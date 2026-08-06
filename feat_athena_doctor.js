@@ -19,10 +19,12 @@
  *   2. Clearer success: after any Athena action an explicit honest result line
  *      ("✓ Pulled N visits from athenaOne") with counts, complementing the §58 save-verify
  *      banner (which separately confirms the data actually persisted).
- *   3. Wiring: a "🔧 Troubleshoot Athena" control by the status dot (and clicking the red dot).
- *      A FAILED pull/search raises NO toast (v1.0.4, owner's second request): the red
- *      status dot is the signal, and the panel explains it when he asks. This module
- *      still CLAIMS the failure notice so Clarity/Save Verify stay quiet too.
+ *   3. Wiring: a "🔧 Troubleshoot Athena" control (#mlsAthenaDoctorBtn). It also wires
+ *      #mlsAthenaStatusDot, which mls-connect.js:10992 pre-seeds out of existence — that
+ *      wiring is inert today; see the long note at the failure branch below.
+ *      A FAILED pull/search raises NO toast (v1.0.4, owner's second request) and nothing
+ *      else marks it either: it is SILENT until he opens the panel. This module still
+ *      CLAIMS the failure notice so Clarity/Save Verify stay quiet too.
  *
  *  Self-contained, additive, idempotent, fully reversible: window.__mlsAthenaDoctor.revert().
  *  Diagnostics never request or receive PHI. A ready result means only worker
@@ -563,10 +565,31 @@
          bar and reworded it into precondition-specific lines. He came back
          with a screenshot of the generic one. The orange bar is gone.
 
-         WHAT SIGNALS FAILURE NOW: the red #mlsAthenaStatusDot and the
-         🔧 Troubleshoot Athena button, which are durable and silent, and the
-         diagnostic panel still walks the whole chain on demand. Nothing else
-         about failure handling changed.
+         WHAT SIGNALS FAILURE NOW: nothing. Say it plainly rather than leave
+         the next reader assuming a fallback exists.
+
+         An earlier draft of this comment claimed "the red #mlsAthenaStatusDot"
+         stays as the signal. THAT DOT DOES NOT EXIST. mls-connect.js:10992
+         PRE-SEEDS window.__mlsAthenaStatusDot with {installed:true} so
+         feat_athena_status_dot.js's own guard sees "already installed" and
+         never builds anything — one of three surfaces neutralized when Athena
+         connectivity was consolidated onto #mlsAsstPanel .as-status. QA
+         confirmed against live b894: no #mlsAthenaStatusDot in the DOM at any
+         point. The dot lookups still in this file (:412, :660, :675) are
+         therefore inert. They stay so the wiring returns if that consolidation
+         is ever reverted, not because they do anything today.
+
+         Nor does the surviving indicator cover this: #mlsAsstPanel .as-status
+         reads __mlsConnTruth, so it reports CONNECTIVITY. A read that fails on
+         a healthy connection (no-form, visit-bodies-incomplete) leaves it
+         green. It is not a per-action failure signal.
+
+         So the honest statement is: a failed pull or search is now SILENT
+         unless the doctor opens 🔧 Troubleshoot Athena (#mlsAthenaDoctorBtn —
+         still mounted, still opens the full chain diagnostic). That is what
+         the owner chose, with full removal named as the option when asked. If
+         he ever wants a quiet signal back, tinting that existing button on
+         failure is the cheapest one: no new furniture.
 
          THIS MODULE MUST STAY THE NOTICE OWNER. markPullNoticeHandled below
          and `ownsPullNotices: true` (:710) are exactly what make

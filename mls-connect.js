@@ -42432,9 +42432,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success)
    2026-08-06: this was a hand-maintained literal token last moved at b430 on
    2026-07-19, while the module itself changed twice after that (b770, b803).
-   sw.js:272 serves ?v= assets CACHE-FIRST, so a browser holding the b430 URL kept
-   the b430 bytes: b803's rewrite of the Athena failure warning could not reach it,
-   and neither could this build's DELETION of that warning. Switched to the
+   sw.js:272 serves ?v= assets CACHE-FIRST, so a browser holding a cache entry under
+   that URL would keep the b430 bytes and b803's rewrite of the Athena failure warning
+   could never reach it. MEASURED, do not overstate it: QA fetched this exact frozen-token
+   URL through the owner's service worker and compared it to a cache-busted origin fetch
+   on 2026-08-06 — 37,499 bytes, byte-identical. So HIS browser was not being served
+   stale bytes today; the mechanism is real, this instance of it was not. Switched to the
    __MLS_AV form (:35051) — the fix tests/cache-token-cannot-go-stale.test.js:136
    prescribes — so it follows the build number and cannot go stale again. */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
