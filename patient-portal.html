@@ -1185,18 +1185,31 @@
     if(avRec){ try{ avRec.onresult=null; avRec.onend=null; avRec.onerror=null; avRec.stop(); }catch(e){} avRec=null; }
     avMicUi("");
   }
-  function avStopSpeak(){ var s=avSynth(); if(s){ try{ s.cancel(); }catch(e){} } avFace(false); }
+  function avStopSpeak(){ avSpeakSeq++; if(avSpeakWatch){ clearTimeout(avSpeakWatch); avSpeakWatch=null; } avHeld.length=0; var s=avSynth(); if(s){ try{ s.cancel(); }catch(e){} } avFace(false); }
+  /* Chrome garbage-collects utterances mid-sentence, silently killing the
+     onend that opens the microphone. Held references + a duration watchdog
+     make the speak->listen chain unbreakable. */
+  var avHeld=[], avSpeakSeq=0, avSpeakWatch=null;
   function avSpeak(text, thenListen){
     if(!avVoiceOn || !avCanSpeak() || avDone){ if(thenListen) avListen(); return; }
     avStopSpeak();
+    var mySeq=++avSpeakSeq, finished=false;
+    function finish(){
+      if(finished || mySeq!==avSpeakSeq) return;
+      finished=true;
+      if(avSpeakWatch){ clearTimeout(avSpeakWatch); avSpeakWatch=null; }
+      avHeld.length=0; avFace(false);
+      if(thenListen && avVoiceOn && !avDone) avListen();
+    }
     try{
       var u=new SpeechSynthesisUtterance(String(text||""));
       u.rate=0.98; u.pitch=1.02;
       u.onstart=function(){ avFace(true); };
-      u.onend=function(){ avFace(false); if(thenListen && avVoiceOn && !avDone) avListen(); };
-      u.onerror=function(){ avFace(false); if(thenListen && avVoiceOn && !avDone) avListen(); };
+      u.onend=finish; u.onerror=finish;
+      avHeld.push(u);
+      avSpeakWatch=setTimeout(finish, Math.min(30000, Math.max(2500, String(text||"").split(/\s+/).length*380+3000)));
       avSynth().speak(u);
-    }catch(e){ avFace(false); if(thenListen) avListen(); }
+    }catch(e){ finish(); }
   }
   function avListen(){
     if(!avVoiceOn || avDone || avBusy || avRecActive) return;
