@@ -49,6 +49,18 @@ assert(source.includes('function kioskWatchdog'), 'the re-arming silence watchdo
 assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source), 'pvListen no longer reports a dead recogniser');
 assert(source.includes('The exit PIN must be 4 to 8 digits'), 'Setup silently drops a malformed PIN again');
 assert(source.includes('if (found && found.summary)'), 'the summary refetch must be PROVEN before filing');
+assert(source.includes('if (kiosk.completed && !finish) return;'), 'a FINISHED interview must refuse further answers — the typed row survives the rest screen');
+/* av-5.3.2 — the self-end must work on EVERY path and must be BOUNDED:
+   it used to be armed only after the microphone-unavailable early return, so
+   a typed-mode interview never ended and never produced a summary; and the
+   finish turn carries no answer, so an unhonoured/rejected finish re-fired
+   every 9s forever. */
+assert(/kiosk\.mic === false[\s\S]{0,320}kioskArmWatchdog\(20000\)/.test(source), 'typed mode must arm the self-end watchdog — a mic-less interview would never end');
+assert(/if \(!started\)[\s\S]{0,320}kioskArmWatchdog\(20000\)/.test(source), 'a failed mic start must still arm the self-end watchdog');
+assert(source.includes('kiosk.finishTries > 2) { kioskStopBounded(); return; }'), 'the auto-finish lost its client-side bound — it could re-fire every 9s forever');
+assert(source.includes('function kioskStopBounded'), 'the bounded honest stop was removed');
+assert(source.includes("kiosk.heard = true; });"), 'typing must reset the self-end watchdog like speech does');
+assert(!/var heardAnything/.test(source), 'the per-call activity latch is back — typing cannot reset a closure-scoped flag');
 /* av-5.2.0 — smilier, faster, self-ending:
    the 1.3s quiet threshold keeps turns snappy, three fruitless listens end
    the interview politely THROUGH the server (summary still generates), and a
@@ -171,7 +183,7 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av530";
+const marker = "feat_mls_avatar.js?v=20260806av531";
 assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av510 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
