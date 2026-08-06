@@ -1,0 +1,70 @@
+name: Pages deploy
+
+# 2026-08-06 — THE LEGACY PAGES BUILDER TIMED OUT AND PINNED LIVE AT b891.
+# Every branch-triggered legacy build from b892 onward ran ~10.5 minutes and
+# ended "Page build failed." (created 13:02:04Z → updated 13:12:50Z on b893,
+# duration reported 0, no detail): the classic 10-minute legacy cap, which this
+# repository finally outgrew — the two back-to-back builds of cb07fdbd earlier
+# the same night were already retry squeakers.
+#
+# This workflow is the SAME build with a bigger clock: the identical
+# jekyll-build-pages action and the identical _config.yml publication boundary
+# (fail-closed excludes + reviewed-file allowlist), followed by the exact
+# generated-tree audit that pages-publication-audit.yml runs on pull requests.
+# The ONLY new capability is upload + deploy. Pages build_type is switched
+# from "legacy" to "workflow" so pushes to main deploy through here; flipping
+# build_type back to legacy is the rollback.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Configure GitHub Pages metadata
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Build with the GitHub Pages Jekyll action
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1
+        with:
+          source: ./
+          destination: ./_site
+
+      - name: Audit exact generated publication tree
+        run: node scripts/audit-pages-build.js --site-dir=_site
+
+      - name: Upload publication artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: ./_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
