@@ -164,6 +164,14 @@ include:
   # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
   - "MLS_Assist_v3.0.45.zip"
+  # Byte-identical mirror of the line above, under an extension no service
+  # worker generation retires. A worker keeps controlling a tab until every tab
+  # closes and this app's worker deliberately declines skipWaiting(), so an
+  # already-installed worker answers the .zip with 410 no matter what we ship.
+  # Measured: the worker did not roll across three production deploys. The .bin
+  # is the only route that reaches those browsers; the button carries
+  # download="MLS_Assist_v3.0.45.zip" so the doctor still saves a .zip.
+  - "MLS_Assist_v3.0.45.bin"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

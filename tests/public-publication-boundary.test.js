@@ -197,7 +197,15 @@ const vendorTraversalIncludes = ['vendor', ...PUBLIC_VENDOR_ASSETS.map((rel) => 
 /* Owner directive 2026-07-20: the exact stamped 3.0.22 release ships publicly;
  * its bytes are digest-pinned below. Candidates stay excluded. */
 const RELEASED_PACKAGE = 'MLS_Assist_v3.0.45.zip';
-const expectedIncludes = [...PUBLIC_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, 'CNAME'];
+/* 2026-08-06, pin moved deliberately: a byte-identical mirror of the released
+   package under an extension no service-worker generation retires. An installed
+   worker keeps controlling a tab until every tab closes, and this app's worker
+   deliberately declines skipWaiting(), so a stale worker answers the .zip with
+   410 regardless of what we ship — measured live, the worker did not roll
+   across three production deploys. Its bytes are digest-asserted EQUAL to the
+   zip below, so this widens the published surface by zero new content. */
+const RELEASED_PACKAGE_MIRROR = 'MLS_Assist_v3.0.45.bin';
+const expectedIncludes = [...PUBLIC_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, RELEASED_PACKAGE_MIRROR, 'CNAME'];
 assert.deepStrictEqual(sorted(includes), sorted(expectedIncludes), 'Jekyll include allowlist must exactly match reviewed public HTML/assets, the digest-pinned released package, and CNAME');
 
 const diskHtml = fs.readdirSync(root).filter((name) => /\.html$/i.test(name));
@@ -288,6 +296,12 @@ assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_As
 const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.45.zip'))).digest('hex');
 assert.strictEqual(releasedZipSha, 'cdd6d083902a0fc583a6f723b415cc1cdb6a01540840c677a4eddb2c32806273',
   'published package bytes must be the exact stamped 3.0.22 release');
+/* The mirror is the SAME BYTES or it is a second, unreviewed artifact. This is
+   the assertion that keeps "a route stale workers can reach" from becoming "a
+   second package nobody digest-checked". */
+const mirrorSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.45.bin'))).digest('hex');
+assert.strictEqual(mirrorSha, releasedZipSha,
+  'the .bin mirror must be byte-identical to the released package — never a separate build');
 
 const stagingJs = fs.readdirSync(root).filter((name) => /\.staging\.js$/i.test(name));
 assert(stagingJs.length >= 5, 'fixture must exercise staging JavaScript exclusion');

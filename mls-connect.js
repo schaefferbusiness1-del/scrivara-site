@@ -10321,6 +10321,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function passAll() {
+    /* edsync stands down wherever the baked Settings card owns the surface.
+       ---------------------------------------------------------------------
+       This module was written for the get-extension anchor further down the
+       page. When the Settings card (#extensionDownloadSettings) was added
+       ABOVE it, findDownloadAnchor() — which matches by TEXT and by
+       a[download], in document order — silently captured the new card instead,
+       and then rewrote it into three separate lies measured live on b903/b905:
+         * the label became "Add to Chrome — Chrome Web Store" while the href
+           stayed a local .zip, and that publish is owner-gated and NOT done;
+         * removeAttribute('download') + target="_blank" turned the click into a
+           NAVIGATION in a new tab, which is the exact request shape the stale
+           service worker answers with 410 "not a public MLS page" — the doctor
+           lands on a refusal page in a tab they never asked for;
+         * applyToDescription() overwrote the first .note in the card, deleting
+           #extDlVersion outright.
+       The baked card is already correct, already version-pinned to
+       extension-version.json, and already refreshed by the mdx drift refresher.
+       Both shells carry it, so this guard is true on every page that loads this
+       file. Nothing else consumes edsync (no feat_* module, no test, no
+       extension file references __mlsExtDownloadSync or #edsSecondaryRow except
+       three null-guarded readers inside this same file). */
+    if (document.getElementById('extensionDownloadSettings')) return false;
     var anchor = findDownloadAnchor();
     if (!anchor) return false;
     var did = false;
