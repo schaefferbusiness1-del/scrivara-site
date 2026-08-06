@@ -340,6 +340,7 @@ const tests = [
   'provider-day-pull-contract.test.js',
   'provider-incomplete-diagnostics-contract.test.js',
   'history-refusal-diagnostics-contract.test.js',
+  'writeflow-presence-port-contract.test.js',
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',
   'provider-roster-ingest-dedupe-runtime.test.js',

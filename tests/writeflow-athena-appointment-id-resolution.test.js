@@ -27,7 +27,8 @@ const root = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'feat_mls_writeflow.js'), 'utf8');
 /* wf3 (owner 2026-08-04): one-click sheet rebuild — appointment-id resolution
    semantics unchanged; version pin moved deliberately. */
-assert(src.includes("var VERSION = 'wf3-1.0.0'"), 'writeflow version must be wf3-1.0.0');
+/* pin moved wf3-1.0.0 -> wf3-1.1.0 deliberately: mdx-2.0.0 presence port. */
+assert(src.includes("var VERSION = 'wf3-1.1.0'"), 'writeflow version must be wf3-1.1.0');
 assert(!/appointmentId:\s*suppliedAppointment\s*\|\|[^,]*\|\|\s*S\(hit\.id/.test(src), 'the backend row id must never be the appointment-id fallback');
 
 function makeContext(indexRows, calAppts) {
