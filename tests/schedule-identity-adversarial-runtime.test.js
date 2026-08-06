@@ -199,9 +199,9 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-/* pin moved si-1.7.16 -> si-1.7.17 deliberately: mdx-1.0.0 row diagnostics;
-   the identity behavior this suite pins is unchanged. */
-assert(api && api.version === 'si-1.7.17');
+/* pin moved si-1.7.17 -> si-1.7.18 deliberately: mdx-1.1.0 refusal sub-cause
+   capture; the identity behavior this suite pins is unchanged. */
+assert(api && api.version === 'si-1.7.18');
 
 (async () => {
   const bootstrapDate = '2026-07-22';
