@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.0.0';
+  var VERSION = 'av-5.1.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -630,7 +630,7 @@
 
   /* ---- NATURAL SPEECH: the backend voice first, the browser as fallback.
      MP3 from /api/avatar/office/tts (clinician-authed), cached per text so
-     "Hear that again" is instant, with a short circuit-breaker so an outage
+     a repeated question is instant, with a short circuit-breaker so an outage
      degrades to browser speech instead of stalling every question. ---- */
   var ttsCache = {}, ttsOrder = [], ttsDownUntil = 0, ttsAudioNow = null, ttsCtx = null, ttsRaf = 0;
   function ttsEnsureCtx() {
@@ -820,6 +820,27 @@
       });
       faceRow.appendChild(facePreview); faceRow.appendChild(camBtn); faceRow.appendChild(removeFaceBtn);
 
+      /* av-5.1.0: which face the kiosk wears once a photo exists */
+      var faceModeLabel = make('label', '', 'Face style — what patients see in the office');
+      var faceModeSelect = document.createElement('select');
+      faceModeSelect.id = 'mlsAvFaceMode';
+      faceModeSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
+      [['drawn', 'Animated character — full facial expressions, tinted from your photo'], ['photo', 'My stylized photo — looks like me, moves as one piece']].forEach(function (opt) {
+        var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+        if ((cfg.faceMode || 'drawn') === opt[0]) o.selected = true;
+        faceModeSelect.appendChild(o);
+      });
+
+      /* av-5.1.0: the kiosk exit PIN — End interview asks for it, so a
+         patient holding the screen cannot exit into the app */
+      var pinLabel = make('label', '', 'Kiosk exit PIN — required to end an office interview (4-8 digits; blank = off)');
+      var pinInput = make('input');
+      pinInput.id = 'mlsAvExitPin';
+      pinInput.type = 'password'; pinInput.autocomplete = 'off'; pinInput.maxLength = 8;
+      pinInput.setAttribute('inputmode', 'numeric');
+      pinInput.placeholder = 'e.g. 2468';
+      pinInput.value = cfg.exitPin || '';
+
       var toneLabel = make('label', '', 'Tone — how the avatar talks to your patients');
       var toneSelect = document.createElement('select');
       toneSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
@@ -905,6 +926,8 @@
         api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
           tone: toneSelect.value,
           voice: voiceSelect.value,
+          faceMode: faceModeSelect.value,
+          exitPin: pinInput.value.trim(),
           faceImage: pendingFace === undefined ? (cfg.faceImage || '') : pendingFace }) })
           .then(function (r2) {
             saveBtn.disabled = false;
@@ -969,6 +992,8 @@
       form.appendChild(toneLabel); form.appendChild(toneSelect);
       form.appendChild(voiceLabel); form.appendChild(voiceRow);
       form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
+      form.appendChild(faceModeLabel); form.appendChild(faceModeSelect);
+      form.appendChild(pinLabel); form.appendChild(pinInput);
       form.appendChild(section('2 · Questions', 'Asked in order. The avatar adds its own smart follow-ups when an answer needs detail.'));
       form.appendChild(qList); form.appendChild(addQBtn);
       form.appendChild(starterNote); form.appendChild(starters);
@@ -1098,11 +1123,18 @@
       '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh}' +
       '#mlsAvKioskInterim{font:500 2.4vh/1.4 system-ui;color:#55605A;max-width:820px;min-height:3.4vh}' +
       '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' +
-      '#mlsAvKioskActions{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}' +
-      '#mlsAvKioskActions button{border:0;border-radius:999px;padding:2.1vh 3.6vh;font:700 2.3vh system-ui;cursor:pointer;min-height:56px}' +
-      '#mlsAvKioskDone{background:#2E6A4B;color:#fff;box-shadow:0 8px 26px rgba(46,106,75,.35)}' +
-      '#mlsAvKioskRepeat{background:#fff;color:#204034;border:1px solid #cfd9d2!important}' +
-      '#mlsAvKioskType{background:transparent!important;color:#8b958e;text-decoration:underline;font-weight:500!important;font-size:1.7vh!important;padding:1vh!important;min-height:0!important}' +
+      '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
+      '#mlsAvKioskFace svg{animation:mlsAvKBreathe 4.5s ease-in-out infinite}' +
+      '@keyframes mlsAvKBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(1.5px) scale(1.008)}}' +
+      '#mlsAvKioskPin{display:none;position:absolute;inset:0;background:rgba(20,28,24,.55);align-items:center;justify-content:center;z-index:5}' +
+      '#mlsAvKioskPinCard{background:#fff;border-radius:18px;padding:26px 30px;display:flex;flex-direction:column;gap:10px;box-shadow:0 24px 70px rgba(0,0,0,.35);min-width:min(340px,86vw)}' +
+      '#mlsAvKioskPinTitle{font:800 17px \'Public Sans\',system-ui;color:#204034}' +
+      '#mlsAvKioskPinSub{font:500 13px system-ui;color:#55605A}' +
+      '#mlsAvKioskPinInput{border:1px solid #cfd9d2;border-radius:12px;padding:12px;font:700 22px system-ui;letter-spacing:8px;text-align:center}' +
+      '#mlsAvKioskPinMsg{font:600 12.5px system-ui;color:#a33d2b;min-height:16px}' +
+      '#mlsAvKioskPinRow{display:flex;gap:10px}' +
+      '#mlsAvKioskPinGo{border:0;border-radius:999px;padding:12px 20px;background:#2E6A4B;color:#fff;font:700 14px system-ui;cursor:pointer}' +
+      '#mlsAvKioskPinBack{border:1px solid #cfd9d2;border-radius:999px;padding:12px 20px;background:#fff;color:#204034;font:600 14px system-ui;cursor:pointer}' +
       '#mlsAvKioskTypeRow{display:none;gap:10px;width:min(720px,90vw)}' +
       '#mlsAvKioskTypeRow textarea{flex:1;border:1px solid #cfd9d2;border-radius:16px;padding:14px;font:2.2vh system-ui;resize:none}' +
       '#mlsAvKioskTypeRow button{border:0;border-radius:999px;padding:0 26px;background:#204034;color:#fff;font:700 2.1vh system-ui;cursor:pointer}' +
@@ -1131,10 +1163,11 @@
     if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
     safe(function () { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {}); });
     var node = gid('mlsAvKiosk'); if (node && node.parentNode) node.parentNode.removeChild(node);
-    if (reason === 'done') {
+    if (reason === 'done' || kiosk.completed) {
       refreshCount(true);
       safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
     }
+    kiosk.completed = false;
   }
   function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
   function kioskTurn(answer, nonce) {
@@ -1163,8 +1196,8 @@
       if (pg && j.progress && j.progress.total) pg.textContent = j.done ? '' : ('Question ' + Math.min(j.progress.covered || 1, j.progress.total) + ' of ' + j.progress.total);
       if (j.done) {
         kioskMood('speaking', kiosk.lastSay);
-        pvSpeak(kiosk.lastSay, function () { kioskClose('done'); });
-        setTimeout(function () { if (kiosk.open) kioskClose('done'); }, 12000);
+        pvSpeak(kiosk.lastSay, function () { kioskFinish(); });
+        setTimeout(function () { if (kiosk.open && !kiosk.completed) kioskFinish(); }, 12000);
       } else {
         kioskMood('speaking', kiosk.lastSay, answer);
         pvSpeak(kiosk.lastSay, function () { kioskListen(); });
@@ -1219,6 +1252,48 @@
       }
     }, 9000);
   }
+  /* Natural completion must not expose the app either — with a PIN set, the
+     finished kiosk RESTS ("hand the screen back") until staff unlock it. */
+  function kioskFinish() {
+    if (!kiosk.open) return;
+    kiosk.completed = true;
+    if (!kiosk.pinSet) { kioskClose('done'); return; }
+    pvStopVoice();
+    kioskMood('speaking', 'thank you');
+    kioskSetSay('All set — thank you! Please hand the screen back to the team.');
+    var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'Staff: “End interview” (top right) unlocks with the PIN.';
+    var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
+  }
+  /* End interview is a STAFF action: with an exit PIN configured, a patient
+     holding the screen cannot end the kiosk into the doctor's app. The PIN is
+     verified SERVER-side (it never rides to the client); no PIN configured =
+     End closes immediately, and Setup encourages setting one. */
+  function kioskRequestEnd() {
+    if (!kiosk.pinSet) { kioskClose('ended'); return; }
+    pvStopVoice();
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    var pad = gid('mlsAvKioskPin'), input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg');
+    if (!pad) { kioskClose('ended'); return; }
+    if (msg) msg.textContent = '';
+    if (input) input.value = '';
+    pad.style.display = 'flex';
+    if (input) safe(function () { input.focus(); });
+  }
+  function kioskPinSubmit() {
+    var input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg'), go = gid('mlsAvKioskPinGo');
+    var pin = input ? input.value.trim() : '';
+    if (!/^\d{4,8}$/.test(pin)) { if (msg) msg.textContent = 'The PIN is 4 to 8 digits.'; return; }
+    if (go) go.disabled = true;
+    api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: pin }) }).then(function (r) {
+      if (go) go.disabled = false;
+      if (r.ok && r.json && r.json.ok) { kioskClose('ended'); return; }
+      if (msg) msg.textContent = (r.json && r.json.message) || 'That PIN isn\'t right — try again.';
+      if (input) { input.value = ''; safe(function () { input.focus(); }); }
+    }, function () {
+      if (go) go.disabled = false;
+      if (msg) msg.textContent = 'Could not check the PIN — check the connection and try again.';
+    });
+  }
   function kioskMicPreflight(then) {
     /* Ask for the microphone ONCE, up front, while the DOCTOR still holds the
        screen — never mid-interview in front of the patient. */
@@ -1237,9 +1312,21 @@
   function kioskSetIdentity(av) {
     var name = gid('mlsAvKioskName');
     if (name && av && av.name) name.textContent = av.name;
-    /* the portrait no longer REPLACES the face — it tints the drawn character
-       (hair + skin sampled from the doctor's photo) so expressions survive */
-    if (av && typeof av.faceImage === 'string' && av.faceImage.indexOf('data:image/') === 0 && !kiosk.tinted) {
+    if (av && av.exitPinSet === true) kiosk.pinSet = true;
+    var hasPhoto = av && typeof av.faceImage === 'string' && av.faceImage.indexOf('data:image/') === 0;
+    if (hasPhoto && av.faceMode === 'photo') {
+      /* the doctor chose THEIR stylized photo as the face — motion animations
+         (pulse/lean/float) still run on the circle; the drawn controller is
+         retired for this interview */
+      if (!kiosk.photoFace) {
+        kiosk.photoFace = true;
+        if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
+        var mount = gid('mlsAvKioskFace');
+        if (mount) { mount.innerHTML = ''; var img = document.createElement('img'); img.alt = ''; img.src = av.faceImage; mount.appendChild(img); }
+      }
+    } else if (hasPhoto && !kiosk.tinted) {
+      /* drawn mode: the portrait TINTS the character (hair + skin sampled)
+         so the full facial animation survives */
       kiosk.tinted = true;
       faceTintFromPortrait(av.faceImage, function (look) {
         if (look && kiosk.face) { kiosk.look = look; kiosk.face.retint(look); }
@@ -1252,6 +1339,7 @@
     if (kiosk.open) return;
     kioskStyle(); style();
     kiosk.open = true; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
+    kiosk.pinSet = false; kiosk.photoFace = false; kiosk.completed = false;
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
@@ -1264,17 +1352,27 @@
       '<div id="mlsAvKioskMic"><i></i>Listening — just talk, I\'ll know when you\'re finished</div>' +
       '<div id="mlsAvKioskInterim"></div>' +
       '<div id="mlsAvKioskProgress"></div>' +
-      '<div id="mlsAvKioskActions">' +
-        '<button type="button" id="mlsAvKioskDone">✓ That\'s my answer</button>' +
-        '<button type="button" id="mlsAvKioskRepeat">🔁 Hear that again</button>' +
-        '<button type="button" id="mlsAvKioskType">Prefer typing?</button>' +
-      '</div>' +
-      '<div id="mlsAvKioskTypeRow"><textarea rows="2" id="mlsAvKioskInput" placeholder="Type your answer…"></textarea><button type="button" id="mlsAvKioskSend">Send</button></div>';
+      /* NO buttons for the patient — the conversation IS the interface. The
+         typed row appears by itself only when the microphone is unavailable.
+         Saying "can you repeat that?" is handled by the interviewer itself. */
+      '<div id="mlsAvKioskTypeRow"><textarea rows="2" id="mlsAvKioskInput" placeholder="Type your answer…"></textarea><button type="button" id="mlsAvKioskSend">Send</button></div>' +
+      /* staff-only exit gate — shown when an exit PIN is configured */
+      '<div id="mlsAvKioskPin"><div id="mlsAvKioskPinCard">' +
+        '<div id="mlsAvKioskPinTitle">Staff only</div>' +
+        '<div id="mlsAvKioskPinSub">Enter the exit PIN to end this interview.</div>' +
+        '<input id="mlsAvKioskPinInput" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN">' +
+        '<div id="mlsAvKioskPinMsg"></div>' +
+        '<div id="mlsAvKioskPinRow"><button type="button" id="mlsAvKioskPinGo">Unlock &amp; end</button><button type="button" id="mlsAvKioskPinBack">Back to the interview</button></div>' +
+      '</div></div>';
     (document.body || document.documentElement).appendChild(root);
-    root.querySelector('#mlsAvKioskEnd').addEventListener('click', function () { kioskClose('ended'); });
-    root.querySelector('#mlsAvKioskDone').addEventListener('click', function () { if (pvRec) { safe(function () { pvRec.stop(); }); } else kioskListen(); });
-    root.querySelector('#mlsAvKioskRepeat').addEventListener('click', function () { if (kiosk.lastSay) { pvStopVoice(); kioskMood('speaking', kiosk.lastSay); pvSpeak(kiosk.lastSay, function () { kioskListen(); }); } });
-    root.querySelector('#mlsAvKioskType').addEventListener('click', function () { var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = row.style.display === 'flex' ? 'none' : 'flex'; });
+    root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskRequestEnd);
+    root.querySelector('#mlsAvKioskPinGo').addEventListener('click', kioskPinSubmit);
+    root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit(); } });
+    root.querySelector('#mlsAvKioskPinBack').addEventListener('click', function () {
+      var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
+      /* a FINISHED interview stays at rest — Back never reopens the mic */
+      if (kiosk.open && !kiosk.busy && !kiosk.completed) kioskListen();
+    });
     function kioskTypedSubmit() {
       var input = gid('mlsAvKioskInput'); var value = input ? input.value.trim() : '';
       if (!value || kiosk.busy) return;

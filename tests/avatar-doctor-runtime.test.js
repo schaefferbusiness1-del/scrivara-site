@@ -25,7 +25,23 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-5.0.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.1.0'"), 'version token moved without updating this contract');
+/* av-5.1.0 — the conversation IS the interface:
+   no patient buttons (typed row self-appears only when the mic is off), End
+   interview gates behind a SERVER-verified exit PIN (the digits never ride to
+   the client — only exitPinSet does), and the face can be the doctor's
+   stylized photo (faceMode 'photo') while 'drawn' keeps full expressions. */
+assert(!source.includes('mlsAvKioskDone'), 'the patient answer button is back — the conversation is the interface');
+assert(!source.includes('Hear that again'), 'the repeat button is back — saying "repeat that" is the supported path');
+assert(!source.includes('Prefer typing?'), 'the typing toggle button is back — the typed row self-appears on mic failure only');
+assert(source.includes("'/api/avatar/office/unlock'"), 'the exit-PIN verification call was removed');
+assert(source.includes('if (!kiosk.pinSet) { kioskClose(\'ended\'); return; }'), 'End must still close immediately when no PIN is configured');
+assert(source.includes('av.exitPinSet === true'), 'the kiosk no longer learns whether a PIN exists');
+assert(source.includes("exitPin: pinInput.value.trim()"), 'Setup no longer saves the exit PIN');
+assert(source.includes("av.faceMode === 'photo'"), 'the photo face mode was removed');
+assert(source.includes('mlsAvKBreathe'), 'the idle breathing animation was removed');
+assert(source.includes('Please hand the screen back to the team'), 'the finished kiosk must REST behind the PIN, never auto-close into the app');
+assert(source.includes('!kiosk.completed) kioskListen()'), 'Back on the PIN pad must never reopen the mic on a finished interview');
 /* av-5.0.0 — natural voice + the living face + true fullscreen:
    the backend TTS proxy speaks first (browser speech only as fallback, with a
    circuit-breaker so an outage cannot stall every question), a LATE fetch
@@ -118,8 +134,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260805av500";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av500 loader');
+const marker = "feat_mls_avatar.js?v=20260805av510";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av510 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -174,7 +190,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.0.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.1.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

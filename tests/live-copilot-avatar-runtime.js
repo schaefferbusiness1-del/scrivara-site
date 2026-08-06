@@ -376,8 +376,17 @@ const server = http.createServer((req, res) => {
       const body = JSON.parse(route.request().postData() || '{}');
       officeTurns.push(body);
       const respond = (json) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' }, body: JSON.stringify(json) });
-      if (!body.answer) return respond({ ok: true, say: 'Hi! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: { name: 'Ava', faceImage: null } });
+      if (!body.answer) return respond({ ok: true, say: 'Hi! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: { name: 'Ava', faceImage: null, faceMode: 'drawn', exitPinSet: true } });
       return respond({ ok: true, say: 'That covers everything — thank you!', done: true, progress: { covered: 1, total: 1 } });
+    });
+    // av-5.1.0: the exit PIN is verified server-side — '4321' unlocks
+    const unlockCalls = [];
+    await page.route(/scrivara-backend\.onrender\.com\/api\/avatar\/office\/unlock/, async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      unlockCalls.push(body.pin);
+      route.fulfill({ status: 200, contentType: 'application/json',
+        headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' },
+        body: JSON.stringify(body.pin === '4321' ? { ok: true } : { ok: false, message: 'That PIN isn\'t right — try again.' }) });
     });
     await page.evaluate(() => window.__mlsAvatar.openKiosk());
     await page.waitForFunction(() => {
@@ -398,16 +407,32 @@ const server = http.createServer((req, res) => {
     });
     scenario('B9a the kiosk is full-screen, opaque, speaks and listens', kioskShape.fixed && kioskShape.full && kioskShape.opaque && /What brings you in/.test(kioskShape.say), JSON.stringify(kioskShape).slice(0, 160));
     scenario('B9c the living face renders with expressions and true fullscreen was requested', kioskShape.face && !!kioskShape.mood && kioskShape.fs, JSON.stringify({ face: kioskShape.face, mood: kioskShape.mood, fs: kioskShape.fs }));
+    // B9d: END is a STAFF action — the PIN pad gates it, a wrong PIN keeps
+    // the kiosk, Back resumes the interview.
+    await page.evaluate(() => document.getElementById('mlsAvKioskEnd').click());
+    const padShown = await page.evaluate(() => getComputedStyle(document.getElementById('mlsAvKioskPin')).display !== 'none');
+    await page.evaluate(() => { document.getElementById('mlsAvKioskPinInput').value = '1111'; document.getElementById('mlsAvKioskPinGo').click(); });
+    await page.waitForFunction(() => (document.getElementById('mlsAvKioskPinMsg').textContent || '').length > 0, null, { timeout: 5000 });
+    const stillOpen = await page.evaluate(() => !!document.getElementById('mlsAvKiosk'));
+    await page.evaluate(() => document.getElementById('mlsAvKioskPinBack').click());
+    const padHiddenAndListening = await page.evaluate(() => getComputedStyle(document.getElementById('mlsAvKioskPin')).display === 'none' && window.__recs.length >= 2);
+    scenario('B9d End gates behind the exit PIN — wrong PIN refused, Back resumes the interview', padShown && stillOpen && padHiddenAndListening && unlockCalls.includes('1111'));
+
     await page.evaluate(() => {
       const rec = window.__recs[window.__recs.length - 1];
       const result = [{ transcript: 'My shoulder aches at night.' }]; result.isFinal = true;
       rec.onresult({ resultIndex: 0, results: [result] });
       rec.stop();
     });
-    await page.waitForFunction(() => !document.getElementById('mlsAvKiosk'), null, { timeout: 15000 });
+    // av-5.1.0: with a PIN set, completion RESTS ("hand the screen back")
+    // instead of exposing the app; the PIN then closes it for real.
+    await page.waitForFunction(() => /hand the screen back/.test(document.getElementById('mlsAvKioskSay')?.textContent || ''), null, { timeout: 15000 });
+    await page.evaluate(() => document.getElementById('mlsAvKioskEnd').click());
+    await page.evaluate(() => { document.getElementById('mlsAvKioskPinInput').value = '4321'; document.getElementById('mlsAvKioskPinGo').click(); });
+    await page.waitForFunction(() => !document.getElementById('mlsAvKiosk'), null, { timeout: 8000 });
     const officeOk = officeTurns.some((t) => t.answer === 'My shoulder aches at night.' && t.patientExternalId === 'ext-9' && t.answerNonce)
-      && officeTurns.every((t) => t.patientExternalId === 'ext-9');
-    scenario('B9b the spoken office answer files to the ACTIVE patient nonce-safe, kiosk closes on done', officeOk, officeOk ? null : JSON.stringify(officeTurns).slice(0, 200));
+      && officeTurns.every((t) => t.patientExternalId === 'ext-9') && unlockCalls.includes('4321');
+    scenario('B9b the spoken office answer files to the ACTIVE patient nonce-safe; completion rests until the PIN closes it', officeOk, officeOk ? null : JSON.stringify(officeTurns).slice(0, 200));
     await page.screenshot({ path: path.join(outDir, 'B-doctor-panel.png'), fullPage: true });
     await context.close();
   } catch (e) { scenario('B doctor side', false, String(e && e.message).slice(0, 300)); }

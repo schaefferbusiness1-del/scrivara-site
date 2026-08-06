@@ -84,7 +84,10 @@ const assets = [
      no facial expretions"): the natural backend voice (OpenAI TTS proxy) with
      amplitude lip-sync, a drawn SVG character with real expressions (blink,
      gaze, brows, mouth), portrait tinting, and true requestFullscreen. */
-  ['feat_mls_avatar.js', '20260805av500', '20260805av400'],
+  /* 2026-08-06 av-5.1.0 (owner round 10): the patient buttons are GONE (the
+     conversation is the interface), End interview gates behind a server-
+     verified exit PIN, and the face can be the doctor's stylized photo. */
+  ['feat_mls_avatar.js', '20260805av510', '20260805av500'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
