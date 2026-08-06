@@ -25,7 +25,19 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-5.3.0'"), 'version token moved without updating this contract');
+/* The module's self-reported VERSION must move WITH its cache token. av531
+   shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
+   could never confirm the build QA had been told to gate on — a module that
+   misreports itself makes every downstream verification unfalsifiable. */
+assert(source.includes("var VERSION = 'av-5.3.2'"), 'version token moved without updating this contract');
+{
+  const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
+  const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
+  assert(tokenM && verM, 'cannot read the avatar version/token pair');
+  assert.strictEqual(tokenM[1], verM[1] + verM[2] + verM[3],
+    'the loader token and the module VERSION must name the same release (token av' + tokenM[1] +
+    ' vs VERSION av-' + verM[1] + '.' + verM[2] + '.' + verM[3] + ')');
+}
 /* av-5.3.0 — the customizable face, the retired preview, and the six defects
    an adversarial review caught BEFORE this train reached a patient:
    1. kiosk.pinSet is TRI-STATE and unknown means LOCKED (it used to fail open,
@@ -183,8 +195,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av531";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av510 loader');
+const marker = "feat_mls_avatar.js?v=20260806av532";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av532 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -239,7 +251,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.2');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

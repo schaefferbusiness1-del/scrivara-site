@@ -8602,7 +8602,7 @@
    "handler": null
   },
   {
-   "id": "feat-athena-doctor-js-361-close",
+   "id": "feat-athena-doctor-js-373-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -8611,12 +8611,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_athena_doctor.js",
-   "line": 361,
+   "line": 373,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-athena-doctor-js-362-re-check",
+   "id": "feat-athena-doctor-js-374-re-check",
    "label": "Re-check",
    "accessibleName": "Re-check",
    "title": "",
@@ -8625,7 +8625,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_athena_doctor.js",
-   "line": 362,
+   "line": 374,
    "gated": false,
    "handler": null
   },
