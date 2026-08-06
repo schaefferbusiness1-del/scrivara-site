@@ -325,7 +325,24 @@
     if(wanted){
       for(i=0;i<all.length;i++)if(S(all[i]&&(all[i].id||all[i].templateId))===wanted){t=all[i];break;}
       if(!t)return {tpl:null,error:'The selected template is no longer available.',code:'MLS_OPNOTE_TEMPLATE_IDENTITY'};
-      if(S(t.text)!==S(tplText))return {tpl:null,error:'The selected template changed before drafting. Re-select it and retry.',code:'MLS_OPNOTE_TEMPLATE_STALE'};
+      /* b905 — THIS GATE REFUSED THE ONE POPULATION THE CLEANER EXISTS FOR.
+         b897 started passing _tplTextForDraft(tpl.text) to the generator, which
+         strips Word's binary remains from a legacy .doc template. This check is
+         raw byte equality between the STORED text and what was passed, so for
+         exactly the dirty templates the strip targets the two differ and the
+         draft was REFUSED - reported as "the selected template changed before
+         drafting", blaming the doctor for an edit he never made, with a remedy
+         (re-select and retry) that cannot work because the strip re-runs
+         identically. Draft-all's retry classifier treats the code as terminal,
+         so it never retried either. Before b897 those templates drafted dirty;
+         after it they did not draft at all.
+         The gate's real job is "is this still the template that was selected",
+         not "are these bytes identical". Compare the NORMALISED forms: the
+         strip is idempotent (it fires on a Word signature that its own output
+         no longer carries), so stripped-vs-stored compares equal while a
+         genuine edit still differs. */
+      var _normTpl=function(v){ try{ return isFn(window._tplTextForDraft)?S(window._tplTextForDraft(v)):S(v); }catch(e){ return S(v); } };
+      if(_normTpl(t.text)!==_normTpl(tplText))return {tpl:null,error:'The selected template changed before drafting. Re-select it and retry.',code:'MLS_OPNOTE_TEMPLATE_STALE'};
       return {tpl:t,source:'id'};
     }
     for(i=0;i<all.length;i++)if(S(all[i]&&all[i].text)===S(tplText))matches.push(all[i]);
@@ -430,7 +447,10 @@
       [/\blesi\b/i, 'lumbar epidural steroid injection', /\blumbar epidural\b/i],
       [/\bcesi\b/i, 'cervical epidural steroid injection', /\bcervical epidural\b/i],
       [/\btesi\b/i, 'thoracic epidural steroid injection', /\bthoracic epidural\b/i],
-      [/\btpi\b/i,  'trigger point injection',             /\btrigger point\b/i]
+      [/\btpi\b/i,  'trigger point injection',             /\btrigger point\b/i],
+      /* b905 — QA gate: "SIJ inj left" refused while "Left sacroiliac joint
+         injection" sat in the library. Safe over-refusal, but still a miss. */
+      [/\bsij\b/i,  'sacroiliac joint injection',           /\bsacroiliac\b/i]
     ];
     for (var ai = 0; ai < ABBR.length; ai++) {
       if (ABBR[ai][0].test(s) && !ABBR[ai][2].test(s)) s += ' ' + ABBR[ai][1];
