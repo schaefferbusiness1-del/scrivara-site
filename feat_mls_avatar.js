@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-3.0.0';
+  var VERSION = 'av-4.0.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -348,21 +348,64 @@
      stops on every exit (panel close included) so it can never collide with
      the app's dictation. */
   var pvRec = null;
+  /* av-4.0.0: the speak engine that CANNOT dead-end.
+     Chrome garbage-collects utterances mid-sentence, so onend silently never
+     fires and everything chained after speech (like opening the microphone)
+     dies — the exact "it just sits there and makes me type" failure. Three
+     defenses: (1) every utterance is HELD in a module array until it truly
+     finishes; (2) a duration watchdog fires the continuation even if Chrome
+     never does; (3) the continuation is once-only so double-fires are safe. */
+  var pvHeld = [], pvSpeakSeq = 0, pvWatchdog = null, pvVoice;
+  function pvPickVoice() {
+    if (pvVoice !== undefined) return pvVoice;
+    pvVoice = null;
+    safe(function () {
+      var synth = window.speechSynthesis; if (!synth || !isFn(synth.getVoices)) return;
+      var voices = synth.getVoices() || [];
+      if (!voices.length) { safe(function () { synth.addEventListener('voiceschanged', function () { pvVoice = undefined; }, { once: true }); }); return; }
+      var prefer = ['Google US English', 'Microsoft Aria', 'Microsoft Jenny', 'Samantha'];
+      for (var i = 0; i < prefer.length && !pvVoice; i++) {
+        for (var j = 0; j < voices.length; j++) {
+          if (voices[j].name && voices[j].name.indexOf(prefer[i]) >= 0) { pvVoice = voices[j]; break; }
+        }
+      }
+      if (!pvVoice) for (var k = 0; k < voices.length; k++) if (/^en(-|_)/i.test(voices[k].lang || '')) { pvVoice = voices[k]; break; }
+    });
+    return pvVoice;
+  }
   function pvStopVoice() {
+    pvSpeakSeq++;
+    if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+    pvHeld.length = 0;
     safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
     if (pvRec) { safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); }); pvRec = null; }
   }
   function pvSpeak(text, then) {
     var synth = safe(function () { return window.speechSynthesis; }, null);
-    if (!synth || typeof window.SpeechSynthesisUtterance !== 'function') { if (then) then(); return; }
+    var mySeq = ++pvSpeakSeq;
+    var finished = false;
+    function finish() {
+      if (finished || mySeq !== pvSpeakSeq) return;
+      finished = true;
+      if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+      pvHeld.length = 0;
+      if (then) safe(then);
+    }
+    if (!synth || typeof window.SpeechSynthesisUtterance !== 'function') { finish(); return; }
     try {
       synth.cancel();
       var u = new window.SpeechSynthesisUtterance(String(text));
       u.rate = 0.98; u.pitch = 1.02;
-      u.onend = function () { if (then) then(); };
-      u.onerror = function () { if (then) then(); };
+      var voice = pvPickVoice(); if (voice) u.voice = voice;
+      u.onend = finish;
+      u.onerror = finish;
+      pvHeld.push(u); /* defeat the GC */
+      /* watchdog: ~160 wpm reading speed + 3s grace — speech that "never
+         ends" still hands off to the next stage. */
+      var expectMs = Math.min(30000, Math.max(2500, String(text).split(/\s+/).length * 380 + 3000));
+      pvWatchdog = setTimeout(finish, expectMs);
       synth.speak(u);
-    } catch (e) { if (then) then(); }
+    } catch (e) { finish(); }
   }
   function pvListen(onFinal, onInterim) {
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
@@ -742,7 +785,17 @@
     st.textContent =
       '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center}' +
       '#mlsAvKioskEnd{position:absolute;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75}' +
-      '#mlsAvKioskFaceWrap{position:relative;width:min(34vh,340px);height:min(34vh,340px)}' +
+      '#mlsAvKiosk.speaking{background:linear-gradient(165deg,#F5F7EE,#E4F0E6 55%,#D6E8DC)}' +
+      '#mlsAvKiosk.listening{background:linear-gradient(165deg,#F0F4F8,#E2EBF4 55%,#D6E2F0)}' +
+      '#mlsAvKioskWave{display:flex;gap:7px;align-items:center;height:4.4vh;min-height:30px;visibility:hidden}' +
+      '#mlsAvKiosk.speaking #mlsAvKioskWave{visibility:visible}' +
+      '#mlsAvKioskWave span{width:8px;border-radius:999px;background:#2E6A4B;height:22%;animation:mlsAvKWave 1s ease-in-out infinite}' +
+      '#mlsAvKioskWave span:nth-child(2){animation-delay:.12s}#mlsAvKioskWave span:nth-child(3){animation-delay:.24s}#mlsAvKioskWave span:nth-child(4){animation-delay:.36s}#mlsAvKioskWave span:nth-child(5){animation-delay:.48s}' +
+      '@keyframes mlsAvKWave{0%,100%{height:22%}50%{height:100%}}' +
+      '#mlsAvKioskMic{display:none;align-items:center;gap:10px;font:700 2.1vh system-ui;color:#26417a;background:#fff;border-radius:999px;padding:1.2vh 2.4vh;box-shadow:0 6px 22px rgba(38,65,122,.18)}' +
+      '#mlsAvKiosk.listening #mlsAvKioskMic{display:inline-flex}' +
+      '#mlsAvKioskMic i{width:1.6vh;height:1.6vh;min-width:12px;min-height:12px;border-radius:999px;background:#c0392b;animation:mlsAvKRing 1.4s ease-in-out infinite}' +
+      '#mlsAvKioskFaceWrap{position:relative;width:min(40vh,420px);height:min(40vh,420px)}' +
       '#mlsAvKioskFace{width:100%;height:100%;border-radius:999px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12vh;border:5px solid #fff;box-shadow:0 18px 60px rgba(32,64,52,.22);transition:box-shadow .5s ease}' +
       '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
       '#mlsAvKioskMood{position:absolute;right:2%;bottom:2%;width:5.4vh;height:5.4vh;min-width:38px;min-height:38px;border-radius:999px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:3.2vh;box-shadow:0 4px 14px rgba(32,64,52,.25);transition:transform .3s ease}' +
@@ -762,7 +815,7 @@
       '#mlsAvKioskActions button{border:0;border-radius:999px;padding:2.1vh 3.6vh;font:700 2.3vh system-ui;cursor:pointer;min-height:56px}' +
       '#mlsAvKioskDone{background:#2E6A4B;color:#fff;box-shadow:0 8px 26px rgba(46,106,75,.35)}' +
       '#mlsAvKioskRepeat{background:#fff;color:#204034;border:1px solid #cfd9d2!important}' +
-      '#mlsAvKioskType{background:transparent;color:#69736d;text-decoration:underline;font-weight:600!important}' +
+      '#mlsAvKioskType{background:transparent!important;color:#8b958e;text-decoration:underline;font-weight:500!important;font-size:1.7vh!important;padding:1vh!important;min-height:0!important}' +
       '#mlsAvKioskTypeRow{display:none;gap:10px;width:min(720px,90vw)}' +
       '#mlsAvKioskTypeRow textarea{flex:1;border:1px solid #cfd9d2;border-radius:16px;padding:14px;font:2.2vh system-ui;resize:none}' +
       '#mlsAvKioskTypeRow button{border:0;border-radius:999px;padding:0 26px;background:#204034;color:#fff;font:700 2.1vh system-ui;cursor:pointer}' +
@@ -786,6 +839,7 @@
   }
   function kioskClose(reason) {
     pvStopVoice();
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     kiosk.open = false; kiosk.busy = false;
     var node = gid('mlsAvKiosk'); if (node && node.parentNode) node.parentNode.removeChild(node);
     if (reason === 'done') {
@@ -797,6 +851,7 @@
   function kioskTurn(answer, nonce) {
     if (!kiosk.open || kiosk.busy) return;
     kiosk.busy = true;
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     pvStopVoice();
     kioskMood('thinking', '', answer);
     var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
@@ -835,19 +890,60 @@
   }
   function kioskListen() {
     if (!kiosk.open || kiosk.busy) return;
+    if (kiosk.mic === false) {
+      var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
+      var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
+      return;
+    }
     kioskMood('listening', kiosk.lastSay);
+    var heardAnything = false;
     var started = pvListen(function (finalText) {
       if (!kiosk.open) return;
+      if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
       var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
       kiosk.lastTry = { answer: finalText, nonce: reuse };
       kioskTurn(finalText, reuse);
     }, function (interim) {
+      heardAnything = heardAnything || !!interim.trim();
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
     });
     if (!started) {
+      kiosk.mic = false;
       var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'The microphone is not available here — typing works below.';
+      return;
     }
+    /* HANDS-FREE SAFETY NET: silence gets ONE warm nudge per question, and a
+       hard stall (recognition alive but nothing ever heard) re-opens the mic
+       — this loop can never quietly die into a frozen screen. */
+    if (kiosk.nudgeTimer) safe(function () { clearTimeout(kiosk.nudgeTimer); });
+    kiosk.nudgeTimer = setTimeout(function () {
+      if (!kiosk.open || kiosk.busy || heardAnything) return;
+      if (kiosk.nudgedFor !== kiosk.lastSay) {
+        kiosk.nudgedFor = kiosk.lastSay;
+        pvStopVoice();
+        kioskMood('speaking', '');
+        pvSpeak('Take your time — whenever you\'re ready, just start talking.', function () { kioskListen(); });
+      } else {
+        pvStopVoice();
+        kioskListen();
+      }
+    }, 9000);
+  }
+  function kioskMicPreflight(then) {
+    /* Ask for the microphone ONCE, up front, while the DOCTOR still holds the
+       screen — never mid-interview in front of the patient. */
+    var media = safe(function () { return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ audio: true }); }, null);
+    if (!media) { kiosk.mic = false; then(); return; }
+    media.then(function (stream) {
+      safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+      kiosk.mic = true; then();
+    }, function () {
+      kiosk.mic = false;
+      var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'Microphone is off — the interview will use typing.';
+      var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+      then();
+    });
   }
   function kioskSetIdentity(av) {
     var face = gid('mlsAvKioskFace'), name = gid('mlsAvKioskName');
@@ -868,14 +964,16 @@
     root.innerHTML =
       '<button type="button" id="mlsAvKioskEnd">End interview</button>' +
       '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace">🧑‍⚕️</div><div id="mlsAvKioskMood">🙂</div></div>' +
+      '<div id="mlsAvKioskWave"><span></span><span></span><span></span><span></span><span></span></div>' +
       '<div id="mlsAvKioskName">One moment…</div>' +
       '<div id="mlsAvKioskSay">Getting ready…</div>' +
+      '<div id="mlsAvKioskMic"><i></i>Listening — just talk, I\'ll know when you\'re finished</div>' +
       '<div id="mlsAvKioskInterim"></div>' +
       '<div id="mlsAvKioskProgress"></div>' +
       '<div id="mlsAvKioskActions">' +
-        '<button type="button" id="mlsAvKioskDone">🎤 I\'m done talking</button>' +
+        '<button type="button" id="mlsAvKioskDone">✓ That\'s my answer</button>' +
         '<button type="button" id="mlsAvKioskRepeat">🔁 Hear that again</button>' +
-        '<button type="button" id="mlsAvKioskType">Type instead</button>' +
+        '<button type="button" id="mlsAvKioskType">Prefer typing?</button>' +
       '</div>' +
       '<div id="mlsAvKioskTypeRow"><textarea rows="2" id="mlsAvKioskInput" placeholder="Type your answer…"></textarea><button type="button" id="mlsAvKioskSend">Send</button></div>';
     (document.body || document.documentElement).appendChild(root);
@@ -894,7 +992,9 @@
     }
     root.querySelector('#mlsAvKioskSend').addEventListener('click', kioskTypedSubmit);
     root.querySelector('#mlsAvKioskInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kioskTypedSubmit(); } });
-    kioskTurn(null, null);
+    /* mic permission FIRST (the doctor's click is the gesture, the doctor
+       still holds the screen), then the conversation begins. */
+    kioskMicPreflight(function () { kioskTurn(null, null); });
   }
 
   /* ---- the Visit-page presence: check-ins meet the doctor where he works.

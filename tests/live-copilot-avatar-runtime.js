@@ -356,6 +356,9 @@ const server = http.createServer((req, res) => {
       Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeRec });
       Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, value: FakeRec });
       window.getActivePtId = () => 'ext-9'; // the patient in the room
+      // mic preflight granted instantly (no permission UI in the harness)
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+        getUserMedia: () => Promise.resolve({ getTracks: () => [] }) } });
     });
     // office endpoint mock (same context route already covers the origin —
     // extend the handler map by re-routing)

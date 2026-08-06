@@ -25,7 +25,17 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-3.0.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-4.0.0'"), 'version token moved without updating this contract');
+/* av-4.0.0 — the unbreakable voice loop:
+   held utterance refs + duration watchdog (Chrome GCs utterances mid-sentence
+   and onend never fires — the "it makes me type and hit Send" killer), mic
+   preflight before the patient holds the screen, one warm silence nudge per
+   question, and a stall re-listen. */
+assert(source.includes('pvHeld.push(u); /* defeat the GC */'), 'the utterance GC-defeat was removed — the speak->listen chain can silently die again');
+assert(/pvWatchdog = setTimeout\(finish/.test(source), 'the speak completion watchdog was removed');
+assert(source.includes('function kioskMicPreflight'), 'the mic preflight was removed — permission prompts would hit the PATIENT mid-interview');
+assert(source.includes("Take your time — whenever you\\'re ready"), 'the silence nudge was removed');
+assert(source.includes('kiosk.nudgedFor !== kiosk.lastSay'), 'the nudge must fire at most once per question');
 /* av-3.0.0 — the OFFICE kiosk: full-screen, opaque (the app is hidden while a
    patient faces the screen), clinician-authenticated office turns for the
    ACTIVE patient, voice-first with typed fallback, emotion states with a
@@ -91,8 +101,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260805av300";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av300 loader');
+const marker = "feat_mls_avatar.js?v=20260805av400";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av400 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -147,7 +157,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-3.0.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-4.0.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

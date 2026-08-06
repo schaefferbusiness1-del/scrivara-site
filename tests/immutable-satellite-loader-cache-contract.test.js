@@ -76,7 +76,11 @@ const assets = [
   /* 2026-08-05 av-3.0.0 (owner rounds 6.5+7): the OFFICE kiosk — full-screen
      patient-facing interview on the doctor's machine with emotion states —
      plus the talking Setup preview. av201 (b882) retired. */
-  ['feat_mls_avatar.js', '20260805av300', '20260805av201'],
+  /* 2026-08-05 av-4.0.0 (owner: "awful, requires send — rethink"): the speak
+     engine defeats Chrome's utterance GC (held refs + duration watchdog), mic
+     preflight happens up front, and the kiosk becomes a hands-free loop with
+     a silence nudge and stall recovery — it can never dead-end into typing. */
+  ['feat_mls_avatar.js', '20260805av400', '20260805av300'],
   ['feat_mls_copilot_actions.js', '20260805ca211', '20260805ca210']
 ];
 
