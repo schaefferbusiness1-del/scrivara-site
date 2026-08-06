@@ -86,6 +86,32 @@ const root = path.resolve(__dirname, '..');
  * stamps). */
 const CUTOFF = 'e3f37111';
 
+/* FOURTH OCCURRENCE, 2026-08-06 — and this time the cutoff DID NOT MOVE.
+ * -----------------------------------------------------------------------------
+ * 415092e6 stamped app-version.json b911 under a "b910:" subject (the b910 number
+ * was taken mid-flight by another lane; the message kept the old token). Same
+ * disease as the three advances above, and equally unrepairable: it is pushed on
+ * main, four-plus lanes hold merge bases across it, and rewriting it would cost
+ * someone their work — that happened to a lane earlier the same evening.
+ *
+ * But advancing CUTOFF past it would stop checking **57** bump commits, to
+ * forgive one. That trade is what turns "each advance exempts a real violation"
+ * into a gate nobody trusts. So the exemption is NAMED instead: exactly one sha,
+ * with its reason, and it is PRINTED on every run so it can never sit here
+ * quietly. Everything since e3f37111 stays checked, including every commit after
+ * the exempted one.
+ *
+ * If this map grows past a couple of entries, stop patching and fix the writer:
+ * the durable cure named three times above is that the bump path must refuse to
+ * write a subject omitting the token it just wrote, and every ship path must run
+ * this gate. As of tonight it still does not — b912 was pushed while main was
+ * red on this very suite, so at least one path is not running run-all at all. */
+const UNREPAIRABLE = new Map([
+  ['415092e6d09c511c305c19d5dacc30b9dbbf9b13',
+    'stamped b911 under a "b910:" subject after a mid-flight number collision; pushed on main, ' +
+    'merge bases held by 4+ lanes, so it cannot be amended without destroying other lanes\' work']
+]);
+
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 }
@@ -112,6 +138,7 @@ const commits = range ? range.split('\n').filter(Boolean).map(l => {
 const TOKEN = /\bb(\d{3,4})\b/;
 const claimed = new Map();   /* token -> [sha, ...] */
 const unnamed = [];
+const exempted = [];         /* named, unrepairable history — printed every run */
 
 /* The token may appear ANYWHERE in the message, not only the subject.
  *
@@ -150,7 +177,10 @@ for (const c of commits) {
 
   let message = c.subject;
   try { message = git(['log', '-1', '--format=%B', c.sha]); } catch (e) {}
-  if (message.indexOf(token) === -1) unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
+  if (message.indexOf(token) === -1) {
+    if (UNREPAIRABLE.has(c.sha)) exempted.push(c.sha.slice(0, 7) + '  tree=' + token + ' — ' + UNREPAIRABLE.get(c.sha));
+    else unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
+  }
   const arr = claimed.get(token) || [];
   arr.push(c.sha.slice(0, 7));
   claimed.set(token, arr);
@@ -173,5 +203,17 @@ assert.strictEqual(dupes.length, 0,
   'ambiguous when tracing a defect. This is the collision case that cost two abandoned build numbers\n' +
   'in one afternoon. Re-bump rather than reuse: abandon the NUMBER, never the work.');
 
+/* 3. THE EXEMPTIONS ARE ANNOUNCED, EVERY RUN. A quiet allowlist is how a gate
+   rots: the next reader sees a green tick and never learns a violation is being
+   carried. Any entry that stops matching a real violation is also reported, so a
+   stale exemption cannot outlive the commit it was written for. */
+const stale = [...UNREPAIRABLE.keys()].filter((sha) => !exempted.some((line) => line.startsWith(sha.slice(0, 7))));
+assert.strictEqual(stale.length, 0,
+  'These named exemptions no longer match a real violation and must be DELETED, not left to rot:\n  ' +
+  stale.join('\n  ') + '\n\nAn allowlist entry that exempts nothing is a hole waiting for the next commit to fall into.');
+
 console.log('PASS build bump names its build: ' + commits.length + ' commit(s) since ' + CUTOFF +
-  ', ' + claimed.size + ' build bump(s), each named in its own message and claimed once');
+  ', ' + claimed.size + ' build bump(s), each named in its own message and claimed once' +
+  (exempted.length
+    ? '\n  ⚠️  CARRYING ' + exempted.length + ' NAMED EXEMPTION(S) — unrepairable history, not forgiven silently:\n    ' + exempted.join('\n    ')
+    : ''));
