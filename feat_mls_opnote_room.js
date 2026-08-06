@@ -391,18 +391,29 @@
     return { i: i, row: rows[i] };
   }
 
+  var RAIL_FILTER = '';   /* b899 — the rail's name filter, survives rebuilds */
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
     var list = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
+    /* b899 — 96 templates in library-insertion order is creation-time noise;
+       alphabetical, with a name filter above (owner request 2026-08-06). */
+    list = list.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); });
+    var q = String(RAIL_FILTER || '').trim().toLowerCase();
+    var shown = q ? list.filter(function (t) { return String(t.name || '').toLowerCase().indexOf(q) >= 0; }) : list;
     var cur = curRow();
     var appliedId = cur && cur.row ? S(cur.row.tplId || '') : '';
-    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + '</div>';
+    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + (q ? ' &middot; ' + shown.length + ' match' + (shown.length === 1 ? '' : 'es') : '') + '</div>';
+    if (list.length > 5 || q) {
+      h += '<div class="opr-tpl-search"><input id="oprTplSearch" type="search" placeholder="Search templates by name…" aria-label="Search templates by name" autocomplete="off"></div>';
+    }
     if (!list.length) {
       h += '<div class="opr-tpl-empty">None uploaded yet. Drafts follow your templates &mdash; add them on the Templates tab.</div>';
+    } else if (!shown.length) {
+      h += '<div class="opr-tpl-empty">No template name contains &ldquo;' + esc(RAIL_FILTER) + '&rdquo;. Clear the search to see all ' + list.length + '.</div>';
     } else {
       var hOf = safe(function () { return window.__mlsTplPrepFix && isFn(window.__mlsTplPrepFix.healthOf) ? window.__mlsTplPrepFix.healthOf : null; }, null);
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
+      for (var i = 0; i < shown.length; i++) {
+        var t = shown[i];
         var health = hOf ? safe((function (tt) { return function () { return hOf(tt); }; })(t), null) : null;
         var cls = health ? health.cls : '';
         var lbl = health ? health.label : '';
@@ -425,7 +436,16 @@
           + '</button>';
       }
     }
+    /* b899 — typing in the filter rebuilds this rail, and innerHTML replacement
+       destroys focus mid-word. Remember focus + caret, restore after. */
+    var hadFocus = document.activeElement && document.activeElement.id === 'oprTplSearch';
     rail.innerHTML = h;
+    var searchInp = $('oprTplSearch');
+    if (searchInp) {
+      searchInp.value = RAIL_FILTER;
+      searchInp.oninput = function () { RAIL_FILTER = this.value; buildTplRail(); };
+      if (hadFocus) { try { searchInp.focus({ preventScroll: true }); searchInp.setSelectionRange(searchInp.value.length, searchInp.value.length); } catch (eF) {} }
+    }
 
     /* One delegated listener, re-attached with every innerHTML rebuild - the
        idiom buildNav already uses. Detached in revert() alongside the nav. */
@@ -545,7 +565,7 @@
   var TPL_MODES = [
     ['strict', 'Follow it closely', 'Keeps your wording. Fills only what varies.'],
     ['adapt', 'Adapt to the case', 'Keeps your structure, adapts the wording. Recommended.'],
-    ['guide', 'Use it as a guide', 'Keeps your headings, writes the prose its own way.']
+    ['guide', 'Use it as a guide — concise', 'Keeps your headings, writes tighter prose in its own words.']
   ];
   var TPL_MODE_KEY = 'opNoteTemplateMode';
 
