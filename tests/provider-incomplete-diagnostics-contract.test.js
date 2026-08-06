@@ -190,11 +190,20 @@ for (let i = 0; i < 20; i++) mattRows.push({ name: 'Mac Patient ' + i, provider:
 const mattRequest = { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', rosterVerified: true };
 const mattResponse = { receipt: { complete: true, authoritativeEmpty: false }, providers: ['Matthew Schaeffer, MD'] };
 
-/* 8a. the b894 replay: real entry + credential-less echo of the same human */
+/* 8a. THE b894 REPLAY, IN THE SHAPE THE EXTENSION ACTUALLY PRODUCES.
+   mdx-2.0.0 shipped as b899 and was a NO-OP for the reporting user because this
+   fixture originally used a hand-written `legacy-name:` stableKey. Ext 3.0.45
+   stamps every id-less schedule-header provider as `athena:<display text>`
+   (extension-candidates/3.0.45/background.js:6790 and :6971), and the roster
+   preserves a supplied stableKey verbatim (feat_athena_provider_roster.js:315,
+   :340), so the REAL echo is `athena:matthew schaeffer, md` with an empty id.
+   Against that shape b899 pushed `independent-structured-key` and refused
+   exactly as b894 had. A fixture looser than the real producer cannot tell a
+   working fix from a dead one - do not "simplify" this key back. */
 context.__mlsProviderRoster = {
   list: () => [
     { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', equivalentKey: 'matthew schaeffer|' },
-    { id: '', stableKey: 'legacy-name:matthew schaeffer|md', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' },
+    { id: '', stableKey: 'athena:matthew schaeffer, md', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' },
     { id: '8', stableKey: 'backend:8', name: 'Michael Schaeffer, MD', equivalentKey: 'michael schaeffer|md' }
   ],
   getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
@@ -281,5 +290,92 @@ assert.strictEqual(unique.complete, true, 'the pre-existing unique-name fallback
 assert.strictEqual(unique.receipt.canonicalNameFallback, true);
 assert.strictEqual(unique.receipt.canonicalNameFallbackBasis, 'roster-unique');
 assert.strictEqual(unique.receipt.rosterSameNameCount, 1);
+
+/* ---- 8f. OPAQUE athena keys are NOT display echoes and must still refuse ----
+   The roster module's own rule (stringEchoEquivalent, feat_athena_provider_
+   roster.js:394-410): an `athena:*` body that canonicalizes to this clinician's
+   identity is display evidence of one person, but an OPAQUE body carries
+   information beyond the display string and stays a distinct identity. If this
+   ever passes, the fallback has been widened into "any id-less entry", which
+   would let a second real clinician through. */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', equivalentKey: 'matthew schaeffer|' },
+    { id: '', stableKey: 'athena:prov-88217', name: 'Matthew Schaeffer, MD', equivalentKey: 'matthew schaeffer|md' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const opaqueKey = api._scopeProviderRows(mattRows, mattRequest, mattResponse);
+assert.strictEqual(opaqueKey.complete, false,
+  'an opaque athena stableKey is a distinct identity, not a display echo - it must refuse');
+assert.strictEqual(opaqueKey.reason, 'provider-incomplete');
+assert.strictEqual(opaqueKey.rows.length, 0, 'a refusal imports nothing');
+assert(opaqueKey.receipt.sameNameConflictKinds.includes('independent-structured-key'));
+
+/* ---- 8g. the tightened legacy arm: a `legacy-name:` key whose body belongs to
+   a DIFFERENT clinician is not an echo either. mdx-2.0.0 exempted every
+   `legacy-name:` key regardless of body; 2.0.1 requires the body to canonicalize
+   to the requested clinician's own token set. ------------------------------- */
+context.__mlsProviderRoster = {
+  list: () => [
+    { id: '12', stableKey: 'backend:12', name: 'Matthew Schaeffer', equivalentKey: 'matthew schaeffer|' },
+    { id: '', stableKey: 'legacy-name:michael schaeffer|md', name: 'Matthew Schaeffer', equivalentKey: 'matthew schaeffer|' }
+  ],
+  getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }),
+  resolve: () => null
+};
+const wrongBody = api._scopeProviderRows(mattRows, mattRequest, mattResponse);
+assert.strictEqual(wrongBody.complete, false,
+  'a legacy-name key naming a DIFFERENT clinician must not be treated as a display echo');
+assert(wrongBody.receipt.sameNameConflictKinds.includes('independent-structured-key'));
+
+/* ---- 8h. SURNAME-AS-CREDENTIAL must not manufacture a second clinician -----
+   QA lane, 2026-08-06: "Dr. Anh Do" is a real surname. mdx-2.0.0 read a
+   credential two ways that both mistook the surname for one (equivalentKey's
+   credential segment, and any trailing credential-spelled token), producing
+   signatures {"do","md"} across ONE clinician's two roster entries, tripping
+   credential-conflict and blocking 100% of her selected-provider imports. */
+const doRows = [];
+for (let i = 0; i < 8; i++) doRows.push({ name: 'Pain Patient ' + i, provider: 'Anh Thi Do, MD', time: (8 + i) + ':00' });
+const doRequest = { id: '31', stableKey: 'backend:31', name: 'Anh Thi Do', rosterVerified: true };
+const doResponse = { receipt: { complete: true, authoritativeEmpty: false }, providers: ['Anh Thi Do, MD'] };
+for (const [label, roster] of [
+  ['with equivalentKey', [
+    { id: '31', stableKey: 'backend:31', name: 'Anh Thi Do', equivalentKey: 'anh thi|do' },
+    { id: '', stableKey: 'athena:anh thi do, md', name: 'Anh Thi Do, MD', equivalentKey: 'anh thi do|md' }]],
+  ['without equivalentKey', [
+    { id: '31', stableKey: 'backend:31', name: 'Anh Thi Do' },
+    { id: '', stableKey: 'athena:anh thi do, md', name: 'Anh Thi Do, MD' }]]
+]) {
+  context.__mlsProviderRoster = { list: () => roster, getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }), resolve: () => null };
+  const r = api._scopeProviderRows(doRows, doRequest, doResponse);
+  assert.strictEqual(r.complete, true,
+    `surname-as-credential (${label}) must not manufacture a second clinician: ` + JSON.stringify(r.receipt.sameNameConflictKinds));
+  assert.strictEqual(r.rows.length, 8, `${label}: her day must import`);
+  assert.strictEqual(r.receipt.sameNameConflictKinds.length, 0, `${label}: no conflict may be claimed`);
+}
+
+/* ---- 8i. the conflict that MUST still fire: a delimited MD beside a DO ----- */
+for (const [label, nameA, nameB] of [
+  ['comma form', 'Matthew Schaeffer, MD', 'Matthew Schaeffer, DO'],
+  ['athena machine-username form', 'Schaeffer_Matthew_MD', 'Schaeffer_Matthew_DO']
+]) {
+  context.__mlsProviderRoster = {
+    list: () => [
+      { id: '12', stableKey: 'backend:12', name: nameA },
+      { id: '', stableKey: 'athena:' + nameB.toLowerCase(), name: nameB }
+    ],
+    getReceipt: () => ({ complete: true, partial: false, reason: 'complete' }), resolve: () => null
+  };
+  const clash = api._scopeProviderRows(
+    [{ name: 'X', provider: nameA, time: '9:00' }],
+    { id: '12', stableKey: 'backend:12', name: nameA, rosterVerified: true },
+    { receipt: { complete: true }, providers: [nameA] }
+  );
+  assert.strictEqual(clash.complete, false,
+    `${label}: an explicitly delimited MD beside a DO is possibly two humans and must refuse`);
+  assert(clash.receipt.sameNameConflictKinds.includes('credential-conflict'), label + ': must name the credential conflict');
+}
 
 console.log('provider-incomplete-diagnostics-contract: PASS');
