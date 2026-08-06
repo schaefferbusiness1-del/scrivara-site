@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.0.4)
+ *  window.__mlsAthenaDoctor (v1.1.0)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -22,9 +22,11 @@
  *   3. Wiring: a "🔧 Troubleshoot Athena" control (#mlsAthenaDoctorBtn). It also wires
  *      #mlsAthenaStatusDot, which mls-connect.js:10992 pre-seeds out of existence — that
  *      wiring is inert today; see the long note at the failure branch below.
- *      A FAILED pull/search raises NO toast (v1.0.4, owner's second request) and nothing
- *      else marks it either: it is SILENT until he opens the panel. This module still
- *      CLAIMS the failure notice so Clarity/Save Verify stay quiet too.
+ *      A FAILED pull/search raises NO toast (v1.0.4, owner's second request), but it is
+ *      no longer invisible: v1.1.0 puts the state on that same control
+ *      (data-mls-athena-read="failed"), which the next successful read clears — owner,
+ *      "It should have an indicator." This module still CLAIMS the failure notice so
+ *      Clarity/Save Verify stay quiet too.
  *
  *  Self-contained, additive, idempotent, fully reversible: window.__mlsAthenaDoctor.revert().
  *  Diagnostics never request or receive PHI. A ready result means only worker
@@ -36,7 +38,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.0.4';
+  var VERSION = '1.1.0';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -296,6 +298,16 @@
       'border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;' +
       'cursor:pointer;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;}' +
       '#' + BTN_ID + ':hover{background:#2E6A4B;}' +
+      /* read-outcome indicator (v1.1.0). Amber, not red: the read did not
+         complete, which is not the same as the connection being down, and the
+         doctor should not read it as an emergency. The ::after dot carries the
+         state for anyone who cannot separate these two background colours —
+         colour is never the only channel, and the aria-label/title say it in
+         words as well. No animation: this must never pull the eye off a note. */
+      '#' + BTN_ID + '[data-mls-athena-read="failed"]{background:#7c2d12;border-color:#fdba74;padding-right:22px;}' +
+      '#' + BTN_ID + '[data-mls-athena-read="failed"]:hover{background:#9a3412;}' +
+      '#' + BTN_ID + '[data-mls-athena-read="failed"]::after{content:"";position:absolute;top:50%;right:9px;' +
+      'margin-top:-3px;width:6px;height:6px;border-radius:50%;background:#fbbf24;}' +
       // success / failure toast
       '#' + TOAST_ID + '{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:2147483602;' +
       'max-width:min(560px,92vw);padding:11px 16px;border-radius:11px;font-size:14px;font-weight:700;color:#fff;' +
@@ -410,6 +422,12 @@
       b.addEventListener('click', function () { openDiagnostic(null); });
       (document.body || document.documentElement).appendChild(b);
     }
+    /* Re-apply the read state every time. boot()'s MutationObserver re-mounts
+       this button whenever the app blows it away, and a re-mounted button is a
+       FRESH element with no attribute — the indicator would silently vanish on
+       the next re-render, which is the failure mode that makes an indicator
+       worse than none. Driven from module state, not from the old node. */
+    paintReadState();
     // make the status dot clickable to open the diagnostic
     var dot = document.getElementById('mlsAthenaStatusDot');
     if (dot && !dot.__mlsDoctorWired) {
@@ -417,6 +435,53 @@
       dot.style.cursor = 'pointer';
       dot.addEventListener('click', function () { openDiagnostic(null); });
     }
+  }
+
+  /* ---- the read-outcome indicator (v1.1.0) --------------------------------
+     OWNER, 2026-08-06, after this module's failure toast was deleted at his
+     request: "It should have an indicator."
+
+     Both of his instructions have to hold at once, so this is deliberately NOT
+     a notification: nothing appears over the page, nothing takes focus, and
+     nothing has to be dismissed. The affordance he would already use to
+     investigate — 🔧 Troubleshoot Athena — is the thing that tells him there
+     is something to investigate.
+
+     WHY HERE AND NOT ON A STATUS SURFACE. #mlsAthenaStatusDot does not exist:
+     mls-connect.js pre-seeds its installed-guard so the satellite never builds
+     it. #mlsAsstPanel .as-status does exist but reads __mlsConnTruth, i.e.
+     CONNECTIVITY — QA measured it reading "MLS Assist ready · Athena tab
+     detected" immediately after a failed search, because the connection was
+     genuinely fine and only the read failed. An indicator keyed to that would
+     be green in the pass and the fail case alike. This one keys to the READ
+     OUTCOME, which is the fact he actually wants.
+
+     IT MUST CLEAR, or it becomes furniture and stops meaning anything. Any
+     later successful read retires it — including a zero-result read, which is
+     a read that WORKED and found nothing. Managed/background results never
+     touch it in either direction; they return earlier, as everywhere else in
+     this module, so a batch cannot raise or erase the doctor's own signal. */
+  var _readFailed = false;
+
+  function paintReadState() {
+    var b = document.getElementById(BTN_ID);
+    if (!b) return;
+    if (_readFailed) {
+      b.setAttribute('data-mls-athena-read', 'failed');
+      b.setAttribute('aria-label', 'Troubleshoot the MLS Assist Athena connection — the last Athena read did not complete');
+      b.setAttribute('title', 'The last Athena read did not complete. Open to see why.');
+    } else {
+      b.removeAttribute('data-mls-athena-read');
+      b.setAttribute('aria-label', 'Troubleshoot the MLS Assist Athena connection');
+      b.removeAttribute('title');
+    }
+  }
+
+  function setReadState(failed) {
+    failed = !!failed;
+    if (_readFailed === failed) return;
+    _readFailed = failed;
+    paintReadState();
   }
 
   // ---- clearer SUCCESS + auto-trigger on failure --------------------------
@@ -533,6 +598,7 @@
     var clarityOwnsPull = (kind === 'pull') && !!(W.__mlsAthenaClarity);
     if (m.ok && (m.count == null || m.count > 0)) {
       if (managedPull) { markPullNoticeHandled(d, 'managed'); return; }
+      setReadState(false);                       // a read that worked retires the indicator
       var matchesFailure = successMatchesManualFailure(d, kind);
       if (_activeManualFailure && !matchesFailure) return;
       if (matchesFailure) clearManualFailure();
@@ -546,6 +612,10 @@
       }
     } else if (m.ok && m.count === 0) {
       if (managedPull) { markPullNoticeHandled(d, 'managed'); return; }
+      /* A zero-result read SUCCEEDED and found nothing. It retires the
+         indicator exactly like any other success — treating "0 visits" as a
+         failure is the [[in-progress-rendered-as-failed]] mistake in reverse. */
+      setReadState(false);
       var matchesZeroFailure = successMatchesManualFailure(d, kind);
       if (_activeManualFailure && !matchesZeroFailure) return;
       if (matchesZeroFailure) clearManualFailure();
@@ -603,6 +673,10 @@
          warning; with no warning on screen it would silently swallow honest
          "✓ Pulled N visits" toasts instead. */
       markPullNoticeHandled(d, 'doctor');
+      /* v1.1.0 — "It should have an indicator." Silent, but no longer invisible:
+         the Troubleshoot control now carries the failure. Still no toast, and
+         still no [data-mls-athena-pull-failure] node from anyone. */
+      setReadState(true);
       autoTrigger({ ok: false, count: m.count, stage: m.stage });
     }
   }
@@ -697,6 +771,7 @@
     });
     var dot = document.getElementById('mlsAthenaStatusDot');
     if (dot) { try { delete dot.__mlsDoctorWired; } catch (e) { dot.__mlsDoctorWired = false; } }
+    _readFailed = false;   // the button is gone; do not resurrect its state on re-install
     if (W.__mlsAthenaDoctor) W.__mlsAthenaDoctor.installed = false;
   }
 
