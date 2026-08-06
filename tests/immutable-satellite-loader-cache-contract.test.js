@@ -15,14 +15,18 @@ const assets = [
   /* feat_athena_doctor.js left this list on 2026-08-06. Its loader no longer
      carries a hand-maintained token at all — it uses the __MLS_AV form, so
      there is nothing here to pin. It was removed the way the entry below for
-     feat_mls_redesign.js was ALMOST removed, and for the same measured reason:
-     the token last moved at b430 (2026-07-19) while the module changed at b770
-     and b803, so a returning clinician kept the b430 bytes cache-first and
-     b803's rewrite of the Athena failure warning never reached them.
-     tests/cache-token-cannot-go-stale.test.js could not catch it — the last
-     edit predates that suite's b844 seed, so the asset was skipped as
-     untouched. A literal token is only as good as the human bumping it; this
-     one now follows the build number and cannot go stale again. */
+     feat_mls_redesign.js was ALMOST removed, and for a related reason: the
+     token last moved at b430 (2026-07-19) while the module changed at b770 and
+     b803, so any browser holding a cache entry under that URL would have been
+     replaying b430 code. Scope that honestly — a live QA pass on 2026-08-06
+     fetched this frozen URL through the owner's service worker and compared it
+     to a cache-busted origin fetch: 37,499 bytes, byte-identical. HIS browser
+     was not stale. The exposure was real, this instance of it did not fire.
+     tests/cache-token-cannot-go-stale.test.js could not have caught it either
+     way — the last edit predates that suite's b844 seed, so the asset was
+     skipped as untouched, which is what every seed advance quietly buys. A
+     literal token is only as good as the human bumping it; this one now
+     follows the build number and cannot go stale again. */
   ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
   ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
