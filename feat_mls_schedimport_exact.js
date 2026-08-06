@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.17";
+  var VERSION = "si-1.7.18";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -1064,6 +1064,7 @@
          ledger is bounded localStorage, and a fingerprint is not a finding. */
       var ledgerCensus = {};
       for (var ck in census) if (Object.prototype.hasOwnProperty.call(census, ck) && ck !== "prints") ledgerCensus[ck] = census[ck];
+      var perPatientDiag = {};
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         var pid = String(p.patientId || "");
@@ -1071,6 +1072,11 @@
         var why = String(p.reason || "incomplete").slice(0, 120);
         if (pid) perPatient[pid] = why;
         reasons[why] = (reasons[why] || 0) + 1;
+        /* mdx-1.1.0: persist the PHI-free sub-cause evidence beside the reason
+           string - bounded (≤40 patients per day ledger by construction). */
+        if (pid && (p.visitsFailedHistogram || p.visitsEnumDiag || p.visitsReadReceipt)) {
+          perPatientDiag[pid] = { hist: p.visitsFailedHistogram || null, enumDiag: p.visitsEnumDiag || null, receipt: p.visitsReadReceipt || null };
+        }
       });
       (receipt.retry || []).forEach(function (r) {
         if (!r) return;
@@ -1095,6 +1101,7 @@
         verdict: String(receipt.reason || ""),
         reasons: reasons,
         perPatient: perPatient,
+        perPatientDiag: perPatientDiag,
         /* b752: the CENSUS OF THE STORE, recorded next to the walk counts so
            the two can be compared after the fact. contentOk/contentNone are
            the answer to the question this ledger could not answer before:
@@ -2458,14 +2465,43 @@
     try { Object.freeze(exactSnap); } catch (eFreezeExactSnap) {}
     return exactSnap;
   }
-  function frozenRetryEntry(row, target, reason) {
+  function frozenRetryEntry(row, target, reason, diagSource) {
     row = row || {}; target = target || {};
-    return {
+    var entry = {
       patientId: String(target.patientId || row._mlsTargetPatientId || row.patient_external_id || row.patientId || ""),
       reason: String(reason || row.reason || "history-partial").slice(0, 120),
       frozenDob: normDob(target.dob || row._mlsTargetDob || row.dob || row.frozenDob || ""),
       frozenMrn: normMrn(target.mrn || target.athenaId || row._mlsTargetMrn || row.mrn || row.athenaId || row.frozenMrn || "")
     };
+    /* mdx-1.1.0: carry the PHI-free refusal evidence with the retry entry so
+       the error report can name the sub-cause without the patient record. */
+    if (diagSource && (diagSource.visitsFailedHistogram || diagSource.visitsEnumDiag || diagSource.visitsReadReceipt)) {
+      entry.diag = {
+        hist: diagSource.visitsFailedHistogram || null,
+        enumDiag: diagSource.visitsEnumDiag || null,
+        receipt: diagSource.visitsReadReceipt || null
+      };
+    }
+    return entry;
+  }
+  /* mdx-1.1.0: compact human suffix for the day panel row - names the top
+     sub-causes so "visit-bodies-incomplete" stops being a dead end. */
+  function historyDiagSuffix(one) {
+    try {
+      if (one && one.visitsFailedHistogram) {
+        var hks = Object.keys(one.visitsFailedHistogram);
+        hks.sort(function (a, b) { return one.visitsFailedHistogram[b] - one.visitsFailedHistogram[a]; });
+        var hParts = [];
+        for (var hi = 0; hi < hks.length && hi < 2; hi++) hParts.push(hks[hi] + "×" + one.visitsFailedHistogram[hks[hi]]);
+        if (hks.length > 2) hParts.push("+" + (hks.length - 2) + " more");
+        if (hParts.length) return " {" + hParts.join(", ") + "}";
+      }
+      if (one && one.visitsEnumDiag) {
+        var hed = one.visitsEnumDiag;
+        return " {passes:" + (hed.passes || 0) + ",identical:" + (hed.identicalPasses || 0) + ",noise:" + (hed.noiseDropped || 0) + "}";
+      }
+    } catch (eSuffix) {}
+    return "";
   }
   function verifiedChartCoverage(rd, readStartedAt) {
     rd = rd || {};
@@ -3163,8 +3199,53 @@
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
               }
-              if (vr && vr.ok) { recordReadMs('visits', Date.now() - __vAttemptT0); break; }
+              /* mdx-1.1.0: a fast EMPTY chart must not set the pace for deep
+                 charts. recordReadMs feeds adaptiveCeilingMs (median x 2.5,
+                 floor 60s); one authoritative-empty read in ~15s collapsed the
+                 ceiling so later deep charts got a ~24s index phase - the
+                 "first two fine, next five fail" shape from the 2026-08-05
+                 field ledger. Only non-empty reads teach the pace. */
+              if (vr && vr.ok) { if (!(vr.receipt && (vr.receipt.authoritativeEmpty === true || Number(vr.receipt.expected || 0) === 0))) recordReadMs('visits', Date.now() - __vAttemptT0); break; }
               var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
+              /* mdx-1.1.0 (field ledger 2026-08-05, second clinician's Mac):
+                 the refusal's own evidence crossed the bridge and died on this
+                 line for three straight field reports - failedIndexes (the
+                 per-row reason histogram behind visit-bodies-incomplete),
+                 enumDiag (the per-frame record behind
+                 encounter-index-incomplete), and the read receipt. Capture
+                 them PHI-free onto the per-patient record so the day ledger,
+                 the panel row, and the emailed error report can name the
+                 sub-cause. ecSeen/frames are NEVER copied - they carry a
+                 patient-name field. */
+              try {
+                if (vr && typeof vr === "object") {
+                  if (Array.isArray(vr.failedIndexes) && vr.failedIndexes.length) {
+                    var fiHist = {};
+                    for (var fiI = 0; fiI < vr.failedIndexes.length && fiI < 40; fiI++) {
+                      var fiR = String(vr.failedIndexes[fiI] && vr.failedIndexes[fiI].reason || "unknown").slice(0, 48);
+                      fiHist[fiR] = (fiHist[fiR] || 0) + 1;
+                    }
+                    one.visitsFailedHistogram = fiHist;
+                  }
+                  if (vr.receipt && typeof vr.receipt === "object") {
+                    one.visitsReadReceipt = {
+                      expected: Number(vr.receipt.expected || 0), parsed: Number(vr.receipt.parsed || 0),
+                      attempted: Number(vr.receipt.attempted || 0), elapsedMs: Number(vr.receipt.elapsedMs || 0),
+                      timeBudgetMs: Number(vr.receipt.timeBudgetMs || 0), retryCount: Number(vr.receipt.retryCount || 0),
+                      minimalBodies: Number(vr.receipt.minimalBodies || 0)
+                    };
+                  }
+                  if (vr.enumDiag && typeof vr.enumDiag === "object") {
+                    one.visitsEnumDiag = {
+                      answered: Array.isArray(vr.enumDiag.answered) ? vr.enumDiag.answered.slice(0, 8).map(function (aStr) { return String(aStr).slice(0, 90); }) : [],
+                      noiseDropped: Number(vr.enumDiag.noiseDropped || 0),
+                      passes: Number(vr.enumDiag.passes || 0),
+                      identicalPasses: Number(vr.enumDiag.identicalPasses || 0),
+                      gaveUpEarly: vr.enumDiag.gaveUpEarly === true
+                    };
+                  }
+                }
+              } catch (eDiagCap) {}
               if (visitsAttempt < 2 && /same-frame-name-mismatch|same-frame-name-missing|no-athena-tab/.test(vErrText) && Date.now() + 300000 < batchDeadlineAt) {
                 /* Live 2026-07-16 (si-1.7.2): a bare visits re-read is NOT
                    enough when the whole tab kept the previous patient (run 2
@@ -3223,10 +3304,10 @@
           one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
           if (!one.complete) {
             one.reason = one.chartReason || one.visitsReason || "history-partial";
-            receipt.retry.push(frozenRetryEntry(row, target, one.reason));
+            receipt.retry.push(frozenRetryEntry(row, target, one.reason, one));
           }
         }
-        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : (one.reason || "")), one.parsePipelined === true);
+        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true);
         receipt.patients.push(one); receipt.processed++;
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
