@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.19";
+  var VERSION = "si-1.7.20";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -304,28 +304,59 @@
     tokens.sort();
     return tokens.join("|");
   }
-  /* mdx-2.0.0: the credential portion of a provider label, for the same-name
-     echo test in scopeProviderRows. Prefer the roster's own credential-aware
-     equivalentKey ("base|credential|staff") when the entry carries one - that
-     parse already knows a surname like "Do" from the DO credential. Otherwise
-     read only the TRAILING credential tokens off the display name. Titles
-     ("Dr") never count: a title cannot distinguish two humans. Empty means "no
-     credential stated", which conflicts with nothing. */
+  /* mdx-2.0.2: the credential portion of a provider label, for the same-name
+     echo test in scopeProviderRows.
+
+     A BARE SURNAME IS NOT A CREDENTIAL JUST BECAUSE IT SPELLS ONE. "Dr. Anh Do"
+     is a real surname in a pain practice, as are Ot, Od, Rn and Pa. mdx-2.0.0
+     read the credential two ways that both got this wrong: it trusted the
+     roster's `equivalentKey` credential segment (whose parse yields
+     "anh thi|do", i.e. Do-as-credential), and its own fallback accepted ANY
+     trailing credential-spelled token. Measured: a clinician named "Anh Thi
+     Do" produced signatures {"do","md"} across her OWN two roster entries,
+     tripped credential-conflict, and was blocked from 100% of her
+     selected-provider imports - the same "gate whose condition can never be
+     satisfied on that machine" shape as the defect this file just fixed, one
+     axis over (QA lane, 2026-08-06).
+
+     So a credential is only ASSERTED when an explicit delimiter separates it
+     from the name: a comma ("Anh Thi Do, MD") or the underscore of athena's
+     machine username ("Schaeffer_Matthew_MD"). A plain space does not qualify.
+     Empty means "no credential stated" and conflicts with nothing, so this
+     errs toward silence rather than toward inventing a second clinician -
+     while still catching the case that matters, a delimited MD standing beside
+     a DO. Keeping the underscore is load-bearing: a comma-only rule would let
+     two REAL clinicians through in athena's machine-username form. Titles
+     ("Dr") never count: a title cannot distinguish two humans.
+
+     NOT FIXED HERE, deliberately: `providerKey("Anh Do")` returns "" (both
+     tokens are stripped as noise, leaving fewer than two), so a TWO-token
+     credential-surname clinician fails earlier still, at provider-unverified.
+     That lives in PROVIDER_NOISE, predates this work, and feeds every matching
+     surface in the app - it is reported, not patched mid-flight. */
   var PROVIDER_CRED_TOKENS = {
     md: 1, do: 1, np: 1, pa: 1, pac: 1, aprn: 1, fnp: 1, fnpc: 1, dnp: 1,
     rn: 1, crnp: 1, cnp: 1, dpm: 1, dds: 1, dmd: 1, phd: 1, mbbs: 1, od: 1
   };
   function providerCredentialSignature(entry) {
-    var eq = String(entry && entry.equivalentKey || "");
-    if (eq.indexOf("|") >= 0) return String(eq.split("|")[1] || "").trim().toLowerCase();
-    var toks = String(entry && entry.name || "").toLowerCase()
-      .replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(Boolean);
+    /* Read the DISPLAY NAME only. equivalentKey is deliberately not consulted:
+       its credential segment is exactly the parse that mistakes a surname for
+       a credential. */
+    var raw = String(entry && entry.name || "").toLowerCase();
+    var tail = raw.split(/[,_/]/);
+    if (tail.length < 2) return "";                 /* no explicit delimiter -> nothing asserted */
     var sig = [];
-    for (var i = toks.length - 1; i >= 0; i--) {
-      var t = toks[i];
-      if (t === "c" && sig.length === 0) continue; /* the "-C" tail of PA-C */
-      if (PROVIDER_CRED_TOKENS[t] !== 1) break;
-      if (sig.indexOf(t) < 0) sig.push(t);
+    for (var i = tail.length - 1; i >= 1; i--) {
+      var seg = tail[i].replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(Boolean);
+      if (!seg.length) continue;
+      var all = true;
+      for (var j = 0; j < seg.length; j++) {
+        var t = seg[j];
+        if (t === "c") continue;                    /* the "-C" tail of PA-C */
+        if (PROVIDER_CRED_TOKENS[t] !== 1) { all = false; break; }
+        if (sig.indexOf(t) < 0) sig.push(t);
+      }
+      if (!all) break;
     }
     sig.sort();
     return sig.join("+");
@@ -675,8 +706,24 @@
         var sig = providerCredentialSignature(entry);
         if (sig) credSigs[sig] = 1;
         if ((eId && eId === wantIdLc) || (wantSk && eSk && eSk === wantSk)) { requestedListed = true; return; }
-        if (eId && conflictKinds.indexOf("independent-id") < 0) conflictKinds.push("independent-id");
-        if (eSk && eSk !== wantSk && !/^legacy-name:/.test(eSk) && conflictKinds.indexOf("independent-structured-key") < 0) conflictKinds.push("independent-structured-key");
+        if (eId) { if (conflictKinds.indexOf("independent-id") < 0) conflictKinds.push("independent-id"); return; }
+        /* mdx-2.0.1: an id-LESS entry is a second identity only when its key
+           carries information beyond the display string. The roster module
+           already owns this rule (stringEchoEquivalent, feat_athena_provider_
+           roster.js:394) and mdx-2.0.0 got it wrong: it exempted `legacy-name:`
+           ONLY, while ext 3.0.45 stamps every id-less schedule-header provider
+           as `athena:<display text>` (background.js:6790/:6971). That is the
+           exact shape on the reporting Mac, so b899 pushed
+           independent-structured-key and refused identically to b894 - a
+           NO-OP, proven by executing the real roster shape. A key body that
+           canonicalizes to THIS clinician's own token set is display evidence
+           of one person; an opaque body ("athena:prov-88217") does not and
+           stays a distinct identity. Note this also TIGHTENS the legacy arm,
+           which previously exempted any `legacy-name:` key regardless of
+           whose name was in its body. */
+        var echoBody = eSk.replace(/^(?:legacy-name:|athena:)/, "");
+        var isDisplayEcho = !!eSk && echoBody !== eSk && providerKey(echoBody) === req.key;
+        if (eSk && !isDisplayEcho && conflictKinds.indexOf("independent-structured-key") < 0) conflictKinds.push("independent-structured-key");
       });
       if (Object.keys(credSigs).length > 1 && conflictKinds.indexOf("credential-conflict") < 0) conflictKinds.push("credential-conflict");
       canonicalNameFallback = requestedListed && conflictKinds.length === 0;
