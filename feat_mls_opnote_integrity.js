@@ -1241,9 +1241,27 @@
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
     generationStage(ctx,'Confirming procedure','Verifying the exact patient and requested procedure.');
+    /* 2026-08-06 — THE REFUSAL IS RIGHT; THE REASON WAS WRONG.
+       Three different conditions shared one message, and the one a doctor
+       actually hits is the third: the patient resolves perfectly, ctx carries a
+       real name, dob and patientId, and the draft is simply not for the patient
+       currently open. Telling him "exact patient identity could not be
+       verified" sends him hunting a data problem that does not exist — QA lost
+       a corpus run to exactly that, chasing a chart defect that was really a
+       selection mismatch.
+       Same class as the transient fault that used to report "your link is
+       invalid": a guard that fails closed for a good reason and then names the
+       wrong one is only half a guard. Each branch now says what it means, and
+       the two recoverable ones say what to DO. */
     var p=exactPatient(name,ctx.dob,ctx.patientId);
-    if(!p||!S(ctx.patientId).trim()||S(p.id)!==S(ctx.patientId)){
-      var ie=new Error('Op-note generation stopped: exact patient identity could not be verified.');ie.code='MLS_OPNOTE_IDENTITY';throw ie;
+    if(!p){
+      var ie0=new Error('Op-note generation stopped: no chart matches this patient\'s name and date of birth.');ie0.code='MLS_OPNOTE_IDENTITY';throw ie0;
+    }
+    if(!S(ctx.patientId).trim()){
+      var ie1=new Error('Op-note generation stopped: open the patient\'s chart first — a note is only drafted for a patient the app has open.');ie1.code='MLS_OPNOTE_IDENTITY';throw ie1;
+    }
+    if(S(p.id)!==S(ctx.patientId)){
+      var ie2=new Error('Op-note generation stopped: this note is for '+(S(p.name)||'another patient')+', but a different patient is open. Open that patient first — op notes draft for the patient currently open.');ie2.code='MLS_OPNOTE_IDENTITY';throw ie2;
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
