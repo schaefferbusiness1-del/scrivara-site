@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.0';
+  var VERSION = 'av-5.6.1';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
