@@ -417,8 +417,29 @@ const LOADER = 'mls-connect.js';
  *   - The AI hop is strictly on demand, sequential (never a burst), and only
  *     for rows the deterministic matcher itself declined to call confident.
  *     With no key and no session it never fires at all and the surface falls
- *     back to exactly today's deterministic behaviour. */
-const CEILING = 256;
+ *     back to exactly today's deterministic behaviour.
+ *
+ * 2026-08-07 bg-1.0.0 (BILLING CORRECTNESS GATE): +1 loader,
+ *   feat_mls_billing_gate.js — checks the frozen Superbill payload against the
+ *   backend billing engine before any of it reaches Athena's billing slate.
+ *   Until now the only check between a suggested code and that slate verified
+ *   that a code was SHAPED like a code, so an add-on level with no primary, or
+ *   fluoroscopic guidance already inside the injection's own descriptor, went
+ *   into the chart unremarked — both automatic denials.
+ *   - DEFERRED (requestIdleCallback, 2s timeout): EAGER_CEILING does not move.
+ *   - ZERO BOOT WORK, and this is not a claim about being lightweight: the
+ *     module's entire body is function declarations plus one namespace
+ *     assignment. It touches no patient store, mounts no DOM, registers no
+ *     listener, observes nothing and fetches nothing. Its first byte of real
+ *     work happens when showSuperbill() calls it — which is a deliberate click,
+ *     on one visit, long after boot.
+ *   - NO POLLER, NO OBSERVER, NO INTERVAL: INTERVAL_CEILING and
+ *     OBSERVER_CEILING do not move. It makes at most one fetch per Superbill
+ *     opened, and none at all if the doctor never opens one.
+ *   - Style injection is lazy too — the stylesheet is written on first render,
+ *     not on load, so a session that never opens a Superbill costs nothing
+ *     beyond the parse. */
+const CEILING = 257;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

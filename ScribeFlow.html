@@ -20632,6 +20632,10 @@ let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, cu
 /* One immutable patient/visit owner for the editor contents. Changing the
    active patient does not retarget an already-recorded or reopened visit. */
 let currentVisitAthenaBinding=null, currentSuperbillSnapshot=null;
+/* b941: set once the doctor has been shown a blocking billing finding and has
+   chosen to go on anyway. Reset with every Superbill, so a new set of codes is
+   always held once — an override must never carry across visits. */
+let _superbillCodingOverride=false;
 let currentVisitAthenaCompromised=false, currentVisitAthenaAwayFingerprint=null;
 let currentVisitAthenaEpoch=0;
 /* Snapshot of the AI's ORIGINAL note draft, captured at generation time BEFORE
@@ -22753,13 +22757,24 @@ function _athenaBoundVisitForAction(actionLabel,requireExactHistorical){
 }
 function _athenaResetSuperbill(hide){
   currentSuperbillSnapshot=null;
+  _superbillCodingOverride=false;
   var status=document.getElementById('billAthenaStatus');
   if(status){status.style.display='none';status.textContent='';status.style.color='';}
+  var check=document.getElementById('billCheck');
+  if(check){check.style.display='none';check.innerHTML='';check.className='';}
   if(hide){var card=document.getElementById('billCard');if(card)card.style.display='none';}
 }
-/* Snapshot only the executable E/M and CPT/HCPCS code identities. Descriptions,
-   diagnoses, units, modifiers and diagnosis pointers remain visible review data
-   and are never inferred back out of prose at confirmation time. */
+/* Snapshot the executable E/M and CPT/HCPCS code identities. Descriptions,
+   diagnoses and diagnosis pointers remain visible review data and are never
+   inferred back out of prose at confirmation time.
+
+   b941: `lines` now travels alongside. Units, modifiers and laterality used to
+   be dropped here, which meant the frozen payload could not express "bilateral"
+   at all — and a bilateral procedure billed without modifier 50 pays a third
+   less with NO denial to point at it. Modifiers are only ever carried from
+   STRUCTURED coding fields; they are still never parsed back out of prose, and
+   the returned {emCode, cptCodes, invalid} shape is unchanged so every existing
+   caller and the frozen-payload hash behave exactly as before. */
 function _athenaCanonicalBilling(coding){
   var c=coding||{};
   var codeOf=function(value, emOnly){
@@ -22787,7 +22802,33 @@ function _athenaCanonicalBilling(coding){
     for(var li=1;li<lists.length;li++){if(lists[li].slice().sort().join('|')!==base){invalid.push('Conflicting CPT/HCPCS code lists');break;}}
   }
   var invalidSeen={}; invalid=invalid.filter(function(x){if(!x||invalidSeen[x])return false;invalidSeen[x]=1;return true;});
-  return {emCode:em,cptCodes:cpt,invalid:invalid};
+  /* Structured line detail, for the billing check only. Built from OBJECT
+     entries in the coding fields — a plain string carries no modifier, and one
+     must never be invented for it. Every code that made it into cptCodes gets a
+     line so the check sees the whole claim, with empty modifiers where the note
+     did not record any. */
+  var detailBy={};
+  [c.cptLines,c.cptCodes,c.cpt,c.cpts,c.codes].forEach(function(list){
+    if(!Array.isArray(list))return;
+    list.forEach(function(item){
+      if(!item||typeof item!=='object')return;
+      var code=codeOf(item,false); if(!code||detailBy[code])return;
+      var mods=(Array.isArray(item.modifiers)?item.modifiers:[]).slice(0,4)
+        .map(function(m){return String(m||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,2);})
+        .filter(Boolean);
+      var side=String(item.side||item.laterality||'').toLowerCase();
+      if(['left','right','bilateral'].indexOf(side)<0)side='';
+      detailBy[code]={code:code,units:(Number(item.units)>0?Math.floor(Number(item.units)):1),modifiers:mods,side:side,
+        levels:(Array.isArray(item.levels)?item.levels:[]).slice(0,8).map(function(x){return String(x||'').trim().slice(0,16);}).filter(Boolean)};
+    });
+  });
+  var lines=[];
+  if(em) lines.push(detailBy[em]||{code:em,units:1,modifiers:(function(){
+    var m=[c.em_modifiers,c.emModifiers].find(function(x){return Array.isArray(x)&&x.length;})||[];
+    return m.slice(0,4).map(function(y){return String(y||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,2);}).filter(Boolean);
+  })(),side:'',levels:[]});
+  cpt.forEach(function(code){ lines.push(detailBy[code]||{code:code,units:1,modifiers:[],side:'',levels:[]}); });
+  return {emCode:em,cptCodes:cpt,invalid:invalid,lines:lines};
 }
 /* Freeze reviewed order drafts separately from generated suggestions. An item
    is not a reviewed draft merely because AI proposed it. Legacy auto-added
@@ -23036,9 +23077,31 @@ function pushSuperbillToAthena(){
     try{toast('This Superbill is stale. Open Superbill again to review and freeze the current codes before confirming. Nothing changed in Athena.','err');}catch(e){}
     return;
   }
-  var billing={emCode:String(snap.billing.emCode||''),cptCodes:(snap.billing.cptCodes||[]).slice(),invalid:(snap.billing.invalid||[]).slice()};
+  var billing={emCode:String(snap.billing.emCode||''),cptCodes:(snap.billing.cptCodes||[]).slice(),invalid:(snap.billing.invalid||[]).slice(),lines:(snap.billing.lines||[]).slice()};
   if(billing.invalid.length){try{toast('The frozen Superbill contains conflicting or invalid coding. Reopen it after correcting the codes. Nothing changed in Athena.','err');}catch(e0){}return;}
   if(!billing.emCode&&!billing.cptCodes.length){ try{ toast('No exact E/M or CPT/HCPCS codes are ready. Review the suggested coding first.','err'); }catch(e){} return; }
+  /* b941: the billing gate. A hard finding means this claim will be denied as
+     written — an add-on with no primary, bundled imaging guidance, an E/M with
+     no modifier 25 — so the payload does not go forward until the doctor has
+     seen it. The doctor can still proceed: this refuses ONCE, explains what will
+     deny and why, and a second click goes through. A check that cannot be
+     overridden gets worked around, and a check that never stops anything gets
+     ignored; refusing once is the only version that stays useful.
+     A check that could not RUN never blocks — it warns and says so. */
+  try{
+    var _gate=window.__mlsBillingGate;
+    if(_gate&&typeof _gate.gateDecision==='function'){
+      var _d=_gate.gateDecision(_gate.lastAudit());
+      if(!_d.allow&&!_superbillCodingOverride){
+        _superbillCodingOverride=true;
+        var _st=document.getElementById('billAthenaStatus');
+        if(_st){_st.style.display='block';_st.style.color='#8f2020';
+          _st.textContent='Held: '+_d.reason+' Nothing changed in Athena. Click again to review it in Athena anyway.';}
+        try{ toast('This coding will be denied as written — see the Superbill. Nothing changed in Athena. Click again to proceed anyway.','err'); }catch(e1){}
+        return;
+      }
+    }
+  }catch(eG){}
   var wf=window.__mlsWriteFlow; var status=document.getElementById('billAthenaStatus');
   if(!wf||typeof wf.openUnifiedConfirmation!=='function'){
     if(status){status.style.display='block';status.style.color='#9f2d2d';status.textContent='MLS Assist is still loading. Nothing changed; wait a moment and try again.';}
@@ -25973,18 +26036,51 @@ function printProcNote(){
    FEATURE 4 — VISIT REVENUE ESTIMATE  (pure client-side)
    Small ballpark fee table — national Medicare-ish averages.
    Unknown codes -> excluded with a "—". Estimate only.
+
+   b941: this table was one of THREE disagreeing copies of the same pain-code
+   fee data across the two repos — it said 64483 was $210, the backend pay
+   report said $300, and the relative-value derivation implies about $246 at the
+   CY2026 conversion factor. The backend now owns the one authoritative table
+   (scrivara-backend src/billing/), and these numbers are aligned to it purely so
+   the at-a-glance figure in the Superbill stops contradicting the pay report.
+   It is still a ballpark and still labelled one: it has no locality adjustment,
+   no bilateral handling and no multiple-procedure reduction, so a multi-code day
+   reads HIGH here. The authoritative per-encounter figure is
+   POST /api/coding/price, which applies all three.
+   64490 was also plainly wrong: it is the CERVICAL/THORACIC facet code and was
+   labelled lumbar. The lumbar one is 64493.
    ========================================================= */
 const FEE_TABLE={
-  // Office/outpatient E/M (2024-ish national non-facility allowables, rounded)
+  // Office/outpatient E/M (national non-facility, relative-value derived)
   '99202':73,'99203':114,'99204':169,'99205':224,
-  '99211':24,'99212':58,'99213':92,'99214':131,'99215':184,
-  // Common PM&R / pain procedures (non-facility ballpark)
-  '20610':62,   // major joint/bursa injection
+  '99211':24,'99212':58,'99213':92,'99214':129,'99215':181,
+  // Interventional pain / PM&R (non-facility ballpark, single unit, no modifiers)
+  '20605':55,   // intermediate joint/bursa injection
+  '20610':65,   // major joint/bursa injection
   '20611':75,   // major joint injection w/ ultrasound guidance
-  '64483':210,  // TFESI lumbar, single level
-  '64484':55,   // TFESI lumbar, each add'l level
-  '62323':190,  // lumbar interlaminar epidural w/ imaging
-  '64490':190,  // paravertebral facet joint injection, lumbar
+  '20552':58,   // trigger point, 1-2 muscles
+  '20553':62,   // trigger point, 3+ muscles
+  '27096':164,  // sacroiliac joint injection w/ image guidance
+  '62321':262,  // cervical/thoracic interlaminar epidural w/ imaging
+  '62323':265,  // lumbar/sacral interlaminar epidural w/ imaging
+  '62320':135,  // cervical/thoracic interlaminar epidural, no imaging
+  '62322':163,  // lumbar/sacral interlaminar epidural, no imaging
+  '64479':258,  // TFESI cervical/thoracic, single level
+  '64480':134,  // TFESI cervical/thoracic, each add'l level (add-on)
+  '64483':246,  // TFESI lumbar/sacral, single level
+  '64484':111,  // TFESI lumbar/sacral, each add'l level (add-on)
+  '64490':192,  // paravertebral facet injection, CERVICAL/THORACIC, 1st level
+  '64491':97,   // facet injection cervical/thoracic, 2nd level (add-on)
+  '64492':97,   // facet injection cervical/thoracic, 3rd+ level (add-on)
+  '64493':177,  // paravertebral facet injection, LUMBAR/SACRAL, 1st level
+  '64494':91,   // facet injection lumbar/sacral, 2nd level (add-on)
+  '64495':91,   // facet injection lumbar/sacral, 3rd+ level (add-on)
+  '64633':436,  // RF facet denervation cervical/thoracic, 1st joint
+  '64634':255,  // RF facet denervation cervical/thoracic, add'l joint (add-on)
+  '64635':440,  // RF facet denervation lumbar/sacral, 1st joint
+  '64636':240,  // RF facet denervation lumbar/sacral, add'l joint (add-on)
+  '64450':75,   // injection, other peripheral nerve or branch
+  '77003':105,  // fluoroscopic spine guidance — BUNDLED into most of the above
   '97110':30,   // therapeutic exercise (per 15 min)
   '97140':28,   // manual therapy (per 15 min)
   '97112':32,   // neuromuscular re-education
@@ -26704,7 +26800,7 @@ function showSuperbill(){
   const typedBilling=_athenaCanonicalBilling(c);
   if(typedBilling.invalid&&typedBilling.invalid.length){ toast('The suggested coding fields conflict or contain an invalid item. Correct or regenerate the coding before opening the Superbill.','err'); return; }
   const frozenPatient={name:String(ap.name||''),dob:String(ap.dob||''),mrn:String(ap.mrn||''),patientId:String(ap.patientId||'')};
-  const frozenBilling={emCode:String(typedBilling.emCode||''),cptCodes:(typedBilling.cptCodes||[]).slice(),invalid:(typedBilling.invalid||[]).slice()};
+  const frozenBilling={emCode:String(typedBilling.emCode||''),cptCodes:(typedBilling.cptCodes||[]).slice(),invalid:(typedBilling.invalid||[]).slice(),lines:(typedBilling.lines||[]).map(l=>({code:String(l.code||''),units:Number(l.units)||1,modifiers:(l.modifiers||[]).slice(),side:String(l.side||''),levels:(l.levels||[]).slice()}))};
   const frozenContext=binding.historical&&binding.visitContext?{visitDate:String(binding.visitContext.visitDate||''),provider:String(binding.visitContext.provider||''),appointmentId:String(binding.visitContext.appointmentId||''),encounterId:String(binding.visitContext.encounterId||''),encounterUrl:String(binding.visitContext.encounterUrl||'')}:null;
   currentSuperbillSnapshot={bindingId:binding.id,patient:frozenPatient,billing:frozenBilling,expectedContext:frozenContext,noteTimestamp:binding.noteTimestamp||null,historical:binding.historical===true};
   try{Object.freeze(frozenPatient);Object.freeze(frozenBilling.cptCodes);Object.freeze(frozenBilling.invalid);Object.freeze(frozenBilling);if(frozenContext)Object.freeze(frozenContext);Object.freeze(currentSuperbillSnapshot);}catch(e1){}
@@ -26715,7 +26811,7 @@ function showSuperbill(){
   cpt.forEach(cp=>{ const code=String(cp).trim().split(/[\s—\-:]/)[0]; if(emBase && code===emBase) return; /* don't double-count the E/M if it's echoed in the CPT list */ const f=feeForCode(cp); if(f!=null){ estTotal+=f; estAny=true; estParts.push(code+': $'+f); } });
   const estHtml=estAny
     ? '<b>$'+estTotal.toLocaleString()+'</b>'+(estParts.length?' <span style="color:var(--muted);font-size:12px">('+esc(estParts.join(' · '))+')</span>':'')
-      +'<div style="color:var(--muted);font-size:11px;margin-top:3px">Ballpark national Medicare-ish estimate — actual pay varies by payer, contract, geography, and modifiers.</div>'
+      +'<div style="color:var(--muted);font-size:11px;margin-top:3px">Ballpark national estimate — codes added up one by one. It applies no locality adjustment, no bilateral uplift and no multiple-procedure reduction, so a multi-procedure day reads HIGH here. Your Pay Report applies all three.</div>'
     : '—';
   const emRow=c.em?`<tr><td class="k">E/M visit code</td><td>${esc(c.em)}${c.emJust?' — '+esc(c.emJust):''}</td></tr>`:'';
   const rows=`
@@ -26742,6 +26838,37 @@ function showSuperbill(){
   document.getElementById('billCard').style.display='block';
   try{ expandCardSliver('billCard'); }catch(e){}
   document.getElementById('billCard').scrollIntoView({behavior:'smooth',block:'nearest'});
+  /* b941: run the billing check. Until now the only thing standing between a
+     suggested code and Athena's billing slate was _athenaCanonicalBilling, which
+     verifies that a code is SHAPED like a code and nothing else — so an add-on
+     with no primary, or fluoroscopy billed beside an injection that already
+     includes it, reached the chart unremarked. Asynchronous and non-blocking:
+     the Superbill renders immediately and the verdict lands underneath it. */
+  try{ runBillingCheck(c, typedBilling); }catch(eBG){}
+}
+
+/* Ask the billing engine about the frozen payload and paint the answer into the
+   Superbill. Never edits the codes, never appends a modifier, and never lets a
+   failed check look like a passed one. */
+function runBillingCheck(coding, canonical){
+  var box=document.getElementById('billCheck');
+  if(!box){
+    box=document.createElement('div'); box.id='billCheck'; box.style.display='none';
+    var card=document.getElementById('billCard');
+    var status=document.getElementById('billAthenaStatus');
+    if(!card) return Promise.resolve(null);
+    if(status) card.insertBefore(box,status); else card.appendChild(box);
+  }
+  var gate=window.__mlsBillingGate;
+  if(!gate||typeof gate.check!=='function'){
+    box.style.display='block';
+    box.className='';
+    box.style.cssText='display:block;margin-top:10px;border-radius:10px;border:1px solid #e2e8f2;background:#f2f4f8;color:#414a5a;padding:9px 11px;font-size:12.5px';
+    box.textContent='The billing check has not loaded yet, so these codes have not been checked. That is not the same as nothing being wrong — reload MLS if it does not appear.';
+    return Promise.resolve(null);
+  }
+  box.style.cssText='';
+  return gate.check(coding, canonical, box);
 }
 
 /* =========================================================
