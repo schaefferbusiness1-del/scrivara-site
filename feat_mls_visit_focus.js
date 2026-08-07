@@ -69,7 +69,7 @@
  * order where specificity ties.
  * ========================================================================== */
 (function () {
-  var VER = 'vf-1.2.0';
+  var VER = 'vf-1.2.1';
   var STYLE_ID = 'mlsVfCss', BODY = 'mls-vfocus', PTMORE = 'vf-ptmore', TOOLS = 'vf-tools';
   /* vf-1.1.0: the state that replaced the Advanced-visit-workspace door. It is
      a FACT about the document - #noteBox holds a real note - never a claim
@@ -637,9 +637,37 @@
   /* renderProfile() rebuilds the patient header, so the primary marker has to
      be re-applied after it. Wrapping the app's own render is exact -- it runs
      when and only when the header actually changed -- where a poll would either
-     miss it or burn the main thread waiting for it. */
+     miss it or burn the main thread waiting for it.
+     -----------------------------------------------------------------------
+     WRAP AT MOST ONCE, EVER. The guard below used to read
+     `window.renderProfile.__vfWrapped` -- what is CURRENTLY on window -- while
+     the three timed re-arms below re-ran this function at 1.5s/4s/9s. Any
+     module that wrapped over us without carrying our marker forward therefore
+     made the retry re-wrap, and because `origRenderProfile` is MODULE-LEVEL and
+     read at CALL time, that re-wrap re-pointed the variable our FIRST wrapper
+     also reads. The two wrappers then called each other:
+
+        w_vf2 -> origRenderProfile (= w_other) -> w_vf1 -> origRenderProfile
+              -> w_other -> w_vf1 -> ...
+
+     Measured in real Chrome on b869 (owner report 2026-08-05, "clicking a name
+     on the left does not pull up that patient on the right"): one
+     renderProfile() call recursed until the stack overflowed, the RangeError
+     was swallowed by feat_mls_visit_timeline.js's catch, markPrimary() ran
+     5,687 times as the stack unwound, and the app's OWN renderProfile body
+     never executed -- #profName was never asked for, so the right pane kept the
+     previous patient's name, MRN and clinical fields forever.
+
+     feat_mls_b121_pack.js already wrote this law down after the same cycle blew
+     the stack once before ("Maximum call stack size exceeded", frames
+     alternating between this file and that one): guard on an `installed` FLAG,
+     never on a marker read off window. This is that law, applied here, at the
+     module the cycle actually pivots on. If someone wraps after us we simply
+     stay in the chain as their orig -- which is correct and cycle-free. */
   var origRenderProfile = null;
+  var renderProfileWrapped = false;
   function wrapRenderProfile() {
+    if (renderProfileWrapped) return;
     if (!isFn(window.renderProfile) || window.renderProfile.__vfWrapped) return;
     origRenderProfile = window.renderProfile;
     var w = function () {
@@ -649,6 +677,7 @@
     };
     w.__vfWrapped = true;
     window.renderProfile = w;
+    renderProfileWrapped = true;
   }
 
   var api = {
@@ -677,7 +706,14 @@
       try { document.body.classList.toggle(NOTE, false); } catch (e) {}
       try { if (wrapped && window.togglePtMore === wrapped) window.togglePtMore = origToggle; } catch (e) {}
       try {
-        if (origRenderProfile && window.renderProfile && window.renderProfile.__vfWrapped) window.renderProfile = origRenderProfile;
+        /* Only clear the wrap-once flag when our wrapper actually came OFF the
+           chain. If another module wrapped over us we are still an orig in
+           someone's closure, and re-wrapping later would rebuild the cycle. */
+        if (origRenderProfile && window.renderProfile && window.renderProfile.__vfWrapped) {
+          window.renderProfile = origRenderProfile;
+          origRenderProfile = null;
+          renderProfileWrapped = false;
+        }
       } catch (e) {}
       try {
         var marked = document.querySelectorAll('.vf-primary');

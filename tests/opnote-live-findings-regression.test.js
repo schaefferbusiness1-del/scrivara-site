@@ -22,10 +22,22 @@ assert(prod.includes('canonical template-driven op-note Fields workflow owns thi
   !prod.includes("s.src='feat_mls_opnote_fillblank.js"),
   'production still loads a competing legacy fill-in-the-blank op-note UI');
 
+/* What this pins is LOAD ORDER - the strict template owner must be injected
+   after the field filler, because it wraps what the filler installs. It located
+   both by their exact cache tokens, which made it a token pin as well, and it
+   broke the moment feat_mls_opnote_integrity.js moved to the build-following
+   `?v=' + (window.__MLS_AV || Date.now())` form. That move was itself a fix: the
+   literal token was two days older than the file's content, so a returning
+   browser kept a cached module and none of the recent changes reached it
+   (tests/cache-token-cannot-go-stale.test.js is the general guard).
+   Find the loaders by ASSET NAME, which is what the ordering is about, and let
+   either token spelling satisfy it. */
+const loaderAt = (source, asset) => source.indexOf(asset + '?v=');
 for (const [name, source] of [['production', prod], ['staging', staging]]) {
-  const fillAt = source.indexOf('feat_mls_opnote_fill.js?v=20260730onf2140');
-  const integrityAt = source.indexOf('feat_mls_opnote_integrity.js?v=20260729phlinear');
+  const fillAt = loaderAt(source, 'feat_mls_opnote_fill.js');
+  const integrityAt = loaderAt(source, 'feat_mls_opnote_integrity.js');
   assert(fillAt >= 0, `${name} does not load the corrected known-field filler`);
+  assert(integrityAt >= 0, `${name} does not load the strict template owner at all`);
   assert(integrityAt > fillAt, `${name} does not load the strict template owner after the field filler`);
 }
 

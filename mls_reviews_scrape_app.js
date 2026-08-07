@@ -696,8 +696,8 @@
     h.push('<div id="rscPasteBox" style="display:none;margin-top:10px">' +
            '<div class="rsc-note"><b>Optional override.</b> MLS finds your profiles on its own \u2014 use this only to add a specific profile it missed, or to capture a page by hand. Paste a profile page (or a directory <i>search-results</i> page and MLS will pick out your profile links).</div>' +
            '<div class="rsc-src" id="rscOpenRow"></div>' +
-           '<textarea id="rscPasteTa" placeholder="Paste a profile page, a search-results page, or a profile URL\u2026"></textarea>' +
-           '<div style="margin-top:6px"><select id="rscPasteSite"></select> ' +
+           '<textarea id="rscPasteTa" aria-label="Paste a profile page, a search-results page, or a profile URL" placeholder="Paste a profile page, a search-results page, or a profile URL\u2026"></textarea>' +
+           '<div style="margin-top:6px"><select id="rscPasteSite" aria-label="Which review site this page is from"></select> ' +
            '<button class="rsc-btn rsc-ghost" id="rscPasteGo">Capture / find profiles</button> <span class="rsc-note" id="rscPasteNote"></span></div></div>');
     card.innerHTML = h.join('');
     wire(card);

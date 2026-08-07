@@ -64,7 +64,10 @@ function makeHarness() {
   });
   vm.runInContext(src, context, { filename: 'feat_mls_writeflow.js' });
   const wf = context.window.__mlsWriteFlow;
-  assert(wf && wf.installed && wf.version === 'wf2-2.3.0', 'writeflow failed to install as wf2-2.3.0');
+  /* pin moved wf3-1.0.0 -> wf3-1.1.0 deliberately: mdx-2.0.0 presence port
+     (probe asks the extension to front athenaOne; timeout names the cure).
+     The auto-open behavior this suite pins is unchanged. */
+  assert(wf && wf.installed && wf.version === 'wf3-1.1.0', 'writeflow failed to install as wf3-1.1.0');
   const tick = () => new Promise(r => setImmediate(r));
   async function settle(n) { for (let i = 0; i < (n || 6); i++) await tick(); }
   function deliver(data) { listeners.slice().forEach(fn => { try { fn({ data }); } catch (e) {} }); }

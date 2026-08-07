@@ -391,18 +391,29 @@
     return { i: i, row: rows[i] };
   }
 
+  var RAIL_FILTER = '';   /* b899 — the rail's name filter, survives rebuilds */
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
     var list = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
+    /* b899 — 96 templates in library-insertion order is creation-time noise;
+       alphabetical, with a name filter above (owner request 2026-08-06). */
+    list = list.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); });
+    var q = String(RAIL_FILTER || '').trim().toLowerCase();
+    var shown = q ? list.filter(function (t) { return String(t.name || '').toLowerCase().indexOf(q) >= 0; }) : list;
     var cur = curRow();
     var appliedId = cur && cur.row ? S(cur.row.tplId || '') : '';
-    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + '</div>';
+    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + (q ? ' &middot; ' + shown.length + ' match' + (shown.length === 1 ? '' : 'es') : '') + '</div>';
+    if (list.length > 5 || q) {
+      h += '<div class="opr-tpl-search"><input id="oprTplSearch" type="search" placeholder="Search templates by name…" aria-label="Search templates by name" autocomplete="off"></div>';
+    }
     if (!list.length) {
       h += '<div class="opr-tpl-empty">None uploaded yet. Drafts follow your templates &mdash; add them on the Templates tab.</div>';
+    } else if (!shown.length) {
+      h += '<div class="opr-tpl-empty">No template name contains &ldquo;' + esc(RAIL_FILTER) + '&rdquo;. Clear the search to see all ' + list.length + '.</div>';
     } else {
       var hOf = safe(function () { return window.__mlsTplPrepFix && isFn(window.__mlsTplPrepFix.healthOf) ? window.__mlsTplPrepFix.healthOf : null; }, null);
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
+      for (var i = 0; i < shown.length; i++) {
+        var t = shown[i];
         var health = hOf ? safe((function (tt) { return function () { return hOf(tt); }; })(t), null) : null;
         var cls = health ? health.cls : '';
         var lbl = health ? health.label : '';
@@ -425,7 +436,28 @@
           + '</button>';
       }
     }
+    /* b899 — typing in the filter rebuilds this rail, and innerHTML replacement
+       destroys focus mid-word. Remember focus + caret, restore after. */
+    var hadFocus = document.activeElement && document.activeElement.id === 'oprTplSearch';
+    var selStart = RAIL_FILTER.length, selEnd = RAIL_FILTER.length;
+    if (hadFocus) {
+      try {
+        var _a = document.activeElement;
+        if (_a.selectionStart != null) { selStart = _a.selectionStart; selEnd = _a.selectionEnd; }
+      } catch (eSel) {}
+    }
     rail.innerHTML = h;
+    var searchInp = $('oprTplSearch');
+    if (searchInp) {
+      searchInp.value = RAIL_FILTER;
+      searchInp.oninput = function () { RAIL_FILTER = this.value; buildTplRail(); };
+      /* b905 — RESTORE WHERE THE CARET WAS, NOT THE END OF THE LINE. The rebuild
+         destroys and recreates this input on every keystroke, and jumping to
+         value.length meant any correction made mid-string silently landed at
+         the end instead: type "lumbar", click before the "l", type a character,
+         and it appended. Measured live: caret at 4 came back at 7. */
+      if (hadFocus) { try { searchInp.focus({ preventScroll: true }); searchInp.setSelectionRange(selStart, selEnd); } catch (eF) {} }
+    }
 
     /* One delegated listener, re-attached with every innerHTML rebuild - the
        idiom buildNav already uses. Detached in revert() alongside the nav. */
@@ -545,7 +577,7 @@
   var TPL_MODES = [
     ['strict', 'Follow it closely', 'Keeps your wording. Fills only what varies.'],
     ['adapt', 'Adapt to the case', 'Keeps your structure, adapts the wording. Recommended.'],
-    ['guide', 'Use it as a guide', 'Keeps your headings, writes the prose its own way.']
+    ['guide', 'Use it as a guide — concise', 'Keeps your headings, writes tighter prose in its own words.']
   ];
   var TPL_MODE_KEY = 'opNoteTemplateMode';
 
@@ -861,12 +893,51 @@
       safe(function () {
         var p = $('oprPanelTpls');
         if (!p) return;
+        /* AND IT YIELDS THE INSTANT HE TOUCHES IT.
+           The 140ms pass is there for mls-template-stdline.js, which re-mounts
+           its section on exactly that delay and would otherwise scroll the panel
+           straight back down. But a timer that reasserts a scroll position is
+           also a timer that can take one away, and being yanked to the top
+           mid-scroll is a worse bug than the one this fixes.
+           So a real input gesture ends it. Only wheel/touch/keydown count -
+           NOT the scroll event itself, which is what the focus-driven jump this
+           whole block exists to undo would fire. Passive listeners, removed as
+           soon as the last pass has run, so nothing outlives the open. */
+        /* THE ENTRANCE IS AN ENTRANCE, NOT A RE-RENDER EFFECT.
+           feat_mls_opnote_templates_ui.js animates the library rows in when the
+           doctor arrives. It keyed that off `.on`, which is this tab's
+           shown/hidden state and therefore true for as long as he is in the
+           tab - so every rebuild of the list replayed it. renderTemplateList()
+           rebuilds via box.innerHTML, and tplSearchChanged() calls it on
+           oninput, so MEASURED: one keystroke in the search box restarted 3
+           row animations on a 3-template library, and it would be one per row
+           on a real one. Typing his own search made the list flicker at him.
+           That is the "glitchy" this whole rebuild exists to end, reintroduced
+           by the polish.
+           So the animation gets a class that only exists while he is ARRIVING.
+           900ms: the list renders in the first frames of the open, and this is
+           comfortably past the 300ms animation plus its 200ms stagger tail,
+           while still being gone long before any human finishes a keystroke. */
+        try {
+          p.classList.add('ot-entering');
+          setTimeout(function () { try { p.classList.remove('ot-entering'); } catch (e) {} }, 900);
+        } catch (eEnter) {}
+
+        var owned = true;
+        var release = function () { owned = false; };
+        var events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+        events.forEach(function (n) {
+          try { p.addEventListener(n, release, { passive: true }); } catch (e) { }
+        });
+        var stop = function () {
+          events.forEach(function (n) { try { p.removeEventListener(n, release); } catch (e) { } });
+        };
         var toTop = function () {
-          safe(function () { if (p.scrollTop > 0) p.scrollTop = 0; });
+          safe(function () { if (owned && p.scrollTop > 0) p.scrollTop = 0; });
         };
         toTop();
         setTimeout(toTop, 0);
-        setTimeout(toTop, 140);
+        setTimeout(function () { toTop(); stop(); }, 140);
       });
     }
   }

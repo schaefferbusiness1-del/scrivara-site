@@ -80,7 +80,7 @@
     } catch (e) {}
   })();
 
-  function wrapPair(getName, keySuffix) {
+  function wrapPair(getName, keySuffix, passthrough) {
     var orig = window[getName];
     if (typeof orig !== 'function') return; /* base app not ready / renamed: do nothing */
     var cache = { key: null, str: null, val: null, at: 0 };
@@ -92,6 +92,11 @@
     }
 
     function wrapped() {
+      /* patients delegates unconditionally: the base getPatients stamps
+         __mlsReadGen and serves open-batch reads - a cached parse here strips
+         both, and the base already memoizes on the raw string (__mlsPtsMemo,
+         b377), so caching this key buys nothing. */
+      if (passthrough) return orig();
       if (!api.enabled) return orig();
       var k, s;
       try {
@@ -143,7 +148,7 @@
     api._wrapped[api._wrapped.length - 1].onStorage = onStorage;
   }
 
-  wrapPair('getPatients', 'patients');
+  wrapPair('getPatients', 'patients', true);
   wrapPair('getNotes', 'notes');
 
   api.revert = function () {

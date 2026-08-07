@@ -65,7 +65,7 @@
 (function () {
   'use strict';
 
-  var VERSION = 'ot-2.1.0';
+  var VERSION = 'ot-2.2.0';
   var STYLE_ID = 'mlsOpNoteTemplatesUiCss';
   var BODY_CLASS = 'mls-ot3';
   var OLD_SKIN_ID = 'oprSkin';
@@ -128,10 +128,15 @@
        the saved templates settle in with a short lift, each one a beat after
        the one above.
 
-       Keyed off `#oprPanelTpls.on`, which is not a class invented for this -
-       feat_mls_opnote_room.js showTab() already toggles it as the tab's own
-       shown/hidden state, so the entrance fires exactly when the doctor enters
-       the tab and never on a re-render while he is sitting in it.
+       Keyed off `#oprPanelTpls.ot-entering`, a class showTab() holds for 900ms
+       on ENTERING the tab and then drops. The first draft used `.on` - the
+       tab's shown/hidden state - which sounded equivalent and was not: `.on` is
+       true the whole time he is in the tab, renderTemplateList() rebuilds the
+       rows through box.innerHTML, and tplSearchChanged() calls it on oninput.
+       MEASURED: one keystroke in the search box restarted 3 row animations on a
+       3-template library, one per row. Typing his own search made the list
+       flicker at him - the exact glitchiness this rebuild exists to end,
+       reintroduced by the polish. An entrance has to be scoped to arriving.
 
        transform+opacity only, so it composites and cannot reflow a list the
        renderer is rewriting. The stagger is six nth-child steps and then flat:
@@ -139,16 +144,16 @@
        rows past the sixth are below the fold at every size this tab uses.
        `both` fill so a row cannot be caught pre-paint at opacity 0 if the
        animation is interrupted. */
-    [B + '#oprPanelTpls.on #tplList > div',
+    [B + '#oprPanelTpls.ot-entering #tplList > div',
      'animation:mlsOtRowIn ' + D3 + ' ' + EO + ' both'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(2)', 'animation-delay:40ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(3)', 'animation-delay:80ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(4)', 'animation-delay:120ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(5)', 'animation-delay:160ms'],
-    [B + '#oprPanelTpls.on #tplList > div:nth-child(n+6)', 'animation-delay:200ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(2)', 'animation-delay:40ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(3)', 'animation-delay:80ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(4)', 'animation-delay:120ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(5)', 'animation-delay:160ms'],
+    [B + '#oprPanelTpls.ot-entering #tplList > div:nth-child(n+6)', 'animation-delay:200ms'],
     /* the preview beside it comes in without moving - it is a reading surface,
        and sliding text is the one thing the motion charter forbids outright */
-    [B + '#oprPanelTpls.on #tplDetail',
+    [B + '#oprPanelTpls.ot-entering #tplDetail',
      'animation:mlsOtFadeIn ' + D3 + ' ' + EO + ' both']
   ];
 
@@ -171,7 +176,14 @@
        is a defect the owner already hit once. */
     B + '.opr-top{ padding:14px 60px 14px 20px; gap:18px; background:var(--card);' +
       ' border-bottom:1px solid var(--line); }',
-    B + '.opr-top h3{ font-size:17px; letter-spacing:-.01em; white-space:nowrap; }',
+    /* nowrap is a WIDE-ONLY declaration (the module's own law, see the
+       #oprPanelProcs note above): unconditioned it ran the patient-mode title
+       ("Op note — <name>" + the History-ready chip) 95px past a 375px
+       viewport with no scroll parent — the chip was simply cut off on
+       phones. Narrow screens wrap instead. */
+    B + '.opr-top h3{ font-size:17px; letter-spacing:-.01em; }',
+    '@media (min-width:601px){ ' + B + '.opr-top h3{ white-space:nowrap; } }',
+    '@media (max-width:600px){ ' + B + '.opr-top h3{ white-space:normal; flex-wrap:wrap; row-gap:4px; } }',
     /* 44, NOT 40. `html body button{min-height:44px}` is the app-wide phone tap
        floor at (0,0,3); this selector out-specifies it, so declaring 40 here
        silently LOWERED the floor on the one control that gets you out of the
@@ -210,7 +222,7 @@
       ' text-transform:uppercase; color:var(--muted); margin:18px 0 8px; }',
 
     /* mode + day pickers: full-width, left-aligned, one decision per row */
-    B + '#opPrepModeRow{ flex-direction:column; gap:6px !important; margin:2px 0 12px; }',
+    B + '#opPrepModeRow{ flex-direction:column; gap:6px !important; margin:2px 0 12px !important; }',
     /* 2026-07-29 REGRESSION FIX. b795 set `background:var(--bg) !important` here.
        opPrepRender rewrites style.cssText on these two buttons on EVERY render
        with `background:#204034;color:#fff` for the ACTIVE mode - so the
@@ -227,7 +239,7 @@
     B + '#opPrepModeRow button[aria-pressed="false"]:before{ content:"\\00a0\\00a0\\00a0"; }',
     B + '#opPrepDayRow{ flex-direction:column; align-items:stretch !important;' +
       ' gap:8px !important; background:var(--bg); border:1px solid var(--line);' +
-      ' border-radius:16px; padding:12px; margin:0 0 12px; }',
+      ' border-radius:16px; padding:12px; margin:0 0 12px !important; }',
     B + '#opPrepDayRow button{ border-radius:10px !important; text-align:left;' +
       ' background:var(--card); min-height:38px; }',
     B + '#opPrepDayRow input{ width:100%; box-sizing:border-box; min-height:38px;' +
@@ -735,6 +747,22 @@
     B + '#templatesModal button:focus-visible{ outline:2px solid var(--green-dk);' +
       ' outline-offset:2px; }',
 
+    /* b839 — A CLOSED <details> MUST NOT LEAVE LIVE BOXES BEHIND.
+       The controls inside #tpfFold ("Template health") kept `display:flex`,
+       `visibility:visible` and FULL-SIZE rects while the disclosure was shut:
+       #tpfReupload, #tpfReAll, #tpfMatchBtn and the Re-process / AI-keywords /
+       Delete row all reported real geometry sitting on top of the versioned
+       library beneath them. They did not paint — elementFromPoint returned the
+       element underneath — so this was invisible to the eye and to clicks, but
+       it is a live hazard: any later z-index or stacking change turns seven
+       phantom boxes into seven real ones over the doctor's controls, and until
+       then every overlap audit of this screen reports them as defects and
+       wastes the next reader's time (it wasted mine).
+       Restoring the UA behaviour explicitly costs nothing and makes the audit
+       mean what it says. */
+    B + '#templatesModal details:not([open]) > *:not(summary),' +
+    B + '#opPrepModal details:not([open]) > *:not(summary){ display:none !important; }',
+
     /* THE CLOSE ROW. The Close button measured 1380x42 = 57,960px2, the biggest
        control on the screen, purely because it carries an INLINE `flex:1` in a
        full-width row. flex needs !important; the row's `margin-top:14px` is
@@ -1083,12 +1111,30 @@
 
      THE ORDER IS THE WHOLE DESIGN, top to bottom:
        title + one lead line
+       UPLOAD              ot-2.2.0 - the one control that gets templates IN
        YOUR LIBRARY        search, list, preview - what he opened the tab for
        settings            use-templates, active template
-       add one / import    the intake he needs occasionally
+       add one by hand     the typed/pasted intake he needs occasionally
        standard lines      maintenance
        anything injected   catch-all, never above the library
-       Close */
+       Close
+
+     ot-2.2.0 - UPLOAD MOVES TO THE TOP. Owner, 2026-07-31: "uploading templates
+     needs to be at the top and simple to do."
+
+     He is describing a measurement, not a preference. On b833, in his 936px
+     viewport, the two upload controls sat at y=1906 and y=2446 and the first
+     screen of the tab carried no way to add a template at all. Ordering the
+     library first (ot-2.1.0) was right about what he READS most and wrong about
+     what he needs to DO first: a library he cannot add to is not a library.
+
+     The bulk card is the one promoted, because it is already the simple path -
+     its input is `multiple` and its copy is "one PDF or many files", so it
+     answers both "I have a template" and "I have fifty" with one click. The
+     name/keywords/paste intake stays where it is at 30-36: that is a DIFFERENT
+     job (compose one by hand), and hoisting it too would put four upload
+     affordances on the first screen, which is the confusion he is complaining
+     about. */
   var TAB_ONECOL = [
     R + '.modal{ display:flex; flex-direction:column; align-items:stretch; }',
     /* THE CATCH-ALL, and it sits BELOW the intake so an unnamed panel can never
@@ -1098,7 +1144,10 @@
     RM + 'h3{ order:1; }',
     RM + 'p.note{ order:2; }',
 
-    /* THE LIBRARY, first, because it is the reason the tab exists */
+    /* UPLOAD, above the library: the first screen must offer a way IN */
+    RM + 'div[style*="linear-gradient"]{ order:5; }',
+
+    /* THE LIBRARY, because it is the reason the tab exists */
     RM + 'div:has(> h4){ order:10; }',
     RM + '.field:has(#tplSearch){ order:11; }',
     R + '#tplWorkspace{ order:12; }',
@@ -1115,7 +1164,9 @@
     R + '#tplDropZone{ order:34; }',
     R + '#tplText{ order:35; }',
     RM + '.row:has(> button[onclick^="saveTemplateFromForm"]){ order:36; }',
-    RM + 'div[style*="linear-gradient"]{ order:37; }',
+    /* the bulk-import card that used to sit here at order:37 is now order:5,
+       above the library. One declaration only: an identical selector later in
+       this sheet would win on source order and silently undo the hoist. */
 
     /* maintenance: 451px of form belongs under the work, not over it */
     R + '#mls-stdline-section{ order:50; }',
@@ -1175,14 +1226,20 @@
        panel injected later still auto-places safely. */
     R + '#tplWorkspace > #tpfPanel, ' + R + '#tplWorkspace > #tlPanel{ grid-column:1 / -1; }',
 
-    /* ...and maintenance still may not dominate. Both panels keep every control
-       and become internally scrollable instead of pushing the page: a control
-       inside a scrollable box is reachable by mouse, keyboard and screen
-       reader, which is the difference between capping a height and hiding a
-       feature. Generous caps - these only bite when the panel is genuinely
-       enormous. */
-    R + '#tplWorkspace > #tlPanel{ max-height:340px; overflow:auto; }',
-    R + '#mls-stdline-section{ max-height:360px; overflow:auto; }'
+    /* b841 — THE NESTED SCROLLERS ARE GONE, AND THAT IS THE FIX, NOT A REGRESSION.
+       These two caps existed to stop maintenance panels dominating the tab, and
+       the reasoning ("a control inside a scrollable box is still reachable") was
+       sound in the abstract and wrong in practice. Measured live on the owner's
+       screen: #mls-stdline-section clipped its own primary control - the
+       "💾 Save standard line" button rendered at y=244 while the section's box
+       ended at y=192, so the doctor saw a green button sliced in half and had to
+       discover a second, inner scrollbar to finish the action. A cap that hides
+       the button the panel exists for is not a cap, it is a trap.
+       Nothing is lost by removing them: the ordering above already puts every
+       maintenance surface BELOW the library and the intake (order 50 and 60), so
+       they cannot dominate anything, and #oprPanelTpls owns the one scroller
+       this screen needs. The #tlPanel cap is additionally dead now that the
+       panels are evicted out of #tplWorkspace. */
   ];
 
 
@@ -1285,6 +1342,62 @@
   }
   api.css = build;
 
+  /* ---- b838: THE WORKSPACE HOLDS THE TWO PANES AND NOTHING ELSE ----------
+     This module's charter said it creates, moves and removes no nodes, and that
+     rule earned its place — 102 structural grips live in this subtree. It is
+     amended here deliberately, for one node class, because the defect cannot be
+     reached from CSS.
+
+     #tplDetail carries an INLINE `position:sticky;top:0`. Chrome constrains that
+     sticky by the SCROLL container, not by the item's grid area — pinning the
+     pane to `grid-row:1` was tried first and measured NO improvement (9 real
+     occlusions before, 10 after). So while any full-width panel shares the
+     workspace, the travelling pane will paint over it. Measured on the owner's
+     screen: up to 694x329px of the versioned-library panel covered, with
+     elementFromPoint returning #tplDetText at the intersection — it was taking
+     the clicks, not just the pixels. That is the screenshot he sent.
+
+     Two modules inject panels INTO the workspace rather than beside it:
+     #tpfPanel (template health, mls-connect) and #tlPanel (versioned library,
+     feat_mls_template_library) both do
+     `anchor.parentElement.insertBefore(panel, #tplList)`. They are moved to sit
+     directly AFTER #tplWorkspace, where the flex composition above sorts them
+     into the maintenance band by the catch-all order.
+
+     WHY THIS IS SAFE FOR THE GRIPS: nothing is created, renamed or removed, and
+     no id changes. Both owning modules re-find their panel by id
+     (`if (byId('tlPanel')) return;`) so neither rebuilds it, and neither reads
+     its parentNode after creation. The observer re-evicts late arrivals so a
+     panel injected after the first render cannot reintroduce the overlap. */
+  var _wsObs = null, _evictPend = 0;
+  function evictStrays() {
+    return safe(function () {
+      var ws = document.getElementById('tplWorkspace');
+      if (!ws || !ws.parentNode) return 0;
+      var kids = Array.prototype.slice.call(ws.children), moved = 0, anchor = ws;
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k.id === 'tplList' || k.id === 'tplDetail') continue;
+        k.setAttribute('data-ot-evicted', '1');
+        ws.parentNode.insertBefore(k, anchor.nextSibling);
+        anchor = k;
+        moved++;
+      }
+      return moved;
+    }, 0);
+  }
+  function watchWorkspace() {
+    safe(function () {
+      var ws = document.getElementById('tplWorkspace');
+      if (!ws || _wsObs) return;
+      _wsObs = new MutationObserver(function () {
+        if (_evictPend) return;
+        _evictPend = setTimeout(function () { _evictPend = 0; evictStrays(); }, 60);
+      });
+      _wsObs.observe(ws, { childList: true });
+    });
+  }
+
   /* ---- install: remove the old opinion, then own the surface ------------- */
   api.install = function () {
     safe(function () {
@@ -1303,9 +1416,17 @@
     /* the scope class is what makes this win on specificity regardless of the
        async load order of the two modules */
     safe(function () { document.body.classList.add(BODY_CLASS); });
+    evictStrays();
+    watchWorkspace();
   };
+  api.evictStrays = evictStrays;
 
   api.revert = function () {
+    safe(function () { if (_wsObs) { _wsObs.disconnect(); _wsObs = null; } });
+    safe(function () { if (_evictPend) { clearTimeout(_evictPend); _evictPend = 0; } });
+    /* the evicted panels are left where they are: both owning modules find them
+       by id and neither reads their parent, so putting them back would churn the
+       DOM for no observable gain. The marker records what moved. */
     safe(function () {
       var st = document.getElementById(STYLE_ID);
       if (st && st.parentNode) st.parentNode.removeChild(st);

@@ -468,11 +468,25 @@
     req.stale = true;
     safe(function () { if (req.controller) req.controller.abort(); });
   }
+  /* Only these two names have a production dispatcher; the poll below covers
+     any owner change that emits no event at all. */
   function bindAiOwnerEvents() {
     if (aiOwnerEvents.length) return;
-    ["mls:patient-changed", "mls:active-patient-change", "mls:active-patient-changed", "mls:visit-changed", "mls:view-changed", "mls:context-changed"].forEach(function (name) {
+    ["mls:active-patient-changed", "mls:view-changed"].forEach(function (name) {
       safe(function () { window.addEventListener(name, abortCurrentIfStale, false); aiOwnerEvents.push([name, abortCurrentIfStale]); });
     });
+  }
+  /* Bounded fallback while a request is in flight: an owner switch that emits
+     no event must not leave the busy latch held until the fetch settles. */
+  var AI_STALE_POLL_MS = 2000;
+  function startAiStalePoll(req) {
+    req.staleT = (typeof setInterval === "function") && setInterval(function () {
+      if (activeAiRequest !== req) { stopAiStalePoll(req); return; }
+      abortCurrentIfStale();
+    }, AI_STALE_POLL_MS);
+  }
+  function stopAiStalePoll(req) {
+    safe(function () { if (req && req.staleT && typeof clearInterval === "function") { clearInterval(req.staleT); req.staleT = 0; } });
   }
   function unbindAiOwnerEvents() {
     for (var i = 0; i < aiOwnerEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, aiOwnerEvents[i]));
@@ -638,6 +652,7 @@
     if (!ready) { addAi("Sign in to your MLS account to use AI answers. Schedule, patient, and connection commands still work here."); return true; }
     var req = captureAiOwner();
     activeAiRequest = req;
+    startAiStalePoll(req);
     setAiBusy(true);
     req.pending = addPending("Reading the selected patient and practice context...", { requestId: req.id, requestOwner: req.ownerId, requestEpoch: req.epoch });
     var storeAtSend = CONVO();
@@ -676,6 +691,7 @@
       addAi("Network error reaching Copilot. Nothing was run; check your connection and try again.", { requestId: req.id, actions: [], followups: [], artifact: null }, req.pending);
       req.pending = null;
     }).then(function () {
+      stopAiStalePoll(req);
       dropPending(req.pending); req.pending = null;
       if (activeAiRequest === req) {
         activeAiRequest = null;
@@ -685,6 +701,7 @@
       renderThread();
       if (req.stale && !req.reverted) safe(function () { if (isFn(window.toast)) window.toast("The patient, visit, or conversation changed, so that Copilot answer was discarded.", ""); });
     }, function () {
+      stopAiStalePoll(req);
       dropPending(req.pending); req.pending = null;
       if (activeAiRequest === req) { activeAiRequest = null; setAiBusy(false); }
     });
@@ -1091,6 +1108,7 @@
     if (bootIv) { clearInterval(bootIv); bootIv = null; }
     if (activeAiRequest) {
       activeAiRequest.reverted = true;
+      stopAiStalePoll(activeAiRequest);
       safe(function () { if (activeAiRequest.controller) activeAiRequest.controller.abort(); });
       dropPending(activeAiRequest.pending);
       activeAiRequest = null;

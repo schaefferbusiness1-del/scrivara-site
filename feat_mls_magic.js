@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS Scribe — THE MOMENTS  (__mlsMagic) mg-1.0.0   2026-07-29
+ * MLS Scribe — THE MOMENTS  (__mlsMagic) mg-1.1.0   2026-07-29
  *
  * OWNER: "really just make the site feel majical".
  *
@@ -40,10 +40,11 @@
   try { if (window.__mlsMagic) return; } catch (e) { return; }
 
   var STYLE_ID = 'mlsMagicCss';
-  var api = { version: 'mg-1.0.0', installed: true };
+  var api = { version: 'mg-1.1.0', installed: true };
   window.__mlsMagic = api;
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
 
+  var D1 = 'var(--mls-dur-1,120ms)';
   var D2 = 'var(--mls-dur-2,200ms)';
   var D3 = 'var(--mls-dur-3,300ms)';
   var D4 = 'var(--mls-dur-4,420ms)';
@@ -175,13 +176,50 @@
     '@keyframes mgxDone{from{opacity:.4;transform:scale(.96)}to{opacity:1;transform:none}}'
   ].join('\n');
 
+  /* =========================================================================
+     mg-1.1.0 (owner 2026-08-02: "add even more pretty animations ... make the
+     site feel like magic") — THE OP-NOTE SESSION, five more moments. Same law
+     as MX: every entry cites the exact thing that fires it, every answer is a
+     FACT the app can back, and the shared build loop generates the
+     reduced-motion off-switch. Observers stay banned; the two JS triggers are
+     wrap-and-emit with a state fact-check, the rest are CSS-only triggers
+     (hover, and the display none->shown restart the menus' own open code
+     performs).
+       did my draft produce blanks?  -> the Fields box is born (onf writes
+                                        .mgx2-born at CREATE, once per draft)
+       did the machine finish/save?  -> #opPrepStatus settles (wraps below,
+                                        fact-checked on _genSeq / _noteId)
+       did my pin take?              -> the field row confirms (onf writes
+                                        .mgx2-pinned on the explicit click)
+       which row am I on?            -> .pt-item leans in on hover
+       what just opened?             -> the dock menus arrive from their button
+     The saved NOTE itself is never animated: a drafted op note is clinical
+     text, and the GUARDS' spirit covers its container too — confirmation
+     lives on the status line, which is chrome. */
+  var MX2 = [
+    ['.onf-fillbox.mgx2-born', 'animation:mgx2Born ' + D3 + ' ' + EO + ' both'],
+    ['#opPrepStatus.mgx2-good', 'animation:mgx2Good ' + D3 + ' ' + EO + ' both'],
+    ['.onf-field.mgx2-pinned', 'animation:mgx2Pin ' + D2 + ' ' + EO + ' both'],
+    ['#ptList .pt-item', 'transition:transform ' + D1 + ' ' + EO],
+    ['#ptList .pt-item:hover', 'transform:translateY(-1px)'],
+    ['#mlsToolsMenu, #mlsAccountPopover', 'animation:mgx2Menu ' + D2 + ' ' + EO + ' both']
+  ];
+  var MX2_KEYFRAMES = [
+    '@keyframes mgx2Born{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}',
+    '@keyframes mgx2Good{0%{transform:scale(.985);opacity:.7}60%{transform:scale(1.01)}100%{transform:none;opacity:1}}',
+    '@keyframes mgx2Pin{0%{transform:scale(.995)}60%{transform:scale(1.004)}100%{transform:none}}',
+    /* menus drop 4px FROM the button that owns them - direction is provenance */
+    '@keyframes mgx2Menu{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}'
+  ].join('\n');
+
   function build() {
-    var out = [KEYFRAMES, MX_KEYFRAMES], kill = [];
-    /* MOMENTS and MX go through the SAME loop, so a rule added to either table
-       cannot ship without its generated reduced-motion off-switch. The filter
-       matches rules that turn motion ON: `animation:none` is an off-switch, not
-       an animation, and counting those was a real false positive earlier today. */
-    MOMENTS.concat(MX).forEach(function (m) {
+    var out = [KEYFRAMES, MX_KEYFRAMES, MX2_KEYFRAMES], kill = [];
+    /* MOMENTS, MX and MX2 go through the SAME loop, so a rule added to any
+       table cannot ship without its generated reduced-motion off-switch. The
+       filter matches rules that turn motion ON: `animation:none` is an
+       off-switch, not an animation, and counting those was a real false
+       positive earlier today. */
+    MOMENTS.concat(MX).concat(MX2).forEach(function (m) {
       out.push(m[0] + '{' + m[1] + '}');
       if (/animation\s*:\s*(?!none)[a-zA-Z]/.test(m[1]) ||
           /transition\s*:\s*(?!none)[a-zA-Z-]+\s/.test(m[1])) kill.push(m[0]);
@@ -324,8 +362,62 @@
      a poll, and idempotent because wrapEmit refuses an already-wrapped function. */
   on(window, 'mls:view-changed', function () { safe(wireTemplatesMoments); });
 
+  /* mg-1.1.0 — the status line settles when the op-note machinery ACTUALLY
+     delivered, never merely when it ran. Both wraps fact-check row state the
+     same way the note moment asks haveNote(): opPrepGenerateOne resolves and
+     the row's _genSeq moved -> a draft landed; opPrepSave returns and the row
+     carries a _noteId -> the save landed. Every failure path in both
+     functions returns before those facts become true, so the moment cannot
+     congratulate a refusal (the b500 lesson, and this module's own
+     generation-complete lesson, applied in advance). */
+  function statusGood() {
+    safe(function () {
+      var el = document.getElementById('opPrepStatus');
+      if (!el || !el.offsetWidth) return;
+      el.classList.remove('mgx2-good');
+      void el.offsetWidth;
+      el.classList.add('mgx2-good');
+    });
+  }
+  function wrapDraftMoment() {
+    safe(function () {
+      var orig = window.opPrepGenerateOne;
+      if (typeof orig !== 'function' || orig.__mgxWrap) return;
+      var w = function (i) {
+        var pre = safe(function () { return ((window._opPrep || [])[i] || {})._genSeq || 0; }, 0);
+        var r = orig.apply(this, arguments);
+        var check = function () {
+          var post = safe(function () { return ((window._opPrep || [])[i] || {})._genSeq || 0; }, 0);
+          if (post > pre) statusGood();
+        };
+        if (r && typeof r.then === 'function') r.then(check, function () {});
+        else safe(check);
+        return r;
+      };
+      w.__mgxWrap = true; w.__mgxOrig = orig;
+      window.opPrepGenerateOne = w;
+      wrapped.push('opPrepGenerateOne');
+    });
+    safe(function () {
+      var orig = window.opPrepSave;
+      if (typeof orig !== 'function' || orig.__mgxWrap) return;
+      var w = function (i) {
+        var r = orig.apply(this, arguments);
+        safe(function () {
+          if (((window._opPrep || [])[i] || {})._noteId) statusGood();
+        });
+        return r;
+      };
+      w.__mgxWrap = true; w.__mgxOrig = orig;
+      window.opPrepSave = w;
+      wrapped.push('opPrepSave');
+    });
+  }
+  wrapDraftMoment();
+  on(window, 'mls:view-changed', function () { safe(wrapDraftMoment); });
+
   api.moments = function () {
-    return { rules: MOMENTS.length + MX.length, wrapped: wrapped.slice() };
+    return { rules: MOMENTS.length + MX.length + MX2.length, wrapped: wrapped.slice() };
   };
 
   api.revert = function () {
@@ -354,7 +446,7 @@
       if (st && st.parentNode) st.parentNode.removeChild(st);
     });
     safe(function () {
-      ['mg-settle'].forEach(function (c) {
+      ['mg-settle', 'mgx2-good', 'mgx2-born', 'mgx2-pinned'].forEach(function (c) {
         var els = document.querySelectorAll('.' + c);
         for (var i = 0; i < els.length; i++) els[i].classList.remove(c);
       });

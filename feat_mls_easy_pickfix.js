@@ -99,8 +99,15 @@
         "background:#0a7d2c !important;box-shadow:0 3px 0 #075f21,0 6px 16px rgba(10,125,44,.35) !important;" +
         "transition:transform .04s ease,box-shadow .12s ease !important;}" +
       "#mlsProtoStart." + BIG_CLASS + ":not([disabled]):hover{background:#0b8a30 !important;}" +
-      "#mlsProtoStart." + BIG_CLASS + "[disabled]{background:#9aa3ad !important;color:#eef2f6 !important;" +
-        "cursor:not-allowed !important;opacity:.85 !important;box-shadow:none !important;}" +
+      /* This button is disabled until a patient is picked — which is exactly
+         when its label has to be readable, because the label is what tells you
+         to pick one. #eef2f6 on #9aa3ad measures 2.27:1 against a 4.5:1
+         requirement (18px/800 is just under the 18.66px large-text threshold,
+         so it fails even the 3:1 allowance), and opacity:.85 composited both
+         colours toward the page and made it worse. Now 5.46:1, opacity dropped;
+         still unmistakably a disabled control, just a legible one. */
+      "#mlsProtoStart." + BIG_CLASS + "[disabled]{background:#5b6670 !important;color:#f4f7fa !important;" +
+        "cursor:not-allowed !important;opacity:1 !important;box-shadow:none !important;}" +
       "#mlsProtoGrid button." + SELECTED_CLASS + "{outline:3px solid #0a7d2c !important;outline-offset:1px !important;" +
         "box-shadow:0 0 0 3px rgba(10,125,44,.25) !important;border-radius:12px !important;}" +
       "@media (max-width:560px){#" + BTN_ID + "{font-size:17px !important;min-height:58px !important;}" +

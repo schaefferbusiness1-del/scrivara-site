@@ -255,6 +255,26 @@
   }
 })();
 /* end __mlsOldBrowserCompat */</script>
+<script>
+/* pvc-1.0.0: a preview link that arrives with EXTRA params (utm tags, share
+   trackers) must not dead-end on the login wall. The safety boundary above is
+   exact BY DESIGN — so canonicalize to the exact route instead of loosening
+   it: one location.replace, after which the exact match arms normally.
+   (Sits AFTER the compat layer: the oldbrowser gate pins exactly two inline
+   blocks before compat, and canonicalizing here is still long before the
+   login UI exists.) */
+(function(){
+  try{
+    var u=new URL(location.href);
+    if(!/\/ScribeFlow\.html$/.test(u.pathname))return;
+    if(u.search==='?preview=1')return;
+    if(u.searchParams.get('preview')!=='1')return;
+    var p=window.__MLS_PUBLIC_PREVIEW;
+    if(p&&p.enabled===true)return;
+    location.replace(u.pathname+'?preview=1');
+  }catch(e){}
+})();
+</script>
 <script src="clinical-state-purge.js?v=20260718csp1"></script>
 <!-- PWA: installable phone + desktop app -->
 <meta name="theme-color" content="#2E6A4B">
@@ -386,17 +406,8 @@
     --mls-ease-spring:cubic-bezier(.2,.9,.3,1.06);
   }
   body, button, input, select, textarea, .sf-select{ font-family:var(--sans); }
-  /* ===== LOADING VOCABULARY (b828) — one way to look busy =====
-     Composable, theme-var driven, motion-token timed, reduced-motion safe.
-     Surfaces adopt these instead of inventing another spinner. */
-  .mls-load-bar{ height:8px; border-radius:999px; background:var(--soft); overflow:hidden; border:1px solid var(--line); }
-  .mls-load-fill{ height:100%; border-radius:999px; background:linear-gradient(90deg,var(--green-dk),var(--green)); transition:width var(--mls-dur-2) var(--mls-ease-out); position:relative; }
-  .mls-load-fill::after{ content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent); animation:mlsLoadShine 1.6s linear infinite; }
-  .mls-load-dots::after{ content:"…"; display:inline-block; width:1.2em; text-align:left; animation:mlsLoadDots 1.4s steps(4,end) infinite; }
-  @keyframes mlsLoadShine{ 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
-  @keyframes mlsLoadDots{ 0%{content:""} 25%{content:"."} 50%{content:".."} 75%{content:"…"} }
+  /* mlsLoadIn — shared entry animation (op-prep room panels) */
   @keyframes mlsLoadIn{ 0%{opacity:0;transform:translateY(8px)} 100%{opacity:1;transform:none} }
-  @media (prefers-reduced-motion: reduce){ .mls-load-fill::after,.mls-load-dots::after{ animation:none; } }
   /* ===== QoL: DARK MODE (MLS) — overrides the color variables above ===== */
   html body.theme-dark{
     --bg:#141915; --card:#1C231E; --ink:#EAEFEA; --muted:#9CA89E;
@@ -445,7 +456,6 @@
   body.theme-dark .rf-absent{ background:var(--soft2); color:var(--muted) }
   /* opt / gold panel */
   body.theme-dark .opt-card h3,
-  body.theme-dark .opt-section .h-warn,
   body.theme-dark .gap-item b{ color:var(--gold) }
   /* auth screen */
   body.theme-dark .auth-wrap{ background:radial-gradient(120% 90% at 50% 0%,#15212f 0%,var(--bg) 60%) }
@@ -478,14 +488,12 @@
   /* generic inline-styled info notes (.note baseline already var; covers the
      hard-coded #eef4fc/#e6f7ef/#fff7e6 inline boxes via attribute targeting) */
   body.theme-dark [style*="background:#eef4fc"],
-  body.theme-dark [style*="background:#eef6ff"],
-  body.theme-dark [style*="background:#eef4fb"]{ background:var(--soft)!important; color:var(--ink) }
+  body.theme-dark [style*="background:#eef6ff"]{ background:var(--soft)!important; color:var(--ink) }
   body.theme-dark [style*="background:#e6f7ef"]{ background:rgba(47,185,134,.13)!important; color:var(--green)!important; border-color:rgba(47,185,134,.4)!important }
   body.theme-dark [style*="background:#fff7e6"],
   body.theme-dark [style*="background:#fdf6e3"]{ background:var(--gold-bg)!important; color:var(--amber)!important; border-color:rgba(217,169,59,.4)!important }
   body.theme-dark [style*="background:#fdecea"],
-  body.theme-dark [style*="background:#fdecec"],
-  body.theme-dark [style*="background:#fdeced"]{ background:rgba(224,96,107,.14)!important; color:var(--red)!important; border-color:rgba(224,96,107,.4)!important }
+  body.theme-dark [style*="background:#fdecec"]{ background:rgba(224,96,107,.14)!important; color:var(--red)!important; border-color:rgba(224,96,107,.4)!important }
   body.theme-dark [style*="background:#f0f9f4"],
   body.theme-dark [style*="background:#e3f5ec"],
   body.theme-dark [style*="background:#e6f7ef"]{ border-color:rgba(47,185,134,.4)!important }
@@ -508,8 +516,7 @@
   body.theme-dark #legalFeeRow{ background:var(--gold-bg)!important; border-color:rgba(217,169,59,.4)!important; color:var(--ink) }
   /* green-tinted surfaces (invoice tools, doctor seats, follow-ups, booking row) */
   body.theme-dark [style*="background:#eefaf3"],
-  body.theme-dark [style*="background:#f0fbf4"],
-  body.theme-dark [style*="background:#eefbf4"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.32)!important; color:var(--ink) }
+  body.theme-dark [style*="background:#f0fbf4"]{ background:rgba(47,185,134,.10)!important; border-color:rgba(47,185,134,.32)!important; color:var(--ink) }
   /* purple-tinted surfaces (messaging panels + buttons + lawyer box) */
   body.theme-dark [style*="background:#f6f1fb"],
   body.theme-dark [style*="background:#f3f0fb"]{ background:rgba(139,107,224,.15)!important; border-color:rgba(139,107,224,.4)!important; color:var(--ink) }
@@ -567,7 +574,12 @@
   /* intake accent (brand teal) selected states stay legible as-is (#2E6A4B + #fff) */
   /* ===== MLS additive — CUSTOM WIDGET v2 blocks (all colors via theme variables,
      so light & dark mode both work with zero extra rules) ===== */
-  .cw-blk{margin:0 0 13px}
+  .cw-live-host{margin:0 0 12px}
+.cw-live-card{border:1px solid var(--line);border-radius:var(--r-card);padding:12px 14px;background:var(--card,#fff)}
+.cw-live-title{font:700 14px/1.3 var(--font,inherit);color:var(--ink,#204034);margin-bottom:2px}
+.cw-live-desc{font-size:12px;color:var(--muted);margin-bottom:8px}
+.cw-live-note{font-size:11.5px;color:var(--muted);margin-top:6px;text-align:right}
+.cw-blk{margin:0 0 13px}
   .cw-blk:last-child{margin-bottom:0}
   .cw-blk-label{font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
   .cw-fields{display:grid;grid-template-columns:minmax(110px,max-content) 1fr;gap:4px 16px;font-size:13.5px}
@@ -888,7 +900,7 @@
      carry a 0px fallback, so nothing moves on a device with neither. */
   #opPrepModal.opr-room{ padding:0;
     --opr-dock-clear:calc(104px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)); }
-  /* b828 (motion pass): the room ARRIVES instead of snapping — entrance on the
+  /* b940 (motion pass): the room ARRIVES instead of snapping — entrance on the
      shared tokens, transform/opacity only; the Templates panel swap crossfades
      on dur-2. Both silent under prefers-reduced-motion. */
   #opPrepModal.opr-room.show > .modal{ animation:mlsLoadIn var(--mls-dur-3) var(--mls-ease-out); }
@@ -907,7 +919,7 @@
   #opPrepModal.opr-room > .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
-  /* b828 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
+  /* b940 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
   #opPrepModal.opr-room .modal-x{ position:absolute; top:10px; right:12px; z-index:3;
@@ -946,6 +958,11 @@
   .opr-tpl-item{ display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink);
     padding:5px 9px; }
   .opr-tpl-empty{ font-size:11.5px; color:var(--muted); padding:2px 9px 6px; line-height:1.45; }
+  /* b940 — the rail's name filter */
+  .opr-tpl-search{ padding:0 9px 7px; }
+  .opr-tpl-search input{ width:100%; box-sizing:border-box; font:inherit; font-size:12px; padding:5px 9px;
+    border:1px solid var(--line); border-radius:10px; background:var(--card,#fff); color:var(--ink); }
+  .opr-tpl-search input:focus{ outline:2px solid #2E6A4B33; border-color:#2E6A4B; }
   #oprReceipt{ color:var(--muted); margin:0 0 10px; }
   #opPrepList .opr-cur{ box-shadow:0 0 0 1.5px var(--green-dk) inset; }
   /* Stage 3 — the Templates tab. The reparented #templatesModal keeps its own
@@ -1025,9 +1042,18 @@
      and nowhere near the dock, so padding there would be dead space in a 229px
      box. The value itself is responsive via --opr-dock-clear. */
   html:has(#opPrepModal.opr-room.show) #mlsDock{ z-index:9401; }
+  /* The scrim and the dock must NOT share a value. Outside the room they are
+     correctly ordered (scrim 9300 < dock 9310), but lifting both to the same
+     z-index above the room's .modal-bg handed the tie to DOM order — and
+     openCopilotDock() appends the dock first and the scrim second, so the
+     scrim won and painted over the panel. Since #copilotDockScrim.open carries
+     pointer-events:auto and closes the dock on click, Copilot inside the
+     op-note room opened dimmed and shut again on the first press of Send, the
+     mic, or the text box: functionally dead on the one surface a doctor is
+     already in when they want it. The lift now preserves the base ordering. */
   html:has(#opPrepModal.opr-room.show) #mlsToolsMenu,
-  html:has(#opPrepModal.opr-room.show) #copilotDockScrim,
-  html:has(#opPrepModal.opr-room.show) #copilotDock{ z-index:9402; }
+  html:has(#opPrepModal.opr-room.show) #copilotDockScrim{ z-index:9402; }
+  html:has(#opPrepModal.opr-room.show) #copilotDock{ z-index:9403; }
   html:has(#opPrepModal.opr-room.show) #oprEditor,
   html:has(#opPrepModal.opr-room.show) #oprPanelTpls{ padding-bottom:var(--opr-dock-clear); }
   @media (min-width:761px){
@@ -1156,7 +1182,6 @@
   .hist-main .s{font-size:13px;color:var(--muted);margin-top:2px}
   .hist-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:10px}
   .hist-item .del:hover{background:#fdeced;color:var(--red)}
-  .save-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px}
   @media print{
     header,.howto,.tools,.note-actions,.big-capture,.row,#captureCard,#emrCard,#historyCard,.disclaim,.opt-card,footer .noprint,.mainnav,#patientsView,#patientBar{display:none!important}
     body{background:#fff}.grid{display:block}.card{box-shadow:none;border:none}
@@ -1301,8 +1326,24 @@
      #tplList, becoming grid items; they must span the full row so the
      list/detail panes keep their two columns. ===== */
   #tplWorkspace>*{grid-column:1 / -1;min-width:0}
-  #tplWorkspace>#tplList{grid-column:1}
-  #tplWorkspace>#tplDetail{grid-column:2}
+  /* b940 — THE STICKY PREVIEW WAS ROAMING OVER EVERY PANEL BELOW IT.
+     #tplDetail carries an INLINE `position:sticky;top:0`. A grid item's
+     containing block is its GRID AREA, and with `grid-row:auto` the detail's
+     area was resolved against a container that also holds the full-width panels
+     injected after it (#tpfPanel template health, #tlPanel versioned library) —
+     so the pane travelled the whole 1027px workspace and painted straight over
+     them. Measured on the owner's screen: 9 occlusions while scrolling, up to
+     694x329px of the versioned-library panel covered, and elementFromPoint at
+     the intersection returned #tplDetText — it was stealing the clicks too, not
+     merely the pixels.
+     Pinning BOTH panes to row 1 makes the detail's containing block that row
+     and nothing else, so it physically cannot reach row 2+. align-self:start is
+     load-bearing: without it the pane stretches to fill the row, travel becomes
+     zero and it stops sticking at all. With it, the preview still follows the
+     doctor down a long list — which is the behaviour worth keeping — and simply
+     stops where the list does. */
+  #tplWorkspace>#tplList{grid-column:1;grid-row:1}
+  #tplWorkspace>#tplDetail{grid-column:2;grid-row:1;align-self:start}
   /* On a phone the two-pane split collapsed the preview to a ~60px sliver.
      grid-template-columns is INLINE on the element so the override needs
      !important, and the column placements above must be neutralised or
@@ -1360,7 +1401,16 @@
      ============================================================ */
   body{ font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
   .wrap{ padding-bottom:60px; }
-  .card{ border-radius:16px; padding:24px; box-shadow:0 1px 2px rgba(20,33,28,.04),0 10px 30px rgba(20,33,28,.05); }
+  /* padding is gated, the rest is not. A media query adds NO specificity, so
+     this unconditioned rule — 21 lines later and at identical specificity —
+     silently overrode `@media(max-width:600px){.card{padding:16px}}` at every
+     width. Every one of the 79 cards in the app kept its 24px desktop padding
+     on a 390px phone: 48px of the screen spent on padding inside a .wrap that
+     already takes 16px each side, so content got 16px less room than the
+     responsive design budgeted for it. Stating the desktop value only for
+     desktop lets the phone rule reach the phone. */
+  .card{ border-radius:16px; box-shadow:0 1px 2px rgba(20,33,28,.04),0 10px 30px rgba(20,33,28,.05); }
+  @media(min-width:601px){ .card{ padding:24px; } }
   .card + .card{ margin-top:20px; }
   .card h2{ letter-spacing:-.01em; }
   .card .sub{ line-height:1.55; }
@@ -1420,9 +1470,9 @@
   body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#F6FBF8"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
   /* Split patient view — chart on the RIGHT when a patient is active (opt-in setting). */
   body.pt-split.pt-has-active #ptSplitWrap{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
-  body.pt-split.pt-has-active #profileCard{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 84px); overflow:auto; }
-  body.pt-split.pt-has-active #profileNonePanel{ margin-top:0; }
-  @media(max-width:980px){ body.pt-split.pt-has-active #ptSplitWrap{ display:block; } body.pt-split.pt-has-active #profileCard{ position:static; max-height:none; margin-top:20px; } }
+  body.pt-split.pt-has-active #profileCard{ margin-top:0!important; position:sticky; top:66px; max-height:calc(100vh - 84px); overflow:auto; }
+  body.pt-split.pt-has-active #profileNonePanel{ margin-top:0!important; }
+  @media(max-width:980px){ body.pt-split.pt-has-active #ptSplitWrap{ display:block; } body.pt-split.pt-has-active #profileCard{ position:static; max-height:none; margin-top:20px!important; } }
   /* Procedure group headers in the patient list. */
   .pt-group-hdr{ font-size:11.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);margin:14px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--line); }
   .pt-list > .pt-group-hdr:first-child{ margin-top:2px; }
@@ -1490,7 +1540,7 @@
   body.theme-dark .cact-btn{ background:var(--card);color:#C9DCD2;border-color:#204034; }
   body.theme-dark .copilot-chip{ background:transparent; }
 
-  /* ---- Copilot calm polish (b828) ----
+  /* ---- Copilot calm polish (b940) ----
      The hero card is an introduction. Once a conversation exists it stops
      paying rent: ~100px of gradient re-introducing a panel the doctor is
      already using, pushing the newest answer down. :has() collapses it to a
@@ -1704,7 +1754,7 @@
   html body #mlsDock button{ min-width:44px; }
   html body #mlsDock #mlsDockCopilot{ min-width:44px; }
   html body #mlsDock #mlsDockAsk{ min-width:44px; }
-  /* b828 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
+  /* b940 (phone audit B1): 8 dock items x 44px min + gaps demand 393px of a
      345px content box — flex-wrap:nowrap pushed the Ask input (and its
      absolutely-anchored results panel) off-screen right. At phone widths the
      Ask bar steps out of the dock; Ask stays reachable through Tools. */
@@ -1811,6 +1861,42 @@
   html body #mlsDock{ left:2px; right:2px; padding:6px 0; gap:0; }
 }
 
+/* ===== ph-dock-label-1.0.0 — "AI Studio" stops being the only two-line tab ===
+ * MEASURED, #mlsDock's buttons and the "AI Studio" span, one boot per width:
+ *     320  button 49.7x61  label 41.7x24 (two lines)   dock 75px tall
+ *     360  button 49x61    label 41x24   (two lines)   dock 75px
+ *     390                                              dock 75px
+ *     402  button 56x49    label 46.5x12 (one line)    dock 63px
+ *     430  button 60.7x49  label 46.5x12 (one line)    dock 63px
+ * Patient 36.2, Visit 23.4, Review 35.7, Tools 26.7 and Copilot 36.3 are all
+ * 12px tall at EVERY width — "AI Studio" is the only label that ever wraps.
+ * Below 402px the flex line squeezes the buttons past the point where 46.5px of
+ * label fits inside `padding:8px 12px 7px` (feat_mls_calm_shell.js:313-314), so
+ * exactly one tab wraps, that button grows to 61px, and the dock grows to 75px
+ * on the phones with the least screen to spare.
+ *
+ * It also quietly spent clearance budgeted elsewhere: ScribeFlow.html's ph-a2hs
+ * card comment reads "Clears the dock (bottom:8px, ~64px tall)" and anchors
+ * #mlsA2hsCard at bottom:84px. MEASURED gap from the card's bottom edge to the
+ * dock's top edge: 1px at 320/360/390, 13px at 402/430. The documented 64px is
+ * the 402px dock; the narrow phones ran 75px and cleared by a single pixel.
+ *
+ * The LABEL is what does not fit, so the label is what is corrected: 8px of
+ * horizontal padding buys 16px, comfortably more than the 4.8px "AI Studio" was
+ * short. MEASURED before -> after at 320: label 41.7x24 -> 46.5x12, button
+ * 49.7x61 -> 49.7x49, dock 75px -> 63px, card-to-dock gap 1px -> 13px, and
+ * #mlsDock scrollWidth 314 == clientWidth 314 — no new overflow, which is the
+ * exact failure ph-dock-fit-1.0.0 above exists to prevent. Tap targets are
+ * unchanged: the buttons are sized by the dock's flex line, not by their own
+ * padding (49.7px wide either way), and ph-tap-1.0.0's 44px floor still applies.
+ * 390px is the boundary because 390 MEASURED 75px and 402 MEASURED 63px.
+ * position / bottom / transform / z-index are untouched, so the fixed-position
+ * stacking context is byte-for-byte the one that shipped. */
+@media (max-width:390px){
+  html body #mlsDock button{ padding-left:4px; padding-right:4px; }
+  html body #mlsDock button span{ white-space:nowrap; }
+}
+
 /* ===== ph-safe-1.0.0 — notch and home-indicator insets (2026-07-25) =========
  * ScribeFlow.html declares apple-mobile-web-app-capable=yes, so once a
  * clinician adds MLS to the Home Screen it runs TRUE full screen with no
@@ -1830,10 +1916,30 @@
  * env(...) carries a 0px fallback everywhere, so nothing moves on a device
  * without insets, and no existing rule is edited. */
 @supports (padding: env(safe-area-inset-top)) {
-  /* Sticky top bar — the notch. */
+  /* Sticky top bar — the notch.
+     ph-safe-1.0.1: this used to read `padding-top:calc(env(safe-area-inset-top,0px))`,
+     which REPLACED the header's designed top padding instead of adding to it. env()
+     reports 0px in an ordinary Safari/Chrome tab — the browser chrome already absorbs
+     the notch, and the inset is only non-zero for an installed Home-Screen instance —
+     so on every tab session the declaration resolved to `padding-top:0` and, being
+     !important, outranked the base `header{padding:13px 26px}` (:637) and the phone
+     `header{padding:14px 16px}` (:1355). MEASURED at 402x874: #appHeader 67px tall
+     with padding-top 0 and padding-bottom 14 — visibly top-heavy and lopsided, with
+     the title jammed against the top edge; 81px once the base padding is restored.
+     The base values are mirrored here per breakpoint because a `calc()` cannot read
+     the padding it is overriding; if either base changes, these must change with it.
+     box-sizing:content-box was dropped: it was undocumented and MEASURED to be a
+     no-op in every state (67px both ways at env=0, 140px both ways with a 59px
+     inset), because box-sizing only reshapes a box that specifies a width or height
+     and this header specifies neither — while silently opting it out of the global
+     `*{box-sizing:border-box}` if one is ever added. */
   html body #appHeader{
-    padding-top:calc(env(safe-area-inset-top,0px)) !important;
-    box-sizing:content-box;
+    padding-top:calc(13px + env(safe-area-inset-top,0px)) !important;
+  }
+  @media (max-width:600px){
+    html body #appHeader{
+      padding-top:calc(14px + env(safe-area-inset-top,0px)) !important;
+    }
   }
   /* Landscape: the notch eats a side margin too. */
   html body #appWrap, html body #appScreen{
@@ -1858,7 +1964,86 @@
     html body.mls-redesign #appWrap{
       padding-bottom:calc(110px + env(safe-area-inset-bottom,0px)) !important;
     }
+    /* ph-wrap-gutter-1.0.0 — under the calm shell that 110px reserves for an
+       element that is not on screen, and it lands in the wrong place.
+       #appWrap is NOT the last of the page: #appScreen's children are
+       [#appHeader, #appWrap, #appFooter], so the padding opens a blank band
+       BETWEEN the content and the footer rather than below the last painted
+       pixel. MEASURED at 402x874, demo boot, Visit view:
+           last painted content in #appWrap (#visitView)  doc y 1026.3
+           #appWrap bottom                                doc y 1136.3
+           blank band inside the wrap                     exactly 110.0px
+       The number is vestigial: it comes from feat_mls_redesign.js:1179, written
+       when #mlsRdNav (fixed, bottom:0) was the phone navigation, and the calm
+       shell sets #mlsRdNav display:none and mounts #mlsDock instead.
+       Clearing the dock is already handled BELOW the footer, where it belongs:
+       #mlsDock occupies 71px of the viewport bottom, against body.mls-calm's
+       96px padding-bottom (feat_mls_calm_shell.js:217) plus #appFooter's 40px
+       margin-bottom — 136px for a 71px obstruction, so nothing becomes
+       unreachable. Verified: at maximum scroll the footer still clears the dock.
+       Scoped to .mls-calm on purpose. In the classic shell (?ui=classic, which
+       removes mls-calm) #mlsRdNav IS the fixed bottom navigation and genuinely
+       needs the 110px, so that path keeps the rule above byte-for-byte.
+       Specificity (1,2,2) beats the (1,1,2) it must override; both !important. */
+    html body.mls-redesign.mls-calm #appWrap{
+      padding-bottom:calc(10px + env(safe-area-inset-bottom,0px)) !important;
+    }
   }
+}
+
+/* ===== ph-a2hs-clear-1.0.0 — the Home Screen card must not eat the footer ===
+ * See the measurement in ph-a2hs-1.0.1 (reserveClearance, bottom of this file):
+ * the card is position:fixed at bottom:84px, so it reserves no scroll space and
+ * covered the last 30.3px of #appFooter at MAXIMUM scroll — the "Always review
+ * AI notes before signing… Do not enter real patient information." line.
+ *
+ * The card's total reach above the viewport bottom is its own height plus the
+ * 84px anchor plus the home-indicator inset, and 12px of breathing room keeps
+ * the disclaimer from ending flush against the card's shadow. This REPLACES
+ * body.mls-calm's padding-bottom:96px rather than adding to it — it wins on
+ * specificity ((0,1,2) vs (0,1,1)), so there is no double reservation and no
+ * competing !important. It applies only while the card is actually on screen,
+ * so the steady state after "Not now" is byte-for-byte what shipped.
+ * Desktop never sees it: show() bails on !isHandheld(). */
+html.mls-a2hs-open body{
+  padding-bottom:calc(84px + 12px + env(safe-area-inset-bottom,0px) + var(--mls-a2hs-h,83px));
+}
+
+/* ===== ph-boot-top-1.0.0 — the readiness strip must not own the header ======
+ * #mlsBootReadiness (mls-connect.js:47417, br-1.1.0) is the honest "Getting MLS
+ * ready — N of 4 engines live" strip. It is appended straight to <body> with an
+ * inline cssText of `position:fixed;top:0;left:50%;transform:translateX(-50%);
+ * z-index:2147482800`, and it lives until the core engines report live OR 30s.
+ *
+ * MEASURED at 402x874 on a clean boot:
+ *     #appHeader        402x67 at y=0   (sticky, z-index 6000)
+ *     #mlsBootReadiness 201x38 at y=0   (fixed,  z-index 2147482800)
+ *     overlap 201 x 38 — the entire top-centre of the bar
+ *     elementFromPoint(201, 33.5) -> DIV#mlsBootReadiness, NOT the header
+ * So for up to half a minute after sign-in the strip both HIDES the screen title
+ * and EATS the taps aimed at it — the home link and "+ New" underneath it are
+ * dead. On a phone that is the whole width of the title area.
+ *
+ * Two independent corrections, because either alone leaves half the defect:
+ *   pointer-events:none — the strip is role="status" and has no click handler of
+ *     its own, so it should never have been a hit-test target at any width.
+ *   top:var(--mls-hdr-h,...) — drop it BELOW the header instead of over it.
+ *     --mls-hdr-h is the header's measured height, published on install and on
+ *     resize by feat_mls_redesign.js:925 and already consumed exactly this way at
+ *     ScribeFlow.html:31503 (`top:var(--mls-hdr-h,74px)`), so this follows an
+ *     established anchor rather than inventing a constant. It also tracks the
+ *     header's new height automatically now that ph-safe-1.0.1 restores its top
+ *     padding. Before the shell mounts the variable is unset and the fallback
+ *     applies; at that point there is no header on screen to cover anyway.
+ * `!important` is required and sufficient: an inline style outranks any normal
+ * declaration, and the strip's own cssText carries no !important to compete.
+ * Page-level, not phone-scoped: the strip is centred at top:0 on every width, so
+ * it covers header content on desktop too — the phone is only where it covers
+ * ALL of it. The border-radius:0 0 10px 10px reads the same hanging from the
+ * header's lower edge as it did from the window's. */
+html body #mlsBootReadiness{
+  top:var(--mls-hdr-h,74px) !important;
+  pointer-events:none !important;
 }
 
 /* ===== ph-deadend-1.0.0 — N5: remove the Pull button that cannot work =======
@@ -2449,8 +2634,25 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 .auth-logo{ font-family:var(--serif) !important; font-weight:600 !important; font-size:20px !important; letter-spacing:-.01em; color:var(--ink); }
 .auth-sub{ font-size:14px !important; color:var(--muted) !important; }
 .auth-tabs{ background:transparent !important; border:0 !important; border-bottom:1px solid var(--line) !important; border-radius:0 !important; padding:0 !important; gap:18px !important; }
-.auth-tab{ background:transparent !important; border:0 !important; border-radius:0 !important; color:#8A8F86 !important; font-weight:600 !important; padding:10px 2px !important; box-shadow:none !important; }
+/* #636E66, not #8A8F86. MEASURED on live b875 against the card's white:
+   #8A8F86 is 3.31:1 at 14.5px/600 and FAILS WCAG AA (4.5:1 needed) — on the
+   one control a new user must find to reach Sign up. #636E66 measures 4.87:1.
+   feat_mls_ui_shell.js predicted this exact number and concluded the fix
+   "belongs in feat_mls_login_exact.js" — but the sign-in screen loads four
+   scripts and the feat_* train lands only AFTER login, so a fix there could
+   never run here. It belongs in this file. */
+.auth-tab{ background:transparent !important; border:0 !important; border-radius:0 !important; color:#636E66 !important; font-weight:600 !important; padding:10px 2px !important; box-shadow:none !important; }
 .auth-tab.on{ color:var(--brand-dk) !important; font-weight:700 !important; box-shadow:inset 0 -2px 0 var(--brand) !important; }
+/* These are <button> now, so the UA defaults have to be put back down. Every
+   property here is one a browser sets on a button and no other .auth-tab rule
+   overrides — including the ones feat_mls_login_exact.js builds at runtime,
+   which set background/color/padding but never appearance, font or margin. */
+.auth-tab{ -webkit-appearance:none !important; appearance:none !important; margin:0 !important;
+  font-family:inherit !important; font-size:14.5px !important; line-height:1.2 !important;
+  text-align:center !important; cursor:pointer !important; width:auto !important; }
+/* no border-radius here: the radius scale is 10/16/22/999 (one-radius-scale gate)
+   and the outline follows the tab's own shape, which is square by design. */
+.auth-tab:focus-visible{ outline:2px solid var(--brand) !important; outline-offset:2px !important; }
 .auth-card .field label{ font-size:12.5px; font-weight:600; color:#55605A; }
 .auth-card .field input{ height:46px; border:1px solid #DDD8CC !important; border-radius:10px !important; background:var(--field-bg) !important; font-size:14.5px; transition:border-color .15s, box-shadow .15s; }
 .auth-card .field input:focus{ border-color:var(--brand) !important; box-shadow:0 0 0 3px rgba(46,106,75,.12) !important; outline:none; }
@@ -2478,9 +2680,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub">Ambient AI medical scribe — sign in to continue</p>
 
-    <div class="auth-tabs">
-      <div class="auth-tab on" id="tabLogin" aria-label="Show the log in form" onclick="switchAuth('login')">Log in</div>
-      <div class="auth-tab" id="tabSignup" onclick="switchAuth('signup')">Sign up</div>
+    <!-- Real buttons in a tablist. These were DIVs with onclick and nothing else:
+         not focusable, not in the tab order, announced as plain text. MEASURED on
+         live b875 — a keyboard-only or screen-reader user could not reach "Sign up"
+         AT ALL, so there was no keyboard path to creating an account.
+         feat_athena_tooltip_dedupe.js already adds role/tabindex/aria-selected and a
+         keydown handler to these two ids, but the sign-in screen loads FOUR scripts
+         and the feat_* train lands only after login — so that fix could never run
+         here. It has to live in this file, which is the only one the screen gets. -->
+    <div class="auth-tabs" role="tablist" aria-label="Log in or create an account" onkeydown="_authTabsKeydown(event)">
+      <button type="button" class="auth-tab on" id="tabLogin" role="tab" aria-selected="true" onclick="switchAuth('login')">Log in</button>
+      <button type="button" class="auth-tab" id="tabSignup" role="tab" aria-selected="false" onclick="switchAuth('signup')">Sign up</button>
     </div>
 
     <div class="auth-err" id="authErr"></div>
@@ -2524,7 +2734,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- Forgot-password link + inline email-reset panel -->
     <div id="forgotLinkWrap" style="text-align:center;margin-top:12px">
-      <a href="#" id="forgotLink" style="font-size:13px;color:var(--brand);text-decoration:none" onclick="showForgot();return false;">Forgot password?</a>
+      <!-- 104x17px measured at 375px wide: below the 44px minimum touch target,
+           on the link someone locked out of their account has to hit. Padding
+           grows the hit area without moving the text. -->
+      <a href="#" id="forgotLink" style="font-size:13px;color:var(--brand);text-decoration:none;display:inline-block;padding:14px 10px;margin:-14px -10px" onclick="showForgot();return false;">Forgot password?</a>
     </div>
     <div id="forgotPanel" style="display:none;margin-top:12px">
       <div class="field">
@@ -4657,6 +4870,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       </div>
 
       <div class="field">
+        <label for="qolDockSide">Navigation bar position</label>
+        <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
+          <option value="bottom">Floating — bottom centre (default)</option>
+          <option value="top">Floating — top centre</option>
+          <option value="left">Floating — left edge</option>
+          <option value="right">Floating — right edge</option>
+        </select>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">It keeps hovering over the page wherever you put it. Changes apply straight away.</div>
+      </div>
+
+      <div class="field">
         <label for="qolCompact" style="display:flex;align-items:center;gap:9px;cursor:pointer">
           <input type="checkbox" id="qolCompact" style="width:17px;height:17px;cursor:pointer" onchange="applyCompactPreview(this.checked)">
           <span>Compact mode <span style="font-weight:400;color:var(--muted)">(denser cards)</span></span>
@@ -4782,6 +5006,26 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div><!-- /App tabs section -->
 
     <!-- ============ SECTION: Security & privacy ============ -->
+    <!-- ============ SECTION: MLS Assist extension download (mdx-1.0.0, owner order 2026-08-05) ============
+         The version and zip name are BAKED and the release gate pins them to
+         extension-version.json + the shipped zip, so this card can never name
+         a build the site does not serve. The core connect script carries a
+         boot-time refresher that corrects drift if a newer manifest reaches
+         this page. -->
+    <div class="set-section" id="extensionDownloadSettings">
+      <p class="set-head">🔌 MLS Assist extension</p>
+      <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
+      <div class="field">
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.45</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.45.bin" download="MLS_Assist_v3.0.45.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.45</span> (.zip)</a>
+        <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
+        <details style="margin:10px 0 0">
+          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.45</span></summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.45 - Chart histories finish on machines where they used to stall. Since v3.0.32 a check that waits for the athenaOne visit list to settle had been cancelling its own progress counter, so on some setups that wait could never complete and the history read gave up with an encounter-index error no matter how long it ran. The counter now survives, and the wait completes the way it did before. When a read still cannot finish, the reason names which step refused and what it saw, and every read records whether athenaOne was actually visible - the difference between a covered window and a slow chart. The review sheet can also bring athenaOne forward for its read-only check, never while you are recording. Everything from v3.0.44 remains. Requires Chrome 116+.</p>
+        </details>
+      </div>
+    </div>
+
     <div class="set-section"><p class="set-head">🔒 Security &amp; privacy</p>
     <p class="set-desc">Protect access on this device. Clearing saved data only affects this browser — it never touches server data.</p>
 
@@ -4831,7 +5075,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </div>
 
-      <!-- b828: texted sign-in codes (SMS second factor). Server-driven: the
+      <!-- b940: texted sign-in codes (SMS second factor). Server-driven: the
            card renders from bkUser.sms_2fa_enabled / sms_2fa_phone_last4 and
            hides itself with a plain sentence if the server has no SMS lane. -->
       <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">
@@ -4848,6 +5092,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
             <input type="tel" id="smsTwofaPhone" aria-label="Mobile number for sign-in codes" placeholder="Mobile number (e.g. 555-123-4567)" autocomplete="tel" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();smsTwofaSetup();}">
             <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="smsTwofaSetup()">Text me a code</button>
           </div>
+        </div>
+
+        <!-- The plain sentence the comment above promises. Without it the card
+             offered "Text me a code" unconditionally, and the five endpoints it
+             posts to (/api/auth/2fa/sms/{setup,verify,send,login,disable}) do
+             not exist on the backend — so a doctor who tried to turn texted
+             codes on got a failure, every time, from a control that looked
+             ready. Offer it only when the server says it has the lane. -->
+        <div id="smsTwofaUnavailableBox" style="display:none">
+          <p class="note" style="margin:2px 0 0">Texted codes aren't available on this account yet. Use the authenticator app above for your second factor.</p>
         </div>
 
         <div id="smsTwofaEnrollBox" style="display:none;margin-top:8px">
@@ -4949,7 +5203,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="athenaFollowToggle" checked>
           <span><b>↔ Follow each other</b> — opening a patient in athenaOne opens them here, and picking one here opens them in athenaOne (never during a pull or while recording; needs MLS Assist v3.0.23+)</span>
         </label>
-        <!-- b828: the "Full visit notes" choice, restored as its OWN Settings
+        <!-- b940: the "Full visit notes" choice, restored as its OWN Settings
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
@@ -4961,7 +5215,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during an Athena pull, also open and save every encounter note (slower, most complete). Off: the schedule and each patient's chart history cards only — much faster. Applies to every pull on this account, wherever you start it.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.38.zip" download="MLS_Assist_v3.0.38.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.38 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.45.zip" download="MLS_Assist_v3.0.45.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.45 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -5322,7 +5576,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <div class="field" style="margin-top:4px">
       <label for="cwDescribe">Describe the widget you want</label>
-      <textarea id="cwDescribe" style="min-height:90px" placeholder="e.g. A DME orders card with payer justifications&#10;e.g. A smoking-cessation counseling summary&#10;e.g. A return-to-work status box with restrictions and dates"></textarea>
+      <textarea id="cwDescribe" style="min-height:90px" onkeydown="if((event.ctrlKey||event.metaKey)&amp;&amp;event.key==='Enter'){event.preventDefault();designCustomWidget();}" placeholder="e.g. A DME orders card with payer justifications&#10;e.g. A smoking-cessation counseling summary&#10;e.g. A return-to-work status box with restrictions and dates"></textarea>
+      <p class="note" style="margin:4px 0 0;font-size:12px">Tip: press <b>Ctrl</b>+<b>Enter</b> (⌘+Enter on Mac) to design it.</p>
     </div>
     <div class="row tight" style="margin-top:0">
       <button class="btn-primary" id="cwDesignBtn" onclick="designCustomWidget()">✨ Design my widget</button>
@@ -5342,6 +5597,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- Preview / edit step (hidden until a design exists or an edit starts) -->
     <div id="cwPreview" style="display:none;margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px">
       <h4 style="margin:0 0 8px" id="cwPreviewHead">Preview — tweak anything, then save</h4>
+      <!-- v4: the REAL card, rendered by the real renderer with sample data,
+           updating as you type. It replaced a read-only list of block names
+           that never showed what the widget would actually look like. -->
+      <div id="cwLiveHost" class="cw-live-host"></div>
       <div class="row tight" style="align-items:flex-end">
         <div style="flex:0 0 80px">
           <label for="cwEmoji">Emoji</label>
@@ -5846,7 +6105,7 @@ function setSessionEmail(e){
   if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
-/* SLIDING SESSION REFRESH (b828): an ACTIVE clinician must never hit the fixed
+/* SLIDING SESSION REFRESH (b940): an ACTIVE clinician must never hit the fixed
    30-day token cliff mid-workday. POST /api/auth/refresh exchanges a valid
    token for a fresh 30-day one at most once per day (the server no-ops on
    tokens younger than 24h). 404-safe: until the backend deploys the endpoint,
@@ -6246,10 +6505,33 @@ function localEvaluationReceipt(m,email){
   };
 }
 
+/* Left/right arrows move between the two tabs, which is what a screen-reader
+   user is taught to press on a tablist. Enter and Space come free now that
+   these are real buttons. Registered once, on the tablist, so no per-node
+   listener can be orphaned by a re-render. */
+function _authTabsKeydown(e){
+  if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight'&&e.key!=='Home'&&e.key!=='End') return;
+  var tabs=[document.getElementById('tabLogin'),document.getElementById('tabSignup')].filter(Boolean);
+  if(tabs.indexOf(e.target)<0) return;
+  e.preventDefault();
+  var next = (e.key==='Home') ? tabs[0]
+           : (e.key==='End') ? tabs[tabs.length-1]
+           : tabs[(tabs.indexOf(e.target) + (e.key==='ArrowRight'?1:tabs.length-1)) % tabs.length];
+  if(!next) return;
+  switchAuth(next.id==='tabSignup'?'signup':'login');
+  try{ next.focus(); }catch(_){}
+}
 function switchAuth(mode){
   authMode=mode;
   document.getElementById('tabLogin').classList.toggle('on',mode==='login');
   document.getElementById('tabSignup').classList.toggle('on',mode==='signup');
+  /* aria-selected is the ONLY thing that tells a screen reader which of the two
+     is current; the `on` class is invisible to it. They move together or the
+     announcement lies. */
+  try{
+    document.getElementById('tabLogin').setAttribute('aria-selected',mode==='login'?'true':'false');
+    document.getElementById('tabSignup').setAttribute('aria-selected',mode==='signup'?'true':'false');
+  }catch(_){}
   document.getElementById('authConfirmField').style.display=mode==='signup'?'block':'none';
   const authBtn=document.getElementById('authBtn'); authBtn.textContent=mode==='signup'?'Create account':'Log in';
   const pass=document.getElementById('authPass');
@@ -6463,7 +6745,7 @@ async function doAuth(){
 }
 
 /* ---------- Two-factor login (shown when /api/auth/login returns twofa_required) ---------- */
-/* b828: METHOD-AWARE. The login response now reports every second factor the
+/* b940: METHOD-AWARE. The login response now reports every second factor the
    account can use (methods:['totp','sms']) and, when a code was already
    texted, sms:{sent,phone_last4}. The card defaults to the factor that needs
    the least work — a code already on its way to the doctor's phone — and the
@@ -6596,7 +6878,7 @@ async function doTwofaLogin(){
   if(btn){ btn.disabled=true; btn.textContent='Verifying…'; }
   try{
     let res,data;
-    /* b828: a texted code completes at its own sibling route; the TOTP and
+    /* b940: a texted code completes at its own sibling route; the TOTP and
        recovery paths keep the original endpoint. Same pending token, same
        session token back — only the proof differs. */
     const endpoint=(twofaActiveMethod==='sms'&&!twofaRecoveryMode)?'/api/auth/2fa/sms/login':'/api/auth/2fa/login';
@@ -6804,7 +7086,7 @@ function startSession(email){
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
   session={email};
   setSessionEmail(email);
-  try{ slideSession(); }catch(e){} /* b828: fire-and-forget; never blocks the gate */
+  try{ slideSession(); }catch(e){} /* b940: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
   // COMPLIANCE GATE: in backend mode, keep the app hidden behind a brief neutral
@@ -8337,6 +8619,7 @@ function openSettings(){
   // QoL settings (MLS)
   const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
   const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
+  const qds=document.getElementById('qolDockSide'); if(qds) qds.value=(typeof window.mlsDockSide==='function'?window.mlsDockSide():'bottom');
   const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
   const _qpl=document.getElementById('qolPtLayout'); if(_qpl) _qpl.value=getQolPtLayout();
@@ -8407,6 +8690,7 @@ function closeSettings(){
   try{
     const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
     const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
+    const qds=document.getElementById('qolDockSide'); if(qds) qds.value=(typeof window.mlsDockSide==='function'?window.mlsDockSide():'bottom');
     const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
     const qpl=document.getElementById('qolPtLayout'); if(qpl) qpl.value=getQolPtLayout();
     const qgp=document.getElementById('qolGroupProc'); if(qgp) qgp.checked=getQolGroupProc();
@@ -8440,6 +8724,7 @@ function saveSettings(){
   // QoL settings (MLS) — persist per-device
   const qt=document.getElementById('qolTheme'); if(qt) localStorage.setItem(uns('qolTheme'),qt.value);
   const qts=document.getElementById('qolTextSize'); if(qts) localStorage.setItem(uns('qolTextSize'),qts.value);
+  const qds=document.getElementById('qolDockSide'); if(qds && typeof window.applyDockSidePreview==='function') window.applyDockSidePreview(qds.value);
   const qc=document.getElementById('qolCompact'); if(qc) localStorage.setItem(uns('qolCompact'),qc.checked?'1':'0');
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
   const _qpl=document.getElementById('qolPtLayout'); if(_qpl) localStorage.setItem(uns('qolPtLayout'),_qpl.value);
@@ -8499,7 +8784,7 @@ function saveSettings(){
 const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolCompact',
   'qolSignature','qolFollowup','qolConfirmLogout','idleMins','practiceName','providerName',
   'providerCred','npi','clinicAddress','clinicPhone','facilityName','facilityAddress','googleBusinessUrl','defaultFormat','noteStyle',
-  /* b828: docspec is the SPECIALTY the doctor sets in Settings. getSpec() reads it
+  /* b940: docspec is the SPECIALTY the doctor sets in Settings. getSpec() reads it
      into the letterhead, the full-history PDF header and the op-note prep context,
      and it rode nowhere - a doctor who set it on the desktop had a blank specialty
      on the laptop, and the server never learned it at all. The marketing listing
@@ -8508,6 +8793,26 @@ const PREF_SYNC_KEYS=['docprefs','defaultComment','qolTheme','qolTextSize','qolC
      featIME and noteModel above: a value the doctor typed once, that the app then
      forgot per device. */
   'docspec',
+  /* b940: four choices the doctor makes once and the app then forgot per device.
+     Same class as noteModel and opFieldDefaultsUserV1 above, which are already here.
+       opNoteTemplateMode is the strongest of the four: a deliberate three-way
+     statement ("Follow it closely / Adapt to the case / Use it as a guide") about
+     how their own validated templates must be honoured. Stored per device only, so
+     on a second machine drafts silently reverted to 'adapt' - reword freely - with
+     the rail showing "Adapt · Recommended" and no indication anything had changed.
+       ez3PortalAskOff, qolGroupProc and navfeat_orders are plain workflow
+     preferences with nothing device-specific about them: the doctor turns the
+     portal-invite prompt off because it interrupts them, enables the Orders tab, or
+     groups patients by procedure, and each reappears or vanishes on the next
+     machine. setNavLayout even prints "Saved ✓".
+     DELIBERATELY NOT ADDED: pullVisitBodies, whose own label promises "every pull
+     on this account, wherever you start it" and which therefore belongs here - it
+     is a schedule-PULL setting and the owner has fenced that path off. Recorded in
+     coordination/outbox/012 rather than taken.
+     ALSO NOT ADDED: navLayout and qolPtLayout. Left-rail vs top-bar and split vs
+     stacked are plausibly screen-size-appropriate per device, so syncing them could
+     make a laptop worse. That is a judgement call, not an oversight. */
+  'opNoteTemplateMode','ez3PortalAskOff','qolGroupProc','navfeat_orders',
   /* featIME was in FEATURE_DEFAULTS and absent here, so of the five feature
      toggles exactly one silently stayed on the old laptop. Nothing distinguishes
      it from its four siblings; it was a transcription gap, not a decision. */
@@ -8613,7 +8918,7 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b828: the restored "Pull full visit notes" Settings option. One stored
+/* b940: the restored "Pull full visit notes" Settings option. One stored
    truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
    checkbox: the importer reads the KEY, the phone-relay job payload reads the
    inline NODE, so both are written on every change.
@@ -8621,7 +8926,7 @@ async function loadPrefsFromServer(opts){
    Every visit on 47 of 51 snapshot patients in the live store was an
    index-only stub — the encounter bodies were never read — because this
    preference sat at its code-authored '0' while the toggle that could change
-   it never rendered (the b828 finding). A pull without encounter bodies is
+   it never rendered (the b940 finding). A pull without encounter bodies is
    not "complete available history" (owner bar 2026-07-28: first-pull
    completeness, no silent omissions), so absence of a recorded HUMAN choice
    now means ON. The uns('pullVisitBodiesSet') marker records that a human
@@ -8670,12 +8975,22 @@ function renderTwofaSettings(){
   } else {
     document.getElementById('twofaRecoveryBox').style.display='none';
   }
-  /* b828: texted-codes card, from the same server truth (/api/me projection). */
+  /* b940: texted-codes card, from the same server truth (/api/me projection).
+     The card's own comment says it "hides itself with a plain sentence if the
+     server has no SMS lane" — that gate was never written, so it offered
+     enrollment against five endpoints the backend does not implement and the
+     button failed every time it was pressed. A server that has the lane says
+     so with sms_2fa_available; silence means it does not. An account already
+     enrolled still sees its controls, so a later server change can never
+     strand someone who has texted codes switched on. */
   try{
     const smsOn=!!(bkUser&&bkUser.sms_2fa_enabled);
+    const smsAvailable=!!(bkUser&&(bkUser.sms_2fa_available===true||bkUser.sms_2fa_enabled===true));
     const last4=(bkUser&&bkUser.sms_2fa_phone_last4)||'';
-    document.getElementById('smsTwofaOnBox').style.display=smsOn?'block':'none';
-    document.getElementById('smsTwofaOffBox').style.display=smsOn?'none':'block';
+    const unavailableBox=document.getElementById('smsTwofaUnavailableBox');
+    if(unavailableBox) unavailableBox.style.display=smsAvailable?'none':'block';
+    document.getElementById('smsTwofaOnBox').style.display=(smsAvailable&&smsOn)?'block':'none';
+    document.getElementById('smsTwofaOffBox').style.display=(smsAvailable&&!smsOn)?'block':'none';
     document.getElementById('smsTwofaEnrollBox').style.display='none';
     const l4=document.getElementById('smsTwofaLast4'); if(l4) l4.textContent=last4||'····';
   }catch(e){}
@@ -9781,6 +10096,18 @@ function setActivePtId(id){
   if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
   try{ if(id) sessionStorage.setItem(uns('activePtChosen'),String(id)); else sessionStorage.removeItem(uns('activePtChosen')); }catch(e5){}
   if(changed){
+    /* Custom-widget output is per-patient: drop every cached reply (+ its block
+       state) stamped for a different chart so the renderer can never restore
+       another patient's text. try/catch also shields the TDZ window before the
+       _cw* consts (declared much later in this block) have evaluated. */
+    try{
+      var _cwNextPt=String(id||''), _cwDrop={};
+      Object.keys(_cwLatest).concat(Object.keys(_cwState)).forEach(function(k){ if(String(_cwLatestPt[k]||'')!==_cwNextPt) _cwDrop[k]=1; });
+      Object.keys(_cwLatestPt).forEach(function(k){ if(String(_cwLatestPt[k])!==_cwNextPt) _cwDrop[k]=1; });
+      var _cwDropKeys=Object.keys(_cwDrop);
+      _cwDropKeys.forEach(function(k){ delete _cwLatest[k]; delete _cwLatestPt[k]; delete _cwState[k]; });
+      if(_cwDropKeys.length){ try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(eCw2){} }
+    }catch(eCw){}
     try{ window.dispatchEvent(new CustomEvent('mls:active-patient-changed',{detail:{previousId:String(previous||''),patientId:String(id||'')}})); }
     catch(e3){ try{ var ev=new Event('mls:active-patient-changed'); ev.detail={previousId:String(previous||''),patientId:String(id||'')}; window.dispatchEvent(ev); }catch(e4){} }
   }
@@ -11104,6 +11431,16 @@ async function downloadStudyPdf(){
     const practice=(typeof getPracticeName==='function'&&getPracticeName())||'MLS';
     const addr=(typeof getClinicAddress==='function')?getClinicAddress():'';
     const phone=(typeof getClinicPhone==='function')?getClinicPhone():'';
+    /* b940: the last two jsPDF builders. The practice's own logo, drawn by the one
+       owner (__mlsOpNotePro.drawLetterheadLogo), which returns the space CONSUMED -
+       so a refusal is 0 and this cursor cannot advance past a logo that was not
+       drawn. Existence-checked and wrapped: that module loads separately, and an
+       absent engine must mean "no logo", never a thrown export. */
+    try {
+      const _lhP = (window.MLS_OPNOTE_LETTERHEAD) || {};
+      const _proP = window.__mlsOpNotePro;
+      if (_proP && typeof _proP.drawLetterheadLogo === 'function') y += _proP.drawLetterheadLogo(doc, _lhP.logo, margin, y);
+    } catch (eLogo) {}
     doc.setFont('helvetica','bold'); doc.setFontSize(15);
     doc.text(String(practice),margin,y); y+=18;
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
@@ -13587,7 +13924,7 @@ function _ensureStudioMsgBound(){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
-        /* b828: the auto-save commits HERE - the one door that knows the tool
+        /* b940: the auto-save commits HERE - the one door that knows the tool
            actually passed its runtime check. A failed or timed-out tool never
            reaches My creations (its pending save is cleared below / replaced
            by the next build). */
@@ -13838,7 +14175,7 @@ function studioGetSaved(){
   return arr;
 }
 /* THE ACCOUNT COPY IS PUSHED FROM THE WRITE ITSELF, not from the callers.
-   Measured on the live tab at b828: a tool built in the Studio showed "☁ in your
+   Measured on the live tab at b940: a tool built in the Studio showed "☁ in your
    account" while GET /api/prefs held NO creations at all. The auto-save wrapper
    in mls-connect.js calls studioSetSaved DIRECTLY, so it never reached the sync
    call that sat in saveStudioWidget — and since auto-save is how most tools get
@@ -14296,7 +14633,7 @@ function copilotSnapshot(){
       transcriptTail: tx?tx.slice(-1800):'',
       noteGenerated: !!String(soap||'').trim(),
       noteWords: words(soap),
-      /* b828 (audit): Copilot got a word COUNT, not the words — it literally
+      /* b940 (audit): Copilot got a word COUNT, not the words — it literally
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
@@ -14668,6 +15005,18 @@ function _copilotNavigate(raw, label){
 function _copilotDoAction(kind, arg, btn){
   try{
     var done=function(){ if(btn){ btn.classList.add('cact-done'); } };
+    /* Agentic kinds (pullProviders, draftNote) are owned by the Copilot Power
+       module; the tap IS the confirmation and it posts honest receipts. */
+    if(window.__mlsCopilotPower && window.__mlsCopilotPower.installed && typeof window.__mlsCopilotPower.handles==='function' && window.__mlsCopilotPower.handles(kind)){
+      window.__mlsCopilotPower.run(kind, arg, btn); return;
+    }
+    /* Before that module's deferred loader lands, these kinds must NOT fall to
+       the keyword guess below — 'draftNote' matches /note/ and would navigate
+       to History while marking the button done. Honest wait instead. */
+    if(kind==='pullProviders'||kind==='draftNote'||kind==='appControl'){
+      try{ toast('That control is still loading — give it a second and tap it again.',''); }catch(e){}
+      return;
+    }
     if(kind==='navigate'){
       if(_copilotNavigate(arg,btn&&btn.textContent)){ done(); return; }
       try{ toast('That suggestion isn’t wired to a screen yet — tell me what you want to see and I’ll take you there.',''); }catch(e){}
@@ -15213,7 +15562,7 @@ function _athenaProfileEmptyText(p,key,fallback){
       return 'Athena chart verified'+(when?' '+when:'')+': none documented.';
     }
   }catch(e){}
-  /* b828 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
+  /* b940 HONEST EMPTY PANEL. Measured 2026-07-27: on Wednesday 2026-07-29,
      15 of 19 scheduled patients had no landed Athena chart, yet every
      clinical card still rendered a generic "No ... recorded." line. That is
      the same sentence a REVIEWED-and-clear chart shows, so the panel was
@@ -15262,7 +15611,7 @@ function renderProfile(){
   renderDocs(p);
   renderPtTimeline(p);
 }
-/* b828: one honest, actionable line above the clinical grid when NOTHING has
+/* b940: one honest, actionable line above the clinical grid when NOTHING has
    been read for this patient and the clinician has typed nothing either. It
    reuses the exact Pull-chart verb the History view owns
    (pullPatientChartViaAssist), so there is no second pull path to keep in
@@ -15689,6 +16038,29 @@ function getTemplates(){
        lost its template ("Trigger point injections" shown for a TFESI). */
     let healed=false;
     a.forEach((t,i)=>{ if(t && (t.id==null || t.id==='' || t.id==='undefined')){ t.id='tplfix'+Date.now().toString(36)+'_'+i; healed=true; } });
+    /* b940: KEYWORDS MUST BE AN ARRAY, and ten call sites already assumed it.
+       `(t.keywords||[]).join(' ')` appears in feat_mls_opnote_integrity.js:392,
+       four places in mls-connect.js and both shells — and a STRING has no
+       .join, so one string-keyword template throws a TypeError that takes down
+       whatever called it. Measured: the sample-day demo seeds its three
+       templates with string keywords, so openOpPrep() threw and "Prep op notes"
+       would not open AT ALL in the demo a prospective customer is invited to
+       try. feat_mls_uxpack1.js's starter pack writes the same shape, so any
+       doctor who clicked "add starter templates" armed the same crash.
+       Normalising HERE fixes all ten consumers at once and heals the data that
+       is already stored, which a fix at the writers alone cannot do. */
+    a.forEach(t=>{
+      if(!t) return;
+      if(Array.isArray(t.keywords)){
+        const flat=t.keywords.map(k=>String(k==null?'':k).trim()).filter(Boolean);
+        if(flat.length!==t.keywords.length||flat.some((k,i)=>k!==t.keywords[i])){ t.keywords=flat; healed=true; }
+        return;
+      }
+      if(t.keywords==null||t.keywords===''){ if(t.keywords!==undefined&&!Array.isArray(t.keywords)){ t.keywords=[]; healed=true; } return; }
+      t.keywords=String(t.keywords).split(/[,;\n]+|\s{2,}/).map(s=>s.trim()).filter(Boolean);
+      if(t.keywords.length===1) t.keywords=t.keywords[0].split(/\s+/).filter(Boolean);
+      healed=true;
+    });
     if(healed){ try{ localStorage.setItem(uns('templates'),JSON.stringify(a)); }catch(e2){} }
     return a;
   }
@@ -15719,6 +16091,47 @@ function _opTomorrowDateStr(){ var d=new Date(_acctTodayKey()+'T12:00'); d.setDa
 /* Score templates against a procedure description; return them best-first. */
 function _opRankTemplates(procedure){
   var procL=String(procedure||'').toLowerCase();
+  /* b940 — THE SHORT LEVEL FORM COULD NOT REACH THE LEVEL BONUS. A QA gate
+     traced this to the containment loop below: it tests single tokens
+     ('l4','l5'), and "l4-5" contains "l4" but NOT "l5", so "Left L3-L4" and
+     "Left L4-L5" both scored +2 and the tie fell to library order — measured
+     live as 167 vs 167, picking the WRONG LEVEL silently. The long form works
+     precisely because it carries both tokens (173 vs 167).
+     Rewrite to the long form AND emit each level as its own token, so the
+     bonus below can see them. Same shape fixes c5-6, c6-7 and t12-l1; "l5-1"
+     is the sacral crossing and becomes l5-s1. */
+  procL = procL.replace(/\b([clts])(\d{1,2})\s*[-–—\/]\s*(\d{1,2})\b/g, function(m, ltr, a, b){
+    var na=+a, nb=+b;
+    if(ltr==='l' && na===5 && nb===1) return 'l5-s1 l5 s1';
+    if(nb===na+1) return ltr+a+'-'+ltr+b+' '+ltr+a+' '+ltr+b;
+    return m;
+  });
+  /* b940 — THE REAL SCHEDULE SPEAKS IN ABBREVIATIONS. Measured on the owner's
+     live day (18 rows): "R SI Joint injection", "B/L L4 TF ESI", "BL L2, L3,
+     L4 MBB #2", "L4MB & L5 DR B", "Caudal ESI" — while template names and
+     keywords carry the LONG forms. Append the expansions to the haystack so
+     type detection and token scoring see both spellings; purely additive. */
+  var EXP=[
+    [/\bb\/?l\b/,'bilateral'],
+    /* b940 — bare laterality letters. Monday's real day: "R S1 ESI" ranked a
+       three-way L/R/Bilateral tie at 69 because the lone "R" never matched
+       'right', so the confidence margin was zero and the safety matcher
+       (rightly) refused. "B/L" rows broke their ties via the expansion above;
+       these two give bare R/L the same power. The lookarounds keep the L of
+       "B/L" and of level tokens (L5) out of it. */
+    [/\br\b(?![\d\/])/,'right'],
+    [/(?<!b\/)\bl\b(?!\d)/,'left'],
+    [/\bsi\b/,'sacroiliac si joint'],
+    [/\btf\s*esi\b|\btfesi\b/,'transforaminal epidural steroid injection'],
+    [/\besi\b/,'epidural steroid injection'],
+    [/\btf\b/,'transforaminal'],
+    [/\bmbb\b|\bmb\b|\dmb\b/,'medial branch block facet'],
+    [/\bdr\s*b\b/,'dorsal ramus medial branch block facet'],
+    [/\btpi\b/,'trigger point injection'],
+    [/\bilesi\b/,'interlaminar epidural steroid injection'],
+    [/\bhnp\b/,'herniated disc']
+  ];
+  EXP.forEach(function(p){ if(p[0].test(procL)) procL+=' '+p[1]; });
   var toks=procL.replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(function(w){ return w.length>1; });
   /* Procedure TYPE is the identity of an op note (a TFESI is never a facet
      block, whatever levels match). Level/laterality only break ties WITHIN
@@ -15734,6 +16147,7 @@ function _opRankTemplates(procedure){
     {k:'si',          re:/(sacroiliac|si joint)/},
     {k:'trigger',     re:/trigger point/},
     {k:'genicular',   re:/genicular/},
+    {k:'hip',         re:/\bhip\b/},   /* b940: a hip injection must never silently take a spine template — no hip template means an honest closest-guess warning */
     {k:'kypho',       re:/(kyphoplasty|vertebroplasty)/},
     {k:'stim',        re:/stimulator/}
   ];
@@ -15826,7 +16240,7 @@ function _opNewRow(name, reason, dob, dateStr, patientId, scope, dateKey){
 /* Local date-key (YYYY-MM-DD) helpers + appts for ANY chosen day, so you can prep today, tomorrow, or a picked date. */
 function _opDayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
 function _opDayStr(key){ try{ return new Date(key+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){ return key; } }
-/* b828 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
+/* b940 (owner-approved auto-naming): the cc's DATE segment — "Jul 27, 2026 — "
    for the row's procedure day, or '' when the day is unknown, so a dangling
    separator can never render. Readers stay safe by construction: draft-resume
    matches by procedure CONTAINMENT (feat_mls_opnote_prep adoptExistingDraft),
@@ -16021,7 +16435,7 @@ function opPrepRender(){
        and NOTHING else - no class, no aria - so (a) a screen reader was told
        nothing about which mode was in effect, and (b) any stylesheet that
        overrode the background left white text on a near-white button, which is
-       exactly what shipped in b828 (measured ~1.03:1: the selected mode read as
+       exactly what shipped in b940 (measured ~1.03:1: the selected mode read as
        an empty box). aria-pressed is now the machine-readable truth, so
        presentation can key off state instead of guessing, and the state survives
        a background override. */
@@ -16127,10 +16541,25 @@ async function opPrepGenerateOne(i){
     if(appt.facilityName){ctx.facility=String(appt.facilityName);ctx.facilityName=String(appt.facilityName);}
     row._ctx=ctx;
     if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
-    var out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), tpl.text||'', ctx);
+    var out;
+    if(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled===true){
+      /* pv-7.1.2: the sample workspace drafts LOCALLY — the template verbatim,
+         its placeholders handed to the canonical parser below so the Fields
+         box works exactly like the real thing. No AI call, no network:
+         the preview boundary blocks fetch, and before this branch the demo's
+         own "✨ Draft op note" always died on that wall. Starter templates
+         still carry legacy [GAUGE]-style tokens the canonical parser cannot
+         see (the signed-in AI path converts them server-side), so they are
+         rewritten to [FILL: gauge] form here — same field labels, same
+         Fields-box machinery as the real product. */
+      var pvNote=_tplTextForDraft(tpl.text).replace(/\[(?!\[)([A-Z][A-Z /+&-]{2,30})\](?!\])/g, function(_m,p){ return '[FILL: '+p.toLowerCase()+']'; });
+      out={ note: pvNote, missing: [], templateMode: 'verbatim-sample' };
+    } else {
+      out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), _tplTextForDraft(tpl.text), ctx);
+    }
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
     row._genNote=row.note; row.edited=false; /* b392: fresh draft = pristine baseline for the edit guard */
-    /* b828: an unambiguous "the generator ran and produced this" stamp. Draft-all
+    /* b940: an unambiguous "the generator ran and produced this" stamp. Draft-all
        counts successes by watching it change. Comparing the note TEXT instead was
        almost right, but a re-draft that produced identical text would have been
        counted as a failure - a false negative in the honest direction, which is
@@ -16307,8 +16736,32 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   var sys='You draft an OPERATIVE / PROCEDURE NOTE for a pain/spine physician by adapting ONE of their OWN prior operative notes (the TEMPLATE) to a new patient and procedure. Keep the template’s exact structure, section headings, wording and style. Fill in the patient name, the date of procedure, and the specific procedure with its laterality and spinal levels. Keep all standard boilerplate. '
     +'CRITICAL — the KNOWN PATIENT FACTS and PATIENT CHART/HISTORY below come from the chart attached to this exact operative-note row. Use only documented facts relevant to the procedure; never transfer facts from another patient or invent new findings. Fill known facts directly wherever the template needs them and NEVER list a documented fact in "missing". '
     +'NEVER ask for patient name, sex/gender, age, date of birth, MRN, or BMI — treat those as known or as boilerplate that needs no input. '
+    /* 2026-08-06, owner: "for the op note the date of procidure needs to be put
+       in". Reproduced 15/15 across all three at-risk templates: DATE OF
+       PROCEDURE is passed in the user message and the note never contains it,
+       in any format. Deterministic, and it affects EVERY note rather than the
+       three templates the medication defect touches.
+       Cause is the line immediately above. It tells the model to treat dates as
+       "boilerplate that needs no input", meaning do not ASK for them — and the
+       model generalised that to do not WRITE them. Nothing anywhere instructed
+       it to render the procedure date, and none of the templates carry a [DATE]
+       placeholder for it to land in. So: say it explicitly, and say it in the
+       same breath as the rule it was being read as part of. */
+    +'ALWAYS WRITE THE DATE OF PROCEDURE into the note itself — it is given to you below and it is never a placeholder and never omitted. If the TEMPLATE has a date line, fill it; if it has none, add one near the top ("Date of procedure: <date>"). Do not confuse it with date of birth. '
     +'ONLY put a [[key]] placeholder (and a "missing" entry) for a detail that genuinely VARIES per case AND is not known — e.g. needle gauge/size, medication name/dose/volume, contrast amount, fluoroscopy time, sedation, or an ambiguous level. '
     +'BE CONSERVATIVE — use the FEWEST placeholders possible. If the TEMPLATE already states a standard value for something (a routine dose, a standard volume, default contrast), KEEP the template’s value rather than blanking it; only blank a detail that truly changes patient-to-patient and is not derivable. Each placeholder key must be UNIQUE and appear exactly once. '
+    /* 2026-08-06, PATIENT SAFETY. The line above and the line before it point in
+       opposite directions for drug fields, and the conservative one was winning.
+       Measured: the Lumbar Facet Joint Injection template, whose text contains
+       no drug name at all, produced "1% lidocaine", "0.25% bupivacaine" and
+       "80 mg triamcinolone" — three drugs and a DOSE invented to satisfy "use
+       the fewest placeholders". Every invented value was textbook, which is the
+       tell: the model was not hallucinating, it was supplying the routine value
+       the instruction above asks for. A signed note would have asserted the
+       patient received 80 mg of triamcinolone on no authority whatsoever.
+       The carve-out is stated AFTER the conservative rule and in its own terms
+       so it cannot read as a subordinate clause of it. */
+    +'ABSOLUTE EXCEPTION, OVERRIDES THE CONSERVATIVE RULE ABOVE — there is NO routine value for a drug. If the TEMPLATE marks a MEDICATION NAME, DOSE, CONCENTRATION, VOLUME OF A DRUG, or DEVICE/NEEDLE SIZE as something to be supplied (e.g. [LOCAL ANESTHETIC], [STEROID DOSE], [ANESTHETIC], [GAUGE], [ANESTHETIC/SALINE]), you MUST emit a [[key]] placeholder for it and you MUST NOT supply a value — not a standard one, not a typical one, not a safe-sounding one. Never write a drug name, strength, percentage or milligram figure that is not already written in the TEMPLATE text, the transcript, or the KNOWN PATIENT FACTS. If you are unsure whether a detail is a drug, treat it as a drug and place a placeholder. An unfilled blank is safe; a plausible invented dose is not. '
     +'CODING -- fill real codes, never echo an instruction: when the TEMPLATE, transcript, or KNOWN FACTS name a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain" or "CPT code for lumbar medial branch block") -- REPLACE that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, NOT fabrication; do NOT output a deprecated non-billable parent code, and do NOT invent a code for a diagnosis that was not stated. NEVER leave literal "ICD-10 code for ..." or "CPT code for ..." text in the finished note. Only if genuinely unsure of the exact current code for a named diagnosis, insert a [[icd10_<short_dx>]] placeholder and add it to "missing" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. '
     +'Use snake_case keys (e.g. needle_size, contrast_volume, sedation). Return ONLY JSON, no prose, no code fence: {"note":"<full operative note text, with [[key]] placeholders where needed>","missing":[{"key":"needle_size","label":"Needle size / gauge","example":"22g 3.5in"}]}.';
   var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure
@@ -16319,7 +16772,210 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   var obj=null; try{ obj=JSON.parse(s); }catch(e){ try{ var m=s.match(/\{[\s\S]*\}/); if(m) obj=JSON.parse(m[0]); }catch(_){} }
   if(!obj||typeof obj!=='object') return {note:s, missing:[]};
-  return {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]};
+  return _opGuardDrugBlanks(tplText, _opGuardProcedureDate(dateStr, {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]}));
+}
+
+/* ── PROCEDURE-DATE GUARD (2026-08-06) ─────────────────────────────────────
+   Owner: "for the op note the date of procidure needs to be put in."
+   Measured 15/15 across all three at-risk templates: the date is passed in the
+   user message as "DATE OF PROCEDURE: <dateStr>" and the returned note contains
+   it in NO format — not ISO, not US, not spelled out, not even the phrase.
+   Deterministic, and unlike the medication defect it affects EVERY note.
+
+   The prompt line above now says to write it. This is the guarantee, same
+   reasoning as the drug guard: a prompt is a request. Unlike that one this fix
+   is safe to apply automatically, because the date is a value we were GIVEN —
+   inserting it invents nothing. That is the whole difference between the two
+   guards, and it is why this one repairs while the other refuses.
+
+   It accepts any recognisable rendering of the same day, so a note that writes
+   "August 6, 2026" is left exactly as the model wrote it. Only a note with no
+   date at all gets a line added. */
+function _opNoteHasDate(note, dateStr){
+  var s=String(note||''); var d=String(dateStr||'').trim();
+  if(!d) return true;                                   /* nothing to enforce */
+  if(s.indexOf(d)>=0) return true;                      /* verbatim */
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  if(!m) return s.toLowerCase().indexOf(d.toLowerCase())>=0;
+  var y=m[1], mo=+m[2], da=+m[3];
+  var MON=['January','February','March','April','May','June','July','August','September','October','November','December'][mo-1]||'';
+  var pats=[
+    mo+'/'+da+'/'+y, String(mo).padStart(2,'0')+'/'+String(da).padStart(2,'0')+'/'+y,
+    mo+'-'+da+'-'+y, da+' '+MON+' '+y
+  ];
+  for(var i=0;i<pats.length;i++) if(s.indexOf(pats[i])>=0) return true;
+  if(MON){
+    var re=new RegExp(MON+'\\.?\\s+0?'+da+'(?:st|nd|rd|th)?,?\\s+'+y,'i');
+    if(re.test(s)) return true;
+    var abbr=MON.slice(0,3);
+    if(new RegExp('\\b'+abbr+'\\.?\\s+0?'+da+'(?:st|nd|rd|th)?,?\\s+'+y,'i').test(s)) return true;
+  }
+  return false;
+}
+
+function _opGuardProcedureDate(dateStr, out){
+  try{
+    if(_opNoteHasDate(out&&out.note, dateStr)) return out;
+    var note=String(out.note||'');
+    /* Top of the note, above the body, where a procedure date belongs — and
+       never inside the prose, where it would read as something the doctor
+       dictated. */
+    var repaired='Date of procedure: '+String(dateStr).trim()+'\n'+note;
+    try{ window.__mlsOpDateGuard={at:Date.now(),added:String(dateStr).trim()}; }catch(e){}
+    try{ console.warn('[mls] op-note date guard: the draft carried no date of procedure; inserted '+String(dateStr).trim()+'.'); }catch(e2){}
+    return {note:repaired, missing:out.missing, dateGuard:{added:String(dateStr).trim()}};
+  }catch(e){ return out; }
+}
+
+/* ── DRUG-BLANK GUARD (2026-08-06, patient safety) ─────────────────────────
+   The prompt carve-out above is a REQUEST. This is the guarantee.
+
+   THE DEFECT IT ENFORCES AGAINST, measured on a real patient on live b923:
+   the Lumbar Facet Joint Injection template carries [LOCAL ANESTHETIC] and
+   [STEROID DOSE] and names no drug anywhere in its text. The draft came back
+   reading "anesthetized with 1% lidocaine" and "80 mg triamcinolone with
+   [FILL: volume of anesthetic] of 0.25% bupivacaine". Three drugs and a dose,
+   invented, in a note the doctor signs. The [VOLUME] blank survived in the SAME
+   SENTENCE, which is what proves the blank machinery works and only the drug
+   fields were being resolved away.
+
+   WHY THIS CHECK IS EXACT AND NEEDS NO DRUG LEXICON. A lexicon would have to
+   recognise every drug a pain physician might use, and its false negatives
+   would be silent — the worst possible failure shape here. Instead this asks a
+   question with a known answer: the TEMPLATE told us which fields are drug
+   fields. If [STEROID DOSE] went in, a blank for it must come out. Nothing has
+   to be understood about the prose.
+
+   WHAT IT DOES ON VIOLATION. It does NOT try to find the invented value and
+   excise it — locating "80 mg triamcinolone" inside generated prose is exactly
+   the guesswork this whole defect is made of. It re-blanks the field by name
+   and records it as missing, so the doctor is asked instead of told. If the
+   note cannot be made safe that way, the caller still sees a note whose drug
+   fields are unresolved, which is the honest state.
+
+   SCOPE, measured across the library: 3 of 96 templates carry these
+   placeholders (Caudal ESI, Lumbar Facet Joint Injection, Genicular Nerve
+   Block). 93 spell their drugs out and cannot reach this path at all. The
+   guard is therefore provable on its ENTIRE at-risk population rather than
+   sampled — and it must stay that way, so it keys off the template's own
+   tokens rather than a list of template names. */
+/* PREFIX match, leading \b only. A trailing \b was the first version and it was
+   wrong in the most embarrassing possible way: \bANESTH\b cannot match
+   "ANESTHETIC", so [LOCAL ANESTHETIC] — the exact field that invented "1%
+   lidocaine" — was classified as safe. Caught by the suite on its first run.
+   Drug words vary by suffix (ANESTHETIC / ANESTHESIA, STEROID / STEROIDS), so
+   the stem must be open-ended. Over-matching here is harmless: the cost is a
+   blank the doctor fills, and the alternative cost is an invented dose. */
+var _OP_DRUG_FIELD_RE = /\b(?:ANESTH|STEROID|MEDICATION|MEDS?\b|DRUG|DOSAGE|DOSE|CONCENTRATION|GAUGE|NEEDLE|CONTRAST|SEDATION|OPIOID|NARCOTIC|SALINE|INJECTATE|LIDO|BUPIV|ROPIV|TRIAMCIN|DEXAMETH|METHYLPRED|BETAMETH|MARCAINE|OMNIPAQUE|ISOVUE)/i;
+
+function _opDrugPlaceholdersIn(tplText){
+  var out=[], seen={}, s=String(tplText||''), m;
+  /* Both spellings a template can carry: [STEROID DOSE] and [[steroid_dose]]. */
+  var re=/\[\[?\s*([A-Za-z][A-Za-z0-9 _\/+&-]{1,40}?)\s*\]?\]/g;
+  while((m=re.exec(s))){
+    var label=m[1].trim();
+    if(!_OP_DRUG_FIELD_RE.test(label)) continue;
+    var key=label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+    if(seen[key]) continue;
+    seen[key]=1;
+    out.push({key:key,label:label});
+  }
+  return out;
+}
+
+function _opGuardDrugBlanks(tplText, out){
+  try{
+    var fields=_opDrugPlaceholdersIn(tplText);
+    if(!fields.length) return out;                  /* 93 of 96 templates stop here */
+    var note=String(out.note||''), missing=Array.isArray(out.missing)?out.missing.slice():[];
+    var violated=[];
+    /* 2026-08-06, the surviving symptom. QA on b928: fabrication is gone from
+       the PROSE, but 1 run in 3 still produced a blank whose LABEL carried an
+       invented drug — "[FILL: volume of 0.25% bupivacaine]". The doctor is then
+       shown a drug and a concentration he never specified, dressed as his own
+       template's wording. Lower severity than the original, identical root: the
+       label is COMPOSED by the model rather than carried from the template.
+       Rule, and it is QA's: a blank's label is derived from the template's
+       placeholder name, never composed. So any strength, percentage or dose
+       figure is stripped out of a label, and a label that then names nothing of
+       its own falls back to the template's own placeholder text. Labels are UI
+       prompts - removing a value from one can never lose clinical content,
+       because the value was never the doctor's to begin with. */
+    var labelledDrug=[];
+    /* EVERY placeholder the template declares, keyed the same way `missing`
+       keys are, so a label can be derived from the doctor's own wording rather
+       than from the model's. Not just the drug-class ones: [VOLUME] is not a
+       drug field, and it is the field whose label carried the invented
+       bupivacaine. */
+    var tplLabels={};
+    (function(){
+      var s=String(tplText||''), re=/\[\[?\s*([A-Za-z][A-Za-z0-9 _\/+&-]{1,40}?)\s*\]?\]/g, m;
+      while((m=re.exec(s))){
+        var lab=m[1].trim(), k=lab.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+        if(k&&!tplLabels[k]) tplLabels[k]=lab.toLowerCase();
+      }
+    })();
+    missing=missing.map(function(mf){
+      if(!mf||typeof mf!=='object') return mf;
+      var L=String(mf.label||''); if(!L) return mf;
+      /* DERIVE, do not sanitise. A first version stripped the number out of
+         "volume of 0.25% bupivacaine" and produced "volume of bupivacaine" —
+         still an invented drug, just cheaper-looking. The template said the
+         field is [VOLUME]; that is the label, and nothing the model composed
+         around it is the doctor's. So: if this key exists as a placeholder in
+         the TEMPLATE, the template's own wording wins outright. Only a key with
+         no template placeholder falls back to stripping values out of whatever
+         the model wrote. */
+      var own=tplLabels[mf.key]||null;
+      var cleaned;
+      if(own){ cleaned=own; }
+      else {
+        cleaned=L.replace(/\b\d+(?:\.\d+)?\s*(?:%|mg|mcg|ug|g|ml|mL|cc|units?)\b/gi,'')
+                 .replace(/\b\d+(?:\.\d+)?\s*%/g,'')
+                 .replace(/\s{2,}/g,' ').replace(/^[\s,;:-]+|[\s,;:-]+$/g,'').replace(/\s+of\s*$/i,'').trim();
+      }
+      if(!cleaned) cleaned=String(mf.key||'').replace(/_/g,' ');
+      if(cleaned===L) return mf;
+      labelledDrug.push({key:mf.key,was:L,now:cleaned});
+      return {key:mf.key,label:cleaned,example:mf.example||''};
+    });
+    if(labelledDrug.length){
+      try{ window.__mlsOpDrugLabelGuard={at:Date.now(),cleaned:labelledDrug}; }catch(eL){}
+      /* The note text carries the same composed labels, so rewrite them there
+         too - otherwise the prose keeps showing the invented value while the
+         Fields box shows the clean one, which is worse than either alone. */
+      labelledDrug.forEach(function(c){
+        try{ note=note.split('[FILL: '+c.was+']').join('[FILL: '+c.now+']')
+                     .split('[FILL:'+c.was+']').join('[FILL:'+c.now+']'); }catch(eR){}
+      });
+    }
+    fields.forEach(function(f){
+      /* Did a blank for THIS field survive, in any shape the app recognises?
+         EXACT, not stem-matched. The first version tested the stem
+         ("anesthetic") anywhere inside a [FILL: …] label, and the live output's
+         "[FILL: volume of anesthetic]" — which belongs to the VOLUME field —
+         satisfied it, so the ANESTHETIC field was scored as safe while the
+         model had in fact replaced it with bupivacaine. One field's blank must
+         never vouch for another's. */
+      var lab = f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      var present = note.indexOf('[['+f.key+']]')>=0
+        || new RegExp('\\[FILL:\\s*'+lab+'\\s*\\]','i').test(note)
+        || new RegExp('\\[\\s*'+lab+'\\s*\\]','i').test(note);
+      if(present) return;
+      violated.push(f);
+      /* Re-blank by NAME. We do not hunt the invented value inside the prose —
+         that is the same guesswork that produced it. */
+      note += (note.slice(-1)==='\n'?'':'\n')+'['+f.label+']: [['+f.key+']]';
+      if(!missing.some(function(x){return x&&x.key===f.key;})){
+        missing.push({key:f.key,label:f.label,example:''});
+      }
+    });
+    if(violated.length){
+      try{ window.__mlsOpDrugGuard={at:Date.now(),violated:violated.map(function(f){return f.key;})}; }catch(e){}
+      try{ console.warn('[mls] op-note drug guard: '+violated.length+' drug field(s) were resolved by the model instead of left blank — re-blanked: '+violated.map(function(f){return f.label;}).join(', ')); }catch(e2){}
+    }
+    return {note:note, missing:missing, drugGuard:{violated:violated.map(function(f){return f.key;})}};
+  }catch(e){ return out; }
 }
 /* Fill the [[key]] placeholders in a patient's note with the values typed, and remember
    each value so it shows in the dropdown next time. */
@@ -16807,14 +17463,147 @@ function saveTemplateFromForm(){
 /* ===== MULTI-TEMPLATE PDF SPLIT — one upload with several forms → AI detects each
    and splits them into separate templates the user can keep. ===== */
 var _tplPendingSplit=[];
+/* Templates already staged (unchecked review rows) from an EARLIER drop that
+   the doctor hasn't clicked "Add" on yet. Snapshotted at the top of every
+   tplMultiFile() call so a second drag-in merges into the first drop's
+   pending rows instead of wiping them — every reset point below restores
+   from this instead of starting from []. */
+var _tplPendingCarry=[];
+/* b940 — files that would not read are NOT silently counted away: each one
+   becomes a named, UNCHECKED review row, so an upload of N files always ends
+   at the review list ("no readable templates" was a dead end that stamped the
+   whole job failed — the owner's 90 legacy .doc files could all land there).
+   Consumed (and emptied) by _tplAppendUnreadableRows at each finalize point. */
+var _tplUnreadableRows=[];
+function _tplAppendUnreadableRows(){
+  for(var i=0;i<_tplUnreadableRows.length;i++){ var u=_tplUnreadableRows[i];
+    _tplPendingSplit.push({ name:String(u.name||'File').replace(/\.[^.]+$/,'')+' — couldn’t read', text:(u.text&&u.text.trim())||('(No readable text could be extracted from “'+String(u.name||'this file')+'”. Re-save it as .docx or PDF and upload it again.)'), keep:false, unreadable:true });
+  }
+  _tplUnreadableRows=[];
+}
 function _tplMultiStatus(m,c){ var s=document.getElementById('tplMultiStatus'); if(s){ s.textContent=m||''; s.style.color=c||'var(--muted)'; } }
 function _tplMultiDragOver(ev,on){ ev.preventDefault(); try{ ev.dataTransfer.dropEffect='copy'; }catch(e){} var z=document.getElementById('tplMultiDrop'); if(z){ z.style.borderColor=on?'#2E6A4B':'#EAF1EE'; z.style.background=on?'#eef0ff':'#fbfbff'; } }
 function _tplMultiDrop(ev){ ev.preventDefault(); _tplMultiDragOver(ev,false); var fs=ev.dataTransfer&&ev.dataTransfer.files; if(!fs||!fs.length){ _tplMultiStatus('No files detected in that drop.','#b4231e'); return; } tplMultiFile({target:{files:fs,value:''}}); }
 /* Read ANY supported file to text (PDF text-layer, Word .docx, OCR images, or plain/rich text). */
+/* b940 — OLD .doc (Word 97–2003) is a BINARY container; `file.text()` decodes
+   it as UTF-8 and shreds it. Word stores the document text either as CP1252
+   single-byte or UTF-16LE: decode the raw bytes BOTH ways, keep the decoding
+   that yields more real English words, then keep only substantial lines
+   (binary runs shred into confetti of 1–3 printable chars, and that confetti
+   is what used to inflate a single note past the multi-form threshold and send
+   it through the AI splitter chunk after chunk). Font tables and style names
+   may survive — the review step and the type-namer tolerate that. */
+async function _extractLegacyDocText(file){
+  var bytes=new Uint8Array(await file.arrayBuffer());
+  function printable(s){ return s.replace(/[^\x09\x0A\x0D\x20-\x7EÀ-ſ‘’“”–—]+/g,'\n'); }
+  function score(s){ var m=s.match(/\b(?:the|and|of|to|with|was|is|were|patient|procedure|left|right|note|for|injection|anesthesia)\b/gi); return m?m.length:0; }
+  var a='',b='';
+  try{ a=printable(new TextDecoder('windows-1252').decode(bytes)); }catch(e){}
+  try{ b=printable(new TextDecoder('utf-16le').decode(bytes)); }catch(e){}
+  var best=score(b)>score(a)?b:a;
+  return _tplStripWordJunk(best);
+}
+/* b940 — THE TEMPLATE CARRIED FIVE PAGES OF WORD'S GUTS INTO A SIGNED-READY
+   NOTE. Dr. Schaeffer's real drafted PDF (OpNote 2026-08-06): pages 1–2 were
+   the clinical note, pages 3–7 were "bjbjÈwÈw", "hãjY" field runs,
+   [Content_Types].xml, theme/theme XML, "Word.Document.8" — the raw remains
+   of a Word 97–2003 .doc that the line filter above used to wave through
+   (every artifact has ≥3 chars and ≥2 letters). A weak filter is worse than
+   none: it laundered binary junk into "text".
+   This finds the document's PROSE via density: each line scores wordish-ness
+   (real words with vowels, label shapes) against junk signatures (OOXML part
+   names, bjbj, field-code confetti, high non-ASCII ratio); Kadane's max-sum
+   region over those scores is the body a human wrote; junk-scored lines
+   inside the region are dropped individually. Clean text passes through
+   near-identical: prose lines score positive, short ALLCAPS labels (NDC,
+   LOT, EXP) score neutral and survive. */
+function _tplStripWordJunk(text){
+  var lines=String(text||'').replace(/\r\n?/g,'\n').split('\n');
+  /* b940 — "Normal" ALONE is a clinical value (FINDINGS/Normal); only
+     "Normal.dot" is Word's template name. The h-confetti rule moved out of
+     this case-insensitive alternation: /^h..../i deleted Hand, Heart, Head,
+     Healed, HEENT — real words that begin with h. */
+  var JUNK=/\[Content_Types\]\.xml|_rels\/\.rels|theme\/theme|themeManager|MSWordDoc|Word\.Document|Microsoft (Office )?Word|Word 97-2003|^Normal\.dot$|^bjbj|<\?xml |<a:clrMap|xmlPK$|relsPK$|^PK!/i;
+  /* field-code confetti is a LOWERCASE h plus 3-5 chars that include at least
+     one non-letter ("h(Cj", "h)ld", "hãjY") — case-sensitive, and a non-letter
+     required, so no English word can match. */
+  var HJUNK=/^h[A-Za-z0-9(){}\[\]@#$%^&*+=|\\\/<>.,;:'"~`!?-]{3,5}$/;
+  var scored=lines.map(function(raw){
+    var l=raw.replace(/\s{2,}/g,' ').trim();
+    if(!l) return {raw:'', s:0};
+    if(JUNK.test(l)) return {raw:raw, s:-4};
+    if(HJUNK.test(l) && /[^A-Za-z]/.test(l)) return {raw:raw, s:-4};
+    var nonAscii=(l.match(/[^\x00-\x7F]/g)||[]).length;
+    if(nonAscii>l.length*0.15) return {raw:raw, s:-3};
+    var toks=l.split(/\s+/);
+    var wordish=toks.filter(function(w){ return /[AEIOUYaeiouy]/.test(w) && /^[A-Za-z][A-Za-z'’.,:;()\/%0-9"-]*$/.test(w); }).length;
+    var ratio=wordish/toks.length;
+    if(toks.length===1){
+      if(/^[A-Z]{2,10}:?$/.test(l)) return {raw:raw, s:0};          /* NDC / LOT / EXP labels */
+      if(/^[A-Za-z][A-Za-z'’-]{2,}[.:,]?$/.test(l) && /[aeiouy]/i.test(l)) return {raw:raw, s:0};  /* Same / Signature */
+      if(/^[CTLS]\d{1,2}(-[CTLS]?\d{1,2})?[.,:]?$/i.test(l)) return {raw:raw, s:0};  /* L4-L5, S1 */
+      if(/^\d+[.)]$/.test(l)) return {raw:raw, s:0};                 /* "1." list markers */
+      if(/^_{3,}$/.test(l)) return {raw:raw, s:0};                   /* signature rule */
+      return {raw:raw, s:-2};                                        /* "AM*", "(Cj", "ulóóó" */
+    }
+    if(ratio>=0.6 && toks.length>=4) return {raw:raw, s:3};          /* real prose */
+    if(ratio>=0.5) return {raw:raw, s:1};                            /* "Patient: ______" headers */
+    /* b940 — LOW PROSE DENSITY IS NOT EVIDENCE OF BINARY JUNK. A pain note is
+       MADE of word-poor lines: "Depo-Medrol 80 mg", "LEVELS: L4-L5, L5-S1",
+       "CPT: 64483, 64484", "BP 120/80 HR 72". Scoring those -2 deleted the
+       drug, the level and the billing code and left an orphan header, which
+       reads as an unfilled field and invites the model to invent a dose.
+       Plain printable ASCII with no binary-ish characters now scores POSITIVE;
+       only genuinely binary-looking lines stay negative. */
+    if(/^[\x20-\x7E]+$/.test(l) && !/[{}\[\]\\|@#^~`<>]|\*{2,}|[A-Za-z][0-9][A-Za-z][0-9]/.test(l)) return {raw:raw, s:1};
+    return {raw:raw, s:-2};
+  });
+  var best={a:0,b:-1,sum:0}, cur={a:0,sum:0};
+  for(var i=0;i<scored.length;i++){
+    cur.sum+=scored[i].s;
+    if(cur.sum<=0){ cur={a:i+1,sum:0}; continue; }
+    if(cur.sum>best.sum) best={a:cur.a,b:i,sum:cur.sum};
+  }
+  /* b940 — best.b is the running-sum PEAK, not the end of the authored body.
+     Word-poor tail lines (doses, codes, disposition, the signature) drag the
+     sum down without ever reaching zero, so the peak froze mid-document and
+     EVERY line after it was dropped — past the s>=0 filter, silently.
+     Measured on the doctor's own 59 op-note .doc files: 59/59 lost the
+     attestation "Matthew Schaeffer, MD" and 46/59 lost the "OPERATIVE REPORT"
+     title. The window exists only to LOCATE the authored text; it is now
+     extended outward across every adjacent non-negative line so no authored
+     content is trimmed. */
+  if(best.b<best.a){ best={a:0,b:scored.length-1}; }
+  while(best.b+1<scored.length && scored[best.b+1].s>=0) best.b++;
+  while(best.a>0 && scored[best.a-1].s>=0) best.a--;
+  var out=[];
+  for(var k=best.a;k<=best.b;k++){ if(scored[k].s>=0) out.push(scored[k].raw); }
+  var res=out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+  /* b940 — NEVER SILENTLY AMPUTATE. If this would remove more than a quarter
+     of the letters of a document carrying NO Word-binary signature, it has
+     misjudged the document, not cleaned it: hand back the original. */
+  var _L=function(s){ return (String(s).match(/[A-Za-z]/g)||[]).length; };
+  var _o=_L(text);
+  if(_o && _L(res)<_o*0.75 && !/bjbj|\[Content_Types\]\.xml|Word\.Document|themeManager|MSWordDoc|Word 97-2003/i.test(String(text))) return String(text);
+  return res;
+}
+/* b940 — templates that were ALREADY imported dirty must still DRAFT clean:
+   the fix above only helps future imports, while the doctor's library holds
+   yesterday's. Gate on the unmistakable Word-binary signature so clean
+   templates pass through byte-identical. */
+function _tplTextForDraft(text){
+  var s=String(text||'');
+  if(/bjbj|\[Content_Types\]\.xml|Word\.Document|themeManager|MSWordDoc/i.test(s)){
+    var cleaned=_tplStripWordJunk(s);
+    if(cleaned && (cleaned.match(/[A-Za-z]/g)||[]).length>=40) return cleaned;
+  }
+  return s;
+}
 async function _tplReadAnyFile(file){
   var lower=(file.name||'').toLowerCase(), mime=(file.type||'').toLowerCase();
   if(lower.endsWith('.pdf')||mime==='application/pdf'){ try{ return await extractPdfText(file); }catch(e){ return ''; } }
   if(lower.endsWith('.docx')||mime.indexOf('officedocument.wordprocessingml')>=0){ try{ return await _extractDocxText(file); }catch(e){ return ''; } }
+  if(lower.endsWith('.doc')||lower.endsWith('.dot')||mime==='application/msword'){ try{ var legacy=await _extractLegacyDocText(file); if((legacy.match(/[A-Za-z]/g)||[]).length>=40) return legacy; }catch(e){} try{ return _tplStripWordJunk(_cleanExtractedText(await file.text(), lower)); }catch(e){ return ''; } }
   if(/^image\//.test(mime)||/\.(png|jpe?g|webp|gif|bmp|heic|heif|jfif|tiff)$/.test(lower)){
     if(!backendMode()||!bkToken()) return '';
     try{ var dataUrl=await readFileAsDataUrl(file); var rv=await fetch(bkBase()+'/api/vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({image:dataUrl,mimetype:mime||'image/png'})}); var jv={}; try{ jv=await rv.json(); }catch(e){} return rv.ok?((jv.text||'').trim()):''; }catch(e){ return ''; }
@@ -16863,65 +17652,261 @@ function _tplParseMeta(text){
   return meta;
 }
 function _tplTypeName(text, fallback){
-  var s=String(text||''); var proc='';
-  var m=s.match(/(?:OPERATIONS?\s+PERFORMED|PROCEDURES?\s+PERFORMED|OPERATIVE\s+PROCEDURE|PROCEDURE\s*\(S\)|NAME\s+OF\s+(?:PROCEDURE|OPERATION)|TITLE\s+OF\s+(?:PROCEDURE|OPERATION)|PROCEDURE|OPERATION)\s*[:\-–]\s*(.+)/i);
-  if(m) proc=m[1];
-  if(!proc){ var m2=s.match(/(?:POST-?OPERATIVE\s+DIAGNOS[EI]S|PRE-?OPERATIVE\s+DIAGNOS[EI]S)\s*[:\-–]\s*(.+)/i); if(m2) proc=m2[1]; }
-  proc=String(proc||'').split(/\n/)[0].replace(/\s+/g,' ').replace(/\b(patient|name|dob|mrn|date)\b.*$/i,'').trim();
-  if(proc && typeof _opParseProc==='function'){ var d=_opParseProc(proc); var bits=[]; if(d.side) bits.push(d.side);
-    var lv=(d.levels||[]).filter(function(x,ix,arr){ return arr.indexOf(x)===ix; }).slice(0,4); if(lv.length) bits.push(lv.join('/'));
-    var ty=(d.types||[]).filter(function(x,ix,arr){ return arr.indexOf(x)===ix; }).slice(0,3); if(ty.length) bits.push(ty.join(' '));
-    if(bits.length>=1 && (ty.length||lv.length)) return bits.join(' ').slice(0,80); }
-  if(proc) return proc.slice(0,80);
+  var s=String(text||'');
+  /* b940 — THE HEADER LINE ABOVE THE PROCEDURE LINE WAS NAMING THE TEMPLATE.
+     The old single-pass match found "procedure:" INSIDE "Date of procedure:
+     ______", captured the fill-in blank, tidied it to NOTHING — and returned
+     that empty string, because the fallback only ran when no match existed at
+     all. Measured on the owner's real signed-in account (b891): every AI-split
+     op-note form named "" (and his earlier real import surfaced header junk
+     like "7-7-2025 Type of Anesthesia: …" as template names). Now the keyword
+     must START its line, EVERY matching line is a candidate, and a candidate
+     that tidies to nothing falls through to the next one — then the diagnosis
+     line, then the filename. */
+  var candidates=[];
+  var LINE_RE=/^\s*(?:OPERATIONS?\s+PERFORMED|PROCEDURES?\s+PERFORMED|OPERATIVE\s+PROCEDURE|PROCEDURE\s*\(S\)|NAME\s+OF\s+(?:PROCEDURE|OPERATION)|TITLE\s+OF\s+(?:PROCEDURE|OPERATION)|PROCEDURES?|OPERATION)\s*[:\-–]\s*(.+)$/i;
+  var lines=s.split(/\r?\n/);
+  for(var li=0; li<lines.length && candidates.length<6; li++){
+    var lm=lines[li].match(LINE_RE);
+    if(lm && lm[1]) candidates.push(lm[1]);
+  }
+  var m2=s.match(/(?:POST-?OPERATIVE\s+DIAGNOS[EI]S|PRE-?OPERATIVE\s+DIAGNOS[EI]S)\s*[:\-–]\s*(.+)/i);
+  if(m2) candidates.push(m2[1]);
+  /* b940 — THE PARSED BITS ENRICH THE PROCEDURE PHRASE, THEY DO NOT REPLACE IT.
+     This used to return `side + levels + types` and DISCARD the phrase the
+     doctor actually wrote, the moment _opParseProc recognised any type token —
+     which is nearly always, on a real op note. Measured on the shipped library:
+
+       Genicular Nerve Block          ->  "Block"
+       Lumbar Facet Joint Injection   ->  "Facet Injection"
+       Caudal Epidural Steroid Inj.   ->  "Caudal Epidural Steroid"
+       (two distinct templates)       ->  both "Medial branch Block"
+
+     "Block" is not a name, it is the remains of one — and it hit BOTH surfaces
+     that call this: the "Rename by note type" button and every BULK IMPORT,
+     which names each uploaded op note this way. Two templates reduced to the
+     same string is the ambiguous-picker defect all over again.
+     Side and levels are kept because they genuinely add information, and only
+     when the phrase does not already carry them. */
+  /* A NAME IS A LABEL, NOT A SENTENCE. The phrase comes off a clinical line, so
+     it arrives with fill-in placeholders, trailing punctuation and enough length
+     to be cut mid-word. Measured before this tidy: "Genicular nerve block,
+     [LATERALITY] knee ([superolateral, superomedial, inferome" — truncated
+     mid-word, carrying two placeholder tokens into the library. */
+  var tidy=function(v){
+    return String(v||'')
+      .replace(/\[[^\]]*\]/g,' ')            /* [LEVELS], [LATERALITY] */
+      .replace(/\b[A-Z][A-Z-]*-(?:VALUE|GAUGE|VOLUME|TIME|MODALITY)\b/g,' ')
+      .replace(/_{2,}/g,' ')                 /* ___ fill-in blanks */
+      .replace(/\(\s*\)/g,' ').replace(/\s*,\s*(?=,|$)/g,'')
+      /* removing a placeholder can strand the word that qualified it —
+         "…of the knee, [LATERALITY] side" became "…of the knee, side" */
+      .replace(/,\s*(side|sides|level|levels|approach|laterality)\s*$/i,'')
+      .replace(/\s+/g,' ').replace(/[\s,;:.\-–(]+$/,'').trim();
+  };
+  var cap=function(v){ v=tidy(v); if(v.length<=80) return v;
+    var cut=v.slice(0,80); var sp=cut.lastIndexOf(' ');
+    return tidy(sp>24?cut.slice(0,sp):cut); };
+  for(var ci=0; ci<candidates.length; ci++){
+    var proc=String(candidates[ci]||'').split(/\n/)[0].replace(/\s+/g,' ').replace(/\b(patient|name|dob|mrn|date)\b.*$/i,'').trim();
+    if(!proc) continue;
+    if(typeof _opParseProc==='function'){
+      var d=_opParseProc(proc), lead=[];
+      /* compare with dashes and case normalised, or "L4-L5" in the phrase fails to
+         match the parser's "L4–L5" and the level is printed twice */
+      var norm=function(v){ return String(v||'').toLowerCase().replace(/[–—]/g,'-').replace(/[^a-z0-9-]/g,''); };
+      var low=norm(proc);
+      if(d.side && low.indexOf(norm(d.side))===-1) lead.push(d.side);
+      var lv=(d.levels||[]).filter(function(x,ix,arr){ return arr.indexOf(x)===ix; }).slice(0,4)
+              .filter(function(x){ return low.indexOf(norm(x))===-1; });
+      if(lv.length) lead.push(lv.join('/'));
+      if(lead.length){ var withLead=cap(lead.join(' ')+' '+proc); if(withLead) return withLead; }
+    }
+    var plain=cap(proc);
+    if(plain) return plain;   /* a candidate that tidies to nothing falls through */
+  }
   // Fall back: scrub an obvious "Lastname, Firstname" patient name out of the filename.
   var fb=String(fallback||'').replace(/^\s*operative\s*report\s*[-–:]?\s*/i,'').replace(/[A-Z][a-z]+,\s*[A-Z][a-z]+/g,'').replace(/[-–_]+/g,' ').replace(/\s+/g,' ').trim();
   return (fb||'Operative note template').slice(0,80);
 }
+/* A TEMPLATE WITHOUT KEYWORDS CAN NEVER BE AUTO-CHOSEN. The class-aware
+   auto-pick guard (mls-connect) requires >=1 TRUE keyword hit before it will
+   apply a procedure template — deliberately, so the RIGHT procedure template
+   wins or nothing is guessed. But every bulk-imported template arrived with
+   keywords:[] (only hand-written Keywords: metadata survived), so the guard
+   starved: a doctor could import 90 op notes and "Auto-choose by keywords"
+   would never pick ANY of them. Seed keywords from the template's own name —
+   the name is already the tidied procedure phrase, so its clinical tokens
+   (genicular/nerve/block/knee) are exactly the true-signal keywords the guard
+   was designed around. Explicit Keywords: metadata always wins. */
+function _tplSeedKeywords(t){
+  if(!t || (t.keywords && t.keywords.length)) return;
+  var stop={'the':1,'and':1,'with':1,'without':1,'for':1,'into':1,'onto':1,'under':1,'over':1,'from':1,'variant':1,'template':1,'note':1,'notes':1,'report':1,'operative':1,'procedure':1,'guided':1,'guidance':1};
+  t.keywords=String(t.name||'').toLowerCase()
+    .replace(/\(variant \d+\)/g,' ')
+    .split(/[^a-z0-9-]+/)
+    .filter(function(w){ return w.length>2 && !stop[w] && !/^\d+$/.test(w) && !/^-+$/.test(w); })
+    .filter(function(w,ix,arr){ return arr.indexOf(w)===ix; })
+    .slice(0,10);
+}
+/* ── Recognition concurrency ───────────────────────────────────────────────
+   b940 — every /api/templates/split call ran STRICTLY SERIAL. A 90-file batch
+   in which many files look multi-form is 90+ sequential AI round-trips, so the
+   doctor watched a truthful bar crawl for minutes. Recognition now runs
+   through a bounded pool. Two rules keep the outcome identical to the serial
+   run, byte for byte:
+
+     • Every unit of work writes into its OWN sink array and the sinks are
+       concatenated in INPUT order. Completion order therefore cannot reorder
+       the review list, flip which copy the first-wins dedupe keeps, or shift
+       the checkbox row indices bound to _tplPendingSplit[i].
+     • _TPL_AI_LIMIT bounds in-flight fetches GLOBALLY — files and chunks draw
+       on one budget — so a chunk pool nested inside a file pool still cannot
+       put more than _TPL_AI_LIMIT requests on the wire. */
+var _TPL_AI_LIMIT=4;
+var _tplAiInFlight=0, _tplAiWaiters=[], _tplAiOff=false, _tplRecogFound=0;
+function _tplAiSlot(){
+  if(_tplAiInFlight<_TPL_AI_LIMIT){ _tplAiInFlight++; return Promise.resolve(); }
+  return new Promise(function(res){ _tplAiWaiters.push(res); });
+}
+function _tplAiRelease(){
+  var next=_tplAiWaiters.shift();
+  if(next) next(); else _tplAiInFlight=Math.max(0,_tplAiInFlight-1);   // hand the slot on, don't free then re-take it
+}
+/* Run task(item,index) over items with at most `limit` in flight, results in
+   INPUT order. A task that throws yields undefined; every caller reads that as
+   "recognition produced nothing here" and falls back — never as a lost file. */
+async function _tplPool(items, limit, task){
+  items=items||[];
+  var out=new Array(items.length), next=0;
+  var lanes=Math.max(1, Math.min(limit|0||1, items.length||1)), runners=[];
+  for(var w=0; w<lanes; w++){
+    runners.push((async function(){
+      for(var ix=next++; ix<items.length; ix=next++){
+        try{ out[ix]=await task(items[ix], ix); }catch(e){ out[ix]=undefined; }
+      }
+    })());
+  }
+  await Promise.all(runners);
+  return out;
+}
+/* One slot-limited /api/templates/split round-trip. Returns the rows it found,
+   [] when it found none, or null when the AI is unavailable for this account. */
+async function _tplSplitChunk(chunk){
+  if(_tplAiOff) return null;
+  await _tplAiSlot();
+  try{
+    if(_tplAiOff) return null;
+    var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunk})});
+    var d=await r.json().catch(function(){return {};});
+    /* 403 = this account has no AI split. The serial loop broke out of the
+       file's remaining chunks and let the keep-fallback own the file; the
+       latch spares the REST of the batch the same refusal. Every file still
+       lands through its own fallback, so the rows are identical — just without
+       89 more round-trips to be told no. Reset per run, never sticky. */
+    if(r.status===403){ _tplAiOff=true; return null; }
+    if(r.ok && d.templates && d.templates.length) return d.templates;
+    return [];
+  }catch(e){ return []; }
+  finally{ _tplAiRelease(); }
+}
+/* Truthful running total while sinks are still detached from _tplPendingSplit. */
+function _tplFoundSoFar(out){ return out===_tplPendingSplit ? out.length : (_tplRecogFound+out.length); }
 async function tplMultiFile(ev){
   var files=ev.target&&ev.target.files?Array.prototype.slice.call(ev.target.files):[]; try{ ev.target.value=''; }catch(e){}
   if(!files.length) return;
+  /* snapshot whatever is already staged-but-not-added before this drop's
+     resets run, so a second drag-in ADDS to the review list instead of
+     erasing the first drop's unreviewed rows. */
+  _tplPendingCarry=_tplPendingSplit.slice();
+  _tplAiOff=false; _tplRecogFound=0;
   document.getElementById('tplMultiResult').innerHTML='';
-  var perFileText=[], unreadable=0;
+  var perFileText=[], unreadable=0; _tplUnreadableRows=[];
   for(var fi=0; fi<files.length; fi++){
     _tplMultiStatus('Reading files… '+(fi+1)+'/'+files.length+' ('+(files[fi].name||'file')+')');
     var t=''; try{ t=await _tplReadAnyFile(files[fi]); }catch(e){}
     // Guard against binary garbage (e.g. an old .doc that didn't extract) — needs real letters.
     var letters=(String(t).match(/[A-Za-z]/g)||[]).length;
     if(t && t.trim() && letters>=40){ perFileText.push({ name:(files[fi].name||('Template '+(fi+1))).replace(/\.[^.]+$/,''), text:t.trim() }); }
-    else if(files[fi]) unreadable++;
+    else if(files[fi]){ unreadable++; _tplUnreadableRows.push({ name:files[fi].name||('File '+(fi+1)), text:String(t||'').trim() }); }
   }
-  if(!perFileText.length){ _tplMultiStatus('No readable text found'+(unreadable?(' ('+unreadable+' file'+(unreadable===1?'':'s')+' couldn’t be read — if they’re old .doc files, re-save as .docx or PDF)'):'')+'.','#b4231e'); return; }
+  if(!perFileText.length){
+    /* b940 — an all-unreadable batch used to DEAD-END here ("No readable text
+       found") and the whole upload was stamped failed. The files are shown
+       instead: named, unchecked, with the re-save advice attached to each. */
+    if(!_tplUnreadableRows.length){ _tplMultiStatus('No files could be read.','#b4231e'); return; }
+    _tplPendingSplit=_tplPendingCarry.slice(); _tplAppendUnreadableRows();
+    _tplMultiStatus(_tplPendingSplit.length+' file'+(_tplPendingSplit.length===1?'':'s')+' couldn’t be read as text (old .doc files? re-save them as .docx or PDF and upload again). Each is listed below so nothing is lost:','#b4231e');
+    _renderTplSplitPreview();
+    return;
+  }
   if(perFileText.length>=3){
     // BATCH of files → EACH file is ONE template (named by note TYPE). Only AI-split a file that
     // genuinely holds multiple forms — so 50 op-note files reliably become up to 50 templates.
-    _tplPendingSplit=[];
-    for(var i=0;i<perFileText.length;i++){
-      var p=perFileText[i];
-      var meta=_tplParseMeta(p.text);
-      if(meta.name){ _tplPendingSplit.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); }
-      else if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name); }
-      else { _tplPendingSplit.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
-    }
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); });   // name by type (explicit metadata names win)
+    _tplPendingSplit=_tplPendingCarry.slice();
+    /* b889 — this loop used to run SILENT: the status froze on "Reading
+       files… N/N" while any file that looked multi-form went through the
+       serial AI splitter for minutes. Every file now announces itself, and
+       _tplPhaseTick lets the template-library progress card draw the
+       recognition bar.
+       b940 — the files are recognized through the bounded pool. The counters
+       below tick on COMPLETION, never on dispatch: with several files in
+       flight, "42/90" has to mean 42 files finished, not 42 files started. */
+    var recDone=0, recTotal=perFileText.length;
+    var recTick=function(label){
+      _tplMultiStatus('✨ Recognizing templates… '+recDone+'/'+recTotal+(label?(' ('+label+')'):'')+' · '+_tplRecogFound+' found so far');
+      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', recDone, recTotal, label||'file', _tplRecogFound); }catch(e){}
+    };
+    recTick(perFileText[0].name);
+    var fileSinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
+      var sink=[];
+      try{
+        var meta=_tplParseMeta(p.text);
+        if(meta.name){ sink.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); }
+        else if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name, sink); }
+        else { sink.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
+      }catch(e){}
+      /* b889's law holds under concurrency too: a file that recognized to
+         nothing is kept whole, never dropped. */
+      if(!sink.length && String(p.text||'').trim()){
+        var nm=p.name; try{ nm=_tplTypeName(p.text, p.name); }catch(e){}
+        sink.push({ name:nm, text:p.text, keep:true });
+      }
+      recDone++; _tplRecogFound+=sink.length; recTick(p.name);
+      return sink;
+    });
+    fileSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by type (explicit metadata names win)
     var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=batchInfo.list;
-    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(batchInfo.dropped.length?(' · '+batchInfo.dropped.length+' duplicate'+(batchInfo.dropped.length===1?'':'s')+' skipped ('+batchInfo.dropped.slice(0,3).join(', ')+(batchInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable skipped'):'')+'. Review and add:','#1c7a43');
+    _tplAppendUnreadableRows();
+    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(batchInfo.dropped.length?(' · '+batchInfo.dropped.length+' duplicate'+(batchInfo.dropped.length===1?'':'s')+' skipped ('+batchInfo.dropped.slice(0,3).join(', ')+(batchInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable listed unchecked below'):'')+'. Review and add:','#1c7a43');
     _renderTplSplitPreview();
   } else {
     /* 1-2 files: process EVERY file separately so no file can silently vanish
        into a joined blob — each file yields at least one reviewable row, and
        duplicates are reported instead of dropped. */
     if(!backendMode()||!bkToken()){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
-    _tplPendingSplit=[];
-    for(var j=0;j<perFileText.length;j++){
-      _tplMultiStatus('✨ Recognizing templates… file '+(j+1)+'/'+perFileText.length+' ('+_tplPendingSplit.length+' found so far)');
-      await _tplSplitOneInto(perFileText[j].text, perFileText[j].name);
-    }
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); });
+    _tplPendingSplit=_tplPendingCarry.slice();
+    var pairDone=0, pairTotal=perFileText.length;
+    var pairTick=function(label){
+      _tplMultiStatus('✨ Recognizing templates… file '+pairDone+'/'+pairTotal+(label?(' ('+label+')'):'')+' ('+_tplRecogFound+' found so far)');
+      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', pairDone, pairTotal, label||'file', _tplRecogFound); }catch(e){}
+    };
+    pairTick(perFileText[0].name);
+    var pairSinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
+      var sink=[];
+      try{ await _tplSplitOneInto(p.text, p.name, sink); }catch(e){}
+      pairDone++; _tplRecogFound+=sink.length; pairTick(p.name);
+      return sink;
+    });
+    pairSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
+    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });
     var pairInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
     _tplPendingSplit=pairInfo.list;
     if(!_tplPendingSplit.length){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
-    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(pairInfo.dropped.length?(' · '+pairInfo.dropped.length+' duplicate'+(pairInfo.dropped.length===1?'':'s')+' skipped ('+pairInfo.dropped.slice(0,3).join(', ')+(pairInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable skipped'):'')+'. Review and add:','#1c7a43');
+    _tplAppendUnreadableRows();
+    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(pairInfo.dropped.length?(' · '+pairInfo.dropped.length+' duplicate'+(pairInfo.dropped.length===1?'':'s')+' skipped ('+pairInfo.dropped.slice(0,3).join(', ')+(pairInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable listed unchecked below'):'')+'. Review and add:','#1c7a43');
     _renderTplSplitPreview();
   }
 }
@@ -16947,34 +17932,46 @@ function _tplDedupeTemplates(arr){
   return _tplDedupeTemplatesInfo(arr).list;
 }
 /* Split ONE document's text (chunked) and push results into _tplPendingSplit. */
-async function _tplSplitOneInto(text, fallbackName){
+/* `sink` (b940) is the caller's private accumulator; omit it and this writes
+   straight into _tplPendingSplit exactly as it always has. */
+async function _tplSplitOneInto(text, fallbackName, sink){
+  var out=sink||_tplPendingSplit;
   /* Explicit Name:/Keywords: metadata makes the file self-describing — one
      template, named by its metadata, body cleaned; no AI round-trip needed. */
   var meta=_tplParseMeta(text);
-  if(meta.name){ _tplPendingSplit.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); return; }
+  if(meta.name){ out.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); return; }
   var chunks=_tplChunk(text, 6000);
-  var before=_tplPendingSplit.length;
-  for(var ci=0; ci<chunks.length; ci++){
-    try{
-      var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunks[ci]})});
-      var d=await r.json().catch(function(){return {};});
-      if(r.status===403) break;   // AI split unavailable on this account — the per-file fallback below still keeps the file
-      if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||fallbackName||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
-    }catch(e){}
-  }
+  var before=out.length;
+  /* b889 — a single long file splits into many chunks and each was a serial AI
+     round-trip; without a status per part, one big file reads as a total stall.
+     b940 — the parts run through the same globally-bounded pool, and their rows
+     are appended in CHUNK order afterwards, so a fast part 7 can never jump
+     ahead of a slow part 2 in the reviewed list. */
+  var parts=await _tplPool(chunks, _TPL_AI_LIMIT, async function(chunk, ci){
+    if(chunks.length>1) _tplMultiStatus('✨ Recognizing templates… '+String(fallbackName||'file')+' · part '+(ci+1)+'/'+chunks.length+' ('+_tplFoundSoFar(out)+' found so far)');
+    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize-part', ci, chunks.length, String(fallbackName||'file'), _tplFoundSoFar(out)); }catch(e){}
+    return await _tplSplitChunk(chunk);
+  });
+  parts.forEach(function(rows){
+    if(!rows) return;   // null = AI unavailable (403); the keep-fallback below owns the file
+    rows.forEach(function(t){ out.push({ name:String(t.name||fallbackName||('Template '+(out.length+1))), text:String(t.text||''), keep:true }); });
+  });
   // If the AI found nothing in this file, keep the file itself as a single template.
-  if(_tplPendingSplit.length===before && text.trim()){ _tplPendingSplit.push({ name:fallbackName||('Template '+(_tplPendingSplit.length+1)), text:text.trim(), keep:true }); }
+  if(out.length===before && text.trim()){ out.push({ name:fallbackName||('Template '+(out.length+1)), text:text.trim(), keep:true }); }
 }
 /* No AI available (signed out / server unreachable): each uploaded file becomes ONE template
    (files were joined with \f) — never a dead end that demands a sign-in. */
 function _tplPerFileFallback(text){
-  _tplPendingSplit=String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){
+  _tplPendingSplit=_tplPendingCarry.concat(String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){
     var meta=_tplParseMeta(seg);
     if(meta.name) return { name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true };
-    return { name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
-  });
+    var row={ name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
+    _tplSeedKeywords(row);
+    return row;
+  }));
   var fbInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
   _tplPendingSplit=fbInfo.list;
+  _tplAppendUnreadableRows();
   if(!_tplPendingSplit.length){ _tplMultiStatus('No readable text found in those files.','#b4231e'); return; }
   _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' (one per file)'+(fbInfo.dropped.length?(' · '+fbInfo.dropped.length+' duplicate'+(fbInfo.dropped.length===1?'':'s')+' skipped'):'')+'. Review and add:','#1c7a43');
   _renderTplSplitPreview();
@@ -16982,17 +17979,25 @@ function _tplPerFileFallback(text){
 async function tplAiSplit(text){
   if(!backendMode()||!bkToken()){ _tplPerFileFallback(text); return; }
   var chunks=_tplChunk(text, 6000);
-  _tplPendingSplit=[];
-  for(var ci=0; ci<chunks.length; ci++){
-    _tplMultiStatus('✨ Recognizing templates… part '+(ci+1)+'/'+chunks.length+' ('+_tplPendingSplit.length+' found so far)');
-    try{
-      var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunks[ci]})});
-      var d=await r.json().catch(function(){return {};});
-      if(r.status===403) break;   // AI split unavailable on this account — fall through to the per-file fallback
-      if(r.ok && d.templates && d.templates.length){ d.templates.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); }); }
-    }catch(e){}
-  }
-  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); });   // name by note TYPE, not patient (explicit metadata names win)
+  _tplPendingSplit=_tplPendingCarry.slice(); _tplAiOff=false; _tplRecogFound=0;
+  /* b940 — one giant PDF is many chunks and every chunk was its own serial
+     round-trip. Same bounded pool, same chunk-ordered append. */
+  var aiDone=0;
+  var aiTick=function(ci){
+    _tplMultiStatus('✨ Recognizing templates… part '+aiDone+'/'+chunks.length+' ('+_tplRecogFound+' found so far)');
+    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', aiDone, chunks.length, 'part '+((ci||0)+1), _tplRecogFound); }catch(e){}
+  };
+  aiTick(0);
+  var aiParts=await _tplPool(chunks, _TPL_AI_LIMIT, async function(chunk, ci){
+    var rows=await _tplSplitChunk(chunk);
+    aiDone++; _tplRecogFound+=(rows&&rows.length)||0; aiTick(ci);
+    return rows;
+  });
+  aiParts.forEach(function(rows){
+    if(!rows) return;   // null = AI unavailable (403) → _tplPerFileFallback below
+    rows.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); });
+  });
+  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t); });   // name by note TYPE, not patient (explicit metadata names win)
   var aiInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
   _tplPendingSplit=aiInfo.list;
   if(!_tplPendingSplit.length){ _tplPerFileFallback(text); return; }   // AI found nothing → keep each file as one template
@@ -17014,10 +18019,31 @@ function tplAddSplit(){
   var keep=_tplPendingSplit.filter(function(t){return t.keep && (t.text||'').trim();});
   if(!keep.length){ toast('Select at least one template.','err'); return; }
   var list=getTemplates();
-  keep.forEach(function(t,ki){ list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:String(t.name||'Template').slice(0,120), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() }); });
+  /* b940 — AN IMPORT MAY NOT CREATE A TWIN EITHER.
+     b940 stopped the RENAME button making two templates share a name; the same
+     rule has to hold on the way IN. Measured: importing eight op notes into the
+     shipped library produced "Caudal epidural steroid injection" alongside the
+     existing "Caudal Epidural Steroid Injection" — differing only in case, so
+     the picker shows two rows the doctor cannot tell apart and an edit lands on
+     whichever one they guessed. A doctor importing fifty notes hits this for
+     every procedure they already had a template for, which is most of them.
+     The incoming name is disambiguated rather than refused, because the import
+     is the doctor asking for these templates and dropping one silently would be
+     worse than a numbered name. */
+  var used={}; list.forEach(function(x){ used[String(x.name||'').trim().toLowerCase()]=1; });
+  var uniqueName=function(want){
+    var base=String(want||'Template').slice(0,120).trim()||'Template';
+    if(!used[base.toLowerCase()]){ used[base.toLowerCase()]=1; return base; }
+    for(var n=2;n<=99;n++){
+      var cand=(base+' ('+n+')').slice(0,120);
+      if(!used[cand.toLowerCase()]){ used[cand.toLowerCase()]=1; return cand; }
+    }
+    return base;
+  };
+  keep.forEach(function(t,ki){ _tplSeedKeywords(t); list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:uniqueName(t.name), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() }); });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
-  _tplPendingSplit=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
+  _tplPendingSplit=[]; _tplPendingCarry=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
   renderTemplateList(); renderTemplateActiveSelect();
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
   try{ toast('Added '+keep.length+' templates.','ok'); }catch(e){}
@@ -17026,8 +18052,58 @@ function tplAddSplit(){
    For the doctor who already uploaded op notes named "Operative Report - Lastname, First". */
 async function fixTemplateNames(){
   var list=getTemplates(); if(!list.length){ try{ toast('No templates to rename yet.',''); }catch(e){} return; }
-  var renamed=0, changes=[];
-  list.forEach(function(t){ var nn=_tplTypeName(t.text, t.name); if(nn && nn!==t.name){ changes.push((t.name||'?')+'  →  '+nn); t.name=nn; renamed++; } });
+  /* b940 — A RENAME MAY NOT COST THE DOCTOR INFORMATION, AND MAY NOT CREATE TWINS.
+     This button exists to replace a PATIENT name with the note type. Applied to
+     a library that is already well named it was destroying names instead:
+     "Genicular Nerve Block" became "Block", "Lumbar Facet Joint Injection"
+     became "Facet Injection", and two distinct templates both became
+     "Medial branch Block" — indistinguishable in the picker, which is exactly
+     the ambiguity that once made the prep row show the wrong template.
+
+     Two guards, both cheap:
+       1. WORD-SUBSET. If every word of the proposed name already appears in the
+          current name and the proposal is shorter, the proposal is strictly
+          less specific — skip it. A real patient-named template ("Smith, John")
+          shares no words with "Lumbar Epidural Steroid Injection", so the
+          feature still does its job.
+       2. UNIQUENESS. A proposal that collides with another template's name is
+          skipped rather than applied, because two identical names are worse
+          than one clumsy one. */
+  var words=function(s){ return String(s||'').toLowerCase().split(/[^a-z0-9]+/).filter(function(w){ return w.length>1; }); };
+  var losesInformation=function(oldName,newName){
+    var o=words(oldName), n=words(newName);
+    if(!n.length) return true;
+    if(n.length>=o.length) return false;
+    return n.every(function(w){ return o.indexOf(w)!==-1; });
+  };
+  /* THE REAL TRIGGER: this button replaces a PATIENT name with the note type.
+     A name that already reads as a procedure is not the problem it was built to
+     solve, and rewriting it only ever made things worse — the shipped library
+     went "Genicular Nerve Block" -> "Genicular nerve block, [LATERALITY] knee
+     (superolateral…", trading a clean label for a clinical sentence. If the
+     name already names the procedure, leave it alone. */
+  var PROC_WORD=/\b(injection|block|epidural|esi|rfa|ablation|neurotomy|rhizotomy|discogram|arthrogram|myelogram|kyphoplasty|vertebroplasty|stimulator|facet|medial branch|genicular|caudal|transforaminal|interlaminar|sacroiliac|si joint|trigger point|bursa|biopsy|aspiration|lysis|catheter|consult|op note|operative note)\b/i;
+  var alreadyNotesType=function(name){
+    var s=String(name||'');
+    if(!PROC_WORD.test(s)) return false;
+    /* …unless a patient name is riding along with it ("Reinert, David —
+       Lumbar ESI"): Lastname, Firstname is the shape this button hunts. */
+    if(/[A-Z][a-z]+\s*,\s*[A-Z][a-z]+/.test(s)) return false;
+    return true;
+  };
+  var renamed=0, changes=[], skipped=0;
+  var taken={}; list.forEach(function(t){ taken[String(t.name||'').toLowerCase()]=(taken[String(t.name||'').toLowerCase()]||0)+1; });
+  list.forEach(function(t){
+    var nn=_tplTypeName(t.text, t.name);
+    if(!nn || nn===t.name) return;
+    if(alreadyNotesType(t.name)){ skipped++; return; }
+    if(losesInformation(t.name, nn)){ skipped++; return; }
+    var key=nn.toLowerCase();
+    if(taken[key]){ skipped++; return; }
+    taken[String(t.name||'').toLowerCase()]--; taken[key]=1;
+    changes.push((t.name||'?')+'  →  '+nn); t.name=nn; renamed++;
+  });
+  if(!renamed && skipped){ try{ toast('Left '+skipped+' name'+(skipped===1?'':'s')+' alone — the note type would have been less specific than the name you already have.','ok'); }catch(e){} return; }
   if(!renamed){ try{ toast('Template names already look like note types — nothing to fix.','ok'); }catch(e){} return; }
   if(!await mlsConfirm('Rename '+renamed+' template'+(renamed===1?'':'s')+' by NOTE TYPE (procedure) instead of patient name?\n\n'+changes.slice(0,12).join('\n')+(changes.length>12?('\n…and '+(changes.length-12)+' more'):'')+'\n\nProceed?')) return;
   setTemplates(list); renderTemplateList(); renderTemplateActiveSelect();
@@ -17081,7 +18157,7 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   const templateFingerprint=_athenaEditorFingerprint();
   const templateFormat=currentFormat;
   const sys='You are a clinical documentation assistant. Reformat the provided visit note so it EXACTLY matches the structure, sections, field labels and order of the TEMPLATE below, filling each field/section from the visit note and transcript. Keep all clinically documented content; do NOT invent findings, history, or values not present in the note/transcript — use "not documented" for empty template fields. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
-  const user='TEMPLATE (match this format exactly):\n"""\n'+String(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
+  const user='TEMPLATE (match this format exactly):\n"""\n'+_tplTextForDraft(template.text).slice(0,12000)+'\n"""\n\nVISIT NOTE TO REFORMAT:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   try{
     let out=(await aiCallRaw(sys,user,getKey(),{freeform:true})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     if(!_athenaAsyncBindingStillSafe(expectedBinding,'template formatting',expectedEpoch))return false;
@@ -17399,7 +18475,7 @@ function saveDraft(){
 function saveCurrentNote(announce){
   if(currentVisitAthenaBinding&&!_athenaGuardBoundEditor('saving this note')) return false;
   // Keep currentSoap in sync with any in-editor edits before saving.
-  // b828 (write-blocker audit #2): same predicate as emrReadyText — a typed
+  // b940 (write-blocker audit #2): same predicate as emrReadyText — a typed
   // note with text is real regardless of whether generation revealed the box.
   if(currentFormat==='soap'){
     const nb=document.getElementById('noteBox');
@@ -17690,7 +18766,7 @@ function renderHistory(){
     let _ccRaw = n.cc && n.cc!=='—' ? n.cc : (n.isDraft?'Draft':'No chief complaint');
     if(/not (?:explicitly )?(?:stated|provided|documented|addressed) in the transcript/i.test(_ccRaw)) _ccRaw='Visit note';
     /* op-note autosaves store cc as "<patient> — <date> — <procedure> (op-note
-       draft)" (b828 owner-approved auto-name; the date segment is '' for rows
+       draft)" (b940 owner-approved auto-name; the date segment is '' for rows
        whose procedure day is unknown). Draft-resume matches by procedure
        CONTAINMENT so both formats adopt. This row already leads with the
        patient name, so the prefix rendered doubled: "Bernard P Brooks —
@@ -18021,7 +19097,7 @@ function initRecog(){
 function showMicWarn(msg){
   const w=document.getElementById('micWarn');
   w.style.display='flex'; w.querySelector('span').textContent=msg;
-  /* b828 (phone audit B5): #micWarn lives inside #captureCard, which the
+  /* b940 (phone audit B5): #micWarn lives inside #captureCard, which the
      calm shell hides PERMANENTLY — every mic diagnostic (including the iOS
      advice) was being written into an invisible node, so a failed mic looked
      like a dead button. If the warn node has no rendered box, say it where
@@ -20492,7 +21568,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 }
 For conservative_care/imaging_concordance/surgical_options/preop_workup/consent_points: populate ONLY when surgery is genuinely being considered/discussed and ONLY from what the transcript/note supports; otherwise leave them empty ({tried:[],still_needed:[]} / "" / [] / [] / {benefits:[],risks:[],alternatives:[]}). Never fabricate surgical planning for a non-surgical visit.
 For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY what the transcript/note actually supports; never fabricate. Any of these arrays may be empty ([]). Extract opioids (drug, mg per dose, doses per day) ONLY if the conversation names them.${instrLine}${ptSummaryLine}`+docPrefsBlock();
-  /* b828 (diarization, option A): turn labels ride the USER payload — the one
+  /* b940 (diarization, option A): turn labels ride the USER payload — the one
      field that survives the hosted transport — as a clearly-marked HYPOTHESIS
      sidecar with the caveat INSIDE the block, so the model sees it even where
      the system string is dropped. The canonical transcript is untouched. */
@@ -21219,7 +22295,7 @@ function signNote(){
     }
   }catch(eSignPh){}
   setBadge(true);
-  /* b828: this was getName() - uns('docname'), the device-local LOGIN name - and
+  /* b940: this was getName() - uns('docname'), the device-local LOGIN name - and
      the string it builds is an ELECTRONIC SIGNATURE that saveCurrentNote() writes
      into the chart. On a shared or front-desk login it attested that whoever was
      signed in on that browser had signed a clinical note. clinicalProviderName()
@@ -21266,7 +22342,7 @@ function downloadNote(){
    billing and orders must never ride inside an untyped free-text paste. ---- */
 function emrReadyText(){
   const nb=document.getElementById('noteBox');
-  /* b828 (write-blocker audit #2): read the box whenever it HAS text, not only
+  /* b940 (write-blocker audit #2): read the box whenever it HAS text, not only
      when generation revealed it. A hand-typed or room-mirrored note was
      invisible to the whole write path because #noteBox ships display:none and
      only showNote() (generation / record load) flips it — so typing a note
@@ -21624,7 +22700,7 @@ function _athenaBuildPlan(binding){
   return { plan:plan, lines:lines, who:who, noteText:noteText };
 }
 function pushEntireVisitToAthena(btn){
-  /* b828 (write-blocker audit #1): gate on the note TEXT, not on how it came
+  /* b940 (write-blocker audit #1): gate on the note TEXT, not on how it came
      to exist. emrReadyText() now reads typed text too; the plan builder's own
      "Nothing to review yet" stays as the terminal empty check. */
   if(!emrReadyText()){ try{ toast('Type or generate the note first, then review the Athena actions.','err'); }catch(e){} return; }
@@ -21893,7 +22969,7 @@ function compilePatientRecord(p){
   notes.forEach(n=>{
     L.push('');
     L.push('• '+new Date(n.updated||n.created).toLocaleString()+(n.signed?' — Signed':n.isDraft?' — Draft':' — Unsigned'));
-    /* b828 (audit): op notes save their body to .text, not .soap — every prior
+    /* b940 (audit): op notes save their body to .text, not .soap — every prior
        operative note contributed a BLANK body here, and op-note drafts were
        falsely labeled "[Transcript only]". This record feeds the (B) op-note
        fallback AND the IME/legal report, where prior op notes matter most. */
@@ -22006,7 +23082,7 @@ function buildPrintHTML(){
   }
   const noteText=(currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'';
   const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
-  /* b828: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  /* b940: was getName(), the device-local LOGIN name, on a printed clinical document. */
   const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   // MLS additive — optional practice/provider header details (render only if set)
@@ -22784,7 +23860,7 @@ function ordersAsText(){
   const ap=activePatient();
   const out=[];
   out.push('ORDERS — '+(ap?ap.name:'Unassigned patient'));
-  /* b828: the LOGIN name on an orders sheet that gets pasted into a pharmacy or
+  /* b940: the LOGIN name on an orders sheet that gets pasted into a pharmacy or
      imaging portal. The shared resolver decides who the clinician is. */
   out.push('Provider: '+(clinicalProviderName()||'Clinician')+(getSpec()?(' · '+getSpec()):''));
   out.push('Date: '+new Date().toLocaleString());
@@ -22884,7 +23960,7 @@ function buildOrdersPrintHTML(){
   const ap=activePatient();
   const patient=ap?ap.name:'Unassigned patient';
   const ptMeta=ap?[ap.sex,ap.dob,ap.mrn?('MRN '+ap.mrn):''].filter(Boolean).join(' · '):'';
-  /* b828: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  /* b940: was getName(), the device-local LOGIN name, on a printed clinical document. */
   const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   const now=new Date().toLocaleString();
@@ -22928,7 +24004,7 @@ function buildOrdersPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <!-- b828: this hardcoded the VENDOR's name and a single specialty onto a
+    <!-- b940: this hardcoded the VENDOR's name and a single specialty onto a
          document the practice hands out. getPracticeName()/getSpec() were already
          in scope; buildPrintHTML() has resolved its letterhead this way since the
          b805 export fix, so this is the pattern catching up, not a new one. The
@@ -23112,7 +24188,7 @@ async function generatePriorAuth(){
     const appealNow=paMode==='appeal';
     return {
       service:paSelectedService(), isAppeal:appealNow, ptLine:ptLineNow,
-      /* b828: the letter is addressed to a PAYER and never learned which one. The
+      /* b940: the letter is addressed to a PAYER and never learned which one. The
          prompt's own instruction is to emit "To: [Insurance Plan / Utilization
          Management]" and "leave the plan name bracketed if not given" — and
          nothing ever gave it, because this packet read activePatient() for name,
@@ -23159,7 +24235,7 @@ async function generatePriorAuth(){
     const provider=priorAuthSources.provider;
     const spec=priorAuthSources.spec;
     const dxLine=priorAuthSources.dxLine;
-    /* b828: the payer the letter is ADDRESSED to. Both branches below use it. */
+    /* b940: the payer the letter is ADDRESSED to. Both branches below use it. */
     const payerLine=priorAuthSources.payerLine||'';
     const note=priorAuthSources.note;
     const pctx=priorAuthSources.pctx;
@@ -23243,7 +24319,7 @@ function buildPriorAuthPrintHTML(){
   const ap=activePatient();
   const patient=ap?ap.name:'[Patient — provider to complete]';
   const ptMeta=ap?[ap.sex,ap.dob,ap.mrn?('MRN '+ap.mrn):''].filter(Boolean).join(' · '):'';
-  /* b828: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  /* b940: was getName(), the device-local LOGIN name, on a printed clinical document. */
   const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   const now=new Date().toLocaleString();
@@ -23265,7 +24341,7 @@ function buildPriorAuthPrintHTML(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <!-- b828: this hardcoded the VENDOR's name and a single specialty onto a
+    <!-- b940: this hardcoded the VENDOR's name and a single specialty onto a
          document the practice hands out. getPracticeName()/getSpec() were already
          in scope; buildPrintHTML() has resolved its letterhead this way since the
          b805 export fix, so this is the pattern catching up, not a new one. The
@@ -24177,7 +25253,35 @@ async function generateReferral(){
     toast('Offline example referral shown.','');
     return;
   }
-  const to=await mlsPrompt('Refer to which specialty / consultant? (e.g. Cardiology, Dr. Lee)','Specialist');
+  /* b940: the default was the literal word 'Specialist', so the doctor retyped a
+     consultant they had already entered minutes earlier. This visit's referral
+     ORDER carries it: ORDER_DEFS.referral's first field is
+     {key:'specialty', label:'Specialty / provider', req:1}, so a referral order in
+     currentOrders always has one. The prior-auth panel in this same file already
+     makes exactly this move - populatePaServiceSelect() builds its picker from
+     this visit's orders.
+     mlsPrompt's second argument is a PREFILLED EDITABLE value, not a forced one, so
+     the doctor overwrites it in one keystroke when the letter is for somebody else.
+     Most recent referral order wins; falls back to the chart's PCP, which is the
+     field literally labelled "PCP / referring provider"; then to the old literal. */
+  const _refDefault=(function(){
+    try{
+      for(var i=currentOrders.length-1;i>=0;i--){
+        var o=currentOrders[i];
+        if(o&&o.type==='referral'){
+          var v=String((o.fields&&o.fields.specialty)||'').trim();
+          if(v) return v;
+        }
+      }
+    }catch(e){}
+    try{
+      var ap=(typeof activePatient==='function')?activePatient():null;
+      var pcp=String((ap&&ap.history&&ap.history.pcp)||'').trim();
+      if(pcp) return pcp;
+    }catch(e2){}
+    return 'Specialist';
+  })();
+  const to=await mlsPrompt('Refer to which specialty / consultant? (e.g. Cardiology, Dr. Lee)',_refDefault);
   if(to===null){ return; } // user cancelled
   const referralBinding=currentVisitAthenaBinding;
   const referralEpoch=currentVisitAthenaEpoch;
@@ -24663,7 +25767,7 @@ function printProcNote(){
   if(!txt){ toast('Generate the procedure note first.','err'); return; }
   const ap=activePatient();
   const patient=ap?ap.name:'[Patient — provider to complete]';
-  /* b828: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  /* b940: was getName(), the device-local LOGIN name, on a printed clinical document. */
   const docName=clinicalProviderName()||'Clinician';
   const spec=getSpec();
   const now=new Date().toLocaleString();
@@ -24684,7 +25788,7 @@ function printProcNote(){
   @media print{body{padding:0}}
 </style></head><body>
   <div class="hd">
-    <!-- b828: this hardcoded the VENDOR's name and a single specialty onto a
+    <!-- b940: this hardcoded the VENDOR's name and a single specialty onto a
          document the practice hands out. getPracticeName()/getSpec() were already
          in scope; buildPrintHTML() has resolved its letterhead this way since the
          b805 export fix, so this is the pattern catching up, not a new one. The
@@ -25320,7 +26424,7 @@ function printHandout(){
   const patient=ap?ap.name:(document.getElementById('patientLabel').value.trim()||'Patient');
   const docName=clinicalProviderName()||getPracticeName()||'Your care team';
   const now=new Date().toLocaleDateString();
-  /* b828: "Call the office with any questions." named neither the office nor a
+  /* b940: "Call the office with any questions." named neither the office nor a
      number, on a sheet a PATIENT takes home — the same defect b823 fixed in the
      after-visit summary, on a different surface. b823 touched only
      feat_after_visit_summary.js and its test reads only that file, so this one
@@ -25350,7 +26454,7 @@ function printHandout(){
   @media print{body{padding:0 14px}}
 </style></head><body>
   <div class="hd">
-    <!-- b828: a PATIENT handout headed with a generic title and the vendor's
+    <!-- b940: a PATIENT handout headed with a generic title and the vendor's
          specialty. The heading stays (it names the document, which is right for a
          patient) and the sub-line becomes the practice the patient is dealing
          with. -->
@@ -25610,7 +26714,7 @@ function copySection(letter){
 function printExtra(title,bodyId){
   const body=document.getElementById(bodyId);
   const patient=document.getElementById('patientLabel').value.trim()||'Unlabeled';
-  /* b828: this header printed Patient / Provider / timestamp and nothing else, on
+  /* b940: this header printed Patient / Provider / timestamp and nothing else, on
      the twelve documents that route through printExtra() - the after-visit summary,
      referral letter, IME report, medical-legal report, utilization review,
      superbill, good faith estimate, three analysis reports and the custom-widget
@@ -25623,7 +26727,7 @@ function printExtra(title,bodyId){
      has it, and the line is omitted entirely when no patient is active. */
   const _peAp=(typeof activePatient==='function')?activePatient():null;
   const _peMeta=_peAp?[_peAp.sex,_peAp.dob,_peAp.mrn?('MRN '+_peAp.mrn):''].filter(Boolean).join(' · '):'';
-  /* b828: was getName(), the device-local LOGIN name, on a printed clinical document. */
+  /* b940: was getName(), the device-local LOGIN name, on a printed clinical document. */
   const docName=clinicalProviderName()||'Clinician';
   const now=new Date().toLocaleString();
   const bodyText=(body.tagName==='TEXTAREA'||body.tagName==='INPUT')?body.value:body.textContent;
@@ -26416,7 +27520,7 @@ function agSyncSignState(){
    login loading owner: the old green MLS treatment, with the compliance gate
    still one layer above it at z-index 9999. */
 var sfGateLoadingStarted=0, sfGateHideToken=0, sfGateForceTimer=0, sfGateLoadingVisible=false, sfGateStageTimers=[];
-/* b828: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
+/* b940: the LAST-RESORT reveal. Deliberately NOT part of the token bookkeeping
    below, because that bookkeeping is exactly what can strand the loading screen
    forever — see sfArmGateWatchdog(). */
 var sfGateWatchdog=0;
@@ -26551,7 +27655,7 @@ function sfWaitForStableFirstFrame(token,force,gated){
   });
 }
 
-/* b828 — THE LOADING SCREEN MUST ALWAYS END.
+/* b940 — THE LOADING SCREEN MUST ALWAYS END.
  *
  * Reported: "I CANT EVEN SIGN IN THE LOADING SCREEN HAS ME STUCK."
  *
@@ -26654,7 +27758,7 @@ function sfShowGateLoading(){
   el.setAttribute('aria-label','Preparing your MLS workspace');
   el.style.cssText='position:fixed;inset:0;z-index:9998;background:linear-gradient(180deg,#204034 0%,#1E2B24 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font:500 16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;text-align:center;opacity:1;visibility:visible;pointer-events:auto;transition:opacity '+SF_GATE_FADE_MS+'ms ease';
   if(!el.querySelector('#sfGateLoadingInner')){
-    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}#mlsBLbar{transform-origin:left center;will-change:transform}#sfGateLoading.mls-gate-progress #mlsBLbar{animation:sfGateAdvance 4300ms cubic-bezier(.22,.7,.25,1) forwards}#sfGateLoading #mlsBLbar.done{animation:none;transform:scaleX(1)!important}@keyframes sfGateAdvance{0%{transform:scaleX(.08)}24%{transform:scaleX(.28)}58%{transform:scaleX(.57)}84%{transform:scaleX(.78)}100%{transform:scaleX(.88)}}@media(prefers-reduced-motion:reduce){#sfGateLoading.mls-gate-progress #mlsBLbar{animation:none;transform:scaleX(.55)}}#mlsBLwave{display:flex;align-items:flex-end;gap:4px;height:28px;margin:2px 0 -2px}#mlsBLwave i{display:block;width:4px;border-radius:10px;background:linear-gradient(180deg,#8FD8BE,#3B7C5A);transform-origin:bottom center;animation:mlsBLpulse 1250ms cubic-bezier(.4,0,.2,1) infinite}@keyframes mlsBLpulse{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}#mlsBLtip{max-width:340px;min-height:34px;margin-top:4px;color:#A8C4B7;font:400 12.5px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;opacity:0;transform:translateY(3px);transition:opacity 320ms ease,transform 320ms cubic-bezier(.32,.72,0,1)}#mlsBLtip.on{opacity:1;transform:translateY(0)}#mlsBLtip b{display:inline-block;margin-right:7px;padding:2px 8px;border-radius:999px;background:rgba(143,216,190,.16);color:#8FD8BE;font-weight:600;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;vertical-align:1px}@media(prefers-reduced-motion:reduce){#mlsBLwave i{animation:none;transform:scaleY(.6)}#mlsBLtip{transition:none}}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
+    el.innerHTML='<style id="sfGateLoadingCss">html.mls-secure-loading body>:not(#sfGateLoading){visibility:hidden!important}html.mls-secure-loading body>:not(#sfGateLoading),html.mls-secure-loading body>:not(#sfGateLoading) *{transition:none!important;animation-play-state:paused!important}html.mls-secure-loading #mlsBusyPill,html.mls-secure-loading #mlsLbBar,html.mls-secure-loading #mlsCopVoiceBtn,html.mls-secure-loading #mlsAsstFab,html.mls-secure-loading #mlsDaDock,html.mls-secure-loading #mlsTabPickerChip,html.mls-app-revealing #mlsBusyPill,html.mls-app-revealing #mlsLbBar,html.mls-app-revealing #mlsCopVoiceBtn,html.mls-app-revealing #mlsAsstFab,html.mls-app-revealing #mlsDaDock,html.mls-app-revealing #mlsTabPickerChip{display:none!important}#mlsBLbar{transform-origin:left center;will-change:transform}#sfGateLoading.mls-gate-progress #mlsBLbar{animation:sfGateAdvance 4300ms cubic-bezier(.22,.7,.25,1) forwards}#sfGateLoading #mlsBLbar.done{animation:none;transform:scaleX(1)!important}@keyframes sfGateAdvance{0%{transform:scaleX(.08)}24%{transform:scaleX(.28)}58%{transform:scaleX(.57)}84%{transform:scaleX(.78)}100%{transform:scaleX(.88)}}@media(prefers-reduced-motion:reduce){#sfGateLoading.mls-gate-progress #mlsBLbar{animation:none;transform:scaleX(.55)!important}}#mlsBLwave{display:flex;align-items:flex-end;gap:4px;height:28px;margin:2px 0 -2px}#mlsBLwave i{display:block;width:4px;border-radius:10px;background:linear-gradient(180deg,#8FD8BE,#3B7C5A);transform-origin:bottom center;animation:mlsBLpulse 1250ms cubic-bezier(.4,0,.2,1) infinite}@keyframes mlsBLpulse{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}#mlsBLtip{max-width:340px;min-height:34px;margin-top:4px;color:#A8C4B7;font:400 12.5px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;opacity:0;transform:translateY(3px);transition:opacity 320ms ease,transform 320ms cubic-bezier(.32,.72,0,1)}#mlsBLtip.on{opacity:1;transform:translateY(0)}#mlsBLtip b{display:inline-block;margin-right:7px;padding:2px 8px;border-radius:999px;background:rgba(143,216,190,.16);color:#8FD8BE;font-weight:600;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;vertical-align:1px}@media(prefers-reduced-motion:reduce){#mlsBLwave i{animation:none;transform:scaleY(.6)}#mlsBLtip{transition:none}}</style><div id="sfGateLoadingInner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px">'+
       '<div id="sfGateLoadingBrand" style="display:flex;align-items:center;gap:12px">'+
         '<svg viewBox="0 0 56 56" width="48" height="48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sfGateMarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect width="56" height="56" rx="15" fill="url(#sfGateMarkGrad)"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg>'+
         '<span style="font:800 24px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;letter-spacing:-.3px">MLS <span style="font-weight:500;color:#C9DCD2">Scribe</span></span>'+
@@ -27372,6 +28476,16 @@ async function legalTextToPdf(docType,text,fallbackBodyId){
     const maxW=pageW-margin*2;
     let y=margin;
     // Header
+    /* b940: the last two jsPDF builders. The practice's own logo, drawn by the one
+       owner (__mlsOpNotePro.drawLetterheadLogo), which returns the space CONSUMED -
+       so a refusal is 0 and this cursor cannot advance past a logo that was not
+       drawn. Existence-checked and wrapped: that module loads separately, and an
+       absent engine must mean "no logo", never a thrown export. */
+    try {
+      const _lhP = (window.MLS_OPNOTE_LETTERHEAD) || {};
+      const _proP = window.__mlsOpNotePro;
+      if (_proP && typeof _proP.drawLetterheadLogo === 'function') y += _proP.drawLetterheadLogo(doc, _lhP.logo, margin, y);
+    } catch (eLogo) {}
     doc.setFont('helvetica','bold'); doc.setFontSize(15);
     doc.text(String(practice),margin,y); y+=18;
     doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
@@ -29223,6 +30337,9 @@ let _cwPendingLayout=null;      // sanitized layout sitting in the preview (save
 let _cwCreateInFlight=false;    // blocks double-click/re-entrant create attempts
 const _cwLibraryInstallInFlight={}; // one guard per curated library origin
 const _cwLatest={};             // widgetId -> latest RAW model reply (this session)
+window._cwLatest=_cwLatest;     // prod satellite feat_mls_widgetinsert.js reads window._cwLatest
+const _cwLatestPt={};           // widgetId -> patient id that reply was generated FOR
+window._cwLatestPt=_cwLatestPt;
 const _cwState={};              // widgetId -> sanitized per-block content incl. doctor's toggles
 const _cwCharts={};             // widgetId -> [Chart.js instances] (destroyed on re-render)
 
@@ -29773,7 +30890,21 @@ function hideWidgetPreview(){
   const p=document.getElementById('cwPreview'); if(p) p.style.display='none';
   const h=document.getElementById('cwPreviewHead'); if(h) h.textContent='Preview — tweak anything, then save';
 }
+/* v4: any edit to the identity fields re-renders the live card. Bound once,
+   lazily, so it cannot double-bind across repeated opens of the modal. */
+let _cwLiveBound=false;
+function cwBindLivePreview(){
+  if(_cwLiveBound) return;
+  ['cwTitle','cwEmoji','cwDescription','cwFormat'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input',()=>{ try{ cwLivePreview(); }catch(e){} });
+  });
+  const f=document.getElementById('cwFormat');
+  if(f) f.addEventListener('change',()=>{ try{ cwLivePreview(); }catch(e){} });
+  _cwLiveBound=true;
+}
 function showWidgetPreview(spec){
+  cwBindLivePreview();
   cwHideLibrary();
   document.getElementById('cwEmoji').value=spec.emoji||'🧩';
   document.getElementById('cwTitle').value=spec.title||'';
@@ -29794,10 +30925,78 @@ function cwRemoveLayout(){
 }
 /* One readable line per block (type chip + label + options/items/range).
    Built with createElement/textContent only — labels come from the model. */
+/* SAMPLE CONTENT for the live preview — one realistic value per block type,
+   in exactly the shape cwSanitizeContent expects, so the preview is rendered
+   by the SAME code path that renders the real card. Nothing here is sent
+   anywhere; it exists so the doctor sees the actual card before saving
+   instead of a list of block names. */
+function cwSampleContent(layout){
+  return (layout||[]).map(blk=>{
+    switch(blk.type){
+      case 'text':      return 'Sample text for “'+(blk.label||'this block')+'” — the real card fills this from the visit.';
+      case 'bullets':   return ['First point taken from the note','Second point','Third point'];
+      case 'table':     return (blk.columns||[]).length
+                          ? [blk.columns.map((c,i)=>i===0?'Example':'value'), blk.columns.map((c,i)=>i===0?'Second row':'value')]
+                          : null;
+      case 'fields':    { const o={}; (blk.items||[]).forEach((it,i)=>{ o[it]=i===0?'Example':'value'; }); return o; }
+      case 'select':    return (blk.options&&blk.options.length)?blk.options[0]:null;
+      case 'checklist': return (blk.items||[]).filter((_,i)=>i%2===0);
+      case 'badge':     return {text:'Stable', level:'green'};
+      case 'score':     { const mn=blk.min||0, mx=blk.max||10; return Math.round((mn+(mx-mn)*0.7)*10)/10; }
+      case 'chart':     return {labels:['Visit 1','Visit 2','Visit 3','Visit 4'], data:[7,6,4,3]};
+      case 'timeline':  return [{date:'Mar 4',text:'Initial evaluation'},{date:'Apr 1',text:'Follow-up — improving'}];
+      case 'rating':    return Math.max(1, Math.round((blk.max||5)*0.8));
+      case 'number':    return 42;
+      default:          return null;
+    }
+  });
+}
+/* The live preview: a REAL card, built by the real renderer, updating as the
+   doctor edits. Replaces a read-only list of block names that never showed
+   what the widget would actually look like. */
+function cwLivePreview(){
+  const host=document.getElementById('cwLiveHost');
+  if(!host) return;
+  const title=(document.getElementById('cwTitle')||{}).value||'Untitled widget';
+  const emoji=(document.getElementById('cwEmoji')||{}).value||'🧩';
+  const desc=(document.getElementById('cwDescription')||{}).value||'';
+  const layout=(_cwPendingLayout&&_cwPendingLayout.length)?_cwPendingLayout:null;
+  host.innerHTML='';
+  const card=document.createElement('div');
+  card.className='extra-card cw-live-card';
+  const h=document.createElement('div'); h.className='cw-live-title';
+  h.textContent=(emoji?emoji+' ':'')+title;
+  card.appendChild(h);
+  if(desc){ const d=document.createElement('div'); d.className='cw-live-desc'; d.textContent=desc; card.appendChild(d); }
+  const body=document.createElement('div');
+  body.id='cwBody___preview';                 // the renderer writes here
+  card.appendChild(body);
+  host.appendChild(card);
+  const w={id:'__preview', title:title, emoji:emoji, layout:layout,
+           format:(document.getElementById('cwFormat')||{}).value||'text'};
+  try{
+    if(layout){ cwRenderLayoutBlocks(w, cwSampleContent(layout)); }
+    else {
+      const fmt=w.format;
+      const sample = fmt==='bullets' ? '- First point from the note\n- Second point\n- Third point'
+                   : fmt==='table'   ? 'Item | Detail\nExample | value\nSecond row | value'
+                   : 'Sample output for this widget — the real card fills this from each visit’s note and transcript.';
+      cwRenderOutput(w, sample);
+    }
+  }catch(e){
+    body.textContent='Preview unavailable for this design — the widget will still save and run.';
+    body.style.color='var(--muted)';
+  }
+  const note=document.createElement('div');
+  note.className='cw-live-note';
+  note.textContent='Live preview with sample data — nothing here is saved or sent.';
+  host.appendChild(note);
+}
 function cwRenderLayoutSummary(){
   const wrap=document.getElementById('cwLayoutWrap');
   const box=document.getElementById('cwLayoutSummary');
   const fmt=document.getElementById('cwFormatWrap');
+  cwLivePreview();                      // the card the doctor actually gets
   if(!wrap||!box) return;
   if(!_cwPendingLayout||!_cwPendingLayout.length){
     wrap.style.display='none';
@@ -29929,6 +31128,7 @@ function saveCustomWidget(){
     if(changed){
       list[i]=candidate;
       delete _cwLatest[_cwEditingId];   // layout may have changed — drop stale content/state
+      delete _cwLatestPt[_cwEditingId];
       delete _cwState[_cwEditingId];
       setCustomWidgets(list);
     }
@@ -30007,6 +31207,7 @@ async function deleteCustomWidgetAt(index){
   list.splice(index,1);
   if(!list.some(x=>x.id===w.id)){
     delete _cwLatest[w.id];
+    delete _cwLatestPt[w.id];
     delete _cwState[w.id];
     cwDestroyCharts(w.id);
     delete _cwCharts[w.id];
@@ -30582,7 +31783,7 @@ async function printCustomWidget(id){
 
   const pt=activePatient();
   const ptName=(pt && (pt.name||pt.label))?String(pt.name||pt.label):'(no patient selected)';
-  /* b828: bkUser.name is server-sourced and stays first; the local rung was the
+  /* b940: bkUser.name is server-sourced and stays first; the local rung was the
      LOGIN name and is now the shared resolver. */
   const docName=(bkUser&&bkUser.name)||clinicalProviderName()||'Clinician';
   const today=agTodayStr();
@@ -30618,6 +31819,10 @@ async function printCustomWidget(id){
 function cwPushToNote(id){
   const w=(typeof getRenderableCustomWidgets==='function'?getRenderableCustomWidgets():getCustomWidgets()).find(x=>x.id===id);
   if(!w) return;
+  // Per-patient guard: never append output that was generated for another chart.
+  if(_cwLatestPt[w.id]!==undefined && String(_cwLatestPt[w.id])!==String((typeof getActivePtId==='function'?getActivePtId():'')||'')){
+    toast('This widget was generated for a different patient — refresh it for the current patient first.','err'); return;
+  }
   // Prefer live block state; fall back to a parse of this session's latest reply.
   let serialized='';
   if(Array.isArray(w.layout)&&w.layout.length){
@@ -30790,6 +31995,7 @@ async function runCustomWidget(id,opts){
     if(!customWidgetResultStillSafe()) return;
     const raw=String(response||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     _cwLatest[id]=raw;
+    try{ _cwLatestPt[id]=(typeof getActivePtId==='function'?getActivePtId():'')||''; }catch(ePt){}
     delete _cwState[id];           // fresh fill → recompute block state from this reply
     cwRenderOutput(w,raw);
   }catch(err){
@@ -31068,7 +32274,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=20260726pv711"></script>
+<script src="public-preview-runtime.js?v=20260802pv713"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -31365,7 +32571,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b828';
+  window.__MLS_AV='b943';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -31730,6 +32936,10 @@ function _ptGroupSort(mode){
   function close() {
     var c = document.getElementById(CARD_ID);
     if (c && c.parentNode) c.parentNode.removeChild(c);
+    try {
+      document.documentElement.classList.remove('mls-a2hs-open');
+      document.documentElement.style.removeProperty('--mls-a2hs-h');
+    } catch (e) {}
   }
 
   function show() {
@@ -31791,6 +33001,33 @@ function _ptGroupSort(mode){
     card.appendChild(no);
 
     document.body.appendChild(card);
+    reserveClearance(card);
+  }
+
+  /* ph-a2hs-1.0.1 — the card is position:fixed, so it reserved NO scroll space
+     and simply sat on whatever the page ended with. MEASURED at 402x874 at
+     MAXIMUM scroll (scrollHeight 1377, clientHeight 874, so scrollY was already
+     at its limit of 503):
+         #appFooter    651.3 .. 737.6
+         #mlsA2hsCard  707.3 .. 790.0  (fixed)
+         overlap       30.3 CSS px, with nowhere left to scroll
+     The 30.3px it covered is the medico-legal line — "Always review AI notes
+     before signing… Do not enter real patient information." — which is the one
+     piece of text on the page that must never be unreachable.
+     The card's own height is published rather than assumed, because the message
+     wraps to two or three lines depending on width and on whether the Android
+     "Add to Home Screen" button is present. The class lands on <html> so the
+     rule can out-specify body.mls-calm's padding-bottom:96px
+     (feat_mls_calm_shell.js:217) on specificity alone — (0,1,2) against (0,1,1)
+     — instead of stacking another !important, which is the failure mode this
+     file's comments repeatedly warn about. Reverted in close(), so a dismissed
+     card gives the space straight back. */
+  function reserveClearance(card) {
+    try {
+      var h = Math.round(card.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--mls-a2hs-h', h + 'px');
+      document.documentElement.classList.add('mls-a2hs-open');
+    } catch (e) {}
   }
 
   try {
@@ -31817,6 +33054,188 @@ function _ptGroupSort(mode){
   api.revert = function () {
     close();
     try { delete window.__mlsA2HS; } catch (e) { window.__mlsA2HS = null; }
+  };
+})();
+</script>
+<script>
+/* ===== dt-getphone-1.0.0 — tell the DESKTOP how to get MLS onto a phone =====
+ * ph-a2hs-1.0.0 (above) offers "Add to Home Screen" on the phone itself, which
+ * only helps a clinician who has ALREADY found the site on their phone. Nothing
+ * told the desktop user — the one actually sitting in front of MLS every day —
+ * that a phone install exists or how to reach it. This is that missing half, and
+ * it is deliberately the MIRROR of ph-a2hs: same eligibility helpers inverted,
+ * same visual language, same one-key dismissal contract.
+ *
+ * Shown only when ALL of these hold, so it can never double up with ph-a2hs:
+ *   !isHandheld()   — the phone already gets its own card
+ *   !isStandalone() — an installed instance is not a browser tab
+ *   signed in       — #appScreen visible; a logged-out visitor has no workspace
+ *                     to put on a phone, and the auth screen has no room for it
+ *   not dismissed   — localStorage, so "Got it" means forever, not per session
+ *
+ * Anchored bottom-RIGHT because feat_mls_redesign.js:1070-1074 pins #mlsAsstFab
+ * and #mlsCopVoiceBtn to the bottom-LEFT (left:calc(var(--rail-w) + 14px)), and
+ * the phone dock is phone-only — so the right corner is the one that is free on
+ * a desktop. z-index 99996 sits one BELOW ph-a2hs's 99997: the two are mutually
+ * exclusive by construction, and if that ever stops being true the phone's own
+ * card is the one that must win.
+ * The host is read from location.host rather than hard-coded, so the card names
+ * the domain the clinician is actually on instead of promising mlsscribe.com to
+ * someone on staging. */
+;(function () {
+  if (window.__mlsGetPhone) return;
+  var CARD_ID = 'mlsGetPhoneCard', SEEN = 'mls_getphone_dismissed';
+  var api = { installed: true, version: 'dt-getphone-1.0.0' };
+  window.__mlsGetPhone = api;
+
+  function isIOSLike() {
+    try {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+        (/Macintosh/.test(navigator.userAgent || '') && (navigator.maxTouchPoints || 0) > 1);
+    } catch (e) { return false; }
+  }
+  function isHandheld() {
+    try {
+      if (isIOSLike()) return true;
+      return /Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent || '') &&
+             ((navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window);
+    } catch (e) { return false; }
+  }
+  function isStandalone() {
+    try {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+             navigator.standalone === true;
+    } catch (e) { return false; }
+  }
+  function signedIn() {
+    try {
+      var s = document.getElementById('appScreen');
+      return !!s && getComputedStyle(s).display !== 'none';
+    } catch (e) { return false; }
+  }
+  function dismissed() { try { return localStorage.getItem(SEEN) === '1'; } catch (e) { return false; } }
+  function remember() { try { localStorage.setItem(SEEN, '1'); } catch (e) {} }
+
+  function close() {
+    var c = document.getElementById(CARD_ID);
+    if (c && c.parentNode) c.parentNode.removeChild(c);
+  }
+
+  /* ONE source of truth for "the phone card owns this screen". Re-deriving
+     handheld-ness here and hoping the two copies agree is exactly how two cards
+     end up stacked on each other; ask ph-a2hs directly instead, and treat its
+     card actually being in the DOM as final regardless of what any heuristic
+     says. Measured while building this: at 1440x900 with touch emulation left
+     on, ph-a2hs's card was on screen while its own eligible() read false — so
+     the DOM check is not belt-and-braces, it is the one that fires. */
+  function phoneCardOwnsScreen() {
+    try {
+      if (document.getElementById('mlsA2hsCard')) return true;
+      var a = window.__mlsA2HS;
+      return !!(a && typeof a.eligible === 'function' && a.eligible());
+    } catch (e) { return false; }
+  }
+
+  /* #mlsKbdHint ("Press ? for shortcuts", feat_mls_keyboard_layer.js:54) is
+     anchored right:14px/bottom:84px, which this card's 175px height would sit
+     straight through — MEASURED overlap 4570 px^2 at 1440x900. On a desktop that
+     hint is legitimate (there IS a ? key), so the card yields rather than
+     displacing it.
+     Checking only "is the hint in the DOM right now" LOSES THE RACE and was
+     measured doing so: the card mounted while the corner was still empty and the
+     hint appeared underneath it a second later, collision intact. So the gate is
+     a floor on elapsed time as well — the hint fades at 6.5s and is removed 0.5s
+     later, so nothing can still be arriving at 12s. The floor is what guarantees
+     the outcome; the DOM check only covers a hint that outstays its own timer.
+     Time-based rather than keyed on the hint's sessionStorage flag on purpose: if
+     feat_mls_keyboard_layer.js never loads, that flag is never written, and a
+     card that waits for it would never appear at all. */
+  var START = Date.now();
+  function hintOwnsCorner() {
+    try {
+      if (Date.now() - START < 12000) return true;
+      return !!document.getElementById('mlsKbdHint');
+    } catch (e) { return false; }
+  }
+
+  function eligible() {
+    return !isHandheld() && !isStandalone() && !dismissed() && signedIn() &&
+           !phoneCardOwnsScreen() && !hintOwnsCorner();
+  }
+
+  function show() {
+    if (!eligible()) return;
+    if (document.getElementById(CARD_ID)) return;
+    if (!document.body) return;
+
+    var host = '';
+    try { host = location.host || ''; } catch (e) {}
+
+    var card = document.createElement('div');
+    card.id = CARD_ID;
+    card.setAttribute('role', 'note');
+    card.setAttribute('aria-label', 'Use MLS on your phone');
+    card.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'max-width:330px',
+      'z-index:99996', 'box-sizing:border-box',
+      'background:#F6FBF8', 'border:1px solid #D8E5DE', 'border-radius:10px',
+      'padding:13px 14px', 'box-shadow:0 8px 24px rgba(20,33,28,.16)',
+      'font:500 13px/1.5 "Public Sans",system-ui,-apple-system,sans-serif', 'color:#1A211C'
+    ].join(';');
+
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:5px';
+    head.innerHTML = '<span aria-hidden="true">📱</span><span>Use MLS on your phone</span>';
+    card.appendChild(head);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'color:#3C4A43';
+    /* Named steps rather than a vague "install the app": MLS is a web app, so
+       there is no App Store listing to search for and saying "download the app"
+       would send a clinician somewhere that does not exist. */
+    body.appendChild(document.createTextNode('There is no app to download. On your phone, open '));
+    var b = document.createElement('b');
+    b.textContent = host || 'this site';
+    body.appendChild(b);
+    body.appendChild(document.createTextNode(' in Safari or Chrome, then tap Share and choose “Add to Home Screen”. It opens full screen, like an app.'));
+    card.appendChild(body);
+
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:11px';
+
+    var ok = document.createElement('button');
+    ok.type = 'button';
+    ok.textContent = 'Got it';
+    ok.setAttribute('aria-label', 'Got it — do not show this again');
+    ok.style.cssText = 'min-height:34px;border:0;border-radius:10px;background:#2E6A4B;color:#fff;' +
+      'font:700 12.5px "Public Sans",system-ui,sans-serif;padding:0 14px;cursor:pointer';
+    ok.addEventListener('click', function () { remember(); close(); });
+    row.appendChild(ok);
+
+    card.appendChild(row);
+    document.body.appendChild(card);
+  }
+
+  /* The card waits for a signed-in workspace. Poll rather than hook the login
+     path: sign-in happens in several places (fresh signup, restored session,
+     2FA) and a poller cannot miss one of them. It stops the moment it shows the
+     card or the card is permanently dismissed, so it never runs for long. */
+  var tries = 0;
+  var iv = setInterval(function () {
+    try {
+      if (dismissed() || document.getElementById(CARD_ID) || ++tries > 120) { clearInterval(iv); return; }
+      if (eligible()) { show(); clearInterval(iv); }
+    } catch (e) { clearInterval(iv); }
+  }, 1000);
+
+  api.cardId = CARD_ID;
+  api.show = show;
+  api.close = close;
+  api.eligible = eligible;
+  api.revert = function () {
+    try { clearInterval(iv); } catch (e) {}
+    close();
+    try { delete window.__mlsGetPhone; } catch (e) { window.__mlsGetPhone = null; }
   };
 })();
 </script>
@@ -31858,7 +33277,7 @@ function _ptGroupSort(mode){
      snapshotted at boot, and doing so silently disabled the whole handler. */
   function VV() { try { return window.visualViewport || null; } catch (e) { return null; } }
   var applied = 0, bound = false;
-  var api = { installed: true, version: 'ph-kbd-1.0.0' };
+  var api = { installed: true, version: 'ph-kbd-1.0.2' };
   window.__mlsKbdInset = api;
   function overlap() {
     var vv = VV();
@@ -31868,13 +33287,61 @@ function _ptGroupSort(mode){
       return (isFinite(o) && o > 0) ? Math.round(o) : 0;
     } catch (e) { return 0; }
   }
+  /* ph-kbd-1.0.1 — a keyboard can ONLY be open while an editable element holds
+     focus. Browser chrome never can. That is the one reliable discriminator,
+     and the reason this gate exists.
+
+     With viewport-fit=cover in the head (ScribeFlow.html:30) `innerHeight` is the
+     LAYOUT viewport — the FULL screen height — while `visualViewport.height`
+     excludes Safari's top URL bar and bottom toolbar. So with the toolbars
+     merely EXPANDED and nothing focused, overlap() is large, it sailed past the
+     old `> 80` threshold, and it lifted the dock off the bottom — a nav pill
+     stranded mid-screen, painting over #mlsEz3Body.
+
+     Be precise about which numbers are measured and which are derived, because
+     no overlap() value was ever read on the owner's device:
+       OBSERVED  on his iPhone (402x874 CSS, b853): the pill floated ~220px above
+                 the viewport bottom with no keyboard anywhere.
+       DERIVED   through this rule's consumer at ScribeFlow.html:1868,
+                 bottom = 8px + env(safe-area-inset-bottom) + var(--mls-kbd):
+                 --mls-kbd was ~178px if that inset was 34px, up to ~212px if the
+                 expanded toolbars zeroed it. Call the chrome delta ~178-212.
+       MEASURED  headless, driving the real shipped module with visualViewport
+                 shadowed, document.activeElement === <body> throughout:
+                     overlap 0   -> dock bottomGap 8    (no collapsible chrome)
+                     overlap 220 -> dock bottomGap 228  (chrome only, no keyboard)
+     The old comment assumed the chrome delta was "small". Under viewport-fit
+     =cover it is the single largest delta the page ever sees.
+
+     The FOCUS GATE is what fixes this, and it carries the whole load. The 140px
+     floor is NOT a second opinion about chrome vs keyboard and must not be read
+     as one: the chrome delta measures ~178-212 here, which is ABOVE 140, so the
+     floor would not catch it on its own. Its only job is to discard the small
+     deltas — a partially collapsed URL bar — that would otherwise jitter the
+     dock on a device whose chrome is thinner than this one's. Raising it until
+     it did separate the two populations is not available either: it would have
+     to clear ~212 while still admitting a landscape keyboard (~200), and those
+     ranges overlap. A pixel threshold cannot answer this question. Focus can.
+
+     Still live for the case this module was written for: focus a textarea in the
+     op-note room (#opPrepModal.opr-room, which drives --opr-dock-clear off this
+     same variable) and the lift applies exactly as before. */
+  function editableFocused() {
+    try {
+      var a = document.activeElement;
+      if (!a || a === document.body) return false;
+      if (a.isContentEditable) return true;
+      if (a.tagName === 'TEXTAREA') return true;
+      if (a.tagName !== 'INPUT') return false;
+      /* Button-like and non-text inputs summon no keyboard. */
+      return !/^(button|submit|reset|checkbox|radio|file|range|color|image|hidden)$/i
+        .test(a.type || 'text');
+    } catch (e) { return false; }
+  }
   function apply() {
     try {
       var o = overlap();
-      /* Small deltas are browser chrome (the collapsing URL bar), not a
-         keyboard. Lifting the dock for those would make it jitter while you
-         scroll, so only react to something keyboard-sized. */
-      var next = o > 80 ? o : 0;
+      var next = (editableFocused() && o > 140) ? o : 0;
       if (next === applied) return;
       applied = next;
       document.documentElement.style.setProperty('--mls-kbd', next ? (next + 'px') : '0px');
@@ -31888,6 +33355,24 @@ function _ptGroupSort(mode){
     try {
       vv.addEventListener('resize', apply);
       vv.addEventListener('scroll', apply);
+      /* ph-kbd-1.0.2: deliberately NO focusin/focusout listeners. Reacting to
+         focus was measured to be both unnecessary and harmful:
+           HARMFUL — focusin fires while the toolbars are still expanded and the
+             keyboard has not begun to appear, so apply() reads the CHROME-only
+             overlap and lifts by exactly that. Measured on this app at 402x874
+             with a 178-220px chrome delta shadowed in: focus a textarea and the
+             dock's bottom gap went 8 -> 228 immediately, then stayed there for
+             800ms because no visualViewport event ever followed. That is the
+             reported defect, re-created at focus time.
+           UNNECESSARY — on iOS the keyboard appearing IS the visualViewport
+             resize, and focus is always settled before it (focus must precede
+             the keyboard being summoned, blur precedes its dismissal). Measured
+             with the focus listeners removed: a keyboard-sized resize (overlap
+             510) with a textarea focused still took applied 0 -> 510 and moved
+             the dock 8 -> 518, and the drop on blur still fired, because the
+             keyboard's dismissal is itself a resize.
+         So the resize/scroll pair is the complete event surface, and the focus
+         state is read at that moment as a GATE rather than used as a trigger. */
       bound = true;
     } catch (e) { bound = false; }
     return bound;

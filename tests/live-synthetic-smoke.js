@@ -1583,7 +1583,12 @@ async function enterAndSaveSyntheticNote(cdp) {
     document.getElementById('noteEmpty').style.display='none';
     document.getElementById('formatToggleRow').style.display='flex';
     box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
-    window.dispatchEvent(new CustomEvent('mls:note-updated',{detail:{source:'live-synthetic-fixture'}}));
+    /* 2026-08-04: this fixture used to dispatch 'mls:note-updated' — an event
+       NO production code emits, so the dispatch validated nothing but itself.
+       Production announces a programmatic note write by settling generation
+       (generateNote dispatches mls:generation-complete on every exit lane),
+       so the fixture now emits the real event for the moment it mimics. */
+    window.dispatchEvent(new CustomEvent('mls:generation-complete',{detail:{source:'live-synthetic-fixture'}}));
     if(typeof populateEMR==='function') populateEMR(lastEMR,currentCoding);
     if(typeof renderCoding==='function') renderCoding(currentCoding);
     if(typeof enableOutputs==='function') enableOutputs(true);

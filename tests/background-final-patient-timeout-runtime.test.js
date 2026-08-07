@@ -140,7 +140,7 @@ async function testNeverSettlingSearchOpen() {
     mlsPickAthenaTab: async tabs => tabs[0] || null,
     self: null,
     chrome: {
-      runtime: { onMessage: { addListener: fn => listeners.push(fn) } },
+      runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ onMessage: { addListener: fn => listeners.push(fn) } },
       tabs: {
         query: async () => [{ id: 71, active: true, url: 'https://athenanet.athenahealth.com/1/1/globalframeset.esp' }],
         sendMessage() {}
@@ -200,7 +200,7 @@ function makeVisitsRuntime(options) {
     mlsReadChartIdentityShadow: function () {},
     self: null,
     chrome: {
-      runtime: { onMessage: { addListener: fn => listeners.push(fn) } },
+      runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ onMessage: { addListener: fn => listeners.push(fn) } },
       tabs: {
         query: (_query, callback) => callback([{ id: 77, active: false, url: 'https://athenanet.athenahealth.com/chart' }]),
         sendMessage() {}

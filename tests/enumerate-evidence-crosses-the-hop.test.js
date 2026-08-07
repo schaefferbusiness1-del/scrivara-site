@@ -77,7 +77,16 @@ const gateRefusal = bg.slice(bg.indexOf('      if (!gate.ok) {'), bg.indexOf('  
 assert(/enumDiag: \{ frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped/.test(gateRefusal),
   'the chart-frame refusal must RETURN the frame table, not only a truncated summary of it');
 
-const indexRefusal = bg.slice(bg.indexOf("reason: 'encounter-index-incomplete'"), bg.indexOf("reason: 'encounter-index-incomplete'") + 900);
+/* 3.0.45: this slice used to run to a fixed +900 chars and broke when the reason
+   string grew an [idx:...] tag — enumDiag sits 959 chars in, so a correct return
+   failed a window heuristic. Bound it to the END OF THE RETURN OBJECT instead:
+   that is what the assertion actually means ("the same return carries the frame
+   table"), and it cannot rot the next time the reason gains a field. */
+const indexRefusalStart = bg.indexOf("reason: 'encounter-index-incomplete'");
+assert(indexRefusalStart > -1, 'the index-incomplete refusal could not be located');
+const indexRefusalEnd = bg.indexOf('};', indexRefusalStart);
+assert(indexRefusalEnd > indexRefusalStart, 'the index-incomplete return object never closes');
+const indexRefusal = bg.slice(indexRefusalStart, indexRefusalEnd);
 assert(/enumDiag: \{ frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped/.test(indexRefusal),
   'the index-incomplete refusal must RETURN the frame table too — it is the refusal the owner is most likely to hit');
 

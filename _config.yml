@@ -35,7 +35,7 @@ exclude:
   # The shipped app references them ZERO times (grep of ScribeFlow.html and
   # mls-connect.js), yet Jekyll was copying both into the public site: 51
   # coordination/inbox/*.js working notes, and extension candidate SOURCE for
-  # 3.0.32-3.0.38 including MLS_Assist_v3.0.38.zip. The Pages audit was flagging
+  # 3.0.32-3.0.44 including MLS_Assist_v3.0.44.zip. The Pages audit was flagging
   # all of it as "unexpected/unreviewed", and that audit has not run since
   # 2026-07-19, so nobody saw the flag.
   # This changes no extension byte and no extension behaviour - the files stay
@@ -53,6 +53,9 @@ exclude:
   - "mobile/"
   - "*.md"
   - "**/*.md"
+  # Repository-level copyright notice. It governs the source tree, not the
+  # served site; terms.html/privacy.html remain the public-facing legal pages.
+  - "LICENSE"
   - "package.json"
   - "package-lock.json"
   - "Gemfile"
@@ -84,6 +87,26 @@ exclude:
   - "feat_mls_navfeat_keep.js"
   - "feat_mls_staff_hub.js"
   - "feat_mls_team_exact.js"
+  # 2026-08-06 — 14 feat modules the shipped app references ZERO times (grep of
+  # mls-connect.js + ScribeFlow.html at 408206ab), surfaced by the first
+  # Actions-run publication audit. Dead code has no business being served;
+  # excluding an unreferenced file cannot break the app. The three modules the
+  # app DOES load (avatar, copilot_power, tele_doctor) went into the reviewed
+  # inventory instead.
+  - "feat_mls_cal_athena_sync.js"
+  - "feat_mls_cal_fullwidth_providers.js"
+  - "feat_mls_cal_provider_roster.js"
+  - "feat_mls_day_agenda.js"
+  - "feat_mls_day_pace.js"
+  - "feat_mls_herotoday_fix.js"
+  - "feat_mls_lastseen_rows.js"
+  - "feat_mls_month_pull.js"
+  - "feat_mls_next_patient.js"
+  - "feat_mls_patientlock_b52.js"
+  - "feat_mls_problem_strip_hide.js"
+  - "feat_mls_problem_strip.js"
+  - "feat_mls_selected_day_sync.js"
+  - "feat_mls_send_portal_invite.js"
   - "manifest.json"
   - "background.js"
   - "inject_dom.js"
@@ -157,10 +180,18 @@ include:
   - "jspdf.umd-4.2.1.min.js"
 
   # The exact released MLS Assist package (owner directive 2026-07-20).
-  # SHA-256 dedfeacdfda3962b0ae00eb28abca07485ea09a3ce9eedf65e299c03ee9c68e8 —
+  # SHA-256 cdd6d083902a0fc583a6f723b415cc1cdb6a01540840c677a4eddb2c32806273 —
   # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.38.zip"
+  - "MLS_Assist_v3.0.45.zip"
+  # Byte-identical mirror of the line above, under an extension no service
+  # worker generation retires. A worker keeps controlling a tab until every tab
+  # closes and this app's worker deliberately declines skipWaiting(), so an
+  # already-installed worker answers the .zip with 410 no matter what we ship.
+  # Measured: the worker did not roll across three production deploys. The .bin
+  # is the only route that reaches those browsers; the button carries
+  # download="MLS_Assist_v3.0.45.zip" so the doctor still saves a .zip.
+  - "MLS_Assist_v3.0.45.bin"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

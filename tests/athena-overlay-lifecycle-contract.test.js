@@ -196,6 +196,7 @@ function makeEnvironment(options) {
   const status = { athenaOpen: true, mlsApp: true, patientOpen: true, identity: { name: 'Test Patient' } };
   const chrome = {
     runtime: {
+      id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */
       lastError: null,
       getManifest() { return { version: '9.9.9' }; },
       sendMessage(message, callback) {

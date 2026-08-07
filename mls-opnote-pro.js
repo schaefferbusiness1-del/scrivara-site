@@ -77,19 +77,74 @@
      works: an explicit assignment (a white-label host, a test fixture)
      overrides the Settings value for that field only.
      --------------------------------------------------------------- */
+  /* ONE owner for drawing a practice logo onto a jsPDF letterhead. (b831)
+     Returns the VERTICAL SPACE CONSUMED, so a caller advances its cursor by the
+     return value and a refusal is simply 0 - there is no way for a caller to
+     advance past a logo that was not drawn.
+     Every failure mode ends the same way: nothing drawn, 0 returned, letterhead
+     unchanged. An unreadable logo must never cost the doctor their export.
+     jsPDF's addImage throws on a malformed data URL, on an unsupported format and
+     on some truncated base64; getImageProperties is absent from older builds and
+     can itself throw. */
+  function drawLetterheadLogo(doc, dataUrl, x, y, opts) {
+    var src = '';
+    try { src = String(dataUrl || '').trim(); } catch (e0) { return 0; }
+    if (!src) return 0;
+    try {
+      var maxW = (opts && opts.maxW) || 120, maxH = (opts && opts.maxH) || 36;
+      var gap = (opts && opts.gap != null) ? opts.gap : 8;
+      var fmt = /^data:image\/png/i.test(src) ? 'PNG' : 'JPEG';
+      var w = maxW, h = maxH, props = null;
+      try { props = doc.getImageProperties ? doc.getImageProperties(src) : null; } catch (e1) { props = null; }
+      if (props && props.width && props.height) {
+        /* fit inside the band, preserving aspect ratio rather than squashing the mark */
+        var scale = Math.min(maxW / props.width, maxH / props.height);
+        w = Math.max(1, props.width * scale);
+        h = Math.max(1, props.height * scale);
+      }
+      doc.addImage(src, fmt, x, y, w, h);
+      return h + gap;
+    } catch (e) { return 0; }
+  }
   function lhSetting(fn) {
     return safe(function () {
       return typeof window[fn] === 'function' ? String(window[fn]() || '').trim() : '';
     }, '') || '';
   }
   if (!window.MLS_OPNOTE_LETTERHEAD) {
-    var lhOverride = { clinicName: null, addressLines: null };
+    var lhOverride = { clinicName: null, addressLines: null, logo: null };
     var letterhead = {};
     try {
       Object.defineProperty(letterhead, 'clinicName', {
         enumerable: true, configurable: true,
         get: function () { return lhOverride.clinicName != null ? lhOverride.clinicName : lhSetting('getPracticeName'); },
         set: function (v) { lhOverride.clinicName = v; }
+      });
+      /* b830: the Settings logo field promises, in its own hint, "Your logo appears
+         on the printed/PDF letterhead, and the 'Prepared with MLS' line is removed
+         for a clean, white-label note." Browser Print honoured both. NOT ONE jsPDF
+         builder drew the logo or dropped the footer, so a Premium doctor saw their
+         logo on Print and then handed a patient or a lawyer a PDF with no logo and
+         an MLS footer — the white-label promise failed in exactly the artifact that
+         leaves the practice.
+         Exposed on the SHARED letterhead so the six PDF builders can each draw it
+         from one place rather than six reads of localStorage.
+         Premium-gated the same way feat_mls_dictate_letter.js already gates it, and
+         the same way renderLogoSetting() gates the Settings preview. */
+      Object.defineProperty(letterhead, 'logo', {
+        enumerable: true, configurable: true,
+        get: function () {
+          if (lhOverride.logo != null) return lhOverride.logo;
+          return safe(function () {
+            var prem = (typeof window.effectivePremium === 'function') ? window.effectivePremium() : false;
+            if (!prem || typeof window.getClinicLogo !== 'function') return '';
+            var d = String(window.getClinicLogo() || '').trim();
+            /* only a data: image URL is drawable by jsPDF's addImage; anything else
+               (a remote URL, a stray string) must not be handed to it */
+            return /^data:image\/(png|jpe?g);base64,/i.test(d) ? d : '';
+          }, '') || '';
+        },
+        set: function (v) { lhOverride.logo = v; }
       });
       Object.defineProperty(letterhead, 'addressLines', {
         enumerable: true, configurable: true,
@@ -553,8 +608,22 @@
       return isNaN(d.getTime()) ? '' : v;
     } catch (e) { return ''; }
   }
+  /* b834 — A DICTATED DATE IS A CALENDAR DAY, NOT AN INSTANT.
+     `new Date('2026-07-22')` is specified to parse a date-only string as UTC
+     midnight, and getFullYear/getMonth/getDate then read LOCAL fields. Every
+     timezone west of UTC therefore filed the note one day EARLY: the b822 suite
+     asserts 2026-07-22 -> '20260722' and measured '20260721' on the owner's own
+     machine, which is how this was found. A note filed under the wrong date is
+     the whole point of the surface, so the calendar fields are now read off the
+     text when the text IS a calendar day; only a real timestamp (one carrying a
+     time) goes through Date, where local conversion is what you want. */
   function dateForFile(dop) {
-    var d = dop ? new Date(dop) : new Date();
+    var s = dop == null ? '' : String(dop).trim();
+    var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+    if (iso) return iso[1] + ('0' + iso[2]).slice(-2) + ('0' + iso[3]).slice(-2);
+    var us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if (us) return us[3] + ('0' + us[1]).slice(-2) + ('0' + us[2]).slice(-2);
+    var d = s ? new Date(s) : new Date();
     if (isNaN(d.getTime())) d = new Date();
     return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2);
   }
@@ -598,6 +667,10 @@
     var y = margin;
 
     var lh = window.MLS_OPNOTE_LETTERHEAD || {};
+    /* read ONCE per export: the footer runs per page and must not disagree with the
+       header it is footing */
+    var _lhLogo = '';
+    try { _lhLogo = String(lh.logo || '').trim(); } catch (e) { _lhLogo = ''; }
     var docName = meta.provider || 'Clinician';
     var spec = meta.spec || '';
     var printed = new Date().toLocaleString();
@@ -608,7 +681,15 @@
         doc.setPage(i);
         doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(150);
         doc.text('Page ' + i + ' of ' + pc, pageW - margin, pageH - 24, { align: 'right' });
-        doc.text('Generated with MLS — review and complete any [bracketed] items before signing.', margin, pageH - 24);
+        /* b830: the white-label half of the logo promise. "Prepared with MLS" is
+           BRANDING and is dropped once the practice has its own letterhead logo.
+           The rest of the sentence is a SAFETY warning about unresolved [bracketed]
+           items on a clinical document, and is NOT branding — it stays either way.
+           Splitting them is the whole point: white-labelling a document must not
+           quietly delete a warning about incomplete content. */
+        doc.text(_lhLogo
+          ? 'Review and complete any [bracketed] items before signing.'
+          : 'Generated with MLS — review and complete any [bracketed] items before signing.', margin, pageH - 24);
       }
       doc.setTextColor(0);
     }
@@ -622,6 +703,10 @@
     }
 
     // ---- Letterhead ----
+    /* b831: the draw moved into drawLetterheadLogo() below and is exposed on
+       __mlsOpNotePro, because five other jsPDF builders need exactly this and four
+       more copies of it is the defect this whole effort keeps closing. */
+    y += drawLetterheadLogo(doc, _lhLogo, margin, y);
     if (lh.clinicName) {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(21, 95, 179);
       doc.text(pdfSafe(lh.clinicName), margin, y); y += 18;
@@ -715,6 +800,47 @@
         if (unresolved.length) {
           var labels = unresolved.map(function (x) { return x.label || x.key; });
           var shown = labels.slice(0, 6).join(', ') + (labels.length > 6 ? (' +' + (labels.length - 6) + ' more') : '');
+          /* 2026-08-07 — MEASURED BY QA ON THE OWNER'S LIVE ACCOUNT: every op-note
+             PDF export is blocked, and filling every blank in the NOTE changes
+             nothing. His `npi` and `facilityName` settings are empty, so
+             attestNote's footer emits [[provider_npi]] and [[facility_name]]
+             rather than inventing them (correct), and this gate then refuses on
+             them. Deterministic, nothing to do with templates, and it means no
+             op note on his account can become a PDF at all.
+
+             THE GATE IS RIGHT AND IS NOT WEAKENED HERE. An operative note
+             leaving the app without an NPI is exactly what it should refuse.
+             What was wrong is that it says "Fill them in" for a field that is
+             NOT IN THE NOTE - the doctor hunts the note text for something that
+             lives in Settings, and every blank he fills leaves the count
+             unchanged. Same "honest refusal, wrong location" class as the
+             op-note identity message.
+
+             A practice-level field is also a different KIND of missing: a note
+             blank is per-note, an NPI is once-ever. They are counted and named
+             separately so "2 unresolved fields" can never appear on a note
+             where he has resolved everything a note can resolve. */
+          var PRACTICE_RE = /\b(?:npi|facility|practice|clinic|provider[_ ]?name|address|tax[_ ]?id|ptan)\b/i;
+          var practice = [], noteLevel = [];
+          unresolved.forEach(function (x) {
+            var lab = String((x && (x.label || x.key)) || '');
+            (PRACTICE_RE.test(lab) ? practice : noteLevel).push(lab);
+          });
+          if (practice.length && !noteLevel.length) {
+            safe(function () {
+              toast('This note is finished — but your practice details are not. Set ' + practice.slice(0, 4).join(' and ') +
+                ' in Settings, then export. Nothing in the note itself is missing.', 'warn');
+            });
+            return;
+          }
+          if (practice.length) {
+            safe(function () {
+              toast('Not exported: ' + noteLevel.length + ' field' + (noteLevel.length === 1 ? '' : 's') + ' still blank in the note (' +
+                noteLevel.slice(0, 4).join(', ') + '), and ' + practice.slice(0, 3).join(' and ') + ' ' +
+                (practice.length === 1 ? 'is' : 'are') + ' not set in Settings.', 'warn');
+            });
+            return;
+          }
           safe(function () { toast('This op note is still a draft — ' + unresolved.length + ' unresolved field' + (unresolved.length === 1 ? '' : 's') + ' (' + shown + '). Fill them in before exporting a PDF.', 'err'); });
           return;
         }
@@ -908,6 +1034,10 @@
     parseNote: parseNote,
     isNormalized: isNormalized,
     exportPdf: exportPdf,
+    /* b831: exposed so the other jsPDF builders draw the practice logo through the
+       SAME function with the SAME failure semantics, instead of five copies of an
+       addImage call that each have to remember not to advance the cursor on a throw. */
+    drawLetterheadLogo: drawLetterheadLogo,
     rewire: function () { safe(wire); }
   };
 

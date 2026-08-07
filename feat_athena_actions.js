@@ -201,11 +201,17 @@
       try {
         Promise.resolve(sv.verifyVisitsSaved(identity, visits)).then(function (res) {
           if (res && res.ok) {
-            finishOk('✓ Saved ' + res.count + ' visit' + (res.count === 1 ? '' : 's') +
+            finishOk('✓ Saved ' + res.savedCount + ' visit' + (res.savedCount === 1 ? '' : 's') +
               ' into ' + esc(ptName) + '’s MLS record — re-read and verified.');
-          } else if (res && res.partial) {
-            finishFail('⚠ Save incomplete — ' + res.verified + ' of ' + res.expected +
-              ' verified. Missing: ' + (res.missing || []).join(', '), 'Re-run the pull for the missing item(s).');
+          } else if (res && !res.patientFound) {
+            finishFail('✗ Save not confirmed — ' + esc(ptName) + ' was not found in the saved store after the pull.',
+              'Re-run the pull; if it repeats, use the Verify-saved-data button to inspect the store.');
+          } else if (res && res.patientFound && (res.savedCount < res.expectedCount || (res.mismatches || []).length)) {
+            var missingNames = (res.missing || []).map(function (m) { return m.date || m.id || m.key; }).filter(Boolean);
+            finishFail('⚠ Save incomplete — ' + res.savedCount + ' of ' + res.expectedCount +
+              ' verified.' + (missingNames.length ? ' Missing: ' + missingNames.join(', ') : '') +
+              ((res.mismatches || []).length ? ' ' + (res.mismatches || []).length + ' visit(s) saved with differing fields.' : ''),
+              'Re-run the pull for the missing item(s).');
           } else {
             finishInfo('Saved to MLS — re-reading the store to confirm…');
           }

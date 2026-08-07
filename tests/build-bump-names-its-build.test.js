@@ -70,7 +70,53 @@ const root = path.resolve(__dirname, '..');
  * rebase across it). The durable rule, now mechanical for this lane: the
  * subject line of a bump commit is bump-build.js's stdout, pasted verbatim,
  * never retyped. */
-const CUTOFF = 'e951a54';
+/* THIRD ADVANCE, 2026-08-02, e3f37111: a NEW shape of the same disease. Two
+ * cloud-dispatched sessions (claude/phone-version-styling-r6gj7a and
+ * claude/site-ui-glitches-performance-ogr8rz) each ran the bump path
+ * independently from the same live base (b853), blind to each other, and BOTH
+ * pushed commits claiming b854 with byte-identical stamps. Neither history can
+ * be rewritten (pushed remote branches; date-coded cache tokens make rebasing
+ * destructive), so the integration merge necessarily carries two b854
+ * claimers. Per this gate's own doctrine the NUMBER was abandoned — b854 was
+ * never served — and the integrated train shipped as b855 via
+ * scripts/bump-build.js. The durable upstream fix: parallel cloud branches
+ * must never be deployed separately under their own claimed number; the
+ * integrator always lands them as ONE train and re-runs bump-build.js, which
+ * makes the claim unique again (see memory: cloud-branches-collide-on-build-
+ * stamps). */
+/* FOURTH ADVANCE, 2026-08-06, 415092e6: the SECOND ADVANCE's disease, repeated
+ * by me, against a rule written verbatim twelve lines above it. bump-build.js
+ * printed `b911: …` after a collision moved the number under me, and I committed
+ * a heredoc subject reading `b910:` — retyped, not pasted. 415092e6 sets b911
+ * with a b910 subject, so `git log --grep b911` denies the build the owner runs.
+ * Fixed FORWARD, same reason as every advance before it: four lanes were
+ * rebasing across it within minutes.
+ *
+ * WHAT WAS DIFFERENT THIS TIME, and it is the part worth keeping. Three build
+ * numbers were lost that evening to other lanes claiming them mid-gate, so I
+ * reordered the ship path to merge → GATE → bump → push, to shrink the window
+ * between claiming a number and publishing it. That worked — and it also moved
+ * the bump commit to AFTER the only suite that inspects bump commits, so this
+ * gate could no longer see the thing it exists to check. A reordering that
+ * defeats a check is a hole even when every run is green: run-all.js passed on
+ * the tree it was given, because the offending commit did not exist yet.
+ *
+ * So the honest reading is NOT "advance the cutoff and try harder". It is that
+ * two mechanical fixes were owed and are now in place:
+ *   1. scripts/bump-build.js writes its corrected subject to
+ *      scripts/.last-bump-subject. "Take it from there rather than from memory"
+ *      was previously impossible for a heredoc — stdout is not readable by the
+ *      command being typed. Now the subject is a file, so it can be pasted by
+ *      machine instead of by hand.
+ *   2. Gate before the bump for the slow suites, then run THIS suite alone
+ *      after the bump commit exists and before the push. It takes seconds, so
+ *      the collision window stays closed and the naming check gets its sight
+ *      back. Both goals, no trade.
+ *
+ * If this constant moves a fifth time, the conclusion is not that lanes are
+ * careless — it is that composing the commit and running the bump are still two
+ * steps that a human can get out of sync, and they should become one. */
+const CUTOFF = '415092e6';
 
 function git(args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();

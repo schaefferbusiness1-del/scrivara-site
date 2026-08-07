@@ -345,46 +345,11 @@
       wrappedPrev.__fpWrap = true;
       window._opPreviewHtml = wrappedPrev;
     }
-    /* prefill empty row inputs after the op-prep list renders */
-    function prefillOpPrepRows() {
-      try {
-        var list = $('opPrepList'); if (!list) return;
-        var inputs = list.querySelectorAll('input[onchange*="opProcChanged"], textarea[onchange*="opProcChanged"]');
-        Array.prototype.forEach.call(inputs, function (inp) {
-          if (String(inp.value || '').trim()) return;
-          var row = inp.closest('div');
-          var scope = row; var name = '';
-          for (var hop = 0; hop < 4 && scope; hop++) {
-            var m = String(scope.textContent || '').match(/🧑\s*([^·\n]+)/); /* person emoji then name */
-            if (m) { name = m[1].trim(); break; }
-            scope = scope.parentElement;
-          }
-          if (!name) return;
-          var det = findReasonFor(name, String(window._opPrepDay || ''));
-          if (!det) return;
-          inp.value = det;
-          try { inp.dispatchEvent(new Event('change', { bubbles: true })) } catch (e) {}
-          try {
-            var mIdx = String(inp.getAttribute('onchange') || '').match(/opProcChanged\((\d+)/);
-            if (mIdx && typeof window.opProcChanged === 'function') window.opProcChanged(+mIdx[1], det);
-          } catch (e) {}
-        });
-      } catch (e) {}
-    }
-    ['openOpPrep', 'openOpPrepForPatient', 'opPrepSetMode'].forEach(function (fn) {
-      if (typeof window[fn] === 'function' && !window[fn].__fpWrap) {
-        FP._orig['op_' + fn] = window[fn];
-        var w = function () {
-          var r = FP._orig['op_' + fn].apply(this, arguments);
-          setTimeout(prefillOpPrepRows, 300);
-          setTimeout(prefillOpPrepRows, 900);
-          return r;
-        };
-        w.__fpWrap = true;
-        window[fn] = w;
-      }
-    });
-    FP.fixes.opPrepAuto = true;
+    /* The old prefillOpPrepRows block is GONE: its selector matched nothing
+       (the app emits oninput="_opProcChanged", never onchange="opProcChanged")
+       and window.opProcChanged was defined nowhere, so it never filled a row.
+       Row prefill is owned by feat_mls_opnote_fill.js (fillProcInputs). */
+    FP.fixes.opPrepAuto = 'superseded-by-onf';
   } catch (e) { FP.fixes.opPrepAuto = 'error: ' + e.message; }
 
   /* ------------------------------------------------------------------ F3
@@ -1097,8 +1062,15 @@
       }
     }, true);
 
-    ['mls:ui-ready', 'mls:view-changed', 'mls:patient-changed', 'mls:note-generated',
-      'mls:generation-complete', 'mls:schedule-updated', 'mls:calendar-updated'].forEach(function (name) {
+    /* 2026-08-04 (#24 dead listeners): this list carried four names NO
+       production code ever dispatches (mls:patient-changed, mls:note-generated,
+       mls:schedule-updated, mls:calendar-updated — checked against the live
+       dispatch inventory). The patient moment really fires as
+       mls:active-patient-changed; note generation already settles through
+       mls:generation-complete below; schedule/calendar repaints are caught by
+       this bus's own MutationObserver on #calendarView/#mlsAgendaChip. */
+    ['mls:ui-ready', 'mls:view-changed', 'mls:active-patient-changed',
+      'mls:generation-complete'].forEach(function (name) {
       listen(window, name, function () { queueRefresh(document, name, 40); }, false);
     });
     /* Generation settled (success OR failure): stop the generation burst —

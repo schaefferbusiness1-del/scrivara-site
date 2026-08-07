@@ -1206,3 +1206,268 @@ being a Settings field nothing reads; five preference keys promising account sco
 and delivering device scope; `clinicLogo` never reaching a jsPDF letterhead.
 
 — integration lane
+
+---
+
+## Update — b829, and a CORRECTION to one of my own findings
+
+### CORRECTION: `googleBusinessUrl` is not dead plumbing
+
+I listed it in the b824 backlog as "a Settings field with no getter that nothing
+reads". **That was wrong end-to-end**, and I found it by verifying before fixing.
+There is no client-side getter, but the field is fully functional:
+`src/server.js:1799` reads `prefs.googleBusinessUrl` into
+`practiceProfile.google_business_url`, it is in `PREF_SYNC_KEYS` so it reaches the
+server, and `booking.html:186` renders it as the patient-facing "Find us on Google"
+button. Nothing to fix. Struck from the backlog.
+
+Worth naming the lesson: an audit that traces only one repo will call a working
+round-trip dead. Four of the five findings I acted on tonight held up; this one did
+not, and the cost of checking was two greps.
+
+### SHIPPED at b829
+
+**The referral letter made the doctor retype a consultant they had just entered.**
+`generateReferral()` defaulted to the literal word `'Specialist'`, while this visit's
+referral ORDER carries it — `ORDER_DEFS.referral`'s first field is
+`{key:'specialty', label:'Specialty / provider', req:1}`. The prior-auth panel in the
+same file already makes this exact move. Most recent referral order wins, chart PCP
+second, original literal last. `mlsPrompt`'s second argument is a prefilled EDITABLE
+value, so this is a suggestion and not a decision.
+
+**The dictated letter left the recipient blank** for "Primary care doctor" and
+"Referring doctor", so the salutation degraded to "Dear Colleague:" and the fax cover
+sheet printed `TO:    __________` — while `p.history.pcp`, the field literally
+labelled "PCP / referring provider", holds it.
+
+Prefilled **per recipient type**: an attorney is not the PCP, and prefilling a
+non-medical recipient's box with a doctor's name is a wrong-recipient hazard on a
+letter that gets faxed out of the practice. It never overwrites what the doctor
+typed, marks its own value so it can tell it apart later, and stops touching the box
+once the doctor edits it.
+
+**Four preferences now travel**: `opNoteTemplateMode` (the doctor's explicit
+three-way statement about how their validated templates must be honoured — it
+silently reverted to "adapt / reword freely" on a second machine),
+`ez3PortalAskOff`, `qolGroupProc`, `navfeat_orders`.
+
+Deliberately NOT added, both pinned so they read as decisions:
+- **`pullVisitBodies`** — its own label promises "every pull on this account,
+  wherever you start it", so it belongs there, but it is a schedule-PULL setting and
+  that path is fenced off. Recorded, not taken.
+- **`navLayout` / `qolPtLayout`** — left-rail vs top-bar and split vs stacked are
+  plausibly screen-size-appropriate per device; syncing them could make a laptop
+  worse.
+
+### A pre-existing drift, found and NAMED rather than papered over
+
+The two shells' `PREF_SYNC_KEYS` disagree, and have for a while. Six keys that
+production syncs do **not** sync on staging: `facilityAddress`, `facilityName`,
+`googleBusinessUrl`, `noteModel`, `opFieldDefaultsUserV1`, `studio_widgets` — and
+staging carries `legalEnabled`, which production does not. Not caused by this change.
+The new suite asserts the drift is **exactly those six**, so the day somebody widens
+it, a test says so.
+
+### Two instrument errors, both mine, both found by mutation
+
+1. The suite executed the extracted `_refDefault` resolver and **survived** a
+   mutation that reverted the `mlsPrompt` call to `'Specialist'` — the resolver sat
+   there correct and uncalled. Same shape that survived in the b820 identity suite.
+   Now the consumer is asserted, not just the helper.
+2. A mutation I wrote to reverse the referral loop **hit a different, identical loop
+   elsewhere in the file**, because `replace(..., 1)` takes the first match — so a
+   "SURVIVED" result was a harness artifact, not a coverage gap. I had added a
+   uniqueness guard for exactly this earlier tonight and did not here. Re-run scoped
+   to `_refDefault`; caught immediately.
+
+9 mutations, all caught after those two repairs. All 464 site suites pass.
+
+### Backlog: one finding left
+
+`clinicLogo` never reaches any jsPDF letterhead, though the field's own hint promises
+"printed/PDF letterhead" and the white-label half fails too
+(`mls-opnote-pro.js` prints "Generated with MLS" regardless of Premium). Left because
+embedding an image in six PDF builders is a materially larger change than anything
+else in this batch and deserves its own build, not a tail-end one.
+
+— integration lane
+
+---
+
+## Update — b830. The audit backlog is now empty.
+
+### The white-label promise failed in the one artifact that leaves the practice
+
+The Settings logo field says, in its own hint:
+
+> "Your logo appears on the printed/PDF letterhead, and the 'Prepared with MLS'
+> line is removed for a clean, white-label note."
+
+Browser Print honoured both halves. **Not one jsPDF builder did** — none drew the
+logo, and every one printed "Generated with MLS" regardless of Premium. So a Premium
+doctor uploaded their mark, saw it on Print, and then handed a patient or a lawyer a
+PDF with no logo and a vendor footer. The promise failed in exactly the artifact that
+leaves the building.
+
+The logo now lives on the **shared** `MLS_OPNOTE_LETTERHEAD` beside `clinicName` and
+`addressLines`, so the remaining PDF builders can each draw it from one place rather
+than six reads of localStorage. Premium-gated the same way
+`feat_mls_dictate_letter.js` and `renderLogoSetting()` already gate it.
+
+### Two properties I cared about more than the happy path
+
+**An unreadable logo must not cost the doctor their operative note.** jsPDF's
+`addImage` throws on a malformed data URL, on an unsupported format, and on some
+truncated base64. Every failure ends "no logo, letterhead unchanged" — the y-cursor
+only advances after the draw has actually succeeded, so a throw cannot leave the
+letterhead printing into a gap. Asserted by making `addImage` throw and requiring the
+letterhead still render. `getImageProperties` throwing, or being absent from an older
+jsPDF, is handled too.
+
+**White-labelling must not delete a safety warning.** The old footer was one sentence
+doing two jobs: *"Generated with MLS"* is branding, and *"review and complete any
+[bracketed] items before signing"* warns about incomplete content on a clinical
+document. Dropping the whole line for white-label would have quietly removed the
+warning. The branding goes; the warning stays in **both** states, and a mutation that
+drops it is caught.
+
+Only a `data:image/png` or `data:image/jpeg` URL is drawable, so seven non-drawable
+shapes are refused before they reach `addImage` — including SVG (which `addImage`
+cannot render), a remote URL, and a bare base64 blob. The logo is fitted to a
+120×36pt band preserving aspect ratio rather than squashed. The logo is read ONCE per
+export, because the footer runs per page and must not disagree with the header it is
+footing.
+
+9 mutations, all caught. All 465 site suites pass.
+
+### One weak assertion of my own, found and replaced
+
+Section 2 of the new suite originally contained an `||` whose first operand was
+nonsense and whose second did all the work — a tautology dressed as an assertion. It
+would have passed against a footer that never branched. Replaced with what it meant
+to say, plus a second assertion that the logo is read once per export rather than per
+page.
+
+### Scope, stated honestly
+
+This wires the SHARED accessor and the op-note PDF, which is the primary export. The
+five other jsPDF builders (`feat_fullhistory_pdf.js`, `mls-procedure-report.js`,
+`feat_after_visit_summary.js`, `downloadStudyPdf`, `legalTextToPdf`) can now each draw
+`lh.logo` in two lines, but they are **not** done here — I am not going to claim six
+export paths when I have evidence for one. That is the next increment, and it is a
+small one now that the accessor and the failure semantics exist.
+
+### The backlog from the four audits is empty
+
+Eleven findings: nine shipped (b825, b827, b828, b829, b830, plus backend `a605330`),
+one **struck as wrong on verification** (`googleBusinessUrl` is read end-to-end), one
+narrowed to the five remaining PDF builders above. Eight blanks stand recorded as
+UNSAFE to auto-fill, and the three pull-surface defects stand handed off in `013`.
+
+— integration lane
+
+---
+
+## Update — b831. Four PDF builders, one owner.
+
+b830 shipped the logo on the op-note PDF and I said out loud that the other five
+builders were "the next increment". This is that increment, not a promise about it.
+
+The draw is now **one function** — `drawLetterheadLogo(doc, dataUrl, x, y, opts)` in
+`mls-opnote-pro.js`, exposed on `__mlsOpNotePro`. Four builders call it:
+
+| builder | artifact |
+| --- | --- |
+| `mls-opnote-pro.js` | the operative note PDF |
+| `feat_fullhistory_pdf.js` | the full-history export |
+| `mls-procedure-report.js` | the procedure report |
+| `feat_after_visit_summary.js` | **the summary handed to the patient** |
+
+### Why a return value instead of a void draw
+
+It returns the **vertical space consumed**. A refusal is `0`, so the caller's
+`y += drawLetterheadLogo(...)` cannot advance past a logo that was not drawn. That is
+a stronger contract than "remember not to move the cursor inside your catch block" —
+which is precisely the kind of thing four separate copies would each have to get
+right, and one of them eventually would not. The suite asserts each caller
+**advances by the return value**: a mutation that discards it is caught, because a
+discarded return means the letterhead prints straight over the logo.
+
+Each non-owner call also checks the function exists before calling it and sits in its
+own try/catch, because `mls-opnote-pro.js` loads separately — an absent engine must
+mean "no logo", never a thrown export. A mutation removing that check is caught.
+
+### Still not done, and named so it stays a decision
+
+`downloadStudyPdf` and `legalTextToPdf` in `ScribeFlow.html` are **not** wired. The
+suite asserts `ScribeFlow.html` contains no `drawLetterheadLogo` reference, with a
+message telling whoever wires them to add themselves to the covered list rather than
+leaving the assertion to fail mysteriously. Two builders left, deliberately, and the
+test knows it.
+
+7 mutations, all caught. All 465 site suites pass.
+
+### Also in b831: the b830 suite got stronger by being retargeted
+
+It previously sliced the inlined draw block out of source and executed the fragment.
+Now it extracts and **calls the function**, which is both a better instrument and the
+only way to assert the return-value contract at all.
+
+— integration lane
+
+---
+
+## Update — b832. All six PDF builders, and the logo work is closed.
+
+In b831 I left `downloadStudyPdf` and `legalTextToPdf` unwired and had the suite
+assert their absence so the gap stayed a decision. That was the right way to leave it
+overnight; it was not a reason to leave it. Both are now wired, and **all six jsPDF
+builders draw the practice letterhead through the one owner**:
+
+`mls-opnote-pro.js` · `feat_fullhistory_pdf.js` · `mls-procedure-report.js` ·
+`feat_after_visit_summary.js` · `downloadStudyPdf` · `legalTextToPdf`
+
+### The placeholder assertion had to be deleted, not left
+
+The suite previously asserted `ScribeFlow.html` contained **no** reference to
+`drawLetterheadLogo`. That assertion was correct when written and would have been
+actively wrong the moment the gap closed — it would have started defending the gap
+instead of the fix. A test that pins a known gap has to be removed when the gap
+closes. It is replaced by: both shell builders draw through the shared owner, both
+advance by its return value, both existence-check it, and — new — **each draw is
+asserted to sit ABOVE the practice name**, because a logo drawn below it lands on top
+of the letterhead text.
+
+That last assertion earned itself: the mutation that moves the draw below the name is
+caught, and nothing else in the suite would have noticed.
+
+### Two non-uniqueness traps in one build
+
+My first patch attempt asserted its anchor was unique and **failed** — the
+`doc.text(String(practice),margin,y)` letterhead line appears in both builders, so a
+`replace(..., 1)` would have patched one function twice and left the other untouched.
+Same trap that produced a phantom "SURVIVED" verdict in b829. The uniqueness guard is
+now the thing I reach for first, and here it did its job before any damage: patched by
+line position inside each function, verified by name.
+
+4 mutations, all caught. All 465 site suites pass.
+
+### What remains, and why each is a decision rather than a gap
+
+1. **Eight blanks proven UNSAFE to auto-fill** — pre-procedure pain (last month's
+   score is not today's), "allergies and anticoagulation reviewed" (auto-asserting
+   *reviewed* fabricates a clinical act), laterality, indication from the problem list,
+   steroid dose, follow-up interval, signature date, and the op-note PDF's DOB/MRN
+   (safe ONLY if resolved from the note's own `patientId` — `appMeta()` reads whatever
+   chart is open, and the history list shows every patient's notes when none is
+   active). Filling any of these would be fabrication on a clinical document. Not
+   doing them is the correct outcome, not an unfinished one.
+
+2. **Three pull-surface defects** in `013`, fenced off by the owner, each with a
+   one-command reproduction and a written-out fix.
+
+Everything I found through the four audit lenses — Settings→consumers,
+chart→documents, server↔client, and one-fact-two-implementations — is now shipped,
+struck as wrong on verification, or in one of those two categories.
+
+— integration lane

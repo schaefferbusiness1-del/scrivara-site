@@ -84,7 +84,27 @@
 
     sending = true;
     var isOp = looksLikeOpNote(n.text);
-    toast('Sending to athenaOne: ' + (isOp ? 'op-note' : 'note') + (codes ? ' + suggested codes' : '') + ' (unsigned draft - you sign).', '');
+    toast('Handed the ' + (isOp ? 'op-note' : 'note') + (codes ? ' + suggested codes' : '') + ' to the guarded write-back - watch its panel for the confirmed or refused result (unsigned draft - you sign).', '');
+
+    /* Latch "sent" ONLY on the write-back's REAL confirmed result (same event
+       feat_mls_submit_checklist.js consumes). A refused or unknown outcome does
+       NOT latch, so Finish stays retryable instead of answering "Already sent". */
+    var settled = false, to = 0;
+    function settle() { if (settled) return; settled = true; safe(function () { window.removeEventListener('message', onMsg, true); }); if (to) { safe(function () { clearTimeout(to); }); to = 0; } }
+    function onMsg(ev) {
+      var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppPasteResult') return;
+      var resp = d.resp || {};
+      settle();
+      if (resp.ok && resp.confirmed) {
+        lastSent = sig;
+        toast('Confirmed: the note landed in the open athenaOne chart (unsigned draft - you sign).', '');
+      } else if (resp.ok && !resp.confirmed) {
+        toast('Wrote to a field but could NOT confirm - check the chart before signing. Finish again to retry.', '');
+      } else {
+        toast('The write-back refused or failed - see its panel for the reason. Finish again to retry.', 'err');
+      }
+    }
+    safe(function () { window.addEventListener('message', onMsg, true); });
 
     var ok = false;
     if (isOp && g('__mlsOpWb') && isFn(g('__mlsOpWb').writeOpNote)) {
@@ -92,10 +112,11 @@
     } else if (g('__mlsAthenaWriteback') && isFn(g('__mlsAthenaWriteback').writeNoteToChart)) {
       ok = true; safe(function () { g('__mlsAthenaWriteback').writeNoteToChart({ note: payload }); });
     }
-    if (!ok) { toast('Could not auto-send - the Athena writeback module is not loaded. Reload the page and try again.', 'err'); sending = false; return; }
-    if (!codes) toast('Note: no generated codes were visible to include - sent the note only.', '');
+    if (!ok) { settle(); toast('Could not auto-send - the Athena writeback module is not loaded. Reload the page and try again.', 'err'); sending = false; return; }
+    if (!codes) toast('Note: no generated codes were visible to include - handed off the note only.', '');
     else toast('Codes are appended to the note text; athenaOne code pickers are not auto-filled yet.', '');
-    lastSent = sig;
+    /* unknown outcome after a minute: stop listening, do not latch (retry allowed) */
+    to = setTimeout(function () { settle(); }, 60000);
     setTimeout(function () { sending = false; }, 4000);
   }
 

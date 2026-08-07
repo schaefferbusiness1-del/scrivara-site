@@ -280,36 +280,61 @@ async function formSaveVisibility() {
     addEventListener() {},
     querySelector(sel) { return /saveTemplateFromForm/.test(String(sel)) ? saveBtn : null; },
   };
-  let releasePreview;
-  const previewGate = new Promise(resolve => { releasePreview = resolve; });
+  /* tl-1.3.0 — THIS TEST USED TO PIN THE DEFECT.
+     It asserted that pressing Save goes busy "while the preview round-trips",
+     renders an "Import preview — nothing saved yet" card and waits for a
+     Commit. Measured live on b833 in the owner's Chrome, that contract cost
+     him his library: the preview card landed at y=3004 in a 936px viewport so
+     he never saw the step, Commit reported "added: 1" while the device list
+     stayed at 8, and the "Activate imported set" that finally landed it ran
+     applySet() — which REPLACED the device library with the one-template set,
+     taking it 8 -> 1 and overwriting the server copy through
+     syncPrefsToServer(). Pressing Save must never be able to do that.
+
+     The contract now: Save saves, on the device, synchronously, through the
+     proven local path. The preview/commit round-trip still exists and is still
+     tested — for tplMultiFile, a BULK import the doctor is deliberately
+     reviewing (previewThenCommit above). It is no longer in the way of one
+     typed template. */
+  let saveCalls = 0;
   const h = makeHarness(async (url) => {
     if (url.includes('/api/template-sets?')) return response(200, { activeSetId: '', sets: [] });
-    if (url.endsWith('/api/template-imports/preview')) {
-      await previewGate;
-      return response(200, { preview: { targetSetId: null, targetVersion: 0, counts: { added: 1 }, detail: { rejected: [] }, proposedTemplateCount: 1, canCommit: true } });
-    }
-    throw new Error(`Unexpected request ${url}`);
-  }, { document: doc, toast() {}, clearTplForm() {} });
+    throw new Error(`form save must not reach the network, got ${url}`);
+  }, {
+    document: doc,
+    toast() {},
+    clearTplForm() {},
+    saveTemplateFromForm() { saveCalls += 1; return true; },
+  });
   h.setHosted(true);
-  const run = h.context.saveTemplateFromForm();
-  assert.strictEqual(saveBtn.disabled, true, 'save button must go busy while the preview round-trips');
-  assert(/Preparing preview/.test(saveBtn.textContent), 'busy button must say what is happening');
-  releasePreview();
-  await run;
-  assert.strictEqual(saveBtn.disabled, false, 'save button must restore after the preview lands');
-  assert.strictEqual(saveBtn.textContent, '💾 Save template', 'save button label must restore');
-  const formBox = ids.tplFormResult;
-  assert(formBox, 'form saves must create a result box beside the form');
-  assert(/Import preview — nothing saved yet/.test(formBox.innerHTML), 'the review card must render in the form-local box');
-  assert(/Commit one recoverable version/.test(formBox.innerHTML), 'the commit affordance must be in the form-local box');
-  assert.strictEqual(ids.tplMultiResult.innerHTML, '', 'form saves must not render into the above-the-fold upload box');
-  assert(formBox.scrollCalls.length >= 1 && formBox.scrollCalls[0] && formBox.scrollCalls[0].block === 'center',
-    'the review card must scroll to CENTER (nearest left it out of view — owner repro 2026-07-23)');
+  await h.context.saveTemplateFromForm();
+
+  assert.strictEqual(saveCalls, 1, 'Save must call the device save exactly once, even when hosted');
+  const previewCalls = h.fetches.filter(f => String(f.url).endsWith('/api/template-imports/preview'));
+  assert.strictEqual(previewCalls.length, 0, 'Save must not round-trip through the import preview');
+  assert(!ids.tplFormResult, 'Save must not spawn an off-screen preview card the doctor has to find');
+  assert.strictEqual(saveBtn.disabled, false, 'Save must never be left disabled');
+  assert.strictEqual(saveBtn.textContent, '💾 Save template', 'Save must keep its label');
+  assert.strictEqual(ids.tplMultiResult.innerHTML, '', 'Save must not render into the bulk-upload box');
 }
 
 function staticContracts() {
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
-  assert(source.includes("VERSION='tl-1.2.0'"), 'form-save visibility lane must carry tl-1.2.0');
+  assert(source.includes("VERSION='tl-1.6.0'"), 'the add-means-add lane must carry tl-1.6.0 (pin moved deliberately: clean previews auto-commit from the Add click path)');
+
+  /* tl-1.3.0 — the two mechanisms that cost the owner his library on b833.
+     Both are asserted on the SOURCE as well as at runtime, because both
+     failures were silent and a runtime-only pin can be satisfied by a stub. */
+  assert(!/previewImport\(\{fromForm:true\}\)/.test(source),
+    'the form save must not route through the import preview — that panel rendered at y=3004 and the doctor never saw it');
+  assert(source.includes('function wouldRemove'),
+    'activating a set must be able to name what it would delete');
+  assert(source.includes('async function confirmReplace'),
+    'a set that drops device templates must be confirmed, not applied silently');
+  assert(/if\(!\(await confirmReplace\(data\.set\)\)\)/.test(source),
+    'activateSet must gate applySet behind the destructive-change confirmation');
+  assert(/if\(await confirmReplace\(result\.set\)\)applySet\(result\.set\)/.test(source),
+    'a commit that activates must gate applySet behind the same confirmation');
   assert(source.includes('function importResultBox'), 'import previews must target the box where the user acted');
   assert(source.includes("block:'center'"), 'import review must scroll into the middle of the viewport');
   assert(source.includes("resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult'"), 'commit results must land in the same box as their preview');
@@ -318,11 +343,21 @@ function staticContracts() {
   assert(source.includes("TEMPLATE_VERSION_CONFLICT"));
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
+  /* 2026-08-06: this pinned a hand-maintained token (…tl160, then …tl161). That
+     is what let the loader go stale while the module changed: fea4afb8 edited
+     feat_mls_template_library.js on 08-06 with the token still reading 08-05, so
+     b904's import fix could not reach a returning browser and main went red on
+     tests/cache-token-cannot-go-stale.test.js. A date bump fixes it once; the
+     build-number buster cannot go stale by construction, so the assertion now
+     pins the FORM rather than a value anyone has to remember to move. */
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260723tl120'));
+    assert(loader.includes("feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now())"),
+      'the template library loader must follow the build number, not a hand-maintained token');
+    assert(!/feat_mls_template_library\.js\?v=20\d{6}/.test(loader),
+      'a hand-maintained date token came back on the template library loader — it will go stale at the next change');
   }
   const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
-  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260723tl120');
+  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=');
   assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
     'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');

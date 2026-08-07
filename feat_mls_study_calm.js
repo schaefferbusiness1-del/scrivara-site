@@ -38,8 +38,6 @@
       '#mlsSgPro h4{font-family:"Newsreader",Georgia,serif !important;font-weight:600 !important;font-size:17px !important;letter-spacing:-.01em;color:#1A211C !important;margin:0 0 10px !important;}',
       '#mlsSgPro input[type=text],#mlsSgPro input:not([type]),#mlsSgPro select{background:#FCFBF8 !important;border:1px solid #E4E1D8 !important;border-radius:10px !important;color:#1A211C !important;padding:9px 12px !important;font-size:13.5px !important;}',
       '#mlsSgPro button{border-radius:10px !important;font-weight:700 !important;}',
-      /* the purple by-procedure button joins the family */
-      '#mlsSgPro button[style*="7c3aed"],#mlsSgPro button[style*="8b5cf6"],#mlsSgPro .sgp-build{background:#204034 !important;border-color:#204034 !important;color:#fff !important;}',
       /* legacy strip cards, calm when opened */
       '#mls-sg-root .mls-sg-wrap, #mls-sg-root{background:transparent;}',
       '#mls-sg-root [class*=card], #mls-sg-root > div > div{border-radius:14px;}',

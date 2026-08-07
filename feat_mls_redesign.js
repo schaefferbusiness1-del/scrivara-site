@@ -94,7 +94,7 @@
 "body.mls-redesign, body.mls-redesign button, body.mls-redesign input, body.mls-redesign select,",
 "body.mls-redesign textarea, body.mls-redesign .sf-select{ font-family:'Public Sans',system-ui,-apple-system,'Segoe UI',sans-serif !important; }",
 "body.mls-redesign ::placeholder{ color:#68736B; }",
-"body.mls-redesign #mlsEz3 .ez3-safety,body.mls-redesign #mlsEz3 .ez3-fstep,body.mls-redesign #mlsEz3 .ez3-prow .dob,body.mls-redesign #mlsEz3 .ez3-prow .tm,body.mls-redesign #mlsEz3 .ez3-qchip .qt,body.mls-redesign #mlsEz3 .ez3fl-staffLink,body.mls-redesign #mlsEz3 .ez3fl-rechint,body.mls-redesign #mlsEz3 .ez3fl-txhead span,body.mls-redesign #mlsEz3 .ez3fl-txmeta,body.mls-redesign #mlsEz3 .ez3fl-step .s{ color:#68736B !important; }",
+"body.mls-redesign #mlsEz3 .ez3-safety,body.mls-redesign #mlsEz3 .ez3-fstep,body.mls-redesign #mlsEz3 .ez3-prow .dob,body.mls-redesign #mlsEz3 .ez3-prow .tm,body.mls-redesign #mlsEz3 .ez3-qchip .qt,body.mls-redesign #mlsEz3 .ez3fl-rechint,body.mls-redesign #mlsEz3 .ez3fl-txhead span,body.mls-redesign #mlsEz3 .ez3fl-txmeta,body.mls-redesign #mlsEz3 .ez3fl-step .s{ color:#68736B !important; }",
 "body.mls-redesign #mlsSmBtn{ color:#68736B !important; }",
 "body.mls-redesign .ez3fl-step .s{ color:#68736B !important; }",
 "body.mls-redesign ::-webkit-scrollbar{ width:10px;height:10px; }",
@@ -245,9 +245,9 @@
 "body.mls-redesign .card>h2, body.mls-redesign .card>h3{ letter-spacing:-.01em; }",
 
 "/* ---- buttons: calm, flat, no gradients ---- */",
-"body.mls-redesign .btn-primary, body.mls-redesign .btn-blue{ background:var(--brand-dk) !important; color:#fff !important; border:none !important; border-radius:10px !important; font-weight:600 !important; box-shadow:0 8px 20px -8px rgba(32,64,52,.6) !important; transition:transform .12s ease, background .18s ease, box-shadow .18s ease; }",
-"body.mls-redesign .btn-primary:hover, body.mls-redesign .btn-blue:hover{ background:#28503f !important; }",
-"body.mls-redesign .btn-primary:active, body.mls-redesign .btn-blue:active{ transform:translateY(1px); }",
+"body.mls-redesign .btn-primary{ background:var(--brand-dk) !important; color:#fff !important; border:none !important; border-radius:10px !important; font-weight:600 !important; box-shadow:0 8px 20px -8px rgba(32,64,52,.6) !important; transition:transform .12s ease, background .18s ease, box-shadow .18s ease; }",
+"body.mls-redesign .btn-primary:hover{ background:#28503f !important; }",
+"body.mls-redesign .btn-primary:active{ transform:translateY(1px); }",
 "body.mls-redesign .btn-green{ background:var(--brand) !important; color:#fff !important; border:none !important; border-radius:10px !important; font-weight:600 !important; box-shadow:0 8px 20px -8px rgba(46,106,75,.55) !important; transition:transform .12s ease, filter .18s ease; }",
 "body.mls-redesign .btn-green:hover{ filter:brightness(1.06); }",
 "body.mls-redesign .btn-green:active{ transform:translateY(1px); }",
@@ -316,7 +316,7 @@
 "body.mls-redesign #mlsAddPtLauncher *{ color:var(--ink) !important; }",
 
 "/* ---- toasts ---- */",
-"body.mls-redesign #mlsTip,body.mls-redesign .mls-toast,body.mls-redesign .toast{ background:#204034 !important; color:#fff !important; border:1px solid rgba(255,255,255,.08) !important; border-radius:12px !important; box-shadow:0 18px 40px -12px rgba(20,33,28,.5) !important; }",
+"body.mls-redesign #mlsTip,body.mls-redesign .toast{ background:#204034 !important; color:#fff !important; border:1px solid rgba(255,255,255,.08) !important; border-radius:12px !important; box-shadow:0 18px 40px -12px rgba(20,33,28,.5) !important; }",
 "body.mls-redesign .empty{ border:1.5px dashed #D6D2C6 !important; background:var(--soft2) !important; border-radius:14px !important; }",
 
 "/* ---- calm loading primitives (used by theme polish + any module) ---- */",
@@ -577,7 +577,13 @@
   function organizePrimaryNavigation(){
     try{
       var nav=document.querySelector('.mainnav'); if(!nav) return false;
-      nav.setAttribute('role','navigation'); nav.setAttribute('aria-label','Primary navigation');
+      /* write-only-on-change: this function runs on every applyAll pass, and
+         these two were unconditional — 34 no-op attribute writes each per 30
+         idle seconds, every one invalidating style for the nav. Same discipline
+         tests/body-class-writes-only-on-change.test.js already enforces on the
+         body class. */
+      if(nav.getAttribute('role')!=='navigation') nav.setAttribute('role','navigation');
+      if(nav.getAttribute('aria-label')!=='Primary navigation') nav.setAttribute('aria-label','Primary navigation');
       var tabs=[].slice.call(nav.querySelectorAll('.navtab'));
       for(var a=0;a<tabs.length;a++) wireNavAccessibility(tabs[a]);
 
@@ -611,13 +617,19 @@
         var secondary=$(SECONDARY_NAV[s]); if(!secondary||secondary.parentElement!==nav) continue;
         var hide=secondaryRouteAvailable(SECONDARY_NAV[s]);
         if(hide){
+          /* The transition check used to guard only the save-the-prior-value
+             block; the four state writes below it ran unconditionally on every
+             pass — 544 no-op attribute writes per 30 idle seconds across these
+             four tabs, each one a chance for a screen reader to re-announce a
+             hidden item. Applying the state inside the same block that detects
+             the transition matches how the sibling case is already written. */
           if(secondary.getAttribute('data-mlsrd-primary-hidden')!=='1'){
             secondary.setAttribute('data-mlsrd-prehide-tabindex',secondary.hasAttribute('tabindex')?secondary.getAttribute('tabindex'):'__none__');
             secondary.setAttribute('data-mlsrd-prehide-aria-hidden',secondary.hasAttribute('aria-hidden')?secondary.getAttribute('aria-hidden'):'__none__');
             if(!secondary.hidden) secondary.setAttribute('data-mlsrd-added-hidden','1');
+            secondary.setAttribute('data-mlsrd-primary-hidden','1');
+            secondary.setAttribute('aria-hidden','true'); secondary.setAttribute('tabindex','-1'); secondary.hidden=true;
           }
-          secondary.setAttribute('data-mlsrd-primary-hidden','1');
-          secondary.setAttribute('aria-hidden','true'); secondary.setAttribute('tabindex','-1'); secondary.hidden=true;
         }else if(secondary.getAttribute('data-mlsrd-primary-hidden')==='1'){
           restoreSecondaryRoute(secondary);
         }
@@ -1205,7 +1217,7 @@
 "  /* 4) No idle floating controls. Quick actions live in the compact top bar",
 "     and field dictation stays beside the field that owns it. */",
 "  #_patientFace, #mlsCopVoiceBtn, #mlsAsstFab, #mlsDaDock, #mlsTabPickerChip, #mlsAddPtLauncher,",
-"  #mlsScDock, #mlsPayReportFab, .mls-askreview-chip{ display:none !important; }",
+"  #mlsScDock{ display:none !important; }",
 "  #mlsFab, #mlsFabMenu{ display:none !important; }",
 "  /* while actually LISTENING the voice control must be visible + tappable */",
 "  #mlsCopVoiceBtn.mls-bl42-on{ display:inline-flex !important; left:14px !important; right:auto !important; bottom:84px !important; z-index:99990 !important; }",
@@ -1288,7 +1300,13 @@
     };
     try{ document.addEventListener('input',_surfaceInputHandler,true); }catch(e){}
     try{ window.addEventListener('mls:active-patient-changed',_surfacePatientHandler); }catch(e2){}
-    try{ window.addEventListener('mls:note-updated',_surfacePatientHandler); }catch(e3){}
+    /* 2026-08-04 (#24): this used to listen for 'mls:note-updated', a name no
+       production code dispatches (only a test fixture emitted it — vacuous).
+       The genuine programmatic-note moment is generation settling: showNote()
+       writes #noteBox.value with NO input event, so the note-draft body state
+       lagged until the next keystroke. mls:generation-complete fires on every
+       generate exit lane; the handler is guarded and idempotent. */
+    try{ window.addEventListener('mls:generation-complete',_surfacePatientHandler); }catch(e3){}
     try{ window.addEventListener('storage',_surfaceStorageHandler); }catch(e4){}
   }
   function ensurePayReportMenuItem(){
@@ -1388,7 +1406,7 @@
   function revert(){ try{if(_obs)_obs.disconnect();if(_lifeObs)_lifeObs.disconnect();_observedRoot=null;_lifeRoot=null;}catch(e){} try{_t.forEach(function(timer){clearTimeout(timer);});_t=[];}catch(e){} try{if(_schedT)clearTimeout(_schedT);}catch(e){}
     try{window.removeEventListener('mls:ui-ready',schedule);window.removeEventListener('mls:view-mode-changed',schedule);}catch(e){}
     try{if(_surfaceInputHandler)document.removeEventListener('input',_surfaceInputHandler,true);}catch(e){}
-    try{if(_surfacePatientHandler){window.removeEventListener('mls:active-patient-changed',_surfacePatientHandler);window.removeEventListener('mls:note-updated',_surfacePatientHandler);}}catch(e){}
+    try{if(_surfacePatientHandler){window.removeEventListener('mls:active-patient-changed',_surfacePatientHandler);window.removeEventListener('mls:generation-complete',_surfacePatientHandler);}}catch(e){}
     try{if(_surfaceStorageHandler)window.removeEventListener('storage',_surfaceStorageHandler);}catch(e){}
     _surfaceInputHandler=null;_surfacePatientHandler=null;_surfaceStorageHandler=null;
     try{if(_railKeyHandler)document.removeEventListener('keydown',_railKeyHandler,true);}catch(e){} try{if(_railResizeHandler)window.removeEventListener('resize',_railResizeHandler);}catch(e){}

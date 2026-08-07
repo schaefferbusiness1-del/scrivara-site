@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><title>MLS Assist</title>
+<style>
+  body{width:300px;margin:0;font:13px/1.45 'Public Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1A211C;background:#FBFAF7}
+  .h{background:#204034;color:#fff;padding:12px 14px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .h svg{display:block;flex:none;border-radius:6px}
+  .b{padding:14px}
+  label{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5F6B64;display:block;margin:10px 0 4px}
+  input{width:100%;box-sizing:border-box;border:1px solid #E4E1D8;border-radius:9px;padding:8px;font:13px inherit;background:#fff;color:#1A211C}
+  input:focus{outline:none;border-color:#2E6A4B;box-shadow:0 0 0 3px rgba(46,106,75,.12)}
+  button{margin-top:14px;width:100%;background:#204034;color:#fff;border:none;border-radius:9px;padding:10px;font:600 13px inherit;cursor:pointer;transition:filter .15s ease,transform .12s ease}
+  button:hover{filter:brightness(1.1)}
+  button:active{transform:translateY(1px)}
+  .ok{color:#2E6A4B;font-size:12px;margin-top:8px;min-height:16px}
+  .note{color:#5F6B64;font-size:11.5px;margin-top:10px}
+  details{margin-top:14px;border-top:1px solid #E7E5DD;padding-top:6px}
+  summary{cursor:pointer;font-weight:700;font-size:12px;color:#2E6A4B;padding:6px 0;list-style:none;user-select:none}
+  summary::-webkit-details-marker{display:none}
+  summary:before{content:"▸ ";color:#A6AEA6}
+  details[open] summary:before{content:"▾ "}
+</style></head><body>
+<div class="h"><svg viewBox="0 0 56 56" width="22" height="22" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="0" y="0" width="56" height="56" rx="15" fill="#2E6A4B"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg> MLS Assist</div>
+<div class="b">
+  <button id="openTab" style="margin-top:0;background:#2E6A4B;font-size:14px;padding:12px">🩺 Open MLS Assist on this tab</button>
+  <div id="conn" role="status" aria-live="polite" style="margin-top:12px;border-radius:9px;padding:9px 11px;font-size:12.5px;background:#F6FBF8;border:1px solid #E7E5DD;color:#3D453E">Checking connection…</div>
+  <div class="note" style="margin-top:10px">✓ No setup needed with the official MLS backend — stay signed in to MLS (mlsscribe.com) and MLS Assist can use that login. Click the green button above to start.</div>
+  <div class="note" style="margin-top:8px;background:#fff7e6;border:1px solid #f0d79a;border-radius:8px;padding:8px;color:#7a5a16"><b>Synthetic evaluation only.</b> Live schedule pulls remain clinician-started, but do not open or send real patient information until MLS publishes and verifies production legal/vendor readiness.</div>
+
+  <details>
+    <summary>🌙 Nightly EMR backup</summary>
+    <div style="font-size:11.5px;color:#5F6B64;margin:6px 0 8px">At the time below, capture the one patient chart already open in signed-in athenaOne. If an exact verified chart is not open, nothing is read or sent. Needs this computer on and Chrome open.</div>
+    <label style="display:flex;align-items:center;gap:7px;text-transform:none;font-size:13px;font-weight:600;color:#1A211C;margin:0">
+      <input id="bkEnabled" type="checkbox" style="width:auto;margin:0"> Capture one open Athena chart nightly
+    </label>
+    <label for="bkTime" style="margin-top:10px">Time (this computer's local time)</label>
+    <input id="bkTime" type="time" value="02:00" style="font:13px inherit">
+    <button id="bkSave" style="background:#2E6A4B">Save schedule</button>
+    <button id="bkRun">▶ Run backup now</button>
+    <div class="ok" id="bkStatus" role="status" aria-live="polite" style="color:#5F6B64"></div>
+  </details>
+
+  <details>
+    <summary>⚙ Advanced — API key &amp; backend</summary>
+    <label for="key">MLS API key <span style="text-transform:none;letter-spacing:0;color:#5F6B64;font-weight:500">(optional)</span></label>
+    <input id="key" type="password" placeholder="leave blank to use your MLS login" autocomplete="off">
+    <label for="backend">Backend URL</label>
+    <input id="backend" type="text" value="https://scrivara-backend.onrender.com">
+    <button id="save">Save</button>
+    <div class="ok" id="ok" role="status" aria-live="polite"></div>
+    <div class="note">Your MLS login can authenticate only to the official backend above. A custom HTTPS backend requires its own explicit API key; MLS Assist will never substitute or send your MLS login token to it.</div>
+  </details>
+</div>
+<script src="popup.js"></script></body></html>

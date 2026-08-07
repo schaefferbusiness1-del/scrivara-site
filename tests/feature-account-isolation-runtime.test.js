@@ -8,7 +8,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 const connectSource = read('mls-connect.js');
-assert(connectSource.includes('feat_mls_status_center.js') && connectSource.includes('?v=20260725sc113'),
+assert(connectSource.includes('feat_mls_status_center.js') && connectSource.includes('?v=20260802sc114'),
   'account-isolated Status Center is not loaded through a fresh immutable URL');
 assert(!connectSource.includes('?v=20260718sc1e-b415'), 'retired non-isolated Status Center URL remains loadable');
 

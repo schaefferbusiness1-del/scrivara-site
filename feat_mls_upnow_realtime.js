@@ -36,7 +36,7 @@
   "use strict";
   try { if (window.__mlsUpNowRealtime && window.__mlsUpNowRealtime.installed) return; } catch (e) { return; }
 
-  var VERSION = "unr-1.1.0";
+  var VERSION = "unr-1.1.1";
   var BANNER = "heroPullStatus";
   var HERO = "heroToday";
   var NOMORE = "No more patients today.";
@@ -128,13 +128,31 @@
     });
   }
 
-  /* ---- overrides ---- */
+  /* ---- overrides ----
+     WRAP EACH TARGET AT MOST ONCE, EVER. Each _orig* below is MODULE-LEVEL and
+     read at CALL time by a wrapper that is already installed. Guarding only on
+     "is MY marker on window.<fn>" while boot()'s 1s poll re-runs these
+     installers 60 times means any co-wrapper that does not carry our marker
+     forward makes the poll re-wrap -- which re-points the shared _orig* that
+     our FIRST wrapper still reads, and the two wrappers then call each other
+     until the stack overflows.
+
+     MEASURED on b870's shipped module set, both real modules in a vm with the
+     polls replayed:
+       _calLoadNextUp      [easy_pickfix, upnow_realtime]  base ran 0 (RangeError)
+       _renderTodayPatients[upnow_realtime, upnow_sync]     base ran 0 (RangeError)
+     in the load order where THIS module wraps first. Same defect as b870's
+     renderProfile cycle (feat_mls_visit_focus.js), same law, and the law was
+     first written down in feat_mls_b121_pack.js. These drive the Up-Next hero
+     and today's patient list, so a cycle silently freezes both. */
   var _origAutoPos = null, _origLoadNextUp = null, _origRender = null;
+  var _didAutoPos = false, _didLoadNextUp = false, _didRenderGuard = false;
 
   function installAutoPos() {
     safe(function () {
+      if (_didAutoPos) return;
       if (typeof window._heroAutoPos !== "function") return;
-      if (window._heroAutoPos.__mlsUnrWrapped) return;
+      if (window._heroAutoPos.__mlsUnrWrapped) { _didAutoPos = true; return; }
       _origAutoPos = window._heroAutoPos;
       var fn = function (pending) {
         if (!pending || !pending.length) return 0;
@@ -151,14 +169,19 @@
         return 0;                            /* untimed -> original default */
       };
       fn.__mlsUnrWrapped = true; fn.__mlsUnrOrig = _origAutoPos;
+      /* carry co-wrappers' head markers so none of them sees an unmarked head
+         and re-wraps over us (the b121_pack idiom) */
+      try { fn.__mlsEzpfWrapped = _origAutoPos.__mlsEzpfWrapped; } catch (e) {}
       window._heroAutoPos = fn;
+      _didAutoPos = true;
     });
   }
 
   function installLoadNextUp() {
     safe(function () {
+      if (_didLoadNextUp) return;
       if (typeof window._calLoadNextUp !== "function") return;
-      if (window._calLoadNextUp.__mlsUnrWrapped) return;
+      if (window._calLoadNextUp.__mlsUnrWrapped) { _didLoadNextUp = true; return; }
       _origLoadNextUp = window._calLoadNextUp;
       var fn = function () {
         try {
@@ -173,14 +196,17 @@
         return _origLoadNextUp.apply(this, arguments);
       };
       fn.__mlsUnrWrapped = true; fn.__mlsUnrOrig = _origLoadNextUp;
+      try { fn.__mlsEzpfWrapped = _origLoadNextUp.__mlsEzpfWrapped; } catch (e) {}
       window._calLoadNextUp = fn;
+      _didLoadNextUp = true;
     });
   }
 
   function installRenderGuard() {
     safe(function () {
+      if (_didRenderGuard) return;
       if (typeof window._renderTodayPatients !== "function") return;
-      if (window._renderTodayPatients.__mlsUnrGuard) return;
+      if (window._renderTodayPatients.__mlsUnrGuard) { _didRenderGuard = true; return; }
       _origRender = window._renderTodayPatients;
       var fn = function () {
         var r = _origRender.apply(this, arguments);
@@ -191,7 +217,9 @@
       };
       fn.__mlsUnrGuard = true; fn.__mlsUnrOrig = _origRender;
       try { fn.__mlsUpNowWrapped = _origRender.__mlsUpNowWrapped; } catch (e) {}
+      try { fn.__mlsUpNowOrig = _origRender.__mlsUpNowOrig; } catch (e) {}
       window._renderTodayPatients = fn;
+      _didRenderGuard = true;
     });
   }
 

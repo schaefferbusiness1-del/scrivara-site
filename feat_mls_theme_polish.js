@@ -42,16 +42,14 @@
     var st = document.createElement('style'); st.id = STYLE_ID;
     st.textContent = [
       /* ---------- 1. calm button polish ---------- */
-      'html .btn-green,html .btn-ghost,html .btn-blue,html .btn-red,html button.edit,html #authBtn{transition:transform .13s ease,box-shadow .13s ease,filter .13s ease,background .18s ease!important}',
+      'html .btn-green,html .btn-ghost,html .btn-red,html button.edit,html #authBtn{transition:transform .13s ease,box-shadow .13s ease,filter .13s ease,background .18s ease!important}',
       'html body .btn-green.btn-green:hover{transform:translateY(-1px);filter:brightness(1.05)}',
       'html body .btn-green.btn-green:active{transform:translateY(0);filter:brightness(.97)}',
       'html body .btn-ghost.btn-ghost:hover{transform:translateY(-1px)}',
       'html body .btn-ghost.btn-ghost:active{transform:translateY(0)}',
-      'html body .btn-blue.btn-blue:hover{transform:translateY(-1px)}',
-      'html body .btn-blue.btn-blue:active{transform:translateY(0)}',
       'html body .btn-red:hover{transform:translateY(-1px)}',
       'html body button.edit:hover{transform:translateY(-1px)}',
-      'html .btn-green:focus-visible,html .btn-ghost:focus-visible,html .btn-blue:focus-visible,html .btn-primary:focus-visible,html #authBtn:focus-visible{outline:3px solid rgba(46,106,75,.35)!important;outline-offset:2px!important}',
+      'html .btn-green:focus-visible,html .btn-ghost:focus-visible,html .btn-primary:focus-visible,html #authBtn:focus-visible{outline:3px solid rgba(46,106,75,.35)!important;outline-offset:2px!important}',
 
       /* ---------- 2. Visit view card consistency ---------- */
       'html body #visitView .card,html body #visitView .extra-card{border-radius:16px!important;border-color:#E7E5DD!important;box-shadow:0 1px 2px rgba(20,33,28,.04)!important;transition:box-shadow .18s ease}',
@@ -66,8 +64,8 @@
       '@keyframes mlsThmSpin{to{transform:rotate(360deg)}}',
       'html button:disabled{opacity:.62;cursor:default}',
       /* ---------- 4. calm modal typography ---------- */
-      'html body .modal>h2:first-child,html body .modal>h3:first-child,html body .modal .mls-modal-title{font-family:Newsreader,Georgia,serif!important;font-weight:600!important;letter-spacing:-.012em!important;font-size:21px!important}',
-      '@media (prefers-reduced-motion: reduce){.mls-busy::after{animation:none}.btn-green,.btn-ghost,.btn-blue,.btn-red,button.edit{transition:none!important}}'
+      'html body .modal>h2:first-child,html body .modal>h3:first-child{font-family:Newsreader,Georgia,serif!important;font-weight:600!important;letter-spacing:-.012em!important;font-size:21px!important}',
+      '@media (prefers-reduced-motion: reduce){.mls-busy::after{animation:none}.btn-green,.btn-ghost,.btn-red,button.edit{transition:none!important}}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }

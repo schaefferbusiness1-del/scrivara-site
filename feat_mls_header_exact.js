@@ -81,10 +81,29 @@
     if (studioStar) clean = "✦ " + clean;
     if (node.textContent !== clean) node.textContent = clean;
   }
+  /* feat_mls_redesign.js owns the four PRIMARY_NAV labels and restores an icon
+     prefix from data-mlsrd-original-text; relabel() strips exactly that prefix.
+     Two owners, opposite goals, each watching a document-wide subtree that the
+     other writes into — so neither has a fixpoint and it never settles.
+     MEASURED on an idle signed-in app: all four labels oscillated 26 times in
+     20 seconds (~1.3Hz) between "Today"/"🎙️ Today", "Patients"/"👥 Patients",
+     "Calendar"/"📅 Calendar", "✦ Tools"/"✨ Tools". The emoji changes the
+     label's width, so the whole nav row re-laid out on every flip: visible
+     jitter, and a tab that can move out from under the cursor between aiming
+     and pressing. Each module's own "did it change?" guard was useless here,
+     because the value genuinely differed every pass — the other module had
+     just changed it.
+     One owner has to yield, and Redesign is the one that declares itself the
+     authority (PRIMARY_NAV, aria-label, data-mlsrd-primary). The remaining ids
+     below are untouched by Redesign's label pass and keep their normalisation. */
+  var REDESIGN_OWNED_LABELS = { nav_visit: 1, nav_patients: 1, nav_calendar: 1, nav_studio: 1 };
   function relabelAll() {
     ["nav_calendar", "nav_patients", "nav_visit", "nav_recs", "nav_history",
-     "nav_legalreq", "nav_team", "nav_analysis", "nav_help"].forEach(function (id) { relabel(id, false); });
-    relabel("nav_studio", true);
+     "nav_legalreq", "nav_team", "nav_analysis", "nav_help"].forEach(function (id) {
+      if (REDESIGN_OWNED_LABELS[id]) return;
+      relabel(id, false);
+    });
+    if (!REDESIGN_OWNED_LABELS.nav_studio) relabel("nav_studio", true);
   }
 
   /* Relocated Menu rows: neutral inline styling that reads on a light OR dark
@@ -159,10 +178,23 @@
     try { var sp = mainnav.querySelector(":scope > .hx-spacer"); if (sp) sp.remove(); } catch (e) {}
   }
 
+  /* Scoped to the rail this module actually rewrites. It used to observe
+     document.documentElement with subtree:true while its own callback wrote
+     back into that same subtree — the textbook shape for a feedback loop. The
+     disconnect/reconnect above stops it re-triggering ITSELF, but any of the
+     other ~1Hz writers elsewhere in the document restarted the cycle, so
+     buildNav() (gateAccount + relocateToMenu + relabelAll) ran about once a
+     second forever. Narrowing to #mlsRdNav keeps every mutation this module
+     cares about — the nav it owns — and drops the ones it does not.
+     document.documentElement stays as the fallback for the window before the
+     rail exists, so nothing is missed during boot. */
+  function observeRoot() {
+    try { return document.getElementById("mlsRdNav") || document.documentElement; } catch (e) { return document.documentElement; }
+  }
   function applyAll() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
     try { injectCSS(); buildNav(); } catch (e) {}
-    try { if (_obs) _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    try { if (_obs) _obs.observe(observeRoot(), { childList: true, subtree: true }); } catch (e) {}
   }
   function schedule() { if (_sched) return; _sched = setTimeout(function () { _sched = null; applyAll(); }, 160); }
   function boot() {

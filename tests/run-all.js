@@ -12,6 +12,7 @@ const tests = [
   'boot-script-budget.test.js',
   'public-preview-policy.test.js',
   'public-preview-runtime.test.js',
+  'preview-route-canonicalize-runtime.test.js',
   'public-preview-integration-contract.test.js',
   'homepage-self-guided-preview.test.js',
   'public-release-truth-boundary.test.js',
@@ -35,6 +36,24 @@ const tests = [
   'write-confirm-requires-change.test.js',
   'one-canonical-stop.test.js',
   'deselect-releases-the-visit.test.js',
+  /* Owner 2026-08-05: clicking a name on the left did not open that patient on
+     the right. Four modules wrap renderProfile; two of them called each other
+     until the stack overflowed and the app's own render never ran. Executes
+     both real modules against a stub DOM with deterministic timers. */
+  'patient-select-renders-that-patient.test.js',
+  /* ...and the same class swept across every SHIPPED module, both load orders.
+     b870 fixed one instance; this sweep found two more (the Up-Next hero and
+     today's patient list), each broken in exactly one load order. */
+  'wrapper-chains-reach-their-base.test.js',
+  /* Owner 2026-08-05 'fix sign in screen'. The tabs were divs: no keyboard path
+     to Sign up at all, and 3.31:1 contrast. Both already had fixes — in feat_*
+     modules the sign-in screen never loads. */
+  'sign-in-screen-is-reachable.test.js',
+  /* The post-op video lane must be INVISIBLE until its backend deploys: a
+     'Talk to your doctor now' button that 404s to someone in pain after surgery
+     is worse than shipping nothing. Executes both halves against a stubbed
+     fetch. Also pins that neither half prescribes. */
+  'telehealth-ships-dark.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',
@@ -64,6 +83,18 @@ const tests = [
      driver does not then repaint the pointed-at editor out of existence, in
      all four byte-identical copies of it. */
   'sign-refusal-survives-the-repaint.test.js',
+  /* b834 — a fix on the origin that a returning browser never receives is not
+     shipped. feat_mls_opnote_integrity.js sat behind a hand-maintained cache
+     token dated two days before its own content changed. This compares every
+     hand-maintained token against its file's real history. */
+  'cache-token-cannot-go-stale.test.js',
+  /* 2026-08-06 — the same disease one layer out: a deploy that publishes an
+     OLDER tree than the one already live silently reverts whatever landed in
+     between, and reports success. Measured that day: 13 deploys, 3 inversions
+     (23%), app-version.json going BACKWARDS twice, one inversion reverting
+     another lane's shipped fix 51 seconds after it landed. This replays those
+     exact pairs against the guard. */
+  'forward-deploy-guard.test.js',
   /* b814 — "maybe add liquid glass designs some places your call". The call was
      the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
      the theme derivation, the @supports fallback, and the surfaces that must
@@ -120,6 +151,15 @@ const tests = [
   'ui-clinical-pass.test.js',
   'ui-shell-pass.test.js',
   'schedule-mutating-row-reverify-contract.test.js',
+  /* 3.0.40 candidate contracts (sn-1.1 / er-1.2 / csr-1.1 / pp-1.x / wv-1.x) */
+  'schedule-chip-name-capture-contract.test.js',
+  'schedule-empty-day-settle-contract.test.js',
+  'schedule-pull-reconciliation-contract.test.js',
+  'extension-orphan-neutralization-contract.test.js',
+  'athena-write-verification-contract.test.js',
+  /* fg-1.0 (3.0.41): the user-initiated retry may front the athena tab (panes
+     never hydrate occluded) and must always restore focus */
+  'history-retry-foreground-contract.test.js',
   'sanitize-regex-linear-time.test.js',
   'schedule-weektab-provider-header-variant.test.js',
   'opnote-room-remake-contract.test.js',
@@ -221,6 +261,17 @@ const tests = [
   'copilot-request-binding-contract.test.js',
   'widget-builder-v2-runtime.test.js',
   'custom-widget-identity-runtime.test.js',
+  'widget-builder-live-preview.test.js',
+  /* Owner 2026-08-06: "it should be able to listen while it is talking" and
+     "it doesn't really start listening right away it's delayed". The mic now
+     opens WITH the question; the risk that creates - the avatar transcribing
+     ITSELF into the patient's answer - is what most of this suite guards. */
+  'avatar-listens-while-speaking.test.js',
+  /* av-5.6.0 the visit copilot: the room capture survives a reload, the
+     action detector refuses every negated/past/conditional/interrogative form
+     of an order, and nothing consequential is confirmable while a clinically
+     required field was never spoken. */
+  'avatar-visit-copilot.test.js',
   'studio-creations-durability.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',
@@ -261,11 +312,39 @@ const tests = [
   'intake-attach-single-flight.test.js',
   'multi-tab-hint-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
+  'athena-read-indicator.test.js',
+  /* Owner 2026-08-06: "some times it puts in the wrong medication". Reproduced
+     verbatim on a real patient - three drugs and an 80 mg dose invented to
+     satisfy a prompt line telling the model to prefer routine values over
+     blanks. 3 of 96 templates can reach it; the guard is proven on all 3. */
+  'opnote-drug-blanks-never-invented.test.js',
+  /* Owner 2026-08-06: "the date of procidure needs to be put in". Reproduced
+     15/15 - the date is handed to the generator and rendered in no format at
+     all. Deterministic, and it affects EVERY note, not the 3 at-risk ones. */
+  'opnote-carries-its-procedure-date.test.js',
+  /* b925 and b927 put both op-note safety guards in ScribeFlow.html's
+     _genOpNote - which feat_mls_opnote_integrity.js REPLACES. Two builds of a
+     patient-safety fix shipped and did nothing; QA proved it on live b926.
+     This suite asserts on the INSTALLED generator, never on a file. */
+  'opnote-guards-run-in-the-installed-generator.test.js',
+  /* Owner 2026-08-06: "the template auto matching just is not that good".
+     QA measured it on the text his SCHEDULE carries, not on well-formed
+     strings: 24 of 27 real reasons REFUSED with the right template already
+     ranked first. The gate, not the ranker - and a suite of ideal inputs
+     could never have seen it. */
+  'template-match-real-schedule-text.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
+  'opnote-rail-search-caret.test.js',
+  'provider-key-credential-surname.test.js',
+  'visit-reason-not-correspondence.test.js',
+  'draft-all-panel-collapses-without-hiding-failure.test.js',
+  'tesi-expands-to-the-region-the-text-supports.test.js',
+  'tpl-word-junk.test.js',
   'template-library-runtime.test.js',
+  'template-recognition-bounded-concurrency.test.js',
   'staging-history-writeflow-parity.test.js',
   'active-patient-sync-status.test.js',
   'voice-pill-persistence-runtime.test.js',
@@ -305,6 +384,9 @@ const tests = [
   'schedule-calendar-partial-diagnostics-runtime.test.js',
   'schedule-import-scan-performance-contract.test.js',
   'provider-day-pull-contract.test.js',
+  'provider-incomplete-diagnostics-contract.test.js',
+  'history-refusal-diagnostics-contract.test.js',
+  'writeflow-presence-port-contract.test.js',
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',
   'provider-roster-ingest-dedupe-runtime.test.js',
@@ -384,6 +466,16 @@ const tests = [
   'assistant-request-ownership-runtime.test.js',
   'copilot-actions-once-contract.test.js',
   'copilot-context-pack-runtime.test.js',
+  /* 2026-08-05 Copilot Power (cpw-1.0.0): the snapshot gains providerCoverage +
+     capabilities, the /api/copilot body gains an ABSOLUTE wire cap through the
+     loaded wrapper, and the agentic kinds (pullProviders/draftNote) execute
+     fail-closed with honest receipts. */
+  'copilot-power-context-contract.test.js',
+  'copilot-power-actions-runtime.test.js',
+  /* 2026-08-05 AVATAR (av-1.0.0, owner-ordered): the doctor side of the
+     patient-facing check-in — no polling, fail-closed chart match, idempotent
+     stamped import, one idle-deferred loader. */
+  'avatar-doctor-runtime.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',
@@ -475,7 +567,7 @@ const tests = [
      pharmacy portal, and five printed letterheads. Four of those also hardcoded
      the VENDOR's name and specialty onto documents the practice hands out. */
   'twelve-shell-documents-carry-the-practice.test.js',
-  /* b828 — the prior-authorisation and appeal letters are addressed to a health
+  /* b832 — the prior-authorisation and appeal letters are addressed to a health
      plan the packet never named. Its own prompt says "leave the plan name bracketed
      if not given" and nothing gave it, while p.insurance holds payer/plan/memberId
      and the Superbill already prints them. A payer cannot process a PA addressed to
@@ -483,7 +575,7 @@ const tests = [
      the member ID is the one field where an invented value reaches an insurer
      looking real. */
   'payer-letters-know-which-payer.test.js',
-  /* b828 — printExtra() is the print path for TWELVE generated documents (superbill,
+  /* b832 — printExtra() is the print path for TWELVE generated documents (superbill,
      IME, medical-legal, good faith estimate, referral, AVS, UR, three analyses, the
      widget printouts) and its header carried no DOB and no MRN, so none of them
      could be filed against a chart — while two sibling builders in the same file
@@ -492,6 +584,22 @@ const tests = [
      surface b823 fixed, which a module-scoped test could not protect. Both degrade
      byte-identically when nothing is configured. */
   'printed-documents-can-be-filed-and-answered.test.js',
+  /* b832 — three more places the app asked for what it held: the referral letter
+     defaulted to the literal word "Specialist" while THIS VISIT's referral order
+     carried the consultant; the dictated letter left the recipient blank for the two
+     medical types though p.history.pcp holds it (prefilled per type, so an ATTORNEY
+     never receives a doctor's name); and four workflow preferences now follow the
+     doctor across devices. Also pins the pre-existing production/staging
+     PREF_SYNC_KEYS drift so widening it has to be deliberate. */
+  'the-app-offers-what-the-visit-already-decided.test.js',
+  /* b832 — the Settings logo field promised "your logo appears on the printed/PDF
+     letterhead, and the 'Prepared with MLS' line is removed". Browser Print honoured
+     both; NOT ONE jsPDF builder did, so a Premium doctor handed out PDFs with no logo
+     and a vendor footer. Two properties matter more than the happy path and are
+     asserted hardest: a throwing addImage must never cost the doctor their export,
+     and white-labelling must drop the BRANDING while keeping the [bracketed]-items
+     SAFETY warning. */
+  'the-premium-logo-reaches-the-pdf.test.js',
   'opnote-fillbox-sees-every-shape.test.js',
   'opnote-autoname-date-contract.test.js',
   'opnote-room-stage2-contract.test.js',
@@ -611,6 +719,12 @@ const tests = [
   'voice-reaches-one-copilot-brain.test.js',
   'capture-and-turns-are-honest.test.js',
   'use-every-time-round-trip.test.js',
+  /* Two glitches the owner could see and the gate could not. Both were found by
+     measuring the running app rather than by reading it, and both are fenced by
+     the PROPERTY that makes the fix a fix — a fixpoint, and one measurement per
+     frame — because a "did it change?" guard cannot detect either class. */
+  'nav-labels-and-order-hold-still.test.js',
+  'typing-does-not-force-layout.test.js',
   /* 2026-07-31 — the phone app (app.html) and its two store binaries. These
      three carry more weight than a normal suite because a regression here is a
      store release, not a git push: Apple and Google review the bytes, and a

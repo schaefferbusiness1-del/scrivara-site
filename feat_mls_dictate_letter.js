@@ -390,7 +390,40 @@
     });
     /* default clinical toggle + resets by recipient type */
     var typeSel = host.querySelector('#mlsdlType'), clin = host.querySelector('#mlsdlClinical');
-    function applyType() { var m = RECIPIENTS[typeSel.value] || RECIPIENTS.other; clin.checked = !!m.clinicalDefault; }
+    /* b829: the recipient box shipped with a placeholder only, so a letter to the
+       "Primary care doctor" or "Referring doctor" left the name blank -- the
+       salutation degraded to "Dear Colleague:" and the fax cover sheet printed
+       "TO:    __________". The chart already stores it: p.history.pcp is the field
+       literally labelled "PCP / referring provider", populated from the Athena
+       chart by feat_visits.js (_sectionValues for 'primary care provider' / 'pcp' /
+       'referring provider') and persisted through the same upsert as every other
+       field.
+       ONLY for the two medical recipient types. An attorney is not the PCP, and
+       prefilling their box with a doctor's name would be a wrong-recipient hazard
+       on a letter that leaves the practice.
+       Never overwrites what the doctor has typed, and never fights them: once they
+       edit the box it is left alone for the rest of the session. */
+    var nameBox = host.querySelector('#mlsdlName');
+    var nameTouched = false;
+    if (nameBox) nameBox.addEventListener('input', function () { nameTouched = true; });
+    function chartPcp() {
+      try {
+        var p = activePt();
+        return S(p && p.history && p.history.pcp).trim();
+      } catch (e) { return ''; }
+    }
+    function applyType() {
+      var m = RECIPIENTS[typeSel.value] || RECIPIENTS.other;
+      clin.checked = !!m.clinicalDefault;
+      if (!nameBox || nameTouched) return;
+      var want = (typeSel.value === 'pcp' || typeSel.value === 'referring') ? chartPcp() : '';
+      /* only ever replace a value this function put there, or an empty box */
+      if (!S(nameBox.value).trim() || nameBox.getAttribute('data-mlsdl-auto') === '1') {
+        nameBox.value = want;
+        if (want) nameBox.setAttribute('data-mlsdl-auto', '1');
+        else nameBox.removeAttribute('data-mlsdl-auto');
+      }
+    }
     applyType(); typeSel.onchange = applyType;
     host.querySelector('#mlsdlDictate').onclick = function () { startDictation(this, host.querySelector('#mlsdlStatus')); };
     var pv = host.querySelectorAll('.mlsdlPv');

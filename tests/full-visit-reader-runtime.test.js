@@ -11,9 +11,18 @@ const visitsSource = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 const productionLoader = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const stagingLoader = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 
-const visitCacheKey = 'feat_visits.js?v=20260729vis11';
-assert(productionLoader.includes(visitCacheKey), 'production must load the r7 visit model cache key');
-assert(stagingLoader.includes(visitCacheKey), 'staging must load the same r7 visit model cache key');
+/* PIN MOVED DELIBERATELY 2026-08-06: from the hand-maintained '20260729vis11'
+   to the shared build-number cache-buster. feat_visits.js gained the history
+   identity binding, which made it stale against its own token — the third
+   hand-maintained token to go stale in one evening (after the template library
+   and the pull flow), each one a fix a returning browser never received. The
+   build-number form follows the build and cannot go stale again, so the pin now
+   asserts the FORM rather than a value someone must remember to move. */
+const visitCacheKey = "feat_visits.js?v='+(window.__MLS_AV||Date.now())";
+assert(productionLoader.includes(visitCacheKey), 'production must load feat_visits with the build-number cache-buster');
+assert(stagingLoader.includes(visitCacheKey), 'staging must load feat_visits with the same build-number cache-buster');
+assert(!/feat_visits\.js\?v=20\d{6}/.test(productionLoader) && !/feat_visits\.js\?v=20\d{6}/.test(stagingLoader),
+  'a hand-maintained date token came back on the feat_visits loader — it will go stale at the next change');
 
 const start = background.indexOf('/* === MLS Assist visit-reader lineage (active: v2.9.22 r4)');
 const end = background.indexOf('\n})();', start);
@@ -115,7 +124,7 @@ function makeReader(options = {}) {
     mlsReadChartIdentityShadow: function identityShadowReader() {},
     self: null,
     chrome: {
-      runtime: { onMessage: { addListener: fn => listeners.push(fn) } },
+      runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ onMessage: { addListener: fn => listeners.push(fn) } },
       tabs: {
         query: (_q, cb) => cb([{ id: 77, active: false, url: 'https://athenanet.athenahealth.com/chart' }]),
         sendMessage: () => {}

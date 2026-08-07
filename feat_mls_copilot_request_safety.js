@@ -111,11 +111,25 @@
     token.stale = true;
     safe(function () { if (token.controller) token.controller.abort(); });
   }
+  /* Only these two names have a production dispatcher; the poll below covers
+     any owner change that emits no event at all. */
   function bindOwnerEvents() {
     if (ownerEvents.length || !isFn(window.addEventListener)) return;
-    ["mls:patient-changed", "mls:active-patient-change", "mls:active-patient-changed", "mls:visit-changed", "mls:view-changed", "mls:context-changed"].forEach(function (name) {
+    ["mls:active-patient-changed", "mls:view-changed"].forEach(function (name) {
       safe(function () { window.addEventListener(name, abortIfStale, false); ownerEvents.push([name, abortIfStale]); });
     });
+  }
+  /* Bounded fallback while a request is in flight: an owner switch that emits
+     no event must not leave _copilotBusy latched for the full 45 s timeout. */
+  var STALE_POLL_MS = 2000;
+  function startStalePoll(token) {
+    token.staleT = (typeof setInterval === "function") && setInterval(function () {
+      if (activeRequest !== token) { stopStalePoll(token); return; }
+      abortIfStale();
+    }, STALE_POLL_MS);
+  }
+  function stopStalePoll(token) {
+    safe(function () { if (token && token.staleT && typeof clearInterval === "function") { clearInterval(token.staleT); token.staleT = 0; } });
   }
   function unbindOwnerEvents() {
     for (var i = 0; i < ownerEvents.length; i++) safe(function (row) { window.removeEventListener(row[0], row[1], false); }.bind(null, ownerEvents[i]));
@@ -144,6 +158,7 @@
 
     var token = capture(), ownerHistory = token.history;
     activeRequest = token;
+    startStalePoll(token);
     if (inp) { inp.value = ""; inp.style.height = "auto"; }
     ownerHistory.push({ role: "user", text: q });
     var pending = { role: "pending", requestId: token.id, requestOwner: token.ownerId, requestEpoch: token.epoch };
@@ -216,6 +231,7 @@
       return false;
     } finally {
       safe(function () { if (token.timeoutT && typeof clearTimeout === "function") { clearTimeout(token.timeoutT); token.timeoutT = 0; } });
+      stopStalePoll(token);
       dropPending(ownerHistory, pending);
       token.pending = null;
       if (activeRequest === token) {
@@ -248,6 +264,7 @@
     revert: function () {
       if (activeRequest) {
         activeRequest.reverted = true;
+        stopStalePoll(activeRequest);
         safe(function () { if (activeRequest.controller) activeRequest.controller.abort(); });
         dropPending(activeRequest.history, activeRequest.pending);
         activeRequest = null;

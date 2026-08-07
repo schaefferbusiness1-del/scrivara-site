@@ -1,5 +1,5 @@
 /* ============================================================================
- * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.0.3)
+ * feat_mls_copilot_actions.js -> window.__mlsCopilotActions (ca-2.1.1)
  * ---------------------------------------------------------------------------
  * The base Studio Copilot canonically persists and renders reply metadata
  * (actions, followups, artifact). This companion never intercepts /api/copilot,
@@ -39,7 +39,7 @@
   'use strict';
   try { if (window.__mlsCopilotActions && window.__mlsCopilotActions.installed) return; } catch (e) { return; }
 
-  var VERSION = 'ca-2.0.3';
+  var VERSION = 'ca-2.1.1';
   var ASSET = 'feat_mls_copilot_actions.js';
   var BLOCK_CLASS = 'mlsCaBlock';
   var STYLE_ID = 'mlsCoActStyle';
@@ -269,7 +269,7 @@
       } else if (tries > 20) clearInterval(iv);
     }, 150);
   }
-  function runAction(a) {
+  function runAction(a, btn) {
     if (!a) return false;
     if (a.kind === 'navigate') {
       if (doNavigate(a.arg, a.label)) return true;
@@ -279,6 +279,20 @@
     if (a.kind === 'openPatient') return doOpenPatient(a.arg);
     if (a.kind === 'startVisit') return doStartVisit(a.arg);
     if (a.kind === 'build') { doBuild(a.arg); return true; }
+    /* ca-2.1.0: agentic kinds (pullProviders, draftNote) are owned by the
+       Copilot Power module — the tap on the rendered offer IS the user's
+       confirmation, and that module posts honest receipts. Delegate before the
+       keyword fallback so these never degrade into a navigation guess. */
+    if (safe(function () { return window.__mlsCopilotPower && window.__mlsCopilotPower.installed && isFn(window.__mlsCopilotPower.handles) && window.__mlsCopilotPower.handles(a.kind); }, false)) {
+      return safe(function () { return window.__mlsCopilotPower.run(a.kind, a.arg, btn || null); }, false);
+    }
+    /* ca-2.1.1: before the Power module's deferred loader lands, these kinds
+       must not fall to the keyword guess — 'draftNote' matches /note/ and
+       would navigate to History. Honest wait instead. */
+    if (a.kind === 'pullProviders' || a.kind === 'draftNote' || a.kind === 'appControl') {
+      toast('That control is still loading — give it a second and tap it again.');
+      return false;
+    }
     /* ca-2.0.1: unknown kind (model drift) — land on the closest REAL view by
        keyword from kind/arg/label, else say so; never a silent dead click and
        never a navigate to a garbage view name. */
@@ -375,7 +389,7 @@
       actions.forEach(function (a) {
         var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'mlsca-act';
         btn.textContent = a.label || a.kind;
-        btn.onclick = function () { runAction(a); };
+        btn.onclick = function () { runAction(a, btn); };
         ac.appendChild(btn);
       });
       block.appendChild(ac);

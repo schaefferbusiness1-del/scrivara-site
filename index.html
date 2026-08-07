@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self' https://scrivara-backend.onrender.com; object-src 'none'; base-uri 'self'; upgrade-insecure-requests">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MLS Scribe — The ambient AI scribe & clinical platform for spine, pain &amp; PM&amp;R</title>
@@ -13,11 +13,13 @@
   <meta property="og:url" content="https://mlsscribe.com/">
   <meta property="og:title" content="MLS Scribe — talk through the visit, walk out with a finished, coded note">
   <meta property="og:description" content="Ambient AI scribe evaluation for spine, pain & PM&R. Synthetic data only; production clinical readiness is not yet released.">
-  <meta property="og:image" content="https://mlsscribe.com/apple-touch-icon.png">
-  <meta name="twitter:card" content="summary_large_image">
+  <meta property="og:image" content="https://mlsscribe.com/icon-512.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="MLS Scribe — the ambient AI scribe & clinical platform for spine, pain & PM&R">
   <meta name="twitter:description" content="Ambient AI medical-scribe evaluation with clinician-reviewed drafts. Synthetic data only; production clinical readiness is not yet released.">
-  <meta name="twitter:image" content="https://mlsscribe.com/apple-touch-icon.png">
+  <meta name="twitter:image" content="https://mlsscribe.com/icon-512.png">
   <meta name="robots" content="index,follow">
   <meta name="theme-color" content="#204034">
 <link rel="manifest" href="manifest.webmanifest">
@@ -307,7 +309,9 @@ header.site{position:sticky;top:0;z-index:60;background:rgba(251,250,247,.88);ba
 
 /* pricing */
 .price-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;align-items:stretch}
-@media (max-width:1080px){.price-grid{grid-template-columns:repeat(2,1fr)}}
+/* (a max-width:1080px override that restated the base value byte-for-byte
+   lived here. It changed nothing and read as an unfinished responsive step —
+   the real collapse to one column happens further down.) */
 .price{background:var(--card);border:1px solid #E4E2DA;border-radius:16px;padding:30px 28px;display:flex;flex-direction:column;box-shadow:var(--sh-card)}
 .price.feat{border:2px solid var(--deep);position:relative;box-shadow:0 20px 50px -24px rgba(32,64,52,.5)}
 .price .tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--deep);color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 13px;border-radius:20px}
@@ -922,8 +926,8 @@ Your browser does not support embedded video. <a href="mls-scribe-30-second-over
 <div id="mlsChatPanel" role="dialog" aria-label="MLS assistant">
 <div id="mlsChatHead"><div><b>MLS Assistant</b><small>Features, pricing, anything</small></div><button id="mlsChatClose" onclick="mlsChatToggle(false)" aria-label="Close">×</button></div>
 <div id="mlsChatMsgs"></div>
-<form id="mlsChatForm" onsubmit="mlsChatSend(event);return false;" action="javascript:void(0)">
-<input id="mlsChatInput" autocomplete="off" placeholder="Type your question…">
+<form id="mlsChatForm" onsubmit="event.preventDefault();mlsChatSend(event);return false;">
+<input id="mlsChatInput" autocomplete="off" aria-label="Type your question" placeholder="Type your question…">
 <button id="mlsChatSendBtn" type="submit">Send</button>
 <small style="flex-basis:100%;color:var(--muted)">Messages are sent to the MLS sales assistant. Do not include patient, case or contact details.</small>
 </form>

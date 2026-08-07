@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.16";
+  var VERSION = "si-1.7.20";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -292,17 +292,99 @@
     aprn: 1, fnp: 1, fnpc: 1, dnp: 1, rn: 1, crnp: 1, cnp: 1,
     dpm: 1, dds: 1, dmd: 1, phd: 1, mbbs: 1, od: 1
   };
+  /* A TITLE is never a surname; a CREDENTIAL can be. "Dr"/"Doctor" only ever
+     precede a name, so they are always noise. "Do", "Pa", "Rn", "Ot", "Od" are
+     real surnames in a pain practice AND real credentials, and which one they
+     are depends on whether the name can spare them. */
+  var PROVIDER_TITLE = { dr: 1, doctor: 1 };
   function providerKey(raw) {
     var s = String(raw == null ? "" : raw).trim().toLowerCase();
     if (!s || /^all(?:\s+providers?)?$/.test(s)) return "";
     s = safe(function () { return s.normalize("NFKD").replace(/[\u0300-\u036f]/g, ""); }, s);
-    var seen = {}, tokens = s.replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(function (t) {
-      if (!t || PROVIDER_NOISE[t] || seen[t]) return false;
+    var seen = {}, all = s.replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(function (t) {
+      if (!t || PROVIDER_TITLE[t] || seen[t]) return false;
       seen[t] = 1; return true;
     });
+    /* A CLINICIAN WHOSE SURNAME SPELLS A CREDENTIAL COULD NEVER PULL.
+       Every credential-spelled token was stripped unconditionally and the
+       result then had to hold two survivors, so "Anh Do", "Sam Pa" and
+       "Lee Rn" all keyed to "" and failed at provider-unverified \u2014 100% of
+       their selected-provider imports, since the day this shipped. Measured
+       by the ext-goal lane, 2026-08-06.
+       Credentials are stripped only while the name can SPARE them: if
+       removing them would leave fewer than two identifying tokens, the token
+       was carrying name weight and is kept. This CANNOT widen matching \u2014 the
+       key either gains a token it already had in the raw label, or is
+       unchanged. Proven unchanged on every existing shape:
+         "Anh Thi Do" -> anh|thi        (credential genuinely spare)
+         "Matthew Schaeffer, MD" -> matthew|schaeffer
+         "Schaeffer_Matthew_MD" / "Schaeffer, Matthew" -> same key
+         "John Smith DO" -> john|smith  "Sam Parker PA" -> parker|sam
+       and newly resolvable, without colliding with anyone:
+         "Anh Do" -> anh|do   "Dr. Anh Do" -> anh|do   "Anh Doe" -> anh|doe
+       A label that is ONLY a credential still refuses: "Dr Do" and "MD" -> "". */
+    var stripped = all.filter(function (t) { return !PROVIDER_NOISE[t]; });
+    var tokens = stripped.length >= 2 ? stripped : all;
     if (tokens.length < 2) return "";
-    tokens.sort();
+    tokens = tokens.slice().sort();
     return tokens.join("|");
+  }
+  /* mdx-2.0.2: the credential portion of a provider label, for the same-name
+     echo test in scopeProviderRows.
+
+     A BARE SURNAME IS NOT A CREDENTIAL JUST BECAUSE IT SPELLS ONE. "Dr. Anh Do"
+     is a real surname in a pain practice, as are Ot, Od, Rn and Pa. mdx-2.0.0
+     read the credential two ways that both got this wrong: it trusted the
+     roster's `equivalentKey` credential segment (whose parse yields
+     "anh thi|do", i.e. Do-as-credential), and its own fallback accepted ANY
+     trailing credential-spelled token. Measured: a clinician named "Anh Thi
+     Do" produced signatures {"do","md"} across her OWN two roster entries,
+     tripped credential-conflict, and was blocked from 100% of her
+     selected-provider imports - the same "gate whose condition can never be
+     satisfied on that machine" shape as the defect this file just fixed, one
+     axis over (QA lane, 2026-08-06).
+
+     So a credential is only ASSERTED when an explicit delimiter separates it
+     from the name: a comma ("Anh Thi Do, MD") or the underscore of athena's
+     machine username ("Schaeffer_Matthew_MD"). A plain space does not qualify.
+     Empty means "no credential stated" and conflicts with nothing, so this
+     errs toward silence rather than toward inventing a second clinician -
+     while still catching the case that matters, a delimited MD standing beside
+     a DO. Keeping the underscore is load-bearing: a comma-only rule would let
+     two REAL clinicians through in athena's machine-username form. Titles
+     ("Dr") never count: a title cannot distinguish two humans.
+
+     NOT FIXED HERE, deliberately: `providerKey("Anh Do")` returns "" (both
+     tokens are stripped as noise, leaving fewer than two), so a TWO-token
+     credential-surname clinician fails earlier still, at provider-unverified.
+     That lives in PROVIDER_NOISE, predates this work, and feeds every matching
+     surface in the app - it is reported, not patched mid-flight. */
+  var PROVIDER_CRED_TOKENS = {
+    md: 1, do: 1, np: 1, pa: 1, pac: 1, aprn: 1, fnp: 1, fnpc: 1, dnp: 1,
+    rn: 1, crnp: 1, cnp: 1, dpm: 1, dds: 1, dmd: 1, phd: 1, mbbs: 1, od: 1
+  };
+  function providerCredentialSignature(entry) {
+    /* Read the DISPLAY NAME only. equivalentKey is deliberately not consulted:
+       its credential segment is exactly the parse that mistakes a surname for
+       a credential. */
+    var raw = String(entry && entry.name || "").toLowerCase();
+    var tail = raw.split(/[,_/]/);
+    if (tail.length < 2) return "";                 /* no explicit delimiter -> nothing asserted */
+    var sig = [];
+    for (var i = tail.length - 1; i >= 1; i--) {
+      var seg = tail[i].replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(Boolean);
+      if (!seg.length) continue;
+      var all = true;
+      for (var j = 0; j < seg.length; j++) {
+        var t = seg[j];
+        if (t === "c") continue;                    /* the "-C" tail of PA-C */
+        if (PROVIDER_CRED_TOKENS[t] !== 1) { all = false; break; }
+        if (sig.indexOf(t) < 0) sig.push(t);
+      }
+      if (!all) break;
+    }
+    sig.sort();
+    return sig.join("+");
   }
   function providerRequest(raw) {
     var obj = raw && typeof raw === "object" ? raw : null;
@@ -542,11 +624,41 @@
       matchingRows: 0,
       mismatchedRows: 0,
       unattributedRows: 0,
-      discoveredProviders: providerDiagLabels(resp, rows)
+      discoveredProviders: providerDiagLabels(resp, rows),
+      /* mdx-1.0.0 (field report, Mac, 2026-08-05): a provider-incomplete
+         refusal must NAME its rows or nobody can cure it remotely. PHI-free by
+         construction - appointment times and shape flags only, never patient
+         fields. nameMatchedIdMissingRows separates "athena exposed no provider
+         identity on the row at all" from "the row showed the selected name but
+         athena gave no structured id" - two different cures the emailed error
+         report previously could not tell apart. */
+      requireStableId: false,
+      canonicalNameFallback: false,
+      /* mdx-2.0.0: WHY the name fallback did or did not engage, so the next
+         emailed report names the arm instead of a bare false. PHI-free:
+         constant strings and counts only. */
+      canonicalNameFallbackBasis: "",
+      rosterSameNameCount: 0,
+      sameNameConflictKinds: [],
+      nameMatchedIdMissingRows: 0,
+      unattributedDetail: []
+    };
+    var noteUnattributed = function (r, shape, k, rowId) {
+      if (receipt.unattributedDetail.length >= 12) return;
+      receipt.unattributedDetail.push({
+        time: String(r && (r.time || r.start_local || "") || "").slice(0, 12),
+        shape: shape,
+        hasName: !!k,
+        nameMatchesSelected: !!(k && req.key && k === req.key),
+        hasId: !!rowId
+      });
     };
     if (req.mode === "all") {
-      receipt.providerTaggedRows = rows.filter(function (r) { return !!providerKey(r && r.provider); }).length;
-      receipt.unattributedRows = rows.length - receipt.providerTaggedRows;
+      rows.forEach(function (r) {
+        if (providerKey(r && r.provider)) { receipt.providerTaggedRows++; return; }
+        receipt.unattributedRows++;
+        noteUnattributed(r, "no-provider-identity", "", String(rowProviderId(r) || "").trim());
+      });
       var verifiedEmpty = !!(resp && resp.receipt && resp.receipt.complete === true && resp.receipt.authoritativeEmpty === true && rows.length === 0);
       receipt.complete = receipt.scheduleComplete && (verifiedEmpty || receipt.unattributedRows === 0);
       receipt.reason = receipt.complete ? "all-providers" : (receipt.scheduleComplete ? "provider-incomplete" : "provider-unverified");
@@ -583,22 +695,78 @@
     var matching = [];
     var requireStableId = !!(req.id && req.rosterVerified);
     var canonicalNameFallback = false;
+    var fallbackBasis = "";
+    var sameNameCount = 0;
+    var conflictKinds = [];
     if (requireStableId) {
       var canonicalRoster = safe(function () {
         var api = window.__mlsProviderRoster;
         return api && isFn(api.list) ? (api.list() || []) : [];
       }, []) || [];
       var canonicalSameName = canonicalRoster.filter(function (entry) { return providerKey(entry && entry.name) === req.key; });
-      canonicalNameFallback = canonicalSameName.length === 1 && (
-        (req.id && String(canonicalSameName[0].id || "").trim().toLowerCase() === String(req.id).trim().toLowerCase()) ||
-        (req.stableKey && String(canonicalSameName[0].stableKey || canonicalSameName[0].stable_key || "") === req.stableKey)
-      );
+      sameNameCount = canonicalSameName.length;
+      /* mdx-2.0.0 (field report #2, Mac, 2026-08-06, b894, ext 3.0.45): that
+         athenaOne skin renders schedule rows AND roster strings with display
+         names only - no structured provider id anywhere - so roster ingest
+         keeps a credential-less display echo of the clinician beside the real
+         entry. providerKey() strips credentials while the roster's own
+         equivalentKey keeps them, so the echo can never collapse upstream, the
+         old `length === 1` demand here was unsatisfiable on that machine, and
+         every selected-mode pull refused provider-incomplete on a COMPLETE
+         20/20 grid. Owner order 2026-08-06: "default to just name if it has
+         to but make sure everything else still works." So: the name fallback
+         engages when the requested clinician is listed and every OTHER
+         same-name entry is provably a display echo of that same clinician -
+         no independent structured id, no independent non-legacy stableKey,
+         and no conflicting credential. The moment any same-name entry could
+         be a second real clinician, this refuses exactly as before, and the
+         receipt now names which arm decided. */
+      var wantIdLc = String(req.id || "").trim().toLowerCase();
+      var wantSk = String(req.stableKey || "");
+      var requestedListed = false;
+      var credSigs = {};
+      canonicalSameName.forEach(function (entry) {
+        var eId = String(entry && entry.id != null ? entry.id : "").trim().toLowerCase();
+        var eSk = String(entry && (entry.stableKey || entry.stable_key) || "");
+        var sig = providerCredentialSignature(entry);
+        if (sig) credSigs[sig] = 1;
+        if ((eId && eId === wantIdLc) || (wantSk && eSk && eSk === wantSk)) { requestedListed = true; return; }
+        if (eId) { if (conflictKinds.indexOf("independent-id") < 0) conflictKinds.push("independent-id"); return; }
+        /* mdx-2.0.1: an id-LESS entry is a second identity only when its key
+           carries information beyond the display string. The roster module
+           already owns this rule (stringEchoEquivalent, feat_athena_provider_
+           roster.js:394) and mdx-2.0.0 got it wrong: it exempted `legacy-name:`
+           ONLY, while ext 3.0.45 stamps every id-less schedule-header provider
+           as `athena:<display text>` (background.js:6790/:6971). That is the
+           exact shape on the reporting Mac, so b899 pushed
+           independent-structured-key and refused identically to b894 - a
+           NO-OP, proven by executing the real roster shape. A key body that
+           canonicalizes to THIS clinician's own token set is display evidence
+           of one person; an opaque body ("athena:prov-88217") does not and
+           stays a distinct identity. Note this also TIGHTENS the legacy arm,
+           which previously exempted any `legacy-name:` key regardless of
+           whose name was in its body. */
+        var echoBody = eSk.replace(/^(?:legacy-name:|athena:)/, "");
+        var isDisplayEcho = !!eSk && echoBody !== eSk && providerKey(echoBody) === req.key;
+        if (eSk && !isDisplayEcho && conflictKinds.indexOf("independent-structured-key") < 0) conflictKinds.push("independent-structured-key");
+      });
+      if (Object.keys(credSigs).length > 1 && conflictKinds.indexOf("credential-conflict") < 0) conflictKinds.push("credential-conflict");
+      canonicalNameFallback = requestedListed && conflictKinds.length === 0;
+      fallbackBasis = canonicalNameFallback
+        ? (sameNameCount === 1 ? "roster-unique" : "roster-echo-collapsed")
+        : (sameNameCount === 0 ? "requested-name-not-listed"
+          : (requestedListed ? "same-name-identity-conflict" : "requested-entry-not-listed"));
     }
+    receipt.requireStableId = requireStableId;
+    receipt.canonicalNameFallback = canonicalNameFallback;
+    receipt.canonicalNameFallbackBasis = fallbackBasis;
+    receipt.rosterSameNameCount = sameNameCount;
+    receipt.sameNameConflictKinds = conflictKinds;
     rows.forEach(function (r) {
       var k = providerKey(r && r.provider), rowId = String(rowProviderId(r) || "").trim().toLowerCase();
       var wantId = String(req.id || "").trim().toLowerCase();
       if (!k && !rowId) {
-        if (!scopeFill) { receipt.unattributedRows++; return; }
+        if (!scopeFill) { receipt.unattributedRows++; noteUnattributed(r, "no-provider-identity", k, rowId); return; }
         /* pa-1.0.0: the columnless scoped fill - a COPY, so the caller's raw
            rows never mutate; the filled copy carries into both the create
            body and the enrich path downstream. */
@@ -616,7 +784,7 @@
         if (rowId) {
           if (rowId === wantId) matching.push(r); else receipt.mismatchedRows++;
         } else if (k === req.key && canonicalNameFallback) matching.push(r);
-        else if (k === req.key) receipt.unattributedRows++;
+        else if (k === req.key) { receipt.unattributedRows++; receipt.nameMatchedIdMissingRows++; noteUnattributed(r, "selected-name-no-structured-id", k, rowId); }
         else receipt.mismatchedRows++;
       } else if (k === req.key) matching.push(r);
       else receipt.mismatchedRows++;
@@ -1038,6 +1206,7 @@
          ledger is bounded localStorage, and a fingerprint is not a finding. */
       var ledgerCensus = {};
       for (var ck in census) if (Object.prototype.hasOwnProperty.call(census, ck) && ck !== "prints") ledgerCensus[ck] = census[ck];
+      var perPatientDiag = {};
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         var pid = String(p.patientId || "");
@@ -1045,6 +1214,11 @@
         var why = String(p.reason || "incomplete").slice(0, 120);
         if (pid) perPatient[pid] = why;
         reasons[why] = (reasons[why] || 0) + 1;
+        /* mdx-1.1.0: persist the PHI-free sub-cause evidence beside the reason
+           string - bounded (≤40 patients per day ledger by construction). */
+        if (pid && (p.visitsFailedHistogram || p.visitsEnumDiag || p.visitsReadReceipt)) {
+          perPatientDiag[pid] = { hist: p.visitsFailedHistogram || null, enumDiag: p.visitsEnumDiag || null, receipt: p.visitsReadReceipt || null };
+        }
       });
       (receipt.retry || []).forEach(function (r) {
         if (!r) return;
@@ -1069,6 +1243,7 @@
         verdict: String(receipt.reason || ""),
         reasons: reasons,
         perPatient: perPatient,
+        perPatientDiag: perPatientDiag,
         /* b752: the CENSUS OF THE STORE, recorded next to the walk counts so
            the two can be compared after the fact. contentOk/contentNone are
            the answer to the question this ledger could not answer before:
@@ -2432,14 +2607,43 @@
     try { Object.freeze(exactSnap); } catch (eFreezeExactSnap) {}
     return exactSnap;
   }
-  function frozenRetryEntry(row, target, reason) {
+  function frozenRetryEntry(row, target, reason, diagSource) {
     row = row || {}; target = target || {};
-    return {
+    var entry = {
       patientId: String(target.patientId || row._mlsTargetPatientId || row.patient_external_id || row.patientId || ""),
       reason: String(reason || row.reason || "history-partial").slice(0, 120),
       frozenDob: normDob(target.dob || row._mlsTargetDob || row.dob || row.frozenDob || ""),
       frozenMrn: normMrn(target.mrn || target.athenaId || row._mlsTargetMrn || row.mrn || row.athenaId || row.frozenMrn || "")
     };
+    /* mdx-1.1.0: carry the PHI-free refusal evidence with the retry entry so
+       the error report can name the sub-cause without the patient record. */
+    if (diagSource && (diagSource.visitsFailedHistogram || diagSource.visitsEnumDiag || diagSource.visitsReadReceipt)) {
+      entry.diag = {
+        hist: diagSource.visitsFailedHistogram || null,
+        enumDiag: diagSource.visitsEnumDiag || null,
+        receipt: diagSource.visitsReadReceipt || null
+      };
+    }
+    return entry;
+  }
+  /* mdx-1.1.0: compact human suffix for the day panel row - names the top
+     sub-causes so "visit-bodies-incomplete" stops being a dead end. */
+  function historyDiagSuffix(one) {
+    try {
+      if (one && one.visitsFailedHistogram) {
+        var hks = Object.keys(one.visitsFailedHistogram);
+        hks.sort(function (a, b) { return one.visitsFailedHistogram[b] - one.visitsFailedHistogram[a]; });
+        var hParts = [];
+        for (var hi = 0; hi < hks.length && hi < 2; hi++) hParts.push(hks[hi] + "×" + one.visitsFailedHistogram[hks[hi]]);
+        if (hks.length > 2) hParts.push("+" + (hks.length - 2) + " more");
+        if (hParts.length) return " {" + hParts.join(", ") + "}";
+      }
+      if (one && one.visitsEnumDiag) {
+        var hed = one.visitsEnumDiag;
+        return " {passes:" + (hed.passes || 0) + ",identical:" + (hed.identicalPasses || 0) + ",noise:" + (hed.noiseDropped || 0) + "}";
+      }
+    } catch (eSuffix) {}
+    return "";
   }
   function verifiedChartCoverage(rd, readStartedAt) {
     rd = rd || {};
@@ -2800,7 +3004,7 @@
     }
     var batchDeadlineAt = batchStartedAt + batchBudgetMs;
     if (sweepDeadlineCapAt > 0) batchDeadlineAt = Math.min(batchDeadlineAt, sweepDeadlineCapAt);
-    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
+    var receipt = { requestId: batchRequestId, startedAt: batchStartedAt, deadlineAt: batchDeadlineAt, timedOut: false, requested: rows.length + unresolved.length, processed: 0, complete: false, exactIdentityVerified: false, presenceRequested: __historyRetryForeground === true, presenceAssisted: false, presenceFrontedReads: 0, presenceQuietReads: 0, patients: [], retry: unresolved.map(function (item) { return frozenRetryEntry(item, null, item && item.reason); }), failures: unresolved.length };
     if (historyBatchRunning) {
       rows.forEach(function (r) { receipt.retry.push(frozenRetryEntry(r, null, "history-batch-busy")); });
       receipt.failures = receipt.retry.length; receipt.reason = "history-batch-busy"; return receipt;
@@ -3115,9 +3319,10 @@
                  full 195s window applies). Grinding 195s per failure in the
                  MAIN pass starved the sweep of budget (live 15:11: 10 failures
                  burned ~40 min; only one sweep pass fit). */
-              var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
+              var __fgFullWindow = __historyRetryForeground === true && (typeof __mlsDoctorMidVisit === "function" ? __mlsDoctorMidVisit() !== true : true); /* pace-1.0 */ var visitsDeadlineAt = Math.min(patientDeadlineAt, Date.now() + (visitsAttempt === 1 && !sweepDepth && __fgFullWindow !== true ? adaptiveCeilingMs('visits', 60000, 195000, 100000) : 195000));
               try {
-                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+                vr = await boundedUntil(bridge("mlsAppAllVisitsResult", "mlsAppReadAllVisits", 190000, { requestId: visitsRequestId, deadlineAt: visitsDeadlineAt, managed: true, background: true, silent: true, initiator: "schedule-batch", foregroundOk: __historyRetryForeground === true && (typeof __mlsDoctorMidVisit === "function" ? __mlsDoctorMidVisit() !== true : true), foregroundBatchStart: (__historyRetryForeground === true && __presenceBatchAnnounced !== true) ? (__presenceBatchAnnounced = true) : false, hint: { patient: target.name, name: target.name, dob: target.dob || "", athenaId: target.mrn || target.athenaId || "" } }), visitsDeadlineAt, "visits-read-deadline-exceeded");
+                if (vr && vr.fronted === true) { receipt.presenceAssisted = true; receipt.presenceFrontedReads = (receipt.presenceFrontedReads | 0) + 1; } else if (__historyRetryForeground === true) { receipt.presenceQuietReads = (receipt.presenceQuietReads | 0) + 1; } /* fg-1.3: per-read truth (was fg-1.2 batch-global) */
               } catch (vDeadlineErr) {
                 var vdMsg = String(vDeadlineErr && vDeadlineErr.message || vDeadlineErr || "");
                 /* si-1.8.1: same transient-runner-death recovery as the chart
@@ -3136,8 +3341,53 @@
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
               }
-              if (vr && vr.ok) { recordReadMs('visits', Date.now() - __vAttemptT0); break; }
+              /* mdx-1.1.0: a fast EMPTY chart must not set the pace for deep
+                 charts. recordReadMs feeds adaptiveCeilingMs (median x 2.5,
+                 floor 60s); one authoritative-empty read in ~15s collapsed the
+                 ceiling so later deep charts got a ~24s index phase - the
+                 "first two fine, next five fail" shape from the 2026-08-05
+                 field ledger. Only non-empty reads teach the pace. */
+              if (vr && vr.ok) { if (!(vr.receipt && (vr.receipt.authoritativeEmpty === true || Number(vr.receipt.expected || 0) === 0))) recordReadMs('visits', Date.now() - __vAttemptT0); break; }
               var vErrText = String((vr && (vr.reason || vr.error)) || "visits-read-failed");
+              /* mdx-1.1.0 (field ledger 2026-08-05, second clinician's Mac):
+                 the refusal's own evidence crossed the bridge and died on this
+                 line for three straight field reports - failedIndexes (the
+                 per-row reason histogram behind visit-bodies-incomplete),
+                 enumDiag (the per-frame record behind
+                 encounter-index-incomplete), and the read receipt. Capture
+                 them PHI-free onto the per-patient record so the day ledger,
+                 the panel row, and the emailed error report can name the
+                 sub-cause. ecSeen/frames are NEVER copied - they carry a
+                 patient-name field. */
+              try {
+                if (vr && typeof vr === "object") {
+                  if (Array.isArray(vr.failedIndexes) && vr.failedIndexes.length) {
+                    var fiHist = {};
+                    for (var fiI = 0; fiI < vr.failedIndexes.length && fiI < 40; fiI++) {
+                      var fiR = String(vr.failedIndexes[fiI] && vr.failedIndexes[fiI].reason || "unknown").slice(0, 48);
+                      fiHist[fiR] = (fiHist[fiR] || 0) + 1;
+                    }
+                    one.visitsFailedHistogram = fiHist;
+                  }
+                  if (vr.receipt && typeof vr.receipt === "object") {
+                    one.visitsReadReceipt = {
+                      expected: Number(vr.receipt.expected || 0), parsed: Number(vr.receipt.parsed || 0),
+                      attempted: Number(vr.receipt.attempted || 0), elapsedMs: Number(vr.receipt.elapsedMs || 0),
+                      timeBudgetMs: Number(vr.receipt.timeBudgetMs || 0), retryCount: Number(vr.receipt.retryCount || 0),
+                      minimalBodies: Number(vr.receipt.minimalBodies || 0)
+                    };
+                  }
+                  if (vr.enumDiag && typeof vr.enumDiag === "object") {
+                    one.visitsEnumDiag = {
+                      answered: Array.isArray(vr.enumDiag.answered) ? vr.enumDiag.answered.slice(0, 8).map(function (aStr) { return String(aStr).slice(0, 90); }) : [],
+                      noiseDropped: Number(vr.enumDiag.noiseDropped || 0),
+                      passes: Number(vr.enumDiag.passes || 0),
+                      identicalPasses: Number(vr.enumDiag.identicalPasses || 0),
+                      gaveUpEarly: vr.enumDiag.gaveUpEarly === true
+                    };
+                  }
+                }
+              } catch (eDiagCap) {}
               if (visitsAttempt < 2 && /same-frame-name-mismatch|same-frame-name-missing|no-athena-tab/.test(vErrText) && Date.now() + 300000 < batchDeadlineAt) {
                 /* Live 2026-07-16 (si-1.7.2): a bare visits re-read is NOT
                    enough when the whole tab kept the previous patient (run 2
@@ -3196,10 +3446,10 @@
           one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
           if (!one.complete) {
             one.reason = one.chartReason || one.visitsReason || "history-partial";
-            receipt.retry.push(frozenRetryEntry(row, target, one.reason));
+            receipt.retry.push(frozenRetryEntry(row, target, one.reason, one));
           }
         }
-        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : (one.reason || "")), one.parsePipelined === true);
+        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true);
         receipt.patients.push(one); receipt.processed++;
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
@@ -3500,6 +3750,10 @@
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
+      /* the busy stamp is cleared identically on success and rejection, so the
+         progress chip cannot tell them apart from its disappearance alone —
+         record the real outcome BEFORE zeroing the stamp (finding #5) */
+      safe(function () { window.__mlsPullLastOutcome = { ok: true, at: Date.now() }; });
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
@@ -3508,6 +3762,7 @@
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
+      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: String(error && error.message || error || 'pull failed').slice(0, 200) }; });
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
@@ -3561,6 +3816,26 @@
     return { rows: rows, unresolved: unresolved };
   }
 
+  /* fg-1.0 (3.0.41): true only while the USER-INITIATED retry batch runs -
+     batches are single-flight (withPatientBatch + the cross-tab shield), so a
+     module flag cannot leak into a quiet pull. */
+  var __historyRetryForeground = false;
+  /* fg-1.3: ONE presence announce per user-initiated pull. The old latch lived
+     on the batch receipt, so every automatic re-check sweep re-announced and
+     re-armed an assist the doctor had already quieted. */
+  var __presenceBatchAnnounced = false;
+  /* fg-1.3: never yank athenaOne in front of a doctor who is mid-recording.
+     Class-first truth copied from the visit lane (captureBtn .recording);
+     the ez3 Go button text is the second lane's honest stop-state. */
+  function __mlsDoctorMidVisit() {
+    return safe(function () {
+      var b = document.getElementById("captureBtn");
+      if (b && (b.classList.contains("recording") || /stop/i.test(b.textContent || ""))) return true;
+      var g = document.getElementById("ez3ActiveGo");
+      if (g && /\bstop\b/i.test(g.textContent || "")) return true;
+      return false;
+    }, false);
+  }
   function retryFailedHistory(source, onStatus) {
     var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
     var retry = Array.isArray(history.retry) ? history.retry : [];
@@ -3587,7 +3862,11 @@
     }
     return runManagedAthenaOperation(function () {
       return withPatientBatch("history-retry", function () {
-        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {});
+        __historyRetryForeground = true;
+        __presenceBatchAnnounced = false;
+        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}).then(
+          function (v) { __historyRetryForeground = false; return v; },
+          function (e) { __historyRetryForeground = false; throw e; });
       });
     }, retryBusy).then(function (receipt) {
       receipt.retryOf = String(history.requestId || "");
@@ -3777,7 +4056,7 @@
         var navDay = normDate(nav && nav.schedDate);
         if (nav && nav.ok === false) {
           onStatus((nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
-          return fail("nav-failed", { error: nav && nav.error || "" });
+          return fail("nav-failed", { error: nav && nav.error || "", navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired) });
         }
         if (navDay && navDay !== date) {
           onStatus("Athena opened " + navDay + " instead of " + date + ". Nothing was imported.", "err");
@@ -3945,8 +4224,27 @@
             var selectedProvider = providerRequest(providerTarget);
             if (!res.providerReceipt || res.providerReceipt.complete !== true) {
               var providerReason = res.reason || (res.providerReceipt && res.providerReceipt.reason) || "provider-unverified";
+              /* mdx-1.0.0: provider-incomplete only fires AFTER the schedule
+                 read proved complete (an unsettled grid reports
+                 provider-unverified instead), so the old advice - "retry after
+                 the full day grid finishes loading" - was wrong every time it
+                 was shown and sent one clinician chasing a grid that was
+                 already settled (field report, Mac, 2026-08-05). Name the
+                 counts and the actual shape; the copyable error report now
+                 carries the per-row detail. */
+              var pRec = res.providerReceipt || {};
+              var pUn = Number(pRec.unattributedRows || 0), pSrc = Number(pRec.sourceRows || 0), pNim = Number(pRec.nameMatchedIdMissingRows || 0);
+              /* mdx-2.0.0: with the same-clinician echo collapse shipped, a
+                 name-matched refusal that still fires means the roster truly
+                 could not clear the name - say which way, honestly. */
+              var pBasis = String(pRec.canonicalNameFallbackBasis || "");
+              var incompleteMsg = pNim > 0 && pNim === pUn
+                ? (pBasis === "same-name-identity-conflict"
+                  ? (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name only, and MLS's verified roster carries more than one distinct clinician under that name, so a name alone cannot pick between them. Nothing was imported. Choose the exact clinician in Choose a provider, or open the full Day view once so the rows carry structured ids, then pull again - and if this repeats, use the error-report button so the rows are named.")
+                  : (pNim + " of " + pSrc + " schedule rows show " + (pRec.requested || "the selected provider") + " by name, but athenaOne exposed no structured provider id on them and MLS's roster could not clear the name (" + (pBasis || "no-basis") + "), so another clinician with the same display name cannot be ruled out. Nothing was imported. Open the full Day view once so the rows carry ids, then pull again - and if this repeats, use the error-report button so the rows are named."))
+                : ((pUn || "Some") + " of " + (pSrc || "the") + " schedule rows carry no provider identity MLS can verify, even though the day grid finished loading. Nothing was imported - filing those rows would risk the wrong chart. Pull again with the provider column visible in the Day view; if this repeats, use the error-report button so the rows are named.");
               onStatus(providerReason === "provider-incomplete"
-                ? "Some Athena schedule rows did not identify their provider. Nothing was imported; retry after the full day grid finishes loading."
+                ? incompleteMsg
                 : (selectedProvider.mode === "selected" ? "MLS could not verify the selected provider on this Athena day. Nothing was imported; the pull was not widened to other providers." : "MLS could not prove complete provider coverage for this Athena day. Nothing was imported."), "err");
               return fail(providerReason, { scheduleReceipt: r.receipt, providerReceipt: res.providerReceipt || null, retry: { schedule: true, provider: selectedProvider.mode === "selected" ? selectedProvider.name : "all" } });
             }
@@ -4551,12 +4849,35 @@
     }, null);
   }
   function dayPull(opts) {
+    /* fg-1.2 (3.0.43): a dayPull is BY DEFINITION user-initiated ("the ONE
+       guarded day lane every visible pull owner calls"), so the doctor is
+       present: its history reads get the same presence assist as the manual
+       retry, behind the same gates (only when Chrome owns OS focus; the
+       doctor's first move away quiets the rest of the batch). Auto/relay
+       pulls never pass through here and stay strictly quiet. The flag rides
+       the same single-flight protections as the retry lane. */
+    __historyRetryForeground = true;
+    __presenceBatchAnnounced = false;
+    return Promise.resolve().then(function () { return __dayPullInner(opts); }).then(
+      function (v) { __historyRetryForeground = false; return v; },
+      function (e) { __historyRetryForeground = false; throw e; });
+  }
+  function __dayPullInner(opts) {
     opts = opts || {};
     var say = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var day = normDate(opts.date) || "";
     /* No date is not this lane to judge: hand it straight to the engine so its
         own refusal is the one the clinician reads. */
     if (!day) return Promise.resolve(pull(opts));
+    /* pace-1.0 (live 2026-08-03 17:11Z): a REFUSED pull must not navigate.
+       The Monday click printed "Opening 2026-07-27..." and THEN hit the
+       engine mutex, leaving a resumed Tuesday pass driving the wrong day
+       grid (25 honest failures, ~15 min lost). Advisory check only - the
+       engine's own single-flight stays the authoritative gate. */
+    if (pullRunning || foreignPullLease()) {
+      return Promise.resolve({ ok: false, complete: false, reason: "pull-in-flight",
+        error: "Another explicit pull is already running. No Athena navigation was started." });
+    }
     var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");
     var scope0 = explicit ? opts.provider : accountProviderRequest();
     var gate0 = _resolveDayScope(scope0);

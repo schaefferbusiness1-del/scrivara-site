@@ -513,8 +513,15 @@
     if (!p) return;
 
     if (ST.phase === 'idle' || ST.phase === 'cancelled' || ST.phase === 'done') {
-      p.style.display = 'none';
-      p.innerHTML = '';
+      /* No-op-write discipline. This branch runs twice a second for the whole
+         life of the page — scheduleTick() installs setInterval(step, 500) and
+         never clears it — and both writes were unconditional. MEASURED: 80
+         byte-identical innerHTML writes per 40 idle seconds on a panel that is
+         display:none throughout. Same class as the b849 pull-progress card fix
+         ("the old render() rebuilt the WHOLE card via innerHTML every 900ms
+         tick"), one file over. */
+      if (p.style.display !== 'none') p.style.display = 'none';
+      if (p.innerHTML !== '') p.innerHTML = '';
       removeSpinnerHide();
       return;
     }
@@ -586,11 +593,12 @@
     var active = pullActive();
 
     /* HIGHEST PRIORITY: if today's patients are loaded and no pull is in
-       flight, we are DONE — never leave a spinner or an error card sitting on
-       top of a schedule that actually arrived (covers a recovery that lands
-       patients while a terminal card is showing). */
+       flight, we are DONE — never leave a spinner sitting on top of a schedule
+       that actually arrived. A TERMINAL failure card is exempt: it carries the
+       diagnosis + Retry and must survive until the user acts (a partial day can
+       load patients while the failure still matters). */
     var tc = todayCount();
-    if (tc != null && tc > 0 && !active) {
+    if (tc != null && tc > 0 && !active && ST.phase !== 'terminal') {
       if (ST.phase !== 'done') { ST.phase = 'done'; ST.stepKey = 'ready'; ST.lastGoodKey = 'prepare'; removeSpinnerHide(); persist(); }
       render(); return;
     }

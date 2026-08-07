@@ -257,11 +257,92 @@ async function runBrowser(exe) {
       for(let i=0;i<5;i++) cur.push({id:'syn_lay_'+i,name:'SYNTHETIC FIXTURE TEMPLATE '+(i+1),keywords:['synthetic'],
         text:'SYNTHETIC TEST TEMPLATE - NOT A REAL PATIENT DOCUMENT\\n\\nPATIENT: [[patient_name]]',created:Date.now()-i*1000});
       if(window.setTemplates)window.setTemplates(cur);return cur.length;})()`);
+    /* the seed must have LANDED in the store before anything downstream reads
+       it — asserting on a library that was never populated measures nothing */
+    await wait(cdp, 'the seeded templates in the store',
+      `((window.getTemplates&&window.getTemplates())||[]).length>=5`, 15000);
     await evalJs(cdp, `(()=>{ if(typeof openOpPrep==='function'){openOpPrep();return 1;} return 0; })()`);
-    await wait(cdp, 'the op-note room', `document.getElementById('opPrepModal')&&document.getElementById('opPrepModal').classList.contains('show')`, 15000);
+    /* 45s, not 15s: this launches its own Chrome and the room mounts a large
+       subtree. Measured 2026-08-05 with 41 Chrome processes contending (a
+       parallel lane holding tabs open) — openOpPrep exceeded 15s and this
+       suite failed as "timed out waiting for the op-note room" on a tree that
+       had passed minutes earlier. A load-sensitive deadline reports the
+       machine, not the product. */
+    await wait(cdp, 'the op-note room', `document.getElementById('opPrepModal')&&document.getElementById('opPrepModal').classList.contains('show')`, 45000);
     await sleep(1200);
+
+    /* PRE-WARM, so the measured entrance has rows to stagger.
+       The entrance is `#oprPanelTpls.ot-entering #tplList > div` with per-row
+       nth-child delays, and showTab() holds that class for 900ms. If #tplList
+       is still empty when the class lands, exactly ONE animationstart fires
+       (nth-child(1), which carries no delay rule) and the stagger assertion
+       fails with rows:[{idx:0,delay:"0s"}] — which is what a slow machine
+       produced here, not a missing entrance. Open the tab once UNMEASURED to
+       force renderTemplateList(), prove the rows exist, then leave and come
+       back for the real measurement. Nothing about the assertion is loosened:
+       it still demands a genuine staggered arrival. */
     await evalJs(cdp, `(()=>{const t=document.getElementById('oprTabTpls');if(t){t.click();return 1;}return 0;})()`);
-    await sleep(2500);
+    await wait(cdp, 'the template library to render its rows',
+      `document.querySelectorAll('#tplList > div').length>=2`, 20000);
+    await evalJs(cdp, `(()=>{const t=document.getElementById('oprTabProcs');if(t){t.click();return 1;}return 0;})()`);
+    await sleep(1100);   /* let the 900ms ot-entering class expire before re-entry */
+    /* RECORD THE ENTRANCE AS IT HAPPENS.
+       Reading animation-name off a settled row cannot prove an entrance ran -
+       it proves a rule still matches, at whatever moment the probe looked. It
+       also made this suite fail the moment the animation was correctly scoped
+       to ARRIVING (a 900ms class) rather than to being in the tab, because by
+       then the class is gone and computed animation-name is legitimately
+       'none'. Listen for animationstart instead: it fires once per row, only
+       when the animation really begins, and it is what distinguishes an
+       entrance from a rule nobody triggers. */
+    await evalJs(cdp, `(()=>{ window.__otAnim=[];
+      document.addEventListener('animationstart', function(e){
+        if(!/^mlsOt/.test(e.animationName)) return;
+        var t=e.target, cs=null; try{ cs=getComputedStyle(t); }catch(_){}
+        window.__otAnim.push({ name:e.animationName,
+          where: t && t.parentElement ? (t.parentElement.id||t.parentElement.tagName) : '',
+          idx: t && t.parentElement ? Array.prototype.indexOf.call(t.parentElement.children, t) : -1,
+          delay: cs ? cs.animationDelay : '' });
+      }, true); return 1; })()`);
+    await evalJs(cdp, `(()=>{const t=document.getElementById('oprTabTpls');if(t){t.click();return 1;}return 0;})()`);
+    /* wait for the entrance to STOP arriving rather than sleeping a fixed
+       2.5s: under load the later staggered rows (40/80/120/160ms delays) can
+       land after a blind sleep has already read the buffer. Settle = two
+       consecutive polls with no new animationstart. */
+    await evalJs(cdp, `(()=>{ window.__otSettle=-1; return 1; })()`);
+    for (let i = 0, still = 0; i < 40 && still < 2; i++) {
+      await sleep(150);
+      const n = await evalJs(cdp, `(window.__otAnim||[]).length`);
+      const prev = await evalJs(cdp, `window.__otSettle`);
+      still = (n === prev) ? still + 1 : 0;
+      await evalJs(cdp, `(()=>{ window.__otSettle=${Number(n) || 0}; return 1; })()`);
+    }
+    const entrance = await evalJs(cdp, `(window.__otAnim||[]).slice(0,40)`);
+    const libRows = await evalJs(cdp, `document.querySelectorAll('#tplList > div').length`);
+
+    /* ...and then prove it does NOT replay on a re-render. renderTemplateList()
+       rebuilds every row through box.innerHTML and tplSearchChanged() calls it
+       on oninput, so an entrance scoped to the tab's shown state re-fired on
+       every keystroke: measured at 3 restarts per character on a 3-row library,
+       one per row. Typing a search made the list flicker. */
+    /* The contract is about typing AFTER the arrival, not during it. showTab()
+       holds `ot-entering` for 900ms and a rebuild inside that window is a
+       genuine arrival, not a flicker — so wait for the class to clear before
+       probing, or the probe indicts the entrance for still being in progress.
+       (The old blind 2.5s sleep hid this by always outlasting the window.) */
+    await wait(cdp, 'the arrival window to close',
+      `(()=>{const p=document.getElementById('oprPanelTpls');return !!p&&!p.classList.contains('ot-entering');})()`, 8000);
+    await evalJs(cdp, `(()=>{ window.__otAnim=[]; const q=document.getElementById('tplSearch');
+      if(!q) return 0; const P=HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(P,'value').set.call(q,'synthetic');
+      q.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'})); return 1; })()`);
+    await sleep(800);
+    const replays = await evalJs(cdp, `(window.__otAnim||[]).length`);
+    await evalJs(cdp, `(()=>{ const q=document.getElementById('tplSearch');
+      if(!q) return 0; const P=HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(P,'value').set.call(q,'');
+      q.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'})); return 1; })()`);
+    await sleep(500);
     await evalJs(cdp, `(()=>{const p=document.getElementById('oprPanelTpls');if(p)p.scrollTop=0;return 1;})()`);
     await evalJs(cdp, `document.getAnimations().forEach(a=>{try{a.finish()}catch(e){}});1`);
     await sleep(400);
@@ -326,12 +407,36 @@ async function runBrowser(exe) {
     ok(m.motion.keyframes.join(',') === 'mlsOtFadeIn,mlsOtRowIn',
       'both library keyframes are defined in the live stylesheet',
       'found: ' + JSON.stringify(m.motion.keyframes));
-    ok(m.motion.rowAnimation === 'mlsOtRowIn',
-      'the library rows resolve to their entrance animation',
-      'first row animation-name was "' + m.motion.rowAnimation + '"');
-    ok(m.motion.secondRowDelay === null || m.motion.secondRowDelay === '0.04s',
+    const rowStarts = (entrance || []).filter((e) => e.name === 'mlsOtRowIn');
+    ok(rowStarts.length > 0,
+      'the library rows really animate in when the tab opens',
+      'no mlsOtRowIn animationstart fired during the open: ' + JSON.stringify(entrance));
+    /* Stagger, resolved deterministically: reading computed animation-delay at
+       event time RACES the 900ms .ot-entering window under machine load
+       (measured 2026-08-04: 2 of 3 runs on IDENTICAL bytes read every delay as
+       the same empty string while a loaded Chrome dispatched the events late).
+       The design truth has two halves, each provable without that race: the
+       per-row delay RULES ship (pinned against the source), and MORE than one
+       distinct row really animated — each row matches a different nth-child
+       delay rule, so distinct rows ARE staggered starts. The raw delay-set
+       check stays as an accepting fast path. */
+    const delaySet = new Set(rowStarts.map((e) => e.delay).filter((d) => d && d !== '0s'));
+    const rowIdxSet = new Set(rowStarts.map((e) => e.idx).filter((i) => i >= 0));
+    ok(/animation-delay:40ms/.test(OT) && /animation-delay:200ms/.test(OT),
+      'the staggered per-row delay rules ship in the library source',
+      'nth-child animation-delay rules missing from feat_mls_opnote_templates_ui.js');
+    ok(delaySet.size > 1 || rowIdxSet.size > 1,
       'the entrance is staggered, so the library settles in rather than snapping',
-      'second row animation-delay was ' + m.motion.secondRowDelay);
+      'rows: ' + JSON.stringify(rowStarts.map((e) => ({ idx: e.idx, delay: e.delay }))) +
+        ' — #tplList held ' + libRows + ' row(s) when measured. ' +
+        (libRows < 2
+          ? 'FEWER THAN 2 ROWS: the library itself did not render, so no stagger is possible — this is a library/store defect, not a motion defect.'
+          : 'The rows are there, so the entrance really did fire on only one of them.'));
+    ok(replays === 0,
+      'typing in the search box does NOT replay the entrance',
+      replays + ' animation(s) restarted on one search keystroke. renderTemplateList() rebuilds '
+        + 'every row through innerHTML, so an entrance scoped to the tab being OPEN re-fires on '
+        + 'each character and the list flickers while the doctor types.');
   } finally {
     cdp.close();
     try { child.kill(); } catch (_) {}

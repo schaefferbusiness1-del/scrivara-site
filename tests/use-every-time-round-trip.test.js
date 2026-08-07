@@ -451,7 +451,7 @@ ok(!/☆ Use every time/.test(boxOf(P.dom, ta3).innerHTML),
   'the field is offering "Use every time" again, so the doctor is being asked to re-pin something ' +
   'they already pinned — the restore did not reach the button state');
 
-S('STEP 11 — a TEMPLATE line silently outranks the pin, and the pin loses its own controls');
+S('STEP 11 — a TEMPLATE line outranks the pin (tier-2 contract) but says so, keeps the controls, and offers the pin back');
 account = 'doctor-c@example.test';
 const TPL = { id: 't1', name: 'TFESI', text: 'PROCEDURE NOTE\nApproach: Transforaminal\nSide: [FILL: side]\n' };
 const T = loadFill({ templates: [TPL] });
@@ -461,43 +461,53 @@ eq(T.api._resolveInitialField('approach', { patientId: '', tplId: '', proc: 'ESI
 const viaTpl = T.api._resolveInitialField('approach', { patientId: '', tplId: 't1', proc: 'ESI', appt: {} }, {});
 eq(viaTpl.kind, 'template', 'expected the template line to win');
 eq(viaTpl.value, 'Transforaminal', 'expected the template value');
-eq(T.api.getDefault('approach'), 'Paramedian', 'the pin is still stored while being ignored');
+eq(T.api.getDefault('approach'), 'Paramedian', 'the pin is still stored while the template speaks');
 const RAW4 = 'Approach: [FILL: approach]\n';
 T.ctx._opPrep = [{ patientId: '', tplId: 't1', proc: 'ESI', appt: {}, note: RAW4 }];
 const ta4 = makeDraft(T.dom, 0, RAW4);
 T.api._buildFillBox(ta4);
 const box4 = boxOf(T.dom, ta4);
-eq(box4.querySelectorAll('[data-onf-default-label="approach"]').length, 0,
-  'expected NO default controls on a template-sourced field (reusableSurface excludes kind "template")');
-ok(/from template/.test(box4.innerHTML), 'the template chip is missing');
+/* onf-2.12.0 — the override is no longer silent and the pin keeps its controls */
+eq(box4.querySelectorAll('[data-onf-default-label="approach"]').length, 2,
+  'a template-sourced field must render the pin\'s own Change default + Stop using controls');
+ok(/from template — overrode your default/.test(box4.innerHTML),
+  'the chip must say the template overrode the doctor\'s default');
+ok(/Your default: Paramedian — use/.test(box4.innerHTML),
+  'the overridden pin must be offered back as a one-click action');
 console.log('  pinned "Paramedian", template says "Transforaminal" -> the note gets Transforaminal,');
-console.log('  the pin is still stored, and neither "Change default" nor "Stop using" is rendered.');
+console.log('  the chip says "overrode your default", Change/Stop render, and "Your default:');
+console.log('  Paramedian — use" restores the pin with one click.');
 
-S('STEP 12 — SAFETY: laterality and level are pinnable, and a pin overrides the procedure');
+S('STEP 12 — SAFETY: laterality and level can no longer be pinned; the procedure decides');
 const H = loadFill();
 const LEFT_ROW = { patientId: '', tplId: '', proc: 'Left knee injection', appt: {} };
 const beforePin = H.api._resolveInitialField('side', LEFT_ROW, {});
 eq(beforePin.kind, 'suggested', 'unpinned "side" is no longer a reviewed suggestion');
 eq(beforePin.value, 'Left', 'unpinned "side" no longer follows the procedure');
-eq(H.api._defaultOffered('side'), true, 'GOOD NEWS: "side" is no longer offered — update this assertion');
-eq(H.api._setAnyDefault('side', 'Right'), true, 'GOOD NEWS: "side" can no longer be pinned — update this assertion');
+/* onf-2.12.0: a pinned "Right" used to silently fill a LEFT-side note from
+ * inside the collapsed fold — a wrong-side documentation hazard. Side,
+ * laterality, level and site are facts about ONE procedure; the explicit
+ * tier now refuses them exactly as tier 1 always did. */
+eq(H.api._defaultOffered('side'), false, '"side" must never offer a cross-chart pin (wrong-side hazard)');
+eq(H.api._setAnyDefault('side', 'Right'), false, '"side" must refuse to be pinned (wrong-side hazard)');
 const afterPin = H.api._resolveInitialField('side', LEFT_ROW, {});
-eq(afterPin.kind, 'default', 'unexpected: the pin did not win');
-eq(afterPin.value, 'Right', 'unexpected: the pin did not override the procedure-derived side');
-eq(H.api._setAnyDefault('level', 'L5-S1'), true, 'GOOD NEWS: "level" can no longer be pinned');
-eq(H.api._resolveInitialField('level', { patientId: '', tplId: '', proc: 'Right L4-L5 TFESI', appt: {} }, {}).value, 'L5-S1',
-  'unexpected: the level pin did not apply');
-/* and it renders folded away instead of in the ask list */
+eq(afterPin.kind, 'suggested', 'after a refused pin, "side" must stay a procedure-derived suggestion');
+eq(afterPin.value, 'Left', 'after a refused pin, "side" must still follow the procedure');
+eq(H.api._setAnyDefault('level', 'L5-S1'), false, '"level" must refuse to be pinned (procedure-specific)');
+const levelResolved = H.api._resolveInitialField('level', { patientId: '', tplId: '', proc: 'Right L4-L5 TFESI', appt: {} }, {});
+ok(levelResolved.value !== 'L5-S1' && levelResolved.kind !== 'default',
+  'a refused level pin must never surface as the resolved value');
+/* and the side field stays in the ASK list, never silently folded away */
 const RAW5 = 'Side: [FILL: side]\n';
 H.ctx._opPrep = [{ patientId: '', tplId: '', proc: 'Left knee injection', appt: {}, note: RAW5 }];
 const ta5 = makeDraft(H.dom, 0, RAW5);
 H.api._buildFillBox(ta5);
 const box5 = boxOf(H.dom, ta5);
-ok(ta5.value.indexOf('Right') >= 0, 'the LEFT procedure draft did not take the pinned Right');
-ok(box5.innerHTML.indexOf('applied from your defaults') > box5.innerHTML.indexOf('<details class="onf-auto">'),
-  'the wrong-side value is not inside the collapsed fold');
-console.log('  proc "Left knee injection": unpinned -> amber "Left" in the ASK list;');
-console.log('  after pinning Right       -> note reads "Right", inside the COLLAPSED fold.');
+ok(ta5.value.indexOf('Right') < 0, 'the LEFT procedure draft must never read the refused "Right" pin');
+ok(box5.innerHTML.indexOf('applied from your defaults') < 0,
+  '"side" must never render as an applied default');
+console.log('  proc "Left knee injection": amber "Left" suggestion in the ASK list; pinning side/level');
+console.log('  is REFUSED, so a stored "Right" can never silently fill a left-side note.');
 
 S('STEP 13 — sweep: which real template labels offer the button');
 const SWEEP = ['side', 'laterality', 'level', 'levels', 'needle gauge', 'gauge', 'gauge/tip', 'interval',
@@ -514,8 +524,11 @@ const rows = SWEEP.map(l => {
 });
 console.log('  ' + offered + ' of ' + SWEEP.length + ' real [FILL:] labels offer "Use every time".');
 console.log('  refused: ' + rows.filter(r => !r.offered).map(r => r.label).join(', '));
-ok(rows.filter(r => r.label === 'side')[0].tier === 2, 'the sweep no longer classifies side in the explicit tier');
-ok(offered >= 20, 'the button is offered under far fewer fields than expected (' + offered + ')');
+ok(rows.filter(r => r.label === 'side')[0].tier === 0, '"side" must not be pinnable in ANY tier (wrong-side hazard)');
+['side', 'laterality', 'level', 'levels'].forEach(l => {
+  ok(!rows.filter(r => r.label === l)[0].offered, '"' + l + '" must never offer "Use every time"');
+});
+ok(offered >= 16, 'the button is offered under far fewer fields than expected (' + offered + ')');
 
 console.log('');
 console.log('  ================= MEASURED RESULT =================');
@@ -533,12 +546,15 @@ console.log('     WAS: tier 1 (what the app observed) came back and tier 2 (what
 console.log('     doctor instructed) did not. feat_mls_opnote_fill.js:670 already called');
 console.log('     syncPrefsToServer() on every pin, so the push ran and carried nothing —');
 console.log('     which is what kept the gap invisible.');
-console.log('  template speaks   : PIN IS IGNORED, silently, and its own Change/Stop');
-console.log('                      controls are not rendered (feat_mls_opnote_fill.js:1157 + 1246).');
-console.log('                      STILL OPEN — untouched by the sync fix.');
-console.log('  side / level      : PINNABLE, and the pin OVERRIDES the procedure-derived');
-console.log('                      laterality, folded into the collapsed block.');
+console.log('  template speaks   : the template still wins (tier-2 contract), but LOUDLY —');
+console.log('                      the chip reads "from template — overrode your default",');
+console.log('                      Change/Stop render, and "Your default: … — use" restores');
+console.log('                      the pin with one click (onf-2.12.0).');
+console.log('  side / level      : NO LONGER PINNABLE (onf-2.12.0) — laterality, level and');
+console.log('                      site follow the procedure; a stored pin is refused at');
+console.log('                      read AND write, so a wrong-side fill cannot happen.');
 console.log('  ==================================================');
 console.log('');
 console.log('PASS use-every-time round trip: writer, reader, reload and SIGN-OUT SURVIVAL proven by');
-console.log('     execution; template shadowing and the laterality hazard proven the same way.');
+console.log('     execution; the template override is now visible+reversible and the laterality');
+console.log('     pin is refused — both proven the same way.');

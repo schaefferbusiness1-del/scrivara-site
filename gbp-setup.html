@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; upgrade-insecure-requests">
 <title>Google Business Profile — guided setup · MLS Scribe</title>
 <!-- ==========================================================================
   gbp-setup.html — MLS guided Google Business Profile creation (v1.0.0)
@@ -168,14 +168,14 @@ a{color:var(--blue)}
     for (i = 0; i < CATS.length; i++) opts += '<option' + (S.f.category === CATS[i] ? ' selected' : '') + '>' + CATS[i] + '</option>';
     return '<div class="card"><h2>1 · Your details</h2>' +
       '<div class="note">Everything below pre-fills the Google forms for you. Pulled from your Review Finder details where possible.</div>' +
-      '<div class="row"><div><label>Doctor’s full name (with credentials)</label><input type="text" id="fDoctor" value="' + esc(S.f.doctor) + '" placeholder="Matthew Schaeffer, MD"></div>' +
-      '<div><label>Practice name</label><input type="text" id="fPractice" value="' + esc(S.f.practice) + '"></div></div>' +
-      '<div class="row"><div><label>Business category</label><select id="fCategory">' + opts + '</select></div>' +
-      '<div><label>Phone</label><input type="text" id="fPhone" value="' + esc(S.f.phone) + '"></div></div>' +
-      '<label>Street address (as patients should see it)</label><input type="text" id="fAddress" value="' + esc(S.f.address) + '" placeholder="123 Main St, Suite 200, West Chester, PA 19380">' +
-      '<div class="row"><div><label>City</label><input type="text" id="fCity" value="' + esc(S.f.city) + '"></div>' +
-      '<div><label>Website</label><input type="text" id="fWebsite" value="' + esc(S.f.website) + '"></div></div>' +
-      '<label>Office hours</label><input type="text" id="fHours" value="' + esc(S.f.hours) + '">' +
+      '<div class="row"><div><label for="fDoctor">Doctor’s full name (with credentials)</label><input type="text" id="fDoctor" value="' + esc(S.f.doctor) + '" placeholder="Matthew Schaeffer, MD"></div>' +
+      '<div><label for="fPractice">Practice name</label><input type="text" id="fPractice" value="' + esc(S.f.practice) + '"></div></div>' +
+      '<div class="row"><div><label for="fCategory">Business category</label><select id="fCategory">' + opts + '</select></div>' +
+      '<div><label for="fPhone">Phone</label><input type="text" id="fPhone" value="' + esc(S.f.phone) + '"></div></div>' +
+      '<label for="fAddress">Street address (as patients should see it)</label><input type="text" id="fAddress" value="' + esc(S.f.address) + '" placeholder="123 Main St, Suite 200, West Chester, PA 19380">' +
+      '<div class="row"><div><label for="fCity">City</label><input type="text" id="fCity" value="' + esc(S.f.city) + '"></div>' +
+      '<div><label for="fWebsite">Website</label><input type="text" id="fWebsite" value="' + esc(S.f.website) + '"></div></div>' +
+      '<label for="fHours">Office hours</label><input type="text" id="fHours" value="' + esc(S.f.hours) + '">' +
       '<div class="warn">⚠ A personal <b>doctor</b> profile and a <b>practice</b> profile are two different Google listings. This wizard sets up the one you pick in step 2 — and never mixes their ratings.</div>' +
       '</div>';
   }

@@ -55,11 +55,33 @@ assert(/function previewTemplate\(id\)\{ tplSelect\(id\); \}/.test(html), 'previ
 assert(html.includes('>No unsaved changes</div>'), 'a freshly rendered detail pane must not claim Saved');
 
 // 7. runtime modules (template health, upload toolbar, cloud library) insert
-//    themselves beside #tplList and become grid items — they must span the
-//    full row so the two panes keep their columns (caught live on b457)
+//    themselves beside #tplList and become grid items. The full-row span stays
+//    as the fallback for any panel that is still inside the grid (caught live
+//    on b457), and the two panes keep their columns.
 assert(html.includes('#tplWorkspace>*{grid-column:1 / -1;min-width:0}')
-  && html.includes('#tplWorkspace>#tplList{grid-column:1}')
-  && html.includes('#tplWorkspace>#tplDetail{grid-column:2}'),
-  'injected sibling panels must span the workspace grid, keeping list/detail side by side');
+  && html.includes('#tplWorkspace>#tplList{grid-column:1;grid-row:1}')
+  && html.includes('#tplWorkspace>#tplDetail{grid-column:2;grid-row:1;align-self:start}'),
+  'injected sibling panels must span the workspace grid, keeping list/detail side by side on row 1');
+
+// 7b. b839 — THE STICKY PREVIEW MUST HAVE NOTHING BELOW IT TO COVER.
+//     #tplDetail carries an inline `position:sticky;top:0`. Chrome constrains
+//     that sticky by the SCROLL container, not by the item's grid area — so a
+//     full-width panel sharing the workspace gets painted over as the pane
+//     travels. Measured on the owner's screen at b837: 9 real occlusions while
+//     scrolling, up to 694x329px of the versioned-library panel covered, with
+//     elementFromPoint returning #tplDetText (it took the clicks too). Pinning
+//     the pane to grid-row:1 was tried FIRST and measured no improvement
+//     (9 before, 10 after), which is why the panels are evicted instead.
+const tplUi = fs.readFileSync(path.join(root, 'feat_mls_opnote_templates_ui.js'), 'utf8');
+assert(/function evictStrays/.test(tplUi),
+  'the workspace must be able to evict panels injected into it');
+assert(/k\.id === 'tplList' \|\| k\.id === 'tplDetail'/.test(tplUi),
+  'eviction must keep exactly the two panes and move everything else out');
+assert(/_wsObs\s*=\s*new MutationObserver/.test(tplUi),
+  'a panel injected after first render must be evicted too, or the overlap returns');
+assert(/data-ot-evicted/.test(tplUi),
+  'evicted panels must be marked so the move is auditable');
+assert(/details:not\(\[open\]\) > \*:not\(summary\)\{ display:none !important; \}/.test(tplUi),
+  'a closed <details> must not leave full-size layout boxes over the panels beneath it');
 
 console.log('PASS templates workspace: searchable two-pane list/detail, in-place saves with bounded revisions and honest states, dirty-edit protection, confirmed delete with real undo');

@@ -205,8 +205,16 @@ assert(/^\d+(?:\.\d+){1,3}$/.test(String(extensionRelease.version || '')), 'publ
 const vendorTraversalIncludes = ['vendor', ...PUBLIC_VENDOR_ASSETS.map((rel) => path.posix.basename(rel))];
 /* Owner directive 2026-07-20: the exact stamped 3.0.22 release ships publicly;
  * its bytes are digest-pinned below. Candidates stay excluded. */
-const RELEASED_PACKAGE = 'MLS_Assist_v3.0.38.zip';
-const expectedIncludes = [...PUBLIC_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, 'CNAME'];
+const RELEASED_PACKAGE = 'MLS_Assist_v3.0.45.zip';
+/* 2026-08-06, pin moved deliberately: a byte-identical mirror of the released
+   package under an extension no service-worker generation retires. An installed
+   worker keeps controlling a tab until every tab closes, and this app's worker
+   deliberately declines skipWaiting(), so a stale worker answers the .zip with
+   410 regardless of what we ship — measured live, the worker did not roll
+   across three production deploys. Its bytes are digest-asserted EQUAL to the
+   zip below, so this widens the published surface by zero new content. */
+const RELEASED_PACKAGE_MIRROR = 'MLS_Assist_v3.0.45.bin';
+const expectedIncludes = [...PUBLIC_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, RELEASED_PACKAGE_MIRROR, 'CNAME'];
 assert.deepStrictEqual(sorted(includes), sorted(expectedIncludes), 'Jekyll include allowlist must exactly match reviewed public HTML/assets, the digest-pinned released package, and CNAME');
 
 const diskHtml = fs.readdirSync(root).filter((name) => /\.html$/i.test(name));
@@ -292,11 +300,17 @@ const zipFiles = fs.readdirSync(root).filter((name) => /\.zip$/i.test(name));
 assert(zipFiles.length > 1, 'fixture must exercise historical archive exclusion');
 /* Owner directive 2026-07-20: EXACTLY the stamped 3.0.22 release is public.
  * Its published bytes must equal the release digest — any drift fails. */
-assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_Assist_v3.0.38.zip'],
+assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_Assist_v3.0.45.zip'],
   'exactly the released 3.0.22 package may be published — nothing else, and never a candidate');
-const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.38.zip'))).digest('hex');
-assert.strictEqual(releasedZipSha, 'fc72a9ef4a862ca5598079d1d635f341fe3dbaa0c51ba570e05a71afe9323e8b',
+const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.45.zip'))).digest('hex');
+assert.strictEqual(releasedZipSha, 'cdd6d083902a0fc583a6f723b415cc1cdb6a01540840c677a4eddb2c32806273',
   'published package bytes must be the exact stamped 3.0.22 release');
+/* The mirror is the SAME BYTES or it is a second, unreviewed artifact. This is
+   the assertion that keeps "a route stale workers can reach" from becoming "a
+   second package nobody digest-checked". */
+const mirrorSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.45.bin'))).digest('hex');
+assert.strictEqual(mirrorSha, releasedZipSha,
+  'the .bin mirror must be byte-identical to the released package — never a separate build');
 
 const stagingJs = fs.readdirSync(root).filter((name) => /\.staging\.js$/i.test(name));
 assert(stagingJs.length >= 5, 'fixture must exercise staging JavaScript exclusion');
@@ -366,8 +380,8 @@ if (/\bMKT_URL\s*=\s*['"]mls-marketing\.html['"]/.test(read('mls_reviews_scrape_
  * browser. The page may expose only the separately published store channel. */
 const extensionPage = read('get-extension.html');
 assert(!/\bJSZip\b|var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(extensionPage), 'download page must not assemble loose extension source');
-assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.38\.zip["']/i.test(extensionPage) &&
-  /fc72a9ef4a862ca5598079d1d635f341fe3dbaa0c51ba570e05a71afe9323e8b/.test(extensionPage) &&
+assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3\.0\.45\.zip["']/i.test(extensionPage) &&
+  /cdd6d083902a0fc583a6f723b415cc1cdb6a01540840c677a4eddb2c32806273/.test(extensionPage) &&
   !/candidate package withheld/i.test(extensionPage),
   'manual download must offer exactly the released package with its displayed digest');
 
@@ -543,9 +557,9 @@ async function verifyServiceWorkerRuntime() {
   assert.strictEqual(fetchCalls.length, callsBeforeCandidate, 'candidate extension bytes must not reach the network');
   /* The exact released 3.0.22 package passes through to the network (never 410,
    * never cached — the cached-keys assertion below covers every ZIP). */
-  const releasedArchive = await runFetch(`${origin}/MLS_Assist_v3.0.38.zip`);
+  const releasedArchive = await runFetch(`${origin}/MLS_Assist_v3.0.45.zip`);
   assert.notStrictEqual(releasedArchive.status, 410, 'the exact released package must pass through the service worker');
-  assert(fetchCalls.includes(`${origin}/MLS_Assist_v3.0.38.zip`), 'the released package download must reach the network');
+  assert(fetchCalls.includes(`${origin}/MLS_Assist_v3.0.45.zip`), 'the released package download must reach the network');
 
   /* A genuine basic 200 is cacheable only when its URL is an exact static
    * allowlist member. Query strings that can carry tokens/codes never become
@@ -554,10 +568,10 @@ async function verifyServiceWorkerRuntime() {
   await runFetch(`${origin}/privacy.html`, { mode: 'navigate', accept: 'text/html' });
   await runFetch(`${origin}/ScribeFlow.html?demo=1`, { mode: 'navigate', accept: 'text/html' });
   await runFetch(`${origin}/feat_runtime.js?v=reviewed-2`);
-  const newFindAsset = await runFetch(`${origin}/feat_mls_fixpack_0701.js?v=20260727fp115`);
-  assert.strictEqual(await newFindAsset.text(), `network:${origin}/feat_mls_fixpack_0701.js?v=20260727fp115`,
+  const newFindAsset = await runFetch(`${origin}/feat_mls_fixpack_0701.js?v=20260804fp117`);
+  assert.strictEqual(await newFindAsset.text(), `network:${origin}/feat_mls_fixpack_0701.js?v=20260804fp117`,
     'old fp110 cache entry shadowed the exact-ID/account-bound fp111 Find implementation');
-  assert(fetchCalls.includes(`${origin}/feat_mls_fixpack_0701.js?v=20260727fp115`),
+  assert(fetchCalls.includes(`${origin}/feat_mls_fixpack_0701.js?v=20260804fp117`),
     'new Find immutable URL did not reach the network when only fp110 was cached');
   const newStatusCenter = await runFetch(`${origin}/feat_mls_status_center.js?v=20260719sc111`);
   assert.strictEqual(await newStatusCenter.text(), `network:${origin}/feat_mls_status_center.js?v=20260719sc111`,
@@ -582,7 +596,7 @@ async function verifyServiceWorkerRuntime() {
   assert(cachedKeys.includes(`${origin}/feat_mls_force_full_phone.js?v=20260719ffp200`), 'exact reviewed phone UI asset should be cacheable by version');
   assert(!cachedKeys.some((key) => /MLS_Assist_v[^/]+\.zip/i.test(key)), 'extension downloads must not be cached by the service worker');
   assert(cachedKeys.includes(`${origin}/feat_runtime.js?v=reviewed-2`), 'exact versioned static assets must remain cacheable');
-  assert(cachedKeys.includes(`${origin}/feat_mls_fixpack_0701.js?v=20260727fp115`), 'new exact-ID Find implementation was not cached under its own immutable URL');
+  assert(cachedKeys.includes(`${origin}/feat_mls_fixpack_0701.js?v=20260804fp117`), 'new exact-ID Find implementation was not cached under its own immutable URL');
   assert(cachedKeys.includes(`${origin}/feat_mls_status_center.js?v=20260719sc111`), 'preview-safe account-isolated Status Center was not cached under its own immutable URL');
   for (const vendorRequest of PUBLIC_VENDOR_REQUESTS) {
     assert(cachedKeys.includes(`${origin}/${vendorRequest}`), `approved versioned vendor runtime was not cached: ${vendorRequest}`);
@@ -592,7 +606,7 @@ async function verifyServiceWorkerRuntime() {
   let activateWork;
   handlers.activate({ waitUntil(promise) { activateWork = Promise.resolve(promise); } });
   await activateWork;
-  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v188'], 'activation must remove every superseded MLS cache');
+  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v199'], 'activation must remove every superseded MLS cache');
 
   networkOffline = true;
   for (const sensitiveUrl of [

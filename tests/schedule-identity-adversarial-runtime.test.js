@@ -199,7 +199,10 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-assert(api && api.version === 'si-1.7.16');
+/* pin moved si-1.7.18 -> si-1.7.19 deliberately: mdx-2.0.0 same-clinician
+   roster-echo collapse for the selected-provider name fallback; every
+   adversarial identity behavior this suite pins is unchanged and re-run. */
+assert(api && api.version === 'si-1.7.20');
 
 (async () => {
   const bootstrapDate = '2026-07-22';

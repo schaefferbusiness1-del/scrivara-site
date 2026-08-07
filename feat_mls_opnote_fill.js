@@ -60,7 +60,6 @@
       '.onf-fillbox .onf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;}',
       '.onf-fillbox label{display:flex;flex-direction:column;gap:3px;font:700 11px/1.3 system-ui;color:#5a4a24;}',
       '.onf-fillbox input,.onf-fillbox select{font:600 12.5px system-ui;padding:5px 8px;border:1px solid #d9c48f;border-radius:7px;background:#fff;color:#3a2f12;}',
-      '.onf-fillbox .onf-done{border-color:#8fce9e;background:#f2fbf4;}',
       '.onf-fillbox label.onf-has input,.onf-fillbox label.onf-has select{border-color:#8fce9e;background:#f6fdf8;}',
       '.onf-fillbox .onf-sug{font:800 9px system-ui;color:#7a5310;background:#fdf0d0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
       '.onf-fillbox .onf-need{font:800 9px system-ui;color:#8a2a2a;background:#fbe0e0;padding:1px 6px;border-radius:999px;margin-left:5px;vertical-align:middle;}',
@@ -670,7 +669,10 @@
   function userDefaultBlocked(label) {
     var l = S(label).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!l) return true;
-    return /(patient name|(^| )name$|\bdob\b|birth|\bmrn\b|medical record|chart (number|id|no)|account (number|no)|\bage\b|\bsex\b|\bgender\b|\bbmi\b|body mass|\bdate\b|\bday\b|today|diagnos|\bdx\b|indication|history|\bhpi\b|allerg|medication|\bmeds\b|complication|consent|time ?out)/.test(l);
+    /* onf-2.12.0: side/laterality/level/site are facts about ONE procedure —
+       a pinned "Left" would silently fill a right-side note from inside the
+       collapsed fold. They follow the procedure, never a cross-chart pin. */
+    return /(patient name|(^| )name$|\bdob\b|birth|\bmrn\b|medical record|chart (number|id|no)|account (number|no)|\bage\b|\bsex\b|\bgender\b|\bbmi\b|body mass|\bdate\b|\bday\b|today|diagnos|\bdx\b|indication|history|\bhpi\b|allerg|medication|\bmeds\b|complication|consent|time ?out|laterality|\bside\b|\blevels?\b|\bsite\b)/.test(l);
   }
   function userDefaultEligible(label) {
     return !!fieldIdentity(label) && !defaultEligible(label) && !userDefaultBlocked(label);
@@ -1380,6 +1382,9 @@
     /* build the box: EVERY field shown, pre-set, marked known / suggested / blank */
     var box = existing || document.createElement('div');
     box.className = 'onf-fillbox';
+    /* mg-1.1.0 moment: the box is BORN once per draft — feat_mls_magic styles
+       .mgx2-born; re-renders reset className above so it can never replay. */
+    if (!existing) box.className = 'onf-fillbox mgx2-born';
     safe(function () { box.setAttribute('data-onf-for', ta.id); });
     /* onf-2.10.0 (owner: "way too many fields — it should know way more"):
        fields the app filled CONFIDENTLY (chart / schedule / settings /
@@ -1408,17 +1413,23 @@
           ctrl = '<input type="text" data-onf-idx="' + idx + '" data-onf-label="' + esc(label) + '" id="' + fid + '" value="' + esc(cur) + '" placeholder="type value">';
         }
       }
+      var acts = [], recent = priorValues(label)[0] || '', def = anyFieldDefault(label);
+      /* onf-2.12.0: a template line still outranks a pin (the tier-2 contract),
+         but never SILENTLY — the chip says so and the pin is one click away. */
+      var pinOverridden = kind === 'template' && def && S(def.value).toLowerCase() !== S(cur).toLowerCase();
       var tag = kind === 'suggested' ? ' <span class="onf-sug">suggested</span>'
         : kind === 'saved' ? ' <span class="onf-saved">saved</span>'
         : kind === 'default' ? ' <span class="onf-default">applied from your defaults</span>'
         : kind === 'history' ? ' <span class="onf-hist">from chart</span>'
-        : kind === 'template' ? ' <span class="onf-hist">from template</span>'
+        : kind === 'template' ? (pinOverridden ? ' <span class="onf-hist">from template — overrode your default</span>' : ' <span class="onf-hist">from template</span>')
         : (kind === 'blank' ? ' <span class="onf-need">needs value</span>' : '');
-      var acts = [], recent = priorValues(label)[0] || '', def = anyFieldDefault(label);
       /* onf-2.9.0: per-field dictation (capture = pinned Dictate-Anywhere engine) */
       acts.push('<button type="button" class="onf-mic" data-onf-mic="' + esc(fid) + '" title="Dictate this field — spoken value is normalized by AI">🎙</button>');
-      var reusableSurface = kind !== 'known' && kind !== 'history' && kind !== 'template';
-      if (reusableSurface && recent && S(recent).toLowerCase() !== S(cur).toLowerCase()) {
+      var reusableSurface = kind !== 'known' && kind !== 'history';
+      if (pinOverridden) {
+        acts.push('<button type="button" class="onf-recent" data-onf-recent-control="' + esc(fid) + '" data-onf-recent-value="' + esc(def.value) + '">Your default: ' + esc(def.value) + ' — use</button>');
+      }
+      if (reusableSurface && recent && S(recent).toLowerCase() !== S(cur).toLowerCase() && !(pinOverridden && S(recent).toLowerCase() === S(def.value).toLowerCase())) {
         acts.push('<button type="button" class="onf-recent" data-onf-recent-control="' + esc(fid) + '" data-onf-recent-value="' + esc(recent) + '">Last used: ' + esc(recent) + ' — use</button>');
       }
       /* 2026-07-28: the control is offered under EVERY reusable field - tier 1
@@ -1556,6 +1567,24 @@
       if (!val || val === OTHER) { toast('Choose or type the answer first.', 'err'); return; }
       if (!saveAnyFieldDefault(label, val)) { toast(!defaultOffered(label) ? 'This field is a fact about one patient or one encounter - it cannot be reused across charts.' : 'Sign in fully before saving an op-note default.', 'err'); return; }
       applyDefaultToOpen(label, val);
+      /* mg-1.1.0 moment: the FIELD acknowledges the pin at the click, not just
+         the toast rail — feat_mls_magic styles .onf-field.mgx2-pinned. Only on
+         this explicit success path. The box is REBUILT during this click (a
+         traced add landed on a node the rebuild then destroyed), so the class
+         goes on one MICROTASK later — after every synchronous rebuild in this
+         task, found live by the control id, and never on a ghost. A microtask
+         is not a timer: hidden-tab freezing does not apply to it. */
+      var pinnedFid = this.getAttribute && this.getAttribute('data-onf-default-control');
+      safe(function () {
+        Promise.resolve().then(function () {
+          safe(function () {
+            var liveCtrl = pinnedFid && document.getElementById(pinnedFid);
+            var f = liveCtrl && liveCtrl.closest && liveCtrl.closest('.onf-field');
+            if (!f) return;
+            f.classList.remove('mgx2-pinned'); void f.offsetWidth; f.classList.add('mgx2-pinned');
+          });
+        });
+      });
       toast('Saved — this answer will fill the same field in future op notes.', 'ok');
     });
     /* onf-2.9.0: per-field mics + the dictate-and-fill pad */

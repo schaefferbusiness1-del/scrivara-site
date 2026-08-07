@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; upgrade-insecure-requests">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="robots" content="noindex,nofollow,noarchive,nosnippet" />
 <meta name="referrer" content="no-referrer" />
@@ -275,7 +276,7 @@
           <span class="chip">What are my active health problems?</span>
         </div>
         <form class="composer" id="chatForm">
-          <input id="q" type="text" placeholder="Ask a question about your health…" autocomplete="off" />
+          <input id="q" type="text" aria-label="Ask a question about your health" placeholder="Ask a question about your health…" autocomplete="off" />
           <button class="btn" id="sendBtn" type="submit">Send</button>
         </form>
         <p class="disclaimer">MLS Assistant answers from your records only. It is not a substitute for advice from your care team. For emergencies call 911.</p>
@@ -898,10 +899,10 @@
            medication" - the thing they had just chosen - with nowhere to type
            the name. A refill request could never be sent for anything the
            portal did not already list. */
-        return '<label>Which medication?</label><select id="mReqMed" onchange="var o=document.getElementById(\'mReqOtherWrap\'); if(o) o.style.display = this.value===\'__other\' ? \'block\' : \'none\';">'+opts+'</select>'+
-               '<div id="mReqOtherWrap" style="display:none"><label>What is it called?</label><input id="mReqOther" placeholder="the name on the bottle or box"></div>'+
-               '<label>Pharmacy (name &amp; location)</label><textarea id="mReqPharm" placeholder="e.g. CVS on Main St, Anytown"></textarea>'+
-               '<label>Anything the office should know? (optional — no need for sensitive detail)</label><textarea id="mReqNote" placeholder="e.g. down to my last few doses"></textarea>';
+        return '<label for="mReqMed">Which medication?</label><select id="mReqMed" onchange="var o=document.getElementById(\'mReqOtherWrap\'); if(o) o.style.display = this.value===\'__other\' ? \'block\' : \'none\';">'+opts+'</select>'+
+               '<div id="mReqOtherWrap" style="display:none"><label for="mReqOther">What is it called?</label><input id="mReqOther" placeholder="the name on the bottle or box"></div>'+
+               '<label for="mReqPharm">Pharmacy (name &amp; location)</label><textarea id="mReqPharm" placeholder="e.g. CVS on Main St, Anytown"></textarea>'+
+               '<label for="mReqNote">Anything the office should know? (optional — no need for sensitive detail)</label><textarea id="mReqNote" placeholder="e.g. down to my last few doses"></textarea>';
       },
       collect:function(){ var med=$("mReqMed").value; if(med==="__other"){ var o=$("mReqOther"); med=(o&&o.value||"").trim(); } return { medication:med, pharmacy:($("mReqPharm").value||"").trim(), note:($("mReqNote").value||"").trim() }; },
       valid:function(d){ return !!(d.medication || d.note); }, need:"Please choose your medication, or type its name below." },
@@ -910,9 +911,9 @@
       safe:"This sends a request — a team member confirms the exact time with you. For a medical emergency, call 911.",
       extra:'<div style="margin-top:12px;font-size:13px">Your practice will review this request and contact you to confirm a time.</div>',
       fields:function(){
-        return '<label>Reason for the visit (briefly)</label><textarea id="mReqReason" placeholder="What would you like to be seen for?"></textarea>'+
-               '<label>Preferred time of day</label><select id="mReqWhen"><option>Any time</option><option>Morning</option><option>Afternoon</option><option>Evening</option></select>'+
-               '<label>How soon? </label><select id="mReqUrg"><option>Routine</option><option>As soon as possible (non-emergency)</option></select>';
+        return '<label for="mReqReason">Reason for the visit (briefly)</label><textarea id="mReqReason" placeholder="What would you like to be seen for?"></textarea>'+
+               '<label for="mReqWhen">Preferred time of day</label><select id="mReqWhen"><option>Any time</option><option>Morning</option><option>Afternoon</option><option>Evening</option></select>'+
+               '<label for="mReqUrg">How soon? </label><select id="mReqUrg"><option>Routine</option><option>As soon as possible (non-emergency)</option></select>';
       },
       collect:function(){ return { reason:($("mReqReason").value||"").trim(), timeOfDay:$("mReqWhen").value, urgency:$("mReqUrg").value }; },
       valid:function(d){ return !!d.reason; }, need:"Please add a brief reason for the visit." },
@@ -920,9 +921,9 @@
     injection:{ icon:"💉", title:"Ask about injection timing", cat:"Injection-timing question",
       safe:"MLS can’t tell you when your next injection should be — the timing of injections is decided by your care team based on your plan and history. This sends your question to the office; they’ll advise you.",
       fields:function(){
-        return '<label>Which injection / procedure?</label><textarea id="mReqProc" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
-               '<label>Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;background:#F7F8F7">'+
-               '<label>Your question</label><textarea id="mReqQ" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
+        return '<label for="mReqProc">Which injection / procedure?</label><textarea id="mReqProc" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
+               '<label for="mReqLast">Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;background:#F7F8F7">'+
+               '<label for="mReqQ">Your question</label><textarea id="mReqQ" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
       },
       collect:function(){ return { procedure:($("mReqProc").value||"").trim(), lastDate:$("mReqLast").value, question:($("mReqQ").value||"").trim() }; },
       valid:function(d){ return !!(d.procedure || d.question); }, need:"Please add the injection/procedure or your question." },
@@ -930,7 +931,7 @@
     pain:{ icon:"🩹", title:"Pain-medicine question", cat:"Pain-medicine request",
       safe:"⚠️ For safety, pain-medicine and controlled-substance decisions are made only by your care team — never through this portal or its AI. This routes your message to the office. If you are in a medical emergency or crisis, call 911 now.",
       fields:function(){
-        return '<label>How can the office help? (please don’t include sensitive detail)</label><textarea id="mReqPain" placeholder="e.g. I have a question about my pain-management plan"></textarea>';
+        return '<label for="mReqPain">How can the office help? (please don’t include sensitive detail)</label><textarea id="mReqPain" placeholder="e.g. I have a question about my pain-management plan"></textarea>';
       },
       collect:function(){ return { message:($("mReqPain").value||"").trim() }; },
       valid:function(d){ return !!d.message; }, need:"Please add a short message for the office." },
@@ -938,7 +939,7 @@
     message:{ icon:"✉️", title:"Message the office", cat:"Office message",
       safe:"A team member will read this and follow up. Please don’t include sensitive medical, financial, or ID details — just enough to route your message. For emergencies call 911.",
       fields:function(){
-        return '<label>Your message</label><textarea id="mReqMsg" placeholder="How can we help?"></textarea>';
+        return '<label for="mReqMsg">Your message</label><textarea id="mReqMsg" placeholder="How can we help?"></textarea>';
       },
       collect:function(){ return { message:($("mReqMsg").value||"").trim() }; },
       valid:function(d){ return !!d.message; }, need:"Please type a message." }
@@ -1143,6 +1144,590 @@
     var g=e.target.closest?e.target.closest("[data-guard]"):null; if(!g) return;
     openReq(g.getAttribute("data-guard"));
   });
+
+  /* ================= AVATAR pre-visit check-in =============================
+     The practice programs the questions; the avatar interviews the patient and
+     the answers reach the care team before the visit. This never gives medical
+     advice, never diagnoses, and nothing is approved here. Network goes through
+     requestFetch (the page's one authenticated sensitive-fetch path). */
+  function avSid(){
+    var k="mls_av_sid", v="";
+    try{ v=sessionStorage.getItem(k)||""; }catch(e){}
+    if(!v){
+      v="avchk-"; var A="abcdefghjkmnpqrstuvwxyz23456789";
+      try{
+        var buf=new Uint8Array(24); crypto.getRandomValues(buf);
+        for(var i=0;i<buf.length;i++) v+=A[buf[i]%A.length];
+      }catch(e){ for(var j=0;j<24;j++) v+=A[Math.floor(Math.random()*A.length)]; }
+      try{ sessionStorage.setItem(k,v); }catch(e){}
+    }
+    return v;
+  }
+  var avBusy=false, avDone=false, avLastTry=null;
+  /* ---- VOICE: the avatar SPEAKS each question and LISTENS for the answer —
+     no typing needed. Built on the browser's own speech engines; when either
+     is missing the check-in degrades honestly (spoken questions with typed
+     answers, or classic text) instead of breaking. Typing always remains as
+     a fallback for accessibility. ---- */
+  var avVoiceOn=true, avRec=null, avRecActive=false, avLastSay="";
+  function avSynth(){ try{ return window.speechSynthesis||null; }catch(e){ return null; } }
+  function avRecCtor(){ try{ return window.SpeechRecognition||window.webkitSpeechRecognition||null; }catch(e){ return null; } }
+  function avCanSpeak(){ return !!avSynth() && typeof window.SpeechSynthesisUtterance==="function"; }
+  function avCanListen(){ return !!avRecCtor(); }
+  function avFace(on){ var f=$("mlsAvFace"); if(f) f.classList.toggle("speaking", !!on); }
+  function avMicUi(state){ /* '', 'listening' */
+    var m=$("mlsAvMicState"); if(!m) return;
+    if(state==="listening"){ m.style.display="flex"; }
+    else { m.style.display="none"; var iv=$("mlsAvInterim"); if(iv) iv.textContent=""; }
+  }
+  function avStopListen(){
+    avRecActive=false;
+    if(avRec){ try{ avRec.onresult=null; avRec.onend=null; avRec.onerror=null; avRec.stop(); }catch(e){} avRec=null; }
+    avMicUi("");
+  }
+  function avStopSpeak(){ avSpeakSeq++; if(avSpeakWatch){ clearTimeout(avSpeakWatch); avSpeakWatch=null; } avHeld.length=0; var s=avSynth(); if(s){ try{ s.cancel(); }catch(e){} } avFace(false); }
+  /* Chrome garbage-collects utterances mid-sentence, silently killing the
+     onend that opens the microphone. Held references + a duration watchdog
+     make the speak->listen chain unbreakable. */
+  var avHeld=[], avSpeakSeq=0, avSpeakWatch=null;
+  function avSpeak(text, thenListen){
+    if(!avVoiceOn || !avCanSpeak() || avDone){ if(thenListen) avListen(); return; }
+    avStopSpeak();
+    var mySeq=++avSpeakSeq, finished=false;
+    function finish(){
+      if(finished || mySeq!==avSpeakSeq) return;
+      finished=true;
+      if(avSpeakWatch){ clearTimeout(avSpeakWatch); avSpeakWatch=null; }
+      avHeld.length=0; avFace(false);
+      if(thenListen && avVoiceOn && !avDone) avListen();
+    }
+    try{
+      var u=new SpeechSynthesisUtterance(String(text||""));
+      u.rate=0.98; u.pitch=1.02;
+      u.onstart=function(){ avFace(true); };
+      u.onend=finish; u.onerror=finish;
+      avHeld.push(u);
+      avSpeakWatch=setTimeout(finish, Math.min(30000, Math.max(2500, String(text||"").split(/\s+/).length*380+3000)));
+      avSynth().speak(u);
+    }catch(e){ finish(); }
+  }
+  function avListen(){
+    if(!avVoiceOn || avDone || avBusy || avRecActive) return;
+    var Ctor=avRecCtor(); if(!Ctor) return;
+    avStopSpeak();
+    var rec; try{ rec=new Ctor(); }catch(e){ return; }
+    avRec=rec; avRecActive=true;
+    rec.lang=(navigator.language&&navigator.language.indexOf("es")===0)?navigator.language:"en-US";
+    rec.interimResults=true; rec.continuous=true;
+    var finalText="", quietTimer=null;
+    function submitVoice(){
+      var v=(finalText||"").trim();
+      avStopListen();
+      if(!v) return;
+      var nonce=(avLastTry&&avLastTry.answer===v)?avLastTry.nonce:avNewNonce();
+      avLastTry={answer:v,nonce:nonce};
+      avTurn(v,nonce);
+    }
+    function armQuiet(){ if(quietTimer) clearTimeout(quietTimer); quietTimer=setTimeout(function(){ if(finalText.trim()) submitVoice(); }, 2200); }
+    rec.onresult=function(ev){
+      var interim="";
+      for(var i=ev.resultIndex;i<ev.results.length;i++){
+        var r=ev.results[i];
+        if(r.isFinal) finalText+=(finalText?" ":"")+String(r[0].transcript||"").trim();
+        else interim+=String(r[0].transcript||"");
+      }
+      var iv=$("mlsAvInterim"); if(iv) iv.textContent=(finalText+" "+interim).trim();
+      armQuiet();
+    };
+    rec.onerror=function(ev){
+      avStopListen();
+      if(ev && (ev.error==="not-allowed"||ev.error==="service-not-allowed")){
+        avVoiceOn=false; avSyncVoiceBtn();
+        avMsg("The microphone was not allowed, so we'll do this by typing instead — the box below works the same way.","ai");
+      }
+    };
+    rec.onend=function(){ if(avRecActive){ if(finalText.trim()) submitVoice(); else avStopListen(); } };
+    try{ rec.start(); avMicUi("listening"); }catch(e){ avStopListen(); }
+  }
+  function avSyncVoiceBtn(){
+    var b=$("mlsAvVoiceBtn"); if(!b) return;
+    if(!avCanSpeak()&&!avCanListen()){ b.style.display="none"; return; }
+    b.textContent=avVoiceOn?"🔊 Voice on":"🔇 Voice off";
+    b.title=avVoiceOn?"The assistant speaks and listens. Tap to switch to typing only.":"Tap to turn voice back on.";
+  }
+  function avToggleVoice(){
+    avVoiceOn=!avVoiceOn;
+    if(!avVoiceOn){ avStopSpeak(); avStopListen(); }
+    avSyncVoiceBtn();
+    if(avVoiceOn && !avBusy && !avDone){ var last=$("mlsAvLog"); avListen(); void last; }
+  }
+  function avEnsureStyle(){
+    if($("mlsAvStyle")) return;
+    var st=document.createElement("style"); st.id="mlsAvStyle";
+    st.textContent=
+      "#mlsAvHead{display:flex;align-items:center;gap:10px;margin:0 0 8px}"+
+      "#mlsAvFace{width:46px;height:46px;border-radius:999px;background:var(--soft);display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden;border:2px solid var(--line);animation:mlsAvIdle 4.5s ease-in-out infinite}"+
+      "#mlsAvFace img{width:100%;height:100%;object-fit:cover;border-radius:999px}"+
+      "#mlsAvFace.speaking{animation:mlsAvSpeak .9s ease-in-out infinite}"+
+      "#mlsAvName{font-weight:800;color:var(--blue);font-size:14px}"+
+      "#mlsAvName small{display:block;font-weight:600;color:var(--muted);font-size:11.5px}"+
+      ".mls-av-in{animation:mlsAvIn .28s ease-out}"+
+      ".mls-av-typing{display:inline-flex;gap:4px;padding:11px 13px}"+
+      ".mls-av-typing span{width:6px;height:6px;border-radius:999px;background:var(--muted);animation:mlsAvDot 1.2s ease-in-out infinite}"+
+      ".mls-av-typing span:nth-child(2){animation-delay:.15s}.mls-av-typing span:nth-child(3){animation-delay:.3s}"+
+      "@keyframes mlsAvIdle{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}"+
+      "@keyframes mlsAvSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}"+
+      "@keyframes mlsAvIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}"+
+      "@keyframes mlsAvDot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}"+
+      "@media (prefers-reduced-motion: reduce){#mlsAvFace,#mlsAvFace.speaking,.mls-av-in,.mls-av-typing span{animation:none!important}}";
+    (document.head||document.documentElement).appendChild(st);
+  }
+  function avSetIdentity(av){
+    avEnsureStyle();
+    var face=$("mlsAvFace"), nameEl=$("mlsAvName");
+    if(nameEl && av && av.name){ nameEl.innerHTML=""; nameEl.appendChild(document.createTextNode(av.name)); var s=document.createElement("small"); s.textContent="Pre-visit check-in assistant"; nameEl.appendChild(s); }
+    if(face && av && typeof av.faceImage==="string" && av.faceImage.indexOf("data:image/")===0){
+      face.textContent=""; var img=document.createElement("img"); img.alt=""; img.src=av.faceImage; face.appendChild(img);
+    }
+  }
+  function avTyping(on){
+    var face=$("mlsAvFace"); if(face) face.classList.toggle("speaking", !!on);
+    var log=$("mlsAvLog"); if(!log) return;
+    var t=$("mlsAvTyping");
+    if(on){
+      if(t) return;
+      t=document.createElement("div"); t.id="mlsAvTyping"; t.className="mls-av-typing";
+      t.style.cssText="max-width:86%;margin:6px auto 6px 0;background:var(--soft);border-radius:14px";
+      for(var i=0;i<3;i++) t.appendChild(document.createElement("span"));
+      log.appendChild(t); log.scrollTop=log.scrollHeight;
+    } else if(t && t.parentNode){ t.parentNode.removeChild(t); }
+  }
+  function avNewNonce(){
+    var v="an-", A="abcdefghjkmnpqrstuvwxyz23456789";
+    try{ var buf=new Uint8Array(16); crypto.getRandomValues(buf); for(var i=0;i<buf.length;i++) v+=A[buf[i]%A.length]; }
+    catch(e){ for(var j=0;j<16;j++) v+=A[Math.floor(Math.random()*A.length)]; }
+    return v;
+  }
+  function avMsg(text, who){
+    var log=$("mlsAvLog"); if(!log) return;
+    avTyping(false);
+    var d=document.createElement("div");
+    d.className="mls-av-in";
+    d.style.cssText="max-width:86%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap;"+
+      (who==="me"?"margin:6px 0 6px auto;background:var(--blue);color:#fff":"margin:6px auto 6px 0;background:var(--soft);color:var(--ink)");
+    d.textContent=text;
+    log.appendChild(d); log.scrollTop=log.scrollHeight;
+  }
+  function avSetBusy(b){
+    avBusy=b;
+    var send=$("mlsAvSend"); if(send) send.disabled=b||avDone;
+    var inp=$("mlsAvInput"); if(inp) inp.disabled=b||avDone;
+  }
+  function avFinish(){
+    avDone=true; avSetBusy(false);
+    avStopListen();
+    var row=$("mlsAvInputRow"); if(row) row.style.display="none";
+    var mic=$("mlsAvMicState"); if(mic) mic.style.display="none";
+    var doneEl=$("mlsAvDone"); if(doneEl) doneEl.style.display="block";
+  }
+  function avTurn(answer,nonce){
+    if(avBusy||avDone) return;
+    if(answer) avMsg(answer,"me");
+    avSetBusy(true);
+    avTyping(true);
+    /* On ANY failure the answer is restored to the box. Whether the server
+       recorded it is UNKNOWN from here (the write may have committed and only
+       the response died), so the resend carries the SAME nonce and the server
+       records it exactly once. */
+    function restore(){ if(answer){ var inp=$("mlsAvInput"); if(inp && !inp.value) inp.value=answer; } }
+    requestFetch("/api/patient/avatar/turn",{method:"POST",body:JSON.stringify(answer?{clientSessionId:avSid(),answer:answer,answerNonce:nonce||avNewNonce()}:{clientSessionId:avSid()})})
+      .then(function(r){ if(r.status===401) throw {auth:true}; return r.json().catch(function(){return {};}); })
+      .then(function(j){
+        if(j && j.ok===false && j.error==="not_configured"){
+          avMsg(j.message||"Your care team has not set up the check-in yet.","ai"); avFinish(); return;
+        }
+        if(j && j.ok===false && j.message){
+          avSetBusy(false); restore();
+          avMsg(j.message,"ai");
+          return;
+        }
+        if(!j || typeof j.say!=="string" || !j.say){ throw {}; }
+        avLastTry=null;
+        if(j.avatar) avSetIdentity(j.avatar);
+        avMsg(j.say,"ai");
+        avLastSay=j.say;
+        var rb=$("mlsAvRepeatBtn"); if(rb && avCanSpeak() && !j.done) rb.style.display="";
+        if(j.progress && j.progress.total>0 && !j.done){
+          var pr=$("mlsAvProgress"); if(pr){ pr.textContent="Question "+Math.min(j.progress.covered||1,j.progress.total)+" of "+j.progress.total; pr.style.display="block"; }
+        }
+        if(j.done){ var pr2=$("mlsAvProgress"); if(pr2) pr2.style.display="none"; avSpeak(j.say,false); avFinish(); }
+        else { avSetBusy(false); avSpeak(j.say,true); var inp=$("mlsAvInput"); if(inp && !avVoiceOn) inp.focus(); }
+      })
+      .catch(function(err){
+        avSetBusy(false); restore();
+        avMsg(err&&err.auth?"Your session ended — sign in again to continue the check-in. Your last answer is still in the box below.":"The check-in is temporarily unavailable and your last answer was NOT recorded — it's still in the box below, so tap Send again in a moment.","ai");
+      });
+  }
+  function avStart(){
+    if(isDemo()){ avMsg("Sample preview only — sign in to do your real pre-visit check-in.","ai"); return; }
+    var intro=$("mlsAvIntro"); if(intro) intro.style.display="none";
+    var chat=$("mlsAvChat"); if(chat) chat.style.display="block";
+    avTurn("");
+  }
+  function injectAvatarCard(){
+    if($("mlsAvCard")) return;
+    var grid=document.querySelector("#app .grid"); if(!grid) return;
+    var card=document.createElement("div");
+    card.className="card sec"; card.id="mlsAvCard"; card.style.marginBottom="16px";
+    card.innerHTML=
+      '<h2 style="font-size:14px;letter-spacing:.2px;color:var(--blue-d);margin:0 0 4px;display:flex;align-items:center;gap:8px">🧑‍⚕️ Pre-visit check-in</h2>'+
+      '<div id="mlsAvIntro">'+
+        '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Have a short conversation with <b>'+esc(office().practice)+'</b>’s assistant before your visit — it speaks its questions out loud and listens to your answers, so there’s no typing needed (though you can always type instead). Your answers go only to your care team. It never gives medical advice — and if anything is urgent, call the office or 911 instead.</p>'+
+        '<button type="button" class="btn" id="mlsAvStart">Start check-in</button>'+
+      '</div>'+
+      '<div id="mlsAvChat" style="display:none">'+
+        '<div id="mlsAvHead"><div id="mlsAvFace">🧑‍⚕️</div><div id="mlsAvName" style="flex:1">Check-in assistant</div>'+
+          '<button type="button" class="btn" id="mlsAvRepeatBtn" title="Hear the question again" style="display:none">🔁</button>'+
+          '<button type="button" class="btn" id="mlsAvVoiceBtn"></button>'+
+        '</div>'+
+        '<div id="mlsAvProgress" style="display:none;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 4px"></div>'+
+        '<div id="mlsAvLog" style="max-height:320px;overflow-y:auto;padding:4px 2px;display:flex;flex-direction:column" aria-live="polite"></div>'+
+        '<div id="mlsAvMicState" style="display:none;gap:8px;align-items:center;margin-top:8px;padding:9px 12px;border:1px solid var(--line);border-radius:14px;background:var(--soft)">'+
+          '<span style="font-size:16px" aria-hidden="true">🎤</span>'+
+          '<span style="font-size:13px;color:var(--ink)"><b>Listening — just talk.</b> <span id="mlsAvInterim" style="color:var(--muted)"></span></span>'+
+          '<button type="button" class="btn" id="mlsAvMicDone" style="margin-left:auto">Done</button>'+
+        '</div>'+
+        '<div id="mlsAvInputRow" style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
+          '<textarea id="mlsAvInput" rows="2" placeholder="Prefer typing? Answer here…" style="flex:1;resize:none"></textarea>'+
+          '<button type="button" class="btn" id="mlsAvSend">Send</button>'+
+        '</div>'+
+        '<div id="mlsAvDone" style="display:none;color:var(--good);font-size:13px;font-weight:700;margin-top:8px">✓ Check-in complete — your care team has your answers.</div>'+
+      '</div>';
+    grid.parentNode.insertBefore(card, grid);
+    var startBtn=card.querySelector("#mlsAvStart");
+    if(startBtn) startBtn.addEventListener("click", avStart);
+    var sendBtn=card.querySelector("#mlsAvSend");
+    function submitAnswer(){
+      var inp=$("mlsAvInput"); var v=inp?inp.value.trim():"";
+      if(!v||avBusy||avDone) return;
+      avStopSpeak(); avStopListen();
+      if(inp) inp.value="";
+      /* Resending the SAME text after a failure reuses its nonce (recorded
+         exactly once); an edited answer is a new attempt with a new nonce. */
+      var nonce=(avLastTry&&avLastTry.answer===v)?avLastTry.nonce:avNewNonce();
+      avLastTry={answer:v,nonce:nonce};
+      avTurn(v,nonce);
+    }
+    if(sendBtn) sendBtn.addEventListener("click", submitAnswer);
+    var inp=card.querySelector("#mlsAvInput");
+    if(inp) inp.addEventListener("keydown", function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); submitAnswer(); } });
+    var vb=card.querySelector("#mlsAvVoiceBtn"); if(vb) vb.addEventListener("click", avToggleVoice);
+    var rb=card.querySelector("#mlsAvRepeatBtn"); if(rb) rb.addEventListener("click", function(){ if(avLastSay){ avStopListen(); avSpeak(avLastSay, true); } });
+    var md=card.querySelector("#mlsAvMicDone"); if(md) md.addEventListener("click", function(){ if(avRec){ try{ avRec.stop(); }catch(e){} } });
+    avSyncVoiceBtn();
+  }
+  window.__mlsPortalAvatar={ start:avStart, turn:avTurn };
+  injectAvatarCard();
+  try{
+    var avApp=$("app");
+    var avMo=new MutationObserver(function(){ if(avApp && !avApp.classList.contains("hide")) injectAvatarCard(); });
+    if(avApp) avMo.observe(avApp,{attributes:true,attributeFilter:["class"]});
+  }catch(e){}
+})();
+</script>
+
+<!-- ===================================================================
+     POST-OP VIDEO VISIT (tv-1.0.0, 2026-08-05)
+     Owner: someone home after back surgery whose back is killing them should
+     reach the doctor quickly, without booking and waiting.
+
+     SHIPS DARK. The card renders ONLY when the backend answers
+     /api/patient/tele/eligibility with eligible:true. If that route does not
+     exist yet — the telehealth backend is on a branch at the time of writing —
+     the fetch fails and NOTHING renders. So this can land on the live portal
+     before the backend does, with no broken button and no dead end. The moment
+     the backend deploys, the card appears for the patients who qualify.
+
+     IT DOES NOT PRESCRIBE. The "I think I need something for the pain" box is a
+     sentence the doctor reads, not an order. Nothing here reaches a pharmacy.
+     =================================================================== -->
+<script>
+(function(){
+  "use strict";
+  var API = "https://scrivara-backend.onrender.com";
+  var VERSION = "tv-1.0.0";
+  var POLL_MS = 3000;          /* request status while waiting for the doctor */
+  var SIGNAL_MS = 1200;        /* signalling mailbox during a live call */
+
+  function $(id){ try{ return document.getElementById(id); }catch(e){ return null; } }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+  function tok(){ try{ return (window.__mlsPortalSess && window.__mlsPortalSess.get()) || ""; }catch(e){ return ""; } }
+  function api(path, opts){
+    opts = opts || {};
+    var headers = { "Content-Type":"application/json" };
+    var t = tok();
+    var creds = "include";
+    if(t){ headers.Authorization = "Bearer " + t; creds = "omit"; }
+    /* mlsSensitiveFetch, never raw fetch: this page carries PHI and the wrapper
+       is what applies no-store and no-referrer. The boundary gate enforces it. */
+    return mlsSensitiveFetch(API + path, {
+      method: opts.method || "GET",
+      credentials: creds,
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function(r){
+      return r.json().catch(function(){ return null; }).then(function(j){ return { ok:r.ok, status:r.status, j:j }; });
+    });
+  }
+
+  /* ---------------------------------------------------------------- state */
+  var reqId = null, roomId = null, pc = null, localStream = null;
+  var statusTimer = null, signalTimer = null, lastSeq = 0, offering = false, ended = false;
+
+  function stop(t){ if(t){ try{ clearInterval(t); }catch(e){} } return null; }
+
+  function teardown(msg, tone){
+    ended = true;
+    statusTimer = stop(statusTimer); signalTimer = stop(signalTimer);
+    try{ if(pc){ pc.onicecandidate=null; pc.ontrack=null; pc.close(); } }catch(e){}
+    pc = null;
+    try{ if(localStream){ localStream.getTracks().forEach(function(tr){ tr.stop(); }); } }catch(e){}
+    localStream = null;
+    if(msg) setStage(msg, tone);
+  }
+
+  /* ------------------------------------------------------------------ UI */
+  function card(){
+    var c = $("mlsTeleCard");
+    if(c) return c;
+    var grid = document.querySelector("#app .grid") || document.querySelector("#app");
+    if(!grid) return null;
+    c = document.createElement("div");
+    c.className = "card sec"; c.id = "mlsTeleCard"; c.style.marginBottom = "16px";
+    /* first child so a patient in pain does not scroll past it */
+    if(grid.firstChild) grid.insertBefore(c, grid.firstChild); else grid.appendChild(c);
+    return c;
+  }
+
+  function setStage(html, tone){
+    var s = $("mlsTeleStage"); if(!s) return;
+    s.innerHTML = html;
+    s.style.color = tone === "err" ? "#8d2f2f" : (tone === "ok" ? "#204034" : "");
+  }
+
+  function renderOffer(elig){
+    var c = card(); if(!c) return;
+    var days = Number(elig && elig.daysSinceProcedure);
+    var since = isFinite(days) ? (days === 0 ? "today" : days === 1 ? "yesterday" : days + " days ago") : "recently";
+    c.innerHTML =
+      '<h2 style="font-size:14px;letter-spacing:.2px;color:var(--blue-d);margin:0 0 4px;display:flex;align-items:center;gap:8px">'+
+        '📹 Talk to your doctor now</h2>'+
+      '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Your procedure was '+esc(since)+
+        '. If something has changed since you got home, you can start a short video visit instead of waiting for an appointment. '+
+        'Your doctor has to accept before the call starts — you are not calling into an empty room.</p>'+
+      '<div id="mlsTeleStage" style="font-size:13.5px;line-height:1.55"></div>'+
+      '<div id="mlsTeleForm">'+
+        '<label for="mlsTeleReason" style="display:block;font-size:12.5px;font-weight:700;margin:8px 0 4px">What’s going on?</label>'+
+        '<textarea id="mlsTeleReason" rows="3" maxlength="1000" placeholder="e.g. the pain in my lower back got much worse last night and I can’t get comfortable" '+
+          'style="width:100%;box-sizing:border-box;border:1px solid #DDD8CC;border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea>'+
+        '<label for="mlsTelePain" style="display:block;font-size:12.5px;font-weight:700;margin:10px 0 4px">Pain right now (0–10)</label>'+
+        '<input id="mlsTelePain" type="range" min="0" max="10" step="1" value="5" style="width:100%" '+
+          'oninput="document.getElementById(\'mlsTelePainOut\').textContent=this.value">'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-top:2px">Now: <b id="mlsTelePainOut">5</b> / 10</div>'+
+        '<label style="display:flex;gap:9px;align-items:flex-start;margin:12px 0 4px;font-size:13px;cursor:pointer">'+
+          '<input type="checkbox" id="mlsTeleMeds" style="margin-top:3px">'+
+          '<span>I think I need something for the pain. <span style="color:var(--muted)">Your doctor decides this on the call — nothing is prescribed by sending this.</span></span>'+
+        '</label>'+
+        '<button type="button" id="mlsTeleGo" style="margin-top:10px;border:0;cursor:pointer;background:#204034;color:#fff;font-weight:800;'+
+          'border-radius:999px;padding:13px 20px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6);min-height:44px">Ask to talk to the doctor</button>'+
+        '<p style="font-size:12px;color:var(--muted);margin:10px 0 0">If this is an emergency — chest pain, trouble breathing, a fever you can’t control, '+
+          'numbness or weakness in your legs, or you cannot pass urine — call 911 or go to the emergency room. Do not wait for this.</p>'+
+      '</div>'+
+      '<div id="mlsTeleCall" style="display:none;margin-top:12px">'+
+        '<div style="position:relative;background:#0d1512;border-radius:16px;overflow:hidden">'+
+          '<video id="mlsTeleRemote" autoplay playsinline style="width:100%;display:block;min-height:220px;background:#0d1512"></video>'+
+          '<video id="mlsTeleLocal" autoplay playsinline muted style="position:absolute;right:10px;bottom:10px;width:96px;border-radius:10px;border:2px solid rgba(255,255,255,.7)"></video>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+          '<button type="button" id="mlsTeleMute" style="min-height:44px;border:1px solid #DDD8CC;background:#fff;border-radius:999px;padding:10px 16px;cursor:pointer;font-weight:700">Mute</button>'+
+          '<button type="button" id="mlsTeleCam" style="min-height:44px;border:1px solid #DDD8CC;background:#fff;border-radius:999px;padding:10px 16px;cursor:pointer;font-weight:700">Camera off</button>'+
+          '<button type="button" id="mlsTeleHang" style="min-height:44px;border:0;background:#8d2f2f;color:#fff;border-radius:999px;padding:10px 18px;cursor:pointer;font-weight:800">Leave the visit</button>'+
+        '</div>'+
+      '</div>';
+    var go = $("mlsTeleGo"); if(go) go.addEventListener("click", submit);
+    var hang = $("mlsTeleHang"); if(hang) hang.addEventListener("click", function(){ cancel(); });
+    var mute = $("mlsTeleMute"); if(mute) mute.addEventListener("click", function(){
+      if(!localStream) return; var a=localStream.getAudioTracks()[0]; if(!a) return;
+      a.enabled=!a.enabled; mute.textContent=a.enabled?"Mute":"Unmute";
+    });
+    var cam = $("mlsTeleCam"); if(cam) cam.addEventListener("click", function(){
+      if(!localStream) return; var v=localStream.getVideoTracks()[0]; if(!v) return;
+      v.enabled=!v.enabled; cam.textContent=v.enabled?"Camera off":"Camera on";
+    });
+  }
+
+  function showForm(on){
+    var f=$("mlsTeleForm"), c=$("mlsTeleCall");
+    if(f) f.style.display = on ? "" : "none";
+    if(c) c.style.display = on ? "none" : "";
+  }
+
+  /* ------------------------------------------------------------- request */
+  function submit(){
+    var reason = ($("mlsTeleReason")||{}).value || "";
+    if(!String(reason).trim()){ setStage("Tell your doctor what’s going on first — even one line helps.", "err"); return; }
+    var go=$("mlsTeleGo"); if(go){ go.disabled=true; go.textContent="Sending…"; }
+    setStage("");
+    api("/api/patient/tele/request", { method:"POST", body:{
+      reason: String(reason).slice(0,1000),
+      pain: Number(($("mlsTelePain")||{}).value),
+      wantsMedication: !!(($("mlsTeleMeds")||{}).checked)
+    }}).then(function(r){
+      if(go){ go.disabled=false; go.textContent="Ask to talk to the doctor"; }
+      if(!r.ok || !r.j || !r.j.request){
+        setStage(esc((r.j&&r.j.error) || "That didn’t send. Please try again, or call the office."), "err");
+        return;
+      }
+      reqId = r.j.request.id;
+      waiting();
+    }, function(){
+      if(go){ go.disabled=false; go.textContent="Ask to talk to the doctor"; }
+      setStage("That didn’t send — you may be offline. Please try again, or call the office.", "err");
+    });
+  }
+
+  function waiting(){
+    showForm(true);
+    var f=$("mlsTeleForm"); if(f) f.style.display="none";
+    setStage('<b>Your doctor has been asked.</b><br>Keep this page open — the video starts here as soon as they accept. '+
+      'You can close it and call the office if you’d rather not wait.'+
+      '<div style="margin-top:10px"><button type="button" id="mlsTeleCancel" style="min-height:44px;border:1px solid #DDD8CC;background:#fff;'+
+      'border-radius:999px;padding:10px 16px;cursor:pointer;font-weight:700">Never mind, cancel</button></div>');
+    var cx=$("mlsTeleCancel"); if(cx) cx.addEventListener("click", cancel);
+    statusTimer = stop(statusTimer);
+    statusTimer = setInterval(pollStatus, POLL_MS);
+    pollStatus();
+  }
+
+  function cancel(){
+    var id = reqId;
+    teardown("", "");
+    if(id) api("/api/patient/tele/request/"+id+"/cancel", { method:"POST" });
+    reqId=null; roomId=null; ended=false; lastSeq=0; offering=false;
+    boot(true);
+  }
+
+  function pollStatus(){
+    if(!reqId || ended) return;
+    api("/api/patient/tele/request/"+reqId).then(function(r){
+      if(!r.ok || !r.j || !r.j.request) return;
+      var q = r.j.request;
+      if(q.status === "active" && q.roomId && !pc){ roomId = q.roomId; startCall(); return; }
+      if(q.status === "declined"){ teardown('<b>Your doctor can’t take a video visit right now.</b><br>'+
+        esc(q.endReason||"")+' Please call the office — they’ll get you seen.', "err"); }
+      else if(q.status === "expired"){ teardown("<b>Nobody picked this up in time.</b><br>Please call the office.", "err"); }
+      else if(q.status === "ended"){ teardown("<b>The visit has ended.</b> Your doctor will follow up with anything you need.", "ok"); }
+    });
+  }
+
+  /* ---------------------------------------------------------------- call */
+  function startCall(){
+    setStage("<b>Your doctor is joining…</b><br>Allow the camera and microphone when your browser asks.");
+    statusTimer = stop(statusTimer);
+    api("/api/patient/tele/ice").then(function(r){
+      var cfg = { iceServers: (r.j && r.j.iceServers) || [{ urls:"stun:stun.l.google.com:19302" }] };
+      return navigator.mediaDevices.getUserMedia({ video:true, audio:true }).then(function(stream){
+        localStream = stream;
+        var lv=$("mlsTeleLocal"); if(lv) lv.srcObject = stream;
+        showForm(false);
+        pc = new RTCPeerConnection(cfg);
+        stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+        pc.ontrack = function(ev){
+          var rv=$("mlsTeleRemote");
+          if(rv && ev.streams && ev.streams[0]){ rv.srcObject = ev.streams[0]; setStage("<b>You’re connected.</b>", "ok"); }
+        };
+        pc.onicecandidate = function(ev){ if(ev.candidate) send({ candidate: ev.candidate }); };
+        pc.onconnectionstatechange = function(){
+          if(!pc) return;
+          if(pc.connectionState === "failed"){
+            setStage("<b>The video couldn’t connect.</b><br>This is usually the network. Please call the office — don’t keep waiting here.", "err");
+          }
+        };
+        offering = true;
+        return pc.createOffer().then(function(o){ return pc.setLocalDescription(o).then(function(){ send({ sdp: pc.localDescription }); }); });
+      });
+    }).then(function(){
+      signalTimer = stop(signalTimer);
+      signalTimer = setInterval(pump, SIGNAL_MS);
+      pump();
+    }).catch(function(err){
+      var name = err && err.name;
+      if(name === "NotAllowedError"){
+        setStage("<b>Your browser blocked the camera or microphone.</b><br>Allow them for this site and tap again, or call the office.", "err");
+      } else if(name === "NotFoundError"){
+        setStage("<b>No camera or microphone found on this device.</b><br>Please call the office instead.", "err");
+      } else {
+        setStage("<b>The visit couldn’t start on this device.</b><br>Please call the office.", "err");
+      }
+      teardown();
+    });
+  }
+
+  function send(signal){
+    if(!roomId) return;
+    api("/api/patient/tele/room/"+roomId+"/signal", { method:"POST", body:{ signal: signal } });
+  }
+
+  function pump(){
+    if(!roomId || !pc || ended) return;
+    api("/api/patient/tele/room/"+roomId+"/signal?since="+lastSeq).then(function(r){
+      if(!r.ok || !r.j) return;
+      if(r.j.status === "ended"){ teardown("<b>The visit has ended.</b> Your doctor will follow up with anything you need.", "ok"); return; }
+      (r.j.signals||[]).forEach(function(m){
+        lastSeq = Math.max(lastSeq, m.seq);
+        var s = m.signal || {};
+        if(s.sdp){
+          pc.setRemoteDescription(new RTCSessionDescription(s.sdp)).then(function(){
+            if(s.sdp.type === "offer"){
+              return pc.createAnswer().then(function(a){ return pc.setLocalDescription(a); })
+                .then(function(){ send({ sdp: pc.localDescription }); });
+            }
+          }).catch(function(){});
+        } else if(s.candidate){
+          try{ pc.addIceCandidate(new RTCIceCandidate(s.candidate)); }catch(e){}
+        }
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------------- boot */
+  function boot(force){
+    if(!force && $("mlsTeleCard")) return;
+    if(!document.querySelector("#app")) return;
+    if(!tok()) return;                                  /* not signed in yet */
+    api("/api/patient/tele/eligibility").then(function(r){
+      /* SHIPS DARK: no route, no eligibility, no card. Never a broken button. */
+      if(!r.ok || !r.j || !r.j.eligible){ var c=$("mlsTeleCard"); if(c) c.remove(); return; }
+      if(!window.RTCPeerConnection || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+      renderOffer(r.j);
+      var open = r.j.openRequest;
+      if(open && (open.status === "pending" || open.status === "active")){
+        reqId = open.id;
+        if(open.status === "active" && open.roomId){ roomId = open.roomId; startCall(); }
+        else waiting();
+      }
+    }, function(){ /* offline or backend absent — stay dark */ });
+  }
+
+  window.__mlsTeleVisit = { version: VERSION, _boot: boot, _teardown: teardown };
+
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", function(){ setTimeout(boot, 400); });
+  else setTimeout(boot, 400);
+  /* the portal renders its signed-in view asynchronously after auth */
+  setTimeout(boot, 1800);
+  setTimeout(boot, 4000);
 })();
 </script>
 

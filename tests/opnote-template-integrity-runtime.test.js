@@ -156,8 +156,14 @@ async function main() {
   assert(liveAnchored.includes('PATIENT: Jordan Lee') && !liveAnchored.includes('Wrong Patient') && !liveAnchored.includes('MRN: WRONG'), 'model-supplied identity leaked through template reconstruction');
   assert(liveAnchored.includes('The risks, benefits, and alternatives were discussed with the patient, and informed consent was obtained.'), 'live template consent wording changed');
 
-  assert(connect.includes('feat_mls_opnote_integrity.js?v=20260729phlinear'), 'production does not load the final op-note integrity owner');
-  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v=20260729phlinear'), 'staging does not load the same op-note integrity owner');
+  /* Asset name, not cache token. This asserted a literal '?v=20260729phlinear',
+     which made a load-ownership check double as a token pin - and the token had
+     to move, because it was two days older than the file's own content and a
+     returning browser was therefore running a cached copy. The loader now uses
+     the build-following form; what this line means is unchanged.
+     tests/cache-token-cannot-go-stale.test.js owns token freshness. */
+  assert(connect.includes('feat_mls_opnote_integrity.js?v='), 'production does not load the final op-note integrity owner');
+  assert(stagingConnect.includes('feat_mls_opnote_integrity.js?v='), 'staging does not load the same op-note integrity owner');
   assert(scribeFlow.includes('✍️ Type or paste below') && stagingScribeFlow.includes('✍️ Type or paste below'), 'template text entry is not the same clear inline control in production and staging');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(scribeFlow), 'production template text entry still opens a blocking JavaScript prompt');
   assert(!/function tplPasteText\(\)\{[\s\S]{0,180}\bprompt\s*\(/.test(stagingScribeFlow), 'staging template text entry still opens a blocking JavaScript prompt');

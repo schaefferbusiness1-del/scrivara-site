@@ -119,8 +119,38 @@ ${CHECK_VIEWPORT}
 const DUPLICATE_VISIBLE_CONTROLS_SRC = `(function duplicateVisibleControls() {
 ${CHECK_VIEWPORT}
 
+  /* THE ACCESSIBLE NAME IS THE NAME, and it is what decides whether two
+     controls are really the same control twice.
+
+     This read textContent FIRST and fell back to aria-label only when there was
+     no text at all - which is backwards. An aria-label REPLACES the visible
+     text for assistive technology, so a control carrying one is identified by
+     that label, not by its glyph.
+
+     It produced a false finding, and the false finding is instructive: the
+     patient card shows four buttons that all read "✎ Edit" - Reason for visit,
+     Key risks, Vitals, History. feat_mls_calm_shell.js already fixed exactly
+     this in b587 by giving each one an aria-label naming its section, and
+     documented that the short VISIBLE text is deliberate and stays. So the four
+     announce differently, read differently beside their headings, and are not
+     duplicates by any definition that matters - yet this check called them one
+     label on four live controls.
+     Reporting a solved problem as a defect is how a sweep loses its audience. */
   function norm(el) {
-    return String(el.textContent || el.value || el.getAttribute('aria-label') || '')
+    var label = '';
+    try { label = String(el.getAttribute('aria-label') || '').trim(); } catch (e) {}
+    if (!label) {
+      try {
+        var by = String(el.getAttribute('aria-labelledby') || '').trim();
+        if (by) {
+          label = by.split(/\\s+/).map(function (id) {
+            var n = document.getElementById(id);
+            return n ? String(n.textContent || '') : '';
+          }).join(' ').trim();
+        }
+      } catch (e2) {}
+    }
+    return String(label || el.textContent || el.value || '')
       .replace(/\\s+/g, ' ').trim().toLowerCase();
   }
   /* A TOAST IS NOT A SECOND COPY OF THE SCREEN'S CONTROLS.

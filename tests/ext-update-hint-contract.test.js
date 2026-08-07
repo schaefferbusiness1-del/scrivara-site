@@ -15,7 +15,14 @@ const root = path.resolve(__dirname, '..');
 const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
-assert(si.includes('var VERSION = "si-1.7.16"'), 'si-1.7.16 release marker missing');
+/* pin moved si-1.7.17 -> si-1.7.18 deliberately: mdx-1.1.0 captures the
+   bodies/index refusal sub-cause evidence (failedIndexes histogram, enumDiag)
+   and guards the pace learner against fast empty reads; the update-hint
+   behavior this suite pins is unchanged. */
+/* pin moved si-1.7.18 -> si-1.7.19 deliberately: mdx-2.0.0 collapses roster
+   display echoes of the SAME clinician for the selected-provider name
+   fallback (Mac field report 2026-08-06, b894) and discloses the basis. */
+assert(si.includes('var VERSION = "si-1.7.20"'), 'si-1.7.20 release marker missing');
 
 /* the hint must trigger ONLY on receipt-shaped failures, never on e.g. signin */
 const gates = si.match(/RECEIPT_GATE_REASONS = \{([^}]+)\}/);

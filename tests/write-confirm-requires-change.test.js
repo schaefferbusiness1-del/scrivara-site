@@ -16,10 +16,16 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 
-/* every driver carries the pre-write snapshot and the change-guard */
+/* every driver carries the pre-write snapshot and the change-guard.
+ * wv-1.0 (3.0.40): the guard MOVED TO THE FRONT of landed() - the 2026-08-02
+ * audit proved the old ordering let the 40-char-prefix early-return confirm a
+ * failed re-paste into a field already holding a same-opening note before the
+ * unchanged-field refusal could run. The refusal itself got stronger (it now
+ * exempts only the intended-text-already-present case), so this pin tracks
+ * the new form. */
 const snapshots = (bg.match(/var __mlsWrote0 = rd\(\), __mlsWrote0N = norm\(__mlsWrote0\);/g) || []).length;
 assert.strictEqual(snapshots, 3, 'all three typing drivers must snapshot the field before writing (found ' + snapshots + ')');
-const guards = (bg.match(/if \(norm\(cur\) === __mlsWrote0N\) return false;/g) || []).length;
+const guards = (bg.match(/if \(a === __mlsWrote0N && a !== b\) return false;/g) || []).length;
 assert.strictEqual(guards, 3, 'all three landed() verifiers must refuse an unchanged field (found ' + guards + ')');
 
 /* execute the shipped landed() bytes with controlled closures */
@@ -50,10 +56,14 @@ assert.strictEqual(makeLanded([OLD], NOTE, OLD), false,
 /* 2. a real landing (content now contains the note) -> confirmed */
 assert.strictEqual(makeLanded([NOTE], NOTE, OLD), true, 'a genuine landing still confirms');
 
-/* 3. empty field before, long content after (formatting drifted) -> the
-      length fallback may confirm because the field CHANGED */
-assert.strictEqual(makeLanded(['some transformed representation of it'], NOTE, ''), true,
-  'a changed field may still use the length fallback');
+/* 3. wv-1.0 (3.0.40): the bare length fallback is RETIRED. A field that
+      changed to text NOT containing the note used to confirm ("formatting
+      drifted") - which also confirmed a foreign typeahead value as a verified
+      clinical note. Unrecognizable content now refuses; the legitimate
+      formatting-drift case (whitespace-normalizing editor, ~full length) is
+      pinned in athena-write-verification-contract via the prefix+length path. */
+assert.strictEqual(makeLanded(['some transformed representation of it'], NOTE, ''), false,
+  'foreign text in a changed field must never read as landed');
 
 /* 4. masked digits path unaffected */
 assert.strictEqual(makeLanded(['07/28/2026'], '7/28/2026', '', true), true, 'masked digit match still confirms');

@@ -434,7 +434,15 @@
       field.setAttribute('title', 'Sample workspace: editing is disabled.');
     } else if (/^(?:checkbox|radio|file|submit|reset)$/.test(type)) {
       markBlocked(field, 'Sample workspace: this control is disabled.');
-    } else if (field.tagName === 'SELECT' && !(field.closest && field.closest('#mlsEz3'))) {
+    } else if (field.tagName === 'SELECT' && !(field.closest && (field.closest('#mlsEz3') || field.closest('#opPrepModal')))) {
+      /* pv-7.1.2: op-prep room selects (template picker, Fields-box dropdowns,
+         bulk apply) stay LIVE — the sample day's whole promise is "MLS drafts
+         each procedure from your templates", and template-fill is local string
+         work against memory storage. Blocking them made the advertised flow
+         structurally impossible: the dropdown showed the choice, the state
+         never recorded it, and drafting told the prospect to do the thing
+         they had just done. Save/send/record inside the room stay blocked by
+         the dangerous-words click gate exactly as before. */
       markBlocked(field, 'Sample workspace: settings cannot be changed.');
     }
   }
@@ -977,6 +985,20 @@
       if (isSafePreviewNavigation(control)) { markPreviewNavigation(control); return; }
       if (isDangerousControl(control)) markBlocked(control, 'Read-only sample workspace: this action cannot contact Athena, record, send, or save.');
     });
+    /* pv-7.1.3: Tools-menu rows are DIVs, so the control sweep above never
+       sees them. Three of them route to surfaces the preview's three-view
+       policy cannot open (account Settings, pull surfaces, staff prep) and
+       died SILENTLY — the exact dead-end shape this runtime exists to
+       prevent. Stamp them so the click gets the standard explanation. */
+    try {
+      var tmenu = document.getElementById('mlsToolsMenu');
+      if (tmenu) Array.prototype.forEach.call(tmenu.querySelectorAll('div'), function (mrow) {
+        var mt = String(mrow.textContent || '').replace(/\s+/g, ' ').trim();
+        if (mrow.children.length <= 3 && /^(?:⚙️\s*Settings|📥\s*Pull activity|👩‍⚕️\s*Staff prep)$/.test(mt)) {
+          markBlocked(mrow, 'Settings, pull activity, and staff prep are off in the read-only sample workspace.');
+        }
+      });
+    } catch (eTm) {}
     var fields = [];
     try { fields = root.querySelectorAll('input,textarea,select,[contenteditable="true"]'); } catch (e2) {}
     try {

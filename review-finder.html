@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; upgrade-insecure-requests">
 <link rel="stylesheet" href="fonts/fonts.css">
 <title>MLS Reputation — Review Finder</title>
 <style>
@@ -88,12 +88,12 @@
     <h2>🩺 Who are we scanning for?</h2>
     <p class="hint">Enter the doctor + practice. Everything below auto-fills from this.</p>
     <div class="grid">
-      <div><label>Doctor name</label><input id="dName" placeholder="Jane Smith, MD"></div>
-      <div><label>Specialty</label><input id="dSpec" placeholder="Orthopedics / Pain Management"></div>
-      <div><label>Practice name</label><input id="dPractice" placeholder="Main Street Spine &amp; Ortho"></div>
-      <div><label>City, State</label><input id="dCity" placeholder="Philadelphia, PA"></div>
-      <div><label>Google review link (optional)</label><input id="dGoogle" placeholder="https://g.page/r/…/review"></div>
-      <div><label>Website (optional)</label><input id="dSite" placeholder="https://…"></div>
+      <div><label for="dName">Doctor name</label><input id="dName" placeholder="Jane Smith, MD"></div>
+      <div><label for="dSpec">Specialty</label><input id="dSpec" placeholder="Orthopedics / Pain Management"></div>
+      <div><label for="dPractice">Practice name</label><input id="dPractice" placeholder="Main Street Spine &amp; Ortho"></div>
+      <div><label for="dCity">City, State</label><input id="dCity" placeholder="Philadelphia, PA"></div>
+      <div><label for="dGoogle">Google review link (optional)</label><input id="dGoogle" placeholder="https://g.page/r/…/review"></div>
+      <div><label for="dSite">Website (optional)</label><input id="dSite" placeholder="https://…"></div>
     </div>
     <div class="row" style="margin-top:14px"><button class="btn" onclick="save()">💾 Save</button><span id="savedMsg" class="note" role="status" aria-live="polite" aria-atomic="true"></span></div>
   </div>
@@ -310,12 +310,12 @@ load(); renderPlatforms(); dash();
     '<div id="repSources"></div>'+
     '<div class="grp"><div class="lbl">➕ Add a profile link (Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, your website…)</div>'+
     '<p class="note" style="margin:0 0 6px">Paste an HTTPS profile URL from Google, Healthgrades, Vitals, WebMD, RateMDs, Zocdoc, Yelp, or Facebook — one per line. Unknown or insecure hosts are ignored.</p>'+
-    '<textarea id="repLinks" placeholder="https://www.healthgrades.com/physician/...&#10;https://www.vitals.com/doctors/...&#10;https://www.zocdoc.com/doctor/..."></textarea>'+
+    '<textarea id="repLinks" aria-label="Review-site profile links, one per line" placeholder="https://www.healthgrades.com/physician/...&#10;https://www.vitals.com/doctors/...&#10;https://www.zocdoc.com/doctor/..."></textarea>'+
     '<div class="row" style="margin-top:8px"><button class="btn ghost" onclick="window.__repScan(true)">↻ Save links &amp; re-scan</button><span class="note" id="repLiveNote"></span></div></div></div>'+
 
     '<div class="card" id="repAiCard"><h2>✨ Your Google listing, written by MLS</h2>'+
     '<p class="hint">Add the doctor’s resume / bio / anything that shows what makes the practice great (paste text or attach a .txt/.md file). MLS combines it with your REAL reviews and writes a marketing-quality listing draft — you approve before anything goes live.</p>'+
-    '<textarea id="repMat" placeholder="Paste the doctor’s resume, bio, fellowships, awards, special training, services offered…"></textarea>'+
+    '<textarea id="repMat" aria-label="Background material about the doctor" placeholder="Paste the doctor’s resume, bio, fellowships, awards, special training, services offered…"></textarea>'+
     '<div class="row" style="margin-top:8px"><input type="file" id="repMatFile" accept=".txt,.md,.text" style="max-width:280px">'+
     '<button class="btn violet" id="repGenBtn" onclick="window.__repGen()">✨ Write my Google listing</button><span class="note" id="repGenNote"></span></div>'+
     '<div id="repGenOut"></div></div>'+
@@ -515,7 +515,7 @@ load(); renderPlatforms(); dash();
   /* Network scans are explicit only. Saving profile fields never starts one. */
 })();
 </script>
-<script src="mls_reviews_scrape_app.js?v=20260724c2"></script>
+<script src="mls_reviews_scrape_app.js?v=20260802c3"></script>
 <script>
   /* Add one native hover explanation only where the compact label is not self-explanatory. */
   (function(){

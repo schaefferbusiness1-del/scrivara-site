@@ -143,9 +143,17 @@ function testPrepIdentityAndAddressScope() {
 }
 
 async function main() {
-  const prepAt = connector.indexOf('feat_mls_opnote_prep.js?v=20260731opnp181');
-  const integrityAt = connector.indexOf('feat_mls_opnote_integrity.js?v=20260729phlinear');
-  const fillAt = connector.indexOf('feat_mls_opnote_fill.js?v=20260730onf2140');
+  /* Located by ASSET NAME, not by cache token. What this asserts is the load
+     ORDER - prep, then the canonical filler, then the strict template owner
+     that wraps them. Pinning the tokens here made it break whenever one of them
+     legitimately moved, and feat_mls_opnote_integrity.js has now moved to the
+     build-following `?v=' + (window.__MLS_AV || Date.now())` form, precisely
+     because its literal token had gone stale against its own content. Order is
+     the contract; the token is not this suite's business. */
+  const at = (asset) => connector.indexOf(asset + '?v=');
+  const prepAt = at('feat_mls_opnote_prep.js');
+  const integrityAt = at('feat_mls_opnote_integrity.js');
+  const fillAt = at('feat_mls_opnote_fill.js');
   assert(prepAt >= 0 && prepAt < fillAt && fillAt < integrityAt, 'staging op-note assets are not loaded prep → canonical fill → final integrity owner');
   assert(connector.includes('window.__mlsCanonicalOpNoteFillRequested'), 'legacy fill fallback is not suppressed when canonical Fields is requested');
   assert(staging.includes('row.missing&&row.missing.length&&!_opCanonicalFillOwns()'), 'legacy one-at-a-time blank walker still renders beside canonical Fields');

@@ -166,7 +166,7 @@ const handlerContext = {
   mlsAthTabHost: () => 'athenanet.athenahealth.com', mlsAthIsLoginish: () => false,
   mlsAthenaActionV2DriverFn() {},
   chrome: {
-    runtime: { onMessage: { addListener(fn) { listener = fn; } } },
+    runtime: { id: 'mls-test-extension', /* csr-1.x orphan guards treat an id-less runtime as a dead context */ onMessage: { addListener(fn) { listener = fn; } } },
     tabs: { async query() { return liveAthenaTabs.map(tab => ({ ...tab })); } },
     scripting: { async executeScript(details) {
       const req = details.args[0];

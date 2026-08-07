@@ -10,7 +10,15 @@ const source = fs.readFileSync(path.join(root, 'feat_mls_copilot_actions.js'), '
 const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const afterVisitSource = fs.readFileSync(path.join(root, 'feat_after_visit_summary.js'), 'utf8');
 
-assert(source.includes("var VERSION = 'ca-2.0.3'"));
+/* 2026-08-05: ca-2.1.1 — runAction delegates agentic kinds (pullProviders,
+   draftNote) to window.__mlsCopilotPower before the keyword fallback, and
+   before that module's deferred loader lands those kinds get an honest
+   still-loading toast instead of a keyword-guess navigation ('draftNote'
+   matches /note/ and navigated to History). */
+assert(source.includes("var VERSION = 'ca-2.1.1'"));
+assert(source.includes("window.__mlsCopilotPower.handles(a.kind)"), 'agentic kinds no longer delegate to the Copilot Power executors');
+assert(source.includes("still loading — give it a second"), 'the pre-load agentic-kind guard was removed from the actions module');
+assert(appSource.includes("still loading — give it a second"), 'the pre-load agentic-kind guard was removed from _copilotDoAction');
 /* ca-2.0.3: unknown model-drift kinds resolve to a REAL view or say so —
    never a silent dead click, never navigation to a garbage view name. */
 assert(source.includes('function strictView(x)'), 'unknown-kind keyword resolver was removed');

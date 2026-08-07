@@ -87,7 +87,13 @@ function lineContaining(needle, what) {
 section('PART 0 - the builder under test is the LIVE one');
 
 const CONNECT = fs.readFileSync(path.join(ROOT, 'mls-connect.js'), 'utf8');
-const pin = (CONNECT.match(/feat_mls_opnote_integrity\.js\?v=[a-z0-9]+/) || [])[0] || '';
+/* Two spellings are valid, and the module moved from one to the other. It was
+   pinned at a hand-maintained '?v=20260729phlinear' while its content changed
+   twice after that date, so a returning browser kept the cached copy and none
+   of those changes arrived. It now uses the build-following form, which cannot
+   go stale (tests/cache-token-cannot-go-stale.test.js is the general guard).
+   What THIS line is asserting is unchanged: production really loads it. */
+const pin = (CONNECT.match(/feat_mls_opnote_integrity\.js\?v=(?:[a-z0-9]+|'\s*\+\s*\(window\.__MLS_AV[^)]*\))/) || [])[0] || '';
 ok(!!pin, 'production mls-connect.js LOADS feat_mls_opnote_integrity.js', 'pin: ' + (pin || 'ABSENT'));
 
 const STAGING = fs.readFileSync(path.join(ROOT, 'mls-connect.staging.js'), 'utf8');

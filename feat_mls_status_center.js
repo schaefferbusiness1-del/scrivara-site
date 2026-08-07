@@ -924,10 +924,11 @@
   /* ---- pull completion: watch the app's own status line + backend + DOM --- */
   var heroWatch = { armed: false, node: null };
   function armPullCompletionWatch() {
-    // watch DOM areas so "updated" is EVIDENCE, not hope
-    watchArea('calendar', ['#calDayPanel', '#calendarView', '[id*="calendar" i]'], 'Updating MLS calendar', 'Calendar updated with the pulled visits', 'Calendar did not update, refreshing appointment data');
-    watchArea('selector', ['#patientSelect', '#patientPicker', '[id*="patientsel" i]', '[id*="patientpick" i]'], 'Updating patient selector', 'Patient selector updated', 'Patient selector did not refresh — switch views once if a patient is missing');
-    watchArea('easy', ['#mlsEasy', '[id*="mlseasy" i]', '[id*="easyview" i]'], 'Updating MLS Easy', 'MLS Easy updated', 'MLS Easy did not receive patient, retrying sync');
+    // a DOM mutation proves a RE-RENDER happened, nothing more — the labels
+    // may only claim what was observed (standing review finding #4)
+    watchArea('calendar', ['#calDayPanel', '#calendarView', '[id*="calendar" i]'], 'Updating MLS calendar', 'Calendar re-rendered — open the Calendar day to confirm the pulled visits are in it', 'Calendar did not update, refreshing appointment data');
+    watchArea('selector', ['#patientSelect', '#patientPicker', '[id*="patientsel" i]', '[id*="patientpick" i]'], 'Updating patient selector', 'Patient selector re-rendered', 'Patient selector did not refresh — switch views once if a patient is missing');
+    watchArea('easy', ['#mlsEasy', '[id*="mlseasy" i]', '[id*="easyview" i]'], 'Updating MLS Easy', 'MLS Easy re-rendered', 'MLS Easy did not receive patient, retrying sync');
     watchWhosNext();
     hookHero(0);
   }
@@ -958,7 +959,8 @@
     if (fin) {
       stepUpsert('parse', 'Pulling appointment data', 'done', '');
       var dayStep = findStep('day'); if (dayStep && dayStep.state === 'running') dayStep.state = 'done';
-      stepUpsert('missing', 'Checking for missing visits', 'done', 'Compared the pulled day against your calendar.');
+      /* no code compares the pulled day against the calendar — a step claiming
+         that comparison was fabricated and is deliberately absent (finding #4) */
       stepUpsert('fin', 'Finished pulling Athena data', 'done', txt.slice(0, 160));
       srcSet('pull', 'ok', 'Finished pulling Athena data');
       var mm = txt.match(/(\d+)\s+(new\s+)?(patients?|appointments?|visits?)/i);
@@ -1014,7 +1016,7 @@
     var fired = false;
     var mo = observeSession(node, function () {
       if (fired) return; fired = true;
-      srcSet('matching', 'ok', 'Who’s Next updated');
+      srcSet('matching', 'ok', 'Who’s Next re-rendered — open it to confirm the pulled visits');
       stepUpsert('upd_wn', 'Updating Who’s Next', 'done', '');
       safe(function () { mo.disconnect(); });
     }, { childList: true, subtree: true });
@@ -1063,7 +1065,9 @@
   function refreshWritebackReadiness() {
     var connected = conn.verdict === 'connected';
     var wb = safe(function () { return W.__mlsAthenaWriteback; }, null);
-    var hasPatient = !!(lastPatientShown || safe(function () { return (W.activePatient && (W.activePatient.name || W.activePatient.display)) || document.querySelector('[data-active-patient]'); }, null));
+    /* activePatient is a top-level FUNCTION — .name on it is the string
+       'activePatient', permanently truthy. Call it (finding #14). */
+    var hasPatient = !!(lastPatientShown || safe(function () { var ap = typeof W.activePatient === 'function' ? W.activePatient() : W.activePatient; return (ap && (ap.name || ap.display)) || document.querySelector('[data-active-patient]'); }, null));
     if (!connected) { srcSet('writeback', 'warn', 'Not ready — MLS Assist readiness is ' + (conn.verdict === 'checking' ? 'still being checked' : 'unavailable') + '.'); return; }
     if (!wb) { srcSet('writeback', 'idle', 'Write-back module not on this screen.'); return; }
     if (!hasPatient) { srcSet('writeback', 'warn', 'Not ready — no active patient loaded.'); return; }

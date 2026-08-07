@@ -248,7 +248,7 @@
       safe(wireCopilot);
       safe(wrapClose);
       safe(qfSweep);
-    }, 200);
+    }, 1000);
   }
 
   function revert() {

@@ -443,7 +443,18 @@
     if (root && root.parentNode) safe(function () { root.parentNode.removeChild(root); });
     mountedIn = null;
     open = false;
-    lastFanSig = null;
+    /* Do NOT reset lastFanSig here. unmount() detaches `root` but leaves `fan`
+       and `items` exactly as they were, so the fanItems() signature guard is
+       still telling the truth — and nulling it made that guard dead in the
+       shipped one-item configuration: mount() calls fanItems() (which rebuilds
+       and records the signature), then bails at `items.length < 2` into
+       unmount(), which erased the record it had just written. So every observed
+       mutation rebuilt the whole fan from scratch. MEASURED: 45 rebuilds per 30
+       idle seconds, and 289 in 5 seconds while #visitView mutated the way a
+       streaming transcript mutates it — ~58/s during live dictation, the most
+       latency-sensitive thing this app does, for a control that is not even in
+       the DOM. If availability genuinely changes while unmounted the signature
+       changes with it and the rebuild still happens. */
     /* The originals come straight back the moment this control is not there —
        the class is the only thing hiding them. */
     if (D.body && D.body.classList.contains(BODY_ON)) D.body.classList.toggle(BODY_ON, false);

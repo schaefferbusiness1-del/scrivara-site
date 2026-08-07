@@ -74,7 +74,13 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf2-2.3.0'; /* b745: live writes probe-bound; historical writes still pre-name their encounter */
+  var VERSION = 'wf3-1.1.0'; /* owner 2026-08-04: the write UI remade — one sheet,
+     one Confirm & Send. The pre-send #ez3Confirm interstitial is retired, the
+     preferred action probes the exact chart the moment the sheet opens, and the
+     single primary button is BOTH the human confirmation and the trusted-click
+     gesture (its title carries the arm phrase; visible label is the doctor's
+     language). Every wf2 safety invariant is unchanged: one-use token, probe
+     binding, fail-closed identity, four-layer final-action block. */ /* b745: live writes probe-bound; historical writes still pre-name their encounter */
   var S = function (x) { return x == null ? '' : String(x); };
   var STATE = { oneClicks: 0, writes: 0, lastResp: null, verifiedWrites: {}, suggestionsShown: 0, suggestionsAdded: 0, copyScrubbed: 0, orderAccepts: 0 };
   var stopped = false;
@@ -1324,6 +1330,12 @@
       unifiedStatus(state, 'Still checking Athena - nothing is sent.', '', { toast: false });
     }, 8000);
     bridge('mlsAppAthenaActionV2', {
+      /* mdx-2.0.0 (wf3 presence port): the sheet is always doctor-initiated, so
+         ask the extension to bring athenaOne forward for the read-only probe -
+         the briefing SPA renders on paused rAF while occluded (2026-08-05:
+         a staged review starved for hours on exactly this). Never while a
+         recording is active; the extension's own focus guards do the rest. */
+      foregroundOk: (typeof window.__mlsDoctorMidVisit === 'function' ? window.__mlsDoctorMidVisit() !== true : true),
       mode: 'probe', action: row.action, patient: bridgeProbePatient, expectedPatient: bridgeProbePatient,
       expectedContext: state.manifest.visit, previewHash: state.manifest.previewHash, manifestHash: state.manifest.manifestHash, payload: row.payload,
       noteText: row.payload.noteText || '', sections: row.payload.sections || [], notePolicy: 'empty_only',
@@ -1365,6 +1377,9 @@
            making them reopen the whole review. */
         var probeErr = S(probe && (probe.error || probe.message || probe.reason)) || 'Athena context could not be verified. Nothing was changed.';
         if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + probeReason)) probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
+        /* mdx-2.0.0: a null probe is a timeout, and the most common cause is an
+           occluded athenaOne tab that cannot paint its briefing. Name the cure. */
+        if (!probe) probeErr += ' If athenaOne is open but behind other windows, click its tab once so it can paint, then press Check Athena again.';
         unifiedStatus(state, probeErr, 'err');
         unifiedRecheckButton(state, row.id);
         return;
@@ -1378,12 +1393,12 @@
       state.probe = deepFreeze({ rowId: row.id, rowHash: row.rowHash, clientOrderId: probedClientOrderId, manifestHash: state.manifest.manifestHash, token: lock.token, patient: lock.patient, context: lock.context, control: lock.control, rawContext: lock.rawContext, verifiedWrite: exactWrite, taughtDestination: stableClone(taughtDestination), taughtDestinationHash: hashPreview(taughtDestination || {}) });
       renderUnifiedContext(state, lock);
       if (go) {
-        go.disabled = false; go.setAttribute('aria-disabled', 'false'); go.textContent = 'Confirm & write'; go.setAttribute('data-mls-athena-action', row.action);
+        go.disabled = false; go.setAttribute('aria-disabled', 'false'); go.textContent = row.action === 'save_draft' ? 'Confirm & Save draft in Athena' : 'Confirm & Send to Athena'; go.setAttribute('data-mls-athena-action', row.action);
         go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', UNIFIED_ARIA[row.action]); go.title = UNIFIED_ARIA[row.action] + '. Runs only this selected action.';
         if (row.action === 'place_order') { go.setAttribute('data-mls-row-hash', row.rowHash); go.setAttribute('data-mls-client-order-id', probedClientOrderId); }
       }
       setUnifiedReadyTick(row.id);
-      unifiedStatus(state, 'Ready. Review the full payload and exact Athena context, then use the single Confirm & write button. Only ' + row.label + ' will run.', '');
+      unifiedStatus(state, 'Ready — the exact chart is verified. One click on Confirm & Send runs only ' + row.label + '. Nothing else.', '');
     });
   }
   function receiptStateForRow(state, row) {
@@ -1588,20 +1603,25 @@
     return '<div style="margin-top:14px"><div style="font-size:12.5px;font-weight:850;color:' + color + '">' + title + '</div>' +
       (note ? '<div style="font-size:11.5px;color:#52675c;margin-top:2px">' + note + '</div>' : '') + '</div>';
   }
-  function unifiedReadyRowHtml(manifest, row) {
-    return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #cfe0d7;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fff">' +
-      '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">' +
-      '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '" aria-label="Select ' + esc(row.label) + ' for Athena review" style="margin-top:3px">' +
+  function unifiedReadyRowHtml(manifest, row, preChecked) {
+    /* wf3: the ready row is a compact selectable pill (real radio inside, so
+       every existing change-wire and suite hook still works). The preferred
+       row arrives pre-checked and is probed on open — the doctor only touches
+       these pills to switch to Save-as-draft. Payload details and destination
+       teaching stay one fold away. */
+    return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #cfe0d7;border-radius:11px;padding:9px 11px;margin-top:8px;background:#fff;flex:1;min-width:210px">' +
+      '<label style="display:flex;gap:9px;align-items:center;cursor:pointer">' +
+      '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '"' + (preChecked ? ' checked' : '') + ' aria-label="Select ' + esc(row.label) + ' for Athena review">' +
       '<span style="flex:1;min-width:0">' +
       '<span style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#204034">' + esc(row.label) + '</b>' +
       '<span data-mls-ready-tick="' + esc(row.id) + '" style="display:none;font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">&#10003; Athena verified</span></span>' +
-      '<span style="display:block;color:#52675c;font-size:12px;margin-top:3px">' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
+      '<span style="display:block;color:#52675c;font-size:12px;margin-top:2px">' + esc(unifiedOneLine(row.consequence)) + '</span></span></label>' +
       unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
   function unifiedManualRowHtml(manifest, row) {
     return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #f0d79a;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fffdf5">' +
       '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#6d5010">' + esc(row.label) + '</b>' +
-      '<span style="font-size:10.5px;font-weight:850;color:#7a5a16;border:1px solid currentColor;border-radius:999px;padding:1px 7px">YOU FINISH THIS IN ATHENA</span></div>' +
+      '<span style="font-size:10.5px;font-weight:850;color:#7a5a16;border:1px solid currentColor;border-radius:999px;padding:1px 7px">MANUAL &mdash; YOU FINISH THIS IN ATHENA</span></div>' +
       '<div style="font-size:12px;color:#6d5010;margin-top:3px">Complete in Athena: ' + esc(row.destination) + '</div>' +
       '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#6d5010;font-size:11.5px">Why?</summary>' +
       (row.reason ? '<div style="font-size:12px;color:#52675c;margin-top:4px">' + esc(row.reason) + '</div>' : '') +
@@ -1654,27 +1674,45 @@
     var readyRows = plainRows.filter(function (row) { return row.capability === 'ready' && row.action; });
     var manualRows = plainRows.filter(function (row) { return row.capability === 'manual'; });
     var blockedRows = plainRows.filter(function (row) { return row.capability !== 'manual' && !(row.capability === 'ready' && row.action); });
+    /* wf3: ONE focused sheet. The preferred ready action is pre-selected and
+       probed on open; alternatives render as compact pills (still real radios —
+       every existing wire and suite hook is unchanged). Everything the doctor
+       must do in Athena personally lives in one collapsed drawer instead of a
+       wall of groups. */
     var rowsHtml = '';
-    if (readyRows.length) rowsHtml += unifiedGroupHead('MLS can do this', '#205c43', 'Pick one. MLS checks Athena read-only first; nothing is sent until you press Confirm &amp; write.') +
-      readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row); }).join('');
-    if (manualRows.length) rowsHtml += unifiedGroupHead('You finish this in Athena', '#7a5a16', 'The exact payload stays here for you to copy. It never crosses the write bridge.') +
-      manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('');
-    if (orderRows.length) rowsHtml += renderUnifiedOrderSummary(orderRows, manifest);
-    if (blockedRows.length) rowsHtml += unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these. Each one names exactly what is missing.') +
-      blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row); }).join('');
+    if (readyRows.length > 1) {
+      rowsHtml += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" role="radiogroup" aria-label="What MLS sends">' +
+        readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row, chosen && chosen.id === row.id); }).join('') + '</div>';
+    } else if (readyRows.length === 1) {
+      rowsHtml += unifiedReadyRowHtml(manifest, readyRows[0], true);
+    }
+    var drawerCount = manualRows.length + blockedRows.length + orderRows.length;
+    if (drawerCount) {
+      /* wf3: the drawer ships OPEN — what stays manual must be VISIBLE (the
+         unified-confirmation runtime pins this), it is merely grouped and
+         de-emphasized below the primary action instead of interleaved. */
+      rowsHtml += '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent</summary>' +
+        (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'The exact payload stays here for you to copy. It never crosses the write bridge.') +
+          manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('') : '') +
+        (orderRows.length ? renderUnifiedOrderSummary(orderRows, manifest) : '') +
+        (blockedRows.length ? unifiedGroupHead('Can\'t send', '#8b2525', 'MLS fails closed on these. Each one names exactly what is missing.') +
+          blockedRows.map(function (row) { return unifiedBlockedRowHtml(manifest, row); }).join('') : '') +
+        '</details>';
+    }
     var ov = document.createElement('div'); ov.id = 'mlsAthenaUnifiedConfirm';
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483600;background:rgba(10,25,50,.55);display:flex;align-items:center;justify-content:center;padding:18px';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'mlsAthenaUnifiedTitle'); ov.setAttribute('aria-describedby', 'mlsAthenaUnifiedSafety');
-    var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(1180px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
-    card.innerHTML = '<style>#mlsAthenaUnifiedConfirm .mlswf-two{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:15px;align-items:start;margin-top:12px}#mlsAthenaUnifiedConfirm .mlswf-col{min-width:0}@media (max-width:900px){#mlsAthenaUnifiedConfirm .mlswf-two{grid-template-columns:minmax(0,1fr)}}</style>' +
-      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Review Athena destinations</div><div style="color:#52675c;margin-top:3px">One immutable review. Only reviewed note write and Save Draft can be confirmed here; complete final actions in Athena.</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
-      '<div class="mlswf-two"><div class="mlswf-col">' + unifiedNoteHeroHtml(manifest) + '</div><div class="mlswf-col">' +
-      '<div id="mlsAthenaUnifiedContext" style="padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> waiting for the read-only check.</div>' +
-      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Choose one ready action to run its read-only Athena check.</div>' +
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> Select one READY note row for a read-only check and explicit confirmation. Rows marked MANUAL stay in your hands; complete billing, orders, prescriptions, signature, attestation, and claim submission in Athena.</div>' +
-      rowsHtml + unifiedIdentityHtml(manifest) +
-      '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div></div></div>' +
-      '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="flex:1;border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px;font-weight:750;cursor:pointer">Close review</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:11px;font-weight:850;cursor:pointer">Confirm &amp; write</button></div>';
+    var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
+    card.innerHTML =
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; one click writes exactly what you see below. Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      unifiedNoteHeroHtml(manifest) +
+      rowsHtml +
+      '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> being verified read-only now.</div>' +
+      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Checking the exact chart read-only &mdash; nothing is sent yet.</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.</div>' +
+      unifiedIdentityHtml(manifest) +
+      '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
+      '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
     ov.appendChild(card); document.body.appendChild(ov);
     var cancel = card.querySelector('#mlsAthenaUnifiedCancel'), close = card.querySelector('#mlsAthenaUnifiedClose'), go = card.querySelector('#mlsAthenaUnifiedGo');
     cancel.onclick = closeUnifiedConfirmation; close.onclick = closeUnifiedConfirmation;

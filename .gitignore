@@ -17,3 +17,9 @@ tests/live-sensitive-workflow-artifacts/
 tests/live-smoke-artifacts/
 tests/live-visible-controls-artifacts/
 tests/live-ui-sweep-artifacts/
+gate.log
+
+tests/live-copilot-avatar-artifacts/
+
+# receipt written by scripts/bump-build.js so a ship path commits the subject it actually wrote (2026-08-06)
+scripts/.last-bump-subject

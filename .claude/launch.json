@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mls-local",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["_devserver.js"],
+      "port": 45231
+    }
+  ]
+}

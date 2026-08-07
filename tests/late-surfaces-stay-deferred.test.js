@@ -53,7 +53,39 @@ const TRANCHE = [
   'feat_mls_caption_entityfix.js',
   'feat_mls_outcome_pdf.js',
   'feat_comp_report.js',
-  'feat_mls_study_request.js'
+  'feat_mls_study_request.js',
+  /* 2026-08-02 idle sweep: 28 more analyzed-safe satellite loaders moved in
+   * place to the idle pattern (requestIdleCallback + 2500ms timeout +
+   * s.async=true). Listed here are the 26 whose loader is the single-line
+   * var A="name" form this check greps for; the two feat_athena_cardtips*
+   * multi-line block loaders are policed by the boot-script-budget eager
+   * ceiling instead. */
+  'feat_mls_checker.js',
+  'feat_mls_wb_console.js',
+  'feat_mls_assistant_selffix.js',
+  'feat_athena_narration.js',
+  'feat_mls_show_assistant.js',
+  'feat_mls_asst_provname.js',
+  'feat_mls_settings_wb.js',
+  'feat_visit_history_ext.js',
+  'feat_visit_note_detail.js',
+  'feat_mls_pervisit_unify.js',
+  'feat_mls_hero_search.js',
+  'feat_mls_whosnext.js',
+  'feat_mls_find_doctors.js',
+  'feat_mls_nextup_controls.js',
+  'feat_mls_pick_smartscope.js',
+  'feat_mls_visit_useactivept.js',
+  'feat_mls_hero_glance.js',
+  'feat_mls_whosnext_cleanfix.js',
+  'feat_mls_portal_request_inbox.js',
+  'feat_mls_widget_deck.js',
+  'feat_mls_stop_confirm.js',
+  'feat_mls_caldedupe_render.js',
+  'feat_mls_apptabs_menu.js',
+  'feat_mls_dob_format_unify.js',
+  'feat_mls_ctxbar_age_dedupe.js',
+  'feat_mls_ctxbar_dob_slash.js'
 ];
 
 for (const name of TRANCHE) {
@@ -74,12 +106,12 @@ for (const name of TRANCHE) {
 
 /* 2026-07-29: Procedure Report snapshots RVU values on first mount, so its
  * deferred loader must wait for the RVU script or reach a bounded fallback. */
-const procedureLoaderLine = connect.split(/\r?\n/).find((line) => line.includes("s.src='mls-procedure-report.js?v=20260731lib5'"));
+const procedureLoaderLine = connect.split(/\r?\n/).find((line) => line.includes("s.src='mls-procedure-report.js?v=20260807lib7'"));
 assert(procedureLoaderLine && procedureLoaderLine.includes('function waitForRvu(tries)') &&
   procedureLoaderLine.includes('window.__mlsRVU||tries>=30') &&
   procedureLoaderLine.includes('setTimeout(function(){waitForRvu(tries+1);},100)'),
   'Procedure Report can race RVU and freeze fallback totals into its first render');
-assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260731lib5/g) || []).length, 1,
+assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260807lib7/g) || []).length, 1,
   'Procedure Report must retain one bounded production loader');
 
 /* Patient rows now emit the exact final last-seen label themselves. Keeping

@@ -186,7 +186,9 @@
       try { window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render(true); } catch (e) {}
       try { if (typeof renderProfile === 'function') renderProfile(); } catch (e) {}
       var n = saved; try { n = M.getVisits(patient).length; } catch (e) {}
-      status(onStatus, '✓ Done — ' + n + ' visit' + (n === 1 ? '' : 's') + ' pulled for ' + identity.name + '.', true);
+      /* the terminal line reports what THIS pull captured — the total the
+         patient already had is context, never the headline (finding #6). */
+      status(onStatus, '✓ Done — ' + saved + ' new visit' + (saved === 1 ? '' : 's') + ' captured for ' + identity.name + ' (' + n + ' now on file).', true);
       hideChipLater(12000);
       return { ok: true, saved: saved, total: n, created: r.created };
     } finally { busy = false; }

@@ -369,7 +369,35 @@ const LOADER = 'mls-connect.js';
  *     requests, zero behaviour between them). That needs a build step this repo
  *     does not have, so it is recorded here as owed rather than pretended away.
  *     Do not raise this ceiling again for a stylesheet module; bundle instead. */
-const CEILING = 252;
+/* 2026-08-05 cpw-1.0.0 (owner-ordered Copilot Power): +1 loader,
+ *   feat_mls_copilot_power.js — the Copilot's app-wide senses and its
+ *   confirm-by-tap agentic executors (pullProviders/draftNote).
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout): the Copilot cannot be
+ *     asked anything before sign-in completes, so EAGER_CEILING does not move.
+ *     No timers, no observers; lifecycle events only.
+ * 2026-08-05 av-1.0.0 (owner-ordered AVATAR): +1 loader, feat_mls_avatar.js —
+ *   the doctor side of the patient-facing check-in interviewer (program the
+ *   questions, ready badge, bullet inbox, one-tap chart import).
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout): check-ins are read
+ *     minutes-to-hours after boot, so EAGER_CEILING does not move. Badge
+ *     refresh is event-driven (app-ready + tab refocus, 2-min floor) — no
+ *     permanent polling; the bounded mount ladder mirrors the request inbox.
+ *
+ * 2026-08-05 td-1.0.0 (owner-ordered POST-OP VIDEO VISIT): +1 loader,
+ *   feat_mls_tele_doctor.js — the doctor's accept-and-call surface for a
+ *   patient asking to talk after a procedure.
+ *   - DEFERRED (requestIdleCallback, 3s timeout): a request that arrives is
+ *     minutes old by definition, so EAGER_CEILING does not move.
+ *   - NO STANDING INTERVAL, which is why this is +1 script and +0 pollers.
+ *     It makes ONE request per session and then STANDS DOWN PERMANENTLY if the
+ *     route is absent (404/501/unreachable) — the telehealth backend is on a
+ *     branch, so on today's production this module costs exactly one fetch and
+ *     then nothing, forever. When the backend does deploy it re-arms on a
+ *     bounded setTimeout chain that never schedules while the tab is hidden and
+ *     resumes on visibilitychange.
+ *   - Renders nothing at all unless a real pending request comes back, so its
+ *     boot work over a 1,481-patient store is a single conditional. */
+const CEILING = 255;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
@@ -386,8 +414,9 @@ const FLOOR = 200;
  * is therefore enforced in late-surfaces-stay-deferred.test.js. Floor remains
  * 20 below the ceiling per the failure message's own instruction, so the
  * remaining win cannot erode back one feature at a time. */
-const EAGER_CEILING = 196;
-const EAGER_FLOOR = 176;
+/* 196 -> 168 on 2026-08-02: the 28-loader idle sweep — analyzed-safe satellite loaders moved in place to the requestIdleCallback pattern (168 eager / 84 deferred). Floor stays 20 below per the failure message's own instruction. */
+const EAGER_CEILING = 168;
+const EAGER_FLOOR = 148;
 
 /* A window of source before the reference is enough to tell how the insertion
  * is scheduled: these loader lines are single self-contained IIFEs. */
@@ -488,7 +517,13 @@ for (const f of featFiles) {
 }
 
 const OBSERVER_CEILING = 59;   // 60 at b596; one retired when the caption double-escape was fixed at source
-const INTERVAL_CEILING = 214;
+/* 215 (2026-08-02): +1 for the copilot stale-request watchdog (standing
+ * review #10) — it exists only while a request is in flight and is cleared
+ * in the settle/finally/revert paths, so it is a bounded guard, not a
+ * forever-poller. The same change DELETED two permanent whole-document
+ * constructs elsewhere (the zero-hit legacy-sign observer and the fixpack
+ * prefill wrappers), so the app's steady-state timer load went DOWN. */
+const INTERVAL_CEILING = 215;
 
 if (docObservers > OBSERVER_CEILING) {
   failed = true;

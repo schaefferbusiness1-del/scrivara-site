@@ -229,6 +229,79 @@
        if the animation never runs at all. */
     'opacity:0;animation:mlsDockInD var(--mls-slow) var(--mls-spring) forwards}',
     '@keyframes mlsDockInD{from{opacity:0;transform:translateX(-50%) translateY(18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
+
+    /* ---- b841: THE DOCK GOES WHERE THE DOCTOR WANTS IT --------------------
+       Owner: "make it possible to move the bottom menu select to the top in
+       settings or to either side ... but I love how it hovers so dont change
+       that." So every position is still `position:fixed` glass that floats over
+       the page — only the anchor and the axis change. The default is untouched:
+       with no attribute set, the rules above apply exactly as before, so a
+       doctor who never opens the setting sees no difference at all.
+       Each position re-states its own resting transform, because the entrance
+       @keyframes above bakes translateX(-50%) into its end state and a left/right
+       dock must not inherit it. */
+    /* BELOW THE HEADER, not under it. #appHeader is position:sticky, 74px tall
+       and z-index:6000; a dock resting at top:18px with z-index:920 had 56 of
+       its 85 pixels hidden behind it — measured, and visible as a row of half
+       destination labels. The dock clears the header instead of fighting it for
+       a stacking order the header should win. */
+    'body[data-mls-dock="top"] #mlsDock{top:88px;bottom:auto;animation-name:mlsDockInT}',
+    '@keyframes mlsDockInT{from{opacity:0;transform:translateX(-50%) translateY(-18px) scale(.96)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}',
+
+    'body[data-mls-dock="left"] #mlsDock,body[data-mls-dock="right"] #mlsDock{',
+    'top:50%;bottom:auto;left:auto;right:auto;flex-direction:column;align-items:stretch;',
+    'transform:translateY(-50%);border-radius:22px}',
+    'body[data-mls-dock="left"] #mlsDock{left:18px;animation-name:mlsDockInL}',
+    'body[data-mls-dock="right"] #mlsDock{right:18px;animation-name:mlsDockInR}',
+    '@keyframes mlsDockInL{from{opacity:0;transform:translateY(-50%) translateX(-18px) scale(.96)}to{opacity:1;transform:translateY(-50%) translateX(0) scale(1)}}',
+    '@keyframes mlsDockInR{from{opacity:0;transform:translateY(-50%) translateX(18px) scale(.96)}to{opacity:1;transform:translateY(-50%) translateX(0) scale(1)}}',
+    /* the sliding indicator turns with the dock: JS drives height+translateY on
+       this axis, so the CSS must stop pinning the height. */
+    'body[data-mls-dock="left"] #mlsDock .mls-dock-pill,body[data-mls-dock="right"] #mlsDock .mls-dock-pill{',
+    'height:auto;width:calc(100% - 12px)}',
+    'body[data-mls-dock="left"] #mlsDock button,body[data-mls-dock="right"] #mlsDock button{width:100%}',
+    /* the Ask field cannot be 172px wide inside a vertical rail; it rests as a
+       compact square and opens to full width on focus, over the page, which is
+       the same trick the horizontal dock already uses. */
+    'body[data-mls-dock="left"] #mlsDockAskWrap,body[data-mls-dock="right"] #mlsDockAskWrap{',
+    'margin:4px 0 0;padding:8px 0 0;border-left:0;border-top:1px solid rgba(0,0,0,.07);justify-content:center}',
+    'body[data-mls-dock="left"] #mlsDockAsk,body[data-mls-dock="right"] #mlsDockAsk{width:46px}',
+    'body[data-mls-dock="left"] #mlsDockAsk:focus{width:230px}',
+    'body[data-mls-dock="right"] #mlsDockAsk:focus{width:230px;margin-left:-184px}',
+    /* heads-down dimming re-stated per axis for the same reason as the entrance */
+    'body.mls-headsdown[data-mls-dock="top"] #mlsDock{transform:translateX(-50%) translateY(-6px)}',
+    'body.mls-headsdown[data-mls-dock="left"] #mlsDock{transform:translateY(-50%) translateX(-6px)}',
+    'body.mls-headsdown[data-mls-dock="right"] #mlsDock{transform:translateY(-50%) translateX(6px)}',
+    /* CLEARANCE, because "it hovers" must not mean "it hides things".
+       Measured live with the rail on the left: exactly one control, the
+       previous-day arrow #mlsDsPrev, sat underneath it — visible to the eye as
+       a rail over a button, and elementFromPoint at the intersection returned
+       the dock, so the click was going to the dock and not to the arrow. The
+       bottom dock has carried clearance rules since it shipped; the three new
+       sides need their own. The page moves, the dock still floats.
+
+       !important is NOT decoration here, it was measured. Without it the rule
+       parsed, sat in the CSSOM, matched #appWrap (verified with .matches), had
+       no competing rule in any readable sheet — and still computed to 0px. The
+       proof it was being outranked rather than ignored: an INLINE
+       padding-left:128px on #appWrap also computed to 0px, which only an
+       !important declaration can do. It lives in a stylesheet whose cssRules
+       throws on read, so the audit that "found nothing" was the known silent
+       zero, not an absence. */
+    'body[data-mls-dock="left"] #appWrap{padding-left:128px !important}',
+    'body[data-mls-dock="right"] #appWrap{padding-right:128px !important}',
+    'body[data-mls-dock="top"] #appWrap{padding-top:112px !important}',
+    /* a vertical rail on a phone would eat the whole screen edge; below the
+       phone breakpoint every choice falls back to the proven bottom dock. */
+    '@media(max-width:640px){body[data-mls-dock] #mlsDock{top:auto;bottom:18px;left:50%;right:auto;',
+    'flex-direction:row;align-items:center;transform:translateX(-50%);animation-name:mlsDockInD}',
+    'body[data-mls-dock] #mlsDock .mls-dock-pill{height:calc(100% - 12px);width:auto}',
+    'body[data-mls-dock] #mlsDock button{width:auto}',
+    'body[data-mls-dock] #mlsDockAskWrap{margin-left:4px;padding-left:8px;border-top:0;border-left:1px solid rgba(0,0,0,.07)}',
+    'body[data-mls-dock] #mlsDockAsk{width:172px}',
+    /* and the clearance goes with it — a phone gets the bottom rail, so an
+       inherited side padding would just narrow an already narrow screen. */
+    'body[data-mls-dock] #appWrap{padding-left:0 !important;padding-right:0 !important;padding-top:14px !important}}',
     '#mlsDock .mls-dock-pill{position:absolute;top:6px;left:6px;height:calc(100% - 12px);border-radius:16px;background:#D6E7DC;',
     'box-shadow:0 1px 2px rgba(20,35,28,.14),inset 0 0 0 1px rgba(32,64,52,.10);',
     /* The pill already glided rather than teleported — the brief's premise was
@@ -375,11 +448,11 @@
        controls rather than a list of people. The row controls stay present and
        full-size - touch targets are untouched, nothing is hover-only - they are
        just quiet until the row is hovered, focused or active. Names lead. */
-    'body.mls-calm #ptList .pt-row button,body.mls-calm #ptList li button{opacity:.42;',
+    'body.mls-calm #ptList li button{opacity:.42;',
     'transition:opacity var(--mls-fast) linear}',
-    'body.mls-calm #ptList .pt-row:hover button,body.mls-calm #ptList li:hover button,',
-    'body.mls-calm #ptList .pt-row:focus-within button,body.mls-calm #ptList li:focus-within button,',
-    'body.mls-calm #ptList .pt-row.on button,body.mls-calm #ptList li.on button{opacity:1}',
+    'body.mls-calm #ptList li:hover button,',
+    'body.mls-calm #ptList li:focus-within button,',
+    'body.mls-calm #ptList li.on button{opacity:1}',
     'body.mls-calm #ptList button:focus-visible{opacity:1;outline:2px solid #2E6A4B;outline-offset:2px}',
 
     /* patient screen: reference blocks fold to one line */
@@ -436,7 +509,6 @@
     '#mlsToolsMenu .r .rn{overflow-wrap:anywhere}',
     '#mlsToolsMenu .r:hover,#mlsToolsMenu .r:focus{background:#EAF1EE;outline:0}',
     '#mlsToolsMenu .sep{height:1px;margin:5px 8px;background:rgba(0,0,0,.07)}',
-    '#mlsToolsMenu .r.classic{color:#68736B}',
     /* Section captions. Quiet by construction - a caption that competes with
        the rows under it turns four labels into four more things to read. The
        rule above each section after the first is what makes the grouping
@@ -670,7 +742,6 @@
     /* Scoped by the dock id so it cannot lose a specificity tie to the base rule. */
     '#mlsDock #mlsDockAsk,#mlsDock #mlsDockAsk:focus{width:96px;flex:1 1 auto}',
     '#mlsDock #mlsDockAskWrap{flex:1 1 auto;min-width:0}',
-    '#mlsDock #mlsDockClassic{padding:7px 8px;font-size:10.5px}',
     '#mlsAskResults{width:min(340px,86vw)}',
 
     /* The stage rail could not show its last stage on a phone. Measured at 375px
@@ -685,7 +756,37 @@
        told about, and wrapping cannot clip whatever the labels turn out to be in
        another locale. The connectors are decoration — the dots already carry
        done/now — and a connector spanning a line break is worse than none. */
-    '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:12px}',
+    '#mlsStages{flex-wrap:wrap;row-gap:6px;column-gap:8px}',
+    /* ph-stage-1.0.0 — the rail's own type is DEAD CSS, and that is why it wraps.
+       Line 617 declares `font:500 12.5px inherit`. `inherit` is a CSS-wide keyword
+       and cannot stand in for <family-name> inside the `font` SHORTHAND, so the
+       parser throws the WHOLE declaration away — not just the family. Measured on
+       the running app: #mlsStages .st computes font-size:16px / font-weight:400.
+       It has never once rendered at the 12.5/500 the rail was designed for.
+
+       At the inherited 16px the five stages need 378.7px inside a 361.9px rail at
+       402px wide, so the row wrapped and "Send" sat alone on the second line —
+       exactly the owner's screenshot. b853 responded by hiding the rail entirely
+       (mls-connect.js:46695, `body.mls-phone #mlsStages{display:none}`), but the
+       owner runs "Show the full app", which sets sessionStorage mls_phone_mode='0'
+       and makes wantPhone() false (mls-connect.js:46635) — so body.mls-phone never
+       lands on him and that hide never reached him. Width, not a body class, is
+       what a phone fix has to key on here.
+
+       LONGHANDS, deliberately: font-size/font-weight cannot be silently dropped
+       the way the shorthand was. (The same invalid `font:...inherit` pattern
+       appears 100 times across 37 files in this repo; only the one that produces
+       the owner's visible defect is touched here, because correcting the rest is
+       a desktop-visible type change that deserves its own before/after pass.)
+
+       MEASURED one-line fit with the values below (12.5px, 14px dot, 5px gap,
+       8px column-gap): 295.5px needed against 319.9px available at 360px wide, and
+       389.9px at 430px. Below ~347px it wraps again, which is the fallback the
+       comment above deliberately chose over a horizontal scroller.
+       Confined to this @media (max-width:760px) block, so the desktop rail keeps
+       its current type exactly. */
+    '#mlsStages .st{font-size:12.5px;font-weight:500;gap:5px}',
+    '#mlsStages .st .dot{width:14px;height:14px}',
     /* Connectors are decoration on a phone — the dots already carry done/now,
        and a connector spanning a line break is worse than none.
        THIS LINE CLOSES @media (max-width:760px). It used to sit at the very
@@ -1426,8 +1527,110 @@
     return d.label || '';
   }
 
+  /* -------------------------------------------------- b841: dock placement
+     Persisted per user through the app's own uns() namespace when it is
+     available, so the choice follows the account the way every other
+     Appearance setting does, and falls back to a device-local key on the
+     public/preview shells where uns() is not defined. Any value that is not
+     one of the four known sides is treated as the default rather than written
+     to the body, because an unknown attribute would match no rule and strand
+     the dock with `top:auto;bottom:auto`. */
+  var DOCK_SIDES = { bottom: 1, top: 1, left: 1, right: 1 };
+  function dockKey() {
+    try { if (typeof W.uns === 'function') return W.uns('qolDockSide'); } catch (e) {}
+    return 'mls::qolDockSide';
+  }
+  function dockSide() {
+    var v;
+    try { v = W.localStorage.getItem(dockKey()) || ''; } catch (e) { v = ''; }
+    return DOCK_SIDES[v] ? v : 'bottom';
+  }
+  function dockVertical() {
+    var s = dockSide();
+    /* the phone breakpoint forces the bottom rail back, so the pill must be
+       measured on the horizontal axis there no matter what is stored. */
+    var narrow = false;
+    try { narrow = !!(W.matchMedia && W.matchMedia('(max-width:640px)').matches); } catch (e) {}
+    return !narrow && (s === 'left' || s === 'right');
+  }
+  /* A TOP DOCK HAS TO CLEAR WHATEVER IS ALREADY STUCK TO THE TOP, and that is
+     not a constant. Two sticky surfaces live up there and both outrank the dock:
+     #appHeader (74px, z-index 6000) and #mlsCtxBar, the patient banner
+     (z-index 5900). At a fixed top:18px the dock lost 56 of its 85 pixels behind
+     the header; moved to 88px it then disappeared behind the patient banner -
+     both measured, both plainly visible as a row of half-cut labels. Raising the
+     dock's z-index above them was the wrong fix: it would float the navigation
+     over the patient's name and DOB, and the banner is the one thing on this
+     screen that must never be covered.
+     So the offset is measured from whatever is actually stuck up there. Sticky
+     elements hold their position once stuck, so this stays correct while
+     scrolling; it is recomputed on resize, where the header can reflow. */
+  function topDockOffset() {
+    var top = 18;
+    ['appHeader', 'mlsCtxBar'].forEach(function (id) {
+      var el = D.getElementById(id);
+      if (!el) return;
+      var cs = W.getComputedStyle(el), r = el.getBoundingClientRect();
+      if (!/sticky|fixed/.test(cs.position)) return;
+      if (r.height < 2 || cs.display === 'none' || cs.visibility === 'hidden') return;
+      top = Math.max(top, Math.round(r.bottom) + 12);
+    });
+    return top;
+  }
+  function applyDockSide(side) {
+    var v = DOCK_SIDES[side] ? side : dockSide();
+    try {
+      if (v === 'bottom') D.body.removeAttribute('data-mls-dock');
+      else D.body.setAttribute('data-mls-dock', v);
+    } catch (e) {}
+    try {
+      if (dockEl) {
+        /* A MEASUREMENT TAKEN TOO EARLY MUST NOT BE WRITTEN DOWN. boot() runs
+           this before the sticky header has laid out, so topDockOffset()
+           returned its 18px floor - and an inline 18px then BEAT the 88px CSS
+           fallback, parking the dock back under the header. Measured: inline
+           top 18px, dock top 2, covered by #mlsRdTop. So a floor result clears
+           the inline value and lets the stylesheet hold the line until a real
+           measurement exists. */
+        if (v === 'top') {
+          var t = topDockOffset();
+          if (t > 18) dockEl.style.top = t + 'px';
+          else dockEl.style.removeProperty('top');
+        } else dockEl.style.removeProperty('top');
+      }
+    } catch (e) {}
+    try { syncDock(); } catch (e) {}
+  }
+  try {
+    W.addEventListener('resize', function () {
+      if (dockSide() === 'top') safe(function () { applyDockSide('top'); });
+    }, { passive: true });
+  } catch (e) {}
+  W.applyDockSidePreview = function (side) {
+    if (!DOCK_SIDES[side]) side = 'bottom';
+    try { W.localStorage.setItem(dockKey(), side); } catch (e) {}
+    applyDockSide(side);
+    return side;
+  };
+  W.mlsDockSide = dockSide;
+
   function syncDock() {
     if (!dockEl) return;
+    /* b849: KEEP THE TOP DOCK CLEAR, EVENT-DRIVEN RATHER THAN TIMED. Two
+       deferred re-measures (500ms, 1600ms) were not enough - the patient banner
+       settles later than both, and the dock stayed parked behind it. syncDock
+       already runs on every external DOM change, which is exactly when the
+       surfaces above the dock can move, so the offset is recomputed here and
+       WRITTEN ONLY ON CHANGE, matching the no-op-write discipline the rest of
+       this function was built around. Runs only when the doctor has chosen the
+       top dock, so the default path pays nothing. */
+    if (dockSide() === 'top') {
+      var wantTop = topDockOffset();
+      if (wantTop > 18) {
+        var px = wantTop + 'px';
+        if (dockEl.style.top !== px) dockEl.style.top = px;
+      }
+    }
     var active = currentDest();
     var pill = qs('.mls-dock-pill', dockEl);
     var activeBtn = null;
@@ -1454,10 +1657,23 @@
     if (pill && activeBtn) {
       /* offsetWidth/offsetLeft are FORCED LAYOUT reads, two per pass, in the
          file the boot lane measured at 29% of boot's 5,576 forced layouts. */
-      var w = activeBtn.offsetWidth + 'px';
-      var tx = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
-      if (pill.style.width !== w) pill.style.width = w;
-      if (pill.style.transform !== tx) pill.style.transform = tx;
+      /* b841: the indicator follows whichever axis the dock is laid out on. The
+         write-only-on-change discipline above is kept on BOTH axes, and the
+         unused axis is cleared once rather than every pass, so switching sides
+         cannot leave a stale width pinning the pill to the old orientation. */
+      if (dockVertical()) {
+        var h = activeBtn.offsetHeight + 'px';
+        var ty = 'translateY(' + (activeBtn.offsetTop - 6) + 'px)';
+        if (pill.style.width !== '') pill.style.width = '';
+        if (pill.style.height !== h) pill.style.height = h;
+        if (pill.style.transform !== ty) pill.style.transform = ty;
+      } else {
+        var w = activeBtn.offsetWidth + 'px';
+        var tx = 'translateX(' + (activeBtn.offsetLeft - 6) + 'px)';
+        if (pill.style.height !== '') pill.style.height = '';
+        if (pill.style.width !== w) pill.style.width = w;
+        if (pill.style.transform !== tx) pill.style.transform = tx;
+      }
       if (pill.style.opacity !== '1') pill.style.opacity = '1';
     } else if (pill && pill.style.opacity !== '0') {
       pill.style.opacity = '0';
@@ -1622,7 +1838,16 @@
     var sig = dest + '|' +
       sibs.map(function (t) { return t.id + (t.classList.contains('on') ? '*' : ''); }).join(',') + '|' +
       picked.map(function (p) { return (p.as || controlLabel(p.el)) + (p.primary ? '!' : ''); }).join(',');
-    if (sig === lastRnSig && bar.childNodes.length) return;
+    /* The `bar.childNodes.length` half of this guard was written before b582
+       let the bar render EMPTY. In that state childNodes.length is 0, so the
+       guard was always falsy and the function fell through to the empty branch
+       on every single tick — the one case the guard above most needed to catch.
+       MEASURED: #mlsRightNow.innerHTML written 60 times per 40 idle seconds and
+       289 times in 5 seconds under transcript-like mutation, every write
+       byte-identical, dragging syncDock/renderStages/prepRows/contextBar along
+       with it at frame rate. Treat "legitimately empty" as a rendered state
+       rather than as evidence the render never happened. */
+    if (sig === lastRnSig && (bar.childNodes.length || bar.classList.contains('empty'))) return;
     lastRnSig = sig;
 
     /* Rebuilding the bar destroys whatever the keyboard was on and drops focus
@@ -1750,7 +1975,32 @@
      - The raw text stays in the DOM (clipped, not display:none) so the existing
        Copy button, which reads rendered text, keeps producing exactly what it
        always did. Nothing here rewrites another module's output. */
-  var PREP_LABELS = ['ALLERGIES', 'PROBLEMS', 'MEDICATIONS', 'VITALS', 'HISTORY', 'LAST VISIT'];
+  /* 'SOURCE' LEADS, AND ITS ABSENCE FROM THIS LIST WAS THE DEFECT.
+     ---------------------------------------------------------------------
+     buildPrepSummary emits `SOURCE: NOT PULLED from Athena yet — no card on
+     this record has been read from the chart` (mls-connect.js:2237) whenever
+     nothing landed. This list is what prepRows renders, and it did not contain
+     SOURCE — so the one line that says the chart was never read was generated
+     and then never shown. The raw block that holds it is clipped to 1x1px and
+     the duplicate node is display:none, so a day on which EVERY chart was
+     refused rendered as a calm, complete-looking box.
+
+     That is exactly what the owner reported on 2026-08-06 as "it says every
+     patient is alergic to the same thing" and "the summary in the top doesnt
+     show up": one event — every chart refused at the coverage gate, nothing
+     saved — produces BOTH symptoms at once, because every patient then shows
+     the same byte-identical "No Athena history pulled for this patient yet."
+     A shipped comment at ScribeFlow.html:15566 records the same appearance
+     measured on 2026-07-29 (15 of 19 patients with no landed chart), in his
+     words: "one patient's history looked duplicated onto everyone else."
+
+     SOURCE is first so the refusal leads rather than trailing six rows of
+     "Not recorded". When a chart DID land, buildPrepSummary emits no SOURCE
+     line, the regex below simply finds nothing, and no row is added — so this
+     is inert on the healthy path and visible only when there is bad news.
+     An invisible failure is indistinguishable from success; this product's
+     worst recurring defect is a refusal nobody can see. */
+  var PREP_LABELS = ['SOURCE', 'ALLERGIES', 'PROBLEMS', 'MEDICATIONS', 'VITALS', 'HISTORY', 'LAST VISIT'];
   var PREP_EMPTY = /^(none recorded|not recorded|none flagged|none|n\/a|unknown|-|—)?$/i;
 
   function prepRows() {
@@ -2522,7 +2772,17 @@
         return;
       }
       sel = 0;
+      /* ASKING IS ALWAYS REACHABLE. Copilot used to be offered only when NO
+         control matched, so a question sharing one word with any control
+         ('pay schedule' matches 'schedule') showed rows and no way to ask -
+         from a box whose own placeholder promises 'Ask or find anything'.
+         Appended LAST so control matches keep their ranking. */
+      results = results.concat([{ copilot: true, q: input.value.trim() }]);
       panel.innerHTML = results.map(function (r, i) {
+        if (r.copilot) {
+          return '<div class="r ask" role="option" data-i="' + i + '">' +
+            '&#129302; Ask MLS Copilot: "' + String(r.q).replace(/[<>&]/g, '') + '"</div>';
+        }
         var danger = DESTRUCTIVE.test(r.label);
         return '<div class="r' + (i === 0 ? ' sel' : '') + (danger ? ' danger' : '') + '" role="option" data-i="' + i + '">' +
           r.label.replace(/[<>&]/g, '') + (r.count > 1 ? '<small>several — show me</small>' : '') + '</div>';
@@ -2796,6 +3056,10 @@
     try {
       injectCss();
       buildDock();
+      /* b841: restore the doctor's chosen side BEFORE the first syncDock, so
+         the sliding indicator is measured on the axis it will actually live on
+         instead of flipping once on the next pass. */
+      safe(function () { applyDockSide(dockSide()); });
       classicSwitch();
       /* Set BEFORE the first render, not after: every deferred path below
          (the two boot timers, the queued rAF, Ask's 300ms follow-up) checks
@@ -2817,6 +3081,10 @@
          schedule() coalesces to one rAF and the bar skips identical content. */
       setTimeout(schedule, 350);
       setTimeout(schedule, 1200);
+      /* and re-measure the top dock once the sticky surfaces above it have
+         actually laid out — the same two-beat cover the rest of boot uses. */
+      setTimeout(function () { safe(function () { if (dockSide() === 'top') applyDockSide('top'); }); }, 500);
+      setTimeout(function () { safe(function () { if (dockSide() === 'top') applyDockSide('top'); }); }, 1600);
       D.addEventListener('click', schedule, true);
       return true;
     } catch (e) {
