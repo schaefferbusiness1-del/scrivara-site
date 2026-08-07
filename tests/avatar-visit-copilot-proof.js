@@ -121,7 +121,16 @@ function STUBS() {
     this.lang = ''; this.interimResults = false; this.continuous = false;
     this.onresult = null; this.onend = null; this.onerror = null; this.live = false;
     this.start = function () { if (self.live) throw new Error('started'); self.live = true; window.__recs.push(self); window.__log.recStarts++; };
-    this.stop = function () { self.live = false; if (self.onend) self.onend(); };
+    /* onend fires ASYNCHRONOUSLY, as Chrome's does. Firing it synchronously
+       inside stop() re-enters pvListen's submit path — submit() calls stop()
+       and only nulls pvRec afterwards, so a synchronous onend sees pvRec ===
+       rec and submits again. That is a harness artefact, not module behaviour,
+       and it silently swallowed the whole intake turn. */
+    this.stop = function () {
+      self.live = false;
+      const f = self.onend;
+      if (f) setTimeout(function () { f(); }, 0);
+    };
     this.abort = function () { self.live = false; };
   };
   window.__emit = function (text, isFinal) {
@@ -595,6 +604,199 @@ async function say(page, text) {
       ok('REQ5 and it actually saved', saved > 0, saved + ' chars');
       ok('scenario E page threw nothing', errs.length === 0, errs.join(' | '));
       await page.close();
+    }
+    /* ------------------------------------------------------------ F */
+    section('SCENARIO F - TIME TO FIRST WORD (A/B against the old one-blob fetch)');
+    {
+      /* The stub defines the cost model, and both arms run against the SAME
+         model: a turn takes 900ms, and TTS costs 300ms of overhead plus 6ms
+         per character — so a short clause really is cheaper to generate than a
+         long one, which is the whole premise of splitting. The A arm loads the
+         module with the split threshold raised out of reach, which is exactly
+         the code that shipped before this change. */
+      const TURN_MS = 900, TTS_BASE = 300, TTS_PER_CHAR = 6;
+      const REPLY = "Hi, I'm Ava, the practice's AI assistant. What brings you in today?";
+
+      async function measure(src, label) {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        const errs = [];
+        page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+        await page.goto(base + '/page.html');
+        await page.evaluate(STUBS);
+        await page.evaluate(function (cfg) {
+          document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+          window.__audioStarts = [];
+          window.__turnSentAt = 0;
+          window.__t0 = 0;
+          /* an Audio that records WHEN it would have started speaking. Real
+             bytes are irrelevant here — time-to-first-word is the moment
+             playback begins, and that is exactly this call. */
+          window.Audio = function () {
+            const self = this;
+            window.__audioStarts.push(performance.now());
+            this.onended = null; this.onerror = null; this.onloadedmetadata = null;
+            this.duration = 0.4; this.ended = false;
+            this.play = function () {
+              setTimeout(function () { if (self.onloadedmetadata) self.onloadedmetadata(); }, 0);
+              setTimeout(function () { self.ended = true; if (self.onended) self.onended(); }, 100);
+              return Promise.resolve();
+            };
+            this.pause = function () {};
+          };
+          function later(ms, value) {
+            return new Promise(function (r) { setTimeout(function () { r(value); }, ms); });
+          }
+          window.fetch = function (url, opts) {
+            const u = String(url);
+            let body = {};
+            try { body = JSON.parse((opts && opts.body) || '{}'); } catch (e) {}
+            if (u.indexOf('/api/avatar/office/tts') >= 0) {
+              const cost = cfg.base + cfg.per * String(body.text || '').length;
+              return later(cost, {
+                ok: true, status: 200,
+                headers: { get: function () { return 'audio/mpeg'; } },
+                blob: function () { return Promise.resolve(new Blob([''])); },
+                json: function () { return Promise.resolve({}); }
+              });
+            }
+            if (u.indexOf('/api/avatar/office/turn') >= 0) {
+              if (!window.__turnSentAt && window.__t0) window.__turnSentAt = performance.now();
+              const done = !!body.finish;
+              /* The opening turn must speak DIFFERENT words from the measured
+                 one. Reusing the same line made both arms identical at exactly
+                 the turn latency — the TTS cache had already made that audio
+                 during the opening turn, so the measurement was of a cache
+                 hit, not of generation. (Worth knowing on its own: repeated
+                 phrasings really are free.) */
+              window.__turnN = (window.__turnN || 0) + 1;
+              const opening = 'Hello there. Please tell me what is going on today.';
+              const say = window.__turnN === 1 ? opening : cfg.reply;
+              return later(cfg.turn, {
+                ok: true, status: 200,
+                headers: { get: function () { return 'application/json'; } },
+                json: function () {
+                  return Promise.resolve(done
+                    ? { ok: true, done: true, say: 'All set.' }
+                    : { ok: true, say: say, done: false, progress: { covered: 1, total: 2 } });
+                },
+                blob: function () { return Promise.resolve(new Blob([''])); }
+              });
+            }
+            return Promise.resolve({
+              ok: true, status: 200, headers: { get: function () { return 'application/json'; } },
+              json: function () { return Promise.resolve({ ok: true, checkins: [] }); },
+              blob: function () { return Promise.resolve(new Blob([''])); }
+            });
+          };
+        }, { turn: TURN_MS, base: TTS_BASE, per: TTS_PER_CHAR, reply: REPLY });
+
+        await page.addScriptTag({ content: src });
+        await page.waitForTimeout(900);
+        await page.evaluate(function () { window.__mlsAvatar.openKiosk(); });
+        /* let the opening turn finish so we measure a STEADY-STATE turn, not
+           the one that also pays for mic preflight and the face mounting */
+        await page.waitForTimeout(3500);
+        await page.evaluate(function () {
+          window.__audioStarts = []; window.__turnSentAt = 0;
+          window.__t0 = performance.now();
+          window.__emit('my lower back has been hurting for three weeks', true);
+        });
+        await page.waitForTimeout(6000);
+        const out = await page.evaluate(function () {
+          return { starts: window.__audioStarts.slice(), t0: window.__t0, sent: window.__turnSentAt };
+        });
+        await page.close();
+        const first = out.starts.length ? out.starts[0] - out.t0 : null;
+        const sendToWord = (out.starts.length && out.sent) ? out.starts[0] - out.sent : null;
+        return { label: label, first: first, sendToWord: sendToWord, pieces: out.starts.length, errs: errs };
+      }
+
+      /* A: the code as it shipped before — splitting disabled at the threshold */
+      const OLD_SRC = AVATAR_SRC.replace('if (t.length < 28) return [t];', 'if (t.length < 100000) return [t];');
+      ok('the A/B arm really did disable splitting', OLD_SRC !== AVATAR_SRC, 'patch applied');
+      const before = await measure(OLD_SRC, 'one blob (before)');
+      const after = await measure(AVATAR_SRC, 'two pieces (after)');
+
+      console.log('  ---- measured: patient stops speaking -> avatar\'s first word ----');
+      console.log('     reply under test: "' + REPLY + '" (' + REPLY.length + ' chars)');
+      console.log('     cost model: turn ' + TURN_MS + 'ms, tts ' + TTS_BASE + 'ms + ' + TTS_PER_CHAR + 'ms/char');
+      [before, after].forEach(function (r) {
+        console.log('     ' + r.label.padEnd(20) +
+          ' mouth-to-ear ' + (r.first == null ? 'n/a' : r.first.toFixed(0) + ' ms').padStart(8) +
+          '   submit-to-word ' + (r.sendToWord == null ? 'n/a' : r.sendToWord.toFixed(0) + ' ms').padStart(8) +
+          '   audio pieces ' + r.pieces);
+      });
+      ok('REQ6 the avatar actually spoke in both arms', before.first != null && after.first != null,
+        'before=' + before.first + ' after=' + after.first);
+      ok('REQ6 the shipped path speaks in TWO pieces', after.pieces >= 2, 'pieces=' + after.pieces);
+      ok('REQ6 the old path spoke in ONE', before.pieces === 1, 'pieces=' + before.pieces);
+      if (before.first != null && after.first != null) {
+        const saved = before.first - after.first;
+        console.log('     -> first word arrives ' + saved.toFixed(0) + ' ms sooner (' +
+          ((saved / before.first) * 100).toFixed(0) + '% of the wait removed)');
+        ok('REQ6 splitting genuinely reduces time to first word', saved > 100, saved.toFixed(0) + ' ms sooner');
+      }
+      /* the honest caveat, stated in the output rather than left implied */
+      console.log('     NOTE: the ~1300ms quiet-submit window is a deliberate safety choice');
+      console.log('           (cutting a patient off mid-answer loses clinical data) and is');
+      console.log('           included in mouth-to-ear but is NOT what this change touches.');
+      ok('scenario F pages threw nothing', before.errs.length === 0 && after.errs.length === 0,
+        before.errs.concat(after.errs).join(' | '));
+    }
+
+    /* ------------------------------------------------------------ G */
+    section('SCENARIO G - THE DRAFT NOTE IS READY AT END VISIT');
+    {
+      const h = await newPage(browser, base);
+      const page = h.page;
+      await page.evaluate(function () {
+        /* the app's own generator, stubbed at its seam */
+        window.__genCalls = 0;
+        const box = document.createElement('textarea');
+        box.id = 'noteBox';
+        document.body.appendChild(box);
+        window.generateNote = function () {
+          window.__genCalls++;
+          return new Promise(function (r) {
+            setTimeout(function () {
+              document.getElementById('noteBox').value = 'SUBJECTIVE: three weeks of low back pain…';
+              r();
+            }, 300);
+          });
+        };
+      });
+      await toAmbient(page);
+      await say(page, 'the back pain has been going on for three weeks');
+      await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+      await page.clock.runFor(4000);
+      const gen = await page.evaluate(function () { return window.__genCalls; });
+      ok('REQ7 End Visit starts the draft through the app\'s OWN generator', gen === 1, 'calls=' + gen);
+      const rev = await page.evaluate(function () { return window.__review(); });
+      ok('REQ7 the review reports the note is ready', /Draft note ready/.test(rev || ''),
+        (rev || '').slice(-90));
+      const note = await page.evaluate(function () { return document.getElementById('noteBox').value; });
+      ok('REQ7 a note actually exists', note.length > 0, note.slice(0, 40));
+
+      /* and when the drafter FAILS, it must say so without claiming a note */
+      const h2 = await newPage(browser, base);
+      const p2 = h2.page;
+      await p2.evaluate(function () {
+        const box = document.createElement('textarea');
+        box.id = 'noteBox';
+        document.body.appendChild(box);
+        window.generateNote = function () { return Promise.reject(new Error('model unavailable')); };
+      });
+      await toAmbient(p2);
+      await say(p2, 'some visit words here');
+      await p2.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+      await p2.clock.runFor(4000);
+      const rev2 = await p2.evaluate(function () { return window.__review(); });
+      ok('REQ7 a failed draft is reported as a failure', /was not drafted/.test(rev2 || ''), (rev2 || '').slice(-120));
+      ok('REQ7 a failed draft still confirms the transcript is saved',
+        /transcript IS saved/.test(rev2 || '') && /Saved to the visit transcript/.test(rev2 || ''));
+      ok('REQ7 a failed draft never claims a note is ready', !/Draft note ready/.test(rev2 || ''));
+      ok('scenario G pages threw nothing', h.errors.length === 0 && h2.errors.length === 0,
+        h.errors.concat(h2.errors).join(' | '));
     }
   } finally {
     await browser.close();

@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.3';
+  var VERSION = 'av-5.6.4';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -442,6 +442,43 @@
       started = true;
       pvSpeakSynth(t, mySeq, finish);
     }, 5000);
+    /* av-5.6.4 — STREAMED IN TWO PIECES. Time-to-first-word used to be the
+       generation time of the WHOLE reply, because the audio was fetched as one
+       blob and only then played. A reply is almost always a short
+       acknowledgement plus a question ("Got it. How long has it been going
+       on?"), so the first clause is generated far faster than the whole line.
+       Both pieces are requested in PARALLEL and played in order: the patient
+       hears the first words while the second half is still being made.
+
+       Two pieces, not five — more requests would add round trips for no gain
+       and risk an audible seam inside the question itself. Every failure path
+       lands exactly where it landed before: if the first piece fails nothing
+       has played yet, so the WHOLE line falls back to browser speech, which is
+       the pre-existing behaviour. */
+    var chunks = ttsSplitForSpeech(t);
+    if (chunks.length === 2 && Date.now() >= ttsDownUntil) {
+      var second = ttsFetchUrl(chunks[1], voiceOverride);   /* started FIRST so it overlaps the first piece */
+      ttsFetchUrl(chunks[0], voiceOverride).then(function (u1) {
+        if (mySeq !== pvSpeakSeq || finished || started) return;
+        started = true;
+        if (!u1) { pvSpeakSynth(t, mySeq, finish); return; }   /* nothing played yet — the old path, whole line */
+        ttsPlayUrl(u1, mySeq, function () {
+          if (mySeq !== pvSpeakSeq || finished) return;
+          second.then(function (u2) {
+            if (mySeq !== pvSpeakSeq || finished) return;
+            if (u2) ttsPlayUrl(u2, mySeq, finish); else pvSpeakSynth(chunks[1], mySeq, finish);
+          }, function () {
+            if (mySeq !== pvSpeakSeq || finished) return;
+            pvSpeakSynth(chunks[1], mySeq, finish);
+          });
+        });
+      }, function () {
+        if (mySeq !== pvSpeakSeq || finished || started) return;
+        started = true;
+        pvSpeakSynth(t, mySeq, finish);
+      });
+      return;
+    }
     ttsFetchUrl(t, voiceOverride).then(function (url) {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
@@ -1605,6 +1642,23 @@
     if (ttsCtx) { safe(function () { if (ttsCtx.state === 'suspended') ttsCtx.resume(); }); return; }
     ttsCtx = safe(function () { var C = window.AudioContext || window.webkitAudioContext; return C ? new C() : null; }, null);
   }
+  /* Split at the FIRST sentence boundary only, and only when there is real
+     length to gain from it. A short line is already fast; splitting it would
+     spend a second round trip to save nothing. */
+  function ttsSplitForSpeech(text) {
+    var t = String(text == null ? '' : text).trim();
+    /* 28 chars, because the SHAPE this exists for is "Got it. How long has it
+       been going on?" — a tiny acknowledgement in front of the real question.
+       That acknowledgement is generated almost instantly, so the patient hears
+       a voice while the question itself is still being made. A higher floor
+       skipped exactly the case that matters most. */
+    if (t.length < 28) return [t];
+    var m = /^([^.!?]{4,150}[.!?])\s+(\S[\s\S]*)$/.exec(t);
+    if (!m) return [t];
+    var head = m[1].trim(), tail = m[2].trim();
+    if (!head || !tail) return [t];
+    return [head, tail];
+  }
   function ttsFetchUrl(text, voice) {
     var key = (voice || '') + '|' + text;
     if (ttsCache[key]) return Promise.resolve(ttsCache[key]);
@@ -2341,6 +2395,9 @@
       '#mlsAvKioskReview .mlsAvRevSub.bad{color:#7a1f16}' +
       '#mlsAvKioskReview .mlsAvRevList{margin:6px 0 0;padding-left:20px;font:600 13px/1.6 system-ui;color:#1A211C}' +
       '#mlsAvKioskReview .mlsAvRevList.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevNote{font:700 13px/1.5 system-ui;color:#204034;background:#EAF1EC;border-radius:10px;padding:10px 12px;margin-top:14px}' +
+      '#mlsAvKioskReview .mlsAvRevNote.ok{color:#2E6A4B}' +
+      '#mlsAvKioskReview .mlsAvRevNote.bad{color:#7a1f16;background:#F7E4E1}' +
       '#mlsAvKioskReview .mlsAvRevRow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}' +
       '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
       '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
@@ -2544,7 +2601,7 @@
       kiosk.nudgedFor = kiosk.lastSay;
       pvStopVoice();
       kioskMood('speaking', '');
-      pvSpeak('Take your time — whenever you\'re ready, just start talking.', function () { kioskListen(); });
+      pvSpeak(NUDGE_LINE, function () { kioskListen(); });
     } else {
       pvStopVoice();
       kioskListen();
@@ -2814,6 +2871,7 @@
   var AMBIENT_HEAD_ORDERS = '--- actions the doctor confirmed on screen ---';
   /* ONE source for the recording banner text: the markup and the resume path
      must never be able to disagree about what the screen says. */
+  var NUDGE_LINE = 'Take your time — whenever you\'re ready, just start talking.';
   var AMBIENT_REC_TEXT = 'Recording this visit. The avatar is listening in the room and taking notes for the doctor.';
 
   /* =========================================================================
@@ -3814,6 +3872,67 @@
     if (!confirmed.length && !pending.length) {
       card.appendChild(make('div', 'mlsAvRevLine', 'No orders, prescriptions or referrals were recognised in this visit.'));
     }
+    /* av-5.6.4 — THE DRAFT NOTE, STARTED HERE. The acceptance line is "End
+       Visit -> complete note and actions ready for review", and filing a
+       transcript is not a note. The app already owns note generation, so this
+       calls the SAME function the Generate button calls rather than growing a
+       second drafting path that could drift from it.
+       It reports honestly: drafting, ready, or failed-with-a-retry. It never
+       claims a note exists that does not, and it never blocks leaving — the
+       transcript is already saved by the time this starts. */
+    if (ok && isFn(window.generateNote)) {
+      var noteLine = make('div', 'mlsAvRevNote', '✍️ Drafting the note from this visit…');
+      card.appendChild(noteLine);
+      var runNote = function () {
+        noteLine.textContent = '✍️ Drafting the note from this visit…';
+        noteLine.className = 'mlsAvRevNote';
+        var done = false;
+        var settle = function (good, why) {
+          if (done) return;
+          done = true;
+          if (good) {
+            noteLine.textContent = '✓ Draft note ready on the Visit page.';
+            noteLine.className = 'mlsAvRevNote ok';
+            return;
+          }
+          noteLine.textContent = '⚠ The note was not drafted' + (why ? ' (' + why + ')' : '') +
+            '. The transcript IS saved — draft it from the Visit page.';
+          noteLine.className = 'mlsAvRevNote bad';
+          var retry = make('button', 'mlsAvRevMore', 'Try drafting again');
+          retry.type = 'button';
+          retry.addEventListener('click', function () {
+            if (retry.parentNode) retry.parentNode.removeChild(retry);
+            runNote();
+          });
+          noteLine.appendChild(document.createElement('br'));
+          noteLine.appendChild(retry);
+        };
+        /* a note box that gains content is the proof, whatever the function
+           returns — some versions resolve before the write lands */
+        var box = gid('noteBox');
+        var before = (box && typeof box.value === 'string') ? box.value.length : -1;
+        var out = safe(function () { return window.generateNote(); }, null);
+        if (out && isFn(out.then)) {
+          out.then(function () {
+            var b2 = gid('noteBox');
+            settle(!!(b2 && typeof b2.value === 'string' && b2.value.trim().length > 0));
+          }, function (e) { settle(false, String((e && e.message) || 'the drafter refused')); });
+        }
+        /* bounded fallback for the non-promise path: watch the box, give up
+           honestly rather than spinning forever */
+        var waited = 0;
+        (function watch() {
+          if (done) return;
+          var b3 = gid('noteBox');
+          var now = (b3 && typeof b3.value === 'string') ? b3.value.length : -1;
+          if (now > 0 && now !== before) { settle(true); return; }
+          waited += 500;
+          if (waited >= 45000) { settle(false, 'it took too long'); return; }
+          safe(function () { setTimeout(watch, 500); });
+        })();
+      };
+      safe(function () { setTimeout(runNote, 0); });
+    }
     var row = make('div', 'mlsAvRevRow');
     var back = make('button', 'mlsAvRevGo', 'Back to the chart');
     back.type = 'button';
@@ -3989,6 +4108,13 @@
       if (el.requestFullscreen) { var p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function () {}); }
     });
     ttsEnsureCtx();
+    /* av-5.6.4 — the silence nudge is a CONSTANT string, so its audio can be
+       made now, while the doctor is still handing the screen over. When it is
+       needed the patient has already gone quiet and is waiting; paying a round
+       trip at that exact moment is the worst possible time to spend one. Costs
+       one request per interview and warms the TTS connection for the first
+       real question as a side effect. */
+    safe(function () { ttsFetchUrl(NUDGE_LINE, null); });
     /* mic permission FIRST (the doctor's click is the gesture, the doctor
        still holds the screen), then the conversation begins. */
     kioskMicPreflight(function () { kioskTurn(null, null); });

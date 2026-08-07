@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.3)
+ * AVATAR — THE VISIT COPILOT (av-5.6.4)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -475,15 +475,73 @@ assert(/kiosk\.paused = false;/.test(source), 'the paused state must reset — i
     'the markup must use the shared banner constant');
 }
 
-/* 3o. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.3'"), 'VERSION must move with this train');
+/* 3o. TIME TO FIRST WORD. The reply used to be fetched as ONE blob, so the
+   patient waited for the whole line to be generated before hearing anything.
+   It is split at the first sentence boundary and both pieces are requested in
+   parallel — the short acknowledgement is generated while the question is
+   still being made. Every failure path must land where it landed before. */
+assert(source.includes('function ttsSplitForSpeech'), 'the two-piece speech split was removed');
+{
+  const splitFn = new Function(
+    slice('function ttsSplitForSpeech', 'function ttsFetchUrl', 'the splitter') + '; return ttsSplitForSpeech;')();
+  assert.deepStrictEqual(splitFn('Got it. How long has it been going on?'),
+    ['Got it.', 'How long has it been going on?'],
+    'the acknowledgement+question shape is the one this exists for — it MUST split');
+  assert.deepStrictEqual(splitFn('What brings you in today?'), ['What brings you in today?'],
+    'a single short question must not pay for a second round trip');
+  assert.deepStrictEqual(splitFn('Thanks.'), ['Thanks.'], 'a tiny line is already fast');
+  assert.strictEqual(splitFn('no terminator here at all just a long run of words going on and on').length, 1,
+    'a line with no sentence boundary must not be cut mid-clause');
+  ['', null, undefined].forEach((v) => {
+    const out = splitFn(v);
+    assert(Array.isArray(out) && out.length === 1, 'empty input must not throw or fan out');
+  });
+  /* the pieces must REJOIN to the original words — a split that drops or
+     duplicates a clause changes what the patient is told */
+  const parts = splitFn('Thanks. Where exactly is the pain?');
+  assert.strictEqual(parts.join(' '), 'Thanks. Where exactly is the pain?',
+    'the two pieces must reconstruct the sentence exactly');
+}
+{
+  const speak = slice('var chunks = ttsSplitForSpeech(t);', 'ttsFetchUrl(t, voiceOverride).then', 'the chunked speak path');
+  assert(/var second = ttsFetchUrl\(chunks\[1\][\s\S]{0,200}ttsFetchUrl\(chunks\[0\]/.test(speak),
+    'both pieces must be requested in PARALLEL — a sequential second fetch would be slower than not splitting');
+  assert(speak.includes('pvSpeakSynth(t, mySeq, finish)'),
+    'if the FIRST piece fails, nothing has played yet, so the whole line must fall back exactly as before');
+  assert(speak.includes('pvSpeakSynth(chunks[1], mySeq, finish)'),
+    'if only the SECOND piece fails, the first has already played — only the remainder may be re-spoken');
+  assert(/chunks\.length === 2 && Date\.now\(\) >= ttsDownUntil/.test(speak),
+    'the split path must respect the TTS circuit breaker like every other call');
+}
+/* the silence nudge is a CONSTANT, so its audio is made before it is needed */
+assert(source.includes('var NUDGE_LINE'), 'the nudge constant was removed');
+assert(/safe\(function \(\) \{ ttsFetchUrl\(NUDGE_LINE, null\); \}\);/.test(source),
+  'the nudge audio must be prefetched at kiosk open — it is needed at the exact moment a patient is already waiting');
+assert(source.includes('pvSpeak(NUDGE_LINE,'), 'the nudge must SPEAK the same string it prefetched, or the cache never hits');
+
+/* 3p. THE DRAFT NOTE. "End Visit -> complete note ready for review" is the
+   acceptance line, and a filed transcript is not a note. */
+assert(/isFn\(window\.generateNote\)/.test(source),
+  'End Visit must start the draft note through the app\'s OWN generator, not a second drafting path');
+{
+  const rev = slice("var noteLine = make('div', 'mlsAvRevNote'", "var row = make('div', 'mlsAvRevRow');", 'the note drafting block');
+  assert(rev.includes('The transcript IS saved'),
+    'a failed draft must say plainly that the transcript is still saved — that is the doctor\'s real question');
+  assert(rev.includes('Try drafting again'), 'a failed draft must be retryable without leaving the screen');
+  assert(/waited >= 45000/.test(rev), 'the draft watcher must give up honestly rather than spin forever');
+  assert(/b2\.value\.trim\(\)\.length > 0/.test(rev),
+    'a note is "ready" only when the note box actually holds something — never on the promise alone');
+}
+
+/* 3q. the module still reports itself honestly */
+assert(source.includes("var VERSION = 'av-5.6.4'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '563', 'the loader cache token must name av-5.6.3 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '564', 'the loader cache token must name av-5.6.4 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.3): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.4): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');
