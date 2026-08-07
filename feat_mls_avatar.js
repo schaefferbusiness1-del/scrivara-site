@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.3.0';
+  var VERSION = 'av-5.4.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -373,6 +373,15 @@
     });
     return pvVoice;
   }
+  function pvStopSpeechOnly() {
+    pvSpeakSeq++;
+    pvSaying = '';
+    if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+    pvHeld.length = 0;
+    if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
+    faceTalkStop();
+    safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+  }
   function pvStopVoice() {
     pvSpeakSeq++;
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
@@ -387,18 +396,34 @@
      identical either way: `then` fires exactly once — event, error, or
      watchdog — so the speak->listen chain can never strand. */
   function pvSpeak(text, then) { pvSpeakVoiced(text, then, null); }
+  /* the sentence currently leaving the speaker, normalised - any recognition
+     result that is merely a piece of THIS is the avatar hearing itself. */
+  var pvSaying = '';
+  function pvNorm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function pvIsSelfEcho(heard) {
+    var h = pvNorm(heard);
+    if (!h || !pvSaying) return false;
+    if (pvSaying.indexOf(h) >= 0) return true;            /* a slice of our own sentence */
+    var words = h.split(' ').filter(Boolean);
+    if (words.length < 2) return false;
+    var hits = 0;
+    for (var i = 0; i < words.length; i++) if (pvSaying.indexOf(words[i]) >= 0) hits++;
+    return (hits / words.length) > 0.8;                   /* mostly our words */
+  }
   function pvSpeakVoiced(text, then, voiceOverride) {
     var mySeq = ++pvSpeakSeq;
     var finished = false;
     function finish() {
       if (finished || mySeq !== pvSpeakSeq) return;
       finished = true;
+      pvSaying = '';
       if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
       pvHeld.length = 0;
       faceTalkStop();
       if (then) safe(then);
     }
     var t = String(text == null ? '' : text);
+    pvSaying = pvNorm(t);
     /* nothing to say: hand straight off. Speaking '' used to POST an empty
        body to the TTS proxy, take its 400, and trip the 2-minute circuit
        breaker — one blank turn downgraded the voice for the whole visit. */
@@ -716,42 +741,123 @@
     return { mood: mood, talk: talk, talkCycle: talkCycle, retint: retint, destroy: destroy, node: root };
   }
   function faceTintFromPortrait(dataUrl, then) {
-    /* "actually based off your face": sample the saved portrait for hair and
-       skin tone AND estimate the hair cut, then hand back a full look the
-       doctor can fine-tune by hand. Fails safe to the defaults — a bad guess
-       must never produce a stranger. */
+    /* "actually based off your face": derive as many of the character's knobs
+       from the portrait as the pixels honestly support - skin, hair colour,
+       hair length, facial hair, glasses and eye colour - and hand back BOTH the
+       look and a plain-language list of what was detected, so the doctor can
+       see it worked and correct any single knob by hand. Fails safe: an
+       unusable photo returns null rather than a stranger's face. */
     if (!dataUrl || String(dataUrl).indexOf('data:image/') !== 0) { then(null); return; }
     var img = new Image();
     img.onload = function () {
       then(safe(function () {
-        var N = 32;
+        var N = 48;
         var c = document.createElement('canvas'); c.width = N; c.height = N;
         var x = c.getContext('2d'); x.drawImage(img, 0, 0, N, N);
         var d = x.getImageData(0, 0, N, N).data;
-        function at(xx, yy) { var i = (yy * N + xx) * 4; return [d[i], d[i + 1], d[i + 2]]; }
+        function px(xx, yy) { var i = ((yy | 0) * N + (xx | 0)) * 4; return [d[i], d[i + 1], d[i + 2]]; }
         function lum(p) { return (p[0] * 3 + p[1] * 4 + p[2]) / 8; }
-        function avg(x0, y0, x1, y1) {
-          var r = 0, g = 0, b = 0, n = 0;
-          for (var yy = y0; yy < y1; yy++) for (var xx = x0; xx < x1; xx++) { var p = at(xx, yy); r += p[0]; g += p[1]; b += p[2]; n++; }
-          return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+        function hex(p) { return '#' + p.map(function (v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }).join(''); }
+        /* MEDIAN of several small patches - one patch landing on a shadow, a
+           fringe or a frame no longer drags the whole sample. */
+        function patchMedian(spots, r) {
+          var cols = spots.map(function (s2) {
+            var acc = [0, 0, 0], n = 0;
+            for (var yy = s2[1] - r; yy <= s2[1] + r; yy++)
+              for (var xx = s2[0] - r; xx <= s2[0] + r; xx++) {
+                if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+                var p = px(xx, yy); acc[0] += p[0]; acc[1] += p[1]; acc[2] += p[2]; n++;
+              }
+            return n ? [acc[0] / n, acc[1] / n, acc[2] / n] : null;
+          }).filter(Boolean);
+          if (!cols.length) return null;
+          cols.sort(function (a, b) { return lum(a) - lum(b); });
+          return cols[Math.floor(cols.length / 2)];
         }
-        function hex(c3) { return '#' + c3.map(function (v) { return ('0' + Math.max(0, Math.min(255, v)).toString(16)).slice(-2); }).join(''); }
-        var hair = avg(9, 1, 23, 7), skin = avg(12, 15, 20, 25);
-        var skinLum = lum(skin), hairLum = lum(hair);
-        if (skinLum < 70 || skinLum <= hairLum + 8) return null;   /* unusable sample */
-        /* hair CUT, guessed honestly from where hair-dark pixels sit:
-           a dark crown means hair at all; dark low side columns mean length. */
-        var crown = 0, sides = 0, crownN = 0, sidesN = 0;
-        var thresh = (skinLum + hairLum) / 2;
-        for (var xx = 6; xx < 26; xx++) for (var yy = 0; yy < 6; yy++) { crownN++; if (lum(at(xx, yy)) < thresh) crown++; }
-        for (var yy2 = 18; yy2 < 30; yy2++) {
-          for (var xx2 = 0; xx2 < 5; xx2++) { sidesN++; if (lum(at(xx2, yy2)) < thresh) sides++; }
-          for (var xx3 = 27; xx3 < 32; xx3++) { sidesN++; if (lum(at(xx3, yy2)) < thresh) sides++; }
+        /* Regions as fractions of the frame: the portrait is a centred square
+           crop (stylizePortrait guarantees it), so these hold across faces. */
+        var F = function (fx, fy) { return [Math.round(N * fx), Math.round(N * fy)]; };
+        /* clear of the eye band: a spectacle frame sits around y 0.38-0.46 and
+           dragged the skin sample dark, which then made light hair look like
+           skin and read as bald. Cheeks and mid-face only. */
+        var skin = patchMedian([F(0.30, 0.52), F(0.70, 0.52), F(0.32, 0.60), F(0.68, 0.60), F(0.50, 0.30), F(0.50, 0.62)], 2);
+        /* background estimate from the four corners; hair patches that look
+           like background are discarded rather than averaged in. */
+        var bg = patchMedian([F(0.03, 0.03), F(0.97, 0.03), F(0.03, 0.97), F(0.97, 0.97)], 1);
+        var bgL = bg ? lum(bg) : -999;
+        function hairMedian() {
+          /* deep INSIDE the hair mass, not on the hairline: edge patches blend
+             hair with background and returned grey for a black-haired doctor. */
+          var spots = [F(0.44, 0.13), F(0.50, 0.11), F(0.56, 0.13), F(0.40, 0.16), F(0.60, 0.16)];
+          var keep = spots.filter(function (sp) {
+            var p = patchMedian([sp], 1);
+            return p && Math.abs(lum(p) - bgL) > 22;
+          });
+          return patchMedian(keep.length ? keep : spots, 1);
         }
-        var crownRatio = crownN ? crown / crownN : 0, sideRatio = sidesN ? sides / sidesN : 0;
-        var style = crownRatio < 0.18 ? 'bald' : crownRatio < 0.42 ? 'buzz' : sideRatio > 0.42 ? 'long' : 'short';
-        return { skin: hex(skin), hair: hex(hair), shirt: FACE_LOOK.shirt, lip: FACE_LOOK.lip,
-          eyes: FACE_LOOK.eyes, hairStyle: style, glasses: false, beard: 'none' };
+        var hair = hairMedian();
+        if (!skin || !hair) return null;
+        var skinL = lum(skin), hairL = lum(hair);
+        if (skinL < 55) return null;                       /* too dark to read */
+
+        var found = [];
+        var look = { skin: hex(skin), hair: hex(hair), shirt: FACE_LOOK.shirt,
+                     lip: FACE_LOOK.lip, eyes: FACE_LOOK.eyes,
+                     hairStyle: 'short', glasses: false, beard: 'none' };
+        found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
+
+        /* HAIR: how much of the crown is darker than the face, and do the low
+           side columns carry that same darkness (length)? */
+        /* DIFFERENCE from this face's own skin, not darkness: blond, grey and
+           white hair are LIGHTER than skin, and the old darker-than-threshold
+           test classified every one of them as bald. */
+        function unlikeSkin(p) {
+          return (Math.abs(lum(p) - skinL) +
+                  (Math.abs(p[0] - skin[0]) + Math.abs(p[1] - skin[1]) + Math.abs(p[2] - skin[2])) / 6) > 24;
+        }
+        var crown = 0, crownN = 0, sides = 0, sidesN = 0;
+        for (var xx1 = Math.round(N * 0.30); xx1 < N * 0.70; xx1++)
+          for (var yy1 = Math.round(N * 0.04); yy1 < N * 0.18; yy1++) { crownN++; if (unlikeSkin(px(xx1, yy1))) crown++; }
+        for (var yy2 = Math.round(N * 0.55); yy2 < N * 0.92; yy2++) {
+          for (var xx2 = 0; xx2 < N * 0.14; xx2++) { sidesN++; if (unlikeSkin(px(xx2, yy2))) sides++; }
+          for (var xx3 = Math.round(N * 0.86); xx3 < N; xx3++) { sidesN++; if (unlikeSkin(px(xx3, yy2))) sides++; }
+        }
+        function sideLooksLikeHair() {
+          var sp = patchMedian([F(0.06, 0.72), F(0.94, 0.72)], 2);
+          if (!sp || !hair) return false;
+          return (Math.abs(sp[0] - hair[0]) + Math.abs(sp[1] - hair[1]) + Math.abs(sp[2] - hair[2])) / 3 < 46;
+        }
+        var crownR = crownN ? crown / crownN : 0, sideR = sidesN ? sides / sidesN : 0;
+        if (crownR < 0.20) { look.hairStyle = 'bald'; found.push('little or no hair'); }
+        else if (crownR < 0.42) { look.hairStyle = 'buzz'; found.push('very short hair'); }
+        else if (sideR > 0.30 && sideLooksLikeHair()) { look.hairStyle = 'long'; found.push('long hair'); }
+        else { look.hairStyle = 'short'; found.push('short hair'); }
+        if (look.hairStyle !== 'bald') found.push(hairL < 70 ? 'dark hair' : hairL > 165 ? 'light hair' : 'mid-tone hair');
+
+        /* FACIAL HAIR: the chin/jaw measurably darker than the cheeks. Compared
+           against this face's own skin, not an absolute threshold. */
+        var chin = patchMedian([F(0.50, 0.74), F(0.40, 0.70), F(0.60, 0.70)], 2);
+        if (chin) {
+          var drop = skinL - lum(chin);
+          if (drop > 46) { look.beard = 'beard'; found.push('beard'); }
+          else if (drop > 24) { look.beard = 'stubble'; found.push('stubble'); }
+        }
+        /* GLASSES: a band at eye level darker than BOTH the forehead and the
+           cheeks below it, on both sides (a frame, not a shadow). */
+        var browRow = patchMedian([F(0.32, 0.40), F(0.68, 0.40)], 1);
+        var cheekRow = patchMedian([F(0.30, 0.56), F(0.70, 0.56)], 1);
+        var brow2 = patchMedian([F(0.50, 0.30)], 1);
+        if (browRow && cheekRow && brow2) {
+          if (lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(brow2) - 20) {
+            look.glasses = true; found.push('glasses');
+          }
+        }
+        /* EYES: the iris sits just inside each eye centre. Take the darker of
+           the two samples but refuse near-black (that is pupil or lash). */
+        var eye = patchMedian([F(0.36, 0.44), F(0.64, 0.44)], 1);
+        if (eye && lum(eye) > 40 && lum(eye) < skinL - 20) look.eyes = hex(eye);
+
+        return { look: look, found: found };
       }, null));
     };
     img.onerror = function () { then(null); };
@@ -1033,16 +1139,26 @@
         var src = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         if (!src) { lookNote.textContent = 'Capture your photo above first, then Match my photo.'; return; }
         lookNote.textContent = 'Reading your photo…';
-        faceTintFromPortrait(src, function (look) {
-          if (!look) { lookNote.textContent = 'That photo was too dark or too flat to read — set the colours by hand.'; return; }
-          /* auto-derives colour and cut; the doctor's own glasses/beard
-             choices are kept — those cannot be read from a stylized portrait */
-          look.glasses = lookNow.glasses; look.beard = lookNow.beard; look.shirt = lookNow.shirt;
+        faceTintFromPortrait(src, function (res) {
+          var look = res && res.look;
+          if (!look) { lookNote.textContent = 'That photo was too dark or too flat to read - set the colours by hand.'; return; }
+
+
+          /* the matcher now reads beard, glasses and eye colour too, so its
+             findings WIN; only the top colour stays the doctor's (a portrait
+             crop rarely contains enough of it to judge). */
+          look.shirt = lookNow.shirt;
           lookNow = faceLookSafe(look);
           skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
           stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
+          glassesBox.checked = lookNow.glasses === true;
           lookApply();
-          lookNote.textContent = 'Matched from your photo — adjust anything above to fine-tune.';
+          /* say what it actually saw - a silent generic face is exactly what
+             "it straight up does not work" looks like from the doctor's side */
+          var found = (res && res.found && res.found.length) ? res.found.join(', ') : '';
+          lookNote.textContent = found
+            ? ('Matched from your photo - detected ' + found + '. Adjust anything above to fine-tune.')
+            : 'Matched from your photo - adjust anything above to fine-tune.';
         });
       });
       var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
@@ -1088,7 +1204,7 @@
       var voiceSelect = document.createElement('select');
       voiceSelect.id = 'mlsAvVoicePick';
       voiceSelect.style.cssText = toneSelect.style.cssText; voiceSelect.style.flex = '1'; voiceSelect.style.width = 'auto';
-      [['coral', 'Coral — warm & caring (default)'], ['nova', 'Nova — bright & upbeat'], ['shimmer', 'Shimmer — soft & gentle'], ['sage', 'Sage — calm & steady'], ['ash', 'Ash — deep & reassuring'], ['echo', 'Echo — clear & even'], ['alloy', 'Alloy — balanced'], ['onyx', 'Onyx — rich & low']].forEach(function (opt) {
+      [['coral', 'Coral (female) - warm & caring (default)'], ['nova', 'Nova (female) - bright & upbeat'], ['shimmer', 'Shimmer (female) - soft & gentle'], ['sage', 'Sage (female) - calm & steady'], ['ash', 'Ash (male) - deep & reassuring'], ['echo', 'Echo (male) - clear & even'], ['onyx', 'Onyx (male) - rich & low'], ['alloy', 'Alloy (neutral) - balanced']].forEach(function (opt) {
         var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
         if ((cfg.voice || 'coral') === opt[0]) o.selected = true;
         voiceSelect.appendChild(o);
@@ -1420,7 +1536,12 @@
         setTimeout(function () { if (kiosk.open && !kiosk.completed) kioskFinish(); }, 12000);
       } else {
         kioskMood('speaking', kiosk.lastSay, answer);
-        pvSpeak(kiosk.lastSay, function () { kioskListen(); });
+        /* owner: "it should be able to listen while it is talking" - the mic
+           opens WITH the question, not after it. Patients answer as soon as
+           they understand, usually before the sentence ends; those first
+           words used to be discarded and the kiosk looked frozen. */
+        kioskListen(true);
+        pvSpeak(kiosk.lastSay, function () { if (!pvRec) kioskListen(); });
       }
     }, function () {
       kiosk.busy = false;
@@ -1493,24 +1614,32 @@
       kioskClose('ended');
     }
   }
-  function kioskListen() {
+  function kioskListen(keepMood) {
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+    if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
       var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
       var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
       kioskArmWatchdog(20000);   /* typed mode self-ends too */
       return;
     }
-    kioskMood('listening', kiosk.lastSay);
+    if (!keepMood) kioskMood('listening', kiosk.lastSay);
     kiosk.heard = false;
     var started = pvListen(function (finalText) {
       if (!kiosk.open) return;
+      if (pvIsSelfEcho(finalText)) return;      /* never file our own voice */
       if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
       var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
       kiosk.lastTry = { answer: finalText, nonce: reuse };
       kioskTurn(finalText, reuse);
     }, function (interim) {
+      /* the avatar hearing ITSELF must never become the patient's answer */
+      if (pvIsSelfEcho(interim)) return;
       if (interim.trim()) kiosk.heard = true;
+      /* BARGE-IN: real speech while the question is still playing stops the
+         question mid-sentence, the way a person would. Guarded at two words
+         so a cough, an 'mhm' or a nod-noise cannot cut it off. */
+      if (pvSaying && interim.trim().split(/\s+/).filter(Boolean).length >= 2) pvStopSpeechOnly();
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
     }, function () {
       /* the recogniser died on its own with nothing to submit — re-open the
@@ -1615,7 +1744,14 @@
   function kioskMicPreflight(then) {
     /* Ask for the microphone ONCE, up front, while the DOCTOR still holds the
        screen — never mid-interview in front of the patient. */
-    var media = safe(function () { return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ audio: true }); }, null);
+    /* echoCancellation is the PREREQUISITE for an open mic during playback:
+       without it the recogniser transcribes the avatar itself into the
+       patient's answer, which corrupts the record rather than merely
+       annoying anyone. */
+    var media = safe(function () {
+      return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    }, null);
     if (!media) { kiosk.mic = false; then(); return; }
     media.then(function (stream) {
       safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
@@ -1654,7 +1790,8 @@
       /* no saved appearance yet: derive one from the portrait so the face
          still resembles the doctor on day one */
       kiosk.tinted = true;
-      faceTintFromPortrait(av.faceImage, function (look) {
+      faceTintFromPortrait(av.faceImage, function (res) {
+        var look = res && res.look;
         if (look && kiosk.face) { kiosk.look = look; kiosk.face.retint(look); }
       });
     }
@@ -1822,7 +1959,11 @@
     head.appendChild(line);
     /* av-3.0.0: the headline action — the patient is in the room, start the
        interview on THIS screen for THIS patient. */
-    if (!activeHit && activeId) head.appendChild(visitButton('🎙 Start check-in interview', true, function () { openKiosk(); }));
+    /* Always rendered: gating it on an active patient made it VANISH, which
+       reads as "the feature was removed" (the owner reported exactly that).
+       openKiosk() already refuses honestly with a toast naming the
+       precondition  that refusal is only reachable if the button is. */
+    if (!activeHit) head.appendChild(visitButton('🎙 Start check-in interview', true, function () { openKiosk(); }));
     head.appendChild(visitButton(activeHit ? 'All check-ins' : (total ? 'Open check-ins' : 'Open'), false, function () { open(); }));
     /* av-2.0.2: flag FIRST, then open — the old order consumed the flag
        before it was set (Set up landed on the Ready tab) and left it armed
@@ -1944,6 +2085,9 @@
     /* diagnostics: render the drawn character anywhere, so a look can be
        inspected (and pinned) without opening a kiosk in front of a patient */
     faceDemo: function (mount, look) { return makeFace(mount, faceLookSafe(look)); },
+    /* diagnostics: derive a look from a portrait without touching Setup, so
+       the matcher can be proven against real pixels. */
+    deriveLookFromPhoto: function (dataUrl, then) { return faceTintFromPortrait(dataUrl, then); },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,

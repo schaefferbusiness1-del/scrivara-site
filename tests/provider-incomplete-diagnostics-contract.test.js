@@ -156,12 +156,25 @@ const version = String(extManifest.version || '').trim();
 assert(/^\d/.test(version), 'extension-version.json must name a version');
 for (const [label, html] of [['live', liveHtml], ['staging', stagingHtml]]) {
   assert(html.includes('id="extensionDownloadSettings"'), label + ': Settings must carry the extension download section');
-  const href = html.match(/id="extDlBtn" href="(MLS_Assist_v[^"]+\.zip)"/);
-  assert(href, label + ': the download button must link a versioned zip');
-  assert.strictEqual(href[1], 'MLS_Assist_v' + version + '.zip',
+  /* 2026-08-06, pin moved deliberately. The button now links the .bin MIRROR
+     and renames it on save. Why: a service worker keeps controlling a tab until
+     every tab closes and this app's worker declines skipWaiting() on purpose,
+     so an already-installed worker retires the CURRENT .zip and answers the
+     download with 410 — measured live on b903 and again on b905, and the worker
+     did not roll across three production deploys. The .bin extension is passed
+     through by every worker generation; the download attribute keeps the saved
+     filename a .zip for the doctor. The mirror's bytes are digest-asserted
+     equal to the zip in public-publication-boundary. */
+  const href = html.match(/id="extDlBtn" href="(MLS_Assist_v[^"]+\.bin)" download="([^"]+)"/);
+  assert(href, label + ': the download button must link the versioned .bin mirror with an explicit download filename');
+  assert.strictEqual(href[1], 'MLS_Assist_v' + version + '.bin',
     label + ': the baked download link must name the manifest version - bump them together');
+  assert.strictEqual(href[2], 'MLS_Assist_v' + version + '.zip',
+    label + ': the doctor must still SAVE a .zip - a bare download attribute would save it as .bin');
+  assert(fs.existsSync(path.join(root, href[1])), label + ': the linked mirror must exist in the deployed tree: ' + href[1]);
+  assert(fs.existsSync(path.join(root, 'MLS_Assist_v' + version + '.zip')),
+    label + ': the released .zip must still exist - the mirror supplements it, never replaces it');
   assert(html.includes('<b id="extDlVersion">' + version + '</b>'), label + ': the shown version must match the manifest');
-  assert(fs.existsSync(path.join(root, href[1])), label + ': the linked zip must exist in the deployed tree: ' + href[1]);
   /* owner order 2026-08-05 ("with new saying"): the card carries the release
      notes, and the BAKED text must be exactly the manifest's notes so the two
      can never tell different stories about the same version. */
@@ -171,6 +184,124 @@ for (const [label, html] of [['live', liveHtml], ['staging', stagingHtml]]) {
     label + ': the baked What\'s-new text must equal extension-version.json notes - update them together');
   assert(html.includes('id="extDlVersionNotes">' + version + '<'), label + ': the What\'s-new heading version must match the manifest');
 }
+/* ---- 7b. THE SERVICE WORKER MUST NOT RETIRE THE CURRENT PACKAGE, EVEN WHEN
+   THE WORKER IS A RELEASE BEHIND. This is the regression that shipped at every
+   single release: sw.js allowlisted ONE hardcoded filename, so the worker
+   already installed in a doctor's browser carried the PREVIOUS release's
+   literal and answered the new package with 410. Simulated here by running the
+   SHIPPED sw.js with its floor patched back one release - if that copy blocks
+   today's package, the defect is back. ------------------------------------- */
+{
+  const swSource = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const region = swSource.match(/const RELEASED_PACKAGE_FLOOR[\s\S]*?function isRetiredPath[\s\S]*?\n}/);
+  assert(region, 'sw.js must expose the release-floor package rule');
+  assert(!/name === 'mls_assist_v[\d.]+\.zip'/.test(swSource),
+    'sw.js must not go back to a single hardcoded package filename - that is the per-release 410');
+
+  const build = (src) => new Function('baseName', 'normalizedPath', 'isInternalDirectory',
+    'RETIRED_ASSET_PATHS', 'PUBLIC_HTML_PATHS', src + '; return { isRetiredPath };')(
+    (p) => { const a = String(p || '').split('/').filter(Boolean); return a.length ? a[a.length - 1] : ''; },
+    (u) => String(u).toLowerCase(), () => false, new Set(), new Set());
+
+  const current = build(region[0]);
+  const pkg = '/mls_assist_v' + version.toLowerCase() + '.zip';
+  assert.strictEqual(current.isRetiredPath(pkg), false, 'the CURRENT released package must never be retired');
+  assert.strictEqual(current.isRetiredPath('/mls_assist_v3.0.45.bin'), false, 'the mirror must pass through');
+  /* fail-closed, unchanged */
+  assert.strictEqual(current.isRetiredPath('/mls_assist_v2.9.41.zip'), true, 'historical archives stay retired');
+  assert.strictEqual(current.isRetiredPath('/extension-candidates/mls_assist_v9.9.9.zip'), true,
+    'a released-looking name in a subdirectory must never pass on basename alone');
+  assert.strictEqual(current.isRetiredPath('/random.zip'), true, 'unrelated zips stay retired');
+
+  /* THE STALE-WORKER SIMULATION, and the negative control in one: a worker one
+     release behind must STILL serve today's package. Under the old one-literal
+     rule this assertion is impossible to satisfy. */
+  const stale = build(region[0].replace('const RELEASED_PACKAGE_FLOOR = [3, 0, 45];', 'const RELEASED_PACKAGE_FLOOR = [3, 0, 44];'));
+  assert.strictEqual(stale.isRetiredPath(pkg), false,
+    'a worker built one release ago must still serve the CURRENT package - this is the defect that 410d every release');
+  assert.strictEqual(stale.isRetiredPath('/mls_assist_v2.9.41.zip'), true,
+    'the one-release-behind worker must still fail closed on historical archives');
+}
+
+/* ---- 7c. NOTHING MAY REWRITE THE BAKED CARD INTO A CLAIM THAT IS NOT TRUE.
+   Measured live on b903/b905: an older module captured this card by TEXT match,
+   relabelled the button "Add to Chrome - Chrome Web Store" (a publish that is
+   owner-gated and has not happened) over a local file href, REMOVED the
+   download attribute and added target="_blank" - turning the click into a
+   navigation in a new tab, which is precisely the request the stale worker
+   answers with 410. So the doctor met a refusal page in a tab they never asked
+   for. The module now stands down wherever the baked card exists. ---------- */
+assert(connectSource.includes("if (document.getElementById('extensionDownloadSettings')) return false;"),
+  'edsync must stand down when the baked Settings card owns the surface');
+for (const [label, html] of [['live', liveHtml], ['staging', stagingHtml]]) {
+  const btn = html.match(/<a[^>]*id="extDlBtn"[^>]*>/);
+  assert(btn, label + ': the download button must exist');
+  assert(/\sdownload="/.test(btn[0]), label + ': the button must keep an explicit download attribute');
+  assert(!/\starget=/.test(btn[0]), label + ': the button must not open a new tab - a navigation is what the stale worker 410s');
+  assert(!/Chrome Web Store/i.test(btn[0]), label + ': the button must not claim the Chrome Web Store while the publish is owner-gated');
+}
+
+/* ---- 7d. THE POINTER MUST SURVIVE A STALE SHELL. --------------------------
+   b914 shipped the `.bin` mirror to bypass a service worker that will not roll,
+   but `/ScribeFlow.html` is a STATIC_SHELL_PATH, so that same worker keeps
+   serving the CACHED shell carrying the old `.zip` href. Measured on the owner's
+   browser across two consecutive full reloads of b914: DOM href `…45.zip`, the
+   string `.bin` absent from the document entirely, and what the button pointed
+   at returned the 75-byte 410 refusal page. The fix could not arrive by the
+   mechanism it was designed to bypass.
+   mls-connect.js DOES reach him (it loads with `?v=<build>`, an exact-versioned
+   asset on a different worker branch), so the href is normalised there. This
+   executes the SHIPPED normalisation against a stub anchor carrying the stale
+   shell's exact markup. ------------------------------------------------------ */
+{
+  const block = connectSource.match(/if \(a\) \{\s*var mirror = 'MLS_Assist_v' \+ v \+ '\.bin';[\s\S]*?\n          \}/);
+  assert(block, 'the refresher must normalise the anchor to the .bin mirror');
+  const normalise = new Function('a', 'v', block[0]);
+
+  const makeAnchor = (attrs) => {
+    const store = Object.assign({}, attrs);
+    return {
+      getAttribute: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+      setAttribute: (k, val) => { store[k] = String(val); },
+      hasAttribute: (k) => Object.prototype.hasOwnProperty.call(store, k),
+      removeAttribute: (k) => { delete store[k]; },
+      _store: store
+    };
+  };
+
+  /* the owner's actual stale shell: old .zip href, bare download attribute */
+  const stale = makeAnchor({ href: 'MLS_Assist_v' + version + '.zip', download: '' });
+  normalise(stale, version);
+  assert.strictEqual(stale._store.href, 'MLS_Assist_v' + version + '.bin',
+    'a STALE shell must be normalised to the mirror — this is the owner\'s exact machine');
+  assert.strictEqual(stale._store.download, 'MLS_Assist_v' + version + '.zip',
+    'the doctor must still SAVE a .zip');
+
+  /* the shape the hijacker left behind: Web Store href, target=_blank, no download */
+  const hijacked = makeAnchor({ href: 'https://chromewebstore.google.com/x', target: '_blank' });
+  normalise(hijacked, version);
+  assert.strictEqual(hijacked._store.href, 'MLS_Assist_v' + version + '.bin');
+  assert.strictEqual(hijacked._store.target, undefined,
+    'target must be stripped — a navigation is exactly what the stale worker answers with 410');
+
+  /* already correct (fresh browser): inert, and MUST NOT be rewritten back to .zip */
+  const fresh = makeAnchor({ href: 'MLS_Assist_v' + version + '.bin', download: 'MLS_Assist_v' + version + '.zip' });
+  normalise(fresh, version);
+  assert.strictEqual(fresh._store.href, 'MLS_Assist_v' + version + '.bin',
+    'a correct anchor must survive untouched — the previous refresher wrote .zip unconditionally and re-broke fresh browsers');
+
+  /* NEGATIVE CONTROL: the refresher as it shipped in b914 wrote .zip
+     unconditionally. Against the same stale anchor it must FAIL to produce the
+     mirror — otherwise this test proves nothing about the fix. */
+  const old = new Function('a', 'v', "var want = 'MLS_Assist_v' + v + '.zip'; if (a.getAttribute('href') !== want) a.setAttribute('href', want);");
+  const control = makeAnchor({ href: 'MLS_Assist_v' + version + '.zip', download: '' });
+  old(control, version);
+  assert.notStrictEqual(control._store.href, 'MLS_Assist_v' + version + '.bin',
+    'CONTROL FAILED: the b914 refresher already produced the mirror, so this scenario does not reproduce the defect');
+  assert(!connectSource.includes("var want = 'MLS_Assist_v' + v + '.zip';"),
+    'the unconditional .zip rewrite must be gone — it overwrote the baked .bin on fresh browsers too');
+}
+
 assert(connectSource.includes('__mlsExtDlCardWired'), 'the drift refresher must be wired exactly once');
 assert(connectSource.includes("fetch('extension-version.json?nc="), 'the refresher must read the manifest, never invent a version');
 assert(connectSource.includes("getElementById('extDlNotes')"), 'the refresher must also refresh the What\'s-new text from the manifest');

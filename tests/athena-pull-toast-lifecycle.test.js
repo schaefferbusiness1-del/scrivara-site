@@ -77,7 +77,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.0.4');
+assert.strictEqual(api.version, '1.1.4');
 
 function dispatch(data) { api._onResultMessage({ data }); }
 function toast() { return document.getElementById('mlsAthenaDoctorToast'); }

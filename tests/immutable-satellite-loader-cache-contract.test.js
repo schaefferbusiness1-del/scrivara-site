@@ -50,7 +50,11 @@ const assets = [
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
   ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],
-  ['feat_mls_widget_deck.js', '20260802wd111', '20260713wd2'],
+    /* 2026-08-06: the deck's empty state was #C9DCD2 on white (~1.4:1) and
+     effectively invisible; it now follows --muted. The service worker serves
+     this cache-first, so the token must move or a returning clinician keeps
+     the unreadable copy. */
+  ['feat_mls_widget_deck.js', '20260806wd112', '20260802wd111'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260724cmd104', '20260719cmd103'],
@@ -109,7 +113,7 @@ const assets = [
      adversarial-review repairs incl. the fail-OPEN exit gate. */
     /* av-5.3.1: cold-start hardening - a finished interview refuses further
      answers, and the harness rejects the first turn with an HTML 502. */
-  ['feat_mls_avatar.js', '20260806av531', '20260806av530'],
+  ['feat_mls_avatar.js', '20260806av540', '20260806av534'],
   /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
      set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
      that added `appControl` to the still-loading guard. Same calendar day, so

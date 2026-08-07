@@ -126,6 +126,19 @@ if (require.main === module) {
   const staging = fs.readFileSync(stagingFile, 'latin1');
   fs.writeFileSync(stagingFile, staging.replace(/__MLS_AV='b\d+'/g, "__MLS_AV='" + next + "'"), 'latin1');
 
+  /* 2026-08-06 — the corrected subject is now written to a FILE, not only to
+     stdout, so a ship path can commit with `-F` from it instead of retyping it.
+     tests/build-bump-names-its-build.test.js says "take it from there rather
+     than from memory"; until this file existed, "there" was a line of terminal
+     output a heredoc could not read, and 415092e6 shipped labelled b910 with a
+     tree of b911 for exactly that reason. The number is not knowable before the
+     bump runs - a collision can move it under you mid-command - so the only
+     safe subject is the one this script just wrote. */
+  try {
+    fs.writeFileSync(path.join(ROOT, 'scripts', '.last-bump-subject'), out + '\n', 'utf8');
+  } catch (e) { /* advisory only: never fail a correct bump over its receipt */ }
+
   process.stderr.write('bumped ' + cur.token + ' -> ' + next + ' (' + sites + ' sites + staging)\n');
+  process.stderr.write('subject written to scripts/.last-bump-subject - commit with that, not a retyped number\n');
   console.log(out);
 }

@@ -25,7 +25,19 @@ const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
 
-assert(source.includes("var VERSION = 'av-5.3.0'"), 'version token moved without updating this contract');
+/* The module's self-reported VERSION must move WITH its cache token. av531
+   shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
+   could never confirm the build QA had been told to gate on — a module that
+   misreports itself makes every downstream verification unfalsifiable. */
+assert(source.includes("var VERSION = 'av-5.4.0'"), 'version token moved without updating this contract');
+{
+  const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
+  const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
+  assert(tokenM && verM, 'cannot read the avatar version/token pair');
+  assert.strictEqual(tokenM[1], verM[1] + verM[2] + verM[3],
+    'the loader token and the module VERSION must name the same release (token av' + tokenM[1] +
+    ' vs VERSION av-' + verM[1] + '.' + verM[2] + '.' + verM[3] + ')');
+}
 /* av-5.3.0 — the customizable face, the retired preview, and the six defects
    an adversarial review caught BEFORE this train reached a patient:
    1. kiosk.pinSet is TRI-STATE and unknown means LOCKED (it used to fail open,
@@ -50,6 +62,18 @@ assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source), 'pvListen no longe
 assert(source.includes('The exit PIN must be 4 to 8 digits'), 'Setup silently drops a malformed PIN again');
 assert(source.includes('if (found && found.summary)'), 'the summary refetch must be PROVEN before filing');
 assert(source.includes('if (kiosk.completed && !finish) return;'), 'a FINISHED interview must refuse further answers — the typed row survives the rest screen');
+/* THE START BUTTON IS ALWAYS REACHABLE. It used to be gated on an active
+   patient, so with none selected it vanished from the card entirely — which
+   a doctor cannot distinguish from the feature being deleted, and is exactly
+   how the owner reported it ("Where did the start avatar button go"). The
+   honest precondition refusal already existed inside openKiosk(); a refusal
+   is only honest if the control that triggers it can be clicked. */
+assert(!/if \(!activeHit && activeId\) head\.appendChild/.test(source),
+  'the Start button is gated on an active patient again — with none it disappears and reads as removed');
+assert(/if \(!activeHit\) head\.appendChild\(visitButton\('\W*\s*Start check-in interview'/.test(source),
+  'the Start check-in interview button must render whenever the patient has no completed check-in');
+assert(source.includes("toast('Open the patient first"),
+  'the click-time precondition refusal was removed — the button would then do nothing silently');
 /* av-5.3.2 — the self-end must work on EVERY path and must be BOUNDED:
    it used to be armed only after the microphone-unavailable early return, so
    a typed-mode interview never ended and never produced a summary; and the
@@ -98,12 +122,37 @@ assert(source.includes("'/api/avatar/office/tts'"), 'the natural-voice endpoint 
 assert(source.includes('ttsDownUntil = Date.now() + 120000'), 'the TTS circuit-breaker was removed — an outage would stall every question by the fetch timeout');
 assert(/if \(mySeq !== pvSpeakSeq \|\| finished \|\| started\) return;/.test(source), 'the late-TTS double-voice guard was removed');
 assert(source.includes('function makeFace'), 'the living face engine was removed');
+/* THE PHOTO MATCHER must derive more than colour and must SAY what it saw —
+   a silent generic face is exactly what "it straight up does not work" looks
+   like from the doctor's side. Each pin below marks a defect measured against
+   synthesized portraits (see tests/avatar-photo-match-proof.js). */
+assert(source.includes('function patchMedian'),
+  'the matcher lost median sampling — one shadowed patch would skew the whole face');
+assert(source.includes('function unlikeSkin'),
+  'hair classification is back to darker-than-a-threshold, which calls blond, grey and white hair BALD');
+assert(source.includes('bgL'),
+  'hair sampling is no longer background-aware — a black-haired head reads GREY');
+assert(/found\.push\('beard'\)/.test(source) && /found\.push\('glasses'\)/.test(source),
+  'beard/glasses derivation was removed — the face falls back to defaults');
+assert(source.includes('detected '),
+  'the matcher must report what it detected, or a default face is indistinguishable from a failure');
 assert(source.includes('function faceTintFromPortrait'), 'portrait tinting was removed — the face would stop following the doctor\'s look');
 assert(!/mlsAvKioskFace"><\/div>[\s\S]{0,400}appendChild\(img\)/.test(source), 'sanity: nothing re-installs a photo INSTEAD of the drawn face in the kiosk');
 assert(source.includes('requestFullscreen'), 'true fullscreen on Start was removed');
 assert(/function kioskClose[\s\S]{0,600}exitFullscreen/.test(source), 'closing the kiosk must leave fullscreen');
 assert(source.includes('createMediaElementSource'), 'amplitude lip-sync was removed');
-assert(source.includes("'coral', 'Coral — warm & caring (default)'"), 'the voice picker was removed from Setup');
+/* Owner: "label voices male or female". Every option must carry a spoken-
+   gender designation in its VISIBLE text, and the male/female split must
+   actually exist - a picker where every voice reads (female) teaches nothing. */
+{
+  const voices = source.match(/\['(?:coral|nova|shimmer|sage|ash|echo|alloy|onyx)', '[^']+'\]/g) || [];
+  assert(voices.length >= 8, 'the voice picker lost options (found ' + voices.length + ')');
+  voices.forEach(v => assert(/\((?:male|female|neutral)\)/.test(v),
+    'every voice option must be labelled male/female/neutral in its visible text: ' + v));
+  assert(voices.some(v => /\(female\)/.test(v)) && voices.some(v => /\(male\)/.test(v)),
+    'the picker must offer both male and female voices');
+  assert(/coral[^\n]*\(female\)[^\n]*default/.test(source), 'the default voice must still be named as the default');
+}
 /* av-4.0.0 — the unbreakable voice loop:
    held utterance refs + duration watchdog (Chrome GCs utterances mid-sentence
    and onend never fires — the "it makes me type and hit Send" killer), mic
@@ -183,8 +232,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av531";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av510 loader');
+const marker = "feat_mls_avatar.js?v=20260806av540";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av533 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -239,7 +288,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.0');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.4.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

@@ -88,6 +88,13 @@ const tests = [
      token dated two days before its own content changed. This compares every
      hand-maintained token against its file's real history. */
   'cache-token-cannot-go-stale.test.js',
+  /* 2026-08-06 — the same disease one layer out: a deploy that publishes an
+     OLDER tree than the one already live silently reverts whatever landed in
+     between, and reports success. Measured that day: 13 deploys, 3 inversions
+     (23%), app-version.json going BACKWARDS twice, one inversion reverting
+     another lane's shipped fix 51 seconds after it landed. This replays those
+     exact pairs against the guard. */
+  'forward-deploy-guard.test.js',
   /* b814 — "maybe add liquid glass designs some places your call". The call was
      the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
      the theme derivation, the @supports fallback, and the surfaces that must
@@ -254,6 +261,12 @@ const tests = [
   'copilot-request-binding-contract.test.js',
   'widget-builder-v2-runtime.test.js',
   'custom-widget-identity-runtime.test.js',
+  'widget-builder-live-preview.test.js',
+  /* Owner 2026-08-06: "it should be able to listen while it is talking" and
+     "it doesn't really start listening right away it's delayed". The mic now
+     opens WITH the question; the risk that creates - the avatar transcribing
+     ITSELF into the patient's answer - is what most of this suite guards. */
+  'avatar-listens-while-speaking.test.js',
   'studio-creations-durability.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',
@@ -294,6 +307,7 @@ const tests = [
   'intake-attach-single-flight.test.js',
   'multi-tab-hint-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
+  'athena-read-indicator.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',

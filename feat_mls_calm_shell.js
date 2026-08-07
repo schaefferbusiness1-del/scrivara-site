@@ -2747,7 +2747,17 @@
         return;
       }
       sel = 0;
+      /* ASKING IS ALWAYS REACHABLE. Copilot used to be offered only when NO
+         control matched, so a question sharing one word with any control
+         ('pay schedule' matches 'schedule') showed rows and no way to ask -
+         from a box whose own placeholder promises 'Ask or find anything'.
+         Appended LAST so control matches keep their ranking. */
+      results = results.concat([{ copilot: true, q: input.value.trim() }]);
       panel.innerHTML = results.map(function (r, i) {
+        if (r.copilot) {
+          return '<div class="r ask" role="option" data-i="' + i + '">' +
+            '&#129302; Ask MLS Copilot: "' + String(r.q).replace(/[<>&]/g, '') + '"</div>';
+        }
         var danger = DESTRUCTIVE.test(r.label);
         return '<div class="r' + (i === 0 ? ' sel' : '') + (danger ? ' danger' : '') + '" role="option" data-i="' + i + '">' +
           r.label.replace(/[<>&]/g, '') + (r.count > 1 ? '<small>several — show me</small>' : '') + '</div>';
