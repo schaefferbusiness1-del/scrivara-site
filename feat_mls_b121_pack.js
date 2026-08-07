@@ -1810,7 +1810,13 @@
       if (aidHits.length) {
         if (aidHits.length === 1) {
           var h = aidHits[0];
-          if (tokCount(h.name) >= 2 && tokOverlap(h.name, name) >= 1 && !conflictDob(normDob(h.dob), db)) return h;
+          /* px-1.0 (2026-08-07 patient-isolation train): one shared name token
+             was accepted as corroboration, so a mis-stamped athenaId could weld
+             two people who merely share a first name. A stable-id hit may merge
+             only with FULL name equality, or DOB equality plus name overlap. */
+          var hd = normDob(h.dob);
+          if (tokCount(h.name) >= 2 && !conflictDob(hd, db) &&
+              (tokset(h.name) === tokset(name) || (db && hd && db === hd && tokOverlap(h.name, name) >= 1))) return h;
         }
         /* same athenaId but uncorroborated (or multiple rows claim it):
            REFUSE ENTIRELY - do not fall through to weaker name legs while
@@ -1837,11 +1843,14 @@
       if (exact.length === 1) return exact[0];
       if (exact.length > 1) return null; /* ambiguous - migration will collapse them, not this gate */
     }
-    /* leg 3: name-only, no DOB conflict, EXACTLY ONE candidate in the store */
-    var loose = [];
-    for (i = 0; i < cands.length; i++) { if (!conflictDob(normDob(cands[i].dob), db)) loose.push(cands[i]); }
-    if (loose.length === 1) return loose[0];
-    return null; /* zero or ambiguous: let a recoverable duplicate mint */
+    /* leg 3 (name-only) REMOVED - px-1.0, 2026-08-07. A create that merely
+       shares a display name with one existing row used to merge INTO that row
+       with no DOB required on either side, and mergeRows then concatenated the
+       two records' allergies/problems/meds/summary - i.e. a NEW patient
+       inherited another patient's chart. Two records that are really the same
+       person mint a recoverable duplicate instead; identity for a merge is a
+       stable athenaId or name+DOB, never a name alone. */
+    return null; /* no strong-key match: let a recoverable duplicate mint */
   }
 
   /* merge = union fields, visits concat+deduped by _visitKey, earliest

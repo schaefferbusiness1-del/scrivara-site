@@ -10181,7 +10181,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (results || []).forEach(function (r) { if (!r || r.result == null) return; var sc = scoreFn(r.result); if (sc > bestScore) { bestScore = sc; best = r.result; bestFrame = r.frameId; } });
     return { result: best, frameId: bestFrame, score: bestScore };
   }
-  function mlsVisitDateKeyForHint(sv) { var t = String(sv == null ? '' : sv).trim(); var m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) return m[1] + '-' + m[2] + '-' + m[3]; m = t.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if (!m) return ''; var y = m[3].length === 2 ? ('20' + m[3]) : m[3]; return y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2); }
+  function mlsVisitDateKeyForHint(sv) { var t = String(sv == null ? '' : sv).trim(); var m = t.match(/(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2); m = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if (!m) return ''; var y = m[3].length === 2 ? ('20' + m[3]) : m[3]; return y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2); } /* px-e1 2026-08-07: the row parser (DATE_RE) legitimately yields dash- and dot-separated dates (07-21-2026); the old slash-only second regex keyed those to '' so a day-scoped read skipped EVERY row and a visit-notes-OFF pull silently stored nothing for the day. Loose ISO now also normalizes instead of falling through to a mis-parse. */
   function freezeVisitHint(hint) {
     hint = hint || {};
     var out = {

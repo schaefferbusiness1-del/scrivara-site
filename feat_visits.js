@@ -127,7 +127,11 @@
   }
 
   function _remoteVisit(v) {
-    return /athena|legacy|grab|pullrec/i.test(trim(v && v.source));
+    /* px-1.4 (2026-08-07): 'cohort' added - cohort-injection rows are
+       athena-derived text and used to slip past the identity gate purely
+       because their source string was not in this list. Existing unverified
+       cohort rows stay visible for audit but no longer feed summaries. */
+    return /athena|legacy|grab|pullrec|cohort/i.test(trim(v && v.source));
   }
 
   function _strictVerifiedAthenaBody(v) {
@@ -162,14 +166,30 @@
     var real = p.visits.filter(function (v) { return !!(v && v.id && v.indexOnly !== true && _hasVisitContent(v) && _svcToYMD(v.date)); });
     real.forEach(function (full) {
       var day = _svcToYMD(full.date);
+      /* px-1.1 (2026-08-07): a keyless placeholder may be compacted only when
+         the pairing is UNAMBIGUOUS. The old rule deleted EVERY keyless shell
+         on the hydrated row's day - with two same-day encounters, one body
+         landing erased the OTHER encounter's index row, so a two-visit day
+         rendered as one visit. Now a keyless shell is removed only in the
+         legacy 1:1 pairing (one keyless shell, one keyless hydrated row on
+         the day); a hydrated row that carries a stable key cannot prove a
+         keyless shell is its twin, so that shell is kept - a visible extra
+         index row is recoverable, a silently merged day is not. Keyed shells
+         still require the shared stable key. */
+      var fullStable = _stableVisitKeys(full);
+      var keylessShellsForDay = p.visits.filter(function (q) {
+        return q !== full && _emptyPlaceholder(q) && _svcToYMD(q.date) === day && !_stableVisitKeys(q).length;
+      }).length;
+      var hydratedForDay = real.filter(function (r) { return _svcToYMD(r.date) === day; }).length;
+      var keylessPairUnambiguous = !fullStable.length && keylessShellsForDay === 1 && hydratedForDay === 1;
       for (var i = p.visits.length - 1; i >= 0; i--) {
         var q = p.visits[i];
         if (q === full) continue;
         var qStable = _stableVisitKeys(q);
         var compatiblePlaceholder = _emptyPlaceholder(q) && _svcToYMD(q.date) === day && _trustCompatible(q, full) &&
-          (!qStable.length || _sharesStableVisitKey(q, full));
+          ((qStable.length && _sharesStableVisitKey(q, full)) || (!qStable.length && keylessPairUnambiguous));
         var supersededUnverifiedShell = _strictVerifiedAthenaBody(full) && _unverifiedChartShell(q) &&
-          (_sharesStableVisitKey(q, full) || (!qStable.length && !!day && _svcToYMD(q.date) === day));
+          (_sharesStableVisitKey(q, full) || (!qStable.length && !!day && _svcToYMD(q.date) === day && keylessPairUnambiguous));
         if (compatiblePlaceholder || supersededUnverifiedShell) { p.visits.splice(i, 1); changed = true; }
       }
     });
@@ -298,6 +318,10 @@
       bodyComplete: opts.bodyComplete === true && v.fullDetail === true && !indexOnly,
       encounterId: trim(v.encounterId || v.encounterID || ''),
       sourceVisitKey: trim(v.sourceVisitKey || v.rowKey || ''),
+      /* px-4.0: explicit document kind (e.g. 'opnote', 'imaging') - the
+         stable hook for operative notes and future document types. Callers
+         that do not classify a row leave it ''. */
+      docKind: trim(v.docKind || v.documentKind || ''),
       patientName: trim(v.patientName || v.patient || ''),
       patientDob: trim(v.patientDob || v.birthDate || v.dob || ''),
       patientMrn: trim(v.patientMrn || v.mrn || v.athenaId || ''),
@@ -343,11 +367,26 @@
     if (!existing) existing = p.visits.find(function (x) { return _visitKey(x) === key && _trustCompatible(x, v); });
     /* Organized chart pulls can create a dated shell before the optional full
        visit reader runs. Upgrade one strictly empty shell on the same day
-       instead of creating a duplicate when Athena's detailed type label differs. */
-    if (!existing && v.date) {
-      existing = p.visits.find(function (x) {
+       instead of creating a duplicate when Athena's detailed type label differs.
+       px-1.1 (2026-08-07): with MULTIPLE encounters on one day, "first shell
+       on the date" could hydrate encounter A's shell with encounter B's body.
+       A stable-alias agreement wins outright; otherwise the upgrade is taken
+       only when the day has exactly ONE compatible shell and no stable-key
+       CONFLICT - two same-day shells append a new row instead (an extra row
+       is recoverable; a wrong weld is not). */
+    if (!existing && v.date && v.indexOnly !== true && trim(v.raw)) {
+      /* px-1.1 note: the incoming row must itself be a REAL body - an
+         incoming index shell "upgrading" an earlier shell would weld two
+         different same-day encounters' index rows into one. */
+      var dayShells = p.visits.filter(function (x) {
         return _emptyPlaceholder(x) && _svcToYMD(x.date) === _svcToYMD(v.date) && _trustCompatible(x, v);
-      }) || null;
+      });
+      existing = dayShells.find(function (x) { return _sharesStableVisitKey(x, v); }) || null;
+      if (!existing && dayShells.length === 1) {
+        var lone = dayShells[0];
+        var bothStable = _stableVisitKeys(lone).length && _stableVisitKeys(v).length;
+        if (!bothStable || _sharesStableVisitKey(lone, v)) existing = lone;
+      }
     }
     if (existing) {
       /* Older organized-history imports created date/type placeholders without
@@ -579,7 +618,10 @@
     if (v.cpt && v.cpt.length) lines.push('CPT (detected): ' + v.cpt.join(', '));
     if (v.icd10 && v.icd10.length) lines.push('ICD-10 (detected): ' + v.icd10.join(', '));
     lines.push('--- RAW CAPTURED VISIT DATA ---');
-    lines.push(v.raw || '(no raw text captured)');
+    /* px-1.2: normalize encoding and strip page scaffolding BEFORE the model
+       sees the text - garbage in was how garbage summaries got out. */
+    var bodyForPrompt = _normalizeClinicalText(_stripPageDebris(_visitBodyText(v))).slice(0, 24000);
+    lines.push(bodyForPrompt || '(no raw text captured)');
     return lines.join('\n');
   }
 
@@ -594,9 +636,26 @@
     var v = (p.visits || []).find(function (x) { return x.id === visitId; });
     if (!v) return Promise.reject(new Error('no-visit'));
     if (_usableVisits(p).indexOf(v) < 0) return Promise.reject(new Error('identity-unverified'));
+    /* px-1.2: a visit with no captured note text has nothing to summarize.
+       The old path sent the literal "(no raw text captured)" to the model,
+       which then wrote a confident-sounding "summary" of a date and a type -
+       that is exactly how bodyless rows summarized incorrectly. */
+    if (_visitBodyText(v).length < 10) return Promise.reject(new Error('no-note-text'));
     if (v.aiSummary && !opts.force) return Promise.resolve(v.aiSummary);
     return _aiCall(SUM_SYS, _visitToPrompt(v, p)).then(function (txt) {
-      v.aiSummary = trim(txt);
+      var cleaned = _normalizeClinicalText(trim(txt));
+      var verdict = _validVisitSummary(cleaned, v, p);
+      if (!verdict.ok) {
+        /* Record the refusal (bounded, PHI-free) so callers can avoid a hot
+           retry loop; NEVER store the malformed text as a done summary. */
+        v.aiSummaryFailed = { at: new Date().toISOString(), reason: verdict.reason };
+        _upsert(p);
+        var err = new Error('summary-invalid: ' + verdict.reason);
+        err.summaryInvalid = verdict.reason;
+        throw err;
+      }
+      v.aiSummary = cleaned;
+      if (v.aiSummaryFailed) delete v.aiSummaryFailed;
       _upsert(p);
       return v.aiSummary;
     });
@@ -604,7 +663,15 @@
 
   function ensureSummaries(patientId, onProgress) {
     var p = _findPatient(patientId); if (!p) return Promise.resolve(0);
-    var todo = _usableVisits(p).filter(function (v) { return !trim(v.aiSummary); });
+    var todo = _usableVisits(p).filter(function (v) {
+      if (trim(v.aiSummary)) return false;
+      /* nothing to summarize from - the renderer shows an honest placeholder */
+      if (_visitBodyText(v).length < 10) return false;
+      /* a recently refused summary is not retried on every pass */
+      var f = v.aiSummaryFailed;
+      if (f && f.at && (Date.now() - Date.parse(f.at)) < 6 * 3600 * 1000) return false;
+      return true;
+    });
     var i = 0, done = 0;
     function next() {
       if (i >= todo.length) return Promise.resolve(done);
@@ -635,6 +702,85 @@
 
   function _notData(s) {
     return !s || /^(?:none|none recorded|not recorded|unknown|n\/a|na|no (?:known|prior|current)|not documented)\.?$/i.test(_plain(s));
+  }
+
+  /* Deterministic text/encoding repair applied when text is DISPLAYED or fed
+     to a summarizer - stored captures are never modified. Repairs the classic
+     UTF-8-decoded-as-Windows-1252 sequences, drops replacement/control chars,
+     and collapses runaway whitespace. Everything is written as escapes: this
+     file is rewritten by the build stamper and a literal non-ASCII byte here
+     has corrupted shared files before. */
+  function _normalizeClinicalText(s) {
+    s = S(s);
+    if (!s) return '';
+    s = s
+      .replace(/\u00E2\u20AC\u2122/g, "'")
+      .replace(/\u00E2\u20AC\u02DC/g, "'")
+      .replace(/\u00E2\u20AC\u0153/g, '"')
+      .replace(/\u00E2\u20AC\u201C/g, '\u2013')
+      .replace(/\u00E2\u20AC\u201D/g, '\u2014')
+      .replace(/\u00E2\u20AC\u00A2/g, '\u2022')
+      .replace(/\u00E2\u20AC\u00A6/g, '\u2026')
+      .replace(/\u00E2\u20AC[\u009C\u009D]/g, '"')
+      .replace(/\u00E2\u20AC(?=[\s.,;:!?)]|$)/g, '"')
+      .replace(/\u00C3\u00A9/g, '\u00E9')
+      .replace(/\u00C3\u00A8/g, '\u00E8')
+      .replace(/\u00C3\u00A1/g, '\u00E1')
+      .replace(/\u00C3\u00B3/g, '\u00F3')
+      .replace(/\u00C3\u00AD/g, '\u00ED')
+      .replace(/\u00C3\u00BA/g, '\u00FA')
+      .replace(/\u00C3\u00B1/g, '\u00F1')
+      .replace(/\u00C2\u00B0/g, '\u00B0')
+      .replace(/\u00C2\u00A0/g, ' ')
+      .replace(/\u00C2(?=\s)/g, '')
+      .replace(/\uFFFD+/g, ' ')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+    return s.replace(/[ \t]{3,}/g, '  ');
+  }
+
+  /* The clinical body of a visit row - what a summarizer may work FROM.
+     aiSummary is deliberately excluded: it is the summarizer's own OUTPUT. */
+  function _visitBodyText(v) {
+    v = v || {};
+    return trim([S(v.raw), S(v.findings), S(v.plan)].filter(function (x) { return trim(x); }).join('\n'));
+  }
+
+  /* Strip a trailing ", First Last[, MD]" provider tail that the encounter
+     index parser sometimes welds onto the type cell ("fluoro non sedation,
+     Matthew Schaeffer, "). Display-only - stored types are never modified
+     (legacy id-less rows key their dedupe on type). Conservative: requires a
+     credential, or a Two Capitalized Token person shape, at end of string. */
+  function _cleanVisitTypeForDisplay(t) {
+    t = _normalizeClinicalText(S(t));
+    t = t.replace(/,\s*(?:[A-Z][a-zA-Z'.-]+\s+[A-Z][a-zA-Z'.-]+\s*,?\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|CRNP|RN|DPM|PhD)?\.?|[A-Z][a-zA-Z'.-]+\s*,?\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|CRNP|RN|DPM|PhD)\.?)\s*,?\s*$/, '');
+    return trim(t).replace(/[,\s]+$/, '');
+  }
+
+  var _MOJIBAKE_RE = /\u00E2\u20AC|\u00C3[\u0080-\u00BF]|\uFFFD/;
+  var _HTML_TAG_RE = /<\/?[a-z][a-z0-9-]*(?:\s[^<>]*)?>/i;
+  var _JSON_SCAFFOLD_RE = /^\s*[\[{]\s*"|"[a-z_]{2,24}"\s*:\s*["\[{0-9]/i;
+  /* Validate a model-produced visit summary BEFORE it is stored. A reply that
+     is empty, encoding-garbled, markup/JSON-shaped, echoes the prompt, names a
+     conflicting DOB, or repeats itself verbatim is refused - the raw captured
+     text (which the renderer already falls back to) is safer than storing a
+     malformed "summary" as if it were done. */
+  function _validVisitSummary(txt, v, p) {
+    var s = trim(txt);
+    if (!s || s.length < 20) return { ok: false, reason: 'empty-or-short' };
+    if (_MOJIBAKE_RE.test(s)) return { ok: false, reason: 'encoding-garbage' };
+    if (_HTML_TAG_RE.test(s)) return { ok: false, reason: 'html-markup' };
+    if (_JSON_SCAFFOLD_RE.test(s)) return { ok: false, reason: 'json-scaffolding' };
+    if (/RAW CAPTURED VISIT DATA|clinical documentation summarizer/i.test(s)) return { ok: false, reason: 'prompt-echo' };
+    var dm = s.match(/\bDOB\b\s*:?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2})/i);
+    if (dm && p && trim(p.dob)) {
+      var da = _normDob(dm[1]), db = _normDob(p.dob);
+      if (da && db && da !== db) return { ok: false, reason: 'dob-conflict' };
+    }
+    if (s.length >= 240) {
+      var probe = s.slice(40, 100);
+      if (trim(probe).length >= 40 && s.indexOf(probe, 101) >= 0) return { ok: false, reason: 'duplicated-passage' };
+    }
+    return { ok: true };
   }
 
   var _clinicalSectionAliases = [
@@ -893,33 +1039,75 @@
     return lines.join('\n');
   }
 
+  /* px-2.0 (2026-08-07) - the longitudinal summary, rebuilt.
+     What was wrong, measured on the live store 2026-08-07: (a) 26 of 34
+     stored summaries were ONLY the header line ("Longitudinal summary
+     refreshed 8/5/2026 -") because a patient with zero usable visits still
+     reached this builder and nothing else was emitted; (b) the "lead" block
+     printed visits[0]'s body and then the Recent-visits loop printed
+     visits[0] AGAIN - the duplicated-passage class (8 live records); (c) the
+     summary had NO sections for problems / allergies / medications even when
+     the verified chart snapshot held them. Now: structured sections from the
+     verified facts, first visit gets the larger excerpt exactly once,
+     verified-absent cards are stated, and when there is truly nothing the
+     builder returns '' so the honest empty-panel text shows instead of a
+     truncated-looking header. */
   function _aggregateSummary(p, visits, facts) {
     var lines = [];
     var pulled = visits.some(_isAthenaVisit);
     var when = new Date().toLocaleDateString();
     lines.push((pulled ? 'Pulled from Athena ' : 'Longitudinal summary refreshed ') + when + ' —');
-    var latest = visits[0];
-    var lead = latest && _stripIdentityLines(_stripPageDebris(latest.aiSummary || latest.findings || latest.plan || latest.raw));
-    if (lead) lines.push(lead.slice(0, 900));
-
-    var prior = [];
-    ['pmh', 'psh', 'social', 'family', 'smoking'].forEach(function (k) {
-      (facts.history[k] || []).forEach(function (x) { prior.push(x); });
-    });
-    if (prior.length) {
-      lines.push('', 'Prior history:');
-      _uniq(prior).slice(0, 14).forEach(function (x) { lines.push('• ' + x.slice(0, 360)); });
-    }
-
+    var norm = function (x) { return trim(_normalizeClinicalText(S(x))); };
+    var any = false;
+    var section = function (title, values, per, cap) {
+      values = _uniq((values || []).map(norm).filter(Boolean));
+      if (!values.length) return;
+      per = per || 360; cap = cap || 14;
+      lines.push('', title + ':');
+      values.slice(0, cap).forEach(function (x) { lines.push('• ' + x.slice(0, per)); });
+      if (values.length > cap) lines.push('• (+' + (values.length - cap) + ' more on the chart)');
+      any = true;
+    };
+    section('Active or significant problems', facts.problems);
+    section('Allergies and reactions', facts.allergies);
+    section('Medications', facts.meds, 240, 20);
+    section('Past medical history', facts.history.pmh);
+    section('Surgical and procedural history', facts.history.psh);
+    section('Social and family history', [].concat(facts.history.social || [], facts.history.smoking || [], facts.history.family || []));
+    var vit = facts.vitals || {}, vitBits = [];
+    if (trim(S(vit.bp))) vitBits.push('BP ' + trim(S(vit.bp)));
+    if (trim(S(vit.hr))) vitBits.push('HR ' + trim(S(vit.hr)));
+    if (trim(S(vit.bmi))) vitBits.push('BMI ' + trim(S(vit.bmi)));
+    if (vitBits.length) section('Vitals (latest captured)', [vitBits.join(', ') + (trim(S(vit.takenAt)) ? ' (' + trim(S(vit.takenAt)) + ')' : '')]);
     if (visits.length) {
       lines.push('', 'Recent visits:');
-      visits.slice(0, 12).forEach(function (v) {
-        var reason = _typeIsRenderableReason(v.type) ? v.type : '';
-        var detail = _stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || reason));
+      visits.slice(0, 12).forEach(function (v, i) {
+        var reason = _typeIsRenderableReason(v.type) ? _cleanVisitTypeForDisplay(v.type) : '';
+        var detail = norm(_stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || reason)));
         if (!detail) detail = trim(reason) || 'Visit — no readable note text captured';
-        lines.push('• ' + (v.date || 'Undated') + ' — ' + detail.slice(0, 320));
+        lines.push('• ' + (v.date || 'Undated') + ' — ' + detail.slice(0, i === 0 ? 700 : 320));
       });
+      any = true;
     }
+    /* Verified-absent honesty: cards the identity-gated chart read PROVED
+       empty are stated, so "nothing listed" is distinguishable from "never
+       read". Only an exact-patient complete receipt may speak. */
+    try {
+      var rec = p && p.athenaProfileCoverage;
+      if (rec && rec.complete === true && rec.exactIdentityVerified === true && trim(rec.patientId) === trim(p && p.id) && rec.cards) {
+        var none = [];
+        [['problems', 'problems'], ['meds', 'medications'], ['allergies', 'allergies'], ['history', 'history'], ['vitals', 'vitals']].forEach(function (pair) {
+          var card = rec.cards[pair[0]];
+          if (card && card.status === 'not_documented') none.push(pair[1]);
+        });
+        if (none.length) { lines.push('', 'Verified on the Athena chart with none documented: ' + none.join(', ') + '.'); any = true; }
+      }
+    } catch (eNone) {}
+    /* Nothing captured AND nothing verified: an empty string, never a bare
+       header. The profile's own honest-empty text ("No Athena history pulled
+       for this patient yet") renders instead, and the store census cannot
+       mistake a header for captured content. */
+    if (!any) return '';
     return lines.join('\n').slice(0, 9000);
   }
 
@@ -1054,7 +1242,12 @@
     var oldHistory=(oldFacts.history&&!Array.isArray(oldFacts.history)&&typeof oldFacts.history==='object')?oldFacts.history:{};
     Object.keys(facts.history).forEach(function (k) { p.history[k] = _mergeOwnedText(p.history[k], oldHistory[k], facts.history[k]); });
     _mergeVitalsForPatient(p,facts.vitals);
-    p.athenaHistorySummary = _aggregateSummary(p, visits, facts);
+    var aggregate = _aggregateSummary(p, visits, facts);
+    /* px-2.0: an empty aggregate means NOTHING was captured or verified -
+       clear a previously importer-owned summary rather than leaving a stale
+       or header-only one behind. Clinician-authored text is never touched. */
+    if (trim(aggregate)) p.athenaHistorySummary = aggregate;
+    else if (/^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(S(p.athenaHistorySummary)))) p.athenaHistorySummary = '';
     /* Preserve a clinician-authored free-text summary. Only fill/refresh the
        legacy summary slot when it is empty or clearly owned by this importer. */
     if (!trim(p.summary) || /^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(p.summary))) {
@@ -1111,6 +1304,57 @@
     });
   }
 
+  /* ---- one-time store hygiene (px-2.1, 2026-08-07) ----
+     (a) header-only athena summaries ("Longitudinal summary refreshed X -"
+         with NOTHING after the dash) read like truncation and carry zero
+         facts - clear them so the honest empty-panel text shows instead.
+     (b) aiSummary === '' keys were stored by failed model calls; drop the
+         empty key so the row renders its honest fallback.
+     (c) records created inside the known 2026-06-24..29 cross-contamination
+         window whose DOB collapses into a shared cluster get a VISIBLE
+         suspect marker. Fields are never blanked - a wrong-but-visible value
+         is safer than a confident empty ("no allergies recorded" from a wipe
+         would be a false clinical claim). Repair is a re-pull, not a wipe. */
+  function _storeHygieneOnce() {
+    try {
+      if (!isFn(window.getPatients) || !isFn(window.upsertPatient)) return;
+      var flagKey = (typeof window.uns === 'function') ? window.uns('mlsPxHygiene1') : 'mlsPxHygiene1';
+      try { if (localStorage.getItem(flagKey) === '1') return; } catch (eR) { return; }
+      var pts = window.getPatients() || [];
+      var HDR_ONLY = /^(?:Pulled from Athena|Longitudinal summary refreshed)\s+[\d\/.\-]+\s*(?:—|–|-)?\s*$/;
+      var winStart = Date.parse('2026-06-24T00:00:00'), winEnd = Date.parse('2026-06-30T00:00:00');
+      var dobCounts = {};
+      pts.forEach(function (p) {
+        if (!p || !p.created || p.created < winStart || p.created >= winEnd) return;
+        var d = trim(S(p.dob)); if (d) dobCounts[d] = (dobCounts[d] || 0) + 1;
+      });
+      var touched = 0;
+      pts.forEach(function (p) {
+        if (!p) return;
+        var dirty = false;
+        if (typeof p.athenaHistorySummary === 'string' && HDR_ONLY.test(trim(p.athenaHistorySummary))) { p.athenaHistorySummary = ''; dirty = true; }
+        if (typeof p.summary === 'string' && HDR_ONLY.test(trim(p.summary))) { p.summary = ''; dirty = true; }
+        (Array.isArray(p.visits) ? p.visits : []).forEach(function (v) {
+          if (v && typeof v.aiSummary === 'string' && !v.aiSummary.trim()) { delete v.aiSummary; dirty = true; }
+        });
+        if (p.created >= winStart && p.created < winEnd && trim(S(p.dob)) && dobCounts[trim(S(p.dob))] >= 5 && !p.athenaImportSuspect) {
+          p.athenaImportSuspect = { window: '2026-06-24..2026-06-29', reason: 'shared-dob-cluster', markedAt: new Date().toISOString() };
+          dirty = true;
+        }
+        if (dirty) touched++;
+      });
+      if (touched) {
+        /* one bulk write, not N upserts - the store is MLSZ1-compressed and
+           re-serializing 1,500+ records per record would stall the page */
+        if (typeof window.savePatients === 'function') window.savePatients(pts);
+        else pts.forEach(function (p) { try { window.upsertPatient(p); } catch (eU) {} });
+      }
+      try { localStorage.setItem(flagKey, '1'); } catch (eW) {}
+      if (touched) { try { console.log('[MLS visits] store hygiene: cleaned ' + touched + ' record(s) (header-only summaries / empty aiSummary keys / import-window suspect markers)'); } catch (eL) {} }
+    } catch (e) {}
+  }
+  try { setTimeout(_storeHygieneOnce, 4500); } catch (eHyg) {}
+
   window.__mlsVisitModel = {
     getVisits: getVisits,
     addVisit: addVisit,
@@ -1133,7 +1377,12 @@
     _visitToPrompt: _visitToPrompt,
     _sectionValues: _sectionValues,
     _stripPageDebris: _stripPageDebris,
-    _aggregateSummary: _aggregateSummary
+    _aggregateSummary: _aggregateSummary,
+    _normalizeClinicalText: _normalizeClinicalText,
+    _visitBodyText: _visitBodyText,
+    _validVisitSummary: _validVisitSummary,
+    _cleanVisitTypeForDisplay: _cleanVisitTypeForDisplay,
+    _storeHygieneOnce: _storeHygieneOnce
   };
 })();
 
@@ -1238,7 +1487,10 @@
     var card = document.createElement('div'); card.className = 'mlsvh-v'; card.dataset.vid = v.id;
     var head = document.createElement('div'); head.className = 'mlsvh-vh';
     var date = document.createElement('span'); date.className = 'mlsvh-date'; date.textContent = v.date || '(undated)';
-    var type = document.createElement('span'); type.className = 'mlsvh-type'; type.textContent = v.type || (v.aiSummary ? v.aiSummary.split('\n')[0].slice(0, 80) : 'Visit');
+    var type = document.createElement('span'); type.className = 'mlsvh-type';
+    /* px-2.2: display-clean the type (provider tail, mojibake) - stored value untouched */
+    var typeClean = (M() && typeof M()._cleanVisitTypeForDisplay === 'function') ? M()._cleanVisitTypeForDisplay(v.type) : (v.type || '');
+    type.textContent = typeClean || (v.aiSummary ? v.aiSummary.split('\n')[0].slice(0, 80) : 'Visit');
     head.appendChild(date); head.appendChild(type);
     head.appendChild(codePills(v));
     var prov = visitProvenance(v);
@@ -1688,9 +1940,21 @@
     var status = document.createElement('span'); status.className = 'mls-cv-status';
     btn.addEventListener('click', function () {
       btn.disabled = true;
-      run(function (m) { status.textContent = m; }).then(function () { btn.disabled = false; }, function () { btn.disabled = false; });
+      /* px-3.5 (2026-08-07): the bar SURVIVES a patient switch (it is removed
+         only when NO patient is active), so patient A's progress lines - and
+         the terminal "N visits on file" receipt - used to paint inside
+         patient B's open chart. Every status write now proves the run's
+         patient is still the active one. */
+      var runPtId = (activeP() || {}).id || '';
+      run(function (m) {
+        if (S((activeP() || {}).id || '') === S(runPtId)) status.textContent = m;
+      }).then(function () { btn.disabled = false; }, function () { btn.disabled = false; });
     });
     bar.appendChild(btn); bar.appendChild(status);
+    if (!window.__mlsCvBarSwitchWired) {
+      window.__mlsCvBarSwitchWired = true;
+      try { window.addEventListener('mls:active-patient-changed', function () { var s = document.querySelector('#mlsCopyVisitsBar .mls-cv-status'); if (s) s.textContent = ''; }); } catch (eSw) {}
+    }
     var anchor = document.getElementById('profAtGlance') || document.getElementById('profDemo') || document.getElementById('profName');
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling); else card.appendChild(bar);
   }

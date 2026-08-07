@@ -159,7 +159,10 @@
         }
         st.patient = r.identity || null;                 // session lockedIdentity
         st.visitCount = Array.isArray(r.visits) ? r.visits.length : (r.savedCount || 0);
-        narrate('✓ ' + st.visitCount + ' visit(s) on file', 'ok');
+        /* px-e2 2026-08-07: "on file" implied the visits were saved into MLS,
+           but the app-brain persist hook (saveVisitsViaApp) has never existed -
+           this read is session-only. Say what actually happened. */
+        narrate('✓ Read ' + st.visitCount + ' visit(s) from the open chart (this panel only — use MLS "Copy every visit" to import them)', 'ok');
         setState('ready');
         return r;
       });

@@ -10096,6 +10096,13 @@ function setActivePtId(id){
   if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
   try{ if(id) sessionStorage.setItem(uns('activePtChosen'),String(id)); else sessionStorage.removeItem(uns('activePtChosen')); }catch(e5){}
   if(changed){
+    /* px-3.0 (2026-08-07): a monotonically increasing patient-switch epoch.
+       Async completions capture it before their await and re-check it after,
+       so a delayed reply for patient A can never paint or upsert into
+       patient B's panel - and an A->B->A flip (same id, new epoch) is also
+       caught. The visit lane has its own binding epoch; this one covers the
+       Patients-tab lane, which had none. */
+    try{ window._mlsActivePtEpoch=(window._mlsActivePtEpoch||0)+1; }catch(eEp){}
     /* Custom-widget output is per-patient: drop every cached reply (+ its block
        state) stamped for a different chart so the renderer can never restore
        another patient's text. try/catch also shields the TDZ window before the
@@ -10114,6 +10121,15 @@ function setActivePtId(id){
 }
 function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
 function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
+/* px-3.0: the still-active proof for async completions in the Patients lane.
+   Pass the epoch captured BEFORE the await; an id match alone misses A->B->A. */
+function _mlsPatientStillActive(patientId,epoch){
+  try{
+    if(String(getActivePtId())!==String(patientId||'')) return false;
+    if(epoch!=null && Number(epoch)!==Number(window._mlsActivePtEpoch||0)) return false;
+    return true;
+  }catch(e){ return false; }
+}
 function upsertPatient(p){
   const __key=uns('patients'),__batch=__mlsPtsBatchByKey[__key],__foreign=__mlsPtsForeignBatch(__key);
   if(__foreign){const e=new Error('Patient persistence stopped because the signed-in account changed.');e.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw e;}
@@ -13151,7 +13167,7 @@ function copyBookingLinkText(){
 }
 var _boardDoctors=[];
 var _boardDate='';
-function _todayStr(){ return (typeof _acctTodayKey==='function')?_acctTodayKey():(new Date()).toISOString().slice(0,10); }
+function _todayStr(){ if(typeof _acctTodayKey==='function') return _acctTodayKey(); /* px-3.3: local date, not UTC - after ~8 PM ET the UTC key names TOMORROW */ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function _boardDay(){ return _boardDate||_todayStr(); }
 function changeBoardDate(delta){ var d=new Date((_boardDate||_todayStr())+'T12:00'); d.setDate(d.getDate()+delta); _boardDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); loadBoard(true); }
 function jumpBoardDate(v){ if(v){ _boardDate=String(v).slice(0,10); loadBoard(true); } }
@@ -15579,7 +15595,20 @@ function _athenaChartLanded(p){
 }
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
-  if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', '); else if(txt!=null && typeof txt!=='string') txt=String(txt);
+  if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', ');
+  else if(txt!=null && typeof txt==='object'){
+    /* px-3.1: a history/vitals-shaped OBJECT used to stringify to the literal
+       "[object Object]" and pass the truthy check, rendering as if it were
+       real clinical content. Format the keyed values instead. */
+    try{
+      txt=Object.keys(txt).map(function(k){
+        const v=txt[k];
+        const s=(Array.isArray(v)?v.filter(Boolean).join(', '):String(v==null?'':v)).trim();
+        return s?(k+': '+s):'';
+      }).filter(Boolean).join('\n');
+    }catch(e){ txt=''; }
+  }
+  else if(txt!=null && typeof txt!=='string') txt=String(txt);
   if(txt && txt.trim()){ el.textContent=txt; el.classList.remove('empty-txt'); }
   else { el.textContent=placeholder; el.classList.add('empty-txt'); }
 }
@@ -15607,6 +15636,7 @@ function renderProfile(){
   fieldBody('profAllergies',p.allergies,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
   fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
   _renderProfUnpulledNotice(p);
+  _renderProfSuspectNotice(p);
   renderInsurance(p);
   renderDocs(p);
   renderPtTimeline(p);
@@ -15658,6 +15688,29 @@ function _renderProfUnpulledNotice(p){
 }
 /* "At a glance" chips on a patient chart — visits, last visit, last pain — so the
    doctor reads the patient's status in a second when the chart opens. */
+/* px-3.4 (2026-08-07): records created inside the 2026-06-24..29 import
+   window whose DOB collapsed into a shared cluster carry another chart's
+   DOB/allergies/meds/problems (260 records measured). Fields are NEVER
+   blanked - a confidently empty allergy line would read as "no allergies
+   recorded", which is a false clinical claim. Instead the chart says plainly
+   that its imported fields need re-verification, and the cure is a fresh
+   identity-gated pull (which replaces the athena-owned slice). */
+function _renderProfSuspectNotice(p){
+  try{
+    var card=document.getElementById('profileCard'); if(!card) return;
+    var el=document.getElementById('profImportSuspect');
+    var show=!!(p&&p.athenaImportSuspect&&p.athenaImportSuspect.reason);
+    if(!show){ if(el&&el.parentNode) el.parentNode.removeChild(el); return; }
+    if(!el){
+      el=document.createElement('div'); el.id='profImportSuspect';
+      el.setAttribute('role','alert');
+      el.style.cssText='background:#fdecec;border:1px solid #efb9b9;border-radius:10px;padding:10px 13px;margin:10px 0 2px;font-size:13px;line-height:1.5;color:#7a1d1d';
+      var grid=null; try{ grid=card.querySelector?card.querySelector('.prof-grid'):null; }catch(eq){ grid=null; }
+      if(grid&&grid.parentNode) grid.parentNode.insertBefore(el,grid); else card.appendChild(el);
+    }
+    el.textContent='⚠ Verify against athenaOne before relying on this chart: the problems, medications, allergies and DOB below were imported during the 2026-06-24 to 06-29 pull window, which mixed data between patients. Re-pull this chart from Athena to replace them with verified data.';
+  }catch(e){}
+}
 function _renderProfAtGlance(p){
   var host=document.getElementById('profDemo'); if(!host||!host.parentNode) return;
   var el=document.getElementById('profAtGlance');
@@ -16258,6 +16311,23 @@ function _opResolvePatient(name,dob,patientId){
     return exact.length===1?exact[0]:null;
   }catch(e){ return null; }
 }
+/* px-3.1: p.vitals and p.history are OBJECTS on athena-imported records;
+   String() turned them into the literal "[object Object]" inside an op-note
+   AI prompt. Flatten keyed values honestly instead. */
+function _opFmtKv(v){
+  if(v==null) return '';
+  if(typeof v==='string') return v;
+  if(Array.isArray(v)) return v.filter(Boolean).join(', ');
+  if(typeof v==='object'){
+    try{
+      return Object.keys(v).map(function(k){
+        var s=(Array.isArray(v[k])?v[k].filter(Boolean).join(', '):String(v[k]==null?'':v[k])).trim();
+        return s?(k+': '+s):'';
+      }).filter(Boolean).join('; ');
+    }catch(e){ return ''; }
+  }
+  return String(v);
+}
 /* Gather everything we already know about this exact patient for the op note. */
 function _opPatientCtx(name,dob,patientId){
   try{
@@ -16265,7 +16335,7 @@ function _opPatientCtx(name,dob,patientId){
     if(!p) return {};
     var history='';
     try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
-    if(!history){ history=['Problems: '+String(p.problems||''),'Medications: '+String(p.meds||p.medications||''),'Allergies: '+String(p.allergies||''),'Chart summary: '+String(p.summary||''),'Vitals: '+String(p.vitals||''),'History & background: '+String(p.background||p.history||'')].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
+    if(!history){ history=['Problems: '+_opFmtKv(p.problems),'Medications: '+_opFmtKv(p.meds||p.medications),'Allergies: '+_opFmtKv(p.allergies),'Chart summary: '+_opFmtKv(p.summary),'Vitals: '+_opFmtKv(p.vitals),'History & background: '+_opFmtKv(p.background||p.history)].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
     /* Identity separation (owner goal 2026-07-21, pinned by
        tests/provider-identity-separation-contract): a LOGIN/account name is not
        a clinical provider identity. getName() is uns('docname') - the account
@@ -18352,6 +18422,12 @@ async function analyzeDoc(){
   const p=activePatient(); if(!p) return;
   const d=(p.docs||[]).find(x=>x.id===viewingDocId); if(!d) return;
   if(!d.text||!d.text.trim()){ toast('No text to analyze. Paste text for this document first.','err'); return; }
+  /* px-3.0: freeze WHO this analysis belongs to before any await. The old
+     code upserted the pre-await patient object after the model returned -
+     if the doctor had switched patients (or the store had been re-written by
+     a pull) that stale object rolled the record back, and the result pane
+     repainted regardless of whose document was open. */
+  const ptId=p.id, docId=d.id, ptEpoch=(window._mlsActivePtEpoch||0);
   const btn=document.getElementById('docAnalyzeBtn');
   if(!hasAI()){
     // offline graceful fallback: a simple structural summary, honest about no-AI
@@ -18388,14 +18464,26 @@ Return ONLY valid JSON (no fences) with this shape:
     sec('Results',parsed.results);
     sec('Explicit negatives',parsed.negatives);
     sec('Relevant history',parsed.history);
-    d.aiSummary=lines.join('\n');
-    d.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], negatives:parsed.negatives||[], history:parsed.history||[], summary:parsed.summary||'' };
-    upsertPatient(p);
-    document.getElementById('docAiWrap').style.display='block';
-    document.getElementById('docAiBody').textContent=d.aiSummary;
-    document.getElementById('docMergeBtn').style.display='inline-flex';
-    renderProfile();
-    toast('Document analyzed. Review, then merge key items into the profile.','ok');
+    /* px-3.0: re-resolve the patient AND document FRESH from the store - the
+       pre-await objects may be stale (rolled-back fields) or the doctor may
+       have switched charts while the model ran. The result is saved onto the
+       chart it belongs to; the panel repaints only if that chart (and that
+       document) is still the one on screen. */
+    const pF=findPatient(ptId);
+    const dF=pF?((pF.docs||[]).find(x=>x.id===docId)||null):null;
+    if(!pF||!dF){ toast('Analysis finished after the document was removed — nothing saved.',''); return; }
+    dF.aiSummary=lines.join('\n');
+    dF.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], negatives:parsed.negatives||[], history:parsed.history||[], summary:parsed.summary||'' };
+    upsertPatient(pF);
+    if(_mlsPatientStillActive(ptId,ptEpoch)&&viewingDocId===docId){
+      document.getElementById('docAiWrap').style.display='block';
+      document.getElementById('docAiBody').textContent=dF.aiSummary;
+      document.getElementById('docMergeBtn').style.display='inline-flex';
+      renderProfile();
+      toast('Document analyzed. Review, then merge key items into the profile.','ok');
+    } else {
+      toast('Document analysis for '+(pF.name||'a previous patient')+' finished — saved to that chart (not the one now open).','');
+    }
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='✨ Analyze with AI'; }
 }
@@ -20128,12 +20216,33 @@ async function _importPulledSchedule(appts){
     if(existingKeys[key]||existingKeys[dayKey]){ skipped++; continue; }  // already there → skip (no doubling up)
     existingKeys[key]=1; existingKeys[dayKey]=1;
     var ext=''; var existing=null;
-    try{ existing=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(existing) ext=existing.id; }catch(e){}
-    // Durable, server-synced patient record (dedup by name → reused on re-sync, never duplicated).
+    /* px-3.2 (2026-08-07): this legacy fallback matched by NAME ALONE and then
+       stamped the pulled DOB onto whichever same-name record it hit - the
+       wrong-merge shape the exact importer refuses. It is reachable only when
+       the satellite failed to install; make it refuse the same way: a name
+       binds only with a DOB present on BOTH sides and equal. Otherwise a new
+       record is created (a recoverable duplicate, never a wrong weld). */
+    try{
+      var _lpDob=function(s){
+        s=String(s||''); var iso=s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if(iso) return ('0'+iso[2]).slice(-2)+('0'+iso[3]).slice(-2)+iso[1];
+        var m=s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if(!m) return '';
+        var y=m[3].length===2?((+m[3]>40?'19':'20')+m[3]):m[3];
+        return ('0'+m[1]).slice(-2)+('0'+m[2]).slice(-2)+y;
+      };
+      var aDobKey=_lpDob(a.dob);
+      existing=aDobKey?(pts.find(function(x){
+        if(String(x.name||'').trim().toLowerCase()!==name.toLowerCase()) return false;
+        var xDobKey=_lpDob(x.dob);
+        return !!(xDobKey&&xDobKey===aDobKey);
+      })||null):null;
+      if(existing) ext=existing.id;
+    }catch(e){}
+    // Durable, server-synced patient record (dedup by verified identity → reused on re-sync).
     if(!existing && typeof upsertPatient==='function'){
       var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
       try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
-    } else if(existing && a.dob && !existing.dob){ existing.dob=String(a.dob); try{ upsertPatient(existing); }catch(e){} }
+    }
     /* Accept both Athena's canonical "4:00 PM" and 24-hour "16:00". The old
        strict HH:MM gate discarded meridian times, stored start_at:null, and the
        UI later rendered that missing timestamp as a fake evening appointment. */

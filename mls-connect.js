@@ -36181,8 +36181,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     function ym(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
     if(/last month/.test(q)){ var lm=new Date(y,m-1,1); return {label:'last month', in:function(dt){ return dt.slice(0,7)===ym(lm); }}; }
     if(/this month|month/.test(q)){ return {label:'this month', in:function(dt){ return dt.slice(0,7)===ym(now); }}; }
-    if(/this week|week/.test(q)){ var day=now.getDay(); var start=new Date(y,m,now.getDate()-day); var s=start.toISOString().slice(0,10); var e=new Date(start.getTime()+6*864e5).toISOString().slice(0,10); return {label:'this week', in:function(dt){ return dt>=s&&dt<=e; }}; }
-    if(/today/.test(q)){ var t=now.toISOString().slice(0,10); return {label:'today', in:function(dt){ return dt===t; }}; }
+    /* px-3.3 (2026-08-07): LOCAL date keys, not UTC - after ~8 PM ET the UTC
+       key names tomorrow, so "today" matched nothing and "this week" shifted. */
+    function lkey(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+    if(/this week|week/.test(q)){ var day=now.getDay(); var start=new Date(y,m,now.getDate()-day); var s=lkey(start); var e=lkey(new Date(y,m,now.getDate()-day+6)); return {label:'this week', in:function(dt){ return dt>=s&&dt<=e; }}; }
+    if(/today/.test(q)){ var t=lkey(now); return {label:'today', in:function(dt){ return dt===t; }}; }
     if(/this year|year/.test(q)){ return {label:'this year', in:function(dt){ return dt.slice(0,4)===String(y); }}; }
     return {label:'across all pulled dates', in:function(){ return true; }};
   }

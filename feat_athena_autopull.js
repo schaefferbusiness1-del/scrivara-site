@@ -92,26 +92,58 @@
     } catch (e) {}
   }
 
-  /* ---------- find-or-create the MLS patient FROM the chart identity (dedup-safe) ---------- */
+  /* ---------- find-or-create the MLS patient FROM the chart identity ----------
+     px-1.0 (2026-08-07 patient-isolation train). The old resolver bound by
+     name FIRST-MATCH and accepted a name alone when either side lacked a DOB,
+     then stamped the chart's DOB onto that record - so with athenaOne open on
+     one "John Smith" and the store holding a different DOB-less "John Smith",
+     the whole chart (visits, then history/allergies via organize) landed on
+     the wrong person and the paper-over was permanent. Binding order is now:
+       1) stable athena identifier (chart MRN/patient id), exact and unique,
+          with a DOB conflict vetoing;
+       2) name + DOB, both present, equal, exactly one candidate;
+       3) otherwise CREATE a new record carrying the chart identity.
+     A recoverable duplicate row is strictly safer than a wrong merge. Name
+     alone never binds. */
   function resolvePatient(identity) {
     var pts = (typeof getPatients === 'function' ? getPatients() : []) || [];
-    var found = pts.find(function (p) {
-      if (!p) return false;
-      if (!namesMatch(p.name, identity.name)) return false;
-      var pd = normDob(p.dob), id = normDob(identity.dob);
-      if (pd && id) return pd === id;   // both present -> must match
-      return true;                       // name matches, DOB unknown on a side
-    }) || null;
+    var chartMrn = trim(identity.mrn || identity.athenaId || '').toLowerCase();
+    var chartDob = normDob(identity.dob);
+    var found = null, via = '';
+    if (chartMrn) {
+      var idHits = pts.filter(function (p) {
+        if (!p) return false;
+        var pm = trim(p.athenaId || p.mrn || '').toLowerCase();
+        if (!pm || pm !== chartMrn) return false;
+        var pd = normDob(p.dob);
+        return !(pd && chartDob && pd !== chartDob); // DOB conflict vetoes a stable-id hit
+      });
+      if (idHits.length === 1) { found = idHits[0]; via = 'athena-id'; }
+      else if (idHits.length > 1) { found = null; via = 'athena-id-ambiguous'; }
+    }
+    if (!found && via !== 'athena-id-ambiguous' && chartDob) {
+      var ndHits = pts.filter(function (p) {
+        return p && namesMatch(p.name, identity.name) && normDob(p.dob) === chartDob;
+      });
+      if (ndHits.length === 1) { found = ndHits[0]; via = 'name-dob'; }
+    }
     if (found) {
-      if (!trim(found.dob) && trim(identity.dob)) { found.dob = trim(identity.dob); try { upsertPatient(found); } catch (e) {} }
-      return { patient: found, created: false };
+      var changed = false;
+      if (!trim(found.dob) && trim(identity.dob)) { found.dob = trim(identity.dob); changed = true; }
+      var stampId = trim(identity.mrn || identity.athenaId || '');
+      if (stampId && !trim(found.athenaId || '')) { found.athenaId = stampId; changed = true; }
+      if (stampId && !trim(found.mrn || '')) { found.mrn = stampId; changed = true; }
+      if (changed) { try { upsertPatient(found); } catch (e) {} }
+      return { patient: found, created: false, via: via };
     }
     var np = {
       id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      name: trim(identity.name), dob: trim(identity.dob), reason: '', source: 'athena-auto', created: Date.now()
+      name: trim(identity.name), dob: trim(identity.dob),
+      mrn: trim(identity.mrn || identity.athenaId || ''), athenaId: trim(identity.mrn || identity.athenaId || ''),
+      reason: '', source: 'athena-auto', created: Date.now()
     };
     try { upsertPatient(np); } catch (e) {}
-    return { patient: np, created: true };
+    return { patient: np, created: true, via: 'created' };
   }
 
   /* ---------- on-screen status chip (in-place; no toast spam) ---------- */
