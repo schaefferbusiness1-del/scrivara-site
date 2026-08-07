@@ -237,7 +237,7 @@
        Found by tests/opnote-room-walkthrough-runtime.test.js. */
     if (SEL >= rows.length) SEL = rows.length - 1;
     if (SEL < 0) SEL = 0;
-    if (rows.length < 2) { nav.innerHTML = ''; return; }   /* single-patient mode needs no nav */
+    if (rows.length < 2) { if (nav.__oprHtml !== '') { nav.innerHTML = ''; nav.__oprHtml = ''; } return; }   /* single-patient mode needs no nav */
     var h = '<div class="opr-rail-title">Patients — ' + rows.length + '</div>';
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
@@ -255,7 +255,14 @@
         + '<span class="opr-nav-st">' + esc(state) + '</span></span>'
         + '</button>';
     }
-    nav.innerHTML = h;
+    /* b944 PERF — WRITE ONLY WHEN THE MARKUP ACTUALLY CHANGED.
+       buildRails() runs after EVERY opPrepRender, and opPrepRender runs on
+       nearly every control in this room, so this rail was being torn down and
+       reparsed on clicks that changed nothing about it. innerHTML is not a
+       cheap assignment: it destroys and re-creates every button, invalidates
+       layout, and drops any focus inside. Comparing the string first makes an
+       unchanged rail free, and an unchanged rail is the common case. */
+    if (nav.__oprHtml !== h) { nav.innerHTML = h; nav.__oprHtml = h; }
     /* one delegated listener, re-attached with the innerHTML rebuild */
     nav.onclick = function (e) {
       var b = e.target && e.target.closest ? e.target.closest('.opr-nav-item') : null;
@@ -446,9 +453,17 @@
         if (_a.selectionStart != null) { selStart = _a.selectionStart; selEnd = _a.selectionEnd; }
       } catch (eSel) {}
     }
-    rail.innerHTML = h;
+    /* b944 PERF — same law as the patient rail above, and it matters more here
+       because this one carries the WHOLE library (96 templates on the owner's
+       account): ~38KB of markup and 96 buttons, re-parsed after every repaint
+       of the room. The health line for each of those templates is computed
+       above, so skipping the write is only half the saving - but it is the half
+       that costs layout. When nothing changed there is also nothing to restore,
+       so the focus/caret dance below is skipped with it. */
+    var changed = (rail.__oprHtml !== h);
+    if (changed) { rail.innerHTML = h; rail.__oprHtml = h; }
     var searchInp = $('oprTplSearch');
-    if (searchInp) {
+    if (searchInp && changed) {
       searchInp.value = RAIL_FILTER;
       searchInp.oninput = function () { RAIL_FILTER = this.value; buildTplRail(); };
       /* b905 — RESTORE WHERE THE CARET WAS, NOT THE END OF THE LINE. The rebuild
@@ -1140,12 +1155,16 @@
         }
         showTab('procs');
       } catch (e9) {}
-      try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.onclick = null; } } catch (e4) {}
+      /* b944: the write-if-changed caches live ON the nodes, and these nodes
+         outlive the module. Emptying the rail without clearing its cache would
+         leave a re-installed module believing the markup it is about to write
+         is already there - an empty rail that never comes back. */
+      try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.__oprHtml = null; a.onclick = null; } } catch (e4) {}
       /* onkeydown as well as onclick: the keyboard handler was added in the same
          change that made the Edit affordance reachable, and revert() forgot it -
          so a reverted module left a live key handler on a node it no longer owns.
          Found by tests/opnote-room-walkthrough-runtime.test.js. */
-      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
+      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.__oprHtml = null; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
       /* the mode control is a node THIS module created, so revert removes it
          entirely rather than emptying it - leaving an orphan box would be a
          visible artefact of a module that is supposed to be gone. */

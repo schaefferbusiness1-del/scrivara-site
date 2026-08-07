@@ -16028,9 +16028,58 @@ async function extractPdfText(file){
    This whole subsystem is additive and is ONLY consulted when the
    toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
    ========================================================= */
-function getTemplates(){
+/* b944 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
+   MEASURED on the owner's real library (96 templates, ~520KB of JSON): one
+   getTemplates() call costs ~7ms of JSON.parse plus two normalisation passes,
+   and the op-note room calls it PER ROW. opPrepRender's tplOpts closure alone
+   ran it once for every patient card (19 parses per repaint), the 1s Fields-box
+   tick ran it once per row inside syncProcedure, and getTemplateById wraps it
+   too. A nineteen-patient day therefore spent well over a second of main thread
+   in JSON.parse on EVERY render — and almost every button in that room ends in
+   a render. That is the "every button freezes for three seconds" the owner
+   reported; it is not the AI call, it is the store.
+
+   The cache is keyed on the ACCOUNT KEY AND THE RAW STRING, so it can never go
+   stale: any write (setTemplates, another tab, a manual localStorage edit)
+   changes the raw string and the next read re-parses. Reading the raw string is
+   still done every call — that is the correctness guarantee, and a string read
+   is ~100x cheaper than parsing it.
+
+   CALLERS STILL GET THEIR OWN OBJECTS. Several call sites mutate the returned
+   list (list.unshift, list[i].tpf = ..., row edits) and today each call hands
+   back a fresh JSON.parse, so those mutations are private until setTemplates.
+   Handing out the cached array would silently make them shared. Every call
+   therefore returns a deep clone of the cached list — which for JSON-derived
+   data is exactly what a re-parse produced, and costs nothing on the big
+   `text` fields because strings are copied by reference. */
+/* `var`, deliberately: this sits in the one huge inline script, and a `let`
+   here would be in the temporal dead zone for anything above it that reaches
+   getTemplates() during initial execution. */
+var _tplCacheKey=null, _tplCacheRaw=null, _tplCacheList=null;
+function _tplClone(v){
+  if(Array.isArray(v)){ const out=new Array(v.length); for(let i=0;i<v.length;i++) out[i]=_tplClone(v[i]); return out; }
+  if(v && typeof v==='object'){ const out={}; for(const k in v) if(Object.prototype.hasOwnProperty.call(v,k)) out[k]=_tplClone(v[k]); return out; }
+  return v;
+}
+/* Internal, NOT cloned — for read-only hot paths inside this file that only
+   look at fields (id/name/keywords/text) and never mutate. */
+function _tplStore(){
   try{
-    const a=JSON.parse(localStorage.getItem(uns('templates'))||'[]');
+    const key=uns('templates');
+    const raw=localStorage.getItem(key)||'[]';
+    if(_tplCacheList && _tplCacheKey===key && _tplCacheRaw===raw) return _tplCacheList;
+    const list=_getTemplatesUncached(raw);
+    /* _getTemplatesUncached may HEAL and re-write storage; cache against what
+       is actually stored now, so the next call is a hit either way. */
+    let after=raw; try{ after=localStorage.getItem(key)||'[]'; }catch(e){}
+    _tplCacheKey=key; _tplCacheRaw=after; _tplCacheList=list;
+    return list;
+  }catch(e){ return []; }
+}
+function getTemplates(){ return _tplClone(_tplStore()); }
+function _getTemplatesUncached(rawText){
+  try{
+    const a=JSON.parse(rawText!=null?rawText:(localStorage.getItem(uns('templates'))||'[]'));
     if(!Array.isArray(a)) return [];
     /* Self-heal templates saved without an id (seed packs / bulk imports).
        Symptom before 2026-07-13: several <option value="undefined"> entries,
@@ -16075,7 +16124,11 @@ function setTemplates(arr){
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
-function getTemplateById(id){ return getTemplates().find(t=>t.id===id)||null; }
+/* b944 PERF: find in the cached store, then clone only the ONE template that
+   matched. This is called inside draft loops and per-row matchers; cloning the
+   whole library to throw 95 of them away was pure waste. Same contract: a fresh
+   object the caller may mutate, or null. */
+function getTemplateById(id){ var hit=_tplStore().find(function(t){ return t.id===id; }); return hit?_tplClone(hit):null; }
 
 /* ===== PROCEDURE-DAY OP NOTES — for each patient on tomorrow's schedule, match the
    scheduled procedure to one of the doctor's uploaded operative-note templates and draft
@@ -16449,7 +16502,7 @@ function opPrepRender(){
     var _dl=document.getElementById('opPrepDayLbl'); if(_dl) _dl.textContent=window._opPrepDay?_opDayStr(window._opPrepDay):'';
   }catch(e){}
   if(genAll) genAll.style.display = (window._opPrepMode==='patient') ? 'none' : '';
-  if(!rows.length){ if(empty){ empty.style.display='block'; if(window._opPrepMode!=='patient'){ empty.innerHTML='No procedures scheduled for <b>'+esc(window._opPrepDay?_opDayStr(window._opPrepDay):'that day')+'</b> — pick a different day, or pull it from Athena (📥 on the Visit tab).'; } } box.innerHTML=''; return; }
+  if(!rows.length){ if(empty){ empty.style.display='block'; if(window._opPrepMode!=='patient'){ empty.innerHTML='No procedures scheduled for <b>'+esc(window._opPrepDay?_opDayStr(window._opPrepDay):'that day')+'</b> — pick a different day, or pull it from Athena (📥 on the Visit tab).'; } } box.innerHTML=''; box.__opPrepHtml=''; return; }
   if(empty) empty.style.display='none';
   /* 2026-07-29 DATA LOSS REMOVED. This line used to call dedupeSavedTemplates()
      on EVERY op-note render, with announce falsy - so it deleted templates and
@@ -16463,9 +16516,24 @@ function opPrepRender(){
      "Remove duplicates" button, which announces what it did. A duplicate sitting
      in the dropdown is a cosmetic annoyance; deleting an op-note template is not
      recoverable. Do not put an automatic call back here. */
-  if(!getTemplates().length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates on the <b>Templates</b> tab first — MLS adapts them into each patient’s report.</div>'; return; }
-  var tplOpts=function(sel){ return '<option value="">— pick a template —</option>'+getTemplates().map(function(t){ return '<option value="'+t.id+'"'+(t.id===sel?' selected':'')+'>'+esc(t.name||'Template')+'</option>'; }).join(''); };
-  box.innerHTML=rows.map(function(row,i){
+  /* b944 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
+     tplOpts used to call getTemplates() and re-escape every template name
+     INSIDE the per-row map, so a 19-patient day parsed the library 19 times and
+     built 19 × 96 escaped <option> strings on every single repaint — and this
+     function repaints on nearly every control in the room. The option markup is
+     identical for every row apart from which one carries `selected`, so it is
+     built once and the selection is marked with one splice. */
+  var _tplsNow=_tplStore();
+  if(!_tplsNow.length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates on the <b>Templates</b> tab first — MLS adapts them into each patient’s report.</div>'; box.__opPrepHtml=''; return; }
+  var _optHead='<option value="">— pick a template —</option>';
+  var _optParts=_tplsNow.map(function(t){ return { id:String(t.id), html:'<option value="'+t.id+'"' }; });
+  var _optTail=_tplsNow.map(function(t){ return '>'+esc(t.name||'Template')+'</option>'; });
+  var tplOpts=function(sel){
+    var out=_optHead;
+    for(var k=0;k<_optParts.length;k++) out+=_optParts[k].html+(_optParts[k].id===sel?' selected':'')+_optTail[k];
+    return out;
+  };
+  var _html=rows.map(function(row,i){
     var a=row.appt;
     var h='<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:var(--card)">';
     h+='<div id="opPrepPrev_'+i+'">'+_opPreviewHtml(row.proc, a.name, row.dateStr)+'</div>';
@@ -16485,6 +16553,21 @@ function opPrepRender(){
     h+='</div>';
     return h;
   }).join('');
+  /* b944 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
+     This function is the app's answer to almost every control in the op-note
+     room, and the room's own rail builder calls it again on top; a good share of
+     those calls produce byte-identical markup. Writing it anyway destroyed and
+     re-created every card - on a 19-patient day that is 19 selects of ~96
+     <option>s each, 19 textareas holding whole operative notes, and every
+     satellite's injected node inside them (the Fields boxes, the integrity
+     badges), all rebuilt so they could look exactly the same. That is the
+     freeze the owner feels as "the button only clicks after three seconds".
+     When the markup is identical the DOM already says what we were about to
+     write, so there is nothing to destroy - and nothing to restore either,
+     which is why the focus/caret/scroll rescue below is skipped with it. */
+  if(box.__opPrepHtml===_html && box.firstChild){ return; }
+  box.innerHTML=_html;
+  box.__opPrepHtml=_html;
   try{
     if(_keep){
       box.scrollTop=_keep.boxScroll;
@@ -16514,6 +16597,30 @@ function _opNeedleHtml(i, mf, row){
   return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:150px">'+esc(mf.label||'Needle size')+'</label><select onchange="_opNeedlePick('+i+',\''+key+'\',this.value)" style="font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">'+optHtml+'</select>'+txt+hint+'</div>';
 }
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
+/* b944 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
+   Until now "did this draft succeed, and if not why" lived in three window
+   globals (__mlsLastOpFidelityPass / __mlsLastOpFidelityError /
+   __mlsLastOpErrorCode) that the drafter cleared on entry and the runner read
+   on exit. That is only sound while EXACTLY ONE draft is ever in flight, and it
+   is what forced Draft-all to run one patient at a time: with two in flight the
+   second row's entry-clear lands between the first row's success and the
+   runner's read, and the ledger blames the wrong patient — or reports a good
+   note as failed.
+   Every drafter path below now also stamps its own row, so the outcome travels
+   WITH the patient it belongs to. The globals are still written exactly as
+   before (other modules and the staging shell read them); they are simply no
+   longer the only copy. `window.__mlsOpNoteRowVerdicts` is the capability flag
+   the Draft-all runner tests before it dares overlap anything — without it, it
+   stays strictly serial. */
+window.__mlsOpNoteRowVerdicts=true;
+function _opRowVerdict(row,pass,why,code){
+  if(!row) return;
+  try{
+    row._genPass=!!pass;
+    row._genErr=pass?'':String(why||'').replace(/^Error:\s*/,'').trim();
+    row._genErrCode=pass?'':String(code||'');
+  }catch(e){}
+}
 async function opPrepGenerateOne(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   /* b392: a successful re-draft used to silently overwrite the doctor's hand
@@ -16526,11 +16633,12 @@ async function opPrepGenerateOne(i){
     try{ toast('This draft has your manual edits. Click "↻ Discard my edits & re-draft?" again to replace them with a fresh draft.','err'); }catch(e){}
     try{ opPrepRender(); }catch(e){}
     setTimeout(function(){ try{ if(row._confirmRedraft){ row._confirmRedraft=false; opPrepRender(); } }catch(e){} },10000);
+    _opRowVerdict(row,false,'this draft has your manual edits — confirm the discard to replace it','MLS_OPNOTE_EDITED');
     return;
   }
   row._confirmRedraft=false;
   var tpl=getTemplateById(row.tplId);
-  if(!tpl){ try{ var stt=document.getElementById('opPrepStatus'); if(stt) stt.textContent='Pick a template for '+row.appt.name+' first (or tap 🔎 Match template).'; }catch(e){} try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} return; }
+  if(!tpl){ try{ var stt=document.getElementById('opPrepStatus'); if(stt) stt.textContent='Pick a template for '+row.appt.name+' first (or tap 🔎 Match template).'; }catch(e){} try{ toast('Pick a template for this op note first (or tap 🔎 Match template).','err'); }catch(e){} _opRowVerdict(row,false,'no template is selected for this procedure','MLS_OPNOTE_NO_TEMPLATE'); return; }
   var st=document.getElementById('opPrepStatus'); if(st) st.textContent='Drafting '+row.appt.name+'’s op note…';
   try{
     var ctx=_opPatientCtx(row.appt.name,row.appt.dob,row.patientId),appt=row.appt||{};
@@ -16540,7 +16648,7 @@ async function opPrepGenerateOne(i){
     if(appt.facilityId)ctx.facilityId=String(appt.facilityId);
     if(appt.facilityName){ctx.facility=String(appt.facilityName);ctx.facilityName=String(appt.facilityName);}
     row._ctx=ctx;
-    if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} return; }
+    if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} _opRowVerdict(row,false,'the exact patient could not be verified — open this one from the patient’s chart','MLS_OPNOTE_IDENTITY'); return; }
     var out;
     if(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled===true){
       /* pv-7.1.2: the sample workspace drafts LOCALLY — the template verbatim,
@@ -16575,14 +16683,28 @@ async function opPrepGenerateOne(i){
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
+    /* b944: reaching here means the generator RESOLVED. Every fidelity,
+       clinical-consistency, identity and transport failure throws (the template
+       owner builds a real Error and rethrows it), so "the try block completed
+       and a note exists" is the same verdict __mlsLastOpFidelityPass carries -
+       stamped on the row, where a second concurrent draft cannot overwrite it.
+       Stamped BEFORE the autosave/render below so anything they trigger already
+       sees the settled row. */
+    _opRowVerdict(row,true,'','');
+    row._reconstructed=!!(out&&out.reconstructed)||!!row._reconstructed;
     opPrepAutosaveDraft(i);                                  // land a draft in History right away — never lost
     opPrepRender();
     var nblank=(row.missing||[]).length;
     if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(nblank?(' — '+nblank+' blank'+(nblank===1?'':'s')+' to confirm'):'')+' · saved as a draft to History.';
   }catch(e){
     /* b500: show the ACTUAL reason (identity, template conflict, network,
-       server error) — a generic "try again" hid every diagnosable failure. */
-    var why=String((window.__mlsLastOpFidelityError||'')||(e&&e.message)||'').replace(/^Error:\s*/,'').trim();
+       server error) — a generic "try again" hid every diagnosable failure.
+       b944: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
+       so once two drafts can overlap it may already belong to another patient;
+       `e` never does. The global stays as the fallback for a thrower that only
+       wrote there. */
+    var why=String((e&&e.message)||(window.__mlsLastOpFidelityError||'')||'').replace(/^Error:\s*/,'').trim();
+    _opRowVerdict(row,false,why,(e&&(e.__mlsCode||e.code))||'');
     if(st) st.textContent='Couldn’t draft '+row.appt.name+'’s op note'+(why?(' — '+why.slice(0,160)):' — try again.');
   }
 }
@@ -16611,6 +16733,15 @@ function opNoteBlankTokens(text){
 function opNoteBlankCount(text){ return opNoteBlankTokens(text).length; }
 window.opNoteBlankTokens=opNoteBlankTokens;
 window.opNoteBlankCount=opNoteBlankCount;
+var _opHistRepaintT=null;
+function _opHistoryRepaintSoon(){
+  if(_opHistRepaintT) return;
+  _opHistRepaintT=setTimeout(function(){
+    _opHistRepaintT=null;
+    try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
+    try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){}
+  },120);
+}
 function opPrepAutosaveDraft(i){
   try{
     var row=(window._opPrep||[])[i]; if(!row||!row.note) return;
@@ -16619,7 +16750,18 @@ function opPrepAutosaveDraft(i){
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
-    saveNotes(ns); try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){} try{ if(typeof updateNavCounts==='function') updateNavCounts(); }catch(e){} return true;
+    saveNotes(ns);
+    /* b944 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
+       This autosave runs after every drafted row, and it rebuilt the whole
+       History view and the nav counts synchronously each time - a screen the
+       doctor cannot even see, because the op-note room is over it. On a
+       19-patient day that is 19 full re-renders of a list that only has to be
+       correct by the time he looks at it. The DATA is still written immediately
+       and synchronously (saveNotes above) - that is the part that must never be
+       deferred, and it is not; only the repaint is collapsed onto one trailing
+       frame. A single draft still repaints within ~120ms of finishing. */
+    _opHistoryRepaintSoon();
+    return true;
   }catch(e){ return false; }
 }
 async function opPrepGenerateAll(){
@@ -32571,7 +32713,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b943';
+  window.__MLS_AV='b944';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

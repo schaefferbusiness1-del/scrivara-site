@@ -123,6 +123,14 @@ const tests = [
      "Procedure ✓" over a visibly empty box. Executes the fill, and pins that a
      procedure the doctor typed is never overwritten. */
   'opnote-proc-input-prefill.test.js',
+  /* b944 — the owner, on the op-note room: "every button freezes up and then
+     only clicks after like 3 seconds", and "maybe could be drafted all at once
+     for a day". The store was re-parsed per row on every repaint, and Draft-all
+     waited for each round trip because the verdict for a draft lived in window
+     globals the next row cleared. This runs the REAL Draft-all runner against a
+     deliberately interleaved drafter and proves the ledger still blames the
+     right patient — the thing that made overlapping unsafe before. */
+  'opnote-drafting-is-not-serialised.test.js',
   'styled-trigger-classes-have-writers.test.js',
   /* The DYNAMIC counterpart: dispatch the real event, assert the class lands on
      the real node. A writer that exists but is unreachable passes the static
