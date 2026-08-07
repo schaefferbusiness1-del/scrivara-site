@@ -220,6 +220,21 @@ async function toAmbientFrom(page) {
   await page.clock.runFor(1200);
 }
 
+/* run the REAL detector over one line with no kiosk involved — used to sweep a
+   whole visit transcript for false positives cheaply */
+let _sweepPage = null;
+async function pageless(browser, base, line) {
+  if (!_sweepPage) {
+    _sweepPage = await browser.newPage();
+    await _sweepPage.goto(base + '/page.html');
+    await _sweepPage.evaluate(STUBS);
+    await _sweepPage.addScriptTag({ content: AVATAR_SRC });
+  }
+  return _sweepPage.evaluate(function (t) {
+    return window.__mlsAvatar.detectActions(t).map(function (a) { return { kind: a.kind, title: a.title }; });
+  }, line);
+}
+
 async function say(page, text) {
   await page.evaluate(function (t) { window.__emit(t, true); }, text);
   await page.clock.runFor(1600);        /* past the detector's settle window */
@@ -1213,6 +1228,235 @@ async function say(page, text) {
         await page.clock.runFor(400);
         ok('I6 …and back to documenting on resume', (await chip()) === 'Ambiently documenting', String(await chip()));
         ok('I6 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+    }
+    /* ------------------------------------------------------------ J */
+    section('SCENARIO J - ENDURANCE AND THE ADVERSARIAL CASES');
+    {
+      /* --- J1. A LONG VISIT. The backup rewrites the WHOLE record on every
+         save, so total bytes written grow with the square of the visit. A 90
+         minute consultation is the case the brief names, and it is the one
+         where that shape would bite. Measured on a real clock. --- */
+      {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        const errs = [];
+        page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+        await page.goto(base + '/page.html');
+        await page.evaluate(STUBS);
+        await page.evaluate(function () {
+          document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+          /* count the real cost: bytes handed to storage, and time spent in it */
+          window.__ls = { writes: 0, bytes: 0, ms: 0 };
+          const real = localStorage.setItem.bind(localStorage);
+          localStorage.setItem = function (k, v) {
+            const t0 = performance.now();
+            real(k, v);
+            window.__ls.writes++; window.__ls.bytes += String(v).length;
+            window.__ls.ms += performance.now() - t0;
+          };
+        });
+        await page.addScriptTag({ content: AVATAR_SRC });
+        await page.waitForTimeout(900);
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'Hello?', done: true }];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.waitForTimeout(900);
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+        await page.waitForTimeout(250);
+        await page.evaluate(function () {
+          document.getElementById('mlsAvKioskPinInput').value = '1234';
+          document.getElementById('mlsAvKioskPinAmb').click();
+        });
+        await page.waitForTimeout(800);
+
+        /* ~600 finalised utterances ≈ a long, talkative consultation */
+        const N = 600;
+        const t0 = Date.now();
+        await page.evaluate(function (n) {
+          for (let i = 0; i < n; i++) {
+            window.__emit('exam finding number ' + i + ' spoken aloud in the room during a long visit', true);
+          }
+        }, N);
+        await page.waitForTimeout(2500);
+        const wall = Date.now() - t0;
+        const st = await page.evaluate(function () {
+          const a = window.__amb();
+          let stored = null;
+          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          return { chars: a.capturedChars, backedUp: a.backedUp, trimmed: a.backupTrimmed,
+            parts: stored ? stored.parts.length : 0, ls: window.__ls };
+        });
+        console.log('  ---- ' + N + ' utterances (a long visit) ----');
+        console.log('     captured ' + st.chars + ' chars in ' + st.parts + ' parts');
+        console.log('     storage: ' + st.ls.writes + ' writes, ' +
+          (st.ls.bytes / 1048576).toFixed(2) + ' MB handed to localStorage, ' +
+          st.ls.ms.toFixed(0) + ' ms total in setItem');
+        console.log('     wall clock for the whole burst: ' + wall + ' ms');
+        ok('J1 a long visit captures every utterance', st.parts === N, st.parts + '/' + N);
+        ok('J1 …and is still backed up at the end', st.backedUp === true, 'backedUp=' + st.backedUp);
+        /* the throttle is what keeps this from being quadratic in practice:
+           one write per ~1.5s regardless of how fast the room talks */
+        ok('J1 the save throttle holds under a burst — writes are not per-utterance',
+          st.ls.writes < N / 4, st.ls.writes + ' writes for ' + N + ' utterances');
+        ok('J1 …and total bytes written stay sane', st.ls.bytes < 40 * 1048576,
+          (st.ls.bytes / 1048576).toFixed(2) + ' MB');
+        ok('J1 …and storage never becomes the bottleneck', st.ls.ms < 3000, st.ls.ms.toFixed(0) + ' ms');
+
+        /* THE BURST FLATTERS ITSELF. 600 utterances arriving at once coalesce
+           into two writes, which says nothing about a REAL 90 minute visit
+           where they arrive spread out and the throttle fires every ~1.5s on a
+           record that keeps growing. The backup rewrites the whole record each
+           time, so the honest question is: what does ONE write cost at
+           end-of-visit size, and what does that come to over a full visit? */
+        const perWrite = await page.evaluate(function () {
+          const k = 'acct-9::mlsAvRoomCaptureV1';
+          const payload = localStorage.getItem(k) || '';
+          const t0 = performance.now();
+          for (let i = 0; i < 50; i++) localStorage.setItem(k + '::probe', payload);
+          const ms = (performance.now() - t0) / 50;
+          localStorage.removeItem(k + '::probe');
+          return { bytes: payload.length, ms: ms };
+        });
+        /* 90 minutes at one write per 1.5s is the worst case the cap allows */
+        const worstWrites = (90 * 60) / 1.5;
+        const worstMs = perWrite.ms * worstWrites;
+        console.log('     one write at end-of-visit size (' + (perWrite.bytes / 1024).toFixed(0) + ' KB): ' +
+          perWrite.ms.toFixed(2) + ' ms');
+        console.log('     extrapolated worst case, 90 min at 1 write/1.5s: ' + worstWrites + ' writes, ' +
+          (worstMs / 1000).toFixed(1) + ' s of main thread total (' +
+          ((worstMs / (90 * 60 * 1000)) * 100).toFixed(2) + '% duty cycle)');
+        ok('J1 a single end-of-visit write is not a frame killer', perWrite.ms < 8,
+          perWrite.ms.toFixed(2) + ' ms');
+        ok('J1 …and the whole 90-minute worst case stays a rounding error on the main thread',
+          worstMs < 30000, (worstMs / 1000).toFixed(1) + ' s across 90 min');
+        ok('J1 page threw nothing', errs.length === 0, errs.join(' | '));
+        await page.close();
+      }
+
+      /* --- J2. HOW NOISY IS THE DETECTOR OVER A WHOLE REAL VISIT? Curated
+         sentences prove it can refuse; a continuous transcript proves it does
+         not cry wolf while two people simply talk. --- */
+      {
+        const VISIT = [
+          'good morning, how have you been since last time',
+          'not too bad, the back is still bothering me though',
+          'tell me where exactly it hurts',
+          'right across the lower back, and sometimes down the leg',
+          'does it wake you at night', 'occasionally, if I roll over wrong',
+          'any numbness or tingling in the feet', 'no, nothing like that',
+          'how about weakness, any trouble on stairs', 'no, stairs are fine',
+          'have you been taking anything for it', 'just ibuprofen when it is bad',
+          'does that help', 'takes the edge off for a few hours',
+          'let me have a look at you', 'can you bend forward for me',
+          'that is where it catches', 'okay, and lean back',
+          'that is fine', 'now lift this leg straight up',
+          'that pulls a bit', 'and the other one', 'that one is fine',
+          'your reflexes are normal', 'strength is good in both legs',
+          'the good news is nothing here worries me',
+          'most of this settles with time and movement',
+          'I had an MRI years ago for my neck', 'yes I remember that',
+          'do you think I need another one', 'I do not think we need imaging today',
+          'we would only do that if things changed',
+          'should I keep taking the ibuprofen', 'yes, that is reasonable',
+          'what about physical therapy, my sister had that',
+          'it can help, let us see how the next few weeks go',
+          'come back if it gets worse', 'thank you doctor',
+          'take care of yourself', 'you too'
+        ];
+        const found = [];
+        for (let i = 0; i < VISIT.length; i++) {
+          const out = await pageless(browser, base, VISIT[i]);
+          if (out.length) found.push({ line: VISIT[i], got: out.map(function (a) { return a.kind + ':' + a.title; }) });
+        }
+        console.log('  ---- detector over a ' + VISIT.length + '-line visit with NO orders in it ----');
+        found.forEach(function (f) { console.log('     FIRED on: "' + f.line + '" -> ' + f.got.join(', ')); });
+        ok('J2 a whole visit with no orders in it produces NO proposals', found.length === 0,
+          found.length + ' spurious proposal(s)');
+      }
+
+      /* --- J3. CROSS-PATIENT. The worst thing this file can produce. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'patient A has a distinctive complaint about her shoulder');
+        await say(page, 'order an MRI lumbar spine without contrast');
+        await page.evaluate(function () { document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo').click(); });
+        await page.clock.runFor(300);
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        await page.evaluate(function () {
+          document.getElementById('mlsAvKioskPinInput').value = '1234';
+          document.getElementById('mlsAvKioskPinGo').click();
+        });
+        await page.clock.runFor(1500);
+        /* a NEW patient on the same screen */
+        await page.evaluate(function () {
+          window.__activePt = 'ext-88';
+          window.getPatients = function () { return [{ id: 'ext-88', name: 'Patient B' }]; };
+          document.getElementById('ez3flTranscript').value = '';
+        });
+        await toAmbient(page);
+        const st = await page.evaluate(function () { return window.__amb(); });
+        const cards = await page.evaluate(function () { return window.__cards(); });
+        ok('J3 the new patient starts with an EMPTY capture', st.capturedChars === 0, st.capturedChars + ' chars');
+        ok('J3 …bound to the new chart', st.boundPatient === 'ext-88', st.boundPatient);
+        ok('J3 …and no proposed action survives from the previous patient', cards.length === 0,
+          JSON.stringify(cards.map(function (c) { return c.title; })));
+        await say(page, 'patient B has knee pain');
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('J3 …and patient A never appears in patient B\'s transcript',
+          box.indexOf('distinctive complaint about her shoulder') < 0 && box.indexOf('patient B has knee pain') >= 0,
+          'A-leak=' + (box.indexOf('distinctive complaint') >= 0));
+        ok('J3 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- J4. a CORRUPT backup must refuse, not crash --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        const cases = await page.evaluate(function () {
+          const k = 'acct-9::mlsAvRoomCaptureV1';
+          const out = [];
+          [['not json at all', 'garbage'],
+           ['{"v":1}', 'valid json, wrong shape'],
+           ['{"v":1,"parts":"not an array","bound":"ext-77"}', 'parts is not an array'],
+           ['null', 'literal null'],
+           ['{"v":1,"parts":[],"bound":"ext-77"}', 'empty parts']
+          ].forEach(function (row) {
+            localStorage.setItem(k, row[0]);
+            let res;
+            try { res = { ok: true, value: window.__mlsAvatar.pendingCapture() }; }
+            catch (e) { res = { ok: false, err: String(e && e.message) }; }
+            out.push({ why: row[1], threw: !res.ok, value: res.value === null ? 'null' : typeof res.value });
+          });
+          return out;
+        });
+        cases.forEach(function (c) {
+          ok('J4 a corrupt backup (' + c.why + ') refuses without throwing',
+            c.threw === false && c.value === 'null', JSON.stringify(c));
+        });
+        ok('J4 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- J5. End Visit pressed twice must not file the visit twice --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'a single line of this visit');
+        await page.evaluate(function () {
+          const b = document.getElementById('mlsAvKioskEndVisit');
+          b.click(); b.click(); b.click();
+        });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        const hits = box.split('a single line of this visit').length - 1;
+        ok('J5 three rapid End Visit clicks file the visit exactly ONCE', hits === 1, hits + ' copies');
+        ok('J5 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
       }
     }
   } finally {
