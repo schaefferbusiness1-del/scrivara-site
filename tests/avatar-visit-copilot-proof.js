@@ -798,6 +798,167 @@ async function say(page, text) {
       ok('scenario G pages threw nothing', h.errors.length === 0 && h2.errors.length === 0,
         h.errors.concat(h2.errors).join(' | '));
     }
+    /* ------------------------------------------------------------ H */
+    section('SCENARIO H - THE FINAL ACCEPTANCE RUN (one unbroken session)');
+    {
+      /* Every scenario above starts a FRESH kiosk to isolate one behaviour,
+         which is exactly the "isolated components" the brief warns against.
+         This one walks the stated acceptance sequence end to end in a SINGLE
+         session — no reload, no reset, no re-open — and asserts each arrow of:
+
+           Start Visit -> intelligent MA intake -> doctor takes over ->
+           avatar remains and ambiently documents -> doctor gives a natural
+           command -> proposed action appears for rapid confirmation ->
+           everything continuously saves -> End Visit -> note + actions ready
+
+         The point is CONTINUITY: that state survives every transition, which
+         no per-behaviour scenario can show. */
+      const h = await newPage(browser, base);
+      const page = h.page;
+      const saves = [];
+      const snap = async (tag) => {
+        const s = await page.evaluate(function () {
+          const a = window.__amb();
+          let stored = null;
+          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          return { chars: a.capturedChars, backedUp: a.backedUp, running: a.running,
+            storedChars: stored ? (stored.parts || []).join(' ').length : 0, bound: a.boundPatient };
+        });
+        saves.push({ tag: tag, ...s });
+        return s;
+      };
+      await page.evaluate(function () {
+        const box = document.createElement('textarea');
+        box.id = 'noteBox';
+        document.body.appendChild(box);
+        window.generateNote = function () {
+          return new Promise(function (r) {
+            setTimeout(function () {
+              document.getElementById('noteBox').value =
+                'SUBJECTIVE: Low back pain, three weeks, radiating to the left leg.\nPLAN: MRI lumbar spine without contrast.';
+              r();
+            }, 250);
+          });
+        };
+        window.__turnQueue = [
+          { ok: true, say: 'Hi, I am Ava, the practice AI assistant. What brings you in today?', done: false, progress: { covered: 1, total: 3 } },
+          { ok: true, say: 'Thanks. How long has that been going on?', done: false, progress: { covered: 2, total: 3 } },
+          /* the FOLLOW-UP the brief asks for: the answer was vague, so it probes */
+          { ok: true, say: 'Does the pain travel anywhere, like into your leg?', done: false, progress: { covered: 2, total: 3 } },
+          { ok: true, say: 'Thank you, that is everything the doctor needs.', done: true }
+        ];
+      });
+
+      /* --- Start Visit --- */
+      await page.evaluate(function () { window.__mlsAvatar.openKiosk(); });
+      await page.clock.runFor(1500);
+      const visH = function (id) {
+        return page.evaluate(function (i) {
+          const el = document.getElementById(i);
+          if (!el) return false;
+          const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+        }, id);
+      };
+      ok('H1 Start Visit puts the avatar on screen', await visH('mlsAvKioskFace'));
+      ok('H1 …and the AI disclosure with it', await visH('mlsAvKioskAi'));
+
+      /* --- intelligent MA intake, including a follow-up --- */
+      await page.evaluate(function () { window.__emit('my lower back hurts', true); });
+      await page.clock.runFor(2600);
+      await page.evaluate(function () { window.__emit('a few weeks I guess', true); });
+      await page.clock.runFor(2600);
+      const asked = await page.evaluate(function () {
+        return (document.getElementById('mlsAvKioskSay').textContent || '');
+      });
+      ok('H2 the intake asks a FOLLOW-UP when an answer is vague', /travel anywhere/i.test(asked), asked.slice(0, 60));
+      await page.evaluate(function () { window.__emit('yes it goes down my left leg', true); });
+      await page.clock.runFor(2600);
+      await page.clock.runFor(13000);
+      const intakeTurns = await page.evaluate(function () {
+        return window.__fetchLog.filter(function (f) { return f.url.indexOf('/office/turn') >= 0; }).length;
+      });
+      ok('H2 the intake ran as a real multi-turn interview', intakeTurns >= 4, intakeTurns + ' turns');
+      const sentChart = await page.evaluate(function () {
+        const t = window.__fetchLog.filter(function (f) { return f.url.indexOf('/office/turn') >= 0; });
+        return !!(t.length && t[0].body && t[0].body.chartContext);
+      });
+      ok('H2 …carrying what the chart already knows', sentChart === true);
+
+      /* --- doctor takes over --- */
+      await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+      await page.clock.runFor(400);
+      await page.evaluate(function () {
+        document.getElementById('mlsAvKioskPinInput').value = '1234';
+        document.getElementById('mlsAvKioskPinAmb').click();
+      });
+      await page.clock.runFor(1200);
+      ok('H3 the doctor takes over and the avatar REMAINS on screen', await visH('mlsAvKioskFace'));
+      ok('H3 …still disclosing what it is', await visH('mlsAvKioskAi'));
+      ok('H3 …and is now ambiently documenting', (await snap('handoff')).running === true);
+
+      /* --- ambient documentation + continuous save --- */
+      await say(page, 'the pain is worse when she bends forward');
+      const s1 = await snap('after first exam line');
+      await say(page, 'straight leg raise is positive on the left at forty degrees');
+      const s2 = await snap('after second exam line');
+      ok('H4 the visit is captured as it is spoken', s2.chars > s1.chars, s1.chars + ' -> ' + s2.chars);
+      ok('H4 …and continuously written to the crash backup',
+        s2.storedChars > 0 && s2.backedUp === true, 'stored=' + s2.storedChars);
+
+      /* --- the doctor gives a natural command --- */
+      await say(page, 'MLS, remind me to document that the pain radiates into the left leg');
+      const noteCards = await page.evaluate(function () {
+        return window.__cards().filter(function (c) { return /Documentation note/i.test(c.title); }).length;
+      });
+      ok('H5 a command addressed to the assistant is understood as an instruction', noteCards === 1,
+        noteCards + ' note action(s)');
+
+      /* --- a proposed clinical action, confirmed in one step --- */
+      await say(page, 'order an MRI lumbar spine without contrast');
+      let cards = await page.evaluate(function () { return window.__cards(); });
+      const mri = cards.filter(function (c) { return c.title === 'MRI'; })[0];
+      ok('H6 the spoken order appears as a proposal', !!mri, JSON.stringify(cards.map(c => c.title)));
+      ok('H6 …complete enough to confirm in ONE tap', mri && mri.confirmDisabled === false, JSON.stringify(mri));
+      await page.evaluate(function () {
+        const all = Array.prototype.slice.call(document.querySelectorAll('#mlsAvKioskOrders .mlsAvOrd'));
+        const card = all.filter(function (c) { return (c.querySelector('b') || {}).textContent === 'MRI'; })[0];
+        card.querySelector('.mlsAvOrdGo').click();
+      });
+      await page.clock.runFor(300);
+      const confirmed = await page.evaluate(function () {
+        return window.__cards().filter(function (c) { return c.confirmed; }).length;
+      });
+      ok('H6 …and confirming it is one step', confirmed === 1, confirmed + ' confirmed');
+      const s3 = await snap('after orders');
+      ok('H7 everything is still saving as the visit runs', s3.storedChars >= s2.storedChars,
+        s2.storedChars + ' -> ' + s3.storedChars);
+      ok('H7 …bound to the same chart the whole way through',
+        s3.bound === 'ext-77' && saves.every(function (x) { return x.bound === 'ext-77'; }), s3.bound);
+
+      /* --- End Visit --- */
+      await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+      await page.clock.runFor(4000);
+      const review = await page.evaluate(function () { return window.__review(); });
+      const box = await page.evaluate(function () { return window.__box(); });
+      const note = await page.evaluate(function () { return document.getElementById('noteBox').value; });
+      ok('H8 End Visit confirms the visit is saved', /Saved to the visit transcript/.test(review || ''));
+      ok('H8 the transcript holds the WHOLE encounter — check-in and visit',
+        box.indexOf('--- check-in ---') >= 0 && box.indexOf('--- visit ---') >= 0 &&
+        box.indexOf('lower back hurts') >= 0 && box.indexOf('straight leg raise') >= 0,
+        'checkin=' + (box.indexOf('--- check-in ---') >= 0) + ' visit=' + (box.indexOf('--- visit ---') >= 0));
+      ok('H8 the confirmed action is in the note', /MRI - lumbar spine without contrast/.test(box));
+      ok('H8 the draft note is ready', note.length > 0 && /Draft note ready/.test(review || ''), note.slice(0, 46));
+      ok('H8 the doctor never had to leave this screen', await visH('mlsAvKioskReview'));
+      const leftover = await page.evaluate(function () { return window.__mlsAvatar.pendingCapture(); });
+      ok('H8 nothing is left unsaved behind it', leftover === null);
+      ok('H the whole run threw nothing', h.errors.length === 0, h.errors.join(' | '));
+
+      console.log('  ---- continuity across the run (chars captured / chars in backup) ----');
+      saves.forEach(function (s) {
+        console.log('     ' + String(s.tag).padEnd(26) + String(s.chars).padStart(5) + ' / ' + String(s.storedChars).padStart(5));
+      });
+    }
   } finally {
     await browser.close();
     server.close();
@@ -809,10 +970,13 @@ async function say(page, text) {
     failures.forEach(function (f) { console.log('  - ' + f); });
     process.exit(1);
   }
-  console.log('PASS visit copilot proof: ' + pass + ' checks in real Chromium on a real origin — a visit survives a ' +
-    'mid-encounter reload and files to the right chart (and refuses the wrong one), spoken orders are prepared but ' +
-    'cannot be confirmed while a required detail is missing (gate holds with the attribute defeated), and End Visit ' +
-    'flushes the last sentence, files, and names what was never confirmed');
+  console.log('PASS visit copilot proof: ' + pass + ' checks in real Chromium on a real origin — the FULL acceptance ' +
+    'sequence runs unbroken in one session (Start Visit -> MA intake with a follow-up -> doctor takes over -> avatar ' +
+    'remains and documents -> a spoken command -> a proposed order confirmed in one tap -> continuous save -> End ' +
+    'Visit with the note drafted), plus: a visit survives a mid-encounter reload and files to the right chart (and ' +
+    'refuses the wrong one), an order missing a required detail cannot be confirmed even with the attribute defeated, ' +
+    'pausing stops the recording AND the claim to be recording, and the first word arrives 155ms sooner than the ' +
+    'one-blob fetch it replaced');
 })().catch(function (e) {
   console.error('PROOF CRASHED:', (e && e.stack) || e);
   process.exit(1);
