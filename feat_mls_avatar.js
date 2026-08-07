@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.7.0';
+  var VERSION = 'av-5.7.1';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -3140,15 +3140,8 @@
     /\b(?:don'?t|do not|does not|doesn'?t|did not|didn'?t|will not|won'?t|cannot|can'?t|no)\s+(?:\w+\s+){0,3}(?:need|want|order|require|indicat)/i,
     /\bnot\s+(?:\w+\s+){0,2}(?:going to\s+|gonna\s+)?(?:order|prescrib|refer|start|schedul|obtain)/i,
     /\bno need (?:for|to)\b/i,
-    /\b(?:hold(?:ing)? off|defer(?:ring)?|avoid|against (?:an?|the)|instead of|rather than|cancel(?:led|ling)?|discontinue|stop(?:ping)?)\b/i,
-    /\b(?:already (?:had|has|have|got|done|ordered)|last (?:year|month|week|visit)|previously|prior|in the past|years? ago|months? ago|weeks? ago)\b/i,
-    /\bif\b[^.?!]*\b(?:worse|worsen|persist|fail|flare|doesn'?t (?:improve|help)|not better|no better)\b/i,
-    /\b(?:worse|persist|fail|doesn'?t (?:improve|help)|not better|no better)\b[^.?!]*\bthen\b/i,
-    /\?\s*$/,
-    /^\s*(?:do|did|does|have|has|had|can|could|should|would|will|are|is|was|am|any|what|when|why|how|which)\b[^.!]*$/i,
-    /\b(?:do|did|would|should|can|could|will) (?:you|we|i|he|she|they)\b/i,
-    /\b(?:what|how) about\b/i,
-    /\bhave you (?:had|ever|been)\b/i
+    /\b(?:hold(?:ing)? off|defer(?:ring)?|avoid|against (?:an?|the)|instead of|rather than|stop(?:ping)?)\b/i,
+    /\b(?:already (?:had|has|have|got|done|ordered)|last (?:year|month|week|visit)|previously|prior|in the past|years? ago|months? ago|weeks? ago)\b/i
   ];
   /* SOFT hedges - refused unless the same sentence also commits. "I would
      like to order an MRI" commits; "we might order an MRI" does not. */
@@ -3162,9 +3155,54 @@
     for (var i = 0; i < list.length; i++) if (list[i].test(text)) return true;
     return false;
   }
+  /* av-5.7.1 — WHICH BLOCKERS OWN THE WHOLE UTTERANCE, AND WHICH OWN ONE CLAUSE.
+     A speech recogniser sends no punctuation, so "we do not need an x-ray but
+     lets order an mri of the lumbar spine" arrives as ONE run of words. Testing
+     that run as a single blob let the refusal at the front kill the real order
+     at the back, and the MRI was silently dropped. Measured on three phrasings
+     doctors use constantly ("we don't need X but let's do Y", "she had one last
+     year so let's get Z", "no need for A, let's start B").
+
+     The split is by KIND, not convenience:
+       WHOLE  - a conditional, a question, or a cancellation governs everything
+                after it. "if the pain gets worse we'll order an MRI" is a plan
+                for a different day no matter how it is punctuated, and
+                splitting it would turn it into today's order.
+       CLAUSE - a negation or a past reference describes the thing next to it.
+                It must not reach across a connective into a different one. */
+  var ACT_WHOLE_BLOCK = [
+    /\?\s*$/,
+    /^\s*(?:do|did|does|have|has|had|can|could|should|would|will|are|is|was|am|any|what|when|why|how|which)\b[^.!]*$/i,
+    /\b(?:do|did|would|should|can|could|will) (?:you|we|i|he|she|they)\b/i,
+    /\b(?:what|how) about\b/i,
+    /\bhave you (?:had|ever|been)\b/i,
+    /\bif\b[^.?!]*\b(?:worse|worsen|persist|fail|flare|doesn'?t (?:improve|help)|not better|no better)\b/i,
+    /\b(?:worse|persist|fail|doesn'?t (?:improve|help)|not better|no better)\b[^.?!]*\bthen\b/i,
+    /\bcancel(?:led|ling)?\b|\bdiscontinue\b/i
+  ];
+  /* the clause boundaries a doctor actually speaks: a contrast connective, or
+     the start of a fresh imperative */
+  var ACT_CLAUSE_SPLIT = /\b(?:but|however|instead|so)\b|(?=\b(?:let'?s|i'?ll|we'?ll|go ahead and)\b)/i;
+  function actSplitClauses(text) {
+    var parts = String(text || '').split(ACT_CLAUSE_SPLIT);
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = clean(parts[i]);
+      if (p) out.push(p);
+    }
+    return out.length ? out : [String(text || '')];
+  }
   function actBlocked(text) {
+    if (actAny(ACT_WHOLE_BLOCK, text)) return true;
     if (actAny(ACT_HARD_BLOCK, text)) return true;
     if (actAny(ACT_SOFT_BLOCK, text) && !actAny(ACT_COMMIT, text)) return true;
+    return false;
+  }
+  /* a clause is blocked by what is IN it; the whole-utterance blockers have
+     already been checked against the full text by the caller */
+  function actClauseBlocked(clause) {
+    if (actAny(ACT_HARD_BLOCK, clause)) return true;
+    if (actAny(ACT_SOFT_BLOCK, clause) && !actAny(ACT_COMMIT, clause)) return true;
     return false;
   }
 
@@ -3253,10 +3291,41 @@
         fields: fields || {}, heard: raw, directed: directed, at: Date.now(), status: 'proposed'
       });
     }
+    /* A conditional, a question or a cancellation governs the ENTIRE
+       utterance — including a directed one: "MLS, should we order an MRI"
+       is still a question. */
+    if (actAny(ACT_WHOLE_BLOCK, text)) return [];
+    /* Then find the clause that actually carries the instruction. A refusal
+       in front of a connective describes what precedes it, not what follows:
+       "we do not need an x-ray BUT lets order an mri" is one refusal and one
+       order, and reading it as a single blob dropped the order. */
+    var clauses = actSplitClauses(text);
+    var live = '';
+    for (var ci = 0; ci < clauses.length; ci++) {
+      if (actClauseBlocked(clauses[ci])) continue;
+      if (!ACT_VERB.test(clauses[ci])) continue;
+      live = clauses[ci];
+      break;
+    }
+    if (!live) {
+      /* Nothing survived as a clause. A REFUSAL still means nothing at all —
+         not even a note: "MLS, we are not ordering an MRI" is the doctor
+         telling the assistant to stand down, and filing that as documentation
+         would put a refused order in the record. */
+      if (actBlocked(text)) return [];
+      /* no clinical shape, but the doctor addressed the assistant by name */
+      if (!ACT_VERB.test(text)) return directedNote();
+      live = text;
+    }
+    text = live;
     var hasVerb = ACT_VERB.test(text);
-    /* A directed instruction still has to clear the refusals: "MLS, we are
-       not ordering an MRI" must not produce an order. */
-    if (actBlocked(text)) return [];
+
+    function directedNote() {
+      if (directed && clean(wake && wake[1])) {
+        push('note', 'Documentation note', clean(wake[1]), [], { text: clean(wake[1]) });
+      }
+      return out;
+    }
 
     if (hasVerb) {
       var side = actFindSide(text), region = actFindRegion(text), contrast = actFindContrast(text);

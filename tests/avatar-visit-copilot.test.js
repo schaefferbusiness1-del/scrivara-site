@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.7.0)
+ * AVATAR — THE VISIT COPILOT (av-5.7.1)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -176,6 +176,72 @@ REFUSALS.forEach(([sentence, why]) => {
    a bypass around the safety rules */
 assert.strictEqual(one('MLS, we are not ordering an MRI.').length, 0,
   'the wake word must not turn a negated sentence into an order');
+
+/* ---- 1c. THE SHAPE THE DETECTOR ACTUALLY RECEIVES.
+   Every sentence above is written the way a person writes: capitalised, with a
+   full stop or a question mark. A speech recogniser emits none of that. Chrome
+   hands this module lowercase text with no terminal punctuation at all, so a
+   guard that keys off "?" or a sentence-initial capital is a guard that does
+   not exist in production. Both halves are re-run in that form. ---- */
+function asr(s) {
+  return String(s).toLowerCase().replace(/[.?!,;:]/g, '').replace(/\s+/g, ' ').trim();
+}
+REFUSALS.forEach(([sentence, why]) => {
+  const raw = asr(sentence);
+  const out = one(raw);
+  assert.strictEqual(out.length, 0,
+    'AS THE RECOGNISER WOULD SEND IT, this must still propose nothing: "' + raw + '" (' + why + ') — got ' +
+    JSON.stringify(out.map(a => a.kind + ':' + a.title)));
+});
+/* and the orders must still be FOUND in that form, or the feature only works
+   on text nobody actually speaks */
+{
+  const a = one(asr('Order an MRI lumbar spine without contrast.'));
+  assert.strictEqual(a.length, 1, 'the headline order must survive losing its punctuation and capitals');
+  assert.strictEqual(a[0].fields.region, 'lumbar spine');
+  assert.strictEqual(a[0].fields.contrast, 'without contrast');
+}
+{
+  const a = one(asr("Let's get an MRI of the left knee."));
+  assert.strictEqual(a.length, 1, 'a lowercase unpunctuated order must still be found');
+  assert.strictEqual(a[0].fields.side, 'left');
+}
+{
+  const a = one(asr('Start gabapentin 300 mg at night.'));
+  assert.strictEqual(a.length, 1); assert.strictEqual(a[0].fields.drug, 'gabapentin');
+  assert.strictEqual(a[0].fields.dose, '300 mg', 'the dose must survive the recogniser form');
+}
+{
+  const a = one(asr('MLS, remind me to document that the pain radiates into the left leg.'));
+  assert.strictEqual(a.length, 1, 'the wake word must survive losing its comma');
+  assert.strictEqual(a[0].kind, 'note');
+}
+
+/* ---- 1d. A REFUSAL IN FRONT OF AN ORDER MUST NOT EAT IT.
+   With no punctuation the whole utterance is one run of words, so testing it as
+   a single blob let a refusal at the front kill a real order at the back. These
+   three phrasings are how doctors actually speak, and all three silently
+   produced nothing before the clause split. ---- */
+[
+  ['we do not need an x-ray but lets order an mri of the lumbar spine', 'imaging', 'MRI'],
+  ['she had an mri last year so lets order a ct of the abdomen and pelvis', 'imaging', 'CT'],
+  ['no need for physical therapy lets start meloxicam 15 mg daily', 'medication', 'Meloxicam']
+].forEach(([sentence, kind, title]) => {
+  const out = one(sentence);
+  assert.strictEqual(out.length, 1,
+    'the order after the refusal must survive: "' + sentence + '" — got ' + JSON.stringify(out));
+  assert.strictEqual(out[0].kind, kind);
+  assert.strictEqual(out[0].title, title);
+});
+/* and the thing that makes that safe: a CONDITIONAL still governs everything
+   after it, however it is punctuated. Splitting it would turn a plan for a
+   different day into today's order. */
+assert.strictEqual(one('if the pain gets worse well order an mri').length, 0,
+  'a conditional must block the whole utterance, not just its own clause');
+assert.strictEqual(one('should we order an mri or wait').length, 0,
+  'a question must block the whole utterance');
+assert.strictEqual(one('MLS should we order an mri').length, 0,
+  'the wake word must not turn a question into an order');
 
 /* the detector is PURE and bounded */
 assert.strictEqual(one('').length, 0, 'empty input is not an action');
@@ -674,14 +740,14 @@ assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source
 }
 
 /* 3r. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.7.0'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.7.1'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '570', 'the loader cache token must name av-5.7.0 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '571', 'the loader cache token must name av-5.7.1 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.7.0): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.7.1): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');
