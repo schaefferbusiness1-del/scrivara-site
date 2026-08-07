@@ -9,7 +9,52 @@ names the exact SHA that was gated, not "the tip".
 
 ---
 
-## 2026-08-07 — site `9a397938` (b940), backend `176be040`
+## 2026-08-07 17:4x — site `4256f4fd` (b943), backend `ad7ac1c` — ALL GREEN
+
+Six site PRs (#4, #6, #8, #9, #5, #10) and three backend PRs (#12, #14, #15) merged
+inside about 25 minutes. Gated the resulting tip, not the individual branches.
+
+| Gate | Result |
+|---|---|
+| site — complete registry | **504/504, 0 failed** |
+| site — Jekyll build + `audit-pages-build.js` | PASS — 325 exact reviewed files |
+| site — Pages deploy | runs 65–70 all `success`, no inversion; live carries b943 |
+| backend — `npm test` | **PASS, exit 0, 49 suites** |
+| site — real Chrome live smoke | **0 pass in 3** — the instrument, not the code; see below |
+| live origin verification (`mlsscribe.com`) | still **NOT POSSIBLE** — 403 at the proxy, re-checked 17:37Z |
+
+**The b940 cache-token red is CLEARED.** `cache-token-cannot-go-stale` passes on this
+tip — 29 tokens checked commit-precisely, 0 stale. PR #9 carried the fix, exactly as
+predicted, and merging it is what closed it.
+
+### Why 0-for-3 live is not a regression
+
+Instrumented the harness with a 120s budget instead of 45s and measured what
+`__mlsSessionReady` actually does on b943. It **resolves every time** — `app: block`,
+no errors, 2/2 cycles pass — but one path is slow:
+
+| settle point | wall time | settled |
+|---|---|---|
+| initial boot | 4,882 ms | RESOLVED |
+| warm re-settle | 54 ms | RESOLVED |
+| **`reload-history-reopen`** | **55,417 ms** | RESOLVED |
+| stability cycle | 4,125 ms | RESOLVED |
+
+55.4s against a 45s budget is why every failure lands in `reload-history-reopen` and
+why the tally reads 0/3. The app is not broken on this path — it completes it. The
+harness simply stops waiting 10 seconds too early *on this hardware*.
+
+Worth one look by someone who owns startup, though NOT dispatched as a defect because
+it was measured under a CPU budget that is not the doctor's: `ScribeFlow.html` arms a
+**30.2-second** startup deadline whose comment promises "no optional endpoint can trap
+the user indefinitely", and it re-arms rather than firing while `document.hidden`.
+`document.hidden` was **false** here and the settle still took 55s, so the deadline did
+not cap it at 30.2s — consistent with main-thread timer starvation rather than a
+hung endpoint.
+
+---
+
+## 2026-08-07 (earlier) — site `9a397938` (b940), backend `176be040`
 
 | Gate | Result |
 |---|---|
