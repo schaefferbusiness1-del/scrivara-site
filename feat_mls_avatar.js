@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.7.4';
+  var VERSION = 'av-5.7.5';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -3991,14 +3991,22 @@
     if (pending.length) {
       lines.push('');
       lines.push(AMBIENT_HEAD_PENDING);
+      /* EVERY LINE CARRIES THE CAVEAT, not just the footer. This block sits in
+         the transcript, and the transcript is what the note generator reads —
+         its own rule is to include "ONLY what is actually supported by the
+         transcript", which these lines technically are. A single line lifted
+         out of this section and into a Plan would be an order the doctor never
+         confirmed, in a note they are about to sign. So the line itself says
+         so, wherever it ends up. */
       pending.forEach(function (a) {
         var gap = (a.missing || []).length ? ('  (missing ' + ordersMissingText(a) + ')') : '';
-        lines.push('- [' + (ACT_KIND_LABEL[a.kind] || a.kind) + '] ' + clean(a.title) +
-          (clean(a.detail) ? ' - ' + clean(a.detail) : '') + gap +
+        lines.push('- NOT ORDERED (never confirmed) - [' + (ACT_KIND_LABEL[a.kind] || a.kind) + '] ' +
+          clean(a.title) + (clean(a.detail) ? ' - ' + clean(a.detail) : '') + gap +
           '  (heard: "' + clean(a.heard) + '")');
       });
-      lines.push('[Heard during the visit and NEVER confirmed by the doctor. These were NOT ordered. ' +
-        'The visit ended before they could be reviewed.]');
+      lines.push('[Heard during the visit and NEVER confirmed by the doctor. These were NOT ordered and must ' +
+        'NOT appear in the plan. The visit ended before they could be reviewed. Listed only so the doctor ' +
+        'knows what was heard.]');
     }
     var block = lines.join('\n');
     /* filing the same recovered capture twice would duplicate a whole visit

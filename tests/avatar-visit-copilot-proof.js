@@ -1762,6 +1762,12 @@ async function say(page, text) {
           box.slice(box.indexOf('NEVER confirmed'), box.indexOf('NEVER confirmed') + 120));
         ok('M1b …and is stated plainly as NOT ordered',
           /These were NOT ordered/.test(box));
+        /* the footer alone is not enough: the note generator reads this transcript
+           and its rule is to include what the transcript supports, so a line
+           lifted out of the section must carry the caveat by itself */
+        ok('M1b …and EVERY pending line carries the caveat on its own',
+          /- NOT ORDERED \(never confirmed\) - \[Referral\]/.test(box),
+          (box.match(/- NOT ORDERED[^\n]*/) || ['(none)'])[0].slice(0, 80));
         ok('M1b page threw nothing', h.errors.length === 0, h.errors.join(' | '));
       }
 
