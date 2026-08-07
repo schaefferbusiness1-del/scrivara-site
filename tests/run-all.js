@@ -261,6 +261,7 @@ const tests = [
   'copilot-request-binding-contract.test.js',
   'widget-builder-v2-runtime.test.js',
   'custom-widget-identity-runtime.test.js',
+  'widget-builder-live-preview.test.js',
   'studio-creations-durability.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',

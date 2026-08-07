@@ -29,7 +29,7 @@ function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
    shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
    could never confirm the build QA had been told to gate on — a module that
    misreports itself makes every downstream verification unfalsifiable. */
-assert(source.includes("var VERSION = 'av-5.3.2'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.3.3'"), 'version token moved without updating this contract');
 {
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
   const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
@@ -62,6 +62,18 @@ assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source), 'pvListen no longe
 assert(source.includes('The exit PIN must be 4 to 8 digits'), 'Setup silently drops a malformed PIN again');
 assert(source.includes('if (found && found.summary)'), 'the summary refetch must be PROVEN before filing');
 assert(source.includes('if (kiosk.completed && !finish) return;'), 'a FINISHED interview must refuse further answers — the typed row survives the rest screen');
+/* THE START BUTTON IS ALWAYS REACHABLE. It used to be gated on an active
+   patient, so with none selected it vanished from the card entirely — which
+   a doctor cannot distinguish from the feature being deleted, and is exactly
+   how the owner reported it ("Where did the start avatar button go"). The
+   honest precondition refusal already existed inside openKiosk(); a refusal
+   is only honest if the control that triggers it can be clicked. */
+assert(!/if \(!activeHit && activeId\) head\.appendChild/.test(source),
+  'the Start button is gated on an active patient again — with none it disappears and reads as removed');
+assert(/if \(!activeHit\) head\.appendChild\(visitButton\('\W*\s*Start check-in interview'/.test(source),
+  'the Start check-in interview button must render whenever the patient has no completed check-in');
+assert(source.includes("toast('Open the patient first"),
+  'the click-time precondition refusal was removed — the button would then do nothing silently');
 /* av-5.3.2 — the self-end must work on EVERY path and must be BOUNDED:
    it used to be armed only after the microphone-unavailable early return, so
    a typed-mode interview never ended and never produced a summary; and the
@@ -195,8 +207,8 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av532";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av532 loader');
+const marker = "feat_mls_avatar.js?v=20260806av533";
+assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av533 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -251,7 +263,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.2');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.3');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;
