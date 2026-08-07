@@ -716,6 +716,45 @@ assert(/isFn\(window\.generateNote\)/.test(source),
     'the chart the doctor is looking at must win over merely the newest');
 }
 
+/* 3p-ter. THE SEAM TO THE NOTE, EXECUTED.
+   This module writes the visit into #ez3flTranscript and fires one input event.
+   The note generator does NOT read that box — it reads #transcript. Between
+   them sits mls-connect's mirror MERGE, which is a merge and not a copy, and
+   nothing in this suite had ever proved the block survives it. If that merge
+   ever stops preserving the mirror's own content, this feature silently stops
+   reaching the note while every other test here still passes. */
+{
+  const connectSrc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+  const start = connectSrc.indexOf('window.__mlsTxMirror = {');
+  assert(start > 0, 'the transcript mirror was moved or renamed — the seam to the note is unverified');
+  const end = connectSrc.indexOf('})();', start);
+  const mirrorSrc = connectSrc.slice(connectSrc.lastIndexOf('(function', start), end + 5);
+  const sandbox = { window: {}, document: { activeElement: null } };
+  vm.createContext(sandbox);
+  vm.runInContext(mirrorSrc, sandbox);
+  const merge = sandbox.window.__mlsTxMirror.merge;
+  assert(typeof merge === 'function', 'the mirror lost its merge');
+
+  const BLOCK = '--- check-in ---\nPatient: my back hurts\n\n--- visit ---\nthe exam was unremarkable';
+  /* a fake mirror element carrying the base the mirror last synced */
+  function el(base) { const e = { value: '' }; sandbox.window.__mlsTxMirror.set(e, base); return e; }
+
+  /* 1. the note box is EMPTY — the ordinary case after a room capture */
+  assert(merge(el(''), BLOCK, '').indexOf('the exam was unremarkable') > -1,
+    'an empty #transcript must take the whole block');
+  /* 2. the doctor already had text and the recogniser added more */
+  {
+    const prior = 'Doctor draft.';
+    const out = merge(el(prior), prior + '\n\n' + BLOCK, prior + ' and some dictation');
+    assert(out.indexOf('the exam was unremarkable') > -1, 'the block must survive a merge with newer dictation');
+    assert(out.indexOf('some dictation') > -1, 'and the dictation must survive too — the merge keeps both');
+  }
+  /* 3. #transcript diverged entirely — the block must still not be dropped */
+  assert(merge(el('Doctor draft.'), 'Doctor draft.\n\n' + BLOCK, 'something else entirely')
+    .indexOf('the exam was unremarkable') > -1,
+    'a divergent #transcript must not cost the visit its transcript');
+}
+
 /* 3q. ONE STATE CHIP. The brief names the states it wants shown; they existed
    only as a class on the root plus four scattered elements, which is not the
    same as the screen ANSWERING "what is it doing right now". */
