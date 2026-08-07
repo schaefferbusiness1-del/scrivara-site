@@ -95,9 +95,33 @@ const document = {
   createElement: element,
   getElementById(id) { return findById(html, id); },
   querySelectorAll(selector) {
-    const m = /^\[([a-z-]+)="([^"]*)"\]$/.exec(String(selector || ''));
-    if (!m) return [];
-    return walk(html, []).filter((n) => n.getAttribute(m[1]) === m[2]);
+    const sel = String(selector || '');
+    const m = /^\[([a-z-]+)="([^"]*)"\]$/.exec(sel);
+    if (m) return walk(html, []).filter((n) => n.getAttribute(m[1]) === m[2]);
+    /* The affordance sweep's compound selector. Supported explicitly rather
+       than left returning [] — a stub that silently matches nothing makes the
+       code under test unreachable, and a mutation pass caught exactly that:
+       deleting the whole sweep left this suite green. Each clause is
+       "<ancestor id> <descendant test>". */
+    const clauses = sel.split(',').map((c) => c.trim()).filter(Boolean);
+    if (!clauses.length) return [];
+    const out = [];
+    for (const c of clauses) {
+      const parts = /^#([A-Za-z0-9_-]+)\s+(.+)$/.exec(c);
+      if (!parts) return [];                       // unknown shape: fail loudly, not silently
+      const root = findById(html, parts[1]);
+      if (!root) continue;
+      const test = parts[2];
+      for (const n of walk(root, [])) {
+        if (n === root) continue;
+        const hit =
+          (test === 'button' && n.tagName === 'BUTTON') ||
+          (test === '[data-dest="tools"]' && n.getAttribute('data-dest') === 'tools') ||
+          (test === '[role="button"]' && n.getAttribute('role') === 'button');
+        if (hit && out.indexOf(n) < 0) out.push(n);
+      }
+    }
+    return out;
   },
   addEventListener() {}
 };
@@ -112,8 +136,16 @@ class FakeMutationObserver {
   disconnect() {}
 }
 
+/* Capture console.warn rather than let it through: the module is SUPPOSED to
+   warn when a failure has nowhere visible to live, so that warning is a result
+   to assert, not noise to print. */
+const warnings = [];
+const captureConsole = Object.assign(Object.create(console), {
+  warn: (...a) => { warnings.push(a.join(' ')); }
+});
+
 const ctx = {
-  console, document, MutationObserver: FakeMutationObserver,
+  console: captureConsole, document, MutationObserver: FakeMutationObserver,
   setTimeout() { return 1; }, clearTimeout() {},
   addEventListener() {}, removeEventListener() {},
   postMessage() {}
@@ -123,7 +155,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.1.3');
+assert.strictEqual(api.version, '1.1.4');
 
 const dispatch = (data) => api._onResultMessage({ data });
 const btn = () => document.getElementById('mlsAthenaDoctorBtn');
@@ -416,15 +448,70 @@ assert.strictEqual(futureBtn.getAttribute('data-mls-athena-read'), null, 'the sl
 assert.strictEqual(futureBtn.getAttribute('aria-label'), 'Account', 'the slot occupant did not get its own label back verbatim');
 assert.strictEqual(api.renderedFailureSurfaces().length, 0, 'a good read left a rendered surface still claiming failure');
 
+/* v1.1.4 — THE AFFORDANCE ITSELF, found by NAME.
+   QA measured every element containing "Troubleshoot Athena" as 0x0 and asked
+   whether the doctor can reach it at all. He can: it moved to the DOCK's Tools
+   menu (feat_mls_calm_shell.js:1108), after feat_mls_redesign.js:148 hid
+   #mlsTbMenu outright — their reading was taken with that menu CLOSED, where a
+   row is 0x0 by design. So the dock's Tools launcher is a real surface, and so
+   is anything that NAMES the affordance. */
+const dock = element('div'); dock.id = 'mlsDock'; dock._box = { width: 697, height: 82 };
+const toolsBtn = element('button');
+toolsBtn.setAttribute('data-dest', 'tools');
+toolsBtn.textContent = 'Tools';
+toolsBtn._box = { width: 64, height: 48 };
+dock.appendChild(toolsBtn);
+body.appendChild(dock);
+
+const toolsMenu = element('div'); toolsMenu.id = 'mlsToolsMenu';
+const toolsRow = element('button');
+toolsRow.textContent = '🔧 Troubleshoot Athena';
+toolsRow._box = { width: 96, height: 32 };
+const unrelatedRow = element('button');
+unrelatedRow.textContent = 'Snapshot';
+unrelatedRow._box = { width: 96, height: 32 };
+toolsMenu.appendChild(toolsRow);
+toolsMenu.appendChild(unrelatedRow);
+body.appendChild(toolsMenu);
+
+observerCallback();
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-dock-1', ok: false, reason: 'no-form' });
+assert.strictEqual(toolsBtn.getAttribute('data-mls-athena-read'), 'failed',
+  'the dock Tools launcher carries no state — it is the route to Troubleshoot Athena now that #mlsTbMenu is display:none');
+assert.strictEqual(toolsRow.getAttribute('data-mls-athena-read'), 'failed',
+  'the Tools row that NAMES Troubleshoot Athena was not painted — discovery by name is what ends the id chase');
+assert.strictEqual(unrelatedRow.getAttribute('data-mls-athena-read'), null,
+  'an unrelated Tools row was painted — the name match is too loose and every menu item would wear an Athena dot');
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-dock-2', ok: true, results: [{}] });
+assert.strictEqual(toolsBtn.getAttribute('data-mls-athena-read'), null, 'the dock launcher kept a resolved failure');
+assert.strictEqual(toolsRow.getAttribute('data-mls-athena-read'), null, 'the Tools row kept a resolved failure');
+
+/* v1.1.4 — AN INDICATOR WITH NOWHERE TO LIVE IS A PRODUCT BUG, AND IT SAYS SO.
+   QA: "if the set comes back EMPTY that is not a no-op." Three rounds went into
+   moving paint around before anyone asked whether the affordance was reachable
+   at all. Earlier in this run there was no rendered surface, so the module must
+   have said so — once, on the console, never as a toast (the owner deleted the
+   toast), and it must leave a flag a live probe can read without watching the
+   console. */
+assert(warnings.some((w) => /NO rendered surface/.test(w)),
+  'a failure with no rendered surface passed silently — the unreachable-affordance case must announce itself');
+assert.strictEqual(warnings.filter((w) => /NO rendered surface/.test(w)).length, 1,
+  'the unreachable warning repeats — it must fire once, not once per failed read');
+assert.strictEqual(ctx.__mlsAthenaReadIndicatorUnreachable, false,
+  'the unreachable flag is still set even though a rendered surface now carries the state');
+
 /* NEGATIVE CONTROL on the receipt itself: if every candidate loses its box —
    the exact live situation at b911/b915 — the receipt must go FALSE. A receipt
    that cannot fail is the vacuous-pass class all over again. */
-futureBtn._box = { width: 0, height: 0 };
+const boxes = api.readSurfaces().map((el) => [el, el._box]);
+boxes.forEach(([el]) => { el._box = { width: 0, height: 0 }; });
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-slot-3', ok: false, reason: 'no-tab' });
 assert.strictEqual(api.renderedFailureSurfaces().length, 0,
   'the receipt reports a rendered surface when every candidate is 0x0 — it would have passed at b911 and b915, and it must not');
-futureBtn._box = { width: 106, height: 38 };
-assert(api.renderedFailureSurfaces().length > 0, 'the receipt did not recover when the surface regained a box');
+assert.strictEqual(ctx.__mlsAthenaReadIndicatorUnreachable, true,
+  'every surface is 0x0 and the unreachable flag did not go true — this is the live b911/b915 state and it must be announced');
+boxes.forEach(([el, box]) => { el._box = box; });
+assert(api.renderedFailureSurfaces().length > 0, 'the receipt did not recover when the surfaces regained their boxes');
 
 console.log('PASS Athena read indicator: both failure paths raise it on every RENDERED surface (the ☰ Menu button, since ' +
   'feat_mls_topbar_unify hides the original), any successful read including zero-result clears it, tooltip and aria-label ' +
