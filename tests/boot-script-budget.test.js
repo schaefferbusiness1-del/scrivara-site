@@ -397,7 +397,28 @@ const LOADER = 'mls-connect.js';
  *     resumes on visibilitychange.
  *   - Renders nothing at all unless a real pending request comes back, so its
  *     boot work over a 1,481-patient store is a single conditional. */
-const CEILING = 255;
+/* 2026-08-07 opdb-1.0.0 (owner-ordered OP-NOTE DAY BRAIN): +1 loader,
+ *   feat_mls_opnote_daybrain.js — AI-assisted template matching layered over
+ *   the deterministic ranker, and the procedure-aware day triage that stops
+ *   "Draft all op notes" writing an operative note for a patient who never had
+ *   a procedure.
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout), so EAGER_CEILING does not
+ *     move and the post-login burst this ceiling guards is unchanged. Op notes
+ *     are minutes-after-boot work by definition — the surface does not exist
+ *     until the doctor opens the op-note room by hand.
+ *   - NO INTERVAL and NO OBSERVER, so INTERVAL_CEILING and OBSERVER_CEILING do
+ *     not move either. It waits for feat_mls_opnote_integrity.js on a BOUNDED
+ *     setTimeout ladder (25 tries at 400ms, then inert), which is the same
+ *     pattern the request inbox uses, and one delegated document click
+ *     listener — not a listener per row.
+ *   - Its boot work over a 1,481-patient store is ZERO: every entry point is a
+ *     wrapper that only does work once window._opPrep exists, which requires
+ *     openOpPrep() to have run. Nothing is read, parsed or rendered at install.
+ *   - The AI hop is strictly on demand, sequential (never a burst), and only
+ *     for rows the deterministic matcher itself declined to call confident.
+ *     With no key and no session it never fires at all and the surface falls
+ *     back to exactly today's deterministic behaviour. */
+const CEILING = 256;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

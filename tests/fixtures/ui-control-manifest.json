@@ -1,13 +1,13 @@
 {
  "generatedBy": "tools/ui-control-inventory.js",
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
- "sources": 274,
+ "sources": 275,
  "totals": {
-  "controls": 1344,
+  "controls": 1348,
   "gated": 99,
-  "active": 1245,
+  "active": 1249,
   "byKind": {
-   "button": 1288,
+   "button": 1292,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 959
+  "dynamic": 963
  },
  "controls": [
   {
@@ -7188,7 +7188,7 @@
    "handler": null
   },
   {
-   "id": "scribeflow-html-16473-match-template",
+   "id": "scribeflow-html-16541-match-template",
    "label": "Match template",
    "accessibleName": "Match template",
    "title": "Find the best-matching template for this procedure",
@@ -7197,12 +7197,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16473,
+   "line": 16541,
    "gated": false,
    "handler": "_opAutoTpl( )"
   },
   {
-   "id": "scribeflow-html-16483-save-to-s-chart",
+   "id": "scribeflow-html-16551-save-to-s-chart",
    "label": "Save to ’s chart",
    "accessibleName": "Save to ’s chart",
    "title": "",
@@ -7211,12 +7211,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16483,
+   "line": 16551,
    "gated": false,
    "handler": "opPrepSave( )"
   },
   {
-   "id": "scribeflow-html-16705-skip",
+   "id": "scribeflow-html-16847-skip",
    "label": "Skip",
    "accessibleName": "Skip",
    "title": "",
@@ -7225,12 +7225,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16705,
+   "line": 16847,
    "gated": false,
    "handler": "opPrepBlankSkip( )"
   },
   {
-   "id": "scribeflow-html-16706-fill-all-at-once",
+   "id": "scribeflow-html-16848-fill-all-at-once",
    "label": "Fill all at once",
    "accessibleName": "Fill all at once",
    "title": "Fill every remaining blank with whatever you’ve typed so far",
@@ -7239,12 +7239,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 16706,
+   "line": 16848,
    "gated": false,
    "handler": "opPrepApplyAll( )"
   },
   {
-   "id": "scribeflow-html-17030-open-in-history",
+   "id": "scribeflow-html-17172-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -7253,12 +7253,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17030,
+   "line": 17172,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "scribeflow-html-17035-open-in-history",
+   "id": "scribeflow-html-17177-open-in-history",
    "label": "Open in History",
    "accessibleName": "Open in History",
    "title": "",
@@ -7267,12 +7267,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17035,
+   "line": 17177,
    "gated": false,
    "handler": "closeOpPrep();setActivePtId(' ');try{renderProfile();renderPatientBar();}catch(e"
   },
   {
-   "id": "scribeflow-html-17127-save-changes",
+   "id": "scribeflow-html-17269-save-changes",
    "label": "Save changes",
    "accessibleName": "Save changes",
    "title": "",
@@ -7281,12 +7281,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17127,
+   "line": 17269,
    "gated": false,
    "handler": "tplDetailSave()"
   },
   {
-   "id": "scribeflow-html-17128-use-on-current-note",
+   "id": "scribeflow-html-17270-use-on-current-note",
    "label": "Use on current note",
    "accessibleName": "Use on current note",
    "title": "Reformat the note you have open right now to match this template",
@@ -7295,12 +7295,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17128,
+   "line": 17270,
    "gated": false,
    "handler": "useTemplateNow(' ')"
   },
   {
-   "id": "scribeflow-html-17130-duplicate",
+   "id": "scribeflow-html-17272-duplicate",
    "label": "Duplicate",
    "accessibleName": "Duplicate",
    "title": "",
@@ -7309,12 +7309,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17130,
+   "line": 17272,
    "gated": false,
    "handler": "duplicateTemplate(' ')"
   },
   {
-   "id": "scribeflow-html-17131-delete",
+   "id": "scribeflow-html-17273-delete",
    "label": "Delete…",
    "accessibleName": "Delete…",
    "title": "",
@@ -7323,12 +7323,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17131,
+   "line": 17273,
    "gated": false,
    "handler": "deleteTemplate(' ')"
   },
   {
-   "id": "scribeflow-html-17133-restore",
+   "id": "scribeflow-html-17275-restore",
    "label": "Restore",
    "accessibleName": "Restore",
    "title": "",
@@ -7337,12 +7337,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17133,
+   "line": 17275,
    "gated": false,
    "handler": "tplRestoreRevision(' ')"
   },
   {
-   "id": "scribeflow-html-17343-undo-delete",
+   "id": "scribeflow-html-17485-undo-delete",
    "label": "Undo delete",
    "accessibleName": "Undo delete",
    "title": "",
@@ -7351,12 +7351,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 17343,
+   "line": 17485,
    "gated": false,
    "handler": "tplUndoDelete()"
   },
   {
-   "id": "scribeflow-html-18006-add-selected-to-my-templates",
+   "id": "scribeflow-html-18158-add-selected-to-my-templates",
    "label": "Add selected to my templates",
    "accessibleName": "Add selected to my templates",
    "title": "",
@@ -7365,12 +7365,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18006,
+   "line": 18158,
    "gated": false,
    "handler": "tplAddSplit()"
   },
   {
-   "id": "scribeflow-html-18678-remove-the-extras",
+   "id": "scribeflow-html-18830-remove-the-extras",
    "label": "Remove the extras",
    "accessibleName": "Remove the extras",
    "title": "",
@@ -7379,12 +7379,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18678,
+   "line": 18830,
    "gated": false,
    "handler": "cleanupDuplicateNotes();return false;"
   },
   {
-   "id": "scribeflow-html-18727-clear-search",
+   "id": "scribeflow-html-18879-clear-search",
    "label": "Clear search",
    "accessibleName": "Clear search",
    "title": "",
@@ -7393,12 +7393,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18727,
+   "line": 18879,
    "gated": false,
    "handler": "var s=document.getElementById('histSearch');if(s)s.value='';var f=document.getEl"
   },
   {
-   "id": "scribeflow-html-18772-attach",
+   "id": "scribeflow-html-18924-attach",
    "label": "Attach",
    "accessibleName": "Attach",
    "title": "Attach this visit to",
@@ -7407,12 +7407,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18772,
+   "line": 18924,
    "gated": false,
    "handler": "event.stopPropagation();attachNoteToActive(' ')"
   },
   {
-   "id": "scribeflow-html-18775-review-athena-actions",
+   "id": "scribeflow-html-18927-review-athena-actions",
    "label": "Review Athena actions",
    "accessibleName": "Review Athena actions",
    "title": "Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action.",
@@ -7421,12 +7421,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18775,
+   "line": 18927,
    "gated": false,
    "handler": "event.stopPropagation();pushHistoryNoteToAthena(' ')"
   },
   {
-   "id": "scribeflow-html-18776-handler",
+   "id": "scribeflow-html-18928-handler",
    "label": "—",
    "accessibleName": "Open saved visit for : ,",
    "title": "",
@@ -7435,12 +7435,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18776,
+   "line": 18928,
    "gated": false,
    "handler": "openNoteFromHistory(' ')"
   },
   {
-   "id": "scribeflow-html-18784-delete",
+   "id": "scribeflow-html-18936-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete",
@@ -7449,12 +7449,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18784,
+   "line": 18936,
    "gated": false,
    "handler": "event.stopPropagation();deleteNote(' ')"
   },
   {
-   "id": "scribeflow-html-18787-athena-chart-import-receipt",
+   "id": "scribeflow-html-18939-athena-chart-import-receipt",
    "label": "Athena chart-import receipt",
    "accessibleName": "View collapsed Athena chart-import receipts",
    "title": "",
@@ -7463,12 +7463,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 18787,
+   "line": 18939,
    "gated": false,
    "handler": "var f=document.getElementById('histFilter');if(f){f.value='imports';renderHistor"
   },
   {
-   "id": "scribeflow-html-19187-maybe-later",
+   "id": "scribeflow-html-19339-maybe-later",
    "label": "Maybe later",
    "accessibleName": "Maybe later",
    "title": "",
@@ -7477,12 +7477,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 19187,
+   "line": 19339,
    "gated": false,
    "handler": "_dismissAssistPrompt()"
   },
   {
-   "id": "scribeflow-html-20057-iscur-meta",
+   "id": "scribeflow-html-20209-iscur-meta",
    "label": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "accessibleName": "'+ (isCur?' ':'')+ ' '+(meta?' ':'')+'",
    "title": "",
@@ -7491,12 +7491,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 20057,
+   "line": 20209,
    "gated": false,
    "handler": "_heroPickPatient( )"
   },
   {
-   "id": "scribeflow-html-20101-button",
+   "id": "scribeflow-html-20253-button",
    "label": "‹",
    "accessibleName": "‹",
    "title": "Earlier patients",
@@ -7505,12 +7505,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 20101,
+   "line": 20253,
    "gated": false,
    "handler": "_heroWin(-1)"
   },
   {
-   "id": "scribeflow-html-20102-button",
+   "id": "scribeflow-html-20254-button",
    "label": "›",
    "accessibleName": "›",
    "title": "Later patients",
@@ -7519,12 +7519,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 20102,
+   "line": 20254,
    "gated": false,
    "handler": "_heroWin(1)"
   },
   {
-   "id": "scribeflow-html-20110-view-tomorrow",
+   "id": "scribeflow-html-20262-view-tomorrow",
    "label": "view tomorrow",
    "accessibleName": "view tomorrow",
    "title": "",
@@ -7533,12 +7533,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 20110,
+   "line": 20262,
    "gated": false,
    "handler": "_heroToggleTom()"
   },
   {
-   "id": "scribeflow-html-22763-button",
+   "id": "scribeflow-html-22915-button",
    "label": "×",
    "accessibleName": "×",
    "title": "",
@@ -7547,12 +7547,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22763,
+   "line": 22915,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-22767-close-plan",
+   "id": "scribeflow-html-22919-close-plan",
    "label": "Close plan",
    "accessibleName": "Close plan",
    "title": "",
@@ -7561,12 +7561,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22767,
+   "line": 22919,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-22864-times",
+   "id": "scribeflow-html-23016-times",
    "label": "&times;",
    "accessibleName": "Close",
    "title": "",
@@ -7575,7 +7575,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22864,
+   "line": 23016,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
@@ -7589,7 +7589,7 @@
    "domId": "athenaReceiptWrite",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22869,
+   "line": 23021,
    "gated": false,
    "handler": "_athenaReceiptAction('write_note')"
   },
@@ -7603,12 +7603,12 @@
    "domId": "athenaReceiptSave",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22870,
+   "line": 23022,
    "gated": false,
    "handler": "_athenaReceiptAction('save_draft')"
   },
   {
-   "id": "scribeflow-html-22872-close-review",
+   "id": "scribeflow-html-23024-close-review",
    "label": "Close review",
    "accessibleName": "Close review",
    "title": "",
@@ -7617,12 +7617,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 22872,
+   "line": 23024,
    "gated": false,
    "handler": "var p=document.getElementById('athenaReceipt');if(p)p.remove();"
   },
   {
-   "id": "scribeflow-html-23398-add-this-order",
+   "id": "scribeflow-html-23550-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -7631,12 +7631,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23398,
+   "line": 23550,
    "gated": false,
    "handler": "acceptSuggestion( )"
   },
   {
-   "id": "scribeflow-html-23416-add-this-order",
+   "id": "scribeflow-html-23568-add-this-order",
    "label": "Add this order",
    "accessibleName": "Add this order",
    "title": "Add this order",
@@ -7645,12 +7645,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23416,
+   "line": 23568,
    "gated": false,
    "handler": "acceptAiSuggestion( )"
   },
   {
-   "id": "scribeflow-html-23564-review-for-athena",
+   "id": "scribeflow-html-23716-review-for-athena",
    "label": "Review for Athena",
    "accessibleName": "Review for Athena",
    "title": "Review this frozen proposal, then complete the exact order directly in Athena. MLS does not place it.",
@@ -7659,12 +7659,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23564,
+   "line": 23716,
    "gated": false,
    "handler": "event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(' '),this"
   },
   {
-   "id": "scribeflow-html-23584-remove-order",
+   "id": "scribeflow-html-23736-remove-order",
    "label": "Remove order",
    "accessibleName": "Remove order",
    "title": "Remove this order",
@@ -7673,12 +7673,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23584,
+   "line": 23736,
    "gated": false,
    "handler": "removeVisitOrder(' ')"
   },
   {
-   "id": "scribeflow-html-23822-remove",
+   "id": "scribeflow-html-23974-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -7687,7 +7687,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 23822,
+   "line": 23974,
    "gated": false,
    "handler": "event.stopPropagation();removeOrder(' ')"
   },
@@ -7701,7 +7701,7 @@
    "domId": "ikExitCancel",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 24725,
+   "line": 24877,
    "gated": false,
    "handler": null
   },
@@ -7715,12 +7715,12 @@
    "domId": "ikExitGo",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 24726,
+   "line": 24878,
    "gated": false,
    "handler": null
   },
   {
-   "id": "scribeflow-html-25090-handler",
+   "id": "scribeflow-html-25242-handler",
    "label": ".",
    "accessibleName": ".",
    "title": "",
@@ -7729,12 +7729,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 25090,
+   "line": 25242,
    "gated": false,
    "handler": "insertDot( )"
   },
   {
-   "id": "scribeflow-html-25390-add-selected",
+   "id": "scribeflow-html-25542-add-selected",
    "label": "+ Add selected",
    "accessibleName": "+ Add selected",
    "title": "",
@@ -7743,12 +7743,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 25390,
+   "line": 25542,
    "gated": false,
    "handler": "applyTeachSuggestions()"
   },
   {
-   "id": "scribeflow-html-25391-dismiss",
+   "id": "scribeflow-html-25543-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -7757,12 +7757,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 25391,
+   "line": 25543,
    "gated": false,
    "handler": "document.getElementById('teachCard').style.display='none'"
   },
   {
-   "id": "scribeflow-html-25615-remove",
+   "id": "scribeflow-html-25767-remove",
    "label": "Remove",
    "accessibleName": "Remove",
    "title": "Remove",
@@ -7771,12 +7771,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 25615,
+   "line": 25767,
    "gated": false,
    "handler": "removeMmeRow( )"
   },
   {
-   "id": "scribeflow-html-28180-executed-pdf",
+   "id": "scribeflow-html-28332-executed-pdf",
    "label": "Executed PDF",
    "accessibleName": "Executed PDF",
    "title": "",
@@ -7785,12 +7785,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28180,
+   "line": 28332,
    "gated": false,
    "handler": "downloadAgreementExecuted( )"
   },
   {
-   "id": "scribeflow-html-28181-receipt",
+   "id": "scribeflow-html-28333-receipt",
    "label": "Receipt",
    "accessibleName": "Receipt",
    "title": "",
@@ -7799,12 +7799,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28181,
+   "line": 28333,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-28184-review-countersign",
+   "id": "scribeflow-html-28336-review-countersign",
    "label": "Review & countersign",
    "accessibleName": "Review & countersign",
    "title": "",
@@ -7813,12 +7813,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28184,
+   "line": 28336,
    "gated": false,
    "handler": "openCountersign( ,''+esc(String(r.name_signed||'')).replace(/\\x27/g,"
   },
   {
-   "id": "scribeflow-html-28189-download",
+   "id": "scribeflow-html-28341-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -7827,12 +7827,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28189,
+   "line": 28341,
    "gated": false,
    "handler": "downloadAgreementReceipt( )"
   },
   {
-   "id": "scribeflow-html-28781-open-chart",
+   "id": "scribeflow-html-28933-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "",
@@ -7841,12 +7841,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28781,
+   "line": 28933,
    "gated": false,
    "handler": "selectPatient(' ');showView('patients')"
   },
   {
-   "id": "scribeflow-html-28782-text",
+   "id": "scribeflow-html-28934-text",
    "label": "Text",
    "accessibleName": "Text",
    "title": "",
@@ -7855,12 +7855,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28782,
+   "line": 28934,
    "gated": false,
    "handler": "recComposeText(' ')"
   },
   {
-   "id": "scribeflow-html-28783-mark-done",
+   "id": "scribeflow-html-28935-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -7869,12 +7869,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28783,
+   "line": 28935,
    "gated": false,
    "handler": "recResolveMsg( )"
   },
   {
-   "id": "scribeflow-html-28799-send-text",
+   "id": "scribeflow-html-28951-send-text",
    "label": "Send text",
    "accessibleName": "Send text",
    "title": "",
@@ -7883,12 +7883,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28799,
+   "line": 28951,
    "gated": false,
    "handler": "recSend('sms',this)"
   },
   {
-   "id": "scribeflow-html-28799-call-read-it-aloud",
+   "id": "scribeflow-html-28951-call-read-it-aloud",
    "label": "Call & read it aloud",
    "accessibleName": "Call & read it aloud",
    "title": "",
@@ -7897,12 +7897,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28799,
+   "line": 28951,
    "gated": false,
    "handler": "recSend('voice',this)"
   },
   {
-   "id": "scribeflow-html-28841-save-settings",
+   "id": "scribeflow-html-28993-save-settings",
    "label": "Save settings",
    "accessibleName": "Save settings",
    "title": "",
@@ -7911,12 +7911,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28841,
+   "line": 28993,
    "gated": false,
    "handler": "saveRecSettings(this)"
   },
   {
-   "id": "scribeflow-html-28938-revoke",
+   "id": "scribeflow-html-29090-revoke",
    "label": "revoke",
    "accessibleName": "revoke",
    "title": "",
@@ -7925,12 +7925,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28938,
+   "line": 29090,
    "gated": false,
    "handler": "revokeApiKey( );return false"
   },
   {
-   "id": "scribeflow-html-28993-remove",
+   "id": "scribeflow-html-29145-remove",
    "label": "remove",
    "accessibleName": "remove",
    "title": "",
@@ -7939,12 +7939,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 28993,
+   "line": 29145,
    "gated": false,
    "handler": "schedApiDeleteWebhook( );return false"
   },
   {
-   "id": "scribeflow-html-29170-case-intake-unavailable",
+   "id": "scribeflow-html-29322-case-intake-unavailable",
    "label": "Case intake unavailable",
    "accessibleName": "Case intake unavailable",
    "title": "Case intake is unavailable in this evaluation build",
@@ -7953,12 +7953,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29170,
+   "line": 29322,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-29226-button",
+   "id": "scribeflow-html-29378-button",
    "label": "( )",
    "accessibleName": "( )",
    "title": "Upload the cover letter, signed patient authorization/release, and medical records for the doctor",
@@ -7967,12 +7967,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29226,
+   "line": 29378,
    "gated": false,
    "handler": "toggleAttachPanel(' ')"
   },
   {
-   "id": "scribeflow-html-29227-messages",
+   "id": "scribeflow-html-29379-messages",
    "label": "Messages",
    "accessibleName": "Messages",
    "title": "Secure messages with the physician about this matter",
@@ -7981,12 +7981,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29227,
+   "line": 29379,
    "gated": false,
    "handler": "toggleLawMessages(' ',' ')"
   },
   {
-   "id": "scribeflow-html-29231-report-delivery-unavailable",
+   "id": "scribeflow-html-29383-report-delivery-unavailable",
    "label": "Report delivery unavailable",
    "accessibleName": "Report delivery unavailable",
    "title": "Medical-legal report delivery is unavailable in this build",
@@ -7995,12 +7995,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29231,
+   "line": 29383,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-29233-release-unavailable",
+   "id": "scribeflow-html-29385-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Payment and report release are unavailable in this evaluation build",
@@ -8009,12 +8009,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29233,
+   "line": 29385,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-29239-request-testimony",
+   "id": "scribeflow-html-29391-request-testimony",
    "label": "Request testimony",
    "accessibleName": "Request testimony",
    "title": "",
@@ -8023,12 +8023,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29239,
+   "line": 29391,
    "gated": false,
    "handler": "lawRequestAppearance(' ')"
   },
   {
-   "id": "scribeflow-html-29249-open-chart",
+   "id": "scribeflow-html-29401-open-chart",
    "label": "Open chart",
    "accessibleName": "Open chart",
    "title": "Open this client's chart in MLS",
@@ -8037,12 +8037,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29249,
+   "line": 29401,
    "gated": false,
    "handler": "legalOpenPatient(' ')"
   },
   {
-   "id": "scribeflow-html-29250-schedule",
+   "id": "scribeflow-html-29402-schedule",
    "label": "Schedule",
    "accessibleName": "Schedule",
    "title": "Schedule an appointment / IME for this client",
@@ -8051,12 +8051,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29250,
+   "line": 29402,
    "gated": false,
    "handler": "legalSchedulePatient(' ')"
   },
   {
-   "id": "scribeflow-html-29257-release-unavailable",
+   "id": "scribeflow-html-29409-release-unavailable",
    "label": "Release unavailable",
    "accessibleName": "Release unavailable",
    "title": "Patient authorization and recipient verification are not implemented",
@@ -8065,12 +8065,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29257,
+   "line": 29409,
    "gated": true,
    "handler": null
   },
   {
-   "id": "scribeflow-html-29260-delete",
+   "id": "scribeflow-html-29412-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "Delete this request from your inbox (e.g. clear out test entries)",
@@ -8079,7 +8079,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29260,
+   "line": 29412,
    "gated": false,
    "handler": "deleteLegalRequest(' ')"
   },
@@ -8093,12 +8093,12 @@
    "domId": "attachUploadBtn-'+safeId+'",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29336,
+   "line": 29488,
    "gated": false,
    "handler": "uploadLegalAttachment(' ')"
   },
   {
-   "id": "scribeflow-html-29491-download",
+   "id": "scribeflow-html-29643-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -8107,12 +8107,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29491,
+   "line": 29643,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
   {
-   "id": "scribeflow-html-29534-download",
+   "id": "scribeflow-html-29686-download",
    "label": "Download",
    "accessibleName": "Download",
    "title": "",
@@ -8121,7 +8121,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29534,
+   "line": 29686,
    "gated": false,
    "handler": "downloadLegalAttachment(' ',' ')"
   },
@@ -8135,12 +8135,12 @@
    "domId": "docAttachBtn",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29554,
+   "line": 29706,
    "gated": false,
    "handler": "uploadDoctorAttachment(' ')"
   },
   {
-   "id": "scribeflow-html-29694-set-up-direct-payouts-to-receive-this",
+   "id": "scribeflow-html-29846-set-up-direct-payouts-to-receive-this",
    "label": "Set up direct payouts to receive this",
    "accessibleName": "Set up direct payouts to receive this",
    "title": "",
@@ -8149,7 +8149,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29694,
+   "line": 29846,
    "gated": false,
    "handler": "startConnectOnboard();return false;"
   },
@@ -8163,12 +8163,12 @@
    "domId": "srSubmit",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29737,
+   "line": 29889,
    "gated": false,
    "handler": "submitSelfRequest()"
   },
   {
-   "id": "scribeflow-html-29738-cancel",
+   "id": "scribeflow-html-29890-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -8177,12 +8177,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29738,
+   "line": 29890,
    "gated": false,
    "handler": "toggleSelfRequestForm()"
   },
   {
-   "id": "scribeflow-html-29803-save-draft-and-review-choice",
+   "id": "scribeflow-html-29955-save-draft-and-review-choice",
    "label": "Save draft and review choice",
    "accessibleName": "Save draft and review choice",
    "title": "",
@@ -8191,12 +8191,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29803,
+   "line": 29955,
    "gated": false,
    "handler": "saveExpertProfile()"
   },
   {
-   "id": "scribeflow-html-29833-manage-payout-account",
+   "id": "scribeflow-html-29985-manage-payout-account",
    "label": "Manage payout account",
    "accessibleName": "Manage payout account",
    "title": "",
@@ -8205,12 +8205,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29833,
+   "line": 29985,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-29836-finish-payout-setup",
+   "id": "scribeflow-html-29988-finish-payout-setup",
    "label": "Finish payout setup",
    "accessibleName": "Finish payout setup",
    "title": "",
@@ -8219,12 +8219,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29836,
+   "line": 29988,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-29838-set-up-direct-payouts",
+   "id": "scribeflow-html-29990-set-up-direct-payouts",
    "label": "Set up direct payouts",
    "accessibleName": "Set up direct payouts",
    "title": "",
@@ -8233,12 +8233,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 29838,
+   "line": 29990,
    "gated": false,
    "handler": "startConnectOnboard(this)"
   },
   {
-   "id": "scribeflow-html-30082-add-line",
+   "id": "scribeflow-html-30234-add-line",
    "label": "+ Add line",
    "accessibleName": "+ Add line",
    "title": "",
@@ -8247,12 +8247,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 30082,
+   "line": 30234,
    "gated": false,
    "handler": "legalInvAddRow()"
   },
   {
-   "id": "scribeflow-html-30086-save-invoice",
+   "id": "scribeflow-html-30238-save-invoice",
    "label": "Save invoice",
    "accessibleName": "Save invoice",
    "title": "",
@@ -8261,12 +8261,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 30086,
+   "line": 30238,
    "gated": false,
    "handler": "saveLegalInvoice()"
   },
   {
-   "id": "scribeflow-html-30087-download-pdf",
+   "id": "scribeflow-html-30239-download-pdf",
    "label": "Download PDF",
    "accessibleName": "Download PDF",
    "title": "",
@@ -8275,12 +8275,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 30087,
+   "line": 30239,
    "gated": false,
    "handler": "downloadLegalInvoicePDF()"
   },
   {
-   "id": "scribeflow-html-30205-refresh",
+   "id": "scribeflow-html-30357-refresh",
    "label": "Refresh",
    "accessibleName": "Refresh",
    "title": "",
@@ -8289,12 +8289,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 30205,
+   "line": 30357,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "scribeflow-html-30219-send",
+   "id": "scribeflow-html-30371-send",
    "label": "Send",
    "accessibleName": "Send",
    "title": "",
@@ -8303,12 +8303,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 30219,
+   "line": 30371,
    "gated": false,
    "handler": "()"
   },
   {
-   "id": "scribeflow-html-31242-edit",
+   "id": "scribeflow-html-31394-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -8317,12 +8317,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 31242,
+   "line": 31394,
    "gated": false,
    "handler": "editCustomWidgetAt( )"
   },
   {
-   "id": "scribeflow-html-31243-delete",
+   "id": "scribeflow-html-31395-delete",
    "label": "Delete",
    "accessibleName": "Delete",
    "title": "",
@@ -8331,7 +8331,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 31243,
+   "line": 31395,
    "gated": false,
    "handler": "deleteCustomWidgetAt( )"
   },
@@ -8345,12 +8345,12 @@
    "domId": "cwRefresh_'+w.id+'",
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 31272,
+   "line": 31424,
    "gated": false,
    "handler": "event.stopPropagation();refreshCustomWidget(' ')"
   },
   {
-   "id": "scribeflow-html-31273-add-to-note",
+   "id": "scribeflow-html-31425-add-to-note",
    "label": "Add to note",
    "accessibleName": "Add to note",
    "title": "Append this widget's content to the current visit note",
@@ -8359,12 +8359,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 31273,
+   "line": 31425,
    "gated": false,
    "handler": "event.stopPropagation();cwPushToNote(' ')"
   },
   {
-   "id": "scribeflow-html-31274-copy",
+   "id": "scribeflow-html-31426-copy",
    "label": "Copy",
    "accessibleName": "Copy",
    "title": "",
@@ -8373,12 +8373,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 31274,
+   "line": 31426,
    "gated": false,
    "handler": "event.stopPropagation();copyExtra('cwText_ ')"
   },
   {
-   "id": "scribeflow-html-31275-print",
+   "id": "scribeflow-html-31427-print",
    "label": "Print",
    "accessibleName": "Print",
    "title": "",
@@ -8387,7 +8387,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "ScribeFlow.html",
-   "line": 31275,
+   "line": 31427,
    "gated": false,
    "handler": "event.stopPropagation();printCustomWidget(' ')"
   },
@@ -10744,6 +10744,62 @@
    "handler": null
   },
   {
+   "id": "feat-mls-opnote-daybrain-js-721-draft-anyway",
+   "label": "Draft anyway",
+   "accessibleName": "Draft anyway",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "file": "feat_mls_opnote_daybrain.js",
+   "line": 721,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "feat-mls-opnote-daybrain-js-725-draft-a-new-one",
+   "label": "Draft a new one",
+   "accessibleName": "Draft a new one",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "file": "feat_mls_opnote_daybrain.js",
+   "line": 725,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "feat-mls-opnote-daybrain-js-761-k-0-esc-opts-k-name-template",
+   "label": "' + (k === 0 ? ' ' : '') + esc(opts[k].name || 'Template') + '",
+   "accessibleName": "' + (k === 0 ? ' ' : '') + esc(opts[k].name || 'Template') + '",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "dynamic",
+   "file": "feat_mls_opnote_daybrain.js",
+   "line": 761,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "opdbFold",
+   "label": "' + (folded ? ('Show all scheduled') : 'Show only who needs an op note') + '",
+   "accessibleName": "' + (folded ? ('Show all scheduled') : 'Show only who needs an op note') + '",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "opdbFold",
+   "view": "dynamic",
+   "file": "feat_mls_opnote_daybrain.js",
+   "line": 801,
+   "gated": false,
+   "handler": null
+  },
+  {
    "id": "mlsOnfApplyAll",
    "label": "Apply to all",
    "accessibleName": "Apply to all",
@@ -10786,7 +10842,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1427-dictate-this-field-spoken-value-is-normalized-by",
+   "id": "feat-mls-opnote-fill-js-1431-dictate-this-field-spoken-value-is-normalized-by",
    "label": "Dictate this field — spoken value is normalized by AI",
    "accessibleName": "Dictate this field — spoken value is normalized by AI",
    "title": "Dictate this field — spoken value is normalized by AI",
@@ -10795,12 +10851,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1427,
+   "line": 1431,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1430-your-default-use",
+   "id": "feat-mls-opnote-fill-js-1434-your-default-use",
    "label": "Your default: — use",
    "accessibleName": "Your default: — use",
    "title": "",
@@ -10809,12 +10865,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1430,
+   "line": 1434,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1433-last-used-use",
+   "id": "feat-mls-opnote-fill-js-1437-last-used-use",
    "label": "Last used: — use",
    "accessibleName": "Last used: — use",
    "title": "",
@@ -10823,12 +10879,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1433,
+   "line": 1437,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1438-use-every-time",
+   "id": "feat-mls-opnote-fill-js-1442-use-every-time",
    "label": "Use every time",
    "accessibleName": "Use every time",
    "title": "",
@@ -10837,12 +10893,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1438,
+   "line": 1442,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1440-change-default",
+   "id": "feat-mls-opnote-fill-js-1444-change-default",
    "label": "Change default",
    "accessibleName": "Change default",
    "title": "",
@@ -10851,12 +10907,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1440,
+   "line": 1444,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1441-stop-using",
+   "id": "feat-mls-opnote-fill-js-1445-stop-using",
    "label": "Stop using",
    "accessibleName": "Stop using",
    "title": "",
@@ -10865,12 +10921,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1441,
+   "line": 1445,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-fill-js-1456-looks-right-save-to-history-blanks-blank-left",
+   "id": "feat-mls-opnote-fill-js-1460-looks-right-save-to-history-blanks-blank-left",
    "label": "Looks right — save to History' + (blanks ? (' ( blank left)') : '') + '",
    "accessibleName": "Looks right — save to History' + (blanks ? (' ( blank left)') : '') + '",
    "title": "",
@@ -10879,7 +10935,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1456,
+   "line": 1460,
    "gated": false,
    "handler": null
   },
@@ -10893,7 +10949,7 @@
    "domId": "mlsOnfDictBtn_' + idx + '",
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1459,
+   "line": 1463,
    "gated": false,
    "handler": null
   },
@@ -10907,7 +10963,7 @@
    "domId": "mlsOnfDictGo_' + idx + '",
    "view": "dynamic",
    "file": "feat_mls_opnote_fill.js",
-   "line": 1460,
+   "line": 1464,
    "gated": false,
    "handler": null
   },
@@ -10968,7 +11024,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-room-js-627-button",
+   "id": "feat-mls-opnote-room-js-642-button",
    "label": "' + ' ' + '",
    "accessibleName": "' + ' ' + '",
    "title": "—",
@@ -10977,12 +11033,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_room.js",
-   "line": 627,
+   "line": 642,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-room-js-717-re-draft",
+   "id": "feat-mls-opnote-room-js-732-re-draft",
    "label": "Re-draft:",
    "accessibleName": "Re-draft:",
    "title": "",
@@ -10991,12 +11047,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_room.js",
-   "line": 717,
+   "line": 732,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-room-js-784-prev",
+   "id": "feat-mls-opnote-room-js-799-prev",
    "label": "Prev",
    "accessibleName": "Previous patient",
    "title": "",
@@ -11005,12 +11061,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_room.js",
-   "line": 784,
+   "line": 799,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-room-js-786-next",
+   "id": "feat-mls-opnote-room-js-801-next",
    "label": "Next",
    "accessibleName": "Next patient",
    "title": "",
@@ -11019,7 +11075,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_room.js",
-   "line": 786,
+   "line": 801,
    "gated": false,
    "handler": null
   },
@@ -13446,7 +13502,7 @@
    "handler": null
   },
   {
-   "id": "mls-connect-js-15787-ud83d-udd01-re-process",
+   "id": "mls-connect-js-15797-ud83d-udd01-re-process",
    "label": "\\uD83D\\uDD01 Re-process",
    "accessibleName": "\\uD83D\\uDD01 Re-process",
    "title": "",
@@ -13455,12 +13511,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15787,
+   "line": 15797,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-15788-ud83c-udff7-ai-keywords",
+   "id": "mls-connect-js-15798-ud83c-udff7-ai-keywords",
    "label": "\\uD83C\\uDFF7 AI keywords",
    "accessibleName": "\\uD83C\\uDFF7 AI keywords",
    "title": "",
@@ -13469,12 +13525,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15788,
+   "line": 15798,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-15789-ud83d-uddd1-delete",
+   "id": "mls-connect-js-15799-ud83d-uddd1-delete",
    "label": "\\uD83D\\uDDD1 Delete",
    "accessibleName": "\\uD83D\\uDDD1 Delete",
    "title": "",
@@ -13483,12 +13539,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15789,
+   "line": 15799,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-15794-u2705-apply",
+   "id": "mls-connect-js-15804-u2705-apply",
    "label": "\\u2705 Apply",
    "accessibleName": "\\u2705 Apply",
    "title": "",
@@ -13497,12 +13553,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15794,
+   "line": 15804,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-15795-keep-the-old-one",
+   "id": "mls-connect-js-15805-keep-the-old-one",
    "label": "Keep the old one",
    "accessibleName": "Keep the old one",
    "title": "",
@@ -13511,7 +13567,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15795,
+   "line": 15805,
    "gated": false,
    "handler": null
   },
@@ -13525,7 +13581,7 @@
    "domId": "tpfReupload",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15815,
+   "line": 15825,
    "gated": false,
    "handler": null
   },
@@ -13539,7 +13595,7 @@
    "domId": "tpfReAll",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15816,
+   "line": 15826,
    "gated": false,
    "handler": null
   },
@@ -13553,12 +13609,12 @@
    "domId": "tpfMatchBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15817,
+   "line": 15827,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-15822-esc-c",
+   "id": "mls-connect-js-15832-esc-c",
    "label": "' + esc(c) + \"",
    "accessibleName": "' + esc(c) + \"",
    "title": "",
@@ -13567,7 +13623,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 15822,
+   "line": 15832,
    "gated": false,
    "handler": null
   },
@@ -13581,7 +13637,7 @@
    "domId": "tpfMonthBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 16234,
+   "line": 16327,
    "gated": false,
    "handler": null
   },
@@ -13595,7 +13651,7 @@
    "domId": "tpfLedgerTog",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 16244,
+   "line": 16337,
    "gated": false,
    "handler": null
   },
@@ -13609,12 +13665,12 @@
    "domId": "tpfStop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 16247,
+   "line": 16340,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-16384-u00d7",
+   "id": "mls-connect-js-16477-u00d7",
    "label": "\\u00D7",
    "accessibleName": "Close",
    "title": "",
@@ -13623,12 +13679,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 16384,
+   "line": 16477,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-16415-ud83d-udcac-ask-mls-a-question",
+   "id": "mls-connect-js-16508-ud83d-udcac-ask-mls-a-question",
    "label": "\\uD83D\\uDCAC Ask MLS a question",
    "accessibleName": "\\uD83D\\uDCAC Ask MLS a question",
    "title": "",
@@ -13637,12 +13693,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 16415,
+   "line": 16508,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-16416-close",
+   "id": "mls-connect-js-16509-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -13651,7 +13707,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 16416,
+   "line": 16509,
    "gated": false,
    "handler": null
   },
@@ -13665,7 +13721,7 @@
    "domId": "ez3Verify",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19015,
+   "line": 19108,
    "gated": false,
    "handler": null
   },
@@ -13679,7 +13735,7 @@
    "domId": "ez3HistOpen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19020,
+   "line": 19113,
    "gated": false,
    "handler": null
   },
@@ -13693,7 +13749,7 @@
    "domId": "ez3HistPull",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19023,
+   "line": 19116,
    "gated": false,
    "handler": null
   },
@@ -13707,7 +13763,7 @@
    "domId": "ez3Adv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19374,
+   "line": 19467,
    "gated": false,
    "handler": null
   },
@@ -13721,7 +13777,7 @@
    "domId": "ez3RecBack",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19459,
+   "line": 19552,
    "gated": false,
    "handler": null
   },
@@ -13735,7 +13791,7 @@
    "domId": "ez3Portal",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19533,
+   "line": 19626,
    "gated": false,
    "handler": null
   },
@@ -13749,7 +13805,7 @@
    "domId": "ez3ActiveGo",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19568,
+   "line": 19661,
    "gated": false,
    "handler": null
   },
@@ -13763,7 +13819,7 @@
    "domId": "ez3Now",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19619,
+   "line": 19712,
    "gated": false,
    "handler": null
   },
@@ -13777,7 +13833,7 @@
    "domId": "ez3Nxt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19624,
+   "line": 19717,
    "gated": false,
    "handler": null
   },
@@ -13791,12 +13847,12 @@
    "domId": "ez3Next",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19631,
+   "line": 19724,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-19634-all-patients-seen-on",
+   "id": "mls-connect-js-19727-all-patients-seen-on",
    "label": "All patients seen on",
    "accessibleName": "All patients seen on",
    "title": "",
@@ -13805,7 +13861,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19634,
+   "line": 19727,
    "gated": true,
    "handler": null
   },
@@ -13819,7 +13875,7 @@
    "domId": "ez3ActiveGo",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19642,
+   "line": 19735,
    "gated": false,
    "handler": null
   },
@@ -13833,7 +13889,7 @@
    "domId": "ez3Prep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19652,
+   "line": 19745,
    "gated": false,
    "handler": null
   },
@@ -13847,7 +13903,7 @@
    "domId": "ez3Hist",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19653,
+   "line": 19746,
    "gated": false,
    "handler": null
   },
@@ -13861,12 +13917,12 @@
    "domId": "ez3AllProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19810,
+   "line": 19903,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-19862-start-recording-activates-this-patient",
+   "id": "mls-connect-js-19955-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -13875,12 +13931,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19862,
+   "line": 19955,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-19863-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-19956-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -13889,12 +13945,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19863,
+   "line": 19956,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-19864-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-19957-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -13903,12 +13959,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19864,
+   "line": 19957,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-19865-send-to-athena-review-confirm",
+   "id": "mls-connect-js-19958-send-to-athena-review-confirm",
    "label": "Send to Athena Review & confirm",
    "accessibleName": "Send to Athena Review & confirm",
    "title": "",
@@ -13917,7 +13973,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19865,
+   "line": 19958,
    "gated": false,
    "handler": null
   },
@@ -13931,7 +13987,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19923,
+   "line": 20016,
    "gated": false,
    "handler": null
   },
@@ -13945,12 +14001,12 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19946,
+   "line": 20039,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-19983-button",
+   "id": "mls-connect-js-20076-button",
    "label": "' + '",
    "accessibleName": "' + '",
    "title": "",
@@ -13959,7 +14015,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 19983,
+   "line": 20076,
    "gated": false,
    "handler": null
   },
@@ -13973,7 +14029,7 @@
    "domId": "ez3QToolsToggle",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20030,
+   "line": 20123,
    "gated": false,
    "handler": null
   },
@@ -13987,7 +14043,7 @@
    "domId": "ez3QAssistant",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20033,
+   "line": 20126,
    "gated": false,
    "handler": null
   },
@@ -14001,7 +14057,7 @@
    "domId": "ez3QDictate",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20035,
+   "line": 20128,
    "gated": false,
    "handler": null
   },
@@ -14015,7 +14071,7 @@
    "domId": "ez3QPaste",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20036,
+   "line": 20129,
    "gated": false,
    "handler": null
   },
@@ -14029,7 +14085,7 @@
    "domId": "ez3QPhone",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20038,
+   "line": 20131,
    "gated": false,
    "handler": null
   },
@@ -14043,7 +14099,7 @@
    "domId": "ez3QAvs",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20039,
+   "line": 20132,
    "gated": false,
    "handler": null
   },
@@ -14057,7 +14113,7 @@
    "domId": "ez3QOrders",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20040,
+   "line": 20133,
    "gated": false,
    "handler": null
   },
@@ -14071,7 +14127,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20159,
+   "line": 20252,
    "gated": false,
    "handler": null
   },
@@ -14085,7 +14141,7 @@
    "domId": "ez3HomeTop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20164,
+   "line": 20257,
    "gated": false,
    "handler": null
   },
@@ -14099,7 +14155,7 @@
    "domId": "ez3StartActive",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20209,
+   "line": 20302,
    "gated": false,
    "handler": null
   },
@@ -14113,7 +14169,7 @@
    "domId": "ez3PickAlt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20210,
+   "line": 20303,
    "gated": false,
    "handler": null
   },
@@ -14127,7 +14183,7 @@
    "domId": "ez3PickBig",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20211,
+   "line": 20304,
    "gated": false,
    "handler": null
   },
@@ -14141,7 +14197,7 @@
    "domId": "ez3Stop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20213,
+   "line": 20306,
    "gated": false,
    "handler": null
   },
@@ -14155,7 +14211,7 @@
    "domId": "ez3CancelRec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20215,
+   "line": 20308,
    "gated": false,
    "handler": null
   },
@@ -14169,7 +14225,7 @@
    "domId": "ez3GenBusy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20217,
+   "line": 20310,
    "gated": true,
    "handler": null
   },
@@ -14183,7 +14239,7 @@
    "domId": "ez3Edit",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20225,
+   "line": 20318,
    "gated": false,
    "handler": null
   },
@@ -14197,7 +14253,7 @@
    "domId": "ez3Regen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20226,
+   "line": 20319,
    "gated": false,
    "handler": null
   },
@@ -14211,7 +14267,7 @@
    "domId": "ez3Copy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20227,
+   "line": 20320,
    "gated": false,
    "handler": null
   },
@@ -14225,7 +14281,7 @@
    "domId": "ez3Sign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20231,
+   "line": 20324,
    "gated": false,
    "handler": null
   },
@@ -14239,7 +14295,7 @@
    "domId": "ez3SkipSign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20233,
+   "line": 20326,
    "gated": false,
    "handler": null
   },
@@ -14253,7 +14309,7 @@
    "domId": "ez3Send",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20236,
+   "line": 20329,
    "gated": false,
    "handler": null
   },
@@ -14267,7 +14323,7 @@
    "domId": "ez3NextPt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20238,
+   "line": 20331,
    "gated": false,
    "handler": null
   },
@@ -14281,7 +14337,7 @@
    "domId": "ez3PortalAsk",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20243,
+   "line": 20336,
    "gated": false,
    "handler": null
   },
@@ -14295,7 +14351,7 @@
    "domId": "ez3Gen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20250,
+   "line": 20343,
    "gated": false,
    "handler": null
   },
@@ -14309,7 +14365,7 @@
    "domId": "ez3Rec2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20252,
+   "line": 20345,
    "gated": false,
    "handler": null
   },
@@ -14323,7 +14379,7 @@
    "domId": "ez3Rec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20261,
+   "line": 20354,
    "gated": false,
    "handler": null
   },
@@ -14337,7 +14393,7 @@
    "domId": "ez3Change",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20269,
+   "line": 20362,
    "gated": false,
    "handler": null
   },
@@ -14351,7 +14407,7 @@
    "domId": "ez3Chart2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20270,
+   "line": 20363,
    "gated": false,
    "handler": null
   },
@@ -14365,7 +14421,7 @@
    "domId": "ez3Prep2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20271,
+   "line": 20364,
    "gated": false,
    "handler": null
   },
@@ -14379,7 +14435,7 @@
    "domId": "ez3Hist2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20272,
+   "line": 20365,
    "gated": false,
    "handler": null
   },
@@ -14393,7 +14449,7 @@
    "domId": "ez3SecToggle",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20278,
+   "line": 20371,
    "gated": false,
    "handler": null
   },
@@ -14407,7 +14463,7 @@
    "domId": "ez3Copilot",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20286,
+   "line": 20379,
    "gated": false,
    "handler": null
   },
@@ -14421,7 +14477,7 @@
    "domId": "ez3Recs",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20287,
+   "line": 20380,
    "gated": false,
    "handler": null
   },
@@ -14435,7 +14491,7 @@
    "domId": "ez3PtSend",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20288,
+   "line": 20381,
    "gated": false,
    "handler": null
   },
@@ -14449,7 +14505,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20565,
+   "line": 20658,
    "gated": false,
    "handler": null
   },
@@ -14463,7 +14519,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20566,
+   "line": 20659,
    "gated": false,
    "handler": null
   },
@@ -14477,7 +14533,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20611,
+   "line": 20704,
    "gated": false,
    "handler": null
   },
@@ -14491,7 +14547,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 20612,
+   "line": 20705,
    "gated": false,
    "handler": null
   },
@@ -14505,7 +14561,7 @@
    "domId": "ez3sAthenaApiPull",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21299,
+   "line": 21392,
    "gated": false,
    "handler": null
   },
@@ -14519,7 +14575,7 @@
    "domId": "ez3sAthenaApiProviderBlocked",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21300,
+   "line": 21393,
    "gated": true,
    "handler": null
   },
@@ -14533,7 +14589,7 @@
    "domId": "ez3sAthenaApiCheck",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21301,
+   "line": 21394,
    "gated": false,
    "handler": null
   },
@@ -14547,7 +14603,7 @@
    "domId": "ez3ProvFix",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21345,
+   "line": 21438,
    "gated": false,
    "handler": null
   },
@@ -14561,7 +14617,7 @@
    "domId": "ez3ProvRefresh",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21346,
+   "line": 21439,
    "gated": false,
    "handler": null
   },
@@ -14575,7 +14631,7 @@
    "domId": "ez3PullStart",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21364,
+   "line": 21457,
    "gated": true,
    "handler": null
   },
@@ -14589,7 +14645,7 @@
    "domId": "ez3PullRetry",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21365,
+   "line": 21458,
    "gated": true,
    "handler": null
   },
@@ -14603,7 +14659,7 @@
    "domId": "ez3PullCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21366,
+   "line": 21459,
    "gated": true,
    "handler": null
   },
@@ -14617,7 +14673,7 @@
    "domId": "ez3sPullToday",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21367,
+   "line": 21460,
    "gated": false,
    "handler": null
   },
@@ -14631,7 +14687,7 @@
    "domId": "ez3StaffBack",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21383,
+   "line": 21476,
    "gated": false,
    "handler": null
   },
@@ -14645,7 +14701,7 @@
    "domId": "ez3sProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21393,
+   "line": 21486,
    "gated": false,
    "handler": null
   },
@@ -14659,7 +14715,7 @@
    "domId": "ez3sPrep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21394,
+   "line": 21487,
    "gated": false,
    "handler": null
   },
@@ -14673,7 +14729,7 @@
    "domId": "ez3sReviews",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21395,
+   "line": 21488,
    "gated": false,
    "handler": null
   },
@@ -14687,7 +14743,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 21418,
+   "line": 21511,
    "gated": false,
    "handler": null
   },
@@ -14701,7 +14757,7 @@
    "domId": "ez3ModeDoc",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24490,
+   "line": 24583,
    "gated": false,
    "handler": null
   },
@@ -14715,7 +14771,7 @@
    "domId": "ez3ModeStaff",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24491,
+   "line": 24584,
    "gated": false,
    "handler": null
   },
@@ -14729,7 +14785,7 @@
    "domId": "ez3Adv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24738,
+   "line": 24831,
    "gated": false,
    "handler": null
   },
@@ -14743,7 +14799,7 @@
    "domId": "ez3RecBack",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24772,
+   "line": 24865,
    "gated": false,
    "handler": null
   },
@@ -14757,7 +14813,7 @@
    "domId": "ez3Now",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24804,
+   "line": 24897,
    "gated": false,
    "handler": null
   },
@@ -14771,7 +14827,7 @@
    "domId": "ez3Nxt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24809,
+   "line": 24902,
    "gated": false,
    "handler": null
   },
@@ -14785,12 +14841,12 @@
    "domId": "ez3Next",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24816,
+   "line": 24909,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-24819-all-patients-seen-today",
+   "id": "mls-connect-js-24912-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -14799,7 +14855,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24819,
+   "line": 24912,
    "gated": true,
    "handler": null
   },
@@ -14813,7 +14869,7 @@
    "domId": "ez3Prep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24829,
+   "line": 24922,
    "gated": false,
    "handler": null
   },
@@ -14827,7 +14883,7 @@
    "domId": "ez3Hist",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24830,
+   "line": 24923,
    "gated": false,
    "handler": null
   },
@@ -14841,7 +14897,7 @@
    "domId": "ez3AllProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24946,
+   "line": 25039,
    "gated": false,
    "handler": null
   },
@@ -14855,12 +14911,12 @@
    "domId": "ez3PullNow",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24951,
+   "line": 25044,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-24969-more-actions-for-this-patient",
+   "id": "mls-connect-js-25062-more-actions-for-this-patient",
    "label": "More actions for this patient",
    "accessibleName": "More actions for this patient",
    "title": "More actions for this patient",
@@ -14869,12 +14925,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24969,
+   "line": 25062,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-24974-start-recording-activates-this-patient",
+   "id": "mls-connect-js-25067-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -14883,12 +14939,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24974,
+   "line": 25067,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-24975-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-25068-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -14897,12 +14953,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24975,
+   "line": 25068,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-24976-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-25069-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -14911,12 +14967,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24976,
+   "line": 25069,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-24977-send-to-athena-review-confirm",
+   "id": "mls-connect-js-25070-send-to-athena-review-confirm",
    "label": "Send to Athena Review & confirm",
    "accessibleName": "Send to Athena Review & confirm",
    "title": "",
@@ -14925,7 +14981,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 24977,
+   "line": 25070,
    "gated": false,
    "handler": null
   },
@@ -14939,7 +14995,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25035,
+   "line": 25128,
    "gated": false,
    "handler": null
   },
@@ -14953,12 +15009,12 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25056,
+   "line": 25149,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-25091-button",
+   "id": "mls-connect-js-25184-button",
    "label": "' + '",
    "accessibleName": "' + '",
    "title": "",
@@ -14967,7 +15023,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25091,
+   "line": 25184,
    "gated": false,
    "handler": null
   },
@@ -14981,7 +15037,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25132,
+   "line": 25225,
    "gated": false,
    "handler": null
   },
@@ -14995,7 +15051,7 @@
    "domId": "ez3PickBig",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25148,
+   "line": 25241,
    "gated": false,
    "handler": null
   },
@@ -15009,7 +15065,7 @@
    "domId": "ez3Stop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25152,
+   "line": 25245,
    "gated": false,
    "handler": null
   },
@@ -15023,12 +15079,12 @@
    "domId": "ez3CancelRec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25154,
+   "line": 25247,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-25156-generating-the-note",
+   "id": "mls-connect-js-25249-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -15037,7 +15093,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25156,
+   "line": 25249,
    "gated": true,
    "handler": null
   },
@@ -15051,7 +15107,7 @@
    "domId": "ez3Edit",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25164,
+   "line": 25257,
    "gated": false,
    "handler": null
   },
@@ -15065,7 +15121,7 @@
    "domId": "ez3Regen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25165,
+   "line": 25258,
    "gated": false,
    "handler": null
   },
@@ -15079,7 +15135,7 @@
    "domId": "ez3Copy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25166,
+   "line": 25259,
    "gated": false,
    "handler": null
   },
@@ -15093,7 +15149,7 @@
    "domId": "ez3PtSend",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25167,
+   "line": 25260,
    "gated": false,
    "handler": null
   },
@@ -15107,7 +15163,7 @@
    "domId": "ez3Copilot",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25174,
+   "line": 25267,
    "gated": false,
    "handler": null
   },
@@ -15121,7 +15177,7 @@
    "domId": "ez3Recs",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25175,
+   "line": 25268,
    "gated": false,
    "handler": null
   },
@@ -15135,7 +15191,7 @@
    "domId": "ez3Sign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25179,
+   "line": 25272,
    "gated": false,
    "handler": null
   },
@@ -15149,7 +15205,7 @@
    "domId": "ez3SkipSign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25181,
+   "line": 25274,
    "gated": false,
    "handler": null
   },
@@ -15163,7 +15219,7 @@
    "domId": "ez3Send",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25184,
+   "line": 25277,
    "gated": false,
    "handler": null
   },
@@ -15177,7 +15233,7 @@
    "domId": "ez3NextPt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25186,
+   "line": 25279,
    "gated": false,
    "handler": null
   },
@@ -15191,7 +15247,7 @@
    "domId": "ez3Gen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25192,
+   "line": 25285,
    "gated": false,
    "handler": null
   },
@@ -15205,7 +15261,7 @@
    "domId": "ez3Rec2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25194,
+   "line": 25287,
    "gated": false,
    "handler": null
   },
@@ -15219,7 +15275,7 @@
    "domId": "ez3Rec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25196,
+   "line": 25289,
    "gated": false,
    "handler": null
   },
@@ -15233,7 +15289,7 @@
    "domId": "ez3Change",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25202,
+   "line": 25295,
    "gated": false,
    "handler": null
   },
@@ -15247,7 +15303,7 @@
    "domId": "ez3Chart2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25203,
+   "line": 25296,
    "gated": false,
    "handler": null
   },
@@ -15261,7 +15317,7 @@
    "domId": "ez3Prep2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25204,
+   "line": 25297,
    "gated": false,
    "handler": null
   },
@@ -15275,7 +15331,7 @@
    "domId": "ez3Hist2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25205,
+   "line": 25298,
    "gated": false,
    "handler": null
   },
@@ -15289,7 +15345,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25443,
+   "line": 25536,
    "gated": false,
    "handler": null
   },
@@ -15303,7 +15359,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25444,
+   "line": 25537,
    "gated": false,
    "handler": null
   },
@@ -15317,7 +15373,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25489,
+   "line": 25582,
    "gated": false,
    "handler": null
   },
@@ -15331,7 +15387,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25490,
+   "line": 25583,
    "gated": false,
    "handler": null
   },
@@ -15345,7 +15401,7 @@
    "domId": "ez3PullStart",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25858,
+   "line": 25951,
    "gated": true,
    "handler": null
   },
@@ -15359,7 +15415,7 @@
    "domId": "ez3PullRetry",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25859,
+   "line": 25952,
    "gated": true,
    "handler": null
   },
@@ -15373,7 +15429,7 @@
    "domId": "ez3PullCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25860,
+   "line": 25953,
    "gated": true,
    "handler": null
   },
@@ -15387,7 +15443,7 @@
    "domId": "ez3sPullToday",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25861,
+   "line": 25954,
    "gated": false,
    "handler": null
   },
@@ -15401,7 +15457,7 @@
    "domId": "ez3sProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25883,
+   "line": 25976,
    "gated": false,
    "handler": null
   },
@@ -15415,7 +15471,7 @@
    "domId": "ez3sPrep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25884,
+   "line": 25977,
    "gated": false,
    "handler": null
   },
@@ -15429,7 +15485,7 @@
    "domId": "ez3sReviews",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25885,
+   "line": 25978,
    "gated": false,
    "handler": null
   },
@@ -15443,7 +15499,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 25908,
+   "line": 26001,
    "gated": false,
    "handler": null
   },
@@ -15457,7 +15513,7 @@
    "domId": "ez3ModeDoc",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26681,
+   "line": 26774,
    "gated": false,
    "handler": null
   },
@@ -15471,7 +15527,7 @@
    "domId": "ez3ModeStaff",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26682,
+   "line": 26775,
    "gated": false,
    "handler": null
   },
@@ -15485,7 +15541,7 @@
    "domId": "ez3Adv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26814,
+   "line": 26907,
    "gated": false,
    "handler": null
   },
@@ -15499,7 +15555,7 @@
    "domId": "ez3Now",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26868,
+   "line": 26961,
    "gated": false,
    "handler": null
   },
@@ -15513,7 +15569,7 @@
    "domId": "ez3Nxt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26873,
+   "line": 26966,
    "gated": false,
    "handler": null
   },
@@ -15527,12 +15583,12 @@
    "domId": "ez3Next",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26880,
+   "line": 26973,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-26883-all-patients-seen-today",
+   "id": "mls-connect-js-26976-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -15541,7 +15597,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26883,
+   "line": 26976,
    "gated": true,
    "handler": null
   },
@@ -15555,7 +15611,7 @@
    "domId": "ez3Prep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26893,
+   "line": 26986,
    "gated": false,
    "handler": null
   },
@@ -15569,7 +15625,7 @@
    "domId": "ez3Hist",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 26894,
+   "line": 26987,
    "gated": false,
    "handler": null
   },
@@ -15583,7 +15639,7 @@
    "domId": "ez3AllProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27011,
+   "line": 27104,
    "gated": false,
    "handler": null
   },
@@ -15597,12 +15653,12 @@
    "domId": "ez3PullNow",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27016,
+   "line": 27109,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27035-more-actions-for-this-patient",
+   "id": "mls-connect-js-27128-more-actions-for-this-patient",
    "label": "More actions for this patient",
    "accessibleName": "More actions for this patient",
    "title": "More actions for this patient",
@@ -15611,12 +15667,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27035,
+   "line": 27128,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27040-start-recording-activates-this-patient",
+   "id": "mls-connect-js-27133-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -15625,12 +15681,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27040,
+   "line": 27133,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27041-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-27134-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -15639,12 +15695,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27041,
+   "line": 27134,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27042-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-27135-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -15653,12 +15709,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27042,
+   "line": 27135,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27043-send-to-athena-review-confirm",
+   "id": "mls-connect-js-27136-send-to-athena-review-confirm",
    "label": "Send to Athena Review & confirm",
    "accessibleName": "Send to Athena Review & confirm",
    "title": "",
@@ -15667,7 +15723,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27043,
+   "line": 27136,
    "gated": false,
    "handler": null
   },
@@ -15681,7 +15737,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27101,
+   "line": 27194,
    "gated": false,
    "handler": null
   },
@@ -15695,12 +15751,12 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27130,
+   "line": 27223,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27199-button",
+   "id": "mls-connect-js-27292-button",
    "label": "' + '",
    "accessibleName": "' + '",
    "title": "",
@@ -15709,7 +15765,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27199,
+   "line": 27292,
    "gated": false,
    "handler": null
   },
@@ -15723,7 +15779,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27245,
+   "line": 27338,
    "gated": false,
    "handler": null
   },
@@ -15737,7 +15793,7 @@
    "domId": "ez3PickBig",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27261,
+   "line": 27354,
    "gated": false,
    "handler": null
   },
@@ -15751,12 +15807,12 @@
    "domId": "ez3Stop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27265,
+   "line": 27358,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-27268-generating-the-note",
+   "id": "mls-connect-js-27361-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -15765,7 +15821,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27268,
+   "line": 27361,
    "gated": true,
    "handler": null
   },
@@ -15779,7 +15835,7 @@
    "domId": "ez3Edit",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27276,
+   "line": 27369,
    "gated": false,
    "handler": null
   },
@@ -15793,7 +15849,7 @@
    "domId": "ez3Regen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27277,
+   "line": 27370,
    "gated": false,
    "handler": null
   },
@@ -15807,7 +15863,7 @@
    "domId": "ez3Copy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27278,
+   "line": 27371,
    "gated": false,
    "handler": null
   },
@@ -15821,7 +15877,7 @@
    "domId": "ez3Sign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27282,
+   "line": 27375,
    "gated": false,
    "handler": null
   },
@@ -15835,7 +15891,7 @@
    "domId": "ez3SkipSign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27284,
+   "line": 27377,
    "gated": false,
    "handler": null
   },
@@ -15849,7 +15905,7 @@
    "domId": "ez3Send",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27287,
+   "line": 27380,
    "gated": false,
    "handler": null
   },
@@ -15863,7 +15919,7 @@
    "domId": "ez3NextPt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27289,
+   "line": 27382,
    "gated": false,
    "handler": null
   },
@@ -15877,7 +15933,7 @@
    "domId": "ez3Gen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27295,
+   "line": 27388,
    "gated": false,
    "handler": null
   },
@@ -15891,7 +15947,7 @@
    "domId": "ez3Rec2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27297,
+   "line": 27390,
    "gated": false,
    "handler": null
   },
@@ -15905,7 +15961,7 @@
    "domId": "ez3Rec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27299,
+   "line": 27392,
    "gated": false,
    "handler": null
   },
@@ -15919,7 +15975,7 @@
    "domId": "ez3Change",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27305,
+   "line": 27398,
    "gated": false,
    "handler": null
   },
@@ -15933,7 +15989,7 @@
    "domId": "ez3Chart2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27306,
+   "line": 27399,
    "gated": false,
    "handler": null
   },
@@ -15947,7 +16003,7 @@
    "domId": "ez3Prep2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27307,
+   "line": 27400,
    "gated": false,
    "handler": null
   },
@@ -15961,7 +16017,7 @@
    "domId": "ez3Hist2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27308,
+   "line": 27401,
    "gated": false,
    "handler": null
   },
@@ -15975,7 +16031,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27484,
+   "line": 27577,
    "gated": false,
    "handler": null
   },
@@ -15989,7 +16045,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27485,
+   "line": 27578,
    "gated": false,
    "handler": null
   },
@@ -16003,7 +16059,7 @@
    "domId": "ez3PullStart",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27827,
+   "line": 27920,
    "gated": true,
    "handler": null
   },
@@ -16017,7 +16073,7 @@
    "domId": "ez3PullRetry",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27828,
+   "line": 27921,
    "gated": true,
    "handler": null
   },
@@ -16031,7 +16087,7 @@
    "domId": "ez3PullCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27829,
+   "line": 27922,
    "gated": true,
    "handler": null
   },
@@ -16045,7 +16101,7 @@
    "domId": "ez3sPullToday",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27830,
+   "line": 27923,
    "gated": false,
    "handler": null
   },
@@ -16059,7 +16115,7 @@
    "domId": "ez3sProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27851,
+   "line": 27944,
    "gated": false,
    "handler": null
   },
@@ -16073,7 +16129,7 @@
    "domId": "ez3sPrep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27852,
+   "line": 27945,
    "gated": false,
    "handler": null
   },
@@ -16087,7 +16143,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 27875,
+   "line": 27968,
    "gated": false,
    "handler": null
   },
@@ -16101,7 +16157,7 @@
    "domId": "ez3ModeDoc",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28559,
+   "line": 28652,
    "gated": false,
    "handler": null
   },
@@ -16115,7 +16171,7 @@
    "domId": "ez3ModeStaff",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28560,
+   "line": 28653,
    "gated": false,
    "handler": null
   },
@@ -16129,7 +16185,7 @@
    "domId": "ez3Adv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28663,
+   "line": 28756,
    "gated": false,
    "handler": null
   },
@@ -16143,12 +16199,12 @@
    "domId": "ez3Next",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28692,
+   "line": 28785,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28695-all-patients-seen-today",
+   "id": "mls-connect-js-28788-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -16157,12 +16213,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28695,
+   "line": 28788,
    "gated": true,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28697-no-patients-pulled-for-today-yet-open-staff-prep",
+   "id": "mls-connect-js-28790-no-patients-pulled-for-today-yet-open-staff-prep",
    "label": "No patients pulled for today yet' + ' Open Staff prep to pull today’s schedule from Athena",
    "accessibleName": "No patients pulled for today yet' + ' Open Staff prep to pull today’s schedule from Athena",
    "title": "",
@@ -16171,7 +16227,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28697,
+   "line": 28790,
    "gated": true,
    "handler": null
   },
@@ -16185,7 +16241,7 @@
    "domId": "ez3Choose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28700,
+   "line": 28793,
    "gated": false,
    "handler": null
   },
@@ -16199,7 +16255,7 @@
    "domId": "ez3Prep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28703,
+   "line": 28796,
    "gated": false,
    "handler": null
   },
@@ -16213,12 +16269,12 @@
    "domId": "ez3Hist",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28704,
+   "line": 28797,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28753-start-recording-activates-this-patient",
+   "id": "mls-connect-js-28846-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -16227,12 +16283,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28753,
+   "line": 28846,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28754-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-28847-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -16241,12 +16297,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28754,
+   "line": 28847,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28755-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-28848-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -16255,12 +16311,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28755,
+   "line": 28848,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28756-send-to-athena-review-confirm",
+   "id": "mls-connect-js-28849-send-to-athena-review-confirm",
    "label": "Send to Athena Review & confirm",
    "accessibleName": "Send to Athena Review & confirm",
    "title": "",
@@ -16269,7 +16325,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28756,
+   "line": 28849,
    "gated": false,
    "handler": null
   },
@@ -16283,7 +16339,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28768,
+   "line": 28861,
    "gated": false,
    "handler": null
   },
@@ -16297,7 +16353,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28777,
+   "line": 28870,
    "gated": false,
    "handler": null
   },
@@ -16311,7 +16367,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28818,
+   "line": 28911,
    "gated": false,
    "handler": null
   },
@@ -16325,7 +16381,7 @@
    "domId": "ez3PickBig",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28832,
+   "line": 28925,
    "gated": false,
    "handler": null
   },
@@ -16339,12 +16395,12 @@
    "domId": "ez3Stop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28836,
+   "line": 28929,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-28839-generating-the-note",
+   "id": "mls-connect-js-28932-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -16353,7 +16409,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28839,
+   "line": 28932,
    "gated": true,
    "handler": null
   },
@@ -16367,7 +16423,7 @@
    "domId": "ez3Edit",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28847,
+   "line": 28940,
    "gated": false,
    "handler": null
   },
@@ -16381,7 +16437,7 @@
    "domId": "ez3Regen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28848,
+   "line": 28941,
    "gated": false,
    "handler": null
   },
@@ -16395,7 +16451,7 @@
    "domId": "ez3Copy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28849,
+   "line": 28942,
    "gated": false,
    "handler": null
   },
@@ -16409,7 +16465,7 @@
    "domId": "ez3Sign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28853,
+   "line": 28946,
    "gated": false,
    "handler": null
   },
@@ -16423,7 +16479,7 @@
    "domId": "ez3SkipSign",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28855,
+   "line": 28948,
    "gated": false,
    "handler": null
   },
@@ -16437,7 +16493,7 @@
    "domId": "ez3Send",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28858,
+   "line": 28951,
    "gated": false,
    "handler": null
   },
@@ -16451,7 +16507,7 @@
    "domId": "ez3NextPt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28860,
+   "line": 28953,
    "gated": false,
    "handler": null
   },
@@ -16465,7 +16521,7 @@
    "domId": "ez3Gen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28866,
+   "line": 28959,
    "gated": false,
    "handler": null
   },
@@ -16479,7 +16535,7 @@
    "domId": "ez3Rec2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28868,
+   "line": 28961,
    "gated": false,
    "handler": null
   },
@@ -16493,7 +16549,7 @@
    "domId": "ez3Rec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28870,
+   "line": 28963,
    "gated": false,
    "handler": null
   },
@@ -16507,7 +16563,7 @@
    "domId": "ez3Change",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28876,
+   "line": 28969,
    "gated": false,
    "handler": null
   },
@@ -16521,7 +16577,7 @@
    "domId": "ez3Chart2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28877,
+   "line": 28970,
    "gated": false,
    "handler": null
   },
@@ -16535,7 +16591,7 @@
    "domId": "ez3Prep2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28878,
+   "line": 28971,
    "gated": false,
    "handler": null
   },
@@ -16549,7 +16605,7 @@
    "domId": "ez3Hist2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 28879,
+   "line": 28972,
    "gated": false,
    "handler": null
   },
@@ -16563,7 +16619,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29055,
+   "line": 29148,
    "gated": false,
    "handler": null
   },
@@ -16577,7 +16633,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29056,
+   "line": 29149,
    "gated": false,
    "handler": null
   },
@@ -16591,7 +16647,7 @@
    "domId": "ez3PullStart",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29398,
+   "line": 29491,
    "gated": true,
    "handler": null
   },
@@ -16605,7 +16661,7 @@
    "domId": "ez3PullRetry",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29399,
+   "line": 29492,
    "gated": true,
    "handler": null
   },
@@ -16619,7 +16675,7 @@
    "domId": "ez3PullCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29400,
+   "line": 29493,
    "gated": true,
    "handler": null
   },
@@ -16633,7 +16689,7 @@
    "domId": "ez3sPullToday",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29401,
+   "line": 29494,
    "gated": false,
    "handler": null
   },
@@ -16647,7 +16703,7 @@
    "domId": "ez3sProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29422,
+   "line": 29515,
    "gated": false,
    "handler": null
   },
@@ -16661,7 +16717,7 @@
    "domId": "ez3sPrep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29423,
+   "line": 29516,
    "gated": false,
    "handler": null
   },
@@ -16675,7 +16731,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 29446,
+   "line": 29539,
    "gated": false,
    "handler": null
   },
@@ -16689,7 +16745,7 @@
    "domId": "ez3ModeDoc",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30178,
+   "line": 30271,
    "gated": false,
    "handler": null
   },
@@ -16703,7 +16759,7 @@
    "domId": "ez3ModeStaff",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30179,
+   "line": 30272,
    "gated": false,
    "handler": null
   },
@@ -16717,7 +16773,7 @@
    "domId": "ez3Close",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30180,
+   "line": 30273,
    "gated": false,
    "handler": null
   },
@@ -16731,12 +16787,12 @@
    "domId": "ez3Next",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30292,
+   "line": 30385,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30295-all-patients-seen-today",
+   "id": "mls-connect-js-30388-all-patients-seen-today",
    "label": "All patients seen today",
    "accessibleName": "All patients seen today",
    "title": "",
@@ -16745,12 +16801,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30295,
+   "line": 30388,
    "gated": true,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30297-no-patients-pulled-for-today-yet-ask-the-front-d",
+   "id": "mls-connect-js-30390-no-patients-pulled-for-today-yet-ask-the-front-d",
    "label": "No patients pulled for today yet' + ' Ask the front desk to “Pull today’s patients” (Staff prep)",
    "accessibleName": "No patients pulled for today yet' + ' Ask the front desk to “Pull today’s patients” (Staff prep)",
    "title": "",
@@ -16759,7 +16815,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30297,
+   "line": 30390,
    "gated": true,
    "handler": null
   },
@@ -16773,7 +16829,7 @@
    "domId": "ez3Choose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30300,
+   "line": 30393,
    "gated": false,
    "handler": null
   },
@@ -16787,7 +16843,7 @@
    "domId": "ez3PullToday",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30303,
+   "line": 30396,
    "gated": false,
    "handler": null
   },
@@ -16801,7 +16857,7 @@
    "domId": "ez3Prep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30304,
+   "line": 30397,
    "gated": false,
    "handler": null
   },
@@ -16815,12 +16871,12 @@
    "domId": "ez3Hist",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30305,
+   "line": 30398,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30350-start-recording-activates-this-patient",
+   "id": "mls-connect-js-30443-start-recording-activates-this-patient",
    "label": "Start Recording Activates this patient",
    "accessibleName": "Start Recording Activates this patient",
    "title": "",
@@ -16829,12 +16885,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30350,
+   "line": 30443,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30351-pull-chart-context-read-only-this-patient",
+   "id": "mls-connect-js-30444-pull-chart-context-read-only-this-patient",
    "label": "Pull Chart Context Read-only, this patient",
    "accessibleName": "Pull Chart Context Read-only, this patient",
    "title": "",
@@ -16843,12 +16899,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30351,
+   "line": 30444,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30352-generate-note-from-the-captured-visit",
+   "id": "mls-connect-js-30445-generate-note-from-the-captured-visit",
    "label": "Generate Note From the captured visit",
    "accessibleName": "Generate Note From the captured visit",
    "title": "",
@@ -16857,12 +16913,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30352,
+   "line": 30445,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30353-send-to-athena-review-confirm",
+   "id": "mls-connect-js-30446-send-to-athena-review-confirm",
    "label": "Send to Athena Review & confirm",
    "accessibleName": "Send to Athena Review & confirm",
    "title": "",
@@ -16871,7 +16927,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30353,
+   "line": 30446,
    "gated": false,
    "handler": null
   },
@@ -16885,7 +16941,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30365,
+   "line": 30458,
    "gated": false,
    "handler": null
   },
@@ -16899,7 +16955,7 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30374,
+   "line": 30467,
    "gated": false,
    "handler": null
   },
@@ -16913,7 +16969,7 @@
    "domId": "ez3Back",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30414,
+   "line": 30507,
    "gated": false,
    "handler": null
   },
@@ -16927,7 +16983,7 @@
    "domId": "ez3PickBig",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30428,
+   "line": 30521,
    "gated": false,
    "handler": null
   },
@@ -16941,12 +16997,12 @@
    "domId": "ez3Stop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30432,
+   "line": 30525,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30435-generating-the-note",
+   "id": "mls-connect-js-30528-generating-the-note",
    "label": "Generating the note…",
    "accessibleName": "Generating the note…",
    "title": "",
@@ -16955,7 +17011,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30435,
+   "line": 30528,
    "gated": true,
    "handler": null
   },
@@ -16969,7 +17025,7 @@
    "domId": "ez3Edit",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30442,
+   "line": 30535,
    "gated": false,
    "handler": null
   },
@@ -16983,7 +17039,7 @@
    "domId": "ez3Regen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30443,
+   "line": 30536,
    "gated": false,
    "handler": null
   },
@@ -16997,7 +17053,7 @@
    "domId": "ez3Copy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30444,
+   "line": 30537,
    "gated": false,
    "handler": null
   },
@@ -17011,7 +17067,7 @@
    "domId": "ez3Send",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30447,
+   "line": 30540,
    "gated": false,
    "handler": null
   },
@@ -17025,7 +17081,7 @@
    "domId": "ez3NextPt",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30449,
+   "line": 30542,
    "gated": false,
    "handler": null
   },
@@ -17039,7 +17095,7 @@
    "domId": "ez3Gen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30454,
+   "line": 30547,
    "gated": false,
    "handler": null
   },
@@ -17053,7 +17109,7 @@
    "domId": "ez3Rec2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30456,
+   "line": 30549,
    "gated": false,
    "handler": null
   },
@@ -17067,7 +17123,7 @@
    "domId": "ez3Rec",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30458,
+   "line": 30551,
    "gated": false,
    "handler": null
   },
@@ -17081,7 +17137,7 @@
    "domId": "ez3Change",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30464,
+   "line": 30557,
    "gated": false,
    "handler": null
   },
@@ -17095,7 +17151,7 @@
    "domId": "ez3Chart2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30465,
+   "line": 30558,
    "gated": false,
    "handler": null
   },
@@ -17109,7 +17165,7 @@
    "domId": "ez3Prep2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30466,
+   "line": 30559,
    "gated": false,
    "handler": null
   },
@@ -17123,7 +17179,7 @@
    "domId": "ez3Hist2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30467,
+   "line": 30560,
    "gated": false,
    "handler": null
   },
@@ -17137,7 +17193,7 @@
    "domId": "ez3ConfCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30580,
+   "line": 30673,
    "gated": false,
    "handler": null
   },
@@ -17151,7 +17207,7 @@
    "domId": "ez3ConfYes",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30581,
+   "line": 30674,
    "gated": false,
    "handler": null
   },
@@ -17165,7 +17221,7 @@
    "domId": "ez3sPullToday",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30615,
+   "line": 30708,
    "gated": false,
    "handler": null
   },
@@ -17179,7 +17235,7 @@
    "domId": "ez3sPullMonth",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30616,
+   "line": 30709,
    "gated": false,
    "handler": null
   },
@@ -17193,7 +17249,7 @@
    "domId": "ez3sProv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30617,
+   "line": 30710,
    "gated": false,
    "handler": null
   },
@@ -17207,7 +17263,7 @@
    "domId": "ez3sPrep",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30618,
+   "line": 30711,
    "gated": false,
    "handler": null
   },
@@ -17221,12 +17277,12 @@
    "domId": "ez3More",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30645,
+   "line": 30738,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30917-cancel",
+   "id": "mls-connect-js-31010-cancel",
    "label": "Cancel",
    "accessibleName": "Cancel",
    "title": "",
@@ -17235,12 +17291,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30917,
+   "line": 31010,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30918-yes-send",
+   "id": "mls-connect-js-31011-yes-send",
    "label": "Yes, send",
    "accessibleName": "Yes, send",
    "title": "",
@@ -17249,12 +17305,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30918,
+   "line": 31011,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30947-start-recording",
+   "id": "mls-connect-js-31040-start-recording",
    "label": "Start Recording",
    "accessibleName": "Start Recording",
    "title": "",
@@ -17263,12 +17319,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30947,
+   "line": 31040,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30948-pull-chart-context",
+   "id": "mls-connect-js-31041-pull-chart-context",
    "label": "Pull Chart Context",
    "accessibleName": "Pull Chart Context",
    "title": "",
@@ -17277,12 +17333,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30948,
+   "line": 31041,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30951-generate-note",
+   "id": "mls-connect-js-31044-generate-note",
    "label": "Generate Note",
    "accessibleName": "Generate Note",
    "title": "",
@@ -17291,12 +17347,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30951,
+   "line": 31044,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-30952-send-to-athena",
+   "id": "mls-connect-js-31045-send-to-athena",
    "label": "Send to Athena",
    "accessibleName": "Send to Athena",
    "title": "",
@@ -17305,7 +17361,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 30952,
+   "line": 31045,
    "gated": false,
    "handler": null
   },
@@ -17319,7 +17375,7 @@
    "domId": "b49PullStop",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 31341,
+   "line": 31434,
    "gated": false,
    "handler": null
   },
@@ -17333,7 +17389,7 @@
    "domId": "mlsR46VerLater",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 31826,
+   "line": 31919,
    "gated": false,
    "handler": null
   },
@@ -17347,7 +17403,7 @@
    "domId": "r44GbpConnect",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32335,
+   "line": 32428,
    "gated": false,
    "handler": null
   },
@@ -17361,7 +17417,7 @@
    "domId": "r44GbpClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32336,
+   "line": 32429,
    "gated": false,
    "handler": null
   },
@@ -17375,7 +17431,7 @@
    "domId": "r44GbpDis",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32363,
+   "line": 32456,
    "gated": false,
    "handler": null
   },
@@ -17389,7 +17445,7 @@
    "domId": "r44GbpPub",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32373,
+   "line": 32466,
    "gated": false,
    "handler": null
   },
@@ -17403,7 +17459,7 @@
    "domId": "r44GbpCopy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32374,
+   "line": 32467,
    "gated": false,
    "handler": null
   },
@@ -17417,7 +17473,7 @@
    "domId": "r44qrClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32446,
+   "line": 32539,
    "gated": false,
    "handler": null
   },
@@ -17431,7 +17487,7 @@
    "domId": "r44cTunnelGo",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32603,
+   "line": 32696,
    "gated": false,
    "handler": null
   },
@@ -17445,12 +17501,12 @@
    "domId": "r44cGbpOpen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 32607,
+   "line": 32700,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-33088-u-1f399-start-seeing-patients",
+   "id": "mls-connect-js-33181-u-1f399-start-seeing-patients",
    "label": "\\u{1F399} Start seeing patients",
    "accessibleName": "\\u{1F399} Start seeing patients",
    "title": "",
@@ -17459,12 +17515,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33088,
+   "line": 33181,
    "gated": false,
    "handler": "showView('visit')"
   },
   {
-   "id": "mls-connect-js-33089-u-1f4c5-see-schedule",
+   "id": "mls-connect-js-33182-u-1f4c5-see-schedule",
    "label": "\\u{1F4C5} See schedule",
    "accessibleName": "\\u{1F4C5} See schedule",
    "title": "",
@@ -17473,7 +17529,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33089,
+   "line": 33182,
    "gated": false,
    "handler": "showView('calendar')"
   },
@@ -17487,7 +17543,7 @@
    "domId": "mlsR3LegalAttach",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33187,
+   "line": 33280,
    "gated": false,
    "handler": null
   },
@@ -17501,7 +17557,7 @@
    "domId": "sgpAllBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33338,
+   "line": 33431,
    "gated": false,
    "handler": null
   },
@@ -17515,7 +17571,7 @@
    "domId": "sgpProcBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33341,
+   "line": 33434,
    "gated": false,
    "handler": null
   },
@@ -17529,12 +17585,12 @@
    "domId": "sgpRunBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33357,
+   "line": 33450,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-33477-u-1f4cb-copy",
+   "id": "mls-connect-js-33570-u-1f4cb-copy",
    "label": "\\u{1F4CB} Copy",
    "accessibleName": "\\u{1F4CB} Copy",
    "title": "",
@@ -17543,7 +17599,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33477,
+   "line": 33570,
    "gated": false,
    "handler": "navigator.clipboard.writeText(document.getElementById('mlsSgProNarr').textConten"
   },
@@ -17557,12 +17613,12 @@
    "domId": "mlsB39ImproveBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33804,
+   "line": 33897,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-33861-skip-tour",
+   "id": "mls-connect-js-33954-skip-tour",
    "label": "Skip tour",
    "accessibleName": "Skip tour",
    "title": "",
@@ -17571,12 +17627,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33861,
+   "line": 33954,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-33862-8592-back",
+   "id": "mls-connect-js-33955-8592-back",
    "label": "&#8592; Back",
    "accessibleName": "&#8592; Back",
    "title": "",
@@ -17585,12 +17641,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 33862,
+   "line": 33955,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34578-button",
+   "id": "mls-connect-js-34671-button",
    "label": "×",
    "accessibleName": "Close",
    "title": "",
@@ -17599,12 +17655,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 34578,
+   "line": 34671,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34585-got-it",
+   "id": "mls-connect-js-34678-got-it",
    "label": "Got it",
    "accessibleName": "Got it",
    "title": "",
@@ -17613,12 +17669,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 34585,
+   "line": 34678,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-34586-ask-mls-a-question",
+   "id": "mls-connect-js-34679-ask-mls-a-question",
    "label": "Ask MLS a question",
    "accessibleName": "Ask MLS a question",
    "title": "",
@@ -17627,12 +17683,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 34586,
+   "line": 34679,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-35412-open-in-calendar",
+   "id": "mls-connect-js-35505-open-in-calendar",
    "label": "Open in Calendar",
    "accessibleName": "Open in Calendar",
    "title": "",
@@ -17641,12 +17697,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35412,
+   "line": 35505,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-35649-u2190-back",
+   "id": "mls-connect-js-35742-u2190-back",
    "label": "\\u2190 Back",
    "accessibleName": "\\u2190 Back",
    "title": "",
@@ -17655,12 +17711,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35649,
+   "line": 35742,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-35649-4-disabled-step-4-all-set-next-lb-step-1-u2192",
+   "id": "mls-connect-js-35742-4-disabled-step-4-all-set-next-lb-step-1-u2192",
    "label": "=4?' disabled':'')+'>'+(step>=4?'All set':'Next: '+LB[step+1]+' \\u2192')+'",
    "accessibleName": "=4?' disabled':'')+'>'+(step>=4?'All set':'Next: '+LB[step+1]+' \\u2192')+'",
    "title": "",
@@ -17669,7 +17725,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35649,
+   "line": 35742,
    "gated": false,
    "handler": null
   },
@@ -17683,7 +17739,7 @@
    "domId": "mlsCopyBook",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35837,
+   "line": 35930,
    "gated": false,
    "handler": null
   },
@@ -17697,7 +17753,7 @@
    "domId": "mlsCfgBook",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35838,
+   "line": 35931,
    "gated": false,
    "handler": null
   },
@@ -17711,7 +17767,7 @@
    "domId": "mlsSendPortal",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35842,
+   "line": 35935,
    "gated": false,
    "handler": null
   },
@@ -17725,7 +17781,7 @@
    "domId": "emrAi",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35935,
+   "line": 36028,
    "gated": false,
    "handler": null
   },
@@ -17739,7 +17795,7 @@
    "domId": "emrClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35935,
+   "line": 36028,
    "gated": false,
    "handler": null
   },
@@ -17753,7 +17809,7 @@
    "domId": "emrAll",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35935,
+   "line": 36028,
    "gated": false,
    "handler": null
   },
@@ -17767,7 +17823,7 @@
    "domId": "emrIns",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 35935,
+   "line": 36028,
    "gated": false,
    "handler": null
   },
@@ -17781,7 +17837,7 @@
    "domId": "mls-ask-x",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 36148,
+   "line": 36241,
    "gated": false,
    "handler": null
   },
@@ -17795,7 +17851,7 @@
    "domId": "mls-ask-go",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 36149,
+   "line": 36242,
    "gated": false,
    "handler": null
   },
@@ -17809,7 +17865,7 @@
    "domId": "mlsDWClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 37247,
+   "line": 37340,
    "gated": false,
    "handler": null
   },
@@ -17823,7 +17879,7 @@
    "domId": "mlsDWOpen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 37281,
+   "line": 37374,
    "gated": false,
    "handler": null
   },
@@ -17837,7 +17893,7 @@
    "domId": "mlsDelCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 37580,
+   "line": 37673,
    "gated": false,
    "handler": null
   },
@@ -17851,7 +17907,7 @@
    "domId": "mlsDelGo",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 37581,
+   "line": 37674,
    "gated": true,
    "handler": null
   },
@@ -17865,7 +17921,7 @@
    "domId": "mlsPiCancel",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 37902,
+   "line": 37995,
    "gated": false,
    "handler": null
   },
@@ -17879,7 +17935,7 @@
    "domId": "mlsPiSend",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 37903,
+   "line": 37996,
    "gated": false,
    "handler": null
   },
@@ -17893,7 +17949,7 @@
    "domId": "mlsTlClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 38375,
+   "line": 38468,
    "gated": false,
    "handler": null
   },
@@ -17907,7 +17963,7 @@
    "domId": "mlsSyncVerifyNow",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 38750,
+   "line": 38843,
    "gated": false,
    "handler": null
   },
@@ -17921,7 +17977,7 @@
    "domId": "mlsActClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 38953,
+   "line": 39046,
    "gated": false,
    "handler": null
   },
@@ -17935,7 +17991,7 @@
    "domId": "mlsRecGen",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39063,
+   "line": 39156,
    "gated": false,
    "handler": null
   },
@@ -17949,7 +18005,7 @@
    "domId": "mlsRecGen2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39076,
+   "line": 39169,
    "gated": false,
    "handler": null
   },
@@ -17963,7 +18019,7 @@
    "domId": "mlsRecValidate",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39092,
+   "line": 39185,
    "gated": false,
    "handler": null
   },
@@ -17977,12 +18033,12 @@
    "domId": "mlsRecClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39092,
+   "line": 39185,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39206-dismiss",
+   "id": "mls-connect-js-39299-dismiss",
    "label": "Dismiss",
    "accessibleName": "Dismiss",
    "title": "",
@@ -17991,12 +18047,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39206,
+   "line": 39299,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39209-schedule-follow-up",
+   "id": "mls-connect-js-39302-schedule-follow-up",
    "label": "Schedule follow-up",
    "accessibleName": "Schedule follow-up",
    "title": "",
@@ -18005,12 +18061,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39209,
+   "line": 39302,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39210-recommendations",
+   "id": "mls-connect-js-39303-recommendations",
    "label": "Recommendations",
    "accessibleName": "Recommendations",
    "title": "",
@@ -18019,12 +18075,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39210,
+   "line": 39303,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-39211-history",
+   "id": "mls-connect-js-39304-history",
    "label": "History",
    "accessibleName": "History",
    "title": "",
@@ -18033,7 +18089,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39211,
+   "line": 39304,
    "gated": false,
    "handler": null
   },
@@ -18047,7 +18103,7 @@
    "domId": "'+esc(it.id)+'",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39471,
+   "line": 39564,
    "gated": false,
    "handler": null
   },
@@ -18061,7 +18117,7 @@
    "domId": "'+esc(it.id)+'",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39473,
+   "line": 39566,
    "gated": false,
    "handler": null
   },
@@ -18075,7 +18131,7 @@
    "domId": "'+esc(it.id)+'",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39475,
+   "line": 39568,
    "gated": false,
    "handler": null
   },
@@ -18089,7 +18145,7 @@
    "domId": "mlsSupX",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39512,
+   "line": 39605,
    "gated": false,
    "handler": null
   },
@@ -18103,7 +18159,7 @@
    "domId": "mlsSupVisitBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39607,
+   "line": 39700,
    "gated": false,
    "handler": null
   },
@@ -18117,7 +18173,7 @@
    "domId": "mlsSupVisitBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 39608,
+   "line": 39701,
    "gated": false,
    "handler": null
   },
@@ -18131,7 +18187,7 @@
    "domId": "mlsCsX",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40111,
+   "line": 40204,
    "gated": false,
    "handler": null
   },
@@ -18145,7 +18201,7 @@
    "domId": "mlsCsAdd",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40127,
+   "line": 40220,
    "gated": false,
    "handler": null
   },
@@ -18159,7 +18215,7 @@
    "domId": "mlsCsExport",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40128,
+   "line": 40221,
    "gated": false,
    "handler": null
   },
@@ -18173,7 +18229,7 @@
    "domId": "mlsCsImport",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40129,
+   "line": 40222,
    "gated": false,
    "handler": null
   },
@@ -18187,7 +18243,7 @@
    "domId": "mlsCsReset",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40130,
+   "line": 40223,
    "gated": false,
    "handler": null
   },
@@ -18201,12 +18257,12 @@
    "domId": "mlsCsPickFromMgr",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40135,
+   "line": 40228,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-40174-edit",
+   "id": "mls-connect-js-40267-edit",
    "label": "Edit",
    "accessibleName": "Edit",
    "title": "",
@@ -18215,7 +18271,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40174,
+   "line": 40267,
    "gated": false,
    "handler": null
   },
@@ -18229,7 +18285,7 @@
    "domId": "mlsCsCopy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40214,
+   "line": 40307,
    "gated": false,
    "handler": null
   },
@@ -18243,7 +18299,7 @@
    "domId": "mlsCsInsert",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40215,
+   "line": 40308,
    "gated": false,
    "handler": null
   },
@@ -18257,12 +18313,12 @@
    "domId": "mlsCsOpenMgr",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 40281,
+   "line": 40374,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-41373-close",
+   "id": "mls-connect-js-41466-close",
    "label": "Close",
    "accessibleName": "Close",
    "title": "",
@@ -18271,12 +18327,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41373,
+   "line": 41466,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-41376-by-name-dob",
+   "id": "mls-connect-js-41469-by-name-dob",
    "label": "By name + DOB",
    "accessibleName": "By name + DOB",
    "title": "",
@@ -18285,12 +18341,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41376,
+   "line": 41469,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-41377-by-procedure",
+   "id": "mls-connect-js-41470-by-procedure",
    "label": "By procedure",
    "accessibleName": "By procedure",
    "title": "",
@@ -18299,12 +18355,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41377,
+   "line": 41470,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-41378-cohorts",
+   "id": "mls-connect-js-41471-cohorts",
    "label": "Cohorts",
    "accessibleName": "Cohorts",
    "title": "",
@@ -18313,7 +18369,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41378,
+   "line": 41471,
    "gated": false,
    "handler": null
   },
@@ -18327,7 +18383,7 @@
    "domId": "mlsStudyParse",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41405,
+   "line": 41498,
    "gated": false,
    "handler": null
   },
@@ -18341,7 +18397,7 @@
    "domId": "mlsStudyImport",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41406,
+   "line": 41499,
    "gated": false,
    "handler": null
   },
@@ -18355,7 +18411,7 @@
    "domId": "mlsStudyBAuto",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41468,
+   "line": 41561,
    "gated": false,
    "handler": null
   },
@@ -18369,7 +18425,7 @@
    "domId": "mlsStudyBFind",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41469,
+   "line": 41562,
    "gated": false,
    "handler": null
   },
@@ -18383,7 +18439,7 @@
    "domId": "mlsStudyBTag",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41480,
+   "line": 41573,
    "gated": false,
    "handler": null
   },
@@ -18397,7 +18453,7 @@
    "domId": "mlsStudyFhirBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41487,
+   "line": 41580,
    "gated": true,
    "handler": null
   },
@@ -18411,7 +18467,7 @@
    "domId": "mlsStudyBImport",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41587,
+   "line": 41680,
    "gated": false,
    "handler": null
   },
@@ -18425,7 +18481,7 @@
    "domId": "mlsStudyCsv",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41661,
+   "line": 41754,
    "gated": false,
    "handler": null
   },
@@ -18439,7 +18495,7 @@
    "domId": "'+esc(p.id)+'",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 41666,
+   "line": 41759,
    "gated": false,
    "handler": null
   },
@@ -18453,7 +18509,7 @@
    "domId": "mlsGrabImport",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 42119,
+   "line": 42212,
    "gated": false,
    "handler": null
   },
@@ -18467,7 +18523,7 @@
    "domId": "mlsTourSkip",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 43114,
+   "line": 43207,
    "gated": false,
    "handler": null
   },
@@ -18481,7 +18537,7 @@
    "domId": "mlsTourBack",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 43117,
+   "line": 43210,
    "gated": false,
    "handler": null
   },
@@ -18495,7 +18551,7 @@
    "domId": "mlsTourNext",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 43118,
+   "line": 43211,
    "gated": false,
    "handler": null
   },
@@ -18509,7 +18565,7 @@
    "domId": "mlsTourSkipV2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 43402,
+   "line": 43495,
    "gated": false,
    "handler": null
   },
@@ -18523,7 +18579,7 @@
    "domId": "mlsTourBackV2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 43404,
+   "line": 43497,
    "gated": false,
    "handler": null
   },
@@ -18537,7 +18593,7 @@
    "domId": "mlsTourNextV2",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 43405,
+   "line": 43498,
    "gated": false,
    "handler": null
   },
@@ -18551,7 +18607,7 @@
    "domId": "mlsDsPrev",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45338,
+   "line": 45431,
    "gated": false,
    "handler": null
   },
@@ -18565,7 +18621,7 @@
    "domId": "mlsDsNext",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45340,
+   "line": 45433,
    "gated": false,
    "handler": null
   },
@@ -18579,7 +18635,7 @@
    "domId": "mlsDsTodayBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45341,
+   "line": 45434,
    "gated": false,
    "handler": null
   },
@@ -18593,7 +18649,7 @@
    "domId": "mlsDsPullBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45342,
+   "line": 45435,
    "gated": false,
    "handler": null
   },
@@ -18607,7 +18663,7 @@
    "domId": "mlsDsRetryHistoryBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45343,
+   "line": 45436,
    "gated": false,
    "handler": null
   },
@@ -18621,7 +18677,7 @@
    "domId": "mlsDsDiagBtn",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45344,
+   "line": 45437,
    "gated": false,
    "handler": null
   },
@@ -18635,12 +18691,12 @@
    "domId": "mlsPcClose",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45578,
+   "line": 45671,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-45826-unmark",
+   "id": "mls-connect-js-45919-unmark",
    "label": "Unmark",
    "accessibleName": "Unmark",
    "title": "",
@@ -18649,12 +18705,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 45826,
+   "line": 45919,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-46457-got-it",
+   "id": "mls-connect-js-46550-got-it",
    "label": "Got it",
    "accessibleName": "Got it",
    "title": "Got it",
@@ -18663,7 +18719,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 46457,
+   "line": 46550,
    "gated": false,
    "handler": "try{localStorage.setItem('mlsRlPhoneIntroSeen','1')}catch(e){};this.parentNode.r"
   },
@@ -18677,7 +18733,7 @@
    "domId": "mlsRlCopy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 46744,
+   "line": 46837,
    "gated": false,
    "handler": null
   },
@@ -18691,7 +18747,7 @@
    "domId": "mlsPhEmail",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 46973,
+   "line": 47066,
    "gated": false,
    "handler": null
   },
@@ -18705,7 +18761,7 @@
    "domId": "mlsPhCopy",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 46974,
+   "line": 47067,
    "gated": false,
    "handler": null
   },
@@ -18719,12 +18775,12 @@
    "domId": "mlsPhDismiss",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 46975,
+   "line": 47068,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-47199-label-solid-suggested",
+   "id": "mls-connect-js-47292-label-solid-suggested",
    "label": "\" + label + (solid ? ' (suggested)' : '') + '",
    "accessibleName": "\" + label + (solid ? ' (suggested)' : '') + '",
    "title": "",
@@ -18733,7 +18789,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47199,
+   "line": 47292,
    "gated": false,
    "handler": null
   },
@@ -18747,7 +18803,7 @@
    "domId": "mlsDrSnooze",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47203,
+   "line": 47296,
    "gated": false,
    "handler": null
   },
@@ -18761,12 +18817,12 @@
    "domId": "' + esc(d.id) + '",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47267,
+   "line": 47360,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-47297-office-computer",
+   "id": "mls-connect-js-47390-office-computer",
    "label": "Office computer",
    "accessibleName": "Office computer",
    "title": "",
@@ -18775,12 +18831,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47297,
+   "line": 47390,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-47298-secondary-computer",
+   "id": "mls-connect-js-47391-secondary-computer",
    "label": "Secondary computer",
    "accessibleName": "Secondary computer",
    "title": "",
@@ -18789,12 +18845,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47298,
+   "line": 47391,
    "gated": false,
    "handler": null
   },
   {
-   "id": "mls-connect-js-47299-phone-remote",
+   "id": "mls-connect-js-47392-phone-remote",
    "label": "Phone / remote",
    "accessibleName": "Phone / remote",
    "title": "",
@@ -18803,7 +18859,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47299,
+   "line": 47392,
    "gated": false,
    "handler": null
   },
@@ -18817,7 +18873,7 @@
    "domId": "mlsDrRename",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47300,
+   "line": 47393,
    "gated": false,
    "handler": null
   },
@@ -18831,7 +18887,7 @@
    "domId": "mlsDrRefresh",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47301,
+   "line": 47394,
    "gated": false,
    "handler": null
   },
@@ -18845,7 +18901,7 @@
    "domId": "mlsEhRecheck",
    "view": "dynamic",
    "file": "mls-connect.js",
-   "line": 47558,
+   "line": 47651,
    "gated": false,
    "handler": null
   }
