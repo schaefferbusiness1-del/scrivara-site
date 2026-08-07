@@ -15559,6 +15559,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       "#tpfLedgerList .bad{color:#a12c2c;font-weight:700}",
       "#tpfLedgerList .skip{color:#8a6414}",
       "#tpfLedgerList .pend{color:#5a6b80}",
+      /* 2026-08-06 owner: "the thing at the top when drafting all the op notes
+         for a whole day ... should be colapsible and a clean loading bar with an
+         expandible part that shows that". Collapsing hides the PER-ROW LIST and
+         nothing else: the headline, the bar and the failure strip below stay
+         mounted, because a run that fails while the doctor has it collapsed must
+         still say so. Driven by a class on the box, so one toggle owns it. */
+      "#tpfLedger .tpf-ltog{font-size:11.5px;border-radius:8px;border:1px solid #c9d5ea;background:#fff;color:#16233a;padding:3px 9px;cursor:pointer;line-height:1.2}",
+      "#tpfLedger .tpf-ltog .tpf-caret{display:inline-block;transition:transform .18s ease}",
+      "#tpfLedger.tpf-collapsed .tpf-ltog .tpf-caret{transform:rotate(-90deg)}",
+      "#tpfLedger.tpf-collapsed #tpfLedgerList{display:none}",
+      "#tpfLedger.tpf-collapsed #tpfSafety{display:none}",
+      /* the failure strip is the whole point of the collapsed state: it is
+         OUTSIDE #tpfLedgerList so collapsing cannot hide it. Empty and hidden
+         while nothing has failed, so a clean run stays clean. */
+      "#tpfLedgerFails{display:none;margin-top:6px;font-size:11.5px;line-height:1.5;color:#a12c2c;background:#fdf2f2;border:1px solid #f0cfcf;border-radius:8px;padding:6px 9px}",
+      "#tpfLedgerFails.on{display:block}",
+      "#tpfLedgerFails b{color:#a12c2c}",
       "#tpfSafety{font-size:11px;color:#127a43;margin-top:5px;font-weight:600}",
       ".tpf-month{display:inline-flex;gap:6px;align-items:center}",
       ".tpf-month input[type=month]{font-size:12.5px;padding:5px 8px;border:1px solid #c9d5ea;border-radius:8px}",
@@ -15883,6 +15900,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     box.classList.add("on");
     var head = box.querySelector(".tpf-lstat"); if (head) head.textContent = headline || "";
     setBar(total ? (doneN / total) * 100 : 0);
+    /* THE COLLAPSED PANEL MUST STILL SAY A NOTE FAILED. This strip lives
+       outside #tpfLedgerList, so it survives collapsing; the per-row list is the
+       only thing the toggle hides. Named, not counted - "2 failed" sends the
+       doctor hunting, "Smith, Jones" does not. Painted on every repaint so it
+       clears itself the moment a retry succeeds. */
+    var failsEl = $("tpfLedgerFails");
+    if (failsEl) {
+      var failed = states.filter(function (s) { return s && s.st === "fail"; });
+      if (!failed.length) { failsEl.className = ""; failsEl.innerHTML = ""; }
+      else {
+        var shown = failed.slice(0, 6).map(function (s) { return esc(s.name); }).join(", ");
+        var more = failed.length > 6 ? " +" + (failed.length - 6) + " more" : "";
+        failsEl.className = "on";
+        failsEl.innerHTML = "✗ <b>" + failed.length + (failed.length === 1 ? " note failed" : " notes failed") +
+          "</b> — " + shown + esc(more) + (box.classList.contains("tpf-collapsed") ? " · open Details to see why" : "");
+      }
+    }
     var listEl = $("tpfLedgerList"); if (!listEl) return;
     listEl.innerHTML = states.map(function (s) {
       var cls = s.st === "ok" ? "ok" : s.st === "fail" ? "bad" : s.st === "skip" ? "skip" : "pend";
@@ -16207,13 +16241,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var row = genBtn && genBtn.closest ? genBtn.closest(".row") : null;
         if (row && row.parentElement) {
           var led = document.createElement("div"); led.id = "tpfLedger";
-          led.innerHTML = '<div class="tpf-lhead"><b>Draft-all progress</b><span class="tpf-lstat" style="font-size:11.5px;color:#5a6b80"></span>' +
+          led.innerHTML = '<div class="tpf-lhead"><button type="button" class="tpf-ltog" id="tpfLedgerTog" aria-expanded="true" aria-controls="tpfLedgerList"><span class="tpf-caret">\u25BE</span> Details</button>' +
+            '<b>Draft-all progress</b><span class="tpf-lstat" style="font-size:11.5px;color:#5a6b80"></span>' +
             '<div id="tpfBar"><div id="tpfBarIn"></div></div>' +
             '<button type="button" id="tpfStop">\u23F9 Stop</button></div>' +
             '<div id="tpfLedgerList"></div>' +
+            '<div id="tpfLedgerFails" role="status"></div>' +
             '<div id="tpfSafety">\uD83D\uDD12 Prep drafts save to each patient\u2019s History only \u2014 nothing is ever sent to Athena automatically.</div>';
           row.parentElement.insertBefore(led, row.nextSibling);
           led.querySelector("#tpfStop").onclick = function () { RUN.stop = true; toast("Stopping after the current patient\u2026", ""); };
+          /* collapse is a per-doctor preference and must survive the 1.3s tick
+             that rebuilds this panel, so it is read back from storage below. */
+          var tog = led.querySelector("#tpfLedgerTog");
+          tog.onclick = function () {
+            var nowCollapsed = !led.classList.contains("tpf-collapsed");
+            led.classList[nowCollapsed ? "add" : "remove"]("tpf-collapsed");
+            tog.setAttribute("aria-expanded", nowCollapsed ? "false" : "true");
+            try { localStorage.setItem("mlsTpfLedgerCollapsed", nowCollapsed ? "1" : "0"); } catch (eLs) {}
+          };
+          try {
+            if (localStorage.getItem("mlsTpfLedgerCollapsed") === "1") {
+              led.classList.add("tpf-collapsed"); tog.setAttribute("aria-expanded", "false");
+            }
+          } catch (eLs2) {}
         }
       }
     } catch (e) {}
