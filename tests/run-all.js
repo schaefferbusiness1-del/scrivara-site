@@ -197,6 +197,12 @@ const tests = [
   'athena-session-preservation-contract.test.js',
   'athena-session-health-runtime.test.js',
   'athena-confirmed-billing-contract.test.js',
+  /* b941 2026-08-07: the frozen Superbill payload was checked only for code
+     SHAPE, so an add-on with no primary or fluoroscopy billed beside an
+     injection that already includes it reached Athena's billing slate
+     unremarked. Pins the gate, and pins that a check which could not RUN never
+     reads as a check that passed. */
+  'billing-gate-contract.test.js',
   'chartautofill-guard-active-patient-runtime.test.js',
   'commercial-hardening-contract.test.js',
   'visit-draft-lifecycle-runtime.test.js',
