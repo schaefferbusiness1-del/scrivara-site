@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.1.3)
+ *  window.__mlsAthenaDoctor (v1.1.4)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -38,7 +38,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.1.3';
+  var VERSION = '1.1.4';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -607,6 +607,28 @@
         for (i = 0; i < btns.length; i++) pushUnique(out, btns[i]);
       }
     } catch (e2) {}
+    /* v1.1.4 — THE AFFORDANCE ITSELF, found by name rather than by id.
+       QA asked whether Troubleshoot Athena is reachable at all, having measured
+       every element containing that text as 0x0. It IS reachable: it moved to
+       the DOCK's Tools menu (feat_mls_calm_shell.js:1108 lists
+       {id:'mlsAthenaDoctorBtn', as:'Troubleshoot Athena'}), and
+       ScribeFlow.html:12980 documents the same migration for Staff Prep after
+       feat_mls_redesign.js:148 hid #mlsTbMenu outright. Their measurement was
+       taken with that menu CLOSED, where a row is 0x0 by design.
+       So the dock's Tools launcher is a real surface and gets the dot, and so
+       does any control that NAMES the affordance. Scoped to the menu
+       containers rather than the whole document: this runs from the observer's
+       sync check, and a document-wide text scan there would be a boot-perf
+       regression in the middle of a boot-perf complaint. */
+    try {
+      var scope = document.querySelectorAll(
+        '#mlsDock [data-dest="tools"], #mlsToolsMenu button, #mlsTbMenuPanel button, #mlsToolsMenu [role="button"]');
+      for (i = 0; i < scope.length; i++) {
+        var el = scope[i];
+        var t = String(el.textContent || el.getAttribute('aria-label') || '');
+        if (/troubleshoot\s*athena/i.test(t) || el.getAttribute('data-dest') === 'tools') pushUnique(out, el);
+      }
+    } catch (e2) {}
     return out;
   }
 
@@ -670,11 +692,36 @@
     }
   }
 
+  var _warnedUnreachable = false;
+
   function setReadState(failed) {
     failed = !!failed;
     if (_readFailed === failed) return;
     _readFailed = failed;
     paintReadState();
+    /* v1.1.4 — QA: "if the set comes back EMPTY that is not a no-op — it means
+       the affordance is unreachable and something should say so loudly."
+       Exactly right. An indicator with nowhere to live is a PRODUCT bug, not a
+       painting bug, and three rounds were spent moving paint around before that
+       question got asked. If a read has failed and nothing on screen can carry
+       it, say so once — never repeatedly, and never as a toast, because the
+       owner deleted the toast and this is for whoever is debugging.
+       __mlsAthenaReadIndicatorUnreachable is left on window so a live probe can
+       read the verdict without watching the console. */
+    if (failed) {
+      var reachable = renderedFailureSurfaces().length > 0;
+      try { W.__mlsAthenaReadIndicatorUnreachable = !reachable; } catch (e) {}
+      if (!reachable && !_warnedUnreachable) {
+        _warnedUnreachable = true;
+        try {
+          console.warn('[mls] An Athena read failed and NO rendered surface can show it. ' +
+            'Troubleshoot Athena has no visible entry point on this screen — that is a product ' +
+            'defect, not a styling one. Surfaces considered: ' + readSurfaces().length + '.');
+        } catch (e2) {}
+      }
+    } else {
+      try { W.__mlsAthenaReadIndicatorUnreachable = false; } catch (e3) {}
+    }
   }
 
   // ---- clearer SUCCESS + auto-trigger on failure --------------------------
