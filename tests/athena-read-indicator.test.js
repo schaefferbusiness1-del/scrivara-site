@@ -57,7 +57,16 @@ function element(tag) {
     hasAttribute(name) { return name in this.attributes; },
     addEventListener() {},
     querySelector(selector) { return selector === '.mlsdoc-x' ? (this._dismiss || null) : null; },
-    querySelectorAll() { return []; }
+    querySelectorAll(selector) {
+      /* Only the slot sweep needs this; everything else keeps the old stub. */
+      if (String(selector) !== 'button') return [];
+      return walk(this, []).filter((n) => n !== this && n.tagName === 'BUTTON');
+    },
+    /* Layout, so "is it actually on screen" is testable. 0x0 by default —
+       a node must be given a box explicitly, mirroring the real defect where
+       every id we named turned out to have none. */
+    _box: { width: 0, height: 0 },
+    getBoundingClientRect() { return { width: this._box.width, height: this._box.height }; }
   };
   Object.defineProperty(node, 'innerHTML', {
     get() { return this._html || ''; },
@@ -114,7 +123,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.1.2');
+assert.strictEqual(api.version, '1.1.3');
 
 const dispatch = (data) => api._onResultMessage({ data });
 const btn = () => document.getElementById('mlsAthenaDoctorBtn');
@@ -322,6 +331,100 @@ dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-vis-9', ok:
 const carriers = [menuBtn, row].filter((el) => el.getAttribute('data-mls-athena-read') === 'failed');
 assert(carriers.length >= 2,
   'ANY_VISIBLE_SURFACE_CARRIES_STATE would be false: only the .mlsTbHidden original was painted');
+
+/* =========================================================================
+ * v1.1.3 — THE RECEIPT, NOT THE ID.
+ *
+ * Three ids in a row were named as "the visible surface" and all three were
+ * measured off-screen by QA on the owner's browser:
+ *   b911  #mlsAthenaDoctorBtn  .mlsTbHidden -> display:none
+ *   b915  #mlsTbMenuBtn        itself inline-flex, PARENT #mlsTbMenu display:none
+ *   b920  the dropdown row     exists only while the menu is open
+ * The rendered control in that header slot today is #mlsAccountMenuBtn — and
+ * naming it would just queue the fourth correction.
+ *
+ * So the module resolves structurally: every rendered <button> inside the
+ * header menu slot #mlsRdMenuSlot is painted, whatever it is called. The slot
+ * is the stable thing; its occupants are not. This section proves that with a
+ * button whose id the module has never heard of.
+ *
+ * And the assertion is QA's receipt rather than an id: after a failed read, at
+ * least one surface that is REALLY RENDERED carries the state. An assertion
+ * naming any id passes forever while the doctor sees nothing — which is
+ * precisely what shipped three times.
+ * ====================================================================== */
+const slot = element('div');
+slot.id = 'mlsRdMenuSlot';
+slot._box = { width: 106, height: 38 };
+body.appendChild(slot);
+
+/* The occupant. Deliberately an id the module does not know, standing in for
+   whatever supersedes #mlsAccountMenuBtn next. */
+const futureBtn = element('button');
+futureBtn.id = 'mlsSomeFutureMenuBtn';
+futureBtn._box = { width: 106, height: 38 };
+futureBtn.setAttribute('aria-label', 'Account');
+slot.appendChild(futureBtn);
+
+/* A sibling that is present but NOT rendered — it must never be mistaken for
+   the affordance, which is the whole failure mode being fixed. */
+const hiddenSibling = element('button');
+hiddenSibling.id = 'mlsRdNewBtn';
+slot.appendChild(hiddenSibling);
+
+observerCallback();
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-slot-1', ok: false, reason: 'no-form' });
+
+assert.strictEqual(futureBtn.getAttribute('data-mls-athena-read'), 'failed',
+  'the rendered occupant of the header menu slot was not painted — the indicator still needs a code change every time a topbar lane swaps that component');
+/* The zero-box sibling IS painted, deliberately. Filtering the paint list to
+   rendered nodes looks tidier and is wrong: a surface hidden at the moment of
+   failure would then never be painted, and when it later becomes visible it
+   would show nothing. Visibility usually flips by toggling a class on an
+   ANCESTOR, which a childList/subtree observer never sees, so there is no
+   second chance. Painting a hidden node costs one attribute; missing the
+   signal costs the whole feature. Rendered-ness is a REPORTING filter, in
+   renderedFailureSurfaces() below — never a painting decision. */
+assert.strictEqual(hiddenSibling.getAttribute('data-mls-athena-read'), 'failed',
+  'a currently-hidden slot control was skipped — it will show nothing if it becomes visible while the failure still stands');
+assert(/Account/.test(futureBtn.getAttribute('aria-label') || ''),
+  'the slot occupant lost its own label instead of having the failure appended to it');
+
+/* THE DOT'S CSS MUST BE GENERIC. Painting the right node draws nothing if the
+   only rules are per-id — the same invisible indicator in a new disguise, and
+   the failure this whole section exists to prevent. Asserted against the BUILT
+   stylesheet text, because the rules are assembled by string concatenation and
+   a source-level grep cannot see the finished selector. */
+const styleEl = document.getElementById('mls-athena-doctor-style');
+assert(styleEl, 'the module built no stylesheet');
+/* The selector must stand ALONE at a rule boundary. A first attempt at this
+   assertion used /[^\]]\[data-mls-athena-read…/ and was VACUOUS: the character
+   before the bracket in `#mlsAthenaDoctorBtn[data-mls-athena-read…` is "n",
+   which satisfied it, so the per-id rule passed the generic check. Caught by
+   mutating the generic rule away and watching the suite stay green. */
+assert(/(?:^|\})\s*\[data-mls-athena-read="failed"\]::after\s*\{[^}]*content/.test(styleEl.textContent),
+  'the failure dot is defined only per-id — a surface resolved structurally would carry the attribute and render nothing');
+
+/* QA'S RECEIPT, exactly as they run it live. */
+const rendered = api.renderedFailureSurfaces();
+assert(rendered.length > 0,
+  'ANY_VISIBLE_SURFACE_CARRIES_STATE is FALSE — after a failed read nothing that is actually on screen carries data-mls-athena-read="failed"');
+assert(rendered.indexOf(futureBtn) >= 0, 'the rendered surface list does not contain the one control that is on screen');
+
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-slot-2', ok: true, results: [{}] });
+assert.strictEqual(futureBtn.getAttribute('data-mls-athena-read'), null, 'the slot occupant kept a resolved failure');
+assert.strictEqual(futureBtn.getAttribute('aria-label'), 'Account', 'the slot occupant did not get its own label back verbatim');
+assert.strictEqual(api.renderedFailureSurfaces().length, 0, 'a good read left a rendered surface still claiming failure');
+
+/* NEGATIVE CONTROL on the receipt itself: if every candidate loses its box —
+   the exact live situation at b911/b915 — the receipt must go FALSE. A receipt
+   that cannot fail is the vacuous-pass class all over again. */
+futureBtn._box = { width: 0, height: 0 };
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-slot-3', ok: false, reason: 'no-tab' });
+assert.strictEqual(api.renderedFailureSurfaces().length, 0,
+  'the receipt reports a rendered surface when every candidate is 0x0 — it would have passed at b911 and b915, and it must not');
+futureBtn._box = { width: 106, height: 38 };
+assert(api.renderedFailureSurfaces().length > 0, 'the receipt did not recover when the surface regained a box');
 
 console.log('PASS Athena read indicator: both failure paths raise it on every RENDERED surface (the ☰ Menu button, since ' +
   'feat_mls_topbar_unify hides the original), any successful read including zero-result clears it, tooltip and aria-label ' +
