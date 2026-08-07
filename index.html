@@ -399,11 +399,16 @@ footer{border-top:1px solid var(--line);background:var(--paper)}
 .mlsmsg{max-width:85%;padding:9px 13px;border-radius:13px;font-size:13.5px;line-height:1.5;white-space:pre-wrap}
 .mlsmsg.bot{background:var(--card);border:1px solid var(--line);color:var(--ink);align-self:flex-start;border-bottom-left-radius:5px}
 .mlsmsg.user{background:var(--deep);color:#fff;align-self:flex-end;border-bottom-right-radius:5px}
-#mlsChatForm{display:flex;gap:8px;padding:11px;border-top:1px solid var(--line);background:var(--card)}
-#mlsChatInput{flex:1;border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;font:14px var(--sans);background:var(--bar)}
+/* flex-wrap is load-bearing: the privacy note below carries flex-basis:100%,
+   which only moves it to its own line when the form is allowed to wrap. Without
+   it the note stayed a third item on the input row, shrank to ~62px wide, wrapped
+   to seventeen lines, and stretched the field and Send button to 256px tall. */
+#mlsChatForm{display:flex;flex-wrap:wrap;gap:8px;padding:11px;border-top:1px solid var(--line);background:var(--card)}
+#mlsChatInput{flex:1 1 auto;min-width:0;border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;font:14px var(--sans);background:var(--bar)}
 #mlsChatInput:focus{outline:none;border-color:var(--green)}
-#mlsChatSendBtn{background:var(--deep);color:#fff;border:none;border-radius:10px;padding:0 16px;font:600 13.5px var(--sans);cursor:pointer}
+#mlsChatSendBtn{flex:0 0 auto;background:var(--deep);color:#fff;border:none;border-radius:10px;padding:0 16px;font:600 13.5px var(--sans);cursor:pointer}
 #mlsChatSendBtn:disabled{opacity:.6}
+#mlsChatForm small{flex:0 0 100%;font-size:11px;line-height:1.4}
 
 /* detail modal */
 .mdl-ov{position:fixed;inset:0;z-index:80;background:rgba(26,33,28,.45);display:none;align-items:center;justify-content:center;padding:22px;backdrop-filter:blur(3px)}
