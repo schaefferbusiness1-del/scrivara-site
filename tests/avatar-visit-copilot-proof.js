@@ -208,6 +208,18 @@ async function toAmbient(page) {
   await page.clock.runFor(1200);
 }
 
+/* the staff handoff on a kiosk that is ALREADY open and finished with intake */
+async function toAmbientFrom(page) {
+  await page.clock.runFor(13000);
+  await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+  await page.clock.runFor(400);
+  await page.evaluate(function () {
+    document.getElementById('mlsAvKioskPinInput').value = '1234';
+    document.getElementById('mlsAvKioskPinAmb').click();
+  });
+  await page.clock.runFor(1200);
+}
+
 async function say(page, text) {
   await page.evaluate(function (t) { window.__emit(t, true); }, text);
   await page.clock.runFor(1600);        /* past the detector's settle window */
@@ -993,6 +1005,215 @@ async function say(page, text) {
       saves.forEach(function (s) {
         console.log('     ' + String(s.tag).padEnd(26) + String(s.chars).padStart(5) + ' / ' + String(s.storedChars).padStart(5));
       });
+    }
+    /* ------------------------------------------------------------ I */
+    section('SCENARIO I - THE THINGS THAT GO WRONG IN A REAL ROOM');
+    {
+      /* The brief names these by hand: network issues, microphone reconnects,
+         transcription errors, overlapping speech. None of them were proved
+         before this scenario — every earlier test ran on a network that never
+         failed, a microphone that never died and a recogniser that never lied.
+         A copilot that only works when nothing goes wrong is a demo. */
+
+      /* --- I1. the turn request FAILS mid-interview --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
+          window.__failNext = false;
+          window.__turnBodies = [];
+          const real = window.fetch;
+          window.fetch = function (url, opts) {
+            /* log EVERY turn attempt, including the one we are about to fail —
+               the earlier version logged only what reached the stub, so the
+               failed attempt's nonce was invisible and the comparison below
+               was meaningless */
+            if (String(url).indexOf('/office/turn') >= 0) {
+              let b = {};
+              try { b = JSON.parse((opts && opts.body) || '{}'); } catch (e) {}
+              window.__turnBodies.push(b);
+            }
+            if (window.__failNext && String(url).indexOf('/office/turn') >= 0) {
+              window.__failNext = false;
+              return Promise.resolve({
+                ok: false, status: 500,
+                headers: { get: function () { return 'application/json'; } },
+                json: function () { return Promise.resolve({}); },
+                blob: function () { return Promise.resolve(new Blob([''])); }
+              });
+            }
+            return real(url, opts);
+          };
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.clock.runFor(1500);
+        await page.evaluate(function () {
+          window.__failNext = true;
+          window.__emit('my back has been hurting for three weeks', true);
+        });
+        await page.clock.runFor(3000);
+        const said = await page.evaluate(function () {
+          return (document.getElementById('mlsAvKioskSay').textContent || '');
+        });
+        ok('I1 a failed turn NEVER speaks an empty sentence at the patient', said.trim().length > 0, said.slice(0, 60));
+        ok('I1 …it says the connection hiccuped and the answer is safe',
+          /connection hiccuped|safe to say again/i.test(said), said.slice(0, 70));
+        const reopened = await page.evaluate(function () {
+          return !!(window.__recs[window.__recs.length - 1] || {}).live;
+        });
+        ok('I1 …and the microphone reopens so the patient can simply repeat', reopened === true);
+        /* the answer must still be resendable under the SAME nonce, or the
+           retry files the patient's words twice */
+        await page.evaluate(function () { window.__emit('my back has been hurting for three weeks', true); });
+        await page.clock.runFor(3000);
+        const answered = await page.evaluate(function () {
+          return (window.__turnBodies || []).filter(function (b) { return b && b.answer; })
+            .map(function (b) { return { a: b.answer, n: b.answerNonce }; });
+        });
+        ok('I1 …the patient repeating themselves DOES reach the server', answered.length >= 2,
+          answered.length + ' answered attempts');
+        ok('I1 …and the resend reuses the SAME nonce, so the server cannot double-file it',
+          answered.length >= 2 && answered[0].n === answered[answered.length - 1].n,
+          JSON.stringify(answered.map(function (x) { return x.n; })));
+        ok('I1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I2. the microphone dies mid-capture and must come back --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'the exam shows tenderness over the joint line');
+        const before = await page.evaluate(function () { return window.__amb().capturedChars; });
+        const startsBefore = await page.evaluate(function () { return window.__log.recStarts; });
+        await page.evaluate(function () {
+          const r = window.__recs[window.__recs.length - 1];
+          if (r && r.onerror) { r.live = false; r.onerror({ error: 'network' }); }
+        });
+        await page.clock.runFor(6000);
+        const startsAfter = await page.evaluate(function () { return window.__log.recStarts; });
+        ok('I2 a dead microphone is restarted by itself', startsAfter > startsBefore,
+          startsBefore + ' -> ' + startsAfter);
+        await say(page, 'and there is no effusion today');
+        const after = await page.evaluate(function () { return window.__amb().capturedChars; });
+        ok('I2 …and speech after the reconnect is still captured', after > before, before + ' -> ' + after);
+        ok('I2 …with nothing lost from before it died',
+          (await page.evaluate(function () { return window.__amb(); })).capturedChars >= before);
+        ok('I2 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I3. the recogniser lies: empty, whitespace and repeated finals --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'the knee is swollen today');
+        const base1 = await page.evaluate(function () { return window.__amb().capturedChars; });
+        await page.evaluate(function () {
+          window.__emit('', true);
+          window.__emit('   ', true);
+          window.__emit('the knee is swollen today', true);   /* Chrome re-delivering the tail */
+        });
+        await page.clock.runFor(2500);
+        const after = await page.evaluate(function () { return window.__amb(); });
+        ok('I3 empty and whitespace transcriptions add nothing', after.capturedChars === base1,
+          base1 + ' -> ' + after.capturedChars);
+        ok('I3 …and an exactly repeated phrase is not filed twice', after.capturedChars === base1);
+        const cards = await page.evaluate(function () { return window.__cards(); });
+        ok('I3 …and garbage never becomes a clinical order', cards.length === 0, JSON.stringify(cards));
+        ok('I3 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I4. overlapping speech: finals arriving faster than they can be
+         processed must all survive, in order --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await page.evaluate(function () {
+          ['the pain is sharp', 'it started on Tuesday', 'she took ibuprofen',
+           'it helped a little', 'the swelling is down'].forEach(function (t) { window.__emit(t, true); });
+        });
+        await page.clock.runFor(3000);
+        const st = await page.evaluate(function () {
+          const a = window.__amb();
+          let stored = null;
+          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          return { chars: a.capturedChars, parts: stored ? stored.parts : [] };
+        });
+        ok('I4 five overlapping utterances are ALL captured', st.parts.length === 5,
+          st.parts.length + ' parts');
+        ok('I4 …in the order they were spoken',
+          st.parts[0] === 'the pain is sharp' && st.parts[4] === 'the swelling is down',
+          JSON.stringify(st.parts.slice(0, 2)));
+        ok('I4 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I5. browser storage refuses mid-visit --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'first line before storage breaks');
+        const okBefore = await page.evaluate(function () { return window.__amb().backedUp; });
+        ok('I5 the backup is healthy to begin with', okBefore === true);
+        await page.evaluate(function () {
+          const real = localStorage.setItem.bind(localStorage);
+          window.__realSet = real;
+          localStorage.setItem = function () { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; };
+        });
+        await say(page, 'second line while storage is refusing');
+        const st = await page.evaluate(function () { return window.__amb(); });
+        ok('I5 a refusing store is reported HONESTLY, not hidden', st.backedUp === false, 'backedUp=' + st.backedUp);
+        ok('I5 …while the in-memory capture keeps everything', st.capturedChars > 0, st.capturedChars + ' chars');
+        /* and the visit must still file in full when it ends */
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('I5 …and End Visit still writes the WHOLE visit to the transcript',
+          box.indexOf('first line before storage breaks') >= 0 &&
+          box.indexOf('second line while storage is refusing') >= 0,
+          'first=' + (box.indexOf('first line') >= 0) + ' second=' + (box.indexOf('second line') >= 0));
+        const rev = await page.evaluate(function () { return window.__review(); });
+        ok('I5 …and the review admits the backup was not written',
+          /crash backup could not be written/i.test(rev || ''), (rev || '').slice(0, 120));
+        ok('I5 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I6. the state chip the brief asks for, read off the live DOM --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        const chip = function () {
+          return page.evaluate(function () {
+            const el = document.getElementById('mlsAvKioskState');
+            return el ? (el.textContent || '').trim() : null;
+          });
+        };
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.clock.runFor(1600);
+        const listening = await chip();
+        ok('I6 the screen names its state in ONE place', listening !== null, String(listening));
+        /* the mic opens WITH the question, so the honest answer here is BOTH.
+           The first version of this test expected "Listening" and caught the
+           chip under-reporting: it said "Speaking" while the microphone was
+           already open, which hides the one behaviour the brief leads with. */
+        ok('I6 …and says it is speaking AND listening at once (full duplex)',
+          listening === 'Speaking · listening', String(listening));
+        await toAmbientFrom(page);
+        ok('I6 …Ambiently documenting during the visit', (await chip()) === 'Ambiently documenting', String(await chip()));
+        await page.evaluate(function () { document.getElementById('mlsAvKioskMute').click(); });
+        await page.clock.runFor(400);
+        ok('I6 …Paused when paused', (await chip()) === 'Paused', String(await chip()));
+        await page.evaluate(function () { document.getElementById('mlsAvKioskMute').click(); });
+        await page.clock.runFor(400);
+        ok('I6 …and back to documenting on resume', (await chip()) === 'Ambiently documenting', String(await chip()));
+        ok('I6 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
     }
   } finally {
     await browser.close();

@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.6)
+ * AVATAR — THE VISIT COPILOT (av-5.6.7)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -615,15 +615,38 @@ assert(/isFn\(window\.generateNote\)/.test(source),
     'a note is "ready" only when the note box actually holds something — never on the promise alone');
 }
 
-/* 3q. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.6'"), 'VERSION must move with this train');
+/* 3q. ONE STATE CHIP. The brief names the states it wants shown; they existed
+   only as a class on the root plus four scattered elements, which is not the
+   same as the screen ANSWERING "what is it doing right now". */
+assert(source.includes('var KIOSK_STATES'), 'the state table was removed');
+['Ready', 'Listening', 'Speaking', 'Ambiently documenting', 'Saving', 'Paused'].forEach((label) => {
+  assert(source.indexOf("'" + label + "'") > 0, 'the brief asks for a "' + label + '" state and it is not in the table');
+});
+/* the chip is derived inside kioskMood — the same call that sets the classes —
+   so what the screen says and what the kiosk IS cannot drift apart */
+assert(/function kioskMood\(state, say, answer\) \{[\s\S]{0,400}kioskState\(kiosk\.paused \? 'paused' : \(kiosk\.ambient \? 'documenting'/.test(source),
+  'the chip must be derived from the mood call, not maintained separately');
+/* full duplex is a REAL state: the microphone opens WITH the question, so a
+   chip that said only "Speaking" under-reported the headline behaviour */
+assert(source.includes("duplex: 'Speaking · listening'"), 'the full-duplex state label was removed');
+assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source),
+  'opening the mic during speech must show BOTH states, not pick one');
+/* pause changed kiosk.paused without telling the screen — caught by the proof */
+{
+  const p = slice('function kioskPauseToggle', 'function kioskEndVisit', 'the pause toggle');
+  assert(p.includes("kioskState('paused')"), 'pausing must move the state chip');
+  assert(/kioskState\(kiosk\.ambient \? 'documenting' : 'listening'\)/.test(p), 'resuming must move it back');
+}
+
+/* 3r. the module still reports itself honestly */
+assert(source.includes("var VERSION = 'av-5.6.7'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '566', 'the loader cache token must name av-5.6.6 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '567', 'the loader cache token must name av-5.6.7 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.6): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.7): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');
