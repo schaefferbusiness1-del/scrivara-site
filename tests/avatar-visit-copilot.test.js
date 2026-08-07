@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.7)
+ * AVATAR — THE VISIT COPILOT (av-5.6.8)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -639,14 +639,14 @@ assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source
 }
 
 /* 3r. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.7'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.6.8'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '567', 'the loader cache token must name av-5.6.7 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '568', 'the loader cache token must name av-5.6.8 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.7): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.8): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

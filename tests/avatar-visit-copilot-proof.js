@@ -1459,6 +1459,102 @@ async function say(page, text) {
         ok('J5 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
       }
     }
+    /* ------------------------------------------------------------ K */
+    section('SCENARIO K - DOES IT ACTUALLY FIT? (layout at real screen sizes)');
+    {
+      /* This train added FIVE elements to a screen the brief calls premium and
+         uncluttered: a state chip, an AI disclosure, a mute button, an End
+         Visit button and an orders widget. Nothing has ever checked that they
+         fit — every scenario so far ran at 1280x900. A patient-facing screen
+         that overflows, overlaps or hides its own disclosure is not premium,
+         and none of the logic tests can see it. */
+      const SIZES = [
+        { w: 1280, h: 900, name: 'desktop' },
+        { w: 1366, h: 768, name: 'laptop (short)' },
+        { w: 1024, h: 768, name: 'tablet landscape' },
+        { w: 768, h: 1024, name: 'tablet portrait' },
+        { w: 390, h: 844, name: 'phone' }
+      ];
+      for (const size of SIZES) {
+        const page = await browser.newPage({ viewport: { width: size.w, height: size.h } });
+        const errs = [];
+        page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+        await page.goto(base + '/page.html');
+        await page.evaluate(STUBS);
+        await page.evaluate(function () {
+          document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+        });
+        await page.addScriptTag({ content: AVATAR_SRC });
+        await page.clock.install({ time: new Date('2026-08-07T14:00:00Z') });
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.waitForTimeout(700);
+        /* into ambient with a proposal on screen: the busiest the kiosk gets */
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+        await page.waitForTimeout(200);
+        await page.evaluate(function () {
+          document.getElementById('mlsAvKioskPinInput').value = '1234';
+          document.getElementById('mlsAvKioskPinAmb').click();
+        });
+        await page.waitForTimeout(600);
+        await page.evaluate(function () { window.__emit('order an MRI of the knee', true); });
+        await page.waitForTimeout(400);
+
+        const box = await page.evaluate(function () {
+          function r(id) {
+            const el = document.getElementById(id);
+            if (!el) return null;
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return { hidden: true };
+            const b = el.getBoundingClientRect();
+            return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height };
+          }
+          function overlap(a, c) {
+            if (!a || !c || a.hidden || c.hidden) return false;
+            return a.x < c.r && c.x < a.r && a.y < c.b && c.y < a.b;
+          }
+          const ids = ['mlsAvKioskFace', 'mlsAvKioskAi', 'mlsAvKioskState', 'mlsAvKioskMute',
+            'mlsAvKioskEndVisit', 'mlsAvKioskOrders', 'mlsAvKioskRec'];
+          const got = {};
+          ids.forEach(function (i) { got[i] = r(i); });
+          return {
+            vw: window.innerWidth, vh: window.innerHeight,
+            el: got,
+            docScrollX: document.documentElement.scrollWidth > window.innerWidth + 1,
+            docScrollY: document.documentElement.scrollHeight > window.innerHeight + 1,
+            muteHitsEnd: overlap(got.mlsAvKioskMute, got.mlsAvKioskEndVisit),
+            ordersHitFace: overlap(got.mlsAvKioskOrders, got.mlsAvKioskFace),
+            ordersHitEnd: overlap(got.mlsAvKioskOrders, got.mlsAvKioskEndVisit)
+          };
+        });
+
+        const tag = size.name + ' ' + size.w + 'x' + size.h;
+        const off = [];
+        Object.keys(box.el).forEach(function (id) {
+          const e = box.el[id];
+          if (!e || e.hidden) return;
+          if (e.x < -1 || e.y < -1 || e.r > box.vw + 1 || e.b > box.vh + 1) {
+            off.push(id + '(' + Math.round(e.x) + ',' + Math.round(e.y) + ' ' +
+              Math.round(e.r) + 'x' + Math.round(e.b) + ')');
+          }
+        });
+        ok('K ' + tag + ': nothing is pushed off the screen', off.length === 0, off.join(' '));
+        ok('K ' + tag + ': the page never scrolls', !box.docScrollX && !box.docScrollY,
+          'x=' + box.docScrollX + ' y=' + box.docScrollY);
+        ok('K ' + tag + ': the avatar is visible', !!box.el.mlsAvKioskFace && !box.el.mlsAvKioskFace.hidden &&
+          box.el.mlsAvKioskFace.h > 40, JSON.stringify(box.el.mlsAvKioskFace));
+        ok('K ' + tag + ': the AI disclosure is visible', !!box.el.mlsAvKioskAi && !box.el.mlsAvKioskAi.hidden &&
+          box.el.mlsAvKioskAi.h > 8, JSON.stringify(box.el.mlsAvKioskAi));
+        ok('K ' + tag + ': mute and End Visit do not overlap', box.muteHitsEnd === false);
+        ok('K ' + tag + ': the orders widget does not cover the avatar', box.ordersHitFace === false,
+          JSON.stringify({ orders: box.el.mlsAvKioskOrders, face: box.el.mlsAvKioskFace }));
+        ok('K ' + tag + ': the orders widget does not cover End Visit', box.ordersHitEnd === false);
+        ok('K ' + tag + ': page threw nothing', errs.length === 0, errs.join(' | '));
+        await page.close();
+      }
+    }
   } finally {
     await browser.close();
     server.close();

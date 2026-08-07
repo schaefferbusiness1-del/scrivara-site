@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.7';
+  var VERSION = 'av-5.6.8';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2416,6 +2416,30 @@
       '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
       '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
       '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}}' +
+      /* av-5.6.8 — IT DID NOT FIT. This train added five elements to a centred
+         flex column (state chip, disclosure, mute, End Visit, orders), and a
+         centred column that overflows clips BOTH ends: the doctor's own face
+         was cropped off the top — 49px of it on a phone, 16px on a tablet in
+         portrait. Measured, not guessed; every logic test passed while the
+         screen was cutting the avatar in half.
+         The face is the one element that must yield: it is allowed to shrink
+         (min-height:0 defeats the automatic content floor that blocks
+         shrinking in a column), and the spacing tightens as the viewport gets
+         shorter so the column fits instead of overflowing. */
+      '#mlsAvKioskFaceWrap{flex:0 1 auto;min-height:0}' +
+      '#mlsAvKioskFace{max-height:100%;box-sizing:border-box}' +
+      '@media (max-height:860px){#mlsAvKiosk{gap:1.7vh;padding:2.4vh 4vw}' +
+        '#mlsAvKioskFaceWrap{width:min(32vh,360px);height:min(32vh,360px)}' +
+        '#mlsAvKioskSay{font-size:2.9vh;min-height:7vh}}' +
+      '@media (max-height:720px){#mlsAvKiosk{gap:1.1vh;padding:1.6vh 3vw}' +
+        '#mlsAvKioskFaceWrap{width:min(26vh,300px);height:min(26vh,300px)}' +
+        '#mlsAvKioskSay{font-size:2.5vh;min-height:5.5vh}' +
+        '#mlsAvKioskInterim{min-height:2.2vh}}' +
+      /* narrow screens: the disclosure must stay ONE readable line-block rather
+         than a three-line paragraph that shoves the face off the top */
+      '@media (max-width:560px){#mlsAvKioskAi{font-size:1.55vh;padding:.55vh 1.4vh}' +
+        '#mlsAvKioskState{font-size:1.45vh}' +
+        '#mlsAvKioskMute,#mlsAvKioskEndVisit{padding:8px 13px;font-size:12px}}' +
       '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
       '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
       '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
