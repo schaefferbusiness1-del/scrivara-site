@@ -267,6 +267,11 @@ const tests = [
      opens WITH the question; the risk that creates - the avatar transcribing
      ITSELF into the patient's answer - is what most of this suite guards. */
   'avatar-listens-while-speaking.test.js',
+  /* av-5.6.0 the visit copilot: the room capture survives a reload, the
+     action detector refuses every negated/past/conditional/interrogative form
+     of an order, and nothing consequential is confirmable while a clinically
+     required field was never spoken. */
+  'avatar-visit-copilot.test.js',
   'studio-creations-durability.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',

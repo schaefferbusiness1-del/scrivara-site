@@ -29,7 +29,7 @@ function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
    shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
    could never confirm the build QA had been told to gate on — a module that
    misreports itself makes every downstream verification unfalsifiable. */
-assert(source.includes("var VERSION = 'av-5.5.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.6.0'"), 'version token moved without updating this contract');
 {
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
   const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
