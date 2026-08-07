@@ -14,10 +14,15 @@ names the exact SHA that was gated, not "the tip".
 | Gate | Result |
 |---|---|
 | site — complete registry (`tests/qa-complete-run.js`) | **499/500 — 1 RED** |
-| site — real Chrome live smoke (`test:live-synthetic --runs=1`) | PASS 1/1 cycles |
 | site — Jekyll build + `audit-pages-build.js` | PASS — 321 exact reviewed files |
+| site — real Chrome live smoke | 1 clean pass in 4 attempts — see "live is not a gate here" |
 | backend — `npm test` (48-program chain) | PASS, exit 0, no assertion failures |
 | live origin verification (`mlsscribe.com`) | **NOT POSSIBLE — egress blocked** |
+
+Also gated this session: **PR #9** (`5baccc8d`, the avatar lane) — **501/501 green**,
+and `cache-token-cannot-go-stale` passes there (29 tokens checked, 0 stale). That
+branch contains b940 and carries the token at `20260807av565`, so merging it clears
+the red below.
 
 ### RED: `cache-token-cannot-go-stale.test.js`
 
@@ -64,9 +69,17 @@ go stale again — the same treatment `feat_mls_opnote_integrity.js` already has
   `build-bump-names-its-build.test.js` prints "THIS SUITE CHECKED NOTHING".
 - **`CHROME_PATH=/opt/pw-browsers/chromium`** — the live harnesses only probe the
   `/usr/bin` names.
-- **Run the live suites alone.** A first `live-synthetic-smoke` run against a busy
-  box failed `session-ready-timeout` at 45s; the same commit passed 1/1 with the
-  machine to itself. Contention there produces a false red, not a real one.
+- **Live is not a gate here.** Same command (`--runs=2`), idle box: `main` b940 passed
+  1 of 4 attempts, PR #9 passed 1 of 3. Identical rate on both trees, so the harness is
+  measuring this container and not the code. Failures are `session-ready-timeout`
+  against a 45s budget, mostly in `reload-history-reopen` — the second boot after a
+  hard reload. A pass is real evidence (the app booted, created a patient, saved a note
+  through the live editor, hard-reloaded, restored, completed its cycles in real
+  Chrome); a failure is evidence of nothing. My first read of this — that a busy box
+  caused it — was wrong: it reproduces on an idle one.
+- **`rm -rf _site` before every sweep.** See the skill; a leftover Jekyll build makes
+  `hex-colour-integrity` report 11 failures on a green tree, and `_site/` is gitignored
+  so nothing warns you.
 - **`mlsscribe.com` and `scrivara-backend.onrender.com` are blocked** by this
   environment's egress policy (proxy answers 403 to CONNECT). Deploy status has to
   come from the `pages-deploy.yml` workflow record instead, and no session under this

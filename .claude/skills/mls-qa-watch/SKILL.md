@@ -36,6 +36,13 @@ export CHROME_PATH=/opt/pw-browsers/chromium
 
 They already pass `--no-sandbox` and `--headless=new` on Linux, so no other flag is needed.
 
+**BUILD `_site` AFTER THE SWEEP, NEVER BEFORE.** `jekyll build` leaves a full second
+copy of every published file in `_site/`, and the file-scanning suites walk it:
+`hex-colour-integrity.test.js` then counts every pinned colour twice and reports 11
+failures (`#B07636 occurs 84 time(s), expected 51`) on a tree that is green. `_site/`
+is gitignored, so `git status` stays clean and gives you no hint at all. `rm -rf _site`
+before any sweep, and never leave one behind for the next lane.
+
 ## 1. Gate a candidate
 
 ```bash
@@ -62,6 +69,26 @@ CHROME_PATH=/opt/pw-browsers/chromium npm run test:live-synthetic -- --runs=3
 CHROME_PATH=/opt/pw-browsers/chromium npm run test:live-visible-controls
 CHROME_PATH=/opt/pw-browsers/chromium npm run test:live-a11y-responsive
 ```
+
+**Read a live red as NOTHING until you have re-run it.** Measured 2026-08-07, same
+command (`--runs=2`), idle box, both trees:
+
+| tree | attempts | passes | failures |
+|---|---|---|---|
+| `main` b940 `9a397938` | 4 | 1 | 3 |
+| PR #9 `5baccc8d` | 3 | 1 | 2 |
+
+Same ~1-in-3 pass rate on both, so the difference between the trees is zero and the
+harness is measuring this container, not the code. Failures are `session-ready-timeout`
+against a 45s budget, concentrated in `reload-history-reopen` — the second boot after
+a hard reload, the heaviest path — plus one "timed out waiting for initial local-demo
+auth screen". A *pass* is still real evidence: it means the app booted, created a
+patient, saved a note through the live editor, hard-reloaded, restored, and completed
+its stability cycles in real Chrome. A *failure* is evidence of nothing.
+
+So: this harness is a positive-signal instrument here, not a gate. Do not dispatch a
+lane at a live red without reproducing it several times AND showing the same command
+passing on the parent commit.
 
 Backend: `cd ../scrivara-backend && npm ci && npm test`.
 
