@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.3.2';
+  var VERSION = 'av-5.3.3';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -1822,7 +1822,11 @@
     head.appendChild(line);
     /* av-3.0.0: the headline action — the patient is in the room, start the
        interview on THIS screen for THIS patient. */
-    if (!activeHit && activeId) head.appendChild(visitButton('🎙 Start check-in interview', true, function () { openKiosk(); }));
+    /* Always rendered: gating it on an active patient made it VANISH, which
+       reads as "the feature was removed" (the owner reported exactly that).
+       openKiosk() already refuses honestly with a toast naming the
+       precondition  that refusal is only reachable if the button is. */
+    if (!activeHit) head.appendChild(visitButton('🎙 Start check-in interview', true, function () { openKiosk(); }));
     head.appendChild(visitButton(activeHit ? 'All check-ins' : (total ? 'Open check-ins' : 'Open'), false, function () { open(); }));
     /* av-2.0.2: flag FIRST, then open — the old order consumed the flag
        before it was set (Set up landed on the Ready tab) and left it armed

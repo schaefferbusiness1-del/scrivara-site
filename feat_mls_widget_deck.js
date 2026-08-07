@@ -47,7 +47,7 @@
       '#' + DECK_ID + ' .wd-card h4{margin:0;font:800 13px/1.35 "Plus Jakarta Sans",system-ui,sans-serif;color:#1E2B24;display:flex;align-items:center;gap:6px}',
       '#' + DECK_ID + ' .wd-desc{font:500 11.5px/1.4 system-ui;color:#2E6A4B}',
       '#' + DECK_ID + ' .wd-body{font:500 12.5px/1.5 system-ui;color:#204034;max-height:220px;overflow-y:auto;border-top:1px dashed #E7E5DD;padding-top:6px}',
-      '#' + DECK_ID + ' .wd-body:empty:before{content:"Fills when you generate a note.";color:#C9DCD2;font-weight:600}',
+      '#' + DECK_ID + ' .wd-body:empty:before{content:"Fills when you generate a note.";color:var(--muted,#69736d);font-weight:600}',
       '#' + DECK_ID + ' .wd-acts{display:flex;gap:6px;margin-top:auto;padding-top:4px}',
       '#' + DECK_ID + ' .wd-acts button{border:0;background:#EAF1EE;color:#2E6A4B;border-radius:8px;padding:4px 10px;font:700 11.5px/1.2 system-ui;cursor:pointer}',
       '#' + DECK_ID + ' .wd-acts button:hover{background:#DEEAE3}',
