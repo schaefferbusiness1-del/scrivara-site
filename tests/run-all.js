@@ -336,6 +336,7 @@ const tests = [
   'provider-key-credential-surname.test.js',
   'visit-reason-not-correspondence.test.js',
   'draft-all-panel-collapses-without-hiding-failure.test.js',
+  'tesi-expands-to-the-region-the-text-supports.test.js',
   'tpl-word-junk.test.js',
   'template-library-runtime.test.js',
   'template-recognition-bounded-concurrency.test.js',

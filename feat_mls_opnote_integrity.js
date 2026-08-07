@@ -446,7 +446,8 @@
     var ABBR = [
       [/\blesi\b/i, 'lumbar epidural steroid injection', /\blumbar epidural\b/i],
       [/\bcesi\b/i, 'cervical epidural steroid injection', /\bcervical epidural\b/i],
-      [/\btesi\b/i, 'thoracic epidural steroid injection', /\bthoracic epidural\b/i],
+      /* TESI is handled below, NOT here: it is ambiguous and a flat expansion
+         picks the rare reading. See the block after this loop. */
       [/\btpi\b/i,  'trigger point injection',             /\btrigger point\b/i],
       /* b905 — QA gate: "SIJ inj left" refused while "Left sacroiliac joint
          injection" sat in the library. Safe over-refusal, but still a miss. */
@@ -455,6 +456,31 @@
     for (var ai = 0; ai < ABBR.length; ai++) {
       if (ABBR[ai][0].test(s) && !ABBR[ai][2].test(s)) s += ' ' + ABBR[ai][1];
     }
+    /* 2026-08-06 — TESI IS AMBIGUOUS AND THE OLD EXPANSION PICKED THE RARE
+       READING. It expanded unconditionally to "thoracic", but in an
+       interventional pain practice TESI overwhelmingly means TRANSFORAMINAL.
+       Measured against the owner's real 96-template library: NINE transforaminal
+       templates, ZERO thoracic. So "R L4-5 TESI" scored identically to
+       "R L4-5 thoracic epidural steroid injection" and returned the GENERIC
+       lumbar starter instead of the right-side L4-L5 transforaminal template —
+       a generic op note where a specific one was meant, on the commonest
+       procedure this practice books.
+
+       THE LEVEL IN THE SAME STRING SETTLES IT, so this reads rather than
+       guesses: a thoracic level means thoracic; any other spinal level rules
+       thoracic OUT; and with NO level it asserts NO region at all and appends
+       only "epidural steroid injection", which is true of every reading.
+       Asserting a region from no evidence is what produced this defect. */
+    if (/\btesi\b/i.test(s) && !/\b(?:transforaminal|thoracic)\b/i.test(s)) {
+      if (/\bt(?:1[0-2]|[1-9])\b/i.test(s)) s += ' thoracic epidural steroid injection';
+      else if (/\b[lcs](?:1[0-2]|[1-9])\b/i.test(s)) s += ' transforaminal epidural steroid injection';
+      else s += ' epidural steroid injection';
+    }
+    /* ILESI expanded to NOTHING (\blesi\b cannot match inside it), so
+       "L4-5 ILESI" scored against the library on "L4-5" alone and returned a
+       LEFT TRANSFORAMINAL template — the wrong approach AND a laterality the
+       doctor never wrote. Interlaminar is unambiguous, so this one is flat. */
+    if (/\bilesi\b/i.test(s) && !/\binterlaminar\b/i.test(s)) s += ' interlaminar epidural steroid injection';
     var lead = /^[\s\(\[\*]*([a-z]\s*\/?\s*[a-z]|[a-z])\b/i.exec(s);
     var tag = lead ? lead[1].replace(/[\s\/]/g, '').toLowerCase() : '';
     if (tag === 'bl' && !/\bbilateral\b/i.test(s)) s += ' bilateral';
