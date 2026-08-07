@@ -1836,6 +1836,113 @@ async function say(page, text) {
         await ctx.close();
       }
     }
+    /* ------------------------------------------------------------ N */
+    section('SCENARIO N - THE PHOTO FACE, THE PATIENT, AND REVERT');
+    {
+      /* --- N1. THE DISCLOSURE WITH THE DOCTOR'S REAL PHOTOGRAPH. Every layout
+         check so far ran on the DRAWN face. The disclosure matters most in
+         exactly the case never tested: when the screen is showing the doctor's
+         actual photograph and speaking in a voice chosen to sound like them.
+         That is the combination a patient could mistake for the doctor. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        /* a 1x1 png, which is all kioskSetIdentity needs to take the photo path */
+        const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        await page.evaluate(function (png) {
+          window.__turnQueue = [{
+            ok: true, say: 'Hello, what brings you in today?', done: false,
+            progress: { covered: 1, total: 2 },
+            avatar: { name: 'Dr Vance', faceMode: 'photo', faceImage: png, exitPinSet: true }
+          }];
+          window.__mlsAvatar.openKiosk();
+        }, PNG);
+        await page.clock.runFor(1800);
+        const shot = await page.evaluate(function () {
+          const img = document.querySelector('#mlsAvKioskFace img');
+          const ai = document.getElementById('mlsAvKioskAi');
+          const aiBox = ai ? ai.getBoundingClientRect() : null;
+          const aiCs = ai ? getComputedStyle(ai) : null;
+          return {
+            photo: !!img && String(img.src).indexOf('data:image/') === 0,
+            name: (document.getElementById('mlsAvKioskName') || {}).textContent,
+            aiText: ai ? (ai.textContent || '').trim() : null,
+            aiVisible: !!(aiCs && aiCs.display !== 'none' && aiCs.visibility !== 'hidden' &&
+              Number(aiCs.opacity) > 0 && aiBox.width > 0 && aiBox.height > 0),
+            aiOnScreen: !!(aiBox && aiBox.top >= 0 && aiBox.bottom <= window.innerHeight)
+          };
+        });
+        ok('N1 the kiosk really is showing the doctor\'s photograph', shot.photo === true);
+        ok('N1 …under the doctor\'s name', /Vance/.test(String(shot.name)), String(shot.name));
+        ok('N1 …and the AI disclosure is STILL on screen', shot.aiVisible === true && shot.aiOnScreen === true,
+          JSON.stringify({ visible: shot.aiVisible, onScreen: shot.aiOnScreen }));
+        ok('N1 …saying it is an AI assistant, not the doctor',
+          /\bAI\b/i.test(String(shot.aiText)) && /assistant/i.test(String(shot.aiText)),
+          String(shot.aiText));
+        ok('N1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- N2. THE PATIENT CANNOT CREATE A CLINICAL ORDER. During intake the
+         patient is holding the screen. Anything they say that sounds like an
+         order must produce nothing at all — the widget belongs to the room
+         capture, which only a staff PIN can start. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await page.evaluate(function () {
+          window.__turnQueue = [
+            { ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } },
+            { ok: true, say: 'Thank you.', done: false, progress: { covered: 2, total: 2 } }
+          ];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.clock.runFor(1500);
+        await page.evaluate(function () {
+          window.__emit('order an mri of the lumbar spine without contrast', true);
+        });
+        await page.clock.runFor(3500);
+        const cards = await page.evaluate(function () { return window.__cards(); });
+        const widget = await page.evaluate(function () { return window.__widgetVisible(); });
+        const amb = await page.evaluate(function () { return window.__amb(); });
+        ok('N2 a patient saying an order during intake proposes NOTHING', cards.length === 0,
+          JSON.stringify(cards.map(function (c) { return c.title; })));
+        ok('N2 …and the widget never appears for them', widget === false);
+        ok('N2 …because room capture is not running', amb.running === false);
+        ok('N2 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- N3. REVERT. This module advertises itself as fully reversible, and
+         this train added a chip, two buttons, a widget, a review pane, styles
+         and three timers. A revert that leaves any of them behind leaves a
+         half-installed module on a clinical screen. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'order an mri of the knee');
+        const beforeRevert = await page.evaluate(function () {
+          return { kiosk: !!document.getElementById('mlsAvKiosk'), recs: window.__log.recStarts };
+        });
+        ok('N3 the kiosk is up and recording before revert', beforeRevert.kiosk === true);
+        await page.evaluate(function () { window.__mlsAvatar.revert(); });
+        await page.clock.runFor(3000);
+        const after = await page.evaluate(function () {
+          const ids = ['mlsAvKiosk', 'mlsAvKioskState', 'mlsAvKioskOrders', 'mlsAvKioskReview',
+            'mlsAvKioskMute', 'mlsAvKioskEndVisit', 'mlsAvKioskStyle', 'mlsAvBtn', 'mlsAvVisitCard'];
+          const left = ids.filter(function (i) { return !!document.getElementById(i); });
+          return { left: left, installed: window.__mlsAvatar.installed, recs: window.__log.recStarts };
+        });
+        ok('N3 revert removes every element this train added', after.left.length === 0, after.left.join(', '));
+        ok('N3 …and the module reports itself uninstalled', after.installed === false, String(after.installed));
+        /* the timers are the invisible half: a reverted module that keeps a
+           save or a detect timer alive is still running on the doctor's page */
+        await page.clock.runFor(8000);
+        const recsLater = await page.evaluate(function () { return window.__log.recStarts; });
+        ok('N3 …and nothing restarts the microphone afterwards',
+          recsLater === after.recs, after.recs + ' -> ' + recsLater);
+        ok('N3 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+    }
   } finally {
     await browser.close();
     server.close();

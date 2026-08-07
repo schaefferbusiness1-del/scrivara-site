@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.7.2';
+  var VERSION = 'av-5.7.3';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -4474,6 +4474,7 @@
   }
 
   function ensureVisitCard() {
+    if (reverted) return;
     var view = gid('visitView'); if (!view) return;
     var card = gid('mlsAvVisitCard');
     if (!card) {
@@ -4668,6 +4669,9 @@
 
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
   var retryTimers = [], lifecycleBound = [], visBound = false;
+  /* set by revert(). Several teardown paths are ASYNC and land after revert has
+     finished, so every path that can build UI checks this first. */
+  var reverted = false;
   function scheduleEnsure() {
     /* av-1.3.1: this module is idle-DEFERRED, so the app's ready events can
        fire BEFORE it loads — a fresh login landing on Visit then showed no
@@ -4708,6 +4712,12 @@
     }
   }
   function revert() {
+    /* SET BEFORE ANYTHING ELSE. revert() removes the Visit card at the END, but
+       kioskEndForStaff() above that kicks off an async refresh whose callback
+       REBUILDS the card — so it came back after the module had declared itself
+       uninstalled. A reverted module must leave nothing on the doctor's page.
+       Measured in the browser proof, not reasoned about. */
+    reverted = true;
     retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
     retryTimers = [];
     lifecycleBound.forEach(function (row) { safe(function () { window.removeEventListener(row[0], row[1], false); }); });
