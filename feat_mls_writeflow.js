@@ -74,7 +74,7 @@
   'use strict';
   if (window.__mlsWriteFlow && window.__mlsWriteFlow.installed) return;
 
-  var VERSION = 'wf3-1.0.0'; /* owner 2026-08-04: the write UI remade — one sheet,
+  var VERSION = 'wf3-1.1.0'; /* owner 2026-08-04: the write UI remade — one sheet,
      one Confirm & Send. The pre-send #ez3Confirm interstitial is retired, the
      preferred action probes the exact chart the moment the sheet opens, and the
      single primary button is BOTH the human confirmation and the trusted-click
@@ -1330,6 +1330,12 @@
       unifiedStatus(state, 'Still checking Athena - nothing is sent.', '', { toast: false });
     }, 8000);
     bridge('mlsAppAthenaActionV2', {
+      /* mdx-2.0.0 (wf3 presence port): the sheet is always doctor-initiated, so
+         ask the extension to bring athenaOne forward for the read-only probe -
+         the briefing SPA renders on paused rAF while occluded (2026-08-05:
+         a staged review starved for hours on exactly this). Never while a
+         recording is active; the extension's own focus guards do the rest. */
+      foregroundOk: (typeof window.__mlsDoctorMidVisit === 'function' ? window.__mlsDoctorMidVisit() !== true : true),
       mode: 'probe', action: row.action, patient: bridgeProbePatient, expectedPatient: bridgeProbePatient,
       expectedContext: state.manifest.visit, previewHash: state.manifest.previewHash, manifestHash: state.manifest.manifestHash, payload: row.payload,
       noteText: row.payload.noteText || '', sections: row.payload.sections || [], notePolicy: 'empty_only',
@@ -1371,6 +1377,9 @@
            making them reopen the whole review. */
         var probeErr = S(probe && (probe.error || probe.message || probe.reason)) || 'Athena context could not be verified. Nothing was changed.';
         if (/encounter frame|context.unverified|context.mismatch/i.test(probeErr + ' ' + probeReason)) probeErr += ' To unlock: in athenaOne, open this patient\'s encounter for documentation (check the patient in and open the visit note), then press Check Athena again.';
+        /* mdx-2.0.0: a null probe is a timeout, and the most common cause is an
+           occluded athenaOne tab that cannot paint its briefing. Name the cure. */
+        if (!probe) probeErr += ' If athenaOne is open but behind other windows, click its tab once so it can paint, then press Check Athena again.';
         unifiedStatus(state, probeErr, 'err');
         unifiedRecheckButton(state, row.id);
         return;

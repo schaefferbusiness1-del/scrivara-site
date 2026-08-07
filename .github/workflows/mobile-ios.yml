@@ -1,0 +1,166 @@
+
+# Builds the App Store upload artifact (an .ipa) from app.html, and optionally
+# sends it to TestFlight.
+#
+# Runs on demand only, on a macOS runner — Apple's toolchain does not exist
+# anywhere else, which is also why nobody can hand you a finished iOS build
+# without a Mac somewhere in the loop.
+#
+# WITHOUT the signing secrets this still runs and does an UNSIGNED build, which
+# proves the project compiles and nothing more. With them it archives, exports,
+# and (if `upload` is set) delivers to TestFlight.
+#
+# Secrets required for a signed build (Settings → Secrets → Actions):
+#   IOS_CERTIFICATE_P12_BASE64      Apple Distribution certificate, .p12, base64
+#   IOS_CERTIFICATE_PASSWORD        the .p12 export password
+#   IOS_PROVISIONING_PROFILE_BASE64 App Store provisioning profile, base64
+#   IOS_TEAM_ID                     10-character Apple Developer Team ID
+# And to upload to TestFlight:
+#   APPSTORE_API_KEY_ID             App Store Connect API key id
+#   APPSTORE_API_ISSUER_ID          its issuer id
+#   APPSTORE_API_PRIVATE_KEY        the .p8 contents
+#
+# mobile/store/RUNBOOK.md explains where each of these comes from.
+
+name: Build iOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      buildNumber:
+        description: 'CFBundleVersion (must be higher than the last upload for this version; blank = use mobile/app.config.json)'
+        required: false
+        type: string
+      upload:
+        description: 'Upload to TestFlight after building'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bump build number
+        if: inputs.buildNumber != ''
+        working-directory: mobile
+        run: |
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('app.config.json','utf8'));
+            c.iosBuildNumber = String('${{ inputs.buildNumber }}');
+            if (!/^[0-9]+(\.[0-9]+)*\$/.test(c.iosBuildNumber)) {
+              throw new Error('build number must be numeric, e.g. 7 or 1.2.3');
+            }
+            fs.writeFileSync('app.config.json', JSON.stringify(c, null, 2) + '\n');
+            console.log('iosBuildNumber -> ' + c.iosBuildNumber);
+          "
+
+      - name: Install
+        working-directory: mobile
+        run: npm install --no-audit --no-fund
+
+      - name: Build web assets
+        working-directory: mobile
+        run: npm run build
+
+      - name: Prove the bundle is the reviewed page
+        run: node tests/phone-app-www-build-is-faithful.test.js
+
+      - name: Add + sync the iOS project
+        working-directory: mobile
+        run: |
+          if [ ! -d ios ]; then npx cap add ios; fi
+          npx cap sync ios
+          node scripts/configure-native.mjs
+
+      - name: Install signing material
+        id: signing
+        if: env.IOS_CERTIFICATE_P12_BASE64 != ''
+        env:
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+        run: |
+          # A throwaway keychain, unlocked only for this job, deleted after it.
+          KEYCHAIN=$RUNNER_TEMP/signing.keychain-db
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          echo "$IOS_CERTIFICATE_P12_BASE64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "${{ secrets.IOS_CERTIFICATE_PASSWORD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 -d \
+            > ~/Library/MobileDevice/Provisioning\ Profiles/scrivara.mobileprovision
+
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Archive
+        working-directory: mobile/ios/App
+        run: |
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+              -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+              DEVELOPMENT_TEAM='${{ secrets.IOS_TEAM_ID }}' \
+              CODE_SIGN_STYLE=Automatic \
+              archive
+          else
+            echo "::warning::No signing secrets — building UNSIGNED. This artifact cannot be uploaded to App Store Connect."
+            xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+              -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+              archive
+          fi
+
+      - name: Export .ipa
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          sed "s/__TEAM_ID__/${{ secrets.IOS_TEAM_ID }}/" \
+            mobile/store/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+          ls -la "$RUNNER_TEMP/export"
+
+      - name: Upload to TestFlight
+        if: inputs.upload && steps.signing.outputs.signed == 'true'
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "${{ secrets.APPSTORE_API_PRIVATE_KEY }}" \
+            > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8
+          xcrun altool --upload-app -f "$RUNNER_TEMP"/export/*.ipa -t ios \
+            --apiKey '${{ secrets.APPSTORE_API_KEY_ID }}' \
+            --apiIssuer '${{ secrets.APPSTORE_API_ISSUER_ID }}'
+          rm -rf ~/.appstoreconnect
+
+      - name: Remove signing material from the runner
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/scrivara.mobileprovision || true
+          rm -rf ~/.appstoreconnect || true
+
+      - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.signed == 'true'
+        with:
+          name: scrivara-ios-${{ github.sha }}
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+          retention-days: 14

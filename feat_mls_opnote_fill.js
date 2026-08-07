@@ -193,9 +193,13 @@
   }
   /* onf-1.4.0: mark the row's procedure text from its assigned template so the
      readiness checklist's "Procedure" shows filled once a template is matched. */
-  function syncProcedure(row) {
+  /* b944 PERF: `tl` is now optional. The 1s tick called this once per patient
+     row and each call read the whole template store, so a 19-patient day paid
+     19 library reads a second for a lookup that only ever needs one list. The
+     tick passes the list it already holds; every other caller is unchanged. */
+  function syncProcedure(row, tlIn) {
     if (!row || S(row.proc).trim() || !row.tplId) return;
-    var t = null, tl = templates();
+    var t = null, tl = tlIn || templates();
     for (var i = 0; i < tl.length; i++) if (tl[i] && tl[i].id === row.tplId) { t = tl[i]; break; }
     if (t) { row.proc = S(t.name || '').replace(/^(procedure note:?|op note:?)\s*/i, '').trim(); }
   }
@@ -1605,9 +1609,32 @@
     if (b.type === 'file' || b.querySelector && b.querySelector('input[type=file]')) return false;
     return true;
   }
-  function wireUploadButtons() {
+  /* b944 PERF — DO NOT RE-SCAN THE WHOLE APP EVERY SECOND.
+     This walked document.querySelectorAll('button, a') and read .textContent of
+     every hit, on EVERY tick, for as long as the op-note room was open (the
+     `|| modalOpen()` in tick()). Measured in the shipped app: 1,180 buttons and
+     anchors, ~9ms per pass with layout-free but non-trivial text reads - once a
+     second, forever, competing with the doctor's own clicks. That cadence exists
+     for ONE reason, stated at the call site: the op room's own "Upload
+     templates" button is born dead and must work on the first click. That button
+     is INSIDE the room. So while the room is open the sweep is scoped to the two
+     modals that can hold it, and the whole-document sweep keeps its own lazy
+     every-6-ticks cadence unchanged. Nothing loses its wiring; the first-click
+     guarantee is exactly as strong, over a subtree instead of a document. */
+  function uploadBtnRoots(scoped) {
+    if (!scoped) return [document];
+    var out = [];
+    var a = $('opPrepModal'); if (a) out.push(a);
+    var b = $('templatesModal'); if (b) out.push(b);
+    return out.length ? out : [document];
+  }
+  function wireUploadButtons(scoped) {
     if (!isFn(window.openTemplates)) return;
-    var btns = safe(function () { return document.querySelectorAll('button, a'); }, []);
+    var roots = uploadBtnRoots(scoped), btns = [];
+    for (var r = 0; r < roots.length; r++) {
+      var found = safe(function (root) { return function () { return root.querySelectorAll('button, a'); }; }(roots[r]), []);
+      for (var k = 0; k < found.length; k++) btns.push(found[k]);
+    }
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
       if (!looksDeadUploadBtn(b)) continue;
@@ -1645,8 +1672,9 @@
        where its Upload-templates button must work on the FIRST click (it is
        born dead; the lazy cadence left a ~6s window where clicks did nothing
        - owner bug 2026-07-13) */
-    if (_wireN <= 3 || _wireN % 6 === 0 || modalOpen()) { safe(wireUploadButtons); safe(wrapOpeners); }
     var open = modalOpen();
+    var wholeDoc = (_wireN <= 3 || _wireN % 6 === 0);
+    if (wholeDoc || open) { safe(function () { wireUploadButtons(!wholeDoc); }); safe(wrapOpeners); }
     /* onf-2.1.0: [FILL:] blanks in the MAIN note editor get the same fill box
        (the floating tap-to-start walker is retired; this is the ONE mechanism).
        Skipped while the op modal is open — the modal owns the screen then. */
@@ -1670,7 +1698,8 @@
     safe(injectBar);
     /* set each row's procedure from its matched template + pre-fill the visible
        "Procedure" input on every card (list view too, not just drafted rows). */
-    safe(function () { var op = window._opPrep || []; for (var i = 0; i < op.length; i++) syncProcedure(op[i]); });
+    var tplsThisTick = safe(templates, []);
+    safe(function () { var op = window._opPrep || []; for (var i = 0; i < op.length; i++) syncProcedure(op[i], tplsThisTick); });
     safe(fillProcInputs);
     var tas = noteBoxes();
     for (var i = 0; i < tas.length; i++) {
@@ -1680,7 +1709,7 @@
       if (settled(ta)) continue;
       (function (t) {
         var rw = safe(function () { return (window._opPrep || [])[+t.id.replace('opPrepNote_', '')]; }, null);
-        safe(function () { syncProcedure(rw); });         /* readiness "Procedure" = the matched template */
+        safe(function () { syncProcedure(rw, tplsThisTick); });   /* readiness "Procedure" = the matched template */
         safe(function () { ensureHeader(t); });          /* guarantee personalization (may prepend header) */
         /* onf-2.11.0: measured live at b712 on a resumed draft - box absent,
            no console error, nobody told. Not silent any more. */

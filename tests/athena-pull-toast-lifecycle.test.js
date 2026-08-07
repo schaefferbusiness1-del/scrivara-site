@@ -77,7 +77,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.0.3');
+assert.strictEqual(api.version, '1.1.4');
 
 function dispatch(data) { api._onResultMessage({ data }); }
 function toast() { return document.getElementById('mlsAthenaDoctorToast'); }
@@ -94,42 +94,48 @@ assert.strictEqual(toast(), null, 'managed per-patient failure created a duplica
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'prefetch-1', background: true, ok: false, reason: 'no-tab' });
 assert.strictEqual(toast(), null, 'explicit background failure created a standalone warning');
 
+/* v1.0.4 (2026-08-06) — the owner asked twice to delete the orange failure bar
+   ("I hate this notification just get rid of it", with a screenshot of the
+   search line). It is gone for MANUAL failures too, not only managed ones.
+   What must survive the deletion is asserted below: the notice is still
+   CLAIMED, and success lines still speak. */
 const manualFail = {
   source: 'mls-ext', type: 'mlsAppAllVisitsResult',
   id: 'manual-read-1', ok: false, reason: 'visit-bodies-incomplete'
 };
 assert.strictEqual(api.isManagedPullResult(manualFail), false, 'manual result was incorrectly classified as background');
 dispatch(manualFail);
-const firstWarning = toast();
-assert(firstWarning && firstWarning.className === 'warn', 'manual failure lost its actionable warning');
-assert(firstWarning.innerHTML.includes('Troubleshoot Athena'), 'manual warning lost troubleshooting guidance');
+assert.strictEqual(toast(), null, 'a manual failure raised the orange bar the owner asked us to delete');
+assert.strictEqual(manualFail.__mlsAthenaPullNoticeHandled, 'doctor',
+  'Doctor stopped CLAIMING the failure notice - feat_athena_clarity.js:227 and feat_save_verify.js:515 stand down only on that claim, so the bar would come straight back wearing a different module name');
 
-dispatch(manualFail);
-assert.strictEqual(toast(), firstWarning, 'duplicate manual failure flashed/recreated an already-visible warning');
-
-// Unrelated managed success must not erase a real manual warning.
-dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-mabc12-success1', ok: true, visits: [{}] });
-assert.strictEqual(toast(), firstWarning, 'managed success erased an unrelated manual failure warning');
-
-// A success for another manual action kind is not correlated either.
-dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'manual-search-ok', ok: true, results: [{}] });
-assert.strictEqual(toast(), firstWarning, 'unrelated manual search success erased a pull failure warning');
-
-// A different, unlinked manual pull must not erase the active failure either.
+/* Silence must not cost the honest SUCCESS line. The deleted warning used to
+   park _activeManualFailure, which gated every later success toast; if that
+   state is ever restored without its toast, this catches it. */
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-read-unlinked', ok: true, visits: [{}] });
-assert.strictEqual(toast(), firstWarning, 'unlinked manual pull success erased the active failure warning');
+const okToast = toast();
+assert(okToast && okToast.className === 'ok', 'an earlier failure swallowed a later honest success line');
+assert(okToast.innerHTML.includes('Pulled 1 visit'), 'the success line lost its count');
 
-// A real retry uses a fresh transport ID but links back to failure A. That
-// linked success must clear stale failure state even when the richer clarity
-// module owns the success message and Athena Doctor intentionally stays quiet.
-ctx.__mlsAthenaClarity = { installed: true };
-dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-read-2', retryOf: 'manual-read-1', parentRequestId: 'manual-read-1', ok: true, visits: [{}] });
-assert.strictEqual(toast(), null, 'successful pull did not retire the stale failure warning');
-
+// Managed traffic stays silent on both sides — its batch owner reports once.
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-mabc12-success1', ok: true, visits: [{}] });
+assert.strictEqual(toast(), okToast, 'managed success created a duplicate toast');
 dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-mabc12-next123', ok: true, visits: [] });
-assert.strictEqual(toast(), null, 'managed zero-result created a duplicate toast instead of leaving aggregate UI in control');
+assert.strictEqual(toast(), okToast, 'managed zero-result created a toast instead of leaving aggregate UI in control');
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'mlssi-mabc12-fail1', ok: false, reason: 'no-tab' });
+assert.strictEqual(toast(), okToast, 'managed failure created a standalone warning');
 
-dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'manual-search-1', ok: false, reason: 'no-form' });
-assert(toast() && toast().className === 'warn', 'manual Athena search failure should remain honest and actionable');
+// Clarity owns the richer per-patient success line when installed.
+ctx.__mlsAthenaClarity = { installed: true };
+api.clearToast();
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'manual-read-2', ok: true, visits: [{}] });
+assert.strictEqual(toast(), null, 'Doctor duplicated Clarity per-patient success toast');
 
-console.log('PASS Athena pull toast lifecycle suppresses managed noise, preserves manual warnings, dedupes repeats, and clears stale failures on success');
+// The SEARCH path is the exact one in the owner's screenshot. 'no-form' matched
+// no precondition, so it produced the generic "didn't work - re-run" line.
+const searchFail = { source: 'mls-ext', type: 'mlsAppSearchResult', id: 'manual-search-1', ok: false, reason: 'no-form' };
+dispatch(searchFail);
+assert.strictEqual(toast(), null, 'a failed Athena search still raises the notification the owner deleted');
+assert.strictEqual(searchFail.__mlsAthenaPullNoticeHandled, 'doctor', 'the search failure notice was left unclaimed');
+
+console.log('PASS Athena failure toasts are gone on every path, the notice is still claimed so no other module raises one, and success lines still speak');

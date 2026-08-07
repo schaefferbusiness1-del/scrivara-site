@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
-  var VERSION='tl-1.4.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
+  var VERSION='tl-1.6.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
   var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
@@ -64,12 +64,33 @@
      the steps are drawn and the doctor can see WHICH part is slow and what is
      still to come. Done steps get a tick, the running one a pulsing dot, the
      rest stay quiet. */
+  function fmtDur(ms){ var s=Math.max(0,Math.round(ms/1000)); return s>=60?(Math.floor(s/60)+'m '+(s%60)+'s'):(s+'s'); }
+  /* b882 — the elapsed clock + honest per-step estimate. Always computed from
+     Date.now() differences, never from tick counts: a hidden tab FREEZES
+     timers outright, so a counting clock would freeze with it and resume
+     wrong. The estimate only speaks for the CURRENT step (measured rate ×
+     items left) — a whole-pipeline promise would be a guess dressed as one. */
+  function progressTimeLine(){
+    if(!state.progT0) return '';
+    var now=Date.now(), line='⏱ '+fmtDur(now-state.progT0)+' elapsed';
+    var ph=(state.progPhase||{})[state.progStage];
+    if(ph&&ph.t){
+      if(ph.c>0&&ph.c<ph.t) line+=' · about '+fmtDur((now-(state.progStageT0||now))/ph.c*(ph.t-ph.c))+' left in this step';
+      else if(!ph.c) line+=' · estimating time…';
+    }
+    return line;
+  }
   function paintProgress(stage,current,total,operation){
     try{
       var box=progressBox();if(!box)return;
       var t=Number(total)||0,c=Math.max(0,Math.min(Number(current)||0,t)),pct=t?Math.round(c/t*100):0;
       var steps=state.progStages||[],at=-1,i;
       for(i=0;i<steps.length;i++){ if(steps[i]===stage){at=i;break;} }
+      /* b882 — remember each stage's own count, so a finished stage's bar can
+         stay full while the next stage's bar fills from zero. */
+      state.progPhase=state.progPhase||{};
+      if(t) state.progPhase[stage]={c:c,t:t};
+      if(stage!==state.progStage){ state.progStage=stage; state.progStageT0=Date.now(); }
       var stepsHtml='';
       if(steps.length>1){
         stepsHtml='<ol class="tl-prog-steps">';
@@ -79,6 +100,24 @@
         }
         stepsHtml+='</ol>';
       }
+      /* b882 — the import pipeline gets TWO bars (reading, then recognizing).
+         One bar snapped to 100% the moment the last file was READ and then sat
+         motionless through minutes of serial AI recognition — the owner's
+         90-file import looked hung at "90 / 90". */
+      var READ='Reading files', PARSE='Parsing template content', barsHtml;
+      var ri=steps.indexOf(READ), pi=steps.indexOf(PARSE);
+      if(ri>=0&&pi>=0){
+        var rp=state.progPhase[READ]||{c:0,t:0}, pp=state.progPhase[PARSE]||{c:0,t:0};
+        var rpct=at>ri?100:(rp.t?Math.round(rp.c/rp.t*100):0);
+        var ppct=at>pi?100:(pp.t?Math.round(pp.c/pp.t*100):0);
+        barsHtml=
+          '<div class="tl-prog-sub"><span>1 · Reading files</span><span>'+(rp.t?(at>ri?rp.t:rp.c)+' / '+rp.t:'')+'</span></div>'+
+          '<div class="tl-prog-bar"><i style="width:'+rpct+'%"></i></div>'+
+          '<div class="tl-prog-sub"><span>2 · Recognizing templates</span><span>'+(pp.t?(at>pi?pp.t:pp.c)+' / '+pp.t:'')+'</span></div>'+
+          '<div class="tl-prog-bar tl-prog-bar2"'+(at===pi&&!pp.t?' data-tl-indeterminate="1"':'')+'><i style="width:'+(at===pi&&!pp.t?40:ppct)+'%"></i></div>';
+      } else {
+        barsHtml='<div class="tl-prog-bar"'+(t?'':' data-tl-indeterminate="1"')+'><i style="width:'+(t?pct:40)+'%"></i></div>';
+      }
       box.hidden=false;
       box.innerHTML=
         '<div class="tl-prog">'+
@@ -86,20 +125,29 @@
             '<span class="tl-prog-title">'+esc(state.progLabel||stage||'Working…')+'</span>'+
             (t?'<span class="tl-prog-count">'+c+' / '+t+'</span>':'<span class="tl-prog-count">working…</span>')+
           '</div>'+
-          '<div class="tl-prog-bar"'+(t?'':' data-tl-indeterminate="1"')+'><i style="width:'+(t?pct:40)+'%"></i></div>'+
+          barsHtml+
           '<div class="tl-prog-txt">'+esc(stage||'')+'</div>'+
           stepsHtml+
           (operation&&operation!==stage?'<div class="tl-prog-op">'+esc(operation)+'</div>':'')+
+          '<div class="tl-prog-time" id="tlProgTime">'+esc(progressTimeLine())+'</div>'+
         '</div>';
     }catch(e){}
   }
   /* the strip is a PROGRESS indicator, so it leaves when the work does —
      otherwise a finished import reads as one still running. */
-  function clearProgress(){ try{ var box=byId('tlUploadProgress'); if(box){ box.innerHTML=''; box.hidden=true; } }catch(e){} }
+  function clearProgress(){ try{ state.progGen=(state.progGen||0)+1; state.progT0=0; state.progPhase=null; state.progStage=''; var box=byId('tlUploadProgress'); if(box){ box.innerHTML=''; box.hidden=true; } }catch(e){} }
   function progressStart(opts){
     try{
       state.progStages=(opts&&Array.isArray(opts.stages))?opts.stages.slice():[];
       state.progLabel=(opts&&opts.label)||'Working…';
+      /* b882 — the clock ticks once a second into the time line ONLY (a full
+         repaint per second would fight the event-driven frames). Not an
+         interval: a generation-checked timeout chain that dies the moment
+         clearProgress bumps the generation or progT0 drops — nothing to leak
+         and nothing for the poller ceiling to carry forever. */
+      state.progT0=Date.now(); state.progPhase={}; state.progStage=''; state.progStageT0=0;
+      state.progGen=(state.progGen||0)+1;
+      (function tickLoop(gen){ setTimeout(function(){ try{ if(gen!==state.progGen||!state.progT0) return; var el=byId('tlProgTime'); if(el) el.textContent=progressTimeLine(); tickLoop(gen); }catch(e){} },1000); })(state.progGen);
       paintProgress(state.progStages[0]||state.progLabel,0,(opts&&opts.total)||0,'');
     }catch(e){}
     var api=window.__mlsLoadingCalm,h=null;
@@ -160,6 +208,10 @@
       '#tlUploadProgress .tl-prog-steps li.now{color:#19352a;font-weight:800}',
       '#tlUploadProgress .tl-prog-steps li.now .tl-prog-dot{background:#4f9a72;animation:tlProgPulse 1.15s ease-in-out infinite}',
       '#tlUploadProgress .tl-prog-op{margin-top:7px;font-size:11.5px;color:#5b6d65;line-height:1.5}',
+      /* b882 — the two-bar import layout + the elapsed/ETA line */
+      '#tlUploadProgress .tl-prog-sub{display:flex;justify-content:space-between;gap:10px;margin-top:7px;font-size:11.5px;font-weight:750;color:#5b6d65;font-variant-numeric:tabular-nums}',
+      '#tlUploadProgress .tl-prog-bar2>i{background:linear-gradient(90deg,#54639f,#8073c2)}',
+      '#tlUploadProgress .tl-prog-time{margin-top:8px;font-size:11.5px;font-weight:700;color:#35536f;font-variant-numeric:tabular-nums}',
       '@keyframes tlProgSlide{0%{transform:translateX(-100%)}100%{transform:translateX(320%)}}',
       '@keyframes tlProgPulse{0%,100%{box-shadow:0 0 0 0 rgba(79,154,114,.55)}50%{box-shadow:0 0 0 5px rgba(79,154,114,0)}}',
       /* a clinical surface never animates at someone who asked it not to */
@@ -279,7 +331,7 @@
 
   function importBody(custom){
     custom=custom||{};var selected=setFor(custom.targetSetId!==undefined?custom.targetSetId:state.selectedSetId),pending=custom.templates||((window._tplPendingSplit||[]).filter(function(t){return t&&t.keep!==false&&S(t.text).trim();}));if(!Array.isArray(pending))pending=[];
-    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:custom.scope||(byId('tlScope')&&byId('tlScope').value)||(selected&&selected.scope)||'account',facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:t.providerId||'',facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true};}),removeTemplateIds:custom.removeTemplateIds||[]};
+    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:custom.scope||(byId('tlScope')&&byId('tlScope').value)||(selected&&selected.scope)||'account',facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:t.providerId||'',facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
   }
 
   function countsHtml(counts){var keys=['added','updated','duplicated','rejected','unchanged','removed'];return '<div class="tl-counts">'+keys.map(function(key){return '<span class="tl-count '+(key==='rejected'?'bad':'')+'">'+key+': '+(Number(counts&&counts[key])||0)+'</span>';}).join('')+'</div>';}
@@ -313,7 +365,7 @@
     box.innerHTML='<div class="tl-import-review"><b>Import preview — nothing saved yet</b>'+countsHtml(preview.counts)+'<div>Resulting set: '+preview.proposedTemplateCount+' template'+(preview.proposedTemplateCount===1?'':'s')+'.</div>'+
       (rejected.length?'<div style="color:#982c2c;margin-top:5px">'+rejected.map(function(x){return esc((x.name||'Row '+(x.index+1))+': '+x.reason);}).join('<br>')+'</div>':'')+
       '<label style="display:block;margin:8px 0"><input type="checkbox" id="tlActivateAfter" style="width:auto"> Activate this set after commit'+(preview.targetSetId?' (current selection remains active if already active)':'')+'</label>'+
-      '<button data-tl-import="commit" '+(preview.canCommit?'':'disabled')+'>Commit one recoverable version</button> <button data-tl-import="cancel">Cancel</button></div>';
+      '<button data-tl-import="commit" '+(preview.canCommit?'':'disabled')+'>💾 Save these templates now (one recoverable version)</button> <button data-tl-import="cancel">Cancel</button></div>';
     box.onclick=importClick;try{box.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}flashReview(box);
   }
 
@@ -373,10 +425,28 @@
       if(!hosted())return originals.tplAddSplit.apply(this,arguments);
       var self=this,args=arguments,btn=null;
       try{var box=byId('tplMultiResult');btn=box?box.querySelector('button[onclick*="tplAddSplit"]'):null;if(btn){btn.disabled=true;btn.textContent='⏳ Adding templates…';}}catch(e){}
-      /* Cloud preview failed (endpoint missing, session expired, server error):
-         nothing was saved server-side, so fall back to the proven device add —
-         the user's selection must never silently vanish. */
-      return previewImport().catch(function(){
+      /* tl-1.6.0 — ADD MEANS ADD. The owner imported 77 templates, read
+         "added: 77" on the card and walked away — but the card was a PREVIEW
+         and the 77 sat unsaved behind "Commit one recoverable version"
+         (his Saved list still showed 3). When the preview is CLEAN
+         (committable, nothing rejected, nothing removed) the second click
+         carries no decision, so commit immediately; the preview card only
+         parks when something genuinely needs judgment. previewImport() itself
+         still stops at pending — the runtime pins on preview/commit semantics
+         are untouched; only this click path chains them. */
+      return previewImport().then(function(preview){
+        try{
+          var c=(preview&&preview.counts)||{};
+          if(preview&&preview.canCommit&&state.pending&&!(Number(c.rejected)||0)&&!(Number(c.removed)||0)){
+            /* a commit failure (e.g. version conflict) has its own recovery UX
+               inside commitPending — it must NOT fall through to the device-add
+               fallback below, which exists for PREVIEW failures only (a commit
+               retried after a device add would double-import). */
+            return commitPending().catch(function(){ return null; });
+          }
+        }catch(e){}
+        return preview;
+      }).catch(function(){
         try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
         return originals.tplAddSplit.apply(self,args);
       }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
@@ -411,8 +481,25 @@
       try{state.editingId='';}catch(e){}
       return out;};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}
     if(isFn(window.editTemplate)&&!window.editTemplate.__tl){originals.editTemplate=window.editTemplate;var editWrap=function(id){state.editingId=id;return originals.editTemplate.apply(this,arguments);};editWrap.__tl=true;window.editTemplate=editWrap;}
-    if(isFn(window._tplReadAnyFile)&&!window._tplReadAnyFile.__tl){originals.readFile=window._tplReadAnyFile;var readWrap=async function(file){var out=await originals.readFile.apply(this,arguments);if(activeUpload){activeUpload.done++;progressStage(activeUpload.handle,'Parsing template content',activeUpload.done,activeUpload.total,'Parsed '+S(file&&file.name||'file')+'.');}return out;};readWrap.__tl=true;window._tplReadAnyFile=readWrap;}
-    if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){originals.tplMultiFile=window.tplMultiFile;var uploadWrap=function(ev,providedHandle){var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');if(uploadRuns[fp])return uploadRuns[fp];var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});if(files.length>500||invalid.length){var er=new Error(files.length>500?'Import at most 500 files at a time.':'Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});var handle=providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:10*60*1000,replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});var run=(async function(){try{progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');activeUpload={handle:handle,total:files.length,done:0};progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');await originals.tplMultiFile.call(window,{target:{files:files,value:''}});progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');if(handle)handle.complete('Template review ready.');return found;}catch(error){if(handle)handle.fail(error);throw error;}finally{activeUpload=null;delete uploadRuns[fp];}})();uploadRuns[fp]=run;return run;};uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;}
+    /* b882 — reads report as 'Reading files' (they used to report as 'Parsing
+       template content', which lit the parse step and parked the bar at N/N
+       while recognition had not even begun — the "stuck at 90/90" report). */
+    if(isFn(window._tplReadAnyFile)&&!window._tplReadAnyFile.__tl){originals.readFile=window._tplReadAnyFile;var readWrap=async function(file){var out=await originals.readFile.apply(this,arguments);if(activeUpload){activeUpload.done++;progressStage(activeUpload.handle,'Reading files',activeUpload.done,activeUpload.total,'Read '+S(file&&file.name||'file')+'.');}return out;};readWrap.__tl=true;window._tplReadAnyFile=readWrap;}
+    /* b882 — the recognition loops in ScribeFlow (batch per-file, pair
+       per-file, splitter per-chunk) announce themselves through this hook so
+       the second bar moves file by file. Outside an active upload run it
+       stays a no-op: the strip has no owner to retire it then, and a bar
+       nobody clears is a lie about work still running. */
+    if(!window._tplPhaseTick||!window._tplPhaseTick.__tl){var phaseTick=function(kind,done,total,label,found){
+      try{
+        if(!activeUpload)return;
+        var n=Number(found)||0,d=Number(done)||0,t=Number(total)||0;
+        var suffix=' — '+n+' template'+(n===1?'':'s')+' found so far.';
+        if(kind==='recognize'){activeUpload.parse={c:d,t:t};progressStage(activeUpload.handle,'Parsing template content',d,t,'Recognizing '+S(label||'file')+suffix);}
+        else if(kind==='recognize-part'){var pp=activeUpload.parse||{c:0,t:0};progressStage(activeUpload.handle,'Parsing template content',pp.c,pp.t,S(label||'file')+' · part '+(d+1)+'/'+(t||1)+suffix);}
+      }catch(e){}
+    };phaseTick.__tl=true;window._tplPhaseTick=phaseTick;}
+    if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){originals.tplMultiFile=window.tplMultiFile;var uploadWrap=function(ev,providedHandle){var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');if(uploadRuns[fp])return uploadRuns[fp];var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});if(files.length>500||invalid.length){var er=new Error(files.length>500?'Import at most 500 files at a time.':'Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});var handle=providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:Math.min(60*60*1000,5*60*1000+files.length*20*1000),replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});/* b882 — the deadline is ABSOLUTE (LoadingCalm never extends it on activity), and a 90-file import with OCR or AI-split legitimately outruns a flat 10 minutes — it then read "took longer than expected and stopped" while still working. Scale with the batch: 5 min + 20 s per file, capped at the 1-hour clamp. */var run=(async function(){try{progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');activeUpload={handle:handle,total:files.length,done:0};progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');await originals.tplMultiFile.call(window,{target:{files:files,value:''}});progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');if(handle)handle.complete('Template review ready.');return found;}catch(error){if(handle)handle.fail(error);throw error;}finally{activeUpload=null;delete uploadRuns[fp];}})();uploadRuns[fp]=run;return run;};uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;}
   }
 
   function install(){wrapFunctions();ensurePanel();if(hosted())setTimeout(function(){refresh({silent:true});},0);}

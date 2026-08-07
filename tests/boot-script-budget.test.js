@@ -369,7 +369,56 @@ const LOADER = 'mls-connect.js';
  *     requests, zero behaviour between them). That needs a build step this repo
  *     does not have, so it is recorded here as owed rather than pretended away.
  *     Do not raise this ceiling again for a stylesheet module; bundle instead. */
-const CEILING = 252;
+/* 2026-08-05 cpw-1.0.0 (owner-ordered Copilot Power): +1 loader,
+ *   feat_mls_copilot_power.js — the Copilot's app-wide senses and its
+ *   confirm-by-tap agentic executors (pullProviders/draftNote).
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout): the Copilot cannot be
+ *     asked anything before sign-in completes, so EAGER_CEILING does not move.
+ *     No timers, no observers; lifecycle events only.
+ * 2026-08-05 av-1.0.0 (owner-ordered AVATAR): +1 loader, feat_mls_avatar.js —
+ *   the doctor side of the patient-facing check-in interviewer (program the
+ *   questions, ready badge, bullet inbox, one-tap chart import).
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout): check-ins are read
+ *     minutes-to-hours after boot, so EAGER_CEILING does not move. Badge
+ *     refresh is event-driven (app-ready + tab refocus, 2-min floor) — no
+ *     permanent polling; the bounded mount ladder mirrors the request inbox.
+ *
+ * 2026-08-05 td-1.0.0 (owner-ordered POST-OP VIDEO VISIT): +1 loader,
+ *   feat_mls_tele_doctor.js — the doctor's accept-and-call surface for a
+ *   patient asking to talk after a procedure.
+ *   - DEFERRED (requestIdleCallback, 3s timeout): a request that arrives is
+ *     minutes old by definition, so EAGER_CEILING does not move.
+ *   - NO STANDING INTERVAL, which is why this is +1 script and +0 pollers.
+ *     It makes ONE request per session and then STANDS DOWN PERMANENTLY if the
+ *     route is absent (404/501/unreachable) — the telehealth backend is on a
+ *     branch, so on today's production this module costs exactly one fetch and
+ *     then nothing, forever. When the backend does deploy it re-arms on a
+ *     bounded setTimeout chain that never schedules while the tab is hidden and
+ *     resumes on visibilitychange.
+ *   - Renders nothing at all unless a real pending request comes back, so its
+ *     boot work over a 1,481-patient store is a single conditional. */
+/* 2026-08-07 opdb-1.0.0 (owner-ordered OP-NOTE DAY BRAIN): +1 loader,
+ *   feat_mls_opnote_daybrain.js — AI-assisted template matching layered over
+ *   the deterministic ranker, and the procedure-aware day triage that stops
+ *   "Draft all op notes" writing an operative note for a patient who never had
+ *   a procedure.
+ *   - DEFERRED (requestIdleCallback, 2.5s timeout), so EAGER_CEILING does not
+ *     move and the post-login burst this ceiling guards is unchanged. Op notes
+ *     are minutes-after-boot work by definition — the surface does not exist
+ *     until the doctor opens the op-note room by hand.
+ *   - NO INTERVAL and NO OBSERVER, so INTERVAL_CEILING and OBSERVER_CEILING do
+ *     not move either. It waits for feat_mls_opnote_integrity.js on a BOUNDED
+ *     setTimeout ladder (25 tries at 400ms, then inert), which is the same
+ *     pattern the request inbox uses, and one delegated document click
+ *     listener — not a listener per row.
+ *   - Its boot work over a 1,481-patient store is ZERO: every entry point is a
+ *     wrapper that only does work once window._opPrep exists, which requires
+ *     openOpPrep() to have run. Nothing is read, parsed or rendered at install.
+ *   - The AI hop is strictly on demand, sequential (never a burst), and only
+ *     for rows the deterministic matcher itself declined to call confident.
+ *     With no key and no session it never fires at all and the surface falls
+ *     back to exactly today's deterministic behaviour. */
+const CEILING = 256;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first

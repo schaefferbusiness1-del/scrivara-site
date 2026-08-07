@@ -237,7 +237,7 @@
        Found by tests/opnote-room-walkthrough-runtime.test.js. */
     if (SEL >= rows.length) SEL = rows.length - 1;
     if (SEL < 0) SEL = 0;
-    if (rows.length < 2) { nav.innerHTML = ''; return; }   /* single-patient mode needs no nav */
+    if (rows.length < 2) { if (nav.__oprHtml !== '') { nav.innerHTML = ''; nav.__oprHtml = ''; } return; }   /* single-patient mode needs no nav */
     var h = '<div class="opr-rail-title">Patients — ' + rows.length + '</div>';
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
@@ -255,7 +255,14 @@
         + '<span class="opr-nav-st">' + esc(state) + '</span></span>'
         + '</button>';
     }
-    nav.innerHTML = h;
+    /* b944 PERF — WRITE ONLY WHEN THE MARKUP ACTUALLY CHANGED.
+       buildRails() runs after EVERY opPrepRender, and opPrepRender runs on
+       nearly every control in this room, so this rail was being torn down and
+       reparsed on clicks that changed nothing about it. innerHTML is not a
+       cheap assignment: it destroys and re-creates every button, invalidates
+       layout, and drops any focus inside. Comparing the string first makes an
+       unchanged rail free, and an unchanged rail is the common case. */
+    if (nav.__oprHtml !== h) { nav.innerHTML = h; nav.__oprHtml = h; }
     /* one delegated listener, re-attached with the innerHTML rebuild */
     nav.onclick = function (e) {
       var b = e.target && e.target.closest ? e.target.closest('.opr-nav-item') : null;
@@ -391,18 +398,29 @@
     return { i: i, row: rows[i] };
   }
 
+  var RAIL_FILTER = '';   /* b899 — the rail's name filter, survives rebuilds */
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
     var list = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
+    /* b899 — 96 templates in library-insertion order is creation-time noise;
+       alphabetical, with a name filter above (owner request 2026-08-06). */
+    list = list.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); });
+    var q = String(RAIL_FILTER || '').trim().toLowerCase();
+    var shown = q ? list.filter(function (t) { return String(t.name || '').toLowerCase().indexOf(q) >= 0; }) : list;
     var cur = curRow();
     var appliedId = cur && cur.row ? S(cur.row.tplId || '') : '';
-    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + '</div>';
+    var h = '<div class="opr-rail-title">Your templates &mdash; ' + list.length + (q ? ' &middot; ' + shown.length + ' match' + (shown.length === 1 ? '' : 'es') : '') + '</div>';
+    if (list.length > 5 || q) {
+      h += '<div class="opr-tpl-search"><input id="oprTplSearch" type="search" placeholder="Search templates by name…" aria-label="Search templates by name" autocomplete="off"></div>';
+    }
     if (!list.length) {
       h += '<div class="opr-tpl-empty">None uploaded yet. Drafts follow your templates &mdash; add them on the Templates tab.</div>';
+    } else if (!shown.length) {
+      h += '<div class="opr-tpl-empty">No template name contains &ldquo;' + esc(RAIL_FILTER) + '&rdquo;. Clear the search to see all ' + list.length + '.</div>';
     } else {
       var hOf = safe(function () { return window.__mlsTplPrepFix && isFn(window.__mlsTplPrepFix.healthOf) ? window.__mlsTplPrepFix.healthOf : null; }, null);
-      for (var i = 0; i < list.length; i++) {
-        var t = list[i];
+      for (var i = 0; i < shown.length; i++) {
+        var t = shown[i];
         var health = hOf ? safe((function (tt) { return function () { return hOf(tt); }; })(t), null) : null;
         var cls = health ? health.cls : '';
         var lbl = health ? health.label : '';
@@ -425,7 +443,36 @@
           + '</button>';
       }
     }
-    rail.innerHTML = h;
+    /* b899 — typing in the filter rebuilds this rail, and innerHTML replacement
+       destroys focus mid-word. Remember focus + caret, restore after. */
+    var hadFocus = document.activeElement && document.activeElement.id === 'oprTplSearch';
+    var selStart = RAIL_FILTER.length, selEnd = RAIL_FILTER.length;
+    if (hadFocus) {
+      try {
+        var _a = document.activeElement;
+        if (_a.selectionStart != null) { selStart = _a.selectionStart; selEnd = _a.selectionEnd; }
+      } catch (eSel) {}
+    }
+    /* b944 PERF — same law as the patient rail above, and it matters more here
+       because this one carries the WHOLE library (96 templates on the owner's
+       account): ~38KB of markup and 96 buttons, re-parsed after every repaint
+       of the room. The health line for each of those templates is computed
+       above, so skipping the write is only half the saving - but it is the half
+       that costs layout. When nothing changed there is also nothing to restore,
+       so the focus/caret dance below is skipped with it. */
+    var changed = (rail.__oprHtml !== h);
+    if (changed) { rail.innerHTML = h; rail.__oprHtml = h; }
+    var searchInp = $('oprTplSearch');
+    if (searchInp && changed) {
+      searchInp.value = RAIL_FILTER;
+      searchInp.oninput = function () { RAIL_FILTER = this.value; buildTplRail(); };
+      /* b905 — RESTORE WHERE THE CARET WAS, NOT THE END OF THE LINE. The rebuild
+         destroys and recreates this input on every keystroke, and jumping to
+         value.length meant any correction made mid-string silently landed at
+         the end instead: type "lumbar", click before the "l", type a character,
+         and it appended. Measured live: caret at 4 came back at 7. */
+      if (hadFocus) { try { searchInp.focus({ preventScroll: true }); searchInp.setSelectionRange(selStart, selEnd); } catch (eF) {} }
+    }
 
     /* One delegated listener, re-attached with every innerHTML rebuild - the
        idiom buildNav already uses. Detached in revert() alongside the nav. */
@@ -545,7 +592,7 @@
   var TPL_MODES = [
     ['strict', 'Follow it closely', 'Keeps your wording. Fills only what varies.'],
     ['adapt', 'Adapt to the case', 'Keeps your structure, adapts the wording. Recommended.'],
-    ['guide', 'Use it as a guide', 'Keeps your headings, writes the prose its own way.']
+    ['guide', 'Use it as a guide — concise', 'Keeps your headings, writes tighter prose in its own words.']
   ];
   var TPL_MODE_KEY = 'opNoteTemplateMode';
 
@@ -1108,12 +1155,16 @@
         }
         showTab('procs');
       } catch (e9) {}
-      try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.onclick = null; } } catch (e4) {}
+      /* b944: the write-if-changed caches live ON the nodes, and these nodes
+         outlive the module. Emptying the rail without clearing its cache would
+         leave a re-installed module believing the markup it is about to write
+         is already there - an empty rail that never comes back. */
+      try { var a = $('oprRowNav'); if (a) { a.innerHTML = ''; a.__oprHtml = null; a.onclick = null; } } catch (e4) {}
       /* onkeydown as well as onclick: the keyboard handler was added in the same
          change that made the Edit affordance reachable, and revert() forgot it -
          so a reverted module left a live key handler on a node it no longer owns.
          Found by tests/opnote-room-walkthrough-runtime.test.js. */
-      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
+      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.__oprHtml = null; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
       /* the mode control is a node THIS module created, so revert removes it
          entirely rather than emptying it - leaving an orphan box would be a
          visible artefact of a module that is supposed to be gone. */

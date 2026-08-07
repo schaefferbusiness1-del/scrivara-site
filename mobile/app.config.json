@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "THE ONE PLACE THE APP'S IDENTITY IS DEFINED. Every other file derives from",
+    "it: capacitor.config.json, the Android applicationId, the iOS bundle id, the",
+    "store listings, and the generated www/. Change a value here and re-run",
+    "`npm run build` in mobile/ — do not hand-edit the derived files.",
+    "",
+    "displayName: what appears under the icon and at the top of both store",
+    "listings. It is 'Scrivara' rather than 'MLS' deliberately: in an app store",
+    "'MLS' reads as Multiple Listing Service, which is a discoverability problem",
+    "and a plausible review problem. If the owner wants 'MLS' anyway, this single",
+    "string is the whole change.",
+    "",
+    "appId: the bundle identifier / applicationId. It is PERMANENT. Once a build",
+    "is uploaded under it, neither store lets you change it — a different id is a",
+    "different app with a different listing, a different review, and no upgrade",
+    "path for anyone who installed the first one. Decide it before the first",
+    "upload, not after."
+  ],
+  "displayName": "Scrivara",
+  "appId": "com.scrivara.app",
+  "version": "1.0.0",
+  "androidVersionCode": 1,
+  "iosBuildNumber": "1",
+  "apiBase": "https://scrivara-backend.onrender.com",
+  "themeColor": "#F7F5EF",
+  "themeColorDark": "#141A16",
+  "brandColor": "#2E6A4B",
+  "supportEmail": "support@mlsscribe.com",
+  "privacyUrl": "https://mlsscribe.com/privacy.html",
+  "termsUrl": "https://mlsscribe.com/terms.html",
+  "marketingUrl": "https://mlsscribe.com/"
+}

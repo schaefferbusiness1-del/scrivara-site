@@ -1,0 +1,19 @@
+{
+  "id": "/app.html",
+  "name": "Scrivara",
+  "short_name": "Scrivara",
+  "description": "Pull a day out of athenaOne and read a patient's chart, from your phone.",
+  "start_url": "/app.html",
+  "scope": "/app.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F5EF",
+  "theme_color": "#F7F5EF",
+  "categories": ["medical", "productivity"],
+  "icons": [
+    { "src": "app-icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "app-icon-maskable-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}

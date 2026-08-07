@@ -42,8 +42,8 @@ assert(/HIPAA compliant/i.test(assist), 'assist states the confirmed HIPAA postu
 assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only language must be gone from assist');
 
 const download = read('get-extension.html');
-assert(/MLS_Assist_v3\.0\.44\.zip/.test(download) &&
-  /54622758c4e1543c24560a9bba649ad446ebebaabf47052aab1174fcd6f4bb77/i.test(download) &&
+assert(/MLS_Assist_v3\.0\.45\.zip/.test(download) &&
+  /cdd6d083902a0fc583a6f723b415cc1cdb6a01540840c677a4eddb2c32806273/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));
@@ -124,7 +124,7 @@ const feed = JSON.parse(read('extension-version.json'));
    3.0.23 2026-07-27 (mlsAppChartIdentity bridge verb for the bidirectional
    follow); 3.0.5 2026-07-24; 3.0.4 2026-07-21 (label-only delta on the 3.0.0
    core), each loaded and live-verified before its pin move. */
-assert.strictEqual(feed.version, '3.0.44', 'public feed must state the released stable channel exactly');
+assert.strictEqual(feed.version, '3.0.45', 'public feed must state the released stable channel exactly');
 
 const lawyers = read('lawyers.html');
 assert(!/ipapi\.co|ipwho\.is|get\.geojs\.io|detectState\s*\(/i.test(lawyers));

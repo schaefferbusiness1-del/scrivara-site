@@ -2229,6 +2229,14 @@ function mlsAthenaTeachWatcherFn(config) {
         return { ok: false, blocked: true, reason: 'write-safety-guard-missing', error: 'The write-safety guard failed to load; this action is blocked. Nothing was changed.' };
       }
       /* MLS_WRITE_SAFETY_GATE_END */
+      /* mdx-2.0.0 (wf3 presence port): the read-only probe drives the briefing
+         SPA, which renders on paused rAF while the athena tab is occluded - the
+         2026-08-05 staging session starved on exactly this. When the sheet asks
+         (doctor-initiated, not mid-recording), reuse the pulls' fg-1.x front
+         lane - every focus guard in it applies (never fronts when Chrome is
+         unfocused, respects the doctor-moved latch); failure is silent and the
+         probe proceeds to its honest bounded timeout. Probe mode only. */
+      if (mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function') { try { await self.__mlsFrontAthenaForRead(sender && sender.tab && sender.tab.id); } catch (eFgProbe) {} }
       var actionToken = '', rec = null;
       if (mode === 'execute') {
         actionToken = clean(msg.actionToken); rec = tokens[actionToken];
@@ -2512,7 +2520,7 @@ function mlsAthenaTeachWatcherFn(config) {
     if (entryEpoch !== Number(QP.epoch || 0)) return 'limp';
     var p = ensureBody(tab, senderTabId).catch(function () { return 'limp'; });
     QP.pending = p;
-    try { return await p; } finally { if (QP.pending === p) QP.pending = null; qpTouch(); }
+    try { var __qpV = await p; try { self.__mlsQpLastVerdict = { v: String(__qpV || ''), at: Date.now() }; } catch (eQpV) {} return __qpV; } finally { if (QP.pending === p) QP.pending = null; qpTouch(); }
   }
   self.__mlsQpEnsure = qpEnsure;
 
@@ -5550,6 +5558,7 @@ var mlsProv = (function () {
       return r && r.result === true;
     } catch (e) { return null; }
   }
+  try { self.__mlsProbeSessionExpired = __mlsProbeSessionExpired; } catch (eSxExport) {} /* sx-1.1: the allvisits listener lives outside this function scope and reaches the probe via self */
   /* ---- v1.51: hands-free schedule DATE navigation (read-only nav) ---- */
   if (msg.type === 'mlsAppGotoDateRequest') {
     const __gotoStartedAt = Date.now();
@@ -6114,6 +6123,13 @@ var mlsProv = (function () {
          app-end owns the final release. Failed/expired reads clean up now. */
       if (payload && payload.ok === true) { if (self.__mlsDayScheduleQpOwner === __schedGuard.token) self.__mlsDayScheduleQpOwner = ''; }
       else __schedCleanup('schedule-terminal', false);
+      if (payload && payload.ok !== true) {
+        /* sx-1.1: bounded (2.5s) session probe rides schedule-read failures. */
+        Promise.race([(typeof self.__mlsProbeSessionExpired === 'function') ? self.__mlsProbeSessionExpired() : Promise.resolve(null), new Promise(function (rsSx) { setTimeout(function () { rsSx(null); }, 2500); })])
+          .then(function (expSx) { __schedRawRespond(Object.assign({}, payload || {}, { sessionLikelyExpired: expSx === true, id: __schedRequestId, requestId: __schedRequestId, deadlineAt: __schedGuard.deadline })); },
+                function () { __schedRawRespond(Object.assign({}, payload || {}, { id: __schedRequestId, requestId: __schedRequestId, deadlineAt: __schedGuard.deadline })); });
+        return true;
+      }
       __schedRawRespond(Object.assign({}, payload || {}, { id: __schedRequestId, requestId: __schedRequestId, deadlineAt: __schedGuard.deadline }));
       return true;
     }
@@ -7462,6 +7478,15 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       if (chartResponseSent) return false;
       chartResponseSent = true;
       if (chartDeadlineTimer != null) { try { clearTimeout(chartDeadlineTimer); } catch (eClearChartTimer) {} }
+      if (payload && payload.ok !== true) {
+        /* sx-1.1: the bounded (2.5s) session probe rides EVERY chart-read failure
+           response, so a dead athena session is named at the first failed read,
+           not after the batch grinds N failures. ok:true responses never probe. */
+        Promise.race([(typeof self.__mlsProbeSessionExpired === 'function') ? self.__mlsProbeSessionExpired() : Promise.resolve(null), new Promise((rsSx) => { setTimeout(() => { rsSx(null); }, 2500); })])
+          .then((expSx) => { sendResponse(Object.assign({}, payload || {}, { sessionLikelyExpired: expSx === true, requestId: chartRequestGuard.token, deadlineAt: chartRequestGuard.deadline })); },
+                () => { sendResponse(Object.assign({}, payload || {}, { requestId: chartRequestGuard.token, deadlineAt: chartRequestGuard.deadline })); });
+        return true;
+      }
       sendResponse(Object.assign({}, payload || {}, { requestId: chartRequestGuard.token, deadlineAt: chartRequestGuard.deadline }));
       return true;
     };
@@ -9477,7 +9502,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var effStabN = Math.max(Number(stabN) || 0, Number(cfg && cfg.outerStableN) || 0);
           var effStabMs = Math.max(Number(stabMs) || 0, Number(cfg && cfg.outerStableMs) || 0);
           if (!(effStabN >= 6 && effStabMs >= 20000)) {
-          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering[' + listKids + '/' + evTotal + ';rows=' + g.rows.length + stab + ';outerN=' + (Number(cfg && cfg.outerStableN) || 0) + ';outerMs=' + (Number(cfg && cfg.outerStableMs) || 0) + ']', declaredEvents: evTotal, renderedListItems: listKids };
+          return { ok: false, count: 0, score: 0, reason: 'visits-list-still-rendering[' + listKids + '/' + evTotal + ';rows=' + g.rows.length + stab + ';outerN=' + (Number(cfg && cfg.outerStableN) || 0) + ';outerMs=' + (Number(cfg && cfg.outerStableMs) || 0) + ']', declaredEvents: evTotal, renderedListItems: listKids, effStabN: effStabN, effStabMs: effStabMs, parsedRows: g.rows.length };
           }
           acceptedOnStability = true;
         }
@@ -10411,7 +10436,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       /* One definition of a noise surface, shared with the candidate walk below.
          Fails OPEN: a result with no frameUrl is kept, so this can only remove a
          frame that identified itself as noise, never one that stayed silent. */
-      var NOISE_SURFACE_RE = /stm.esp|globalnav|statusbar|inbox|messag|findpatient.esp/i;
+      var NOISE_SURFACE_RE = /stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp|coordinator|enterprise/i;
       function noiseResult(r) {
         var u = String((r && r.result && r.result.frameUrl) || '');
         return !!u && NOISE_SURFACE_RE.test(u);
@@ -10426,12 +10451,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var authoritativeEmptyIndex = !!(enumRes && enumRes.ok && enumRes.count === 0 && enumRes.indexComplete === true && enumRes.authoritativeEmpty === true);
       if (!enumRes || !enumRes.ok || (!enumRes.count && !authoritativeEmptyIndex) || !enumRes.indexComplete) {
         /* Volatile counters out, everything that reflects the chart in. */
-        var ehKey = enrSeen.join(',').replace(/;?n=[0-9]+/g, '').replace(/;?sameFor=[0-9]+s/g, '');
+        var ehKey = enrSeen.join(',').replace(/;?n=[0-9]+/g, '').replace(/;?sameFor=[0-9]+s/g, '').replace(/;?outerN=[0-9]+/g, '').replace(/;?outerMs=[0-9]+/g, '');
         if (ehKey && ehKey === ehStuckKey) ehStuckPasses++; else { ehStuckKey = ehKey; ehStuckPasses = 1; ehStuckFirstAt = Date.now(); }
         var ehStuck = ehStuckPasses >= EH_STUCK_LIMIT;
         if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline && Date.now() + 7000 < indexPhaseDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
-          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped ? '[noise-frames-excluded:' + enNoiseDropped + (enChart.length ? '' : ';no-chart-frame-answered') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : ''), identity: {}, visits: [], diag: diag,
+          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped || !enChart.length ? '[' + (enNoiseDropped ? 'noise-frames-excluded:' + enNoiseDropped : '') + (!enChart.length ? ((enNoiseDropped ? ';' : '') + 'no-chart-frame-answered') : '') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : '') + (function (er) { try { if (!er) return ''; var erR = String(er.reason || ''); var gate = erR.indexOf('visits-panel-not-open') >= 0 ? 'panel' : erR.indexOf('visits-total-not-readable') >= 0 ? 'total' : erR.indexOf('visits-list-still-rendering') >= 0 ? 'lstill' : (er.ok ? 'ok' : 'other'); return '[idx:' + gate + ';' + (Number(er.renderedListItems) || 0) + '/' + (Number(er.declaredEvents) || 0) + ';r' + (Number(er.parsedRows) || 0) + ';eN' + (Number(er.effStabN) || 0) + ';eMs' + (Number(er.effStabMs) || 0) + ';p' + (ehPass + 1) + ']'; } catch (eIdxTag) { return ''; } })(enumRes), identity: {}, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
@@ -10843,7 +10868,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount,
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,
-        authoritativeEmpty: total === 0 && authoritativeEmptyIndex
+        authoritativeEmpty: total === 0 && authoritativeEmptyIndex,
+        qpVisibility: (function () { try { var q = self.__mlsQpLastVerdict; return q && (Date.now() - q.at) < 300000 ? q.v : ''; } catch (eQpRead) { return ''; } })()
       };
       if (!bodyComplete) {
         return {
@@ -10894,6 +10920,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      stays quiet (their choice governs more than one restore). Reset only
      when a new user-initiated batch announces itself. */
   var __mlsFgDoctorMoved = false;
+  self.__mlsFrontAthenaForRead = __mlsFrontAthenaForRead; /* mdx-2.0.0: write-probe presence port (hoisted declaration) */
   async function __mlsFrontAthenaForRead(appTabId) {
     try {
       /* fg-1.1: a restore may still be in flight from the previous row -
@@ -11005,7 +11032,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null;
             if (msg.foregroundOk === true && value && typeof value === 'object') { try { value.fronted = __fgDidFront === true; } catch (eFr) {} } /* fg-1.2: the reply discloses whether the assist actually ran, so the app can tell the doctor when presence would have helped */
             try { __mlsRestoreFocusAfterRead(__fgState); __fgState = null; } catch (eRf) {}
-            sendResponse(value);
+            if (value && value.ok !== true) {
+              /* sx-1.1: bounded (2.5s) session probe rides history-read failures.
+                 Only the response is deferred; the cleanup below runs now. */
+              Promise.race([(typeof self.__mlsProbeSessionExpired === 'function') ? self.__mlsProbeSessionExpired() : Promise.resolve(null), new Promise(function (rsSx) { setTimeout(function () { rsSx(null); }, 2500); })])
+                .then(function (expSx) { try { if (expSx === true && value && typeof value === 'object') value.sessionLikelyExpired = true; } catch (eSxSet) {} sendResponse(value); },
+                      function () { sendResponse(value); });
+            } else { sendResponse(value); }
             try { var __clNow = thisRead.__mlsAfterResponseCleanup || (thisRead.__mlsInner && thisRead.__mlsInner.__mlsAfterResponseCleanup); if (__clNow) __clNow(); } catch (eCleanup) {}
           }
           thisRead.then(finish, function (e) { finish({ ok: false, requestId: transportRequestId, error: String((e && e.message) || e) }); });

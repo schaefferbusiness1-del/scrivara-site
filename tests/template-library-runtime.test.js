@@ -320,7 +320,7 @@ async function formSaveVisibility() {
 
 function staticContracts() {
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
-  assert(source.includes("VERSION='tl-1.4.0'"), 'the save-saves + destructive-activate-guard lane must carry tl-1.3.0');
+  assert(source.includes("VERSION='tl-1.6.0'"), 'the add-means-add lane must carry tl-1.6.0 (pin moved deliberately: clean previews auto-commit from the Add click path)');
 
   /* tl-1.3.0 — the two mechanisms that cost the owner his library on b833.
      Both are asserted on the SOURCE as well as at runtime, because both
@@ -343,11 +343,21 @@ function staticContracts() {
   assert(source.includes("TEMPLATE_VERSION_CONFLICT"));
   assert(source.includes("refresh({applyActive:false,silent:true})"), 'conflict refresh must not overwrite device edits');
   assert(source.includes('@media(max-width:520px)'), 'template set controls must reflow at narrow MacBook/phone widths');
+  /* 2026-08-06: this pinned a hand-maintained token (…tl160, then …tl161). That
+     is what let the loader go stale while the module changed: fea4afb8 edited
+     feat_mls_template_library.js on 08-06 with the token still reading 08-05, so
+     b904's import fix could not reach a returning browser and main went red on
+     tests/cache-token-cannot-go-stale.test.js. A date bump fixes it once; the
+     build-number buster cannot go stale by construction, so the assertion now
+     pins the FORM rather than a value anyone has to remember to move. */
   for (const loader of [liveLoader, stagingLoader]) {
-    assert(loader.includes('feat_mls_template_library.js?v=20260731tl140'));
+    assert(loader.includes("feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now())"),
+      'the template library loader must follow the build number, not a hand-maintained token');
+    assert(!/feat_mls_template_library\.js\?v=20\d{6}/.test(loader),
+      'a hand-maintained date token came back on the template library loader — it will go stale at the next change');
   }
   const loadingAt = liveLoader.indexOf("var A='feat_mls_loading_calm.js',V='lb-2.1.0'");
-  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=20260731tl140');
+  const templateAt = liveLoader.indexOf('feat_mls_template_library.js?v=');
   assert(loadingAt >= 0 && templateAt > loadingAt && liveLoader.slice(loadingAt, templateAt).includes("s.src=A+'?v=20260719lb204'"),
     'shared progress must install with the exact fresh version before template lifecycle wiring');
   assert(/onchange="tplMultiFile\(event\)"/.test(html), 'picker must use the wrapped batch importer');

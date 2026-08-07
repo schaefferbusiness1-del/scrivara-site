@@ -830,6 +830,25 @@
     return next;
   }
 
+  /* visits[].type is the LAST term of the summary fallback chain, so on a visit
+     with no body it becomes the rendered description. Measured on the live
+     roster 2026-08-06: 2,070 of 3,329 visits have no body, and 58 of those
+     carry text scraped off an inbox or worklist surface rather than an
+     encounter -- 50 message threads and 10 strings carrying a THIRD PARTY'S
+     name and date of birth. _stripIdentityLines cannot catch the latter: it
+     anchors "dob:" to the start of a line, and these arrive mid-string after a
+     slash. Both shapes are unmistakable and neither can be a visit reason, so
+     they fall through to the placeholder instead of printing as clinical text.
+     Deliberately NARROW -- a name-shaped test suppressed 32% of legitimate
+     descriptions while still passing correspondence that quoted the patient's
+     own name. Text that merely mentions another person stays visible; the
+     collector, not the renderer, is what must stop ingesting these. */
+  /* » is the thread separator athenaNet renders between message authors.
+     Escaped, not literal: this file is rewritten by the build stamper and a
+     non-ASCII byte here has corrupted shared files before. */
+  var _NOT_A_VISIT_REASON = /\u00BB|[\/,]\s*d?\.?o\.?b\.?\s*:?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\bd\.?o\.?b\.?\b\s*:?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\bdate of birth\b/i;
+  function _typeIsRenderableReason(t) { return !!trim(t) && !_NOT_A_VISIT_REASON.test(S(t)); }
+
   function _stripIdentityLines(text) {
     return _plain(S(text).split(/\n+/).filter(function (line) {
       return !/^\s*(?:patient|name|dob|date of birth|mrn|age|sex|gender)\s*:/i.test(_plain(line));
@@ -895,12 +914,47 @@
     if (visits.length) {
       lines.push('', 'Recent visits:');
       visits.slice(0, 12).forEach(function (v) {
-        var detail = _stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || v.type));
-        if (!detail) detail = trim(v.type) || 'Visit — no readable note text captured';
+        var reason = _typeIsRenderableReason(v.type) ? v.type : '';
+        var detail = _stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || reason));
+        if (!detail) detail = trim(reason) || 'Visit — no readable note text captured';
         lines.push('• ' + (v.date || 'Undated') + ' — ' + detail.slice(0, 320));
       });
     }
     return lines.join('\n').slice(0, 9000);
+  }
+
+  /* WHOSE HISTORY IS THIS? — the stored receipt could not answer that.
+     ---------------------------------------------------------------------
+     The pull-time path verifies identity properly (identityVerified, an
+     identityBinding to a patient id, _athenaHistoryProofMatches on name+DOB,
+     exactIdentityVerified on the receipt) — but NONE of it survived into what
+     is persisted. historyImportReceipt recorded completeness and counts, never
+     WHOSE chart it was, so from stored data alone nobody could audit whether a
+     patient's history belongs to them.
+
+     Found 2026-08-06 while answering the owner's "make sure the extension
+     actually pulls the right history". An audit of 260 records from the
+     2026-06-24→06-29 cross-contamination window could only demonstrate
+     NON-COLLAPSE — that no two patients share a history — which is strictly
+     weaker than proof of correct attribution: a defect that gave each patient a
+     DIFFERENT wrong history would be invisible to every check available on the
+     stored record.
+
+     The profile receipt already does this right (athenaProfileCoverage carries
+     patientId, and the merge above refuses a snapshot whose patientId is not
+     this record's). This brings the history receipt to the same standard.
+
+     The fingerprint is over the identity AS IT WAS AT IMPORT, so a record whose
+     name/DOB is later re-identified — the chimera-upsert class — no longer
+     matches its own history receipt, and that disagreement is detectable rather
+     than silent. It is a non-cryptographic digest of fields already stored in
+     plain text on the same record; it adds no PHI. */
+  function _identityFingerprint(p) {
+    var basis = (trim(p && p.name) + '|' + trim(p && p.dob)).toLowerCase().replace(/[^a-z0-9|]/g, '');
+    if (basis === '|') return '';
+    var h = 0;
+    for (var i = 0; i < basis.length; i++) { h = ((h << 5) - h + basis.charCodeAt(i)) | 0; }
+    return 'idfp-' + (h >>> 0).toString(36);
   }
 
   function organizePatientHistory(patientId) {
@@ -963,7 +1017,9 @@
         verifiedVisits: visits.length,
         excludedUnverified: excluded,
         semanticCoverage: semanticCoverage,
-        organizedAt: new Date().toISOString()
+        organizedAt: new Date().toISOString(),
+        patientId: trim(p.id),
+        identityFingerprint: _identityFingerprint(p)
       };
       if(profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
         p.athenaProfileCoverage=Object.assign({},profileReceipt,{semanticComplete:false,semanticCoverage:semanticCoverage});
@@ -1028,7 +1084,9 @@
       verifiedVisits: visits.length,
       excludedUnverified: excluded,
       semanticCoverage: semanticCoverage,
-      organizedAt: new Date().toISOString()
+      organizedAt: new Date().toISOString(),
+      patientId: trim(p.id),
+      identityFingerprint: _identityFingerprint(p)
     };
     _upsert(p);
     return {

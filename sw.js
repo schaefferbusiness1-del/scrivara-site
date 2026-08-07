@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v197';
+const CACHE = 'mls-v200';
 
 const SHELL = [
   '/ScribeFlow.html',
@@ -36,6 +36,7 @@ const PUBLIC_HTML_PATHS = new Set([
   'index.html',
   'intake.html',
   'lawyers.html',
+  'app.html',
   'patient-portal.html',
   'phone.html',
   'privacy.html',
@@ -106,6 +107,55 @@ function isInternalDirectory(pathname) {
   return /(?:^|\/)(?:tests|scripts|tmp|tools|_ws_tools|node_modules|vendor)(?:\/|$)/.test(pathname);
 }
 
+/* THE ONE-LITERAL ALLOWLIST WAS A SELF-INFLICTED 410 AT EVERY RELEASE.
+ * ---------------------------------------------------------------------------
+ * This used to read `if (name === 'mls_assist_v<THIS RELEASE>.zip') return false;`
+ * — a single hardcoded filename. A service worker keeps controlling a page until
+ * every tab closes, and this one deliberately declines skipWaiting() (see the
+ * install handler) because taking over a live clinical tab can force a reload.
+ * So at EVERY extension release the worker already running in a doctor's browser
+ * carried the PREVIOUS release's literal, classified the NEW package as retired,
+ * and answered the download with 410 "not a public MLS page" — while curl and
+ * every test saw a healthy 200 on the origin.
+ *
+ * Measured live by the QA lane on 2026-08-06 (owner's Chrome, build b903):
+ *   /MLS_Assist_v3.0.45.zip -> 410      (the current release, blocked)
+ *   /MLS_Assist_v3.0.44.zip -> 404      (passthrough — the stale worker's literal)
+ *   getRegistration() -> active + waiting, and the worker did NOT roll across
+ *   three successive production deploys.
+ *
+ * A version FLOOR removes the per-release edit that nobody can remember to make.
+ * It stays fail-closed by default — the zip branch still returns true unless all
+ * three conditions hold — and is ROOT-ONLY, so a released-looking name under
+ * extension-candidates/ or any other directory can never pass on basename alone.
+ * Raising the floor is optional tightening, never a correctness requirement.
+ *
+ * Deliberately NOT done here: reading extension-version.json at runtime (puts a
+ * network fetch inside the fetch decision and must then choose a failure
+ * direction), and a bare family regex (would re-open 60+ historical archives and
+ * every candidate build). */
+const RELEASED_PACKAGE_FLOOR = [3, 0, 45];
+const RELEASE_PACKAGE_NAME = /^mls_assist_v(\d{1,6}(?:\.\d{1,6}){1,3})\.zip$/;
+
+function packageVersionAtOrAboveFloor(version) {
+  const parts = String(version).split('.').map((part) => Number(part));
+  if (parts.some((part) => !Number.isFinite(part))) return false;
+  const width = Math.max(parts.length, RELEASED_PACKAGE_FLOOR.length);
+  for (let index = 0; index < width; index += 1) {
+    const found = parts[index] || 0;
+    const floor = RELEASED_PACKAGE_FLOOR[index] || 0;
+    if (found !== floor) return found > floor;
+  }
+  return true;
+}
+
+function isPublicReleasePackage(pathname) {
+  const match = RELEASE_PACKAGE_NAME.exec(baseName(pathname));
+  if (!match) return false;
+  if (pathname !== '/' + match[0]) return false;   /* root only */
+  return packageVersionAtOrAboveFloor(match[1]);
+}
+
 function isRetiredPath(urlLike) {
   const pathname = normalizedPath(urlLike);
   const name = baseName(pathname);
@@ -114,11 +164,10 @@ function isRetiredPath(urlLike) {
   if (/\.html$/.test(name)) {
     return !PUBLIC_HTML_PATHS.has(name);
   }
-  /* Owner directive 2026-07-20: the EXACT released 3.0.22 package is public.
-   * Network passthrough only — isSafeCacheUrl still refuses to cache any ZIP,
-   * and every other (candidate/historical) ZIP stays fail-closed below. */
-  if (name === 'mls_assist_v3.0.44.zip') return false;
-  if (/\.zip$/.test(name)) return true;
+  /* Owner directive 2026-07-20: the exact RELEASED package is public. Network
+   * passthrough only — isSafeCacheUrl still refuses to cache any ZIP, and every
+   * candidate/historical ZIP stays fail-closed. */
+  if (/\.zip$/.test(name)) return !isPublicReleasePackage(pathname);
   if (/\.staging\.js$/.test(name) || /_append_[^/]*\.js$/.test(name)) return true;
   return name === 'bg_worker_block.js';
 }
@@ -129,6 +178,12 @@ const STATIC_SHELL_PATHS = new Set(SHELL.map((entry) => normalizedPath(entry)));
  * service worker cannot see). Their navigations are therefore network-only
  * even when the visible request URL has no query string. */
 const NETWORK_ONLY_HTML_PATHS = new Set([
+  /* app.html renders a patient's chart. A cached copy of it is not a risk in
+     itself (the page holds no data — every patient it shows arrives over the
+     API at runtime), but a stale shell is: the app the doctor launches must be
+     the one currently deployed, and this page is also the source the two store
+     binaries are built from. Never serve it from a cache. */
+  '/app.html',
   '/appointment.html',
   '/best-doctors-optout.html',
   '/booking.html',

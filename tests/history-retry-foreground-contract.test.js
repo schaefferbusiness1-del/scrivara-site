@@ -24,7 +24,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-const candDir = ['3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
+const candDir = ['3.0.45', '3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
 const bg = fs.readFileSync(candDir ? path.join(candDir, 'background.js') : path.join(root, 'background.js'), 'utf8');
 const content = fs.readFileSync(candDir ? path.join(candDir, 'content.js') : path.join(root, 'content.js'), 'utf8');
 const feat = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
@@ -156,7 +156,19 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
     mlsPickAthenaTab: async (tabs) => tabs.find(t => /athenanet/.test(t.url)),
     Promise, console,
   });
+  /* 3.0.45: this harness modelled chrome.* but NOT `self`, while the real MV3
+     service worker always has it (self === globalThis there — background.js has
+     assigned onto it since long before this suite existed, e.g.
+     self.__mlsQpEnsure). The gap stayed invisible only because no line inside
+     this particular slice referenced it; the moment the fg lane was exported for
+     the write-probe presence port, correct production code threw
+     "self is not defined" in the sandbox. Model the worker global faithfully —
+     a harness that is TIGHTER than the runtime invents failures exactly as a
+     stub looser than the runtime hides them. */
+  sandbox.self = sandbox;
   vm.runInContext(helpers + '\nthis.__front = __mlsFrontAthenaForRead; this.__restore = __mlsRestoreFocusAfterRead; this.__moved = function () { return __mlsFgDoctorMoved; }; this.__resetMoved = function () { __mlsFgDoctorMoved = false; };', sandbox, { timeout: 5000 });
+  assert.strictEqual(typeof sandbox.__mlsFrontAthenaForRead, 'function',
+    'the fg front lane must be exported on the worker global — the write-probe presence port calls it through self');
   (async () => {
     /* 4a. doctor OUTSIDE Chrome: fronting must be refused outright */
     world.focused = false;

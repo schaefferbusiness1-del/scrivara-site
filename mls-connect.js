@@ -2227,7 +2227,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (visitBits.length) lines.push('Visit: ' + visitBits.join(' — '));
     lines.push('');
 
-    /* b870: a record whose Athena chart was never pulled has EVERY card
+    /* b940: a record whose Athena chart was never pulled has EVERY card
        empty, and the reader cannot tell that from a chart that was read and
        found clear. ctx.chartLanded is the import stamp _savePatientChart
        writes, so say which of the two this is - once, up front - and make the
@@ -4040,7 +4040,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (!b.context || typeof b.context !== 'object') b.context = {};
           b.context.providerStats = computeStats();
           var newBody = JSON.stringify(b);
-          if (newBody.length <= 59000) { /* stay under the server's 60KB context slice */
+          if (newBody.length <= 98000) { /* stay under the server's bounded 100K context cap (was a blind 60K slice) */
             init = Object.assign({}, init, { body: newBody });
             api.calls++;
           }
@@ -4327,7 +4327,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((m = d.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) y = parseInt(m[1], 10);
     else if ((m = d.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/))) y = parseInt(m[3], 10);
     if (!y) return null;
-    /* b870: same defect as the builder's own ageOf - year subtraction with no
+    /* b940: same defect as the builder's own ageOf - year subtraction with no
        birthday adjustment, one year high for anyone whose birthday has not yet
        occurred this year. This satellite's ages appear in the reason strings the
        doctor reads to understand why a patient matched, so it must agree with the
@@ -4471,7 +4471,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   try { if (window.__mlsPullProgress) return; } catch (e) { return; }
   var api = { version: '1.0.0', opens: 0 };
   var PANEL = 'mlsPullProgPanel', FAB = 'mlsPullProgFab';
-  /* b870 #36: NON-BLOCKING BY DEFAULT. The pull opens as the bottom-left
+  /* b940 #36: NON-BLOCKING BY DEFAULT. The pull opens as the bottom-left
      pill; the full panel is one click away. hidden survives the whole pull
      (sweep boundaries included) and resets only when the pull truly ends. */
   var startedAt = 0, hidden = true, stopped = false;
@@ -4511,7 +4511,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'body.theme-dark #' + PANEL + ' .pp-wait{color:var(--muted)}',
       '#' + PANEL + ' .pp-note{font-size:11.5px;color:#8A8F86;margin-top:12px}',
       '#' + PANEL + ' .pp-btn{margin-top:14px;background:#fff;color:#1A211C;border:1px solid #D9D6CD;border-radius:10px;padding:9px 14px;font:600 12.5px system-ui;cursor:pointer}',
-      /* b870: the panel speaks the page's motion + theme vocabularies. */
+      /* b940: the panel speaks the page's motion + theme vocabularies. */
       '#' + PANEL + ' .ppc{animation:mlsLoadIn var(--mls-dur-3,300ms) var(--mls-ease-out,ease-out)}',
       '@media (prefers-reduced-motion: reduce){#' + PANEL + ' .ppc{animation:none}}',
       'body.theme-dark #' + PANEL + ' .ppc{background:var(--card,#1C231E);border-color:var(--line,#2B342D);color:var(--ink,#EAEFEA)}',
@@ -4534,7 +4534,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     f.onclick = function () { hidden = false; render(); };
     document.body.appendChild(f);
   }
-  /* b870 #36: the pill carries live progress instead of a frozen label. */
+  /* b940 #36: the pill carries live progress instead of a frozen label. */
   function paintFab(S) {
     var f = document.getElementById(FAB); if (!f || !S) return;
     /* ONE COUNT, TWO SURFACES. The day-pull bar is the count the doctor is
@@ -4553,7 +4553,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (f.textContent !== t) f.textContent = t;
   }
 
-  /* b870 #36 (owner watched it live): the old render() rebuilt the WHOLE card
+  /* b940 #36 (owner watched it live): the old render() rebuilt the WHOLE card
      via innerHTML every 900ms tick, so the b735 mlsLoadIn entrance animation
      replayed on a brand-new element about once a second - the visible
      "glitches out and shows back". It also destroyed the Hide button mid-
@@ -4610,11 +4610,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!running) {
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
-      startedAt = 0; hidden = true; /* b870: reset to the pill DEFAULT, never to the modal */
+      startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
       return;
     }
     if (!startedAt) { startedAt = Date.now(); api.opens++; }
-    /* b870: the PILL needs the stylesheet too. b870 flipped the default to
+    /* b940: the PILL needs the stylesheet too. b940 flipped the default to
        pill-first but left css() below the hidden early-return, so the FAB
        shipped with no rule to position it - position:static at the end of
        body instead of fixed at bottom-left, and the panel unreachable because
@@ -4820,7 +4820,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function parseYear(dob) { var m = S(dob).match(/((?:19|20)\d{2})/); return m ? parseInt(m[1], 10) : null; }
-  /* b870: this subtracted birth YEAR from the current year, with no birthday
+  /* b940: this subtracted birth YEAR from the current year, with no birthday
      adjustment, so every patient whose birthday has not yet happened this calendar
      year was reported ONE YEAR OLDER than the rest of the app says. Not an edge
      case: on 31 July that is roughly everyone born August to December.
@@ -5221,7 +5221,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     results.forEach(function (r) {
       pi++;
       if(!window.__mlsStudyScrub){window.__mlsStudyScrub=function(text,name){var t=String(text==null?'':text);try{String(name==null?'':name).toLowerCase().split(/[^a-z]+/).forEach(function(w){if(w.length>2)t=t.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'),'[patient]');});t=t.replace(/\b(mrn|acct|account|chart|id)\s*[#:]?\s*\d[\d-]*\b/gi,'[id]');t=t.replace(/\b\d{3}[-.)\s]\d{3}[-.\s]\d{4}\b/g,'[phone]');t=t.replace(/\b\d{6,}\b/g,'[id]');t=t.replace(/\b(\d{4})-(\d{2})-\d{2}\b/g,'$1-$2');t=t.replace(/\b(\d{1,2})\/\d{1,2}\/(\d{4})\b/g,'$1/$2');}catch(e){}return t;};}
-      /* b870: same de-identification promise, same scrub. */
+      /* b940: same de-identification promise, same scrub. */
       r.visits.forEach(function (v) { if (lines.length < 900) { lines.push("P" + pi + " | " + S(v.date) + " | " + S(v.type) + " | " + window.__mlsStudyScrub(S(v.detail), (r.patient && r.patient.name) || r.name).replace(/[\n\r|]+/g, " ").slice(0, 260)); nVisits++; } });
     });
     var sys = "You are a careful, honest, PREMIUM clinical-study analyst. Use ONLY the provided de-identified per-visit records. " +
@@ -6293,7 +6293,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        ENGINE's duplicate transcript card yields instead. CSS-class hide,
        never node removal (see the fl-1.5.0 flash note). */
     '#mlsEz3Body.ez3fl-top-owns .ez3-transcript-card{display:none!important}',
-    /* b870: the engine hero and this lane both offer Generate, so a doctor saw
+    /* b940: the engine hero and this lane both offer Generate, so a doctor saw
        two. The class above is a CLAIM; this rule reads the FACT - the lane is
        really mounted AND its Generate is really offered - the same shape
        feat_mls_visit_focus.js proved, so it can never hide the LAST Generate on
@@ -6307,7 +6307,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        both drove one recorder while repainting on different cadences, so the
        screen showed "Resume recording" and "Stop recording" at once. While
        the lane pill is really offered, the engine's recording controls hide;
-       when the lane pill is hidden (idle with no transcript - b870), the
+       when the lane pill is hidden (idle with no transcript - b940), the
        engine hero survives untouched, so this can never hide the LAST
        recording control. #ez3CancelRec stays visible: the lane has no
        discard path, and losing the only cancel would be a b653-class hole. */
@@ -6670,7 +6670,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!gen || gen.disabled) { flowToast('Note generation is not ready yet. Try again in a moment.', 'err'); return; }
     try { gen.click(); } catch (e) { flowToast('The note could not start generating. Please try again.', 'err'); return; }
     syncTopLane(document.querySelector('.ez3fl-record'));
-    /* b870: tell the engine phase machine that a generation is now running.
+    /* b940: tell the engine phase machine that a generation is now running.
        Without this the engine keeps offering #ez3Gen, a SECOND Generate button
        lower down the same screen, while this lane already reads Generating
        note. Guarded and optional: with no engine present the lane behaves
@@ -6685,7 +6685,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scan also catches transient things — toasts above all — and would size the
      scroll clearance from something that is about to disappear. If none of these
      exist the clearance stays 0 and openReviewStep behaves exactly as b666 did. */
-  /* b870: both ids below are RETIRED (vc-2.0.0 — the owner removed the
+  /* b940: both ids below are RETIRED (vc-2.0.0 — the owner removed the
      bottom-left bubbles), so every lookup now resolves null and the computed
      clearance is 0. That is CORRECT: nothing floats over the bottom-left any
      more, so there is nothing to clear. The list and the covered-scroll
@@ -6788,7 +6788,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              screen and still unpressable — so it earns the same scroll. */
           var offscreen = r.bottom <= 0 || r.top >= vh;
           var covered = clearance > 0 && r.bottom > vh - clearance;
-          /* b870 (owner 2026-07-27: "when I click review and sign it should not
+          /* b940 (owner 2026-07-27: "when I click review and sign it should not
              scroll me down"). b666 revealed this control by scrolling to it,
              because the click had no visible consequence; b669 kept that scroll
              clear of the fixed bubble. Both were fixes for a real defect. The
@@ -6926,7 +6926,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var nmEl = document.querySelector('.mlsctx-name');
     var pname = (nmEl && nmEl.offsetParent) ? (nmEl.textContent || '').trim() : '';
     if (rb) {
-      /* b870 (owner 2026-07-26: "get rid of the top start recording extra
+      /* b940 (owner 2026-07-26: "get rid of the top start recording extra
          button its so annoying"). Idle, this pill read "Start recording —
          <name>" directly above the big taught hero (#ez3Nxt) that says the
          SAME thing — two identical offers on one screen. The pill's real jobs
@@ -7008,7 +7008,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        ever absent the class comes off and the engine card is back on its own. */
     try {
       var laneMounted = !!(_primaryLane && _primaryLane.isConnected) || !!body.querySelector('.ez3fl-record');
-      /* b870 (phone audit B2): on the phone the whole lane is CSS-hidden, so a
+      /* b940 (phone audit B2): on the phone the whole lane is CSS-hidden, so a
          MOUNTED lane must not claim the top - that claim was hiding the
          engine's transcript card and quick-tools chip, leaving the phone with
          no transcript at all. Mounted is not visible. */
@@ -8808,7 +8808,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      Manual recovery stays available via __mlsSanitizeV2._scrub(). */
   var cleanRuns = 0;
   function tick() {
-    /* b870 #36: every _savePatientChart during a pull re-dirties a summary,
+    /* b940 #36: every _savePatientChart during a pull re-dirties a summary,
        so this sweep ran a FULL-STORE LZ compress every 2.5s all pull long -
        the once-a-second main-thread freezes the owner watched. The write-time
        sanitizer (patch()) still strips at the source; the retroactive sweep
@@ -10321,6 +10321,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function passAll() {
+    /* edsync stands down wherever the baked Settings card owns the surface.
+       ---------------------------------------------------------------------
+       This module was written for the get-extension anchor further down the
+       page. When the Settings card (#extensionDownloadSettings) was added
+       ABOVE it, findDownloadAnchor() — which matches by TEXT and by
+       a[download], in document order — silently captured the new card instead,
+       and then rewrote it into three separate lies measured live on b903/b905:
+         * the label became "Add to Chrome — Chrome Web Store" while the href
+           stayed a local .zip, and that publish is owner-gated and NOT done;
+         * removeAttribute('download') + target="_blank" turned the click into a
+           NAVIGATION in a new tab, which is the exact request shape the stale
+           service worker answers with 410 "not a public MLS page" — the doctor
+           lands on a refusal page in a tab they never asked for;
+         * applyToDescription() overwrote the first .note in the card, deleting
+           #extDlVersion outright.
+       The baked card is already correct, already version-pinned to
+       extension-version.json, and already refreshed by the mdx drift refresher.
+       Both shells carry it, so this guard is true on every page that loads this
+       file. Nothing else consumes edsync (no feat_* module, no test, no
+       extension file references __mlsExtDownloadSync or #edsSecondaryRow except
+       three null-guarded readers inside this same file). */
+    if (document.getElementById('extensionDownloadSettings')) return false;
     var anchor = findDownloadAnchor();
     if (!anchor) return false;
     var did = false;
@@ -15419,13 +15441,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function healthOf(t) {
     /* honest heuristics -- never fabricates a success */
     var txt = S(t.text), len = txt.length;
-    var letters = (txt.match(/[A-Za-z]/g) || []).length;
+    /* b946 PERF: count without allocating. `txt.match(/[A-Za-z]/g)` builds an
+       array holding one single-character string per letter in the template -
+       on the owner's 96-template library that is roughly half a million throwaway
+       strings, and the op-note room calls healthOf for every template on every
+       rail rebuild, which happens after every repaint of the room. Same answer,
+       no garbage. */
+    var letters = 0;
+    for (var _c = 0; _c < len; _c++) {
+      var _cc = txt.charCodeAt(_c);
+      if ((_cc >= 65 && _cc <= 90) || (_cc >= 97 && _cc <= 122)) letters++;
+    }
     if (t.tpf && t.tpf.status === "ok") return { cls: "ok", label: "\u2713 re-processed " + new Date(t.tpf.at).toLocaleDateString() };
     if (t.tpf && t.tpf.status === "failed") return { cls: "bad", label: "\u2717 re-process failed" + (t.tpf.msg ? " \u2014 " + t.tpf.msg : "") };
     if (len < 200) return { cls: "warn", label: "\u26A0 very short (" + len + " chars) \u2014 likely a bad extraction; re-upload or re-process" };
     if (len > 0 && letters / len < 0.45) return { cls: "warn", label: "\u26A0 text looks unreadable \u2014 re-upload the original file" };
     if (!(t.keywords && t.keywords.length)) return { cls: "warn", label: "\u26A0 no keywords \u2014 auto-matching is weak; run AI keywords or re-process" };
-    return { cls: "legacy", label: "\u25CB processed by an earlier AI pass \u2014 re-process to refresh" };
+    /* b940 \u2014 a template imported five minutes ago is CURRENT, not "an earlier
+       AI pass". Every creation path stamps `created`, so a missing stamp is
+       the only honest definition of legacy. The owner's dad imported his
+       whole library and every rail card told him to re-process work that had
+       just been processed. */
+    if (t.created) return { cls: "ok", label: "\u2713 imported " + new Date(t.created).toLocaleDateString() + " \u2014 current AI" };
+    /* b940 — "EVERY creation path stamps created" WAS WRONG, and the live
+       library proved it: 0 of the owner's 96 templates carried the stamp,
+       because the cloud import maps a FIXED field list that silently dropped
+       it (feat_mls_template_library importBody, which now carries it forward).
+       So the b900 label fix changed nothing on his screen - every card still
+       told him to re-process a library he had imported minutes earlier.
+       The deeper error was treating "no stamp" as evidence of staleness. It is
+       evidence of nothing. Every real symptom of a bad or outdated extraction
+       is already caught above: too short, unreadable, no keywords. A template
+       that passes all of those is USABLE, and telling the doctor to re-process
+       it is noise dressed as advice. */
+    return { cls: "ok", label: "✓ ready — keywords set, auto-matching enabled" };
   }
 
   /* ---------- backend helpers (the app's own base/token fns) --------------- */
@@ -15520,6 +15569,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       "#tpfLedgerList .bad{color:#a12c2c;font-weight:700}",
       "#tpfLedgerList .skip{color:#8a6414}",
       "#tpfLedgerList .pend{color:#5a6b80}",
+      /* 2026-08-06 owner: "the thing at the top when drafting all the op notes
+         for a whole day ... should be colapsible and a clean loading bar with an
+         expandible part that shows that". Collapsing hides the PER-ROW LIST and
+         nothing else: the headline, the bar and the failure strip below stay
+         mounted, because a run that fails while the doctor has it collapsed must
+         still say so. Driven by a class on the box, so one toggle owns it. */
+      "#tpfLedger .tpf-ltog{font-size:11.5px;border-radius:8px;border:1px solid #c9d5ea;background:#fff;color:#16233a;padding:3px 9px;cursor:pointer;line-height:1.2}",
+      "#tpfLedger .tpf-ltog .tpf-caret{display:inline-block;transition:transform .18s ease}",
+      "#tpfLedger.tpf-collapsed .tpf-ltog .tpf-caret{transform:rotate(-90deg)}",
+      "#tpfLedger.tpf-collapsed #tpfLedgerList{display:none}",
+      "#tpfLedger.tpf-collapsed #tpfSafety{display:none}",
+      /* the failure strip is the whole point of the collapsed state: it is
+         OUTSIDE #tpfLedgerList so collapsing cannot hide it. Empty and hidden
+         while nothing has failed, so a clean run stays clean. */
+      "#tpfLedgerFails{display:none;margin-top:6px;font-size:11.5px;line-height:1.5;color:#a12c2c;background:#fdf2f2;border:1px solid #f0cfcf;border-radius:8px;padding:6px 9px}",
+      "#tpfLedgerFails.on{display:block}",
+      "#tpfLedgerFails b{color:#a12c2c}",
       "#tpfSafety{font-size:11px;color:#127a43;margin-top:5px;font-weight:600}",
       ".tpf-month{display:inline-flex;gap:6px;align-items:center}",
       ".tpf-month input[type=month]{font-size:12.5px;padding:5px 8px;border:1px solid #c9d5ea;border-radius:8px}",
@@ -15844,6 +15910,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     box.classList.add("on");
     var head = box.querySelector(".tpf-lstat"); if (head) head.textContent = headline || "";
     setBar(total ? (doneN / total) * 100 : 0);
+    /* THE COLLAPSED PANEL MUST STILL SAY A NOTE FAILED. This strip lives
+       outside #tpfLedgerList, so it survives collapsing; the per-row list is the
+       only thing the toggle hides. Named, not counted - "2 failed" sends the
+       doctor hunting, "Smith, Jones" does not. Painted on every repaint so it
+       clears itself the moment a retry succeeds. */
+    var failsEl = $("tpfLedgerFails");
+    if (failsEl) {
+      var failed = states.filter(function (s) { return s && s.st === "fail"; });
+      if (!failed.length) { failsEl.className = ""; failsEl.innerHTML = ""; }
+      else {
+        var shown = failed.slice(0, 6).map(function (s) { return esc(s.name); }).join(", ");
+        var more = failed.length > 6 ? " +" + (failed.length - 6) + " more" : "";
+        failsEl.className = "on";
+        failsEl.innerHTML = "✗ <b>" + failed.length + (failed.length === 1 ? " note failed" : " notes failed") +
+          "</b> — " + shown + esc(more) + (box.classList.contains("tpf-collapsed") ? " · open Details to see why" : "");
+      }
+    }
     var listEl = $("tpfLedgerList"); if (!listEl) return;
     listEl.innerHTML = states.map(function (s) {
       var cls = s.st === "ok" ? "ok" : s.st === "fail" ? "bad" : s.st === "skip" ? "skip" : "pend";
@@ -15863,7 +15946,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
     if (rows.length > 40) {
       var goBig = false;
-      try { goBig = await window.mlsConfirm("Draft " + rows.length + " op notes? This runs one AI call per patient (roughly " + Math.ceil(rows.length * 8 / 60) + "\u2013" + Math.ceil(rows.length * 15 / 60) + " minutes). Drafts save to History only \u2014 nothing is sent to Athena. Continue?"); } catch (e) {}
+      /* b946: the estimate follows the runner. It still says one AI call per
+         patient - that is unchanged and worth stating - but the wall-clock
+         figure now divides by how many run at once, because quoting the old
+         serial minutes for a parallel run would be a number the doctor watches
+         and finds wrong. */
+      var _lanes = 1; try { if (window.__mlsOpNoteRowVerdicts === true) _lanes = 3; } catch (eLn) {}
+      try { goBig = await window.mlsConfirm("Draft " + rows.length + " op notes? This runs one AI call per patient, " + (_lanes > 1 ? _lanes + " at a time" : "one at a time") + " (roughly " + Math.ceil(rows.length * 8 / 60 / _lanes) + "\u2013" + Math.ceil(rows.length * 15 / 60 / _lanes) + " minutes). Drafts save to History only \u2014 nothing is sent to Athena. Continue?"); } catch (e) {}
       if (!goBig) return;
     }
     RUN.on = true; RUN.stop = false;
@@ -15893,7 +15982,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          an earlier patient can never be blamed on this row, then copy it onto
          the row when the draft comes back not-ok - the wrapper returns false
          instead of rejecting, so the catch below almost never fires. */
+      /* b946: also clear THIS ROW's stamp. Under the parallel runner below the
+         globals are shared, so they are cleared only to keep single-flight
+         behaviour byte-identical; the per-row fields are the ones that decide. */
       try { window.__mlsLastOpFidelityError = ""; window.__mlsLastOpErrorCode = ""; window.__mlsLastOpReconstructed = false; } catch (e0) {}
+      try { var rC = (window._opPrep || [])[idx]; if (rC) { delete rC._genPass; rC._genErr = ""; rC._genErrCode = ""; rC._reconstructed = false; } } catch (e0b) {}
       /* CAPTURE WHAT THE ROW ALREADY HAD, BEFORE SPENDING AN ATTEMPT ON IT.
          `row.gen` and `row.note` are STICKY: nothing clears them when a re-draft
          fails, and feat_mls_opnote_prep.js's adoptExistingDraft sets both from a
@@ -15939,15 +16032,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var noteNow = S(r && r.note).trim();
         var producedSomething = !!noteNow && (!hadGen || noteNow !== hadNote);
         var wrapperSaid = (drafted === true) ? true : (drafted === false ? false : null);
-        var fidelity = true;
-        try { if (typeof window.__mlsLastOpFidelityPass !== 'undefined') fidelity = !!window.__mlsLastOpFidelityPass; } catch (eFp) {}
-        var ok = !!(r && r.gen && noteNow && !S(window.__mlsLastOpFidelityError) && !S(window.__mlsLastOpErrorCode));
+        /* b946: THE THREE SIGNALS ARE READ FROM THE ROW WHEN THE ROW HAS THEM.
+           Every clause below used to read a window global, which is correct for
+           exactly one draft in flight and wrong for two. The base drafter now
+           stamps _genPass / _genErr / _genErrCode / _reconstructed on the row it
+           drafted (window.__mlsOpNoteRowVerdicts), so the verdict cannot be
+           reassigned to whichever patient happened to start last. When the
+           stamps are absent - an older shell, or a base this module does not
+           own - every read falls back to the global exactly as before, and the
+           runner also refuses to overlap anything (see PARALLEL below), so the
+           old single-flight semantics stay intact end to end. */
+        var perRow = !!(r && typeof r._genPass !== 'undefined');
+        var fidelity = true, lastErr = "", lastCode = "", wasReconstructed = false;
+        if (perRow) {
+          fidelity = !!r._genPass; lastErr = S(r._genErr); lastCode = S(r._genErrCode); wasReconstructed = !!r._reconstructed;
+        } else {
+          try { if (typeof window.__mlsLastOpFidelityPass !== 'undefined') fidelity = !!window.__mlsLastOpFidelityPass; } catch (eFp) {}
+          try { lastErr = S(window.__mlsLastOpFidelityError); lastCode = S(window.__mlsLastOpErrorCode); wasReconstructed = !!window.__mlsLastOpReconstructed; } catch (eFg) {}
+        }
+        var ok = !!(r && r.gen && noteNow && !lastErr && !lastCode);
         if (wrapperSaid === false) ok = false;
         else if (wrapperSaid === true) ok = ok && fidelity;
         else ok = ok && producedSomething;
         /* stamp reconstruction on the row while the marker is still this row's */
-        try { if (r && window.__mlsLastOpReconstructed) r._reconstructed = true; } catch (eRr) {}
-        if (!ok && r) { try { var w = S(window.__mlsLastOpFidelityError).replace(/^Error:\s*/, "").slice(0, 160); if (w) r._lastDraftErr = w; } catch (e1) {} }
+        try { if (r && wasReconstructed) r._reconstructed = true; } catch (eRr) {}
+        if (!ok && r) { try { var w = lastErr.replace(/^Error:\s*/, "").slice(0, 160); if (w) r._lastDraftErr = w; } catch (e1) {} }
         return ok;
       })["catch"](function (e) {
         /* keep the REAL reason for the ledger instead of a generic "failed twice" */
@@ -15955,9 +16064,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return false;
       });
     }
-    function step() {
-      if (RUN.stop || i >= total) return finish();
-      var idx = onlyIdx ? onlyIdx[i] : i, row = rows[idx];
+    /* b946 — A DAY'S DRAFTS NO LONGER QUEUE BEHIND EACH OTHER.
+       OWNER: "the op notes still draft pretty slowly and maybe could be drafted
+       all at once for a day". They could not be, and the reason was not the AI:
+       this runner drafted patient N+1 only after patient N's round trip had
+       fully returned, then waited another 350ms. On the owner's real 19-patient
+       Monday at ~9s per note that is about three and a half minutes of mostly
+       IDLE main thread - the tab sat waiting on one HTTP response at a time.
+
+       runOne() is what step() was, minus the "call myself next" tail: it draws
+       one row to a definite state and resolves. pump() below keeps up to
+       PARALLEL of them in flight. Nothing about how a single row is drafted,
+       retried, scored or reported has changed - the ledger paints the same
+       states, the same retry rule applies, and Stop still lands after the
+       patients already in flight.
+
+       WHY IT IS SAFE TO OVERLAP NOW, AND WAS NOT BEFORE. The verdict for a
+       draft used to live in window globals that the NEXT row cleared on entry,
+       so two in flight meant the ledger could credit or blame the wrong patient
+       - the exact class of defect this file's comments are full of. The base
+       drafter now stamps its verdict on the row it drafted; PARALLEL stays at 1
+       unless that capability is present, so an older shell keeps the old
+       strictly-serial behaviour rather than a subtly wrong fast one.
+       The generator's own single-flight guard is keyed per patient
+       (generationByPatient), so distinct rows never collide there either. */
+    var PARALLEL = 1;
+    try { if (window.__mlsOpNoteRowVerdicts === true) PARALLEL = 3; } catch (ePw) {}
+    function runOne(idx) {
+      var row = rows[idx];
       /* 2026-07-28: resolve the exact patient BEFORE spending an AI attempt.
          Tomorrow's roster rows often have no imported chart yet, and the base
          generator's identity refusal used to surface only as a generic
@@ -15967,9 +16101,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         try { pRes = window._opResolvePatient((row.appt && row.appt.name) || "", (row.appt && row.appt.dob) || "", row.patientId || ""); } catch (eIr) {}
         if (!pRes) {
           states[idx].st = "fail"; states[idx].msg = "patient not verified in MLS yet (chart not pulled, or DOB missing on the schedule row) \u2014 pull this patient's chart, then re-try";
-          failN++; i++;
-          paintLedger(states, i, total, headline());
-          return setTimeout(step, 60);
+          failN++;
+          return Promise.resolve();
         }
       }
       /* a hand-edited row arms a two-click discard confirm in the base drafter.
@@ -15977,9 +16110,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (row && row._confirmRedraft) {
         try { row._confirmRedraft = false; } catch (eCe) {}
         states[idx].st = "skip"; states[idx].msg = "skipped \u2014 your hand-edits were kept (use Draft on this card to overwrite them deliberately)";
-        skipN++; i++;
-        paintLedger(states, i, total, headline());
-        return setTimeout(step, 60);
+        skipN++;
+        return Promise.resolve();
       }
       /* 2026-07-30 \u2014 AUTO-MATCH NO LONGER GIVES UP, IT WARNS.
          OWNER: "fix up the auto match system where it doesnt give up if it cant
@@ -16016,12 +16148,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         states[idx].msg = tplList().length
           ? "no template could be matched \u2014 pick one on the card, then Draft it alone"
           : "no templates uploaded yet \u2014 add one in the Templates tab";
-        skipN++; i++;
-        paintLedger(states, i, total, headline());
-        return setTimeout(step, 60);
+        skipN++;
+        return Promise.resolve();
       }
       states[idx].st = "run"; paintLedger(states, i, total, headline());
-      tryRow(idx).then(function (ok1) {
+      return tryRow(idx).then(function (ok1) {
         if (ok1 === "edited") return "edited";
         if (ok1) return true;
         if (RUN.stop) return false;
@@ -16030,8 +16161,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            conflict, truncation and auth failures are deterministic - the old
            blind retry burned a second AI call to fail identically. */
         var code = "";
-        try { code = S(window.__mlsLastOpErrorCode); } catch (eCc) {}
+        /* b946: this row's own code, for the same reason the verdict is per-row
+           now - the global belongs to whichever draft touched it last. */
+        try { var rC2 = (window._opPrep || [])[idx]; code = S(rC2 && rC2._genErrCode) || S(window.__mlsLastOpErrorCode); } catch (eCc) {}
         if (code && !/^(NETWORK|TIMEOUT|HTTP_429|HTTP_5\d\d)$/.test(code)) return false;
+        /* A 429 is the one failure that says "you are asking too fast". Drop the
+           whole run to one at a time before the wait, so the retry and every
+           remaining patient go out single-file instead of re-colliding. */
+        if (code === "HTTP_429") PARALLEL = 1;
         return new Promise(function (res) { setTimeout(res, code === "HTTP_429" ? 15000 : 4000); }).then(function () { return tryRow(idx); });
       }).then(function (ok) {
         var r = (window._opPrep || [])[idx];
@@ -16106,12 +16243,41 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           states[idx].st = "fail"; states[idx].msg = why + " \u2014 re-try this one from its card";
         }
-        i++;
-        paintLedger(states, i, total, headline());
-        setTimeout(step, 350);
+        /* b946: the completed-count is bumped by settleOne(), once per row, for
+           EVERY path - including the pre-checks that used to bump it themselves.
+           Bumping here as well would double-count and run the bar past 100%. */
       });
     }
+    /* The pool. `i` stays what it always was - the number of rows that have
+       reached a definite state - so the headline and the progress bar read
+       exactly as before; `nextSlot` is the separate cursor into the work list.
+       Launches are greedy up to PARALLEL and a completion schedules the next
+       pump on the same 350ms courtesy delay the serial runner used, so a single
+       row (PARALLEL = 1, or a retry list of one) behaves identically. */
+    var nextSlot = 0, active = 0, finished = false;
+    function settleOne() {
+      active--; i++;
+      paintLedger(states, i, total, headline());
+      setTimeout(pump, 350);
+    }
+    function pump() {
+      if (finished) return;
+      if (RUN.stop || nextSlot >= total) { if (active === 0) finish(); return; }
+      while (active < PARALLEL && nextSlot < total && !RUN.stop) {
+        var slot = onlyIdx ? onlyIdx[nextSlot] : nextSlot;
+        nextSlot++;
+        active++;
+        (function (idx) {
+          var p;
+          try { p = runOne(idx); } catch (eR) { p = Promise.resolve(); }
+          Promise.resolve(p).then(settleOne, settleOne);
+        })(slot);
+      }
+      if (active === 0 && (RUN.stop || nextSlot >= total)) finish();
+    }
     function finish() {
+      if (finished) return;
+      finished = true;
       RUN.on = false;
       var el = $("opPrepStatus");
       var summary = (RUN.stop ? "\u23F9 Stopped: " : "\u2705 Done: ") + okN + " drafted \u00B7 " + failN + " failed \u00B7 " + skipN + " skipped of " + total + ".";
@@ -16133,7 +16299,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       logEvent("draft-all", "prep run", failN === 0, summary);
     }
-    step();
+    pump();
   }
 
   /* intercept the existing Draft-all button (capture phase beats its inline onclick) */
@@ -16168,13 +16334,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var row = genBtn && genBtn.closest ? genBtn.closest(".row") : null;
         if (row && row.parentElement) {
           var led = document.createElement("div"); led.id = "tpfLedger";
-          led.innerHTML = '<div class="tpf-lhead"><b>Draft-all progress</b><span class="tpf-lstat" style="font-size:11.5px;color:#5a6b80"></span>' +
+          led.innerHTML = '<div class="tpf-lhead"><button type="button" class="tpf-ltog" id="tpfLedgerTog" aria-expanded="true" aria-controls="tpfLedgerList"><span class="tpf-caret">\u25BE</span> Details</button>' +
+            '<b>Draft-all progress</b><span class="tpf-lstat" style="font-size:11.5px;color:#5a6b80"></span>' +
             '<div id="tpfBar"><div id="tpfBarIn"></div></div>' +
             '<button type="button" id="tpfStop">\u23F9 Stop</button></div>' +
             '<div id="tpfLedgerList"></div>' +
+            '<div id="tpfLedgerFails" role="status"></div>' +
             '<div id="tpfSafety">\uD83D\uDD12 Prep drafts save to each patient\u2019s History only \u2014 nothing is ever sent to Athena automatically.</div>';
           row.parentElement.insertBefore(led, row.nextSibling);
           led.querySelector("#tpfStop").onclick = function () { RUN.stop = true; toast("Stopping after the current patient\u2026", ""); };
+          /* collapse is a per-doctor preference and must survive the 1.3s tick
+             that rebuilds this panel, so it is read back from storage below. */
+          var tog = led.querySelector("#tpfLedgerTog");
+          tog.onclick = function () {
+            var nowCollapsed = !led.classList.contains("tpf-collapsed");
+            led.classList[nowCollapsed ? "add" : "remove"]("tpf-collapsed");
+            tog.setAttribute("aria-expanded", nowCollapsed ? "false" : "true");
+            try { localStorage.setItem("mlsTpfLedgerCollapsed", nowCollapsed ? "1" : "0"); } catch (eLs) {}
+          };
+          try {
+            if (localStorage.getItem("mlsTpfLedgerCollapsed") === "1") {
+              led.classList.add("tpf-collapsed"); tog.setAttribute("aria-expanded", "false");
+            }
+          } catch (eLs2) {}
         }
       }
     } catch (e) {}
@@ -16193,7 +16375,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   API.openMonth = openMonth;
   API.draftAll = draftAll;
   API.testMatch = runMatchTest;
-  /* b870: the workroom's template rail reads health through THIS owner — one
+  /* b940: the workroom's template rail reads health through THIS owner — one
      source for the honest heuristics, never a duplicated copy that drifts. */
   API.healthOf = healthOf;
 
@@ -18440,8 +18622,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-crow b{text-align:right;}',
     '.ez3-modal-note{font-size:12px;color:#9fd8bd;margin:12px 0 14px;line-height:1.55;}',
     '.ez3-modal-btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}',
-    /* b870: the workspace toast lives at the SAME measured top anchor as the
-       app toast. b870 left it at bottom:150px - inside the band the owner said
+    /* b940: the workspace toast lives at the SAME measured top anchor as the
+       app toast. b940 left it at bottom:150px - inside the band the owner said
        blocks the ask bar - because toast() inside this module is a LOCAL
        function shadowing window.toast, so moving the app rule missed every
        workspace message. --mls-notice-top is measured and republished on each
@@ -18941,7 +19123,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      inline working state at once and resolves ONLY on what the record proves:
      a newly landed chart timestamp. Never on the click having been dispatched.
      ASCII only, no apostrophes (ez3-region scanner parity rule). */
-  /* b870: the 700ms verification poll REPLACES the whole #ez3VRow node when
+  /* b940: the 700ms verification poll REPLACES the whole #ez3VRow node when
      vSig() changes, and vSig flips the moment the extension identity signal
      lands - which is exactly during a chart pull. That erased this progress
      line mid-flight and the row reverted to its resting text, so on a
@@ -18982,14 +19164,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (now && now !== before) {
         clearInterval(poll);
         chartRowStatus("\u2713 History loaded from athenaOne - the AI can reference it", "ok");
-        chartStatusPending = null; /* b870: the watch is OVER - let the row show real state again */
+        chartStatusPending = null; /* b940: the watch is OVER - let the row show real state again */
         safe(function () { render(); });
         return;
       }
       if (waited >= 90000) {
         clearInterval(poll);
         chartRowStatus("\u26A0 No chart came back. Open this patient in athenaOne, then press Pull chart again.", "warn");
-        chartStatusPending = null; /* b870: stop restoring a finished watch */
+        chartStatusPending = null; /* b940: stop restoring a finished watch */
       }
     }, 1500);
   }
@@ -19348,11 +19530,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function homeSig() {
     var allRows = arguments.length ? arguments[0] : dayRows(visitDay());
     var tc = arguments.length > 1 ? arguments[1] : timeContext(allRows);
-    /* b870: the empty-day hero renders from activePatient() (the owner's
+    /* b940: the empty-day hero renders from activePatient() (the owner's
        through-line law, b693) but this signature never tracked it — switching
        patients via Recent or the calendar's "Open patient" left the hero
        offering the PREVIOUS patient's name until something else moved.
-       Measured live at b870 in BOTH directions (banner Adam / hero Bernard,
+       Measured live at b940 in BOTH directions (banner Adam / hero Bernard,
        then banner Bernard / hero Adam). The banner patient is part of what
        the home shows, so it is part of the signature. */
     var apk = '';
@@ -19389,7 +19571,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!ap) return false;
     return String(button.title || '') === 'Open the patient portal for ' + String(ap.name || 'this patient') + '. Nothing sends until you click Send login.';
   }
-  /* b870 HONEST DAY COUNTS. Measured 2026-07-27: this button read
+  /* b940 HONEST DAY COUNTS. Measured 2026-07-27: this button read
      "6 on Wednesday, July 29\u2019s schedule" while the account store held 19
      rows for that day. The tab had loaded its calendar BEFORE the pull and
      nothing re-read it, yet the label stated 6 as a fact about the day. A
@@ -20162,7 +20344,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<small>' + (tx.trim().length ? 'Uses every recorded and typed segment above' : 'Add some transcript text first') + '</small></button>' +
              '<div class="ez3-row2"><button type="button" class="ez3-sm pri" id="ez3Rec2">🎙 Resume recording</button></div>';
       } else {
-        /* b870: the patient name comes OFF this button. The visit workspace
+        /* b940: the patient name comes OFF this button. The visit workspace
            already names the patient in the banner immediately above, and
            .ez3-big small renders display:block - so the name became its own
            line and read as a duplicate Start Recording pill above the stage
@@ -20437,7 +20619,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * stop-before-Save/Sign rules (HTML:13760) still apply. This module adds a
    * FIRST gate that hard-BLOCKS on a name mismatch and never auto-submits. */
   function requestSend(a) {
-    /* b870 (write-blocker audit #40): a 30-char floor refused real short notes. */
+    /* b940 (write-blocker audit #40): a 30-char floor refused real short notes. */
     if (noteText().trim().length < 1) { toast('Type or generate the note first — there’s nothing to send yet.'); return; }
     var p = $('pushAllEmrBtn'); if (!p) { toast('Send control (#pushAllEmrBtn) not found on this build.'); return; }
     var locked = S.locked || (a ? { name: a.name || '', dob: dobOf(a) } : { name: activeName(), dob: '' });
@@ -21399,7 +21581,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var lt = $('ez3Late'); if (lt) { var l = lateLine(tc); if (l) lt.textContent = '⏰ ' + l; }
         var st = $('ez3HomeStatus'); if (st) setHomeStatusHtml(st, homeStatus());
       } else if (S.mode === 'doctor' && S.screen === 'choose') {
-        /* b870: Choose had NO poll branch, so once it was open it never
+        /* b940: Choose had NO poll branch, so once it was open it never
            re-read the store. Measured 2026-07-27: it stated 6 patients for
            Wednesday 2026-07-29 while the account held 19. homeSig() already
            carries the selected day and its row count, so the signature that
@@ -21548,7 +21730,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     state: function () { return { mode: S.mode, screen: S.screen, phase: S.phase, locked: S.locked, autoPull: S.autoPull, pull: P ? { running: P.running, label: P.range.label, saved: P.saved, failedDays: P.failedDays.length } : null }; },
     providerTarget: function () { return activeProviderRequest(); },
     providerRosterReceipt: function () { return providerRosterReceipt(); },
-    /* b870 (owner 2026-07-27: "WHY IS THERE 2 GENERATE NOTES HERE"). The top
+    /* b940 (owner 2026-07-27: "WHY IS THERE 2 GENERATE NOTES HERE"). The top
        visit lane starts a generation by clicking #genBtn directly, which never
        stamps this phase machine, so computePhase() stayed on idle/stopped and
        renderDoctor kept painting its own #ez3Gen hero reading "Generate one
@@ -21580,7 +21762,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       exactActionReady: function (actionLabel) {
         var label = actionLabel || 'this action';
         if (!S.appt) {
-          /* b870 (write-blocker audit #36): DEMOTE, never refuse. The owner's
+          /* b940 (write-blocker audit #36): DEMOTE, never refuse. The owner's
              standing ruling (same file, requireExactScheduledBinding): an
              unscheduled patient proceeds as an UNSCHEDULED visit with a
              visible warning; only a proven cross-patient conflict blocks.
@@ -23266,7 +23448,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ---------- public api + revert ---------- */
   api.purgeClinicalStorage = purgeRecordingDb;
-  /* b870: the pull-completion path must be able to drive the ONE safe Easy
+  /* b940: the pull-completion path must be able to drive the ONE safe Easy
      re-render instead of inventing a second one. refreshEasy is debounced and
      already refuses to touch an active visit, a live recording, or a running
      pull, so exporting it adds no new way to disturb the doctor. */
@@ -25315,7 +25497,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * stop-before-Save/Sign rules (HTML:13760) still apply. This module adds a
    * FIRST gate that hard-BLOCKS on a name mismatch and never auto-submits. */
   function requestSend(a) {
-    /* b870 (write-blocker audit #40): a 30-char floor refused real short notes. */
+    /* b940 (write-blocker audit #40): a 30-char floor refused real short notes. */
     if (noteText().trim().length < 1) { toast('Type or generate the note first — there’s nothing to send yet.'); return; }
     var p = $('pushAllEmrBtn'); if (!p) { toast('Send control (#pushAllEmrBtn) not found on this build.'); return; }
     var locked = S.locked || (a ? { name: a.name || '', dob: dobOf(a) } : { name: activeName(), dob: '' });
@@ -27356,7 +27538,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * stop-before-Save/Sign rules (HTML:13760) still apply. This module adds a
    * FIRST gate that hard-BLOCKS on a name mismatch and never auto-submits. */
   function requestSend(a) {
-    /* b870 (write-blocker audit #40): a 30-char floor refused real short notes. */
+    /* b940 (write-blocker audit #40): a 30-char floor refused real short notes. */
     if (noteText().trim().length < 1) { toast('Type or generate the note first — there’s nothing to send yet.'); return; }
     var p = $('pushAllEmrBtn'); if (!p) { toast('Send control (#pushAllEmrBtn) not found on this build.'); return; }
     var locked = S.locked || (a ? { name: a.name || '', dob: dobOf(a) } : { name: activeName(), dob: '' });
@@ -28927,7 +29109,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * stop-before-Save/Sign rules (HTML:13760) still apply. This module adds a
    * FIRST gate that hard-BLOCKS on a name mismatch and never auto-submits. */
   function requestSend(a) {
-    /* b870 (write-blocker audit #40): a 30-char floor refused real short notes. */
+    /* b940 (write-blocker audit #40): a 30-char floor refused real short notes. */
     if (noteText().trim().length < 1) { toast('Type or generate the note first — there’s nothing to send yet.'); return; }
     var p = $('pushAllEmrBtn'); if (!p) { toast('Send control (#pushAllEmrBtn) not found on this build.'); return; }
     var locked = S.locked || (a ? { name: a.name || '', dob: dobOf(a) } : { name: activeName(), dob: '' });
@@ -30452,7 +30634,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ---- send-to-Athena with name/DOB/destination confirm ------------------ */
   function requestSend(a) {
-    /* b870 (write-blocker audit #40): a 30-char floor refused real short notes. */
+    /* b940 (write-blocker audit #40): a 30-char floor refused real short notes. */
     if (noteText().trim().length < 1) { toast('Type or generate the note first — there’s nothing to send yet.'); return; }
     var p = $('pushAllEmrBtn'); if (!p) { toast('Send control (#pushAllEmrBtn) not found on this build.'); return; }
     var locked = S.locked || (a ? { name: a.name || '', dob: dobOf(a) } : { name: activeName(), dob: '' });
@@ -31718,7 +31900,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { return Date.now() - Number(localStorage.getItem(VKEY) || 0) < 24 * 3600 * 1000; } catch (e) { return false; }
   }
   function banner(msg, how) {
-    /* b870 (#20 phone): NEVER on a phone. This prompt fires whenever there is
+    /* b940 (#20 phone): NEVER on a phone. This prompt fires whenever there is
        no extension handshake, and a phone can never complete one, so it fired
        every phone session. Measured at 375x812: 230x332 fixed at bottom:90px
        with z-index 2147483100 over the centre of the screen, which made 6 of
@@ -33363,7 +33545,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!inRange(v.date, months)) return;
         nVisits++;
         if(!window.__mlsStudyScrub){window.__mlsStudyScrub=function(text,name){var t=String(text==null?'':text);try{String(name==null?'':name).toLowerCase().split(/[^a-z]+/).forEach(function(w){if(w.length>2)t=t.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'),'[patient]');});t=t.replace(/\b(mrn|acct|account|chart|id)\s*[#:]?\s*\d[\d-]*\b/gi,'[id]');t=t.replace(/\b\d{3}[-.)\s]\d{3}[-.\s]\d{4}\b/g,'[phone]');t=t.replace(/\b\d{6,}\b/g,'[id]');t=t.replace(/\b(\d{4})-(\d{2})-\d{2}\b/g,'$1-$2');t=t.replace(/\b(\d{1,2})\/\d{1,2}\/(\d{4})\b/g,'$1/$2');}catch(e){}return t;};}
-        /* b870: the header below says DE-IDENTIFIED; the detail must be. */
+        /* b940: the header below says DE-IDENTIFIED; the detail must be. */
         if (lines.length < 900) lines.push("P" + pi + " | " + S(v.date) + " | " + S(v.type) + " | " + window.__mlsStudyScrub(S(v.detail), p && p.name).replace(/[\n\r|]+/g, " ").slice(0, 260));
       });
     });
@@ -33684,7 +33866,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         _origRender = window.renderStudioWidget;
         var w = function (html, title) {
           var r = _origRender.apply(this, arguments);
-          /* b870 (audit): a tool that FAILS its runtime check was saved into
+          /* b940 (audit): a tool that FAILS its runtime check was saved into
              My creations anyway - the verdict arrives LATER by postMessage.
              Stash a PENDING save; the __mlsWidgetReady branch (ScribeFlow)
              commits it - the one door that knows the tool passed. */
@@ -35048,7 +35230,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b870';
+  window.__MLS_AV = window.__MLS_AV || 'b946';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35391,7 +35573,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b870';
+  var MLS_APP_BUILD='2026-07-25-b946';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -37887,7 +38069,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var b=document.getElementById('mlsPortalInviteBtn');
       if(!ap){ if(b) b.remove(); return; } // only show for a real active patient
 
-      /* b870: this button is INVISIBLE in the reworked patient banner — the
+      /* b940: this button is INVISIBLE in the reworked patient banner — the
          bar's allowlist hides every child but the identity block and Recent —
          but it deliberately still MOUNTS, and that is not an oversight.
          feat_mls_patient_reach_v2's delegatePortalInvite() reaches for
@@ -37977,7 +38159,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 /* Legal/Team navigation restore is intentionally held in this release. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_sched_datesync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_sched_datesync.js?v=20260626sds1c1';s.setAttribute('data-mls-asset','feat_mls_sched_datesync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item38: schedule-bar date sync + viewed-date indicator (additive, reversible: window.__mlsSchedDateSync.revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_realtime.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_realtime.js?v=20260723unr110';s.setAttribute('data-mls-asset','feat_mls_upnow_realtime.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item39: UP NOW real-time honesty / no-more-patients-today banner (additive, reversible: window.__mlsUpNowRealtime.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_realtime.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_realtime.js?v=20260805unr111';s.setAttribute('data-mls-asset','feat_mls_upnow_realtime.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item39: UP NOW real-time honesty / no-more-patients-today banner (additive, reversible: window.__mlsUpNowRealtime.revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_caption_entityfix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_caption_entityfix.js?v=20260626cef1c1';s.setAttribute('data-mls-asset','feat_mls_caption_entityfix.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* item40: fix double-escaped "today's schedule" caption entity (additive, reversible: window.__mlsCaptionEntityFix.revert()) */
 /* ============================================================
    MLS-CONNECT — connectedness feature bundle (external)
@@ -40274,7 +40456,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          "Installed". __mlsAsstFix.version is an in-app module version (e.g.
          1.4.1) and showed up as a phantom installed extension. */
       var loaded = null; try { loaded = window.__mlsExtReportedVersion || null; } catch (e) {}
-      /* b870+b870 (owner: "fix text and badge"): the badge COMPARES, and only
+      /* b940+b940 (owner: "fix text and badge"): the badge COMPARES, and only
          a version the extension itself announced counts as installed. */
       loaded = loaded ? String(loaded).replace(/^v/i, '') : '';
       if (!VER && !loaded) return null;                       // nothing known yet: leave the honest "checking" text
@@ -42270,7 +42452,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 })();
 
 ;/* === Outcome Study feature loader (loads mls-outcome-study.js) === */
-(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.getElementById('mlsOutcomeStudyLoader'))return;var s=document.createElement('script');s.id='mlsOutcomeStudyLoader';s.src='mls-outcome-study.js?v=20260802lib6';s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})();
+(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.getElementById('mlsOutcomeStudyLoader'))return;var s=document.createElement('script');s.id='mlsOutcomeStudyLoader';s.src='mls-outcome-study.js?v=20260807lib7';s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})();
 
 ;/* === RVU feature loader (loads mls-rvu.js) === */
 (function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.getElementById('mlsRvuLoader'))return;var s=document.createElement('script');s.id='mlsRvuLoader';s.src='mls-rvu.js?v=20260730bc2';s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})();
@@ -42376,7 +42558,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   } catch(e){}
 })();
 
-;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v=20260729vis11';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
+;(function(){try{if(!document.querySelector('script[data-mls-visits]')){var s=document.createElement('script');s.src='feat_visits.js?v='+(window.__MLS_AV||Date.now())+'';s.setAttribute('data-mls-visits','1');(document.head||document.documentElement).appendChild(s);}}catch(e){}})(); /* MLS visit-aware loader */
 /* Networked legal chart-fill UI is intentionally not loaded in this release. */
 
 /* MLS — load Add-patient (per-visit) UI + injection-cohort per-visit capture (append-only, guarded) */
@@ -42404,10 +42586,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 
 /* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
-(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.js?v=20260802lib6';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.js?v=20260807lib7';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* ---- loader: mls-procedure-report (Analysis › 📊 Procedure Report: counts by type, Office/ASC place-of-service, RVU/$ totals, PDF/CSV) ---- */
-(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){(function waitForRvu(tries){if(window.__mlsRVU||tries>=30){if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.js?v=20260802lib6';s.async=true;(document.head||document.documentElement).appendChild(s);return;}setTimeout(function(){waitForRvu(tries+1);},100);})(0);},{timeout:2500});}catch(e){}})();
+(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){(function waitForRvu(tries){if(window.__mlsRVU||tries>=30){if(window.__mlsProcReportLoader)return;window.__mlsProcReportLoader=1;var s=document.createElement('script');s.src='mls-procedure-report.js?v=20260807lib7';s.async=true;(document.head||document.documentElement).appendChild(s);return;}setTimeout(function(){waitForRvu(tries+1);},100);})(0);},{timeout:2500});}catch(e){}})();
 
 ;(function(){try{if(!document.querySelector('script[data-mls-asset="feat_source_clarity.js"]')){var s=document.createElement('script');s.src='feat_source_clarity.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_source_clarity.js');document.head.appendChild(s);}}catch(e){}})();
 /* ---- loader: feat_athena_autopull (one-click open-chart auto-pull; fixes false name-match safety stop; additive, reversible) ---- */
@@ -42423,11 +42605,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* ---- loader: feat_save_verify.js (save-integrity verification) ---- */
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_save_verify.js"]'))return;var s=document.createElement('script');s.src='feat_save_verify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_save_verify.js');document.head.appendChild(s);}catch(e){}})();
 
-/* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success) */
-(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v=20260719ad104';s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
+/* feat_athena_doctor.js loader — guarded, idempotent, cache-busted (self-troubleshoot + clearer success)
+   2026-08-06: this was a hand-maintained literal token last moved at b430 on
+   2026-07-19, while the module itself changed twice after that (b770, b803).
+   sw.js:272 serves ?v= assets CACHE-FIRST, so a browser holding a cache entry under
+   that URL would keep the b430 bytes and b803's rewrite of the Athena failure warning
+   could never reach it. MEASURED, do not overstate it: QA fetched this exact frozen-token
+   URL through the owner's service worker and compared it to a cache-busted origin fetch
+   on 2026-08-06 — 37,499 bytes, byte-identical. So HIS browser was not being served
+   stale bytes today; the mechanism is real, this instance of it was not. Switched to the
+   __MLS_AV form (:35051) — the fix tests/cache-token-cannot-go-stale.test.js:136
+   prescribes — so it follows the build number and cannot go stale again. */
+(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_doctor.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_doctor.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_doctor.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_onscreen.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_onscreen.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_opnote_onscreen.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 /* ---- loader: mls-template-stdline (reusable standard line for Templates tab) ---- */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="mls-template-stdline.js"]'))return;var s=document.createElement('script');s.src='/mls-template-stdline.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','mls-template-stdline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 
 /* ---- loader: feat_athena_actions.js (shared Athena-action treatment: live status / click-intent labels / destination-verify / self-recovery) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_actions.js"]'))return;var s=document.createElement('script');s.src='/feat_athena_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_actions.js');document.head.appendChild(s);}catch(e){}})();
@@ -42452,7 +42644,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_centerpiece.js"]'))return;var s=document.createElement('script');s.src='feat_mls_centerpiece.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_centerpiece.js');document.head.appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_fab_layout.js"]'))return;var s=document.createElement('script');s.src='feat_fab_layout.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_fab_layout.js');document.head.appendChild(s);}catch(e){}})();
 /* ---- loader feat_athena_provider_picker.js (Whose patients? doctor dropdown + provider-scoped schedule pull) ---- */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return;var s=document.createElement('script');s.src='/feat_after_visit_summary.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_after_visit_summary.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return;var s=document.createElement('script');s.src='/feat_after_visit_summary.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_after_visit_summary.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 /* ---- loader: feat_mls_protocol (MLS Easy protocol: auto-advance to NEXT UP Slide 2, record textbox, full ordered flow, provider-name-everywhere, sizing/readability; additive, reversible) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol_pickfix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_protocol_pickfix.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_mls_protocol_pickfix.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -42463,8 +42655,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{['feat_opnote_history.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — history-aware op-note generation + real loading/ready indicator (append-only, guarded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_roster.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_roster.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_provider_roster.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 
 /* LOADER for feat_athena_truthcheck.js  (PART 1)
  * Append this ONE guarded, idempotent, cache-busted, ;-prefixed line/block at
@@ -42598,7 +42790,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260727dl2';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260725asst217';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.16 - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + escalating first-click nav settle-retry + ping-aware duplicate detection + merge-deferral busy stamp + outdated-extension hint + counted import-phase statuses + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.20 (mdx-2.0.1 the display-echo test now accepts the extension's real athena:&lt;display text&gt; keys, which made mdx-2.0.0 a no-op; mdx-2.0.2 asserts a credential only when comma- or underscore-delimited, so a surname that spells one cannot invent a second clinician; mdx-1.1.0 history refusal sub-cause capture + empty-read pace guard) - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + escalating first-click nav settle-retry + ping-aware duplicate detection + merge-deferral busy stamp + outdated-extension hint + counted import-phase statuses + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -42617,7 +42809,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* 2026-07-28 owner order: feat_mls_voice_commands.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_chartautofill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_chartautofill.js?v=20260720cf1c2';s.setAttribute('data-mls-asset','feat_mls_chartautofill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item6: auto-fill patient name from open athenaOne chart (read-only, additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_clean.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_clean.js?v=20260625lc2c1';s.setAttribute('data-mls-asset','feat_mls_login_clean.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item7: login shows only login UI (gate app chrome pre-login, additive reversible) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_timeline_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_timeline_sync.js?v=20260625tl1c1';s.setAttribute('data-mls-asset','feat_mls_timeline_sync.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_timeline_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_timeline_sync.js?v=20260625tl1c1';s.setAttribute('data-mls-asset','feat_mls_timeline_sync.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calbox_uniform.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calbox_uniform.js?v=20260727cb110';s.setAttribute('data-mls-asset','feat_mls_calbox_uniform.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b739: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_gen_speed.js"]'))return;var s=document.createElement('script');s.src='feat_mls_gen_speed.js?v=20260625gs1c1';s.setAttribute('data-mls-asset','feat_mls_gen_speed.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item10: keep backend warm to cut op-note cold-start latency (additive reversible) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_nextup_controls.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260625nu1c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item11: remove redundant white Complex picker list; add Today/any-day/Show-more to blue NEXT UP (additive, reversible) */
@@ -42627,18 +42819,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_offtab_navhide.js"]'))return;var s=document.createElement('script');s.src='feat_mls_offtab_navhide.js?v=20260625oth1c1';s.setAttribute('data-mls-asset','feat_mls_offtab_navhide.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item13: off App-tabs disappear from nav (kept in Menu) -- 6b nav half (additive, reversible) */
 ;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;}catch(e){}})(); /* canonical template-driven op-note Fields workflow owns this feature; competing legacy quick action retired */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_baricon.js"]'))return;var s=document.createElement('script');s.src='feat_mls_baricon.js?v=20260727bi121';s.setAttribute('data-mls-asset','feat_mls_baricon.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item15: patient-bar Chart/Visit/History/Schedule -> icons (additive, reversible) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_avs.js?v=20260625havs1c1';s.setAttribute('data-mls-asset','feat_mls_history_avs.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_history_avs.js"]'))return;var s=document.createElement('script');s.src='feat_mls_history_avs.js?v=20260625havs1c1';s.setAttribute('data-mls-asset','feat_mls_history_avs.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v=20260716unify110';s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Copilot one-conversation store, request-specific pending state, event-driven context */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_copilot_slim.js"]'))return;var s=document.createElement('script');s.src='feat_copilot_slim.js?v=20260719csp211';s.setAttribute('data-mls-asset','feat_copilot_slim.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* loss-aware Copilot context packing: keeps identities, counts, appointments and structured metrics */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260802asst145';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260728p2c6';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v=20260722ca204';s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* cpw-1.0.0: Copilot app-wide senses (providerCoverage + capabilities in the snapshot), absolute wire cap on /api/copilot, and confirm-by-tap executors for pullProviders (via __mlsSI.dayPull, roster fail-closed) and draftNote (via openOpPrepForPatient). DEFERRED past first paint: the Copilot cannot receive a question before sign-in completes, so this module has no claim on the boot burst -- additive, reversible (window.__mlsCopilotPower.revert()) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v=20260807av567';s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260803chk3044';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260727uns4';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260806chk3045';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260727uns4';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
@@ -42656,7 +42850,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A='feat_mls_athena_chip_conn.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625acc1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item30: unify context-bar Athena chip with the connection source of truth (__mlsConnTruth) -- idle chip shows honest connected/not-connected instead of bare "idle" -- additive, reversible (window.__mlsAthenaChipConn.revert()) */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_athena_chip_conn_all.js"]'))return;var s=document.createElement('script');s.src='feat_mls_athena_chip_conn_all.js?v=20260625acca1c1';s.setAttribute('data-mls-asset','feat_mls_athena_chip_conn_all.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item31: extend item30 -- Athena context-bar chip honours __mlsConnTruth in the non-idle "synced" state too, so the chip says the same honest connected/not-connected on every tab (additive, reversible: window.__mlsAthenaChipConnAll.revert()) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_lastseen_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_lastseen_unify.js?v=20260625ls1c1';s.setAttribute('data-mls-asset','feat_mls_lastseen_unify.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_lastseen_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_lastseen_unify.js?v=20260625ls1c1';s.setAttribute('data-mls-asset','feat_mls_lastseen_unify.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avs_label_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avs_label_unify.js?v=20260625avslbl1c1';s.setAttribute('data-mls-asset','feat_mls_avs_label_unify.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b739: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_ctxbar_dob_slash.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260626cds1c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item35: unify the patient context-bar DOB to the canonical MM/DD/YYYY slash format (matches DOB input, profile cards, scheduler cards & timeline) -- removes the lone dash-format outlier in #mlsCtxBar .mlsctx-meta -- additive, reversible (window.__mlsCtxDobSlash.revert()) */
@@ -42674,7 +42868,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* Private expert review remains in its direct review-only module; no Legal-view mover is loaded. */
 
 ;/* === item69,70,72,73,77,78 promoted staging->prod 2026-06-30 (item74 snapshot & item76 allergy SKIPPED: already present in prod, no duplicates) === */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_outcome_pdf.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802lib6";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* item69 (STAGING): Outcome Study report exports -- multi-page PDF report + standalone SVG chart download added to the existing Outcome Study results panel (sources live rendered cohort data; athenaOne untouched; never writes/deletes records) -- additive, reversible: window.__mlsOutcomePdf.revert() */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_outcome_pdf.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260807lib7";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* item69 (STAGING): Outcome Study report exports -- multi-page PDF report + standalone SVG chart download added to the existing Outcome Study results panel (sources live rendered cohort data; athenaOne untouched; never writes/deletes records) -- additive, reversible: window.__mlsOutcomePdf.revert() */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_pervisit_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260725pvu1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item70: unify copy-every-visit + per-visit records into one coherent timeline/detail surface + verify single model; additive, reversible: window.__mlsPerVisitUnify.revert() */
 ;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727dp7";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
 ;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727rp210";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 (STAGING): Recent-patients one-click quick-switcher in the patient bar -- jump back to the last charts opened this session via the app's own setActivePtId path (additive, reversible: window.__mlsRecentPts.revert()) */
@@ -43957,22 +44151,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260802ne113';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=20260717wbs110-b356';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v=20260802pf112';s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260728cal16';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_prep.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_prep.js?v=20260731opnp181';s.setAttribute('data-mls-asset','feat_mls_opnote_prep.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 12: op-note prep hardening - immutable identity, account-scoped provider/practice/facility facts, draft-only (window.__mlsOpNotePrep opnp-1.6.0; revert()) */
 /* Medical-legal narrative workflow is intentionally held pending reviewed release. */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260731dl1c2-B820';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260731dl1c2-B820';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260723sr233";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v=20260731tl140';s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b904: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 /* Staff account provisioning is intentionally held; Staff Prep remains available from Menu. */
 ;(function(){try{var A='feat_mls_command_palette.js',V='cpal-1.0.3',api=window.__mlsCmdPalette,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='feat_mls_command_palette.js?v=20260724cmd104';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Ctrl+K converges on canonical Find; version-aware compatibility owner (cpal-1.0.3; revert()). */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260805vtl103';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260805vtl103';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1400);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_tele_doctor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_tele_doctor.js?v=20260805td100';s.setAttribute('data-mls-asset','feat_mls_tele_doctor.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:3000});}catch(e){}})(); /* post-op video visits: the doctor's accept + call surface. Ships DARK  polls only when signed in to the backend and renders nothing without a real pending request. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802wd111";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260806wd112";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Calm Shell: dock + right-now bar + visit stages + heads-down + Ask over the existing controls, ?ui=classic escape hatch (window.__mlsCalmShell calm-1.0.0; revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_views.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_views.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_views.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Calm Views: one primary action per screen on Calendar/History/AI Studio/Analysis, everything else class-folded behind an in-view More. Loaded on idle - it is chrome over views the doctor reaches after boot, and it must not join the post-login burst (window.__mlsCalmViews cv-1.0.0; revert()) */
@@ -43989,7 +44184,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_polish_everywhere.js";if(document.querySelector(String.fromCharCode(115,99,114,105,112,116)+"[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* pe-1.0.0: the app motion vocabulary applied to the surfaces the doctor lives in (.card, .ez3-card, .ez3-row2, .pt-item, every btn-*), not just Copilot. Revert: window.__mlsPolishEverywhere.revert() */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_magic.js";if(document.querySelector("script[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* mg-1.0.0: the MOMENTS - a note arriving, a completion drawing its own check, a stage advancing, waiting, the banner patient changing. Revert: window.__mlsMagic.revert() */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_voice_one.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_voice_one.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_visit_voice_one.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500});}catch(e){}})(); /* ONE in-visit voice control that EXPANDS to Copilot Voice / MLS Assistant / Dictate and never decides between them; inline, never floating. Deferred on requestIdleCallback, same as the cluster it replaces (window.__mlsVisitVoiceOne vo-1.0.0; revert(), describe()). */
-;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260802onf2170';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: one Fields workflow, account-scoped safe defaults, clinician-edit preservation, exact-patient chart fills (window.__mlsOpNoteFill onf-2.7.0; revert()) */
+;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: one Fields workflow, account-scoped safe defaults, clinician-edit preservation, exact-patient chart fills (window.__mlsOpNoteFill onf-2.7.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260716ct110';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 2026-07-29: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */
@@ -44620,6 +44815,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         extUpdateHint: String(res.extUpdateHint || '').slice(0, 300),
         scheduleReceipt: dsPick(res.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason', 'schedDate']),
         providerRosterReceipt: dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'providerMode', 'targetDate']),
+        /* mdx-1.0.0: the report that reached us for a provider-incomplete
+           refusal (Mac, 2026-08-05) carried no provider receipt at all, so the
+           failing rows could not be named remotely. Clinician names and
+           PHI-free row shapes only - unattributedDetail is built capped and
+           without patient fields at the source. */
+        providerReceipt: dsPick(res.providerReceipt, ['mode', 'requested', 'rosterVerified', 'complete', 'reason', 'scheduleComplete', 'sourceRows', 'providerTaggedRows', 'matchingRows', 'mismatchedRows', 'unattributedRows', 'nameMatchedIdMissingRows', 'requireStableId', 'canonicalNameFallback', 'canonicalNameFallbackBasis', 'rosterSameNameCount', 'sameNameConflictKinds', 'attribution', 'scopeFilledRows', 'discoveredProviders', 'unattributedDetail']),
         calendarReceipt: (function () {
           var cr = dsPick(res.calendarReceipt, [
             'complete', 'attempted', 'accounted', 'mapped', 'uniqueSources', 'uniqueBackend',
@@ -44634,7 +44835,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return cr;
         })(),
         identityBootstrap: ib ? { complete: ib.complete === true, attempted: ib.attempted, alreadyProven: ib.alreadyProven, requested: ib.requested, resolved: ib.resolved, failed: ib.failed, reasons: ib.reasons || {} } : null,
-        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), retryReasons: dsReasonHistogram(hr.retry) } : null
+        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), retryReasons: dsReasonHistogram(hr.retry),
+          /* mdx-1.1.0: the sub-cause evidence behind bodies/index refusals -
+             reason + histograms + counters only, never patient identifiers. */
+          retryDiag: (function () { try { return (hr.retry || []).slice(0, 10).map(function (r) { return r && r.diag ? { reason: String(r.reason || '').slice(0, 80), hist: r.diag.hist || null, enumDiag: r.diag.enumDiag || null, receipt: r.diag.receipt || null } : null; }).filter(function (x0) { return !!x0; }); } catch (e) { return []; } })() } : null
       } : null,
       lastStatuses: (DS.statusLog || []).slice()
     };
@@ -44693,7 +44897,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'unresolved ' + unresolved + (unresolved && reasonBits.length ? ' — ' + reasonBits.join(', ') : '')];
     return parts.join(' · ');
   }
-  /* b870: THE CENSUS SENTENCE. hist in pullOutcome counts RECEIPTS - patients
+  /* b940: THE CENSUS SENTENCE. hist in pullOutcome counts RECEIPTS - patients
      whose read reported complete - and on Wed 2026-07-29 all 19 reported
      complete while the store gained zero characters (stamps 19, problems 6,
      meds 0, visits 18 before AND after, byte identical). The census in the
@@ -44749,7 +44953,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return { ok: true, message: fmtDay(day) + ' was verified in Athena and has no appointments.' };
       }
       var rows = Number(sr.parsedCount != null ? sr.parsedCount : (sr.mergedRows != null ? sr.mergedRows : 0));
-      /* b870: report what was STORED, not what was walked. hr.processed counts
+      /* b940: report what was STORED, not what was walked. hr.processed counts
          ENUMERATED rows - it is incremented for a pure failure and for every
          patient regardless of whether the chart landed - so the old line could
          say "history checked for 19 patients" with zero histories stored, which
@@ -45244,7 +45448,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       body.insertBefore(strip, body.firstChild);
       /* "Full visit notes" preference. 2026-07-28: DEFAULT ON — the 2026-07-21
          default-OFF call predates the finding that the toggle never rendered
-         (b870) and that 47 of 51 live snapshot patients carried only index-only
+         (b940) and that 47 of 51 live snapshot patients carried only index-only
          visit stubs: no human ever chose the fast lane, the code did. A pull
          without encounter bodies is not complete history (owner bar
          2026-07-28). An explicit click writes the ...Set marker and is
@@ -45380,7 +45584,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var w = function () {
       var args = arguments, self = this;
       var opts=args[1]||{},before=(opts.patientId||opts.name)?opts:activeP();
-      /* b870: `safe` was never defined in this IIFE, so the moment
+      /* b940: `safe` was never defined in this IIFE, so the moment
          _athenaHistoryTargetSnapshot existed on window, EVERY wrapped call
          threw ReferenceError synchronously - the individual patient pull was
          dead app-wide, ~1.2s after boot. Found live: the first pull of a
@@ -45719,7 +45923,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       box.innerHTML = '<label style="font-weight:600">Staff (not patients)</label>' +
         (names.length
           ? names.map(function (n) { return '<div class="sm-row"><span>' + esc(n.replace(/\b\w/g, function (c) { return c.toUpperCase(); })) + '</span><button type="button" class="sm-un" data-sm="' + esc(n) + '">Unmark</button></div>'; }).join('')
-          /* b870: this copy used to point the doctor at a quiet staff-marking
+          /* b940: this copy used to point the doctor at a quiet staff-marking
              link on the active-patient bar. The banner rework (owner
              2026-07-27) removed every control from that bar, so the sentence
              would have been describing something no longer on screen — the
@@ -45803,7 +46007,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#profileCard.pf2-collapsed #pf2SumExtra > *{display:none!important;}',
     '.pf2-sec.open .pf2-b{display:block;}',
     '.pf2-b > *{margin-top:8px !important;}',
-    /* b870 (owner 2026-07-27: "the arrows do not work"). The Calm Shell adopts
+    /* b940 (owner 2026-07-27: "the arrows do not work"). The Calm Shell adopts
        every 2-child direct child of #profileCard as a .mls-fold, which matched
        these very sections, and its
          body.mls-calm #profileCard .mls-fold:not(.mls-open) > *:not(:first-child)
@@ -45840,7 +46044,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { id: 'pf2Classic', label: '📚 Visit timeline (classic view)' },
     { id: 'pf2Misc',    label: '📈 Vitals & extras' }
   ];
-  /* b870: ONE delegated listener, installed once, instead of a listener per
+  /* b940: ONE delegated listener, installed once, instead of a listener per
      header node. A per-node listener dies with the node, and this module is
      explicitly re-entrant ("Re-renders re-adopt on the next ensure pass"), so
      any layer that rebuilds a section would leave a visible arrow that cannot
@@ -46751,7 +46955,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        toggles only, nothing removed */
     'body.mls-phone .ez3fl-quick, body.mls-phone .ez3fl-staffLink, body.mls-phone .ez3fl-steps,',
     'body.mls-phone .wd-deck, body.mls-phone [id^="mlsWd"], body.mls-phone #mlsDayProgress,',
-    /* b870: .ez3-row2 left this list - visit_focus owns row2 folding on every
+    /* b940: .ez3-row2 left this list - visit_focus owns row2 folding on every
        device (behind the Visit shortcuts disclosure), and the blanket hide was
        the phone's post-stop dead end: note readonly, no edit/copy/resume. */
     'body.mls-phone #ez3Adv,',
@@ -46779,10 +46983,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     'body.mls-phone #mlsDsStrip{ padding:7px 9px; gap:6px; }',
     'body.mls-phone #mlsDsStrip .ds-pull{ padding:8px 12px; }',
     'body.mls-phone #mlsPhExit{ display:block; }',
-    /* b870 (audit B3): the ONE disclosure that reaches every folded control
+    /* b940 (audit B3): the ONE disclosure that reaches every folded control
        stays reachable on the phone. */
     'html body.mls-phone #ez3QuickTools{ display:inline-flex !important; min-height:44px; }',
-    /* b870 (audit crowding): the right-now bar duplicates the dock's nav 14px
+    /* b940 (audit crowding): the right-now bar duplicates the dock's nav 14px
        above the content, and the stage rail wraps to two rows of pure status -
        ~120px of chrome between the header and the record button. Both stand
        down on the phone; the dock and day strip carry their jobs. */
@@ -47485,7 +47689,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 ;(function(){try{var A='feat_mls_progress_stages.js',V='ps-1.3.0',api=window.__mlsProgressStages,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260722ps131';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b870: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_merge.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_merge.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_merge.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{
   var A='feat_mls_cross_day_context.js',V='xdc-2.0.3',old=window.__mlsCrossDayContext||null;
   if(old&&old.installed&&old.version===V)return;
@@ -47972,3 +48176,68 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
   api.revert = function () { try { window.fetch = crOrigFetch; window.__mlsCrFetchWrapped = false; api.installed = false; } catch (e) {} };
 } catch (e) {} })();
+
+/* ===== Settings: MLS Assist extension download card refresher (mdx-1.0.0) =====
+   The card in ScribeFlow.html ships with the current extension version BAKED
+   into the href and label, and the release gate pins those bytes to
+   extension-version.json + the served zip. This refresher exists only for the
+   drift window where a cached page meets a newer manifest: it re-points the
+   card at whatever extension-version.json actually names. It never invents a
+   version and it fails silently closed - the baked link keeps working. */
+(function () { try {
+  if (window.__mlsExtDlCardWired) return; window.__mlsExtDlCardWired = 1;
+  function refreshExtDlCard() {
+    try {
+      fetch('extension-version.json?nc=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (m) {
+          var v = m && m.version ? String(m.version).trim() : '';
+          if (!/^[0-9][0-9A-Za-z.\-]*$/.test(v)) return;
+          var a = document.getElementById('extDlBtn');
+          var t1 = document.getElementById('extDlVersion');
+          var t2 = document.getElementById('extDlVersionBtn');
+          var t3 = document.getElementById('extDlVersionNotes');
+          var n1 = document.getElementById('extDlNotes');
+          /* mdx-1.2.0 — THE POINTER MUST RIDE FRESH CODE, NOT THE SHELL.
+             b914 published a byte-identical `.bin` mirror because an
+             already-installed service worker retires the current `.zip` and
+             answers it with 410. But the only thing pointing AT the mirror was
+             the baked HTML — and `/ScribeFlow.html` is a STATIC_SHELL_PATH, so
+             the same unrolled worker keeps serving the CACHED shell with the old
+             `.zip` href. Measured on the owner's browser across two consecutive
+             full reloads of b914: DOM href `…45.zip`, the string `.bin` absent
+             from the document entirely, and fetching what the button pointed at
+             returned the 75-byte 410 refusal page. The fix could not arrive by
+             the mechanism it was designed to bypass.
+             This file DOES reach him — it loads with `?v=<build>`, which is an
+             exact-versioned asset on a different worker branch, verified current
+             on his machine. So the href is normalised HERE.
+             It also repairs a defect this very line used to cause: it wrote
+             `.zip` unconditionally, so on a FRESH browser it overwrote the baked
+             `.bin` and re-broke the download. The card pin only read the baked
+             HTML and never executed this, so nothing caught it.
+             Inert where already correct; `download` keeps the .zip filename so
+             the doctor still saves a .zip; any `target` is stripped because a
+             navigation (rather than a download) is exactly what the stale worker
+             answers with 410. */
+          if (a) {
+            var mirror = 'MLS_Assist_v' + v + '.bin';
+            var saveAs = 'MLS_Assist_v' + v + '.zip';
+            if (a.getAttribute('href') !== mirror) a.setAttribute('href', mirror);
+            if (a.getAttribute('download') !== saveAs) a.setAttribute('download', saveAs);
+            if (a.hasAttribute('target')) a.removeAttribute('target');
+          }
+          if (t1 && t1.textContent !== v) t1.textContent = v;
+          if (t2 && t2.textContent !== v) t2.textContent = v;
+          if (t3 && t3.textContent !== v) t3.textContent = v;
+          var notes = m && m.notes ? String(m.notes) : '';
+          if (n1 && notes && n1.textContent !== notes) n1.textContent = notes;
+        })
+        .catch(function () {});
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refreshExtDlCard, { once: true });
+  else refreshExtDlCard();
+} catch (e) {} })();
+
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1400);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_daybrain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_daybrain.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_daybrain.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* opdb-1.0.0: op-note DAY BRAIN — AI-assisted template matching layered over the deterministic ranker (oni still decides; the model only orders oni's own compatible candidates), plus procedure-aware day triage so "Draft all op notes" writes notes only for patients who actually had a procedure and still need one. Loaded LAST so its wrappers sit outermost over oni/opnp/the room. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */

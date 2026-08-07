@@ -1975,7 +1975,32 @@
      - The raw text stays in the DOM (clipped, not display:none) so the existing
        Copy button, which reads rendered text, keeps producing exactly what it
        always did. Nothing here rewrites another module's output. */
-  var PREP_LABELS = ['ALLERGIES', 'PROBLEMS', 'MEDICATIONS', 'VITALS', 'HISTORY', 'LAST VISIT'];
+  /* 'SOURCE' LEADS, AND ITS ABSENCE FROM THIS LIST WAS THE DEFECT.
+     ---------------------------------------------------------------------
+     buildPrepSummary emits `SOURCE: NOT PULLED from Athena yet — no card on
+     this record has been read from the chart` (mls-connect.js:2237) whenever
+     nothing landed. This list is what prepRows renders, and it did not contain
+     SOURCE — so the one line that says the chart was never read was generated
+     and then never shown. The raw block that holds it is clipped to 1x1px and
+     the duplicate node is display:none, so a day on which EVERY chart was
+     refused rendered as a calm, complete-looking box.
+
+     That is exactly what the owner reported on 2026-08-06 as "it says every
+     patient is alergic to the same thing" and "the summary in the top doesnt
+     show up": one event — every chart refused at the coverage gate, nothing
+     saved — produces BOTH symptoms at once, because every patient then shows
+     the same byte-identical "No Athena history pulled for this patient yet."
+     A shipped comment at ScribeFlow.html:15566 records the same appearance
+     measured on 2026-07-29 (15 of 19 patients with no landed chart), in his
+     words: "one patient's history looked duplicated onto everyone else."
+
+     SOURCE is first so the refusal leads rather than trailing six rows of
+     "Not recorded". When a chart DID land, buildPrepSummary emits no SOURCE
+     line, the regex below simply finds nothing, and no row is added — so this
+     is inert on the healthy path and visible only when there is bad news.
+     An invisible failure is indistinguishable from success; this product's
+     worst recurring defect is a refusal nobody can see. */
+  var PREP_LABELS = ['SOURCE', 'ALLERGIES', 'PROBLEMS', 'MEDICATIONS', 'VITALS', 'HISTORY', 'LAST VISIT'];
   var PREP_EMPTY = /^(none recorded|not recorded|none flagged|none|n\/a|unknown|-|—)?$/i;
 
   function prepRows() {
@@ -2747,7 +2772,17 @@
         return;
       }
       sel = 0;
+      /* ASKING IS ALWAYS REACHABLE. Copilot used to be offered only when NO
+         control matched, so a question sharing one word with any control
+         ('pay schedule' matches 'schedule') showed rows and no way to ask -
+         from a box whose own placeholder promises 'Ask or find anything'.
+         Appended LAST so control matches keep their ranking. */
+      results = results.concat([{ copilot: true, q: input.value.trim() }]);
       panel.innerHTML = results.map(function (r, i) {
+        if (r.copilot) {
+          return '<div class="r ask" role="option" data-i="' + i + '">' +
+            '&#129302; Ask MLS Copilot: "' + String(r.q).replace(/[<>&]/g, '') + '"</div>';
+        }
         var danger = DESTRUCTIVE.test(r.label);
         return '<div class="r' + (i === 0 ? ' sel' : '') + (danger ? ' danger' : '') + '" role="option" data-i="' + i + '">' +
           r.label.replace(/[<>&]/g, '') + (r.count > 1 ? '<small>several — show me</small>' : '') + '</div>';

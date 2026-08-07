@@ -41,6 +41,19 @@ const tests = [
      until the stack overflowed and the app's own render never ran. Executes
      both real modules against a stub DOM with deterministic timers. */
   'patient-select-renders-that-patient.test.js',
+  /* ...and the same class swept across every SHIPPED module, both load orders.
+     b870 fixed one instance; this sweep found two more (the Up-Next hero and
+     today's patient list), each broken in exactly one load order. */
+  'wrapper-chains-reach-their-base.test.js',
+  /* Owner 2026-08-05 'fix sign in screen'. The tabs were divs: no keyboard path
+     to Sign up at all, and 3.31:1 contrast. Both already had fixes — in feat_*
+     modules the sign-in screen never loads. */
+  'sign-in-screen-is-reachable.test.js',
+  /* The post-op video lane must be INVISIBLE until its backend deploys: a
+     'Talk to your doctor now' button that 404s to someone in pain after surgery
+     is worse than shipping nothing. Executes both halves against a stubbed
+     fetch. Also pins that neither half prescribes. */
+  'telehealth-ships-dark.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
   'settings-scheduling-api-contract.test.js',
@@ -75,6 +88,13 @@ const tests = [
      token dated two days before its own content changed. This compares every
      hand-maintained token against its file's real history. */
   'cache-token-cannot-go-stale.test.js',
+  /* 2026-08-06 — the same disease one layer out: a deploy that publishes an
+     OLDER tree than the one already live silently reverts whatever landed in
+     between, and reports success. Measured that day: 13 deploys, 3 inversions
+     (23%), app-version.json going BACKWARDS twice, one inversion reverting
+     another lane's shipped fix 51 seconds after it landed. This replays those
+     exact pairs against the guard. */
+  'forward-deploy-guard.test.js',
   /* b814 — "maybe add liquid glass designs some places your call". The call was
      the two fixed/sticky edge surfaces and nothing else; this pins the recipe,
      the theme derivation, the @supports fallback, and the surfaces that must
@@ -103,6 +123,14 @@ const tests = [
      "Procedure ✓" over a visibly empty box. Executes the fill, and pins that a
      procedure the doctor typed is never overwritten. */
   'opnote-proc-input-prefill.test.js',
+  /* b945 — the owner, on the op-note room: "every button freezes up and then
+     only clicks after like 3 seconds", and "maybe could be drafted all at once
+     for a day". The store was re-parsed per row on every repaint, and Draft-all
+     waited for each round trip because the verdict for a draft lived in window
+     globals the next row cleared. This runs the REAL Draft-all runner against a
+     deliberately interleaved drafter and proves the ledger still blames the
+     right patient — the thing that made overlapping unsafe before. */
+  'opnote-drafting-is-not-serialised.test.js',
   'styled-trigger-classes-have-writers.test.js',
   /* The DYNAMIC counterpart: dispatch the real event, assert the class lands on
      the real node. A writer that exists but is unreachable passes the static
@@ -245,6 +273,17 @@ const tests = [
   'copilot-request-binding-contract.test.js',
   'widget-builder-v2-runtime.test.js',
   'custom-widget-identity-runtime.test.js',
+  'widget-builder-live-preview.test.js',
+  /* Owner 2026-08-06: "it should be able to listen while it is talking" and
+     "it doesn't really start listening right away it's delayed". The mic now
+     opens WITH the question; the risk that creates - the avatar transcribing
+     ITSELF into the patient's answer - is what most of this suite guards. */
+  'avatar-listens-while-speaking.test.js',
+  /* av-5.6.0 the visit copilot: the room capture survives a reload, the
+     action detector refuses every negated/past/conditional/interrogative form
+     of an order, and nothing consequential is confirmable while a clinically
+     required field was never spoken. */
+  'avatar-visit-copilot.test.js',
   'studio-creations-durability.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',
@@ -285,11 +324,39 @@ const tests = [
   'intake-attach-single-flight.test.js',
   'multi-tab-hint-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
+  'athena-read-indicator.test.js',
+  /* Owner 2026-08-06: "some times it puts in the wrong medication". Reproduced
+     verbatim on a real patient - three drugs and an 80 mg dose invented to
+     satisfy a prompt line telling the model to prefer routine values over
+     blanks. 3 of 96 templates can reach it; the guard is proven on all 3. */
+  'opnote-drug-blanks-never-invented.test.js',
+  /* Owner 2026-08-06: "the date of procidure needs to be put in". Reproduced
+     15/15 - the date is handed to the generator and rendered in no format at
+     all. Deterministic, and it affects EVERY note, not the 3 at-risk ones. */
+  'opnote-carries-its-procedure-date.test.js',
+  /* b925 and b927 put both op-note safety guards in ScribeFlow.html's
+     _genOpNote - which feat_mls_opnote_integrity.js REPLACES. Two builds of a
+     patient-safety fix shipped and did nothing; QA proved it on live b926.
+     This suite asserts on the INSTALLED generator, never on a file. */
+  'opnote-guards-run-in-the-installed-generator.test.js',
+  /* Owner 2026-08-06: "the template auto matching just is not that good".
+     QA measured it on the text his SCHEDULE carries, not on well-formed
+     strings: 24 of 27 real reasons REFUSED with the right template already
+     ranked first. The gate, not the ranker - and a suite of ideal inputs
+     could never have seen it. */
+  'template-match-real-schedule-text.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
+  'opnote-rail-search-caret.test.js',
+  'provider-key-credential-surname.test.js',
+  'visit-reason-not-correspondence.test.js',
+  'draft-all-panel-collapses-without-hiding-failure.test.js',
+  'tesi-expands-to-the-region-the-text-supports.test.js',
+  'tpl-word-junk.test.js',
   'template-library-runtime.test.js',
+  'template-recognition-bounded-concurrency.test.js',
   'staging-history-writeflow-parity.test.js',
   'active-patient-sync-status.test.js',
   'voice-pill-persistence-runtime.test.js',
@@ -329,6 +396,9 @@ const tests = [
   'schedule-calendar-partial-diagnostics-runtime.test.js',
   'schedule-import-scan-performance-contract.test.js',
   'provider-day-pull-contract.test.js',
+  'provider-incomplete-diagnostics-contract.test.js',
+  'history-refusal-diagnostics-contract.test.js',
+  'writeflow-presence-port-contract.test.js',
   'provider-month-exact-routing.test.js',
   'provider-roster-integrity.test.js',
   'provider-roster-ingest-dedupe-runtime.test.js',
@@ -408,6 +478,16 @@ const tests = [
   'assistant-request-ownership-runtime.test.js',
   'copilot-actions-once-contract.test.js',
   'copilot-context-pack-runtime.test.js',
+  /* 2026-08-05 Copilot Power (cpw-1.0.0): the snapshot gains providerCoverage +
+     capabilities, the /api/copilot body gains an ABSOLUTE wire cap through the
+     loaded wrapper, and the agentic kinds (pullProviders/draftNote) execute
+     fail-closed with honest receipts. */
+  'copilot-power-context-contract.test.js',
+  'copilot-power-actions-runtime.test.js',
+  /* 2026-08-05 AVATAR (av-1.0.0, owner-ordered): the doctor side of the
+     patient-facing check-in — no polling, fail-closed chart match, idempotent
+     stamped import, one idle-deferred loader. */
+  'avatar-doctor-runtime.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',
@@ -656,7 +736,27 @@ const tests = [
      the PROPERTY that makes the fix a fix — a fixpoint, and one measurement per
      frame — because a "did it change?" guard cannot detect either class. */
   'nav-labels-and-order-hold-still.test.js',
-  'typing-does-not-force-layout.test.js'
+  'typing-does-not-force-layout.test.js',
+  /* 2026-07-31 — the phone app (app.html) and its two store binaries. These
+     three carry more weight than a normal suite because a regression here is a
+     store release, not a git push: Apple and Google review the bytes, and a
+     doctor cannot roll back an app the way they can reload a page.
+       boundaries        — CSP, no PHI at rest, text-only DOM, relay-only pulls
+       control-budget    — the owner asked for "very little buttons"; this is
+                           the number, so growing it is a deliberate edit
+       www-build         — the reviewed page and the shipped bundle are one
+                           file, proved by running the build and diffing it */
+  'phone-app-boundaries.test.js',
+  'phone-app-control-budget.test.js',
+  'phone-app-www-build-is-faithful.test.js',
+  /* "Draft all op notes" wrote an operative note for every name on the day,
+     including follow-ups, cancellations and no-shows, because nothing in the
+     op-note path had ever asked whether a procedure happened. This pins the
+     triage that stops it, the doctor's bypass, the fences that keep the new AI
+     matching layer from ever being weaker than the deterministic ranker, and
+     that the gate composes with mls-connect's richer draftAll rather than
+     replacing it (the b943 owner truce). */
+  'opnote-day-brain-drafts-only-real-procedures.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

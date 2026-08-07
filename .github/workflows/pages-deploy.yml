@@ -1,0 +1,99 @@
+name: Pages deploy
+
+# 2026-08-06 — THE LEGACY PAGES BUILDER TIMED OUT AND PINNED LIVE AT b891.
+# Every branch-triggered legacy build from b892 onward ran ~10.5 minutes and
+# ended "Page build failed." (created 13:02:04Z → updated 13:12:50Z on b893,
+# duration reported 0, no detail): the classic 10-minute legacy cap, which this
+# repository finally outgrew — the two back-to-back builds of cb07fdbd earlier
+# the same night were already retry squeakers.
+#
+# This workflow is the SAME build with a bigger clock: the identical
+# jekyll-build-pages action and the identical _config.yml publication boundary
+# (fail-closed excludes + reviewed-file allowlist), followed by the exact
+# generated-tree audit that pages-publication-audit.yml runs on pull requests.
+# The ONLY new capability is upload + deploy. Pages build_type is switched
+# from "legacy" to "workflow" so pushes to main deploy through here; flipping
+# build_type back to legacy is the rollback.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      # Read by the deploy job's forward-deploy guard. Carried as a job output
+      # rather than re-read from the artifact, because the deploy job has no
+      # _site to read and must not re-derive the number from anywhere else.
+      artifact_build: ${{ steps.stamp.outputs.build }}
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Configure GitHub Pages metadata
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Build with the GitHub Pages Jekyll action
+        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1
+        with:
+          source: ./
+          destination: ./_site
+
+      - name: Audit exact generated publication tree
+        run: node scripts/audit-pages-build.js --site-dir=_site
+
+      - name: Stamp the artifact build number
+        id: stamp
+        run: |
+          build=$(grep -o 'b[0-9]\+' _site/app-version.json | head -n1)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "artifact carries $build"
+
+      - name: Upload publication artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: ./_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # A queued older run can reach THIS job after a newer one has already
+      # published. Measured 2026-08-06: 13 deploys, 3 inversions (23%), every run
+      # reporting success, app-version.json going backwards twice, one of them
+      # reverting another lane's shipped fix 51 seconds after it landed. The check
+      # must live here, in the deploy job, as late as possible — a build-time check
+      # passes and the inversion still happens afterwards. Only the inversion is
+      # blocked: bump-build.js guarantees a forward lane always carries a higher
+      # number, and an equal number (a legitimate re-deploy) passes.
+      - name: Refuse to publish an older tree than the one already live
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          sparse-checkout: scripts/assert-forward-deploy.js
+          sparse-checkout-cone-mode: false
+
+      - name: Forward-deploy guard
+        run: node scripts/assert-forward-deploy.js --artifact "${{ needs.build.outputs.artifact_build }}"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

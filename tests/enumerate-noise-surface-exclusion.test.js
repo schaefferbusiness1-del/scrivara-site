@@ -82,8 +82,18 @@ assert(/for \(var ecJ = 0; ecJ < enChart\.length; ecJ\+\+\)/.test(bg),
 assert(/ecDrop = 'noise-surface'/.test(bg),
   'the candidate walk must keep its own noise drop; it is what names the refusal in the receipt');
 
-assert(/enNoiseDropped \? '\[noise-frames-excluded:'/.test(bg),
-  'when every answering frame was noise the refusal must say so — only the reason STRING survives the extension-to-page hop, so an excluded-everything outcome would otherwise be indistinguishable from a chart that never loaded');
+/* 3.0.45: the bracket is now opened by EITHER condition, because the old shape
+   could only ever emit ';no-chart-frame-answered' INSIDE the noise bracket — so
+   the case this assertion exists to protect (nothing answered at all, and none
+   of it was noise) fell back to a bare 'encounter-index-incomplete', exactly the
+   ambiguity the comment below warns about. Both halves are pinned separately so
+   neither can be dropped while the other keeps this suite green. */
+assert(/enNoiseDropped \? 'noise-frames-excluded:' \+ enNoiseDropped/.test(bg),
+  'when answering frames were excluded as noise the refusal must still name how many — only the reason STRING survives the extension-to-page hop');
+assert(/!enChart\.length \? \(\(enNoiseDropped \? ';' : ''\) \+ 'no-chart-frame-answered'\)/.test(bg),
+  'when NO chart frame answered the refusal must say so unconditionally — not only when noise happened to be dropped too, or an excluded-everything outcome is indistinguishable from a chart that never loaded');
+assert(/\(enNoiseDropped \|\| !enChart\.length \? '\['/.test(bg),
+  'the diagnostic bracket must open for either condition');
 
 /* ------------------------------------------------------- the real filter -- */
 

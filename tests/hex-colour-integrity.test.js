@@ -42,6 +42,12 @@ const BUILD_TOKEN_IN_HEX = /b\d{3}/i;
    invariant on exactly one future build; the count is what protects it then.
    Counted at build b559 on 2026-07-24. */
 const PREEXISTING = {
+  '#b8860b': 3,   // "b886" — darkgoldenrod, one copy each in ScribeFlow.html /
+                  //          -staging / _test since long before b886;
+                  //          git-verified identical on origin/main (b885) at
+                  //          the moment the build number caught up to it on
+                  //          2026-08-05. The boundary-anchored bumper cannot
+                  //          touch it ("b886" is followed by "0b").
   '#2bb673': 1,   // "b673" — calendar-polish green, present since before b600;
                   //          collided with the live build number on 2026-07-26
                   //          (git-verified untouched by the b673 bump)
@@ -49,18 +55,30 @@ const PREEXISTING = {
   '#d8b574': 8,   // "b574"
   '#b58105': 1,   // "b581"
   '#5b7186': 19,  // "b718"
-  '#6b7280': 7,   // "b728" — +1 on 2026-08-03: the 3.0.44 full-file candidate
+  '#6b7280': 8,   // "b728" — +1 on 2026-08-06: the 3.0.45 full-file candidate
+                  //          (same review_screen.js copy; verified the delta is
+                  //          exactly 1 and lives only in extension-candidates/3.0.45)
+                  //          +1 on 2026-08-03: the 3.0.44 full-file candidate
                   //          adds another review_screen.js copy.
                   //          +1 on 2026-08-02: extension-candidates/3.0.40 is
                   //          the first candidate staged with ALL 20 files (the
                   //          release-coherence copy), so review_screen.js's
                   //          copy of this colour now counts twice repo-wide
   '#6B756E': 1,   // "b756"
-  '#B07636': 48,  // "b076" — +3 on 2026-08-02 (the 3.0.40 candidate's
+  '#B07636': 51,  // "b076" — +3 on 2026-08-06 (the 3.0.45 candidate's
+                  //          mls-popup.css copy; delta verified to be exactly 3
+                  //          and confined to extension-candidates/3.0.45)
+                  //          +3 on 2026-08-02 (the 3.0.40 candidate's
                   //          mls-popup.css copy), +3 again on 2026-08-03
                   //          (the 3.0.44 full-file candidate, same copy)
   '#6b7684': 1,   // "b768"
   '#b9770a': 6,   // "b977"
+  '#e0b877': 2,   // "b877" — the fill-box amber border and its dictation-
+                  //          correction twin in feat_mls_opnote_fill.js.
+                  //          Collided with the live build number on 2026-08-05
+                  //          at the b876 -> b877 bump. Git-verified untouched:
+                  //          both occurrences are byte-identical at HEAD b876,
+                  //          in a file the b877 change never opened.
   '#b7791f': 1,   // "b779" — AuthPilot amber (--mod), byte-identical since the
                   //          file's first upload; collided with the live build
                   //          number on 2026-07-28 (git-verified untouched by

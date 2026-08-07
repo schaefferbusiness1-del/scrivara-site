@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- The app is bundled: every byte it executes ships inside it. The only thing
+     it ever reaches for is the API. `connect-src` is therefore the entire
+     network surface, and it names one host. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; connect-src https://scrivara-backend.onrender.com; img-src 'self' data:; media-src 'none'; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; manifest-src 'self'; worker-src 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F7F5EF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141A16" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Scrivara">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Scrivara</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="app-manifest.json">
+<style>
+/* ============================================================================
+   Scrivara — the phone app.
+
+   Three screens, nine controls, one job: pull a day out of athenaOne and read a
+   patient. Everything that is not one of those two verbs was deliberately left
+   out; see mobile/store/DESIGN.md for what was cut and why.
+
+   No framework, no build step, no web fonts. -apple-system resolves to SF on
+   iOS and Roboto on Android, so the app is set in the reader's own system face
+   at their own accessibility size.
+   ========================================================================= */
+
+:root{
+  --bg:#F7F5EF; --surface:#FFFFFF; --surface-2:#FBFAF6;
+  --ink:#16201A; --ink-2:#4C5A51; --ink-3:#7E8B83;
+  --line:#E6E3DA; --line-2:#EFEDE6;
+  --brand:#2E6A4B; --brand-ink:#204034; --brand-wash:#EAF2ED;
+  --warn:#8A5A12; --warn-wash:#FCF3E2;
+  --bad:#8C2F2F; --bad-wash:#FBECEC;
+  --shadow:0 1px 2px rgba(22,32,26,.05), 0 8px 24px rgba(22,32,26,.06);
+  --r:16px; --r-sm:11px;
+  --tap:48px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#141A16; --surface:#1C231E; --surface-2:#212925;
+    --ink:#ECF1ED; --ink-2:#AAB8AF; --ink-3:#7C8B82;
+    --line:#2C352F; --line-2:#252E28;
+    --brand:#7FC79E; --brand-ink:#C9E7D6; --brand-wash:#1E2B23;
+    --warn:#E6BE7E; --warn-wash:#2B2418;
+    --bad:#F0A6A6; --bad-wash:#2C1D1D;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.28);
+  }
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font:400 17px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+}
+button,input{font:inherit;color:inherit}
+button{border:0;background:none;padding:0;cursor:pointer}
+.hide{display:none !important}
+
+/* ---- app frame: header / scroller / dock, each owning its safe area ------- */
+#app{display:flex;flex-direction:column;height:100dvh}
+
+header{
+  flex:0 0 auto; position:relative; z-index:5;
+  padding:calc(env(safe-area-inset-top) + 10px) max(16px,env(safe-area-inset-left)) 10px max(16px,env(safe-area-inset-right));
+  background:color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter:saturate(180%) blur(18px); -webkit-backdrop-filter:saturate(180%) blur(18px);
+  border-bottom:1px solid transparent; transition:border-color .2s ease;
+}
+header.scrolled{border-bottom-color:var(--line)}
+.hrow{display:flex;align-items:center;gap:12px;min-height:34px}
+.htitle{font-size:26px;font-weight:700;letter-spacing:-.5px;margin:0;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hsub{font-size:13.5px;color:var(--ink-3);margin:2px 0 0}
+
+/* the back affordance and the sign-out affordance are the same shape */
+.hbtn{width:38px;height:38px;margin:-2px -8px -2px 0;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.hbtn:active{background:var(--line-2)}
+.hbtn.lead{margin:-2px 0 -2px -9px}
+.hbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+main{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
+.wrap{padding:6px max(16px,env(safe-area-inset-left)) 26px max(16px,env(safe-area-inset-right));
+  max-width:620px;margin:0 auto}
+
+/* ---- the dock: at most one primary action is ever offered --------------- */
+#dock{flex:0 0 auto;position:relative;z-index:5;
+  padding:10px max(16px,env(safe-area-inset-left)) calc(env(safe-area-inset-bottom) + 12px) max(16px,env(safe-area-inset-right));
+  background:linear-gradient(to top, var(--bg) 62%, transparent);
+}
+#dock .inner{max-width:620px;margin:0 auto}
+.primary{width:100%;min-height:54px;border-radius:15px;background:var(--brand);color:#fff;
+  font-size:17px;font-weight:650;letter-spacing:.1px;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  box-shadow:0 6px 20px color-mix(in srgb, var(--brand) 30%, transparent);
+  transition:transform .14s cubic-bezier(.2,.7,.3,1), opacity .16s ease}
+@media (prefers-color-scheme: dark){ .primary{color:#0F1611} }
+.primary:active:not(:disabled){transform:scale(.977)}
+.primary:disabled{opacity:.55;box-shadow:none}
+.primary .spin{width:19px;height:19px;border-radius:50%;border:2.5px solid currentColor;
+  border-right-color:transparent;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.dock-note{font-size:13px;line-height:1.4;color:var(--ink-2);text-align:center;margin:0 0 9px;
+  padding:0 4px}
+.dock-note.bad{color:var(--bad)}
+
+/* ---- cards and rows ----------------------------------------------------- */
+.card{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);
+  overflow:hidden;margin:12px 0}
+.rows{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:13px;width:100%;text-align:left;
+  min-height:var(--tap);padding:13px 15px;border-bottom:1px solid var(--line-2)}
+.row:last-child{border-bottom:0}
+button.row:active{background:var(--surface-2)}
+.row .when{flex:0 0 58px;display:block;font-size:14px;font-weight:650;color:var(--brand);
+  font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+/* name over meta: these are spans, so they need to be told to stack */
+.row .body{flex:1 1 auto;min-width:0;display:block}
+.row .name{display:block;font-size:17px;font-weight:600;letter-spacing:-.2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .meta{display:block;font-size:13.5px;color:var(--ink-3);margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .chev{flex:0 0 auto;color:var(--ink-3);opacity:.8}
+.row .chev svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round;display:block}
+
+.sechead{font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--ink-3);margin:22px 4px 2px}
+
+/* ---- the patient identity block ---------------------------------------- */
+.who{padding:18px 4px 4px}
+.who h2{font-size:29px;font-weight:700;letter-spacing:-.7px;margin:0;line-height:1.18}
+.who .facts{font-size:15px;color:var(--ink-2);margin-top:5px;
+  font-variant-numeric:tabular-nums}
+
+/* ---- status line: the office computer, stated as fact not decoration ---- */
+.status{display:flex;align-items:center;gap:9px;padding:11px 14px;margin:12px 0 0;
+  background:var(--surface);border-radius:var(--r-sm);box-shadow:var(--shadow);
+  font-size:13.5px;line-height:1.4;color:var(--ink-2)}
+.status .dot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--ink-3)}
+.status.ok .dot{background:var(--brand)}
+.status.warn .dot{background:var(--warn)}
+.status.warn{color:var(--warn)}
+.status.bad .dot{background:var(--bad)}
+.status.bad{color:var(--bad)}
+
+/* ---- empty + message states -------------------------------------------- */
+.empty{text-align:center;padding:44px 22px 30px;color:var(--ink-3)}
+.empty .mark{font-size:34px;line-height:1;margin-bottom:12px;opacity:.55}
+.empty h3{font-size:18px;font-weight:650;color:var(--ink-2);margin:0 0 5px;letter-spacing:-.2px}
+.empty p{font-size:14.5px;margin:0;line-height:1.5;max-width:31ch;
+  margin-left:auto;margin-right:auto}
+
+.notice{border-radius:var(--r-sm);padding:13px 15px;margin:12px 0;font-size:14.5px;line-height:1.5}
+.notice.bad{background:var(--bad-wash);color:var(--bad)}
+.notice.warn{background:var(--warn-wash);color:var(--warn)}
+.notice.ok{background:var(--brand-wash);color:var(--brand-ink)}
+
+/* ---- pull-to-refresh: the second way to pull, and it has no button ------ */
+#ptr{position:absolute;top:calc(env(safe-area-inset-top) + 46px);left:0;right:0;
+  display:flex;justify-content:center;pointer-events:none;z-index:4;opacity:0}
+#ptr .ring{width:28px;height:28px;border-radius:50%;background:var(--surface);
+  box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;color:var(--brand)}
+#ptr .ring svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.4;
+  stroke-linecap:round;stroke-linejoin:round}
+#ptr.spinning .ring svg{animation:spin .8s linear infinite}
+
+/* ---- find a patient: an input, not a button, and it earns its place —
+   without it "see a patient" only works for whoever is on today's list ----- */
+.find{position:relative;margin:12px 0 2px}
+.find input{width:100%;min-height:46px;padding:11px 15px 11px 42px;border-radius:13px;
+  background:var(--surface);border:1.5px solid transparent;box-shadow:var(--shadow);
+  font-size:16.5px;transition:border-color .16s ease}
+.find input:focus{outline:none;border-color:var(--brand)}
+.find svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  width:17px;height:17px;fill:none;stroke:var(--ink-3);stroke-width:2.2;
+  stroke-linecap:round;pointer-events:none}
+/* type=search brings its own clear button, and the UA paints it in the UA's
+   accent — Chrome blue, on a page with no blue in it. Keep the affordance
+   (it is part of the input, not an eleventh control) and re-draw it in ink. */
+.find input::-webkit-search-cancel-button{
+  -webkit-appearance:none; appearance:none;
+  width:19px; height:19px; margin-left:6px; cursor:pointer;
+  background-color:var(--ink-3);
+  -webkit-mask:var(--x-mask) center/15px 15px no-repeat;
+  mask:var(--x-mask) center/15px 15px no-repeat;
+}
+:root{ --x-mask:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>"); }
+
+/* ---- sign in ------------------------------------------------------------ */
+#signin{min-height:100%;display:flex}
+#signin .wrap{display:flex;flex-direction:column;justify-content:center;flex:1;
+  padding-top:0;padding-bottom:8px}
+.logo{width:60px;height:60px;border-radius:17px;background:var(--brand);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 20px;
+  box-shadow:0 8px 26px color-mix(in srgb, var(--brand) 32%, transparent)}
+.logo svg{width:34px;height:34px;fill:none;stroke:#fff;stroke-width:2.6;
+  stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-color-scheme: dark){ .logo svg{stroke:#0F1611} }
+#signin h1{font-size:28px;font-weight:700;letter-spacing:-.6px;text-align:center;margin:0}
+#signin .tag{font-size:15.5px;color:var(--ink-3);text-align:center;margin:6px 0 26px}
+.field{margin-bottom:11px}
+.field label{display:block;font-size:13px;font-weight:600;color:var(--ink-2);
+  margin:0 0 6px 3px;letter-spacing:.1px}
+.field input{width:100%;min-height:52px;padding:14px 16px;border-radius:13px;
+  background:var(--surface);border:1.5px solid var(--line);
+  font-size:17px;transition:border-color .16s ease, box-shadow .16s ease}
+.field input:focus{outline:none;border-color:var(--brand);
+  box-shadow:0 0 0 3.5px color-mix(in srgb, var(--brand) 16%, transparent)}
+#totpInput{text-align:center;letter-spacing:9px;font-weight:650;
+  font-variant-numeric:tabular-nums}
+.legal{font-size:12.5px;line-height:1.55;color:var(--ink-3);text-align:center;margin:20px 0 0}
+.legal a{color:var(--ink-2)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+    transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header id="hdr">
+    <div class="hrow">
+      <button class="hbtn lead hide" id="backBtn" aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <h1 class="htitle" id="hTitle">Scrivara</h1>
+      <button class="hbtn hide" id="outBtn" aria-label="Sign out">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 17l5-5-5-5M20 12H9M12 20H6a2 2 0 01-2-2V6a2 2 0 012-2h6"/></svg>
+      </button>
+    </div>
+    <p class="hsub hide" id="hSub"></p>
+    <div id="ptr"><div class="ring"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 11-2.34-5.66M20 4v4h-4"/></svg></div></div>
+  </header>
+
+  <main id="scroller">
+    <!-- SIGN IN -->
+    <section id="signin" class="hide"><div class="wrap">
+      <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l2.5-6 4 13L16 12h6"/></svg></div>
+      <h1>Scrivara</h1>
+      <p class="tag">Your schedule and your charts, on your phone.</p>
+
+      <div id="credFields">
+        <div class="field">
+          <label for="emailInput">Email</label>
+          <input id="emailInput" type="email" inputmode="email" autocomplete="username"
+                 autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next">
+        </div>
+        <div class="field">
+          <label for="pwInput">Password</label>
+          <input id="pwInput" type="password" autocomplete="current-password" enterkeyhint="go">
+        </div>
+      </div>
+
+      <div class="field hide" id="totpField">
+        <label for="totpInput">Six-digit code from your authenticator</label>
+        <input id="totpInput" type="text" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="8" enterkeyhint="go">
+      </div>
+
+      <div id="signinMsg"></div>
+      <!-- Both stores require a reachable privacy policy from inside the app.
+           These are relative here because this page is served from the site;
+           the native build rewrites them to absolute https URLs, since a
+           bundled app has no siblings to link to. target=_blank is what makes
+           Capacitor hand them to the system browser instead of trying to
+           navigate the app's own webview off its bundle. -->
+      <p class="legal">
+        Protected health information. Authorised clinicians only.<br>
+        <a href="privacy.html" target="_blank" rel="noreferrer">Privacy</a> ·
+        <a href="terms.html" target="_blank" rel="noreferrer">Terms</a>
+      </p>
+    </div></section>
+
+    <!-- TODAY -->
+    <section id="today" class="hide"><div class="wrap">
+      <div id="todayStatus"></div>
+      <div class="find">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+        <input id="findInput" type="search" placeholder="Find a patient" aria-label="Find a patient"
+               autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="search">
+      </div>
+      <div id="todayBody"></div>
+    </div></section>
+
+    <!-- PATIENT -->
+    <section id="patient" class="hide"><div class="wrap">
+      <div class="who">
+        <h2 id="ptName"></h2>
+        <div class="facts" id="ptFacts"></div>
+      </div>
+      <div id="patientBody"></div>
+    </div></section>
+  </main>
+
+  <div id="dock"><div class="inner">
+    <p class="dock-note hide" id="dockNote"></p>
+    <button class="primary hide" id="goBtn"></button>
+  </div></div>
+</div>
+
+<script>
+'use strict';
+/* ===========================================================================
+   Scrivara app runtime.
+
+   State is one object and one render(). There is no router, no store, no
+   component tree — three screens do not earn any of that, and a doctor holding
+   a phone between rooms should never wait on a framework booting.
+
+   The pull goes through the EXISTING relay: POST /api/relay/jobs, kinds
+   `pullDay` and `pullChart`, executed by the same office computer running the
+   same extension that the desktop button uses (mls-connect.js __mlsRelayLink,
+   rl-2.0.0). This app adds no second pull engine, so there is no second thing
+   that can disagree about what a pull did.
+   ========================================================================= */
+
+var API = 'https://scrivara-backend.onrender.com';
+var TOK_KEY = 'scrivara.session.v1';
+var EMAIL_KEY = 'scrivara.lastEmail.v1';
+var IDLE_MS = 15 * 60 * 1000;
+
+/* PHI lives HERE and nowhere else. Nothing below `S` is ever written to
+   localStorage, sessionStorage, IndexedDB or a cache — sign out, idle-lock and
+   app close all drop it with the object. tests/phone-app-no-phi-at-rest.test.js
+   is the fence. */
+var S = {
+  screen: 'signin',
+  token: '',
+  user: null,
+  pending2fa: '',
+  busy: false,
+  msg: null,             // {kind:'bad'|'warn'|'ok', text}
+  date: todayISO(),
+  appts: null,           // day rows, or null = not loaded yet
+  office: null,          // /api/relay/presence verdict
+  find: '',              // patient lookup query
+  found: null,           // its results, or null = no search running
+  patient: null,         // the open patient
+  visits: null,          // that patient's visits
+  pull: null             // {phase, note} while a relay job is in flight
+};
+
+/* ---------- tiny DOM helpers. Everything patient-derived goes in as TEXT. -- */
+function $(id){ return document.getElementById(id); }
+function el(tag, cls, text){
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = String(text);
+  return n;
+}
+function clear(n){ while (n.firstChild) n.removeChild(n.firstChild); }
+function chev(){
+  var s = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('aria-hidden','true');
+  var p = document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d','M9 5l7 7-7 7'); s.appendChild(p);
+  var w = el('span','chev'); w.appendChild(s); return w;
+}
+
+/* ---------- dates -------------------------------------------------------- */
+function todayISO(){
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function longDate(iso){
+  var p = String(iso||'').split('-');
+  if (p.length !== 3) return String(iso||'');
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  if (isNaN(d.getTime())) return String(iso);
+  return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()] +
+    ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
+}
+function shortDate(iso){
+  var p = String(iso||'').slice(0,10).split('-');
+  if (p.length !== 3) return String(iso||'');
+  var y = Number(p[0]), m = Number(p[1]), dd = Number(p[2]);
+  if (!m || !dd) return String(iso).slice(0,10);
+  var out = MONTHS[m-1] + ' ' + dd;
+  if (y !== new Date().getFullYear()) out += ' ’' + String(y).slice(2);
+  return out;
+}
+/* "8:30a" — the narrowest honest form; the column is 60px on a 375px screen. */
+function clock(hhmm){
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm||''));
+  if (!m) return '';
+  var h = Number(m[1]), mi = m[2], suffix = h >= 12 ? 'p' : 'a';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + mi + suffix;
+}
+function ageFrom(dob){
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dob||'')) ||
+          /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(dob||''));
+  if (!m) return '';
+  var y, mo, d;
+  if (String(dob).indexOf('-') === 4){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else { mo = +m[1]; d = +m[2]; y = +m[3]; }
+  var n = new Date(), a = n.getFullYear() - y;
+  if (n.getMonth()+1 < mo || (n.getMonth()+1 === mo && n.getDate() < d)) a--;
+  if (!(a >= 0 && a < 130)) return '';
+  return a + 'y';
+}
+function usDob(dob){
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dob||''));
+  return m ? (m[2] + '/' + m[3] + '/' + m[1]) : String(dob||'');
+}
+
+/* ---------- the API. One door, so one place decides what an error means. -- */
+function api(method, path, body){
+  var opt = {
+    method: method,
+    headers: { 'Accept':'application/json' },
+    cache: 'no-store',
+    credentials: 'omit',
+    referrerPolicy: 'no-referrer'
+  };
+  if (S.token) opt.headers.Authorization = 'Bearer ' + S.token;
+  if (body !== undefined){ opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  return fetch(API + path, opt).then(function(r){
+    return r.text().then(function(t){
+      var j = null; try { j = t ? JSON.parse(t) : null; } catch(e){ j = null; }
+      if (r.ok) return j || {};
+      var err = new Error((j && (j.message || j.error)) || ('Request failed (' + r.status + ')'));
+      err.status = r.status;
+      err.code = j && j.error;
+      throw err;
+    });
+  }, function(){
+    var err = new Error('No connection. Check your signal and try again.');
+    err.status = 0;
+    throw err;
+  });
+}
+/* A 401 anywhere means the session is gone; do not paper over it. */
+function handleAuthLoss(e){
+  if (e && e.status === 401){ signOut('Your session expired. Sign in again.'); return true; }
+  return false;
+}
+
+/* ---------- session ------------------------------------------------------ */
+function loadToken(){
+  try { return localStorage.getItem(TOK_KEY) || ''; } catch(e){ return ''; }
+}
+function saveToken(t){
+  try { t ? localStorage.setItem(TOK_KEY, t) : localStorage.removeItem(TOK_KEY); } catch(e){}
+}
+function signOut(reason){
+  saveToken('');
+  S.token = ''; S.user = null; S.pending2fa = '';
+  S.appts = null; S.patient = null; S.visits = null; S.office = null; S.pull = null;
+  S.find = ''; S.found = null;
+  S.busy = false;
+  S.screen = 'signin';
+  S.msg = reason ? { kind:'warn', text: reason } : null;
+  var p = $('pwInput'); if (p) p.value = '';
+  var t = $('totpInput'); if (t) t.value = '';
+  var f = $('findInput'); if (f) f.value = '';
+  render();
+}
+
+/* Idle lock. A phone left on a counter is the realistic exposure for this app,
+   and it is the one this product can actually do something about. */
+var idleAt = Date.now();
+function touchIdle(){ idleAt = Date.now(); }
+setInterval(function(){
+  if (!S.token) return;
+  if (S.pull) { touchIdle(); return; }   // a running pull is active use
+  if (Date.now() - idleAt > IDLE_MS) signOut('Locked after 15 minutes. Sign in to continue.');
+}, 20000);
+['touchstart','keydown','focusin'].forEach(function(ev){
+  document.addEventListener(ev, touchIdle, { passive:true });
+});
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible') touchIdle();
+});
+
+/* ---------- sign in ------------------------------------------------------ */
+function doSignIn(){
+  if (S.busy) return;
+  var msg = function(kind, text){ S.msg = { kind: kind, text: text }; S.busy = false; render(); };
+
+  if (S.pending2fa){
+    var code = ($('totpInput').value || '').trim();
+    if (code.length < 6) return msg('bad','Enter the six-digit code from your authenticator app.');
+    S.busy = true; S.msg = null; render();
+    api('POST','/api/auth/2fa/login',{ pending: S.pending2fa, code: code })
+      .then(afterAuth)
+      .catch(function(e){
+        if (e.status === 401) { S.pending2fa = ''; return msg('bad', e.message); }
+        msg('bad', e.message);
+      });
+    return;
+  }
+
+  var email = ($('emailInput').value || '').trim().toLowerCase();
+  var pw = $('pwInput').value || '';
+  if (!email || email.indexOf('@') < 0) return msg('bad','Enter the email address you use for Scrivara.');
+  if (!pw) return msg('bad','Enter your password.');
+  S.busy = true; S.msg = null; render();
+  api('POST','/api/auth/login',{ email: email, password: pw })
+    .then(function(j){
+      try { localStorage.setItem(EMAIL_KEY, email); } catch(e){}
+      if (j && j.twofa_required){
+        S.pending2fa = j.pending || '';
+        S.busy = false; S.msg = null;
+        render();
+        var t = $('totpInput'); if (t) setTimeout(function(){ try{ t.focus(); }catch(e){} }, 120);
+        return;
+      }
+      return afterAuth(j);
+    })
+    .catch(function(e){ msg('bad', e.message); });
+}
+
+/* The password is only half the gate. The account must also be a clinician
+   with active access AND hold a server-recorded clinical release — the same
+   three walls the desktop app stands behind (requireClinician,
+   patientAccessGate, /api/agreements/me). Checking them HERE means the doctor
+   is told which wall stopped them, instead of meeting an empty screen. */
+function afterAuth(j){
+  if (!j || !j.token){ S.busy = false; S.msg = { kind:'bad', text:'Sign-in did not return a session. Try again.' }; return render(); }
+  S.token = j.token; S.user = j.user || null; S.pending2fa = '';
+  saveToken(S.token);
+  touchIdle();
+  return api('GET','/api/agreements/me').then(function(a){
+    var granted = a && a.userAccess && a.userAccess.status === 'granted';
+    if (!granted){
+      S.busy = false;
+      S.msg = { kind:'warn', text:'This account is signed in, but clinical access has not been released for it yet. Your practice administrator completes that once; nothing on this phone can grant it.' };
+      saveToken(''); S.token = ''; S.user = null;
+      return render();
+    }
+    S.busy = false; S.msg = null; S.screen = 'today';
+    render();
+    refreshToday();
+  }, function(e){
+    /* Never invent a verdict from a network hiccup — say what happened. */
+    S.busy = false;
+    if (e.status === 401) { signOut('Your session expired. Sign in again.'); return; }
+    S.msg = { kind:'bad', text:'Could not confirm this account’s clinical access: ' + e.message };
+    saveToken(''); S.token = '';
+    render();
+  });
+}
+
+/* ---------- today -------------------------------------------------------- */
+function refreshToday(){
+  if (!S.token) return Promise.resolve();
+  var want = S.date;
+  return Promise.all([
+    api('GET','/api/appointments?date=' + encodeURIComponent(want) + '&order=asc&limit=300')
+      .then(function(j){ return (j && j.appointments) || []; }, function(e){ if (handleAuthLoss(e)) throw e; throw e; }),
+    api('GET','/api/relay/presence').then(function(j){ return j || null; }, function(){ return null; })
+  ]).then(function(out){
+    if (S.date !== want) return;      // the day moved under us; drop the stale answer
+    S.appts = out[0];
+    S.office = out[1];
+    S.msg = null;
+    render();
+  }).catch(function(e){
+    if (e && e.status === 401) return;  // signOut already ran
+    S.appts = S.appts || [];
+    S.msg = { kind:'bad', text: e && e.message ? e.message : 'Could not load the day.' };
+    render();
+  });
+}
+
+/* ---------- find a patient ----------------------------------------------- */
+/* Server-side search: the phone asks for a page of matches instead of
+   downloading the practice to filter it locally. */
+var findTimer = null, findSeq = 0;
+function scheduleFind(q){
+  S.find = q;
+  if (findTimer) clearTimeout(findTimer);
+  if (!q.trim()){ S.found = null; findSeq++; render(); return; }
+  findTimer = setTimeout(function(){ runFind(q); }, 320);
+}
+function runFind(q){
+  var seq = ++findSeq;
+  return api('GET','/api/patients/search?limit=30&q=' + encodeURIComponent(q.trim())).then(function(j){
+    if (seq !== findSeq) return;                 // a newer keystroke already won
+    S.found = ((j && j.patients) || []).map(toPatient);
+    render();
+  }, function(e){
+    if (handleAuthLoss(e)) return;
+    if (seq !== findSeq) return;
+    S.found = [];
+    S.msg = { kind:'bad', text: e.message };
+    render();
+  });
+}
+function toPatient(row){
+  var d = (row && row.data) || {};
+  return {
+    name: d.name || row.label || 'Unnamed patient',
+    dob: d.dob || '',
+    mrn: d.mrn || '',
+    external_id: row.external_id || ''
+  };
+}
+
+/* ---------- patient ------------------------------------------------------ */
+function openPatient(p){
+  S.patient = p;
+  S.visits = null;
+  S.msg = null;
+  S.screen = 'patient';
+  render();
+  $('scroller').scrollTop = 0;
+  loadVisits();
+  if (!p.mrn && p.name) enrichPatient(p);
+}
+/* A schedule row carries a name and a DOB but no MRN. Fill it in from the
+   patient record when one exists — quietly, and only onto the patient still
+   open, so a slow answer can never relabel someone else's chart. */
+function enrichPatient(p){
+  api('GET','/api/patients/search?limit=5&q=' + encodeURIComponent(p.name)).then(function(j){
+    if (S.patient !== p) return;
+    var rows = (j && j.patients) || [];
+    var hit = null;
+    for (var i = 0; i < rows.length; i++){
+      var c = toPatient(rows[i]);
+      var sameId = p.external_id && c.external_id && c.external_id === p.external_id;
+      var sameWho = normName(c.name) === normName(p.name) && (!p.dob || !c.dob || c.dob === p.dob);
+      if (sameId || sameWho){ hit = c; break; }
+    }
+    if (!hit) return;
+    if (hit.mrn) p.mrn = hit.mrn;
+    if (!p.dob && hit.dob) p.dob = hit.dob;
+    if (!p.external_id && hit.external_id){ p.external_id = hit.external_id; loadVisits(); }
+    render();
+  }, function(){ /* enrichment is a nicety; its failure is not news */ });
+}
+function loadVisits(){
+  var p = S.patient;
+  if (!p) return Promise.resolve();
+  var q = p.external_id
+    ? ('?patient_external_id=' + encodeURIComponent(p.external_id) + '&limit=60')
+    : ('?limit=60');
+  return api('GET','/api/records' + q).then(function(j){
+    if (S.patient !== p) return;
+    var recs = (j && j.records) || [];
+    /* No external id means the server could not scope it, so filter here on the
+       name the row itself carries rather than showing another patient's chart. */
+    if (!p.external_id){
+      var want = normName(p.name);
+      recs = recs.filter(function(r){ return want && normName(r.record && r.record.patientName) === want; });
+    }
+    S.visits = recs.map(function(r){
+      return {
+        date: r.note_date || '',
+        type: r.visit_type || (r.record && r.record.visitType) || '',
+        em: r.em || '',
+        signed: !!r.signed,
+        draft: !!r.is_draft,
+        source: 'chart'
+      };
+    });
+    render();
+  }, function(e){
+    if (handleAuthLoss(e)) return;
+    if (S.patient !== p) return;
+    S.visits = [];
+    S.msg = { kind:'bad', text: e.message };
+    render();
+  });
+}
+function normName(n){
+  return String(n||'').toLowerCase().replace(/[^a-z]+/g,'');
+}
+
+/* ---------- the pull ----------------------------------------------------- */
+/* Fail fast and honestly. Queuing a job at an office computer that is asleep
+   buys a minute of "waiting…" and then a lie; the relay learned this at
+   rl-2.0.0 and this app inherits the lesson rather than re-learning it. */
+function officeVerdict(){
+  var p = S.office;
+  if (!p || !p.ok) return { ok:true };                       // unknown: let the pull try
+  if (p.online && !p.ext){
+    return { ok:false, text:(p.officeName ? ('“' + p.officeName + '” is on, but') : 'Your office computer is on, but') +
+      ' the MLS Assist extension is not responding there. Open chrome://extensions → MLS Assist → Reload on that computer, then pull again.' };
+  }
+  if (!p.online){
+    return { ok:false, text:(p.officeName ? ('“' + p.officeName + '”' ) : 'No office computer') +
+      ' is not reachable' + (p.ageSec != null ? ' (last seen ' + agoText(p.ageSec) + ')' : '') +
+      '. Open MLS there with the extension running, then pull again.' };
+  }
+  if (p.officeAth === 'no-tab'){
+    return { ok:false, text:'athenaOne is signed out on ' + (p.officeName ? ('“' + p.officeName + '”') : 'your office computer') +
+      '. Sign in there and open the Day schedule, then pull again.' };
+  }
+  return { ok:true };
+}
+function agoText(sec){
+  sec = Number(sec)||0;
+  return sec < 120 ? (sec + 's ago') : (Math.round(sec/60) + 'm ago');
+}
+
+function relayPull(kind, payload, dedupeKey, onDone){
+  var v = officeVerdict();
+  if (!v.ok){ S.msg = { kind:'bad', text: v.text }; render(); return; }
+
+  S.pull = { phase:'queue', note:'Asking your office computer…' };
+  S.msg = null; render();
+
+  var requestId = 'app-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
+  var targetDeviceId = (S.office && S.office.officeId) || '';
+  api('POST','/api/relay/jobs', {
+    kind: kind,
+    payload: Object.assign({ requestId: requestId }, payload),
+    requestId: requestId,
+    targetDeviceId: targetDeviceId,
+    dedupeKey: dedupeKey
+  }).then(function(j){
+    if (!j || !j.ok || !j.id) throw new Error((j && j.error) || 'Could not queue the request.');
+    if (j.dup) S.pull = { phase:'run', note:'Already running — joining it…' };
+    poll(j.id, 0);
+  }).catch(function(e){
+    if (handleAuthLoss(e)) return;
+    S.pull = null; S.msg = { kind:'bad', text: e.message }; render();
+  });
+
+  /* Ladder, matched to the relay's own: office budget 8.5m < server marks a
+     silent executor lost at 150s < this wait 10.5m < job TTL 15m. */
+  var MAX = 252;   // 252 * 2.5s = 10.5 minutes
+  function poll(id, n){
+    if (!S.pull) return;                       // screen left; stop cleanly
+    if (n > MAX){
+      S.pull = null;
+      S.msg = { kind:'bad', text:'Still running after 10 minutes. It may finish on the office computer — check there before pulling again.' };
+      return render();
+    }
+    setTimeout(function(){
+      if (!S.pull) return;
+      api('GET','/api/relay/jobs/' + encodeURIComponent(id)).then(function(r){
+        if (!S.pull) return;
+        var job = r && r.job;
+        if (!job){ S.pull = null; S.msg = { kind:'bad', text:'That request is no longer on the server. Pull again.' }; return render(); }
+        if (job.status === 'queued'){
+          S.pull = { phase:'queue', note:'Waiting for your office computer to pick it up…' };
+          render(); return poll(id, n+1);
+        }
+        if (job.status === 'taken'){
+          S.pull = { phase:'run', note:(job.progress && job.progress.note) || 'Reading athenaOne…' };
+          render(); return poll(id, n+1);
+        }
+        S.pull = null;
+        if (job.status === 'lost'){
+          S.msg = { kind:'bad', text:'Your office computer stopped responding mid-pull. Wake it and try again.' };
+          return render();
+        }
+        if (job.status === 'canceled'){ S.msg = { kind:'warn', text:'That pull was canceled.' }; return render(); }
+        onDone(job.result || { ok:false, error:'no result' });
+      }, function(e){
+        if (handleAuthLoss(e)) { S.pull = null; return; }
+        /* One network blip must not kill a five-minute pull. */
+        poll(id, n+1);
+      });
+    }, 2500);
+  }
+}
+
+function pullDay(){
+  var date = S.date;
+  relayPull('pullDay', { date: date, provider: null }, 'pullDay|' + date + '|all|b0', function(res){
+    if (!res.ok){
+      S.msg = { kind:'bad', text:'Your office computer reported: ' + (res.error || 'the pull failed') };
+      return render();
+    }
+    /* Verify the receipt names the day we asked for. A pull that answers about
+       another date can never read as success for this one. */
+    var pulled = res.data && res.data.pulled;
+    if (pulled && pulled !== date){
+      S.msg = { kind:'bad', text:'The office computer answered about ' + pulled + ', not ' + date + '. Nothing was assumed — pull again.' };
+      return render();
+    }
+    /* Claim only what THIS phone can see: re-read the day and count it. */
+    S.msg = { kind:'ok', text:'Pulled — reading it back…' };
+    render();
+    refreshToday().then(function(){
+      var n = (S.appts || []).length;
+      S.msg = n
+        ? { kind:'ok', text: n + (n === 1 ? ' patient is' : ' patients are') + ' on this phone for ' + longDate(date) + '.' }
+        : { kind:'warn', text:'The pull finished, but no appointments for ' + longDate(date) + ' have reached this phone yet. Pull to refresh in a moment.' };
+      render();
+    });
+  });
+}
+
+function pullChart(){
+  var p = S.patient;
+  if (!p) return;
+  relayPull('pullChart', { name: p.name, dob: p.dob || '', athenaId: p.external_id || '' },
+    'pullChart|' + normName(p.name) + '|' + (p.dob||''), function(res){
+      if (!res.ok){
+        S.msg = { kind:'bad', text:'Your office computer reported: ' + (res.error || 'the chart read failed') };
+        return render();
+      }
+      var live = ((res.data && res.data.visits) || []).map(function(v){
+        return {
+          date: String((v && (v.date || v.serviceDate)) || '').slice(0,10),
+          type: (v && (v.type || v.procedure)) || '',
+          em: (v && v.cpt) || '',
+          signed: false, draft: false, source: 'athena'
+        };
+      }).filter(function(v){ return v.date; });
+
+      /* Merge on date+type: a visit the chart already holds is not a second
+         visit just because athenaOne also knows about it. */
+      var have = {};
+      (S.visits || []).forEach(function(v){ have[v.date + '|' + normName(v.type)] = 1; });
+      var added = live.filter(function(v){ return !have[v.date + '|' + normName(v.type)]; });
+      S.visits = (S.visits || []).concat(added).sort(function(a,b){ return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0); });
+      S.msg = added.length
+        ? { kind:'ok', text: added.length + (added.length === 1 ? ' visit' : ' visits') + ' read from athenaOne just now.' }
+        : { kind:'ok', text:'athenaOne returned ' + live.length + (live.length === 1 ? ' visit' : ' visits') + ' — all of them are already in this chart.' };
+      render();
+    });
+}
+
+/* =========================== RENDER ====================================== */
+function render(){
+  ['signin','today','patient'].forEach(function(id){
+    $(id).classList.toggle('hide', S.screen !== id);
+  });
+  $('backBtn').classList.toggle('hide', S.screen !== 'patient');
+  $('outBtn').classList.toggle('hide', S.screen === 'signin');
+  if (S.screen === 'signin') renderSignin();
+  if (S.screen === 'today') renderToday();
+  if (S.screen === 'patient') renderPatient();
+}
+
+function msgNode(){
+  if (!S.msg) return null;
+  return el('div','notice ' + (S.msg.kind || 'warn'), S.msg.text);
+}
+
+function renderSignin(){
+  $('hTitle').textContent = '';
+  $('hSub').classList.add('hide');
+  $('credFields').classList.toggle('hide', !!S.pending2fa);
+  $('totpField').classList.toggle('hide', !S.pending2fa);
+
+  var box = $('signinMsg'); clear(box);
+  var m = msgNode(); if (m) box.appendChild(m);
+
+  var b = $('goBtn');
+  b.classList.remove('hide');
+  b.disabled = S.busy;
+  clear(b);
+  if (S.busy) b.appendChild(el('span','spin'));
+  b.appendChild(el('span', null, S.busy ? 'Signing in…' : (S.pending2fa ? 'Verify' : 'Sign in')));
+  $('dockNote').classList.add('hide');
+}
+
+function renderToday(){
+  $('hTitle').textContent = 'Today';
+  var sub = $('hSub');
+  sub.textContent = longDate(S.date);
+  sub.classList.remove('hide');
+
+  /* office status — a fact, not a control */
+  var st = $('todayStatus'); clear(st);
+  var p = S.office;
+  if (p && p.ok){
+    var kind = (p.online && p.ext) ? (p.officeAth === 'no-tab' ? 'warn' : 'ok') : 'bad';
+    var text;
+    if (kind === 'ok') text = 'Ready to pull on ' + (p.officeName || 'your office computer') + '.';
+    else if (kind === 'warn') text = 'athenaOne is signed out on ' + (p.officeName || 'your office computer') + '.';
+    else if (p.online && !p.ext) text = 'The MLS Assist extension is not responding on ' + (p.officeName || 'your office computer') + '.';
+    else text = (p.officeName ? '“' + p.officeName + '” last seen ' + agoText(p.ageSec) : 'No office computer is connected') + '.';
+    var line = el('div','status ' + kind);
+    line.appendChild(el('span','dot'));
+    line.appendChild(el('span', null, text));
+    st.appendChild(line);
+  }
+
+  var body = $('todayBody'); clear(body);
+  var m = msgNode(); if (m) body.appendChild(m);
+
+  var searching = !!S.find.trim();
+  if (searching){
+    if (S.found === null){
+      body.appendChild(emptyState('◌','Searching…',''));
+    } else if (!S.found.length){
+      body.appendChild(emptyState('○','No patient by that name',
+        'Only patients already saved in Scrivara are searchable. Pull the day they were seen to bring them over.'));
+    } else {
+      body.appendChild(el('div','sechead', S.found.length + (S.found.length === 1 ? ' match' : ' matches')));
+      body.appendChild(listCard(S.found.map(function(p){
+        var bits = [];
+        var a = ageFrom(p.dob); if (a) bits.push(a);
+        if (p.mrn) bits.push('MRN ' + p.mrn);
+        else if (p.dob) bits.push('DOB ' + usDob(p.dob));
+        return { name: p.name, meta: bits.join(' · '), onTap: function(){ openPatient(p); } };
+      })));
+    }
+  } else if (S.appts === null){
+    body.appendChild(emptyState('◌','Loading the day…',''));
+  } else if (!S.appts.length){
+    body.appendChild(emptyState('○','Nothing on the schedule yet',
+      'Pull the day to bring ' + longDate(S.date) + ' over from athenaOne.'));
+  } else {
+    body.appendChild(el('div','sechead', S.appts.length + (S.appts.length === 1 ? ' patient' : ' patients')));
+    body.appendChild(listCard(S.appts.map(function(a){
+      var bits = [];
+      var age = ageFrom(a.dob); if (age) bits.push(age);
+      if (a.reason) bits.push(a.reason);
+      else if (a.provider) bits.push(a.provider);
+      return {
+        when: clock(a.start_local || a.time_display) || '—',
+        name: a.name || 'Unnamed patient',
+        meta: bits.join(' · '),
+        onTap: function(){
+          openPatient({ name: a.name, dob: a.dob, external_id: a.patient_external_id || '', mrn: '' });
+        }
+      };
+    })));
+  }
+
+  var b = $('goBtn');
+  b.classList.remove('hide');
+  b.disabled = !!S.pull;
+  clear(b);
+  if (S.pull) b.appendChild(el('span','spin'));
+  b.appendChild(el('span', null, S.pull ? 'Pulling…' : 'Pull today'));
+  dockNote(S.pull ? S.pull.note : '');
+}
+
+function renderPatient(){
+  var p = S.patient || {};
+  $('hTitle').textContent = '';
+  $('hSub').classList.add('hide');
+  $('ptName').textContent = p.name || 'Patient';
+  var facts = [];
+  var age = ageFrom(p.dob); if (age) facts.push(age);
+  if (p.dob) facts.push('DOB ' + usDob(p.dob));
+  if (p.mrn) facts.push('MRN ' + p.mrn);
+  $('ptFacts').textContent = facts.join(' · ');
+
+  var body = $('patientBody'); clear(body);
+  var m = msgNode(); if (m) body.appendChild(m);
+
+  if (S.visits === null){
+    body.appendChild(emptyState('◌','Loading the chart…',''));
+  } else if (!S.visits.length){
+    body.appendChild(emptyState('○','No visits in this chart yet',
+      'Pull the chart to read ' + (p.name ? firstName(p.name) + '’s' : 'this patient’s') + ' history from athenaOne.'));
+  } else {
+    body.appendChild(el('div','sechead', S.visits.length + (S.visits.length === 1 ? ' visit' : ' visits')));
+    body.appendChild(listCard(S.visits.map(function(v){
+      var bits = [];
+      if (v.em) bits.push(v.em);
+      if (v.source === 'athena') bits.push('athenaOne');
+      else if (v.draft) bits.push('draft');
+      else if (v.signed) bits.push('signed');
+      return { when: shortDate(v.date), name: v.type || 'Visit', meta: bits.join(' · ') };
+    })));
+  }
+
+  var b = $('goBtn');
+  b.classList.remove('hide');
+  b.disabled = !!S.pull;
+  clear(b);
+  if (S.pull) b.appendChild(el('span','spin'));
+  b.appendChild(el('span', null, S.pull ? 'Reading…' : 'Pull chart'));
+  dockNote(S.pull ? S.pull.note : '');
+}
+
+/* One list shape for all three lists. A tappable row is a <button>; a row that
+   does nothing is a <div>, so nothing on screen looks pressable unless it is. */
+function listCard(items){
+  var card = el('div','card'), rows = el('div','rows');
+  items.forEach(function(it){
+    var r;
+    if (it.onTap){ r = el('button','row'); r.type = 'button'; }
+    else { r = el('div','row'); }
+    if (it.when != null) r.appendChild(el('span','when', it.when));
+    var bd = el('span','body');
+    bd.appendChild(el('span','name', it.name));
+    if (it.meta) bd.appendChild(el('span','meta', it.meta));
+    r.appendChild(bd);
+    if (it.onTap){ r.appendChild(chev()); r.addEventListener('click', it.onTap); }
+    rows.appendChild(r);
+  });
+  card.appendChild(rows);
+  return card;
+}
+
+function firstName(n){ return String(n||'').trim().split(/\s+/)[0] || ''; }
+function emptyState(mark, head, sub){
+  var e = el('div','empty');
+  e.appendChild(el('div','mark', mark));
+  e.appendChild(el('h3', null, head));
+  if (sub) e.appendChild(el('p', null, sub));
+  return e;
+}
+function dockNote(text){
+  var n = $('dockNote');
+  n.textContent = text || '';
+  n.classList.toggle('hide', !text);
+}
+
+/* =========================== WIRING ====================================== */
+$('goBtn').addEventListener('click', function(){
+  touchIdle();
+  if (S.screen === 'signin') return doSignIn();
+  if (S.screen === 'today') return pullDay();
+  if (S.screen === 'patient') return pullChart();
+});
+$('backBtn').addEventListener('click', function(){
+  touchIdle();
+  S.pull = null; S.msg = null; S.patient = null; S.visits = null;
+  S.screen = 'today';
+  render();
+});
+$('outBtn').addEventListener('click', function(){ signOut(''); });
+
+['emailInput','pwInput','totpInput'].forEach(function(id){
+  $(id).addEventListener('keydown', function(e){
+    if (e.key === 'Enter'){ e.preventDefault(); doSignIn(); }
+  });
+});
+
+$('findInput').addEventListener('input', function(){
+  touchIdle();
+  scheduleFind(this.value || '');
+});
+$('findInput').addEventListener('keydown', function(e){
+  if (e.key === 'Enter'){ e.preventDefault(); try{ this.blur(); }catch(err){} }
+});
+
+/* header hairline appears only once there is something above the fold */
+var scroller = $('scroller');
+scroller.addEventListener('scroll', function(){
+  $('hdr').classList.toggle('scrolled', scroller.scrollTop > 4);
+}, { passive:true });
+
+/* ---- pull-to-refresh ---------------------------------------------------- */
+(function(){
+  var startY = 0, pulling = false, dist = 0;
+  var THRESH = 68;
+  var ptr = $('ptr');
+  function set(d){
+    var t = Math.min(d, THRESH * 1.5);
+    ptr.style.opacity = String(Math.min(1, t / THRESH));
+    ptr.style.transform = 'translateY(' + Math.min(t * .5, 40) + 'px)';
+  }
+  function reset(){
+    ptr.classList.remove('spinning');
+    ptr.style.transition = 'opacity .2s ease, transform .2s ease';
+    ptr.style.opacity = '0'; ptr.style.transform = 'translateY(0)';
+    setTimeout(function(){ ptr.style.transition = ''; }, 220);
+  }
+  scroller.addEventListener('touchstart', function(e){
+    if (S.screen === 'signin' || scroller.scrollTop > 0 || S.pull) { pulling = false; return; }
+    startY = e.touches[0].clientY; pulling = true; dist = 0;
+  }, { passive:true });
+  scroller.addEventListener('touchmove', function(e){
+    if (!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    if (dist <= 0){ pulling = false; reset(); return; }
+    set(dist);
+  }, { passive:true });
+  scroller.addEventListener('touchend', function(){
+    if (!pulling) return;
+    pulling = false;
+    if (dist < THRESH){ reset(); return; }
+    ptr.classList.add('spinning'); set(THRESH);
+    touchIdle();
+    var job = (S.screen === 'patient') ? loadVisits()
+            : (S.find.trim() ? runFind(S.find) : refreshToday());
+    Promise.resolve(job).then(reset, reset);
+  }, { passive:true });
+})();
+
+/* ---- boot --------------------------------------------------------------- */
+(function(){
+  try {
+    var last = localStorage.getItem(EMAIL_KEY);
+    if (last) $('emailInput').value = last;
+  } catch(e){}
+
+  var t = loadToken();
+  if (!t){ render(); return; }
+
+  /* A stored token proves nothing until the server agrees. Ask once, and land
+     on the day only when it does. */
+  S.token = t;
+  S.busy = true; S.screen = 'signin'; render();
+  api('GET','/api/me').then(function(j){
+    S.user = (j && j.user) || null;
+    return api('GET','/api/agreements/me');
+  }).then(function(a){
+    if (!(a && a.userAccess && a.userAccess.status === 'granted')) throw new Error('not-released');
+    S.busy = false; S.screen = 'today'; touchIdle(); render();
+    refreshToday();
+  }).catch(function(){
+    S.busy = false; S.token = ''; saveToken(''); S.screen = 'signin'; render();
+  });
+})();
+</script>
+</body>
+</html>
