@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.6';
+  var VERSION = 'av-5.6.7';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2346,6 +2346,11 @@
       /* THE AI DISCLOSURE. Permanent, in both modes, and never smaller than
          the interim line - a screen wearing the doctor's face must say what
          it is at a glance, not in fine print. */
+      '#mlsAvKioskState{font:800 1.7vh system-ui;letter-spacing:.4px;text-transform:uppercase;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.45vh 1.6vh}' +
+      '#mlsAvKioskState[data-state="listening"]{color:#26417a;border-color:#26417a}' +
+      '#mlsAvKioskState[data-state="speaking"]{color:#2E6A4B;border-color:#2E6A4B}' +
+      '#mlsAvKioskState[data-state="documenting"]{color:#7a1f16;border-color:#c0392b}' +
+      '#mlsAvKioskState[data-state="saving"],#mlsAvKioskState[data-state="paused"]{color:#204034;border-color:#204034}' +
       '#mlsAvKioskAi{font:700 1.85vh/1.4 system-ui;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.7vh 2vh;max-width:min(760px,92vw);margin-top:-.4vh}' +
       /* mute/pause, top-LEFT so it can never be hit while reaching for End */
       '#mlsAvKioskMute{position:absolute;top:14px;left:16px;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:10px 18px;font:700 13px system-ui;cursor:pointer;z-index:6}' +
@@ -2418,8 +2423,33 @@
       '@media (prefers-reduced-motion: reduce){#mlsAvKiosk *,#mlsAvKiosk.speaking #mlsAvKioskFace,#mlsAvKiosk.listening #mlsAvKioskFace,#mlsAvKiosk.thinking #mlsAvKioskFace{animation:none!important}}';
     (document.head || document.documentElement).appendChild(st);
   }
+  /* av-5.6.7 — ONE STATE CHIP. The kiosk already carried its state in half a
+     dozen places: a class on the root, a mic pill, a recording banner, a save
+     badge. Each is true, but a doctor glancing over has to assemble the answer
+     from four elements, and "what is it doing right now" is the question the
+     screen should answer without being read. The chip is derived inside
+     kioskMood — the same call that sets the classes — so what the screen SAYS
+     and what the kiosk IS cannot drift apart. */
+  var KIOSK_STATES = {
+    ready: 'Ready', listening: 'Listening', speaking: 'Speaking', thinking: 'Thinking',
+    /* the headline behaviour: the microphone is open WHILE the question plays,
+       so the chip must be able to say both rather than picking one and lying */
+    duplex: 'Speaking · listening',
+    documenting: 'Ambiently documenting', saving: 'Saving', paused: 'Paused'
+  };
+  function kioskState(name) {
+    var el = gid('mlsAvKioskState');
+    if (!el) return;
+    el.textContent = KIOSK_STATES[name] || KIOSK_STATES.ready;
+    el.setAttribute('data-state', name);
+  }
   function kioskMood(state, say, answer) {
     var root = gid('mlsAvKiosk'); if (!root) return;
+    /* paused and documenting OUTRANK the momentary mood: a paused kiosk is
+       paused whatever it was last doing, and a room capture is documenting
+       even while the face is animating a listen. */
+    kioskState(kiosk.paused ? 'paused' : (kiosk.ambient ? 'documenting' :
+      (KIOSK_STATES[state] ? state : 'ready')));
     ['speaking', 'listening', 'thinking', 'caring', 'happy'].forEach(function (c) { root.classList.remove(c); });
     var caring = /pain|hurt|worse|can't|cannot|scared|worried|sad|tired|sick/i.test(String(answer || '') + ' ' + String(say || ''));
     var happy = /thank|welcome|great|wonderful|glad|nice|perfect|all set|covers everything|see you|good (morning|afternoon|evening)|hi[!,. ]|hello/i.test(String(say || ''));
@@ -2647,6 +2677,13 @@
     }
     if (!keepMood) kioskMood('listening', kiosk.lastSay);
     kiosk.heard = false;
+    /* the chip is set HERE too, because the mic opens WITH the question: at
+       kioskMood time the recogniser is not open yet, so 'speaking' alone
+       would under-report what the kiosk is actually doing. */
+    if (!kiosk.ambient && !kiosk.paused) {
+      var stRoot = gid('mlsAvKiosk');
+      kioskState(stRoot && stRoot.classList.contains('speaking') ? 'duplex' : 'listening');
+    }
     var started = pvListen(function (finalText) {
       if (!kiosk.open) return;
       if (pvIsSelfEcho(finalText)) return;      /* never file our own voice */
@@ -3886,11 +3923,13 @@
       if (kiosk.ambient) kioskAmbientSave(true);   /* nothing already heard is lost by pausing */
       pvStopVoice();                               /* stops the voice AND the microphone */
       kiosk.ambRec = null;
+      kioskState('paused');
       if (recText) recText.textContent = 'PAUSED — not recording. Nothing is being captured right now.';
       kioskSetSay(kiosk.ambient ? 'Paused. I am not listening or recording.' : 'Paused. I am not listening.');
       return true;
     }
     if (recText) recText.textContent = AMBIENT_REC_TEXT;
+    kioskState(kiosk.ambient ? 'documenting' : 'listening');
     if (kiosk.ambient) {
       kioskSetSay('I am listening to the visit and taking notes for the doctor.');
       kioskMood('listening', '');
@@ -3905,6 +3944,7 @@
     if (!kiosk.ambient || kiosk.ambEnding) return;
     kiosk.ambEnding = true;
     var root = gid('mlsAvKiosk'); if (root) root.classList.add('saving');
+    kioskState('saving');
     kioskSetSay('Saving the visit…');
     var iv = gid('mlsAvKioskInterim');
     if (iv) iv.textContent = 'Finishing the recording and writing it to the transcript…';
@@ -4132,6 +4172,7 @@
          the room-capture modes, so it cannot be turned off by a state change.
          The spoken half lives in the backend's INTERVIEW_SYSTEM rule 9: the
          first thing it SAYS also identifies it. */
+      '<div id="mlsAvKioskState" role="status" data-state="ready">Ready</div>' +
       '<div id="mlsAvKioskAi">🤖 AI assistant — not the doctor. What you tell me goes to your care team.</div>' +
       /* mute/pause: the patient stops being recorded the instant it is
          pressed, and the screen says so. See kioskPauseToggle. */
@@ -4194,6 +4235,7 @@
     root.querySelector('#mlsAvKioskInput').addEventListener('input', function () { kiosk.heard = true; });
     /* the LIVING face */
     kiosk.face = makeFace(gid('mlsAvKioskFace'), kiosk.look || null);
+    kioskState('ready');
     /* TRUE fullscreen + the audio engine, both on the doctor's click (the
        one user gesture Chrome honours for either) */
     safe(function () {

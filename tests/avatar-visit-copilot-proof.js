@@ -208,6 +208,33 @@ async function toAmbient(page) {
   await page.clock.runFor(1200);
 }
 
+/* the staff handoff on a kiosk that is ALREADY open and finished with intake */
+async function toAmbientFrom(page) {
+  await page.clock.runFor(13000);
+  await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+  await page.clock.runFor(400);
+  await page.evaluate(function () {
+    document.getElementById('mlsAvKioskPinInput').value = '1234';
+    document.getElementById('mlsAvKioskPinAmb').click();
+  });
+  await page.clock.runFor(1200);
+}
+
+/* run the REAL detector over one line with no kiosk involved — used to sweep a
+   whole visit transcript for false positives cheaply */
+let _sweepPage = null;
+async function pageless(browser, base, line) {
+  if (!_sweepPage) {
+    _sweepPage = await browser.newPage();
+    await _sweepPage.goto(base + '/page.html');
+    await _sweepPage.evaluate(STUBS);
+    await _sweepPage.addScriptTag({ content: AVATAR_SRC });
+  }
+  return _sweepPage.evaluate(function (t) {
+    return window.__mlsAvatar.detectActions(t).map(function (a) { return { kind: a.kind, title: a.title }; });
+  }, line);
+}
+
 async function say(page, text) {
   await page.evaluate(function (t) { window.__emit(t, true); }, text);
   await page.clock.runFor(1600);        /* past the detector's settle window */
@@ -993,6 +1020,444 @@ async function say(page, text) {
       saves.forEach(function (s) {
         console.log('     ' + String(s.tag).padEnd(26) + String(s.chars).padStart(5) + ' / ' + String(s.storedChars).padStart(5));
       });
+    }
+    /* ------------------------------------------------------------ I */
+    section('SCENARIO I - THE THINGS THAT GO WRONG IN A REAL ROOM');
+    {
+      /* The brief names these by hand: network issues, microphone reconnects,
+         transcription errors, overlapping speech. None of them were proved
+         before this scenario — every earlier test ran on a network that never
+         failed, a microphone that never died and a recogniser that never lied.
+         A copilot that only works when nothing goes wrong is a demo. */
+
+      /* --- I1. the turn request FAILS mid-interview --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
+          window.__failNext = false;
+          window.__turnBodies = [];
+          const real = window.fetch;
+          window.fetch = function (url, opts) {
+            /* log EVERY turn attempt, including the one we are about to fail —
+               the earlier version logged only what reached the stub, so the
+               failed attempt's nonce was invisible and the comparison below
+               was meaningless */
+            if (String(url).indexOf('/office/turn') >= 0) {
+              let b = {};
+              try { b = JSON.parse((opts && opts.body) || '{}'); } catch (e) {}
+              window.__turnBodies.push(b);
+            }
+            if (window.__failNext && String(url).indexOf('/office/turn') >= 0) {
+              window.__failNext = false;
+              return Promise.resolve({
+                ok: false, status: 500,
+                headers: { get: function () { return 'application/json'; } },
+                json: function () { return Promise.resolve({}); },
+                blob: function () { return Promise.resolve(new Blob([''])); }
+              });
+            }
+            return real(url, opts);
+          };
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.clock.runFor(1500);
+        await page.evaluate(function () {
+          window.__failNext = true;
+          window.__emit('my back has been hurting for three weeks', true);
+        });
+        await page.clock.runFor(3000);
+        const said = await page.evaluate(function () {
+          return (document.getElementById('mlsAvKioskSay').textContent || '');
+        });
+        ok('I1 a failed turn NEVER speaks an empty sentence at the patient', said.trim().length > 0, said.slice(0, 60));
+        ok('I1 …it says the connection hiccuped and the answer is safe',
+          /connection hiccuped|safe to say again/i.test(said), said.slice(0, 70));
+        const reopened = await page.evaluate(function () {
+          return !!(window.__recs[window.__recs.length - 1] || {}).live;
+        });
+        ok('I1 …and the microphone reopens so the patient can simply repeat', reopened === true);
+        /* the answer must still be resendable under the SAME nonce, or the
+           retry files the patient's words twice */
+        await page.evaluate(function () { window.__emit('my back has been hurting for three weeks', true); });
+        await page.clock.runFor(3000);
+        const answered = await page.evaluate(function () {
+          return (window.__turnBodies || []).filter(function (b) { return b && b.answer; })
+            .map(function (b) { return { a: b.answer, n: b.answerNonce }; });
+        });
+        ok('I1 …the patient repeating themselves DOES reach the server', answered.length >= 2,
+          answered.length + ' answered attempts');
+        ok('I1 …and the resend reuses the SAME nonce, so the server cannot double-file it',
+          answered.length >= 2 && answered[0].n === answered[answered.length - 1].n,
+          JSON.stringify(answered.map(function (x) { return x.n; })));
+        ok('I1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I2. the microphone dies mid-capture and must come back --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'the exam shows tenderness over the joint line');
+        const before = await page.evaluate(function () { return window.__amb().capturedChars; });
+        const startsBefore = await page.evaluate(function () { return window.__log.recStarts; });
+        await page.evaluate(function () {
+          const r = window.__recs[window.__recs.length - 1];
+          if (r && r.onerror) { r.live = false; r.onerror({ error: 'network' }); }
+        });
+        await page.clock.runFor(6000);
+        const startsAfter = await page.evaluate(function () { return window.__log.recStarts; });
+        ok('I2 a dead microphone is restarted by itself', startsAfter > startsBefore,
+          startsBefore + ' -> ' + startsAfter);
+        await say(page, 'and there is no effusion today');
+        const after = await page.evaluate(function () { return window.__amb().capturedChars; });
+        ok('I2 …and speech after the reconnect is still captured', after > before, before + ' -> ' + after);
+        ok('I2 …with nothing lost from before it died',
+          (await page.evaluate(function () { return window.__amb(); })).capturedChars >= before);
+        ok('I2 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I3. the recogniser lies: empty, whitespace and repeated finals --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'the knee is swollen today');
+        const base1 = await page.evaluate(function () { return window.__amb().capturedChars; });
+        await page.evaluate(function () {
+          window.__emit('', true);
+          window.__emit('   ', true);
+          window.__emit('the knee is swollen today', true);   /* Chrome re-delivering the tail */
+        });
+        await page.clock.runFor(2500);
+        const after = await page.evaluate(function () { return window.__amb(); });
+        ok('I3 empty and whitespace transcriptions add nothing', after.capturedChars === base1,
+          base1 + ' -> ' + after.capturedChars);
+        ok('I3 …and an exactly repeated phrase is not filed twice', after.capturedChars === base1);
+        const cards = await page.evaluate(function () { return window.__cards(); });
+        ok('I3 …and garbage never becomes a clinical order', cards.length === 0, JSON.stringify(cards));
+        ok('I3 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I4. overlapping speech: finals arriving faster than they can be
+         processed must all survive, in order --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await page.evaluate(function () {
+          ['the pain is sharp', 'it started on Tuesday', 'she took ibuprofen',
+           'it helped a little', 'the swelling is down'].forEach(function (t) { window.__emit(t, true); });
+        });
+        await page.clock.runFor(3000);
+        const st = await page.evaluate(function () {
+          const a = window.__amb();
+          let stored = null;
+          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          return { chars: a.capturedChars, parts: stored ? stored.parts : [] };
+        });
+        ok('I4 five overlapping utterances are ALL captured', st.parts.length === 5,
+          st.parts.length + ' parts');
+        ok('I4 …in the order they were spoken',
+          st.parts[0] === 'the pain is sharp' && st.parts[4] === 'the swelling is down',
+          JSON.stringify(st.parts.slice(0, 2)));
+        ok('I4 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I5. browser storage refuses mid-visit --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'first line before storage breaks');
+        const okBefore = await page.evaluate(function () { return window.__amb().backedUp; });
+        ok('I5 the backup is healthy to begin with', okBefore === true);
+        await page.evaluate(function () {
+          const real = localStorage.setItem.bind(localStorage);
+          window.__realSet = real;
+          localStorage.setItem = function () { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; };
+        });
+        await say(page, 'second line while storage is refusing');
+        const st = await page.evaluate(function () { return window.__amb(); });
+        ok('I5 a refusing store is reported HONESTLY, not hidden', st.backedUp === false, 'backedUp=' + st.backedUp);
+        ok('I5 …while the in-memory capture keeps everything', st.capturedChars > 0, st.capturedChars + ' chars');
+        /* and the visit must still file in full when it ends */
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('I5 …and End Visit still writes the WHOLE visit to the transcript',
+          box.indexOf('first line before storage breaks') >= 0 &&
+          box.indexOf('second line while storage is refusing') >= 0,
+          'first=' + (box.indexOf('first line') >= 0) + ' second=' + (box.indexOf('second line') >= 0));
+        const rev = await page.evaluate(function () { return window.__review(); });
+        ok('I5 …and the review admits the backup was not written',
+          /crash backup could not be written/i.test(rev || ''), (rev || '').slice(0, 120));
+        ok('I5 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- I6. the state chip the brief asks for, read off the live DOM --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        const chip = function () {
+          return page.evaluate(function () {
+            const el = document.getElementById('mlsAvKioskState');
+            return el ? (el.textContent || '').trim() : null;
+          });
+        };
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.clock.runFor(1600);
+        const listening = await chip();
+        ok('I6 the screen names its state in ONE place', listening !== null, String(listening));
+        /* the mic opens WITH the question, so the honest answer here is BOTH.
+           The first version of this test expected "Listening" and caught the
+           chip under-reporting: it said "Speaking" while the microphone was
+           already open, which hides the one behaviour the brief leads with. */
+        ok('I6 …and says it is speaking AND listening at once (full duplex)',
+          listening === 'Speaking · listening', String(listening));
+        await toAmbientFrom(page);
+        ok('I6 …Ambiently documenting during the visit', (await chip()) === 'Ambiently documenting', String(await chip()));
+        await page.evaluate(function () { document.getElementById('mlsAvKioskMute').click(); });
+        await page.clock.runFor(400);
+        ok('I6 …Paused when paused', (await chip()) === 'Paused', String(await chip()));
+        await page.evaluate(function () { document.getElementById('mlsAvKioskMute').click(); });
+        await page.clock.runFor(400);
+        ok('I6 …and back to documenting on resume', (await chip()) === 'Ambiently documenting', String(await chip()));
+        ok('I6 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+    }
+    /* ------------------------------------------------------------ J */
+    section('SCENARIO J - ENDURANCE AND THE ADVERSARIAL CASES');
+    {
+      /* --- J1. A LONG VISIT. The backup rewrites the WHOLE record on every
+         save, so total bytes written grow with the square of the visit. A 90
+         minute consultation is the case the brief names, and it is the one
+         where that shape would bite. Measured on a real clock. --- */
+      {
+        const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+        const errs = [];
+        page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+        await page.goto(base + '/page.html');
+        await page.evaluate(STUBS);
+        await page.evaluate(function () {
+          document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+          /* count the real cost: bytes handed to storage, and time spent in it */
+          window.__ls = { writes: 0, bytes: 0, ms: 0 };
+          const real = localStorage.setItem.bind(localStorage);
+          localStorage.setItem = function (k, v) {
+            const t0 = performance.now();
+            real(k, v);
+            window.__ls.writes++; window.__ls.bytes += String(v).length;
+            window.__ls.ms += performance.now() - t0;
+          };
+        });
+        await page.addScriptTag({ content: AVATAR_SRC });
+        await page.waitForTimeout(900);
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'Hello?', done: true }];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.waitForTimeout(900);
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+        await page.waitForTimeout(250);
+        await page.evaluate(function () {
+          document.getElementById('mlsAvKioskPinInput').value = '1234';
+          document.getElementById('mlsAvKioskPinAmb').click();
+        });
+        await page.waitForTimeout(800);
+
+        /* ~600 finalised utterances ≈ a long, talkative consultation */
+        const N = 600;
+        const t0 = Date.now();
+        await page.evaluate(function (n) {
+          for (let i = 0; i < n; i++) {
+            window.__emit('exam finding number ' + i + ' spoken aloud in the room during a long visit', true);
+          }
+        }, N);
+        await page.waitForTimeout(2500);
+        const wall = Date.now() - t0;
+        const st = await page.evaluate(function () {
+          const a = window.__amb();
+          let stored = null;
+          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          return { chars: a.capturedChars, backedUp: a.backedUp, trimmed: a.backupTrimmed,
+            parts: stored ? stored.parts.length : 0, ls: window.__ls };
+        });
+        console.log('  ---- ' + N + ' utterances (a long visit) ----');
+        console.log('     captured ' + st.chars + ' chars in ' + st.parts + ' parts');
+        console.log('     storage: ' + st.ls.writes + ' writes, ' +
+          (st.ls.bytes / 1048576).toFixed(2) + ' MB handed to localStorage, ' +
+          st.ls.ms.toFixed(0) + ' ms total in setItem');
+        console.log('     wall clock for the whole burst: ' + wall + ' ms');
+        ok('J1 a long visit captures every utterance', st.parts === N, st.parts + '/' + N);
+        ok('J1 …and is still backed up at the end', st.backedUp === true, 'backedUp=' + st.backedUp);
+        /* the throttle is what keeps this from being quadratic in practice:
+           one write per ~1.5s regardless of how fast the room talks */
+        ok('J1 the save throttle holds under a burst — writes are not per-utterance',
+          st.ls.writes < N / 4, st.ls.writes + ' writes for ' + N + ' utterances');
+        ok('J1 …and total bytes written stay sane', st.ls.bytes < 40 * 1048576,
+          (st.ls.bytes / 1048576).toFixed(2) + ' MB');
+        ok('J1 …and storage never becomes the bottleneck', st.ls.ms < 3000, st.ls.ms.toFixed(0) + ' ms');
+
+        /* THE BURST FLATTERS ITSELF. 600 utterances arriving at once coalesce
+           into two writes, which says nothing about a REAL 90 minute visit
+           where they arrive spread out and the throttle fires every ~1.5s on a
+           record that keeps growing. The backup rewrites the whole record each
+           time, so the honest question is: what does ONE write cost at
+           end-of-visit size, and what does that come to over a full visit? */
+        const perWrite = await page.evaluate(function () {
+          const k = 'acct-9::mlsAvRoomCaptureV1';
+          const payload = localStorage.getItem(k) || '';
+          const t0 = performance.now();
+          for (let i = 0; i < 50; i++) localStorage.setItem(k + '::probe', payload);
+          const ms = (performance.now() - t0) / 50;
+          localStorage.removeItem(k + '::probe');
+          return { bytes: payload.length, ms: ms };
+        });
+        /* 90 minutes at one write per 1.5s is the worst case the cap allows */
+        const worstWrites = (90 * 60) / 1.5;
+        const worstMs = perWrite.ms * worstWrites;
+        console.log('     one write at end-of-visit size (' + (perWrite.bytes / 1024).toFixed(0) + ' KB): ' +
+          perWrite.ms.toFixed(2) + ' ms');
+        console.log('     extrapolated worst case, 90 min at 1 write/1.5s: ' + worstWrites + ' writes, ' +
+          (worstMs / 1000).toFixed(1) + ' s of main thread total (' +
+          ((worstMs / (90 * 60 * 1000)) * 100).toFixed(2) + '% duty cycle)');
+        ok('J1 a single end-of-visit write is not a frame killer', perWrite.ms < 8,
+          perWrite.ms.toFixed(2) + ' ms');
+        ok('J1 …and the whole 90-minute worst case stays a rounding error on the main thread',
+          worstMs < 30000, (worstMs / 1000).toFixed(1) + ' s across 90 min');
+        ok('J1 page threw nothing', errs.length === 0, errs.join(' | '));
+        await page.close();
+      }
+
+      /* --- J2. HOW NOISY IS THE DETECTOR OVER A WHOLE REAL VISIT? Curated
+         sentences prove it can refuse; a continuous transcript proves it does
+         not cry wolf while two people simply talk. --- */
+      {
+        const VISIT = [
+          'good morning, how have you been since last time',
+          'not too bad, the back is still bothering me though',
+          'tell me where exactly it hurts',
+          'right across the lower back, and sometimes down the leg',
+          'does it wake you at night', 'occasionally, if I roll over wrong',
+          'any numbness or tingling in the feet', 'no, nothing like that',
+          'how about weakness, any trouble on stairs', 'no, stairs are fine',
+          'have you been taking anything for it', 'just ibuprofen when it is bad',
+          'does that help', 'takes the edge off for a few hours',
+          'let me have a look at you', 'can you bend forward for me',
+          'that is where it catches', 'okay, and lean back',
+          'that is fine', 'now lift this leg straight up',
+          'that pulls a bit', 'and the other one', 'that one is fine',
+          'your reflexes are normal', 'strength is good in both legs',
+          'the good news is nothing here worries me',
+          'most of this settles with time and movement',
+          'I had an MRI years ago for my neck', 'yes I remember that',
+          'do you think I need another one', 'I do not think we need imaging today',
+          'we would only do that if things changed',
+          'should I keep taking the ibuprofen', 'yes, that is reasonable',
+          'what about physical therapy, my sister had that',
+          'it can help, let us see how the next few weeks go',
+          'come back if it gets worse', 'thank you doctor',
+          'take care of yourself', 'you too'
+        ];
+        const found = [];
+        for (let i = 0; i < VISIT.length; i++) {
+          const out = await pageless(browser, base, VISIT[i]);
+          if (out.length) found.push({ line: VISIT[i], got: out.map(function (a) { return a.kind + ':' + a.title; }) });
+        }
+        console.log('  ---- detector over a ' + VISIT.length + '-line visit with NO orders in it ----');
+        found.forEach(function (f) { console.log('     FIRED on: "' + f.line + '" -> ' + f.got.join(', ')); });
+        ok('J2 a whole visit with no orders in it produces NO proposals', found.length === 0,
+          found.length + ' spurious proposal(s)');
+      }
+
+      /* --- J3. CROSS-PATIENT. The worst thing this file can produce. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'patient A has a distinctive complaint about her shoulder');
+        await say(page, 'order an MRI lumbar spine without contrast');
+        await page.evaluate(function () { document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo').click(); });
+        await page.clock.runFor(300);
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        await page.evaluate(function () {
+          document.getElementById('mlsAvKioskPinInput').value = '1234';
+          document.getElementById('mlsAvKioskPinGo').click();
+        });
+        await page.clock.runFor(1500);
+        /* a NEW patient on the same screen */
+        await page.evaluate(function () {
+          window.__activePt = 'ext-88';
+          window.getPatients = function () { return [{ id: 'ext-88', name: 'Patient B' }]; };
+          document.getElementById('ez3flTranscript').value = '';
+        });
+        await toAmbient(page);
+        const st = await page.evaluate(function () { return window.__amb(); });
+        const cards = await page.evaluate(function () { return window.__cards(); });
+        ok('J3 the new patient starts with an EMPTY capture', st.capturedChars === 0, st.capturedChars + ' chars');
+        ok('J3 …bound to the new chart', st.boundPatient === 'ext-88', st.boundPatient);
+        ok('J3 …and no proposed action survives from the previous patient', cards.length === 0,
+          JSON.stringify(cards.map(function (c) { return c.title; })));
+        await say(page, 'patient B has knee pain');
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('J3 …and patient A never appears in patient B\'s transcript',
+          box.indexOf('distinctive complaint about her shoulder') < 0 && box.indexOf('patient B has knee pain') >= 0,
+          'A-leak=' + (box.indexOf('distinctive complaint') >= 0));
+        ok('J3 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- J4. a CORRUPT backup must refuse, not crash --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        const cases = await page.evaluate(function () {
+          const k = 'acct-9::mlsAvRoomCaptureV1';
+          const out = [];
+          [['not json at all', 'garbage'],
+           ['{"v":1}', 'valid json, wrong shape'],
+           ['{"v":1,"parts":"not an array","bound":"ext-77"}', 'parts is not an array'],
+           ['null', 'literal null'],
+           ['{"v":1,"parts":[],"bound":"ext-77"}', 'empty parts']
+          ].forEach(function (row) {
+            localStorage.setItem(k, row[0]);
+            let res;
+            try { res = { ok: true, value: window.__mlsAvatar.pendingCapture() }; }
+            catch (e) { res = { ok: false, err: String(e && e.message) }; }
+            out.push({ why: row[1], threw: !res.ok, value: res.value === null ? 'null' : typeof res.value });
+          });
+          return out;
+        });
+        cases.forEach(function (c) {
+          ok('J4 a corrupt backup (' + c.why + ') refuses without throwing',
+            c.threw === false && c.value === 'null', JSON.stringify(c));
+        });
+        ok('J4 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- J5. End Visit pressed twice must not file the visit twice --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'a single line of this visit');
+        await page.evaluate(function () {
+          const b = document.getElementById('mlsAvKioskEndVisit');
+          b.click(); b.click(); b.click();
+        });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        const hits = box.split('a single line of this visit').length - 1;
+        ok('J5 three rapid End Visit clicks file the visit exactly ONCE', hits === 1, hits + ' copies');
+        ok('J5 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
     }
   } finally {
     await browser.close();
