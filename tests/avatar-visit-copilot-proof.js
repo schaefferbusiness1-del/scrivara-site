@@ -1730,6 +1730,41 @@ async function say(page, text) {
         ok('M1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
       }
 
+      /* --- M1b. A CRASH BYPASSES THE REVIEW. The review names what was heard
+         and never confirmed; a reload never reaches it. Proposals the doctor
+         had not yet acted on used to vanish from the recovered visit without
+         ever being mentioned — silence about a proposed order. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'order an mri of the lumbar spine without contrast');
+        await page.evaluate(function () { document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo').click(); });
+        await page.clock.runFor(300);
+        await say(page, 'and lets refer him to orthopedics');   /* left UNCONFIRMED */
+        const before = await page.evaluate(function () { return window.__amb().actions.length; });
+        ok('M1b two actions exist before the crash', before === 2, String(before));
+
+        await page.reload();
+        await page.evaluate(STUBS);
+        await page.addScriptTag({ content: AVATAR_SRC });
+        await page.clock.runFor(4000);
+        const pend = await page.evaluate(function () { return window.__mlsAvatar.pendingCapture(); });
+        ok('M1b the recovered capture still carries both actions',
+          !!pend && pend.actions.length === 2, pend ? String(pend.actions.length) : 'none');
+
+        const filed = await page.evaluate(function () { return window.__mlsAvatar.fileRecoveredCapture(); });
+        ok('M1b the recovered visit files', filed.ok === true, JSON.stringify(filed));
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('M1b the CONFIRMED order is in the recovered note', /MRI.*lumbar spine/i.test(box));
+        ok('M1b the UNCONFIRMED one is NAMED rather than silently dropped',
+          /heard but NEVER confirmed/i.test(box) && /Orthopedics/i.test(box),
+          box.slice(box.indexOf('NEVER confirmed'), box.indexOf('NEVER confirmed') + 120));
+        ok('M1b …and is stated plainly as NOT ordered',
+          /These were NOT ordered/.test(box));
+        ok('M1b page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
       /* --- M2. TWO TABS. The backup key is account-scoped, and a doctor
          having the app open twice is not exotic. If both tabs write the same
          key, one visit silently overwrites the other and the loser is gone

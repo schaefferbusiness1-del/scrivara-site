@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.7.1';
+  var VERSION = 'av-5.7.2';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2940,6 +2940,7 @@
   var AMBIENT_HEAD_CHECKIN = '--- check-in ---';
   var AMBIENT_HEAD_VISIT = '--- visit ---';
   var AMBIENT_HEAD_ORDERS = '--- actions the doctor confirmed on screen ---';
+  var AMBIENT_HEAD_PENDING = '--- heard but NEVER confirmed (not ordered) ---';
   /* ONE source for the recording banner text: the markup and the resume path
      must never be able to disagree about what the screen says. */
   var NUDGE_LINE = 'Take your time — whenever you\'re ready, just start talking.';
@@ -3967,6 +3968,27 @@
     lines.push(info.body);
     var orders = ordersBlockFrom(info.actions.filter(function (a) { return a && a.status === 'confirmed'; }));
     if (orders) { lines.push(''); lines.push(orders); }
+    /* av-5.7.2 — WHAT WAS HEARD AND NEVER CONFIRMED SURVIVES THE CRASH TOO.
+       The review screen names these out loud, but a crash is exactly the path
+       that never reaches the review: the doctor reloads, files the recovered
+       visit, and three proposals they had not yet acted on used to disappear
+       without ever being mentioned. Silence about a proposed order is the one
+       thing this widget must never produce, and the recovery path was the last
+       place still producing it. They are listed as NOT ordered, in the same
+       words the review uses, so the two surfaces cannot drift. */
+    var pending = info.actions.filter(function (a) { return a && a.status === 'proposed'; });
+    if (pending.length) {
+      lines.push('');
+      lines.push(AMBIENT_HEAD_PENDING);
+      pending.forEach(function (a) {
+        var gap = (a.missing || []).length ? ('  (missing ' + ordersMissingText(a) + ')') : '';
+        lines.push('- [' + (ACT_KIND_LABEL[a.kind] || a.kind) + '] ' + clean(a.title) +
+          (clean(a.detail) ? ' - ' + clean(a.detail) : '') + gap +
+          '  (heard: "' + clean(a.heard) + '")');
+      });
+      lines.push('[Heard during the visit and NEVER confirmed by the doctor. These were NOT ordered. ' +
+        'The visit ended before they could be reviewed.]');
+    }
     var block = lines.join('\n');
     /* filing the same recovered capture twice would duplicate a whole visit
        in the note - the body is its own idempotency key */
