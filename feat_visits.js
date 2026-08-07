@@ -830,6 +830,25 @@
     return next;
   }
 
+  /* visits[].type is the LAST term of the summary fallback chain, so on a visit
+     with no body it becomes the rendered description. Measured on the live
+     roster 2026-08-06: 2,070 of 3,329 visits have no body, and 58 of those
+     carry text scraped off an inbox or worklist surface rather than an
+     encounter -- 50 message threads and 10 strings carrying a THIRD PARTY'S
+     name and date of birth. _stripIdentityLines cannot catch the latter: it
+     anchors "dob:" to the start of a line, and these arrive mid-string after a
+     slash. Both shapes are unmistakable and neither can be a visit reason, so
+     they fall through to the placeholder instead of printing as clinical text.
+     Deliberately NARROW -- a name-shaped test suppressed 32% of legitimate
+     descriptions while still passing correspondence that quoted the patient's
+     own name. Text that merely mentions another person stays visible; the
+     collector, not the renderer, is what must stop ingesting these. */
+  /* » is the thread separator athenaNet renders between message authors.
+     Escaped, not literal: this file is rewritten by the build stamper and a
+     non-ASCII byte here has corrupted shared files before. */
+  var _NOT_A_VISIT_REASON = /\u00BB|[\/,]\s*d?\.?o\.?b\.?\s*:?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\bd\.?o\.?b\.?\b\s*:?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\bdate of birth\b/i;
+  function _typeIsRenderableReason(t) { return !!trim(t) && !_NOT_A_VISIT_REASON.test(S(t)); }
+
   function _stripIdentityLines(text) {
     return _plain(S(text).split(/\n+/).filter(function (line) {
       return !/^\s*(?:patient|name|dob|date of birth|mrn|age|sex|gender)\s*:/i.test(_plain(line));
@@ -895,8 +914,9 @@
     if (visits.length) {
       lines.push('', 'Recent visits:');
       visits.slice(0, 12).forEach(function (v) {
-        var detail = _stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || v.type));
-        if (!detail) detail = trim(v.type) || 'Visit — no readable note text captured';
+        var reason = _typeIsRenderableReason(v.type) ? v.type : '';
+        var detail = _stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || reason));
+        if (!detail) detail = trim(reason) || 'Visit — no readable note text captured';
         lines.push('• ' + (v.date || 'Undated') + ' — ' + detail.slice(0, 320));
       });
     }
