@@ -322,6 +322,12 @@ const tests = [
      patient-safety fix shipped and did nothing; QA proved it on live b926.
      This suite asserts on the INSTALLED generator, never on a file. */
   'opnote-guards-run-in-the-installed-generator.test.js',
+  /* Owner 2026-08-06: "the template auto matching just is not that good".
+     QA measured it on the text his SCHEDULE carries, not on well-formed
+     strings: 24 of 27 real reasons REFUSED with the right template already
+     ranked first. The gate, not the ranker - and a suite of ideal inputs
+     could never have seen it. */
+  'template-match-real-schedule-text.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
