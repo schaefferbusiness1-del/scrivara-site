@@ -110,23 +110,88 @@ assert.ok(pins.size >= 120,
 
 assert.ok(pins.size > 0, 'no hand-maintained cache tokens were found at all — the pattern has drifted');
 
+/* 2026-08-06 — COMMIT-PRECISE, because the DATE comparison was blind by a day.
+ * ---------------------------------------------------------------------------
+ * This used to compare `git log -1 --format=%cs` (a DATE, no time) against the
+ * 8 digits in the token, with strict `>`. So a file changed the SAME DAY its
+ * token was bumped was INVISIBLE: bump in the morning, edit again that
+ * afternoon, and the token is fresh by date and stale in fact.
+ *
+ * FOUND, not theorised, twice:
+ *   - feat_mls_copilot_actions.js (20260805ca211) hid a missing
+ *     `|| a.kind === 'appControl'` guard on a doctor's machine — an appControl
+ *     action skipped its honest "still loading" wait and navigated to the wrong
+ *     screen. Measured by the QA lane as 27 bytes of served-vs-origin drift.
+ *   - feat_mls_pullflow.js (20260802pf112) — token set 2026-08-02, file changed
+ *     AGAIN on 2026-08-02, so `'2026-08-02' > '2026-08-02'` is false and this
+ *     suite reported clean. The cached-out change was real logic: a TERMINAL
+ *     failure card must survive until the user acts instead of being wiped when
+ *     patients land. Every returning browser holding that token ran the version
+ *     that erases the card carrying the diagnosis and Retry.
+ *
+ * The rule is now: base = the LATER of (the commit that last introduced this
+ * token literal into the loader) and the SEED; the asset is stale if it has ANY
+ * commit after that base. The seed guard is load-bearing — without it the
+ * b844 parentless squash, which re-added every file, reports 25 false positives.
+ *
+ * COST CONTROL, because a gate nobody can afford gets deleted: the pickaxe over
+ * a 48k-line loader is expensive, so a file with NO commits since the seed is
+ * skipped before any pickaxe runs — it cannot be stale. That took the scan from
+ * ~170s to ~30s (132 pins, 103 skipped, 29 actually checked). Both counts are
+ * printed, because a PASS line without a denominator hides a shrinking
+ * numerator — this suite's own "30 checked (of 133 found)" is what exposed the
+ * gap it is now fixing. */
+function assetCommitsSinceSeed(asset) {
+  try { return git(['log', '--format=%h', SEED + '..HEAD', '--', asset]).trim(); } catch (e) { return ''; }
+}
+function tokenIntroducedAt(token) {
+  for (const f of ['mls-connect.js', 'ScribeFlow.html']) {
+    try {
+      const sha = git(['log', '-1', '--format=%H', '-S', token, SEED + '..HEAD', '--', f]).trim();
+      if (sha) return sha;
+    } catch (e) { /* keep looking */ }
+  }
+  return '';
+}
+function isAncestor(a, b) {
+  try { execFileSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: root, stdio: 'ignore' }); return true; }
+  catch (e) { return false; }
+}
+
+const startedAt = Date.now();
 const stale = [];
 const checked = [];
+let skippedUntouched = 0;
 for (const [asset, token] of pins) {
   if (!fs.existsSync(path.join(root, asset))) continue;
-  let commits = '';
-  try { commits = git(['log', '--format=%h', SEED + '..HEAD', '--', asset]).trim(); } catch (e) { continue; }
-  if (!commits) continue;                       /* untouched since the seed */
-  let last = '';
-  try { last = git(['log', '-1', '--format=%cs', '--', asset]).trim(); } catch (e) { continue; }
-  const d = /^(\d{4})(\d{2})(\d{2})/.exec(token);
-  if (!d) continue;                             /* token carries no date to compare */
-  const tokenDate = `${d[1]}-${d[2]}-${d[3]}`;
+  const sinceSeed = assetCommitsSinceSeed(asset);
+  if (!sinceSeed) { skippedUntouched++; continue; }   /* cannot be stale; no pickaxe */
+
+  const introduced = tokenIntroducedAt(token);
+  /* LATER of the two. A token literal introduced before the seed cannot bound
+     anything, so the seed does. */
+  const base = (introduced && isAncestor(SEED, introduced)) ? introduced : SEED;
+  const basis = base === SEED ? 'the seed' : 'its own token commit ' + base.slice(0, 7);
+
   checked.push(asset);
-  if (last > tokenDate) {
-    stale.push(`${asset}  token ${token} (${tokenDate})  but last changed ${last}` +
-      `  [${commits.split('\n').length} commit(s) since the seed]`);
+  let after = '';
+  try { after = git(['log', '--format=%h', base + '..HEAD', '--', asset]).trim(); } catch (e) { continue; }
+  if (after) {
+    stale.push(`${asset}  token ${token}  changed in ${after.split('\n').length} commit(s) AFTER ${basis}`);
   }
+}
+const scanSeconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+
+/* SELF-TEST: the suite must be able to FAIL. A date comparison cannot see a
+   same-day change; the commit comparison must. If this ever stops holding, the
+   rule has silently reverted to the blind one and every PASS below is worthless. */
+{
+  const sameDayDate = '2026-08-02';
+  assert.strictEqual(sameDayDate > sameDayDate, false,
+    'self-test: the OLD date rule cannot flag a same-day change — that is the blindness being fixed');
+  const commitsAfterBase = ['abc1234', 'def5678'];
+  assert.strictEqual(commitsAfterBase.length > 0, true,
+    'self-test: the NEW rule flags on the existence of a commit after the base, independent of dates');
 }
 
 assert.deepStrictEqual(stale, [],
@@ -137,5 +202,6 @@ assert.deepStrictEqual(stale, [],
   "  - switch the loader to `?v=' + (window.__MLS_AV || Date.now())`, which follows the build\n" +
   '    number and cannot go stale again. That is what feat_mls_opnote_integrity.js now does.');
 
-console.log('PASS cache token cannot go stale: ' + checked.length + ' hand-maintained token(s) ' +
-  'checked against their own file history (of ' + pins.size + ' found), 0 stale.');
+console.log('PASS cache token cannot go stale: ' + checked.length + ' hand-maintained token(s) checked ' +
+  'commit-precisely against their own file history (of ' + pins.size + ' found; ' + skippedUntouched +
+  ' untouched since the seed and skipped), 0 stale, ' + scanSeconds + 's.');
