@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.1)
+ * AVATAR — THE VISIT COPILOT (av-5.6.2)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -364,6 +364,13 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
 {
   const rec = slice('function ambientRecoverFile', 'function kioskAmbientStart', 'the recovery write');
   assert(rec.includes('activePtIdSafe()'), 'recovery must resolve the chart at WRITE time');
+  /* a capture still RUNNING in this tab is not a recovered one — offering it
+     would file half a consultation and drop the backup protecting the rest */
+  {
+    const info = slice('function ambientRecoverInfo', 'function ambientRecoverFile', 'the recovery reader');
+    assert(/kiosk\.ambient === true && clean\(rec\.sid\)[\s\S]{0,80}return null;/.test(info),
+      'a capture running in THIS tab must not be offered as recoverable');
+  }
   assert(rec.includes('is not the one this recording belongs to'),
     'a chart mismatch must refuse and name the chart the words belong to');
   assert(rec.lastIndexOf('ambientStoreDrop()') > rec.indexOf('box.value = prior'),
@@ -425,14 +432,14 @@ assert(/kiosk\.chartCtx = undefined;/.test(source),
 }
 
 /* 3m. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.1'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.6.2'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '561', 'the loader cache token must name av-5.6.1 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '562', 'the loader cache token must name av-5.6.2 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.1): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.2): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

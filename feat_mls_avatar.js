@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.1';
+  var VERSION = 'av-5.6.2';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -3558,6 +3558,12 @@
   function ambientRecoverInfo() {
     var rec = ambientStoreRead();
     if (!rec) return null;
+    /* A CAPTURE RUNNING IN THIS TAB IS NOT A RECOVERED ONE. The backup is
+       written continuously while the room is being recorded, so without this
+       the Visit card would offer "File the recovered visit" for a visit still
+       in progress - filing half a consultation and dropping the backup that
+       protects the other half. Recovery means the tab that took it is gone. */
+    if (kiosk.ambient === true && clean(rec.sid) && clean(rec.sid) === clean(kiosk.sid)) return null;
     var body = (rec.parts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
     if (!body) return null;
     var start = Number(rec.start) || 0, saved = Number(rec.savedAt) || 0;
