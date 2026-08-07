@@ -337,6 +337,18 @@ assert(!/fetch\([^)]*order/i.test(source), 'this module must not gain an order-s
   assert(card.includes("make('div', 'mlsAvOrdHeard'"), 'the verbatim heard line was removed from the card');
 }
 
+/* 3f-bis. NO NATIVE BLOCKING DIALOG anywhere in this flow. window.prompt and
+   window.confirm freeze the renderer — they would stall the recording clock,
+   the save badge and the microphone restart loop behind a modal held open in
+   front of a patient, and this app has been wedged by exactly that before.
+   Correcting an action is inline; discarding a recovered visit is two taps. */
+assert(!/window\.(prompt|confirm)\s*\(/.test(source),
+  'a native blocking dialog is back in the avatar module — it would freeze the capture loop mid-visit');
+assert(source.includes('a.editing = true'), 'the inline action editor was removed');
+assert(/function commitEdit\(\)[\s\S]{0,200}if \(!v\) return;/.test(source),
+  'saving an empty edit must be a no-op, not a blank action');
+assert(/data-armed/.test(source), 'the two-tap discard guard was removed — one reflex tap would delete a consultation');
+
 /* 3g. the widget is ABSENT when there is nothing to confirm — it is not a
    permanent panel competing with the patient for the doctor's attention */
 assert(/if \(!list\.length\) \{ host\.style\.display = 'none'/.test(source),
@@ -387,7 +399,32 @@ assert(/#mlsAvKiosk\.ambient #mlsAvKioskEndVisit\{display:block\}/.test(source),
 assert(/#mlsAvKiosk\.ambient #mlsAvKioskEnd\{display:none\}/.test(source),
   'the interview-era End button must be hidden during a capture — two ways to end a visit is one too many');
 
-/* 3l. the module still reports itself honestly */
+/* 3l. WHAT THE CHART ALREADY KNOWS. The intake stops making the patient recite
+   what the chart carries — but only from the EXACT chart the interview is
+   bound to, and it must not survive into the next patient. */
+{
+  const ctxFn = slice('function kioskChartContext', 'function kioskTurn', 'the chart context builder');
+  assert(ctxFn.includes('exactPatient(kiosk.ext)'),
+    'the chart block must come from the exact bound chart — exactPatient fails closed on an ambiguous id');
+  assert(/if \(!p\) return null;/.test(ctxFn),
+    'an unresolvable patient must send NO context rather than the wrong chart');
+  ['allergies', 'medications', 'problems'].forEach(k =>
+    assert(ctxFn.includes('ctx.' + k), 'the chart block lost its ' + k + ' field'));
+  assert(/\.slice\(0, 400\)|, 400\)/.test(ctxFn), 'the chart fields must be capped client-side too');
+}
+assert(/if \(kiosk\.chartCtx === undefined\) kiosk\.chartCtx = kioskChartContext\(\);/.test(source),
+  'the chart context must be resolved once per interview, not rebuilt on the latency path of every turn');
+assert(/kiosk\.chartCtx = undefined;/.test(source),
+  'openKiosk must reset the chart context — the previous patient\'s chart must never ride into the next interview');
+{
+  /* it rides on the OFFICE turn only; the portal is a different module and a
+     different session, and the backend refuses it there regardless */
+  const turn = slice('function kioskTurn', 'THE SELF-END WATCHDOG', 'the turn body');
+  assert(turn.includes('body.chartContext = kiosk.chartCtx'), 'the chart block never reaches the request');
+  assert(turn.includes("'/api/avatar/office/turn'"), 'the chart block must ride the clinician-authenticated route');
+}
+
+/* 3m. the module still reports itself honestly */
 assert(source.includes("var VERSION = 'av-5.6.0'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');

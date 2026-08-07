@@ -2309,6 +2309,8 @@
       '#mlsAvKioskOrders .mlsAvOrdPick{flex:1;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:9px;padding:7px 4px;font:700 12px system-ui;cursor:pointer}' +
       '#mlsAvKioskOrders .mlsAvOrdPick:hover{border-color:#2E6A4B;color:#2E6A4B}' +
       '#mlsAvKioskOrders .mlsAvOrdRow{display:flex;gap:6px;margin-top:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdRow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdIn{flex:1 1 100%;border:1px solid #2E6A4B;border-radius:9px;padding:8px 9px;font:600 12.5px system-ui;color:#1A211C}' +
       '#mlsAvKioskOrders .mlsAvOrdGo{flex:1;border:0;background:#2E6A4B;color:#fff;border-radius:9px;padding:8px 6px;font:800 12.5px system-ui;cursor:pointer}' +
       '#mlsAvKioskOrders .mlsAvOrdGo:disabled{background:#cfd9d2;color:#55605A;cursor:not-allowed}' +
       '#mlsAvKioskOrders .mlsAvOrdEdit,#mlsAvKioskOrders .mlsAvOrdNo{border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:9px;padding:8px 10px;font:700 12.5px system-ui;cursor:pointer}' +
@@ -2369,6 +2371,45 @@
     kiosk.completed = false;
   }
   function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
+  /* av-5.6.0 - WHAT THE CHART ALREADY KNOWS. An MA who has read the chart does
+     not make the patient recite the allergy list the chart already carries.
+     Built ONLY from the exact chart this interview is bound to - exactPatient
+     fails closed on an unknown or ambiguous external id, so an unresolvable
+     patient sends no context rather than the wrong patient's. Computed once
+     per interview: the chart does not change while the patient is answering,
+     and rebuilding it per turn would put roster work on the latency path. */
+  function kioskChartContext() {
+    var p = safe(function () { return exactPatient(kiosk.ext); }, null);
+    if (!p) return null;
+    function listOf(value, cap) {
+      var text = '';
+      if (Array.isArray(value)) {
+        text = value.map(function (x) {
+          return clean(typeof x === 'string' ? x : (x && (x.name || x.text || x.label || x.description)));
+        }).filter(Boolean).join(', ');
+      } else text = clean(value).replace(/\s*[\r\n]+\s*/g, ', ');
+      return text.replace(/\s+/g, ' ').trim().slice(0, cap);
+    }
+    var ctx = {};
+    var dob = clean(p.dob);
+    if (dob) {
+      var years = safe(function () {
+        var d = new Date(dob.indexOf('T') < 0 ? dob + 'T00:00:00Z' : dob);
+        if (isNaN(d.getTime())) return 0;
+        var age = Math.floor((Date.now() - d.getTime()) / 31557600000);
+        return (age > 0 && age < 130) ? age : 0;
+      }, 0);
+      if (years) ctx.age = String(years);
+    }
+    var sex = clean(p.sex || p.gender); if (sex) ctx.sex = sex.slice(0, 20);
+    var reason = clean(p.visitReason || p.reason || p.apptReason);
+    if (reason) ctx.visitReason = reason.slice(0, 200);
+    var allergies = listOf(p.allergies, 240); if (allergies) ctx.allergies = allergies;
+    var meds = listOf(p.meds || p.medications, 400); if (meds) ctx.medications = meds;
+    var problems = listOf(p.problems, 400); if (problems) ctx.problems = problems;
+    for (var k in ctx) { if (Object.prototype.hasOwnProperty.call(ctx, k)) return ctx; }
+    return null;
+  }
   function kioskTurn(answer, nonce, finish) {
     if (!kiosk.open || kiosk.busy) return;
     /* A FINISHED interview accepts nothing more. The typed row stays on screen
@@ -2384,6 +2425,10 @@
     kioskMood('thinking', '', answer);
     var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
+    /* the interview is stateless server-side, so the chart block rides with
+       every turn - resolved once, at the first turn, and reused */
+    if (kiosk.chartCtx === undefined) kiosk.chartCtx = kioskChartContext();
+    if (kiosk.chartCtx) body.chartContext = kiosk.chartCtx;
     if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); kiosk.silent = 0; kiosk.finishTries = 0; }
     if (finish) body.finish = true;
     api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
@@ -3197,6 +3242,39 @@
       card.appendChild(make('div', 'mlsAvOrdOk', 'Confirmed - goes into the note. Place it in the EMR from the chart.'));
       return card;
     }
+    /* the inline editor replaces the card's controls while it is open, so
+       there is never a Confirm button next to a half-typed action */
+    if (a.editing) {
+      var ed = make('div', 'mlsAvOrdEdRow');
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'mlsAvOrdEdIn';
+      input.value = a.title + (a.detail ? ' - ' + a.detail : '');
+      input.setAttribute('aria-label', 'Edit this action');
+      input.maxLength = 120;
+      function commitEdit() {
+        var v = clean(input.value);
+        if (!v) return;                       /* an empty action is not a correction */
+        a.title = v.slice(0, 120); a.detail = ''; a.missing = []; a.edited = true; a.editing = false;
+        ordersRender(); kioskAmbientSave(true);
+      }
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); a.editing = false; ordersRender(); }
+      });
+      ed.appendChild(input);
+      var save = make('button', 'mlsAvOrdGo', 'Save');
+      save.type = 'button';
+      save.addEventListener('click', commitEdit);
+      var cancel = make('button', 'mlsAvOrdEdit', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', function () { a.editing = false; ordersRender(); });
+      ed.appendChild(save); ed.appendChild(cancel);
+      card.appendChild(ed);
+      /* focus after the node is in the document, or the caret goes nowhere */
+      safe(function () { setTimeout(function () { safe(function () { input.focus(); input.select(); }); }, 0); });
+      return card;
+    }
     var missing = a.missing || [];
     if (missing.length) {
       card.appendChild(make('div', 'mlsAvOrdMiss', 'Not stated: ' + ordersMissingText(a) + '. The avatar will not fill this in.'));
@@ -3235,17 +3313,11 @@
     });
     var edit = make('button', 'mlsAvOrdEdit', 'Edit');
     edit.type = 'button';
-    edit.addEventListener('click', function () {
-      var next = safe(function () {
-        return window.prompt('What should this action say? The avatar files your words exactly.',
-          (a.title + (a.detail ? ' - ' + a.detail : '')));
-      }, null);
-      if (next == null) return;
-      var v = clean(next);
-      if (!v) return;
-      a.title = v.slice(0, 120); a.detail = ''; a.missing = []; a.edited = true;
-      ordersRender(); kioskAmbientSave(true);
-    });
+    /* INLINE, never window.prompt. A native dialog blocks the whole renderer -
+       it would freeze the recording clock, the save badge and the microphone
+       loop behind a modal the doctor may be holding open in front of a
+       patient, and this app has already been wedged once by exactly that. */
+    edit.addEventListener('click', function () { a.editing = true; ordersRender(); });
     var drop = make('button', 'mlsAvOrdNo', 'Dismiss');
     drop.type = 'button';
     drop.addEventListener('click', function () {
@@ -3740,6 +3812,10 @@
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.finishTries = 0; kiosk.heard = false;
+    /* undefined means "not resolved yet"; null means "resolved to nothing".
+       Both must reset, or the previous patient's chart block would ride into
+       the next interview. */
+    kiosk.chartCtx = undefined;
     /* kiosk.look and kiosk.nudgedFor already leak across interviews in this
        file. The recording state must never join them - it carries a
        patient's words, and a leak here is a cross-patient transcript. */
@@ -3986,11 +4062,23 @@
          the doctor has already handled would sit here forever, and the one
          thing worse than losing a visit is being nagged about a visit that
          was never lost. */
-      recActions.appendChild(visitButton('Discard', false, function () {
-        var sure = safe(function () {
-          return window.confirm('Delete the recovered recording (' + pend.words + ' words) for chart ' + pend.bound + '? This cannot be undone.');
-        }, false);
-        if (!sure) return;
+      /* TWO TAPS, no native dialog. window.confirm blocks the renderer, and
+         this button deletes a consultation - it needs a deliberate second
+         action, not a modal that can be dismissed by reflex. The button says
+         what it is about to destroy before it destroys it. */
+      recActions.appendChild(visitButton('Discard', false, function (b) {
+        if (b.getAttribute('data-armed') !== '1') {
+          b.setAttribute('data-armed', '1');
+          b.textContent = 'Delete ' + pend.words + ' words?';
+          b.style.color = '#7a1f16';
+          safe(function () {
+            setTimeout(function () {
+              if (!b || b.getAttribute('data-armed') !== '1') return;
+              b.removeAttribute('data-armed'); b.textContent = 'Discard'; b.style.color = '';
+            }, 6000);
+          });
+          return;
+        }
         ambientStoreDrop();
         toast('The recovered recording was deleted.');
         safe(function () { ensureVisitCard(); });

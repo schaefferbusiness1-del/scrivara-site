@@ -9,6 +9,7 @@
     "test:performance": "node tests/performance-lifecycle-contract.test.js",
     "test:extension-read": "node tests/extension-read-path.test.js",
     "test:extension-package": "node tests/extension-package.test.js",
+    "test:visit-copilot-proof": "node tests/avatar-visit-copilot-proof.js",
     "test:live-extension": "node tests/live-extension-candidate.js",
     "test:live-phone": "node tests/live-phone-secure-lifecycle.js",
     "test:live-sensitive-public": "node tests/live-sensitive-public-workflows.js",

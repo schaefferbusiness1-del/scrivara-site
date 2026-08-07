@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 274,
  "totals": {
-  "controls": 1342,
+  "controls": 1343,
   "gated": 99,
-  "active": 1243,
+  "active": 1244,
   "byKind": {
-   "button": 1286,
+   "button": 1287,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 957
+  "dynamic": 958
  },
  "controls": [
   {
@@ -9115,7 +9115,21 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 2937,
+   "line": 3834,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsAvKioskEndVisit",
+   "label": "End visit & review",
+   "accessibleName": "End visit & review",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsAvKioskEndVisit",
+   "view": "dynamic",
+   "file": "feat_mls_avatar.js",
+   "line": 3846,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9143,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 2951,
+   "line": 3856,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9157,7 @@
    "domId": "mlsAvKioskPinGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 2958,
+   "line": 3863,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9171,7 @@
    "domId": "mlsAvKioskPinAmb",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 2959,
+   "line": 3864,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9185,7 @@
    "domId": "mlsAvKioskPinBack",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 2960,
+   "line": 3865,
    "gated": false,
    "handler": null
   },

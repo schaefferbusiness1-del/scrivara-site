@@ -270,7 +270,16 @@ async function unlockWith(page, buttonId) {
 /* ========================================================================== */
 (async function main() {
   const chromium = loadChromium();
-  const browser = await chromium.launch({ channel: 'chrome' });
+  /* Real Chrome is the default because that is what the doctor runs. A CI box
+     with only Playwright's bundled Chromium can opt out via
+     AVATAR_PROOF_CHANNEL=chromium rather than being unable to run this proof
+     at all — the recogniser and speech engine are stubbed either way, so the
+     browser build is not what this harness is measuring. */
+  const channel = process.env.AVATAR_PROOF_CHANNEL || 'chrome';
+  const exe = process.env.AVATAR_PROOF_EXECUTABLE || '';
+  const launchOpts = exe ? { executablePath: exe }
+    : (channel === 'chromium' ? {} : { channel: channel });
+  const browser = await chromium.launch(launchOpts);
   try {
     /* ---------------------------------------------------------------- 0 */
     section('SCENARIO 0 - CONTROL: a normal interview DOES self-end on silence');
