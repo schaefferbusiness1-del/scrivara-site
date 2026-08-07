@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.5';
+  var VERSION = 'av-5.6.6';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2379,6 +2379,7 @@
       '#mlsAvKioskOrders .mlsAvOrdDet{font:600 12.5px system-ui;color:#204034;margin-top:2px}' +
       '#mlsAvKioskOrders .mlsAvOrdHeard{font:italic 500 11.5px/1.4 system-ui;color:#69736d;margin-top:5px}' +
       '#mlsAvKioskOrders .mlsAvOrdMiss{font:700 11.5px/1.4 system-ui;color:#7a1f16;background:#F7E4E1;border-radius:8px;padding:5px 7px;margin-top:6px}' +
+      '#mlsAvKioskOrders .mlsAvOrdFix{font:600 11.5px/1.4 system-ui;color:#26417a;margin-top:4px}' +
       '#mlsAvKioskOrders .mlsAvOrdOk{font:700 11.5px/1.4 system-ui;color:#2E6A4B;margin-top:5px}' +
       '#mlsAvKioskOrders .mlsAvOrdSide{display:flex;gap:6px;margin-top:6px}' +
       '#mlsAvKioskOrders .mlsAvOrdPick{flex:1;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:9px;padding:7px 4px;font:700 12px system-ui;cursor:pointer}' +
@@ -3239,6 +3240,76 @@
      card either did not have or already agreed with. ------------------- */
   var ACT_DETECT_MS = 1200;
   var ACT_SUPERSEDE_MS = 30000;
+
+  /* ---- av-5.6.6 — CORRECTIONS ------------------------------------------
+     Doctors correct themselves mid-sentence, constantly: "order an MRI of the
+     knee — actually, make that the right knee." Until now the second half did
+     nothing, so the card kept asking for a side the doctor had already said
+     out loud. That is the copilot failing at the exact moment it looked like
+     it was working.
+
+     Two rules keep this safe:
+       1. A correction only ever applies to a RECENT action, and only when it
+          actually carries a new value. "Actually the pain is worse at night"
+          is not an amendment — the cue alone changes nothing.
+       2. Correcting something the doctor already CONFIRMED sends it back to
+          unconfirmed. Silently editing a confirmed order would mean the thing
+          they approved and the thing in the note are different, which is the
+          one outcome this widget exists to prevent. ---------------------- */
+  var ACT_CORRECT_WINDOW = 180000;
+  var ACT_CANCEL_RE = /\b(?:cancel|scratch|forget|disregard|strike|withdraw)\s+(?:that|it|the\s+(?:order|scan|mri|ct|x-?ray|ultrasound|referral|prescription|labs?))\b|\bnever ?mind\b|\bactually,?\s*no\b|\bdon'?t (?:order|do) (?:that|it)\b/i;
+  var ACT_CUE_RE = /\b(?:actually|sorry|i meant|i mean|make (?:that|it)|change (?:that|it)|correction|instead)\b/i;
+  function actRebuildDetail(a) {
+    var f = a.fields || {}, bits = [];
+    if (a.kind === 'imaging') {
+      if (f.side) bits.push(actTitleCase(f.side));
+      if (f.region) bits.push(f.region);
+      if (f.contrast) bits.push(f.contrast);
+    } else if (a.kind === 'medication') {
+      if (f.dose) bits.push(f.dose);
+      if (f.route) bits.push(f.route);
+      if (f.frequency) bits.push(f.frequency);
+    } else return a.detail || '';
+    return bits.join(a.kind === 'medication' ? ', ' : ' ');
+  }
+  function applyCorrection(sentence) {
+    var text = clean(sentence);
+    if (!text) return null;
+    var list = kiosk.ambActions || [], target = null, i;
+    for (i = list.length - 1; i >= 0; i--) {
+      if (list[i].status === 'dismissed') continue;
+      if (Date.now() - (list[i].at || 0) > ACT_CORRECT_WINDOW) break;
+      target = list[i]; break;
+    }
+    if (!target) return null;
+    if (ACT_CANCEL_RE.test(text)) {
+      target.status = 'dismissed';
+      target.correctedBy = text;
+      return { kind: 'cancelled', on: target };
+    }
+    if (!ACT_CUE_RE.test(text)) return null;
+    var side = actFindSide(text), contrast = actFindContrast(text);
+    var dose = (/\b(\d+(?:\.\d+)?\s?(?:mg|mcg|g|ml|units?|iu|milligrams?|micrograms?|grams?))\b/i.exec(text) || [])[1] || '';
+    var region = actFindRegion(text);
+    var f = target.fields || (target.fields = {}), changed = false;
+    if (side && target.kind === 'imaging' && f.side !== side) { f.side = side; target.picked = side; changed = true; }
+    if (contrast && target.kind === 'imaging' && f.contrast !== contrast) { f.contrast = contrast; changed = true; }
+    if (region && target.kind === 'imaging' && f.region !== region) { f.region = region; changed = true; }
+    if (dose && target.kind === 'medication' && f.dose !== dose) { f.dose = dose; changed = true; }
+    /* the cue alone is not a correction — without a new VALUE there is nothing
+       to change, and guessing what was meant is exactly what this must not do */
+    if (!changed) return null;
+    target.detail = actRebuildDetail(target);
+    target.missing = (target.missing || []).filter(function (k) {
+      if (k === 'side') return !f.side;
+      if (k === 'dose') return !f.dose;
+      if (k === 'body part') return !f.region;
+      return true;
+    });
+    target.correctedBy = text;
+    if (target.status === 'confirmed') { target.status = 'proposed'; target.reconfirm = true; }
+    return { kind: 'amended', on: target };
+  }
   function actRoot(a) {
     var f = a.fields || {};
     return a.kind + '|' + clean(f.modality || f.panel || f.specialty || f.drug || (a.kind === 'note' ? a.detail : '')).toLowerCase();
@@ -3280,6 +3351,11 @@
        below then UPGRADES it in place when the rest of the sentence arrives -
        which is exactly what ordersUpsert's supersession exists for. Measured:
        ~1200ms to first card before this, single-digit ms after. */
+    /* A CORRECTION IS NOT A NEW ORDER. It is checked first and, when it
+       lands, this phrase goes no further — otherwise "actually, make that the
+       right knee" could sit a second card beside the one it was fixing. */
+    var fixed = safe(function () { return applyCorrection(seg); }, null);
+    if (fixed) { ordersRender(); kioskAmbientSave(true); return; }
     var immediate = detectActions(seg), grew = 0, k;
     for (k = 0; k < immediate.length; k++) if (ordersUpsert(immediate[k])) grew++;
     if (grew) { ordersRender(); kioskAmbientSave(true); }
@@ -3369,6 +3445,15 @@
       /* focus after the node is in the document, or the caret goes nowhere */
       safe(function () { setTimeout(function () { safe(function () { input.focus(); input.select(); }); }, 0); });
       return card;
+    }
+    /* A CORRECTED order that was already confirmed says so loudly. The doctor
+       approved different words a moment ago, and the note must carry what they
+       approve NOW — so it goes back to needing a tap. */
+    if (a.reconfirm) {
+      card.appendChild(make('div', 'mlsAvOrdMiss', 'You corrected this after confirming it — confirm again to keep it in the note.'));
+    }
+    if (a.correctedBy) {
+      card.appendChild(make('div', 'mlsAvOrdFix', '↻ corrected: “' + a.correctedBy + '”'));
     }
     var missing = a.missing || [];
     if (missing.length) {

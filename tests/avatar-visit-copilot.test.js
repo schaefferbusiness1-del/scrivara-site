@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.5)
+ * AVATAR — THE VISIT COPILOT (av-5.6.6)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -181,6 +181,77 @@ assert.strictEqual(one('MLS, we are not ordering an MRI.').length, 0,
 assert.strictEqual(one('').length, 0, 'empty input is not an action');
 assert.strictEqual(one(null).length, 0, 'null input must not throw');
 assert.strictEqual(one('x'.repeat(900)).length, 0, 'an absurdly long run is refused rather than parsed');
+
+/* ---- 1c. CORRECTIONS, EXECUTED. Doctors correct themselves constantly
+   ("order an MRI of the knee — actually, make that the right knee"). Until
+   av-5.6.6 the second half did nothing and the card kept asking for a side the
+   doctor had already said aloud. ---- */
+{
+  const corrSrc = slice('var ACT_CORRECT_WINDOW', 'function ordersUpsert', 'the correction engine');
+  const cbox = { console, Date, Math, JSON, RegExp };
+  vm.createContext(cbox);
+  vm.runInContext(
+    'function clean(v){var t=v==null?"":String(v).trim();return(!t||/^(undefined|null)$/i.test(t))?"":t;}\n' +
+    'function safe(f,d){try{return f();}catch(e){return d;}}\nvar kiosk={ambActions:[]};\n' +
+    detectorSrc + corrSrc +
+    '\nthis.applyCorrection=applyCorrection; this.kiosk=kiosk; this.detectActions=detectActions;', cbox);
+
+  const seed = (sentence) => {
+    cbox.kiosk.ambActions = cbox.detectActions(sentence || 'order an MRI of the knee');
+    return cbox.kiosk.ambActions[0];
+  };
+  const plain = (a) => JSON.parse(JSON.stringify(a));
+
+  let t = seed();
+  assert.deepStrictEqual(plain(t).missing, ['side'], 'sanity: the seeded order is missing its side');
+  let r = cbox.applyCorrection('actually make that the right knee');
+  assert.strictEqual(r && r.kind, 'amended', 'a spoken correction must amend the order');
+  assert.strictEqual(plain(t).fields.side, 'right');
+  assert.deepStrictEqual(plain(t).missing, [], 'the correction must CLEAR the gap it answers');
+  assert(/Right knee/.test(plain(t).detail), 'the card text must be rebuilt from the corrected fields: ' + t.detail);
+
+  t = seed('order an MRI lumbar spine without contrast');
+  r = cbox.applyCorrection('sorry, make that with contrast');
+  assert.strictEqual(plain(t).fields.contrast, 'with contrast', 'contrast must be correctable');
+
+  t = seed('start gabapentin 300 mg at night');
+  r = cbox.applyCorrection('actually make it 600 mg');
+  assert.strictEqual(plain(t).fields.dose, '600 mg', 'a dose must be correctable');
+
+  /* THE SAFETY RULE. Silently editing an order the doctor already confirmed
+     would mean the thing they approved and the thing in the note differ. */
+  t = seed(); t.status = 'confirmed';
+  r = cbox.applyCorrection('actually the left knee');
+  assert.strictEqual(plain(t).status, 'proposed',
+    'correcting a CONFIRMED order must send it back for re-confirmation, never edit it in place');
+  assert.strictEqual(plain(t).reconfirm, true, 'the re-confirm flag drives the warning on the card');
+
+  t = seed();
+  r = cbox.applyCorrection('actually cancel that order');
+  assert.strictEqual(plain(t).status, 'dismissed', 'a spoken cancellation must drop the proposal');
+
+  /* and what it must NOT do — the cue alone changes nothing, because guessing
+     what was meant is exactly the failure this whole widget avoids */
+  [['actually the pain is worse at night', 'a cue with no new value'],
+   ['the knee has been hurting for weeks', 'ordinary conversation'],
+   ['actually she is feeling a bit better', 'a cue about the patient, not the order']
+  ].forEach(([line, why]) => {
+    const before = seed();
+    const snapshot = JSON.stringify(plain(before));
+    const res = cbox.applyCorrection(line);
+    assert.strictEqual(res, null, 'must ignore ' + why + ': ' + line);
+    assert.strictEqual(JSON.stringify(plain(cbox.kiosk.ambActions[0])), snapshot,
+      'ignoring a correction must leave the order byte-identical: ' + line);
+  });
+
+  /* a correction with no order to correct is a no-op, not a crash */
+  cbox.kiosk.ambActions = [];
+  assert.strictEqual(cbox.applyCorrection('actually make that the right knee'), null,
+    'a correction with nothing to correct must be a no-op');
+}
+/* a correction must never ALSO create a new order beside the one it fixed */
+assert(/var fixed = safe\(function \(\) \{ return applyCorrection\(seg\); \}, null\);\s*\n\s*if \(fixed\) \{[^}]*return;/.test(source),
+  'a landed correction must stop the phrase from reaching the detector');
 
 /* ===========================================================================
    PART 2 — THE BACKUP, EXECUTED (persistence, reload, quota, drop)
@@ -545,14 +616,14 @@ assert(/isFn\(window\.generateNote\)/.test(source),
 }
 
 /* 3q. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.5'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.6.6'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '565', 'the loader cache token must name av-5.6.5 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '566', 'the loader cache token must name av-5.6.6 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.5): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.6): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');
