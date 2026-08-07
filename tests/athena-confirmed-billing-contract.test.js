@@ -28,9 +28,28 @@ const frozen = canonicalBilling({
   cpt: ['J3301 — injection medication', 'CPT 20610 — large joint injection', '99214 duplicate E/M'],
   icd: ['M5450', 'Z0000', 'U0710']
 });
-assert.deepStrictEqual(frozen, { emCode: '99214', cptCodes: ['J3301', '20610'], invalid: [] });
+/* b946: the snapshot gained a `lines` field carrying units, modifiers and
+   laterality, so the billing check can see a bilateral procedure as bilateral —
+   without it the payload could not express modifier 50 at all, and a bilateral
+   line billed as unilateral pays a third less with no denial to point at it.
+   The three fields the confirmation path and the frozen-payload hash depend on
+   are asserted individually and are UNCHANGED; asserting the whole object by
+   deep equality would only pin that nobody may ever add a field, which is not
+   the property this suite exists to protect. The leak check below now covers
+   `lines` too, because that is the property that matters. */
+assert.strictEqual(frozen.emCode, '99214');
+assert.deepStrictEqual(frozen.cptCodes, ['J3301', '20610']);
+assert.deepStrictEqual(frozen.invalid, []);
 assert(!frozen.cptCodes.some(code => ['M5450', 'Z0000', 'U0710'].includes(code)), 'diagnosis codes leaked into the typed billing snapshot');
-assert.deepStrictEqual(canonicalBilling({ cptCodes: [], cpt: ['J3301'] }), { emCode: '', cptCodes: ['J3301'], invalid: [] }, 'an empty alias must not shadow populated structured CPT data');
+assert(!frozen.lines.some(line => ['M5450', 'Z0000', 'U0710'].includes(line.code)), 'diagnosis codes leaked into the structured billing lines');
+assert.deepStrictEqual(frozen.lines.map(line => line.code), ['99214', 'J3301', '20610'],
+  'every executable code must appear as a line, so the billing check sees the whole claim');
+assert(frozen.lines.every(line => Array.isArray(line.modifiers) && line.modifiers.length === 0),
+  'these inputs carry no structured modifier, and one must never be invented from a description');
+const aliasShadow = canonicalBilling({ cptCodes: [], cpt: ['J3301'] });
+assert.strictEqual(aliasShadow.emCode, '', 'an empty alias must not shadow populated structured CPT data');
+assert.deepStrictEqual(aliasShadow.cptCodes, ['J3301'], 'an empty alias must not shadow populated structured CPT data');
+assert.deepStrictEqual(aliasShadow.invalid, []);
 const conflicting = canonicalBilling({ emCode: '99215', em: '99214', cptCodes: ['J3301'], cpt: ['20610'] });
 assert(conflicting.invalid.length >= 2, 'conflicting populated E/M and CPT aliases did not fail closed');
 
@@ -79,11 +98,23 @@ vm.runInNewContext(superbill + '\npushSuperbillToAthena();', directContext, { ti
 assert.strictEqual(reviewCalls.length, 1, 'one Superbill click must open one immutable review');
 assert.strictEqual(reviewCalls[0].plan.length, 1);
 assert.strictEqual(reviewCalls[0].plan[0].kind, 'billing');
-assert.deepStrictEqual(JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] });
+/* b946: `lines` rides along with the payload. Asserted field by field for the
+   same reason as above — the property under test is that the reviewed payload
+   is an isolated COPY that a later mutation of the source cannot reach, not
+   that the object may never grow a field. */
+const reviewedBilling = () => JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing));
+assert.strictEqual(reviewedBilling().emCode, '99214');
+assert.deepStrictEqual(reviewedBilling().cptCodes, ['J3301']);
+assert.deepStrictEqual(reviewedBilling().invalid, []);
+assert(Array.isArray(reviewedBilling().lines), 'the reviewed payload must carry its structured lines');
 assert(!reviewCalls[0].plan[0].billing.cptCodes.includes('M5450'), 'Superbill shortcut leaked an ICD code into the reviewed billing payload');
 assert.strictEqual(reviewCalls[0].patient.name, 'Example Patient');
 directSnapshot.billing.cptCodes[0] = 'M5450';
-assert.deepStrictEqual(JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] }, 'post-preview coding mutation changed the reviewed billing snapshot');
+directSnapshot.billing.lines = [{ code: 'M5450', units: 9, modifiers: ['50'], side: 'bilateral', levels: [] }];
+assert.deepStrictEqual(reviewedBilling().cptCodes, ['J3301'], 'post-preview coding mutation changed the reviewed billing snapshot');
+assert.strictEqual(reviewedBilling().emCode, '99214', 'post-preview coding mutation changed the reviewed billing snapshot');
+assert(!reviewedBilling().lines.some(line => line.code === 'M5450'),
+  'post-preview mutation reached the reviewed structured lines — the copy is not isolated');
 
 const identitySource = between(app, 'function _athenaNormIdentity(v)', 'function _athenaResetSuperbill(hide)');
 const sameBoundPatient = Function(identitySource + '\nreturn _athenaSameBoundPatient;')();

@@ -82,6 +82,7 @@
     "feat_mls_avs_label_unify.js",
     "feat_mls_b121_pack.js",
     "feat_mls_baricon.js",
+    "feat_mls_billing_gate.js",
     "feat_mls_cal_cyclefix.js",
     "feat_mls_calbox_uniform.js",
     "feat_mls_caldedupe_render.js",
