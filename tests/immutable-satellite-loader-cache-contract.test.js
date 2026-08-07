@@ -113,7 +113,13 @@ const assets = [
      adversarial-review repairs incl. the fail-OPEN exit gate. */
     /* av-5.3.1: cold-start hardening - a finished interview refuses further
      answers, and the harness rejects the first turn with an HTML 502. */
-  ['feat_mls_avatar.js', '20260806av540', '20260806av534'],
+  /* av-5.4.0: AMBIENT ROOM MODE - the same PIN pad now has a second outcome,
+     keep the room microphone open through the consultation and hand the
+     doctor one transcript with the check-in and the visit in it.
+     av-5.5.0 (2026-08-07, owner: 'have it conform to the picture of the
+     person better'): Match applies exactly the knobs the photo answered,
+     and reads brow weight, lip fullness, nose width and top colour. */
+  ['feat_mls_avatar.js', '20260807av550', '20260806av540'],
   /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
      set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
      that added `appControl` to the still-loading guard. Same calendar day, so

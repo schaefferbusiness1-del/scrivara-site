@@ -29,7 +29,7 @@ function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
    shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
    could never confirm the build QA had been told to gate on — a module that
    misreports itself makes every downstream verification unfalsifiable. */
-assert(source.includes("var VERSION = 'av-5.4.0'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.5.0'"), 'version token moved without updating this contract');
 {
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
   const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
@@ -52,6 +52,30 @@ assert(source.includes('function faceLookSafe'), 'the face-look whitelist was re
 assert(source.includes('function makeFace') && source.includes('.fLidL'), 'the eyelid acting was removed');
 assert(source.includes('mlsAvLook_hairStyle') || source.includes("pickControl('hairStyle'"), 'the appearance studio lost its hair control');
 assert(source.includes('🪄 Match my photo'), 'the derive-from-photo button was removed');
+/* av-5.5.0 — MATCH APPLIES ONLY WHAT THE PHOTO ANSWERED.
+   Owner, 2026-08-07: "have it conform to the picture of the person better".
+   It could not. The apply path carried a hand-maintained keep-list that pinned
+   brow weight, nose and lip shape back to their previous values on EVERY run,
+   so those three knobs were structurally unreachable from a photo no matter
+   how good the photo was. The matcher now returns `derived` — the ledger of
+   what it really measured — and the caller applies exactly that set.
+
+   The direction of this contract is the whole point. An over-eager `derived`
+   silently overwrites a setting the doctor chose by hand, so a knob the pixels
+   cannot answer must be ABSENT from it rather than present with a default.
+   tests/avatar-photo-match-proof.js drives real Chrome over nine synthesized
+   portraits and asserts both halves, including a flat face that must claim no
+   nose and a head-only crop that must claim no top colour. */
+assert(source.includes('derived: derived'), 'the matcher no longer reports WHICH knobs it measured — the caller cannot tell a reading from a default');
+assert(/got\.indexOf\(k\) >= 0/.test(source), 'Match no longer gates on the derived ledger');
+assert(!/look\.brows = lookNow\.brows/.test(source),
+  'the keep-list is back: pinning brows/nose/lips to their previous values makes the photo unable to move them');
+assert(!/patchMedian\(\[F\(0\.50, 0\.74\)/.test(source),
+  'the beard sample is back ON THE MOUTH — a dark lip colour reads as facial hair on a clean-shaven face');
+assert(/var by0 = at\(0\.355\)/.test(source),
+  'the brow band reopened onto the hairline, where the bottom of the hair mass sits (y 0.34) — every face measures its own fringe');
+assert(source.includes('if (!look.glasses) {'),
+  'the brow measure no longer stands down for glasses — a frame lies across that band and reads as the thickest brows on every bespectacled face');
 assert(source.includes('faceLook: lookNow'), 'Setup no longer saves the chosen appearance');
 assert(source.includes('kiosk.pinSet === false'), 'the exit gate must compare === false — unknown means LOCKED');
 assert(source.includes('kiosk.pinSet = null'), 'openKiosk must seed the PIN state as UNKNOWN, never as unlocked');
@@ -232,8 +256,15 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av540";
-assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av533 loader');
+/* DERIVED, never a hand-typed literal. This line carried a pinned token and a
+   message naming "the av533 loader" while the module had moved on twice — a
+   contract that has to be edited by hand on every release is one that will
+   eventually be edited to match whatever is there, which is how a gate stops
+   checking. The token is read out of mls-connect.js and the only thing
+   asserted is that it AGREES with the module's own VERSION (the block at the
+   top of this file) and that there is exactly one of it. */
+const marker = (connect.match(/feat_mls_avatar\.js\?v=\d{8}av\d+/) || [null])[0];
+assert(marker, 'mls-connect.js is missing the Avatar loader entirely');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
@@ -288,7 +319,10 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.4.0');
+    /* against the SOURCE, not a hand-typed literal: what matters is that the
+       running module reports the version its own file declares. A pinned
+       string here only proves someone remembered to edit two places. */
+    assert.strictEqual(window.__mlsAvatar.version, source.match(/var VERSION = '(av-\d+\.\d+\.\d+)'/)[1]);
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;
