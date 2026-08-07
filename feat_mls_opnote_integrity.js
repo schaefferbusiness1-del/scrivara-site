@@ -495,6 +495,41 @@
       return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index };
     }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
+  /* Does the reason NAME exactly one template? Returns that template or null.
+     Deliberately strict, because this is the one path that confers confidence
+     without a score margin:
+       - every significant word of the reason must appear in the template name
+       - the reason must carry at least one word that is not a stop word, and
+         that word must be longer than a two-letter fragment, so "L" or "SI"
+         alone can never name anything
+       - EXACTLY ONE template may match; two means ambiguous, which is the
+         cervical-vs-lumbar and left-vs-right case that must keep refusing
+     Light singular/plural folding only ("points" -> "point"). No synonym table
+     and no abbreviation expansion here: expandShorthand() already ran, and
+     inventing equivalences is how a matcher starts guessing. */
+  function namedExactlyOne(procedure, list) {
+    if (!list || list.length < 2) return null;
+    var want = tokens(procedure).map(stemWord).filter(function (w) { return w.length > 2; });
+    if (!want.length) return null;
+    var hit = null, count = 0;
+    for (var i = 0; i < list.length; i++) {
+      var nm = tokens(list[i] && list[i].name).map(stemWord);
+      if (!nm.length) continue;
+      var all = true;
+      for (var j = 0; j < want.length; j++) {
+        if (nm.indexOf(want[j]) < 0) { all = false; break; }
+      }
+      if (all) { count++; hit = list[i]; if (count > 1) return null; }
+    }
+    return count === 1 ? hit : null;
+  }
+  function stemWord(w) {
+    w = S(w);
+    if (w.length > 4 && /(?:ies)$/.test(w)) return w.slice(0, -3) + 'y';
+    if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
+    return w;
+  }
+
   function best(procedure) {
     procedure = expandShorthand(procedure);
     /* An explicit "no procedure performed" statement is a REAL no-match — it
@@ -533,7 +568,39 @@
        separates them. A tie now falls through to the closest-guess path, which
        still offers the template but says out loud that it was not decided. */
     var deadHeat = !!(second && second.tpl && margin === 0 && S(second.tplClass) === S(top.tplClass));
-    var confident = !deadHeat && (classExact || (top.score >= 10 && margin >= 4 && siblingSafe));
+    /* 2026-08-06 — "the template auto matching just is not that good" (owner).
+       MEASURED by QA against the text his SCHEDULE actually carries, rather
+       than against well-formed strings: 24 of 27 real reasons REFUSED, and in
+       ~20 of those the closest candidate was already the right template.
+       "Genicular" refused against a template named "Genicular Nerve Block".
+
+       So the ranker is fine and the GATE is the problem. It is calibrated for
+       long formal strings like "Left L4-5 TFESI"; a day grid says "Facet",
+       "Hip injection", "Lumbar Spine". `top.score >= 10 && margin >= 4` cannot
+       be reached by a two-word reason no matter how obviously it names one
+       template.
+
+       THIS IS THE MIRROR OF THE LATERALITY BUG, NOT ITS UNDOING. Then it
+       committed confidently and wrongly (a bare "R" took the LEFT template);
+       the cure tightened confidence, and over-tightened it into never
+       committing at all. The fix must NOT lower the margin globally — that
+       reinstates the wrong-side defect. It adds ONE narrow, decisive case:
+
+         if the reason's own words are all present in exactly ONE template's
+         name, that is not ambiguity, it is a name.
+
+       Every guard above still runs first and still refuses: two procedures
+       named, an incompatible template, a stated no-procedure, a dead heat.
+       And it requires EXACTLY ONE such template, so "Facet" with both a
+       cervical and a lumbar facet template in the library still refuses -
+       which is precisely the side/level ambiguity that must keep failing
+       closed. Vague-but-unambiguous-in-type resolves; ambiguous-in-side-or-
+       level does not. */
+    var named = namedExactlyOne(procedure, list);
+    var confident = !deadHeat && (classExact || !!named || (top.score >= 10 && margin >= 4 && siblingSafe));
+    if (named && !deadHeat && !classExact && !(top.score >= 10 && margin >= 4 && siblingSafe)) {
+      return { tpl:named, candidate:named, confident:true, reason:'the reason names exactly one template', score:top.score, ranked:r };
+    }
     return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score — the level or side is not decisive, so it was not auto-applied'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
   }
 
@@ -1241,9 +1308,27 @@
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
     generationStage(ctx,'Confirming procedure','Verifying the exact patient and requested procedure.');
+    /* 2026-08-06 — THE REFUSAL IS RIGHT; THE REASON WAS WRONG.
+       Three different conditions shared one message, and the one a doctor
+       actually hits is the third: the patient resolves perfectly, ctx carries a
+       real name, dob and patientId, and the draft is simply not for the patient
+       currently open. Telling him "exact patient identity could not be
+       verified" sends him hunting a data problem that does not exist — QA lost
+       a corpus run to exactly that, chasing a chart defect that was really a
+       selection mismatch.
+       Same class as the transient fault that used to report "your link is
+       invalid": a guard that fails closed for a good reason and then names the
+       wrong one is only half a guard. Each branch now says what it means, and
+       the two recoverable ones say what to DO. */
     var p=exactPatient(name,ctx.dob,ctx.patientId);
-    if(!p||!S(ctx.patientId).trim()||S(p.id)!==S(ctx.patientId)){
-      var ie=new Error('Op-note generation stopped: exact patient identity could not be verified.');ie.code='MLS_OPNOTE_IDENTITY';throw ie;
+    if(!p){
+      var ie0=new Error('Op-note generation stopped: no chart matches this patient\'s name and date of birth.');ie0.code='MLS_OPNOTE_IDENTITY';throw ie0;
+    }
+    if(!S(ctx.patientId).trim()){
+      var ie1=new Error('Op-note generation stopped: open the patient\'s chart first — a note is only drafted for a patient the app has open.');ie1.code='MLS_OPNOTE_IDENTITY';throw ie1;
+    }
+    if(S(p.id)!==S(ctx.patientId)){
+      var ie2=new Error('Op-note generation stopped: this note is for '+(S(p.name)||'another patient')+', but a different patient is open. Open that patient first — op notes draft for the patient currently open.');ie2.code='MLS_OPNOTE_IDENTITY';throw ie2;
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
