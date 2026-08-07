@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.3.4';
+  var VERSION = 'av-5.4.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -373,6 +373,15 @@
     });
     return pvVoice;
   }
+  function pvStopSpeechOnly() {
+    pvSpeakSeq++;
+    pvSaying = '';
+    if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+    pvHeld.length = 0;
+    if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
+    faceTalkStop();
+    safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+  }
   function pvStopVoice() {
     pvSpeakSeq++;
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
@@ -387,18 +396,34 @@
      identical either way: `then` fires exactly once — event, error, or
      watchdog — so the speak->listen chain can never strand. */
   function pvSpeak(text, then) { pvSpeakVoiced(text, then, null); }
+  /* the sentence currently leaving the speaker, normalised - any recognition
+     result that is merely a piece of THIS is the avatar hearing itself. */
+  var pvSaying = '';
+  function pvNorm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  function pvIsSelfEcho(heard) {
+    var h = pvNorm(heard);
+    if (!h || !pvSaying) return false;
+    if (pvSaying.indexOf(h) >= 0) return true;            /* a slice of our own sentence */
+    var words = h.split(' ').filter(Boolean);
+    if (words.length < 2) return false;
+    var hits = 0;
+    for (var i = 0; i < words.length; i++) if (pvSaying.indexOf(words[i]) >= 0) hits++;
+    return (hits / words.length) > 0.8;                   /* mostly our words */
+  }
   function pvSpeakVoiced(text, then, voiceOverride) {
     var mySeq = ++pvSpeakSeq;
     var finished = false;
     function finish() {
       if (finished || mySeq !== pvSpeakSeq) return;
       finished = true;
+      pvSaying = '';
       if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
       pvHeld.length = 0;
       faceTalkStop();
       if (then) safe(then);
     }
     var t = String(text == null ? '' : text);
+    pvSaying = pvNorm(t);
     /* nothing to say: hand straight off. Speaking '' used to POST an empty
        body to the TTS proxy, take its 400, and trip the 2-minute circuit
        breaker — one blank turn downgraded the voice for the whole visit. */
@@ -1511,7 +1536,12 @@
         setTimeout(function () { if (kiosk.open && !kiosk.completed) kioskFinish(); }, 12000);
       } else {
         kioskMood('speaking', kiosk.lastSay, answer);
-        pvSpeak(kiosk.lastSay, function () { kioskListen(); });
+        /* owner: "it should be able to listen while it is talking" - the mic
+           opens WITH the question, not after it. Patients answer as soon as
+           they understand, usually before the sentence ends; those first
+           words used to be discarded and the kiosk looked frozen. */
+        kioskListen(true);
+        pvSpeak(kiosk.lastSay, function () { if (!pvRec) kioskListen(); });
       }
     }, function () {
       kiosk.busy = false;
@@ -1584,24 +1614,32 @@
       kioskClose('ended');
     }
   }
-  function kioskListen() {
+  function kioskListen(keepMood) {
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+    if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
       var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
       var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
       kioskArmWatchdog(20000);   /* typed mode self-ends too */
       return;
     }
-    kioskMood('listening', kiosk.lastSay);
+    if (!keepMood) kioskMood('listening', kiosk.lastSay);
     kiosk.heard = false;
     var started = pvListen(function (finalText) {
       if (!kiosk.open) return;
+      if (pvIsSelfEcho(finalText)) return;      /* never file our own voice */
       if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
       var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
       kiosk.lastTry = { answer: finalText, nonce: reuse };
       kioskTurn(finalText, reuse);
     }, function (interim) {
+      /* the avatar hearing ITSELF must never become the patient's answer */
+      if (pvIsSelfEcho(interim)) return;
       if (interim.trim()) kiosk.heard = true;
+      /* BARGE-IN: real speech while the question is still playing stops the
+         question mid-sentence, the way a person would. Guarded at two words
+         so a cough, an 'mhm' or a nod-noise cannot cut it off. */
+      if (pvSaying && interim.trim().split(/\s+/).filter(Boolean).length >= 2) pvStopSpeechOnly();
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
     }, function () {
       /* the recogniser died on its own with nothing to submit — re-open the
@@ -1706,7 +1744,14 @@
   function kioskMicPreflight(then) {
     /* Ask for the microphone ONCE, up front, while the DOCTOR still holds the
        screen — never mid-interview in front of the patient. */
-    var media = safe(function () { return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ audio: true }); }, null);
+    /* echoCancellation is the PREREQUISITE for an open mic during playback:
+       without it the recogniser transcribes the avatar itself into the
+       patient's answer, which corrupts the record rather than merely
+       annoying anyone. */
+    var media = safe(function () {
+      return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    }, null);
     if (!media) { kiosk.mic = false; then(); return; }
     media.then(function (stream) {
       safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });

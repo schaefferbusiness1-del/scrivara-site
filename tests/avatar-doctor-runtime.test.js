@@ -29,7 +29,7 @@ function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
    shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
    could never confirm the build QA had been told to gate on — a module that
    misreports itself makes every downstream verification unfalsifiable. */
-assert(source.includes("var VERSION = 'av-5.3.4'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.4.0'"), 'version token moved without updating this contract');
 {
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
   const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
@@ -232,7 +232,7 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av534";
+const marker = "feat_mls_avatar.js?v=20260806av540";
 assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av533 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
@@ -288,7 +288,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.4');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.4.0');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

@@ -262,6 +262,11 @@ const tests = [
   'widget-builder-v2-runtime.test.js',
   'custom-widget-identity-runtime.test.js',
   'widget-builder-live-preview.test.js',
+  /* Owner 2026-08-06: "it should be able to listen while it is talking" and
+     "it doesn't really start listening right away it's delayed". The mic now
+     opens WITH the question; the risk that creates - the avatar transcribing
+     ITSELF into the patient's answer - is what most of this suite guards. */
+  'avatar-listens-while-speaking.test.js',
   'studio-creations-durability.test.js',
   'async-owner-guards.test.js',
   'history-duplicate-name-binding.test.js',
