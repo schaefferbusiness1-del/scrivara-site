@@ -29,7 +29,7 @@ function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
    shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
    could never confirm the build QA had been told to gate on — a module that
    misreports itself makes every downstream verification unfalsifiable. */
-assert(source.includes("var VERSION = 'av-5.3.3'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.3.4'"), 'version token moved without updating this contract');
 {
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
   const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
@@ -122,12 +122,37 @@ assert(source.includes("'/api/avatar/office/tts'"), 'the natural-voice endpoint 
 assert(source.includes('ttsDownUntil = Date.now() + 120000'), 'the TTS circuit-breaker was removed — an outage would stall every question by the fetch timeout');
 assert(/if \(mySeq !== pvSpeakSeq \|\| finished \|\| started\) return;/.test(source), 'the late-TTS double-voice guard was removed');
 assert(source.includes('function makeFace'), 'the living face engine was removed');
+/* THE PHOTO MATCHER must derive more than colour and must SAY what it saw —
+   a silent generic face is exactly what "it straight up does not work" looks
+   like from the doctor's side. Each pin below marks a defect measured against
+   synthesized portraits (see tests/avatar-photo-match-proof.js). */
+assert(source.includes('function patchMedian'),
+  'the matcher lost median sampling — one shadowed patch would skew the whole face');
+assert(source.includes('function unlikeSkin'),
+  'hair classification is back to darker-than-a-threshold, which calls blond, grey and white hair BALD');
+assert(source.includes('bgL'),
+  'hair sampling is no longer background-aware — a black-haired head reads GREY');
+assert(/found\.push\('beard'\)/.test(source) && /found\.push\('glasses'\)/.test(source),
+  'beard/glasses derivation was removed — the face falls back to defaults');
+assert(source.includes('detected '),
+  'the matcher must report what it detected, or a default face is indistinguishable from a failure');
 assert(source.includes('function faceTintFromPortrait'), 'portrait tinting was removed — the face would stop following the doctor\'s look');
 assert(!/mlsAvKioskFace"><\/div>[\s\S]{0,400}appendChild\(img\)/.test(source), 'sanity: nothing re-installs a photo INSTEAD of the drawn face in the kiosk');
 assert(source.includes('requestFullscreen'), 'true fullscreen on Start was removed');
 assert(/function kioskClose[\s\S]{0,600}exitFullscreen/.test(source), 'closing the kiosk must leave fullscreen');
 assert(source.includes('createMediaElementSource'), 'amplitude lip-sync was removed');
-assert(source.includes("'coral', 'Coral — warm & caring (default)'"), 'the voice picker was removed from Setup');
+/* Owner: "label voices male or female". Every option must carry a spoken-
+   gender designation in its VISIBLE text, and the male/female split must
+   actually exist - a picker where every voice reads (female) teaches nothing. */
+{
+  const voices = source.match(/\['(?:coral|nova|shimmer|sage|ash|echo|alloy|onyx)', '[^']+'\]/g) || [];
+  assert(voices.length >= 8, 'the voice picker lost options (found ' + voices.length + ')');
+  voices.forEach(v => assert(/\((?:male|female|neutral)\)/.test(v),
+    'every voice option must be labelled male/female/neutral in its visible text: ' + v));
+  assert(voices.some(v => /\(female\)/.test(v)) && voices.some(v => /\(male\)/.test(v)),
+    'the picker must offer both male and female voices');
+  assert(/coral[^\n]*\(female\)[^\n]*default/.test(source), 'the default voice must still be named as the default');
+}
 /* av-4.0.0 — the unbreakable voice loop:
    held utterance refs + duration watchdog (Chrome GCs utterances mid-sentence
    and onend never fires — the "it makes me type and hit Send" killer), mic
@@ -207,7 +232,7 @@ assert(source.includes("REFRESH_MIN_MS = 120000"), 'the refocus refresh floor wa
 assert(/visibilitychange/.test(source), 'the tab-refocus refresh path was removed');
 assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source), 'the Avatar module must have no bridge/Athena path');
 
-const marker = "feat_mls_avatar.js?v=20260806av533";
+const marker = "feat_mls_avatar.js?v=20260806av534";
 assert(connect.indexOf(marker) >= 0, 'mls-connect.js is missing the av533 loader');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
@@ -263,7 +288,7 @@ const P1 = { id: 'ext-9', name: 'Exact Patient', summary: 'Existing history.' };
   // fail-closed chart resolution
   {
     const { window } = build([P1, { id: 'other', name: 'Other' }]);
-    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.3');
+    assert.strictEqual(window.__mlsAvatar.version, 'av-5.3.4');
     assert.strictEqual(window.__mlsAvatar.exactPatient('ext-9').name, 'Exact Patient');
     assert.strictEqual(window.__mlsAvatar.exactPatient('missing'), null, 'unknown id resolves to null');
     const dup = build([{ id: 'dup-1', name: 'A' }, { id: 'dup-1', name: 'B' }]).window;

@@ -113,7 +113,7 @@ const assets = [
      adversarial-review repairs incl. the fail-OPEN exit gate. */
     /* av-5.3.1: cold-start hardening - a finished interview refuses further
      answers, and the harness rejects the first turn with an HTML 502. */
-  ['feat_mls_avatar.js', '20260806av533', '20260806av532'],
+  ['feat_mls_avatar.js', '20260806av534', '20260806av533'],
   /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
      set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
      that added `appControl` to the still-loading guard. Same calendar day, so
