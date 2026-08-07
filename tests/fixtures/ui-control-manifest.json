@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 274,
  "totals": {
-  "controls": 1343,
+  "controls": 1344,
   "gated": 99,
-  "active": 1244,
+  "active": 1245,
   "byKind": {
-   "button": 1287,
+   "button": 1288,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 958
+  "dynamic": 959
  },
  "controls": [
   {
@@ -9115,7 +9115,21 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 3834,
+   "line": 3911,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsAvKioskMute",
+   "label": "Pause",
+   "accessibleName": "Pause",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsAvKioskMute",
+   "view": "dynamic",
+   "file": "feat_mls_avatar.js",
+   "line": 3926,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9143,7 @@
    "domId": "mlsAvKioskEndVisit",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 3846,
+   "line": 3935,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9157,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 3856,
+   "line": 3945,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9171,7 @@
    "domId": "mlsAvKioskPinGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 3863,
+   "line": 3952,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9185,7 @@
    "domId": "mlsAvKioskPinAmb",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 3864,
+   "line": 3953,
    "gated": false,
    "handler": null
   },
@@ -9185,7 +9199,7 @@
    "domId": "mlsAvKioskPinBack",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 3865,
+   "line": 3954,
    "gated": false,
    "handler": null
   },

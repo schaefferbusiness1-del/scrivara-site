@@ -397,6 +397,205 @@ async function say(page, text) {
         recAfter === recStarts, recStarts + ' -> ' + recAfter);
       ok('scenario C page threw nothing', h.errors.length === 0, h.errors.join(' | '));
     }
+    /* ------------------------------------------------------------ D */
+    section('SCENARIO D - DISCLOSURE, PRESENCE, BARGE-IN AND PAUSE');
+    {
+      const h = await newPage(browser, base);
+      const page = h.page;
+      await page.evaluate(function () {
+        window.__turnQueue = [
+          { ok: true, say: 'Hello, what brings you in today?', done: false, progress: { covered: 1, total: 2 } },
+          { ok: true, say: 'Thanks. How long has it been going on?', done: false, progress: { covered: 2, total: 2 } },
+          { ok: true, say: 'Thank you, that is everything I needed.', done: true }
+        ];
+        /* speech that does NOT end by itself, so barge-in is observable */
+        window.__cancels = 0;
+        window.speechSynthesis.cancel = function () { window.__cancels++; };
+        window.speechSynthesis.speak = function () { /* keeps "speaking" */ };
+        window.__mlsAvatar.openKiosk();
+      });
+      await page.clock.runFor(1500);
+
+      const vis = function (id) {
+        return page.evaluate(function (i) {
+          const el = document.getElementById(i);
+          if (!el) return { present: false };
+          const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          return { present: true, visible: cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0,
+            text: (el.textContent || '').replace(/\s+/g, ' ').trim() };
+        }, id);
+      };
+
+      let ai = await vis('mlsAvKioskAi');
+      ok('REQ4 the AI disclosure is on screen during INTAKE', ai.visible === true, ai.text);
+      ok('REQ4 the disclosure says it is not the doctor', /not the doctor/i.test(ai.text || ''), ai.text);
+      let face = await vis('mlsAvKioskFace');
+      ok('REQ4 the avatar itself is on screen', face.visible === true);
+
+      /* BARGE-IN: the patient talks over the question. Two words is the guard. */
+      await page.evaluate(function () { window.__emit('actually my', false); });
+      await page.clock.runFor(200);
+      const cancels = await page.evaluate(function () { return window.__cancels; });
+      const recAlive = await page.evaluate(function () {
+        const r = window.__recs[window.__recs.length - 1]; return !!(r && r.onresult);
+      });
+      ok('REQ4 the patient can interrupt the avatar mid-sentence', cancels > 0, 'cancel calls=' + cancels);
+      ok('REQ4 barge-in stops the VOICE and leaves the microphone alive', recAlive === true);
+
+      /* into ambient, where the avatar MUST stay on screen */
+      await page.evaluate(function () {
+        window.speechSynthesis.speak = function (u) { setTimeout(function () { if (u.onend) u.onend(); }, 5); };
+      });
+      await page.clock.runFor(14000);
+      await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+      await page.clock.runFor(400);
+      await page.evaluate(function () {
+        document.getElementById('mlsAvKioskPinInput').value = '1234';
+        document.getElementById('mlsAvKioskPinAmb').click();
+      });
+      await page.clock.runFor(1200);
+
+      ai = await vis('mlsAvKioskAi');
+      ok('REQ4 the disclosure is STILL on screen during room capture', ai.visible === true, ai.text);
+      face = await vis('mlsAvKioskFace');
+      ok('REQ4 the avatar STAYS on screen for the doctor visit', face.visible === true);
+      const rec = await vis('mlsAvKioskRec');
+      ok('REQ4 the recording state is shown', rec.visible === true && /Recording this visit/.test(rec.text), rec.text.slice(0, 50));
+      const save = await vis('mlsAvKioskSave');
+      ok('REQ4 the SAVED state is shown', save.visible === true, save.text);
+
+      await say(page, 'the pain started three weeks ago');
+      const before = await page.evaluate(function () { return window.__amb().capturedChars; });
+
+      /* PAUSE — the invariant: a paused screen never still claims to record */
+      const startsBefore = await page.evaluate(function () { return window.__log.recStarts; });
+      await page.evaluate(function () { document.getElementById('mlsAvKioskMute').click(); });
+      await page.clock.runFor(500);
+      const recPaused = await vis('mlsAvKioskRec');
+      ok('REQ4 pausing stops the screen claiming to record',
+        /PAUSED/.test(recPaused.text) && !/Recording this visit/.test(recPaused.text), recPaused.text.slice(0, 60));
+      const pausedClass = await page.evaluate(function () {
+        return document.getElementById('mlsAvKiosk').classList.contains('paused');
+      });
+      ok('REQ4 the paused state drives the whole screen off one class', pausedClass === true);
+
+      /* words spoken while paused must NOT be captured */
+      await page.evaluate(function () { window.__emit('this must not be recorded at all', true); });
+      await page.clock.runFor(2000);
+      const during = await page.evaluate(function () { return window.__amb(); });
+      ok('REQ4 nothing spoken while paused is captured', during.capturedChars === before,
+        before + ' -> ' + during.capturedChars);
+      ok('REQ4 what was captured BEFORE the pause is kept', during.capturedChars > 0 && during.backedUp === true,
+        'chars=' + during.capturedChars + ' backedUp=' + during.backedUp);
+      const startsPaused = await page.evaluate(function () { return window.__log.recStarts; });
+      await page.clock.runFor(6000);
+      const startsIdle = await page.evaluate(function () { return window.__log.recStarts; });
+      ok('REQ4 the microphone does not reopen by itself while paused', startsIdle === startsPaused,
+        startsBefore + ' -> ' + startsPaused + ' -> ' + startsIdle);
+
+      /* RESUME */
+      await page.evaluate(function () { document.getElementById('mlsAvKioskMute').click(); });
+      await page.clock.runFor(600);
+      const recBack = await vis('mlsAvKioskRec');
+      ok('REQ4 resuming restores the recording disclosure', /Recording this visit/.test(recBack.text), recBack.text.slice(0, 50));
+      await say(page, 'and it radiates into the left leg');
+      const after = await page.evaluate(function () { return window.__amb().capturedChars; });
+      ok('REQ4 capture works again after resume', after > during.capturedChars, during.capturedChars + ' -> ' + after);
+      ok('scenario D page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+    }
+
+    /* ------------------------------------------------------------ E */
+    section('SCENARIO E - MEASURED LATENCY (real clock, not a faked one)');
+    {
+      /* No page.clock here: latency measured against a faked clock is a
+         number about the fake. This page runs on real time. */
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      const errs = [];
+      page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+      await page.goto(base + '/page.html');
+      await page.evaluate(STUBS);
+      await page.evaluate(function () {
+        document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+      });
+      await page.addScriptTag({ content: AVATAR_SRC });
+      await page.waitForTimeout(1200);
+      await page.evaluate(function () {
+        window.__turnQueue = [{ ok: true, say: 'Hello?', done: true }];
+        window.__mlsAvatar.openKiosk();
+      });
+      await page.waitForTimeout(900);
+      await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+      await page.waitForTimeout(300);
+      await page.evaluate(function () {
+        document.getElementById('mlsAvKioskPinInput').value = '1234';
+        document.getElementById('mlsAvKioskPinAmb').click();
+      });
+      await page.waitForTimeout(900);
+
+      /* MIC -> PROPOSAL ON SCREEN. The recogniser handing us a finalised
+         phrase is t0; the card being painted is t1. Everything between is
+         ours: dedupe, detection, upsert, render. */
+      const samples = [];
+      const SENTENCES = [
+        'order an MRI lumbar spine without contrast',
+        'lets get a CT of the abdomen and pelvis with contrast',
+        'start gabapentin 300 mg at night',
+        'lets refer him to orthopedics',
+        'order an x-ray of the right shoulder'
+      ];
+      for (let i = 0; i < SENTENCES.length; i++) {
+        const ms = await page.evaluate(function (text) {
+          const t0 = performance.now();
+          window.__emit(text, true);
+          const n = document.querySelectorAll('#mlsAvKioskOrders .mlsAvOrd').length;
+          return { ms: performance.now() - t0, cards: n };
+        }, SENTENCES[i]);
+        samples.push(ms);
+        await page.waitForTimeout(120);
+      }
+      const times = samples.map(function (s) { return s.ms; });
+      const worst = Math.max.apply(null, times);
+      const mean = times.reduce(function (a, b) { return a + b; }, 0) / times.length;
+      const painted = samples.filter(function (s) { return s.cards > 0; }).length;
+      console.log('  ---- measured: transcript-final -> proposal painted ----');
+      samples.forEach(function (s, i) {
+        console.log('     ' + s.ms.toFixed(1).padStart(6) + ' ms   ' + SENTENCES[i].slice(0, 46));
+      });
+      console.log('     mean ' + mean.toFixed(1) + ' ms, worst ' + worst.toFixed(1) + ' ms');
+      ok('REQ5 a spoken order is on screen in the same tick it is heard', painted === SENTENCES.length,
+        painted + '/' + SENTENCES.length + ' painted synchronously');
+      ok('REQ5 mic-to-proposal stays under 50 ms', worst < 50, 'worst ' + worst.toFixed(1) + ' ms');
+
+      /* END VISIT -> SAVED. Dominated by the deliberate recogniser-flush wait
+         (the last sentence of a visit is usually the plan), so this measures
+         that the wait is BOUNDED, not that it is zero.
+         The stub recogniser stops SYNCHRONOUSLY, which real Chrome does not —
+         measuring against it would report our own overhead and call it the
+         flush. Model Chrome instead: onend arrives ~150ms after stop(), so the
+         120ms poll loop is actually exercised. */
+      await page.evaluate(function () {
+        const r = window.__recs[window.__recs.length - 1];
+        if (!r) return;
+        r.stop = function () { r.live = false; setTimeout(function () { if (r.onend) r.onend(); }, 150); };
+      });
+      const endMs = await page.evaluate(function () {
+        return new Promise(function (resolve) {
+          const t0 = performance.now();
+          document.getElementById('mlsAvKioskEndVisit').click();
+          (function poll() {
+            const p = document.getElementById('mlsAvKioskReview');
+            if (p && getComputedStyle(p).display !== 'none') { resolve(performance.now() - t0); return; }
+            setTimeout(poll, 15);
+          })();
+        });
+      });
+      console.log('  ---- measured: End Visit click -> review shown: ' + endMs.toFixed(0) + ' ms ----');
+      ok('REQ5 End Visit completes well inside its flush budget', endMs < 2500, endMs.toFixed(0) + ' ms');
+      const saved = await page.evaluate(function () { return window.__box().length; });
+      ok('REQ5 and it actually saved', saved > 0, saved + ' chars');
+      ok('scenario E page threw nothing', errs.length === 0, errs.join(' | '));
+      await page.close();
+    }
   } finally {
     await browser.close();
     server.close();

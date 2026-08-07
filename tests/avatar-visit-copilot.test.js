@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.2)
+ * AVATAR — THE VISIT COPILOT (av-5.6.3)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -431,15 +431,59 @@ assert(/kiosk\.chartCtx = undefined;/.test(source),
   assert(turn.includes("'/api/avatar/office/turn'"), 'the chart block must ride the clinician-authenticated route');
 }
 
-/* 3m. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.2'"), 'VERSION must move with this train');
+/* 3m. THE AI DISCLOSURE. This screen can wear the doctor's own face and speak
+   in a voice chosen to sound like them. Without a disclosure that is not a
+   feature, it is impersonation — so the line is mounted with the kiosk, in
+   BOTH modes, and cannot be removed by any state change. */
+assert(source.includes('mlsAvKioskAi'), 'the AI disclosure element was removed');
+assert(/AI assistant\s*—\s*not the doctor/.test(source),
+  'the disclosure must say plainly that this is not the doctor');
+{
+  /* it must NOT be hidden by any mode class — a disclosure that disappears
+     during room capture is worse than none, because the patient saw one */
+  assert(!/#mlsAvKiosk[^{]*#mlsAvKioskAi\s*\{[^}]*display:\s*none/.test(source),
+    'a CSS rule hides the AI disclosure in some kiosk state');
+  const markup = slice("root.innerHTML =", "(document.body || document.documentElement).appendChild(root);", 'the kiosk markup');
+  assert(markup.indexOf('mlsAvKioskAi') > 0, 'the disclosure must be mounted with the kiosk, not added later');
+}
+
+/* 3n. MUTE / PAUSE. The one invariant: a paused kiosk must never still claim
+   to be recording, and pausing must not cost what was already heard. */
+assert(source.includes('function kioskPauseToggle'), 'the mute/pause control was removed');
+assert(source.includes('mlsAvKioskMute'), 'the mute/pause button was removed');
+{
+  const p = slice('function kioskPauseToggle', 'function kioskEndVisit', 'the pause toggle');
+  assert(/kiosk\.ambient\) kioskAmbientSave\(true\)[\s\S]{0,120}pvStopVoice\(\)/.test(p),
+    'the capture must be flushed to the backup BEFORE the microphone closes — pausing must not cost words');
+  assert(/PAUSED[^']*not recording/.test(p),
+    'the banner must stop claiming to record the moment pause is pressed');
+  assert(p.indexOf('pvStopVoice()') > 0, 'pause must actually close the microphone, not merely relabel the screen');
+}
+/* nothing may reopen the microphone while paused — three separate doors */
+['function kioskAmbientListen', 'function kioskAmbientRetry', 'function kioskListen'].forEach((fn) => {
+  const at = source.indexOf(fn);
+  assert(at > 0, 'missing ' + fn);
+  assert(/if \(kiosk\.paused\) return/.test(source.slice(at, at + 400)),
+    fn + ' can reopen the microphone while paused');
+});
+assert(/kiosk\.paused = false;/.test(source), 'the paused state must reset — it must not be inherited by the next patient');
+{
+  /* one source for the banner text, so the markup and the resume path cannot
+     drift into disagreeing about what the screen says */
+  assert(source.includes('var AMBIENT_REC_TEXT'), 'the shared recording-banner constant was removed');
+  assert(source.includes("<span id=\"mlsAvKioskRecText\">' + AMBIENT_REC_TEXT + '</span>"),
+    'the markup must use the shared banner constant');
+}
+
+/* 3o. the module still reports itself honestly */
+assert(source.includes("var VERSION = 'av-5.6.3'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '562', 'the loader cache token must name av-5.6.2 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '563', 'the loader cache token must name av-5.6.3 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.2): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.3): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

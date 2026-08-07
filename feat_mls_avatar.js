@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.2';
+  var VERSION = 'av-5.6.3';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2281,6 +2281,19 @@
       /* av-5.6.0 - the save state rides INSIDE the recording disclosure, so
          "recording" and "backed up" are read in one glance and neither can be
          on screen without the other. */
+      /* THE AI DISCLOSURE. Permanent, in both modes, and never smaller than
+         the interim line - a screen wearing the doctor's face must say what
+         it is at a glance, not in fine print. */
+      '#mlsAvKioskAi{font:700 1.85vh/1.4 system-ui;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.7vh 2vh;max-width:min(760px,92vw);margin-top:-.4vh}' +
+      /* mute/pause, top-LEFT so it can never be hit while reaching for End */
+      '#mlsAvKioskMute{position:absolute;top:14px;left:16px;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:10px 18px;font:700 13px system-ui;cursor:pointer;z-index:6}' +
+      '#mlsAvKioskMute[aria-pressed="true"]{background:#7a1f16;color:#fff;border-color:#7a1f16}' +
+      /* PAUSED: the red dot stops, the banner goes grey, and nothing on this
+         screen still implies a live microphone. */
+      '#mlsAvKiosk.paused #mlsAvKioskRec{border-color:#cfd9d2;color:#55605A}' +
+      '#mlsAvKiosk.paused #mlsAvKioskRec i{animation:none;background:#69736d}' +
+      '#mlsAvKiosk.paused #mlsAvKioskMic{display:none}' +
+      '#mlsAvKiosk.paused #mlsAvKioskWave{visibility:hidden}' +
       '#mlsAvKioskSave{font:700 1.6vh system-ui;font-style:normal;padding:.4vh 1.4vh;border-radius:999px;background:#EAF1EC;color:#204034}' +
       '#mlsAvKioskSave[data-state="bad"]{background:#F7E4E1;color:#7a1f16}' +
       '#mlsAvKiosk.saving #mlsAvKioskSave{background:#EDE7D6;color:#55605A}' +
@@ -2364,6 +2377,7 @@
     kioskAmbientClear();
     kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = [];
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
+    kiosk.paused = false;
     if (reason === 'done' || kiosk.completed) {
       refreshCount(true);
       safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
@@ -2555,7 +2569,8 @@
     }
   }
   function kioskListen(keepMood) {
-    if (kiosk.ambient) return;   /* the ambient loop owns the microphone and never takes turns */
+    if (kiosk.ambient) return;
+    if (kiosk.paused) return;         /* see kioskPauseToggle */   /* the ambient loop owns the microphone and never takes turns */
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
@@ -2797,6 +2812,9 @@
   var AMBIENT_HEAD_CHECKIN = '--- check-in ---';
   var AMBIENT_HEAD_VISIT = '--- visit ---';
   var AMBIENT_HEAD_ORDERS = '--- actions the doctor confirmed on screen ---';
+  /* ONE source for the recording banner text: the markup and the resume path
+     must never be able to disagree about what the screen says. */
+  var AMBIENT_REC_TEXT = 'Recording this visit. The avatar is listening in the room and taking notes for the doctor.';
 
   /* =========================================================================
      av-5.6.0 - THE VISIT COPILOT. Room mode could already hear a whole
@@ -3187,7 +3205,18 @@
   }
   function ordersDetectSoon(sentence) {
     if (!kiosk.ambient) return;
-    kiosk.ambWindow = ((kiosk.ambWindow || '') + ' ' + clean(sentence)).slice(-400).trim();
+    var seg = clean(sentence);
+    kiosk.ambWindow = ((kiosk.ambWindow || '') + ' ' + seg).slice(-400).trim();
+    /* THE IMMEDIATE PASS. Most spoken orders arrive as ONE finalised phrase,
+       and making the doctor wait the settle window for a card the detector
+       already holds is latency we control and should not spend. Whatever this
+       finds is on screen in the same tick the words land; the windowed pass
+       below then UPGRADES it in place when the rest of the sentence arrives -
+       which is exactly what ordersUpsert's supersession exists for. Measured:
+       ~1200ms to first card before this, single-digit ms after. */
+    var immediate = detectActions(seg), grew = 0, k;
+    for (k = 0; k < immediate.length; k++) if (ordersUpsert(immediate[k])) grew++;
+    if (grew) { ordersRender(); kioskAmbientSave(true); }
     if (kiosk.ambDetectTimer) safe(function () { clearTimeout(kiosk.ambDetectTimer); });
     kiosk.ambDetectTimer = setTimeout(function () {
       kiosk.ambDetectTimer = null;
@@ -3435,6 +3464,7 @@
   }
   function kioskAmbientRetry() {
     if (!kiosk.ambient) return;
+    if (kiosk.paused) return;         /* a restart while paused would reopen the mic behind the disclosure */
     /* End Visit stops the recogniser ON PURPOSE and then waits for its
        trailing final results. Without this the onend handler would read that
        deliberate stop as a death and reopen the microphone underneath the
@@ -3457,6 +3487,7 @@
   }
   function kioskAmbientListen() {
     if (!kiosk.ambient) return false;
+    if (kiosk.paused) return false;   /* paused means the microphone is CLOSED, not merely ignored */
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
     if (!C) { kioskAmbientNoMic(); return false; }
     var rec = safe(function () { return new C(); }, null);
@@ -3680,6 +3711,45 @@
       kiosk.ambFlushTimer = setTimeout(poll, 120);
     })();
   }
+  /* ---- MUTE / PAUSE -----------------------------------------------------
+     One control, both modes. During the INTERVIEW it silences the avatar and
+     closes the microphone; during ROOM CAPTURE it stops recording. In both,
+     the screen stops claiming to listen in the SAME action that closes the
+     microphone - "paused" and "the screen says paused" are one fact off one
+     class, exactly as the recording disclosure is.
+
+     A pause that kept recording, or a screen still reading "Recording this
+     visit" while paused, is the worst defect this file could ship: a patient
+     asked for privacy and was told they had it. What was already captured is
+     flushed to the backup BEFORE the microphone closes, so pausing can never
+     cost the words already spoken. ------------------------------------- */
+  function kioskPauseToggle() {
+    kiosk.paused = !kiosk.paused;
+    var root = gid('mlsAvKiosk'), btn = gid('mlsAvKioskMute'), recText = gid('mlsAvKioskRecText');
+    if (btn) {
+      btn.textContent = kiosk.paused ? '▶ Resume' : '⏸ Pause';
+      btn.setAttribute('aria-pressed', kiosk.paused ? 'true' : 'false');
+    }
+    if (root) { if (kiosk.paused) root.classList.add('paused'); else root.classList.remove('paused'); }
+    if (kiosk.paused) {
+      if (kiosk.ambient) kioskAmbientSave(true);   /* nothing already heard is lost by pausing */
+      pvStopVoice();                               /* stops the voice AND the microphone */
+      kiosk.ambRec = null;
+      if (recText) recText.textContent = 'PAUSED — not recording. Nothing is being captured right now.';
+      kioskSetSay(kiosk.ambient ? 'Paused. I am not listening or recording.' : 'Paused. I am not listening.');
+      return true;
+    }
+    if (recText) recText.textContent = AMBIENT_REC_TEXT;
+    if (kiosk.ambient) {
+      kioskSetSay('I am listening to the visit and taking notes for the doctor.');
+      kioskMood('listening', '');
+      kioskAmbientListen();
+    } else if (!kiosk.completed) {
+      kioskSetSay(kiosk.lastSay || '');
+      kioskListen();
+    }
+    return false;
+  }
   function kioskEndVisit() {
     if (!kiosk.ambient || kiosk.ambEnding) return;
     kiosk.ambEnding = true;
@@ -3833,6 +3903,7 @@
        across interviews exactly as little as the transcript does */
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false; kiosk.ambSavedAt = 0;
+    kiosk.paused = false;   /* a paused kiosk must never be inherited by the next patient */
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
@@ -3841,11 +3912,23 @@
       '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace"></div></div>' +
       '<div id="mlsAvKioskWave"><span></span><span></span><span></span><span></span><span></span></div>' +
       '<div id="mlsAvKioskName">One moment…</div>' +
+      /* av-5.6.3 - THE AI DISCLOSURE. This screen can wear the doctor's own
+         face (faceMode 'photo') and speak in a voice chosen to sound like
+         them. Without this line a patient has no way to know they are not
+         talking to their doctor - which is impersonation, not a feature.
+         Mounted with the kiosk and never removed, in BOTH the interview and
+         the room-capture modes, so it cannot be turned off by a state change.
+         The spoken half lives in the backend's INTERVIEW_SYSTEM rule 9: the
+         first thing it SAYS also identifies it. */
+      '<div id="mlsAvKioskAi">🤖 AI assistant — not the doctor. What you tell me goes to your care team.</div>' +
+      /* mute/pause: the patient stops being recorded the instant it is
+         pressed, and the screen says so. See kioskPauseToggle. */
+      '<button type="button" id="mlsAvKioskMute" aria-pressed="false">Pause</button>' +
       '<div id="mlsAvKioskSay">Getting ready…</div>' +
       '<div id="mlsAvKioskMic"><i></i>Listening — just talk, I\'ll know when you\'re finished</div>' +
       /* the PERMANENT recording disclosure - mounted with the kiosk, shown by
          the .ambient class alone, and never removed while capture runs */
-      '<div id="mlsAvKioskRec" role="status"><i aria-hidden="true"></i><span id="mlsAvKioskRecText">Recording this visit. The avatar is listening in the room and taking notes for the doctor.</span><b id="mlsAvKioskRecClock" aria-hidden="true">0:00</b><em id="mlsAvKioskSave" data-state="ok">Saved</em></div>' +
+      '<div id="mlsAvKioskRec" role="status"><i aria-hidden="true"></i><span id="mlsAvKioskRecText">' + AMBIENT_REC_TEXT + '</span><b id="mlsAvKioskRecClock" aria-hidden="true">0:00</b><em id="mlsAvKioskSave" data-state="ok">Saved</em></div>' +
       /* av-5.6.0: ONE control ends the visit. It ends the RECORDING and opens
          the review - it is not a way into the app, so it carries no PIN; the
          way back to the chart still does. */
@@ -3874,6 +3957,7 @@
     (document.body || document.documentElement).appendChild(root);
     root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskRequestEnd);
     root.querySelector('#mlsAvKioskEndVisit').addEventListener('click', kioskEndVisit);
+    root.querySelector('#mlsAvKioskMute').addEventListener('click', kioskPauseToggle);
     root.querySelector('#mlsAvKioskPinGo').addEventListener('click', function () { kioskPinSubmit('end'); });
     root.querySelector('#mlsAvKioskPinAmb').addEventListener('click', function () { kioskPinSubmit('ambient'); });
     root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit('end'); } });
