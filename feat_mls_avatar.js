@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.5.0';
+  var VERSION = 'av-5.6.5';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -442,6 +442,43 @@
       started = true;
       pvSpeakSynth(t, mySeq, finish);
     }, 5000);
+    /* av-5.6.4 — STREAMED IN TWO PIECES. Time-to-first-word used to be the
+       generation time of the WHOLE reply, because the audio was fetched as one
+       blob and only then played. A reply is almost always a short
+       acknowledgement plus a question ("Got it. How long has it been going
+       on?"), so the first clause is generated far faster than the whole line.
+       Both pieces are requested in PARALLEL and played in order: the patient
+       hears the first words while the second half is still being made.
+
+       Two pieces, not five — more requests would add round trips for no gain
+       and risk an audible seam inside the question itself. Every failure path
+       lands exactly where it landed before: if the first piece fails nothing
+       has played yet, so the WHOLE line falls back to browser speech, which is
+       the pre-existing behaviour. */
+    var chunks = ttsSplitForSpeech(t);
+    if (chunks.length === 2 && Date.now() >= ttsDownUntil) {
+      var second = ttsFetchUrl(chunks[1], voiceOverride);   /* started FIRST so it overlaps the first piece */
+      ttsFetchUrl(chunks[0], voiceOverride).then(function (u1) {
+        if (mySeq !== pvSpeakSeq || finished || started) return;
+        started = true;
+        if (!u1) { pvSpeakSynth(t, mySeq, finish); return; }   /* nothing played yet — the old path, whole line */
+        ttsPlayUrl(u1, mySeq, function () {
+          if (mySeq !== pvSpeakSeq || finished) return;
+          second.then(function (u2) {
+            if (mySeq !== pvSpeakSeq || finished) return;
+            if (u2) ttsPlayUrl(u2, mySeq, finish); else pvSpeakSynth(chunks[1], mySeq, finish);
+          }, function () {
+            if (mySeq !== pvSpeakSeq || finished) return;
+            pvSpeakSynth(chunks[1], mySeq, finish);
+          });
+        });
+      }, function () {
+        if (mySeq !== pvSpeakSeq || finished || started) return;
+        started = true;
+        pvSpeakSynth(t, mySeq, finish);
+      });
+      return;
+    }
     ttsFetchUrl(t, voiceOverride).then(function (url) {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
@@ -1605,6 +1642,31 @@
     if (ttsCtx) { safe(function () { if (ttsCtx.state === 'suspended') ttsCtx.resume(); }); return; }
     ttsCtx = safe(function () { var C = window.AudioContext || window.webkitAudioContext; return C ? new C() : null; }, null);
   }
+  /* Split at the FIRST sentence boundary only, and only when there is real
+     length to gain from it. A short line is already fast; splitting it would
+     spend a second round trip to save nothing. */
+  function ttsSplitForSpeech(text) {
+    var t = String(text == null ? '' : text).trim();
+    /* 28 chars, because the SHAPE this exists for is "Got it. How long has it
+       been going on?" — a tiny acknowledgement in front of the real question.
+       That acknowledgement is generated almost instantly, so the patient hears
+       a voice while the question itself is still being made. A higher floor
+       skipped exactly the case that matters most. */
+    if (t.length < 28) return [t];
+    var m = /^([^.!?]{4,150}[.!?])\s+(\S[\s\S]*)$/.exec(t);
+    if (!m) return [t];
+    var head = m[1].trim(), tail = m[2].trim();
+    if (!head || !tail) return [t];
+    /* AN ABBREVIATION IS NOT A SENTENCE END. "I think Dr. Smith should see
+       you. How does that sound?" would otherwise be spoken as "I think
+       Doctor." — pause — "Smith should see you...", which is worse than the
+       latency the split saves: a change that makes the avatar sound broken is
+       not an optimisation. Decimals ("3.5 weeks") are already safe because the
+       match requires whitespace after the terminator; titles and initials are
+       not, so they are named here. */
+    if (/(?:^|\s)(?:[A-Za-z]|dr|drs|mr|mrs|ms|st|jr|sr|prof|rev|vs|approx|dept|est|fig|no|etc|e\.g|i\.e|a\.m|p\.m)\.$/i.test(head)) return [t];
+    return [head, tail];
+  }
   function ttsFetchUrl(text, voice) {
     var key = (voice || '') + '|' + text;
     if (ttsCache[key]) return Promise.resolve(ttsCache[key]);
@@ -2278,6 +2340,76 @@
       '#mlsAvKiosk.ambient{background:linear-gradient(165deg,#F8F1EF,#F2E4E1 55%,#EAD9D5)}' +
       '#mlsAvKioskRec i{width:1.6vh;height:1.6vh;min-width:13px;min-height:13px;border-radius:999px;background:#c0392b;animation:mlsAvKRing 1.4s ease-in-out infinite}' +
       '#mlsAvKioskRecClock{font:700 1.9vh ui-monospace,SFMono-Regular,Menlo,monospace;color:#55605A;letter-spacing:.4px}' +
+      /* av-5.6.0 - the save state rides INSIDE the recording disclosure, so
+         "recording" and "backed up" are read in one glance and neither can be
+         on screen without the other. */
+      /* THE AI DISCLOSURE. Permanent, in both modes, and never smaller than
+         the interim line - a screen wearing the doctor's face must say what
+         it is at a glance, not in fine print. */
+      '#mlsAvKioskAi{font:700 1.85vh/1.4 system-ui;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.7vh 2vh;max-width:min(760px,92vw);margin-top:-.4vh}' +
+      /* mute/pause, top-LEFT so it can never be hit while reaching for End */
+      '#mlsAvKioskMute{position:absolute;top:14px;left:16px;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:10px 18px;font:700 13px system-ui;cursor:pointer;z-index:6}' +
+      '#mlsAvKioskMute[aria-pressed="true"]{background:#7a1f16;color:#fff;border-color:#7a1f16}' +
+      /* PAUSED: the red dot stops, the banner goes grey, and nothing on this
+         screen still implies a live microphone. */
+      '#mlsAvKiosk.paused #mlsAvKioskRec{border-color:#cfd9d2;color:#55605A}' +
+      '#mlsAvKiosk.paused #mlsAvKioskRec i{animation:none;background:#69736d}' +
+      '#mlsAvKiosk.paused #mlsAvKioskMic{display:none}' +
+      '#mlsAvKiosk.paused #mlsAvKioskWave{visibility:hidden}' +
+      '#mlsAvKioskSave{font:700 1.6vh system-ui;font-style:normal;padding:.4vh 1.4vh;border-radius:999px;background:#EAF1EC;color:#204034}' +
+      '#mlsAvKioskSave[data-state="bad"]{background:#F7E4E1;color:#7a1f16}' +
+      '#mlsAvKiosk.saving #mlsAvKioskSave{background:#EDE7D6;color:#55605A}' +
+      /* ONE end control during a capture. The interview-era button is hidden
+         rather than left beside it: two ways to end a visit is one too many. */
+      '#mlsAvKioskEndVisit{display:none;position:absolute;top:14px;right:16px;border:0;background:#204034;color:#fff;border-radius:999px;padding:12px 22px;font:800 14px system-ui;cursor:pointer;box-shadow:0 8px 26px rgba(32,64,52,.28);z-index:6}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskEndVisit{display:block}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskEnd{display:none}' +
+      '#mlsAvKioskEndVisit:hover{background:#2E6A4B}' +
+      /* the orders widget: compact, corner-mounted, never over the face, and
+         absent entirely when there is nothing to confirm */
+      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:min(370px,92vw);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      '#mlsAvKioskOrders .mlsAvOrdHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdTitle{font:800 13px \'Public Sans\',system-ui;color:#204034}' +
+      '#mlsAvKioskOrders .mlsAvOrdCount{font:700 11.5px system-ui;color:#55605A}' +
+      '#mlsAvKioskOrders .mlsAvOrd{border:1px solid #E7E5DD;border-radius:12px;padding:9px 10px;margin-bottom:8px;background:#FCFBF8}' +
+      '#mlsAvKioskOrders .mlsAvOrd[data-kind="medication"]{border-color:#e0cfc8}' +
+      '#mlsAvKioskOrders .mlsAvOrdTop{display:flex;align-items:baseline;justify-content:space-between;gap:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdTop b{font:800 13.5px \'Public Sans\',system-ui;color:#1A211C}' +
+      '#mlsAvKioskOrders .mlsAvOrdKind{font:700 10.5px system-ui;color:#55605A;text-transform:uppercase;letter-spacing:.5px}' +
+      '#mlsAvKioskOrders .mlsAvOrdDet{font:600 12.5px system-ui;color:#204034;margin-top:2px}' +
+      '#mlsAvKioskOrders .mlsAvOrdHeard{font:italic 500 11.5px/1.4 system-ui;color:#69736d;margin-top:5px}' +
+      '#mlsAvKioskOrders .mlsAvOrdMiss{font:700 11.5px/1.4 system-ui;color:#7a1f16;background:#F7E4E1;border-radius:8px;padding:5px 7px;margin-top:6px}' +
+      '#mlsAvKioskOrders .mlsAvOrdOk{font:700 11.5px/1.4 system-ui;color:#2E6A4B;margin-top:5px}' +
+      '#mlsAvKioskOrders .mlsAvOrdSide{display:flex;gap:6px;margin-top:6px}' +
+      '#mlsAvKioskOrders .mlsAvOrdPick{flex:1;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:9px;padding:7px 4px;font:700 12px system-ui;cursor:pointer}' +
+      '#mlsAvKioskOrders .mlsAvOrdPick:hover{border-color:#2E6A4B;color:#2E6A4B}' +
+      '#mlsAvKioskOrders .mlsAvOrdRow{display:flex;gap:6px;margin-top:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdRow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdIn{flex:1 1 100%;border:1px solid #2E6A4B;border-radius:9px;padding:8px 9px;font:600 12.5px system-ui;color:#1A211C}' +
+      '#mlsAvKioskOrders .mlsAvOrdGo{flex:1;border:0;background:#2E6A4B;color:#fff;border-radius:9px;padding:8px 6px;font:800 12.5px system-ui;cursor:pointer}' +
+      '#mlsAvKioskOrders .mlsAvOrdGo:disabled{background:#cfd9d2;color:#55605A;cursor:not-allowed}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdit,#mlsAvKioskOrders .mlsAvOrdNo{border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:9px;padding:8px 10px;font:700 12.5px system-ui;cursor:pointer}' +
+      '#mlsAvKioskOrders .mlsAvOrdFoot{font:600 10.8px/1.45 system-ui;color:#69736d;border-top:1px solid #E7E5DD;padding-top:7px;margin-top:2px}' +
+      /* the review: one screen, one verdict, and the pending list said out
+         loud rather than quietly omitted */
+      '#mlsAvKioskReview{display:none;position:absolute;inset:0;background:rgba(20,28,24,.62);align-items:center;justify-content:center;z-index:8;padding:4vh 4vw}' +
+      '#mlsAvKioskReview .mlsAvRevCard{background:#fff;border-radius:20px;padding:24px 26px;width:min(620px,94vw);max-height:88vh;overflow:auto;text-align:left;box-shadow:0 28px 80px rgba(0,0,0,.38)}' +
+      '#mlsAvKioskReview .mlsAvRevHead{font:800 20px \'Public Sans\',system-ui;margin-bottom:8px}' +
+      '#mlsAvKioskReview .mlsAvRevHead.ok{color:#2E6A4B}' +
+      '#mlsAvKioskReview .mlsAvRevHead.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevLine{font:600 13.5px/1.5 system-ui;color:#204034}' +
+      '#mlsAvKioskReview .mlsAvRevWarn{font:700 12.5px/1.5 system-ui;color:#7a1f16;background:#F7E4E1;border-radius:10px;padding:9px 11px;margin-top:10px}' +
+      '#mlsAvKioskReview .mlsAvRevSub{font:800 12.5px system-ui;color:#204034;margin-top:14px}' +
+      '#mlsAvKioskReview .mlsAvRevSub.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevList{margin:6px 0 0;padding-left:20px;font:600 13px/1.6 system-ui;color:#1A211C}' +
+      '#mlsAvKioskReview .mlsAvRevList.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevNote{font:700 13px/1.5 system-ui;color:#204034;background:#EAF1EC;border-radius:10px;padding:10px 12px;margin-top:14px}' +
+      '#mlsAvKioskReview .mlsAvRevNote.ok{color:#2E6A4B}' +
+      '#mlsAvKioskReview .mlsAvRevNote.bad{color:#7a1f16;background:#F7E4E1}' +
+      '#mlsAvKioskReview .mlsAvRevRow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}' +
+      '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
+      '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
+      '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}}' +
       '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
       '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
       '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
@@ -2309,6 +2441,8 @@
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
     kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = [];
+    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
+    kiosk.paused = false;
     if (reason === 'done' || kiosk.completed) {
       refreshCount(true);
       safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
@@ -2316,6 +2450,45 @@
     kiosk.completed = false;
   }
   function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
+  /* av-5.6.0 - WHAT THE CHART ALREADY KNOWS. An MA who has read the chart does
+     not make the patient recite the allergy list the chart already carries.
+     Built ONLY from the exact chart this interview is bound to - exactPatient
+     fails closed on an unknown or ambiguous external id, so an unresolvable
+     patient sends no context rather than the wrong patient's. Computed once
+     per interview: the chart does not change while the patient is answering,
+     and rebuilding it per turn would put roster work on the latency path. */
+  function kioskChartContext() {
+    var p = safe(function () { return exactPatient(kiosk.ext); }, null);
+    if (!p) return null;
+    function listOf(value, cap) {
+      var text = '';
+      if (Array.isArray(value)) {
+        text = value.map(function (x) {
+          return clean(typeof x === 'string' ? x : (x && (x.name || x.text || x.label || x.description)));
+        }).filter(Boolean).join(', ');
+      } else text = clean(value).replace(/\s*[\r\n]+\s*/g, ', ');
+      return text.replace(/\s+/g, ' ').trim().slice(0, cap);
+    }
+    var ctx = {};
+    var dob = clean(p.dob);
+    if (dob) {
+      var years = safe(function () {
+        var d = new Date(dob.indexOf('T') < 0 ? dob + 'T00:00:00Z' : dob);
+        if (isNaN(d.getTime())) return 0;
+        var age = Math.floor((Date.now() - d.getTime()) / 31557600000);
+        return (age > 0 && age < 130) ? age : 0;
+      }, 0);
+      if (years) ctx.age = String(years);
+    }
+    var sex = clean(p.sex || p.gender); if (sex) ctx.sex = sex.slice(0, 20);
+    var reason = clean(p.visitReason || p.reason || p.apptReason);
+    if (reason) ctx.visitReason = reason.slice(0, 200);
+    var allergies = listOf(p.allergies, 240); if (allergies) ctx.allergies = allergies;
+    var meds = listOf(p.meds || p.medications, 400); if (meds) ctx.medications = meds;
+    var problems = listOf(p.problems, 400); if (problems) ctx.problems = problems;
+    for (var k in ctx) { if (Object.prototype.hasOwnProperty.call(ctx, k)) return ctx; }
+    return null;
+  }
   function kioskTurn(answer, nonce, finish) {
     if (!kiosk.open || kiosk.busy) return;
     /* A FINISHED interview accepts nothing more. The typed row stays on screen
@@ -2331,6 +2504,10 @@
     kioskMood('thinking', '', answer);
     var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
+    /* the interview is stateless server-side, so the chart block rides with
+       every turn - resolved once, at the first turn, and reused */
+    if (kiosk.chartCtx === undefined) kiosk.chartCtx = kioskChartContext();
+    if (kiosk.chartCtx) body.chartContext = kiosk.chartCtx;
     if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); kiosk.silent = 0; kiosk.finishTries = 0; }
     if (finish) body.finish = true;
     api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
@@ -2432,7 +2609,7 @@
       kiosk.nudgedFor = kiosk.lastSay;
       pvStopVoice();
       kioskMood('speaking', '');
-      pvSpeak('Take your time — whenever you\'re ready, just start talking.', function () { kioskListen(); });
+      pvSpeak(NUDGE_LINE, function () { kioskListen(); });
     } else {
       pvStopVoice();
       kioskListen();
@@ -2457,7 +2634,8 @@
     }
   }
   function kioskListen(keepMood) {
-    if (kiosk.ambient) return;   /* the ambient loop owns the microphone and never takes turns */
+    if (kiosk.ambient) return;
+    if (kiosk.paused) return;         /* see kioskPauseToggle */   /* the ambient loop owns the microphone and never takes turns */
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
@@ -2698,8 +2876,597 @@
   var AMBIENT_MAX_MS = 90 * 60 * 1000;         /* hard cap - never into the next patient */
   var AMBIENT_HEAD_CHECKIN = '--- check-in ---';
   var AMBIENT_HEAD_VISIT = '--- visit ---';
+  var AMBIENT_HEAD_ORDERS = '--- actions the doctor confirmed on screen ---';
+  /* ONE source for the recording banner text: the markup and the resume path
+     must never be able to disagree about what the screen says. */
+  var NUDGE_LINE = 'Take your time — whenever you\'re ready, just start talking.';
+  var AMBIENT_REC_TEXT = 'Recording this visit. The avatar is listening in the room and taking notes for the doctor.';
+
+  /* =========================================================================
+     av-5.6.0 - THE VISIT COPILOT. Room mode could already hear a whole
+     consultation. Three things it could not do, each of which is a way a real
+     visit loses information:
+
+     1. IT FORGOT ON REFRESH. The capture lived in ONE array in ONE tab and
+        reached the transcript exactly once, at the very end. A reload, a
+        crashed renderer, a tab discarded under memory pressure, or a mis-tap
+        threw away the entire consultation and left no trace that anything had
+        ever been recorded - the doctor could not even know what was lost.
+        Every finalised sentence is now persisted under the account namespace
+        within ~1.5s, and an unfiled capture announces itself on the next load.
+     2. IT HEARD ORDERS AND DID NOTHING WITH THEM. "Order an MRI lumbar spine
+        without contrast" was recorded as prose and re-read later. It is now
+        recognised as it is said and prepared as a PROPOSAL - never submitted,
+        never completed by guesswork, and not confirmable at all while a
+        clinically required detail (which side) is missing.
+     3. IT HAD NO END. Capture ended through the staff PIN pad, which is a door
+        back into the app, not a review of the visit. One End Visit control now
+        flushes the recogniser, files, and reports honestly what was saved and
+        what remains only proposed.
+     ======================================================================== */
+
+  /* ---- 1. THE BACKUP -----------------------------------------------------
+     The in-memory capture stays authoritative; this is the crash copy. It is
+     account-namespaced (never the next doctor's visit), chart-bound (it can
+     only ever be filed to the chart it was taken on), and it degrades under
+     quota by shedding its OLDEST sentences and SAYING SO - a backup that
+     silently stopped updating an hour ago is worse than no backup. ------- */
+  var AMBIENT_STORE_KEY = 'mlsAvRoomCaptureV1';
+  var AMBIENT_SAVE_MS = 1500;
+  function ambientStoreKey() {
+    return safe(function () {
+      return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY) || AMBIENT_STORE_KEY) : AMBIENT_STORE_KEY;
+    }, AMBIENT_STORE_KEY);
+  }
+  function ambientStoreRead() {
+    return safe(function () {
+      var raw = localStorage.getItem(ambientStoreKey());
+      if (!raw) return null;
+      var rec = JSON.parse(raw);
+      if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) return null;
+      /* an UNBOUND backup could only ever end in a refusal to write (see
+         kioskAmbientFile), so it is not a recoverable capture at all */
+      if (!clean(rec.bound)) return null;
+      return rec;
+    }, null);
+  }
+  function ambientStoreDrop() { safe(function () { localStorage.removeItem(ambientStoreKey()); }); }
+  function ambientStoreWrite(rec) {
+    var key = ambientStoreKey();
+    var parts = (rec.parts || []).slice();
+    var trimmed = false;
+    for (var guard = 0; guard < 40; guard++) {
+      var body = safe(function () {
+        return JSON.stringify({
+          v: 1, sid: rec.sid || '', bound: rec.bound || '', start: rec.start || 0,
+          savedAt: Date.now(), avName: rec.avName || '', trimmed: trimmed,
+          intake: rec.intake || [], actions: rec.actions || [], parts: parts
+        });
+      }, '');
+      if (!body) return { ok: false, why: 'serialise', trimmed: trimmed };
+      if (safe(function () { localStorage.setItem(key, body); return true; }, false)) {
+        return { ok: true, trimmed: trimmed, bytes: body.length };
+      }
+      /* out of quota: shed the oldest quarter of the STORED copy and retry.
+         kiosk.ambParts is untouched, so a visit that ends normally still
+         files complete - only the crash copy loses its head. */
+      if (parts.length < 2) return { ok: false, why: 'quota', trimmed: trimmed };
+      parts = parts.slice(Math.ceil(parts.length / 4));
+      trimmed = true;
+    }
+    return { ok: false, why: 'quota', trimmed: true };
+  }
+  function ambientActionsForStore() {
+    return (kiosk.ambActions || []).map(function (a) {
+      return { id: a.id, kind: a.kind, title: a.title, detail: a.detail, heard: a.heard,
+        missing: (a.missing || []).slice(), status: a.status, at: a.at };
+    });
+  }
+  function kioskAmbientSaveNow() {
+    /* A FILED capture leaves no backup behind: the words are in the doctor's
+       transcript now, and a stale copy would offer to file them a second
+       time on the next load. */
+    if (kiosk.ambFiled || !clean(kiosk.ambBound)) return null;
+    var res = ambientStoreWrite({
+      sid: kiosk.sid, bound: kiosk.ambBound, start: kiosk.ambStart, avName: kiosk.avName || '',
+      intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || []
+    });
+    kiosk.ambSavedAt = Date.now();
+    kiosk.ambSaveOk = res.ok === true;
+    kiosk.ambSaveTrim = res.trimmed === true;
+    kioskAmbientSaveBadge();
+    return res;
+  }
+  function kioskAmbientSave(force) {
+    if (force) {
+      if (kiosk.ambSaveTimer) { safe(function () { clearTimeout(kiosk.ambSaveTimer); }); kiosk.ambSaveTimer = null; }
+      return kioskAmbientSaveNow();
+    }
+    if (!kiosk.ambient) return null;
+    /* a trailing save is already queued and will carry this sentence too -
+       one write per ~1.5s, not one per recognised phrase */
+    if (kiosk.ambSaveTimer) return null;
+    kiosk.ambSaveTimer = setTimeout(function () {
+      kiosk.ambSaveTimer = null;
+      kioskAmbientSaveNow();
+    }, AMBIENT_SAVE_MS);
+    return null;
+  }
+  function kioskAmbientSaveBadge() {
+    var el = gid('mlsAvKioskSave');
+    if (!el) return;
+    if (kiosk.ambSaveOk === false) {
+      el.textContent = 'Not backed up - this tab only';
+      el.setAttribute('data-state', 'bad');
+      return;
+    }
+    el.textContent = kiosk.ambSaveTrim ? 'Saved (backup trimmed)' : 'Saved';
+    el.setAttribute('data-state', 'ok');
+  }
+
+  /* ---- 2. THE ACTION DETECTOR -------------------------------------------
+     Pure, synchronous and LOCAL. It runs on the sentence the recogniser just
+     finalised, so a proposal is on screen in the same tick the doctor stops
+     speaking: no network hop, no model round trip, and it still works while
+     the connection is crawling. Three rules it may never break:
+
+       - IT READS ONLY WHAT WAS SAID. Every field it cannot hear stays empty.
+         An empty field that is clinically required (which side, for a paired
+         body part) blocks Confirm outright rather than being filled in with
+         the likely answer.
+       - IT PROPOSES, IT NEVER PLACES. Nothing here submits anything. The
+         confirmed list is written into the doctor's transcript under its own
+         heading; placing the order in the EMR remains the doctor's action.
+       - IT IS CONSERVATIVE ON PURPOSE. One microphone means doctor and
+         patient arrive on the same channel and cannot be told apart, so a
+         question ("should we get an MRI?", "can I get an MRI?") and every
+         negated, past, conditional or cancelled form is refused. A missed
+         proposal costs one manual entry; a spurious one spends the doctor's
+         attention in front of a patient on something nobody asked for. ---- */
+
+  /* the trigger VERB is mandatory for every kind. On its own this refuses
+     most of what a patient says about their own care ("I had an MRI last
+     year", "my knee hurts") before any other guard runs. */
+  var ACT_VERB = /\b(order|orders|ordering|get|getting|obtain|schedule|scheduling|book|repeat|prescribe|prescribing|start|starting|refer|referring|referral|send|draw|check|put (?:him|her|them) on|follow(?:ing)? up|come back|see (?:him|her|them) back)\b/i;
+
+  /* HARD refusals: the sentence contains the words and no action was taken.
+     These win over every commitment phrase, because "if it gets worse we'll
+     order an MRI" is a plan for a different day, not an order for today. */
+  var ACT_HARD_BLOCK = [
+    /\b(?:don'?t|do not|does not|doesn'?t|did not|didn'?t|will not|won'?t|cannot|can'?t|no)\s+(?:\w+\s+){0,3}(?:need|want|order|require|indicat)/i,
+    /\bnot\s+(?:\w+\s+){0,2}(?:going to\s+|gonna\s+)?(?:order|prescrib|refer|start|schedul|obtain)/i,
+    /\bno need (?:for|to)\b/i,
+    /\b(?:hold(?:ing)? off|defer(?:ring)?|avoid|against (?:an?|the)|instead of|rather than|cancel(?:led|ling)?|discontinue|stop(?:ping)?)\b/i,
+    /\b(?:already (?:had|has|have|got|done|ordered)|last (?:year|month|week|visit)|previously|prior|in the past|years? ago|months? ago|weeks? ago)\b/i,
+    /\bif\b[^.?!]*\b(?:worse|worsen|persist|fail|flare|doesn'?t (?:improve|help)|not better|no better)\b/i,
+    /\b(?:worse|persist|fail|doesn'?t (?:improve|help)|not better|no better)\b[^.?!]*\bthen\b/i,
+    /\?\s*$/,
+    /^\s*(?:do|did|does|have|has|had|can|could|should|would|will|are|is|was|am|any|what|when|why|how|which)\b[^.!]*$/i,
+    /\b(?:do|did|would|should|can|could|will) (?:you|we|i|he|she|they)\b/i,
+    /\b(?:what|how) about\b/i,
+    /\bhave you (?:had|ever|been)\b/i
+  ];
+  /* SOFT hedges - refused unless the same sentence also commits. "I would
+     like to order an MRI" commits; "we might order an MRI" does not. */
+  var ACT_SOFT_BLOCK = [/\b(?:might|maybe|perhaps|possibly|probably|consider(?:ing)?|thinking about|may want)\b/i];
+  var ACT_COMMIT = [
+    /\b(?:let'?s|we'?ll|we will|i'?ll|i will|i'?m going to|i am going to|go ahead and|please)\s+(?:\w+\s+){0,3}(?:order|get|obtain|schedul|book|prescrib|start|refer|send|draw|check|repeat)/i,
+    /\bi(?:'d| would| want)?\s*(?:like\s+)?to (?:order|get|obtain|start|prescribe|refer|schedule|check|draw)\b/i,
+    /^\s*(?:order|get|obtain|schedule|book|prescribe|start|refer|send|draw|check|repeat)\b/i
+  ];
+  function actAny(list, text) {
+    for (var i = 0; i < list.length; i++) if (list[i].test(text)) return true;
+    return false;
+  }
+  function actBlocked(text) {
+    if (actAny(ACT_HARD_BLOCK, text)) return true;
+    if (actAny(ACT_SOFT_BLOCK, text) && !actAny(ACT_COMMIT, text)) return true;
+    return false;
+  }
+
+  var ACT_IMAGING = [
+    ['MRI', /\b(?:m\s?r\s?i|magnetic resonance)\b/i],
+    ['CT', /\b(?:c\s?t(?: scan)?|cat scan|computed tomography)\b/i],
+    ['X-ray', /\b(?:x[- ]?rays?|radiographs?|plain films?)\b/i],
+    ['Ultrasound', /\b(?:ultrasound|sonogram|doppler)\b/i],
+    ['DEXA', /\b(?:dexa|bone density)\b/i],
+    ['PET', /\bp\s?e\s?t(?: scan| ct)?\b/i],
+    ['EMG / nerve conduction', /\b(?:e\s?m\s?g|electromyograph\w*|nerve conduction)\b/i],
+    ['Bone scan', /\bbone scans?\b/i]
+  ];
+  /* longest first - "lumbar spine" must win over "spine", and "abdomen and
+     pelvis" over either half */
+  var ACT_REGIONS = ['abdomen and pelvis', 'lumbosacral spine', 'cervical spine', 'thoracic spine',
+    'lumbar spine', 'sacroiliac joint', 'si joint', 'lower extremity', 'upper extremity',
+    'brain', 'head', 'neck', 'chest', 'abdomen', 'pelvis', 'spine', 'sinus',
+    'shoulder', 'elbow', 'forearm', 'wrist', 'hand', 'hip', 'knee', 'ankle', 'foot',
+    'femur', 'tibia', 'humerus', 'clavicle', 'eye', 'ear', 'arm', 'leg'];
+  /* paired structures: an imaging order without a side is not a complete
+     order, so the widget refuses to let it be confirmed until the doctor
+     picks one. It never picks for them. */
+  var ACT_PAIRED = ['shoulder', 'elbow', 'forearm', 'wrist', 'hand', 'hip', 'knee', 'ankle', 'foot',
+    'femur', 'tibia', 'humerus', 'clavicle', 'eye', 'ear', 'arm', 'leg', 'lower extremity', 'upper extremity'];
+  var ACT_LABS = [
+    ['CBC', /\bc\s?b\s?c\b|\bcomplete blood count\b/i],
+    ['CMP', /\bc\s?m\s?p\b|\bcomprehensive metabolic\b/i],
+    ['BMP', /\bb\s?m\s?p\b|\bbasic metabolic\b/i],
+    ['HbA1c', /\b(?:hemoglobin\s+)?a\s?1\s?c\b/i],
+    ['Lipid panel', /\blipid (?:panel|profile)\b/i],
+    ['TSH', /\bt\s?s\s?h\b|\bthyroid (?:panel|function)\b/i],
+    ['ESR', /\be\s?s\s?r\b|\bsed rate\b/i],
+    ['CRP', /\bc\s?r\s?p\b|\bc[- ]reactive protein\b/i],
+    ['Urinalysis', /\burinalysis\b|\bu\s?a\b/i],
+    ['Vitamin D', /\bvitamin d\b/i],
+    ['PT/INR', /\bp\s?t\s?\/?\s?i\s?n\s?r\b|\binr\b/i]
+  ];
+  var ACT_SPECIALTIES = ['orthopedics', 'orthopaedics', 'orthopedic surgery', 'ortho', 'neurosurgery',
+    'neurology', 'cardiology', 'rheumatology', 'physical therapy', 'pt', 'pain management',
+    'sports medicine', 'podiatry', 'dermatology', 'endocrinology', 'gastroenterology',
+    'psychiatry', 'urology', 'ent', 'ophthalmology', 'oncology', 'vascular surgery',
+    'general surgery', 'spine surgery', 'nephrology', 'pulmonology'];
+
+  function actFindRegion(text) {
+    for (var i = 0; i < ACT_REGIONS.length; i++) {
+      if (new RegExp('\\b' + ACT_REGIONS[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(text)) return ACT_REGIONS[i];
+    }
+    return '';
+  }
+  function actFindSide(text) {
+    if (/\bbilateral(?:ly)?\b|\bboth\b/i.test(text)) return 'bilateral';
+    if (/\bleft\b|\bl\s?side\b/i.test(text)) return 'left';
+    if (/\bright\b/i.test(text)) return 'right';
+    return '';
+  }
+  function actFindContrast(text) {
+    if (/\bwith and without contrast\b/i.test(text)) return 'with and without contrast';
+    if (/\b(?:without|no|sans) contrast\b/i.test(text)) return 'without contrast';
+    if (/\bwith contrast\b/i.test(text)) return 'with contrast';
+    return '';
+  }
+  function actInterval(text) {
+    var m = /\b(?:in|after)\s+(?:about\s+)?(\d+|one|two|three|four|five|six|eight|ten|twelve)\s+(day|week|month|year)s?\b/i.exec(text);
+    return m ? (m[1] + ' ' + m[2] + (/^(1|one)$/i.test(m[1]) ? '' : 's')) : '';
+  }
+  function actTitleCase(s) { return String(s || '').replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }); }
+
+  /* detectActions(sentence) -> array of proposals (usually 0 or 1).
+     Exposed for tests through window.__mlsAvatar.detectActions - it is a pure
+     function of its argument and touches nothing. */
+  function detectActions(sentence) {
+    var raw = clean(sentence);
+    if (!raw || raw.length > 600) return [];
+    var directed = false;
+    /* a sentence addressed to the assistant by name is an INSTRUCTION, not
+       part of the conversation between the doctor and the patient */
+    var wake = /^\s*(?:hey[, ]+|ok[, ]+|okay[, ]+)?(?:m\.?\s?l\.?\s?s\.?|scribe|avatar|copilot)\s*[,:.]?\s+(.{3,})$/i.exec(raw);
+    var text = raw;
+    if (wake) { directed = true; text = clean(wake[1]); }
+    var out = [];
+    function push(kind, title, detail, missing, fields) {
+      out.push({
+        id: 'act-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+        kind: kind, title: title, detail: detail || '', missing: missing || [],
+        fields: fields || {}, heard: raw, directed: directed, at: Date.now(), status: 'proposed'
+      });
+    }
+    var hasVerb = ACT_VERB.test(text);
+    /* A directed instruction still has to clear the refusals: "MLS, we are
+       not ordering an MRI" must not produce an order. */
+    if (actBlocked(text)) return [];
+
+    if (hasVerb) {
+      var side = actFindSide(text), region = actFindRegion(text), contrast = actFindContrast(text);
+      var i, m;
+      for (i = 0; i < ACT_IMAGING.length; i++) {
+        if (!ACT_IMAGING[i][1].test(text)) continue;
+        var bits = [];
+        if (side) bits.push(actTitleCase(side));
+        if (region) bits.push(region);
+        if (contrast) bits.push(contrast);
+        var need = [];
+        if (region && ACT_PAIRED.indexOf(region) >= 0 && !side) need.push('side');
+        if (!region) need.push('body part');
+        push('imaging', ACT_IMAGING[i][0], bits.join(' '), need,
+          { modality: ACT_IMAGING[i][0], region: region, side: side, contrast: contrast });
+        break;
+      }
+      if (!out.length) {
+        for (i = 0; i < ACT_LABS.length; i++) {
+          if (!ACT_LABS[i][1].test(text)) continue;
+          push('lab', ACT_LABS[i][0], '', [], { panel: ACT_LABS[i][0] });
+          break;
+        }
+      }
+      if (!out.length && /\b(?:refer|referral|send (?:him|her|them|the patient))\b/i.test(text)) {
+        var spec = '';
+        for (i = 0; i < ACT_SPECIALTIES.length; i++) {
+          if (new RegExp('\\b' + ACT_SPECIALTIES[i] + '\\b', 'i').test(text)) { spec = ACT_SPECIALTIES[i]; break; }
+        }
+        push('referral', 'Referral' + (spec ? ' - ' + actTitleCase(spec) : ''), '',
+          spec ? [] : ['specialty'], { specialty: spec });
+      }
+      if (!out.length && /\b(?:prescrib\w*|start(?:ing)? (?:him|her|them|the patient)? ?on|start(?:ing)?|refill|put (?:him|her|them) on|send (?:in|over) a (?:script|prescription))\b/i.test(text)) {
+        /* the drug NAME is whatever the doctor said after the verb, verbatim
+           and untouched - there is no dictionary here to guess against, and a
+           mis-expanded drug name is the most dangerous thing this file could
+           produce */
+        m = /\b(?:prescribe|prescribing|start|starting|refill|put (?:him|her|them) on)\s+(?:(?:him|her|them|the patient)\s+on\s+)?([a-z][a-z0-9\- ]{2,40})/i.exec(text);
+        /* the captured run stops at the first function word, then at the
+           dose: "start gabapentin 300 mg at night" must name the drug
+           "gabapentin", not "gabapentin 300 mg" - a title that carries a dose
+           reads as a second, different dose next to the real one. */
+        var drug = m ? clean(m[1])
+          .replace(/\s*\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|iu|milligrams?|micrograms?|grams?)\b.*$/i, '')
+          .replace(/\b(?:at|for|and|with|to|in|by|the|a|an|of|on|every|once|twice|daily|nightly)\b.*$/i, '')
+          .trim() : '';
+        var dose = (/\b(\d+(?:\.\d+)?\s?(?:mg|mcg|g|ml|units?|iu|milligrams?|micrograms?|grams?))\b/i.exec(text) || [])[1] || '';
+        var freq = (/\b(once daily|twice daily|three times (?:a day|daily)|every (?:\d+|other) (?:hours?|days?)|at (?:night|bedtime)|nightly|daily|b\.?i\.?d\.?|t\.?i\.?d\.?|q\.?h\.?s\.?|as needed|p\.?r\.?n\.?)\b/i.exec(text) || [])[1] || '';
+        var route = (/\b(by mouth|orally|oral|topical(?:ly)?|injection|intramuscular|subcutaneous|i\.?m\.?|i\.?v\.?)\b/i.exec(text) || [])[1] || '';
+        if (drug) {
+          var dbits = [];
+          if (dose) dbits.push(dose);
+          if (route) dbits.push(route);
+          if (freq) dbits.push(freq);
+          var dneed = [];
+          if (!dose) dneed.push('dose');
+          if (!freq) dneed.push('frequency');
+          push('medication', actTitleCase(drug), dbits.join(', '), dneed,
+            { drug: drug, dose: dose, frequency: freq, route: route });
+        }
+      }
+      if (!out.length && /\b(?:follow(?:ing)? up|come back|see (?:him|her|them) back|recheck)\b/i.test(text)) {
+        var iv = actInterval(text);
+        push('followUp', 'Follow-up' + (iv ? ' in ' + iv : ''), '', iv ? [] : ['interval'], { interval: iv });
+      }
+    }
+    /* A named instruction that matched no clinical shape is still an
+       instruction - it becomes a documentation note carrying the doctor's own
+       words, which is exactly what "remind me to document that ..." asks for.
+       Undirected speech never reaches here: the room is full of sentences. */
+    if (!out.length && directed && text) {
+      push('note', 'Documentation note', text, [], { text: text });
+    }
+    return out;
+  }
+
+  /* ---- the proposal list ------------------------------------------------
+     Chrome finalises PHRASES, not sentences, so one spoken order can arrive
+     as "order an MRI" then "of the lumbar spine without contrast". Detection
+     therefore runs on a short rolling window a beat after the words stop, and
+     a fuller proposal SUPERSEDES the thinner one it grew out of instead of
+     stacking a second card beside it. Two genuinely different scans stay two
+     cards: supersession requires the same modality AND a region the earlier
+     card either did not have or already agreed with. ------------------- */
+  var ACT_DETECT_MS = 1200;
+  var ACT_SUPERSEDE_MS = 30000;
+  function actRoot(a) {
+    var f = a.fields || {};
+    return a.kind + '|' + clean(f.modality || f.panel || f.specialty || f.drug || (a.kind === 'note' ? a.detail : '')).toLowerCase();
+  }
+  function ordersUpsert(proposal) {
+    if (!kiosk.ambActions) kiosk.ambActions = [];
+    var list = kiosk.ambActions, root = actRoot(proposal), now = Date.now(), i;
+    for (i = 0; i < list.length; i++) {
+      var old = list[i];
+      if (old.status !== 'proposed' || actRoot(old) !== root) continue;
+      var oldRegion = clean((old.fields || {}).region).toLowerCase();
+      var newRegion = clean((proposal.fields || {}).region).toLowerCase();
+      var growth = (now - old.at) < ACT_SUPERSEDE_MS && (!oldRegion || oldRegion === newRegion);
+      if (!growth) continue;
+      /* keep the side the DOCTOR already picked on the card - the newer
+         hearing must not silently drop a resolved requirement */
+      if (old.picked) {
+        proposal.picked = old.picked;
+        proposal.fields.side = old.picked;
+        proposal.detail = (actTitleCase(old.picked) + ' ' + proposal.detail).trim();
+        proposal.missing = (proposal.missing || []).filter(function (k) { return k !== 'side'; });
+      }
+      proposal.id = old.id;
+      list[i] = proposal;
+      return proposal;
+    }
+    if (list.length >= 24) return null;    /* bounded - a visit is not a queue */
+    list.push(proposal);
+    return proposal;
+  }
+  function ordersDetectSoon(sentence) {
+    if (!kiosk.ambient) return;
+    var seg = clean(sentence);
+    kiosk.ambWindow = ((kiosk.ambWindow || '') + ' ' + seg).slice(-400).trim();
+    /* THE IMMEDIATE PASS. Most spoken orders arrive as ONE finalised phrase,
+       and making the doctor wait the settle window for a card the detector
+       already holds is latency we control and should not spend. Whatever this
+       finds is on screen in the same tick the words land; the windowed pass
+       below then UPGRADES it in place when the rest of the sentence arrives -
+       which is exactly what ordersUpsert's supersession exists for. Measured:
+       ~1200ms to first card before this, single-digit ms after. */
+    var immediate = detectActions(seg), grew = 0, k;
+    for (k = 0; k < immediate.length; k++) if (ordersUpsert(immediate[k])) grew++;
+    if (grew) { ordersRender(); kioskAmbientSave(true); }
+    if (kiosk.ambDetectTimer) safe(function () { clearTimeout(kiosk.ambDetectTimer); });
+    kiosk.ambDetectTimer = setTimeout(function () {
+      kiosk.ambDetectTimer = null;
+      var window_ = kiosk.ambWindow || '';
+      kiosk.ambWindow = '';
+      if (!window_) return;
+      /* the LAST clause is the one that just finished; the window before it
+         is context that has already been offered to the detector. Split
+         WITHOUT lookbehind - this file still runs on browsers that predate
+         it, and a syntax error here would take the whole module down. */
+      var clauses = window_.replace(/([.!?])\s+/g, '$1\u0001').split('\u0001');
+      var tail = clauses.slice(-2).join(' ');
+      var found = detectActions(tail);
+      var added = 0;
+      for (var i = 0; i < found.length; i++) if (ordersUpsert(found[i])) added++;
+      if (added) { ordersRender(); kioskAmbientSave(true); }
+    }, ACT_DETECT_MS);
+  }
+  function ordersCounts() {
+    var list = kiosk.ambActions || [], c = { proposed: 0, confirmed: 0, dismissed: 0 };
+    for (var i = 0; i < list.length; i++) c[list[i].status] = (c[list[i].status] || 0) + 1;
+    return c;
+  }
+  function ordersConfirmed() {
+    return (kiosk.ambActions || []).filter(function (a) { return a.status === 'confirmed'; });
+  }
+  function ordersFind(id) {
+    var list = kiosk.ambActions || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  var ACT_KIND_LABEL = { imaging: 'Imaging', lab: 'Lab', referral: 'Referral',
+    medication: 'Medication', followUp: 'Follow-up', note: 'Note' };
+  var ACT_MISSING_LABEL = { side: 'which side', 'body part': 'body part',
+    dose: 'dose', frequency: 'how often', specialty: 'which specialty', interval: 'when' };
+  function ordersMissingText(a) {
+    return (a.missing || []).map(function (k) { return ACT_MISSING_LABEL[k] || k; }).join(', ');
+  }
+  /* the card is built with DOM nodes and textContent throughout: `heard` is
+     raw speech off a microphone and must never be interpolated into markup */
+  function ordersCard(a) {
+    var card = make('div', 'mlsAvOrd');
+    card.setAttribute('data-id', a.id);
+    card.setAttribute('data-kind', a.kind);
+    var top = make('div', 'mlsAvOrdTop');
+    top.appendChild(make('b', '', a.title));
+    top.appendChild(make('span', 'mlsAvOrdKind', ACT_KIND_LABEL[a.kind] || a.kind));
+    card.appendChild(top);
+    if (a.detail) card.appendChild(make('div', 'mlsAvOrdDet', a.detail));
+    card.appendChild(make('div', 'mlsAvOrdHeard', '“' + a.heard + '”'));
+    if (a.status === 'confirmed') {
+      card.appendChild(make('div', 'mlsAvOrdOk', 'Confirmed - goes into the note. Place it in the EMR from the chart.'));
+      return card;
+    }
+    /* the inline editor replaces the card's controls while it is open, so
+       there is never a Confirm button next to a half-typed action */
+    if (a.editing) {
+      var ed = make('div', 'mlsAvOrdEdRow');
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'mlsAvOrdEdIn';
+      input.value = a.title + (a.detail ? ' - ' + a.detail : '');
+      input.setAttribute('aria-label', 'Edit this action');
+      input.maxLength = 120;
+      function commitEdit() {
+        var v = clean(input.value);
+        if (!v) return;                       /* an empty action is not a correction */
+        a.title = v.slice(0, 120); a.detail = ''; a.missing = []; a.edited = true; a.editing = false;
+        ordersRender(); kioskAmbientSave(true);
+      }
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); a.editing = false; ordersRender(); }
+      });
+      ed.appendChild(input);
+      var save = make('button', 'mlsAvOrdGo', 'Save');
+      save.type = 'button';
+      save.addEventListener('click', commitEdit);
+      var cancel = make('button', 'mlsAvOrdEdit', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', function () { a.editing = false; ordersRender(); });
+      ed.appendChild(save); ed.appendChild(cancel);
+      card.appendChild(ed);
+      /* focus after the node is in the document, or the caret goes nowhere */
+      safe(function () { setTimeout(function () { safe(function () { input.focus(); input.select(); }); }, 0); });
+      return card;
+    }
+    var missing = a.missing || [];
+    if (missing.length) {
+      card.appendChild(make('div', 'mlsAvOrdMiss', 'Not stated: ' + ordersMissingText(a) + '. The avatar will not fill this in.'));
+    }
+    /* the ONE missing field a doctor can resolve in a single tap without
+       typing. Everything else routes to Edit, which puts the words in their
+       hands rather than inventing them. */
+    if (missing.indexOf('side') >= 0) {
+      var sideRow = make('div', 'mlsAvOrdSide');
+      ['left', 'right', 'bilateral'].forEach(function (side) {
+        var b = make('button', 'mlsAvOrdPick', side === 'bilateral' ? 'Both' : actTitleCase(side));
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          a.picked = side;
+          a.fields.side = side;
+          a.detail = (actTitleCase(side) + ' ' + (a.detail || '')).trim();
+          a.missing = missing.filter(function (k) { return k !== 'side'; });
+          ordersRender(); kioskAmbientSave(true);
+        });
+        sideRow.appendChild(b);
+      });
+      card.appendChild(sideRow);
+    }
+    var row = make('div', 'mlsAvOrdRow');
+    var confirm = make('button', 'mlsAvOrdGo', 'Confirm');
+    confirm.type = 'button';
+    if ((a.missing || []).length) {
+      confirm.disabled = true;
+      confirm.title = 'Missing: ' + ordersMissingText(a);
+    }
+    confirm.addEventListener('click', function () {
+      if ((a.missing || []).length) return;    /* the gate is enforced here too, not only by the attribute */
+      a.status = 'confirmed';
+      a.confirmedAt = Date.now();
+      ordersRender(); kioskAmbientSave(true);
+    });
+    var edit = make('button', 'mlsAvOrdEdit', 'Edit');
+    edit.type = 'button';
+    /* INLINE, never window.prompt. A native dialog blocks the whole renderer -
+       it would freeze the recording clock, the save badge and the microphone
+       loop behind a modal the doctor may be holding open in front of a
+       patient, and this app has already been wedged once by exactly that. */
+    edit.addEventListener('click', function () { a.editing = true; ordersRender(); });
+    var drop = make('button', 'mlsAvOrdNo', 'Dismiss');
+    drop.type = 'button';
+    drop.addEventListener('click', function () {
+      a.status = 'dismissed';
+      ordersRender(); kioskAmbientSave(true);
+    });
+    row.appendChild(confirm); row.appendChild(edit); row.appendChild(drop);
+    card.appendChild(row);
+    return card;
+  }
+  function ordersRender() {
+    var host = gid('mlsAvKioskOrders');
+    if (!host) return;
+    var list = (kiosk.ambActions || []).filter(function (a) { return a.status !== 'dismissed'; });
+    var counts = ordersCounts();
+    /* NOTHING to show means nothing on screen. The widget is not a permanent
+       panel competing with the patient for the doctor's attention - it
+       appears when there is something to confirm and leaves when there is
+       not. */
+    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    host.style.display = 'block';
+    host.innerHTML = '';
+    var head = make('div', 'mlsAvOrdHead');
+    head.appendChild(make('span', 'mlsAvOrdTitle', 'Proposed actions'));
+    var sub = counts.proposed
+      ? (counts.proposed + ' to confirm' + (counts.confirmed ? ' · ' + counts.confirmed + ' confirmed' : ''))
+      : (counts.confirmed + ' confirmed');
+    head.appendChild(make('span', 'mlsAvOrdCount', sub));
+    host.appendChild(head);
+    var body = make('div', 'mlsAvOrdList');
+    /* unconfirmed first: the thing that needs the doctor is the thing at the
+       top of the widget */
+    list.sort(function (x, y) {
+      if (x.status === y.status) return x.at - y.at;
+      return x.status === 'proposed' ? -1 : 1;
+    });
+    list.forEach(function (a) { body.appendChild(ordersCard(a)); });
+    host.appendChild(body);
+    host.appendChild(make('div', 'mlsAvOrdFoot', 'Nothing here is sent anywhere. Confirmed actions go into the visit note for you to place.'));
+  }
+  function ordersBlock() { return ordersBlockFrom(ordersConfirmed()); }
+  function ordersBlockFrom(confirmed) {
+    confirmed = (confirmed || []).filter(Boolean);
+    if (!confirmed.length) return '';
+    var lines = [AMBIENT_HEAD_ORDERS];
+    confirmed.forEach(function (a) {
+      lines.push('- [' + (ACT_KIND_LABEL[a.kind] || a.kind) + '] ' + a.title + (a.detail ? ' - ' + a.detail : '') +
+        '  (heard: "' + a.heard + '")');
+    });
+    lines.push('[These were confirmed on screen by the doctor during the visit. They have NOT been transmitted to any EMR.]');
+    return lines.join('\n');
+  }
   function kioskAmbientClear() {
-    ['ambCap', 'ambTick', 'ambRestart'].forEach(function (key) {
+    ['ambCap', 'ambTick', 'ambRestart', 'ambSaveTimer', 'ambFlushTimer', 'ambDetectTimer'].forEach(function (key) {
       if (kiosk[key]) { safe(function () { clearTimeout(kiosk[key]); }); kiosk[key] = null; }
     });
   }
@@ -2738,6 +3505,11 @@
     kiosk.ambLast = v;
     if (!kiosk.ambParts) kiosk.ambParts = [];
     kiosk.ambParts.push(v);
+    /* the two things that must happen for EVERY finalised sentence: it
+       reaches the crash backup, and it is offered to the action detector.
+       Both are cheap and neither can throw into the recogniser callback. */
+    safe(function () { kioskAmbientSave(false); });
+    safe(function () { ordersDetectSoon(v); });
   }
   function kioskAmbientPaint(interim) {
     var iv = gid('mlsAvKioskInterim');
@@ -2758,6 +3530,12 @@
   }
   function kioskAmbientRetry() {
     if (!kiosk.ambient) return;
+    if (kiosk.paused) return;         /* a restart while paused would reopen the mic behind the disclosure */
+    /* End Visit stops the recogniser ON PURPOSE and then waits for its
+       trailing final results. Without this the onend handler would read that
+       deliberate stop as a death and reopen the microphone underneath the
+       review screen - recording a room the doctor believes has stopped. */
+    if (kiosk.ambClosing) return;
     if (kiosk.ambRestart) { safe(function () { clearTimeout(kiosk.ambRestart); }); kiosk.ambRestart = null; }
     /* A recogniser that RAN for a while and then ended is Chrome's ordinary
        behaviour, not a failure - it ends itself about once a minute and on
@@ -2775,6 +3553,7 @@
   }
   function kioskAmbientListen() {
     if (!kiosk.ambient) return false;
+    if (kiosk.paused) return false;   /* paused means the microphone is CLOSED, not merely ignored */
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
     if (!C) { kioskAmbientNoMic(); return false; }
     var rec = safe(function () { return new C(); }, null);
@@ -2811,10 +3590,12 @@
     if (kiosk.intake.length > 400) return;    /* bounded - an interview is ~20 turns */
     kiosk.intake.push({ who: String(who || 'Avatar'), text: v });
   }
-  function kioskIntakeText() {
-    var rows = kiosk.intake || [], out = [];
+  function kioskIntakeText() { return intakeTextFrom(kiosk.intake); }
+  function intakeTextFrom(rows) {
+    rows = rows || [];
+    var out = [];
     if (!rows.length) return '(no check-in answers were recorded in this session)';
-    for (var i = 0; i < rows.length; i++) out.push(rows[i].who + ': ' + rows[i].text);
+    for (var i = 0; i < rows.length; i++) out.push(clean(rows[i] && rows[i].who) + ': ' + clean(rows[i] && rows[i].text));
     return out.join('\n');
   }
   function kioskAmbientBlock(body) {
@@ -2827,6 +3608,11 @@
     lines.push(AMBIENT_HEAD_VISIT);
     lines.push('[Room capture - the avatar listened in the room for ' + mins + ' min. One microphone, so speakers are not separated.]');
     lines.push(body);
+    /* Confirmed actions ride WITH the transcript, in the same write. Filing
+       them separately would mean a visit whose note and whose orders could
+       disagree about whether the write succeeded. */
+    var orders = ordersBlock();
+    if (orders) { lines.push(''); lines.push(orders); }
     return lines.join('\n');
   }
   function kioskAmbientFile() {
@@ -2852,7 +3638,72 @@
     box.value = prior + (prior ? '\n\n' : '') + block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
     kiosk.ambFiled = true;
+    /* THE BACKUP DIES ONLY ON A PROVEN WRITE. Every refusal above returns
+       before this line, so a capture that could not be filed (wrong chart
+       open, no transcript box on screen) keeps its crash copy and can still
+       be recovered on the next load. */
+    ambientStoreDrop();
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
+    return { ok: true, chars: block.length };
+  }
+  /* ---- RECOVERY. What the backup is FOR. A capture survives the page that
+     took it, so a reload mid-visit, a discarded tab or a crashed renderer
+     costs the doctor one click instead of the consultation. The write obeys
+     exactly the binding rule the live path obeys - the chart is compared at
+     WRITE time, and a mismatch refuses and says which chart the words belong
+     to rather than filing them somewhere plausible. ---------------------- */
+  function ambientRecoverInfo() {
+    var rec = ambientStoreRead();
+    if (!rec) return null;
+    /* A CAPTURE RUNNING IN THIS TAB IS NOT A RECOVERED ONE. The backup is
+       written continuously while the room is being recorded, so without this
+       the Visit card would offer "File the recovered visit" for a visit still
+       in progress - filing half a consultation and dropping the backup that
+       protects the other half. Recovery means the tab that took it is gone. */
+    if (kiosk.ambient === true && clean(rec.sid) && clean(rec.sid) === clean(kiosk.sid)) return null;
+    var body = (rec.parts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
+    if (!body) return null;
+    var start = Number(rec.start) || 0, saved = Number(rec.savedAt) || 0;
+    return {
+      bound: clean(rec.bound), body: body, chars: body.length,
+      words: body.split(/\s+/).filter(Boolean).length,
+      savedAt: saved, trimmed: rec.trimmed === true,
+      mins: (start && saved && saved > start) ? Math.max(1, Math.round((saved - start) / 60000)) : 0,
+      actions: Array.isArray(rec.actions) ? rec.actions : [],
+      intake: Array.isArray(rec.intake) ? rec.intake : []
+    };
+  }
+  function ambientRecoverFile() {
+    var info = ambientRecoverInfo();
+    if (!info) return { ok: false, why: 'there is no recovered visit waiting.' };
+    var now = activePtIdSafe();
+    if (!now) return { ok: false, why: 'no chart is open. The recovered visit belongs to chart ' + info.bound + '.' };
+    if (now !== info.bound) return { ok: false, why: 'the open chart (' + now + ') is not the one this recording belongs to (' + info.bound + ').' };
+    var box = gid('ez3flTranscript') || gid('ez3Transcript');
+    if (!box || typeof box.value !== 'string') return { ok: false, why: 'the visit transcript box is not on this screen — open the Visit recorder first.' };
+    var lines = [];
+    lines.push(AMBIENT_HEAD_CHECKIN);
+    lines.push('[Avatar check-in - the patient\'s own words, chart ' + info.bound + ']');
+    lines.push(intakeTextFrom(info.intake));
+    lines.push('');
+    lines.push(AMBIENT_HEAD_VISIT);
+    lines.push('[Room capture RECOVERED after this page reloaded' +
+      (info.trimmed ? ' - the backup had run out of room, so the EARLIEST part of this visit is missing' : '') +
+      '. One microphone, so speakers are not separated.]');
+    lines.push(info.body);
+    var orders = ordersBlockFrom(info.actions.filter(function (a) { return a && a.status === 'confirmed'; }));
+    if (orders) { lines.push(''); lines.push(orders); }
+    var block = lines.join('\n');
+    /* filing the same recovered capture twice would duplicate a whole visit
+       in the note - the body is its own idempotency key */
+    if (box.value.indexOf(info.body) >= 0) {
+      ambientStoreDrop();
+      return { ok: true, chars: 0, already: true };
+    }
+    var prior = box.value;
+    box.value = prior + (prior ? '\n\n' : '') + block;
+    safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
+    ambientStoreDrop();
     return { ok: true, chars: block.length };
   }
   function kioskAmbientStart() {
@@ -2878,6 +3729,9 @@
     kiosk.ambStart = Date.now();
     kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambFails = 0;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null;
+    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
+    kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
+    kiosk.ambSavedAt = 0;
     pvStopVoice();
     /* pvStopVoice deliberately LEAVES pvSaying set, so the last question would
        stay the echo template and the self-echo filter would silently eat real
@@ -2897,8 +3751,220 @@
        that rolled on would record the next patient in this room. */
     kiosk.ambCap = setTimeout(function () { kioskAmbientStop('cap'); }, AMBIENT_MAX_MS);
     kioskAmbientTick();
+    ordersRender();
+    /* Write the backup record BEFORE the first word. A capture that dies in
+       its first thirty seconds still leaves proof it existed, with the chart
+       it belonged to - the doctor learns that something was lost rather than
+       wondering whether it was ever running. */
+    kioskAmbientSave(true);
     kioskAmbientListen();
     return true;
+  }
+  /* ---- 3. END VISIT -----------------------------------------------------
+     The recogniser is stopped on purpose and then WAITED ON: Chrome delivers
+     any pending final result during stop(), and the last sentence of a visit
+     is often the plan. Ending without that wait would drop it. ---------- */
+  function kioskAmbientFlush(then) {
+    kiosk.ambClosing = true;
+    var rec = kiosk.ambRec;
+    /* handlers stay attached - the tail results still have to arrive. The
+       restart loop is disarmed by kiosk.ambClosing, not by unhooking. */
+    if (rec) safe(function () { rec.stop(); });
+    var waited = 0;
+    (function poll() {
+      waited += 120;
+      if (!kiosk.ambRec || waited >= 960) { safe(then); return; }
+      kiosk.ambFlushTimer = setTimeout(poll, 120);
+    })();
+  }
+  /* ---- MUTE / PAUSE -----------------------------------------------------
+     One control, both modes. During the INTERVIEW it silences the avatar and
+     closes the microphone; during ROOM CAPTURE it stops recording. In both,
+     the screen stops claiming to listen in the SAME action that closes the
+     microphone - "paused" and "the screen says paused" are one fact off one
+     class, exactly as the recording disclosure is.
+
+     A pause that kept recording, or a screen still reading "Recording this
+     visit" while paused, is the worst defect this file could ship: a patient
+     asked for privacy and was told they had it. What was already captured is
+     flushed to the backup BEFORE the microphone closes, so pausing can never
+     cost the words already spoken. ------------------------------------- */
+  function kioskPauseToggle() {
+    kiosk.paused = !kiosk.paused;
+    var root = gid('mlsAvKiosk'), btn = gid('mlsAvKioskMute'), recText = gid('mlsAvKioskRecText');
+    if (btn) {
+      btn.textContent = kiosk.paused ? '▶ Resume' : '⏸ Pause';
+      btn.setAttribute('aria-pressed', kiosk.paused ? 'true' : 'false');
+    }
+    if (root) { if (kiosk.paused) root.classList.add('paused'); else root.classList.remove('paused'); }
+    if (kiosk.paused) {
+      if (kiosk.ambient) kioskAmbientSave(true);   /* nothing already heard is lost by pausing */
+      pvStopVoice();                               /* stops the voice AND the microphone */
+      kiosk.ambRec = null;
+      if (recText) recText.textContent = 'PAUSED — not recording. Nothing is being captured right now.';
+      kioskSetSay(kiosk.ambient ? 'Paused. I am not listening or recording.' : 'Paused. I am not listening.');
+      return true;
+    }
+    if (recText) recText.textContent = AMBIENT_REC_TEXT;
+    if (kiosk.ambient) {
+      kioskSetSay('I am listening to the visit and taking notes for the doctor.');
+      kioskMood('listening', '');
+      kioskAmbientListen();
+    } else if (!kiosk.completed) {
+      kioskSetSay(kiosk.lastSay || '');
+      kioskListen();
+    }
+    return false;
+  }
+  function kioskEndVisit() {
+    if (!kiosk.ambient || kiosk.ambEnding) return;
+    kiosk.ambEnding = true;
+    var root = gid('mlsAvKiosk'); if (root) root.classList.add('saving');
+    kioskSetSay('Saving the visit…');
+    var iv = gid('mlsAvKioskInterim');
+    if (iv) iv.textContent = 'Finishing the recording and writing it to the transcript…';
+    kioskAmbientFlush(function () {
+      kioskAmbientSave(true);              /* the tail reaches the backup before the file attempt */
+      var res = kioskAmbientStop('end-visit');
+      if (root) root.classList.remove('saving');
+      kioskReviewShow(res);
+    });
+  }
+  /* THE REVIEW. It states what is true and nothing else: whether the words
+     reached the transcript, how much, what the doctor confirmed, and - said
+     plainly rather than left off - what was heard and never confirmed. */
+  function kioskReviewShow(res) {
+    var pane = gid('mlsAvKioskReview');
+    if (!pane) return;
+    var ok = !!(res && res.filed);
+    pane.innerHTML = '';
+    var card = make('div', 'mlsAvRevCard');
+    card.appendChild(make('div', 'mlsAvRevHead' + (ok ? ' ok' : ' bad'),
+      ok ? '✓ Saved to the visit transcript' : '⚠ Not saved'));
+    var mins = Math.max(1, Math.round((Date.now() - (kiosk.ambStart || Date.now())) / 60000));
+    card.appendChild(make('div', 'mlsAvRevLine', ok
+      ? (mins + ' min captured · ' + kioskAmbientWords() + ' words · ' + ((res && res.chars) || 0) + ' characters written to the transcript for chart ' + clean(kiosk.ambBound) + '.')
+      : ('Nothing was written: ' + ((res && res.why) || 'the capture could not be filed.'))));
+    if (!ok) {
+      card.appendChild(make('div', 'mlsAvRevWarn',
+        'The words are still held in this browser under chart ' + clean(kiosk.ambBound) +
+        '. Open that chart and use “File the recovered visit” on the Visit page - nothing has been thrown away.'));
+    }
+    if (kiosk.ambSaveOk === false) {
+      card.appendChild(make('div', 'mlsAvRevWarn', ok
+        ? 'Note: the crash backup could not be written while this visit ran (browser storage refused it). It did not matter this time - the transcript above saved normally.'
+        : 'The crash backup could not be written while this visit ran either, so these words exist only in this tab. Copy them somewhere before you reload.'));
+    } else if (kiosk.ambSaveTrim) {
+      card.appendChild(make('div', 'mlsAvRevWarn',
+        'The crash backup ran out of room and dropped its earliest sentences. The transcript above is complete; only the backup was trimmed.'));
+    }
+    var confirmed = ordersConfirmed();
+    var pending = (kiosk.ambActions || []).filter(function (a) { return a.status === 'proposed'; });
+    if (confirmed.length) {
+      card.appendChild(make('div', 'mlsAvRevSub', 'Confirmed and written into the note (place them in the EMR from the chart):'));
+      var ul = make('ul', 'mlsAvRevList');
+      confirmed.forEach(function (a) {
+        ul.appendChild(make('li', '', (ACT_KIND_LABEL[a.kind] || a.kind) + ': ' + a.title + (a.detail ? ' - ' + a.detail : '')));
+      });
+      card.appendChild(ul);
+    }
+    if (pending.length) {
+      card.appendChild(make('div', 'mlsAvRevSub bad', 'Heard but NOT confirmed - these were not ordered and are not in the note:'));
+      var ul2 = make('ul', 'mlsAvRevList bad');
+      pending.forEach(function (a) {
+        ul2.appendChild(make('li', '', (ACT_KIND_LABEL[a.kind] || a.kind) + ': ' + a.title +
+          ((a.missing || []).length ? '  (missing ' + ordersMissingText(a) + ')' : '')));
+      });
+      card.appendChild(ul2);
+    }
+    if (!confirmed.length && !pending.length) {
+      card.appendChild(make('div', 'mlsAvRevLine', 'No orders, prescriptions or referrals were recognised in this visit.'));
+    }
+    /* av-5.6.4 — THE DRAFT NOTE, STARTED HERE. The acceptance line is "End
+       Visit -> complete note and actions ready for review", and filing a
+       transcript is not a note. The app already owns note generation, so this
+       calls the SAME function the Generate button calls rather than growing a
+       second drafting path that could drift from it.
+       It reports honestly: drafting, ready, or failed-with-a-retry. It never
+       claims a note exists that does not, and it never blocks leaving — the
+       transcript is already saved by the time this starts. */
+    if (ok && isFn(window.generateNote)) {
+      var noteLine = make('div', 'mlsAvRevNote', '✍️ Drafting the note from this visit…');
+      card.appendChild(noteLine);
+      var runNote = function () {
+        noteLine.textContent = '✍️ Drafting the note from this visit…';
+        noteLine.className = 'mlsAvRevNote';
+        var done = false;
+        var settle = function (good, why) {
+          if (done) return;
+          done = true;
+          if (good) {
+            noteLine.textContent = '✓ Draft note ready on the Visit page.';
+            noteLine.className = 'mlsAvRevNote ok';
+            return;
+          }
+          noteLine.textContent = '⚠ The note was not drafted' + (why ? ' (' + why + ')' : '') +
+            '. The transcript IS saved — draft it from the Visit page.';
+          noteLine.className = 'mlsAvRevNote bad';
+          var retry = make('button', 'mlsAvRevMore', 'Try drafting again');
+          retry.type = 'button';
+          retry.addEventListener('click', function () {
+            if (retry.parentNode) retry.parentNode.removeChild(retry);
+            runNote();
+          });
+          noteLine.appendChild(document.createElement('br'));
+          noteLine.appendChild(retry);
+        };
+        /* a note box that gains content is the proof, whatever the function
+           returns — some versions resolve before the write lands */
+        var box = gid('noteBox');
+        var before = (box && typeof box.value === 'string') ? box.value.length : -1;
+        var out = safe(function () { return window.generateNote(); }, null);
+        if (out && isFn(out.then)) {
+          out.then(function () {
+            var b2 = gid('noteBox');
+            settle(!!(b2 && typeof b2.value === 'string' && b2.value.trim().length > 0));
+          }, function (e) { settle(false, String((e && e.message) || 'the drafter refused')); });
+        }
+        /* bounded fallback for the non-promise path: watch the box, give up
+           honestly rather than spinning forever */
+        var waited = 0;
+        (function watch() {
+          if (done) return;
+          var b3 = gid('noteBox');
+          var now = (b3 && typeof b3.value === 'string') ? b3.value.length : -1;
+          if (now > 0 && now !== before) { settle(true); return; }
+          waited += 500;
+          if (waited >= 45000) { settle(false, 'it took too long'); return; }
+          safe(function () { setTimeout(watch, 500); });
+        })();
+      };
+      safe(function () { setTimeout(runNote, 0); });
+    }
+    var row = make('div', 'mlsAvRevRow');
+    var back = make('button', 'mlsAvRevGo', 'Back to the chart');
+    back.type = 'button';
+    /* Ending the RECORDING needs no PIN - it is not a door into the app. The
+       door still has the same lock it always had. */
+    back.addEventListener('click', function () {
+      if (kiosk.pinSet === false) { kioskEndForStaff('ended'); return; }
+      pane.style.display = 'none';
+      kioskRequestEnd();
+    });
+    row.appendChild(back);
+    var again = make('button', 'mlsAvRevMore', 'Keep listening');
+    again.type = 'button';
+    again.addEventListener('click', function () {
+      pane.style.display = 'none';
+      /* a visit that is not over after all: a NEW capture, appended to the
+         same chart on its own file. The filed one is never re-filed. */
+      kiosk.ambEnding = false;
+      kioskAmbientStart();
+    });
+    row.appendChild(again);
+    card.appendChild(row);
+    pane.appendChild(card);
+    pane.style.display = 'flex';
   }
   function kioskAmbientStop(reason) {
     if (!kiosk.ambient) return null;
@@ -2949,6 +4015,10 @@
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.finishTries = 0; kiosk.heard = false;
+    /* undefined means "not resolved yet"; null means "resolved to nothing".
+       Both must reset, or the previous patient's chart block would ride into
+       the next interview. */
+    kiosk.chartCtx = undefined;
     /* kiosk.look and kiosk.nudgedFor already leak across interviews in this
        file. The recording state must never join them - it carries a
        patient's words, and a leak here is a cross-patient transcript. */
@@ -2956,6 +4026,11 @@
     kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = '';
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null; kiosk.ambFails = 0;
     kiosk.ambStart = 0; kiosk.ambRecAt = 0; kiosk.intake = []; kiosk.avName = '';
+    /* the proposed actions carry a patient's clinical plan and must leak
+       across interviews exactly as little as the transcript does */
+    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
+    kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false; kiosk.ambSavedAt = 0;
+    kiosk.paused = false;   /* a paused kiosk must never be inherited by the next patient */
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
@@ -2964,11 +4039,31 @@
       '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace"></div></div>' +
       '<div id="mlsAvKioskWave"><span></span><span></span><span></span><span></span><span></span></div>' +
       '<div id="mlsAvKioskName">One moment…</div>' +
+      /* av-5.6.3 - THE AI DISCLOSURE. This screen can wear the doctor's own
+         face (faceMode 'photo') and speak in a voice chosen to sound like
+         them. Without this line a patient has no way to know they are not
+         talking to their doctor - which is impersonation, not a feature.
+         Mounted with the kiosk and never removed, in BOTH the interview and
+         the room-capture modes, so it cannot be turned off by a state change.
+         The spoken half lives in the backend's INTERVIEW_SYSTEM rule 9: the
+         first thing it SAYS also identifies it. */
+      '<div id="mlsAvKioskAi">🤖 AI assistant — not the doctor. What you tell me goes to your care team.</div>' +
+      /* mute/pause: the patient stops being recorded the instant it is
+         pressed, and the screen says so. See kioskPauseToggle. */
+      '<button type="button" id="mlsAvKioskMute" aria-pressed="false">Pause</button>' +
       '<div id="mlsAvKioskSay">Getting ready…</div>' +
       '<div id="mlsAvKioskMic"><i></i>Listening — just talk, I\'ll know when you\'re finished</div>' +
       /* the PERMANENT recording disclosure - mounted with the kiosk, shown by
          the .ambient class alone, and never removed while capture runs */
-      '<div id="mlsAvKioskRec" role="status"><i aria-hidden="true"></i><span id="mlsAvKioskRecText">Recording this visit. The avatar is listening in the room and taking notes for the doctor.</span><b id="mlsAvKioskRecClock" aria-hidden="true">0:00</b></div>' +
+      '<div id="mlsAvKioskRec" role="status"><i aria-hidden="true"></i><span id="mlsAvKioskRecText">' + AMBIENT_REC_TEXT + '</span><b id="mlsAvKioskRecClock" aria-hidden="true">0:00</b><em id="mlsAvKioskSave" data-state="ok">Saved</em></div>' +
+      /* av-5.6.0: ONE control ends the visit. It ends the RECORDING and opens
+         the review - it is not a way into the app, so it carries no PIN; the
+         way back to the chart still does. */
+      '<button type="button" id="mlsAvKioskEndVisit">End visit &amp; review</button>' +
+      /* the orders widget mounts empty and stays invisible until something is
+         actually proposed - see ordersRender */
+      '<div id="mlsAvKioskOrders" role="region" aria-label="Proposed actions"></div>' +
+      '<div id="mlsAvKioskReview" role="dialog" aria-label="Visit review"></div>' +
       '<div id="mlsAvKioskInterim"></div>' +
       '<div id="mlsAvKioskProgress"></div>' +
       /* NO buttons for the patient — the conversation IS the interface. The
@@ -2988,6 +4083,8 @@
       '</div></div>';
     (document.body || document.documentElement).appendChild(root);
     root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskRequestEnd);
+    root.querySelector('#mlsAvKioskEndVisit').addEventListener('click', kioskEndVisit);
+    root.querySelector('#mlsAvKioskMute').addEventListener('click', kioskPauseToggle);
     root.querySelector('#mlsAvKioskPinGo').addEventListener('click', function () { kioskPinSubmit('end'); });
     root.querySelector('#mlsAvKioskPinAmb').addEventListener('click', function () { kioskPinSubmit('ambient'); });
     root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit('end'); } });
@@ -3019,6 +4116,13 @@
       if (el.requestFullscreen) { var p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function () {}); }
     });
     ttsEnsureCtx();
+    /* av-5.6.4 — the silence nudge is a CONSTANT string, so its audio can be
+       made now, while the doctor is still handing the screen over. When it is
+       needed the patient has already gone quiet and is waiting; paying a round
+       trip at that exact moment is the worst possible time to spend one. Costs
+       one request per interview and warms the TTS connection for the first
+       real question as a side effect. */
+    safe(function () { ttsFetchUrl(NUDGE_LINE, null); });
     /* mic permission FIRST (the doctor's click is the gesture, the doctor
        still holds the screen), then the conversation begins. */
     kioskMicPreflight(function () { kioskTurn(null, null); });
@@ -3100,7 +4204,9 @@
       }
     }
     /* Same content -> no rebuild (buttons keep their done/disabled states). */
-    var sig = (activeHit ? 'a' + activeHit.id : 'n') + '|' + total + '|' + activeId;
+    var pend = safe(function () { return ambientRecoverInfo(); }, null);
+    var sig = (activeHit ? 'a' + activeHit.id : 'n') + '|' + total + '|' + activeId +
+      '|' + (pend ? 'r' + pend.bound + ':' + pend.chars : 'r0');
     if (card.getAttribute('data-mls-av-sig') === sig) return;
     card.setAttribute('data-mls-av-sig', sig);
     card.innerHTML = '';
@@ -3128,6 +4234,82 @@
        to hijack the doctor's NEXT open. */
     if (!activeHit) head.appendChild(visitButton('Set up', false, function () { openSetupTab(); open(); }));
     card.appendChild(head);
+
+    /* av-5.6.0 - A ROOM CAPTURE SURVIVED THE PAGE. It is announced here, on
+       the screen the doctor is already looking at, with the chart it belongs
+       to named out loud. It is never filed automatically: this browser cannot
+       know whether the doctor already retyped the visit by hand. */
+    if (pend) {
+      var rec = make('div', '');
+      rec.style.cssText = 'margin-top:10px;padding:10px 12px;border:1px solid #d8c6bf;border-radius:10px;background:#FBF3F0';
+      var mine = pend.bound && activeId && pend.bound === activeId;
+      var when = pend.savedAt ? formatDate(new Date(pend.savedAt).toISOString()) : '';
+      var recLine = make('div', '', '🎙 A recorded visit was saved before this page reloaded' +
+        (pend.mins ? ' (' + pend.mins + ' min, ' : ' (') + pend.words + ' words)' +
+        (when ? ', last saved ' + when : '') + '.');
+      recLine.style.cssText = 'font:700 12.5px/1.5 system-ui;color:#7a1f16';
+      rec.appendChild(recLine);
+      var recSub = make('div', '', mine
+        ? 'It belongs to this chart. Nothing has been written yet.'
+        : 'It belongs to chart ' + pend.bound + ' — open that chart to file it. It will not be written anywhere else.');
+      recSub.style.cssText = 'font:500 12px/1.5 system-ui;color:#55605A;margin-top:3px';
+      rec.appendChild(recSub);
+      if (pend.trimmed) {
+        var trimLine = make('div', '', 'The backup ran out of room, so the earliest part of this visit is missing.');
+        trimLine.style.cssText = 'font:600 11.5px/1.45 system-ui;color:#7a1f16;margin-top:3px';
+        rec.appendChild(trimLine);
+      }
+      var recActions = make('div', 'mlsAvActions');
+      recActions.style.marginTop = '8px';
+      if (mine) {
+        recActions.appendChild(visitButton('File the recovered visit', true, function (b) {
+          var out = ambientRecoverFile();
+          if (out.ok) {
+            b.disabled = true; b.textContent = out.already ? 'Already in transcript ✓' : 'Filed ✓';
+            toast(out.already
+              ? 'That recovered visit was already in the transcript — nothing was written twice.'
+              : 'The recovered visit is in the transcript.');
+            safe(function () { ensureVisitCard(); });
+          } else toast('Not filed — ' + out.why);
+        }));
+      }
+      recActions.appendChild(visitButton('Copy it', false, function (b) {
+        var info = ambientRecoverInfo();
+        if (!info) { toast('There is no recovered visit waiting.'); return; }
+        safe(function () {
+          navigator.clipboard.writeText(info.body).then(function () {
+            b.textContent = 'Copied ✓';
+          }, function () { toast('Could not copy — select the text from the transcript instead.'); });
+        });
+      }));
+      /* Discard is DELIBERATE and says what it costs. Without it a capture
+         the doctor has already handled would sit here forever, and the one
+         thing worse than losing a visit is being nagged about a visit that
+         was never lost. */
+      /* TWO TAPS, no native dialog. window.confirm blocks the renderer, and
+         this button deletes a consultation - it needs a deliberate second
+         action, not a modal that can be dismissed by reflex. The button says
+         what it is about to destroy before it destroys it. */
+      recActions.appendChild(visitButton('Discard', false, function (b) {
+        if (b.getAttribute('data-armed') !== '1') {
+          b.setAttribute('data-armed', '1');
+          b.textContent = 'Delete ' + pend.words + ' words?';
+          b.style.color = '#7a1f16';
+          safe(function () {
+            setTimeout(function () {
+              if (!b || b.getAttribute('data-armed') !== '1') return;
+              b.removeAttribute('data-armed'); b.textContent = 'Discard'; b.style.color = '';
+            }, 6000);
+          });
+          return;
+        }
+        ambientStoreDrop();
+        toast('The recovered recording was deleted.');
+        safe(function () { ensureVisitCard(); });
+      }));
+      rec.appendChild(recActions);
+      card.appendChild(rec);
+    }
 
     if (activeHit) {
       /* THE REVIEW UI: the doctor sees the patient's key points right here,
@@ -3263,9 +4445,24 @@
         startedAt: kiosk.ambStart || null,
         capturedChars: (kiosk.ambParts || []).join(' ').length,
         filed: kiosk.ambFiled === true,
-        last: kiosk.ambResult || null
+        last: kiosk.ambResult || null,
+        /* av-5.6.0: the backup and the proposal queue are part of "how much it
+           holds" — a capture that is running but not backed up is a different
+           state from one that is, and QA must be able to tell them apart. */
+        backedUp: kiosk.ambSaveOk === null ? null : kiosk.ambSaveOk === true,
+        backupTrimmed: kiosk.ambSaveTrim === true,
+        actions: ambientActionsForStore()
       };
     },
+    /* av-5.6.0 diagnostics. detectActions is PURE — it reads its argument and
+       touches nothing — so a proposal set can be proven against any sentence
+       without a microphone, a kiosk or a patient. */
+    detectActions: function (sentence) { return detectActions(sentence); },
+    /* the recovered-capture surface: what survived a reload, and the same
+       fail-closed write the visit card calls. Reading never files. */
+    pendingCapture: function () { return ambientRecoverInfo(); },
+    fileRecoveredCapture: function () { return ambientRecoverFile(); },
+    discardRecoveredCapture: function () { ambientStoreDrop(); return true; },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,
