@@ -15441,7 +15441,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function healthOf(t) {
     /* honest heuristics -- never fabricates a success */
     var txt = S(t.text), len = txt.length;
-    var letters = (txt.match(/[A-Za-z]/g) || []).length;
+    /* b945 PERF: count without allocating. `txt.match(/[A-Za-z]/g)` builds an
+       array holding one single-character string per letter in the template -
+       on the owner's 96-template library that is roughly half a million throwaway
+       strings, and the op-note room calls healthOf for every template on every
+       rail rebuild, which happens after every repaint of the room. Same answer,
+       no garbage. */
+    var letters = 0;
+    for (var _c = 0; _c < len; _c++) {
+      var _cc = txt.charCodeAt(_c);
+      if ((_cc >= 65 && _cc <= 90) || (_cc >= 97 && _cc <= 122)) letters++;
+    }
     if (t.tpf && t.tpf.status === "ok") return { cls: "ok", label: "\u2713 re-processed " + new Date(t.tpf.at).toLocaleDateString() };
     if (t.tpf && t.tpf.status === "failed") return { cls: "bad", label: "\u2717 re-process failed" + (t.tpf.msg ? " \u2014 " + t.tpf.msg : "") };
     if (len < 200) return { cls: "warn", label: "\u26A0 very short (" + len + " chars) \u2014 likely a bad extraction; re-upload or re-process" };
@@ -15936,7 +15946,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
     if (rows.length > 40) {
       var goBig = false;
-      try { goBig = await window.mlsConfirm("Draft " + rows.length + " op notes? This runs one AI call per patient (roughly " + Math.ceil(rows.length * 8 / 60) + "\u2013" + Math.ceil(rows.length * 15 / 60) + " minutes). Drafts save to History only \u2014 nothing is sent to Athena. Continue?"); } catch (e) {}
+      /* b945: the estimate follows the runner. It still says one AI call per
+         patient - that is unchanged and worth stating - but the wall-clock
+         figure now divides by how many run at once, because quoting the old
+         serial minutes for a parallel run would be a number the doctor watches
+         and finds wrong. */
+      var _lanes = 1; try { if (window.__mlsOpNoteRowVerdicts === true) _lanes = 3; } catch (eLn) {}
+      try { goBig = await window.mlsConfirm("Draft " + rows.length + " op notes? This runs one AI call per patient, " + (_lanes > 1 ? _lanes + " at a time" : "one at a time") + " (roughly " + Math.ceil(rows.length * 8 / 60 / _lanes) + "\u2013" + Math.ceil(rows.length * 15 / 60 / _lanes) + " minutes). Drafts save to History only \u2014 nothing is sent to Athena. Continue?"); } catch (e) {}
       if (!goBig) return;
     }
     RUN.on = true; RUN.stop = false;
@@ -15966,7 +15982,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          an earlier patient can never be blamed on this row, then copy it onto
          the row when the draft comes back not-ok - the wrapper returns false
          instead of rejecting, so the catch below almost never fires. */
+      /* b945: also clear THIS ROW's stamp. Under the parallel runner below the
+         globals are shared, so they are cleared only to keep single-flight
+         behaviour byte-identical; the per-row fields are the ones that decide. */
       try { window.__mlsLastOpFidelityError = ""; window.__mlsLastOpErrorCode = ""; window.__mlsLastOpReconstructed = false; } catch (e0) {}
+      try { var rC = (window._opPrep || [])[idx]; if (rC) { delete rC._genPass; rC._genErr = ""; rC._genErrCode = ""; rC._reconstructed = false; } } catch (e0b) {}
       /* CAPTURE WHAT THE ROW ALREADY HAD, BEFORE SPENDING AN ATTEMPT ON IT.
          `row.gen` and `row.note` are STICKY: nothing clears them when a re-draft
          fails, and feat_mls_opnote_prep.js's adoptExistingDraft sets both from a
@@ -16012,15 +16032,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var noteNow = S(r && r.note).trim();
         var producedSomething = !!noteNow && (!hadGen || noteNow !== hadNote);
         var wrapperSaid = (drafted === true) ? true : (drafted === false ? false : null);
-        var fidelity = true;
-        try { if (typeof window.__mlsLastOpFidelityPass !== 'undefined') fidelity = !!window.__mlsLastOpFidelityPass; } catch (eFp) {}
-        var ok = !!(r && r.gen && noteNow && !S(window.__mlsLastOpFidelityError) && !S(window.__mlsLastOpErrorCode));
+        /* b945: THE THREE SIGNALS ARE READ FROM THE ROW WHEN THE ROW HAS THEM.
+           Every clause below used to read a window global, which is correct for
+           exactly one draft in flight and wrong for two. The base drafter now
+           stamps _genPass / _genErr / _genErrCode / _reconstructed on the row it
+           drafted (window.__mlsOpNoteRowVerdicts), so the verdict cannot be
+           reassigned to whichever patient happened to start last. When the
+           stamps are absent - an older shell, or a base this module does not
+           own - every read falls back to the global exactly as before, and the
+           runner also refuses to overlap anything (see PARALLEL below), so the
+           old single-flight semantics stay intact end to end. */
+        var perRow = !!(r && typeof r._genPass !== 'undefined');
+        var fidelity = true, lastErr = "", lastCode = "", wasReconstructed = false;
+        if (perRow) {
+          fidelity = !!r._genPass; lastErr = S(r._genErr); lastCode = S(r._genErrCode); wasReconstructed = !!r._reconstructed;
+        } else {
+          try { if (typeof window.__mlsLastOpFidelityPass !== 'undefined') fidelity = !!window.__mlsLastOpFidelityPass; } catch (eFp) {}
+          try { lastErr = S(window.__mlsLastOpFidelityError); lastCode = S(window.__mlsLastOpErrorCode); wasReconstructed = !!window.__mlsLastOpReconstructed; } catch (eFg) {}
+        }
+        var ok = !!(r && r.gen && noteNow && !lastErr && !lastCode);
         if (wrapperSaid === false) ok = false;
         else if (wrapperSaid === true) ok = ok && fidelity;
         else ok = ok && producedSomething;
         /* stamp reconstruction on the row while the marker is still this row's */
-        try { if (r && window.__mlsLastOpReconstructed) r._reconstructed = true; } catch (eRr) {}
-        if (!ok && r) { try { var w = S(window.__mlsLastOpFidelityError).replace(/^Error:\s*/, "").slice(0, 160); if (w) r._lastDraftErr = w; } catch (e1) {} }
+        try { if (r && wasReconstructed) r._reconstructed = true; } catch (eRr) {}
+        if (!ok && r) { try { var w = lastErr.replace(/^Error:\s*/, "").slice(0, 160); if (w) r._lastDraftErr = w; } catch (e1) {} }
         return ok;
       })["catch"](function (e) {
         /* keep the REAL reason for the ledger instead of a generic "failed twice" */
@@ -16028,9 +16064,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return false;
       });
     }
-    function step() {
-      if (RUN.stop || i >= total) return finish();
-      var idx = onlyIdx ? onlyIdx[i] : i, row = rows[idx];
+    /* b945 — A DAY'S DRAFTS NO LONGER QUEUE BEHIND EACH OTHER.
+       OWNER: "the op notes still draft pretty slowly and maybe could be drafted
+       all at once for a day". They could not be, and the reason was not the AI:
+       this runner drafted patient N+1 only after patient N's round trip had
+       fully returned, then waited another 350ms. On the owner's real 19-patient
+       Monday at ~9s per note that is about three and a half minutes of mostly
+       IDLE main thread - the tab sat waiting on one HTTP response at a time.
+
+       runOne() is what step() was, minus the "call myself next" tail: it draws
+       one row to a definite state and resolves. pump() below keeps up to
+       PARALLEL of them in flight. Nothing about how a single row is drafted,
+       retried, scored or reported has changed - the ledger paints the same
+       states, the same retry rule applies, and Stop still lands after the
+       patients already in flight.
+
+       WHY IT IS SAFE TO OVERLAP NOW, AND WAS NOT BEFORE. The verdict for a
+       draft used to live in window globals that the NEXT row cleared on entry,
+       so two in flight meant the ledger could credit or blame the wrong patient
+       - the exact class of defect this file's comments are full of. The base
+       drafter now stamps its verdict on the row it drafted; PARALLEL stays at 1
+       unless that capability is present, so an older shell keeps the old
+       strictly-serial behaviour rather than a subtly wrong fast one.
+       The generator's own single-flight guard is keyed per patient
+       (generationByPatient), so distinct rows never collide there either. */
+    var PARALLEL = 1;
+    try { if (window.__mlsOpNoteRowVerdicts === true) PARALLEL = 3; } catch (ePw) {}
+    function runOne(idx) {
+      var row = rows[idx];
       /* 2026-07-28: resolve the exact patient BEFORE spending an AI attempt.
          Tomorrow's roster rows often have no imported chart yet, and the base
          generator's identity refusal used to surface only as a generic
@@ -16040,9 +16101,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         try { pRes = window._opResolvePatient((row.appt && row.appt.name) || "", (row.appt && row.appt.dob) || "", row.patientId || ""); } catch (eIr) {}
         if (!pRes) {
           states[idx].st = "fail"; states[idx].msg = "patient not verified in MLS yet (chart not pulled, or DOB missing on the schedule row) \u2014 pull this patient's chart, then re-try";
-          failN++; i++;
-          paintLedger(states, i, total, headline());
-          return setTimeout(step, 60);
+          failN++;
+          return Promise.resolve();
         }
       }
       /* a hand-edited row arms a two-click discard confirm in the base drafter.
@@ -16050,9 +16110,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (row && row._confirmRedraft) {
         try { row._confirmRedraft = false; } catch (eCe) {}
         states[idx].st = "skip"; states[idx].msg = "skipped \u2014 your hand-edits were kept (use Draft on this card to overwrite them deliberately)";
-        skipN++; i++;
-        paintLedger(states, i, total, headline());
-        return setTimeout(step, 60);
+        skipN++;
+        return Promise.resolve();
       }
       /* 2026-07-30 \u2014 AUTO-MATCH NO LONGER GIVES UP, IT WARNS.
          OWNER: "fix up the auto match system where it doesnt give up if it cant
@@ -16089,12 +16148,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         states[idx].msg = tplList().length
           ? "no template could be matched \u2014 pick one on the card, then Draft it alone"
           : "no templates uploaded yet \u2014 add one in the Templates tab";
-        skipN++; i++;
-        paintLedger(states, i, total, headline());
-        return setTimeout(step, 60);
+        skipN++;
+        return Promise.resolve();
       }
       states[idx].st = "run"; paintLedger(states, i, total, headline());
-      tryRow(idx).then(function (ok1) {
+      return tryRow(idx).then(function (ok1) {
         if (ok1 === "edited") return "edited";
         if (ok1) return true;
         if (RUN.stop) return false;
@@ -16103,8 +16161,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            conflict, truncation and auth failures are deterministic - the old
            blind retry burned a second AI call to fail identically. */
         var code = "";
-        try { code = S(window.__mlsLastOpErrorCode); } catch (eCc) {}
+        /* b945: this row's own code, for the same reason the verdict is per-row
+           now - the global belongs to whichever draft touched it last. */
+        try { var rC2 = (window._opPrep || [])[idx]; code = S(rC2 && rC2._genErrCode) || S(window.__mlsLastOpErrorCode); } catch (eCc) {}
         if (code && !/^(NETWORK|TIMEOUT|HTTP_429|HTTP_5\d\d)$/.test(code)) return false;
+        /* A 429 is the one failure that says "you are asking too fast". Drop the
+           whole run to one at a time before the wait, so the retry and every
+           remaining patient go out single-file instead of re-colliding. */
+        if (code === "HTTP_429") PARALLEL = 1;
         return new Promise(function (res) { setTimeout(res, code === "HTTP_429" ? 15000 : 4000); }).then(function () { return tryRow(idx); });
       }).then(function (ok) {
         var r = (window._opPrep || [])[idx];
@@ -16179,12 +16243,41 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           states[idx].st = "fail"; states[idx].msg = why + " \u2014 re-try this one from its card";
         }
-        i++;
-        paintLedger(states, i, total, headline());
-        setTimeout(step, 350);
+        /* b945: the completed-count is bumped by settleOne(), once per row, for
+           EVERY path - including the pre-checks that used to bump it themselves.
+           Bumping here as well would double-count and run the bar past 100%. */
       });
     }
+    /* The pool. `i` stays what it always was - the number of rows that have
+       reached a definite state - so the headline and the progress bar read
+       exactly as before; `nextSlot` is the separate cursor into the work list.
+       Launches are greedy up to PARALLEL and a completion schedules the next
+       pump on the same 350ms courtesy delay the serial runner used, so a single
+       row (PARALLEL = 1, or a retry list of one) behaves identically. */
+    var nextSlot = 0, active = 0, finished = false;
+    function settleOne() {
+      active--; i++;
+      paintLedger(states, i, total, headline());
+      setTimeout(pump, 350);
+    }
+    function pump() {
+      if (finished) return;
+      if (RUN.stop || nextSlot >= total) { if (active === 0) finish(); return; }
+      while (active < PARALLEL && nextSlot < total && !RUN.stop) {
+        var slot = onlyIdx ? onlyIdx[nextSlot] : nextSlot;
+        nextSlot++;
+        active++;
+        (function (idx) {
+          var p;
+          try { p = runOne(idx); } catch (eR) { p = Promise.resolve(); }
+          Promise.resolve(p).then(settleOne, settleOne);
+        })(slot);
+      }
+      if (active === 0 && (RUN.stop || nextSlot >= total)) finish();
+    }
     function finish() {
+      if (finished) return;
+      finished = true;
       RUN.on = false;
       var el = $("opPrepStatus");
       var summary = (RUN.stop ? "\u23F9 Stopped: " : "\u2705 Done: ") + okN + " drafted \u00B7 " + failN + " failed \u00B7 " + skipN + " skipped of " + total + ".";
@@ -16206,7 +16299,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       logEvent("draft-all", "prep run", failN === 0, summary);
     }
-    step();
+    pump();
   }
 
   /* intercept the existing Draft-all button (capture phase beats its inline onclick) */
@@ -35137,7 +35230,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b944';
+  window.__MLS_AV = window.__MLS_AV || 'b945';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35480,7 +35573,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b944';
+  var MLS_APP_BUILD='2026-07-25-b945';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42736,7 +42829,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v=20260728p2c6';s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* cpw-1.0.0: Copilot app-wide senses (providerCoverage + capabilities in the snapshot), absolute wire cap on /api/copilot, and confirm-by-tap executors for pullProviders (via __mlsSI.dayPull, roster fail-closed) and draftNote (via openOpPrepForPatient). DEFERRED past first paint: the Copilot cannot receive a question before sign-in completes, so this module has no claim on the boot burst -- additive, reversible (window.__mlsCopilotPower.revert()) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v=20260807av565';s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v=20260807av566';s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260806chk3045';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260727uns4';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
@@ -44091,7 +44184,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_polish_everywhere.js";if(document.querySelector(String.fromCharCode(115,99,114,105,112,116)+"[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* pe-1.0.0: the app motion vocabulary applied to the surfaces the doctor lives in (.card, .ez3-card, .ez3-row2, .pt-item, every btn-*), not just Copilot. Revert: window.__mlsPolishEverywhere.revert() */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_magic.js";if(document.querySelector("script[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* mg-1.0.0: the MOMENTS - a note arriving, a completion drawing its own check, a stage advancing, waiting, the banner patient changing. Revert: window.__mlsMagic.revert() */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_voice_one.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_voice_one.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_visit_voice_one.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500});}catch(e){}})(); /* ONE in-visit voice control that EXPANDS to Copilot Voice / MLS Assistant / Dictate and never decides between them; inline, never floating. Deferred on requestIdleCallback, same as the cluster it replaces (window.__mlsVisitVoiceOne vo-1.0.0; revert(), describe()). */
-;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v=20260802onf2170';s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: one Fields workflow, account-scoped safe defaults, clinician-edit preservation, exact-patient chart fills (window.__mlsOpNoteFill onf-2.7.0; revert()) */
+;(function(){try{window.__mlsCanonicalOpNoteFillRequested=true;if(document.querySelector('script[data-mls-asset="feat_mls_opnote_fill.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_fill.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_fill.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note prep: one Fields workflow, account-scoped safe defaults, clinician-edit preservation, exact-patient chart fills (window.__mlsOpNoteFill onf-2.7.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_code_table.js"]'))return;var s=document.createElement('script');s.src='feat_mls_code_table.js?v=20260716ct110';s.setAttribute('data-mls-asset','feat_mls_code_table.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 2026-07-29: practice billing/ICD-CPT code-table upload + AI-best fallback (window.__mlsCodeTable ct-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_cal_cyclefix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_cal_cyclefix.js?v=20260712calfix1c1';s.setAttribute('data-mls-asset','feat_mls_cal_cyclefix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* calendar render cycle-breaker: fixes calNext/calPrev/day-nav Maximum-call-stack overflow from the calpro + caldedupe wrapper cycle (window.__mlsCalCycleFix calfix-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opmatch_boost.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opmatch_boost.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_opmatch_boost.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* op-note NEVER-ZERO auto-match: appointment reason -> patient HISTORY (visit type/CPT/plan/findings) -> practice default, so every scheduled patient gets a best-effort template instead of "0 have a template" (window.__mlsOpMatchBoost omb-1.0.0; revert()) */

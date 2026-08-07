@@ -1580,7 +1580,13 @@
            first. Flagged on window the same way this module already reports
            __mlsLastOpFidelityError / __mlsLastOpErrorCode, so the runner picks
            it up per row without a new plumbing path. */
+        /* b944: also ON THE RESULT. The window flag is read by the Draft-all
+           runner AFTER the await, and once two rows can draft at the same time
+           a global cannot say WHICH note was reconstructed. The result object
+           travels with its own note, so the row that receives it is the row
+           that gets the mark. The flag stays for existing readers. */
         try{ window.__mlsLastOpReconstructed=true; }catch(eRc){}
+        try{ repaired.reconstructed=true; }catch(eRc2){}
         repaired.note=fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure);check2=fidelity(repaired.note,tplForModel);}
       if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+12000+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     }
@@ -1605,6 +1611,9 @@
     return S(note);
   }
 
+  /* b944: how many op-note drafts are in flight right now. Owns the lifetime of
+     the drafting overlay, which is a single shared node. */
+  var _oniInflight=0;
   function copyCtx(ctx){var out={};ctx=ctx||{};for(var k in ctx)if(Object.prototype.hasOwnProperty.call(ctx,k)&&k!=='__mlsProgressHandle')out[k]=ctx[k];return out;}
   function generate(name,dateStr,procedure,tplText,ctx) {
     ctx=ctx||{};
@@ -1676,6 +1685,10 @@
           var __m=S(err&&err.message||''), __code=S(err&&err.code||'');
           if(!__code){ if(err&&err.name==='AbortError'){__code='TIMEOUT';} else if(/failed to fetch|networkerror|network error|load failed/i.test(__m)){__code='NETWORK';} else { var __h=/(?:^|[^\d])([45]\d\d)(?:[^\d]|$)/.exec(__m.slice(0,60)); if(__h)__code='HTTP_'+__h[1]; } }
           window.__mlsLastOpErrorCode=__code;
+          /* b944: the code belongs to THIS error too, so a concurrent runner can
+             decide "retry or not" from the rejection it actually caught rather
+             than from a global another patient may have just overwritten. */
+          try{ if(err&&!err.__mlsCode) err.__mlsCode=__code; }catch(e4){}
           if(__code==='TIMEOUT'&&!window.__mlsLastOpFidelityError)window.__mlsLastOpFidelityError='AI call timed out after 3 minutes - the AI service may be busy; a retry usually works.';
         }catch(e3){}
         try{ if(!window.__mlsLastOpFidelityError) window.__mlsLastOpFidelityError=S(err&&err.message||'').trim()||'Op-note generation failed.'; }catch(e2){}
@@ -1752,10 +1765,21 @@
       /* oni-2.13.0 loading screen: a visible drafting overlay for the whole
          generation. pointer-events:none — purely visual, so a hung generation
          can never wedge the UI behind it. */
+      /* b944: ONE OVERLAY FOR THE WHOLE RUN, NOT ONE PER ROW.
+         This used to remove any existing overlay and mount its own, then remove
+         that one in its `finally`. With drafts overlapping (Draft-all now runs
+         three at a time) whichever row finished FIRST tore down the overlay the
+         two still running were standing behind - the screen said "done" while
+         two notes were mid-flight. Counted instead: the first draft in mounts
+         it, the last one out takes it down, and a single draft behaves exactly
+         as before because the count goes 0 -> 1 -> 0. */
+      _oniInflight++;
       var loadEl=null;try{
-        var prior=document.getElementById('mlsOpDraftLoading');if(prior&&prior.parentNode)prior.parentNode.removeChild(prior);
+        var prior=document.getElementById('mlsOpDraftLoading');
+        if(prior&&_oniInflight<=1&&prior.parentNode)prior.parentNode.removeChild(prior);
+        else if(prior)loadEl=prior;
         var calmUi=window.__mlsLoadingCalm;
-        if(!(calmUi&&calmUi.installed)){
+        if(!loadEl&&!(calmUi&&calmUi.installed)){
         loadEl=document.createElement('div');loadEl.id='mlsOpDraftLoading';
         loadEl.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.28);pointer-events:none;';
         loadEl.innerHTML='<div style="background:#fff;color:#0f172a;border-radius:14px;padding:22px 30px;box-shadow:0 18px 50px rgba(2,6,23,.35);font:500 15px/1.5 system-ui,sans-serif;text-align:center;max-width:340px;"><div style="width:26px;height:26px;margin:0 auto 12px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:mlsOpSpin .8s linear infinite;"></div><div>Drafting op note…</div><div id="mlsOpDraftLoadingSub" style="margin-top:6px;font-size:12.5px;color:#64748b;"></div></div><style>@keyframes mlsOpSpin{to{transform:rotate(360deg)}}</style>';
@@ -1763,18 +1787,37 @@
         if(subEl)subEl.textContent=(S(row&&row.appt&&row.appt.name)||'This patient')+' — verifying template, history, and procedure facts';
         (document.body||document.documentElement).appendChild(loadEl);
         }
+        /* b944: when more than one is in flight the overlay must not name a
+           single patient - it would be standing in front of three drafts while
+           claiming to be one. Say how many. */
+        try{
+          var subNow=document.getElementById('mlsOpDraftLoadingSub');
+          if(subNow&&_oniInflight>1)subNow.textContent=_oniInflight+' op notes drafting — verifying templates, history, and procedure facts';
+        }catch(eSub){}
       }catch(eL){}
       var ok=false;
       try{
         await one(i);
-        ok=!!(row&&row.gen&&S(row.note).trim()&&window.__mlsLastOpFidelityPass);
+        /* b944: PREFER THE ROW'S OWN STAMP. The base drafter now records its
+           verdict on the row it drafted (window.__mlsOpNoteRowVerdicts), which
+           is the only reading that survives two drafts running at once - the
+           global is cleared by whichever row STARTS last, not by the row that
+           just finished. Falls back to the global when the stamp is absent, so
+           an older or differently-owned base behaves exactly as before. */
+        var perRow=(row&&typeof row._genPass!=='undefined')?!!row._genPass:!!window.__mlsLastOpFidelityPass;
+        ok=!!(row&&row.gen&&S(row.note).trim()&&perRow);
       } finally {
         try{if(busyBtn){busyBtn.disabled=false;if(busyBtn.dataset.mlsBusyLabel){busyBtn.textContent=busyBtn.dataset.mlsBusyLabel;delete busyBtn.dataset.mlsBusyLabel;}}}catch(eB2){}
-        try{if(loadEl&&loadEl.parentNode)loadEl.parentNode.removeChild(loadEl);}catch(eL2){}
+        _oniInflight=Math.max(0,_oniInflight-1);
+        try{if(_oniInflight===0){var live=document.getElementById('mlsOpDraftLoading');if(live&&live.parentNode)live.parentNode.removeChild(live);}}catch(eL2){}
       }
       /* remember WHICH template produced this draft, for the staleness guard */
       if(ok&&row){row._genTplId=S(row.tplId);syncTplStatus(i);}
-      if(!ok&&window.__mlsLastOpFidelityError)toast(window.__mlsLastOpFidelityError,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
+      /* b944: the row's own reason first, for the same reason as the verdict
+         above - a global message can belong to a different patient by the time
+         this line runs. */
+      var whyRow=S(row&&row._genErr).trim()||S(window.__mlsLastOpFidelityError).trim();
+      if(!ok&&whyRow)toast(whyRow,'err');return ok;};oneWrap.__oni=true;oneWrap.__opnpWrapped=true;oneWrap.__mlsOpTemplateOwner=true;window.opPrepGenerateOne=oneWrap;}
     var all=window.opPrepGenerateAll;
     /* ONE OWNER (matches ScribeFlow.html's opPrepGenerateAll): if mls-connect.js's
        richer draftAll (retry/backoff, low-confidence reroute, per-patient ledger)
