@@ -215,7 +215,7 @@
       var key = S(row.dateKey); if (!key) return false;
       var p = window._opResolvePatient(row.appt && row.appt.name, row.appt && row.appt.dob, row.patientId);
       if (!p || !trim(p.id)) return false;
-      var ns = window.getNotes() || [];
+      var ns = notesNow();
       for (var i = 0; i < ns.length; i++) {
         var n = ns[i];
         if (!n || n.isDraft) continue;
@@ -264,6 +264,20 @@
     return null;
   }
 
+  /* getNotes() is an UNMEMOIZED JSON.parse of the whole notes store
+     (ScribeFlow.html:9118), and triage asks for it up to twice per row -
+     existingOpNote and seenOnDay. triageAll() runs over every row on every
+     opPrepRender(), and a draft-all calls opPrepRender() once per drafted
+     patient, so an 18-row day was heading for ~650 full parses of the store on
+     the main thread. Parsed ONCE per triage pass instead; the cache lives only
+     for the duration of that pass, so a note saved mid-day is still seen by the
+     next one. */
+  var notesPass = null;
+  function notesNow() {
+    if (notesPass) return notesPass;
+    try { return (isFn(window.getNotes) ? window.getNotes() : []) || []; } catch (e) { return []; }
+  }
+
   /* An operative note already in the chart for this patient + this procedure.
      Same ownership rule the resume path uses (feat_mls_opnote_prep.js:341):
      kind 'opnote', matched by immutable patient id and procedure containment. */
@@ -274,7 +288,7 @@
         ? window._opResolvePatient(row.appt && row.appt.name, row.appt && row.appt.dob, row.patientId) : null;
       if (!p || !trim(p.id)) return null;
       var proc = trim(row.proc || (row.appt && row.appt.reason));
-      var ns = window.getNotes() || [], best = null;
+      var ns = notesNow(), best = null;
       for (var i = 0; i < ns.length; i++) {
         var n = ns[i];
         if (!n || S(n.patientId) !== S(p.id) || S(n.kind) !== 'opnote') continue;
@@ -328,11 +342,14 @@
 
   function triageAll() {
     var rows = window._opPrep || [], out = [];
-    for (var i = 0; i < rows.length; i++) {
-      var t = triage(rows[i]);
-      try { rows[i]._opdbTriage = t; } catch (e) {}
-      out.push(t);
-    }
+    try { notesPass = (isFn(window.getNotes) ? window.getNotes() : []) || []; } catch (e) { notesPass = []; }
+    try {
+      for (var i = 0; i < rows.length; i++) {
+        var t = triage(rows[i]);
+        try { rows[i]._opdbTriage = t; } catch (e2) {}
+        out.push(t);
+      }
+    } finally { notesPass = null; }
     return out;
   }
   function needsIndexes() {
