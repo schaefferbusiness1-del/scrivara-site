@@ -1765,6 +1765,44 @@ async function say(page, text) {
         ok('M1b page threw nothing', h.errors.length === 0, h.errors.join(' | '));
       }
 
+      /* --- M1c. NO ACCOUNT NAMESPACE, NO BACKUP. The key used to fall back to
+         an UNSCOPED name when window.uns was unavailable — fail-open with PHI.
+         On a shared clinic workstation the next clinician to sign in reads the
+         same slot, and the Visit card would offer them the previous doctor's
+         consultation to file. It must refuse to write, say so, and still lose
+         nothing at End Visit. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await page.evaluate(function () { try { delete window.uns; } catch (e) { window.uns = undefined; } });
+        await toAmbient(page);
+        await say(page, 'this visit has nowhere safe to be backed up');
+        const st = await page.evaluate(function () {
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf('mlsAvRoomCapture') >= 0) keys.push(k);
+          }
+          return { amb: window.__amb(), keys: keys };
+        });
+        ok('M1c nothing is written when the account namespace is unavailable',
+          st.keys.length === 0, st.keys.join(', '));
+        ok('M1c …and it says so rather than pretending it saved',
+          st.amb.backedUp === false, 'backedUp=' + st.amb.backedUp);
+        ok('M1c …while the capture itself is untouched in memory',
+          st.amb.capturedChars > 0, st.amb.capturedChars + ' chars');
+        /* the whole point: a missing backup is an inconvenience, not a loss */
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('M1c …and End Visit still writes the visit to the transcript',
+          box.indexOf('nowhere safe to be backed up') >= 0);
+        const rev = await page.evaluate(function () { return window.__review(); });
+        ok('M1c …and the review admits the backup never happened',
+          /crash backup could not be written/i.test(rev || ''), (rev || '').slice(0, 100));
+        ok('M1c page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
       /* --- M2. TWO TABS. The backup key is account-scoped, and a doctor
          having the app open twice is not exotic. If both tabs write the same
          key, one visit silently overwrites the other and the loser is gone

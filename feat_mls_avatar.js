@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.7.3';
+  var VERSION = 'av-5.7.4';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2987,16 +2987,23 @@
      change is recovered rather than stranded by the upgrade. */
   function ambientStoreKey(bound) {
     var suffix = clean(bound) ? ('::' + clean(bound)) : '';
-    return safe(function () {
-      return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY + suffix) || (AMBIENT_STORE_KEY + suffix))
-                              : (AMBIENT_STORE_KEY + suffix);
-    }, AMBIENT_STORE_KEY + suffix);
+    /* av-5.7.4 — NO NAMESPACE, NO BACKUP. This used to fall back to an
+       UNSCOPED key when window.uns was unavailable, which is fail-open with
+       PHI: on a shared clinic workstation the next clinician to sign in reads
+       the same slot, and the Visit card would offer them the previous doctor's
+       consultation to file. A missing backup is a recoverable inconvenience —
+       the capture is still in memory and still files at End Visit, and the
+       review says plainly that it was not backed up. A visit surfacing under
+       another clinician's account is not recoverable at all. */
+    if (!isFn(window.uns)) return '';
+    return safe(function () { return window.uns(AMBIENT_STORE_KEY + suffix) || ''; }, '');
   }
   /* every capture this account holds. The unsuffixed key is a PREFIX of every
      chart-scoped one, so one scan finds both the legacy slot and the new ones. */
   function ambientStoreScan() {
     return safe(function () {
       var prefix = ambientStoreKey('');
+      if (!prefix) return [];          /* unnamespaced: nothing was ever written */
       var out = [];
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
@@ -3024,7 +3031,9 @@
     return best;
   }
   function ambientStoreDrop(bound) {
-    safe(function () { localStorage.removeItem(ambientStoreKey(bound)); });
+    var k = ambientStoreKey(bound);
+    if (!k) return;
+    safe(function () { localStorage.removeItem(k); });
     /* a capture taken before the keys were chart-scoped lives at the bare key.
        If it belongs to THIS chart it must go too, or the doctor is offered the
        same filed visit forever. */
@@ -3038,6 +3047,8 @@
   }
   function ambientStoreWrite(rec) {
     var key = ambientStoreKey(rec.bound);
+    /* refuse rather than write where another clinician could read it */
+    if (!key) return { ok: false, why: 'no-account-namespace', trimmed: false };
     var parts = (rec.parts || []).slice();
     var trimmed = false;
     for (var guard = 0; guard < 40; guard++) {
