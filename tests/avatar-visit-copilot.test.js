@@ -716,6 +716,23 @@ assert(/isFn\(window\.generateNote\)/.test(source),
     'the chart the doctor is looking at must win over merely the newest');
 }
 
+/* 3p-quater. THE PREFETCH MUST USE THE SAME CACHE KEYS THE SPEAK PATH READS.
+   The first version of this optimisation was worth EXACTLY 0 ms and reported
+   nothing: it cached the whole line under one key while pvSpeakVoiced splits at
+   the first sentence boundary and looks up each half by its own text, so the
+   entry was never read. The split IS the cache key. Only the A/B measurement
+   caught it, and a silent no-op is the failure mode this pin exists for. */
+{
+  const pf = slice("if (clean(j.nextHint) && !j.done", 'kioskSetSay(kiosk.lastSay)', 'the prefetch');
+  assert(pf.includes('ttsSplitForSpeech(clean(j.nextHint))'),
+    'the prefetch must split the hint exactly as the speak path will, or it caches keys nobody reads');
+  assert(/for \(var hi = 0; hi < hintParts\.length; hi\+\+\) ttsFetchUrl\(hintParts\[hi\]/.test(pf),
+    'EVERY piece must be prefetched — caching only the first leaves the second on the critical path');
+  assert(pf.includes('!kiosk.ambient'),
+    'room capture never speaks, so it must never prefetch a voice');
+  assert(pf.includes('!j.done'), 'a finished interview has no next question to make');
+}
+
 /* 3p-ter. THE SEAM TO THE NOTE, EXECUTED.
    This module writes the visit into #ez3flTranscript and fires one input event.
    The note generator does NOT read that box — it reads #transcript. Between
