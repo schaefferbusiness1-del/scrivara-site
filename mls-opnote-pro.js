@@ -800,6 +800,47 @@
         if (unresolved.length) {
           var labels = unresolved.map(function (x) { return x.label || x.key; });
           var shown = labels.slice(0, 6).join(', ') + (labels.length > 6 ? (' +' + (labels.length - 6) + ' more') : '');
+          /* 2026-08-07 — MEASURED BY QA ON THE OWNER'S LIVE ACCOUNT: every op-note
+             PDF export is blocked, and filling every blank in the NOTE changes
+             nothing. His `npi` and `facilityName` settings are empty, so
+             attestNote's footer emits [[provider_npi]] and [[facility_name]]
+             rather than inventing them (correct), and this gate then refuses on
+             them. Deterministic, nothing to do with templates, and it means no
+             op note on his account can become a PDF at all.
+
+             THE GATE IS RIGHT AND IS NOT WEAKENED HERE. An operative note
+             leaving the app without an NPI is exactly what it should refuse.
+             What was wrong is that it says "Fill them in" for a field that is
+             NOT IN THE NOTE - the doctor hunts the note text for something that
+             lives in Settings, and every blank he fills leaves the count
+             unchanged. Same "honest refusal, wrong location" class as the
+             op-note identity message.
+
+             A practice-level field is also a different KIND of missing: a note
+             blank is per-note, an NPI is once-ever. They are counted and named
+             separately so "2 unresolved fields" can never appear on a note
+             where he has resolved everything a note can resolve. */
+          var PRACTICE_RE = /\b(?:npi|facility|practice|clinic|provider[_ ]?name|address|tax[_ ]?id|ptan)\b/i;
+          var practice = [], noteLevel = [];
+          unresolved.forEach(function (x) {
+            var lab = String((x && (x.label || x.key)) || '');
+            (PRACTICE_RE.test(lab) ? practice : noteLevel).push(lab);
+          });
+          if (practice.length && !noteLevel.length) {
+            safe(function () {
+              toast('This note is finished — but your practice details are not. Set ' + practice.slice(0, 4).join(' and ') +
+                ' in Settings, then export. Nothing in the note itself is missing.', 'warn');
+            });
+            return;
+          }
+          if (practice.length) {
+            safe(function () {
+              toast('Not exported: ' + noteLevel.length + ' field' + (noteLevel.length === 1 ? '' : 's') + ' still blank in the note (' +
+                noteLevel.slice(0, 4).join(', ') + '), and ' + practice.slice(0, 3).join(' and ') + ' ' +
+                (practice.length === 1 ? 'is' : 'are') + ' not set in Settings.', 'warn');
+            });
+            return;
+          }
           safe(function () { toast('This op note is still a draft — ' + unresolved.length + ' unresolved field' + (unresolved.length === 1 ? '' : 's') + ' (' + shown + '). Fill them in before exporting a PDF.', 'err'); });
           return;
         }

@@ -106,12 +106,12 @@ for (const name of TRANCHE) {
 
 /* 2026-07-29: Procedure Report snapshots RVU values on first mount, so its
  * deferred loader must wait for the RVU script or reach a bounded fallback. */
-const procedureLoaderLine = connect.split(/\r?\n/).find((line) => line.includes("s.src='mls-procedure-report.js?v=20260802lib6'"));
+const procedureLoaderLine = connect.split(/\r?\n/).find((line) => line.includes("s.src='mls-procedure-report.js?v=20260807lib7'"));
 assert(procedureLoaderLine && procedureLoaderLine.includes('function waitForRvu(tries)') &&
   procedureLoaderLine.includes('window.__mlsRVU||tries>=30') &&
   procedureLoaderLine.includes('setTimeout(function(){waitForRvu(tries+1);},100)'),
   'Procedure Report can race RVU and freeze fallback totals into its first render');
-assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260802lib6/g) || []).length, 1,
+assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260807lib7/g) || []).length, 1,
   'Procedure Report must retain one bounded production loader');
 
 /* Patient rows now emit the exact final last-seen label themselves. Keeping
