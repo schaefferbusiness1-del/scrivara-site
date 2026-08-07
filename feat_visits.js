@@ -903,6 +903,40 @@
     return lines.join('\n').slice(0, 9000);
   }
 
+  /* WHOSE HISTORY IS THIS? — the stored receipt could not answer that.
+     ---------------------------------------------------------------------
+     The pull-time path verifies identity properly (identityVerified, an
+     identityBinding to a patient id, _athenaHistoryProofMatches on name+DOB,
+     exactIdentityVerified on the receipt) — but NONE of it survived into what
+     is persisted. historyImportReceipt recorded completeness and counts, never
+     WHOSE chart it was, so from stored data alone nobody could audit whether a
+     patient's history belongs to them.
+
+     Found 2026-08-06 while answering the owner's "make sure the extension
+     actually pulls the right history". An audit of 260 records from the
+     2026-06-24→06-29 cross-contamination window could only demonstrate
+     NON-COLLAPSE — that no two patients share a history — which is strictly
+     weaker than proof of correct attribution: a defect that gave each patient a
+     DIFFERENT wrong history would be invisible to every check available on the
+     stored record.
+
+     The profile receipt already does this right (athenaProfileCoverage carries
+     patientId, and the merge above refuses a snapshot whose patientId is not
+     this record's). This brings the history receipt to the same standard.
+
+     The fingerprint is over the identity AS IT WAS AT IMPORT, so a record whose
+     name/DOB is later re-identified — the chimera-upsert class — no longer
+     matches its own history receipt, and that disagreement is detectable rather
+     than silent. It is a non-cryptographic digest of fields already stored in
+     plain text on the same record; it adds no PHI. */
+  function _identityFingerprint(p) {
+    var basis = (trim(p && p.name) + '|' + trim(p && p.dob)).toLowerCase().replace(/[^a-z0-9|]/g, '');
+    if (basis === '|') return '';
+    var h = 0;
+    for (var i = 0; i < basis.length; i++) { h = ((h << 5) - h + basis.charCodeAt(i)) | 0; }
+    return 'idfp-' + (h >>> 0).toString(36);
+  }
+
   function organizePatientHistory(patientId) {
     var p = _findPatient(patientId);
     if (!p) return { ok: false, reason: 'no-patient' };
@@ -963,7 +997,9 @@
         verifiedVisits: visits.length,
         excludedUnverified: excluded,
         semanticCoverage: semanticCoverage,
-        organizedAt: new Date().toISOString()
+        organizedAt: new Date().toISOString(),
+        patientId: trim(p.id),
+        identityFingerprint: _identityFingerprint(p)
       };
       if(profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
         p.athenaProfileCoverage=Object.assign({},profileReceipt,{semanticComplete:false,semanticCoverage:semanticCoverage});
@@ -1028,7 +1064,9 @@
       verifiedVisits: visits.length,
       excludedUnverified: excluded,
       semanticCoverage: semanticCoverage,
-      organizedAt: new Date().toISOString()
+      organizedAt: new Date().toISOString(),
+      patientId: trim(p.id),
+      identityFingerprint: _identityFingerprint(p)
     };
     _upsert(p);
     return {
