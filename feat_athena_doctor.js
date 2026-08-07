@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.1.0)
+ *  window.__mlsAthenaDoctor (v1.1.1)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -38,7 +38,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -308,6 +308,16 @@
       '#' + BTN_ID + '[data-mls-athena-read="failed"]:hover{background:#9a3412;}' +
       '#' + BTN_ID + '[data-mls-athena-read="failed"]::after{content:"";position:absolute;top:50%;right:9px;' +
       'margin-top:-3px;width:6px;height:6px;border-radius:50%;background:#fbbf24;}' +
+      /* v1.1.1 — the surface that is actually RENDERED. feat_mls_topbar_unify
+         hides the button above unconditionally and moves Troubleshoot Athena
+         into the ☰ Menu dropdown, so without this rule the indicator is
+         invisible in normal use (QA measured display:none, 0x0).
+         A DOT ONLY, never the amber fill: Menu carries Ask, Templates, Settings
+         and Log out too, and must not read as an Athena alarm. Inline-block and
+         margin only — no position, no size change to their button beyond the
+         dot itself, because this is another lane's control. */
+      '#mlsTbMenuBtn[data-mls-athena-read="failed"]::after{content:"";display:inline-block;width:6px;height:6px;' +
+      'border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle;}' +
       // success / failure toast
       '#' + TOAST_ID + '{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:2147483602;' +
       'max-width:min(560px,92vw);padding:11px 16px;border-radius:11px;font-size:14px;font-weight:700;color:#fff;' +
@@ -463,17 +473,81 @@
      this module, so a batch cannot raise or erase the doctor's own signal. */
   var _readFailed = false;
 
-  function paintReadState() {
+  /* v1.1.1 — QA, on the owner's live browser: the indicator was landing on a
+     button with computed display:none, 0x0, offsetParent null.
+
+     feat_mls_topbar_unify.js:117 lists #mlsAthenaDoctorBtn in MENU_ITEMS and
+     :326 adds .mlsTbHidden ({display:none !important}) to every one of them,
+     UNCONDITIONALLY, at install. The floating Troubleshoot button has not been
+     visible since that module shipped; its affordance now lives as a row inside
+     the "☰ Menu" dropdown, and the only rendered entry point is that menu
+     button. So v1.1.0 was the b749 class exactly — present, correct, and
+     UNREACHABLE — and QA was right that it nullified the feature.
+
+     The indicator therefore paints EVERY surface that owns the affordance, and
+     the module resolves them at paint time rather than assuming one:
+       - #mlsAthenaDoctorBtn   still painted; visible only when topbar_unify is
+                               absent or reverted, harmless when hidden.
+       - #mlsTbMenuBtn         the rendered surface today. A dot only, never the
+                               amber fill: Menu is a general control and must
+                               not read as an Athena alarm.
+     If a third surface ever owns it, add it here — do not assume the first one
+     in the list is showing.
+
+     WHY IT STASHES. These are other lanes' nodes. aria-label and data-tip are
+     saved into data-mlsdoc-* on the way up and restored EXACTLY on the way
+     down, so clearing can never invent a label the host did not have.
+
+     WHY data-tip AND title. QA found the stale tooltip that survived a good
+     read: this app has a universal data-tip tooltip layer, and a native title
+     gets mirrored into it, so removing only `title` left "The last Athena read
+     did not complete" hovering over a control after a perfectly good read — a
+     false alarm produced by the fix for silence. Both channels are written and
+     both are cleared. */
+  var TIP_TEXT = 'The last Athena read did not complete. Open to see why.';
+  var ARIA_SUFFIX = ' — the last Athena read did not complete';
+  var ARIA_STASH = 'data-mlsdoc-aria0';
+  var TIP_STASH = 'data-mlsdoc-tip0';
+
+  function readSurfaces() {
+    var out = [];
     var b = document.getElementById(BTN_ID);
-    if (!b) return;
-    if (_readFailed) {
-      b.setAttribute('data-mls-athena-read', 'failed');
-      b.setAttribute('aria-label', 'Troubleshoot the MLS Assist Athena connection — the last Athena read did not complete');
-      b.setAttribute('title', 'The last Athena read did not complete. Open to see why.');
-    } else {
-      b.removeAttribute('data-mls-athena-read');
-      b.setAttribute('aria-label', 'Troubleshoot the MLS Assist Athena connection');
-      b.removeAttribute('title');
+    if (b) out.push(b);
+    var menu = document.getElementById('mlsTbMenuBtn');   // feat_mls_topbar_unify.js
+    if (menu) out.push(menu);
+    return out;
+  }
+
+  function raiseOn(el) {
+    if (el.getAttribute('data-mls-athena-read') === 'failed') return;   // already up; never double-stash
+    el.setAttribute(ARIA_STASH, el.getAttribute('aria-label') || '');
+    el.setAttribute(TIP_STASH, el.getAttribute('data-tip') || '');
+    var base = el.getAttribute('aria-label') || (el.id === BTN_ID ? 'Troubleshoot the MLS Assist Athena connection' : 'Menu');
+    el.setAttribute('aria-label', base + ARIA_SUFFIX);
+    el.setAttribute('data-tip', TIP_TEXT);
+    el.setAttribute('title', TIP_TEXT);
+    el.setAttribute('data-mls-athena-read', 'failed');
+  }
+
+  function clearOn(el) {
+    /* getAttribute only, never hasAttribute: these run against host nodes and
+       against three different test harnesses, and the sibling ownership suite's
+       fake element has no hasAttribute. Narrower API, same semantics. */
+    if (el.getAttribute('data-mls-athena-read') === null && el.getAttribute(ARIA_STASH) === null) return;
+    var aria0 = el.getAttribute(ARIA_STASH);
+    var tip0 = el.getAttribute(TIP_STASH);
+    if (aria0) el.setAttribute('aria-label', aria0); else el.removeAttribute('aria-label');
+    if (tip0) el.setAttribute('data-tip', tip0); else el.removeAttribute('data-tip');
+    el.removeAttribute('title');
+    el.removeAttribute(ARIA_STASH);
+    el.removeAttribute(TIP_STASH);
+    el.removeAttribute('data-mls-athena-read');
+  }
+
+  function paintReadState() {
+    var els = readSurfaces();
+    for (var i = 0; i < els.length; i++) {
+      if (_readFailed) raiseOn(els[i]); else clearOn(els[i]);
     }
   }
 
@@ -756,6 +830,13 @@
         if (!document.getElementById(BTN_ID)) ensureButton();
         var dot = document.getElementById('mlsAthenaStatusDot');
         if (dot && !dot.__mlsDoctorWired) ensureButton();
+        /* v1.1.1 — the ☰ Menu button is another module's node and mounts on its
+           own schedule, which may be after a read has already failed. Re-paint
+           only when a surface is genuinely out of sync, so this stays a no-op on
+           the overwhelming majority of mutations and cannot loop: raiseOn and
+           clearOn both return early when the surface already matches. */
+        var menu = document.getElementById('mlsTbMenuBtn');
+        if (menu && (menu.getAttribute('data-mls-athena-read') === 'failed') !== _readFailed) paintReadState();
       });
       try { _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
     }

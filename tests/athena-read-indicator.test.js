@@ -114,7 +114,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.1.0');
+assert.strictEqual(api.version, '1.1.1');
 
 const dispatch = (data) => api._onResultMessage({ data });
 const btn = () => document.getElementById('mlsAthenaDoctorBtn');
@@ -192,5 +192,80 @@ assert.strictEqual(state(), 'sentinel', 'the state reader is not observing the r
 dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-ok-2', ok: true, results: [{}] });
 assert.strictEqual(state(), null, 'a successful read did not overwrite a foreign value on the indicator attribute');
 
-console.log('PASS Athena read indicator: both failure paths raise it, any successful read (including zero-result) clears it, ' +
-  'it survives re-mount, background traffic never moves it, 0 failure bars throughout, and the reader is negative-controlled');
+/* =========================================================================
+ * v1.1.1 — THE TWO DEFECTS QA FOUND ON THE OWNER'S LIVE BROWSER
+ *
+ * DEFECT 1, and it nullified the whole feature: the indicator was landing on a
+ * button with computed display:none, 0x0, offsetParent null. Not conditional —
+ * feat_mls_topbar_unify.js:117 lists #mlsAthenaDoctorBtn in MENU_ITEMS and :326
+ * adds .mlsTbHidden {display:none !important} to every one of them at install.
+ * The floating Troubleshoot button has not been visible since that module
+ * shipped; the rendered entry point is the "☰ Menu" button it creates. v1.1.0
+ * was therefore present, correct and UNREACHABLE — a perfect indicator on a
+ * control the doctor cannot see, which is the same silence he asked us to fix,
+ * one layer down.
+ *
+ * DEFECT 2: a good read cleared data-mls-athena-read and the aria-label but left
+ * the tooltip saying "The last Athena read did not complete". The app mirrors a
+ * native title into its universal data-tip layer, so clearing only `title` left
+ * a permanent false alarm — produced by the fix for silence.
+ *
+ * Everything below fails against v1.1.0.
+ * ====================================================================== */
+const menuBtn = element('button');
+menuBtn.id = 'mlsTbMenuBtn';
+menuBtn.setAttribute('data-tip', 'Open the menu');   // a pre-existing tooltip that MUST come back
+body.appendChild(menuBtn);
+observerCallback();                                   // the surface appeared after boot
+
+const menuState = () => menuBtn.getAttribute('data-mls-athena-read');
+const tip = (el) => el.getAttribute('data-tip');
+
+/* DEFECT 1 — the rendered surface must carry the state, not only the hidden one. */
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-vis-1', ok: false, reason: 'no-form' });
+assert.strictEqual(menuState(), 'failed',
+  'DEFECT 1: the ☰ Menu button carries no state. #mlsAthenaDoctorBtn is display:none under feat_mls_topbar_unify, so the indicator is invisible in normal use');
+assert.strictEqual(state(), 'failed', 'the original control stopped being painted — it is the surface when topbar_unify is absent or reverted');
+assert(/did not complete/.test(menuBtn.getAttribute('aria-label') || ''),
+  'the Menu surface is dot-only — colour and shape must never be the only channel');
+assert.strictEqual(tip(menuBtn), 'The last Athena read did not complete. Open to see why.',
+  'the Menu surface has no hover explanation');
+
+/* DEFECT 2 — the tooltip must clear, on BOTH surfaces, and restore EXACTLY. */
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-vis-2', ok: true, results: [{}] });
+assert.strictEqual(menuState(), null, 'the Menu surface kept the failed state after a good read');
+assert(!/did not complete/.test(tip(menuBtn) || ''),
+  'DEFECT 2: a good read left the tooltip claiming the last read failed — a permanent false alarm on a control the doctor hovers');
+assert.strictEqual(tip(menuBtn), 'Open the menu',
+  'the host tooltip was not restored EXACTLY — this is another lane\'s node and clearing must never invent or destroy its text');
+assert.strictEqual(menuBtn.getAttribute('aria-label'), null,
+  'an aria-label was invented on a button that never had one');
+assert(!/did not complete/.test(btn().getAttribute('data-tip') || ''), 'the original control kept a stale data-tip');
+assert.strictEqual(btn().getAttribute('title'), null, 'the original control kept a stale native title');
+
+/* THE STASH-POISONING PATH, and it took a mutation test to find that the
+   obvious version of this check was vacuous. A repeated FAILURE cannot reach
+   the paint at all — setReadState returns early when the state is unchanged —
+   so dispatching two failures proves nothing about double-stashing.
+
+   The path that DOES re-raise an already-raised element is the re-mount: the
+   observer re-creates #mlsAthenaDoctorBtn and repaints every surface, and the
+   ☰ Menu button is NOT re-created, so it gets a second raiseOn while already
+   carrying the failure text. Without the early return in raiseOn, that second
+   pass stashes "The last Athena read did not complete" AS the host's original
+   tooltip, and the real one is gone for the rest of the session. */
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-vis-3', ok: false, reason: 'no-tab' });
+assert.strictEqual(menuState(), 'failed', 'setup: the failure did not raise the Menu surface');
+body.removeChild(btn());
+observerCallback();                      // re-mount + repaint, with the Menu already raised
+assert(btn(), 'the re-mount did not restore the original control');
+assert.strictEqual(menuState(), 'failed', 'the re-mount dropped the Menu surface state');
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-vis-5', ok: true, visits: [{}] });
+assert.strictEqual(tip(menuBtn), 'Open the menu',
+  'STASH POISONED: a repaint while already raised saved the failure text as the host tooltip, so the real one is unrecoverable');
+assert.strictEqual(menuState(), null, 'the second cycle did not clear');
+
+console.log('PASS Athena read indicator: both failure paths raise it on every RENDERED surface (the ☰ Menu button, since ' +
+  'feat_mls_topbar_unify hides the original), any successful read including zero-result clears it, tooltip and aria-label ' +
+  'restore exactly and survive repeat cycles, it survives re-mount, background traffic never moves it, 0 failure bars ' +
+  'throughout, and the reader is negative-controlled');
