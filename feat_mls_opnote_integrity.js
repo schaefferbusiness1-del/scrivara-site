@@ -1320,15 +1320,46 @@
        invalid": a guard that fails closed for a good reason and then names the
        wrong one is only half a guard. Each branch now says what it means, and
        the two recoverable ones say what to DO. */
+    /* 2026-08-06 — SECOND PASS, and the first one was wrong in a NEW way.
+       b933 split this gate's one catch-all message into three. Splitting was
+       right; two of the three descriptions were not. I wrote them from the
+       symptom QA reported ("the wrong patient is open") instead of from what
+       exactPatient(:611) actually verifies, and then shipped messages naming a
+       condition the code never tests. Fixing a misleading message by inventing
+       two more is the same defect wearing a fresh label.
+
+       WHAT IS ACTUALLY CHECKED. exactPatient takes name, dob and patientId off
+       the REQUEST, never off the screen:
+         - with an id: it loads that chart and returns null if the name or dob
+           on the request disagree with it
+         - without an id: it resolves name+dob and returns null unless EXACTLY
+           one chart matches
+       So this gate is about the REQUEST BEING SELF-CONSISTENT, not about which
+       chart the doctor is looking at. QA measured exactly that: with a fully
+       specified ctx none of the three fire, and the note drafts.
+
+       THAT ALSO ANSWERS THEIR SAFETY QUESTION, and the answer is that nothing
+       changed. The three conditions and their order are byte-for-byte the
+       original `if(!p||!id||p.id!==id)`. There was never a "draft only for the
+       patient on screen" property here to remove - the athena-follow moving
+       his active patient never reached this guard at all. The over-strictness
+       they hit was their harness passing a stale ctx, not this gate.
+
+       The third branch is DEFENSIVE REDUNDANCY and is expected to be
+       unreachable: when an id is supplied, exactPatient returns the chart with
+       that id or null, so p.id can only equal it. Kept, because "expected
+       unreachable" is a claim about today's implementation of a function this
+       one does not own - and labelled, so nobody spends an evening trying to
+       trigger it as QA nearly did. */
     var p=exactPatient(name,ctx.dob,ctx.patientId);
     if(!p){
-      var ie0=new Error('Op-note generation stopped: no chart matches this patient\'s name and date of birth.');ie0.code='MLS_OPNOTE_IDENTITY';throw ie0;
+      var ie0=new Error('Op-note generation stopped: the name and date of birth on this request do not match one chart'+(S(ctx.patientId).trim()?' with that patient id':'')+'. Re-open the patient from the schedule and try again.');ie0.code='MLS_OPNOTE_IDENTITY';throw ie0;
     }
     if(!S(ctx.patientId).trim()){
-      var ie1=new Error('Op-note generation stopped: open the patient\'s chart first — a note is only drafted for a patient the app has open.');ie1.code='MLS_OPNOTE_IDENTITY';throw ie1;
+      var ie1=new Error('Op-note generation stopped: this request carried no patient id, so the chart could not be pinned to one patient. Re-open the patient from the schedule and try again.');ie1.code='MLS_OPNOTE_IDENTITY';throw ie1;
     }
     if(S(p.id)!==S(ctx.patientId)){
-      var ie2=new Error('Op-note generation stopped: this note is for '+(S(p.name)||'another patient')+', but a different patient is open. Open that patient first — op notes draft for the patient currently open.');ie2.code='MLS_OPNOTE_IDENTITY';throw ie2;
+      var ie2=new Error('Op-note generation stopped: the patient id on this request does not match the chart its name and date of birth resolve to. Nothing was drafted.');ie2.code='MLS_OPNOTE_IDENTITY';throw ie2;
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
