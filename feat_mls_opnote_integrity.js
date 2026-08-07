@@ -1492,6 +1492,16 @@
          The implementations stay single-sourced in ScribeFlow.html and are
          called by name, so `String(window._genOpNote)` names them and the gate
          can assert on the INSTALLED function rather than on a file. */
+      /* THE TWO GUARDS ARE NOT THE SAME KIND OF GUARD. Do not flatten them.
+           _opGuardProcedureDate REPAIRS - it inserts the date, because the date
+             is a value we were GIVEN. Inserting it invents nothing.
+           _opGuardDrugBlanks REFUSES - it only re-blanks and re-asks, because a
+             dose was NEVER given to us. If it were ever "helpfully" upgraded to
+             fill in what it thinks the drug should be, it would become the
+             inventor it exists to stop.
+         Given -> may write. Not given -> may only ask. That sentence is the
+         whole distinction, and it is the kind a tidying refactor erases because
+         the two calls sit on adjacent lines and look symmetrical. */
       try{
         if(typeof window._opGuardProcedureDate==='function')result=window._opGuardProcedureDate(dateStr,result);
         if(typeof window._opGuardDrugBlanks==='function')result=window._opGuardDrugBlanks(tplText,result);

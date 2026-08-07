@@ -164,6 +164,23 @@ const novel = 'Brand New Procedure 2027\nInject [STEROID DOSE] of [ANESTHETIC].'
 assert.strictEqual(_opDrugPlaceholdersIn(novel).length, 2,
   'a template added tomorrow carrying [STEROID DOSE] is not covered — the guard must key off tokens, never a list of 3 known template names');
 
+
+/* ── SHADOW GATE (QA, 2026-08-06) ──────────────────────────────────────────
+   Everything above tests the IMPLEMENTATION. It cannot tell shipped from
+   shadowed, and that distinction cost two builds of a patient-safety fix:
+   b925 and b927 both put their guard in ScribeFlow.html's _genOpNote, which
+   feat_mls_opnote_integrity.js replaces at load. Suite green, doctor still
+   told "80 mg triamcinolone".
+   So this file also refuses to pass unless the guard is wired into the
+   generator that actually runs. The full contract lives in
+   tests/opnote-guards-run-in-the-installed-generator.test.js; this is the
+   tripwire, here so that anyone reading THIS suite alone is stopped too. */
+const _integrity = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
+assert(/window\._genOpNote\s*=/.test(_integrity),
+  'feat_mls_opnote_integrity.js no longer installs _genOpNote — re-aim this check at whatever owns the generator now');
+assert(_integrity.includes('window._opGuardDrugBlanks('),
+  'the INSTALLED generator does not call _opGuardDrugBlanks. A definition in ScribeFlow.html is overwritten at load, so this suite would be green while every draft went unguarded — the exact live b926 defect.');
+
 console.log('PASS op-note drug blanks are never invented: 4 drug-class fields recognised and 3 prose fields left inferable, ' +
   'the verbatim live defect (1% lidocaine / 0.25% bupivacaine / 80 mg triamcinolone) is re-blanked and re-prompted, ' +
   'all 3 at-risk templates covered by token not by name, a compliant draft and the 93 clean templates are untouched, ' +
