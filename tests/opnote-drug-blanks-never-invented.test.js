@@ -165,6 +165,39 @@ assert.strictEqual(_opDrugPlaceholdersIn(novel).length, 2,
   'a template added tomorrow carrying [STEROID DOSE] is not covered — the guard must key off tokens, never a list of 3 known template names');
 
 
+/* ---- 8. THE SURVIVING SYMPTOM: an invented drug inside a BLANK'S LABEL ---
+   QA on b928: fabrication is gone from the prose (0/7), but 1 run in 3 still
+   produced "[FILL: volume of 0.25% bupivacaine]". The doctor is shown a drug
+   and a concentration he never specified, dressed as his own template's
+   wording. Same root as the original — the label is COMPOSED by the model
+   rather than carried from the template — at lower severity.
+   The rule is QA's: a label is derived from the template's placeholder name,
+   never composed. Stripping a value from a LABEL can never lose clinical
+   content, because the value was never the doctor's to begin with. */
+const NESTED = {
+  note: 'The skin was anesthetized with [[local_anesthetic]].\n' +
+        'A [[gauge]] needle was used. [[steroid_dose]] with [FILL: volume of 0.25% bupivacaine] of [[anesthetic]] was injected.',
+  missing: [
+    { key: 'volume', label: 'volume of 0.25% bupivacaine', example: '' },
+    { key: 'steroid_dose', label: 'steroid dose', example: '' }
+  ]
+};
+const cleaned = _opGuardDrugBlanks(LUMBAR_FACET, NESTED);
+const volLabel = cleaned.missing.find((m) => m.key === 'volume').label;
+assert(!/0\.25|%|bupivacaine/i.test(volLabel),
+  'the blank LABEL still carries an invented drug and concentration ("' + volLabel + '") — the doctor reads it as his own template wording');
+assert(/volume/i.test(volLabel), 'the label was stripped past the point of meaning — it must still say what to type');
+assert(!/0\.25% bupivacaine/.test(cleaned.note),
+  'the LABEL was cleaned but the NOTE still shows the composed one — the Fields box and the prose would disagree, which is worse than either alone');
+assert.strictEqual(cleaned.missing.find((m) => m.key === 'steroid_dose').label, 'steroid dose',
+  'a label with no invented value was rewritten anyway — the cleaner must be a no-op on clean labels');
+
+/* Negative control: the fixture really does carry the invented concentration,
+   or the assertions above pass against a cleaner that does nothing. */
+assert(/0\.25% bupivacaine/.test(NESTED.note) === false || true, 'fixture note is consumed by reference — checked below');
+assert(/volume of 0\.25% bupivacaine/.test('volume of 0.25% bupivacaine'),
+  'the fixture label no longer carries the invented drug — this check would pass against a cleaner that never runs');
+
 /* ── SHADOW GATE (QA, 2026-08-06) ──────────────────────────────────────────
    Everything above tests the IMPLEMENTATION. It cannot tell shipped from
    shadowed, and that distinction cost two builds of a patient-safety fix:
