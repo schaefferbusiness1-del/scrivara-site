@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  xcodebuild -exportArchive reads this. __TEAM_ID__ is substituted by
+  .github/workflows/mobile-ios.yml from the IOS_TEAM_ID secret, so the Team ID
+  is never committed.
+
+  method app-store-connect  = an upload-ready .ipa. Use `development` or
+  `ad-hoc` only for a build going onto a device by hand.
+
+  uploadSymbols true sends dSYMs so a crash report names a function instead of
+  a hex address. There is no third-party crash reporter in this app, so
+  Xcode Organizer is the only place a crash will ever be readable.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>__TEAM_ID__</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>destination</key>
+	<string>export</string>
+</dict>
+</plist>

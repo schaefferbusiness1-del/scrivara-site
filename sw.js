@@ -36,6 +36,7 @@ const PUBLIC_HTML_PATHS = new Set([
   'index.html',
   'intake.html',
   'lawyers.html',
+  'app.html',
   'patient-portal.html',
   'phone.html',
   'privacy.html',
@@ -177,6 +178,12 @@ const STATIC_SHELL_PATHS = new Set(SHELL.map((entry) => normalizedPath(entry)));
  * service worker cannot see). Their navigations are therefore network-only
  * even when the visible request URL has no query string. */
 const NETWORK_ONLY_HTML_PATHS = new Set([
+  /* app.html renders a patient's chart. A cached copy of it is not a risk in
+     itself (the page holds no data — every patient it shows arrives over the
+     API at runtime), but a stale shell is: the app the doctor launches must be
+     the one currently deployed, and this page is also the source the two store
+     binaries are built from. Never serve it from a cache. */
+  '/app.html',
   '/appointment.html',
   '/best-doctors-optout.html',
   '/booking.html',

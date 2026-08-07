@@ -43,6 +43,14 @@ exclude:
   # working tree. It only stops GitHub Pages serving them to the public.
   - "coordination/"
   - "extension-candidates/"
+  # 2026-07-31 — the native app projects. mobile/ holds the Capacitor wrapper,
+  # the generated Android and Xcode projects, the icon/splash sources and the
+  # store paperwork. NONE of it is a website asset: the shipped app is
+  # app.html, which is on the include allowlist below and is what mobile/
+  # bundles. Without this line Jekyll copies ~130 files of Gradle config, Java,
+  # Swift, a gradle-wrapper.jar and every generated launcher icon onto
+  # mlsscribe.com, and the generated-tree audit flags all of it as unreviewed.
+  - "mobile/"
   - "*.md"
   - "**/*.md"
   # Repository-level copyright notice. It governs the source tree, not the
@@ -143,6 +151,15 @@ include:
   # are the install manifest and the production ScribeFlow UI module it loads.
   - "phone-manifest.json"
   - "feat_mls_force_full_phone.js"
+
+  # The phone app (2026-07-31). app.html is self-contained — no external script,
+  # no stylesheet, no font — so this is its COMPLETE published surface: the page,
+  # its install manifest, and the two store-size icons that manifest names. The
+  # same app.html is what mobile/ bundles into the iOS and Android binaries.
+  - "app.html"
+  - "app-manifest.json"
+  - "app-icon-1024.png"
+  - "app-icon-maskable-1024.png"
 
   # Fail-closed, memory-only public synthetic preview boundary and its
   # canonical-workspace fixture runtime. Both are inert outside ?preview=1.

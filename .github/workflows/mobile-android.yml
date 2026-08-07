@@ -1,0 +1,129 @@
+
+# Builds the Play Store upload artifact (an .aab) from app.html.
+#
+# Runs on demand only. A store upload is a deliberate act, not something that
+# should happen because someone pushed to a branch.
+#
+# WITHOUT the signing secrets this still runs and produces an UNSIGNED bundle —
+# useful for checking the build compiles, useless for uploading. With them it
+# produces the exact artifact Play Console accepts.
+#
+# Secrets required for a signed build (Settings → Secrets → Actions):
+#   ANDROID_KEYSTORE_BASE64   base64 of your upload keystore (.jks)
+#                             `base64 -w0 upload-keystore.jks`
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+#
+# See mobile/store/RUNBOOK.md for how to create the keystore, and read the
+# warning there about what losing it costs.
+
+name: Build Android app bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      versionCode:
+        description: 'Android versionCode (must be higher than the last upload; blank = use mobile/app.config.json)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Bump versionCode
+        if: inputs.versionCode != ''
+        working-directory: mobile
+        run: |
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('app.config.json','utf8'));
+            c.androidVersionCode = Number('${{ inputs.versionCode }}');
+            if (!Number.isInteger(c.androidVersionCode) || c.androidVersionCode < 1) {
+              throw new Error('versionCode must be a positive integer');
+            }
+            fs.writeFileSync('app.config.json', JSON.stringify(c, null, 2) + '\n');
+            console.log('versionCode -> ' + c.androidVersionCode);
+          "
+
+      - name: Install
+        working-directory: mobile
+        run: npm install --no-audit --no-fund
+
+      # The app is app.html. This is where it becomes the bundle's index.html,
+      # and it is the ONLY place that copy is made.
+      - name: Build web assets
+        working-directory: mobile
+        run: npm run build
+
+      - name: Prove the bundle is the reviewed page
+        run: node tests/phone-app-www-build-is-faithful.test.js
+
+      - name: Add + sync the Android project
+        working-directory: mobile
+        run: |
+          if [ ! -d android ]; then npx cap add android; fi
+          npx cap sync android
+          node scripts/configure-native.mjs
+
+      - name: Install signing key
+        id: signing
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        working-directory: mobile/android
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > upload.jks
+          cat > keystore.properties <<EOF
+          storeFile=upload.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build release bundle
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon bundleRelease
+
+      # Say plainly which of the two artifacts this is. An unsigned bundle that
+      # is mistaken for a signed one wastes a Play Console upload attempt and a
+      # release-day hour.
+      - name: Report what was built
+        working-directory: mobile/android
+        run: |
+          ls -la app/build/outputs/bundle/release/
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            echo "::notice::SIGNED release bundle — ready to upload to Play Console."
+          else
+            echo "::warning::UNSIGNED bundle. Play Console will reject it. Add the four ANDROID_* secrets to get a signed one."
+          fi
+
+      - name: Remove signing material from the runner
+        if: always()
+        working-directory: mobile/android
+        run: rm -f upload.jks keystore.properties
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrivara-android-${{ github.sha }}
+          path: mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 14

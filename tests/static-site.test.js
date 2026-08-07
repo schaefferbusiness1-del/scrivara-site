@@ -8,12 +8,24 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const skipDirs = new Set(['.git', 'node_modules', 'tests']);
 
+/* Capacitor COPIES mobile/www into each native project on `cap sync`, so these
+   two directories are generated duplicates of a file this suite already checks
+   at its source (mobile/www/index.html, itself built from app.html and diffed
+   against it by phone-app-www-build-is-faithful.test.js). Both are gitignored
+   and absent from a fresh clone. Walking them would make an unrelated suite
+   fail whenever a local checkout's sync is stale, and would report the same
+   defect three times when it is not. */
+const skipPaths = new Set([
+  path.join(root, 'mobile', 'android', 'app', 'src', 'main', 'assets', 'public'),
+  path.join(root, 'mobile', 'ios', 'App', 'App', 'public'),
+]);
+
 function walk(dir, out = []) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     if (ent.name.startsWith('.') && ent.name !== '.well-known') continue;
     const full = path.join(dir, ent.name);
     if (ent.isDirectory()) {
-      if (!skipDirs.has(ent.name)) walk(full, out);
+      if (!skipDirs.has(ent.name) && !skipPaths.has(full)) walk(full, out);
     } else out.push(full);
   }
   return out;
