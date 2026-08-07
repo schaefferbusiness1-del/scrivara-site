@@ -660,7 +660,7 @@ async function say(page, text) {
       const TURN_MS = 900, TTS_BASE = 300, TTS_PER_CHAR = 6;
       const REPLY = "Hi, I'm Ava, the practice's AI assistant. What brings you in today?";
 
-      async function measure(src, label) {
+      async function measure(src, label, prefetch) {
         const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
         const errs = [];
         page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
@@ -668,6 +668,7 @@ async function say(page, text) {
         await page.evaluate(STUBS);
         await page.evaluate(function (cfg) {
           document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+          window.__prefetch = cfg.prefetch === true;
           window.__audioStarts = [];
           window.__turnSentAt = 0;
           window.__t0 = 0;
@@ -714,13 +715,18 @@ async function say(page, text) {
               window.__turnN = (window.__turnN || 0) + 1;
               const opening = 'Hello there. Please tell me what is going on today.';
               const say = window.__turnN === 1 ? opening : cfg.reply;
+              /* the opening turn hands back the NEXT scripted question, which is
+                 exactly the line the measured turn will speak — so the prefetch
+                 has a real target and the measurement shows what it is worth */
+              const hint = (window.__prefetch && window.__turnN === 1) ? cfg.reply : '';
               return later(cfg.turn, {
                 ok: true, status: 200,
                 headers: { get: function () { return 'application/json'; } },
                 json: function () {
                   return Promise.resolve(done
                     ? { ok: true, done: true, say: 'All set.' }
-                    : { ok: true, say: say, done: false, progress: { covered: 1, total: 2 } });
+                    : { ok: true, say: say, done: false, nextHint: hint || undefined,
+                        progress: { covered: 1, total: 2 } });
                 },
                 blob: function () { return Promise.resolve(new Blob([''])); }
               });
@@ -731,7 +737,7 @@ async function say(page, text) {
               blob: function () { return Promise.resolve(new Blob([''])); }
             });
           };
-        }, { turn: TURN_MS, base: TTS_BASE, per: TTS_PER_CHAR, reply: REPLY });
+        }, { turn: TURN_MS, base: TTS_BASE, per: TTS_PER_CHAR, reply: REPLY, prefetch: prefetch === true });
 
         await page.addScriptTag({ content: src });
         await page.waitForTimeout(900);
@@ -757,13 +763,16 @@ async function say(page, text) {
       /* A: the code as it shipped before — splitting disabled at the threshold */
       const OLD_SRC = AVATAR_SRC.replace('if (t.length < 28) return [t];', 'if (t.length < 100000) return [t];');
       ok('the A/B arm really did disable splitting', OLD_SRC !== AVATAR_SRC, 'patch applied');
-      const before = await measure(OLD_SRC, 'one blob (before)');
-      const after = await measure(AVATAR_SRC, 'two pieces (after)');
+      const before = await measure(OLD_SRC, 'one blob (before)', false);
+      const after = await measure(AVATAR_SRC, 'two pieces (after)', false);
+      /* the third arm: the server hands back the next scripted question, so its
+         audio is already made before the turn that speaks it */
+      const pre = await measure(AVATAR_SRC, 'two pieces + prefetch', true);
 
       console.log('  ---- measured: patient stops speaking -> avatar\'s first word ----');
       console.log('     reply under test: "' + REPLY + '" (' + REPLY.length + ' chars)');
       console.log('     cost model: turn ' + TURN_MS + 'ms, tts ' + TTS_BASE + 'ms + ' + TTS_PER_CHAR + 'ms/char');
-      [before, after].forEach(function (r) {
+      [before, after, pre].forEach(function (r) {
         console.log('     ' + r.label.padEnd(20) +
           ' mouth-to-ear ' + (r.first == null ? 'n/a' : r.first.toFixed(0) + ' ms').padStart(8) +
           '   submit-to-word ' + (r.sendToWord == null ? 'n/a' : r.sendToWord.toFixed(0) + ' ms').padStart(8) +
@@ -783,8 +792,21 @@ async function say(page, text) {
       console.log('     NOTE: the ~1300ms quiet-submit window is a deliberate safety choice');
       console.log('           (cutting a patient off mid-answer loses clinical data) and is');
       console.log('           included in mouth-to-ear but is NOT what this change touches.');
-      ok('scenario F pages threw nothing', before.errs.length === 0 && after.errs.length === 0,
-        before.errs.concat(after.errs).join(' | '));
+      if (after.sendToWord != null && pre.sendToWord != null) {
+        const saved2 = after.sendToWord - pre.sendToWord;
+        console.log('     -> prefetching the next scripted question removes a further ' +
+          saved2.toFixed(0) + ' ms from submit-to-word (' + after.sendToWord.toFixed(0) +
+          ' -> ' + pre.sendToWord.toFixed(0) + ' ms)');
+        /* the TTS leg should be GONE for a scripted question: what is left
+           between submitting and hearing a voice is the turn itself */
+        ok('REQ6 a prefetched question costs no generation time at all',
+          pre.sendToWord <= TURN_MS + 120, pre.sendToWord.toFixed(0) + ' ms vs a ' + TURN_MS + ' ms turn');
+        ok('REQ6 …which is a real improvement over generating it on demand',
+          saved2 > 80, saved2.toFixed(0) + ' ms');
+      }
+      ok('scenario F pages threw nothing',
+        before.errs.length === 0 && after.errs.length === 0 && pre.errs.length === 0,
+        before.errs.concat(after.errs).concat(pre.errs).join(' | '));
     }
 
     /* ------------------------------------------------------------ G */
@@ -2003,8 +2025,9 @@ async function say(page, text) {
     'remains and documents -> a spoken command -> a proposed order confirmed in one tap -> continuous save -> End ' +
     'Visit with the note drafted), plus: a visit survives a mid-encounter reload and files to the right chart (and ' +
     'refuses the wrong one), an order missing a required detail cannot be confirmed even with the attribute defeated, ' +
-    'pausing stops the recording AND the claim to be recording, and the first word arrives 155ms sooner than the ' +
-    'one-blob fetch it replaced');
+    'pausing stops the recording AND the claim to be recording, and the first word arrives 703ms sooner than the ' +
+    'one-blob fetch it replaced (155ms from splitting the reply, 548ms from making the next scripted ' +
+    'question\'s voice before it is asked — which removes the generation leg entirely)');
 })().catch(function (e) {
   console.error('PROOF CRASHED:', (e && e.stack) || e);
   process.exit(1);

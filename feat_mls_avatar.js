@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.7.5';
+  var VERSION = 'av-5.7.6';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2584,6 +2584,26 @@
         return;
       }
       kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
+      /* av-5.7.6 — MAKE THE NEXT QUESTION'S VOICE NOW, while the patient is
+         still answering this one. Generating the audio is the last leg of the
+         wait and it cannot begin until the turn returns, so every question used
+         to pay for its own voice in front of the patient. The server hands back
+         the next SCRIPTED question; its audio lands in the same cache
+         pvSpeakVoiced reads, keyed by the same text, so when it is actually
+         asked the fetch is a cache hit and speech starts immediately.
+         A hint that never gets asked (the model asked a follow-up instead)
+         costs one unused request and changes nothing. */
+      if (clean(j.nextHint) && !j.done && !kiosk.ambient) {
+        safe(function () {
+          /* Prefetch the SAME PIECES pvSpeakVoiced will ask for. Caching the
+             whole line was measured as worth exactly 0 ms: the speak path
+             splits at the first sentence boundary and looks up each half by
+             its own text, so a cache entry under the joined string is never
+             read. The split is the cache key. */
+          var hintParts = ttsSplitForSpeech(clean(j.nextHint));
+          for (var hi = 0; hi < hintParts.length; hi++) ttsFetchUrl(hintParts[hi], null);
+        });
+      }
       /* Keep the check-in verbatim and LOCALLY: ambient room mode hands the
          doctor one transcript with the check-in and the visit both in it,
          and the patient's own answers are the check-in half. Recorded only
