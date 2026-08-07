@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.1.1)
+ *  window.__mlsAthenaDoctor (v1.1.3)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -38,7 +38,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.1.1';
+  var VERSION = '1.1.3';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -316,8 +316,19 @@
          and Log out too, and must not read as an Athena alarm. Inline-block and
          margin only — no position, no size change to their button beyond the
          dot itself, because this is another lane's control. */
-      '#mlsTbMenuBtn[data-mls-athena-read="failed"]::after{content:"";display:inline-block;width:6px;height:6px;' +
+      /* GENERIC, and it has to be. v1.1.3 resolves the surface structurally —
+         it paints whatever button occupies the header menu slot, including ids
+         this module has never heard of. A per-id rule would set the attribute
+         on the right node and still draw nothing, which is the same invisible
+         indicator in a new disguise. One rule, any surface. */
+      '[data-mls-athena-read="failed"]::after{content:"";display:inline-block;width:6px;height:6px;' +
       'border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle;}' +
+      /* The dropdown ROW needs no rule of its own — the generic one above
+         covers it, which is the point of making it generic. The dot on the
+         header control says "something in here"; the same dot on the row says
+         WHICH. Kept only as a slightly wider gap, since the row's icon and
+         label already sit close together. */
+      '[data-mls-menu-key="athena-help"][data-mls-athena-read="failed"]::after{margin-left:7px;}' +
       // success / failure toast
       '#' + TOAST_ID + '{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:2147483602;' +
       'max-width:min(560px,92vw);padding:11px 16px;border-radius:11px;font-size:14px;font-weight:700;color:#fff;' +
@@ -509,20 +520,128 @@
   var ARIA_STASH = 'data-mlsdoc-aria0';
   var TIP_STASH = 'data-mlsdoc-tip0';
 
+  /* THREE surfaces, because feat_mls_topbar_unify.js does two different things
+     to this control and only the first was obvious:
+       1. #mlsAthenaDoctorBtn        hidden with .mlsTbHidden, unconditionally.
+       2. #mlsTbMenuBtn              the ☰ Menu button it puts in the topbar.
+                                     ALWAYS rendered - this is the one that
+                                     satisfies "a visible surface carries the
+                                     state". On narrow screens its media query
+                                     drops only the word "Menu", not the button.
+       3. [data-mls-menu-key="athena-help"]
+                                     the "🔧 Troubleshoot Athena" ROW inside the
+                                     dropdown. createMenuRow() (:232) builds a
+                                     BRAND NEW <button> from the item's label and
+                                     icon strings - it is not the original node
+                                     relocated, so it inherits nothing from it.
+                                     Without this the doctor sees a dot on Menu,
+                                     opens it, and cannot tell WHICH row to click.
+     The row is destroyed and rebuilt by reconcileMenuContent() on every menu
+     rebuild, so like the button it is re-painted from module state, never
+     assumed to have survived. */
+  /* v1.1.3 — STOP NAMING IDS. This is the third id in a row that turned out not
+     to be on screen, and QA caught every one of them:
+       b911  #mlsAthenaDoctorBtn   .mlsTbHidden, display:none
+       b915  #mlsTbMenuBtn         itself display:inline-flex, but its PARENT
+                                   #mlsTbMenu is display:none
+       b920  the dropdown row      only exists while the menu is open
+     The rendered control in that header slot today is #mlsAccountMenuBtn, and
+     naming it would just queue up the fourth correction. So the module now
+     resolves the surface STRUCTURALLY and by RENDERED-NESS:
+
+       - every known candidate id is still painted (harmless when hidden, and it
+         covers the case where a topbar lane is absent or reverted), AND
+       - every rendered button inside the header menu slot #mlsRdMenuSlot is
+         painted too. The SLOT is the stable thing — QA measured it at 106x38
+         while its occupants changed underneath — so this follows the affordance
+         when the next lane swaps the component, without knowing its id.
+
+     WHY NOT offsetParent, which is what QA's receipt uses: it is null for a
+     position:fixed element even when that element is plainly visible, and
+     #mlsAthenaDoctorBtn is position:fixed. getBoundingClientRect is correct for
+     both. Their receipt is still satisfied — #mlsAccountMenuBtn is not fixed —
+     but a future fixed-position surface would read as a false negative to it. */
+  function isRendered(el) {
+    if (!el) return false;
+    try {
+      if (typeof el.getBoundingClientRect === 'function') {
+        var r = el.getBoundingClientRect();
+        return !!r && (r.width > 0 || r.height > 0);
+      }
+    } catch (e) {}
+    return false;   // no layout to consult (unit DOM): never CLAIM rendered
+  }
+
+  function pushUnique(out, el) {
+    if (!el) return;
+    for (var i = 0; i < out.length; i++) if (out[i] === el) return;
+    out.push(el);
+  }
+
   function readSurfaces() {
-    var out = [];
-    var b = document.getElementById(BTN_ID);
-    if (b) out.push(b);
-    var menu = document.getElementById('mlsTbMenuBtn');   // feat_mls_topbar_unify.js
-    if (menu) out.push(menu);
+    var out = [], i;
+    pushUnique(out, document.getElementById(BTN_ID));
+    pushUnique(out, document.getElementById('mlsTbMenuBtn'));      // topbar unify
+    pushUnique(out, document.getElementById('mlsAccountMenuBtn')); // account menu
+    try {
+      var rows = document.querySelectorAll('[data-mls-menu-key="athena-help"]');
+      for (i = 0; i < rows.length; i++) pushUnique(out, rows[i]);
+    } catch (e) {}
+    /* The structural rule: whatever is actually rendered in the header's menu
+       slot, whatever it ends up being called. */
+    try {
+      var slot = document.getElementById('mlsRdMenuSlot');
+      if (slot && typeof slot.querySelectorAll === 'function') {
+        var btns = slot.querySelectorAll('button');
+        /* Paint EVERY button in the slot, rendered or not. It is tempting to
+           filter to the visible one, and the negative control below caught why
+           that is wrong: a surface that is hidden AT THE MOMENT OF FAILURE
+           would never be painted, and when it later becomes visible it shows
+           nothing. Visibility usually changes by toggling a class on an
+           ANCESTOR, which this module's childList/subtree observer does not
+           see, so there is no second chance to catch it.
+           Painting a hidden node costs an attribute and a stashed label.
+           Missing the signal costs the doctor the whole feature — that trade is
+           not close. Rendered-ness is used ONLY in renderedFailureSurfaces(),
+           where it belongs: reporting, not deciding. */
+        for (i = 0; i < btns.length; i++) pushUnique(out, btns[i]);
+      }
+    } catch (e2) {}
     return out;
+  }
+
+  /* Exposed so the gate can assert the property that actually matters —
+     "something the doctor can see carries the state" — instead of an id that
+     keeps going stale. Returns the painted surfaces that are really rendered. */
+  function renderedFailureSurfaces() {
+    var out = [], els = readSurfaces();
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].getAttribute('data-mls-athena-read') === 'failed' && isRendered(els[i])) out.push(els[i]);
+    }
+    return out;
+  }
+
+  /* True when any surface disagrees with module state. Drives the observer
+     re-paint, and keeps it a no-op on the overwhelming majority of mutations. */
+  function surfacesOutOfSync() {
+    var els = readSurfaces();
+    for (var i = 0; i < els.length; i++) {
+      if ((els[i].getAttribute('data-mls-athena-read') === 'failed') !== _readFailed) return true;
+    }
+    return false;
   }
 
   function raiseOn(el) {
     if (el.getAttribute('data-mls-athena-read') === 'failed') return;   // already up; never double-stash
     el.setAttribute(ARIA_STASH, el.getAttribute('aria-label') || '');
     el.setAttribute(TIP_STASH, el.getAttribute('data-tip') || '');
-    var base = el.getAttribute('aria-label') || (el.id === BTN_ID ? 'Troubleshoot the MLS Assist Athena connection' : 'Menu');
+    /* Derive the base from what the surface already says, so each one reads
+       naturally: the original button has an aria-label, the ☰ Menu button and
+       the dropdown row have only their visible text. Never hard-code one label
+       for all three — the row would announce itself as "Menu". */
+    var base = el.getAttribute('aria-label') ||
+      String(el.textContent || '').replace(/\s+/g, ' ').trim() ||
+      (el.id === BTN_ID ? 'Troubleshoot the MLS Assist Athena connection' : 'Menu');
     el.setAttribute('aria-label', base + ARIA_SUFFIX);
     el.setAttribute('data-tip', TIP_TEXT);
     el.setAttribute('title', TIP_TEXT);
@@ -835,8 +954,7 @@
            only when a surface is genuinely out of sync, so this stays a no-op on
            the overwhelming majority of mutations and cannot loop: raiseOn and
            clearOn both return early when the surface already matches. */
-        var menu = document.getElementById('mlsTbMenuBtn');
-        if (menu && (menu.getAttribute('data-mls-athena-read') === 'failed') !== _readFailed) paintReadState();
+        if (surfacesOutOfSync()) paintReadState();
       });
       try { _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
     }
@@ -876,6 +994,14 @@
     pullNoticeHandled: pullNoticeHandled,
     ownsPullNotices: true,
     kindOf: kindOf,
+    /* v1.1.3 — for the gate and for QA's live probe. readSurfaces() is every
+       candidate; renderedFailureSurfaces() is the subset that is BOTH painted
+       and actually on screen. `renderedFailureSurfaces().length > 0` after a
+       failed read is the receipt that has caught three wrong ids in a row —
+       assert that, never an id. */
+    readSurfaces: readSurfaces,
+    renderedFailureSurfaces: renderedFailureSurfaces,
+    isRendered: isRendered,
     // UI / actions
     open: function (lastResult) { openDiagnostic(lastResult || null); },
     diagnose: function (lastResult) { return runChain(lastResult || null, null); },
