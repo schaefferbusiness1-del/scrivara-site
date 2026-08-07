@@ -1,5 +1,5 @@
 {
-  "version": "3.0.45",
+  "version": "3.0.46",
   "minChrome": 116,
-  "notes": "v3.0.45 - Chart histories finish on machines where they used to stall. Since v3.0.32 a check that waits for the athenaOne visit list to settle had been cancelling its own progress counter, so on some setups that wait could never complete and the history read gave up with an encounter-index error no matter how long it ran. The counter now survives, and the wait completes the way it did before. When a read still cannot finish, the reason names which step refused and what it saw, and every read records whether athenaOne was actually visible - the difference between a covered window and a slow chart. The review sheet can also bring athenaOne forward for its read-only check, never while you are recording. Everything from v3.0.44 remains. Requires Chrome 116+."
+  "notes": "v3.0.46 - The day's visit note now imports even when Full visit notes is off and athenaOne prints the date with dashes or dots (07-21-2026): the day-scoped reader recognized only slash dates, so on those charts it skipped every encounter row and the day stored nothing. The green in-Athena panel's Pull history line now says exactly what it did - it reads the open chart for that panel's own note flow and does not import into MLS (importing is the app's Copy every visit button). Everything from v3.0.45 remains. Requires Chrome 116+."
 }

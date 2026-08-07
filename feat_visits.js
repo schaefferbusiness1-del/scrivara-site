@@ -188,8 +188,13 @@
         var qStable = _stableVisitKeys(q);
         var compatiblePlaceholder = _emptyPlaceholder(q) && _svcToYMD(q.date) === day && _trustCompatible(q, full) &&
           ((qStable.length && _sharesStableVisitKey(q, full)) || (!qStable.length && keylessPairUnambiguous));
+        /* trust-superseding arm: LEGACY unverified chart shells (narrow
+           classifier) still die on any same-day strict body - pinned by
+           history-ingestion-card-hardening. Modern index shells are
+           identityVerified, so multi-encounter days are protected by the
+           same-trust arm above, which requires the unambiguous pairing. */
         var supersededUnverifiedShell = _strictVerifiedAthenaBody(full) && _unverifiedChartShell(q) &&
-          (_sharesStableVisitKey(q, full) || (!qStable.length && !!day && _svcToYMD(q.date) === day && keylessPairUnambiguous));
+          (_sharesStableVisitKey(q, full) || (!qStable.length && !!day && _svcToYMD(q.date) === day));
         if (compatiblePlaceholder || supersededUnverifiedShell) { p.visits.splice(i, 1); changed = true; }
       }
     });

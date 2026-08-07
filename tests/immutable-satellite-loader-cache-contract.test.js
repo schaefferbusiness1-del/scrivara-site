@@ -31,9 +31,13 @@ const assets = [
   ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260802asst145', '20260719asst143'],
-  ['feat_mls_b121_pack.js', '20260728p2c6', '20260728p2c5'],
+  /* feat_mls_b121_pack.js left this list on 2026-08-07 (px train): the pack
+     changed (matchRow lost its name-only merge leg - the cross-patient weld)
+     and rather than mint 20260807p2c7 for the same date-granularity blindness
+     that bit copilot_actions, its loader now follows the build number. The
+     build-form + dead-literal assertions live below with feat_visits'. */
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260806chk3045', '20260803chk3044'],
+  ['feat_mls_checker.js', '20260807chk3046', '20260806chk3045'],
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
@@ -153,7 +157,14 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
     label + ': a hand-maintained feat_visits token came back — it will go stale at the next change');
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260806chk3045'),
+/* feat_mls_b121_pack.js: same cure as feat_visits/copilot_actions (px train,
+   2026-08-07) - the loader follows the build number; hand tokens stay dead. */
+assert(connect.includes("feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now())"),
+  'production: feat_mls_b121_pack must load with the build-number cache-buster');
+assert(!/feat_mls_b121_pack\.js\?v=20\d{6}/.test(connect),
+  'production: a hand-maintained feat_mls_b121_pack token came back — it will go stale at the next change');
+
+assert(staging.includes('feat_mls_checker.js?v=20260807chk3046'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
