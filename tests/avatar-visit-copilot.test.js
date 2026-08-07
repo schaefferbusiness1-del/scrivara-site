@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.4)
+ * AVATAR — THE VISIT COPILOT (av-5.6.5)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -492,6 +492,17 @@ assert(source.includes('function ttsSplitForSpeech'), 'the two-piece speech spli
   assert.deepStrictEqual(splitFn('Thanks.'), ['Thanks.'], 'a tiny line is already fast');
   assert.strictEqual(splitFn('no terminator here at all just a long run of words going on and on').length, 1,
     'a line with no sentence boundary must not be cut mid-clause');
+  /* AN ABBREVIATION IS NOT A SENTENCE END. Splitting here made the avatar say
+     "I think Doctor." — pause — "Smith should see you", which sounds broken.
+     A change that degrades how it SOUNDS is not an optimisation. */
+  [['I think Dr. Smith should see you. How does that sound?', 'a title mid-sentence'],
+   ['You will see Mr. Jones in the clinic. Any questions?', 'another title'],
+   ['Your appointment is at 9 a.m. Does that work for you?', 'a lowercase abbreviation'],
+   ['That was about 3.5 weeks ago. Is that right?', 'a decimal number']
+  ].forEach(([line, why]) => {
+    assert.strictEqual(splitFn(line).length, 1,
+      'must NOT split on ' + why + ': ' + JSON.stringify(splitFn(line)));
+  });
   ['', null, undefined].forEach((v) => {
     const out = splitFn(v);
     assert(Array.isArray(out) && out.length === 1, 'empty input must not throw or fan out');
@@ -534,14 +545,14 @@ assert(/isFn\(window\.generateNote\)/.test(source),
 }
 
 /* 3q. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.4'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.6.5'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '564', 'the loader cache token must name av-5.6.4 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '565', 'the loader cache token must name av-5.6.5 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.4): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.5): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

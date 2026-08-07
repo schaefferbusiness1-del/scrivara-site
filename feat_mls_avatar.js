@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.4';
+  var VERSION = 'av-5.6.5';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -1657,6 +1657,14 @@
     if (!m) return [t];
     var head = m[1].trim(), tail = m[2].trim();
     if (!head || !tail) return [t];
+    /* AN ABBREVIATION IS NOT A SENTENCE END. "I think Dr. Smith should see
+       you. How does that sound?" would otherwise be spoken as "I think
+       Doctor." — pause — "Smith should see you...", which is worse than the
+       latency the split saves: a change that makes the avatar sound broken is
+       not an optimisation. Decimals ("3.5 weeks") are already safe because the
+       match requires whitespace after the terminator; titles and initials are
+       not, so they are named here. */
+    if (/(?:^|\s)(?:[A-Za-z]|dr|drs|mr|mrs|ms|st|jr|sr|prof|rev|vs|approx|dept|est|fig|no|etc|e\.g|i\.e|a\.m|p\.m)\.$/i.test(head)) return [t];
     return [head, tail];
   }
   function ttsFetchUrl(text, voice) {
