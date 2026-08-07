@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.1.1)
+ *  window.__mlsAthenaDoctor (v1.1.2)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -38,7 +38,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.1.1';
+  var VERSION = '1.1.2';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -318,6 +318,12 @@
          dot itself, because this is another lane's control. */
       '#mlsTbMenuBtn[data-mls-athena-read="failed"]::after{content:"";display:inline-block;width:6px;height:6px;' +
       'border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle;}' +
+      /* …and the ROW inside that dropdown. The dot on ☰ Menu says "something in
+         here"; this says WHICH. createMenuRow builds a fresh <button> from label
+         + icon strings, so it inherits nothing from the hidden original and has
+         to be painted in its own right. */
+      '[data-mls-menu-key="athena-help"][data-mls-athena-read="failed"]::after{content:"";display:inline-block;' +
+      'width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:7px;vertical-align:middle;}' +
       // success / failure toast
       '#' + TOAST_ID + '{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:2147483602;' +
       'max-width:min(560px,92vw);padding:11px 16px;border-radius:11px;font-size:14px;font-weight:700;color:#fff;' +
@@ -509,20 +515,59 @@
   var ARIA_STASH = 'data-mlsdoc-aria0';
   var TIP_STASH = 'data-mlsdoc-tip0';
 
+  /* THREE surfaces, because feat_mls_topbar_unify.js does two different things
+     to this control and only the first was obvious:
+       1. #mlsAthenaDoctorBtn        hidden with .mlsTbHidden, unconditionally.
+       2. #mlsTbMenuBtn              the ☰ Menu button it puts in the topbar.
+                                     ALWAYS rendered - this is the one that
+                                     satisfies "a visible surface carries the
+                                     state". On narrow screens its media query
+                                     drops only the word "Menu", not the button.
+       3. [data-mls-menu-key="athena-help"]
+                                     the "🔧 Troubleshoot Athena" ROW inside the
+                                     dropdown. createMenuRow() (:232) builds a
+                                     BRAND NEW <button> from the item's label and
+                                     icon strings - it is not the original node
+                                     relocated, so it inherits nothing from it.
+                                     Without this the doctor sees a dot on Menu,
+                                     opens it, and cannot tell WHICH row to click.
+     The row is destroyed and rebuilt by reconcileMenuContent() on every menu
+     rebuild, so like the button it is re-painted from module state, never
+     assumed to have survived. */
   function readSurfaces() {
     var out = [];
     var b = document.getElementById(BTN_ID);
     if (b) out.push(b);
-    var menu = document.getElementById('mlsTbMenuBtn');   // feat_mls_topbar_unify.js
+    var menu = document.getElementById('mlsTbMenuBtn');
     if (menu) out.push(menu);
+    try {
+      var rows = document.querySelectorAll('[data-mls-menu-key="athena-help"]');
+      for (var i = 0; i < rows.length; i++) out.push(rows[i]);
+    } catch (e) {}
     return out;
+  }
+
+  /* True when any surface disagrees with module state. Drives the observer
+     re-paint, and keeps it a no-op on the overwhelming majority of mutations. */
+  function surfacesOutOfSync() {
+    var els = readSurfaces();
+    for (var i = 0; i < els.length; i++) {
+      if ((els[i].getAttribute('data-mls-athena-read') === 'failed') !== _readFailed) return true;
+    }
+    return false;
   }
 
   function raiseOn(el) {
     if (el.getAttribute('data-mls-athena-read') === 'failed') return;   // already up; never double-stash
     el.setAttribute(ARIA_STASH, el.getAttribute('aria-label') || '');
     el.setAttribute(TIP_STASH, el.getAttribute('data-tip') || '');
-    var base = el.getAttribute('aria-label') || (el.id === BTN_ID ? 'Troubleshoot the MLS Assist Athena connection' : 'Menu');
+    /* Derive the base from what the surface already says, so each one reads
+       naturally: the original button has an aria-label, the ☰ Menu button and
+       the dropdown row have only their visible text. Never hard-code one label
+       for all three — the row would announce itself as "Menu". */
+    var base = el.getAttribute('aria-label') ||
+      String(el.textContent || '').replace(/\s+/g, ' ').trim() ||
+      (el.id === BTN_ID ? 'Troubleshoot the MLS Assist Athena connection' : 'Menu');
     el.setAttribute('aria-label', base + ARIA_SUFFIX);
     el.setAttribute('data-tip', TIP_TEXT);
     el.setAttribute('title', TIP_TEXT);
@@ -835,8 +880,7 @@
            only when a surface is genuinely out of sync, so this stays a no-op on
            the overwhelming majority of mutations and cannot loop: raiseOn and
            clearOn both return early when the surface already matches. */
-        var menu = document.getElementById('mlsTbMenuBtn');
-        if (menu && (menu.getAttribute('data-mls-athena-read') === 'failed') !== _readFailed) paintReadState();
+        if (surfacesOutOfSync()) paintReadState();
       });
       try { _obs.observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
     }

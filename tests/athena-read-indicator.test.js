@@ -114,7 +114,7 @@ ctx.window = ctx;
 vm.runInNewContext(source, ctx, { filename: 'feat_athena_doctor.js', timeout: 1000 });
 const api = ctx.__mlsAthenaDoctor;
 assert(api && api.installed, 'Athena doctor did not install');
-assert.strictEqual(api.version, '1.1.1');
+assert.strictEqual(api.version, '1.1.2');
 
 const dispatch = (data) => api._onResultMessage({ data });
 const btn = () => document.getElementById('mlsAthenaDoctorBtn');
@@ -264,6 +264,64 @@ dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-vis-5', ok:
 assert.strictEqual(tip(menuBtn), 'Open the menu',
   'STASH POISONED: a repaint while already raised saved the failure text as the host tooltip, so the real one is unrecoverable');
 assert.strictEqual(menuState(), null, 'the second cycle did not clear');
+
+/* =========================================================================
+ * v1.1.2 — THE MENU ROW IS A DIFFERENT NODE AGAIN.
+ *
+ * QA, re-measuring: the visible "Troubleshoot Athena" the doctor reaches is not
+ * the hidden original relocated — feat_mls_topbar_unify.js:232 createMenuRow()
+ * builds a BRAND NEW <button> from the item's `label` and `icon` STRINGS. It
+ * inherits no attribute, no class and no aria-label from the source element, so
+ * painting the original (or even the ☰ Menu button) still leaves the row the
+ * doctor actually clicks carrying nothing. The dot on Menu says "something in
+ * here"; without this the doctor cannot tell WHICH row.
+ *
+ * The row is destroyed and rebuilt by reconcileMenuContent() on every menu
+ * rebuild, so it is re-painted from module state like every other surface — and
+ * that rebuild is exercised below, because a row that only gets painted once is
+ * a row that is blank the second time the menu opens.
+ * ====================================================================== */
+function buildMenuRow() {                       // mirrors createMenuRow's shape
+  const row = element('button');
+  row.setAttribute('data-mls-topbar-owned', '1');
+  row.setAttribute('data-mls-menu-key', 'athena-help');
+  row.textContent = '🔧 Troubleshoot Athena';
+  return row;
+}
+let row = buildMenuRow();
+body.appendChild(row);
+observerCallback();
+
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-row-1', ok: false, reason: 'no-form' });
+assert.strictEqual(row.getAttribute('data-mls-athena-read'), 'failed',
+  'the dropdown ROW carries no state — it is the control the doctor actually clicks, and createMenuRow builds it fresh from strings');
+assert(/did not complete/.test(row.getAttribute('aria-label') || ''), 'the row has no accessible failure text');
+assert(/Troubleshoot Athena/.test(row.getAttribute('aria-label') || ''),
+  'the row announces itself with a borrowed label — its aria-label must be derived from its OWN text, not the Menu button\'s');
+
+/* The menu is rebuilt: the old row is destroyed and a new one inserted. A
+   surface painted only at failure time is blank on the second open. */
+body.removeChild(row);
+row = buildMenuRow();
+body.appendChild(row);
+observerCallback();
+assert.strictEqual(row.getAttribute('data-mls-athena-read'), 'failed',
+  'a REBUILT menu row lost the state — the doctor opens the menu a second time and sees nothing');
+
+dispatch({ source: 'mls-ext', type: 'mlsAppSearchResult', id: 'qa-row-2', ok: true, results: [{}] });
+assert.strictEqual(row.getAttribute('data-mls-athena-read'), null, 'the rebuilt row kept a resolved failure');
+assert(!/did not complete/.test(row.getAttribute('data-tip') || ''), 'the row kept a stale tooltip after a good read');
+
+/* QA'S ACTUAL RECEIPT, in the form they run it live: a surface OTHER than the
+   permanently-hidden original must carry the state. An assertion on
+   #mlsAthenaDoctorBtn alone passes forever while the doctor sees nothing —
+   which is exactly what happened at b911. The true visibility check needs a
+   browser (computed display + box height) and is QA's to run; this is the
+   strongest proxy available without one. */
+dispatch({ source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: 'qa-vis-9', ok: false, reason: 'no-tab' });
+const carriers = [menuBtn, row].filter((el) => el.getAttribute('data-mls-athena-read') === 'failed');
+assert(carriers.length >= 2,
+  'ANY_VISIBLE_SURFACE_CARRIES_STATE would be false: only the .mlsTbHidden original was painted');
 
 console.log('PASS Athena read indicator: both failure paths raise it on every RENDERED surface (the ☰ Menu button, since ' +
   'feat_mls_topbar_unify hides the original), any successful read including zero-result clears it, tooltip and aria-label ' +
