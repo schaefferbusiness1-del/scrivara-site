@@ -16889,6 +16889,66 @@ function _opGuardDrugBlanks(tplText, out){
     if(!fields.length) return out;                  /* 93 of 96 templates stop here */
     var note=String(out.note||''), missing=Array.isArray(out.missing)?out.missing.slice():[];
     var violated=[];
+    /* 2026-08-06, the surviving symptom. QA on b928: fabrication is gone from
+       the PROSE, but 1 run in 3 still produced a blank whose LABEL carried an
+       invented drug — "[FILL: volume of 0.25% bupivacaine]". The doctor is then
+       shown a drug and a concentration he never specified, dressed as his own
+       template's wording. Lower severity than the original, identical root: the
+       label is COMPOSED by the model rather than carried from the template.
+       Rule, and it is QA's: a blank's label is derived from the template's
+       placeholder name, never composed. So any strength, percentage or dose
+       figure is stripped out of a label, and a label that then names nothing of
+       its own falls back to the template's own placeholder text. Labels are UI
+       prompts - removing a value from one can never lose clinical content,
+       because the value was never the doctor's to begin with. */
+    var labelledDrug=[];
+    /* EVERY placeholder the template declares, keyed the same way `missing`
+       keys are, so a label can be derived from the doctor's own wording rather
+       than from the model's. Not just the drug-class ones: [VOLUME] is not a
+       drug field, and it is the field whose label carried the invented
+       bupivacaine. */
+    var tplLabels={};
+    (function(){
+      var s=String(tplText||''), re=/\[\[?\s*([A-Za-z][A-Za-z0-9 _\/+&-]{1,40}?)\s*\]?\]/g, m;
+      while((m=re.exec(s))){
+        var lab=m[1].trim(), k=lab.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+        if(k&&!tplLabels[k]) tplLabels[k]=lab.toLowerCase();
+      }
+    })();
+    missing=missing.map(function(mf){
+      if(!mf||typeof mf!=='object') return mf;
+      var L=String(mf.label||''); if(!L) return mf;
+      /* DERIVE, do not sanitise. A first version stripped the number out of
+         "volume of 0.25% bupivacaine" and produced "volume of bupivacaine" —
+         still an invented drug, just cheaper-looking. The template said the
+         field is [VOLUME]; that is the label, and nothing the model composed
+         around it is the doctor's. So: if this key exists as a placeholder in
+         the TEMPLATE, the template's own wording wins outright. Only a key with
+         no template placeholder falls back to stripping values out of whatever
+         the model wrote. */
+      var own=tplLabels[mf.key]||null;
+      var cleaned;
+      if(own){ cleaned=own; }
+      else {
+        cleaned=L.replace(/\b\d+(?:\.\d+)?\s*(?:%|mg|mcg|ug|g|ml|mL|cc|units?)\b/gi,'')
+                 .replace(/\b\d+(?:\.\d+)?\s*%/g,'')
+                 .replace(/\s{2,}/g,' ').replace(/^[\s,;:-]+|[\s,;:-]+$/g,'').replace(/\s+of\s*$/i,'').trim();
+      }
+      if(!cleaned) cleaned=String(mf.key||'').replace(/_/g,' ');
+      if(cleaned===L) return mf;
+      labelledDrug.push({key:mf.key,was:L,now:cleaned});
+      return {key:mf.key,label:cleaned,example:mf.example||''};
+    });
+    if(labelledDrug.length){
+      try{ window.__mlsOpDrugLabelGuard={at:Date.now(),cleaned:labelledDrug}; }catch(eL){}
+      /* The note text carries the same composed labels, so rewrite them there
+         too - otherwise the prose keeps showing the invented value while the
+         Fields box shows the clean one, which is worse than either alone. */
+      labelledDrug.forEach(function(c){
+        try{ note=note.split('[FILL: '+c.was+']').join('[FILL: '+c.now+']')
+                     .split('[FILL:'+c.was+']').join('[FILL:'+c.now+']'); }catch(eR){}
+      });
+    }
     fields.forEach(function(f){
       /* Did a blank for THIS field survive, in any shape the app recognises?
          EXACT, not stem-matched. The first version tested the stem
