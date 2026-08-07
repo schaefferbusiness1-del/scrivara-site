@@ -313,6 +313,10 @@ const tests = [
      satisfy a prompt line telling the model to prefer routine values over
      blanks. 3 of 96 templates can reach it; the guard is proven on all 3. */
   'opnote-drug-blanks-never-invented.test.js',
+  /* Owner 2026-08-06: "the date of procidure needs to be put in". Reproduced
+     15/15 - the date is handed to the generator and rendered in no format at
+     all. Deterministic, and it affects EVERY note, not the 3 at-risk ones. */
+  'opnote-carries-its-procedure-date.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',

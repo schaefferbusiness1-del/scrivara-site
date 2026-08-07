@@ -16736,6 +16736,18 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   var sys='You draft an OPERATIVE / PROCEDURE NOTE for a pain/spine physician by adapting ONE of their OWN prior operative notes (the TEMPLATE) to a new patient and procedure. Keep the template’s exact structure, section headings, wording and style. Fill in the patient name, the date of procedure, and the specific procedure with its laterality and spinal levels. Keep all standard boilerplate. '
     +'CRITICAL — the KNOWN PATIENT FACTS and PATIENT CHART/HISTORY below come from the chart attached to this exact operative-note row. Use only documented facts relevant to the procedure; never transfer facts from another patient or invent new findings. Fill known facts directly wherever the template needs them and NEVER list a documented fact in "missing". '
     +'NEVER ask for patient name, sex/gender, age, date of birth, MRN, or BMI — treat those as known or as boilerplate that needs no input. '
+    /* 2026-08-06, owner: "for the op note the date of procidure needs to be put
+       in". Reproduced 15/15 across all three at-risk templates: DATE OF
+       PROCEDURE is passed in the user message and the note never contains it,
+       in any format. Deterministic, and it affects EVERY note rather than the
+       three templates the medication defect touches.
+       Cause is the line immediately above. It tells the model to treat dates as
+       "boilerplate that needs no input", meaning do not ASK for them — and the
+       model generalised that to do not WRITE them. Nothing anywhere instructed
+       it to render the procedure date, and none of the templates carry a [DATE]
+       placeholder for it to land in. So: say it explicitly, and say it in the
+       same breath as the rule it was being read as part of. */
+    +'ALWAYS WRITE THE DATE OF PROCEDURE into the note itself — it is given to you below and it is never a placeholder and never omitted. If the TEMPLATE has a date line, fill it; if it has none, add one near the top ("Date of procedure: <date>"). Do not confuse it with date of birth. '
     +'ONLY put a [[key]] placeholder (and a "missing" entry) for a detail that genuinely VARIES per case AND is not known — e.g. needle gauge/size, medication name/dose/volume, contrast amount, fluoroscopy time, sedation, or an ambiguous level. '
     +'BE CONSERVATIVE — use the FEWEST placeholders possible. If the TEMPLATE already states a standard value for something (a routine dose, a standard volume, default contrast), KEEP the template’s value rather than blanking it; only blank a detail that truly changes patient-to-patient and is not derivable. Each placeholder key must be UNIQUE and appear exactly once. '
     /* 2026-08-06, PATIENT SAFETY. The line above and the line before it point in
@@ -16760,7 +16772,59 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   var obj=null; try{ obj=JSON.parse(s); }catch(e){ try{ var m=s.match(/\{[\s\S]*\}/); if(m) obj=JSON.parse(m[0]); }catch(_){} }
   if(!obj||typeof obj!=='object') return {note:s, missing:[]};
-  return _opGuardDrugBlanks(tplText, {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]});
+  return _opGuardDrugBlanks(tplText, _opGuardProcedureDate(dateStr, {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]}));
+}
+
+/* ── PROCEDURE-DATE GUARD (2026-08-06) ─────────────────────────────────────
+   Owner: "for the op note the date of procidure needs to be put in."
+   Measured 15/15 across all three at-risk templates: the date is passed in the
+   user message as "DATE OF PROCEDURE: <dateStr>" and the returned note contains
+   it in NO format — not ISO, not US, not spelled out, not even the phrase.
+   Deterministic, and unlike the medication defect it affects EVERY note.
+
+   The prompt line above now says to write it. This is the guarantee, same
+   reasoning as the drug guard: a prompt is a request. Unlike that one this fix
+   is safe to apply automatically, because the date is a value we were GIVEN —
+   inserting it invents nothing. That is the whole difference between the two
+   guards, and it is why this one repairs while the other refuses.
+
+   It accepts any recognisable rendering of the same day, so a note that writes
+   "August 6, 2026" is left exactly as the model wrote it. Only a note with no
+   date at all gets a line added. */
+function _opNoteHasDate(note, dateStr){
+  var s=String(note||''); var d=String(dateStr||'').trim();
+  if(!d) return true;                                   /* nothing to enforce */
+  if(s.indexOf(d)>=0) return true;                      /* verbatim */
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  if(!m) return s.toLowerCase().indexOf(d.toLowerCase())>=0;
+  var y=m[1], mo=+m[2], da=+m[3];
+  var MON=['January','February','March','April','May','June','July','August','September','October','November','December'][mo-1]||'';
+  var pats=[
+    mo+'/'+da+'/'+y, String(mo).padStart(2,'0')+'/'+String(da).padStart(2,'0')+'/'+y,
+    mo+'-'+da+'-'+y, da+' '+MON+' '+y
+  ];
+  for(var i=0;i<pats.length;i++) if(s.indexOf(pats[i])>=0) return true;
+  if(MON){
+    var re=new RegExp(MON+'\\.?\\s+0?'+da+'(?:st|nd|rd|th)?,?\\s+'+y,'i');
+    if(re.test(s)) return true;
+    var abbr=MON.slice(0,3);
+    if(new RegExp('\\b'+abbr+'\\.?\\s+0?'+da+'(?:st|nd|rd|th)?,?\\s+'+y,'i').test(s)) return true;
+  }
+  return false;
+}
+
+function _opGuardProcedureDate(dateStr, out){
+  try{
+    if(_opNoteHasDate(out&&out.note, dateStr)) return out;
+    var note=String(out.note||'');
+    /* Top of the note, above the body, where a procedure date belongs — and
+       never inside the prose, where it would read as something the doctor
+       dictated. */
+    var repaired='Date of procedure: '+String(dateStr).trim()+'\n'+note;
+    try{ window.__mlsOpDateGuard={at:Date.now(),added:String(dateStr).trim()}; }catch(e){}
+    try{ console.warn('[mls] op-note date guard: the draft carried no date of procedure; inserted '+String(dateStr).trim()+'.'); }catch(e2){}
+    return {note:repaired, missing:out.missing, dateGuard:{added:String(dateStr).trim()}};
+  }catch(e){ return out; }
 }
 
 /* ── DRUG-BLANK GUARD (2026-08-06, patient safety) ─────────────────────────
