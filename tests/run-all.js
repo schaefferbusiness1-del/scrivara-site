@@ -299,6 +299,7 @@ const tests = [
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
   'opnote-rail-search-caret.test.js',
+  'provider-key-credential-surname.test.js',
   'tpl-word-junk.test.js',
   'template-library-runtime.test.js',
   'template-recognition-bounded-concurrency.test.js',
