@@ -64,10 +64,43 @@ const ROOT = 'C:/Users/Micha/Desktop/MLS_EVERYTHING/dispatch-work/wt-copilot-pow
       const x = c.getContext('2d');
       x.fillStyle = o.bg || '#f2f2f2'; x.fillRect(0, 0, N, N);
       if (o.shirt) { x.fillStyle = o.shirt; x.fillRect(0, N * 0.86, N, N * 0.14); }
-      x.fillStyle = o.skin; x.beginPath(); x.ellipse(N / 2, N * 0.52, N * 0.30, N * 0.36, 0, 0, 7); x.fill();
-      if (o.hair) { x.fillStyle = o.hair; x.beginPath(); x.ellipse(N / 2, N * 0.20, N * 0.30, N * 0.14, 0, 0, 7); x.fill(); }
+      /* THE HEAD, drawn in the SAME proportions faceSvg draws — rx 58, ry 66,
+         centred at y 98 on a 200 viewBox — so "oval" here means the exact head
+         the product renders, and the shape thresholds are being tested against
+         the geometry they were derived from rather than an arbitrary egg.
+         A NOTE ON WHAT THIS DOES NOT PROVE: real portraits arrive through
+         stylizePortrait's centred square crop, and how tightly a real head
+         fills that crop has not been measured. If the shape verdict is wrong
+         on the owner's own photo, the crop is the first place to look. */
+      const rx = (o.rx || 0.29), ry = (o.ry || 0.33), cy = 0.49;
+      x.fillStyle = o.skin; x.beginPath(); x.ellipse(N / 2, N * cy, N * rx, N * ry, 0, 0, 7); x.fill();
+      /* a square jaw is the face still being wide low down — drawn as a
+         straight-sided block from the cheeks to the chin, which is what
+         actually distinguishes one from an oval in a front-on photo. */
+      if (o.squareJaw) {
+        x.fillStyle = o.skin;
+        x.fillRect(N * (0.5 - rx * 0.97), N * 0.55, N * rx * 1.94, N * (cy + ry - 0.55));
+      }
+      /* the irises: two dark discs at a KNOWN separation, so eye spacing is
+         measured against a number the fixture chose rather than inferred. */
+      if (o.irisDx) {
+        x.fillStyle = '#241a12';
+        x.beginPath(); x.ellipse(N * (0.5 - o.irisDx), N * 0.45, N * 0.028, N * 0.028, 0, 0, 7); x.fill();
+        x.beginPath(); x.ellipse(N * (0.5 + o.irisDx), N * 0.45, N * 0.028, N * 0.028, 0, 0, 7); x.fill();
+      }
+      if (o.hair) { x.fillStyle = o.hair; x.beginPath(); x.ellipse(N / 2, N * 0.18, N * rx, N * 0.14, 0, 0, 7); x.fill(); }
+      /* a receding hairline: skin painted back over the two temples, leaving
+         the crown haired. Bare temples ALONE would be a bald head, and the
+         detector has to tell those apart. */
+      if (o.receding) {
+        x.fillStyle = o.skin;
+        x.fillRect(N * 0.26, N * 0.13, N * 0.13, N * 0.16);
+        x.fillRect(N * 0.61, N * 0.13, N * 0.13, N * 0.16);
+      }
       if (o.longHair) { x.fillStyle = o.hair; x.fillRect(0, N * 0.55, N * 0.12, N * 0.40); x.fillRect(N * 0.88, N * 0.55, N * 0.12, N * 0.40); }
-      if (o.beard) { x.fillStyle = o.beard; x.beginPath(); x.ellipse(N / 2, N * 0.74, N * 0.20, N * 0.12, 0, 0, 7); x.fill(); }
+      /* the beard rides the JAW, so it moves with the head rather than
+         hanging off a long face and onto the background. */
+      if (o.beard) { x.fillStyle = o.beard; x.beginPath(); x.ellipse(N / 2, N * (cy + ry * 0.72), N * rx * 0.69, N * ry * 0.33, 0, 0, 7); x.fill(); }
       /* brows sit BETWEEN the forehead and the eyes - y 0.37, just above the
          eye line at 0.44. Drawn at 0.33 they were inside the hair mass, which
          is how the first run of this file caught the matcher measuring a
@@ -118,7 +151,39 @@ const ROOT = 'C:/Users/Micha/Desktop/MLS_EVERYTHING/dispatch-work/wt-copilot-pow
     /* I: the MIDDLE of every scale. Two ends can be split by a single
        threshold in the wrong place; three cannot. */
     const I = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', browPx: 8, lipPx: 8, noseHalf: 0.085 }));
-    return { A, B, C, D, E, F, G, H, I };
+    /* ---- the HEAD, not the paint on it ---- */
+    /* J: a LONG face — narrow and tall. */
+    const J = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', rx: 0.26, ry: 0.37 }));
+    /* K: a ROUND face — wide and short. */
+    const K = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', rx: 0.315, ry: 0.30 }));
+    /* L: a SQUARE JAW on otherwise oval proportions. It must outrank the
+       oval verdict, or a jaw is only ever visible on a face that was already
+       going to be called round. */
+    const L2 = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', squareJaw: true }));
+    /* M/N: the two ends of eye spacing, at separations the fixture chose. */
+    const M2 = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', irisDx: 0.115 }));
+    const N2 = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', irisDx: 0.195 }));
+    /* O: a RECEDING hairline — bare temples, haired crown. */
+    const O = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', receding: true }));
+    /* P: BALD — bare temples AND a bare crown. Must NOT be called receding:
+       the two look identical to a temples-only test. */
+    const P = await derive(portrait({ skin: '#f0c9a0' }));
+    /* Q: DARK BROWS UNDER GREY HAIR — the strongest likeness cue the drawn
+       face has, and the one it could not express while brows were painted in
+       the hair colour. */
+    const Q = await derive(portrait({ skin: '#f0c9a0', hair: '#c9c6c0', browPx: 8, browColor: '#241a12' }));
+    /* R: brows the SAME colour as the hair. The honest answer is to say
+       nothing and let them follow the hair, not to set a redundant colour. */
+    const R = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', browPx: 8, browColor: '#3a2a1c' }));
+    /* S: A HEAD THAT RUNS OFF THE PICTURE. The first version of the frame-
+       boundary guard was UNTESTED - deleting it left this suite at 37/37,
+       which is the same as not having written it. A crop with no margin
+       makes the edge scan return column 0 and column M-1: that is not a
+       very wide face, it is an unanswerable question, and the whole skull
+       group must decline together rather than compute from a full-frame
+       width. Tight crops are ordinary - phones frame faces like this. */
+    const S = await derive(portrait({ skin: '#f0c9a0', hair: '#3a2a1c', rx: 0.52, ry: 0.30 }));
+    return { A, B, C, D, E, F, G, H, I, J, K, L2, M2, N2, O, P, Q, R, S };
   });
 
   if (out.A === 'NO_HOOK') { console.log('NO DIAGNOSTIC HOOK — add one to prove this'); await browser.close(); process.exit(2); }
@@ -135,6 +200,16 @@ const ROOT = 'C:/Users/Micha/Desktop/MLS_EVERYTHING/dispatch-work/wt-copilot-pow
   show('G', 'G head-only crop');
   show('H', 'H thin+narrow');
   show('I', 'I mid on every scale');
+  show('J', 'J long face');
+  show('K', 'K round face');
+  show('L2', 'L square jaw');
+  show('M2', 'M close-set eyes');
+  show('N2', 'N wide-set eyes');
+  show('O', 'O receding hairline');
+  show('P', 'P bald (not receding)');
+  show('Q', 'Q dark brows / grey hair');
+  show('R', 'R brows match the hair');
+  show('S', 'S head runs off frame');
   console.log('pageerrors        :', errs.length ? errs.slice(0, 2) : 'none');
 
   const checks = [
@@ -160,8 +235,27 @@ const ROOT = 'C:/Users/Micha/Desktop/MLS_EVERYTHING/dispatch-work/wt-copilot-pow
     ['F: a flat face claims NO lips', D_('F').indexOf('lips') < 0],
     ['G: a head-only crop claims NO top colour', D_('G').indexOf('shirt') < 0],
     ['C: a spectacle frame is not reported as eyebrows', D_('C').indexOf('brows') < 0],
-    ['derived never names a knob no photo can decide (cap)', !['A','B','C','D','E','F','G','H','I'].some(k => D_(k).indexOf('cap') >= 0)],
-    ['derived never names a knob no photo can decide (stethoscope)', !['A','B','C','D','E','F','G','H','I'].some(k => D_(k).indexOf('stethoscope') >= 0)],
+    ['derived never names a knob no photo can decide (cap)', !['A','B','C','D','E','F','G','H','I','J','K','L2','M2','N2','O','P','Q','R','S'].some(k => D_(k).indexOf('cap') >= 0)],
+    ['derived never names a knob no photo can decide (stethoscope)', !['A','B','C','D','E','F','G','H','I','J','K','L2','M2','N2','O','P','Q','R','S'].some(k => D_(k).indexOf('stethoscope') >= 0)],
+    /* ---- the HEAD. Until this release faceSvg could draw all of these and
+       nothing in the product could ask for one — no control, no derivation.
+       Correct behaviour the doctor cannot reach is indistinguishable from
+       behaviour that was never built. ---- */
+    ['J: a narrow tall face reads as long', L('J').faceShape === 'long'],
+    ['K: a wide short face reads as round', L('K').faceShape === 'round'],
+    ['L: a square jaw OUTRANKS the oval proportions it sits on', L('L2').faceShape === 'square'],
+    ['A: an ordinary head still reads as oval (the default is not a fallback)', L('A').faceShape === 'oval'],
+    ['M: close-set irises read as close', L('M2').eyeSet === 'close'],
+    ['N: wide-set irises read as wide', L('N2').eyeSet === 'wide'],
+    ['O: bare temples with a haired crown read as receding', L('O').hairline === 'receding'],
+    ['P: A BALD HEAD IS NOT A RECEDING ONE (bare temples alone must not decide)', L('P').hairline !== 'receding'],
+    ['Q: dark brows under grey hair get their own colour', D_('Q').indexOf('browCol') >= 0],
+    ['Q: and it is the brow colour, not the hair colour', L('Q').browCol && L('Q').browCol !== L('Q').hair],
+    ['R: brows matching the hair claim NO separate colour', D_('R').indexOf('browCol') < 0],
+    ['`age` is never derived — folds are not measurable at this resolution',
+      !['A','B','C','D','E','F','G','H','I','J','K','L2','M2','N2','O','P','Q','R','S'].some(k => D_(k).indexOf('age') >= 0)],
+    ['S: A FACE THAT RUNS OFF THE PICTURE CLAIMS NO SHAPE', D_('S').indexOf('faceShape') < 0],
+    ['S: and no eye spacing either - the group declines together', D_('S').indexOf('eyeSet') < 0],
     ['no page errors', !errs.length],
   ];
   let bad = 0;

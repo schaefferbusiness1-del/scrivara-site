@@ -625,6 +625,71 @@ async function boot(browser, opts) {
     await page.close();
   }
 
+  /* ================================================================ 9b */
+  head('9b. THE SHIPPED SURFACE: the face a patient actually meets in the kiosk');
+  {
+    /* everything above drives faceDemo, which is a diagnostic hook. The face a
+       patient sees is mounted by openKiosk into #mlsAvKioskFace. A face engine
+       that is perfect in the harness and unmounted in the kiosk would pass all
+       of the above, so the real surface is measured here. */
+    const { page, errs } = await boot(browser);
+    const r = await page.evaluate(async () => {
+      const wait = m => new Promise(r2 => setTimeout(r2, m));
+      window.getActivePtId = () => 'ext-9';
+      window.getPatients = () => [{ id: 'ext-9', name: 'Test Patient' }];
+      window.bkToken = () => 'tok'; window.bkBase = () => 'https://backend.test';
+      window.fetch = function (url) {
+        const u = String(url);
+        const j = u.indexOf('/office/turn') >= 0
+          ? { ok: true, say: 'Hello, tell me what brings you in today.', avatar: { name: 'Ava', exitPinSet: true }, done: false }
+          : { ok: true, checkins: [] };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
+      };
+      /* the mic preflight must not hang the test; a refusal is a supported path */
+      navigator.mediaDevices = navigator.mediaDevices || {};
+      navigator.mediaDevices.getUserMedia = () => Promise.reject(new Error('no mic in this harness'));
+      window.__mlsAvatar.openKiosk();
+      await wait(400);
+      const mount = document.getElementById('mlsAvKioskFace');
+      const svg = mount && mount.querySelector('svg');
+      if (!svg) return { mounted: false };
+      const shirt = svg.querySelector('.fShirt');
+      const ry = [];
+      /* the SAME 2.6s window section 7 uses. The breath cycle is ~4.35s, so a
+         shorter window samples an arc, not the amplitude, and the two numbers
+         would not be comparable. */
+      for (let i = 0; i < 26; i++) { ry.push(parseFloat(shirt.getAttribute('ry'))); await wait(100); }
+      const root = document.getElementById('mlsAvKiosk');
+      const out = {
+        mounted: true,
+        ids: mount.querySelectorAll('[id]').length,
+        hasRig: !!svg.querySelector('.fHeadRig'), hasBody: !!svg.querySelector('.fBody'),
+        hasKnit: !!svg.querySelector('.fKnit'), hasLipUp: !!svg.querySelector('.fLipUp'),
+        hasNostril: !!svg.querySelector('.fNostrilL'),
+        breathSpread: Math.max.apply(null, ry) - Math.min.apply(null, ry),
+        dataMood: svg.getAttribute('data-mood'),
+        rootClass: root ? root.className : null
+      };
+      window.__mlsAvatar.closeKiosk();
+      await wait(120);
+      out.closedClean = !document.getElementById('mlsAvKiosk');
+      return out;
+    });
+    ok(r.mounted, 'openKiosk mounts a drawn face into #mlsAvKioskFace');
+    if (r.mounted) {
+      ok(r.ids === 0, 'the kiosk face is still id-free (it coexists with the Setup preview)', r.ids);
+      ok(r.hasRig && r.hasBody, 'the gesture rig and the breathing chest are present on the SHIPPED face',
+        { rig: r.hasRig, body: r.hasBody });
+      ok(r.hasKnit && r.hasLipUp && r.hasNostril, 'the new expression/feature parts are present too',
+        { knit: r.hasKnit, lipUp: r.hasLipUp, nostril: r.hasNostril });
+      ok(r.breathSpread > 2, 'and it BREATHES in the kiosk, not just in the harness (same 2.6s window, same threshold as section 7)', r.breathSpread);
+      ok(typeof r.dataMood === 'string', 'the kiosk face carries a mood attribute', r.dataMood);
+      ok(r.closedClean, 'closing the kiosk removes the overlay (and destroys the face)');
+    }
+    ok(errs.length === 0, 'no page errors', errs.slice(0, 3));
+    await page.close();
+  }
+
   /* ================================================================ 10 */
   head('10. the gallery a human judges');
   {

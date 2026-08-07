@@ -527,12 +527,22 @@
     /* FACE PASS 2026-08-07 - the character gained real features. Every one of
        these is OPTIONAL and defaults to neutral/off, so a look saved by any
        earlier release renders exactly the face it rendered before. */
-    brows: 'normal', nose: 'straight', lips: 'normal', cap: false, stethoscope: false };
+    brows: 'normal', nose: 'straight', lips: 'normal', cap: false, stethoscope: false,
+    /* CONFORM PASS 2026-08-07 - the owner asked the drawn face to "conform to
+       the picture of the person better". These five describe the HEAD rather
+       than the paint on it, and every one of them is measurable from a
+       front-on portrait. All five default to the head this file already drew,
+       so a look saved by any earlier release renders the same face it did. */
+    faceShape: 'oval', eyeSet: 'normal', hairline: 'full', age: 'adult', browCol: '' };
   var FACE_HAIR_STYLES = ['short', 'wavy', 'long', 'bun', 'buzz', 'bald'];
   var FACE_BEARDS = ['none', 'stubble', 'beard'];
   var FACE_BROWS = ['thin', 'normal', 'thick'];
   var FACE_NOSES = ['button', 'straight', 'wide', 'roman'];
   var FACE_LIPS = ['thin', 'normal', 'full'];
+  var FACE_SHAPES = ['oval', 'round', 'long', 'square'];
+  var FACE_EYE_SETS = ['close', 'normal', 'wide'];
+  var FACE_HAIRLINES = ['full', 'receding'];
+  var FACE_AGES = ['adult', 'mature'];
   /* shade a whitelisted 6-digit hex toward white (amt > 0) or black (amt < 0).
      Accessory colours are DERIVED from the palette the doctor already picked,
      so a scrub cap matches the scrubs and no colour arrives unchosen. */
@@ -548,6 +558,59 @@
       out += ('0' + c.toString(16)).slice(-2);
     }
     return out;
+  }
+  /* SKIN HAS AN UNDERTONE AND SO DO ITS SHADOWS. The nose, the nostrils, the
+     dimples and the glabellar crease were drawn in flat black at a fixed
+     alpha - the same grey shadow on every face in the practice. A shadow is
+     the skin minus light, and it carries the skin's own cast: warm skin
+     shadows run redder, cool skin shadows run bluer. Both come out of the
+     SAME measured skin hex, so no colour arrives that the photo did not put
+     there, and a look set by hand gets the treatment too. */
+  function faceRgb(hexv) {
+    var m = /^#([0-9a-fA-F]{6})$/.exec(String(hexv));
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function faceUndertone(hexv) {
+    /* HUE, not warmth: r-b grows with depth on every skin, so a plain
+       red-minus-blue test calls every deep complexion warm. Hue does not
+       move when the same skin is lit dimmer. */
+    var p = faceRgb(hexv);
+    if (!p) return 'neutral';
+    var mx = Math.max(p[0], p[1], p[2]), mn = Math.min(p[0], p[1], p[2]);
+    if (mx - mn < 8) return 'neutral';
+    var h;
+    if (mx === p[0]) h = 60 * (((p[1] - p[2]) / (mx - mn)) % 6);
+    else if (mx === p[1]) h = 60 * (((p[2] - p[0]) / (mx - mn)) + 2);
+    else h = 60 * (((p[0] - p[1]) / (mx - mn)) + 4);
+    if (h < 0) h += 360;
+    if (h > 60 && h < 300) return 'neutral';          /* not a skin hue at all */
+    return h < 21 ? 'cool' : (h > 34 ? 'warm' : 'neutral');
+  }
+  function faceHex(p) {
+    var i, out = '#', c;
+    for (i = 0; i < 3; i++) {
+      c = Math.round(p[i]); if (c < 0) c = 0; if (c > 255) c = 255;
+      out += ('0' + c.toString(16)).slice(-2);
+    }
+    return out;
+  }
+  function faceSkinShadow(hexv, amt) {
+    var p = faceRgb(hexv);
+    if (!p) return 'rgba(0,0,0,' + amt + ')';
+    var tone = faceUndertone(hexv), k = 1 - amt;
+    var br = tone === 'cool' ? 0.95 : tone === 'warm' ? 1.06 : 1;
+    var bg2 = tone === 'cool' ? 0.98 : tone === 'warm' ? 0.99 : 1;
+    var bb = tone === 'cool' ? 1.12 : tone === 'warm' ? 0.86 : 1;
+    return faceHex([p[0] * k * br, p[1] * k * bg2, p[2] * k * bb]);
+  }
+  /* a flush is the skin pushed toward blood, not a fixed salmon dot: #e07a5f
+     over deep skin is a smear of somebody else's cheek. */
+  function faceBlushTone(hexv) {
+    var p = faceRgb(hexv);
+    if (!p) return '#e07a5f';
+    return faceHex([p[0] * 1.06 + 12, p[1] * 0.80, p[2] * 0.82]);
   }
   function faceLookSafe(look) {
     var l = {}, src = look || {};
@@ -567,6 +630,15 @@
     l.lips = FACE_LIPS.indexOf(src.lips) >= 0 ? src.lips : 'normal';
     l.cap = src.cap === true;
     l.stethoscope = src.stethoscope === true;
+    /* the head itself, on the same whitelist rule. browCol is the ONLY field
+       whose neutral value is the empty string: an eyebrow with no colour of
+       its own follows the hair, which is what this file drew before there
+       was a way to measure one. */
+    l.faceShape = FACE_SHAPES.indexOf(src.faceShape) >= 0 ? src.faceShape : 'oval';
+    l.eyeSet = FACE_EYE_SETS.indexOf(src.eyeSet) >= 0 ? src.eyeSet : 'normal';
+    l.hairline = FACE_HAIRLINES.indexOf(src.hairline) >= 0 ? src.hairline : 'full';
+    l.age = FACE_AGES.indexOf(src.age) >= 0 ? src.age : 'adult';
+    l.browCol = hex(src.browCol, '');
     return l;
   }
   var FACE_MOUTHS = {
@@ -610,22 +682,66 @@
     normal: { scale: 1,    w: 2.2 },
     full:   { scale: 1.26, w: 3.6 }
   };
+  /* THE SKULL. Four shapes a front-on portrait can honestly be measured for:
+     the width-over-lower-height ratio splits round from long, and the jaw
+     width taken 62% of the way from the eye line to the chin is what makes a
+     square jaw square. `oval` is rx 58 / ry 66 - the one head this file drew
+     before this pass - so the default is unchanged to the pixel. */
+  var FACE_SHAPE_PARTS = {
+    oval:   { rx: 58, ry: 66, jaw: 0 },
+    round:  { rx: 63, ry: 60, jaw: 0.30 },
+    long:   { rx: 52, ry: 74, jaw: 0 },
+    square: { rx: 59, ry: 66, jaw: 0.85 }
+  };
+  /* half the distance between the pupils, on the default head. Everything
+     that has to line up with an eye - the lids, the brows, the spectacle
+     lenses, the crow's feet - is placed FROM this rather than repeating 71
+     and 129, which is why moving the eyes used to be impossible. */
+  var FACE_EYE_DX = { close: 25.5, normal: 29, wide: 32.5 };
   function faceSvg(look) {
     look = faceLookSafe(look || FACE_LOOK);
+    /* THE HEAD IS MEASURED FIRST AND EVERY FEATURE IS PLACED FROM IT.
+       Until this pass every doctor got one ellipse - rx 58, ry 66 - with the
+       eyes, the blush, the spectacle lenses and the temples nailed to
+       constants that only made sense on that ellipse, so a matcher could
+       never move them even when it could see they were wrong. The oval is
+       that ellipse exactly; the other three move the skull, and nothing below
+       repeats a coordinate that the skull decides. */
+    var sh = FACE_SHAPE_PARTS[look.faceShape] || FACE_SHAPE_PARTS.oval;
+    var FX = sh.rx / 58, FY = sh.ry / 66;
+    /* a long face is long in its LOWER third: the eyes hold their line while
+       the nose and the mouth travel. Scaling the whole face instead just
+       zooms the drawing and reads as a bigger head, not a longer one. */
+    var dyN = (sh.ry - 66) * 0.30, dyM = (sh.ry - 66) * 0.62;
+    var eyeDx = (FACE_EYE_DX[look.eyeSet] || FACE_EYE_DX.normal) * FX;
+    function n2(v) { return String(Math.round(v * 100) / 100); }
+    var cxL = Math.round((100 - eyeDx) * 100) / 100, cxR = Math.round((100 + eyeDx) * 100) / 100;
+    /* brows follow the MEASURED brow colour when there was one. Painting them
+       in the hair colour is wrong on every blond, grey or bald head, and dark
+       brows under light hair are one of the strongest likeness cues there is. */
+    var browPaint = look.browCol || look.hair;
+    var shadeNose = faceSkinShadow(look.skin, 0.20);
+    var shadeHole = faceSkinShadow(look.skin, 0.36);
+    var shadeSoft = faceSkinShadow(look.skin, 0.14);
+    var shadeKnit = faceSkinShadow(look.skin, 0.34);
+    var blush = faceBlushTone(look.skin);
+    /* one transform for everything that has to hug the skull: the crown, the
+       beard, the cap and the back hair are all drawn for the default head. */
+    var fit = 'translate(100,98) scale(' + n2(FX) + ',' + n2(FY) + ') translate(-100,-98)';
     function eye(cx, side) {
       return '<g class="fEye' + side + '" style="transform-box:fill-box;transform-origin:center;transition:transform .12s ease">' +
         '<ellipse cx="' + cx + '" cy="94" rx="11.5" ry="12.5" fill="#fff"/>' +
         '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
           '<circle cx="' + cx + '" cy="95" r="7" fill="' + look.eyes + '"/>' +
           '<circle cx="' + cx + '" cy="95" r="2.5" fill="#1d1710"/>' +
-          '<circle cx="' + (cx + 2.4) + '" cy="92.2" r="2.1" fill="#fff"/>' +
+          '<circle cx="' + n2(cx + 2.4) + '" cy="92.2" r="2.1" fill="#fff"/>' +
         '</g>' +
         /* the LOWER lid: it rises into a smiling-eye arc on a genuine smile -
            the single strongest cue that a face means it */
-        '<path class="fLow' + side + '" d="M' + (cx - 12) + ' 96 q12 12 24 0 v18 h-24 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
+        '<path class="fLow' + side + '" d="M' + n2(cx - 12) + ' 96 q12 12 24 0 v18 h-24 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
         /* upper lid: a skin-coloured shutter that DROPS for sleepy/caring
            looks and lifts for surprise - real eyelid acting, not just scale */
-        '<path class="fLid' + side + '" d="M' + (cx - 12) + ' 94 a12 12 0 0 1 24 0 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
+        '<path class="fLid' + side + '" d="M' + n2(cx - 12) + ' 94 a12 12 0 0 1 24 0 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
         '</g>';
     }
     var back = '';
@@ -634,8 +750,18 @@
     } else if (look.hairStyle === 'bun') {
       back = '<circle class="fHairBack" cx="100" cy="30" r="20" fill="' + look.hair + '"/>';
     }
+    if (back) back = '<g class="fBackFit" transform="' + fit + '">' + back + '</g>';
     var hairPath = FACE_HAIR_PATHS[look.hairStyle] || FACE_HAIR_PATHS.short;
     var hair = hairPath ? '<path class="fHair" d="' + hairPath + '" fill="' + look.hair + '"/>' : '';
+    /* A RECEDING HAIRLINE is two bare temples, so that is exactly what it is
+       drawn as: skin-coloured wedges laid over the crown, inside the crown
+       group so they ride the head and a cap still covers them. One pair of
+       shapes works for every hair cut - there is no receding variant of each
+       path to keep in step. */
+    var temples = (look.hairline === 'receding' && look.hairStyle !== 'bald')
+      ? '<path class="fTempleL" d="M46 94 Q49 60 82 44 Q63 66 60 94 Z" fill="' + look.skin + '"/>' +
+        '<path class="fTempleR" d="M154 94 Q151 60 118 44 Q137 66 140 94 Z" fill="' + look.skin + '"/>'
+      : '';
     var beard = '';
     if (look.beard === 'stubble') {
       beard = '<path class="fBeard" d="M52 108 Q56 160 100 164 Q144 160 148 108 Q140 150 100 152 Q60 150 52 108 Z" fill="' + look.hair + '" opacity=".28"/>';
@@ -645,9 +771,11 @@
     }
     var glasses = look.glasses
       ? '<g class="fGlasses" fill="none" stroke="#3d4a44" stroke-width="3" opacity=".85">' +
-          '<rect x="55" y="80" width="32" height="28" rx="10"/>' +
-          '<rect x="113" y="80" width="32" height="28" rx="10"/>' +
-          '<path d="M87 92 Q100 88 113 92"/><path d="M55 90 L42 94"/><path d="M145 90 L158 94"/>' +
+          '<rect x="' + n2(cxL - 16) + '" y="80" width="32" height="28" rx="10"/>' +
+          '<rect x="' + n2(cxR - 16) + '" y="80" width="32" height="28" rx="10"/>' +
+          '<path d="M' + n2(cxL + 16) + ' 92 Q100 88 ' + n2(cxR - 16) + ' 92"/>' +
+          '<path d="M' + n2(cxL - 16) + ' 90 L' + n2(100 - sh.rx) + ' 94"/>' +
+          '<path d="M' + n2(cxR + 16) + ' 90 L' + n2(100 + sh.rx) + ' 94"/>' +
         '</g>'
       : '';
     /* ACCESSORIES a doctor plausibly wears. Both default OFF; both are drawn
@@ -669,13 +797,39 @@
           '<circle class="fSthDot" cx="130" cy="187" r="3.6" fill="#98a1a8"/>' +
         '</g>'
       : '';
+    /* THE JAW. An ellipse cannot be square, so a squarer jaw is an additive
+       skin panel that leaves the cheekbones alone and only fills out the
+       lower face. It meets the ellipse exactly at 20% of the way down, where
+       the ellipse is still 98% of its full width, so there is no seam. */
+    var jaw = '';
+    if (sh.jaw > 0) {
+      var jt1 = 98 + 0.20 * sh.ry, jt2 = 98 + 0.74 * sh.ry, jt3 = 98 + 0.99 * sh.ry;
+      var jw1 = sh.rx * 0.98, jw2 = sh.rx * (0.694 + sh.jaw * 0.276);
+      jaw = '<path class="fJaw fSkin" d="M' + n2(100 - jw1) + ' ' + n2(jt1) +
+        ' L' + n2(100 - jw2) + ' ' + n2(jt2) +
+        ' Q' + n2(100 - jw2) + ' ' + n2(jt3) + ' 100 ' + n2(jt3) +
+        ' Q' + n2(100 + jw2) + ' ' + n2(jt3) + ' ' + n2(100 + jw2) + ' ' + n2(jt2) +
+        ' L' + n2(100 + jw1) + ' ' + n2(jt1) + ' Z" fill="' + look.skin + '"/>';
+    }
+    /* AGE. Read from how much of the hair mass has gone grey, drawn as the
+       two lines a face actually earns: the nasolabial folds and crow's feet.
+       Both are in the skin's own shadow colour, both track the eyes and the
+       mouth so they still land on a long face or a wide-set one. */
+    var ageLines = look.age === 'mature'
+      ? '<g class="fAge" fill="none" stroke="' + shadeNose + '" stroke-width="1.7" stroke-linecap="round" opacity=".5">' +
+          '<path class="fFoldL" d="M89 ' + n2(110 + dyN) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
+          '<path class="fFoldR" d="M111 ' + n2(110 + dyN) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>' +
+          '<path class="fCrowL" d="M' + n2(cxL - 13) + ' 89 l-7 -4 M' + n2(cxL - 14) + ' 95 l-8 0 M' + n2(cxL - 13) + ' 101 l-7 4"/>' +
+          '<path class="fCrowR" d="M' + n2(cxR + 13) + ' 89 l7 -4 M' + n2(cxR + 14) + ' 95 l8 0 M' + n2(cxR + 13) + ' 101 l7 4"/>' +
+        '</g>'
+      : '';
     var browW = FACE_BROW_WEIGHT[look.brows] || FACE_BROW_WEIGHT.normal;
     var nose = FACE_NOSE_PARTS[look.nose] || FACE_NOSE_PARTS.straight;
     var lips = FACE_LIP_PARTS[look.lips] || FACE_LIP_PARTS.normal;
     var noseRy = (nose.nr * 0.7).toFixed(2);
     return '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" data-mood="idle" style="width:100%;height:100%;display:block">' +
       /* the CHEST is a real group: breathing moves GEOMETRY in here (the shirt
-         ellipse itself grows and lifts), not a scale on the whole picture */
+         ellipse itself grows and lifts), not a scale on the drawing */
       '<g class="fBody" style="transform-box:view-box;transform-origin:100px 180px;transition:transform .09s linear">' +
         '<ellipse class="fShirt" cx="100" cy="206" rx="74" ry="50" fill="' + look.shirt + '"/>' +
         '<path class="fCollar" d="M78 158 Q100 188 122 158 Q100 172 78 158 Z" fill="' + faceShade(look.shirt, -0.2) + '"/>' +
@@ -687,29 +841,35 @@
          transition, so the two never fight for one transform. */
       '<g class="fHeadRig" style="transform-box:view-box;transform-origin:100px 152px;transition:transform .16s ease-out">' +
       '<g class="fHead" style="transform-box:fill-box;transform-origin:50% 62%;transition:transform .45s ease">' +
-        '<ellipse class="fSkin fEarL" cx="42" cy="100" rx="9" ry="13" fill="' + look.skin + '"/>' +
-        '<ellipse class="fSkin fEarR" cx="158" cy="100" rx="9" ry="13" fill="' + look.skin + '"/>' +
-        '<ellipse class="fSkin fFace" cx="100" cy="98" rx="58" ry="66" fill="' + look.skin + '"/>' +
-        beard + hair + cap +
-        '<circle class="fBlush" cx="63" cy="119" r="9" fill="#e07a5f" opacity=".22" style="transition:opacity .4s ease"/>' +
-        '<circle class="fBlush" cx="137" cy="119" r="9" fill="#e07a5f" opacity=".22" style="transition:opacity .4s ease"/>' +
-        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M58 78 Q70 72 84 77" stroke="' + look.hair + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
-        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M116 77 Q130 72 142 78" stroke="' + look.hair + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
+        '<ellipse class="fSkin fEarL" cx="' + n2(100 - sh.rx) + '" cy="' + n2(98 + 2 * FY) + '" rx="9" ry="' + n2(13 * FY) + '" fill="' + look.skin + '"/>' +
+        '<ellipse class="fSkin fEarR" cx="' + n2(100 + sh.rx) + '" cy="' + n2(98 + 2 * FY) + '" rx="9" ry="' + n2(13 * FY) + '" fill="' + look.skin + '"/>' +
+        '<ellipse class="fSkin fFace" cx="100" cy="98" rx="' + sh.rx + '" ry="' + sh.ry + '" fill="' + look.skin + '"/>' +
+        jaw +
+        '<g class="fCrownFit" transform="' + fit + '">' + beard + hair + temples + cap + '</g>' +
+        '<circle class="fBlush" cx="' + n2(100 - 37 * FX) + '" cy="' + n2(119 + dyN) + '" r="9" fill="' + blush + '" opacity=".22" style="transition:opacity .4s ease"/>' +
+        '<circle class="fBlush" cx="' + n2(100 + 37 * FX) + '" cy="' + n2(119 + dyN) + '" r="9" fill="' + blush + '" opacity=".22" style="transition:opacity .4s ease"/>' +
+        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 1) + ' 72 ' + n2(cxL + 13) + ' 77" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
+        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' 77 Q' + n2(cxR + 1) + ' 72 ' + n2(cxR + 13) + ' 78" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
         /* the glabellar KNIT - two short creases between the brows. Concern is
            read there before it is read anywhere else on a human face. */
-        '<path class="fKnit" d="M96.5 72 Q97.5 66 96.5 61 M103.5 72 Q102.5 66 103.5 61" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
-        eye(71, 'L') + eye(129, 'R') + glasses +
-        '<path class="fNose" d="' + nose.d + '" stroke="rgba(0,0,0,.18)" stroke-width="' + nose.w + '" stroke-linecap="round" fill="none"/>' +
-        '<ellipse class="fNostril fNostrilL" cx="' + (100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="rgba(0,0,0,.20)"/>' +
-        '<ellipse class="fNostril fNostrilR" cx="' + (100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="rgba(0,0,0,.20)"/>' +
+        '<path class="fKnit" d="M96.5 72 Q97.5 66 96.5 61 M103.5 72 Q102.5 66 103.5 61" stroke="' + shadeKnit + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+        eye(cxL, 'L') + eye(cxR, 'R') + glasses +
+        '<g class="fNoseSet" transform="translate(0,' + n2(dyN) + ')">' +
+          '<path class="fNose" d="' + nose.d + '" stroke="' + shadeNose + '" stroke-width="' + nose.w + '" stroke-linecap="round" fill="none"/>' +
+          '<ellipse class="fNostril fNostrilL" cx="' + n2(100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeHole + '"/>' +
+          '<ellipse class="fNostril fNostrilR" cx="' + n2(100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeHole + '"/>' +
+        '</g>' +
+        '<g class="fMouthSet" transform="translate(0,' + n2(dyM) + ')">' +
         '<g class="fMouthWrap" style="transform-box:fill-box;transform-origin:center top;transition:transform .1s ease">' +
           '<g class="fLips" style="transform-box:fill-box;transform-origin:center;transform:scaleY(' + lips.scale + ');transition:transform .3s ease">' +
             '<path class="fMouth" d="' + FACE_MOUTHS.smile + '" fill="' + look.lip + '"/>' +
             '<path class="fLipUp" d="' + FACE_MOUTHS.smile + '" fill="none" stroke="' + faceShade(look.lip, -0.3) + '" stroke-width="' + lips.w + '" stroke-linejoin="round"/>' +
           '</g>' +
-          '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="rgba(0,0,0,.13)" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
-          '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="rgba(0,0,0,.13)" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+          '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+          '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
         '</g>' +
+        '</g>' +
+        ageLines +
       '</g></g></svg>';
   }
   function makeFace(mount, look) {
@@ -1117,7 +1277,7 @@
            beside them - so a dark lip colour measured as a drop from the
            cheeks and a clean-shaven face came back bearded. Facial hair is
            read on the jaw sides and low on the chin, where a mouth is not. */
-        var chin = patchMedian([F(0.34, 0.72), F(0.66, 0.72), F(0.50, 0.85)], 2);
+        var chin = patchMedian([F(0.34, 0.72), F(0.66, 0.72), F(0.50, 0.79)], 2);
         if (chin) {
           var drop = skinL - lum(chin);
           if (drop > 46) { look.beard = 'beard'; found.push('beard'); }
@@ -1128,8 +1288,18 @@
         var browRow = patchMedian([F(0.32, 0.40), F(0.68, 0.40)], 1);
         var cheekRow = patchMedian([F(0.30, 0.56), F(0.70, 0.56)], 1);
         var brow2 = patchMedian([F(0.50, 0.30)], 1);
-        if (browRow && cheekRow && brow2) {
-          if (lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(brow2) - 20) {
+        /* THE BRIDGE IS WHAT MAKES A FRAME A FRAME. "Darker than the forehead
+           and darker than the cheeks, on both sides" is equally well explained
+           by THICK DARK EYEBROWS, and that is not a rare face. Measured: an
+           8px brow bar came back as spectacles - and because the brow measure
+           stands down whenever glasses are detected, the same face then lost
+           its eyebrows too. One misread, two wrong answers, in the direction
+           of adding a feature the doctor does not have.
+           Eyebrows have a gap between them. A frame crosses it. */
+        var bridge = patchMedian([F(0.50, 0.40)], 1);
+        if (browRow && cheekRow && brow2 && bridge) {
+          if (lum(bridge) < lum(cheekRow) - 20 &&
+              lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(brow2) - 20) {
             look.glasses = true; found.push('glasses');
           }
         }
@@ -1176,11 +1346,14 @@
                BELOW the hair mass, whose bottom edge reaches y 0.34 - a band
                that started at 0.30 measured the fringe on a face that had no
                eyebrows drawn at all. */
-            var by0 = at(0.355), by1 = at(0.43), browCols = [];
+            var by0 = at(0.355), by1 = at(0.43), browCols = [], browPix = [];
             for (var bx = at(0.26); bx < M * 0.75; bx++) {
               if (bx > M * 0.44 && bx < M * 0.56) continue;      /* the gap between the brows */
               var darkRows = 0;
-              for (var byy = by0; byy < by1; byy++) if (lum2(px2(bx, byy)) < skinL - 34) darkRows++;
+              for (var byy = by0; byy < by1; byy++) {
+                var bp = px2(bx, byy);
+                if (lum2(bp) < skinL - 34) { darkRows++; browPix.push(bp); }
+              }
               browCols.push(darkRows);
             }
             var browMed = median(browCols);
@@ -1198,6 +1371,17 @@
               var bVal = bRatio < 0.035 ? 'thin' : (bRatio > 0.06 ? 'thick' : 'normal');
               look.brows = bVal; derived.push('brows');
               found.push(bVal === 'normal' ? 'natural brows' : bVal + ' brows');
+              /* AND THEIR COLOUR, from the very pixels that were just counted.
+                 Painting brows in the hair colour is wrong on every blond,
+                 grey or balding head, and dark brows under light hair are one
+                 of the strongest likeness cues a drawn face has. Taken only
+                 when it actually differs from the hair - otherwise the honest
+                 answer is the follow-the-hair default this file already had. */
+              if (browPix.length > 12) {
+                browPix.sort(function (p, q) { return lum2(p) - lum2(q); });
+                var bc = browPix[Math.floor(browPix.length / 2)];
+                if (apart(bc, hair, 30)) { look.browCol = hex(bc); derived.push('browCol'); found.push('brows a different colour from the hair'); }
+              }
             }
           }
 
@@ -1267,6 +1451,138 @@
               found.push('top colour');
             }
           }
+          /* ---- THE SKULL --------------------------------------------------
+             Everything above describes the paint. These describe the HEAD, and
+             they all rest on one measurement: where the face ENDS. Scan inward
+             from both edges at eye level until the pixels start looking like
+             this face's own skin. If that fails - a background the same colour
+             as the skin, a crop with no margin - the whole group declines
+             together rather than each guessing from a bad width. */
+          function chDist(a, b) { return (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3; }
+          function skinLike(p) {
+            /* nearer the measured skin than the measured background. A fixed
+               tolerance called a light wall skin and returned a face the full
+               width of the frame - measured, not hypothetical. */
+            if (!bg) return chDist(p, skin) < 30;
+            return chDist(p, skin) < chDist(p, bg);
+          }
+          /* skinLike answers FACE OR BACKGROUND, where those are the only two
+             options and a relative test is exactly right. Up on the crown
+             there is a THIRD option - hair - and dark hair happens to sit
+             nearer skin than it does a pale wall, so the relative test alone
+             called a full head of hair a bare temple. Anything asking 'is
+             this specifically skin' needs the absolute bound too. */
+          function skinExact(p) { return chDist(p, skin) < 34 && skinLike(p); }
+          function edgesAt(fy) {
+            var y = at(fy), L = -1, R = -1, i;
+            for (i = 0; i < M * 0.48; i++) if (skinLike(px2(i, y))) { L = i; break; }
+            for (i = M - 1; i > M * 0.52; i--) if (skinLike(px2(i, y))) { R = i; break; }
+            /* an edge ON the frame boundary is the face leaving the picture,
+               not the face being that wide. Refuse. */
+            if (L <= 0 || R >= M - 1) return null;
+            return (L >= 0 && R > L) ? { L: L, R: R, w: R - L } : null;
+          }
+          var eyeEdges = edgesAt(0.45);
+          if (eyeEdges && eyeEdges.w > M * 0.30) {
+            var faceW = eyeEdges.w, eyeY = at(0.45);
+            /* the chin: the last skin row down the centre line */
+            var chinY = 0;
+            for (var cy2 = at(0.60); cy2 < M; cy2++) if (skinLike(px2(mid, cy2))) chinY = cy2;
+            /* the chin at the bottom row means the jaw is cropped off, so the
+               lower-face height is a floor, not a measurement. Same refusal. */
+            if (chinY >= M - 1) chinY = 0;
+            var lowerH = chinY - eyeY;
+
+            /* SHAPE. width over the LOWER face height - eyes to chin - because
+               the upper bound of a face is hair, not bone. The three cut points
+               are the ratios of the three heads faceSvg actually draws
+               (oval 116/70 = 1.66, round 126/64 = 1.97, long 104/78 = 1.33),
+               so a photo is being matched to the nearest head that exists
+               rather than to a number invented here. */
+            /* A BEARD HIDES THE JAW, AND WORSE, IT IMPERSONATES IT. skinLike
+               is RELATIVE - nearer the measured skin than the measured
+               background - and a dark beard on a light wall is nearer the
+               skin, so the chin scan ran straight through the beard to its
+               bottom edge and every bearded face measured LONG. That is a
+               claimed shape, not a refusal: it overwrote whatever the doctor
+               had chosen. There is no honest reading of a jaw that is under
+               hair, so there is no reading. */
+            if (lowerH > M * 0.18 && look.beard === 'none') {
+              var shapeR = faceW / lowerH;
+              var sVal = shapeR < 1.48 ? 'long' : (shapeR > 1.80 ? 'round' : 'oval');
+              /* A SQUARE JAW OUTRANKS ALL THREE. It is not a proportion, it is
+                 the face still being wide 62% of the way down to the chin -
+                 the drawn oval has narrowed to 0.80 of its eye-level width by
+                 there, so anything still above 0.88 is a jaw, not an oval. */
+              var jawEdges = edgesAt(0.45 + (chinY - eyeY) * 0.62 / M);
+              if (jawEdges && jawEdges.w / faceW > 0.88) sVal = 'square';
+              look.faceShape = sVal; derived.push('faceShape');
+              found.push(sVal === 'square' ? 'a square jaw' : sVal + ' face');
+            }
+
+            /* EYE SPACING. The darkest column inside each eye region is the
+               iris. Measured against the SAME face's width, and compared with
+               the spacing faceSvg draws by default (2 x 29 over a 116-wide
+               head = 0.50), so the verdict names a head that exists. */
+            function irisX(fx0, fx1) {
+              /* THE DARK MASS, NOT THE DARKEST PIXEL. A solid iris has no
+                 unique darkest pixel - JPEG ringing round its edge is as
+                 dark as its centre - so 'the darkest pixel' is noise wearing
+                 a measurement's clothes. Measured that way, three portraits
+                 with byte-identical eyes came back close, normal and wide,
+                 decided only by the skin colour around them. The centroid of
+                 the whole dark mass does not move. */
+              var sx = 0, sn = 0, lo = 1e9, hi = -1, ex, ey, L2;
+              for (ex = at(fx0); ex < M * fx1; ex++)
+                for (ey = at(0.42); ey < M * 0.48; ey++) {
+                  L2 = lum2(px2(ex, ey));
+                  if (L2 < skinL - 45) { sx += ex; sn++; if (ex < lo) lo = ex; if (ex > hi) hi = ex; }
+                }
+              /* AN IRIS IS COMPACT, AND A SPECTACLE FRAME IS NOT. The frame
+                 is dark across the whole half of the face and was measured
+                 as one enormous eye, so a bespectacled portrait returned an
+                 eye spacing it had no way to see - and silently, because
+                 eyeSet is in derived and 'normal' looks like a default. The
+                 width test is the real gate here: it holds even on a frame
+                 the glasses detector missed. */
+              if (sn < 6 || (hi - lo + 1) > M * 0.14) return -1;
+              return sx / sn;
+            }
+            /* and a second, independent gate on the flag the colour pass
+               already raised - two gates, so a frame has to beat both. */
+            var ixL = look.glasses ? -1 : irisX(0.25, 0.47);
+            var ixR = look.glasses ? -1 : irisX(0.53, 0.75);
+            if (ixL >= 0 && ixR > ixL) {
+              var setR = (ixR - ixL) / faceW;
+              var eVal = setR < 0.44 ? 'close' : (setR > 0.56 ? 'wide' : 'normal');
+              look.eyeSet = eVal; derived.push('eyeSet');
+              if (eVal !== 'normal') found.push(eVal + '-set eyes');
+            }
+          }
+
+          /* A RECEDING HAIRLINE is bare TEMPLES with hair still on the crown -
+             so it is read as exactly that contrast, and never on a head with no
+             hair to recede from. Reading only the temples would call every bald
+             head receding; reading only the crown could never see it at all. */
+          if (look.hairStyle !== 'bald' && hair) {
+            function bare(fx0, fx1) {
+              var skinN = 0, tot = 0;
+              for (var tx = at(fx0); tx < M * fx1; tx++)
+                for (var ty = at(0.16); ty < M * 0.26; ty++) { tot++; if (skinExact(px2(tx, ty))) skinN++; }
+              return tot ? skinN / tot : 0;
+            }
+            var tL = bare(0.28, 0.37), tR = bare(0.63, 0.72), crown = bare(0.44, 0.56);
+            if (tL > 0.55 && tR > 0.55 && crown < 0.25) {
+              look.hairline = 'receding'; derived.push('hairline');
+              found.push('a receding hairline');
+            }
+          }
+          /* `age` is NOT derived. Nasolabial folds and crow's feet are a few
+             pixels of low-contrast texture at this resolution and are wiped out
+             by ordinary lighting, so any verdict here would be a guess wearing
+             a measurement's clothes - and guessing a doctor is old is the one
+             wrong answer this feature must never volunteer. It stays a choice
+             in Setup, which is why that control exists. */
         });
         return { look: look, found: found, derived: derived };
       }, null));
@@ -1535,9 +1851,44 @@
       colourControl('shirt', 'Scrubs / top');
       var stylePick = pickControl('hairStyle', 'Hair', [['short', 'Short'], ['wavy', 'Wavy'], ['long', 'Long'], ['bun', 'Tied back'], ['buzz', 'Buzzed'], ['bald', 'None']]);
       var beardPick = pickControl('beard', 'Facial hair', [['none', 'Clean-shaven'], ['stubble', 'Stubble'], ['beard', 'Beard']]);
+      var browColWell = null;
       var browsPick = pickControl('brows', 'Eyebrows', [['thin', 'Thin'], ['normal', 'Natural'], ['thick', 'Thick']]);
       var nosePick = pickControl('nose', 'Nose', [['button', 'Button'], ['straight', 'Straight'], ['wide', 'Wide'], ['roman', 'Roman']]);
       var lipsPick = pickControl('lips', 'Lips', [['thin', 'Thin'], ['normal', 'Natural'], ['full', 'Full']]);
+      /* THE HEAD ITSELF. faceSvg has drawn these since the same release that
+         added them, and until now nothing could ask for one: no control here,
+         no derivation from the photo. Correct behaviour the doctor cannot
+         reach is indistinguishable from behaviour that was never built. */
+      var shapePick = pickControl('faceShape', 'Face shape', [['oval', 'Oval'], ['round', 'Round'], ['long', 'Long'], ['square', 'Square jaw']]);
+      var eyeSetPick = pickControl('eyeSet', 'Eye spacing', [['close', 'Close-set'], ['normal', 'Natural'], ['wide', 'Wide-set']]);
+      var hairlinePick = pickControl('hairline', 'Hairline', [['full', 'Full'], ['receding', 'Receding']]);
+      var agePick = pickControl('age', 'Face lines', [['adult', 'Smooth'], ['mature', 'Mature']]);
+      var browColPick = pickControl('browCol', 'Eyebrow colour', [['', 'Same as hair']]);
+      /* the brow colour is a COLOUR, but its neutral value is the empty string
+         (follow the hair) and a native colour input cannot express "none". So
+         it is a select with one option plus a real colour well beside it, and
+         choosing a colour is what leaves the follow-the-hair default. */
+      (function () {
+        var well = document.createElement('input');
+        well.type = 'color'; well.id = 'mlsAvLook_browColWell';
+        well.value = lookNow.browCol || lookNow.hair;
+        well.style.cssText = 'width:100%;height:28px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer;margin-top:4px';
+        well.addEventListener('input', function () {
+          lookNow.browCol = well.value;
+          if (browColPick.options.length < 2) {
+            var o = document.createElement('option'); o.value = 'set'; o.textContent = 'Its own colour';
+            browColPick.appendChild(o);
+          }
+          browColPick.value = 'set';
+          lookApply();
+        });
+        browColPick.addEventListener('change', function () {
+          lookNow.browCol = browColPick.value === 'set' ? well.value : '';
+          lookApply();
+        });
+        browColPick.parentNode.appendChild(well);
+        browColWell = well;
+      }());
       /* the OPTIONAL accessories - same control pattern as the existing glasses
          box, all defaulting off, all whitelisted in faceLookSafe */
       function toggleControl(key, labelText) {
@@ -1586,6 +1937,16 @@
           lipPick.value = lookNow.lip;
           stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
           browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
+          shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
+          hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
+          if (lookNow.browCol) {
+            if (browColPick.options.length < 2) {
+              var bo = document.createElement('option'); bo.value = 'set'; bo.textContent = 'Its own colour';
+              browColPick.appendChild(bo);
+            }
+            browColPick.value = 'set';
+            if (browColWell) browColWell.value = lookNow.browCol;
+          } else { browColPick.value = ''; }
           glassesBox.checked = lookNow.glasses === true;
           capBox.checked = lookNow.cap === true;
           stethBox.checked = lookNow.stethoscope === true;
