@@ -150,7 +150,9 @@ function STUBS() {
         title: (c.querySelector('b') || {}).textContent || '',
         detail: (c.querySelector('.mlsAvOrdDet') || {}).textContent || '',
         missing: (c.querySelector('.mlsAvOrdMiss') || {}).textContent || '',
-        confirmDisabled: go ? !!go.disabled : null,
+        /* av-5.6.9: the gate moved to aria-disabled so the control stays
+           keyboard-reachable — 'blocked' must read BOTH spellings */
+        confirmDisabled: go ? (go.disabled === true || go.getAttribute('aria-disabled') === 'true') : null,
         sides: c.querySelectorAll('.mlsAvOrdPick').length,
         confirmed: !!c.querySelector('.mlsAvOrdOk')
       };
@@ -344,7 +346,8 @@ async function say(page, text) {
       /* clicking Confirm while blocked must do nothing at all */
       await page.evaluate(function () {
         const go = document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo');
-        go.disabled = false;                 /* defeat the attribute on purpose */
+        go.disabled = false;
+        go.removeAttribute('aria-disabled');   /* defeat BOTH spellings on purpose */
         go.click();
       });
       await page.clock.runFor(300);
@@ -1554,6 +1557,127 @@ async function say(page, text) {
         ok('K ' + tag + ': page threw nothing', errs.length === 0, errs.join(' | '));
         await page.close();
       }
+    }
+    /* ------------------------------------------------------------ L */
+    section('SCENARIO L - CONTRAST AND KEYBOARD (a patient-facing clinical screen)');
+    {
+      /* Every element this train added carries text, and none of it has ever
+         been checked for legibility. This is a screen a patient reads across a
+         room, and one of the things it must carry is the AI disclosure — a
+         disclosure nobody can read is not a disclosure. Contrast is computed
+         against the real rendered background, not the value I intended. */
+      const h = await newPage(browser, base);
+      const page = h.page;
+      await toAmbient(page);
+      await say(page, 'order an MRI of the knee');
+      await page.evaluate(function () { window.__emit('start gabapentin 300 mg at night', true); });
+      await page.clock.runFor(1800);
+
+      const report = await page.evaluate(function () {
+        function srgb(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+        function lum(rgb) { return 0.2126 * srgb(rgb[0]) + 0.7152 * srgb(rgb[1]) + 0.0722 * srgb(rgb[2]); }
+        function parse(s) {
+          const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(s || '');
+          if (!m) return null;
+          return { c: [+m[1], +m[2], +m[3]], a: m[4] === undefined ? 1 : +m[4] };
+        }
+        /* the first ancestor that actually paints something opaque */
+        function bgOf(el) {
+          let n = el;
+          while (n && n !== document.documentElement) {
+            const p = parse(getComputedStyle(n).backgroundColor);
+            if (p && p.a >= 0.95) return p.c;
+            n = n.parentElement;
+          }
+          return [255, 255, 255];
+        }
+        function ratio(a, b) {
+          const l1 = lum(a), l2 = lum(b);
+          return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        }
+        const out = [];
+        const sels = [
+          ['#mlsAvKioskState', 'state chip'],
+          ['#mlsAvKioskAi', 'AI disclosure'],
+          ['#mlsAvKioskSave', 'save badge'],
+          ['#mlsAvKioskMute', 'mute button'],
+          ['#mlsAvKioskEndVisit', 'End Visit button'],
+          ['#mlsAvKioskRecText', 'recording banner'],
+          ['#mlsAvKioskOrders .mlsAvOrdTitle', 'widget heading'],
+          ['#mlsAvKioskOrders .mlsAvOrdCount', 'widget count'],
+          ['#mlsAvKioskOrders .mlsAvOrd b', 'order title'],
+          ['#mlsAvKioskOrders .mlsAvOrdKind', 'order kind'],
+          ['#mlsAvKioskOrders .mlsAvOrdDet', 'order detail'],
+          ['#mlsAvKioskOrders .mlsAvOrdHeard', 'heard-verbatim line'],
+          ['#mlsAvKioskOrders .mlsAvOrdMiss', 'missing-field warning'],
+          ['#mlsAvKioskOrders .mlsAvOrdFoot', 'widget footer'],
+          ['#mlsAvKioskOrders .mlsAvOrdGo', 'Confirm button'],
+          ['#mlsAvKioskOrders .mlsAvOrdEdit', 'Edit button'],
+          ['#mlsAvKioskOrders .mlsAvOrdNo', 'Dismiss button'],
+          ['#mlsAvKioskOrders .mlsAvOrdPick', 'side picker']
+        ];
+        sels.forEach(function (row) {
+          const el = document.querySelector(row[0]);
+          if (!el) { out.push({ what: row[1], missing: true }); return; }
+          const cs = getComputedStyle(el);
+          const fg = parse(cs.color);
+          if (!fg) return;
+          const px = parseFloat(cs.fontSize) || 16;
+          const bold = (parseInt(cs.fontWeight, 10) || 400) >= 700;
+          /* WCAG "large text": >=24px, or >=18.66px when bold */
+          const large = px >= 24 || (bold && px >= 18.66);
+          out.push({
+            what: row[1], px: Math.round(px * 10) / 10, bold: bold, large: large,
+            ratio: Math.round(ratio(fg.c, bgOf(el)) * 100) / 100,
+            need: large ? 3 : 4.5
+          });
+        });
+        return out;
+      });
+
+      const bad = report.filter(function (r) { return !r.missing && r.ratio < r.need; });
+      console.log('  ---- contrast of every element this train added ----');
+      report.forEach(function (r) {
+        if (r.missing) { console.log('     (not on screen) ' + r.what); return; }
+        console.log('     ' + (r.ratio < r.need ? 'FAIL ' : 'ok   ') +
+          String(r.ratio).padStart(6) + ':1  need ' + r.need + '  ' +
+          String(r.px).padStart(5) + 'px' + (r.bold ? ' bold' : '     ') + '  ' + r.what);
+      });
+      ok('L every added element meets WCAG AA contrast', bad.length === 0,
+        bad.map(function (b) { return b.what + ' ' + b.ratio + ':1'; }).join(', '));
+
+      /* keyboard: a clinical control that cannot be reached by keyboard is not
+         a control for everyone who has to use it */
+      const kb = await page.evaluate(function () {
+        function focusable(sel) {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          el.focus();
+          return document.activeElement === el;
+        }
+        return {
+          mute: focusable('#mlsAvKioskMute'),
+          end: focusable('#mlsAvKioskEndVisit'),
+          confirm: focusable('#mlsAvKioskOrders .mlsAvOrdGo'),
+          dismiss: focusable('#mlsAvKioskOrders .mlsAvOrdNo'),
+          muteName: (document.getElementById('mlsAvKioskMute') || {}).textContent,
+          mutePressed: (document.getElementById('mlsAvKioskMute') || {}).getAttribute
+            ? document.getElementById('mlsAvKioskMute').getAttribute('aria-pressed') : null,
+          stateRole: (document.getElementById('mlsAvKioskState') || {}).getAttribute
+            ? document.getElementById('mlsAvKioskState').getAttribute('role') : null,
+          recRole: (document.getElementById('mlsAvKioskRec') || {}).getAttribute
+            ? document.getElementById('mlsAvKioskRec').getAttribute('role') : null
+        };
+      });
+      ok('L the mute control is keyboard reachable', kb.mute === true);
+      ok('L End Visit is keyboard reachable', kb.end === true);
+      ok('L Confirm is keyboard reachable', kb.confirm === true);
+      ok('L Dismiss is keyboard reachable', kb.dismiss === true);
+      ok('L the mute control reports its pressed state to assistive tech',
+        kb.mutePressed === 'false' || kb.mutePressed === 'true', String(kb.mutePressed));
+      ok('L the state chip announces changes (role=status)', kb.stateRole === 'status', String(kb.stateRole));
+      ok('L the recording disclosure announces itself (role=status)', kb.recRole === 'status', String(kb.recRole));
+      ok('L page threw nothing', h.errors.length === 0, h.errors.join(' | '));
     }
   } finally {
     await browser.close();

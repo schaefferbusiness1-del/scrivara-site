@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.8)
+ * AVATAR — THE VISIT COPILOT (av-5.6.9)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -391,9 +391,17 @@ assert(/function kioskAmbientRetry\(\)[\s\S]{0,500}if \(kiosk\.ambClosing\) retu
 
 /* 3d. the confirm gate is enforced in the HANDLER, not only on the attribute —
    a disabled attribute is a UI hint, not a safety property */
-assert(/confirm\.addEventListener\('click', function \(\) \{\s*\n\s*if \(\(a\.missing \|\| \[\]\)\.length\) return;/.test(source),
+assert(/confirm\.addEventListener\('click', function \(\) \{\s*\n\s*if \(\(a\.missing \|\| \[\]\)\.length\) \{/.test(source),
   'Confirm must re-check the missing fields inside the handler');
-assert(/confirm\.disabled = true;/.test(source), 'Confirm must also be visibly disabled while a field is missing');
+assert(/if \(pick\) safe\(function \(\) \{ pick\.focus\(\); \}\);/.test(source),
+  'a blocked Confirm must point at what would unblock it rather than dying silently');
+/* aria-disabled, not disabled: a disabled button leaves the tab order, so a
+   keyboard user could never reach the control nor hear why it was blocked */
+assert(/confirm\.setAttribute\('aria-disabled', 'true'\)/.test(source),
+  'the gated Confirm must stay keyboard-reachable and announced');
+assert(!/confirm\.disabled = true/.test(source),
+  'a hard-disabled Confirm is back — it vanishes from the tab order');
+assert(/aria-label', 'Confirm/.test(source), 'the gated Confirm must say WHY it is unavailable');
 
 /* 3e. nothing here submits anything, and the note says so */
 assert(source.includes('have NOT been transmitted to any EMR'),
@@ -639,14 +647,14 @@ assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source
 }
 
 /* 3r. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.8'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.6.9'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '568', 'the loader cache token must name av-5.6.8 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '569', 'the loader cache token must name av-5.6.9 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.8): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.6.9): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

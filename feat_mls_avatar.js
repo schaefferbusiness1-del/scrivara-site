@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.8';
+  var VERSION = 'av-5.6.9';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2393,7 +2393,8 @@
       '#mlsAvKioskOrders .mlsAvOrdEdRow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}' +
       '#mlsAvKioskOrders .mlsAvOrdEdIn{flex:1 1 100%;border:1px solid #2E6A4B;border-radius:9px;padding:8px 9px;font:600 12.5px system-ui;color:#1A211C}' +
       '#mlsAvKioskOrders .mlsAvOrdGo{flex:1;border:0;background:#2E6A4B;color:#fff;border-radius:9px;padding:8px 6px;font:800 12.5px system-ui;cursor:pointer}' +
-      '#mlsAvKioskOrders .mlsAvOrdGo:disabled{background:#cfd9d2;color:#55605A;cursor:not-allowed}' +
+      '#mlsAvKioskOrders .mlsAvOrdGo:disabled,#mlsAvKioskOrders .mlsAvOrdGo[aria-disabled="true"]{background:#cfd9d2;color:#204034;cursor:not-allowed}' +
+      '#mlsAvKioskOrders .mlsAvOrdMiss[data-nudge]{outline:2px solid #c0392b;outline-offset:1px}' +
       '#mlsAvKioskOrders .mlsAvOrdEdit,#mlsAvKioskOrders .mlsAvOrdNo{border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:9px;padding:8px 10px;font:700 12.5px system-ui;cursor:pointer}' +
       '#mlsAvKioskOrders .mlsAvOrdFoot{font:600 10.8px/1.45 system-ui;color:#69736d;border-top:1px solid #E7E5DD;padding-top:7px;margin-top:2px}' +
       /* the review: one screen, one verdict, and the pending list said out
@@ -3543,11 +3544,28 @@
     var confirm = make('button', 'mlsAvOrdGo', 'Confirm');
     confirm.type = 'button';
     if ((a.missing || []).length) {
-      confirm.disabled = true;
-      confirm.title = 'Missing: ' + ordersMissingText(a);
+      /* aria-disabled, NOT disabled. A disabled button leaves the tab order
+         entirely, so a doctor working by keyboard could not reach this control
+         at all and was never told WHY it was unavailable. It stays reachable
+         and announced; the real gate is the handler below, which is where it
+         always belonged and which the suite already pins. */
+      confirm.setAttribute('aria-disabled', 'true');
+      confirm.setAttribute('aria-label', 'Confirm — unavailable, missing ' + ordersMissingText(a));
     }
     confirm.addEventListener('click', function () {
-      if ((a.missing || []).length) return;    /* the gate is enforced here too, not only by the attribute */
+      if ((a.missing || []).length) {
+        /* THE GATE, enforced here rather than by an attribute. A dead click is
+           poor guidance though, so it points at the thing that would unblock
+           it instead of doing nothing at all. */
+        var pick = card.querySelector('.mlsAvOrdPick');
+        if (pick) safe(function () { pick.focus(); });
+        var miss = card.querySelector('.mlsAvOrdMiss');
+        if (miss) {
+          miss.setAttribute('data-nudge', '1');
+          safe(function () { setTimeout(function () { miss.removeAttribute('data-nudge'); }, 900); });
+        }
+        return;
+      }
       a.status = 'confirmed';
       a.confirmedAt = Date.now();
       ordersRender(); kioskAmbientSave(true);
