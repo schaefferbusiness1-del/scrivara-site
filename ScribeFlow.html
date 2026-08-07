@@ -16738,6 +16738,18 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
     +'NEVER ask for patient name, sex/gender, age, date of birth, MRN, or BMI — treat those as known or as boilerplate that needs no input. '
     +'ONLY put a [[key]] placeholder (and a "missing" entry) for a detail that genuinely VARIES per case AND is not known — e.g. needle gauge/size, medication name/dose/volume, contrast amount, fluoroscopy time, sedation, or an ambiguous level. '
     +'BE CONSERVATIVE — use the FEWEST placeholders possible. If the TEMPLATE already states a standard value for something (a routine dose, a standard volume, default contrast), KEEP the template’s value rather than blanking it; only blank a detail that truly changes patient-to-patient and is not derivable. Each placeholder key must be UNIQUE and appear exactly once. '
+    /* 2026-08-06, PATIENT SAFETY. The line above and the line before it point in
+       opposite directions for drug fields, and the conservative one was winning.
+       Measured: the Lumbar Facet Joint Injection template, whose text contains
+       no drug name at all, produced "1% lidocaine", "0.25% bupivacaine" and
+       "80 mg triamcinolone" — three drugs and a DOSE invented to satisfy "use
+       the fewest placeholders". Every invented value was textbook, which is the
+       tell: the model was not hallucinating, it was supplying the routine value
+       the instruction above asks for. A signed note would have asserted the
+       patient received 80 mg of triamcinolone on no authority whatsoever.
+       The carve-out is stated AFTER the conservative rule and in its own terms
+       so it cannot read as a subordinate clause of it. */
+    +'ABSOLUTE EXCEPTION, OVERRIDES THE CONSERVATIVE RULE ABOVE — there is NO routine value for a drug. If the TEMPLATE marks a MEDICATION NAME, DOSE, CONCENTRATION, VOLUME OF A DRUG, or DEVICE/NEEDLE SIZE as something to be supplied (e.g. [LOCAL ANESTHETIC], [STEROID DOSE], [ANESTHETIC], [GAUGE], [ANESTHETIC/SALINE]), you MUST emit a [[key]] placeholder for it and you MUST NOT supply a value — not a standard one, not a typical one, not a safe-sounding one. Never write a drug name, strength, percentage or milligram figure that is not already written in the TEMPLATE text, the transcript, or the KNOWN PATIENT FACTS. If you are unsure whether a detail is a drug, treat it as a drug and place a placeholder. An unfilled blank is safe; a plausible invented dose is not. '
     +'CODING -- fill real codes, never echo an instruction: when the TEMPLATE, transcript, or KNOWN FACTS name a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain" or "CPT code for lumbar medial branch block") -- REPLACE that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, NOT fabrication; do NOT output a deprecated non-billable parent code, and do NOT invent a code for a diagnosis that was not stated. NEVER leave literal "ICD-10 code for ..." or "CPT code for ..." text in the finished note. Only if genuinely unsure of the exact current code for a named diagnosis, insert a [[icd10_<short_dx>]] placeholder and add it to "missing" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. '
     +'Use snake_case keys (e.g. needle_size, contrast_volume, sedation). Return ONLY JSON, no prose, no code fence: {"note":"<full operative note text, with [[key]] placeholders where needed>","missing":[{"key":"needle_size","label":"Needle size / gauge","example":"22g 3.5in"}]}.';
   var user='PATIENT: '+name+'\nDATE OF PROCEDURE: '+dateStr+'\nPROCEDURE: '+procedure
@@ -16748,7 +16760,98 @@ async function _genOpNote(name, dateStr, procedure, tplText, ctx){
   var s=String(raw||'').replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
   var obj=null; try{ obj=JSON.parse(s); }catch(e){ try{ var m=s.match(/\{[\s\S]*\}/); if(m) obj=JSON.parse(m[0]); }catch(_){} }
   if(!obj||typeof obj!=='object') return {note:s, missing:[]};
-  return {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]};
+  return _opGuardDrugBlanks(tplText, {note:String(obj.note||''), missing:Array.isArray(obj.missing)?obj.missing:[]});
+}
+
+/* ── DRUG-BLANK GUARD (2026-08-06, patient safety) ─────────────────────────
+   The prompt carve-out above is a REQUEST. This is the guarantee.
+
+   THE DEFECT IT ENFORCES AGAINST, measured on a real patient on live b923:
+   the Lumbar Facet Joint Injection template carries [LOCAL ANESTHETIC] and
+   [STEROID DOSE] and names no drug anywhere in its text. The draft came back
+   reading "anesthetized with 1% lidocaine" and "80 mg triamcinolone with
+   [FILL: volume of anesthetic] of 0.25% bupivacaine". Three drugs and a dose,
+   invented, in a note the doctor signs. The [VOLUME] blank survived in the SAME
+   SENTENCE, which is what proves the blank machinery works and only the drug
+   fields were being resolved away.
+
+   WHY THIS CHECK IS EXACT AND NEEDS NO DRUG LEXICON. A lexicon would have to
+   recognise every drug a pain physician might use, and its false negatives
+   would be silent — the worst possible failure shape here. Instead this asks a
+   question with a known answer: the TEMPLATE told us which fields are drug
+   fields. If [STEROID DOSE] went in, a blank for it must come out. Nothing has
+   to be understood about the prose.
+
+   WHAT IT DOES ON VIOLATION. It does NOT try to find the invented value and
+   excise it — locating "80 mg triamcinolone" inside generated prose is exactly
+   the guesswork this whole defect is made of. It re-blanks the field by name
+   and records it as missing, so the doctor is asked instead of told. If the
+   note cannot be made safe that way, the caller still sees a note whose drug
+   fields are unresolved, which is the honest state.
+
+   SCOPE, measured across the library: 3 of 96 templates carry these
+   placeholders (Caudal ESI, Lumbar Facet Joint Injection, Genicular Nerve
+   Block). 93 spell their drugs out and cannot reach this path at all. The
+   guard is therefore provable on its ENTIRE at-risk population rather than
+   sampled — and it must stay that way, so it keys off the template's own
+   tokens rather than a list of template names. */
+/* PREFIX match, leading \b only. A trailing \b was the first version and it was
+   wrong in the most embarrassing possible way: \bANESTH\b cannot match
+   "ANESTHETIC", so [LOCAL ANESTHETIC] — the exact field that invented "1%
+   lidocaine" — was classified as safe. Caught by the suite on its first run.
+   Drug words vary by suffix (ANESTHETIC / ANESTHESIA, STEROID / STEROIDS), so
+   the stem must be open-ended. Over-matching here is harmless: the cost is a
+   blank the doctor fills, and the alternative cost is an invented dose. */
+var _OP_DRUG_FIELD_RE = /\b(?:ANESTH|STEROID|MEDICATION|MEDS?\b|DRUG|DOSAGE|DOSE|CONCENTRATION|GAUGE|NEEDLE|CONTRAST|SEDATION|OPIOID|NARCOTIC|SALINE|INJECTATE|LIDO|BUPIV|ROPIV|TRIAMCIN|DEXAMETH|METHYLPRED|BETAMETH|MARCAINE|OMNIPAQUE|ISOVUE)/i;
+
+function _opDrugPlaceholdersIn(tplText){
+  var out=[], seen={}, s=String(tplText||''), m;
+  /* Both spellings a template can carry: [STEROID DOSE] and [[steroid_dose]]. */
+  var re=/\[\[?\s*([A-Za-z][A-Za-z0-9 _\/+&-]{1,40}?)\s*\]?\]/g;
+  while((m=re.exec(s))){
+    var label=m[1].trim();
+    if(!_OP_DRUG_FIELD_RE.test(label)) continue;
+    var key=label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+    if(seen[key]) continue;
+    seen[key]=1;
+    out.push({key:key,label:label});
+  }
+  return out;
+}
+
+function _opGuardDrugBlanks(tplText, out){
+  try{
+    var fields=_opDrugPlaceholdersIn(tplText);
+    if(!fields.length) return out;                  /* 93 of 96 templates stop here */
+    var note=String(out.note||''), missing=Array.isArray(out.missing)?out.missing.slice():[];
+    var violated=[];
+    fields.forEach(function(f){
+      /* Did a blank for THIS field survive, in any shape the app recognises?
+         EXACT, not stem-matched. The first version tested the stem
+         ("anesthetic") anywhere inside a [FILL: …] label, and the live output's
+         "[FILL: volume of anesthetic]" — which belongs to the VOLUME field —
+         satisfied it, so the ANESTHETIC field was scored as safe while the
+         model had in fact replaced it with bupivacaine. One field's blank must
+         never vouch for another's. */
+      var lab = f.label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      var present = note.indexOf('[['+f.key+']]')>=0
+        || new RegExp('\\[FILL:\\s*'+lab+'\\s*\\]','i').test(note)
+        || new RegExp('\\[\\s*'+lab+'\\s*\\]','i').test(note);
+      if(present) return;
+      violated.push(f);
+      /* Re-blank by NAME. We do not hunt the invented value inside the prose —
+         that is the same guesswork that produced it. */
+      note += (note.slice(-1)==='\n'?'':'\n')+'['+f.label+']: [['+f.key+']]';
+      if(!missing.some(function(x){return x&&x.key===f.key;})){
+        missing.push({key:f.key,label:f.label,example:''});
+      }
+    });
+    if(violated.length){
+      try{ window.__mlsOpDrugGuard={at:Date.now(),violated:violated.map(function(f){return f.key;})}; }catch(e){}
+      try{ console.warn('[mls] op-note drug guard: '+violated.length+' drug field(s) were resolved by the model instead of left blank — re-blanked: '+violated.map(function(f){return f.label;}).join(', ')); }catch(e2){}
+    }
+    return {note:note, missing:missing, drugGuard:{violated:violated.map(function(f){return f.key;})}};
+  }catch(e){ return out; }
 }
 /* Fill the [[key]] placeholders in a patient's note with the values typed, and remember
    each value so it shows in the dropdown next time. */
