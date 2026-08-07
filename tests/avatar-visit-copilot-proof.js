@@ -936,6 +936,41 @@ async function say(page, text) {
       ok('H7 …bound to the same chart the whole way through',
         s3.bound === 'ext-77' && saves.every(function (x) { return x.bound === 'ext-77'; }), s3.bound);
 
+      /* --- the doctor corrects themselves, which is what doctors do --- */
+      await say(page, 'and order an x-ray of the knee');
+      let xr = (await page.evaluate(function () { return window.__cards(); }))
+        .filter(function (c) { return c.title === 'X-ray'; })[0];
+      ok('H6b an incomplete second order carries its gap', xr && /which side/i.test(xr.missing), xr && xr.missing);
+      await say(page, 'actually make that the right knee');
+      xr = (await page.evaluate(function () { return window.__cards(); }))
+        .filter(function (c) { return c.title === 'X-ray'; })[0];
+      ok('H6b a spoken correction fills the gap without a second card', xr && xr.confirmDisabled === false,
+        JSON.stringify(xr));
+      ok('H6b …and the card shows the corrected side', xr && /Right/i.test(xr.detail), xr && xr.detail);
+      const cardCount = await page.evaluate(function () {
+        return window.__cards().filter(function (c) { return c.title === 'X-ray'; }).length;
+      });
+      ok('H6b …exactly one X-ray card, not two', cardCount === 1, cardCount + ' cards');
+      await page.evaluate(function () {
+        const all = Array.prototype.slice.call(document.querySelectorAll('#mlsAvKioskOrders .mlsAvOrd'));
+        const c = all.filter(function (x) { return (x.querySelector('b') || {}).textContent === 'X-ray'; })[0];
+        c.querySelector('.mlsAvOrdGo').click();
+      });
+      await page.clock.runFor(300);
+      /* correcting something ALREADY confirmed must un-confirm it */
+      await say(page, 'sorry, the left knee');
+      xr = (await page.evaluate(function () { return window.__cards(); }))
+        .filter(function (c) { return c.title === 'X-ray'; })[0];
+      ok('H6c correcting a CONFIRMED order sends it back for re-confirmation',
+        xr && xr.confirmed === false, JSON.stringify(xr));
+      ok('H6c …and says why on the card', xr && /confirm again/i.test(xr.missing), xr && xr.missing);
+      await page.evaluate(function () {
+        const all = Array.prototype.slice.call(document.querySelectorAll('#mlsAvKioskOrders .mlsAvOrd'));
+        const c = all.filter(function (x) { return (x.querySelector('b') || {}).textContent === 'X-ray'; })[0];
+        c.querySelector('.mlsAvOrdGo').click();
+      });
+      await page.clock.runFor(300);
+
       /* --- End Visit --- */
       await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
       await page.clock.runFor(4000);
