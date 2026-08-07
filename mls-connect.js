@@ -48049,7 +48049,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var t2 = document.getElementById('extDlVersionBtn');
           var t3 = document.getElementById('extDlVersionNotes');
           var n1 = document.getElementById('extDlNotes');
-          if (a) { var want = 'MLS_Assist_v' + v + '.zip'; if (a.getAttribute('href') !== want) a.setAttribute('href', want); }
+          /* mdx-1.2.0 — THE POINTER MUST RIDE FRESH CODE, NOT THE SHELL.
+             b914 published a byte-identical `.bin` mirror because an
+             already-installed service worker retires the current `.zip` and
+             answers it with 410. But the only thing pointing AT the mirror was
+             the baked HTML — and `/ScribeFlow.html` is a STATIC_SHELL_PATH, so
+             the same unrolled worker keeps serving the CACHED shell with the old
+             `.zip` href. Measured on the owner's browser across two consecutive
+             full reloads of b914: DOM href `…45.zip`, the string `.bin` absent
+             from the document entirely, and fetching what the button pointed at
+             returned the 75-byte 410 refusal page. The fix could not arrive by
+             the mechanism it was designed to bypass.
+             This file DOES reach him — it loads with `?v=<build>`, which is an
+             exact-versioned asset on a different worker branch, verified current
+             on his machine. So the href is normalised HERE.
+             It also repairs a defect this very line used to cause: it wrote
+             `.zip` unconditionally, so on a FRESH browser it overwrote the baked
+             `.bin` and re-broke the download. The card pin only read the baked
+             HTML and never executed this, so nothing caught it.
+             Inert where already correct; `download` keeps the .zip filename so
+             the doctor still saves a .zip; any `target` is stripped because a
+             navigation (rather than a download) is exactly what the stale worker
+             answers with 410. */
+          if (a) {
+            var mirror = 'MLS_Assist_v' + v + '.bin';
+            var saveAs = 'MLS_Assist_v' + v + '.zip';
+            if (a.getAttribute('href') !== mirror) a.setAttribute('href', mirror);
+            if (a.getAttribute('download') !== saveAs) a.setAttribute('download', saveAs);
+            if (a.hasAttribute('target')) a.removeAttribute('target');
+          }
           if (t1 && t1.textContent !== v) t1.textContent = v;
           if (t2 && t2.textContent !== v) t2.textContent = v;
           if (t3 && t3.textContent !== v) t3.textContent = v;

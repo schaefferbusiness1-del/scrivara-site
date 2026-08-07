@@ -241,6 +241,67 @@ for (const [label, html] of [['live', liveHtml], ['staging', stagingHtml]]) {
   assert(!/Chrome Web Store/i.test(btn[0]), label + ': the button must not claim the Chrome Web Store while the publish is owner-gated');
 }
 
+/* ---- 7d. THE POINTER MUST SURVIVE A STALE SHELL. --------------------------
+   b914 shipped the `.bin` mirror to bypass a service worker that will not roll,
+   but `/ScribeFlow.html` is a STATIC_SHELL_PATH, so that same worker keeps
+   serving the CACHED shell carrying the old `.zip` href. Measured on the owner's
+   browser across two consecutive full reloads of b914: DOM href `…45.zip`, the
+   string `.bin` absent from the document entirely, and what the button pointed
+   at returned the 75-byte 410 refusal page. The fix could not arrive by the
+   mechanism it was designed to bypass.
+   mls-connect.js DOES reach him (it loads with `?v=<build>`, an exact-versioned
+   asset on a different worker branch), so the href is normalised there. This
+   executes the SHIPPED normalisation against a stub anchor carrying the stale
+   shell's exact markup. ------------------------------------------------------ */
+{
+  const block = connectSource.match(/if \(a\) \{\s*var mirror = 'MLS_Assist_v' \+ v \+ '\.bin';[\s\S]*?\n          \}/);
+  assert(block, 'the refresher must normalise the anchor to the .bin mirror');
+  const normalise = new Function('a', 'v', block[0]);
+
+  const makeAnchor = (attrs) => {
+    const store = Object.assign({}, attrs);
+    return {
+      getAttribute: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+      setAttribute: (k, val) => { store[k] = String(val); },
+      hasAttribute: (k) => Object.prototype.hasOwnProperty.call(store, k),
+      removeAttribute: (k) => { delete store[k]; },
+      _store: store
+    };
+  };
+
+  /* the owner's actual stale shell: old .zip href, bare download attribute */
+  const stale = makeAnchor({ href: 'MLS_Assist_v' + version + '.zip', download: '' });
+  normalise(stale, version);
+  assert.strictEqual(stale._store.href, 'MLS_Assist_v' + version + '.bin',
+    'a STALE shell must be normalised to the mirror — this is the owner\'s exact machine');
+  assert.strictEqual(stale._store.download, 'MLS_Assist_v' + version + '.zip',
+    'the doctor must still SAVE a .zip');
+
+  /* the shape the hijacker left behind: Web Store href, target=_blank, no download */
+  const hijacked = makeAnchor({ href: 'https://chromewebstore.google.com/x', target: '_blank' });
+  normalise(hijacked, version);
+  assert.strictEqual(hijacked._store.href, 'MLS_Assist_v' + version + '.bin');
+  assert.strictEqual(hijacked._store.target, undefined,
+    'target must be stripped — a navigation is exactly what the stale worker answers with 410');
+
+  /* already correct (fresh browser): inert, and MUST NOT be rewritten back to .zip */
+  const fresh = makeAnchor({ href: 'MLS_Assist_v' + version + '.bin', download: 'MLS_Assist_v' + version + '.zip' });
+  normalise(fresh, version);
+  assert.strictEqual(fresh._store.href, 'MLS_Assist_v' + version + '.bin',
+    'a correct anchor must survive untouched — the previous refresher wrote .zip unconditionally and re-broke fresh browsers');
+
+  /* NEGATIVE CONTROL: the refresher as it shipped in b914 wrote .zip
+     unconditionally. Against the same stale anchor it must FAIL to produce the
+     mirror — otherwise this test proves nothing about the fix. */
+  const old = new Function('a', 'v', "var want = 'MLS_Assist_v' + v + '.zip'; if (a.getAttribute('href') !== want) a.setAttribute('href', want);");
+  const control = makeAnchor({ href: 'MLS_Assist_v' + version + '.zip', download: '' });
+  old(control, version);
+  assert.notStrictEqual(control._store.href, 'MLS_Assist_v' + version + '.bin',
+    'CONTROL FAILED: the b914 refresher already produced the mirror, so this scenario does not reproduce the defect');
+  assert(!connectSource.includes("var want = 'MLS_Assist_v' + v + '.zip';"),
+    'the unconditional .zip rewrite must be gone — it overwrote the baked .bin on fresh browsers too');
+}
+
 assert(connectSource.includes('__mlsExtDlCardWired'), 'the drift refresher must be wired exactly once');
 assert(connectSource.includes("fetch('extension-version.json?nc="), 'the refresher must read the manifest, never invent a version');
 assert(connectSource.includes("getElementById('extDlNotes')"), 'the refresher must also refresh the What\'s-new text from the manifest');
