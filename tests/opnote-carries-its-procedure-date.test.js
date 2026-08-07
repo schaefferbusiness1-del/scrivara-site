@@ -120,8 +120,31 @@ assert(!/2026|August|Aug|8\/6/.test(DATELESS),
    fallback rather than the mechanism. If the instruction is dropped, every note
    gets a machine-prepended line instead of the model placing the date where
    the template wants it. */
-assert(/ALWAYS WRITE THE DATE OF PROCEDURE/.test(html),
-  'the procedure-date instruction was removed from the generator prompt — the guard would silently become the only mechanism');
+/* Asserted against feat_mls_opnote_integrity.js, NOT ScribeFlow.html. The first
+   version checked `html` — the shadowed prompt, which is never sent. It would
+   have gone green on a build where the instruction reached the model in no
+   form at all: the identical mistake as the guard itself, made inside the test
+   written to catch that mistake. */
+const _int = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
+assert(/ALWAYS WRITE THE DATE OF PROCEDURE/.test(_int),
+  'the procedure-date instruction is missing from the prompt the INSTALLED generator sends — the guard would silently become the only mechanism');
+
+
+/* ── SHADOW GATE (QA, 2026-08-06) ──────────────────────────────────────────
+   Everything above tests the IMPLEMENTATION. It cannot tell shipped from
+   shadowed, and that distinction cost two builds of a patient-safety fix:
+   b925 and b927 both put their guard in ScribeFlow.html's _genOpNote, which
+   feat_mls_opnote_integrity.js replaces at load. Suite green, doctor still
+   told "80 mg triamcinolone".
+   So this file also refuses to pass unless the guard is wired into the
+   generator that actually runs. The full contract lives in
+   tests/opnote-guards-run-in-the-installed-generator.test.js; this is the
+   tripwire, here so that anyone reading THIS suite alone is stopped too. */
+const _integrity = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
+assert(/window\._genOpNote\s*=/.test(_integrity),
+  'feat_mls_opnote_integrity.js no longer installs _genOpNote — re-aim this check at whatever owns the generator now');
+assert(_integrity.includes('window._opGuardProcedureDate('),
+  'the INSTALLED generator does not call _opGuardProcedureDate. A definition in ScribeFlow.html is overwritten at load, so this suite would be green while every draft went unguarded — the exact live b926 defect.');
 
 console.log('PASS op note carries its procedure date: the measured 15/15 dateless draft is repaired at the top of the note, ' +
   '9 renderings of the same day are accepted without adding a second conflicting line, a different day is refused, ' +
