@@ -1,5 +1,5 @@
 /*! feat_athena_doctor.js — MLS Assistant self-troubleshooting + clearer success
- *  window.__mlsAthenaDoctor (v1.1.2)
+ *  window.__mlsAthenaDoctor (v1.1.4)
  *
  *  WHAT IT DOES (live production medical software — REAL checks only, no fake "all good"):
  *   1. Self-troubleshoot: a step-by-step chain check down the whole Athena pipeline.
@@ -38,7 +38,7 @@
   var W = window;
   if (W.__mlsAthenaDoctor && W.__mlsAthenaDoctor.installed) return;
 
-  var VERSION = '1.1.2';
+  var VERSION = '1.1.4';
   var ASSET = 'feat_athena_doctor.js';
   var STYLE_ID = 'mls-athena-doctor-style';
   var PANEL_ID = 'mlsAthenaDoctorPanel';
@@ -316,14 +316,19 @@
          and Log out too, and must not read as an Athena alarm. Inline-block and
          margin only — no position, no size change to their button beyond the
          dot itself, because this is another lane's control. */
-      '#mlsTbMenuBtn[data-mls-athena-read="failed"]::after{content:"";display:inline-block;width:6px;height:6px;' +
+      /* GENERIC, and it has to be. v1.1.3 resolves the surface structurally —
+         it paints whatever button occupies the header menu slot, including ids
+         this module has never heard of. A per-id rule would set the attribute
+         on the right node and still draw nothing, which is the same invisible
+         indicator in a new disguise. One rule, any surface. */
+      '[data-mls-athena-read="failed"]::after{content:"";display:inline-block;width:6px;height:6px;' +
       'border-radius:50%;background:#f59e0b;margin-left:6px;vertical-align:middle;}' +
-      /* …and the ROW inside that dropdown. The dot on ☰ Menu says "something in
-         here"; this says WHICH. createMenuRow builds a fresh <button> from label
-         + icon strings, so it inherits nothing from the hidden original and has
-         to be painted in its own right. */
-      '[data-mls-menu-key="athena-help"][data-mls-athena-read="failed"]::after{content:"";display:inline-block;' +
-      'width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-left:7px;vertical-align:middle;}' +
+      /* The dropdown ROW needs no rule of its own — the generic one above
+         covers it, which is the point of making it generic. The dot on the
+         header control says "something in here"; the same dot on the row says
+         WHICH. Kept only as a slightly wider gap, since the row's icon and
+         label already sit close together. */
+      '[data-mls-menu-key="athena-help"][data-mls-athena-read="failed"]::after{margin-left:7px;}' +
       // success / failure toast
       '#' + TOAST_ID + '{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:2147483602;' +
       'max-width:min(560px,92vw);padding:11px 16px;border-radius:11px;font-size:14px;font-weight:700;color:#fff;' +
@@ -534,16 +539,107 @@
      The row is destroyed and rebuilt by reconcileMenuContent() on every menu
      rebuild, so like the button it is re-painted from module state, never
      assumed to have survived. */
+  /* v1.1.3 — STOP NAMING IDS. This is the third id in a row that turned out not
+     to be on screen, and QA caught every one of them:
+       b911  #mlsAthenaDoctorBtn   .mlsTbHidden, display:none
+       b915  #mlsTbMenuBtn         itself display:inline-flex, but its PARENT
+                                   #mlsTbMenu is display:none
+       b920  the dropdown row      only exists while the menu is open
+     The rendered control in that header slot today is #mlsAccountMenuBtn, and
+     naming it would just queue up the fourth correction. So the module now
+     resolves the surface STRUCTURALLY and by RENDERED-NESS:
+
+       - every known candidate id is still painted (harmless when hidden, and it
+         covers the case where a topbar lane is absent or reverted), AND
+       - every rendered button inside the header menu slot #mlsRdMenuSlot is
+         painted too. The SLOT is the stable thing — QA measured it at 106x38
+         while its occupants changed underneath — so this follows the affordance
+         when the next lane swaps the component, without knowing its id.
+
+     WHY NOT offsetParent, which is what QA's receipt uses: it is null for a
+     position:fixed element even when that element is plainly visible, and
+     #mlsAthenaDoctorBtn is position:fixed. getBoundingClientRect is correct for
+     both. Their receipt is still satisfied — #mlsAccountMenuBtn is not fixed —
+     but a future fixed-position surface would read as a false negative to it. */
+  function isRendered(el) {
+    if (!el) return false;
+    try {
+      if (typeof el.getBoundingClientRect === 'function') {
+        var r = el.getBoundingClientRect();
+        return !!r && (r.width > 0 || r.height > 0);
+      }
+    } catch (e) {}
+    return false;   // no layout to consult (unit DOM): never CLAIM rendered
+  }
+
+  function pushUnique(out, el) {
+    if (!el) return;
+    for (var i = 0; i < out.length; i++) if (out[i] === el) return;
+    out.push(el);
+  }
+
   function readSurfaces() {
-    var out = [];
-    var b = document.getElementById(BTN_ID);
-    if (b) out.push(b);
-    var menu = document.getElementById('mlsTbMenuBtn');
-    if (menu) out.push(menu);
+    var out = [], i;
+    pushUnique(out, document.getElementById(BTN_ID));
+    pushUnique(out, document.getElementById('mlsTbMenuBtn'));      // topbar unify
+    pushUnique(out, document.getElementById('mlsAccountMenuBtn')); // account menu
     try {
       var rows = document.querySelectorAll('[data-mls-menu-key="athena-help"]');
-      for (var i = 0; i < rows.length; i++) out.push(rows[i]);
+      for (i = 0; i < rows.length; i++) pushUnique(out, rows[i]);
     } catch (e) {}
+    /* The structural rule: whatever is actually rendered in the header's menu
+       slot, whatever it ends up being called. */
+    try {
+      var slot = document.getElementById('mlsRdMenuSlot');
+      if (slot && typeof slot.querySelectorAll === 'function') {
+        var btns = slot.querySelectorAll('button');
+        /* Paint EVERY button in the slot, rendered or not. It is tempting to
+           filter to the visible one, and the negative control below caught why
+           that is wrong: a surface that is hidden AT THE MOMENT OF FAILURE
+           would never be painted, and when it later becomes visible it shows
+           nothing. Visibility usually changes by toggling a class on an
+           ANCESTOR, which this module's childList/subtree observer does not
+           see, so there is no second chance to catch it.
+           Painting a hidden node costs an attribute and a stashed label.
+           Missing the signal costs the doctor the whole feature — that trade is
+           not close. Rendered-ness is used ONLY in renderedFailureSurfaces(),
+           where it belongs: reporting, not deciding. */
+        for (i = 0; i < btns.length; i++) pushUnique(out, btns[i]);
+      }
+    } catch (e2) {}
+    /* v1.1.4 — THE AFFORDANCE ITSELF, found by name rather than by id.
+       QA asked whether Troubleshoot Athena is reachable at all, having measured
+       every element containing that text as 0x0. It IS reachable: it moved to
+       the DOCK's Tools menu (feat_mls_calm_shell.js:1108 lists
+       {id:'mlsAthenaDoctorBtn', as:'Troubleshoot Athena'}), and
+       ScribeFlow.html:12980 documents the same migration for Staff Prep after
+       feat_mls_redesign.js:148 hid #mlsTbMenu outright. Their measurement was
+       taken with that menu CLOSED, where a row is 0x0 by design.
+       So the dock's Tools launcher is a real surface and gets the dot, and so
+       does any control that NAMES the affordance. Scoped to the menu
+       containers rather than the whole document: this runs from the observer's
+       sync check, and a document-wide text scan there would be a boot-perf
+       regression in the middle of a boot-perf complaint. */
+    try {
+      var scope = document.querySelectorAll(
+        '#mlsDock [data-dest="tools"], #mlsToolsMenu button, #mlsTbMenuPanel button, #mlsToolsMenu [role="button"]');
+      for (i = 0; i < scope.length; i++) {
+        var el = scope[i];
+        var t = String(el.textContent || el.getAttribute('aria-label') || '');
+        if (/troubleshoot\s*athena/i.test(t) || el.getAttribute('data-dest') === 'tools') pushUnique(out, el);
+      }
+    } catch (e2) {}
+    return out;
+  }
+
+  /* Exposed so the gate can assert the property that actually matters —
+     "something the doctor can see carries the state" — instead of an id that
+     keeps going stale. Returns the painted surfaces that are really rendered. */
+  function renderedFailureSurfaces() {
+    var out = [], els = readSurfaces();
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].getAttribute('data-mls-athena-read') === 'failed' && isRendered(els[i])) out.push(els[i]);
+    }
     return out;
   }
 
@@ -596,11 +692,36 @@
     }
   }
 
+  var _warnedUnreachable = false;
+
   function setReadState(failed) {
     failed = !!failed;
     if (_readFailed === failed) return;
     _readFailed = failed;
     paintReadState();
+    /* v1.1.4 — QA: "if the set comes back EMPTY that is not a no-op — it means
+       the affordance is unreachable and something should say so loudly."
+       Exactly right. An indicator with nowhere to live is a PRODUCT bug, not a
+       painting bug, and three rounds were spent moving paint around before that
+       question got asked. If a read has failed and nothing on screen can carry
+       it, say so once — never repeatedly, and never as a toast, because the
+       owner deleted the toast and this is for whoever is debugging.
+       __mlsAthenaReadIndicatorUnreachable is left on window so a live probe can
+       read the verdict without watching the console. */
+    if (failed) {
+      var reachable = renderedFailureSurfaces().length > 0;
+      try { W.__mlsAthenaReadIndicatorUnreachable = !reachable; } catch (e) {}
+      if (!reachable && !_warnedUnreachable) {
+        _warnedUnreachable = true;
+        try {
+          console.warn('[mls] An Athena read failed and NO rendered surface can show it. ' +
+            'Troubleshoot Athena has no visible entry point on this screen — that is a product ' +
+            'defect, not a styling one. Surfaces considered: ' + readSurfaces().length + '.');
+        } catch (e2) {}
+      }
+    } else {
+      try { W.__mlsAthenaReadIndicatorUnreachable = false; } catch (e3) {}
+    }
   }
 
   // ---- clearer SUCCESS + auto-trigger on failure --------------------------
@@ -920,6 +1041,14 @@
     pullNoticeHandled: pullNoticeHandled,
     ownsPullNotices: true,
     kindOf: kindOf,
+    /* v1.1.3 — for the gate and for QA's live probe. readSurfaces() is every
+       candidate; renderedFailureSurfaces() is the subset that is BOTH painted
+       and actually on screen. `renderedFailureSurfaces().length > 0` after a
+       failed read is the receipt that has caught three wrong ids in a row —
+       assert that, never an id. */
+    readSurfaces: readSurfaces,
+    renderedFailureSurfaces: renderedFailureSurfaces,
+    isRendered: isRendered,
     // UI / actions
     open: function (lastResult) { openDiagnostic(lastResult || null); },
     diagnose: function (lastResult) { return runChain(lastResult || null, null); },

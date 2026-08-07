@@ -308,11 +308,35 @@ const tests = [
   'multi-tab-hint-contract.test.js',
   'athena-pull-toast-lifecycle.test.js',
   'athena-read-indicator.test.js',
+  /* Owner 2026-08-06: "some times it puts in the wrong medication". Reproduced
+     verbatim on a real patient - three drugs and an 80 mg dose invented to
+     satisfy a prompt line telling the model to prefer routine values over
+     blanks. 3 of 96 templates can reach it; the guard is proven on all 3. */
+  'opnote-drug-blanks-never-invented.test.js',
+  /* Owner 2026-08-06: "the date of procidure needs to be put in". Reproduced
+     15/15 - the date is handed to the generator and rendered in no format at
+     all. Deterministic, and it affects EVERY note, not the 3 at-risk ones. */
+  'opnote-carries-its-procedure-date.test.js',
+  /* b925 and b927 put both op-note safety guards in ScribeFlow.html's
+     _genOpNote - which feat_mls_opnote_integrity.js REPLACES. Two builds of a
+     patient-safety fix shipped and did nothing; QA proved it on live b926.
+     This suite asserts on the INSTALLED generator, never on a file. */
+  'opnote-guards-run-in-the-installed-generator.test.js',
+  /* Owner 2026-08-06: "the template auto matching just is not that good".
+     QA measured it on the text his SCHEDULE carries, not on well-formed
+     strings: 24 of 27 real reasons REFUSED with the right template already
+     ranked first. The gate, not the ranker - and a suite of ideal inputs
+     could never have seen it. */
+  'template-match-real-schedule-text.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
   'opnote-rail-search-caret.test.js',
+  'provider-key-credential-surname.test.js',
+  'visit-reason-not-correspondence.test.js',
+  'draft-all-panel-collapses-without-hiding-failure.test.js',
+  'tesi-expands-to-the-region-the-text-supports.test.js',
   'tpl-word-junk.test.js',
   'template-library-runtime.test.js',
   'template-recognition-bounded-concurrency.test.js',

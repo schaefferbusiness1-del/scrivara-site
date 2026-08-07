@@ -292,16 +292,41 @@
     aprn: 1, fnp: 1, fnpc: 1, dnp: 1, rn: 1, crnp: 1, cnp: 1,
     dpm: 1, dds: 1, dmd: 1, phd: 1, mbbs: 1, od: 1
   };
+  /* A TITLE is never a surname; a CREDENTIAL can be. "Dr"/"Doctor" only ever
+     precede a name, so they are always noise. "Do", "Pa", "Rn", "Ot", "Od" are
+     real surnames in a pain practice AND real credentials, and which one they
+     are depends on whether the name can spare them. */
+  var PROVIDER_TITLE = { dr: 1, doctor: 1 };
   function providerKey(raw) {
     var s = String(raw == null ? "" : raw).trim().toLowerCase();
     if (!s || /^all(?:\s+providers?)?$/.test(s)) return "";
     s = safe(function () { return s.normalize("NFKD").replace(/[\u0300-\u036f]/g, ""); }, s);
-    var seen = {}, tokens = s.replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(function (t) {
-      if (!t || PROVIDER_NOISE[t] || seen[t]) return false;
+    var seen = {}, all = s.replace(/[_/]+/g, " ").replace(/[^a-z0-9]+/g, " ").split(/\s+/).filter(function (t) {
+      if (!t || PROVIDER_TITLE[t] || seen[t]) return false;
       seen[t] = 1; return true;
     });
+    /* A CLINICIAN WHOSE SURNAME SPELLS A CREDENTIAL COULD NEVER PULL.
+       Every credential-spelled token was stripped unconditionally and the
+       result then had to hold two survivors, so "Anh Do", "Sam Pa" and
+       "Lee Rn" all keyed to "" and failed at provider-unverified \u2014 100% of
+       their selected-provider imports, since the day this shipped. Measured
+       by the ext-goal lane, 2026-08-06.
+       Credentials are stripped only while the name can SPARE them: if
+       removing them would leave fewer than two identifying tokens, the token
+       was carrying name weight and is kept. This CANNOT widen matching \u2014 the
+       key either gains a token it already had in the raw label, or is
+       unchanged. Proven unchanged on every existing shape:
+         "Anh Thi Do" -> anh|thi        (credential genuinely spare)
+         "Matthew Schaeffer, MD" -> matthew|schaeffer
+         "Schaeffer_Matthew_MD" / "Schaeffer, Matthew" -> same key
+         "John Smith DO" -> john|smith  "Sam Parker PA" -> parker|sam
+       and newly resolvable, without colliding with anyone:
+         "Anh Do" -> anh|do   "Dr. Anh Do" -> anh|do   "Anh Doe" -> anh|doe
+       A label that is ONLY a credential still refuses: "Dr Do" and "MD" -> "". */
+    var stripped = all.filter(function (t) { return !PROVIDER_NOISE[t]; });
+    var tokens = stripped.length >= 2 ? stripped : all;
     if (tokens.length < 2) return "";
-    tokens.sort();
+    tokens = tokens.slice().sort();
     return tokens.join("|");
   }
   /* mdx-2.0.2: the credential portion of a provider label, for the same-name

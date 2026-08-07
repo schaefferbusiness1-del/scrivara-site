@@ -59,7 +59,10 @@ assert.strictEqual(prov({ source: 'mls-visit-editor', indexOnly: false }), null,
 // 5. loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260729vis11'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  /* pin moved 2026-08-06: see full-visit-reader-runtime — the hand-maintained
+     token went stale when feat_visits gained the history identity binding; the
+     build-number form cannot go stale, so this pins the FORM. */
+  assert(text.includes("feat_visits.js?v='+(window.__MLS_AV||Date.now())"), loader + ': feat_visits must use the build-number cache-buster — a hand-maintained token would serve the old module to returning browsers');
 }
 
 console.log('PASS visit-history provenance: index shells and copied excerpts are honestly marked with a remedy; verified bodies and clinician-authored visits stay unmarked; loader pins bumped');
