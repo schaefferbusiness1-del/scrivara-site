@@ -141,6 +141,19 @@ function STUBS() {
     r.onresult({ resultIndex: 0, results: [one] });
     return true;
   };
+  /* read the backup WITHOUT hardcoding its key: the key is chart-scoped now,
+     and a test that pins storage layout breaks every time the layout improves */
+  window.__stored = function () {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || k.indexOf('mlsAvRoomCaptureV1') < 0) continue;
+      try {
+        var r = JSON.parse(localStorage.getItem(k));
+        if (r && Array.isArray(r.parts) && r.parts.length) return r;
+      } catch (e) {}
+    }
+    return null;
+  };
   window.__amb = function () { try { return window.__mlsAvatar.ambientState(); } catch (e) { return { err: String(e) }; } };
   window.__box = function () { return document.getElementById('ez3flTranscript').value; };
   window.__cards = function () {
@@ -850,7 +863,7 @@ async function say(page, text) {
         const s = await page.evaluate(function () {
           const a = window.__amb();
           let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          stored = window.__stored();
           return { chars: a.capturedChars, backedUp: a.backedUp, running: a.running,
             storedChars: stored ? (stored.parts || []).join(' ').length : 0, bound: a.boundPatient };
         });
@@ -1157,7 +1170,7 @@ async function say(page, text) {
         const st = await page.evaluate(function () {
           const a = window.__amb();
           let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          stored = window.__stored();
           return { chars: a.capturedChars, parts: stored ? stored.parts : [] };
         });
         ok('I4 five overlapping utterances are ALL captured', st.parts.length === 5,
@@ -1286,7 +1299,7 @@ async function say(page, text) {
         const st = await page.evaluate(function () {
           const a = window.__amb();
           let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          stored = window.__stored();
           return { chars: a.capturedChars, backedUp: a.backedUp, trimmed: a.backupTrimmed,
             parts: stored ? stored.parts.length : 0, ls: window.__ls };
         });
@@ -1313,8 +1326,8 @@ async function say(page, text) {
            time, so the honest question is: what does ONE write cost at
            end-of-visit size, and what does that come to over a full visit? */
         const perWrite = await page.evaluate(function () {
-          const k = 'acct-9::mlsAvRoomCaptureV1';
-          const payload = localStorage.getItem(k) || '';
+          const k = 'acct-9::mlsAvRoomCaptureV1::probe-src';
+          const payload = JSON.stringify(window.__stored() || {});
           const t0 = performance.now();
           for (let i = 0; i < 50; i++) localStorage.setItem(k + '::probe', payload);
           const ms = (performance.now() - t0) / 50;
@@ -1422,7 +1435,7 @@ async function say(page, text) {
         const h = await newPage(browser, base);
         const page = h.page;
         const cases = await page.evaluate(function () {
-          const k = 'acct-9::mlsAvRoomCaptureV1';
+          const k = 'acct-9::mlsAvRoomCaptureV1::ext-77';
           const out = [];
           [['not json at all', 'garbage'],
            ['{"v":1}', 'valid json, wrong shape'],
@@ -1678,6 +1691,115 @@ async function say(page, text) {
       ok('L the state chip announces changes (role=status)', kb.stateRole === 'status', String(kb.stateRole));
       ok('L the recording disclosure announces itself (role=status)', kb.recRole === 'status', String(kb.recRole));
       ok('L page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+    }
+    /* ------------------------------------------------------------ M */
+    section('SCENARIO M - THE KIOSK IS NOT THE ONLY THING ON THE SCREEN');
+    {
+      /* --- M1. the doctor switches away mid-visit. Chrome throttles timers in
+         a background tab, and this module's save is a setTimeout. If the
+         throttle swallowed it, a visit could run for minutes with a backup
+         frozen at the moment the doctor looked something up. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'first line while the tab is in front');
+        await page.evaluate(function () {
+          Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+          Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.clock.runFor(500);
+        await say(page, 'second line spoken while the doctor was on another tab');
+        await page.evaluate(function () {
+          Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+          Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.clock.runFor(2500);
+        const st = await page.evaluate(function () {
+          let stored = null;
+          stored = window.__stored();
+          return { amb: window.__amb(), parts: stored ? stored.parts : [] };
+        });
+        ok('M1 the capture keeps running while the tab is in the background',
+          st.amb.capturedChars > 0 && /another tab/.test(st.parts.join(' ')),
+          st.parts.length + ' parts');
+        ok('M1 …and the backup holds what was said while it was hidden',
+          st.parts.join(' ').indexOf('second line spoken') >= 0, JSON.stringify(st.parts.slice(-1)));
+        ok('M1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- M2. TWO TABS. The backup key is account-scoped, and a doctor
+         having the app open twice is not exotic. If both tabs write the same
+         key, one visit silently overwrites the other and the loser is gone
+         with no trace — the exact failure this whole feature exists to
+         prevent. Both tabs share one browser context, so they share one
+         localStorage, exactly as two real tabs would. --- */
+      {
+        const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        const errs = [];
+        async function tab(chart) {
+          const p = await ctx.newPage();
+          p.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+          await p.clock.install({ time: new Date('2026-08-07T14:00:00Z') });
+          await p.goto(base + '/page.html');
+          await p.evaluate(STUBS);
+          await p.evaluate(function (c) {
+            document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+            window.__activePt = c;
+            window.getPatients = function () { return [{ id: c, name: 'Patient ' + c }]; };
+          }, chart);
+          await p.addScriptTag({ content: AVATAR_SRC });
+          await p.clock.runFor(3000);
+          return p;
+        }
+        const a = await tab('ext-77');
+        const b = await tab('ext-88');
+        await toAmbient(a);
+        await say(a, 'tab A is recording patient seventy seven');
+        await toAmbient(b);
+        await say(b, 'tab B is recording patient eighty eight');
+        /* give A more to say AFTER B started, so a shared key would show it */
+        await say(a, 'tab A has more to say about seventy seven');
+
+        const keys = await a.evaluate(function () {
+          const out = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf('mlsAvRoomCapture') >= 0) out.push(k);
+          }
+          return out;
+        });
+        console.log('  ---- backup keys with two tabs recording ----');
+        keys.forEach(function (k) { console.log('     ' + k); });
+        ok('M2 two concurrent captures do not share one backup slot', keys.length >= 2,
+          keys.length + ' key(s): ' + keys.join(', '));
+
+        const recoverable = await a.evaluate(function () {
+          const out = {};
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k || k.indexOf('mlsAvRoomCapture') < 0) continue;
+            try {
+              const r = JSON.parse(localStorage.getItem(k));
+              out[r.bound] = (r.parts || []).join(' ');
+            } catch (e) {}
+          }
+          return out;
+        });
+        ok('M2 patient A\'s visit survives tab B recording at the same time',
+          !!recoverable['ext-77'] && recoverable['ext-77'].indexOf('tab A has more to say') >= 0,
+          JSON.stringify(Object.keys(recoverable)));
+        ok('M2 patient B\'s visit survives too',
+          !!recoverable['ext-88'] && recoverable['ext-88'].indexOf('tab B is recording') >= 0,
+          (recoverable['ext-88'] || '').slice(0, 50));
+        ok('M2 and neither visit contains the other patient\'s words',
+          (recoverable['ext-77'] || '').indexOf('eighty eight') < 0 &&
+          (recoverable['ext-88'] || '').indexOf('seventy seven') < 0);
+        ok('M2 pages threw nothing', errs.length === 0, errs.join(' | '));
+        await ctx.close();
+      }
     }
   } finally {
     await browser.close();

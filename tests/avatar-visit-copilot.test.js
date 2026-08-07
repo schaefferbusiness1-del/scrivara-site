@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.9)
+ * AVATAR — THE VISIT COPILOT (av-5.7.0)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -260,9 +260,14 @@ const storeSrc = slice("var AMBIENT_STORE_KEY =", 'function ambientActionsForSto
 
 function makeStore(limitBytes) {
   const mem = {};
+  /* the store is ENUMERABLE now: keys are chart-scoped, so reading a capture
+     means scanning the account's slots rather than fetching one known key.
+     Two tabs used to share one slot and the second visit was overwritten. */
   return {
     mem,
     api: {
+      get length() { return Object.keys(mem).length; },
+      key: (i) => { const ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
       getItem: k => (Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null),
       removeItem: k => { delete mem[k]; },
       setItem: (k, v) => {
@@ -282,6 +287,9 @@ function bootStore(limitBytes, nsFn) {
     'function safe(fn,fb){try{return fn();}catch(e){return fb;}}\n' +
     'function isFn(f){return typeof f==="function";}\n' +
     'function clean(v){var t=v==null?"":String(v).trim();return(!t||/^(undefined|null)$/i.test(t))?"":t;}\n' +
+    /* the reader prefers the chart the doctor is looking at; with none open it
+       falls back to the most recent, which is what this slice exercises */
+    'function activePtIdSafe(){ return globalThis.__active || ""; }\n' +
     storeSrc +
     '\nthis.read=ambientStoreRead; this.write=ambientStoreWrite; this.drop=ambientStoreDrop; this.key=ambientStoreKey;',
     sandbox);
@@ -352,7 +360,7 @@ function bootStore(limitBytes, nsFn) {
   const a = bootStore(0, s => s);
   a.sandbox.write({ sid: 's', bound: 'PT-1', start: 1, parts: ['x y z'], intake: [], actions: [] });
   assert(a.sandbox.read(), 'sanity');
-  a.sandbox.drop();
+  a.sandbox.drop('PT-1');            /* drop is per-CHART now, not per-account */
   assert.strictEqual(a.sandbox.read(), null, 'drop must remove the record');
 }
 
@@ -368,7 +376,7 @@ assert(/kiosk\.ambParts\.push\(v\);[\s\S]{0,400}kioskAmbientSave\(false\)[\s\S]{
    kioskAmbientFile returns BEFORE that line */
 {
   const fileFn = slice('function kioskAmbientFile', 'function kioskAmbientStart', 'the file path');
-  const dropAt = fileFn.indexOf('ambientStoreDrop()');
+  const dropAt = fileFn.indexOf('ambientStoreDrop(');
   const filedAt = fileFn.indexOf('kiosk.ambFiled = true');
   assert(dropAt > 0 && filedAt > 0 && dropAt > filedAt,
     'the backup must be dropped only AFTER the write is marked filed');
@@ -452,7 +460,7 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
   }
   assert(rec.includes('is not the one this recording belongs to'),
     'a chart mismatch must refuse and name the chart the words belong to');
-  assert(rec.lastIndexOf('ambientStoreDrop()') > rec.indexOf('box.value = prior'),
+  assert(rec.lastIndexOf('ambientStoreDrop(') > rec.indexOf('box.value = prior'),
     'the recovered backup must not be discarded before it is written');
   /* the ONE earlier drop is the idempotency branch: the words are already in
      the transcript, so the backup has done its job and must not keep offering
@@ -623,6 +631,25 @@ assert(/isFn\(window\.generateNote\)/.test(source),
     'a note is "ready" only when the note box actually holds something — never on the promise alone');
 }
 
+/* 3p-bis. TWO TABS MUST NOT SHARE ONE BACKUP SLOT. Measured in the browser
+   proof: with an account-scoped key, a second concurrent capture overwrote the
+   first and that patient's ENTIRE VISIT was gone with no trace — the exact
+   failure this feature exists to prevent, reintroduced underneath it. */
+{
+  const st = slice('function ambientStoreKey', 'function ambientActionsForStore', 'the store');
+  assert(/AMBIENT_STORE_KEY \+ suffix/.test(st), 'the backup key must be scoped to the chart');
+  assert(/'::' \+ clean\(bound\)/.test(st), 'the chart id must be part of the key');
+  assert(st.includes('function ambientStoreScan'),
+    'reading must SCAN the account\'s slots — there is no single known key any more');
+  /* the bare key is a PREFIX of every scoped one, so one scan finds a capture
+     taken before this change instead of stranding it on upgrade */
+  assert(/var prefix = ambientStoreKey\(''\);/.test(st),
+    'the scan must start from the unsuffixed key so legacy captures are still recovered');
+  assert(/localStorage\.key\(i\)/.test(st), 'the scan must enumerate storage');
+  assert(/if \(active && clean\(all\[i\]\.bound\) === active\) return all\[i\];/.test(st),
+    'the chart the doctor is looking at must win over merely the newest');
+}
+
 /* 3q. ONE STATE CHIP. The brief names the states it wants shown; they existed
    only as a class on the root plus four scattered elements, which is not the
    same as the screen ANSWERING "what is it doing right now". */
@@ -647,14 +674,14 @@ assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source
 }
 
 /* 3r. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.9'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.7.0'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '569', 'the loader cache token must name av-5.6.9 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '570', 'the loader cache token must name av-5.7.0 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.9): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.7.0): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.9';
+  var VERSION = 'av-5.7.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2976,26 +2976,67 @@
      silently stopped updating an hour ago is worse than no backup. ------- */
   var AMBIENT_STORE_KEY = 'mlsAvRoomCaptureV1';
   var AMBIENT_SAVE_MS = 1500;
-  function ambientStoreKey() {
+  /* av-5.6.10 — THE KEY IS SCOPED TO THE CHART, not just the account.
+     It used to be one slot per account, and a doctor with the app open in two
+     tabs is not exotic. Measured: two concurrent captures wrote the same key
+     and the second patient's ENTIRE VISIT was overwritten and gone, with no
+     trace it had existed — the exact failure this feature was built to
+     prevent, reintroduced by the storage layer underneath it.
+     The bare (unsuffixed) key is still READ, so a capture taken before this
+     change is recovered rather than stranded by the upgrade. */
+  function ambientStoreKey(bound) {
+    var suffix = clean(bound) ? ('::' + clean(bound)) : '';
     return safe(function () {
-      return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY) || AMBIENT_STORE_KEY) : AMBIENT_STORE_KEY;
-    }, AMBIENT_STORE_KEY);
+      return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY + suffix) || (AMBIENT_STORE_KEY + suffix))
+                              : (AMBIENT_STORE_KEY + suffix);
+    }, AMBIENT_STORE_KEY + suffix);
+  }
+  /* every capture this account holds. The unsuffixed key is a PREFIX of every
+     chart-scoped one, so one scan finds both the legacy slot and the new ones. */
+  function ambientStoreScan() {
+    return safe(function () {
+      var prefix = ambientStoreKey('');
+      var out = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(prefix) !== 0) continue;
+        var rec = safe(function () { return JSON.parse(localStorage.getItem(k)); }, null);
+        if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) continue;
+        /* an UNBOUND backup could only ever end in a refusal to write (see
+           kioskAmbientFile), so it is not a recoverable capture at all */
+        if (!clean(rec.bound)) continue;
+        out.push(rec);
+      }
+      return out;
+    }, []) || [];
   }
   function ambientStoreRead() {
-    return safe(function () {
-      var raw = localStorage.getItem(ambientStoreKey());
-      if (!raw) return null;
-      var rec = JSON.parse(raw);
-      if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) return null;
-      /* an UNBOUND backup could only ever end in a refusal to write (see
-         kioskAmbientFile), so it is not a recoverable capture at all */
-      if (!clean(rec.bound)) return null;
-      return rec;
-    }, null);
+    var all = ambientStoreScan();
+    if (!all.length) return null;
+    /* the chart the doctor is looking at wins; otherwise the most recent, so
+       the Visit card names ONE capture and says which chart it belongs to */
+    var active = activePtIdSafe(), best = null;
+    for (var i = 0; i < all.length; i++) {
+      if (active && clean(all[i].bound) === active) return all[i];
+      if (!best || (Number(all[i].savedAt) || 0) > (Number(best.savedAt) || 0)) best = all[i];
+    }
+    return best;
   }
-  function ambientStoreDrop() { safe(function () { localStorage.removeItem(ambientStoreKey()); }); }
+  function ambientStoreDrop(bound) {
+    safe(function () { localStorage.removeItem(ambientStoreKey(bound)); });
+    /* a capture taken before the keys were chart-scoped lives at the bare key.
+       If it belongs to THIS chart it must go too, or the doctor is offered the
+       same filed visit forever. */
+    safe(function () {
+      var legacy = ambientStoreKey('');
+      var raw = localStorage.getItem(legacy);
+      if (!raw) return;
+      var rec = JSON.parse(raw);
+      if (rec && clean(rec.bound) === clean(bound)) localStorage.removeItem(legacy);
+    });
+  }
   function ambientStoreWrite(rec) {
-    var key = ambientStoreKey();
+    var key = ambientStoreKey(rec.bound);
     var parts = (rec.parts || []).slice();
     var trimmed = false;
     for (var guard = 0; guard < 40; guard++) {
@@ -3806,7 +3847,7 @@
        before this line, so a capture that could not be filed (wrong chart
        open, no transcript box on screen) keeps its crash copy and can still
        be recovered on the next load. */
-    ambientStoreDrop();
+    ambientStoreDrop(kiosk.ambBound);
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
     return { ok: true, chars: block.length };
   }
@@ -3861,13 +3902,13 @@
     /* filing the same recovered capture twice would duplicate a whole visit
        in the note - the body is its own idempotency key */
     if (box.value.indexOf(info.body) >= 0) {
-      ambientStoreDrop();
+      ambientStoreDrop(info.bound);
       return { ok: true, chars: 0, already: true };
     }
     var prior = box.value;
     box.value = prior + (prior ? '\n\n' : '') + block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
-    ambientStoreDrop();
+    ambientStoreDrop(info.bound);
     return { ok: true, chars: block.length };
   }
   function kioskAmbientStart() {
@@ -4472,7 +4513,7 @@
           });
           return;
         }
-        ambientStoreDrop();
+        ambientStoreDrop(pend.bound);
         toast('The recovered recording was deleted.');
         safe(function () { ensureVisitCard(); });
       }));
@@ -4631,7 +4672,11 @@
        fail-closed write the visit card calls. Reading never files. */
     pendingCapture: function () { return ambientRecoverInfo(); },
     fileRecoveredCapture: function () { return ambientRecoverFile(); },
-    discardRecoveredCapture: function () { ambientStoreDrop(); return true; },
+    discardRecoveredCapture: function () {
+      var info = ambientRecoverInfo();
+      ambientStoreDrop(info ? info.bound : '');
+      return true;
+    },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,
