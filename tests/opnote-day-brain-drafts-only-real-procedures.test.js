@@ -483,6 +483,34 @@ async function main() {
   assert.deepStrictEqual(quiet.__drafted, undefined, 'a draft was attempted on a no-procedure day');
 
   /* =======================================================================
+   * 4d. TRIAGE PARSES THE NOTES STORE ONCE PER PASS, NOT ONCE PER ROW.
+   *
+   * getNotes() is an unmemoized JSON.parse of the whole notes store
+   * (ScribeFlow.html:9118) and triage asks for it twice per row
+   * (existingOpNote + seenOnDay). triageAll runs on EVERY opPrepRender, and a
+   * draft-all calls opPrepRender once per drafted patient — so without a
+   * per-pass cache an 18-row day performs ~650 full parses of the store on the
+   * main thread, which on the owner's real store is measured in seconds and
+   * starves everything else on the page.
+   * ===================================================================== */
+  {
+    const perfCtx = makeSandbox({});
+    let getNotesCalls = 0;
+    const realGetNotes = perfCtx.getNotes;
+    perfCtx.getNotes = function () { getNotesCalls++; return realGetNotes(); };
+    perfCtx._opPrep = [];
+    for (let n = 0; n < 12; n++) {
+      perfCtx._opPrep.push(row('Ann Alpha', 'Left L5-S1 transforaminal epidural steroid injection', 'p1', FUTURE));
+    }
+    getNotesCalls = 0;
+    perfCtx.__mlsOpNoteDayBrain.triageAll();
+    assert.ok(getNotesCalls <= 1,
+      'triageAll parsed the notes store ' + getNotesCalls + ' times for 12 rows — it must parse once ' +
+      'per pass. Every opPrepRender runs this, and a draft-all renders once per patient, so this is ' +
+      'quadratic in the size of the day over an unmemoized JSON.parse of localStorage.');
+  }
+
+  /* =======================================================================
    * 5. THE POSITIONAL DOM CONTRACTS THIS MODULE MUST NOT BREAK
    *
    * Two other modules find their anchors by POSITION inside a row card, so a

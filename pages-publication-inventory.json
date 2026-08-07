@@ -150,6 +150,7 @@
     "feat_mls_notetools_exact.js",
     "feat_mls_offtab_navhide.js",
     "feat_mls_opmatch_boost.js",
+    "feat_mls_opnote_daybrain.js",
     "feat_mls_opnote_fill.js",
     "feat_mls_opnote_fillblank.js",
     "feat_mls_opnote_integrity.js",
