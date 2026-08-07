@@ -17236,6 +17236,12 @@ function saveTemplateFromForm(){
 /* ===== MULTI-TEMPLATE PDF SPLIT — one upload with several forms → AI detects each
    and splits them into separate templates the user can keep. ===== */
 var _tplPendingSplit=[];
+/* Templates already staged (unchecked review rows) from an EARLIER drop that
+   the doctor hasn't clicked "Add" on yet. Snapshotted at the top of every
+   tplMultiFile() call so a second drag-in merges into the first drop's
+   pending rows instead of wiping them — every reset point below restores
+   from this instead of starting from []. */
+var _tplPendingCarry=[];
 /* b921 — files that would not read are NOT silently counted away: each one
    becomes a named, UNCHECKED review row, so an upload of N files always ends
    at the review list ("no readable templates" was a dead end that stamped the
@@ -17582,6 +17588,10 @@ function _tplFoundSoFar(out){ return out===_tplPendingSplit ? out.length : (_tpl
 async function tplMultiFile(ev){
   var files=ev.target&&ev.target.files?Array.prototype.slice.call(ev.target.files):[]; try{ ev.target.value=''; }catch(e){}
   if(!files.length) return;
+  /* snapshot whatever is already staged-but-not-added before this drop's
+     resets run, so a second drag-in ADDS to the review list instead of
+     erasing the first drop's unreviewed rows. */
+  _tplPendingCarry=_tplPendingSplit.slice();
   _tplAiOff=false; _tplRecogFound=0;
   document.getElementById('tplMultiResult').innerHTML='';
   var perFileText=[], unreadable=0; _tplUnreadableRows=[];
@@ -17598,7 +17608,7 @@ async function tplMultiFile(ev){
        found") and the whole upload was stamped failed. The files are shown
        instead: named, unchecked, with the re-save advice attached to each. */
     if(!_tplUnreadableRows.length){ _tplMultiStatus('No files could be read.','#b4231e'); return; }
-    _tplPendingSplit=[]; _tplAppendUnreadableRows();
+    _tplPendingSplit=_tplPendingCarry.slice(); _tplAppendUnreadableRows();
     _tplMultiStatus(_tplPendingSplit.length+' file'+(_tplPendingSplit.length===1?'':'s')+' couldn’t be read as text (old .doc files? re-save them as .docx or PDF and upload again). Each is listed below so nothing is lost:','#b4231e');
     _renderTplSplitPreview();
     return;
@@ -17606,7 +17616,7 @@ async function tplMultiFile(ev){
   if(perFileText.length>=3){
     // BATCH of files → EACH file is ONE template (named by note TYPE). Only AI-split a file that
     // genuinely holds multiple forms — so 50 op-note files reliably become up to 50 templates.
-    _tplPendingSplit=[];
+    _tplPendingSplit=_tplPendingCarry.slice();
     /* b889 — this loop used to run SILENT: the status froze on "Reading
        files… N/N" while any file that looked multi-form went through the
        serial AI splitter for minutes. Every file now announces itself, and
@@ -17650,7 +17660,7 @@ async function tplMultiFile(ev){
        into a joined blob — each file yields at least one reviewable row, and
        duplicates are reported instead of dropped. */
     if(!backendMode()||!bkToken()){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
-    _tplPendingSplit=[];
+    _tplPendingSplit=_tplPendingCarry.slice();
     var pairDone=0, pairTotal=perFileText.length;
     var pairTick=function(label){
       _tplMultiStatus('✨ Recognizing templates… file '+pairDone+'/'+pairTotal+(label?(' ('+label+')'):'')+' ('+_tplRecogFound+' found so far)');
@@ -17725,13 +17735,13 @@ async function _tplSplitOneInto(text, fallbackName, sink){
 /* No AI available (signed out / server unreachable): each uploaded file becomes ONE template
    (files were joined with \f) — never a dead end that demands a sign-in. */
 function _tplPerFileFallback(text){
-  _tplPendingSplit=String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){
+  _tplPendingSplit=_tplPendingCarry.concat(String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){
     var meta=_tplParseMeta(seg);
     if(meta.name) return { name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true };
     var row={ name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
     _tplSeedKeywords(row);
     return row;
-  });
+  }));
   var fbInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
   _tplPendingSplit=fbInfo.list;
   _tplAppendUnreadableRows();
@@ -17742,7 +17752,7 @@ function _tplPerFileFallback(text){
 async function tplAiSplit(text){
   if(!backendMode()||!bkToken()){ _tplPerFileFallback(text); return; }
   var chunks=_tplChunk(text, 6000);
-  _tplPendingSplit=[]; _tplAiOff=false; _tplRecogFound=0;
+  _tplPendingSplit=_tplPendingCarry.slice(); _tplAiOff=false; _tplRecogFound=0;
   /* b921 — one giant PDF is many chunks and every chunk was its own serial
      round-trip. Same bounded pool, same chunk-ordered append. */
   var aiDone=0;
@@ -17806,7 +17816,7 @@ function tplAddSplit(){
   keep.forEach(function(t,ki){ _tplSeedKeywords(t); list.unshift({ id:'tpl'+Date.now().toString(36)+ki+Math.random().toString(36).slice(2,7), name:uniqueName(t.name), keywords:(t.keywords||[]).slice(0,16), text:t.text, created:Date.now() }); });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
-  _tplPendingSplit=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
+  _tplPendingSplit=[]; _tplPendingCarry=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
   renderTemplateList(); renderTemplateActiveSelect();
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
   try{ toast('Added '+keep.length+' templates.','ok'); }catch(e){}
