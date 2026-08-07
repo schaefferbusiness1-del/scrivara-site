@@ -77,18 +77,33 @@ command (`--runs=2`), idle box, both trees:
 |---|---|---|---|
 | `main` b940 `9a397938` | 4 | 1 | 3 |
 | PR #9 `5baccc8d` | 3 | 1 | 2 |
+| `main` b943 `4256f4fd` | 3 | 0 | 3 |
 
-Same ~1-in-3 pass rate on both, so the difference between the trees is zero and the
-harness is measuring this container, not the code. Failures are `session-ready-timeout`
-against a 45s budget, concentrated in `reload-history-reopen` — the second boot after
-a hard reload, the heaviest path — plus one "timed out waiting for initial local-demo
-auth screen". A *pass* is still real evidence: it means the app booted, created a
-patient, saved a note through the live editor, hard-reloaded, restored, and completed
-its stability cycles in real Chrome. A *failure* is evidence of nothing.
+**The cause is now measured, not guessed.** Patch `settleUi` to wait 120s instead of
+45s and report timings, and the harness passes 2/2 while telling you exactly what it
+waited for (b943):
+
+| settle point | wall time | settled |
+|---|---|---|
+| initial boot | 4,882 ms | RESOLVED |
+| warm re-settle | 54 ms | RESOLVED |
+| **`reload-history-reopen`** | **55,417 ms** | RESOLVED |
+| stability cycle | 4,125 ms | RESOLVED |
+
+`__mlsSessionReady` always resolves and `appScreen` is always `block` — the app
+completes the path. It just takes ~55s on the hard-reload-and-reopen path on this
+hardware, against a 45s wait. That is the entire failure, and it is why every red
+lands in `reload-history-reopen`.
+
+A *pass* is real evidence: the app booted, created a patient, saved a note through
+the live editor, hard-reloaded, restored, and completed its stability cycles in real
+Chrome. A *failure* is evidence of nothing — 0-for-3 on b943 and 1-for-4 on b940 are
+the same measurement.
 
 So: this harness is a positive-signal instrument here, not a gate. Do not dispatch a
 lane at a live red without reproducing it several times AND showing the same command
-passing on the parent commit.
+passing on the parent commit. When you need a real live answer, raise the budget and
+read the timings rather than the tally.
 
 Backend: `cd ../scrivara-backend && npm ci && npm test`.
 
