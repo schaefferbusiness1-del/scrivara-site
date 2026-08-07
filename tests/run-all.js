@@ -317,6 +317,11 @@ const tests = [
      15/15 - the date is handed to the generator and rendered in no format at
      all. Deterministic, and it affects EVERY note, not the 3 at-risk ones. */
   'opnote-carries-its-procedure-date.test.js',
+  /* b925 and b927 put both op-note safety guards in ScribeFlow.html's
+     _genOpNote - which feat_mls_opnote_integrity.js REPLACES. Two builds of a
+     patient-safety fix shipped and did nothing; QA proved it on live b926.
+     This suite asserts on the INSTALLED generator, never on a file. */
+  'opnote-guards-run-in-the-installed-generator.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
   'opnote-staging-identity-runtime.test.js',

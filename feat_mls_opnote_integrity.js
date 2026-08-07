@@ -1315,6 +1315,22 @@
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);if(ctx.age==null)ctx.age=patientAge(ctx.dob);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.age!=null)known.push('age: '+ctx.age);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.practice)known.push('practice: '+ctx.practice);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Every placeholder must be SPECIFIC and clinician-friendly: the key names the exact clinical datum (e.g. lesion_temperature_and_time, injectate_per_level, fluoroscopy_time — never value/details/info), the label is what a physician would call it, and the example is a realistic clinical value for THIS procedure. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
+    /* 2026-08-06 PATIENT SAFETY, and the SECOND half of the same shadowing
+       mistake. b925/b927 added a drug carve-out and a procedure-date
+       instruction to ScribeFlow.html's _genOpNote prompt — but this module
+       builds its OWN prompt (above) and replaces that generator, so those
+       words were never sent to the model either. Both the enforcement and the
+       instruction had to move here. Measured live on b926: a fresh draft of
+       Lumbar Facet Joint Injection still produced "1% lidocaine",
+       "0.25% bupivacaine" and "80 mg triamcinolone" — none of which appear
+       anywhere in that template.
+       Stated as an absolute so it cannot be read as subordinate to the
+       template-fidelity rules above it: a template SLOT for a drug is not a
+       slot to fill from clinical knowledge, it is a slot to leave for the
+       doctor. There is no routine dose for someone else's patient. */
+    sys+=' ABSOLUTE — NEVER INVENT A DRUG OR A DOSE. A [[placeholder]] or bracketed slot naming a MEDICATION, DOSE, CONCENTRATION, DRUG VOLUME, or NEEDLE/DEVICE SIZE (e.g. [LOCAL ANESTHETIC], [STEROID DOSE], [ANESTHETIC], [GAUGE], [ANESTHETIC/SALINE]) must be LEFT AS A PLACEHOLDER for the doctor to fill. Do NOT resolve it from clinical knowledge, from what is typical for this procedure, or from a standard or routine value — there is no routine dose for this patient. Never write a drug name, strength, percentage or milligram figure that is not already written in the SELECTED TEMPLATE, the transcript, or the KNOWN FACTS. If unsure whether a slot is a drug, treat it as a drug and leave the placeholder. An unfilled blank is safe; a plausible invented dose is not.';
+    sys+=' ALWAYS WRITE THE DATE OF PROCEDURE into the note — it is supplied below, it is never a placeholder and never omitted. If the template has a date line, fill it; otherwise add "Date of procedure: <date>" near the top. Do not confuse it with date of birth.';
+
     if(crossAdapt)sys+=' EXCEPTION — CROSS-PROCEDURE ADAPTATION: The selected template describes a DIFFERENT procedure than requested. Keep its heading names, heading order, and formatting style, but write the note for the REQUESTED procedure: the requested procedure type, anatomical region, side, level(s), and approach override any conflicting template wording, fixed boilerplate, or technique narrative.';
 
     /* One clause per mode. 'adapt' adds NOTHING, so it is provably identical to
@@ -1460,6 +1476,26 @@
       if(entry.obsolete||generationByPatient[pkey]!==entry){var se=new Error('An older op-note response was ignored because a newer request is active.');se.code='MLS_OPNOTE_STALE';throw se;}
       if(entry.canceled){var ce=new Error('Op-note generation was canceled safely.');ce.code='MLS_OPNOTE_CANCELED';throw ce;}
       window.__mlsLastOpFidelityPass=true;
+      /* 2026-08-06 PATIENT SAFETY — the guards run HERE because this is the
+         generator that is actually installed.
+         b925/b927 put _opGuardDrugBlanks and _opGuardProcedureDate in
+         ScribeFlow.html's _genOpNote. This module REPLACES window._genOpNote
+         with `generate` (:1519, __mlsopWrapped), so both fixes were in a
+         function nothing calls. QA proved it on live b926: the installed
+         function did not contain the guard, the return object had no drugGuard
+         key, and a fresh draft still read "80 mg triamcinolone ... 0.25%
+         bupivacaine". A patient-safety fix that shipped and did nothing.
+         This is the SAME shadow the comment at :416 already warns about for
+         _opRankTemplates - "patching the shadowed ScribeFlow copy looked right
+         and shipped nothing" - and I walked into it having quoted that very
+         line. Anything added to _genOpNote must be re-checked HERE.
+         The implementations stay single-sourced in ScribeFlow.html and are
+         called by name, so `String(window._genOpNote)` names them and the gate
+         can assert on the INSTALLED function rather than on a file. */
+      try{
+        if(typeof window._opGuardProcedureDate==='function')result=window._opGuardProcedureDate(dateStr,result);
+        if(typeof window._opGuardDrugBlanks==='function')result=window._opGuardDrugBlanks(tplText,result);
+      }catch(eg){}
       generationStage(runCtx,'Note ready','The template and requested clinical facts passed final validation.');
       if(entry.progress)entry.progress.complete('Operative note ready.');
       return result;
