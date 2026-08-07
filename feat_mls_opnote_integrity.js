@@ -435,7 +435,14 @@
     s = s.replace(/\b([clts])\s*(\d{1,2})\s*[-–—\/]\s*(\d{1,2})\b/gi, function (m, ltr, a, b) {
       var na = +a, nb = +b, low = ltr.toLowerCase();
       if (low === 'l' && na === 5 && nb === 1) return ltr + a + '-' + (ltr === 'L' ? 'S' : 's') + b;
-      if (nb === na + 1) return ltr + a + '-' + ltr + b;
+      /* 2026-08-07 — was `nb === na + 1`, i.e. ADJACENT LEVELS ONLY, so a
+         multi-level range came through untouched. "R cervical MBB C5-7" stayed
+         "C5-7", never became "C5-C7", and matched the owner's C3-C5 template
+         instead of his C5-C7 one — the WRONG CERVICAL LEVEL in a drafted note.
+         Cervical medial branch blocks are routinely written as a span, so this
+         is the common form, not an edge case. Any ascending range now expands;
+         nb === na + 1 is simply the two-level case of it. */
+      if (nb > na) return ltr + a + '-' + ltr + b;
       return m;
     });
     /* b901 — the ESI shorthand a pain schedule actually writes. LESI scored 0
@@ -451,7 +458,12 @@
       [/\btpi\b/i,  'trigger point injection',             /\btrigger point\b/i],
       /* b905 — QA gate: "SIJ inj left" refused while "Left sacroiliac joint
          injection" sat in the library. Safe over-refusal, but still a miss. */
-      [/\bsij\b/i,  'sacroiliac joint injection',           /\bsacroiliac\b/i]
+      [/\bsij\b/i,  'sacroiliac joint injection',           /\bsacroiliac\b/i],
+      /* 2026-08-07 — "LFCN block" matched "Genicular Nerve Block": a DIFFERENT
+         NERVE IN A DIFFERENT LIMB REGION. Unexpanded, the only tokens the
+         matcher could score on were "block" and a four-letter word it did not
+         know, so the strongest nerve-block template in the library won. */
+      [/\blfcn\b/i, 'lateral femoral cutaneous nerve block', /\blateral femoral cutaneous\b/i]
     ];
     for (var ai = 0; ai < ABBR.length; ai++) {
       if (ABBR[ai][0].test(s) && !ABBR[ai][2].test(s)) s += ' ' + ABBR[ai][1];

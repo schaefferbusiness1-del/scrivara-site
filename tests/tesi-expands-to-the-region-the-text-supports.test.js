@@ -97,6 +97,25 @@ lacks('L4-5 ILESI', 'transforaminal');
 lacks('L4-5 ILESI', 'left', 'the doctor never wrote a side');
 lacks('L4-5 ILESI', 'right');
 
+/* ---- 4b. MULTI-LEVEL RANGES, and a nerve that is not another nerve ----- */
+/* Both found by sweeping the owner's real 96-template library, same pass as
+   TESI. "R cervical MBB C5-7" matched his C3-C5 template - the WRONG CERVICAL
+   LEVEL - because the level rule only handled ADJACENT levels and left a span
+   untouched. "LFCN block" matched "Genicular Nerve Block", a different nerve
+   in a different limb region, because it expanded to nothing. */
+console.log('a multi-level span canonicalises:');
+has('R cervical MBB C5-7', 'C5-C7', 'stayed "C5-7" and matched the C3-C5 template');
+has('L3-5 MBB', 'L3-L5');
+has('C3-5 block', 'C3-C5');
+/* the two-level case, and the lumbosacral special case, must be untouched */
+has('L4-5 TESI', 'L4-L5', 'the adjacent case is just the two-level span');
+has('L5-1 ESI', 'L5-S1', 'the lumbosacral special case still wins');
+/* a DESCENDING or equal pair is not a level span and must not be rewritten */
+lacks('C7-5 block', 'C7-C5', 'a descending pair is not a range');
+console.log('LFCN is its own nerve:');
+has('LFCN block', 'lateral femoral cutaneous', 'matched "Genicular Nerve Block" before');
+lacks('LFCN block', 'genicular');
+
 /* ---- 5. NEVER REGRESS the gates that already shipped ------------------- */
 console.log('the b901/b905 expansions are unchanged:');
 has('LESI', 'lumbar epidural steroid injection');
