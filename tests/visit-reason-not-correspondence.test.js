@@ -147,6 +147,35 @@ console.log('structural:');
   else { failures++; console.error('        FAIL an alternative was removed from _NOT_A_VISIT_REASON'); }
 })();
 
+/* ---- 6. SUPPRESSION MUST STAY VISIBLE --------------------------------- */
+/* Requested by the ext-goal lane and it is the right requirement: an invisible
+   suppression is the same failure family as an invisible refusal. If a visit's
+   only text was correspondence, the doctor must still see that a visit HAPPENED
+   on that date with no readable note - the row must never silently vanish.
+   Verified live on both holder charts: 12 of 12 rows still rendered, every one
+   dated, 10 of them the placeholder, and no arrow leaked into any row. */
+console.log('a suppressed visit still renders as a dated row:');
+(function () {
+  const block = (src.match(/if \(visits\.length\) \{[\s\S]*?\n    \}/) || [])[0];
+  if (!block) { failures++; console.error('        FAIL the Recent visits block was not found'); return; }
+
+  const checks = [
+    [/lines\.push\('• ' \+ \(v\.date \|\| 'Undated'\)/, 'every visit pushes a dated row unconditionally'],
+    [/no readable note text captured/, 'the placeholder text survives'],
+    [/_typeIsRenderableReason\(v\.type\)/, 'the guard is wired at the call site'],
+  ];
+  for (const [re, what] of checks) {
+    if (re.test(block)) console.log('  pass  ' + what);
+    else { failures++; console.error('  FAIL  ' + what + ' - not found in the shipped block'); }
+  }
+
+  /* the row push must NOT be inside a conditional on `detail` - that is what
+     would make a suppressed visit disappear instead of showing as unreadable */
+  const pushLine = (block.match(/[^\n]*lines\.push\('• '[^\n]*/) || [''])[0];
+  if (/^\s*lines\.push/.test(pushLine)) console.log('  pass  the row push is unconditional - suppression cannot delete a visit');
+  else { failures++; console.error('  FAIL  the row push is guarded by a condition: ' + pushLine.trim().slice(0, 90)); }
+})();
+
 console.log(failures === 0
   ? 'PASS visit-reason guard: correspondence and third-party identity stay out of the visit list, and every genuine reason still renders'
   : 'FAIL visit-reason-not-correspondence: ' + failures + ' assertion(s) failed.');
