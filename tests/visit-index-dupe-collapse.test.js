@@ -187,7 +187,10 @@ assert(/_getPatients\(\)\.find[\s\S]{0,260}window\.findPatient/.test(source.slic
 // 5) loaders ship the new module bytes
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
-  assert(text.includes('feat_visits.js?v=20260729vis11'), loader + ': feat_visits cache pin not bumped — the SW would serve the old module forever');
+  /* pin moved 2026-08-06: the hand-maintained token went stale when feat_visits
+     gained the history identity binding. The build-number form follows the build
+     and cannot go stale, so this asserts the FORM, not a value to remember. */
+  assert(text.includes("feat_visits.js?v='+(window.__MLS_AV||Date.now())"), loader + ': feat_visits must use the build-number cache-buster — a hand-maintained token would serve the old module to returning browsers');
 }
 
 console.log('PASS visit index dupe collapse: batch-aware findPatient, racing ingest keeps each row once, union artifacts self-heal, bodies/aliases/trust boundaries untouched, loader pins bumped');

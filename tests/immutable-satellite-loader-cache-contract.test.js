@@ -75,7 +75,13 @@ const assets = [
      returning browser keeps the cycling copy cache-first. Pinned by
      tests/wrapper-chains-reach-their-base.test.js. */
   ['feat_mls_upnow_realtime.js', '20260805unr111', '20260723unr110'],
-  ['feat_visits.js', '20260729vis11', '20260728vis10'],
+  /* 2026-08-06: feat_visits.js LEAVES this table. It gained the history identity
+     binding and immediately went stale against '20260729vis11' — the third
+     hand-maintained token to go stale in one evening, each hiding a fix from
+     returning browsers. It now rides the shared build-number cache-buster, which
+     follows the build and cannot go stale, so there is no per-release token for
+     this table to police. Its guarantees are not dropped: the assertion below
+     pins the FORM and keeps BOTH retired tokens unreachable. */
   /* 2026-08-05 adversarial-review repairs: all three copilot/avatar satellites
      changed after their b871/b872 immutable URLs shipped — the receipts-append
      signature, the coverage source, fail-open setup form, mutate-before-save
@@ -113,7 +119,13 @@ const assets = [
      adversarial-review repairs incl. the fail-OPEN exit gate. */
     /* av-5.3.1: cold-start hardening - a finished interview refuses further
      answers, and the harness rejects the first turn with an HTML 502. */
-  ['feat_mls_avatar.js', '20260806av540', '20260806av534'],
+  /* av-5.4.0: AMBIENT ROOM MODE - the same PIN pad now has a second outcome,
+     keep the room microphone open through the consultation and hand the
+     doctor one transcript with the check-in and the visit in it.
+     av-5.5.0 (2026-08-07, owner: 'have it conform to the picture of the
+     person better'): Match applies exactly the knobs the photo answered,
+     and reads brow weight, lip fullness, nose width and top colour. */
+  ['feat_mls_avatar.js', '20260807av565', '20260807av564'],
   /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
      set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
      that added `appControl` to the still-loading guard. Same calendar day, so
@@ -131,6 +143,14 @@ for (const [asset, token, retired] of assets) {
   assert.strictEqual(connect.split(token).length - 1, 1,
     `${asset} must have exactly one production loader using ${token}`);
   assert(!connect.includes(retired), `${asset} still exposes retired cache token ${retired}`);
+}
+
+/* feat_visits.js: the form is the pin now, and both retired tokens stay dead. */
+for (const [label, text] of [['production', connect], ['staging', staging]]) {
+  assert(text.includes("feat_visits.js?v='+(window.__MLS_AV||Date.now())"),
+    label + ': feat_visits must load with the build-number cache-buster');
+  assert(!/feat_visits\.js\?v=20\d{6}/.test(text),
+    label + ': a hand-maintained feat_visits token came back — it will go stale at the next change');
 }
 
 assert(staging.includes('feat_mls_checker.js?v=20260806chk3045'),

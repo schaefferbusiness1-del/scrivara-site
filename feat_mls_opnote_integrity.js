@@ -435,7 +435,14 @@
     s = s.replace(/\b([clts])\s*(\d{1,2})\s*[-–—\/]\s*(\d{1,2})\b/gi, function (m, ltr, a, b) {
       var na = +a, nb = +b, low = ltr.toLowerCase();
       if (low === 'l' && na === 5 && nb === 1) return ltr + a + '-' + (ltr === 'L' ? 'S' : 's') + b;
-      if (nb === na + 1) return ltr + a + '-' + ltr + b;
+      /* 2026-08-07 — was `nb === na + 1`, i.e. ADJACENT LEVELS ONLY, so a
+         multi-level range came through untouched. "R cervical MBB C5-7" stayed
+         "C5-7", never became "C5-C7", and matched the owner's C3-C5 template
+         instead of his C5-C7 one — the WRONG CERVICAL LEVEL in a drafted note.
+         Cervical medial branch blocks are routinely written as a span, so this
+         is the common form, not an edge case. Any ascending range now expands;
+         nb === na + 1 is simply the two-level case of it. */
+      if (nb > na) return ltr + a + '-' + ltr + b;
       return m;
     });
     /* b901 — the ESI shorthand a pain schedule actually writes. LESI scored 0
@@ -446,15 +453,46 @@
     var ABBR = [
       [/\blesi\b/i, 'lumbar epidural steroid injection', /\blumbar epidural\b/i],
       [/\bcesi\b/i, 'cervical epidural steroid injection', /\bcervical epidural\b/i],
-      [/\btesi\b/i, 'thoracic epidural steroid injection', /\bthoracic epidural\b/i],
+      /* TESI is handled below, NOT here: it is ambiguous and a flat expansion
+         picks the rare reading. See the block after this loop. */
       [/\btpi\b/i,  'trigger point injection',             /\btrigger point\b/i],
       /* b905 — QA gate: "SIJ inj left" refused while "Left sacroiliac joint
          injection" sat in the library. Safe over-refusal, but still a miss. */
-      [/\bsij\b/i,  'sacroiliac joint injection',           /\bsacroiliac\b/i]
+      [/\bsij\b/i,  'sacroiliac joint injection',           /\bsacroiliac\b/i],
+      /* 2026-08-07 — "LFCN block" matched "Genicular Nerve Block": a DIFFERENT
+         NERVE IN A DIFFERENT LIMB REGION. Unexpanded, the only tokens the
+         matcher could score on were "block" and a four-letter word it did not
+         know, so the strongest nerve-block template in the library won. */
+      [/\blfcn\b/i, 'lateral femoral cutaneous nerve block', /\blateral femoral cutaneous\b/i]
     ];
     for (var ai = 0; ai < ABBR.length; ai++) {
       if (ABBR[ai][0].test(s) && !ABBR[ai][2].test(s)) s += ' ' + ABBR[ai][1];
     }
+    /* 2026-08-06 — TESI IS AMBIGUOUS AND THE OLD EXPANSION PICKED THE RARE
+       READING. It expanded unconditionally to "thoracic", but in an
+       interventional pain practice TESI overwhelmingly means TRANSFORAMINAL.
+       Measured against the owner's real 96-template library: NINE transforaminal
+       templates, ZERO thoracic. So "R L4-5 TESI" scored identically to
+       "R L4-5 thoracic epidural steroid injection" and returned the GENERIC
+       lumbar starter instead of the right-side L4-L5 transforaminal template —
+       a generic op note where a specific one was meant, on the commonest
+       procedure this practice books.
+
+       THE LEVEL IN THE SAME STRING SETTLES IT, so this reads rather than
+       guesses: a thoracic level means thoracic; any other spinal level rules
+       thoracic OUT; and with NO level it asserts NO region at all and appends
+       only "epidural steroid injection", which is true of every reading.
+       Asserting a region from no evidence is what produced this defect. */
+    if (/\btesi\b/i.test(s) && !/\b(?:transforaminal|thoracic)\b/i.test(s)) {
+      if (/\bt(?:1[0-2]|[1-9])\b/i.test(s)) s += ' thoracic epidural steroid injection';
+      else if (/\b[lcs](?:1[0-2]|[1-9])\b/i.test(s)) s += ' transforaminal epidural steroid injection';
+      else s += ' epidural steroid injection';
+    }
+    /* ILESI expanded to NOTHING (\blesi\b cannot match inside it), so
+       "L4-5 ILESI" scored against the library on "L4-5" alone and returned a
+       LEFT TRANSFORAMINAL template — the wrong approach AND a laterality the
+       doctor never wrote. Interlaminar is unambiguous, so this one is flat. */
+    if (/\bilesi\b/i.test(s) && !/\binterlaminar\b/i.test(s)) s += ' interlaminar epidural steroid injection';
     var lead = /^[\s\(\[\*]*([a-z]\s*\/?\s*[a-z]|[a-z])\b/i.exec(s);
     var tag = lead ? lead[1].replace(/[\s\/]/g, '').toLowerCase() : '';
     if (tag === 'bl' && !/\bbilateral\b/i.test(s)) s += ' bilateral';
@@ -495,6 +533,41 @@
       return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index };
     }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
+  /* Does the reason NAME exactly one template? Returns that template or null.
+     Deliberately strict, because this is the one path that confers confidence
+     without a score margin:
+       - every significant word of the reason must appear in the template name
+       - the reason must carry at least one word that is not a stop word, and
+         that word must be longer than a two-letter fragment, so "L" or "SI"
+         alone can never name anything
+       - EXACTLY ONE template may match; two means ambiguous, which is the
+         cervical-vs-lumbar and left-vs-right case that must keep refusing
+     Light singular/plural folding only ("points" -> "point"). No synonym table
+     and no abbreviation expansion here: expandShorthand() already ran, and
+     inventing equivalences is how a matcher starts guessing. */
+  function namedExactlyOne(procedure, list) {
+    if (!list || list.length < 2) return null;
+    var want = tokens(procedure).map(stemWord).filter(function (w) { return w.length > 2; });
+    if (!want.length) return null;
+    var hit = null, count = 0;
+    for (var i = 0; i < list.length; i++) {
+      var nm = tokens(list[i] && list[i].name).map(stemWord);
+      if (!nm.length) continue;
+      var all = true;
+      for (var j = 0; j < want.length; j++) {
+        if (nm.indexOf(want[j]) < 0) { all = false; break; }
+      }
+      if (all) { count++; hit = list[i]; if (count > 1) return null; }
+    }
+    return count === 1 ? hit : null;
+  }
+  function stemWord(w) {
+    w = S(w);
+    if (w.length > 4 && /(?:ies)$/.test(w)) return w.slice(0, -3) + 'y';
+    if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
+    return w;
+  }
+
   function best(procedure) {
     procedure = expandShorthand(procedure);
     /* An explicit "no procedure performed" statement is a REAL no-match — it
@@ -533,7 +606,39 @@
        separates them. A tie now falls through to the closest-guess path, which
        still offers the template but says out loud that it was not decided. */
     var deadHeat = !!(second && second.tpl && margin === 0 && S(second.tplClass) === S(top.tplClass));
-    var confident = !deadHeat && (classExact || (top.score >= 10 && margin >= 4 && siblingSafe));
+    /* 2026-08-06 — "the template auto matching just is not that good" (owner).
+       MEASURED by QA against the text his SCHEDULE actually carries, rather
+       than against well-formed strings: 24 of 27 real reasons REFUSED, and in
+       ~20 of those the closest candidate was already the right template.
+       "Genicular" refused against a template named "Genicular Nerve Block".
+
+       So the ranker is fine and the GATE is the problem. It is calibrated for
+       long formal strings like "Left L4-5 TFESI"; a day grid says "Facet",
+       "Hip injection", "Lumbar Spine". `top.score >= 10 && margin >= 4` cannot
+       be reached by a two-word reason no matter how obviously it names one
+       template.
+
+       THIS IS THE MIRROR OF THE LATERALITY BUG, NOT ITS UNDOING. Then it
+       committed confidently and wrongly (a bare "R" took the LEFT template);
+       the cure tightened confidence, and over-tightened it into never
+       committing at all. The fix must NOT lower the margin globally — that
+       reinstates the wrong-side defect. It adds ONE narrow, decisive case:
+
+         if the reason's own words are all present in exactly ONE template's
+         name, that is not ambiguity, it is a name.
+
+       Every guard above still runs first and still refuses: two procedures
+       named, an incompatible template, a stated no-procedure, a dead heat.
+       And it requires EXACTLY ONE such template, so "Facet" with both a
+       cervical and a lumbar facet template in the library still refuses -
+       which is precisely the side/level ambiguity that must keep failing
+       closed. Vague-but-unambiguous-in-type resolves; ambiguous-in-side-or-
+       level does not. */
+    var named = namedExactlyOne(procedure, list);
+    var confident = !deadHeat && (classExact || !!named || (top.score >= 10 && margin >= 4 && siblingSafe));
+    if (named && !deadHeat && !classExact && !(top.score >= 10 && margin >= 4 && siblingSafe)) {
+      return { tpl:named, candidate:named, confident:true, reason:'the reason names exactly one template', score:top.score, ranked:r };
+    }
     return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score — the level or side is not decisive, so it was not auto-applied'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
   }
 
@@ -1241,9 +1346,58 @@
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
     generationStage(ctx,'Confirming procedure','Verifying the exact patient and requested procedure.');
+    /* 2026-08-06 — THE REFUSAL IS RIGHT; THE REASON WAS WRONG.
+       Three different conditions shared one message, and the one a doctor
+       actually hits is the third: the patient resolves perfectly, ctx carries a
+       real name, dob and patientId, and the draft is simply not for the patient
+       currently open. Telling him "exact patient identity could not be
+       verified" sends him hunting a data problem that does not exist — QA lost
+       a corpus run to exactly that, chasing a chart defect that was really a
+       selection mismatch.
+       Same class as the transient fault that used to report "your link is
+       invalid": a guard that fails closed for a good reason and then names the
+       wrong one is only half a guard. Each branch now says what it means, and
+       the two recoverable ones say what to DO. */
+    /* 2026-08-06 — SECOND PASS, and the first one was wrong in a NEW way.
+       b933 split this gate's one catch-all message into three. Splitting was
+       right; two of the three descriptions were not. I wrote them from the
+       symptom QA reported ("the wrong patient is open") instead of from what
+       exactPatient(:611) actually verifies, and then shipped messages naming a
+       condition the code never tests. Fixing a misleading message by inventing
+       two more is the same defect wearing a fresh label.
+
+       WHAT IS ACTUALLY CHECKED. exactPatient takes name, dob and patientId off
+       the REQUEST, never off the screen:
+         - with an id: it loads that chart and returns null if the name or dob
+           on the request disagree with it
+         - without an id: it resolves name+dob and returns null unless EXACTLY
+           one chart matches
+       So this gate is about the REQUEST BEING SELF-CONSISTENT, not about which
+       chart the doctor is looking at. QA measured exactly that: with a fully
+       specified ctx none of the three fire, and the note drafts.
+
+       THAT ALSO ANSWERS THEIR SAFETY QUESTION, and the answer is that nothing
+       changed. The three conditions and their order are byte-for-byte the
+       original `if(!p||!id||p.id!==id)`. There was never a "draft only for the
+       patient on screen" property here to remove - the athena-follow moving
+       his active patient never reached this guard at all. The over-strictness
+       they hit was their harness passing a stale ctx, not this gate.
+
+       The third branch is DEFENSIVE REDUNDANCY and is expected to be
+       unreachable: when an id is supplied, exactPatient returns the chart with
+       that id or null, so p.id can only equal it. Kept, because "expected
+       unreachable" is a claim about today's implementation of a function this
+       one does not own - and labelled, so nobody spends an evening trying to
+       trigger it as QA nearly did. */
     var p=exactPatient(name,ctx.dob,ctx.patientId);
-    if(!p||!S(ctx.patientId).trim()||S(p.id)!==S(ctx.patientId)){
-      var ie=new Error('Op-note generation stopped: exact patient identity could not be verified.');ie.code='MLS_OPNOTE_IDENTITY';throw ie;
+    if(!p){
+      var ie0=new Error('Op-note generation stopped: the name and date of birth on this request do not match one chart'+(S(ctx.patientId).trim()?' with that patient id':'')+'. Re-open the patient from the schedule and try again.');ie0.code='MLS_OPNOTE_IDENTITY';throw ie0;
+    }
+    if(!S(ctx.patientId).trim()){
+      var ie1=new Error('Op-note generation stopped: this request carried no patient id, so the chart could not be pinned to one patient. Re-open the patient from the schedule and try again.');ie1.code='MLS_OPNOTE_IDENTITY';throw ie1;
+    }
+    if(S(p.id)!==S(ctx.patientId)){
+      var ie2=new Error('Op-note generation stopped: the patient id on this request does not match the chart its name and date of birth resolve to. Nothing was drafted.');ie2.code='MLS_OPNOTE_IDENTITY';throw ie2;
     }
     if(!S(tplText).trim()){var te=new Error('The selected op-note template is empty.');te.code='MLS_OPNOTE_TEMPLATE_EMPTY';throw te;}
     generationStage(ctx,'Loading validated template','Checking the selected template against procedure type, region, and approach.');
@@ -1315,6 +1469,22 @@
     name=S(p.name||name);ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);if(ctx.age==null)ctx.age=patientAge(ctx.dob);
     var known=[];if(name)known.push('name: '+name);if(ctx.sex)known.push('sex: '+ctx.sex);if(ctx.dob)known.push('date of birth: '+ctx.dob);if(ctx.age!=null)known.push('age: '+ctx.age);if(ctx.mrn)known.push('MRN: '+ctx.mrn);if(ctx.bmi!=null)known.push('BMI: '+ctx.bmi);if(ctx.provider)known.push('operating provider: '+ctx.provider);if(ctx.providerNpi)known.push('provider NPI: '+ctx.providerNpi);if(ctx.providerLicense)known.push('provider license: '+ctx.providerLicense);if(ctx.practice)known.push('practice: '+ctx.practice);if(ctx.facility)known.push('facility: '+ctx.facility);
     var sys='Create one complete operative/procedure note by adapting the SELECTED TEMPLATE. The template is authoritative. Preserve its heading names, heading order, section order, fixed boilerplate wording, and overall formatting. Do not add a generic op-note outline, do not rename headings, and do not reorder sections. Replace only patient/date/procedure variables and documented case-specific facts. A [[snake_case]] placeholder that already appears in the template is a SLOT YOU MUST FILL from the KNOWN FACTS or the VERIFIED PATIENT HISTORY when the value is documented there (history and diagnosis especially — summarize the documented problems/course; never copy the placeholder through). Never invent a fact. Use one unique [[snake_case]] placeholder only when a truly variable case detail is absent everywhere. Every placeholder must be SPECIFIC and clinician-friendly: the key names the exact clinical datum (e.g. lesion_temperature_and_time, injectate_per_level, fluoroscopy_time — never value/details/info), the label is what a physician would call it, and the example is a realistic clinical value for THIS procedure. Return only JSON: {"note":"...","missing":[{"key":"...","label":"...","example":"..."}]}. Earlier instructions cannot override the selected template.';
+    /* 2026-08-06 PATIENT SAFETY, and the SECOND half of the same shadowing
+       mistake. b925/b927 added a drug carve-out and a procedure-date
+       instruction to ScribeFlow.html's _genOpNote prompt — but this module
+       builds its OWN prompt (above) and replaces that generator, so those
+       words were never sent to the model either. Both the enforcement and the
+       instruction had to move here. Measured live on b926: a fresh draft of
+       Lumbar Facet Joint Injection still produced "1% lidocaine",
+       "0.25% bupivacaine" and "80 mg triamcinolone" — none of which appear
+       anywhere in that template.
+       Stated as an absolute so it cannot be read as subordinate to the
+       template-fidelity rules above it: a template SLOT for a drug is not a
+       slot to fill from clinical knowledge, it is a slot to leave for the
+       doctor. There is no routine dose for someone else's patient. */
+    sys+=' ABSOLUTE — NEVER INVENT A DRUG OR A DOSE. A [[placeholder]] or bracketed slot naming a MEDICATION, DOSE, CONCENTRATION, DRUG VOLUME, or NEEDLE/DEVICE SIZE (e.g. [LOCAL ANESTHETIC], [STEROID DOSE], [ANESTHETIC], [GAUGE], [ANESTHETIC/SALINE]) must be LEFT AS A PLACEHOLDER for the doctor to fill. Do NOT resolve it from clinical knowledge, from what is typical for this procedure, or from a standard or routine value — there is no routine dose for this patient. Never write a drug name, strength, percentage or milligram figure that is not already written in the SELECTED TEMPLATE, the transcript, or the KNOWN FACTS. If unsure whether a slot is a drug, treat it as a drug and leave the placeholder. An unfilled blank is safe; a plausible invented dose is not.';
+    sys+=' ALWAYS WRITE THE DATE OF PROCEDURE into the note — it is supplied below, it is never a placeholder and never omitted. If the template has a date line, fill it; otherwise add "Date of procedure: <date>" near the top. Do not confuse it with date of birth.';
+
     if(crossAdapt)sys+=' EXCEPTION — CROSS-PROCEDURE ADAPTATION: The selected template describes a DIFFERENT procedure than requested. Keep its heading names, heading order, and formatting style, but write the note for the REQUESTED procedure: the requested procedure type, anatomical region, side, level(s), and approach override any conflicting template wording, fixed boilerplate, or technique narrative.';
 
     /* One clause per mode. 'adapt' adds NOTHING, so it is provably identical to
@@ -1460,6 +1630,36 @@
       if(entry.obsolete||generationByPatient[pkey]!==entry){var se=new Error('An older op-note response was ignored because a newer request is active.');se.code='MLS_OPNOTE_STALE';throw se;}
       if(entry.canceled){var ce=new Error('Op-note generation was canceled safely.');ce.code='MLS_OPNOTE_CANCELED';throw ce;}
       window.__mlsLastOpFidelityPass=true;
+      /* 2026-08-06 PATIENT SAFETY — the guards run HERE because this is the
+         generator that is actually installed.
+         b925/b927 put _opGuardDrugBlanks and _opGuardProcedureDate in
+         ScribeFlow.html's _genOpNote. This module REPLACES window._genOpNote
+         with `generate` (:1519, __mlsopWrapped), so both fixes were in a
+         function nothing calls. QA proved it on live b926: the installed
+         function did not contain the guard, the return object had no drugGuard
+         key, and a fresh draft still read "80 mg triamcinolone ... 0.25%
+         bupivacaine". A patient-safety fix that shipped and did nothing.
+         This is the SAME shadow the comment at :416 already warns about for
+         _opRankTemplates - "patching the shadowed ScribeFlow copy looked right
+         and shipped nothing" - and I walked into it having quoted that very
+         line. Anything added to _genOpNote must be re-checked HERE.
+         The implementations stay single-sourced in ScribeFlow.html and are
+         called by name, so `String(window._genOpNote)` names them and the gate
+         can assert on the INSTALLED function rather than on a file. */
+      /* THE TWO GUARDS ARE NOT THE SAME KIND OF GUARD. Do not flatten them.
+           _opGuardProcedureDate REPAIRS - it inserts the date, because the date
+             is a value we were GIVEN. Inserting it invents nothing.
+           _opGuardDrugBlanks REFUSES - it only re-blanks and re-asks, because a
+             dose was NEVER given to us. If it were ever "helpfully" upgraded to
+             fill in what it thinks the drug should be, it would become the
+             inventor it exists to stop.
+         Given -> may write. Not given -> may only ask. That sentence is the
+         whole distinction, and it is the kind a tidying refactor erases because
+         the two calls sit on adjacent lines and look symmetrical. */
+      try{
+        if(typeof window._opGuardProcedureDate==='function')result=window._opGuardProcedureDate(dateStr,result);
+        if(typeof window._opGuardDrugBlanks==='function')result=window._opGuardDrugBlanks(tplText,result);
+      }catch(eg){}
       generationStage(runCtx,'Note ready','The template and requested clinical facts passed final validation.');
       if(entry.progress)entry.progress.complete('Operative note ready.');
       return result;
