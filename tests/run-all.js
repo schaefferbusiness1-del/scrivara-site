@@ -736,7 +736,15 @@ const tests = [
                            file, proved by running the build and diffing it */
   'phone-app-boundaries.test.js',
   'phone-app-control-budget.test.js',
-  'phone-app-www-build-is-faithful.test.js'
+  'phone-app-www-build-is-faithful.test.js',
+  /* "Draft all op notes" wrote an operative note for every name on the day,
+     including follow-ups, cancellations and no-shows, because nothing in the
+     op-note path had ever asked whether a procedure happened. This pins the
+     triage that stops it, the doctor's bypass, the fences that keep the new AI
+     matching layer from ever being weaker than the deterministic ranker, and
+     that the gate composes with mls-connect's richer draftAll rather than
+     replacing it (the b943 owner truce). */
+  'opnote-day-brain-drafts-only-real-procedures.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
