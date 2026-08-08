@@ -65,6 +65,13 @@ exclude:
   - "**/*.[Hh][Tt][Mm][Ll]"
   - "*.[Zz][Ii][Pp]"
   - "**/*.[Zz][Ii][Pp]"
+  # 2026-08-08 (b948 deploy failure, the b946 class): .bin had NO exclude glob,
+  # so when the released-package mirror moved 3.0.45 -> 3.0.46 the superseded
+  # MLS_Assist_v3.0.45.bin still published, UNDECLARED, and the generated-tree
+  # audit refused the deploy. Same rule as *.zip: every .bin is excluded and
+  # only the include-allowlisted CURRENT release mirror publishes.
+  - "*.[Bb][Ii][Nn]"
+  - "**/*.[Bb][Ii][Nn]"
   - "*.[Ss][Tt][Aa][Gg][Ii][Nn][Gg].[Jj][Ss]"
   - "**/*.[Ss][Tt][Aa][Gg][Ii][Nn][Gg].[Jj][Ss]"
   - "*_[Ss][Tt][Aa][Gg][Ii][Nn][Gg]_*.[Jj][Ss]"
@@ -180,18 +187,18 @@ include:
   - "jspdf.umd-4.2.1.min.js"
 
   # The exact released MLS Assist package (owner directive 2026-07-20).
-  # SHA-256 cdd6d083902a0fc583a6f723b415cc1cdb6a01540840c677a4eddb2c32806273 —
+  # SHA-256 dd9ece28d9df9ba7c829451a1cdac41282bc3ab2cd266a9fdc1517434440bb41 —
   # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.45.zip"
+  - "MLS_Assist_v3.0.46.zip"
   # Byte-identical mirror of the line above, under an extension no service
   # worker generation retires. A worker keeps controlling a tab until every tab
   # closes and this app's worker deliberately declines skipWaiting(), so an
   # already-installed worker answers the .zip with 410 no matter what we ship.
   # Measured: the worker did not roll across three production deploys. The .bin
   # is the only route that reaches those browsers; the button carries
-  # download="MLS_Assist_v3.0.45.zip" so the doctor still saves a .zip.
-  - "MLS_Assist_v3.0.45.bin"
+  # download="MLS_Assist_v3.0.46.zip" so the doctor still saves a .zip.
+  - "MLS_Assist_v3.0.46.bin"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

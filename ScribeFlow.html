@@ -5016,12 +5016,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.45</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.45.bin" download="MLS_Assist_v3.0.45.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.45</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.46</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.46.bin" download="MLS_Assist_v3.0.46.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.46</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.45</span></summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.45 - Chart histories finish on machines where they used to stall. Since v3.0.32 a check that waits for the athenaOne visit list to settle had been cancelling its own progress counter, so on some setups that wait could never complete and the history read gave up with an encounter-index error no matter how long it ran. The counter now survives, and the wait completes the way it did before. When a read still cannot finish, the reason names which step refused and what it saw, and every read records whether athenaOne was actually visible - the difference between a covered window and a slow chart. The review sheet can also bring athenaOne forward for its read-only check, never while you are recording. Everything from v3.0.44 remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.46</span></summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.46 - The day's visit note now imports even when Full visit notes is off and athenaOne prints the date with dashes or dots (07-21-2026): the day-scoped reader recognized only slash dates, so on those charts it skipped every encounter row and the day stored nothing. The green in-Athena panel's Pull history line now says exactly what it did - it reads the open chart for that panel's own note flow and does not import into MLS (importing is the app's Copy every visit button). Everything from v3.0.45 remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5215,7 +5215,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during an Athena pull, also open and save every encounter note (slower, most complete). Off: the schedule and each patient's chart history cards only — much faster. Applies to every pull on this account, wherever you start it.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.45.zip" download="MLS_Assist_v3.0.45.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.45 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.46.zip" download="MLS_Assist_v3.0.46.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.46 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -10096,6 +10096,13 @@ function setActivePtId(id){
   if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
   try{ if(id) sessionStorage.setItem(uns('activePtChosen'),String(id)); else sessionStorage.removeItem(uns('activePtChosen')); }catch(e5){}
   if(changed){
+    /* px-3.0 (2026-08-07): a monotonically increasing patient-switch epoch.
+       Async completions capture it before their await and re-check it after,
+       so a delayed reply for patient A can never paint or upsert into
+       patient B's panel - and an A->B->A flip (same id, new epoch) is also
+       caught. The visit lane has its own binding epoch; this one covers the
+       Patients-tab lane, which had none. */
+    try{ window._mlsActivePtEpoch=(window._mlsActivePtEpoch||0)+1; }catch(eEp){}
     /* Custom-widget output is per-patient: drop every cached reply (+ its block
        state) stamped for a different chart so the renderer can never restore
        another patient's text. try/catch also shields the TDZ window before the
@@ -10114,6 +10121,15 @@ function setActivePtId(id){
 }
 function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
 function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
+/* px-3.0: the still-active proof for async completions in the Patients lane.
+   Pass the epoch captured BEFORE the await; an id match alone misses A->B->A. */
+function _mlsPatientStillActive(patientId,epoch){
+  try{
+    if(String(getActivePtId())!==String(patientId||'')) return false;
+    if(epoch!=null && Number(epoch)!==Number(window._mlsActivePtEpoch||0)) return false;
+    return true;
+  }catch(e){ return false; }
+}
 function upsertPatient(p){
   const __key=uns('patients'),__batch=__mlsPtsBatchByKey[__key],__foreign=__mlsPtsForeignBatch(__key);
   if(__foreign){const e=new Error('Patient persistence stopped because the signed-in account changed.');e.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw e;}
@@ -13151,7 +13167,7 @@ function copyBookingLinkText(){
 }
 var _boardDoctors=[];
 var _boardDate='';
-function _todayStr(){ return (typeof _acctTodayKey==='function')?_acctTodayKey():(new Date()).toISOString().slice(0,10); }
+function _todayStr(){ if(typeof _acctTodayKey==='function') return _acctTodayKey(); /* px-3.3: local date, not UTC - after ~8 PM ET the UTC key names TOMORROW */ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function _boardDay(){ return _boardDate||_todayStr(); }
 function changeBoardDate(delta){ var d=new Date((_boardDate||_todayStr())+'T12:00'); d.setDate(d.getDate()+delta); _boardDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); loadBoard(true); }
 function jumpBoardDate(v){ if(v){ _boardDate=String(v).slice(0,10); loadBoard(true); } }
@@ -15579,7 +15595,20 @@ function _athenaChartLanded(p){
 }
 function fieldBody(elId,txt,placeholder){
   const el=document.getElementById(elId);
-  if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', '); else if(txt!=null && typeof txt!=='string') txt=String(txt);
+  if(Array.isArray(txt)) txt=txt.filter(Boolean).join(', ');
+  else if(txt!=null && typeof txt==='object'){
+    /* px-3.1: a history/vitals-shaped OBJECT used to stringify to the literal
+       "[object Object]" and pass the truthy check, rendering as if it were
+       real clinical content. Format the keyed values instead. */
+    try{
+      txt=Object.keys(txt).map(function(k){
+        const v=txt[k];
+        const s=(Array.isArray(v)?v.filter(Boolean).join(', '):String(v==null?'':v)).trim();
+        return s?(k+': '+s):'';
+      }).filter(Boolean).join('\n');
+    }catch(e){ txt=''; }
+  }
+  else if(txt!=null && typeof txt!=='string') txt=String(txt);
   if(txt && txt.trim()){ el.textContent=txt; el.classList.remove('empty-txt'); }
   else { el.textContent=placeholder; el.classList.add('empty-txt'); }
 }
@@ -15607,6 +15636,7 @@ function renderProfile(){
   fieldBody('profAllergies',p.allergies,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
   fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
   _renderProfUnpulledNotice(p);
+  try{ if(typeof _renderProfSuspectNotice==='function') _renderProfSuspectNotice(p); }catch(ePxSus){}
   renderInsurance(p);
   renderDocs(p);
   renderPtTimeline(p);
@@ -15658,6 +15688,29 @@ function _renderProfUnpulledNotice(p){
 }
 /* "At a glance" chips on a patient chart — visits, last visit, last pain — so the
    doctor reads the patient's status in a second when the chart opens. */
+/* px-3.4 (2026-08-07): records created inside the 2026-06-24..29 import
+   window whose DOB collapsed into a shared cluster carry another chart's
+   DOB/allergies/meds/problems (260 records measured). Fields are NEVER
+   blanked - a confidently empty allergy line would read as "no allergies
+   recorded", which is a false clinical claim. Instead the chart says plainly
+   that its imported fields need re-verification, and the cure is a fresh
+   identity-gated pull (which replaces the athena-owned slice). */
+function _renderProfSuspectNotice(p){
+  try{
+    var card=document.getElementById('profileCard'); if(!card) return;
+    var el=document.getElementById('profImportSuspect');
+    var show=!!(p&&p.athenaImportSuspect&&p.athenaImportSuspect.reason);
+    if(!show){ if(el&&el.parentNode) el.parentNode.removeChild(el); return; }
+    if(!el){
+      el=document.createElement('div'); el.id='profImportSuspect';
+      el.setAttribute('role','alert');
+      el.style.cssText='background:#fdecec;border:1px solid #efb9b9;border-radius:10px;padding:10px 13px;margin:10px 0 2px;font-size:13px;line-height:1.5;color:#7a1d1d';
+      var grid=null; try{ grid=card.querySelector?card.querySelector('.prof-grid'):null; }catch(eq){ grid=null; }
+      if(grid&&grid.parentNode) grid.parentNode.insertBefore(el,grid); else card.appendChild(el);
+    }
+    el.textContent='⚠ Verify against athenaOne before relying on this chart: the problems, medications, allergies and DOB below were imported during the 2026-06-24 to 06-29 pull window, which mixed data between patients. Re-pull this chart from Athena to replace them with verified data.';
+  }catch(e){}
+}
 function _renderProfAtGlance(p){
   var host=document.getElementById('profDemo'); if(!host||!host.parentNode) return;
   var el=document.getElementById('profAtGlance');
@@ -16028,7 +16081,7 @@ async function extractPdfText(file){
    This whole subsystem is additive and is ONLY consulted when the
    toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
    ========================================================= */
-/* b947 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
+/* b949 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
    MEASURED on the owner's real library (96 templates, ~520KB of JSON): one
    getTemplates() call costs ~7ms of JSON.parse plus two normalisation passes,
    and the op-note room calls it PER ROW. opPrepRender's tplOpts closure alone
@@ -16124,7 +16177,7 @@ function setTemplates(arr){
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
-/* b947 PERF: find in the cached store, then clone only the ONE template that
+/* b949 PERF: find in the cached store, then clone only the ONE template that
    matched. This is called inside draft loops and per-row matchers; cloning the
    whole library to throw 95 of them away was pure waste. Same contract: a fresh
    object the caller may mutate, or null. */
@@ -16258,6 +16311,23 @@ function _opResolvePatient(name,dob,patientId){
     return exact.length===1?exact[0]:null;
   }catch(e){ return null; }
 }
+/* px-3.1: p.vitals and p.history are OBJECTS on athena-imported records;
+   String() turned them into the literal "[object Object]" inside an op-note
+   AI prompt. Flatten keyed values honestly instead. */
+function _opFmtKv(v){
+  if(v==null) return '';
+  if(typeof v==='string') return v;
+  if(Array.isArray(v)) return v.filter(Boolean).join(', ');
+  if(typeof v==='object'){
+    try{
+      return Object.keys(v).map(function(k){
+        var s=(Array.isArray(v[k])?v[k].filter(Boolean).join(', '):String(v[k]==null?'':v[k])).trim();
+        return s?(k+': '+s):'';
+      }).filter(Boolean).join('; ');
+    }catch(e){ return ''; }
+  }
+  return String(v);
+}
 /* Gather everything we already know about this exact patient for the op note. */
 function _opPatientCtx(name,dob,patientId){
   try{
@@ -16265,7 +16335,7 @@ function _opPatientCtx(name,dob,patientId){
     if(!p) return {};
     var history='';
     try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
-    if(!history){ history=['Problems: '+String(p.problems||''),'Medications: '+String(p.meds||p.medications||''),'Allergies: '+String(p.allergies||''),'Chart summary: '+String(p.summary||''),'Vitals: '+String(p.vitals||''),'History & background: '+String(p.background||p.history||'')].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
+    if(!history){ history=['Problems: '+_opFmtKv(p.problems),'Medications: '+_opFmtKv(p.meds||p.medications),'Allergies: '+_opFmtKv(p.allergies),'Chart summary: '+_opFmtKv(p.summary),'Vitals: '+_opFmtKv(p.vitals),'History & background: '+_opFmtKv(p.background||p.history)].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
     /* Identity separation (owner goal 2026-07-21, pinned by
        tests/provider-identity-separation-contract): a LOGIN/account name is not
        a clinical provider identity. getName() is uns('docname') - the account
@@ -16516,7 +16586,7 @@ function opPrepRender(){
      "Remove duplicates" button, which announces what it did. A duplicate sitting
      in the dropdown is a cosmetic annoyance; deleting an op-note template is not
      recoverable. Do not put an automatic call back here. */
-  /* b947 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
+  /* b949 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
      tplOpts used to call getTemplates() and re-escape every template name
      INSIDE the per-row map, so a 19-patient day parsed the library 19 times and
      built 19 × 96 escaped <option> strings on every single repaint — and this
@@ -16553,7 +16623,7 @@ function opPrepRender(){
     h+='</div>';
     return h;
   }).join('');
-  /* b947 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
+  /* b949 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
      This function is the app's answer to almost every control in the op-note
      room, and the room's own rail builder calls it again on top; a good share of
      those calls produce byte-identical markup. Writing it anyway destroyed and
@@ -16597,7 +16667,7 @@ function _opNeedleHtml(i, mf, row){
   return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:150px">'+esc(mf.label||'Needle size')+'</label><select onchange="_opNeedlePick('+i+',\''+key+'\',this.value)" style="font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">'+optHtml+'</select>'+txt+hint+'</div>';
 }
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
-/* b947 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
+/* b949 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
    Until now "did this draft succeed, and if not why" lived in three window
    globals (__mlsLastOpFidelityPass / __mlsLastOpFidelityError /
    __mlsLastOpErrorCode) that the drafter cleared on entry and the runner read
@@ -16683,7 +16753,7 @@ async function opPrepGenerateOne(i){
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
-    /* b947: reaching here means the generator RESOLVED. Every fidelity,
+    /* b949: reaching here means the generator RESOLVED. Every fidelity,
        clinical-consistency, identity and transport failure throws (the template
        owner builds a real Error and rethrows it), so "the try block completed
        and a note exists" is the same verdict __mlsLastOpFidelityPass carries -
@@ -16699,7 +16769,7 @@ async function opPrepGenerateOne(i){
   }catch(e){
     /* b500: show the ACTUAL reason (identity, template conflict, network,
        server error) — a generic "try again" hid every diagnosable failure.
-       b947: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
+       b949: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
        so once two drafts can overlap it may already belong to another patient;
        `e` never does. The global stays as the fallback for a thrower that only
        wrote there. */
@@ -16751,7 +16821,7 @@ function opPrepAutosaveDraft(i){
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
-    /* b947 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
+    /* b949 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
        This autosave runs after every drafted row, and it rebuilt the whole
        History view and the nav counts synchronously each time - a screen the
        doctor cannot even see, because the op-note room is over it. On a
@@ -18352,6 +18422,12 @@ async function analyzeDoc(){
   const p=activePatient(); if(!p) return;
   const d=(p.docs||[]).find(x=>x.id===viewingDocId); if(!d) return;
   if(!d.text||!d.text.trim()){ toast('No text to analyze. Paste text for this document first.','err'); return; }
+  /* px-3.0: freeze WHO this analysis belongs to before any await. The old
+     code upserted the pre-await patient object after the model returned -
+     if the doctor had switched patients (or the store had been re-written by
+     a pull) that stale object rolled the record back, and the result pane
+     repainted regardless of whose document was open. */
+  const ptId=p.id, docId=d.id, ptEpoch=(window._mlsActivePtEpoch||0);
   const btn=document.getElementById('docAnalyzeBtn');
   if(!hasAI()){
     // offline graceful fallback: a simple structural summary, honest about no-AI
@@ -18388,14 +18464,26 @@ Return ONLY valid JSON (no fences) with this shape:
     sec('Results',parsed.results);
     sec('Explicit negatives',parsed.negatives);
     sec('Relevant history',parsed.history);
-    d.aiSummary=lines.join('\n');
-    d.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], negatives:parsed.negatives||[], history:parsed.history||[], summary:parsed.summary||'' };
-    upsertPatient(p);
-    document.getElementById('docAiWrap').style.display='block';
-    document.getElementById('docAiBody').textContent=d.aiSummary;
-    document.getElementById('docMergeBtn').style.display='inline-flex';
-    renderProfile();
-    toast('Document analyzed. Review, then merge key items into the profile.','ok');
+    /* px-3.0: re-resolve the patient AND document FRESH from the store - the
+       pre-await objects may be stale (rolled-back fields) or the doctor may
+       have switched charts while the model ran. The result is saved onto the
+       chart it belongs to; the panel repaints only if that chart (and that
+       document) is still the one on screen. */
+    const pF=findPatient(ptId);
+    const dF=pF?((pF.docs||[]).find(x=>x.id===docId)||null):null;
+    if(!pF||!dF){ toast('Analysis finished after the document was removed — nothing saved.',''); return; }
+    dF.aiSummary=lines.join('\n');
+    dF.aiItems={ diagnoses:parsed.diagnoses||[], medications:parsed.medications||[], results:parsed.results||[], negatives:parsed.negatives||[], history:parsed.history||[], summary:parsed.summary||'' };
+    upsertPatient(pF);
+    if(_mlsPatientStillActive(ptId,ptEpoch)&&viewingDocId===docId){
+      document.getElementById('docAiWrap').style.display='block';
+      document.getElementById('docAiBody').textContent=dF.aiSummary;
+      document.getElementById('docMergeBtn').style.display='inline-flex';
+      renderProfile();
+      toast('Document analyzed. Review, then merge key items into the profile.','ok');
+    } else {
+      toast('Document analysis for '+(pF.name||'a previous patient')+' finished — saved to that chart (not the one now open).','');
+    }
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='✨ Analyze with AI'; }
 }
@@ -19562,7 +19650,7 @@ function _assistReadChart(patientRef, onStatus){
       if(!e.data.requestId||String(e.data.requestId)!==requestId) return;
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
-      if(!r.ok || !r.text){ reject(new Error(r.error||'Couldn’t read the chart from your Athena tab.')); return; }
+      if(!r.ok || !r.text){ reject(new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'))); return; }
       var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
       if(!_athenaHistoryProofMatches(target,observed)){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
@@ -20128,12 +20216,39 @@ async function _importPulledSchedule(appts){
     if(existingKeys[key]||existingKeys[dayKey]){ skipped++; continue; }  // already there → skip (no doubling up)
     existingKeys[key]=1; existingKeys[dayKey]=1;
     var ext=''; var existing=null;
-    try{ existing=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(existing) ext=existing.id; }catch(e){}
-    // Durable, server-synced patient record (dedup by name → reused on re-sync, never duplicated).
-    if(!existing && typeof upsertPatient==='function'){
+    /* px-3.2 (2026-08-07): this legacy fallback matched by NAME ALONE and then
+       stamped the pulled DOB onto whichever same-name record it hit - the
+       wrong-merge shape the exact importer refuses. It is reachable only when
+       the satellite failed to install; make it refuse the same way: a name
+       binds only with a DOB present on BOTH sides and equal. Otherwise a new
+       record is created (a recoverable duplicate, never a wrong weld). */
+    try{
+      var _lpDob=function(s){
+        s=String(s||''); var iso=s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if(iso) return ('0'+iso[2]).slice(-2)+('0'+iso[3]).slice(-2)+iso[1];
+        var m=s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if(!m) return '';
+        var y=m[3].length===2?((+m[3]>40?'19':'20')+m[3]):m[3];
+        return ('0'+m[1]).slice(-2)+('0'+m[2]).slice(-2)+y;
+      };
+      var aDobKey=_lpDob(a.dob);
+      existing=aDobKey?(pts.find(function(x){
+        if(String(x.name||'').trim().toLowerCase()!==name.toLowerCase()) return false;
+        var xDobKey=_lpDob(x.dob);
+        return !!(xDobKey&&xDobKey===aDobKey);
+      })||null):null;
+      if(existing) ext=existing.id;
+    }catch(e){}
+    // Durable, server-synced patient record (dedup by verified identity → reused on re-sync).
+    /* px-3.6 (adversarial review): a row with NO DOB gets NO patient record at
+       all (ext stays '') — matching the exact importer's materializePatient
+       rule. Creating one would mint a fresh same-name row on EVERY pulled day
+       (the day-key dedupe is per-day), and those DOB-less/id-less duplicates
+       can never be safely collapsed later. The appointment still posts,
+       unlinked. */
+    if(!existing && aDobKey && typeof upsertPatient==='function'){
       var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
       try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
-    } else if(existing && a.dob && !existing.dob){ existing.dob=String(a.dob); try{ upsertPatient(existing); }catch(e){} }
+    }
     /* Accept both Athena's canonical "4:00 PM" and 24-hour "16:00". The old
        strict HH:MM gate discarded meridian times, stored start_at:null, and the
        UI later rendered that missing timestamp as a fake evening appointment. */
@@ -32713,7 +32828,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b947';
+  window.__MLS_AV='b949';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

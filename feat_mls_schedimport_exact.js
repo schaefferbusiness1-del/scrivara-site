@@ -2469,7 +2469,7 @@
           String(opened.appointmentId || "") === appointmentId && dob);
         cached = exact
           ? { ok: true, dob: String(opened.chartDob || "").trim(), requestId: requestId }
-          : { ok: false, reason: String(opened && (opened.findReason || opened.reason || opened.error) || "identity-proof-unavailable").slice(0, 80) };
+          : { ok: false, reason: (opened && opened.sessionLikelyExpired === true) ? "athena-session-expired" : String(opened && (opened.findReason || opened.reason || opened.error) || "identity-proof-unavailable").slice(0, 80) };
         cache[appointmentId] = cached;
       }
       if (!cached.ok) {
@@ -3144,6 +3144,7 @@
         one.chartReason = String(outcome.e && outcome.e.message || outcome.e || "chart-parse-failed").slice(0, 120);
         if (outcome.e && outcome.e.mlsEchoes) one.chartEchoes = outcome.e.mlsEchoes;
         if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; }
+        else if (/athena-session-expired/.test(one.chartReason)) { stopAfterTimeout = true; receipt.sessionExpired = true; } /* sx-1.1 */
       }
     }
     /* b752: THE BEFORE HALF OF THE MEASUREMENT, taken before the first chart is
@@ -3388,6 +3389,10 @@
                   }
                 }
               } catch (eDiagCap) {}
+              /* sx-1.1: a probed-dead session must not burn the chart-reopen
+                 retry or grind the rest of the batch — halt honestly now.
+                 (Diagnostics above are captured first; they are PHI-free.) */
+              if (vr && vr.sessionLikelyExpired === true) throw new Error("athena-session-expired");
               if (visitsAttempt < 2 && /same-frame-name-mismatch|same-frame-name-missing|no-athena-tab/.test(vErrText) && Date.now() + 300000 < batchDeadlineAt) {
                 /* Live 2026-07-16 (si-1.7.2): a bare visits re-read is NOT
                    enough when the whole tab kept the previous patient (run 2
@@ -3436,7 +3441,7 @@
                 one.visitsReason=one.visitsReason||(currentProfile?"six-card-current-chart-unproven":"six-card-profile-freshness-unproven");
               }
             }
-          } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } }
+          } catch (visitErr) { one.visitsReason = String(visitErr && visitErr.message || visitErr || "visits-read-failed").slice(0, 120); if (/timeout|deadline/i.test(one.visitsReason)) { stopAfterTimeout = true; receipt.timedOut = true; } else if (/athena-session-expired/.test(one.visitsReason)) { stopAfterTimeout = true; receipt.sessionExpired = true; } /* sx-1.1 */ }
           if (overlapParse) { try { await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); } catch (eOverlapLate) {} overlapParse = null; }
           stageMs.visits = Date.now() - __visitsT0;
         }
@@ -3485,6 +3490,7 @@
             pOne.chartReason = String(pRetryErr && pRetryErr.message || pRetryErr || "chart-read-failed").slice(0, 120);
             if (pRetryErr && pRetryErr.mlsEchoes) pOne.chartEchoes = pRetryErr.mlsEchoes;
             if (/timeout|deadline/i.test(pOne.chartReason)) receipt.timedOut = true;
+            else if (/athena-session-expired/.test(pOne.chartReason)) receipt.sessionExpired = true; /* sx-1.1 */
           }
         }
         pOne.organizationComplete = pOne.organized;
@@ -4090,7 +4096,7 @@
             String(receipt.requestedProviderStableKey || "") === rosterOperation.requestedProviderStableKey);
         }
         return bridge("mlsAppScheduleResult", "mlsAppPullSchedule", 30000, { requestId: scheduleRequestId }).then(function (r) {
-        if (!r || !r.ok) { onStatus((r && r.error) || "Couldn't read your athenaOne tab. Open your Day schedule and try again.", "err"); return fail((r && r.reason) || "no-read", { error: r && r.error || "", scheduleReceipt: r && r.receipt || null, retry: { schedule: true } }); }
+        if (!r || !r.ok) { onStatus((r && r.error) || "Couldn't read your athenaOne tab. Open your Day schedule and try again.", "err"); return fail((r && r.reason) || "no-read", { error: r && r.error || "", schedSessionLikelyExpired: !!(r && r.sessionLikelyExpired), scheduleReceipt: r && r.receipt || null, retry: { schedule: true } }); }
         /* Normalize the roster from this exact schedule reply before any rows
            are imported. The raw extension receipt may legitimately omit a
            declared total even after a proven full sweep; the roster module

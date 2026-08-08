@@ -67,6 +67,15 @@
 
   /* ---- visit-type classification (colour + icon, for scannability) ---- */
   function classify(v) {
+    /* px-4.0 (2026-08-07): an EXPLICIT document kind on the row wins over
+       text sniffing - the stable hook for operative notes and future
+       document types (set docKind:'opnote' at ingest and this section, the
+       filters, and the icons all follow without another parser change). */
+    var dk = S(v && v.docKind).toLowerCase();
+    if (dk === "opnote" || dk === "operative" || dk === "procedure")
+      return { key: "procedure", label: "Operative / procedure note", icon: "🛠️", color: "#a87d0a", tint: "rgba(168,125,10,.12)" };
+    if (dk === "imaging")
+      return { key: "imaging", label: "Imaging / study", icon: "🖼️", color: "#2E6A4B", tint: "rgba(8,145,178,.10)" };
     var t = (S(v.type) + " " + S(v.raw)).toLowerCase();
     if (/inject|tfesi|\besi\b|epidural|\bblock\b|facet|\brfa\b|ablation|rhizotom|trigger ?point|denervation|medial branch/.test(t))
       return { key: "injection", label: "Injection", icon: "💉", color: "#7A5CC0", tint: "rgba(124,58,237,.10)" };
@@ -278,7 +287,11 @@
     if (s) return { text: s.replace(/\s*\n+\s*/g, " · ").slice(0, 200), pending: false };
     var f = trim(v.findings) || trim(v.plan) || trim(v.raw);
     if (f) return { text: f.replace(/\s*\n+\s*/g, " · ").slice(0, 200), pending: false };
-    return { text: "AI summary pending — click to view & generate", pending: true };
+    /* px-4.1: a row with NO captured body cannot be summarized - "pending"
+       promised a generation that would honestly refuse. Say what it is. */
+    if (v && (v.indexOnly === true || trim(v.textHead)))
+      return { text: "Index entry — no note text was captured from Athena for this visit", pending: true };
+    return { text: "No note text captured for this visit", pending: true };
   }
   function makeCard(p, v) {
     var c = classify(v);
@@ -299,7 +312,9 @@
     var r1 = document.createElement("div");
     r1.className = "mlsxh-r1";
     var dt = document.createElement("span"); dt.className = "mlsxh-cdate"; dt.textContent = fmtDate(v.date);
-    var ty = document.createElement("span"); ty.className = "mlsxh-ctype"; ty.textContent = trim(v.type) || c.label;
+    var ty = document.createElement("span"); ty.className = "mlsxh-ctype";
+    var tyClean = (MODEL() && isFn(MODEL()._cleanVisitTypeForDisplay)) ? MODEL()._cleanVisitTypeForDisplay(v.type) : trim(v.type);
+    ty.textContent = tyClean || c.label;
     var tag = document.createElement("span"); tag.className = "mlsxh-tag";
     tag.textContent = c.icon + " " + c.label; tag.style.background = c.tint; tag.style.color = c.color;
     r1.appendChild(dt); r1.appendChild(ty); r1.appendChild(tag);
@@ -586,22 +601,34 @@
     sumBtn.addEventListener("click", function () {
       sumBtn.disabled = true;
       var stEl = sec.querySelector(".mlsxh-status");
+      /* px-3.5 (2026-08-07): the summarize run belongs to the patient it was
+         started for. If the doctor switches charts mid-run, progress and the
+         completion line must not paint into the newly opened patient's panel
+         (the summaries themselves are id-keyed and save to the right chart
+         regardless). */
+      var runPtId = p.id;
+      var stillMine = function () {
+        try { return String((typeof window.getActivePtId === "function" ? window.getActivePtId() : "") || "") === String(runPtId || ""); } catch (e) { return false; }
+      };
+      var say = function (m) { if (stEl && stillMine()) stEl.textContent = m; };
       try {
         var fn = MODEL() && (MODEL().summarizeAll || MODEL().ensureSummaries);
         if (!isFn(fn)) throw new Error("history summarizer unavailable");
-        fn.call(MODEL(), p.id, function (m) { if (stEl) stEl.textContent = m; }).then(function (receipt) {
+        fn.call(MODEL(), p.id, function (m) { say(m); }).then(function (receipt) {
           if (receipt && receipt.ok === false) {
-            if (stEl) stEl.textContent = receipt.reason === "semantic-coverage-incomplete"
+            say(receipt.reason === "semantic-coverage-incomplete"
               ? "History organization stopped because one or more labeled clinical sections could not be parsed completely. Existing profile data was preserved."
-              : "Summary blocked because the imported visits are not identity-verified. Pull this chart again first.";
+              : "Summary blocked because the imported visits are not identity-verified. Pull this chart again first.");
             sumBtn.disabled = false; return;
           }
-          if (stEl) stEl.textContent = "Verified visit summaries and patient profile sections are up to date.";
-          try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
-          _lastSig = ""; rebuild(true);
+          say("Verified visit summaries and patient profile sections are up to date.");
+          if (stillMine()) {
+            try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
+            _lastSig = ""; rebuild(true);
+          }
         }, function () {
           sumBtn.disabled = false;
-          if (stEl) stEl.textContent = "Could not finish summarizing. No existing history was removed.";
+          say("Could not finish summarizing. No existing history was removed.");
         });
       } catch (e) { sumBtn.disabled = false; }
     });

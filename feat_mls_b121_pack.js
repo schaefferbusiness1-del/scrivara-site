@@ -1760,8 +1760,13 @@
       if (Date.now() - EXPECT.at > 600000) { EXPECT = null; return false; } /* stale guard - a comparison, not a timer */
       if (!p || typeof p !== 'object' || p.id == null) return false;
       var pd = normDob(p.dob), ok = false;
-      /* leg A: normDob equality (+ >=1 token overlap so a junk name can't ride a shared DOB) */
-      if (EXPECT.ndob && pd && EXPECT.ndob === pd && tokOverlap(p.name, EXPECT.name) >= 1) ok = true;
+      /* leg A: normDob equality + >=2 shared name tokens (px-1.5, 2026-08-08
+         adversarial review): one shared token let TWINS ride - siblings share
+         the DOB AND the surname, so "James Smith" could stamp "John Smith"'s
+         chart MRN and the create-gate's identical predicate then welded the
+         records. Two shared tokens (given+family) survive name-variant rows
+         ("John A Smith" vs "John Smith") while refusing same-surname pairs. */
+      if (EXPECT.ndob && pd && EXPECT.ndob === pd && tokOverlap(p.name, EXPECT.name) >= 2) ok = true;
       /* leg B: exact sorted-token name equality (>=2 tokens both sides), no DOB conflict */
       else if (EXPECT.tokn >= 2 && tokCount(p.name) >= 2 && tokset(p.name) === EXPECT.tokset && !conflictDob(EXPECT.ndob, pd)) ok = true;
       if (!ok) return false;
@@ -1810,7 +1815,16 @@
       if (aidHits.length) {
         if (aidHits.length === 1) {
           var h = aidHits[0];
-          if (tokCount(h.name) >= 2 && tokOverlap(h.name, name) >= 1 && !conflictDob(normDob(h.dob), db)) return h;
+          /* px-1.0/1.5 (2026-08-07/08): one shared name token was accepted as
+             corroboration, so a mis-stamped athenaId could weld two people who
+             merely share a first name - and with >=1 the DOB arm was the SAME
+             predicate the stamper itself uses, so every possible mis-stamp was
+             guaranteed to "corroborate" (twins: same DOB, same surname). A
+             stable-id hit may merge only with FULL name equality, or DOB
+             equality plus BOTH name tokens shared. */
+          var hd = normDob(h.dob);
+          if (tokCount(h.name) >= 2 && !conflictDob(hd, db) &&
+              (tokset(h.name) === tokset(name) || (db && hd && db === hd && tokOverlap(h.name, name) >= 2))) return h;
         }
         /* same athenaId but uncorroborated (or multiple rows claim it):
            REFUSE ENTIRELY - do not fall through to weaker name legs while
@@ -1837,11 +1851,14 @@
       if (exact.length === 1) return exact[0];
       if (exact.length > 1) return null; /* ambiguous - migration will collapse them, not this gate */
     }
-    /* leg 3: name-only, no DOB conflict, EXACTLY ONE candidate in the store */
-    var loose = [];
-    for (i = 0; i < cands.length; i++) { if (!conflictDob(normDob(cands[i].dob), db)) loose.push(cands[i]); }
-    if (loose.length === 1) return loose[0];
-    return null; /* zero or ambiguous: let a recoverable duplicate mint */
+    /* leg 3 (name-only) REMOVED - px-1.0, 2026-08-07. A create that merely
+       shares a display name with one existing row used to merge INTO that row
+       with no DOB required on either side, and mergeRows then concatenated the
+       two records' allergies/problems/meds/summary - i.e. a NEW patient
+       inherited another patient's chart. Two records that are really the same
+       person mint a recoverable duplicate instead; identity for a merge is a
+       stable athenaId or name+DOB, never a name alone. */
+    return null; /* no strong-key match: let a recoverable duplicate mint */
   }
 
   /* merge = union fields, visits concat+deduped by _visitKey, earliest
@@ -1957,8 +1974,19 @@
         var other = arr[idx[j]];
         if (!FLAGS.athenaIdMerges) { veto('athenaId-merges-disabled', anchor, other); continue; }
         if (tokCount(anchor.name) < 2 || tokCount(other.name) < 2) { veto('single-token-name-never-merges', anchor, other); continue; }
-        if (tokOverlap(anchor.name, other.name) < 1) { veto('athenaId-equal-but-zero-name-overlap', anchor, other); continue; }
-        if (conflictDob(normDob(anchor.dob), normDob(other.dob))) { veto('athenaId-equal-but-dob-conflict', anchor, other); continue; }
+        /* px-1.5 (2026-08-08 adversarial review): the migration gate now
+           demands the same corroboration as the create-gate - full sorted-token
+           name equality, or both DOBs present+equal with BOTH name tokens
+           shared. The old rule (>=1 overlap, and a MISSING dob never
+           "conflicts") would merge {John Adams, no dob, aid X} into
+           {John Smith, no dob, aid X} - the exact pair the create-gate suite
+           asserts is refused. runOnce is owner-confirmed, but the nudge count
+           it advertises is computed HERE, so this gate must not be weaker. */
+        var aD = normDob(anchor.dob), oD = normDob(other.dob);
+        var corroborated = tokset(anchor.name) === tokset(other.name) ||
+          (aD && oD && aD === oD && tokOverlap(anchor.name, other.name) >= 2);
+        if (!corroborated) { veto('athenaId-equal-but-name-dob-uncorroborated', anchor, other); continue; }
+        if (conflictDob(aD, oD)) { veto('athenaId-equal-but-dob-conflict', anchor, other); continue; }
         uni(idx[0], idx[j]);
       }
     });

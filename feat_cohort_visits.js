@@ -157,13 +157,17 @@
       // re-verify identity (name+DOB) before saving anything from the chart read
       var ident = (res && res.identity) || { name: res && res.name, dob: res && res.dob };
       var cv = CV();
-      var ok = true;
+      /* px-1.4 (2026-08-07): the old default was ok=true when the chart read
+         returned NO identity at all - "could not verify" was treated as
+         verified. Now trust is granted only when the strict gate actually ran
+         and passed; otherwise rows are saved unverified (visible for audit,
+         excluded from summaries/op-note context by _usableVisits). */
+      var verified = false;
       if (cv && isFn(cv._verifyIdentity) && (ident.name || ident.dob)) {
-        var vr = cv._verifyIdentity(p, ident);
-        ok = !!vr.ok;
+        var vr = safe(function () { return cv._verifyIdentity(p, ident); }, null);
+        if (vr && vr.ok !== true) { say('Safety stop for ' + name + ' — chart identity did not match; nothing saved from the chart read.'); return saveFallback(p, row, cohort); }
+        verified = !!(vr && vr.ok === true);
       }
-      if (!ok) { say('Safety stop for ' + name + ' — chart identity did not match; nothing saved from the chart read.'); return saveFallback(p, row, cohort); }
-
       var matched = all.filter(function (v) { return visitMatchesCohort(mod._normVisit(v, 'cohort-injection'), cohort); });
       if (!matched.length) {
         // walker worked but found no clearly-matching encounter -> keep the row-level matching visit
@@ -171,7 +175,7 @@
       }
       var saved = 0;
       matched.forEach(function (v, i) {
-        var stored = mod.addVisit(p.id, v, { source: 'cohort-injection' });
+        var stored = mod.addVisit(p.id, v, { source: 'cohort-injection', identityVerified: verified, identityBinding: verified ? String(p.id) : '' });
         if (stored) { saved++; say('Saved matching visit ' + (stored.date || (i + 1)) + ' for ' + name + ' (' + (i + 1) + ' of ' + matched.length + ')…'); }
       });
       return summarize(p, saved, name);
