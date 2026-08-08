@@ -1,0 +1,4556 @@
+{
+ "capturedAt": 1786178607192,
+ "build": "b953",
+ "rosterN": 1561,
+ "run": {
+  "done": 153,
+  "ok": 92,
+  "refused": 61,
+  "reasons": {
+   "semantic-coverage-incomplete": 47,
+   "identity-unverified": 14
+  },
+  "total": 153,
+  "finished": true,
+  "startedAt": 1786168491916
+ },
+ "healList": [
+  "p_sched_1wt53y8",
+  "p_sched_11nlgsx",
+  "pmrfja8ahznm1",
+  "pmrfjdk6o0k3e",
+  "pmrfjf9jjwud2",
+  "pmrfjgnk73ft0",
+  "p_sched_1yroh0u",
+  "p_sched_vuuahf",
+  "pmrfjctu3o408",
+  "p_sched_mum2h",
+  "p_sched_1jn8ql0",
+  "p_sched_19w8hhn",
+  "pmrayg1zp2myk",
+  "pmqsq4zzosqx1",
+  "pmrdo3v6rw52g",
+  "pmrdo3vjabhpb",
+  "pmrdo3vpm4iu8",
+  "pmrdo3wliln5g",
+  "pmrdo3wrrr0op",
+  "pmrdo3x5nsqyw",
+  "pmqsq6q6jqp1l",
+  "pmqsq8we7a3l4",
+  "pmr43fsiyina4",
+  "pmrdo3w3i5scz",
+  "pmrdo3x93rqxg",
+  "pmr43frm1dhgy",
+  "p_sched_nosr4m",
+  "p_sched_1oyxg01",
+  "pmrfjf86rtmw8",
+  "pmrfjd84ys9kg",
+  "p_sched_1a3p844",
+  "p_sched_1i96awr",
+  "p_sched_rs197s",
+  "p_sched_9wfqp7",
+  "p_sched_1j4x9vt",
+  "p_sched_ny1qkz",
+  "p_sched_1ducs3u",
+  "p_sched_1knqo1w",
+  "p_sched_1nywqlb",
+  "p_sched_1sp814t",
+  "p_sched_atuj0p",
+  "p_sched_1uxxvw7",
+  "p_sched_l00yp",
+  "p_sched_cenmlv",
+  "p_sched_xav80s",
+  "p_sched_1ikhesm",
+  "p_sched_2pj8f5",
+  "p_sched_1tyutd0",
+  "p_sched_za2f7o",
+  "p_sched_1nqbad5",
+  "pmrfjcxe0divs",
+  "p_sched_1gxz8t",
+  "pmr2kyuk7lv81",
+  "pmr11a0p91e5h",
+  "p_sched_1rydji0",
+  "p_sched_1t0fzs8",
+  "p_sched_12v92s8",
+  "pmqsq4irj07oi",
+  "p_sched_1pl5g6u",
+  "p_sched_nmuows",
+  "p_sched_2b0k06",
+  "pmrfjdinnnjlw",
+  "p_sched_itqiak",
+  "p_sched_6gcghe",
+  "p_sched_1dpw43e",
+  "pmr2kyu5tn5vd",
+  "pmr11a0evqyml",
+  "p_sched_ibuwu5",
+  "p_sched_10tysds",
+  "p_sched_157yjhf",
+  "pmrjmuoss5c1u",
+  "p_sched_1svl4oq",
+  "p_sched_1fmgvk0",
+  "p_sched_16gi2ha",
+  "p_sched_1b2vbd",
+  "p_sched_jmhttz",
+  "p_sched_1h7z1gi",
+  "p_sched_bze6d2",
+  "p_sched_5vpx5b",
+  "p_sched_hppui4",
+  "pmray2vv4xr4j",
+  "p_sched_12cwcum",
+  "p_sched_6finol",
+  "p_sched_1w0unon",
+  "p_sched_zubuun",
+  "pmr2kytgshq34",
+  "pmrfj8oi5oo1z",
+  "p_sched_1b8bjpq",
+  "p_sched_1o1dswz",
+  "p_sched_1b1kw8w",
+  "p_sched_ixm3ws",
+  "pmrfjf9xdhk10",
+  "pmr11a12ig33d",
+  "p_sched_dmndve",
+  "pmray2r4ob15e",
+  "p_sched_1x3o9vr",
+  "p_sched_17rzfs9",
+  "pmrfjf6zet9wl",
+  "p_sched_1axgtaf",
+  "p_sched_1bavkza",
+  "p_sched_1657vif",
+  "p_sched_g3xq5j",
+  "p1783380364659n2yia",
+  "pmrfjd3u1d003",
+  "p_sched_8f5n9b",
+  "p_sched_rgrenr",
+  "p_sched_jdo9wd",
+  "p_sched_1tjwc85",
+  "p_sched_7y04t0",
+  "p_sched_1pqooup",
+  "p_sched_1rod3o5",
+  "p_sched_6h7hxl",
+  "p_sched_1v65irs",
+  "p_sched_1bu0z9w",
+  "p_sched_hys1ep",
+  "p_sched_1g8r9nz",
+  "p_sched_1ocinoi",
+  "p_sched_dt3a1n",
+  "p_sched_ycpoio",
+  "pmrfjfgwb4afo",
+  "p_sched_ibb0sq",
+  "p_sched_1fufp22",
+  "p_sched_oqlmsa",
+  "p_sched_1fl201r",
+  "p_sched_axnzze",
+  "p1783380364822hgagd",
+  "p_sched_lbf1fa",
+  "pmrfjdjtk983r",
+  "p_sched_1yq2zz7",
+  "p_sched_1exs7ug",
+  "p_sched_szi23o",
+  "p_sched_pm20fi",
+  "pmrfjcu570k8s",
+  "p_sched_rf1qpn",
+  "pmrfjej2mi5ey",
+  "p_sched_qyukvf",
+  "pmrc3ihnoxbov",
+  "p_sched_87herh",
+  "p_sched_16h43mv",
+  "p_sched_2101zs",
+  "p_sched_10kayqm",
+  "p_sched_22prfb",
+  "p_sched_1fpkr6w",
+  "p_sched_1swflza",
+  "p_sched_o8xxn4",
+  "p_sched_5ni5e1",
+  "p_sched_nabi35",
+  "p_sched_dg8o1c",
+  "p_sched_lrzssq",
+  "p_sched_132ktzd",
+  "p_sched_cbz5d9",
+  "p_sched_lw58kt",
+  "pmqv3muw2qayu"
+ ],
+ "pre": {
+  "p_sched_1wt53y8": {
+   "sum": 1282,
+   "prob": 55,
+   "meds": 0,
+   "psh": 0,
+   "visits": 2,
+   "rawTotal": 13679
+  },
+  "p_sched_11nlgsx": {
+   "sum": 0,
+   "prob": 39,
+   "meds": 0,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 12350
+  },
+  "pmrfja8ahznm1": {
+   "sum": 3970,
+   "prob": 115,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 119661
+  },
+  "pmrfjdk6o0k3e": {
+   "sum": 3970,
+   "prob": 84,
+   "meds": 0,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 95960
+  },
+  "pmrfjf9jjwud2": {
+   "sum": 5585,
+   "prob": 84,
+   "meds": 160,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 94307
+  },
+  "pmrfjgnk73ft0": {
+   "sum": 887,
+   "prob": 30,
+   "meds": 0,
+   "psh": 0,
+   "visits": 4,
+   "rawTotal": 15353
+  },
+  "p_sched_1yroh0u": {
+   "sum": 2291,
+   "prob": 20,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 39661
+  },
+  "p_sched_vuuahf": {
+   "sum": 2963,
+   "prob": 148,
+   "meds": 0,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 55688
+  },
+  "pmrfjctu3o408": {
+   "sum": 0,
+   "prob": 254,
+   "meds": 0,
+   "psh": 0,
+   "visits": 19,
+   "rawTotal": 149299
+  },
+  "p_sched_mum2h": {
+   "sum": 9000,
+   "prob": 761,
+   "meds": 643,
+   "psh": 0,
+   "visits": 24,
+   "rawTotal": 246084
+  },
+  "p_sched_1jn8ql0": {
+   "sum": 1737,
+   "prob": 109,
+   "meds": 0,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 33873
+  },
+  "p_sched_19w8hhn": {
+   "sum": 2291,
+   "prob": 71,
+   "meds": 47,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 38491
+  },
+  "pmrayg1zp2myk": {
+   "sum": 0,
+   "prob": 645,
+   "meds": 0,
+   "psh": 0,
+   "visits": 17,
+   "rawTotal": 1128
+  },
+  "pmqsq4zzosqx1": {
+   "sum": 0,
+   "prob": 484,
+   "meds": 390,
+   "psh": 0,
+   "visits": 29,
+   "rawTotal": 821
+  },
+  "pmrdo3v6rw52g": {
+   "sum": 0,
+   "prob": 776,
+   "meds": 121,
+   "psh": 0,
+   "visits": 28,
+   "rawTotal": 822
+  },
+  "pmrdo3vjabhpb": {
+   "sum": 0,
+   "prob": 568,
+   "meds": 607,
+   "psh": 0,
+   "visits": 4,
+   "rawTotal": 930
+  },
+  "pmrdo3vpm4iu8": {
+   "sum": 0,
+   "prob": 741,
+   "meds": 464,
+   "psh": 0,
+   "visits": 29,
+   "rawTotal": 235
+  },
+  "pmrdo3wliln5g": {
+   "sum": 0,
+   "prob": 754,
+   "meds": 418,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 126
+  },
+  "pmrdo3wrrr0op": {
+   "sum": 0,
+   "prob": 628,
+   "meds": 518,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 118
+  },
+  "pmrdo3x5nsqyw": {
+   "sum": 0,
+   "prob": 641,
+   "meds": 298,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 302
+  },
+  "pmqsq6q6jqp1l": {
+   "sum": 0,
+   "prob": 562,
+   "meds": 491,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 143
+  },
+  "pmqsq8we7a3l4": {
+   "sum": 0,
+   "prob": 543,
+   "meds": 326,
+   "psh": 0,
+   "visits": 29,
+   "rawTotal": 879
+  },
+  "pmr43fsiyina4": {
+   "sum": 0,
+   "prob": 690,
+   "meds": 393,
+   "psh": 0,
+   "visits": 13,
+   "rawTotal": 901
+  },
+  "pmrdo3w3i5scz": {
+   "sum": 0,
+   "prob": 773,
+   "meds": 398,
+   "psh": 0,
+   "visits": 13,
+   "rawTotal": 1025
+  },
+  "pmrdo3x93rqxg": {
+   "sum": 0,
+   "prob": 729,
+   "meds": 425,
+   "psh": 0,
+   "visits": 20,
+   "rawTotal": 258
+  },
+  "pmr43frm1dhgy": {
+   "sum": 0,
+   "prob": 308,
+   "meds": 0,
+   "psh": 0,
+   "visits": 32,
+   "rawTotal": 1889
+  },
+  "p_sched_nosr4m": {
+   "sum": 0,
+   "prob": 518,
+   "meds": 0,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 110680
+  },
+  "p_sched_1oyxg01": {
+   "sum": 0,
+   "prob": 26,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 13294
+  },
+  "pmrfjf86rtmw8": {
+   "sum": 6996,
+   "prob": 70,
+   "meds": 160,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 108271
+  },
+  "pmrfjd84ys9kg": {
+   "sum": 0,
+   "prob": 42,
+   "meds": 0,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 37148
+  },
+  "p_sched_1a3p844": {
+   "sum": 0,
+   "prob": 87,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 66713
+  },
+  "p_sched_1i96awr": {
+   "sum": 0,
+   "prob": 98,
+   "meds": 0,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 79652
+  },
+  "p_sched_rs197s": {
+   "sum": 0,
+   "prob": 46,
+   "meds": 0,
+   "psh": 0,
+   "visits": 5,
+   "rawTotal": 49884
+  },
+  "p_sched_9wfqp7": {
+   "sum": 0,
+   "prob": 190,
+   "meds": 156,
+   "psh": 0,
+   "visits": 19,
+   "rawTotal": 114009
+  },
+  "p_sched_1j4x9vt": {
+   "sum": 863,
+   "prob": 118,
+   "meds": 45,
+   "psh": 0,
+   "visits": 2,
+   "rawTotal": 14582
+  },
+  "p_sched_ny1qkz": {
+   "sum": 0,
+   "prob": 29,
+   "meds": 27,
+   "psh": 0,
+   "visits": 2,
+   "rawTotal": 10942
+  },
+  "p_sched_1ducs3u": {
+   "sum": 0,
+   "prob": 42,
+   "meds": 0,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 17436
+  },
+  "p_sched_1knqo1w": {
+   "sum": 0,
+   "prob": 74,
+   "meds": 0,
+   "psh": 0,
+   "visits": 2,
+   "rawTotal": 12921
+  },
+  "p_sched_1nywqlb": {
+   "sum": 1008,
+   "prob": 231,
+   "meds": 21,
+   "psh": 0,
+   "visits": 2,
+   "rawTotal": 12938
+  },
+  "p_sched_1sp814t": {
+   "sum": 0,
+   "prob": 172,
+   "meds": 0,
+   "psh": 0,
+   "visits": 30,
+   "rawTotal": 64825
+  },
+  "p_sched_atuj0p": {
+   "sum": 9000,
+   "prob": 101,
+   "meds": 370,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 92501
+  },
+  "p_sched_1uxxvw7": {
+   "sum": 2638,
+   "prob": 415,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 66234
+  },
+  "p_sched_l00yp": {
+   "sum": 0,
+   "prob": 257,
+   "meds": 0,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 51104
+  },
+  "p_sched_cenmlv": {
+   "sum": 9000,
+   "prob": 382,
+   "meds": 482,
+   "psh": 0,
+   "visits": 24,
+   "rawTotal": 99003
+  },
+  "p_sched_xav80s": {
+   "sum": 3696,
+   "prob": 317,
+   "meds": 0,
+   "psh": 0,
+   "visits": 16,
+   "rawTotal": 137541
+  },
+  "p_sched_1ikhesm": {
+   "sum": 0,
+   "prob": 802,
+   "meds": 20,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 168731
+  },
+  "p_sched_2pj8f5": {
+   "sum": 0,
+   "prob": 39,
+   "meds": 41,
+   "psh": 0,
+   "visits": 2,
+   "rawTotal": 12407
+  },
+  "p_sched_1tyutd0": {
+   "sum": 0,
+   "prob": 269,
+   "meds": 43,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 94711
+  },
+  "p_sched_za2f7o": {
+   "sum": 9000,
+   "prob": 1273,
+   "meds": 170,
+   "psh": 0,
+   "visits": 13,
+   "rawTotal": 169610
+  },
+  "p_sched_1nqbad5": {
+   "sum": 1197,
+   "prob": 121,
+   "meds": 7,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 19882
+  },
+  "pmrfjcxe0divs": {
+   "sum": 0,
+   "prob": 34,
+   "meds": 41,
+   "psh": 0,
+   "visits": 5,
+   "rawTotal": 10917
+  },
+  "p_sched_1gxz8t": {
+   "sum": 0,
+   "prob": 111,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 43989
+  },
+  "pmr2kyuk7lv81": {
+   "sum": 0,
+   "prob": 221,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 78556
+  },
+  "pmr11a0p91e5h": {
+   "sum": 0,
+   "prob": 0,
+   "meds": 0,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 21733
+  },
+  "p_sched_1rydji0": {
+   "sum": 0,
+   "prob": 196,
+   "meds": 116,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 113847
+  },
+  "p_sched_1t0fzs8": {
+   "sum": 0,
+   "prob": 31,
+   "meds": 24,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 30115
+  },
+  "p_sched_12v92s8": {
+   "sum": 0,
+   "prob": 440,
+   "meds": 0,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 32579
+  },
+  "pmqsq4irj07oi": {
+   "sum": 0,
+   "prob": 450,
+   "meds": 0,
+   "psh": 0,
+   "visits": 19,
+   "rawTotal": 159624
+  },
+  "p_sched_1pl5g6u": {
+   "sum": 2606,
+   "prob": 285,
+   "meds": 64,
+   "psh": 0,
+   "visits": 17,
+   "rawTotal": 61888
+  },
+  "p_sched_nmuows": {
+   "sum": 5594,
+   "prob": 1891,
+   "meds": 94,
+   "psh": 0,
+   "visits": 22,
+   "rawTotal": 169034
+  },
+  "p_sched_2b0k06": {
+   "sum": 9000,
+   "prob": 400,
+   "meds": 321,
+   "psh": 444,
+   "visits": 15,
+   "rawTotal": 149961
+  },
+  "pmrfjdinnnjlw": {
+   "sum": 0,
+   "prob": 219,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 90730
+  },
+  "p_sched_itqiak": {
+   "sum": 0,
+   "prob": 845,
+   "meds": 9,
+   "psh": 0,
+   "visits": 26,
+   "rawTotal": 257102
+  },
+  "p_sched_6gcghe": {
+   "sum": 0,
+   "prob": 214,
+   "meds": 0,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 52094
+  },
+  "p_sched_1dpw43e": {
+   "sum": 5558,
+   "prob": 422,
+   "meds": 160,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 87565
+  },
+  "pmr2kyu5tn5vd": {
+   "sum": 2620,
+   "prob": 257,
+   "meds": 17,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 38564
+  },
+  "pmr11a0evqyml": {
+   "sum": 0,
+   "prob": 0,
+   "meds": 0,
+   "psh": 0,
+   "visits": 5,
+   "rawTotal": 63376
+  },
+  "p_sched_ibuwu5": {
+   "sum": 0,
+   "prob": 137,
+   "meds": 69,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 71809
+  },
+  "p_sched_10tysds": {
+   "sum": 1619,
+   "prob": 79,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 42588
+  },
+  "p_sched_157yjhf": {
+   "sum": 0,
+   "prob": 154,
+   "meds": 0,
+   "psh": 0,
+   "visits": 15,
+   "rawTotal": 114702
+  },
+  "pmrjmuoss5c1u": {
+   "sum": 0,
+   "prob": 308,
+   "meds": 69,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 47079
+  },
+  "p_sched_1svl4oq": {
+   "sum": 1599,
+   "prob": 150,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 51216
+  },
+  "p_sched_1fmgvk0": {
+   "sum": 0,
+   "prob": 186,
+   "meds": 0,
+   "psh": 0,
+   "visits": 24,
+   "rawTotal": 164872
+  },
+  "p_sched_16gi2ha": {
+   "sum": 6680,
+   "prob": 1919,
+   "meds": 160,
+   "psh": 221,
+   "visits": 13,
+   "rawTotal": 153998
+  },
+  "p_sched_1b2vbd": {
+   "sum": 0,
+   "prob": 83,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 68977
+  },
+  "p_sched_jmhttz": {
+   "sum": 0,
+   "prob": 225,
+   "meds": 0,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 60408
+  },
+  "p_sched_1h7z1gi": {
+   "sum": 4670,
+   "prob": 524,
+   "meds": 0,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 48947
+  },
+  "p_sched_bze6d2": {
+   "sum": 0,
+   "prob": 92,
+   "meds": 0,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 79542
+  },
+  "p_sched_5vpx5b": {
+   "sum": 0,
+   "prob": 114,
+   "meds": 0,
+   "psh": 0,
+   "visits": 16,
+   "rawTotal": 70447
+  },
+  "p_sched_hppui4": {
+   "sum": 0,
+   "prob": 242,
+   "meds": 0,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 91014
+  },
+  "pmray2vv4xr4j": {
+   "sum": 0,
+   "prob": 139,
+   "meds": 21,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 119624
+  },
+  "p_sched_12cwcum": {
+   "sum": 7284,
+   "prob": 761,
+   "meds": 160,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 137548
+  },
+  "p_sched_6finol": {
+   "sum": 0,
+   "prob": 27,
+   "meds": 0,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 63320
+  },
+  "p_sched_1w0unon": {
+   "sum": 6495,
+   "prob": 221,
+   "meds": 0,
+   "psh": 0,
+   "visits": 24,
+   "rawTotal": 234528
+  },
+  "p_sched_zubuun": {
+   "sum": 8367,
+   "prob": 666,
+   "meds": 160,
+   "psh": 0,
+   "visits": 17,
+   "rawTotal": 107620
+  },
+  "pmr2kytgshq34": {
+   "sum": 0,
+   "prob": 75,
+   "meds": 43,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 101848
+  },
+  "pmrfj8oi5oo1z": {
+   "sum": 0,
+   "prob": 42,
+   "meds": 0,
+   "psh": 0,
+   "visits": 16,
+   "rawTotal": 174991
+  },
+  "p_sched_1b8bjpq": {
+   "sum": 0,
+   "prob": 64,
+   "meds": 0,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 130889
+  },
+  "p_sched_1o1dswz": {
+   "sum": 0,
+   "prob": 64,
+   "meds": 0,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 110055
+  },
+  "p_sched_1b1kw8w": {
+   "sum": 5706,
+   "prob": 190,
+   "meds": 320,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 62958
+  },
+  "p_sched_ixm3ws": {
+   "sum": 0,
+   "prob": 27,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 68432
+  },
+  "pmrfjf9xdhk10": {
+   "sum": 9000,
+   "prob": 201,
+   "meds": 321,
+   "psh": 0,
+   "visits": 13,
+   "rawTotal": 157009
+  },
+  "pmr11a12ig33d": {
+   "sum": 5850,
+   "prob": 108,
+   "meds": 160,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 82566
+  },
+  "p_sched_dmndve": {
+   "sum": 5351,
+   "prob": 166,
+   "meds": 159,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 63791
+  },
+  "pmray2r4ob15e": {
+   "sum": 0,
+   "prob": 35,
+   "meds": 0,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 68438
+  },
+  "p_sched_1x3o9vr": {
+   "sum": 0,
+   "prob": 64,
+   "meds": 0,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 103626
+  },
+  "p_sched_17rzfs9": {
+   "sum": 0,
+   "prob": 32,
+   "meds": 48,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 32048
+  },
+  "pmrfjf6zet9wl": {
+   "sum": 7379,
+   "prob": 217,
+   "meds": 160,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 122206
+  },
+  "p_sched_1axgtaf": {
+   "sum": 2968,
+   "prob": 152,
+   "meds": 0,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 89141
+  },
+  "p_sched_1bavkza": {
+   "sum": 7571,
+   "prob": 1219,
+   "meds": 321,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 101421
+  },
+  "p_sched_1657vif": {
+   "sum": 4624,
+   "prob": 866,
+   "meds": 48,
+   "psh": 0,
+   "visits": 21,
+   "rawTotal": 130847
+  },
+  "p_sched_g3xq5j": {
+   "sum": 3343,
+   "prob": 296,
+   "meds": 103,
+   "psh": 0,
+   "visits": 14,
+   "rawTotal": 81206
+  },
+  "p1783380364659n2yia": {
+   "sum": 0,
+   "prob": 27,
+   "meds": 0,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 69657
+  },
+  "pmrfjd3u1d003": {
+   "sum": 0,
+   "prob": 22,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 52221
+  },
+  "p_sched_8f5n9b": {
+   "sum": 0,
+   "prob": 105,
+   "meds": 23,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 27178
+  },
+  "p_sched_rgrenr": {
+   "sum": 0,
+   "prob": 174,
+   "meds": 0,
+   "psh": 0,
+   "visits": 5,
+   "rawTotal": 12337
+  },
+  "p_sched_jdo9wd": {
+   "sum": 42,
+   "prob": 52,
+   "meds": 64,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 12943
+  },
+  "p_sched_1tjwc85": {
+   "sum": 0,
+   "prob": 71,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 28310
+  },
+  "p_sched_7y04t0": {
+   "sum": 0,
+   "prob": 25,
+   "meds": 0,
+   "psh": 0,
+   "visits": 19,
+   "rawTotal": 132990
+  },
+  "p_sched_1pqooup": {
+   "sum": 0,
+   "prob": 47,
+   "meds": 17,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 26644
+  },
+  "p_sched_1rod3o5": {
+   "sum": 0,
+   "prob": 54,
+   "meds": 0,
+   "psh": 0,
+   "visits": 24,
+   "rawTotal": 72432
+  },
+  "p_sched_6h7hxl": {
+   "sum": 0,
+   "prob": 20,
+   "meds": 45,
+   "psh": 0,
+   "visits": 20,
+   "rawTotal": 93016
+  },
+  "p_sched_1v65irs": {
+   "sum": 0,
+   "prob": 135,
+   "meds": 0,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 13307
+  },
+  "p_sched_1bu0z9w": {
+   "sum": 0,
+   "prob": 233,
+   "meds": 12,
+   "psh": 0,
+   "visits": 32,
+   "rawTotal": 182458
+  },
+  "p_sched_hys1ep": {
+   "sum": 0,
+   "prob": 31,
+   "meds": 21,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 14391
+  },
+  "p_sched_1g8r9nz": {
+   "sum": 0,
+   "prob": 61,
+   "meds": 116,
+   "psh": 0,
+   "visits": 16,
+   "rawTotal": 78109
+  },
+  "p_sched_1ocinoi": {
+   "sum": 0,
+   "prob": 216,
+   "meds": 0,
+   "psh": 0,
+   "visits": 15,
+   "rawTotal": 68623
+  },
+  "p_sched_dt3a1n": {
+   "sum": 0,
+   "prob": 79,
+   "meds": 101,
+   "psh": 0,
+   "visits": 27,
+   "rawTotal": 87510
+  },
+  "p_sched_ycpoio": {
+   "sum": 0,
+   "prob": 27,
+   "meds": 74,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 18358
+  },
+  "pmrfjfgwb4afo": {
+   "sum": 0,
+   "prob": 82,
+   "meds": 103,
+   "psh": 0,
+   "visits": 5,
+   "rawTotal": 51796
+  },
+  "p_sched_ibb0sq": {
+   "sum": 0,
+   "prob": 64,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 93792
+  },
+  "p_sched_1fufp22": {
+   "sum": 0,
+   "prob": 97,
+   "meds": 0,
+   "psh": 0,
+   "visits": 13,
+   "rawTotal": 136404
+  },
+  "p_sched_oqlmsa": {
+   "sum": 0,
+   "prob": 871,
+   "meds": 51,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 88314
+  },
+  "p_sched_1fl201r": {
+   "sum": 0,
+   "prob": 192,
+   "meds": 0,
+   "psh": 0,
+   "visits": 13,
+   "rawTotal": 133728
+  },
+  "p_sched_axnzze": {
+   "sum": 0,
+   "prob": 576,
+   "meds": 8,
+   "psh": 0,
+   "visits": 23,
+   "rawTotal": 209603
+  },
+  "p1783380364822hgagd": {
+   "sum": 0,
+   "prob": 272,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 105741
+  },
+  "p_sched_lbf1fa": {
+   "sum": 0,
+   "prob": 752,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 64289
+  },
+  "pmrfjdjtk983r": {
+   "sum": 0,
+   "prob": 132,
+   "meds": 0,
+   "psh": 0,
+   "visits": 22,
+   "rawTotal": 104677
+  },
+  "p_sched_1yq2zz7": {
+   "sum": 0,
+   "prob": 64,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 102883
+  },
+  "p_sched_1exs7ug": {
+   "sum": 0,
+   "prob": 179,
+   "meds": 207,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 40479
+  },
+  "p_sched_szi23o": {
+   "sum": 0,
+   "prob": 156,
+   "meds": 0,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 162077
+  },
+  "p_sched_pm20fi": {
+   "sum": 0,
+   "prob": 120,
+   "meds": 0,
+   "psh": 0,
+   "visits": 12,
+   "rawTotal": 49828
+  },
+  "pmrfjcu570k8s": {
+   "sum": 0,
+   "prob": 82,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 101980
+  },
+  "p_sched_rf1qpn": {
+   "sum": 3970,
+   "prob": 111,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 95329
+  },
+  "pmrfjej2mi5ey": {
+   "sum": 0,
+   "prob": 100,
+   "meds": 0,
+   "psh": 0,
+   "visits": 17,
+   "rawTotal": 221135
+  },
+  "p_sched_qyukvf": {
+   "sum": 1282,
+   "prob": 42,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 15001
+  },
+  "pmrc3ihnoxbov": {
+   "sum": 0,
+   "prob": 283,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 58251
+  },
+  "p_sched_87herh": {
+   "sum": 0,
+   "prob": 56,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 43048
+  },
+  "p_sched_16h43mv": {
+   "sum": 0,
+   "prob": 43,
+   "meds": 0,
+   "psh": 0,
+   "visits": 5,
+   "rawTotal": 34668
+  },
+  "p_sched_2101zs": {
+   "sum": 7382,
+   "prob": 417,
+   "meds": 160,
+   "psh": 0,
+   "visits": 43,
+   "rawTotal": 131334
+  },
+  "p_sched_10kayqm": {
+   "sum": 0,
+   "prob": 31,
+   "meds": 0,
+   "psh": 0,
+   "visits": 8,
+   "rawTotal": 66244
+  },
+  "p_sched_22prfb": {
+   "sum": 0,
+   "prob": 41,
+   "meds": 0,
+   "psh": 0,
+   "visits": 7,
+   "rawTotal": 77368
+  },
+  "p_sched_1fpkr6w": {
+   "sum": 0,
+   "prob": 449,
+   "meds": 0,
+   "psh": 0,
+   "visits": 25,
+   "rawTotal": 231088
+  },
+  "p_sched_1swflza": {
+   "sum": 0,
+   "prob": 131,
+   "meds": 0,
+   "psh": 0,
+   "visits": 10,
+   "rawTotal": 97972
+  },
+  "p_sched_o8xxn4": {
+   "sum": 0,
+   "prob": 110,
+   "meds": 17,
+   "psh": 0,
+   "visits": 3,
+   "rawTotal": 22843
+  },
+  "p_sched_5ni5e1": {
+   "sum": 0,
+   "prob": 27,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 64034
+  },
+  "p_sched_nabi35": {
+   "sum": 0,
+   "prob": 95,
+   "meds": 0,
+   "psh": 0,
+   "visits": 11,
+   "rawTotal": 84408
+  },
+  "p_sched_dg8o1c": {
+   "sum": 0,
+   "prob": 56,
+   "meds": 0,
+   "psh": 0,
+   "visits": 18,
+   "rawTotal": 152834
+  },
+  "p_sched_lrzssq": {
+   "sum": 0,
+   "prob": 28,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 51671
+  },
+  "p_sched_132ktzd": {
+   "sum": 0,
+   "prob": 468,
+   "meds": 0,
+   "psh": 0,
+   "visits": 24,
+   "rawTotal": 241040
+  },
+  "p_sched_cbz5d9": {
+   "sum": 0,
+   "prob": 40,
+   "meds": 0,
+   "psh": 0,
+   "visits": 6,
+   "rawTotal": 31669
+  },
+  "p_sched_lw58kt": {
+   "sum": 0,
+   "prob": 71,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 74469
+  },
+  "pmqv3muw2qayu": {
+   "sum": 0,
+   "prob": 101,
+   "meds": 0,
+   "psh": 0,
+   "visits": 9,
+   "rawTotal": 52101
+  }
+ },
+ "current": {
+  "p_sched_1wt53y8": {
+   "sumLen": 4139,
+   "problems": {
+    "t": "s",
+    "len": 208
+   },
+   "meds": {
+    "t": "s",
+    "len": 432
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 2,
+   "rawTotal": 13679,
+   "updated": 1786168491929
+  },
+  "p_sched_11nlgsx": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 39
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 3,
+   "rawTotal": 12350,
+   "updated": 1786168502911
+  },
+  "pmrfja8ahznm1": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1459
+   },
+   "meds": {
+    "t": "s",
+    "len": 1181
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 9,
+   "rawTotal": 119661,
+   "updated": 1786168514012
+  },
+  "pmrfjdk6o0k3e": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 487
+   },
+   "meds": {
+    "t": "s",
+    "len": 2503
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 20
+   },
+   "visits": 14,
+   "rawTotal": 95960,
+   "updated": 1786168524968
+  },
+  "pmrfjf9jjwud2": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1232
+   },
+   "meds": {
+    "t": "s",
+    "len": 3135
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 149
+   },
+   "visits": 8,
+   "rawTotal": 94307,
+   "updated": 1786168536996
+  },
+  "pmrfjgnk73ft0": {
+   "sumLen": 3766,
+   "problems": {
+    "t": "s",
+    "len": 253
+   },
+   "meds": {
+    "t": "s",
+    "len": 499
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 324
+   },
+   "visits": 4,
+   "rawTotal": 15353,
+   "updated": 1786168548957
+  },
+  "p_sched_1yroh0u": {
+   "sumLen": 2291,
+   "problems": {
+    "t": "s",
+    "len": 20
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 39661,
+   "updated": 1786168561944
+  },
+  "p_sched_vuuahf": {
+   "sumLen": 2963,
+   "problems": {
+    "t": "s",
+    "len": 148
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 11,
+   "rawTotal": 55688,
+   "updated": 1786168609966
+  },
+  "pmrfjctu3o408": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 254
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 19,
+   "rawTotal": 149299,
+   "updated": 1786168669980
+  },
+  "p_sched_mum2h": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 761
+   },
+   "meds": {
+    "t": "s",
+    "len": 643
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 24,
+   "rawTotal": 246084,
+   "updated": 1786168730005
+  },
+  "p_sched_1jn8ql0": {
+   "sumLen": 1737,
+   "problems": {
+    "t": "s",
+    "len": 109
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 33873,
+   "updated": 1786168789978
+  },
+  "p_sched_19w8hhn": {
+   "sumLen": 6230,
+   "problems": {
+    "t": "s",
+    "len": 423
+   },
+   "meds": {
+    "t": "s",
+    "len": 473
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 38491,
+   "updated": 1786168849984
+  },
+  "pmrayg1zp2myk": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 645
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 17,
+   "rawTotal": 1128,
+   "updated": 1786141348688
+  },
+  "pmqsq4zzosqx1": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 484
+   },
+   "meds": {
+    "t": "s",
+    "len": 390
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 56
+   },
+   "visits": 29,
+   "rawTotal": 821,
+   "updated": 1786141348688
+  },
+  "pmrdo3v6rw52g": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 776
+   },
+   "meds": {
+    "t": "s",
+    "len": 121
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 28,
+   "rawTotal": 822,
+   "updated": 1786141348688
+  },
+  "pmrdo3vjabhpb": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 568
+   },
+   "meds": {
+    "t": "s",
+    "len": 607
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 31
+   },
+   "visits": 4,
+   "rawTotal": 930,
+   "updated": 1786141348688
+  },
+  "pmrdo3vpm4iu8": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 741
+   },
+   "meds": {
+    "t": "s",
+    "len": 464
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 15
+   },
+   "visits": 29,
+   "rawTotal": 235,
+   "updated": 1786141348688
+  },
+  "pmrdo3wliln5g": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 754
+   },
+   "meds": {
+    "t": "s",
+    "len": 418
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 10,
+   "rawTotal": 126,
+   "updated": 1786141348688
+  },
+  "pmrdo3wrrr0op": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 628
+   },
+   "meds": {
+    "t": "s",
+    "len": 518
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 12,
+   "rawTotal": 118,
+   "updated": 1786141348688
+  },
+  "pmrdo3x5nsqyw": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 641
+   },
+   "meds": {
+    "t": "s",
+    "len": 298
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 47
+   },
+   "visits": 14,
+   "rawTotal": 302,
+   "updated": 1786141348688
+  },
+  "pmqsq6q6jqp1l": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 562
+   },
+   "meds": {
+    "t": "s",
+    "len": 491
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 218
+   },
+   "visits": 8,
+   "rawTotal": 143,
+   "updated": 1786141348688
+  },
+  "pmqsq8we7a3l4": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 543
+   },
+   "meds": {
+    "t": "s",
+    "len": 326
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 0
+   },
+   "visits": 29,
+   "rawTotal": 879,
+   "updated": 1786141348688
+  },
+  "pmr43fsiyina4": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 690
+   },
+   "meds": {
+    "t": "s",
+    "len": 393
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 13,
+   "rawTotal": 901,
+   "updated": 1786141348688
+  },
+  "pmrdo3w3i5scz": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 773
+   },
+   "meds": {
+    "t": "s",
+    "len": 398
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 13,
+   "rawTotal": 1025,
+   "updated": 1786141348688
+  },
+  "pmrdo3x93rqxg": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 729
+   },
+   "meds": {
+    "t": "s",
+    "len": 425
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 182
+   },
+   "visits": 20,
+   "rawTotal": 258,
+   "updated": 1786141348688
+  },
+  "pmr43frm1dhgy": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 308
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 32,
+   "rawTotal": 1889,
+   "updated": 1786141348688
+  },
+  "p_sched_nosr4m": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1264
+   },
+   "meds": {
+    "t": "s",
+    "len": 796
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 14,
+   "rawTotal": 110680,
+   "updated": 1786169749955
+  },
+  "p_sched_1oyxg01": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 26
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 13294,
+   "updated": 1786169809909
+  },
+  "pmrfjf86rtmw8": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 986
+   },
+   "meds": {
+    "t": "s",
+    "len": 2693
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 155
+   },
+   "visits": 9,
+   "rawTotal": 108271,
+   "updated": 1786169869955
+  },
+  "pmrfjd84ys9kg": {
+   "sumLen": 6824,
+   "problems": {
+    "t": "s",
+    "len": 216
+   },
+   "meds": {
+    "t": "s",
+    "len": 953
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 3,
+   "rawTotal": 37148,
+   "updated": 1786169929923
+  },
+  "p_sched_1a3p844": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 87
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 66713,
+   "updated": 1786169989932
+  },
+  "p_sched_1i96awr": {
+   "sumLen": 7529,
+   "problems": {
+    "t": "s",
+    "len": 525
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 79652,
+   "updated": 1786170049932
+  },
+  "p_sched_rs197s": {
+   "sumLen": 8899,
+   "problems": {
+    "t": "s",
+    "len": 740
+   },
+   "meds": {
+    "t": "s",
+    "len": 4593
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 5,
+   "rawTotal": 49884,
+   "updated": 1786170109937
+  },
+  "p_sched_9wfqp7": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 190
+   },
+   "meds": {
+    "t": "s",
+    "len": 156
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 19,
+   "rawTotal": 114009,
+   "updated": 1786170169976
+  },
+  "p_sched_1j4x9vt": {
+   "sumLen": 863,
+   "problems": {
+    "t": "s",
+    "len": 118
+   },
+   "meds": {
+    "t": "s",
+    "len": 45
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 2,
+   "rawTotal": 14582,
+   "updated": 1786170229909
+  },
+  "p_sched_ny1qkz": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 29
+   },
+   "meds": {
+    "t": "s",
+    "len": 27
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 2,
+   "rawTotal": 10942,
+   "updated": 1786170289909
+  },
+  "p_sched_1ducs3u": {
+   "sumLen": 5002,
+   "problems": {
+    "t": "s",
+    "len": 137
+   },
+   "meds": {
+    "t": "s",
+    "len": 554
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 3,
+   "rawTotal": 17436,
+   "updated": 1786170349921
+  },
+  "p_sched_1knqo1w": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 74
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 2,
+   "rawTotal": 12921,
+   "updated": 1786170409933
+  },
+  "p_sched_1nywqlb": {
+   "sumLen": 1008,
+   "problems": {
+    "t": "s",
+    "len": 231
+   },
+   "meds": {
+    "t": "s",
+    "len": 21
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 2,
+   "rawTotal": 12938,
+   "updated": 1786170469916
+  },
+  "p_sched_1sp814t": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 172
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 30,
+   "rawTotal": 64825,
+   "updated": 1786170529937
+  },
+  "p_sched_atuj0p": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 272
+   },
+   "meds": {
+    "t": "s",
+    "len": 1233
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 62
+   },
+   "visits": 11,
+   "rawTotal": 92501,
+   "updated": 1786170589952
+  },
+  "p_sched_1uxxvw7": {
+   "sumLen": 8770,
+   "problems": {
+    "t": "s",
+    "len": 1079
+   },
+   "meds": {
+    "t": "s",
+    "len": 386
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 50
+   },
+   "visits": 10,
+   "rawTotal": 66234,
+   "updated": 1786170649940
+  },
+  "p_sched_l00yp": {
+   "sumLen": 7420,
+   "problems": {
+    "t": "s",
+    "len": 677
+   },
+   "meds": {
+    "t": "s",
+    "len": 1028
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 27
+   },
+   "visits": 8,
+   "rawTotal": 51104,
+   "updated": 1786170709925
+  },
+  "p_sched_cenmlv": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 897
+   },
+   "meds": {
+    "t": "s",
+    "len": 2590
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 203
+   },
+   "visits": 24,
+   "rawTotal": 99003,
+   "updated": 1786170769955
+  },
+  "p_sched_xav80s": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 985
+   },
+   "meds": {
+    "t": "s",
+    "len": 338
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 62
+   },
+   "visits": 16,
+   "rawTotal": 137541,
+   "updated": 1786170829957
+  },
+  "p_sched_1ikhesm": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 2421
+   },
+   "meds": {
+    "t": "s",
+    "len": 5448
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 47
+   },
+   "visits": 14,
+   "rawTotal": 168731,
+   "updated": 1786170889992
+  },
+  "p_sched_2pj8f5": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 39
+   },
+   "meds": {
+    "t": "s",
+    "len": 41
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 2,
+   "rawTotal": 12407,
+   "updated": 1786170949911
+  },
+  "p_sched_1tyutd0": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 766
+   },
+   "meds": {
+    "t": "s",
+    "len": 2360
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 25
+   },
+   "visits": 10,
+   "rawTotal": 94711,
+   "updated": 1786171009952
+  },
+  "p_sched_za2f7o": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1579
+   },
+   "meds": {
+    "t": "s",
+    "len": 950
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 50
+   },
+   "visits": 13,
+   "rawTotal": 169610,
+   "updated": 1786171069974
+  },
+  "p_sched_1nqbad5": {
+   "sumLen": 1197,
+   "problems": {
+    "t": "s",
+    "len": 121
+   },
+   "meds": {
+    "t": "s",
+    "len": 7
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 3,
+   "rawTotal": 19882,
+   "updated": 1786171129920
+  },
+  "pmrfjcxe0divs": {
+   "sumLen": 3900,
+   "problems": {
+    "t": "s",
+    "len": 93
+   },
+   "meds": {
+    "t": "s",
+    "len": 557
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 5,
+   "rawTotal": 10917,
+   "updated": 1786171189913
+  },
+  "p_sched_1gxz8t": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 111
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 43989,
+   "updated": 1786171249922
+  },
+  "pmr2kyuk7lv81": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 221
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 9,
+   "rawTotal": 78556,
+   "updated": 1786171309940
+  },
+  "pmr11a0p91e5h": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 0
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 3,
+   "rawTotal": 21733,
+   "updated": 1786171369926
+  },
+  "p_sched_1rydji0": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 196
+   },
+   "meds": {
+    "t": "s",
+    "len": 116
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 113847,
+   "updated": 1786171429936
+  },
+  "p_sched_1t0fzs8": {
+   "sumLen": 6129,
+   "problems": {
+    "t": "s",
+    "len": 136
+   },
+   "meds": {
+    "t": "s",
+    "len": 1320
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 30115,
+   "updated": 1786171489921
+  },
+  "p_sched_12v92s8": {
+   "sumLen": 5688,
+   "problems": {
+    "t": "s",
+    "len": 922
+   },
+   "meds": {
+    "t": "s",
+    "len": 826
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 32579,
+   "updated": 1786171549921
+  },
+  "pmqsq4irj07oi": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1242
+   },
+   "meds": {
+    "t": "s",
+    "len": 2730
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 70
+   },
+   "visits": 19,
+   "rawTotal": 159624,
+   "updated": 1786171609988
+  },
+  "p_sched_1pl5g6u": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 907
+   },
+   "meds": {
+    "t": "s",
+    "len": 4128
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 48
+   },
+   "visits": 17,
+   "rawTotal": 61888,
+   "updated": 1786171669930
+  },
+  "p_sched_nmuows": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 3386
+   },
+   "meds": {
+    "t": "s",
+    "len": 2243
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 159
+   },
+   "visits": 22,
+   "rawTotal": 169034,
+   "updated": 1786171729980
+  },
+  "p_sched_2b0k06": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 791
+   },
+   "meds": {
+    "t": "s",
+    "len": 2596
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 148
+   },
+   "visits": 15,
+   "rawTotal": 149961,
+   "updated": 1786171789995
+  },
+  "pmrfjdinnnjlw": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 219
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 9,
+   "rawTotal": 90730,
+   "updated": 1786171849962
+  },
+  "p_sched_itqiak": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 2937
+   },
+   "meds": {
+    "t": "s",
+    "len": 4876
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 26,
+   "rawTotal": 257102,
+   "updated": 1786171910027
+  },
+  "p_sched_6gcghe": {
+   "sumLen": 8896,
+   "problems": {
+    "t": "s",
+    "len": 641
+   },
+   "meds": {
+    "t": "s",
+    "len": 1699
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 42
+   },
+   "visits": 14,
+   "rawTotal": 52094,
+   "updated": 1786171969937
+  },
+  "p_sched_1dpw43e": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1016
+   },
+   "meds": {
+    "t": "s",
+    "len": 2252
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 80
+   },
+   "visits": 9,
+   "rawTotal": 87565,
+   "updated": 1786172029951
+  },
+  "pmr2kyu5tn5vd": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 588
+   },
+   "meds": {
+    "t": "s",
+    "len": 951
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 84
+   },
+   "visits": 8,
+   "rawTotal": 38564,
+   "updated": 1786172089936
+  },
+  "pmr11a0evqyml": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 0
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 5,
+   "rawTotal": 63376,
+   "updated": 1786172149933
+  },
+  "p_sched_ibuwu5": {
+   "sumLen": 7811,
+   "problems": {
+    "t": "s",
+    "len": 520
+   },
+   "meds": {
+    "t": "s",
+    "len": 956
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 12,
+   "rawTotal": 71809,
+   "updated": 1786172209931
+  },
+  "p_sched_10tysds": {
+   "sumLen": 6344,
+   "problems": {
+    "t": "s",
+    "len": 305
+   },
+   "meds": {
+    "t": "s",
+    "len": 480
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 9,
+   "rawTotal": 42588,
+   "updated": 1786172269927
+  },
+  "p_sched_157yjhf": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 416
+   },
+   "meds": {
+    "t": "s",
+    "len": 1817
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 15,
+   "rawTotal": 114702,
+   "updated": 1786172329968
+  },
+  "pmrjmuoss5c1u": {
+   "sumLen": 7427,
+   "problems": {
+    "t": "s",
+    "len": 509
+   },
+   "meds": {
+    "t": "s",
+    "len": 2702
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 47079,
+   "updated": 1786172389936
+  },
+  "p_sched_1svl4oq": {
+   "sumLen": 1599,
+   "problems": {
+    "t": "s",
+    "len": 150
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 51216,
+   "updated": 1786172449924
+  },
+  "p_sched_1fmgvk0": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 186
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 24,
+   "rawTotal": 164872,
+   "updated": 1786172509969
+  },
+  "p_sched_16gi2ha": {
+   "sumLen": 6680,
+   "problems": {
+    "t": "s",
+    "len": 1919
+   },
+   "meds": {
+    "t": "s",
+    "len": 160
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 13,
+   "rawTotal": 153998,
+   "updated": 1786172569984
+  },
+  "p_sched_1b2vbd": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 83
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 9,
+   "rawTotal": 68977,
+   "updated": 1786172629930
+  },
+  "p_sched_jmhttz": {
+   "sumLen": 8646,
+   "problems": {
+    "t": "s",
+    "len": 633
+   },
+   "meds": {
+    "t": "s",
+    "len": 3018
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 22
+   },
+   "visits": 11,
+   "rawTotal": 60408,
+   "updated": 1786172689942
+  },
+  "p_sched_1h7z1gi": {
+   "sumLen": 7436,
+   "problems": {
+    "t": "s",
+    "len": 1310
+   },
+   "meds": {
+    "t": "s",
+    "len": 713
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 66
+   },
+   "visits": 8,
+   "rawTotal": 48947,
+   "updated": 1786172749932
+  },
+  "p_sched_bze6d2": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 314
+   },
+   "meds": {
+    "t": "s",
+    "len": 3359
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 14,
+   "rawTotal": 79542,
+   "updated": 1786172809948
+  },
+  "p_sched_5vpx5b": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 643
+   },
+   "meds": {
+    "t": "s",
+    "len": 2142
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 16,
+   "rawTotal": 70447,
+   "updated": 1786172869944
+  },
+  "p_sched_hppui4": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 242
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 11,
+   "rawTotal": 91014,
+   "updated": 1786172929958
+  },
+  "pmray2vv4xr4j": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 139
+   },
+   "meds": {
+    "t": "s",
+    "len": 21
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 14,
+   "rawTotal": 119624,
+   "updated": 1786172989955
+  },
+  "p_sched_12cwcum": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1483
+   },
+   "meds": {
+    "t": "s",
+    "len": 3670
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 120
+   },
+   "visits": 10,
+   "rawTotal": 137548,
+   "updated": 1786173049991
+  },
+  "p_sched_6finol": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 27
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 63320,
+   "updated": 1786173109934
+  },
+  "p_sched_1w0unon": {
+   "sumLen": 6495,
+   "problems": {
+    "t": "s",
+    "len": 221
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 24,
+   "rawTotal": 234528,
+   "updated": 1786173170004
+  },
+  "p_sched_zubuun": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1620
+   },
+   "meds": {
+    "t": "s",
+    "len": 2433
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 163
+   },
+   "visits": 17,
+   "rawTotal": 107620,
+   "updated": 1786173229959
+  },
+  "pmr2kytgshq34": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 75
+   },
+   "meds": {
+    "t": "s",
+    "len": 43
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 10,
+   "rawTotal": 101848,
+   "updated": 1786173289959
+  },
+  "pmrfj8oi5oo1z": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 2725
+   },
+   "meds": {
+    "t": "s",
+    "len": 974
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 16,
+   "rawTotal": 174991,
+   "updated": 1786173349996
+  },
+  "p_sched_1b8bjpq": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 413
+   },
+   "meds": {
+    "t": "s",
+    "len": 1842
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 12,
+   "rawTotal": 130889,
+   "updated": 1786173409968
+  },
+  "p_sched_1o1dswz": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 684
+   },
+   "meds": {
+    "t": "s",
+    "len": 3110
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 22
+   },
+   "visits": 11,
+   "rawTotal": 110055,
+   "updated": 1786173469957
+  },
+  "p_sched_1b1kw8w": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 630
+   },
+   "meds": {
+    "t": "s",
+    "len": 2149
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 127
+   },
+   "visits": 10,
+   "rawTotal": 62958,
+   "updated": 1786173529956
+  },
+  "p_sched_ixm3ws": {
+   "sumLen": 8985,
+   "problems": {
+    "t": "s",
+    "len": 614
+   },
+   "meds": {
+    "t": "s",
+    "len": 822
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 41
+   },
+   "visits": 9,
+   "rawTotal": 68432,
+   "updated": 1786173589948
+  },
+  "pmrfjf9xdhk10": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 713
+   },
+   "meds": {
+    "t": "s",
+    "len": 2656
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 38
+   },
+   "visits": 13,
+   "rawTotal": 157009,
+   "updated": 1786173649986
+  },
+  "pmr11a12ig33d": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 374
+   },
+   "meds": {
+    "t": "s",
+    "len": 3600
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 95
+   },
+   "visits": 8,
+   "rawTotal": 82566,
+   "updated": 1786173709958
+  },
+  "p_sched_dmndve": {
+   "sumLen": 5351,
+   "problems": {
+    "t": "s",
+    "len": 166
+   },
+   "meds": {
+    "t": "s",
+    "len": 159
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 63791,
+   "updated": 1786173769956
+  },
+  "pmray2r4ob15e": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1135
+   },
+   "meds": {
+    "t": "s",
+    "len": 1789
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 68438,
+   "updated": 1786173829943
+  },
+  "p_sched_1x3o9vr": {
+   "sumLen": 8480,
+   "problems": {
+    "t": "s",
+    "len": 392
+   },
+   "meds": {
+    "t": "s",
+    "len": 831
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 42
+   },
+   "visits": 12,
+   "rawTotal": 103626,
+   "updated": 1786173889969
+  },
+  "p_sched_17rzfs9": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 32
+   },
+   "meds": {
+    "t": "s",
+    "len": 48
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 32048,
+   "updated": 1786173949915
+  },
+  "pmrfjf6zet9wl": {
+   "sumLen": 7379,
+   "problems": {
+    "t": "s",
+    "len": 217
+   },
+   "meds": {
+    "t": "s",
+    "len": 160
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 12,
+   "rawTotal": 122206,
+   "updated": 1786174009970
+  },
+  "p_sched_1axgtaf": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 678
+   },
+   "meds": {
+    "t": "s",
+    "len": 5020
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 98
+   },
+   "visits": 11,
+   "rawTotal": 89141,
+   "updated": 1786174069961
+  },
+  "p_sched_1bavkza": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 2256
+   },
+   "meds": {
+    "t": "s",
+    "len": 4543
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 144
+   },
+   "visits": 11,
+   "rawTotal": 101421,
+   "updated": 1786174129971
+  },
+  "p_sched_1657vif": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 2576
+   },
+   "meds": {
+    "t": "s",
+    "len": 3770
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 76
+   },
+   "visits": 21,
+   "rawTotal": 130847,
+   "updated": 1786174189968
+  },
+  "p_sched_g3xq5j": {
+   "sumLen": 3343,
+   "problems": {
+    "t": "s",
+    "len": 296
+   },
+   "meds": {
+    "t": "s",
+    "len": 103
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 14,
+   "rawTotal": 81206,
+   "updated": 1786174249958
+  },
+  "p1783380364659n2yia": {
+   "sumLen": 7869,
+   "problems": {
+    "t": "s",
+    "len": 146
+   },
+   "meds": {
+    "t": "s",
+    "len": 396
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 69657,
+   "updated": 1786174309943
+  },
+  "pmrfjd3u1d003": {
+   "sumLen": 7312,
+   "problems": {
+    "t": "s",
+    "len": 234
+   },
+   "meds": {
+    "t": "s",
+    "len": 903
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 52221,
+   "updated": 1786174369927
+  },
+  "p_sched_8f5n9b": {
+   "sumLen": 5577,
+   "problems": {
+    "t": "s",
+    "len": 277
+   },
+   "meds": {
+    "t": "s",
+    "len": 474
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 7,
+   "rawTotal": 27178,
+   "updated": 1786174429928
+  },
+  "p_sched_rgrenr": {
+   "sumLen": 3964,
+   "problems": {
+    "t": "s",
+    "len": 310
+   },
+   "meds": {
+    "t": "s",
+    "len": 393
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 5,
+   "rawTotal": 12337,
+   "updated": 1786174489927
+  },
+  "p_sched_jdo9wd": {
+   "sumLen": 4105,
+   "problems": {
+    "t": "s",
+    "len": 127
+   },
+   "meds": {
+    "t": "s",
+    "len": 483
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 28
+   },
+   "visits": 8,
+   "rawTotal": 12943,
+   "updated": 1786174549916
+  },
+  "p_sched_1tjwc85": {
+   "sumLen": 6561,
+   "problems": {
+    "t": "s",
+    "len": 670
+   },
+   "meds": {
+    "t": "s",
+    "len": 1320
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 10,
+   "rawTotal": 28310,
+   "updated": 1786174609926
+  },
+  "p_sched_7y04t0": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 25
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 19,
+   "rawTotal": 132990,
+   "updated": 1786174669971
+  },
+  "p_sched_1pqooup": {
+   "sumLen": 5795,
+   "problems": {
+    "t": "s",
+    "len": 267
+   },
+   "meds": {
+    "t": "s",
+    "len": 1107
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 121
+   },
+   "visits": 9,
+   "rawTotal": 26644,
+   "updated": 1786174729942
+  },
+  "p_sched_1rod3o5": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 778
+   },
+   "meds": {
+    "t": "s",
+    "len": 3313
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 76
+   },
+   "visits": 24,
+   "rawTotal": 72432,
+   "updated": 1786174789950
+  },
+  "p_sched_6h7hxl": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 355
+   },
+   "meds": {
+    "t": "s",
+    "len": 2682
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 59
+   },
+   "visits": 20,
+   "rawTotal": 93016,
+   "updated": 1786174849958
+  },
+  "p_sched_1v65irs": {
+   "sumLen": 4906,
+   "problems": {
+    "t": "s",
+    "len": 288
+   },
+   "meds": {
+    "t": "s",
+    "len": 1211
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 32
+   },
+   "visits": 3,
+   "rawTotal": 13307,
+   "updated": 1786174909922
+  },
+  "p_sched_1bu0z9w": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 233
+   },
+   "meds": {
+    "t": "s",
+    "len": 12
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 32,
+   "rawTotal": 182458,
+   "updated": 1786174970000
+  },
+  "p_sched_hys1ep": {
+   "sumLen": 5240,
+   "problems": {
+    "t": "s",
+    "len": 366
+   },
+   "meds": {
+    "t": "s",
+    "len": 1390
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 14391,
+   "updated": 1786175029921
+  },
+  "p_sched_1g8r9nz": {
+   "sumLen": 8590,
+   "problems": {
+    "t": "s",
+    "len": 695
+   },
+   "meds": {
+    "t": "s",
+    "len": 3127
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 85
+   },
+   "visits": 16,
+   "rawTotal": 78109,
+   "updated": 1786175089950
+  },
+  "p_sched_1ocinoi": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 698
+   },
+   "meds": {
+    "t": "s",
+    "len": 1903
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 65
+   },
+   "visits": 15,
+   "rawTotal": 68623,
+   "updated": 1786175149942
+  },
+  "p_sched_dt3a1n": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1407
+   },
+   "meds": {
+    "t": "s",
+    "len": 3174
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 27,
+   "rawTotal": 87510,
+   "updated": 1786175209969
+  },
+  "p_sched_ycpoio": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 27
+   },
+   "meds": {
+    "t": "s",
+    "len": 74
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 10,
+   "rawTotal": 18358,
+   "updated": 1786175269907
+  },
+  "pmrfjfgwb4afo": {
+   "sumLen": 8020,
+   "problems": {
+    "t": "s",
+    "len": 872
+   },
+   "meds": {
+    "t": "s",
+    "len": 1025
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 29
+   },
+   "visits": 5,
+   "rawTotal": 51796,
+   "updated": 1786175329934
+  },
+  "p_sched_ibb0sq": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 352
+   },
+   "meds": {
+    "t": "s",
+    "len": 1326
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 251
+   },
+   "visits": 10,
+   "rawTotal": 93792,
+   "updated": 1786175389948
+  },
+  "p_sched_1fufp22": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 641
+   },
+   "meds": {
+    "t": "s",
+    "len": 3891
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 113
+   },
+   "visits": 13,
+   "rawTotal": 136404,
+   "updated": 1786175449988
+  },
+  "p_sched_oqlmsa": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1887
+   },
+   "meds": {
+    "t": "s",
+    "len": 3130
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 11,
+   "rawTotal": 88314,
+   "updated": 1786175509955
+  },
+  "p_sched_1fl201r": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 641
+   },
+   "meds": {
+    "t": "s",
+    "len": 5558
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 37
+   },
+   "visits": 13,
+   "rawTotal": 133728,
+   "updated": 1786175569970
+  },
+  "p_sched_axnzze": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 576
+   },
+   "meds": {
+    "t": "s",
+    "len": 8
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 23,
+   "rawTotal": 209603,
+   "updated": 1786175630004
+  },
+  "p1783380364822hgagd": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 705
+   },
+   "meds": {
+    "t": "s",
+    "len": 1374
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 14
+   },
+   "visits": 10,
+   "rawTotal": 105741,
+   "updated": 1786175689984
+  },
+  "p_sched_lbf1fa": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1757
+   },
+   "meds": {
+    "t": "s",
+    "len": 2015
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 29
+   },
+   "visits": 9,
+   "rawTotal": 64289,
+   "updated": 1786175749940
+  },
+  "pmrfjdjtk983r": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 132
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 22,
+   "rawTotal": 104677,
+   "updated": 1786175809964
+  },
+  "p_sched_1yq2zz7": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 900
+   },
+   "meds": {
+    "t": "s",
+    "len": 1432
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 233
+   },
+   "visits": 10,
+   "rawTotal": 102883,
+   "updated": 1786175869963
+  },
+  "p_sched_1exs7ug": {
+   "sumLen": 8949,
+   "problems": {
+    "t": "s",
+    "len": 1000
+   },
+   "meds": {
+    "t": "s",
+    "len": 2151
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 55
+   },
+   "visits": 12,
+   "rawTotal": 40479,
+   "updated": 1786175929960
+  },
+  "p_sched_szi23o": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 661
+   },
+   "meds": {
+    "t": "s",
+    "len": 5394
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 12,
+   "rawTotal": 162077,
+   "updated": 1786175989988
+  },
+  "p_sched_pm20fi": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 120
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 12,
+   "rawTotal": 49828,
+   "updated": 1786176049933
+  },
+  "pmrfjcu570k8s": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1011
+   },
+   "meds": {
+    "t": "s",
+    "len": 2000
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 12
+   },
+   "visits": 10,
+   "rawTotal": 101980,
+   "updated": 1786176109971
+  },
+  "p_sched_rf1qpn": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 561
+   },
+   "meds": {
+    "t": "s",
+    "len": 2335
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 67
+   },
+   "visits": 10,
+   "rawTotal": 95329,
+   "updated": 1786176169982
+  },
+  "pmrfjej2mi5ey": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 810
+   },
+   "meds": {
+    "t": "s",
+    "len": 5356
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 34
+   },
+   "visits": 17,
+   "rawTotal": 221135,
+   "updated": 1786176230006
+  },
+  "p_sched_qyukvf": {
+   "sumLen": 5860,
+   "problems": {
+    "t": "s",
+    "len": 315
+   },
+   "meds": {
+    "t": "s",
+    "len": 2274
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 38
+   },
+   "visits": 6,
+   "rawTotal": 15001,
+   "updated": 1786176289912
+  },
+  "pmrc3ihnoxbov": {
+   "sumLen": 7931,
+   "problems": {
+    "t": "s",
+    "len": 676
+   },
+   "meds": {
+    "t": "s",
+    "len": 1108
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 58251,
+   "updated": 1786176349940
+  },
+  "p_sched_87herh": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 56
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 43048,
+   "updated": 1786176409951
+  },
+  "p_sched_16h43mv": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 43
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 5,
+   "rawTotal": 34668,
+   "updated": 1786176469928
+  },
+  "p_sched_2101zs": {
+   "sumLen": 7382,
+   "problems": {
+    "t": "s",
+    "len": 417
+   },
+   "meds": {
+    "t": "s",
+    "len": 160
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 43,
+   "rawTotal": 131334,
+   "updated": 1786176529964
+  },
+  "p_sched_10kayqm": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 842
+   },
+   "meds": {
+    "t": "s",
+    "len": 2560
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 8,
+   "rawTotal": 66244,
+   "updated": 1786176589953
+  },
+  "p_sched_22prfb": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 437
+   },
+   "meds": {
+    "t": "s",
+    "len": 2753
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 89
+   },
+   "visits": 7,
+   "rawTotal": 77368,
+   "updated": 1786176649973
+  },
+  "p_sched_1fpkr6w": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 3472
+   },
+   "meds": {
+    "t": "s",
+    "len": 4706
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 37
+   },
+   "visits": 25,
+   "rawTotal": 231088,
+   "updated": 1786176710024
+  },
+  "p_sched_1swflza": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 372
+   },
+   "meds": {
+    "t": "s",
+    "len": 785
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 10,
+   "rawTotal": 97972,
+   "updated": 1786176769949
+  },
+  "p_sched_o8xxn4": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 110
+   },
+   "meds": {
+    "t": "s",
+    "len": 17
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 3,
+   "rawTotal": 22843,
+   "updated": 1786176829921
+  },
+  "p_sched_5ni5e1": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 27
+   },
+   "meds": null,
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 64034,
+   "updated": 1786176889954
+  },
+  "p_sched_nabi35": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 566
+   },
+   "meds": {
+    "t": "s",
+    "len": 389
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 11,
+   "rawTotal": 84408,
+   "updated": 1786176949963
+  },
+  "p_sched_dg8o1c": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 593
+   },
+   "meds": {
+    "t": "s",
+    "len": 5646
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 71
+   },
+   "visits": 18,
+   "rawTotal": 152834,
+   "updated": 1786177009995
+  },
+  "p_sched_lrzssq": {
+   "sumLen": 0,
+   "problems": {
+    "t": "s",
+    "len": 28
+   },
+   "meds": {
+    "t": "s",
+    "len": 0
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 51671,
+   "updated": 1786177069945
+  },
+  "p_sched_132ktzd": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 1772
+   },
+   "meds": {
+    "t": "s",
+    "len": 5594
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 24,
+   "rawTotal": 241040,
+   "updated": 1786177130040
+  },
+  "p_sched_cbz5d9": {
+   "sumLen": 5648,
+   "problems": {
+    "t": "s",
+    "len": 146
+   },
+   "meds": {
+    "t": "s",
+    "len": 236
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 6,
+   "rawTotal": 31669,
+   "updated": 1786177189928
+  },
+  "p_sched_lw58kt": {
+   "sumLen": 9000,
+   "problems": {
+    "t": "s",
+    "len": 223
+   },
+   "meds": {
+    "t": "s",
+    "len": 941
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 4
+   },
+   "visits": 9,
+   "rawTotal": 74469,
+   "updated": 1786177249960
+  },
+  "pmqv3muw2qayu": {
+   "sumLen": 8514,
+   "problems": {
+    "t": "s",
+    "len": 1055
+   },
+   "meds": {
+    "t": "s",
+    "len": 2358
+   },
+   "psh": null,
+   "medications": null,
+   "surgicalHistory": null,
+   "allergies": {
+    "t": "s",
+    "len": 84
+   },
+   "visits": 9,
+   "rawTotal": 52101,
+   "updated": 1786177309951
+  }
+ }
+}
