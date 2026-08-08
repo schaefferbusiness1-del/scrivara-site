@@ -64,6 +64,18 @@ const tests = [
   'telehealth-ships-dark.test.js',
   'schedule-row-links-the-chart.test.js',
   'default-note-format-shows-matching-body.test.js',
+  /* The other two Note defaults controls. Measured on b964, the practice
+     billing table reached 4 of 8 prompts that TELL the model to emit a code -
+     it missed all three op-note drafters and the prior-auth letter, i.e. the
+     documents the Settings card itself names. Reach is now a chokepoint, and
+     these two pin it: the contract prints coverage with a denominator, the
+     runtime one drives real prompts through the real wrapper with controls. */
+  'note-defaults-reach-contract.test.js',
+  'note-defaults-reach-runtime.test.js',
+  /* and the honest boundary: /api/generate takes no system prompt, so MAIN
+     visit-note generation on a hosted account carries neither setting and
+     cannot until the endpoint accepts them. Pinned so it is never credited. */
+  'note-defaults-transport-split.test.js',
   'settings-scheduling-api-contract.test.js',
   'studio-tabs-show-one-panel.test.js',
   'visit-stage-rail-fills.test.js',
