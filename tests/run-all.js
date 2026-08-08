@@ -659,6 +659,17 @@ const tests = [
   'writes-are-unblocked-safely.test.js',
   'pull-progress-feeds-modern-pull.test.js',
   'phone-has-a-transcript-and-a-way-on.test.js',
+  /* 2026-08-07, ph2-1.0.0. The phone stopped being the desktop with 28 hide
+     rules on it and became its own app; these two guard the replacement. The
+     suite above stays: it pins the LEGACY layer, which is still installed and
+     still correct the moment the new UI is reverted or declines the device. */
+  'phone-app-is-its-own-app.test.js',
+  /* From the owner's own iPhone screenshot: his phone had mls_device_role='office'
+     stored, which made wantPhone() answer false and handed a 390px screen the full
+     desktop workspace — AND aimed every Athena pull at a device that can never run
+     the Chrome extension. canHostExtension() had been saying so in amber for days. */
+  'an-iphone-cannot-be-the-office-computer.test.js',
+  'phone-setup-guide-contract.test.js',
   'ai-audit-safety-fixes-contract.test.js',
   'loading-vocabulary-contract.test.js',
   'late-surfaces-stay-deferred.test.js',

@@ -112,7 +112,18 @@ const GUARDED = [
      ~40 no-op whole-document style invalidations per minute, all session. Same
      defect as the original, on the one population nobody sampled. */
   ['mls-connect.js', 'applyDoctorRestrictions (LITE USERS ONLY)', 'add() — ~40/min all session',
-    "if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');"]
+    "if (!document.body.classList.contains('mls-lite')) document.body.classList.add('mls-lite');"],
+  /* 2026-08-07, ph2-1.0.0. Two sides of one handover, and BOTH run on a
+     repeating pass on a phone: __mlsPhoneHome.ensure() is a 1600ms interval, and
+     the new phone UI's ensure() re-runs on every engine mode change. Each drops
+     `mls-phone` when the new UI owns the screen, so without the compare a phone
+     would eat a whole-document style invalidation roughly every 1.6 seconds for
+     a class that was already gone — on the one device in this product with the
+     least main thread to spare. */
+  ['mls-connect.js', '__mlsPhoneHome.ensure(), new-UI handover', 'remove() on a 1600ms interval',
+    "if (document.body.classList.contains('mls-phone')) document.body.classList.remove('mls-phone');"],
+  ['feat_mls_phone_ui.js', '__mlsPhoneUI.ensure(), legacy stand-down', 'remove() on every ensure()',
+    "if (document.body.classList.contains('mls-phone')) document.body.classList.remove('mls-phone');"]
 ];
 
 for (const [file, fn, volume, guard] of GUARDED) {
@@ -201,7 +212,17 @@ const scanned = PUBLISHED.length;
    beside it: `if (contains('mls-recording') !== live)` before toggling, so an
    unchanged pass re-commits nothing and cannot cost a whole-document style
    recalc (read by hand). */
-const SITES = { 'mls-connect.js': 24, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6 };
+/* 2026-08-07: site 25 in mls-connect.js is the new-UI handover in
+   __mlsPhoneHome.ensure() — it drops `mls-phone` when feat_mls_phone_ui.js owns
+   the screen, on that module's 1600ms interval, and it compares first (read by
+   hand, and pinned in GUARDED above).
+   feat_mls_phone_ui.js JOINS this tripwire at 3 rather than being left off it,
+   because the whole point of the enumeration above is that a rule scoped to the
+   files you already suspect keeps missing the next one. Its three sites are:
+   add('mls-ph2') on mount and remove('mls-ph2') on unmount, both one-shot and
+   both behind an isConnected/mounted check, plus the guarded `mls-phone`
+   removal above. */
+const SITES = { 'mls-connect.js': 25, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;

@@ -83,6 +83,17 @@ const PREEXISTING = {
                   //          file's first upload; collided with the live build
                   //          number on 2026-07-28 (git-verified untouched by
                   //          any bump: same hex at 51940a2a and da2bf625)
+  '#f5b942': 3,   // "b942" — the checking/warning amber: the connection dot in
+                  //          mls-connect.js (twice, the inline colour and its
+                  //          .mls-b35-dot.chk rule) and the off-today outline in
+                  //          feat_mls_fixpack_0701.js. Collided with the live
+                  //          build number on 2026-08-07 at the b941 -> b942
+                  //          phone-rebuild bump. Git-verified untouched: all
+                  //          three are byte-identical at HEAD b941, and the
+                  //          bump's diff does not contain the string f5b94 at
+                  //          all — two of the three live in a file the bump
+                  //          edited, which is exactly the case this pin exists
+                  //          to keep honest.
 };
 
 /* The annotations above have rotted before: successive blanket build bumps
