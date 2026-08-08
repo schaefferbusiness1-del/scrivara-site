@@ -380,12 +380,17 @@ var S = {
      done he shouild get a ping form the app and up on the phone wshould bea
      suimamry".
      `ckSeen` is IN MEMORY, like everything else here: it is keyed by check-in
-     id, which is an identifier for a patient's visit, and this app writes no
-     PHI to disk (tests/phone-app-no-phi-at-rest.test.js is the fence). The cost
-     is that a reopened app re-announces what is still unread, which is the safe
-     direction to be wrong in. */
+     id AND STATE (`<id>|live` / `<id>|done`), which is an identifier for a
+     patient's visit, and this app writes no PHI to disk
+     (tests/phone-app-no-phi-at-rest.test.js is the fence). The cost is that a
+     reopened app re-announces what is still unread, which is the safe direction
+     to be wrong in.
+     THE STATE IS PART OF THE KEY because a flagged interview is announced while
+     it is still in progress and must be announced AGAIN when it finishes - see
+     refreshCheckins. Keyed by id alone, the first announcement silenced the
+     second, and the second is the one carrying the summary. */
   checkins: null,        // ready check-ins, or null = not loaded
-  ckSeen: {},            // ids already announced this session
+  ckSeen: {},            // "<id>|live" / "<id>|done" already announced this session
   ckOpen: 0,             // the id whose full summary is expanded
   ckPing: null,          // {n, headline} banner for a just-arrived brief
   ckErr: ''              // why the check-in list is unavailable, if it is
@@ -649,8 +654,20 @@ function refreshCheckins(announce){
     S.ckErr = '';
     var fresh = [];
     for (var i = 0; i < rows.length; i++){
+      /* KEYED BY ID **AND STATE**, not by id alone (fixed av-5.7.3, review round
+         three). This endpoint deliberately returns a FLAGGED interview that is still
+         in progress alongside the finished ones, so a red flag reaches the doctor
+         before the patient has stopped answering. Keyed by id, that first
+         announcement burned the id: when the interview actually FINISHED and its
+         summary existed, the row was no longer "fresh", so there was no buzz and no
+         banner - the ping simply never came for the one class of check-in most likely
+         to matter, because the interviews that get abandoned are the alarming ones.
+         The finish is a DIFFERENT EVENT about the same check-in, so it needs its own
+         key. Everything here is still in memory only: no id and no patient text
+         reaches disk. */
       var id = String(rows[i].id);
-      if (!S.ckSeen[id]){ S.ckSeen[id] = 1; fresh.push(rows[i]); }
+      var seenKey = id + '|' + (rows[i].inProgress ? 'live' : 'done');
+      if (!S.ckSeen[seenKey]){ S.ckSeen[seenKey] = 1; fresh.push(rows[i]); }
     }
     S.checkins = rows;
     /* the FIRST load after sign-in marks what is already there WITHOUT

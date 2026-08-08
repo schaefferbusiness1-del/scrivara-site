@@ -435,3 +435,71 @@ earlier assertion than the one they targeted. Each control must fail on a DISTIN
 * the phone's seen-set is keyed by id alone, so a **flagged in-progress** interview that later finishes
   produces no buzz — this is the owner's requirement #5 and goes first next build;
 * raising the analysis grid above 128 (needs every absolute floor re-derived).
+
+## b960 (av-5.7.6) — the three the owner authorised, each with a resolving control
+
+> Owner, after testing Match on his own face: **"it did an aweful job completely ... do research and then
+> really make it good."** Then, on the three I had left open: **"Ok we'll fix these"**, and
+> **"do that this season never a next season go."**
+
+### GLASSES — no new detector was needed
+
+The discriminator was already in the file doing the OPPOSITE job: the nose-bridge test added hours earlier
+so a spectacle frame could not be measured as eyebrows — **an eyebrow stops either side of the bridge, a rim
+crosses it**. It was already firing on his fixture, printing *"a bar runs across the nose bridge, so this may
+be a spectacle frame"*, and then discarding the conclusion.
+
+| arm | result |
+|---|---|
+| his thin rims (`rim` ≈ 1px at the analysis grid) | **`glasses: true`, claimed in `derived`** |
+| the deliberate no-glasses twin | **`glasses: false`, not claimed** |
+| both photo suites | 39/39 and 40/40 — no brow-weight case became glasses |
+
+Why the old one could not see him: it hunts a **dark bar** and needs a solid one. Swept against stroked
+rims it returns false at 0.5, 1.0, 1.5, 2.6 and 4.1 px and only refuses at 7.7 — and
+`tests/avatar-photo-match-framed-proof.js:70` draws `fillRect(N*0.22, N*0.38, N*0.56, N*0.06)`, a filled bar
+**7.7px at the analysis grid**, the only thing it can see. ⛔ **A fixture that can only draw what the
+detector already sees can never falsify it.**
+
+### PINK — two gates, three arms, the first one resolving
+
+```
+RAW         skin #d7bba3   derived ["skin","hairStyle","hair","beard","eyes","lips","nose"]   <- CONTROL
+POSTERIZED  skin #fdcbca   derived []                     + "this is the stylized copy ... retake"
+PINKSKIN    skin #e0c3bf   derived [...,"hair","eyes"]     + "hue 31°, needs 45°+"  (skin refused only)
+```
+
+`#fdcbca` is his pale pink, reproduced exactly. The posterize test reads the matcher's **own pixels** (all
+three channels within ±6 of a multiple of 51: ~100% on the stylized copy against 1.7% by chance) rather than
+a storage flag, which is per-device and absent for any portrait taken before av-5.7.2. The hue floor is
+`h_ab >= 45` with `C* < 32`, from the measured Monk Skin Tone range 48.8–89.1° where every pink candidate
+falls below (`#ffcccc` = 21.0°). ⛔ NOT `b*−a* > 2`: MST8 `#604134` measures 1.7 and real deep skin would be
+refused.
+
+### NOSE — refuses an unstable verdict
+
+Three conditions, each from a measured failure: a **saturated** scan (the span reaching the loop's own bound
+yields a ratio of exactly 0.60, always past the 'wide' cut); **disagreement between two darkness cuts** eight
+apart — the real defect, because every threshold is relative to `skinL`, so the same nose read *wide* on fair
+skin and *button* on a warmer complexion; and **within 0.02 of a category boundary** (his fixture measures
+0.375 against a cut of 0.36).
+
+### ⛔ FOUR VERIFICATION ATTEMPTS FAILED FIRST, ALL IN THE INSTRUMENT
+
+I reported these gates as done before any of them had run. Each failure looked like a result:
+
+1. **A control that read a pre-change snapshot** — `run-stylized-path.js` loads `feat_mls_avatar.dbg.js`,
+   made before the gates existed. Its output described the OLD code. **Print which file a probe loaded.**
+2. **A probe that invented fixture options** (`posterize`, `rimPx`, `stache`) — unknown keys are silently
+   ignored, so it drew a plain image and would have "passed" for the wrong reason.
+3. **An MSYS `/c/...` path in Windows node** — the same trap as the morning's mutation controls.
+4. **The wrong accessor** — `probe()` returns `out[k] = { r: result }`; reading `out[k]` gave every arm an
+   empty `derived`, which looked like a refusal **on all three arms including the control**.
+   ⛔ **An empty result is not a refusal.**
+
+`scratchpad/ownerface/fixture.js` gained `posterize` (the exact `stylizeCanvas` transform: R×1.06, B×0.97,
+snap to six levels of 51, JPEG 0.82), defaults off so every existing case stays byte-identical. Without it
+the two pink arms could not be drawn at all.
+
+Gate: **PASS all 514** on a run that reached the end. Two negative controls fail by name: removing the
+bridge test, and removing the hue gate.

@@ -815,6 +815,18 @@
     if (/Display/i.test(heading)) return 'display';
     if (/Features|App tabs/i.test(heading)) return 'features';
     if (/Legal expert profile/i.test(heading)) return 'legal';
+    /* av-5.7.5 — the owner asked for the avatar in Settings, "easily found". Its own
+       group, because its questions and voice are what a patient actually meets. */
+    if (/Patient check-in avatar/i.test(heading)) return 'avatar';
+    /* 🚨 AND THE SECTION THAT WAS REACHABLE FROM NOWHERE. Measured against the real
+       headings: "🔌 MLS Assist extension" matched none of these patterns, so
+       settingsGroupFor returned '' - and selectSettingsGroup only ever shows a section
+       whose group EQUALS the selected key, so that section existed in the DOM and could
+       not be displayed by any tab. The extension download, the install steps and the
+       update instructions were unreachable from Settings entirely: 1 of 12 sections.
+       An unmapped heading is silently invisible here, which is why the sweep at the
+       bottom of this file now refuses to leave one unmapped. */
+    if (/MLS Assist extension/i.test(heading)) return 'integrations';
     if (/Integrations/i.test(heading)) return 'integrations';
     if (/MLS Controls/i.test(heading)) return 'advanced';
     return '';
@@ -824,6 +836,9 @@
     { key: 'account', label: 'Account & security', icon: '🔐' },
     { key: 'practice', label: 'Practice & provider', icon: '🏥' },
     { key: 'notes', label: 'Notes & AI', icon: '📝' },
+    /* fourth, not last: the owner's word was "easily found", and this is the surface a
+       patient meets before he walks into the room */
+    { key: 'avatar', label: 'Check-in avatar', icon: '🧑‍⚕️' },
     { key: 'display', label: 'Display', icon: '🎨' },
     { key: 'features', label: 'Features & navigation', icon: '🧩' },
     { key: 'legal', label: 'Legal profile', icon: '⚖️' },

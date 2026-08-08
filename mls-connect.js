@@ -15441,7 +15441,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function healthOf(t) {
     /* honest heuristics -- never fabricates a success */
     var txt = S(t.text), len = txt.length;
-    /* b956 PERF: count without allocating. `txt.match(/[A-Za-z]/g)` builds an
+    /* b960 PERF: count without allocating. `txt.match(/[A-Za-z]/g)` builds an
        array holding one single-character string per letter in the template -
        on the owner's 96-template library that is roughly half a million throwaway
        strings, and the op-note room calls healthOf for every template on every
@@ -15946,7 +15946,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
     if (rows.length > 40) {
       var goBig = false;
-      /* b956: the estimate follows the runner. It still says one AI call per
+      /* b960: the estimate follows the runner. It still says one AI call per
          patient - that is unchanged and worth stating - but the wall-clock
          figure now divides by how many run at once, because quoting the old
          serial minutes for a parallel run would be a number the doctor watches
@@ -15982,7 +15982,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          an earlier patient can never be blamed on this row, then copy it onto
          the row when the draft comes back not-ok - the wrapper returns false
          instead of rejecting, so the catch below almost never fires. */
-      /* b956: also clear THIS ROW's stamp. Under the parallel runner below the
+      /* b960: also clear THIS ROW's stamp. Under the parallel runner below the
          globals are shared, so they are cleared only to keep single-flight
          behaviour byte-identical; the per-row fields are the ones that decide. */
       try { window.__mlsLastOpFidelityError = ""; window.__mlsLastOpErrorCode = ""; window.__mlsLastOpReconstructed = false; } catch (e0) {}
@@ -16032,7 +16032,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var noteNow = S(r && r.note).trim();
         var producedSomething = !!noteNow && (!hadGen || noteNow !== hadNote);
         var wrapperSaid = (drafted === true) ? true : (drafted === false ? false : null);
-        /* b956: THE THREE SIGNALS ARE READ FROM THE ROW WHEN THE ROW HAS THEM.
+        /* b960: THE THREE SIGNALS ARE READ FROM THE ROW WHEN THE ROW HAS THEM.
            Every clause below used to read a window global, which is correct for
            exactly one draft in flight and wrong for two. The base drafter now
            stamps _genPass / _genErr / _genErrCode / _reconstructed on the row it
@@ -16064,7 +16064,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return false;
       });
     }
-    /* b956 — A DAY'S DRAFTS NO LONGER QUEUE BEHIND EACH OTHER.
+    /* b960 — A DAY'S DRAFTS NO LONGER QUEUE BEHIND EACH OTHER.
        OWNER: "the op notes still draft pretty slowly and maybe could be drafted
        all at once for a day". They could not be, and the reason was not the AI:
        this runner drafted patient N+1 only after patient N's round trip had
@@ -16161,7 +16161,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            conflict, truncation and auth failures are deterministic - the old
            blind retry burned a second AI call to fail identically. */
         var code = "";
-        /* b956: this row's own code, for the same reason the verdict is per-row
+        /* b960: this row's own code, for the same reason the verdict is per-row
            now - the global belongs to whichever draft touched it last. */
         try { var rC2 = (window._opPrep || [])[idx]; code = S(rC2 && rC2._genErrCode) || S(window.__mlsLastOpErrorCode); } catch (eCc) {}
         if (code && !/^(NETWORK|TIMEOUT|HTTP_429|HTTP_5\d\d)$/.test(code)) return false;
@@ -16243,7 +16243,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           states[idx].st = "fail"; states[idx].msg = why + " \u2014 re-try this one from its card";
         }
-        /* b956: the completed-count is bumped by settleOne(), once per row, for
+        /* b960: the completed-count is bumped by settleOne(), once per row, for
            EVERY path - including the pre-checks that used to bump it themselves.
            Bumping here as well would double-count and run the bar past 100%. */
       });
@@ -35230,7 +35230,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b956';
+  window.__MLS_AV = window.__MLS_AV || 'b960';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35573,7 +35573,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b956';
+  var MLS_APP_BUILD='2026-07-25-b960';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;

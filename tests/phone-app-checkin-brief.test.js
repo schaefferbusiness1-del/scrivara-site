@@ -75,7 +75,9 @@ assert.ok(/checkins: null,/.test(APP) && /ckSeen: \{\},/.test(APP),
   const ck = APP.slice(APP.indexOf('function refreshCheckins'), APP.indexOf('function buzz'));
   assert.ok(/if \(announce && fresh\.length\)/.test(ck),
     'the ping fires regardless of whether this was the first load');
-  assert.ok(/S\.ckSeen\[id\] = 1/.test(ck), 'arrivals are not remembered, so every poll would re-announce everything');
+  assert.ok(/S\.ckSeen\[seenKey\] = 1/.test(ck), 'arrivals are not remembered, so every poll would re-announce everything');
+  assert.ok(/id \+ '\|' \+ \(rows\[i\]\.inProgress \? 'live' : 'done'\)/.test(ck),
+    'the seen-key dropped the STATE, so a flagged interview announced while in progress can never announce its finish');
 }
 
 /* ---------- 4. no promise of a push that does not exist ------------------ */
@@ -127,6 +129,98 @@ assert.ok(/checkins: null,/.test(APP) && /ckSeen: \{\},/.test(APP),
   assert.ok(/stopCheckinWatch\(\)/.test(out), 'sign-out leaves the watch running');
 }
 
-console.log('phone-app-checkin-brief.test.js: OK — reads the ready briefs, visibility-gated self-rescheduling watch, ' +
-  'first load never buzzes, no push is promised, error state distinct from empty, text-only through listCard, ' +
-  'and the session boundary drops both the briefs and the announced ids');
+/* ---------- 7. THE ANNOUNCEMENT, EXECUTED --------------------------------
+   Everything above reads the source. That is how the defect this section exists
+   for survived: the endpoint returns a FLAGGED interview that is still in
+   progress alongside the finished ones, the phone announced it once, and when it
+   actually FINISHED - the moment the summary exists, which is the whole of the
+   owner's ask - the id was already in ckSeen, so there was no buzz and no banner.
+   No source assertion catches that, because every line involved is correct in
+   isolation. So refreshCheckins is LIFTED OUT and RUN against a stub queue, and
+   the three-poll sequence is driven for real.
+   Its control is at the end: keying by id alone must fail poll 3 by name. */
+{
+  const vm = require('vm');
+  const src = APP.slice(APP.indexOf('function refreshCheckins'), APP.indexOf('function buzz'));
+
+  function drive(seenKeyExpr) {
+    const code = seenKeyExpr
+      ? src.replace("var seenKey = id + '|' + (rows[i].inProgress ? 'live' : 'done');",
+                    'var seenKey = ' + seenKeyExpr + ';')
+      : src;
+    const log = { buzzes: 0, renders: 0 };
+    let queued = [];
+    /* A SYNCHRONOUS THENABLE, deliberately, not Promise.resolve. run-all.js requires
+       its suites in a synchronous loop, so real microtasks would not run until the
+       whole run had finished - and a failure here would surface AFTER the runner had
+       already printed "PASS all NNN". A green summary with a failure queued behind it
+       is the worst outcome available. refreshCheckins only ever calls .then(ok, err),
+       so a thenable that invokes ok immediately makes the whole body run inline. */
+    const syncThen = (value) => ({
+      then(ok) { const out = ok ? ok(value) : value; return syncThen(out); },
+      catch() { return this; }
+    });
+    const sandbox = {
+      console,
+      S: { token: 'tok', checkins: null, ckSeen: {}, ckOpen: 0, ckPing: null, ckErr: '' },
+      api: () => syncThen({ checkins: queued }),
+      render: () => { log.renders++; },
+      buzz: () => { log.buzzes++; },
+      handleAuthLoss: () => false
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(code + '\nthis.run = refreshCheckins;', sandbox);
+    return {
+      log, S: sandbox.S,
+      poll: (rows, announce) => { queued = rows; return sandbox.run(announce); }
+    };
+  }
+
+  const FLAGGED_LIVE = [{ id: 77, inProgress: true, headline: '⚠ losing control of her bladder since Tuesday', turns: 3 }];
+  const FLAGGED_DONE = [{ id: 77, inProgress: false, headline: '⚠ losing control of her bladder since Tuesday', turns: 8 }];
+
+  /* the failure path must be DETERMINISTIC. Returning the promise would leave a
+     failed assertion to unhandled-rejection semantics, which is a runtime policy
+     rather than a test result; an explicit catch + exit(1) makes the suite fail the
+     same way every other suite here fails. */
+  (function () {
+    /* the real key */
+    const a = drive(null);
+    a.poll(FLAGGED_LIVE, false);          /* sign-in: mark, never buzz */
+    assert.strictEqual(a.log.buzzes, 0, 'the first load must not buzz for what is already there');
+    assert.strictEqual(a.S.ckPing, null, 'and it must not raise a banner either');
+
+    a.poll(FLAGGED_LIVE, true);           /* same row, still running */
+    assert.strictEqual(a.log.buzzes, 0, 'an unchanged in-progress row must not re-announce on every poll');
+
+    a.poll(FLAGGED_DONE, true);           /* IT FINISHED - the owner's ask */
+    assert.strictEqual(a.log.buzzes, 1,
+      'THE FINISH DID NOT BUZZ — a flagged interview announced while in progress must announce again when its summary exists');
+    assert.ok(a.S.ckPing && a.S.ckPing.n === 1,
+      'the banner must count the finished check-in, not the in-progress one');
+    assert.strictEqual(a.S.ckPing.live, 0, 'and it must not still be described as in progress');
+
+    a.poll(FLAGGED_DONE, true);           /* nothing new */
+    assert.strictEqual(a.log.buzzes, 1, 'a finished row already announced must not buzz again');
+
+    /* CONTROL: the pre-fix key. Same three polls, and poll 3 must go silent. */
+    const b = drive('id');
+    b.poll(FLAGGED_LIVE, false);
+    b.poll(FLAGGED_LIVE, true);
+    b.poll(FLAGGED_DONE, true);
+    assert.strictEqual(b.log.buzzes, 0,
+      'CONTROL FAILED TO REPRODUCE: with the id-only key the finish should have been silent, so this test would not have caught it');
+
+    /* and an ordinary finished check-in still announces on arrival */
+    const c = drive(null);
+    c.poll([], false);
+    c.poll([{ id: 91, inProgress: false, headline: 'right knee, worse on stairs', turns: 7 }], true);
+    assert.strictEqual(c.log.buzzes, 1, 'an ordinary finished check-in must still buzz on arrival');
+    assert.ok(c.S.ckPing && c.S.ckPing.n === 1 && c.S.ckPing.live === 0, 'and be counted as finished');
+
+    console.log('phone-app-checkin-brief.test.js: OK — reads the ready briefs, visibility-gated self-rescheduling watch, ' +
+      'first load never buzzes, no push is promised, error state distinct from empty, text-only through listCard, ' +
+      'the session boundary drops both the briefs and the announced ids, and refreshCheckins is EXECUTED across ' +
+      'three polls so a flagged interview that finishes buzzes exactly once (with the id-only key proved silent)');
+  })();
+}
