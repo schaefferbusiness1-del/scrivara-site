@@ -15653,7 +15653,19 @@ function renderProfile(){
   try{ if(typeof _renderProfAtGlance==='function') _renderProfAtGlance(p); }catch(e){}
   fieldBody('profProblems',p.problems,_athenaProfileEmptyText(p,'problems','No problems recorded. Generate a visit or analyze a document to populate, or edit.'));
   fieldBody('profMeds',p.meds,_athenaProfileEmptyText(p,'meds','No medications recorded.'));
-  fieldBody('profAllergies',p.allergies,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
+  /* Patricia Kirwin, live 2026-08-08: a schedule-imported record with ZERO
+     chart reads rendered a stored lone "NKDA" as if it were a chart fact -
+     the owner read an empty profile wearing a fabricated allergy answer. A
+     lone NKDA-family value on a record no chart read has ever landed for is
+     unverifiable BY THE RECEIPTS, so the card says so next to it. Real
+     pulled content, and any record with a landed chart, render unchanged. */
+  var _algShown=p.allergies;
+  try{
+    if(!_athenaChartLanded(p)&&/^\s*(?:nkda|nka|no known (?:drug )?allerg(?:y|ies))\s*$/i.test(String(p.allergies||''))){
+      _algShown=String(p.allergies).trim()+' — unverified (no Athena chart pulled yet)';
+    }
+  }catch(e){}
+  fieldBody('profAllergies',_algShown,_athenaProfileEmptyText(p,'allergies','No allergies recorded.'));
   fieldBody('profSummary',p.summary,_athenaProfileEmptyText(p,'summary','No summary yet. The AI updates this from visits & documents; you can also edit it.'));
   _renderProfUnpulledNotice(p);
   try{ if(typeof _renderProfSuspectNotice==='function') _renderProfSuspectNotice(p); }catch(ePxSus){}

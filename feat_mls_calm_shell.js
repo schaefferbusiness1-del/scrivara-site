@@ -2048,12 +2048,29 @@
        rather than removed: the box keeps its own Copy control, the rows keep
        the full text in title=, and teardown drops the class with the shell. */
     if (found.length) box.classList.add('mls-dup');
+    /* Patricia Kirwin, live 2026-08-08: her card's dashes were HONEST but
+       INVISIBLE honesty - a never-read record (no coverage receipt, no chart
+       content; 1,340 of 1,567 records) looked identical to a read-and-thin
+       one, and its stored default NKDA read as a chart fact. Three states,
+       never two: NEVER-READ says "not pulled yet" in words; a landed chart's
+       empty field keeps the quiet dash; content renders as content. The
+       never-read test rides the app's own receipt predicate, never a guess. */
+    var neverRead = false;
+    try {
+      var apPt = (typeof window.activePatient === 'function') ? window.activePatient() : null;
+      if (apPt && typeof window._athenaChartLanded === 'function') neverRead = !window._athenaChartLanded(apPt);
+    } catch (eNr) {}
     host.innerHTML = found.map(function (f) {
       var empty = PREP_EMPTY.test(f.value);
-      var val = empty
-        ? '<span class="v none" title="Not captured. This does not mean the chart is empty - re-pull to check.">—</span>'
-        : '<span class="v" title="' + String(f.full || f.value).replace(/[<>&"]/g, '').slice(0, 600) +
+      var val;
+      if (empty && neverRead) {
+        val = '<span class="v none" title="No Athena chart has been pulled for this patient yet - these fields are unread, not empty.">not pulled yet</span>';
+      } else if (empty) {
+        val = '<span class="v none" title="Not captured. This does not mean the chart is empty - re-pull to check.">—</span>';
+      } else {
+        val = '<span class="v" title="' + String(f.full || f.value).replace(/[<>&"]/g, '').slice(0, 600) +
           '">' + f.value.replace(/[<>&]/g, '') + '</span>';
+      }
       return '<div class="r"><span class="k">' + f.label.toLowerCase() + '</span>' + val + '</div>';
     }).join('');
 
