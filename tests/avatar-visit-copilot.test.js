@@ -1,6 +1,6 @@
 'use strict';
 /*
- * AVATAR — THE VISIT COPILOT (av-5.6.7)
+ * AVATAR — THE VISIT COPILOT (av-5.7.6)
  * -----------------------------------------------------------------------------
  * Room mode could already hear a whole consultation. This train is about the
  * three ways it still lost the visit, and every claim below is EXECUTED against
@@ -177,6 +177,72 @@ REFUSALS.forEach(([sentence, why]) => {
 assert.strictEqual(one('MLS, we are not ordering an MRI.').length, 0,
   'the wake word must not turn a negated sentence into an order');
 
+/* ---- 1c. THE SHAPE THE DETECTOR ACTUALLY RECEIVES.
+   Every sentence above is written the way a person writes: capitalised, with a
+   full stop or a question mark. A speech recogniser emits none of that. Chrome
+   hands this module lowercase text with no terminal punctuation at all, so a
+   guard that keys off "?" or a sentence-initial capital is a guard that does
+   not exist in production. Both halves are re-run in that form. ---- */
+function asr(s) {
+  return String(s).toLowerCase().replace(/[.?!,;:]/g, '').replace(/\s+/g, ' ').trim();
+}
+REFUSALS.forEach(([sentence, why]) => {
+  const raw = asr(sentence);
+  const out = one(raw);
+  assert.strictEqual(out.length, 0,
+    'AS THE RECOGNISER WOULD SEND IT, this must still propose nothing: "' + raw + '" (' + why + ') — got ' +
+    JSON.stringify(out.map(a => a.kind + ':' + a.title)));
+});
+/* and the orders must still be FOUND in that form, or the feature only works
+   on text nobody actually speaks */
+{
+  const a = one(asr('Order an MRI lumbar spine without contrast.'));
+  assert.strictEqual(a.length, 1, 'the headline order must survive losing its punctuation and capitals');
+  assert.strictEqual(a[0].fields.region, 'lumbar spine');
+  assert.strictEqual(a[0].fields.contrast, 'without contrast');
+}
+{
+  const a = one(asr("Let's get an MRI of the left knee."));
+  assert.strictEqual(a.length, 1, 'a lowercase unpunctuated order must still be found');
+  assert.strictEqual(a[0].fields.side, 'left');
+}
+{
+  const a = one(asr('Start gabapentin 300 mg at night.'));
+  assert.strictEqual(a.length, 1); assert.strictEqual(a[0].fields.drug, 'gabapentin');
+  assert.strictEqual(a[0].fields.dose, '300 mg', 'the dose must survive the recogniser form');
+}
+{
+  const a = one(asr('MLS, remind me to document that the pain radiates into the left leg.'));
+  assert.strictEqual(a.length, 1, 'the wake word must survive losing its comma');
+  assert.strictEqual(a[0].kind, 'note');
+}
+
+/* ---- 1d. A REFUSAL IN FRONT OF AN ORDER MUST NOT EAT IT.
+   With no punctuation the whole utterance is one run of words, so testing it as
+   a single blob let a refusal at the front kill a real order at the back. These
+   three phrasings are how doctors actually speak, and all three silently
+   produced nothing before the clause split. ---- */
+[
+  ['we do not need an x-ray but lets order an mri of the lumbar spine', 'imaging', 'MRI'],
+  ['she had an mri last year so lets order a ct of the abdomen and pelvis', 'imaging', 'CT'],
+  ['no need for physical therapy lets start meloxicam 15 mg daily', 'medication', 'Meloxicam']
+].forEach(([sentence, kind, title]) => {
+  const out = one(sentence);
+  assert.strictEqual(out.length, 1,
+    'the order after the refusal must survive: "' + sentence + '" — got ' + JSON.stringify(out));
+  assert.strictEqual(out[0].kind, kind);
+  assert.strictEqual(out[0].title, title);
+});
+/* and the thing that makes that safe: a CONDITIONAL still governs everything
+   after it, however it is punctuated. Splitting it would turn a plan for a
+   different day into today's order. */
+assert.strictEqual(one('if the pain gets worse well order an mri').length, 0,
+  'a conditional must block the whole utterance, not just its own clause');
+assert.strictEqual(one('should we order an mri or wait').length, 0,
+  'a question must block the whole utterance');
+assert.strictEqual(one('MLS should we order an mri').length, 0,
+  'the wake word must not turn a question into an order');
+
 /* the detector is PURE and bounded */
 assert.strictEqual(one('').length, 0, 'empty input is not an action');
 assert.strictEqual(one(null).length, 0, 'null input must not throw');
@@ -260,9 +326,14 @@ const storeSrc = slice("var AMBIENT_STORE_KEY =", 'function ambientActionsForSto
 
 function makeStore(limitBytes) {
   const mem = {};
+  /* the store is ENUMERABLE now: keys are chart-scoped, so reading a capture
+     means scanning the account's slots rather than fetching one known key.
+     Two tabs used to share one slot and the second visit was overwritten. */
   return {
     mem,
     api: {
+      get length() { return Object.keys(mem).length; },
+      key: (i) => { const ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
       getItem: k => (Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null),
       removeItem: k => { delete mem[k]; },
       setItem: (k, v) => {
@@ -282,6 +353,9 @@ function bootStore(limitBytes, nsFn) {
     'function safe(fn,fb){try{return fn();}catch(e){return fb;}}\n' +
     'function isFn(f){return typeof f==="function";}\n' +
     'function clean(v){var t=v==null?"":String(v).trim();return(!t||/^(undefined|null)$/i.test(t))?"":t;}\n' +
+    /* the reader prefers the chart the doctor is looking at; with none open it
+       falls back to the most recent, which is what this slice exercises */
+    'function activePtIdSafe(){ return globalThis.__active || ""; }\n' +
     storeSrc +
     '\nthis.read=ambientStoreRead; this.write=ambientStoreWrite; this.drop=ambientStoreDrop; this.key=ambientStoreKey;',
     sandbox);
@@ -352,7 +426,7 @@ function bootStore(limitBytes, nsFn) {
   const a = bootStore(0, s => s);
   a.sandbox.write({ sid: 's', bound: 'PT-1', start: 1, parts: ['x y z'], intake: [], actions: [] });
   assert(a.sandbox.read(), 'sanity');
-  a.sandbox.drop();
+  a.sandbox.drop('PT-1');            /* drop is per-CHART now, not per-account */
   assert.strictEqual(a.sandbox.read(), null, 'drop must remove the record');
 }
 
@@ -368,7 +442,7 @@ assert(/kiosk\.ambParts\.push\(v\);[\s\S]{0,400}kioskAmbientSave\(false\)[\s\S]{
    kioskAmbientFile returns BEFORE that line */
 {
   const fileFn = slice('function kioskAmbientFile', 'function kioskAmbientStart', 'the file path');
-  const dropAt = fileFn.indexOf('ambientStoreDrop()');
+  const dropAt = fileFn.indexOf('ambientStoreDrop(');
   const filedAt = fileFn.indexOf('kiosk.ambFiled = true');
   assert(dropAt > 0 && filedAt > 0 && dropAt > filedAt,
     'the backup must be dropped only AFTER the write is marked filed');
@@ -391,9 +465,17 @@ assert(/function kioskAmbientRetry\(\)[\s\S]{0,500}if \(kiosk\.ambClosing\) retu
 
 /* 3d. the confirm gate is enforced in the HANDLER, not only on the attribute —
    a disabled attribute is a UI hint, not a safety property */
-assert(/confirm\.addEventListener\('click', function \(\) \{\s*\n\s*if \(\(a\.missing \|\| \[\]\)\.length\) return;/.test(source),
+assert(/confirm\.addEventListener\('click', function \(\) \{\s*\n\s*if \(\(a\.missing \|\| \[\]\)\.length\) \{/.test(source),
   'Confirm must re-check the missing fields inside the handler');
-assert(/confirm\.disabled = true;/.test(source), 'Confirm must also be visibly disabled while a field is missing');
+assert(/if \(pick\) safe\(function \(\) \{ pick\.focus\(\); \}\);/.test(source),
+  'a blocked Confirm must point at what would unblock it rather than dying silently');
+/* aria-disabled, not disabled: a disabled button leaves the tab order, so a
+   keyboard user could never reach the control nor hear why it was blocked */
+assert(/confirm\.setAttribute\('aria-disabled', 'true'\)/.test(source),
+  'the gated Confirm must stay keyboard-reachable and announced');
+assert(!/confirm\.disabled = true/.test(source),
+  'a hard-disabled Confirm is back — it vanishes from the tab order');
+assert(/aria-label', 'Confirm/.test(source), 'the gated Confirm must say WHY it is unavailable');
 
 /* 3e. nothing here submits anything, and the note says so */
 assert(source.includes('have NOT been transmitted to any EMR'),
@@ -444,7 +526,7 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
   }
   assert(rec.includes('is not the one this recording belongs to'),
     'a chart mismatch must refuse and name the chart the words belong to');
-  assert(rec.lastIndexOf('ambientStoreDrop()') > rec.indexOf('box.value = prior'),
+  assert(rec.lastIndexOf('ambientStoreDrop(') > rec.indexOf('box.value = prior'),
     'the recovered backup must not be discarded before it is written');
   /* the ONE earlier drop is the idempotency branch: the words are already in
      the transcript, so the backup has done its job and must not keep offering
@@ -615,6 +697,81 @@ assert(/isFn\(window\.generateNote\)/.test(source),
     'a note is "ready" only when the note box actually holds something — never on the promise alone');
 }
 
+/* 3p-bis. TWO TABS MUST NOT SHARE ONE BACKUP SLOT. Measured in the browser
+   proof: with an account-scoped key, a second concurrent capture overwrote the
+   first and that patient's ENTIRE VISIT was gone with no trace — the exact
+   failure this feature exists to prevent, reintroduced underneath it. */
+{
+  const st = slice('function ambientStoreKey', 'function ambientActionsForStore', 'the store');
+  assert(/AMBIENT_STORE_KEY \+ suffix/.test(st), 'the backup key must be scoped to the chart');
+  assert(/'::' \+ clean\(bound\)/.test(st), 'the chart id must be part of the key');
+  assert(st.includes('function ambientStoreScan'),
+    'reading must SCAN the account\'s slots — there is no single known key any more');
+  /* the bare key is a PREFIX of every scoped one, so one scan finds a capture
+     taken before this change instead of stranding it on upgrade */
+  assert(/var prefix = ambientStoreKey\(''\);/.test(st),
+    'the scan must start from the unsuffixed key so legacy captures are still recovered');
+  assert(/localStorage\.key\(i\)/.test(st), 'the scan must enumerate storage');
+  assert(/if \(active && clean\(all\[i\]\.bound\) === active\) return all\[i\];/.test(st),
+    'the chart the doctor is looking at must win over merely the newest');
+}
+
+/* 3p-quater. THE PREFETCH MUST USE THE SAME CACHE KEYS THE SPEAK PATH READS.
+   The first version of this optimisation was worth EXACTLY 0 ms and reported
+   nothing: it cached the whole line under one key while pvSpeakVoiced splits at
+   the first sentence boundary and looks up each half by its own text, so the
+   entry was never read. The split IS the cache key. Only the A/B measurement
+   caught it, and a silent no-op is the failure mode this pin exists for. */
+{
+  const pf = slice("if (clean(j.nextHint) && !j.done", 'kioskSetSay(kiosk.lastSay)', 'the prefetch');
+  assert(pf.includes('ttsSplitForSpeech(clean(j.nextHint))'),
+    'the prefetch must split the hint exactly as the speak path will, or it caches keys nobody reads');
+  assert(/for \(var hi = 0; hi < hintParts\.length; hi\+\+\) ttsFetchUrl\(hintParts\[hi\]/.test(pf),
+    'EVERY piece must be prefetched — caching only the first leaves the second on the critical path');
+  assert(pf.includes('!kiosk.ambient'),
+    'room capture never speaks, so it must never prefetch a voice');
+  assert(pf.includes('!j.done'), 'a finished interview has no next question to make');
+}
+
+/* 3p-ter. THE SEAM TO THE NOTE, EXECUTED.
+   This module writes the visit into #ez3flTranscript and fires one input event.
+   The note generator does NOT read that box — it reads #transcript. Between
+   them sits mls-connect's mirror MERGE, which is a merge and not a copy, and
+   nothing in this suite had ever proved the block survives it. If that merge
+   ever stops preserving the mirror's own content, this feature silently stops
+   reaching the note while every other test here still passes. */
+{
+  const connectSrc = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+  const start = connectSrc.indexOf('window.__mlsTxMirror = {');
+  assert(start > 0, 'the transcript mirror was moved or renamed — the seam to the note is unverified');
+  const end = connectSrc.indexOf('})();', start);
+  const mirrorSrc = connectSrc.slice(connectSrc.lastIndexOf('(function', start), end + 5);
+  const sandbox = { window: {}, document: { activeElement: null } };
+  vm.createContext(sandbox);
+  vm.runInContext(mirrorSrc, sandbox);
+  const merge = sandbox.window.__mlsTxMirror.merge;
+  assert(typeof merge === 'function', 'the mirror lost its merge');
+
+  const BLOCK = '--- check-in ---\nPatient: my back hurts\n\n--- visit ---\nthe exam was unremarkable';
+  /* a fake mirror element carrying the base the mirror last synced */
+  function el(base) { const e = { value: '' }; sandbox.window.__mlsTxMirror.set(e, base); return e; }
+
+  /* 1. the note box is EMPTY — the ordinary case after a room capture */
+  assert(merge(el(''), BLOCK, '').indexOf('the exam was unremarkable') > -1,
+    'an empty #transcript must take the whole block');
+  /* 2. the doctor already had text and the recogniser added more */
+  {
+    const prior = 'Doctor draft.';
+    const out = merge(el(prior), prior + '\n\n' + BLOCK, prior + ' and some dictation');
+    assert(out.indexOf('the exam was unremarkable') > -1, 'the block must survive a merge with newer dictation');
+    assert(out.indexOf('some dictation') > -1, 'and the dictation must survive too — the merge keeps both');
+  }
+  /* 3. #transcript diverged entirely — the block must still not be dropped */
+  assert(merge(el('Doctor draft.'), 'Doctor draft.\n\n' + BLOCK, 'something else entirely')
+    .indexOf('the exam was unremarkable') > -1,
+    'a divergent #transcript must not cost the visit its transcript');
+}
+
 /* 3q. ONE STATE CHIP. The brief names the states it wants shown; they existed
    only as a class on the root plus four scattered elements, which is not the
    same as the screen ANSWERING "what is it doing right now". */
@@ -639,14 +796,14 @@ assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source
 }
 
 /* 3r. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.7'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.7.6'"), 'VERSION must move with this train');
 {
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
   const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '567', 'the loader cache token must name av-5.6.7 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(tokenM && tokenM[1] === '576', 'the loader cache token must name av-5.7.6 (found ' + (tokenM && tokenM[1]) + ')');
 }
 
-console.log('PASS avatar visit copilot (av-5.6.7): detector executed on ' + (12 + REFUSALS.length + 4) +
+console.log('PASS avatar visit copilot (av-5.7.6): detector executed on ' + (12 + REFUSALS.length + 4) +
   ' sentences (' + REFUSALS.length + ' must-refuse, all empty), backup round-trips a reload, sheds its OLDEST ' +
   'sentences under quota and is dropped only after a proven write, End Visit flushes before filing, ' +
   'confirm gate enforced in the handler, recovery fails closed on the chart');

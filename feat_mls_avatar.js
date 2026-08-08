@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.7';
+  var VERSION = 'av-5.7.6';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -2393,7 +2393,8 @@
       '#mlsAvKioskOrders .mlsAvOrdEdRow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}' +
       '#mlsAvKioskOrders .mlsAvOrdEdIn{flex:1 1 100%;border:1px solid #2E6A4B;border-radius:9px;padding:8px 9px;font:600 12.5px system-ui;color:#1A211C}' +
       '#mlsAvKioskOrders .mlsAvOrdGo{flex:1;border:0;background:#2E6A4B;color:#fff;border-radius:9px;padding:8px 6px;font:800 12.5px system-ui;cursor:pointer}' +
-      '#mlsAvKioskOrders .mlsAvOrdGo:disabled{background:#cfd9d2;color:#55605A;cursor:not-allowed}' +
+      '#mlsAvKioskOrders .mlsAvOrdGo:disabled,#mlsAvKioskOrders .mlsAvOrdGo[aria-disabled="true"]{background:#cfd9d2;color:#204034;cursor:not-allowed}' +
+      '#mlsAvKioskOrders .mlsAvOrdMiss[data-nudge]{outline:2px solid #c0392b;outline-offset:1px}' +
       '#mlsAvKioskOrders .mlsAvOrdEdit,#mlsAvKioskOrders .mlsAvOrdNo{border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:9px;padding:8px 10px;font:700 12.5px system-ui;cursor:pointer}' +
       '#mlsAvKioskOrders .mlsAvOrdFoot{font:600 10.8px/1.45 system-ui;color:#69736d;border-top:1px solid #E7E5DD;padding-top:7px;margin-top:2px}' +
       /* the review: one screen, one verdict, and the pending list said out
@@ -2416,6 +2417,30 @@
       '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
       '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
       '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}}' +
+      /* av-5.6.8 — IT DID NOT FIT. This train added five elements to a centred
+         flex column (state chip, disclosure, mute, End Visit, orders), and a
+         centred column that overflows clips BOTH ends: the doctor's own face
+         was cropped off the top — 49px of it on a phone, 16px on a tablet in
+         portrait. Measured, not guessed; every logic test passed while the
+         screen was cutting the avatar in half.
+         The face is the one element that must yield: it is allowed to shrink
+         (min-height:0 defeats the automatic content floor that blocks
+         shrinking in a column), and the spacing tightens as the viewport gets
+         shorter so the column fits instead of overflowing. */
+      '#mlsAvKioskFaceWrap{flex:0 1 auto;min-height:0}' +
+      '#mlsAvKioskFace{max-height:100%;box-sizing:border-box}' +
+      '@media (max-height:860px){#mlsAvKiosk{gap:1.7vh;padding:2.4vh 4vw}' +
+        '#mlsAvKioskFaceWrap{width:min(32vh,360px);height:min(32vh,360px)}' +
+        '#mlsAvKioskSay{font-size:2.9vh;min-height:7vh}}' +
+      '@media (max-height:720px){#mlsAvKiosk{gap:1.1vh;padding:1.6vh 3vw}' +
+        '#mlsAvKioskFaceWrap{width:min(26vh,300px);height:min(26vh,300px)}' +
+        '#mlsAvKioskSay{font-size:2.5vh;min-height:5.5vh}' +
+        '#mlsAvKioskInterim{min-height:2.2vh}}' +
+      /* narrow screens: the disclosure must stay ONE readable line-block rather
+         than a three-line paragraph that shoves the face off the top */
+      '@media (max-width:560px){#mlsAvKioskAi{font-size:1.55vh;padding:.55vh 1.4vh}' +
+        '#mlsAvKioskState{font-size:1.45vh}' +
+        '#mlsAvKioskMute,#mlsAvKioskEndVisit{padding:8px 13px;font-size:12px}}' +
       '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
       '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
       '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
@@ -2559,6 +2584,26 @@
         return;
       }
       kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
+      /* av-5.7.6 — MAKE THE NEXT QUESTION'S VOICE NOW, while the patient is
+         still answering this one. Generating the audio is the last leg of the
+         wait and it cannot begin until the turn returns, so every question used
+         to pay for its own voice in front of the patient. The server hands back
+         the next SCRIPTED question; its audio lands in the same cache
+         pvSpeakVoiced reads, keyed by the same text, so when it is actually
+         asked the fetch is a cache hit and speech starts immediately.
+         A hint that never gets asked (the model asked a follow-up instead)
+         costs one unused request and changes nothing. */
+      if (clean(j.nextHint) && !j.done && !kiosk.ambient) {
+        safe(function () {
+          /* Prefetch the SAME PIECES pvSpeakVoiced will ask for. Caching the
+             whole line was measured as worth exactly 0 ms: the speak path
+             splits at the first sentence boundary and looks up each half by
+             its own text, so a cache entry under the joined string is never
+             read. The split is the cache key. */
+          var hintParts = ttsSplitForSpeech(clean(j.nextHint));
+          for (var hi = 0; hi < hintParts.length; hi++) ttsFetchUrl(hintParts[hi], null);
+        });
+      }
       /* Keep the check-in verbatim and LOCALLY: ambient room mode hands the
          doctor one transcript with the check-in and the visit both in it,
          and the patient's own answers are the check-in half. Recorded only
@@ -2915,6 +2960,7 @@
   var AMBIENT_HEAD_CHECKIN = '--- check-in ---';
   var AMBIENT_HEAD_VISIT = '--- visit ---';
   var AMBIENT_HEAD_ORDERS = '--- actions the doctor confirmed on screen ---';
+  var AMBIENT_HEAD_PENDING = '--- heard but NEVER confirmed (not ordered) ---';
   /* ONE source for the recording banner text: the markup and the resume path
      must never be able to disagree about what the screen says. */
   var NUDGE_LINE = 'Take your time — whenever you\'re ready, just start talking.';
@@ -2951,26 +2997,78 @@
      silently stopped updating an hour ago is worse than no backup. ------- */
   var AMBIENT_STORE_KEY = 'mlsAvRoomCaptureV1';
   var AMBIENT_SAVE_MS = 1500;
-  function ambientStoreKey() {
+  /* av-5.6.10 — THE KEY IS SCOPED TO THE CHART, not just the account.
+     It used to be one slot per account, and a doctor with the app open in two
+     tabs is not exotic. Measured: two concurrent captures wrote the same key
+     and the second patient's ENTIRE VISIT was overwritten and gone, with no
+     trace it had existed — the exact failure this feature was built to
+     prevent, reintroduced by the storage layer underneath it.
+     The bare (unsuffixed) key is still READ, so a capture taken before this
+     change is recovered rather than stranded by the upgrade. */
+  function ambientStoreKey(bound) {
+    var suffix = clean(bound) ? ('::' + clean(bound)) : '';
+    /* av-5.7.4 — NO NAMESPACE, NO BACKUP. This used to fall back to an
+       UNSCOPED key when window.uns was unavailable, which is fail-open with
+       PHI: on a shared clinic workstation the next clinician to sign in reads
+       the same slot, and the Visit card would offer them the previous doctor's
+       consultation to file. A missing backup is a recoverable inconvenience —
+       the capture is still in memory and still files at End Visit, and the
+       review says plainly that it was not backed up. A visit surfacing under
+       another clinician's account is not recoverable at all. */
+    if (!isFn(window.uns)) return '';
+    return safe(function () { return window.uns(AMBIENT_STORE_KEY + suffix) || ''; }, '');
+  }
+  /* every capture this account holds. The unsuffixed key is a PREFIX of every
+     chart-scoped one, so one scan finds both the legacy slot and the new ones. */
+  function ambientStoreScan() {
     return safe(function () {
-      return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY) || AMBIENT_STORE_KEY) : AMBIENT_STORE_KEY;
-    }, AMBIENT_STORE_KEY);
+      var prefix = ambientStoreKey('');
+      if (!prefix) return [];          /* unnamespaced: nothing was ever written */
+      var out = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(prefix) !== 0) continue;
+        var rec = safe(function () { return JSON.parse(localStorage.getItem(k)); }, null);
+        if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) continue;
+        /* an UNBOUND backup could only ever end in a refusal to write (see
+           kioskAmbientFile), so it is not a recoverable capture at all */
+        if (!clean(rec.bound)) continue;
+        out.push(rec);
+      }
+      return out;
+    }, []) || [];
   }
   function ambientStoreRead() {
-    return safe(function () {
-      var raw = localStorage.getItem(ambientStoreKey());
-      if (!raw) return null;
-      var rec = JSON.parse(raw);
-      if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) return null;
-      /* an UNBOUND backup could only ever end in a refusal to write (see
-         kioskAmbientFile), so it is not a recoverable capture at all */
-      if (!clean(rec.bound)) return null;
-      return rec;
-    }, null);
+    var all = ambientStoreScan();
+    if (!all.length) return null;
+    /* the chart the doctor is looking at wins; otherwise the most recent, so
+       the Visit card names ONE capture and says which chart it belongs to */
+    var active = activePtIdSafe(), best = null;
+    for (var i = 0; i < all.length; i++) {
+      if (active && clean(all[i].bound) === active) return all[i];
+      if (!best || (Number(all[i].savedAt) || 0) > (Number(best.savedAt) || 0)) best = all[i];
+    }
+    return best;
   }
-  function ambientStoreDrop() { safe(function () { localStorage.removeItem(ambientStoreKey()); }); }
+  function ambientStoreDrop(bound) {
+    var k = ambientStoreKey(bound);
+    if (!k) return;
+    safe(function () { localStorage.removeItem(k); });
+    /* a capture taken before the keys were chart-scoped lives at the bare key.
+       If it belongs to THIS chart it must go too, or the doctor is offered the
+       same filed visit forever. */
+    safe(function () {
+      var legacy = ambientStoreKey('');
+      var raw = localStorage.getItem(legacy);
+      if (!raw) return;
+      var rec = JSON.parse(raw);
+      if (rec && clean(rec.bound) === clean(bound)) localStorage.removeItem(legacy);
+    });
+  }
   function ambientStoreWrite(rec) {
-    var key = ambientStoreKey();
+    var key = ambientStoreKey(rec.bound);
+    /* refuse rather than write where another clinician could read it */
+    if (!key) return { ok: false, why: 'no-account-namespace', trimmed: false };
     var parts = (rec.parts || []).slice();
     var trimmed = false;
     for (var guard = 0; guard < 40; guard++) {
@@ -3074,15 +3172,8 @@
     /\b(?:don'?t|do not|does not|doesn'?t|did not|didn'?t|will not|won'?t|cannot|can'?t|no)\s+(?:\w+\s+){0,3}(?:need|want|order|require|indicat)/i,
     /\bnot\s+(?:\w+\s+){0,2}(?:going to\s+|gonna\s+)?(?:order|prescrib|refer|start|schedul|obtain)/i,
     /\bno need (?:for|to)\b/i,
-    /\b(?:hold(?:ing)? off|defer(?:ring)?|avoid|against (?:an?|the)|instead of|rather than|cancel(?:led|ling)?|discontinue|stop(?:ping)?)\b/i,
-    /\b(?:already (?:had|has|have|got|done|ordered)|last (?:year|month|week|visit)|previously|prior|in the past|years? ago|months? ago|weeks? ago)\b/i,
-    /\bif\b[^.?!]*\b(?:worse|worsen|persist|fail|flare|doesn'?t (?:improve|help)|not better|no better)\b/i,
-    /\b(?:worse|persist|fail|doesn'?t (?:improve|help)|not better|no better)\b[^.?!]*\bthen\b/i,
-    /\?\s*$/,
-    /^\s*(?:do|did|does|have|has|had|can|could|should|would|will|are|is|was|am|any|what|when|why|how|which)\b[^.!]*$/i,
-    /\b(?:do|did|would|should|can|could|will) (?:you|we|i|he|she|they)\b/i,
-    /\b(?:what|how) about\b/i,
-    /\bhave you (?:had|ever|been)\b/i
+    /\b(?:hold(?:ing)? off|defer(?:ring)?|avoid|against (?:an?|the)|instead of|rather than|stop(?:ping)?)\b/i,
+    /\b(?:already (?:had|has|have|got|done|ordered)|last (?:year|month|week|visit)|previously|prior|in the past|years? ago|months? ago|weeks? ago)\b/i
   ];
   /* SOFT hedges - refused unless the same sentence also commits. "I would
      like to order an MRI" commits; "we might order an MRI" does not. */
@@ -3096,9 +3187,54 @@
     for (var i = 0; i < list.length; i++) if (list[i].test(text)) return true;
     return false;
   }
+  /* av-5.7.1 — WHICH BLOCKERS OWN THE WHOLE UTTERANCE, AND WHICH OWN ONE CLAUSE.
+     A speech recogniser sends no punctuation, so "we do not need an x-ray but
+     lets order an mri of the lumbar spine" arrives as ONE run of words. Testing
+     that run as a single blob let the refusal at the front kill the real order
+     at the back, and the MRI was silently dropped. Measured on three phrasings
+     doctors use constantly ("we don't need X but let's do Y", "she had one last
+     year so let's get Z", "no need for A, let's start B").
+
+     The split is by KIND, not convenience:
+       WHOLE  - a conditional, a question, or a cancellation governs everything
+                after it. "if the pain gets worse we'll order an MRI" is a plan
+                for a different day no matter how it is punctuated, and
+                splitting it would turn it into today's order.
+       CLAUSE - a negation or a past reference describes the thing next to it.
+                It must not reach across a connective into a different one. */
+  var ACT_WHOLE_BLOCK = [
+    /\?\s*$/,
+    /^\s*(?:do|did|does|have|has|had|can|could|should|would|will|are|is|was|am|any|what|when|why|how|which)\b[^.!]*$/i,
+    /\b(?:do|did|would|should|can|could|will) (?:you|we|i|he|she|they)\b/i,
+    /\b(?:what|how) about\b/i,
+    /\bhave you (?:had|ever|been)\b/i,
+    /\bif\b[^.?!]*\b(?:worse|worsen|persist|fail|flare|doesn'?t (?:improve|help)|not better|no better)\b/i,
+    /\b(?:worse|persist|fail|doesn'?t (?:improve|help)|not better|no better)\b[^.?!]*\bthen\b/i,
+    /\bcancel(?:led|ling)?\b|\bdiscontinue\b/i
+  ];
+  /* the clause boundaries a doctor actually speaks: a contrast connective, or
+     the start of a fresh imperative */
+  var ACT_CLAUSE_SPLIT = /\b(?:but|however|instead|so)\b|(?=\b(?:let'?s|i'?ll|we'?ll|go ahead and)\b)/i;
+  function actSplitClauses(text) {
+    var parts = String(text || '').split(ACT_CLAUSE_SPLIT);
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = clean(parts[i]);
+      if (p) out.push(p);
+    }
+    return out.length ? out : [String(text || '')];
+  }
   function actBlocked(text) {
+    if (actAny(ACT_WHOLE_BLOCK, text)) return true;
     if (actAny(ACT_HARD_BLOCK, text)) return true;
     if (actAny(ACT_SOFT_BLOCK, text) && !actAny(ACT_COMMIT, text)) return true;
+    return false;
+  }
+  /* a clause is blocked by what is IN it; the whole-utterance blockers have
+     already been checked against the full text by the caller */
+  function actClauseBlocked(clause) {
+    if (actAny(ACT_HARD_BLOCK, clause)) return true;
+    if (actAny(ACT_SOFT_BLOCK, clause) && !actAny(ACT_COMMIT, clause)) return true;
     return false;
   }
 
@@ -3187,10 +3323,41 @@
         fields: fields || {}, heard: raw, directed: directed, at: Date.now(), status: 'proposed'
       });
     }
+    /* A conditional, a question or a cancellation governs the ENTIRE
+       utterance — including a directed one: "MLS, should we order an MRI"
+       is still a question. */
+    if (actAny(ACT_WHOLE_BLOCK, text)) return [];
+    /* Then find the clause that actually carries the instruction. A refusal
+       in front of a connective describes what precedes it, not what follows:
+       "we do not need an x-ray BUT lets order an mri" is one refusal and one
+       order, and reading it as a single blob dropped the order. */
+    var clauses = actSplitClauses(text);
+    var live = '';
+    for (var ci = 0; ci < clauses.length; ci++) {
+      if (actClauseBlocked(clauses[ci])) continue;
+      if (!ACT_VERB.test(clauses[ci])) continue;
+      live = clauses[ci];
+      break;
+    }
+    if (!live) {
+      /* Nothing survived as a clause. A REFUSAL still means nothing at all —
+         not even a note: "MLS, we are not ordering an MRI" is the doctor
+         telling the assistant to stand down, and filing that as documentation
+         would put a refused order in the record. */
+      if (actBlocked(text)) return [];
+      /* no clinical shape, but the doctor addressed the assistant by name */
+      if (!ACT_VERB.test(text)) return directedNote();
+      live = text;
+    }
+    text = live;
     var hasVerb = ACT_VERB.test(text);
-    /* A directed instruction still has to clear the refusals: "MLS, we are
-       not ordering an MRI" must not produce an order. */
-    if (actBlocked(text)) return [];
+
+    function directedNote() {
+      if (directed && clean(wake && wake[1])) {
+        push('note', 'Documentation note', clean(wake[1]), [], { text: clean(wake[1]) });
+      }
+      return out;
+    }
 
     if (hasVerb) {
       var side = actFindSide(text), region = actFindRegion(text), contrast = actFindContrast(text);
@@ -3519,11 +3686,28 @@
     var confirm = make('button', 'mlsAvOrdGo', 'Confirm');
     confirm.type = 'button';
     if ((a.missing || []).length) {
-      confirm.disabled = true;
-      confirm.title = 'Missing: ' + ordersMissingText(a);
+      /* aria-disabled, NOT disabled. A disabled button leaves the tab order
+         entirely, so a doctor working by keyboard could not reach this control
+         at all and was never told WHY it was unavailable. It stays reachable
+         and announced; the real gate is the handler below, which is where it
+         always belonged and which the suite already pins. */
+      confirm.setAttribute('aria-disabled', 'true');
+      confirm.setAttribute('aria-label', 'Confirm — unavailable, missing ' + ordersMissingText(a));
     }
     confirm.addEventListener('click', function () {
-      if ((a.missing || []).length) return;    /* the gate is enforced here too, not only by the attribute */
+      if ((a.missing || []).length) {
+        /* THE GATE, enforced here rather than by an attribute. A dead click is
+           poor guidance though, so it points at the thing that would unblock
+           it instead of doing nothing at all. */
+        var pick = card.querySelector('.mlsAvOrdPick');
+        if (pick) safe(function () { pick.focus(); });
+        var miss = card.querySelector('.mlsAvOrdMiss');
+        if (miss) {
+          miss.setAttribute('data-nudge', '1');
+          safe(function () { setTimeout(function () { miss.removeAttribute('data-nudge'); }, 900); });
+        }
+        return;
+      }
       a.status = 'confirmed';
       a.confirmedAt = Date.now();
       ordersRender(); kioskAmbientSave(true);
@@ -3764,7 +3948,7 @@
        before this line, so a capture that could not be filed (wrong chart
        open, no transcript box on screen) keeps its crash copy and can still
        be recovered on the next load. */
-    ambientStoreDrop();
+    ambientStoreDrop(kiosk.ambBound);
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
     return { ok: true, chars: block.length };
   }
@@ -3815,17 +3999,46 @@
     lines.push(info.body);
     var orders = ordersBlockFrom(info.actions.filter(function (a) { return a && a.status === 'confirmed'; }));
     if (orders) { lines.push(''); lines.push(orders); }
+    /* av-5.7.2 — WHAT WAS HEARD AND NEVER CONFIRMED SURVIVES THE CRASH TOO.
+       The review screen names these out loud, but a crash is exactly the path
+       that never reaches the review: the doctor reloads, files the recovered
+       visit, and three proposals they had not yet acted on used to disappear
+       without ever being mentioned. Silence about a proposed order is the one
+       thing this widget must never produce, and the recovery path was the last
+       place still producing it. They are listed as NOT ordered, in the same
+       words the review uses, so the two surfaces cannot drift. */
+    var pending = info.actions.filter(function (a) { return a && a.status === 'proposed'; });
+    if (pending.length) {
+      lines.push('');
+      lines.push(AMBIENT_HEAD_PENDING);
+      /* EVERY LINE CARRIES THE CAVEAT, not just the footer. This block sits in
+         the transcript, and the transcript is what the note generator reads —
+         its own rule is to include "ONLY what is actually supported by the
+         transcript", which these lines technically are. A single line lifted
+         out of this section and into a Plan would be an order the doctor never
+         confirmed, in a note they are about to sign. So the line itself says
+         so, wherever it ends up. */
+      pending.forEach(function (a) {
+        var gap = (a.missing || []).length ? ('  (missing ' + ordersMissingText(a) + ')') : '';
+        lines.push('- NOT ORDERED (never confirmed) - [' + (ACT_KIND_LABEL[a.kind] || a.kind) + '] ' +
+          clean(a.title) + (clean(a.detail) ? ' - ' + clean(a.detail) : '') + gap +
+          '  (heard: "' + clean(a.heard) + '")');
+      });
+      lines.push('[Heard during the visit and NEVER confirmed by the doctor. These were NOT ordered and must ' +
+        'NOT appear in the plan. The visit ended before they could be reviewed. Listed only so the doctor ' +
+        'knows what was heard.]');
+    }
     var block = lines.join('\n');
     /* filing the same recovered capture twice would duplicate a whole visit
        in the note - the body is its own idempotency key */
     if (box.value.indexOf(info.body) >= 0) {
-      ambientStoreDrop();
+      ambientStoreDrop(info.bound);
       return { ok: true, chars: 0, already: true };
     }
     var prior = box.value;
     box.value = prior + (prior ? '\n\n' : '') + block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
-    ambientStoreDrop();
+    ambientStoreDrop(info.bound);
     return { ok: true, chars: block.length };
   }
   function kioskAmbientStart() {
@@ -4300,6 +4513,7 @@
   }
 
   function ensureVisitCard() {
+    if (reverted) return;
     var view = gid('visitView'); if (!view) return;
     var card = gid('mlsAvVisitCard');
     if (!card) {
@@ -4430,7 +4644,7 @@
           });
           return;
         }
-        ambientStoreDrop();
+        ambientStoreDrop(pend.bound);
         toast('The recovered recording was deleted.');
         safe(function () { ensureVisitCard(); });
       }));
@@ -4494,6 +4708,9 @@
 
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
   var retryTimers = [], lifecycleBound = [], visBound = false;
+  /* set by revert(). Several teardown paths are ASYNC and land after revert has
+     finished, so every path that can build UI checks this first. */
+  var reverted = false;
   function scheduleEnsure() {
     /* av-1.3.1: this module is idle-DEFERRED, so the app's ready events can
        fire BEFORE it loads — a fresh login landing on Visit then showed no
@@ -4534,6 +4751,12 @@
     }
   }
   function revert() {
+    /* SET BEFORE ANYTHING ELSE. revert() removes the Visit card at the END, but
+       kioskEndForStaff() above that kicks off an async refresh whose callback
+       REBUILDS the card — so it came back after the module had declared itself
+       uninstalled. A reverted module must leave nothing on the doctor's page.
+       Measured in the browser proof, not reasoned about. */
+    reverted = true;
     retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
     retryTimers = [];
     lifecycleBound.forEach(function (row) { safe(function () { window.removeEventListener(row[0], row[1], false); }); });
@@ -4589,7 +4812,11 @@
        fail-closed write the visit card calls. Reading never files. */
     pendingCapture: function () { return ambientRecoverInfo(); },
     fileRecoveredCapture: function () { return ambientRecoverFile(); },
-    discardRecoveredCapture: function () { ambientStoreDrop(); return true; },
+    discardRecoveredCapture: function () {
+      var info = ambientRecoverInfo();
+      ambientStoreDrop(info ? info.bound : '');
+      return true;
+    },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,

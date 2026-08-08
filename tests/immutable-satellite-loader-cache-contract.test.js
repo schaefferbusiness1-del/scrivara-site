@@ -129,7 +129,7 @@ const assets = [
      av-5.5.0 (2026-08-07, owner: 'have it conform to the picture of the
      person better'): Match applies exactly the knobs the photo answered,
      and reads brow weight, lip fullness, nose width and top colour. */
-  ['feat_mls_avatar.js', '20260807av567', '20260807av566'],
+  ['feat_mls_avatar.js', '20260807av576', '20260807av575'],
   /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
      set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
      that added `appControl` to the still-loading guard. Same calendar day, so

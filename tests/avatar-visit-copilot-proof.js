@@ -141,6 +141,19 @@ function STUBS() {
     r.onresult({ resultIndex: 0, results: [one] });
     return true;
   };
+  /* read the backup WITHOUT hardcoding its key: the key is chart-scoped now,
+     and a test that pins storage layout breaks every time the layout improves */
+  window.__stored = function () {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || k.indexOf('mlsAvRoomCaptureV1') < 0) continue;
+      try {
+        var r = JSON.parse(localStorage.getItem(k));
+        if (r && Array.isArray(r.parts) && r.parts.length) return r;
+      } catch (e) {}
+    }
+    return null;
+  };
   window.__amb = function () { try { return window.__mlsAvatar.ambientState(); } catch (e) { return { err: String(e) }; } };
   window.__box = function () { return document.getElementById('ez3flTranscript').value; };
   window.__cards = function () {
@@ -150,7 +163,9 @@ function STUBS() {
         title: (c.querySelector('b') || {}).textContent || '',
         detail: (c.querySelector('.mlsAvOrdDet') || {}).textContent || '',
         missing: (c.querySelector('.mlsAvOrdMiss') || {}).textContent || '',
-        confirmDisabled: go ? !!go.disabled : null,
+        /* av-5.6.9: the gate moved to aria-disabled so the control stays
+           keyboard-reachable — 'blocked' must read BOTH spellings */
+        confirmDisabled: go ? (go.disabled === true || go.getAttribute('aria-disabled') === 'true') : null,
         sides: c.querySelectorAll('.mlsAvOrdPick').length,
         confirmed: !!c.querySelector('.mlsAvOrdOk')
       };
@@ -344,7 +359,8 @@ async function say(page, text) {
       /* clicking Confirm while blocked must do nothing at all */
       await page.evaluate(function () {
         const go = document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo');
-        go.disabled = false;                 /* defeat the attribute on purpose */
+        go.disabled = false;
+        go.removeAttribute('aria-disabled');   /* defeat BOTH spellings on purpose */
         go.click();
       });
       await page.clock.runFor(300);
@@ -644,7 +660,7 @@ async function say(page, text) {
       const TURN_MS = 900, TTS_BASE = 300, TTS_PER_CHAR = 6;
       const REPLY = "Hi, I'm Ava, the practice's AI assistant. What brings you in today?";
 
-      async function measure(src, label) {
+      async function measure(src, label, prefetch) {
         const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
         const errs = [];
         page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
@@ -652,6 +668,7 @@ async function say(page, text) {
         await page.evaluate(STUBS);
         await page.evaluate(function (cfg) {
           document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+          window.__prefetch = cfg.prefetch === true;
           window.__audioStarts = [];
           window.__turnSentAt = 0;
           window.__t0 = 0;
@@ -698,13 +715,18 @@ async function say(page, text) {
               window.__turnN = (window.__turnN || 0) + 1;
               const opening = 'Hello there. Please tell me what is going on today.';
               const say = window.__turnN === 1 ? opening : cfg.reply;
+              /* the opening turn hands back the NEXT scripted question, which is
+                 exactly the line the measured turn will speak — so the prefetch
+                 has a real target and the measurement shows what it is worth */
+              const hint = (window.__prefetch && window.__turnN === 1) ? cfg.reply : '';
               return later(cfg.turn, {
                 ok: true, status: 200,
                 headers: { get: function () { return 'application/json'; } },
                 json: function () {
                   return Promise.resolve(done
                     ? { ok: true, done: true, say: 'All set.' }
-                    : { ok: true, say: say, done: false, progress: { covered: 1, total: 2 } });
+                    : { ok: true, say: say, done: false, nextHint: hint || undefined,
+                        progress: { covered: 1, total: 2 } });
                 },
                 blob: function () { return Promise.resolve(new Blob([''])); }
               });
@@ -715,7 +737,7 @@ async function say(page, text) {
               blob: function () { return Promise.resolve(new Blob([''])); }
             });
           };
-        }, { turn: TURN_MS, base: TTS_BASE, per: TTS_PER_CHAR, reply: REPLY });
+        }, { turn: TURN_MS, base: TTS_BASE, per: TTS_PER_CHAR, reply: REPLY, prefetch: prefetch === true });
 
         await page.addScriptTag({ content: src });
         await page.waitForTimeout(900);
@@ -741,13 +763,16 @@ async function say(page, text) {
       /* A: the code as it shipped before — splitting disabled at the threshold */
       const OLD_SRC = AVATAR_SRC.replace('if (t.length < 28) return [t];', 'if (t.length < 100000) return [t];');
       ok('the A/B arm really did disable splitting', OLD_SRC !== AVATAR_SRC, 'patch applied');
-      const before = await measure(OLD_SRC, 'one blob (before)');
-      const after = await measure(AVATAR_SRC, 'two pieces (after)');
+      const before = await measure(OLD_SRC, 'one blob (before)', false);
+      const after = await measure(AVATAR_SRC, 'two pieces (after)', false);
+      /* the third arm: the server hands back the next scripted question, so its
+         audio is already made before the turn that speaks it */
+      const pre = await measure(AVATAR_SRC, 'two pieces + prefetch', true);
 
       console.log('  ---- measured: patient stops speaking -> avatar\'s first word ----');
       console.log('     reply under test: "' + REPLY + '" (' + REPLY.length + ' chars)');
       console.log('     cost model: turn ' + TURN_MS + 'ms, tts ' + TTS_BASE + 'ms + ' + TTS_PER_CHAR + 'ms/char');
-      [before, after].forEach(function (r) {
+      [before, after, pre].forEach(function (r) {
         console.log('     ' + r.label.padEnd(20) +
           ' mouth-to-ear ' + (r.first == null ? 'n/a' : r.first.toFixed(0) + ' ms').padStart(8) +
           '   submit-to-word ' + (r.sendToWord == null ? 'n/a' : r.sendToWord.toFixed(0) + ' ms').padStart(8) +
@@ -767,8 +792,21 @@ async function say(page, text) {
       console.log('     NOTE: the ~1300ms quiet-submit window is a deliberate safety choice');
       console.log('           (cutting a patient off mid-answer loses clinical data) and is');
       console.log('           included in mouth-to-ear but is NOT what this change touches.');
-      ok('scenario F pages threw nothing', before.errs.length === 0 && after.errs.length === 0,
-        before.errs.concat(after.errs).join(' | '));
+      if (after.sendToWord != null && pre.sendToWord != null) {
+        const saved2 = after.sendToWord - pre.sendToWord;
+        console.log('     -> prefetching the next scripted question removes a further ' +
+          saved2.toFixed(0) + ' ms from submit-to-word (' + after.sendToWord.toFixed(0) +
+          ' -> ' + pre.sendToWord.toFixed(0) + ' ms)');
+        /* the TTS leg should be GONE for a scripted question: what is left
+           between submitting and hearing a voice is the turn itself */
+        ok('REQ6 a prefetched question costs no generation time at all',
+          pre.sendToWord <= TURN_MS + 120, pre.sendToWord.toFixed(0) + ' ms vs a ' + TURN_MS + ' ms turn');
+        ok('REQ6 …which is a real improvement over generating it on demand',
+          saved2 > 80, saved2.toFixed(0) + ' ms');
+      }
+      ok('scenario F pages threw nothing',
+        before.errs.length === 0 && after.errs.length === 0 && pre.errs.length === 0,
+        before.errs.concat(after.errs).concat(pre.errs).join(' | '));
     }
 
     /* ------------------------------------------------------------ G */
@@ -847,7 +885,7 @@ async function say(page, text) {
         const s = await page.evaluate(function () {
           const a = window.__amb();
           let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          stored = window.__stored();
           return { chars: a.capturedChars, backedUp: a.backedUp, running: a.running,
             storedChars: stored ? (stored.parts || []).join(' ').length : 0, bound: a.boundPatient };
         });
@@ -1154,7 +1192,7 @@ async function say(page, text) {
         const st = await page.evaluate(function () {
           const a = window.__amb();
           let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          stored = window.__stored();
           return { chars: a.capturedChars, parts: stored ? stored.parts : [] };
         });
         ok('I4 five overlapping utterances are ALL captured', st.parts.length === 5,
@@ -1283,7 +1321,7 @@ async function say(page, text) {
         const st = await page.evaluate(function () {
           const a = window.__amb();
           let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('acct-9::mlsAvRoomCaptureV1') || 'null'); } catch (e) {}
+          stored = window.__stored();
           return { chars: a.capturedChars, backedUp: a.backedUp, trimmed: a.backupTrimmed,
             parts: stored ? stored.parts.length : 0, ls: window.__ls };
         });
@@ -1310,8 +1348,8 @@ async function say(page, text) {
            time, so the honest question is: what does ONE write cost at
            end-of-visit size, and what does that come to over a full visit? */
         const perWrite = await page.evaluate(function () {
-          const k = 'acct-9::mlsAvRoomCaptureV1';
-          const payload = localStorage.getItem(k) || '';
+          const k = 'acct-9::mlsAvRoomCaptureV1::probe-src';
+          const payload = JSON.stringify(window.__stored() || {});
           const t0 = performance.now();
           for (let i = 0; i < 50; i++) localStorage.setItem(k + '::probe', payload);
           const ms = (performance.now() - t0) / 50;
@@ -1419,7 +1457,7 @@ async function say(page, text) {
         const h = await newPage(browser, base);
         const page = h.page;
         const cases = await page.evaluate(function () {
-          const k = 'acct-9::mlsAvRoomCaptureV1';
+          const k = 'acct-9::mlsAvRoomCaptureV1::ext-77';
           const out = [];
           [['not json at all', 'garbage'],
            ['{"v":1}', 'valid json, wrong shape'],
@@ -1459,6 +1497,518 @@ async function say(page, text) {
         ok('J5 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
       }
     }
+    /* ------------------------------------------------------------ K */
+    section('SCENARIO K - DOES IT ACTUALLY FIT? (layout at real screen sizes)');
+    {
+      /* This train added FIVE elements to a screen the brief calls premium and
+         uncluttered: a state chip, an AI disclosure, a mute button, an End
+         Visit button and an orders widget. Nothing has ever checked that they
+         fit — every scenario so far ran at 1280x900. A patient-facing screen
+         that overflows, overlaps or hides its own disclosure is not premium,
+         and none of the logic tests can see it. */
+      const SIZES = [
+        { w: 1280, h: 900, name: 'desktop' },
+        { w: 1366, h: 768, name: 'laptop (short)' },
+        { w: 1024, h: 768, name: 'tablet landscape' },
+        { w: 768, h: 1024, name: 'tablet portrait' },
+        { w: 390, h: 844, name: 'phone' }
+      ];
+      for (const size of SIZES) {
+        const page = await browser.newPage({ viewport: { width: size.w, height: size.h } });
+        const errs = [];
+        page.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+        await page.goto(base + '/page.html');
+        await page.evaluate(STUBS);
+        await page.evaluate(function () {
+          document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+        });
+        await page.addScriptTag({ content: AVATAR_SRC });
+        await page.clock.install({ time: new Date('2026-08-07T14:00:00Z') });
+        await page.evaluate(function () {
+          window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.waitForTimeout(700);
+        /* into ambient with a proposal on screen: the busiest the kiosk gets */
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
+        await page.waitForTimeout(200);
+        await page.evaluate(function () {
+          document.getElementById('mlsAvKioskPinInput').value = '1234';
+          document.getElementById('mlsAvKioskPinAmb').click();
+        });
+        await page.waitForTimeout(600);
+        await page.evaluate(function () { window.__emit('order an MRI of the knee', true); });
+        await page.waitForTimeout(400);
+
+        const box = await page.evaluate(function () {
+          function r(id) {
+            const el = document.getElementById(id);
+            if (!el) return null;
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return { hidden: true };
+            const b = el.getBoundingClientRect();
+            return { x: b.left, y: b.top, r: b.right, b: b.bottom, w: b.width, h: b.height };
+          }
+          function overlap(a, c) {
+            if (!a || !c || a.hidden || c.hidden) return false;
+            return a.x < c.r && c.x < a.r && a.y < c.b && c.y < a.b;
+          }
+          const ids = ['mlsAvKioskFace', 'mlsAvKioskAi', 'mlsAvKioskState', 'mlsAvKioskMute',
+            'mlsAvKioskEndVisit', 'mlsAvKioskOrders', 'mlsAvKioskRec'];
+          const got = {};
+          ids.forEach(function (i) { got[i] = r(i); });
+          return {
+            vw: window.innerWidth, vh: window.innerHeight,
+            el: got,
+            docScrollX: document.documentElement.scrollWidth > window.innerWidth + 1,
+            docScrollY: document.documentElement.scrollHeight > window.innerHeight + 1,
+            muteHitsEnd: overlap(got.mlsAvKioskMute, got.mlsAvKioskEndVisit),
+            ordersHitFace: overlap(got.mlsAvKioskOrders, got.mlsAvKioskFace),
+            ordersHitEnd: overlap(got.mlsAvKioskOrders, got.mlsAvKioskEndVisit)
+          };
+        });
+
+        const tag = size.name + ' ' + size.w + 'x' + size.h;
+        const off = [];
+        Object.keys(box.el).forEach(function (id) {
+          const e = box.el[id];
+          if (!e || e.hidden) return;
+          if (e.x < -1 || e.y < -1 || e.r > box.vw + 1 || e.b > box.vh + 1) {
+            off.push(id + '(' + Math.round(e.x) + ',' + Math.round(e.y) + ' ' +
+              Math.round(e.r) + 'x' + Math.round(e.b) + ')');
+          }
+        });
+        ok('K ' + tag + ': nothing is pushed off the screen', off.length === 0, off.join(' '));
+        ok('K ' + tag + ': the page never scrolls', !box.docScrollX && !box.docScrollY,
+          'x=' + box.docScrollX + ' y=' + box.docScrollY);
+        ok('K ' + tag + ': the avatar is visible', !!box.el.mlsAvKioskFace && !box.el.mlsAvKioskFace.hidden &&
+          box.el.mlsAvKioskFace.h > 40, JSON.stringify(box.el.mlsAvKioskFace));
+        ok('K ' + tag + ': the AI disclosure is visible', !!box.el.mlsAvKioskAi && !box.el.mlsAvKioskAi.hidden &&
+          box.el.mlsAvKioskAi.h > 8, JSON.stringify(box.el.mlsAvKioskAi));
+        ok('K ' + tag + ': mute and End Visit do not overlap', box.muteHitsEnd === false);
+        ok('K ' + tag + ': the orders widget does not cover the avatar', box.ordersHitFace === false,
+          JSON.stringify({ orders: box.el.mlsAvKioskOrders, face: box.el.mlsAvKioskFace }));
+        ok('K ' + tag + ': the orders widget does not cover End Visit', box.ordersHitEnd === false);
+        ok('K ' + tag + ': page threw nothing', errs.length === 0, errs.join(' | '));
+        await page.close();
+      }
+    }
+    /* ------------------------------------------------------------ L */
+    section('SCENARIO L - CONTRAST AND KEYBOARD (a patient-facing clinical screen)');
+    {
+      /* Every element this train added carries text, and none of it has ever
+         been checked for legibility. This is a screen a patient reads across a
+         room, and one of the things it must carry is the AI disclosure — a
+         disclosure nobody can read is not a disclosure. Contrast is computed
+         against the real rendered background, not the value I intended. */
+      const h = await newPage(browser, base);
+      const page = h.page;
+      await toAmbient(page);
+      await say(page, 'order an MRI of the knee');
+      await page.evaluate(function () { window.__emit('start gabapentin 300 mg at night', true); });
+      await page.clock.runFor(1800);
+
+      const report = await page.evaluate(function () {
+        function srgb(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+        function lum(rgb) { return 0.2126 * srgb(rgb[0]) + 0.7152 * srgb(rgb[1]) + 0.0722 * srgb(rgb[2]); }
+        function parse(s) {
+          const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(s || '');
+          if (!m) return null;
+          return { c: [+m[1], +m[2], +m[3]], a: m[4] === undefined ? 1 : +m[4] };
+        }
+        /* the first ancestor that actually paints something opaque */
+        function bgOf(el) {
+          let n = el;
+          while (n && n !== document.documentElement) {
+            const p = parse(getComputedStyle(n).backgroundColor);
+            if (p && p.a >= 0.95) return p.c;
+            n = n.parentElement;
+          }
+          return [255, 255, 255];
+        }
+        function ratio(a, b) {
+          const l1 = lum(a), l2 = lum(b);
+          return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        }
+        const out = [];
+        const sels = [
+          ['#mlsAvKioskState', 'state chip'],
+          ['#mlsAvKioskAi', 'AI disclosure'],
+          ['#mlsAvKioskSave', 'save badge'],
+          ['#mlsAvKioskMute', 'mute button'],
+          ['#mlsAvKioskEndVisit', 'End Visit button'],
+          ['#mlsAvKioskRecText', 'recording banner'],
+          ['#mlsAvKioskOrders .mlsAvOrdTitle', 'widget heading'],
+          ['#mlsAvKioskOrders .mlsAvOrdCount', 'widget count'],
+          ['#mlsAvKioskOrders .mlsAvOrd b', 'order title'],
+          ['#mlsAvKioskOrders .mlsAvOrdKind', 'order kind'],
+          ['#mlsAvKioskOrders .mlsAvOrdDet', 'order detail'],
+          ['#mlsAvKioskOrders .mlsAvOrdHeard', 'heard-verbatim line'],
+          ['#mlsAvKioskOrders .mlsAvOrdMiss', 'missing-field warning'],
+          ['#mlsAvKioskOrders .mlsAvOrdFoot', 'widget footer'],
+          ['#mlsAvKioskOrders .mlsAvOrdGo', 'Confirm button'],
+          ['#mlsAvKioskOrders .mlsAvOrdEdit', 'Edit button'],
+          ['#mlsAvKioskOrders .mlsAvOrdNo', 'Dismiss button'],
+          ['#mlsAvKioskOrders .mlsAvOrdPick', 'side picker']
+        ];
+        sels.forEach(function (row) {
+          const el = document.querySelector(row[0]);
+          if (!el) { out.push({ what: row[1], missing: true }); return; }
+          const cs = getComputedStyle(el);
+          const fg = parse(cs.color);
+          if (!fg) return;
+          const px = parseFloat(cs.fontSize) || 16;
+          const bold = (parseInt(cs.fontWeight, 10) || 400) >= 700;
+          /* WCAG "large text": >=24px, or >=18.66px when bold */
+          const large = px >= 24 || (bold && px >= 18.66);
+          out.push({
+            what: row[1], px: Math.round(px * 10) / 10, bold: bold, large: large,
+            ratio: Math.round(ratio(fg.c, bgOf(el)) * 100) / 100,
+            need: large ? 3 : 4.5
+          });
+        });
+        return out;
+      });
+
+      const bad = report.filter(function (r) { return !r.missing && r.ratio < r.need; });
+      console.log('  ---- contrast of every element this train added ----');
+      report.forEach(function (r) {
+        if (r.missing) { console.log('     (not on screen) ' + r.what); return; }
+        console.log('     ' + (r.ratio < r.need ? 'FAIL ' : 'ok   ') +
+          String(r.ratio).padStart(6) + ':1  need ' + r.need + '  ' +
+          String(r.px).padStart(5) + 'px' + (r.bold ? ' bold' : '     ') + '  ' + r.what);
+      });
+      ok('L every added element meets WCAG AA contrast', bad.length === 0,
+        bad.map(function (b) { return b.what + ' ' + b.ratio + ':1'; }).join(', '));
+
+      /* keyboard: a clinical control that cannot be reached by keyboard is not
+         a control for everyone who has to use it */
+      const kb = await page.evaluate(function () {
+        function focusable(sel) {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          el.focus();
+          return document.activeElement === el;
+        }
+        return {
+          mute: focusable('#mlsAvKioskMute'),
+          end: focusable('#mlsAvKioskEndVisit'),
+          confirm: focusable('#mlsAvKioskOrders .mlsAvOrdGo'),
+          dismiss: focusable('#mlsAvKioskOrders .mlsAvOrdNo'),
+          muteName: (document.getElementById('mlsAvKioskMute') || {}).textContent,
+          mutePressed: (document.getElementById('mlsAvKioskMute') || {}).getAttribute
+            ? document.getElementById('mlsAvKioskMute').getAttribute('aria-pressed') : null,
+          stateRole: (document.getElementById('mlsAvKioskState') || {}).getAttribute
+            ? document.getElementById('mlsAvKioskState').getAttribute('role') : null,
+          recRole: (document.getElementById('mlsAvKioskRec') || {}).getAttribute
+            ? document.getElementById('mlsAvKioskRec').getAttribute('role') : null
+        };
+      });
+      ok('L the mute control is keyboard reachable', kb.mute === true);
+      ok('L End Visit is keyboard reachable', kb.end === true);
+      ok('L Confirm is keyboard reachable', kb.confirm === true);
+      ok('L Dismiss is keyboard reachable', kb.dismiss === true);
+      ok('L the mute control reports its pressed state to assistive tech',
+        kb.mutePressed === 'false' || kb.mutePressed === 'true', String(kb.mutePressed));
+      ok('L the state chip announces changes (role=status)', kb.stateRole === 'status', String(kb.stateRole));
+      ok('L the recording disclosure announces itself (role=status)', kb.recRole === 'status', String(kb.recRole));
+      ok('L page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+    }
+    /* ------------------------------------------------------------ M */
+    section('SCENARIO M - THE KIOSK IS NOT THE ONLY THING ON THE SCREEN');
+    {
+      /* --- M1. the doctor switches away mid-visit. Chrome throttles timers in
+         a background tab, and this module's save is a setTimeout. If the
+         throttle swallowed it, a visit could run for minutes with a backup
+         frozen at the moment the doctor looked something up. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'first line while the tab is in front');
+        await page.evaluate(function () {
+          Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+          Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.clock.runFor(500);
+        await say(page, 'second line spoken while the doctor was on another tab');
+        await page.evaluate(function () {
+          Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+          Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await page.clock.runFor(2500);
+        const st = await page.evaluate(function () {
+          let stored = null;
+          stored = window.__stored();
+          return { amb: window.__amb(), parts: stored ? stored.parts : [] };
+        });
+        ok('M1 the capture keeps running while the tab is in the background',
+          st.amb.capturedChars > 0 && /another tab/.test(st.parts.join(' ')),
+          st.parts.length + ' parts');
+        ok('M1 …and the backup holds what was said while it was hidden',
+          st.parts.join(' ').indexOf('second line spoken') >= 0, JSON.stringify(st.parts.slice(-1)));
+        ok('M1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- M1b. A CRASH BYPASSES THE REVIEW. The review names what was heard
+         and never confirmed; a reload never reaches it. Proposals the doctor
+         had not yet acted on used to vanish from the recovered visit without
+         ever being mentioned — silence about a proposed order. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'order an mri of the lumbar spine without contrast');
+        await page.evaluate(function () { document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo').click(); });
+        await page.clock.runFor(300);
+        await say(page, 'and lets refer him to orthopedics');   /* left UNCONFIRMED */
+        const before = await page.evaluate(function () { return window.__amb().actions.length; });
+        ok('M1b two actions exist before the crash', before === 2, String(before));
+
+        await page.reload();
+        await page.evaluate(STUBS);
+        await page.addScriptTag({ content: AVATAR_SRC });
+        await page.clock.runFor(4000);
+        const pend = await page.evaluate(function () { return window.__mlsAvatar.pendingCapture(); });
+        ok('M1b the recovered capture still carries both actions',
+          !!pend && pend.actions.length === 2, pend ? String(pend.actions.length) : 'none');
+
+        const filed = await page.evaluate(function () { return window.__mlsAvatar.fileRecoveredCapture(); });
+        ok('M1b the recovered visit files', filed.ok === true, JSON.stringify(filed));
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('M1b the CONFIRMED order is in the recovered note', /MRI.*lumbar spine/i.test(box));
+        ok('M1b the UNCONFIRMED one is NAMED rather than silently dropped',
+          /heard but NEVER confirmed/i.test(box) && /Orthopedics/i.test(box),
+          box.slice(box.indexOf('NEVER confirmed'), box.indexOf('NEVER confirmed') + 120));
+        ok('M1b …and is stated plainly as NOT ordered',
+          /These were NOT ordered/.test(box));
+        /* the footer alone is not enough: the note generator reads this transcript
+           and its rule is to include what the transcript supports, so a line
+           lifted out of the section must carry the caveat by itself */
+        ok('M1b …and EVERY pending line carries the caveat on its own',
+          /- NOT ORDERED \(never confirmed\) - \[Referral\]/.test(box),
+          (box.match(/- NOT ORDERED[^\n]*/) || ['(none)'])[0].slice(0, 80));
+        ok('M1b page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- M1c. NO ACCOUNT NAMESPACE, NO BACKUP. The key used to fall back to
+         an UNSCOPED name when window.uns was unavailable — fail-open with PHI.
+         On a shared clinic workstation the next clinician to sign in reads the
+         same slot, and the Visit card would offer them the previous doctor's
+         consultation to file. It must refuse to write, say so, and still lose
+         nothing at End Visit. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await page.evaluate(function () { try { delete window.uns; } catch (e) { window.uns = undefined; } });
+        await toAmbient(page);
+        await say(page, 'this visit has nowhere safe to be backed up');
+        const st = await page.evaluate(function () {
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf('mlsAvRoomCapture') >= 0) keys.push(k);
+          }
+          return { amb: window.__amb(), keys: keys };
+        });
+        ok('M1c nothing is written when the account namespace is unavailable',
+          st.keys.length === 0, st.keys.join(', '));
+        ok('M1c …and it says so rather than pretending it saved',
+          st.amb.backedUp === false, 'backedUp=' + st.amb.backedUp);
+        ok('M1c …while the capture itself is untouched in memory',
+          st.amb.capturedChars > 0, st.amb.capturedChars + ' chars');
+        /* the whole point: a missing backup is an inconvenience, not a loss */
+        await page.evaluate(function () { document.getElementById('mlsAvKioskEndVisit').click(); });
+        await page.clock.runFor(4000);
+        const box = await page.evaluate(function () { return window.__box(); });
+        ok('M1c …and End Visit still writes the visit to the transcript',
+          box.indexOf('nowhere safe to be backed up') >= 0);
+        const rev = await page.evaluate(function () { return window.__review(); });
+        ok('M1c …and the review admits the backup never happened',
+          /crash backup could not be written/i.test(rev || ''), (rev || '').slice(0, 100));
+        ok('M1c page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- M2. TWO TABS. The backup key is account-scoped, and a doctor
+         having the app open twice is not exotic. If both tabs write the same
+         key, one visit silently overwrites the other and the loser is gone
+         with no trace — the exact failure this whole feature exists to
+         prevent. Both tabs share one browser context, so they share one
+         localStorage, exactly as two real tabs would. --- */
+      {
+        const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        const errs = [];
+        async function tab(chart) {
+          const p = await ctx.newPage();
+          p.on('pageerror', function (e) { errs.push(String((e && e.message) || e)); });
+          await p.clock.install({ time: new Date('2026-08-07T14:00:00Z') });
+          await p.goto(base + '/page.html');
+          await p.evaluate(STUBS);
+          await p.evaluate(function (c) {
+            document.documentElement.requestFullscreen = function () { return Promise.resolve(); };
+            window.__activePt = c;
+            window.getPatients = function () { return [{ id: c, name: 'Patient ' + c }]; };
+          }, chart);
+          await p.addScriptTag({ content: AVATAR_SRC });
+          await p.clock.runFor(3000);
+          return p;
+        }
+        const a = await tab('ext-77');
+        const b = await tab('ext-88');
+        await toAmbient(a);
+        await say(a, 'tab A is recording patient seventy seven');
+        await toAmbient(b);
+        await say(b, 'tab B is recording patient eighty eight');
+        /* give A more to say AFTER B started, so a shared key would show it */
+        await say(a, 'tab A has more to say about seventy seven');
+
+        const keys = await a.evaluate(function () {
+          const out = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.indexOf('mlsAvRoomCapture') >= 0) out.push(k);
+          }
+          return out;
+        });
+        console.log('  ---- backup keys with two tabs recording ----');
+        keys.forEach(function (k) { console.log('     ' + k); });
+        ok('M2 two concurrent captures do not share one backup slot', keys.length >= 2,
+          keys.length + ' key(s): ' + keys.join(', '));
+
+        const recoverable = await a.evaluate(function () {
+          const out = {};
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k || k.indexOf('mlsAvRoomCapture') < 0) continue;
+            try {
+              const r = JSON.parse(localStorage.getItem(k));
+              out[r.bound] = (r.parts || []).join(' ');
+            } catch (e) {}
+          }
+          return out;
+        });
+        ok('M2 patient A\'s visit survives tab B recording at the same time',
+          !!recoverable['ext-77'] && recoverable['ext-77'].indexOf('tab A has more to say') >= 0,
+          JSON.stringify(Object.keys(recoverable)));
+        ok('M2 patient B\'s visit survives too',
+          !!recoverable['ext-88'] && recoverable['ext-88'].indexOf('tab B is recording') >= 0,
+          (recoverable['ext-88'] || '').slice(0, 50));
+        ok('M2 and neither visit contains the other patient\'s words',
+          (recoverable['ext-77'] || '').indexOf('eighty eight') < 0 &&
+          (recoverable['ext-88'] || '').indexOf('seventy seven') < 0);
+        ok('M2 pages threw nothing', errs.length === 0, errs.join(' | '));
+        await ctx.close();
+      }
+    }
+    /* ------------------------------------------------------------ N */
+    section('SCENARIO N - THE PHOTO FACE, THE PATIENT, AND REVERT');
+    {
+      /* --- N1. THE DISCLOSURE WITH THE DOCTOR'S REAL PHOTOGRAPH. Every layout
+         check so far ran on the DRAWN face. The disclosure matters most in
+         exactly the case never tested: when the screen is showing the doctor's
+         actual photograph and speaking in a voice chosen to sound like them.
+         That is the combination a patient could mistake for the doctor. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        /* a 1x1 png, which is all kioskSetIdentity needs to take the photo path */
+        const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        await page.evaluate(function (png) {
+          window.__turnQueue = [{
+            ok: true, say: 'Hello, what brings you in today?', done: false,
+            progress: { covered: 1, total: 2 },
+            avatar: { name: 'Dr Vance', faceMode: 'photo', faceImage: png, exitPinSet: true }
+          }];
+          window.__mlsAvatar.openKiosk();
+        }, PNG);
+        await page.clock.runFor(1800);
+        const shot = await page.evaluate(function () {
+          const img = document.querySelector('#mlsAvKioskFace img');
+          const ai = document.getElementById('mlsAvKioskAi');
+          const aiBox = ai ? ai.getBoundingClientRect() : null;
+          const aiCs = ai ? getComputedStyle(ai) : null;
+          return {
+            photo: !!img && String(img.src).indexOf('data:image/') === 0,
+            name: (document.getElementById('mlsAvKioskName') || {}).textContent,
+            aiText: ai ? (ai.textContent || '').trim() : null,
+            aiVisible: !!(aiCs && aiCs.display !== 'none' && aiCs.visibility !== 'hidden' &&
+              Number(aiCs.opacity) > 0 && aiBox.width > 0 && aiBox.height > 0),
+            aiOnScreen: !!(aiBox && aiBox.top >= 0 && aiBox.bottom <= window.innerHeight)
+          };
+        });
+        ok('N1 the kiosk really is showing the doctor\'s photograph', shot.photo === true);
+        ok('N1 …under the doctor\'s name', /Vance/.test(String(shot.name)), String(shot.name));
+        ok('N1 …and the AI disclosure is STILL on screen', shot.aiVisible === true && shot.aiOnScreen === true,
+          JSON.stringify({ visible: shot.aiVisible, onScreen: shot.aiOnScreen }));
+        ok('N1 …saying it is an AI assistant, not the doctor',
+          /\bAI\b/i.test(String(shot.aiText)) && /assistant/i.test(String(shot.aiText)),
+          String(shot.aiText));
+        ok('N1 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- N2. THE PATIENT CANNOT CREATE A CLINICAL ORDER. During intake the
+         patient is holding the screen. Anything they say that sounds like an
+         order must produce nothing at all — the widget belongs to the room
+         capture, which only a staff PIN can start. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await page.evaluate(function () {
+          window.__turnQueue = [
+            { ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } },
+            { ok: true, say: 'Thank you.', done: false, progress: { covered: 2, total: 2 } }
+          ];
+          window.__mlsAvatar.openKiosk();
+        });
+        await page.clock.runFor(1500);
+        await page.evaluate(function () {
+          window.__emit('order an mri of the lumbar spine without contrast', true);
+        });
+        await page.clock.runFor(3500);
+        const cards = await page.evaluate(function () { return window.__cards(); });
+        const widget = await page.evaluate(function () { return window.__widgetVisible(); });
+        const amb = await page.evaluate(function () { return window.__amb(); });
+        ok('N2 a patient saying an order during intake proposes NOTHING', cards.length === 0,
+          JSON.stringify(cards.map(function (c) { return c.title; })));
+        ok('N2 …and the widget never appears for them', widget === false);
+        ok('N2 …because room capture is not running', amb.running === false);
+        ok('N2 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+
+      /* --- N3. REVERT. This module advertises itself as fully reversible, and
+         this train added a chip, two buttons, a widget, a review pane, styles
+         and three timers. A revert that leaves any of them behind leaves a
+         half-installed module on a clinical screen. --- */
+      {
+        const h = await newPage(browser, base);
+        const page = h.page;
+        await toAmbient(page);
+        await say(page, 'order an mri of the knee');
+        const beforeRevert = await page.evaluate(function () {
+          return { kiosk: !!document.getElementById('mlsAvKiosk'), recs: window.__log.recStarts };
+        });
+        ok('N3 the kiosk is up and recording before revert', beforeRevert.kiosk === true);
+        await page.evaluate(function () { window.__mlsAvatar.revert(); });
+        await page.clock.runFor(3000);
+        const after = await page.evaluate(function () {
+          const ids = ['mlsAvKiosk', 'mlsAvKioskState', 'mlsAvKioskOrders', 'mlsAvKioskReview',
+            'mlsAvKioskMute', 'mlsAvKioskEndVisit', 'mlsAvKioskStyle', 'mlsAvBtn', 'mlsAvVisitCard'];
+          const left = ids.filter(function (i) { return !!document.getElementById(i); });
+          return { left: left, installed: window.__mlsAvatar.installed, recs: window.__log.recStarts };
+        });
+        ok('N3 revert removes every element this train added', after.left.length === 0, after.left.join(', '));
+        ok('N3 …and the module reports itself uninstalled', after.installed === false, String(after.installed));
+        /* the timers are the invisible half: a reverted module that keeps a
+           save or a detect timer alive is still running on the doctor's page */
+        await page.clock.runFor(8000);
+        const recsLater = await page.evaluate(function () { return window.__log.recStarts; });
+        ok('N3 …and nothing restarts the microphone afterwards',
+          recsLater === after.recs, after.recs + ' -> ' + recsLater);
+        ok('N3 page threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      }
+    }
   } finally {
     await browser.close();
     server.close();
@@ -1475,8 +2025,9 @@ async function say(page, text) {
     'remains and documents -> a spoken command -> a proposed order confirmed in one tap -> continuous save -> End ' +
     'Visit with the note drafted), plus: a visit survives a mid-encounter reload and files to the right chart (and ' +
     'refuses the wrong one), an order missing a required detail cannot be confirmed even with the attribute defeated, ' +
-    'pausing stops the recording AND the claim to be recording, and the first word arrives 155ms sooner than the ' +
-    'one-blob fetch it replaced');
+    'pausing stops the recording AND the claim to be recording, and the first word arrives 703ms sooner than the ' +
+    'one-blob fetch it replaced (155ms from splitting the reply, 548ms from making the next scripted ' +
+    'question\'s voice before it is asked — which removes the generation leg entirely)');
 })().catch(function (e) {
   console.error('PROOF CRASHED:', (e && e.stack) || e);
   process.exit(1);
