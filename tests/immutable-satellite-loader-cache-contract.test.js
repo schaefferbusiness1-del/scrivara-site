@@ -68,9 +68,9 @@ const assets = [
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
-  ['feat_task3_frontsync.js', '20260808t3112perf1', '20260727t3110'],
+  ['feat_task3_frontsync.js', '20260808t3113perf2', '20260808t3112perf1'],
   ['feat_mls_upnow_activeselect.js', '20260808uas5perf1', '20260804uas4'],
-  ['feat_mls_upnow_sync.js', '20260808uns5perf1', '20260727uns4'],
+  ['feat_mls_upnow_sync.js', '20260808uns6perf2', '20260808uns5perf1'],
   /* 2026-08-05, unr-1.1.0 -> unr-1.1.1: the module's boot() poll re-ran its
      three installers 60 times while each guarded only on its own window marker,
      so a co-wrapper that did not carry that marker forward made the poll
@@ -228,7 +228,7 @@ assert(staging.includes('feat_mls_assistant_exact.js?v=20260808asst220perf1') &&
   'staging must use the current assistant asset URL and retire the prior one');
 for (const assetUrl of [
   'feat_mls_patientpick.js?v=20260808pick162perf1',
-  'feat_mls_upnow_sync.js?v=20260808uns5perf1'
+  'feat_mls_upnow_sync.js?v=20260808uns6perf2'
 ]) {
   assert(staging.includes(assetUrl), 'staging must use the current performance asset URL: ' + assetUrl);
 }

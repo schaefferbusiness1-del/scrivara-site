@@ -47,16 +47,31 @@ assert(b18.includes('listeners.push(rec); if(active) attach(rec);') &&
   b18.includes('listeners.forEach(attach);'),
   'b18 listeners can attach beneath the loader or fail to attach when the lifecycle starts');
 
-assert(task3.includes("var VERSION = 't3-1.1.2'") &&
-  task3.includes('if (destroyed || !started || tickTimer) return;'),
+assert(task3.includes("var VERSION = 't3-1.1.3'") &&
+  task3.includes('if (destroyed || !started) return;') &&
+  task3.includes('if (!firstUseReconciled) { scheduleFirstUseReconcile(); return; }'),
   'Task 3 heavy reconciliation is not gated on post-loader startup');
 assert(task3.includes("target.closest('.wn-chip,#nav_calendar,#nav_visit,#nav_patients,#heroToday,#calProvFilter,#calJump')") &&
-  task3.includes('if (!relevant) return;\n    scheduleTick(80);'),
+  task3.includes('if (!relevant) return;\n    noteFirstUseActivity();\n    scheduleTick(80);'),
   'Task 3 still schedules a full reconciliation after unrelated button clicks');
 assert(!task3.includes(".wn-chip,#calendarView,#visitView,#patientsView"),
   'Task 3 restored broad route-root click reconciliation');
 assert(!task3.includes('[400, 1200, 2500, 5000, 9000]'),
   'Task 3 restored the five-pass startup reconciliation ladder');
+assert(!task3.includes('[500, 1800, 5000]') && !task3.includes('timeout: 800'),
+  'Task 3 restored guaranteed post-reveal reconciliation passes');
+assert(task3.includes('T3_FIRST_USE_QUIET_MS = 2500') &&
+  task3.includes('scheduler && isFn(scheduler.stats) ? scheduler.stats() : null') &&
+  task3.includes("scheduling.isInputPending({ includeContinuous: true })") &&
+  task3.includes('startIdle = idle(function (deadline) {') &&
+  task3.includes('removeFirstUseActivityListeners();\n      safe(tick);'),
+  'Task 3 no longer gives first-use input priority before its one real-idle reconciliation');
+assert(task3.includes("safe(ensureWraps); safe(wrapHeroRender); safe(wrapHeroPick);\n    scheduleFirstUseReconcile();"),
+  'Task 3 no longer installs correctness wrappers before deferring its expensive first reconciliation');
+assert(task3.includes("document.addEventListener('pointerdown', noteFirstUseActivity, true)") &&
+  task3.includes("document.removeEventListener('pointerdown', noteFirstUseActivity, true)") &&
+  task3.includes('if (!firstUseActivityListeners) return;'),
+  'Task 3 first-use fallback listeners are not lifecycle-owned and retired after reconciliation');
 assert(task3.includes("window.addEventListener('mls:loader-ready', loaderReadyListener, { once: true })"),
   'Task 3 no longer starts from the canonical loader handoff');
 assert(task3.includes('if (destroyed || !started) return;') &&
@@ -126,8 +141,87 @@ assert.deepStrictEqual(replacedRestore.old, [], 'Task3 resurrected Account-A row
 assert.deepStrictEqual(replacedRestore.current, [], 'Task3 contaminated the new account calendar array');
 assert.strictEqual(replacedRestore.Cal._removedDups.length, 0, 'Task3 retained old-account duplicate pointers after boundary');
 
+/* Execute Task 3's first-use scheduler itself. A real input arriving before an
+   idle callback must cancel that callback, restart the full quiet window, and
+   coalesce startup to one reconciliation. Route reconciliation remains live
+   after that one startup pass. */
+const t3IdleAt = task3.indexOf('var tickTimer = null');
+const t3IdleEnd = task3.indexOf('function onReady()', t3IdleAt);
+assert(t3IdleAt >= 0 && t3IdleEnd > t3IdleAt, 'Task 3 first-use scheduler slice is missing');
+let t3Now = 1000;
+let t3Seq = 0;
+let t3SharedBusy = 1000;
+let t3InputPending = false;
+const t3Timers = new Map();
+const t3Idles = new Map();
+const t3Window = {
+  navigator: { scheduling: { isInputPending() { return t3InputPending; } } },
+  __mlsDeferAsset: { stats() { return { lastBusy: t3SharedBusy }; } },
+  requestIdleCallback(fn) { const id = ++t3Seq; t3Idles.set(id, { fn, cancelled: false }); return id; },
+  cancelIdleCallback(id) { const idle = t3Idles.get(id); if (idle) idle.cancelled = true; }
+};
+const t3Context = vm.createContext({
+  window: t3Window,
+  document: { hidden: false },
+  Date: { now() { return t3Now; } },
+  Math, Number,
+  setTimeout(fn, ms) { const id = ++t3Seq; t3Timers.set(id, { fn, due: t3Now + Number(ms || 0), ms: Number(ms || 0), cancelled: false }); return id; },
+  clearTimeout(id) { const timer = t3Timers.get(id); if (timer) timer.cancelled = true; }
+});
+vm.runInContext(`
+  var destroyed=false, started=true, ticks=0, listenerRemovals=0;
+  function isFn(fn){ return typeof fn === 'function'; }
+  function safe(fn,d){ try { return fn(); } catch(e) { return d; } }
+  function tick(){ ticks++; }
+  function viewShown(){ return true; }
+  function removeFirstUseActivityListeners(){ listenerRemovals++; }
+  ${task3.slice(t3IdleAt, t3IdleEnd)}
+  firstUseLastBusy=Date.now();
+  window.__t3IdleTest={
+    start:scheduleFirstUseReconcile,
+    activity:noteFirstUseActivity,
+    route:function(){ scheduleTick(80); },
+    ticks:function(){ return ticks; },
+    listenerRemovals:function(){ return listenerRemovals; }
+  };
+`, t3Context, { filename: 'task3-first-use-idle.js' });
+const t3Api = t3Window.__t3IdleTest;
+function runT3Timers(at) {
+  let ran = true;
+  while (ran) {
+    ran = false;
+    const due = [...t3Timers.entries()].filter(([, timer]) => !timer.cancelled && timer.due <= at).sort((a, b) => a[1].due - b[1].due || a[0] - b[0])[0];
+    if (due) { t3Now = due[1].due; due[1].cancelled = true; due[1].fn(); ran = true; }
+  }
+  t3Now = at;
+}
+t3Api.start();
+assert.strictEqual(t3Api.ticks(), 0, 'Task 3 reconciled before its first-use quiet window');
+t3Now = 2000;
+t3SharedBusy = 2000;
+t3Api.activity();
+runT3Timers(4499);
+assert.strictEqual(t3Idles.size, 0, 'Task 3 did not restart the complete quiet window after input');
+runT3Timers(4500);
+const firstIdle = [...t3Idles.entries()].find(([, idle]) => !idle.cancelled);
+assert(firstIdle, 'Task 3 did not request a real idle slice after the quiet window');
+t3Now = 4550;
+t3SharedBusy = 4550;
+t3Api.activity();
+assert.strictEqual(firstIdle[1].cancelled, true, 'Task 3 left its pending idle callback armed across new input');
+runT3Timers(7050);
+const secondIdle = [...t3Idles.entries()].find(([, idle]) => !idle.cancelled);
+assert(secondIdle, 'Task 3 did not re-arm idle work after renewed input quiet');
+secondIdle[1].cancelled = true;
+secondIdle[1].fn({ timeRemaining() { return 12; } });
+assert.strictEqual(t3Api.ticks(), 1, 'Task 3 startup did not coalesce to exactly one idle reconciliation');
+assert.strictEqual(t3Api.listenerRemovals(), 1, 'Task 3 kept first-use input listeners after reconciliation began');
+t3Api.route();
+runT3Timers(7130);
+assert.strictEqual(t3Api.ticks(), 2, 'Task 3 lost route-driven correctness after its deferred startup pass');
+
 assert(connect.includes('feat_b18_qa.js') && connect.includes('20260808b18v14perf2'));
-assert(connect.includes('feat_task3_frontsync.js') && connect.includes('20260808t3112perf1'));
+assert(connect.includes('feat_task3_frontsync.js') && connect.includes('20260808t3113perf2'));
 assert(connect.includes("feat_mls_upnow_realtime.js?v='+(window.__MLS_AV||Date.now())"));
 assert(staging.includes("feat_mls_upnow_realtime.js?v='+(window.__MLS_AV||Date.now())"));
 

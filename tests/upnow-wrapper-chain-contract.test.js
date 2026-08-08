@@ -9,6 +9,8 @@ const root = path.resolve(__dirname, '..');
 const activeSource = fs.readFileSync(path.join(root, 'feat_mls_upnow_activeselect.js'), 'utf8');
 const realtimeSource = fs.readFileSync(path.join(root, 'feat_mls_upnow_realtime.js'), 'utf8');
 const task3Source = fs.readFileSync(path.join(root, 'feat_task3_frontsync.js'), 'utf8');
+const upnowSyncSource = fs.readFileSync(path.join(root, 'feat_mls_upnow_sync.js'), 'utf8');
+const nextUpSource = fs.readFileSync(path.join(root, 'feat_nextup_connect.js'), 'utf8');
 
 function harness(readyState) {
   let sequence = 0;
@@ -98,6 +100,86 @@ function assertOneBaseCall(h, label) {
   assert.strictEqual(h.baseCalls, 1, label + ' did not reach the base function exactly once');
   assert(chainHas(h.window._calLoadNextUp, '__mlsActiveSelectWrapped'), label + ' lost active-select behavior');
   assert(chainHas(h.window._calLoadNextUp, '__mlsUnrWrapped'), label + ' lost real-time behavior');
+}
+
+function hiddenRenderOwnerChain(marker, originMarker) {
+  let baseCalls = 0;
+  function base() { baseCalls += 1; return 'base'; }
+  const owner = function () { return base.apply(this, arguments); };
+  owner[marker] = true;
+  owner[originMarker] = base;
+  let top = owner;
+  for (const link of ['__orig', '__t3Orig', '__mlsUnrOrig', '__mlsUpNowOrig', '__mlsOrig']) {
+    const inner = top;
+    const wrapper = function () { return inner.apply(this, arguments); };
+    wrapper[link] = inner;
+    top = wrapper;
+  }
+  top.__orig = top; // a co-wrapper cycle must not block the other origin path
+  return { base, owner, top, get baseCalls() { return baseCalls; } };
+}
+
+/* The renderer is shared by several independently loaded features. Each guard
+   must find an existing owner below every supported co-wrapper link instead of
+   adding another full render traversal on every poll or reapply. */
+{
+  const chain = hiddenRenderOwnerChain('__mlsAuthoritativeScheduleGuard', '__orig');
+  const document = {
+    readyState: 'complete', body: {}, documentElement: {},
+    getElementById() { return null; },
+    addEventListener() {}, createElement() { return {}; }
+  };
+  const window = {
+    _renderTodayPatients: chain.top, _calAppts: [], _heroTodayList: [],
+    addEventListener() {}, sessionStorage: { getItem() { return null; } }
+  };
+  const context = vm.createContext({
+    window, document, console: { debug() {}, warn() {}, error() {} }, Date,
+    setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {}
+  });
+  vm.runInContext(nextUpSource, context, { filename: 'feat_nextup_connect.js' });
+  assert.strictEqual(window._renderTodayPatients, chain.top,
+    'Next Up added a duplicate renderer guard above a hidden existing owner');
+  assert.strictEqual(window.__mlsNextUp.version, 'nextup-2.0.1');
+  window.__mlsNextUp._installRendererGuard();
+  assert.strictEqual(window._renderTodayPatients, chain.top,
+    'Next Up reapply added a duplicate renderer guard');
+  window.__mlsNextUp.revert();
+  assert.strictEqual(window._renderTodayPatients, chain.top,
+    'Next Up claimed and reverted a co-wrapper it did not install');
+}
+{
+  const chain = hiddenRenderOwnerChain('__mlsUpNowWrapped', '__mlsUpNowOrig');
+  const visitView = { style: { display: 'none' } };
+  const document = {
+    readyState: 'complete',
+    getElementById(id) { return id === 'visitView' ? visitView : null; },
+    addEventListener() {}, removeEventListener() {}, createElement() { return {}; }
+  };
+  const window = {
+    _renderTodayPatients: chain.top, _heroTodayList: [],
+    addEventListener() {}, removeEventListener() {}
+  };
+  function MutationObserver() {
+    this.observe = function () {};
+    this.disconnect = function () {};
+    this.takeRecords = function () { return []; };
+  }
+  const context = vm.createContext({
+    window, document, MutationObserver,
+    console: { debug() {}, warn() {}, error() {} },
+    setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {}
+  });
+  vm.runInContext(upnowSyncSource, context, { filename: 'feat_mls_upnow_sync.js' });
+  assert.strictEqual(window._renderTodayPatients, chain.top,
+    'Up Now Sync added a duplicate renderer wrapper above a hidden existing owner');
+  window.__mlsUpNowSync.reapply();
+  assert.strictEqual(window._renderTodayPatients, chain.top,
+    'Up Now Sync reapply added a duplicate renderer wrapper');
+  assert.doesNotThrow(() => window._renderTodayPatients(),
+    'the preserved Up Now renderer chain no longer reaches its base');
+  assert.strictEqual(chain.baseCalls, 1,
+    'the preserved Up Now renderer chain reached its base more than once');
 }
 
 /* Both asynchronous load orders must compose without the mutable-original cycle

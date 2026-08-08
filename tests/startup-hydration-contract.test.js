@@ -247,11 +247,11 @@ async function verifyLoaderRuntime() {
   const secondBundle = success.window.__mlsEnsureUiBundle();
   assert.strictEqual(firstBundle, secondBundle, 'concurrent UI-bundle callers did not share one in-flight promise');
   assert.strictEqual(success.mainScripts.length, 1, 'on-demand loader appended duplicate main scripts');
-  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b967', 'main UI script is not exact-versioned');
+  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b968', 'main UI script is not exact-versioned');
   assert(success.timerDelays().includes(30440), 'loader-derived hard deadline was not scheduled');
   await success.flush();
   assert.strictEqual(success.mainScripts[0].id, 'mlsUiBundleScript');
-  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b967');
+  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b968');
   assert.strictEqual(success.window.__externalMainRuns, 1, 'external main source did not execute exactly once');
   await success.advance(2000);
   assert.strictEqual(await firstBundle, true, 'complete critical UI did not publish ready');
@@ -314,32 +314,123 @@ async function verifyLoaderRuntime() {
 
 const refresh = app.slice(app.indexOf("var _refreshMeInFlight=null"), app.indexOf('function handle401()'));
 assert(refresh.includes('if(_refreshMeInFlight&&_refreshMeToken===token)'), 'identity refresh requests are not coalesced');
-assert(refresh.includes('await Promise.allSettled(['), 'patient, record, and preference hydration is still fire-and-forget');
 assert(refresh.includes('loadPatientsFromServer(childOpts)') && refresh.includes('loadRecordsFromServer(childOpts)') && refresh.includes('loadPrefsFromServer(childOpts)'), 'a startup store is missing from the hydration barrier');
+const startupStores = refresh.slice(refresh.indexOf('if(opts.startupId){'), refresh.indexOf('}else{', refresh.indexOf('if(opts.startupId){')));
+const prefAt = startupStores.indexOf('loadPrefsFromServer(childOpts)');
+const firstQuietAt = startupStores.indexOf('sfAwaitStartupHydrationQuiet(childOpts)', prefAt);
+const patientsAt = startupStores.indexOf('loadPatientsFromServer(childOpts)', firstQuietAt);
+const secondQuietAt = startupStores.indexOf('sfAwaitStartupHydrationQuiet(childOpts)', firstQuietAt + 1);
+const recordsAt = startupStores.indexOf('loadRecordsFromServer(childOpts)', secondQuietAt);
+assert(prefAt >= 0 && prefAt < firstQuietAt && firstQuietAt < patientsAt && patientsAt < secondQuietAt && secondQuietAt < recordsAt,
+  'startup hydration is not serialized as preferences, quiet, patients, quiet, records');
+const manualStores = refresh.slice(refresh.indexOf('}else{', refresh.indexOf('if(opts.startupId){')), refresh.indexOf('if(!sfStartupValid(opts))', refresh.indexOf('}else{', refresh.indexOf('if(opts.startupId){'))));
+assert(manualStores.includes('settled=await Promise.allSettled([') && manualStores.includes('loadPatientsFromServer(childOpts)') &&
+  manualStores.includes('loadRecordsFromServer(childOpts)') && manualStores.includes('loadPrefsFromServer(childOpts)'),
+  'manual identity refresh no longer hydrates independent stores in parallel');
 assert(refresh.includes("deferRender:true") && refresh.includes("window.__mlsUiUnification.reconcile"), 'startup data must reconcile once beneath the loader');
 assert.strictEqual((refresh.match(/renderHistory\(\)/g) || []).length, 1, 'hidden startup can render History more than once');
 assert.strictEqual((refresh.match(/updateNavCounts\(\)/g) || []).length, 1, 'hidden startup can update navigation counts more than once');
+
+async function verifyStartupStoreSerialization() {
+  const events = [];
+  const resolvers = {};
+  const pendingStore = name => {
+    events.push(name + ':start');
+    return new Promise(resolve => { resolvers[name] = resolve; });
+  };
+  const elements = { whoLabel: {}, histWho: {} };
+  const context = {
+    Promise, setTimeout, clearTimeout,
+    window: { _calendarOn: true, __mlsUiUnification: { reconcile() {} } },
+    document: { getElementById(id) { return elements[id] || null; } },
+    localStorage: { setItem() {} },
+    backendMode: () => true,
+    bkToken: () => 'startup-token',
+    bkBase: () => 'https://backend.test',
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ user: { email: 'doctor@example.test' }, practice: {} }) }),
+    bkUser: null,
+    session: { email: 'doctor@example.test' },
+    sfSessionUiAccount: 'doctor@example.test',
+    sfStartupValid: opts => !(opts && (opts.cancelled || (opts.signal && opts.signal.aborted))),
+    sfNormalizeSessionAccount: value => String(value || '').toLowerCase(),
+    setSessionEmail() {},
+    sfResetSessionBoundary() {},
+    uns: value => value,
+    applyAccessUI() {},
+    applyAppearance() {},
+    applyFeatureToggles() {},
+    applyLegalUI() {},
+    renderCustomWidgets() {},
+    renderDocPrefs() {},
+    renderStudioSaved() {},
+    _renderPinnedTabs() {},
+    _syncSpecialtyPresetTemplates() {},
+    updateNavCounts() {},
+    renderPatients() {},
+    renderProfile() {},
+    renderHistory() {},
+    currentView: 'visit',
+    loadPrefsFromServer: () => pendingStore('prefs'),
+    loadPatientsFromServer: () => pendingStore('patients'),
+    loadRecordsFromServer: () => pendingStore('records'),
+    sfAwaitStartupHydrationQuiet: async () => { events.push('quiet'); return true; },
+    handle401() {}
+  };
+  vm.createContext(context);
+  vm.runInContext(refresh + '\nthis.refreshMe=refreshMe;', context);
+  const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+
+  const startup = context.refreshMe({ startupId: 1 });
+  await flush();
+  assert.deepStrictEqual(events, ['prefs:start'], 'startup launched a large store beside preferences');
+  resolvers.prefs(true); await flush();
+  assert.deepStrictEqual(events, ['prefs:start', 'quiet', 'patients:start'], 'patients did not wait for preferences and the first quiet window');
+  resolvers.patients(true); await flush();
+  assert.deepStrictEqual(events, ['prefs:start', 'quiet', 'patients:start', 'quiet', 'records:start'], 'records overlapped patient hydration or skipped its quiet window');
+  resolvers.records(true);
+  assert.strictEqual(await startup, true);
+
+  events.length = 0;
+  const manual = context.refreshMe({});
+  await flush();
+  assert.deepStrictEqual(events, ['patients:start', 'records:start', 'prefs:start'], 'manual refresh stopped launching independent stores together');
+  assert(!events.includes('quiet'), 'manual refresh inherited the startup-only quiet delay');
+  resolvers.patients(false); resolvers.records(false); resolvers.prefs(false);
+  assert.strictEqual(await manual, true);
+}
 
 const patientHydration = app.slice(app.indexOf('async function loadPatientsFromServer(opts)'), app.indexOf('/* ---------- HEAD-DOCTOR TEAM VIEW', app.indexOf('async function loadPatientsFromServer(opts)')));
 assert(patientHydration.includes('const localIndex=new Map()') && patientHydration.includes('localIndex.has(row.external_id)?localIndex.get(row.external_id):-1'), 'patient hydration regressed to repeated linear identity scans');
 assert(patientHydration.includes('const additions=[]') && patientHydration.includes('additions.concat(local)'), 'new cloud patients are not batched into one saved merge');
 assert(!patientHydration.includes('.findIndex('), 'patient hydration still performs O(server x local) findIndex scans');
 assert(patientHydration.includes('if(!opts.deferRender)') && patientHydration.indexOf('if(!opts.deferRender)') < patientHydration.indexOf('updateNavCounts()'), 'deferred patient hydration can repaint hidden navigation');
-assert(/await sfHydrationYield\(\);\s*savePatients\([\s\S]*?\);\s*await sfHydrationYield\(\);/.test(patientHydration),
-  'monolithic patient persistence no longer yields before and after its post-reveal write');
+const patientSaveAt = patientHydration.indexOf('savePatients(additions.length?additions.concat(local):local)');
+assert(patientSaveAt > 0 && patientHydration.lastIndexOf('sfHydrationBoundary(opts)', patientSaveAt) >= 0 && patientHydration.indexOf('sfHydrationBoundary(opts)', patientSaveAt) > patientSaveAt,
+  'patient persistence is no longer protected by input-aware boundaries before and after its write');
 
 const recordHydration = app.slice(app.indexOf('async function loadRecordsFromServer(opts)'), app.indexOf('function renderHistory()', app.indexOf('async function loadRecordsFromServer(opts)')));
 assert(recordHydration.includes('const localIndex=new Map()') && recordHydration.includes('localIndex.has(rec.id)?localIndex.get(rec.id):-1'), 'record hydration regressed to repeated linear identity scans');
 assert(recordHydration.includes('localIndex.set(rec.id,local.length-1)'), 'new records are not added to the hydration index');
 assert(!recordHydration.includes('.findIndex('), 'record hydration still performs O(server x local) findIndex scans');
 assert(recordHydration.includes('if(!opts.deferRender)') && recordHydration.indexOf('if(!opts.deferRender)') < recordHydration.indexOf('renderHistory()'), 'deferred record hydration can repaint hidden History');
-assert(/await sfHydrationYield\(\);\s*saveNotes\(local\);\s*await sfHydrationYield\(\);/.test(recordHydration),
-  'monolithic record persistence no longer yields before and after its post-reveal write');
+const recordSaveAt = recordHydration.indexOf('saveNotes(local)');
+assert(recordSaveAt > 0 && recordHydration.lastIndexOf('sfHydrationBoundary(opts)', recordSaveAt) >= 0 && recordHydration.indexOf('sfHydrationBoundary(opts)', recordSaveAt) > recordSaveAt,
+  'record persistence is no longer protected by input-aware boundaries before and after its write');
 
-const prefHydration = app.slice(app.indexOf('async function loadPrefsFromServer(opts)'), app.indexOf('function applyAppearance()', app.indexOf('async function loadPrefsFromServer(opts)')));
+const prefStart = app.indexOf('async function loadPrefsFromServer(opts)');
+const prefHydration = app.slice(prefStart, app.indexOf('/* b940:', prefStart));
 assert(prefHydration.includes("const init={headers:{'Authorization':'Bearer '+bkToken()}}") &&
-  prefHydration.includes("fetch(bkBase()+'/api/prefs',init)"),
-  'preference hydration lost its authenticated request initializer');
+  prefHydration.includes('if(opts.signal) init.signal=opts.signal') && prefHydration.includes("fetch(bkBase()+'/api/prefs',init)"),
+  'preference hydration lost its authenticated, abortable request initializer');
+
+const quietStart = app.indexOf('const SF_STARTUP_HYDRATION_QUIET_MS=1500');
+const quietHelper = app.slice(quietStart, app.indexOf('async function sfFetchListRequest(', quietStart));
+assert(quietStart >= 0 && quietHelper.includes('scheduler.stats()') && quietHelper.includes('Number(stats.lastBusy)') &&
+  quietHelper.includes('scheduling.isInputPending') && quietHelper.includes("opts._sfHydrationQuietState"),
+  'startup hydration lost its scheduler-backed persistent input quiet state');
+assert(quietHelper.includes('if(state.hasReleased&&lastBusyAt<=state.releasedBusyAt) return true') &&
+  quietHelper.includes('await sfHydrationYield()'),
+  'unchanged input state can still impose a fresh 1.5-second delay at every bounded batch');
 
 for (const fn of ['loadPrefsFromServer(opts)', 'loadPatientsFromServer(opts)', 'loadRecordsFromServer(opts)']) {
   assert(app.includes('async function ' + fn), fn + ' does not accept the shared startup signal');
@@ -354,8 +445,8 @@ const gate = app.slice(app.indexOf('async function checkAgreementsGate(opts)'), 
 assert(!gate.includes('showAgreementsGate()'), 'agreement lookup must return a decision instead of bypassing loader timing');
 assert(gate.includes('if(!sfStartupValid(opts)) return true'), 'late legal-readiness responses can still fail open after startup cancellation');
 
-Promise.all([verifyStartupRevealBarrier(), verifyLoaderRuntime()]).then(function () {
-  console.log('PASS startup hydration: safety/UI-only reveal, background cloud hydration, streaming external UI load, fail-closed critical assets, and loader-owned deadline');
+Promise.all([verifyStartupRevealBarrier(), verifyLoaderRuntime(), verifyStartupStoreSerialization()]).then(function () {
+  console.log('PASS startup hydration: safety/UI-only reveal, serialized input-aware cloud hydration, streaming external UI load, fail-closed critical assets, and loader-owned deadline');
 }).catch(function (error) {
   console.error(error);
   process.exit(1);

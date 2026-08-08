@@ -8,6 +8,12 @@ const vm = require('vm');
 const root = path.join(__dirname, '..');
 const scheduleSource = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 const nextUpSource = fs.readFileSync(path.join(root, 'feat_nextup_connect.js'), 'utf8');
+assert(scheduleSource.includes('window.__mlsNextUp.version === "nextup-2.0.1"'),
+  'schedule import does not recognize the current authoritative Next Up module');
+assert(scheduleSource.includes('feat_nextup_connect.js?v=20260808auth3perf1'),
+  'schedule import did not mint a fresh immutable Next Up asset URL');
+assert(!scheduleSource.includes('feat_nextup_connect.js?v=20260714auth1'),
+  'schedule import still references the retired Next Up asset URL');
 const store = new Map();
 const patients = [];
 let backendRows = [];
@@ -269,7 +275,7 @@ assert(api && typeof api.authoritativeRowsForDay === 'function');
   context._renderTodayPatients.__wnRender = true;
   context._renderTodayPatients.__mlsUnrGuard = true;
   vm.runInNewContext(nextUpSource, context, { filename: 'feat_nextup_connect.js', timeout: 1000 });
-  assert(context.__mlsNextUp && context.__mlsNextUp.version === 'nextup-2.0.0');
+  assert(context.__mlsNextUp && context.__mlsNextUp.version === 'nextup-2.0.1');
   assert.strictEqual(context._renderTodayPatients.__wnRender, true, 'Who\'s Next ownership marker was dropped and would cause wrapper churn');
   assert.strictEqual(context.__mlsNextUp._buildToday().length, 19);
   assert(rendered && rendered.length === 19, 'top schedule renderer did not consume the exact snapshot');

@@ -9,12 +9,12 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_task3_frontsync.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-assert(source.includes("var VERSION = 't3-1.1.2'"), 'Visit identity owner version was not advanced');
+assert(source.includes("var VERSION = 't3-1.1.3'"), 'Visit identity owner version was not advanced');
 // t3-1.0.7: a leading "PROVIDER " label on an imported row must not mint a
 // second roster chip beside the real provider (same person, prefixed string).
 assert(source.includes("replace(/^provider\\s+(?=\\S)/i, '')"), 'provider-label prefix must be stripped from provider names');
 assert(source.includes('label: humanize(x.provider)'), 'roster chip labels must use the cleaned provider name');
-assert(connect.includes('A+"?v=20260808t3112perf1"'), 'Visit identity owner loader is not explicitly cache-busted');
+assert(connect.includes('A+"?v=20260808t3113perf2"'), 'Visit identity owner loader is not explicitly cache-busted');
 const start = source.indexOf('/* __T3_PICK_IDENTITY_START__');
 const end = source.indexOf('/* __T3_PICK_IDENTITY_END__', start);
 assert(start >= 0 && end > start, 'production Visit restore identity resolver is missing');
