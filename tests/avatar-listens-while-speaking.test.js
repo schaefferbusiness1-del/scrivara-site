@@ -243,6 +243,19 @@ assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
 assert.strictEqual(sandbox.pvIsSelfEcho('in the morning'), false, 'E: and so is the other branch of it');
 assert.strictEqual(sandbox.pvIsSelfEcho('is the pain worse at night'), true,
   'E: a long contiguous quote is still caught in the tail');
+/* ⛔ THE THREE ASSERTIONS ABOVE ALL PASS AGAINST THE PRE-FIX MODULE, so on their
+   own they prove nothing about the change they were written for. Measured: the old
+   tail call was pvEchoMatch(tail, h, words, 4, 5), which returns before the overlap
+   loop whenever words.length < 5 — so both 3-word cases already returned false and
+   the 6-word contiguous one already returned true. The change this group exists to
+   pin is the removal of the OVERLAP branch, and only a case with >= 5 words that is
+   NOT contiguous can see it. This one was measured on both files: true on the
+   pre-fix module (the overlap branch deleted a real answer), false now. */
+sandbox.dropTail();
+sandbox.setSaying('');
+sandbox.hold(sandbox.pvNorm('Do you have any chest pain or pressure when you walk?'));
+assert.strictEqual(sandbox.pvIsSelfEcho('chest pain pressure when you walk'), false,
+  'E: THE OVERLAP BRANCH IS GONE — a five-word reply built from the question\'s own words, garbled by the recogniser, is the ANSWER and must survive the tail (this is the assertion that fails on the pre-fix module; the three above do not)');
 
 // nothing being spoken and no tail -> nothing is echo
 sandbox.dropTail();

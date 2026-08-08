@@ -134,7 +134,14 @@ const CASES = {
   X6: { label: 'a thick brow, no hand', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 16 } },
   X7: { label: 'the same thick brow with a hand ON the cheek', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 16, hand: true } },
   X8: { label: 'a fringe hanging to the eye line, NO spectacles', o: { skin: '#f0c9a0', hair: '#3a2a1c', fringeTo: 0.41 } },
-  X9: { label: 'thin brows painted in EXACTLY the hair colour', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 3, browColor: '#3a2a1c' } }
+  X9: { label: 'thin brows painted in EXACTLY the hair colour', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 3, browColor: '#3a2a1c' } },
+  /* X10/X11: a BALD head with and without spectacles. On a shaved head the scalp is
+     IN the skin mask, so the only thing the fringe scan could find above the eyes
+     was the FRAME - which then set its own floor and made itself undetectable. And
+     because 'glasses' used to be seeded into `derived`, the non-detection was
+     applied as a detection of absence and Match UNTICKED the doctor's own box. */
+  X10: { label: 'BALD head WITH spectacles', o: { skin: '#f0c9a0', glasses: true, scale: 0.6 } },
+  X11: { label: 'BALD head, no spectacles', o: { skin: '#f0c9a0', scale: 0.6 } }
 };
 
 async function probe(file) {
@@ -225,16 +232,43 @@ function checks(out) {
        means Match leaves whatever the doctor chose alone, which is exactly what
        should happen when the chin could not be trusted. My first version of this
        assertion demanded equality and would have forced a guess. */
-    ['X4/X5 a ceiling-light shadow never asserts a DIFFERENT face shape',
-      D('X5').indexOf('faceShape') < 0 || L('X5').faceShape === L('X4').faceShape],
-    ['X5 and it does not invent a square jaw',
-      !(D('X5').indexOf('faceShape') >= 0 && L('X5').faceShape === 'square')],
-    ['X4 CONTROL: the unshadowed twin still reads a shape', D('X4').indexOf('faceShape') >= 0],
+    /* FACE SHAPE IS NEVER CLAIMED FROM A PHOTO, on any input. Three attempts to
+       make the chin safe against an under-chin shadow were each measured doing the
+       wrong thing - the last one fired on an ordinary shaded neck where the chin was
+       exactly right, and was identically 0.00 at every framing at or below 0.65,
+       the whole band this suite lives in. The value is still computed and reported
+       in `found`; it just never enters `derived`, so Match cannot overwrite the
+       doctor's own Face-shape choice with it. A cosmetic knob is not worth a wrong
+       answer, and none of skin/hair/beard/glasses depends on the chin. */
+    ['NO CASE claims a face shape — the chin cannot support one at webcam framing',
+      ['W1','W2','W3','W4','W5','W6','W7','W8','W9','W12','W13','X1','X2','X3','X4','X5','X6','X7','X8','X9','X10','X11']
+        .every(function (k) { return D(k).indexOf('faceShape') < 0; })],
+    ['X4/X5 and the shadow therefore cannot change what is asserted', true &&
+      D('X4').indexOf('faceShape') < 0 && D('X5').indexOf('faceShape') < 0],
     ['X6 CONTROL: a thick brow with no hand reads thick', L('X6').brows === 'thick'],
+    /* X7 is now carried entirely by the brow read, which is the measurable harm: a
+       hand merged into the face inflated faceW ~19-32% and every width-normalised
+       verdict moved with it. The old sibling here checked faceShape, which no case
+       claims any more, so it could no longer fail. The threshold moved 1.35 -> 1.20
+       because a sweep of this same fixture across ten framings measured asym at
+       1.32-1.41 while the clean face measures 1.03: 1.35 sat inside the noise. */
     ['X7 A HAND ON THE CHEEK MUST NOT MAKE A THICK BROW THIN', L('X7').brows !== 'thin'],
-    ['X7 and the skull group declines when the outline is not all face', D('X7').indexOf('faceShape') < 0],
+    ['X7 and it reads the same thickness as the no-hand twin', L('X7').brows === L('X6').brows],
     ['X8 a fringe to the eye line is NOT spectacles', L('X8').glasses !== true],
-    ['X8 and the brow read is not abandoned with it', D('X8').indexOf('brows') >= 0 || !L('X8').glasses],
+    /* ⛔ THE SIBLING THAT USED TO SIT HERE COULD NOT FAIL: it was
+       `D('X8').indexOf('brows') >= 0 || !L('X8').glasses`, and look.glasses is a
+       boolean seeded false, so whenever the line above held the second disjunct was
+       true and the brow read was never consulted. Its claim was also wrong on this
+       fixture - X8 paints no eyebrows at all, and where a brow WOULD be it is
+       inside the fringe mass, so there is nothing separable to read and refusing is
+       correct. Replaced with the check that does discriminate: a bald head wearing
+       spectacles must still have them detected, which is the regression the
+       fringe-floor fix was really hiding. */
+    ['X10 a BALD head\'s spectacles are still detected (the fringe floor used to be set by the frame itself)',
+      L('X10').glasses === true],
+    ['X10 and a detected pair is CLAIMED so Match can apply it', D('X10').indexOf('glasses') >= 0],
+    ['X11 a face with no spectacles never has the box ticked FOR it', L('X11').glasses !== true],
+    ['X11 and a non-detection is not claimed as a detection of absence', D('X11').indexOf('glasses') < 0],
     ['X9 brows painted in the hair colour claim NO separate colour', D('X9').indexOf('browCol') < 0]
   ];
 }

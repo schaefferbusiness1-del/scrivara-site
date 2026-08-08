@@ -290,7 +290,15 @@ async function newPage(browser) {
           fetches: window.__log.fetches.length, up: !!document.getElementById('mlsAvKiosk'),
           consented: !!(window.__mlsAvatar.kioskState ? 0 : 0) };
       });
-      check('every control behind the card was pressed programmatically', forced.length >= 3, JSON.stringify(forced));
+      /* ⛔ NOT AN ASSERTION ANY MORE, JUST A LOG. Every id in that list is in
+         openKiosk's unconditional innerHTML and root.querySelector would throw at
+         mount if one were missing, so "at least three of them exist" is
+         structurally guaranteed and passes on any build - including the broken one.
+         The pins that actually discriminate are the four below (no microphone, no
+         recogniser, no turn, screen still up), and they DO fail on the pre-fix
+         commit via Pause→Resume and the PIN pad's Back reaching the then-ungated
+         kioskListen. */
+      results.push('  note   pressed behind the card: ' + JSON.stringify(forced));
       check('STILL no microphone', still.mic === 0, 'getUserMedia = ' + still.mic);
       check('STILL no recogniser', still.recs === 0, 'starts = ' + still.recs);
       check('STILL no turn — so no phantom check-in can be created in the doctor\'s inbox',

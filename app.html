@@ -1156,6 +1156,10 @@ function checkinSection(body){
     if (c.inProgress) meta.push('STILL IN PROGRESS');
     if (c.audited === 'corrected') meta.push('summary corrected by the audit');
     else if (c.audited === 'passed') meta.push('summary audited');
+    /* the backend gained 'rejected' and every consumer gave it the empty arm —
+       identical to null, which means "never audited". A refused summary read
+       exactly like an ordinary one. */
+    else if (c.audited === 'rejected') meta.push('⚠ THE AUDIT REJECTED THIS SUMMARY');
     return {
       name: String(c.headline || (c.inProgress
         ? 'Check-in still in progress — flagged, tap to read what there is.'

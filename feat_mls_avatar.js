@@ -195,7 +195,13 @@
                on exactly the check-ins where it matters most. A cap below the
                longest value the writer can produce is a truncation presented as a
                field. */
-            headline: c.headline ? String(c.headline).slice(0, 280) : null
+            headline: c.headline ? String(c.headline).slice(0, 280) : null,
+            /* the Visit card never carried these, so the doctor's most-used surface
+               could not show the auditor's verdict or the gaps at all - a
+               pre-existing omission that only became visible once 'rejected'
+               existed to be dropped */
+            audited: c.audited || null,
+            askAbout: (Array.isArray(c.askAbout) ? c.askAbout : []).slice(0, 3).map(function (a) { return String(a).slice(0, 160); })
           };
         })
       };
@@ -296,8 +302,13 @@
     card.appendChild(make('div', 'mlsAvMeta',
       (checkin.status === 'ready' ? 'Ready ' : 'Seen ') + (formatDate(checkin.ready_at || checkin.created_at) || '') +
       ' · ' + (Number(checkin.turns) || 0) + ' turns' +
+      /* 'rejected' HAS A SURFACE NOW. The backend gained that state and every
+         consumer gave it the empty arm - byte-for-byte the rendering of null,
+         which means "never audited". A note the auditor refused and could not
+         replace read exactly like an ordinary one. */
       (checkin.audited === 'corrected' ? ' · summary corrected by the audit pass' :
-       checkin.audited === 'passed' ? ' · summary audited' : '')));
+       checkin.audited === 'passed' ? ' · summary audited' :
+       checkin.audited === 'rejected' ? ' · ⚠ THE AUDIT REJECTED THIS SUMMARY — read the transcript' : '')));
     /* av-5.7.0 - THE HEADLINE, FIRST AND BIGGEST. The owner asked for a summary
        that "tells the docotor the improatn parts before he sees the pateint",
        and a brief the doctor has to read four labelled lines of is not that. A
@@ -1710,7 +1721,15 @@
     var trueMid = midCols.length ? median(midCols.slice()) : cxMid;
     var halfL = Math.max(1, trueMid - faceRun.L), halfR = Math.max(1, faceRun.R - trueMid);
     var asym = Math.max(halfL, halfR) / Math.min(halfL, halfR);
-    var lopsided = asym > 1.35;
+    /* 1.20, not 1.35. An adversarial sweep of the SAME hand fixture across ten
+       framings measured asym at 1.38, 1.39, 1.37, 1.38, 1.38, 1.41, 1.33, 1.32,
+       1.35, 1.33 - so a threshold of 1.35 sat INSIDE this measurement's own noise
+       band and the guard missed the hand at three framings (0.55, 0.50, 0.40),
+       leaving faceW inflated 18-20% exactly where the framed suite lives. The
+       clean face measures 1.03 on the same estimator, including under an 8-degree
+       tilt, so 1.20 separates the two populations with room on both sides instead
+       of splitting one of them. */
+    var lopsided = asym > 1.20;
     if (lopsided) {
       faceW = 2 * Math.min(halfL, halfR);
       cxMid = trueMid;
@@ -1823,10 +1842,14 @@
                  hairStyle: 'short', glasses: false, beard: 'none' };
     /* THE LEDGER OF WHAT WAS ACTUALLY MEASURED. A knob absent from it is one
        the caller leaves exactly as the doctor set it. */
-    /* hairStyle is NOT seeded here any more - it is pushed by whichever branch of
-       the hair read actually decides, and stays absent when the background makes
-       the question unanswerable. A knob in this list is a claim. */
-    var derived = ['skin', 'beard', 'glasses'];
+    /* NOTHING IS SEEDED HERE EXCEPT THE SKIN. A knob in this list is a CLAIM, and
+       the caller applies every claim over whatever the doctor set by hand. Seeding
+       'glasses' and 'beard' meant a NON-DETECTION was applied as a detection of
+       absence: a doctor who ticked Glasses had the box UNTICKED by Match whenever
+       the detector missed his frames - which, until the fix above, was every
+       bald or shaved head. A detector that finds nothing has measured nothing.
+       Each of these is now pushed by the branch that positively decides it. */
+    var derived = ['skin'];
     found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
 
     /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
@@ -1894,8 +1917,15 @@
     var sideR = sideN ? sideHit / sideN : 0;
     if (hairUnreadable) {
       /* say it out loud rather than answering. `hairStyle` never enters
-         `derived`, so Match leaves the doctor's own choice alone. */
-      found.push('hair could not be read — the background is too close to it in colour');
+         `derived`, so Match leaves the doctor's own choice alone.
+         AND SAY THE RIGHT REASON. When the photo is cropped above the hairline
+         there is no band to measure at all - bandTop clamps to 0, the loop never
+         runs, and crownR is 0 BY CONSTRUCTION rather than by measurement. Blaming
+         the background then sends the doctor to change his wall. crownN tells the
+         two apart: zero means nothing was looked at. */
+      found.push(crownN === 0
+        ? 'hair could not be read — the top of the head is outside the photo'
+        : 'hair could not be read — the background is too close to it in colour');
     }
     else if (crownR < 0.20 || !hair) { look.hairStyle = 'bald'; derived.push('hairStyle'); found.push('little or no hair'); }
     else if (crownR < 0.42) { look.hairStyle = 'buzz'; derived.push('hairStyle'); found.push('very short hair'); }
@@ -1915,7 +1945,7 @@
        are compared against THIS face's own skin rather than a threshold. */
     if (beardDepth > 0.10 && beardPix.length > 20) {
       var bcol = medianCol(beardPix);
-      look.beard = 'beard'; found.push('beard');
+      look.beard = 'beard'; derived.push('beard'); found.push('beard');
       if (bcol && !hair && lum(bcol) < skinL - 20) { look.hair = hex(bcol); derived.push('hair'); }
     } else {
       /* THE JAW, NOT THE MOUTH. Patches on or beside the lips made a dark lip
@@ -1935,8 +1965,8 @@
       var chin = patchMedian([[atX(0.30), jawY], [atX(0.70), jawY], [cxMid, chinY2]], 2, true);
       if (chin) {
         var drop = skinL - lum(chin);
-        if (drop > 46) { look.beard = 'beard'; found.push('beard'); }
-        else if (drop > 24) { look.beard = 'stubble'; found.push('stubble'); }
+        if (drop > 46) { look.beard = 'beard'; derived.push('beard'); found.push('beard'); }
+        else if (drop > 24) { look.beard = 'stubble'; derived.push('beard'); found.push('stubble'); }
       }
     }
 
@@ -1968,14 +1998,21 @@
       var fcols = [];
       for (var ffx = atX(0.14); ffx <= atX(0.86); ffx++) {
         if (ffx < 0 || ffx >= M) continue;
-        var flow = faceT, fseen = false;
+        var flow = faceT, fseen = false, fstart = -1;
         for (var ffy = Math.max(0, faceT - Math.round(faceH * 0.55)); ffy < eyeY; ffy++) {
           var fpx = px(ffx, ffy);
           var fhair = !isBg(fpx) && !mask[ffy * M + ffx] && unlikeSkin(fpx);
-          if (fhair) { fseen = true; flow = ffy; }
+          if (fhair) { if (!fseen) fstart = ffy; fseen = true; flow = ffy; }
           else if (fseen) break;
         }
-        fcols.push(flow);
+        /* THE RUN MUST START ABOVE THE FACE, or it is not hair.
+           ON A BALD OR SHAVED HEAD THE SCALP IS IN THE SKIN MASK, so the only
+           thing this definition can find above the eyes is the SPECTACLE FRAME
+           ITSELF - and it then set its own floor, the frame scan started below the
+           frame, and glasses became undetectable on exactly the heads that have no
+           hair to hide them. Measured and swept. A fringe begins above faceT (the
+           top of the skin); a frame sits inside the face. */
+        fcols.push((fstart >= 0 && fstart < faceT) ? flow : faceT);
       }
       var fmed = median(fcols);
       if (fmed !== null) fringeStop = Math.max(faceT, fmed + 2);
@@ -1993,7 +2030,7 @@
     if (browRow && cheekRow && foreRow && bridge) {
       if (lum(bridge) < lum(cheekRow) - 20 &&
           lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(foreRow) - 20) {
-        look.glasses = true; found.push('glasses');
+        look.glasses = true; derived.push('glasses'); found.push('glasses');
       }
     }
     /* ---- 9. EYE COLOUR: just inside each eye centre; refuse near-black,
@@ -2079,7 +2116,14 @@
            pattern is not monotonic in thickness (5, 7 and 8 were fine), which is
            why one pinned thickness could never have caught it.
            The darkest quarter is the brow itself; the blend sorts above it. */
-        if (browPix.length >= 24) {
+        /* > 12, NOT >= 24. The count scales with head AREA, so doubling the floor
+           while also changing the estimator (median -> darkest quarter) refused a
+           correct brow colour at ordinary webcam distance: measured on one fixture,
+           scale 1.0 gave 111 pixels and scale 0.55 gave 41 - both of which return
+           the right colour with the new estimator, and both of which the doubled
+           floor was fine with, but the margin was gone. The estimator was the fix;
+           the floor was never the problem, so it goes back to what it was. */
+        if (browPix.length > 12) {
           browPix.sort(function (pp, qq) { return lum(pp) - lum(qq); });
           var bc = browPix[Math.floor(browPix.length * 0.25)];
           if (hair && chDist(bc, hair) > 30) { look.browCol = hex(bc); derived.push('browCol'); found.push('brows a different colour from the hair'); }
@@ -2200,19 +2244,24 @@
        face's own columns, means the face goes on and this chin is not the chin. A
        real beard is already handled above (it moves lowerChin), and a real neck is
        skin, so neither fires this. */
-    var belowDark = 0, belowTot = 0;
-    var belowHalf = Math.max(2, Math.round(faceW * 0.30));
-    for (var qy = lowerChin + 1; qy <= Math.min(M - 1, lowerChin + Math.round(faceH * 0.25)); qy++) {
-      for (var qx = cxMid - belowHalf; qx <= cxMid + belowHalf; qx++) {
-        if (qx < 0 || qx >= M) continue;
-        belowTot++;
-        var qp = px(qx, qy);
-        if (!isBg(qp) && !mask[qy * M + qx]) belowDark++;
-      }
-    }
-    var belowR = belowTot ? belowDark / belowTot : 0;
-    var chinPlausible = belowR < 0.35;
-    if (!offFrame && chinPlausible && eyeW > M * 0.10 && lowerH > faceH * 0.20 && look.beard === 'none') {
+    /* ⛔ chinPlausible IS GONE, and faceShape is no longer CLAIMED. Read the
+       measurements before restoring either.
+       This guard was my third attempt to make the face-SHAPE verdict safe against
+       an under-chin shadow, and an adversarial sweep measured it doing both wrong
+       things at once: it FIRED on an ordinary shaded neck where the chin had been
+       measured exactly right (belowR jumped 0 -> 0.53 the moment the shade crossed
+       the mask's luminance cut, with chinY byte-identical to the unshadowed twin),
+       and it was exactly 0.00 at EVERY framing at or below 0.65 - the entire band
+       this file exists for - so where it was aimed it could not fire at all.
+       Three calibrations, three failures, on a signal that is not there at the
+       distances that matter. So the honest answer is not a fourth threshold: the
+       photo does not reliably support a shape verdict, so it stops making one.
+       look.faceShape is still computed and still reported in `found` (it is useful
+       information), but it NEVER enters `derived` - which means Match never
+       overwrites the Face-shape control the doctor set by hand. A cosmetic knob is
+       not worth a wrong answer, and the four knobs the owner actually asked about
+       (skin, hair, beard, glasses) do not depend on the chin. */
+    if (!offFrame && eyeW > M * 0.10 && lowerH > faceH * 0.20 && look.beard === 'none') {
       var shapeR = eyeW / lowerH;
       var sVal = shapeR < 1.48 ? 'long' : (shapeR > 1.80 ? 'round' : 'oval');
       /* A SQUARE JAW OUTRANKS ALL THREE: it is not a proportion, it is the face
@@ -2224,7 +2273,10 @@
          an iris, and 0.88 sat between them. */
       var jawRun = runAt(Math.round(maxWY + (lowerChin - maxWY) * 0.62));
       if (jawRun && jawRun.w / maxW > 0.88) sVal = 'square';
-      look.faceShape = sVal; derived.push('faceShape');
+      /* COMPUTED AND REPORTED, NEVER CLAIMED — see the note above. It goes into
+         `found` so the doctor can see what the photo looked like, and stays out of
+         `derived` so Match cannot overwrite his own choice with it. */
+      look.faceShape = sVal;
       found.push(sVal === 'square' ? 'a square jaw' : sVal + ' face');
     }
     /* EYE SPACING, from the two dark masses measured in step 5. THE DARK MASS,
@@ -3772,7 +3824,14 @@
         return JSON.stringify({
           v: 1, sid: rec.sid || '', bound: rec.bound || '', start: rec.start || 0,
           savedAt: Date.now(), avName: rec.avName || '', trimmed: trimmed,
-          intake: rec.intake || [], actions: rec.actions || [], parts: parts
+          intake: rec.intake || [], actions: rec.actions || [], parts: parts,
+          /* THE CONSENT AND THE FILED FLAG ARE PART OF THE RECORD, not of this
+             tab's memory. Without them a recovered capture filed with NO consent
+             attestation - breaking the invariant this train exists to enforce -
+             and re-filed the whole check-in block a second time, so the patient's
+             intake answers landed in the chart twice. Both are in-memory-only
+             flags that a reload is exactly the event that loses. */
+          consentAt: rec.consentAt || 0, intakeFiled: rec.intakeFiled === true
         });
       }, '');
       if (!body) return { ok: false, why: 'serialise', trimmed: trimmed };
@@ -3801,7 +3860,10 @@
     if (kiosk.ambFiled || !clean(kiosk.ambBound)) return null;
     var res = ambientStoreWrite({
       sid: kiosk.sid, bound: kiosk.ambBound, start: kiosk.ambStart, avName: kiosk.avName || '',
-      intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || []
+      intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || [],
+      /* carried so a RECOVERED capture can state its consent and can tell whether
+         the check-in has already reached the transcript - see ambientStoreWrite */
+      consentAt: kiosk.consentAt || 0, intakeFiled: kiosk.intakeFiled === true
     });
     kiosk.ambSavedAt = Date.now();
     kiosk.ambSaveOk = res.ok === true;
@@ -4437,11 +4499,15 @@
     kioskAmbientClock();
   }
   function kioskAmbientNoMic() {
-    /* No recogniser at all. Say so and STOP: a red recording badge over a
-       microphone that was never open is the one lie this feature must not
-       tell. */
-    var iv = gid('mlsAvKioskInterim');
-    if (iv) iv.textContent = 'Staff: this browser cannot listen here, so nothing is being recorded.';
+    /* No recogniser, or a microphone that has been revoked mid-capture. Say so and
+       STOP: a red recording badge over a microphone that is not open is the one lie
+       this feature must not tell.
+       THE MESSAGE RIDES THROUGH THE STOP. Writing it here and calling the stop on
+       the next line lost it every time - the stop rewrites the say line and the
+       interim synchronously, with no paint in between, so staff saw the ordinary
+       "Recording stopped" and never learned the microphone had gone. */
+    kiosk.ambSayOverride = 'The microphone stopped working, so I stopped recording.';
+    kiosk.ambInterimOverride = 'Staff: the microphone was refused or lost, so nothing more is being recorded. Anything already captured is in the transcript.';
     kioskAmbientStop('no-microphone');
   }
   function kioskAmbientRetry() {
@@ -4624,7 +4690,13 @@
       savedAt: saved, trimmed: rec.trimmed === true,
       mins: (start && saved && saved > start) ? Math.max(1, Math.round((saved - start) / 60000)) : 0,
       actions: Array.isArray(rec.actions) ? rec.actions : [],
-      intake: Array.isArray(rec.intake) ? rec.intake : []
+      intake: Array.isArray(rec.intake) ? rec.intake : [],
+      /* both persisted from av-5.7.1 - an OLDER record simply has neither, which
+         reads as "consent not recorded" and "check-in not yet filed": the safe
+         direction on both counts (it states the gap, and it errs toward including
+         the check-in rather than losing it) */
+      consentAt: Number(rec.consentAt) || 0,
+      intakeFiled: rec.intakeFiled === true
     };
   }
   function ambientRecoverFile() {
@@ -4636,10 +4708,24 @@
     var box = gid('ez3flTranscript') || gid('ez3Transcript');
     if (!box || typeof box.value !== 'string') return { ok: false, why: 'the visit transcript box is not on this screen — open the Visit recorder first.' };
     var lines = [];
-    lines.push(AMBIENT_HEAD_CHECKIN);
-    lines.push('[Avatar check-in - the patient\'s own words, chart ' + info.bound + ']');
-    lines.push(intakeTextFrom(info.intake));
-    lines.push('');
+    /* THE CHECK-IN GOES IN ONCE, ACROSS A RELOAD TOO. The live path tracks this
+       with kiosk.intakeFiled, which is in-memory - so before the flag was
+       persisted, a recovered capture led with the whole intake again and the
+       patient's answers landed in the chart twice. */
+    if (!info.intakeFiled) {
+      lines.push(AMBIENT_HEAD_CHECKIN);
+      lines.push('[Avatar check-in - the patient\'s own words, chart ' + info.bound + ']');
+      /* AND IT CARRIES ITS CONSENT, or says it cannot. A recovered recording used
+         to file with no attestation at all, which is the one thing this train
+         exists to prevent - and silence reads as "nobody asked". */
+      lines.push(info.consentAt
+        ? ('[Recording consent confirmed by practice staff at ' +
+            safe(function () { return new Date(info.consentAt).toLocaleString(); }, String(info.consentAt)) +
+            ', before any microphone was opened]')
+        : '[Recording consent: NOT RECORDED in the recovered file — confirm with the staff member who ran this check-in before relying on this transcript]');
+      lines.push(intakeTextFrom(info.intake));
+      lines.push('');
+    }
     lines.push(AMBIENT_HEAD_VISIT);
     lines.push('[Room capture RECOVERED after this page reloaded' +
       (info.trimmed ? ' - the backup had run out of room, so the EARLIEST part of this visit is missing' : '') +
@@ -4704,7 +4790,16 @@
     kiosk.ambient = true;
     kiosk.ambBound = bound;
     kiosk.ambStart = Date.now();
-    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambFails = 0;
+    /* AN UNFILED CAPTURE IS NEVER DISCARDED BY STARTING A NEW ONE. Before the rest
+       screen existed, a stop that failed to file left only the exit control, so the
+       words stayed in memory and in the crash backup. Restoring the hand-off button
+       on every stop created a one-tap path to this line - which used to reset
+       ambParts and then immediately overwrite the backup with the empty new record,
+       destroying the only copy of a consultation that had just failed to file.
+       Whatever was captured and not filed is carried into the resumed capture. */
+    var carried = (!kiosk.ambFiled && Array.isArray(kiosk.ambParts) && kiosk.ambParts.length)
+      ? kiosk.ambParts.slice() : [];
+    kiosk.ambParts = carried; kiosk.ambLast = ''; kiosk.ambFails = 0;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null;
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
@@ -4965,13 +5060,11 @@
     var root = gid('mlsAvKiosk');
     if (root) root.classList.remove('ambient');
     if (!root) return kiosk.ambResult;      /* the overlay is already gone */
-    /* GIVE THE HAND-OFF BUTTON BACK. kioskAmbientStart hides it with an INLINE
-       display:none, which the .ambient class rule cannot undo - so after any stop
-       that is not End-visit-review (the 90-minute cap, a chart change, a dead
-       microphone, a staff exit that leaves the screen up) the rest screen came
-       back with no way to resume listening, and the only remaining control was
-       the door out of the kiosk. */
-    if (kiosk.completed) kioskRestShow();
+    /* the hand-off button comes back BELOW, after the mood and the say line are
+       written - see the end of this function. Calling it here put the 'resting'
+       chip on screen one line before kioskMood('speaking') took it straight back
+       off, so the screen read "Speaking", waveform animating, over a stopped
+       recording. */
     kioskMood('speaking', 'thank you');
     var head = res.ok ? 'Recording stopped. The visit is in the doctor\'s transcript.'
                       : 'Recording stopped. Nothing was written.';
@@ -4985,6 +5078,21 @@
       iv.textContent = res.ok
         ? ('Staff: ' + res.chars + ' characters filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
         : ('Staff: ' + (res.why || 'the capture could not be filed.'));
+    }
+    /* NOW the hand-off comes back, after the mood/say/interim writes above rather
+       than before them. It is also the LAST thing that touches the chip, so
+       "Waiting for the doctor" is what actually stays on screen. */
+    if (kiosk.completed) kioskRestShow();
+    /* AND THE REASON SURVIVES. kioskAmbientNoMic writes its explanation and then
+       calls this function on the next line, which used to overwrite both the say
+       line and the interim synchronously - so the only sentence telling staff the
+       microphone had been revoked never reached a paint. A caller that has already
+       explained itself passes its line in, and it wins. */
+    if (kiosk.ambSayOverride) {
+      kioskSetSay(kiosk.ambSayOverride);
+      var ivO = gid('mlsAvKioskInterim');
+      if (ivO && kiosk.ambInterimOverride) ivO.textContent = kiosk.ambInterimOverride;
+      kiosk.ambSayOverride = ''; kiosk.ambInterimOverride = '';
     }
     return kiosk.ambResult;
   }
@@ -5136,7 +5244,15 @@
        speech does, or a slow typist gets cut off mid-answer */
     root.querySelector('#mlsAvKioskInput').addEventListener('input', function () { kiosk.heard = true; });
     root.querySelector('#mlsAvKioskRoomGo').addEventListener('click', function () {
-      /* THE HAND-OFF, in one tap. See kioskRestShow. */
+      /* THE HAND-OFF, in one tap. See kioskRestShow.
+         kiosk.mic IS A ONE-SHOT LATCH: it is written once, by the preflight on the
+         consent tap, and never again. So a doctor who dismissed the permission
+         prompt at the start of the check-in found the room recording permanently
+         unavailable for the rest of the visit, with the new refusal telling him the
+         microphone was not available and no way to change that answer. This tap is
+         a fresh user gesture, which is exactly what a permission prompt needs, so
+         it re-probes before refusing. */
+      if (kiosk.mic === false) { kioskMicPreflight(function () { kioskAmbientStart(); }); return; }
       kioskAmbientStart();
     });
     root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskConsentYes);
