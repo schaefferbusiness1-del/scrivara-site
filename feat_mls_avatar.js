@@ -1897,7 +1897,25 @@
         for (var py = sp[1] - r; py <= sp[1] + r; py++) {
           for (var pxx = sp[0] - r; pxx <= sp[0] + r; pxx++) {
             if (pxx < 0 || py < 0 || pxx >= M || py >= M) continue;
-            if (skinOnly && !mask[py * M + pxx]) continue;
+            if (skinOnly) {
+              var si = py * M + pxx;
+              /* 🚨 IT WAS MEASURING HIS WALL AND HIS FACE TOGETHER (av-5.7.7).
+                 Owner: "it needs to see the skin color of my face not my background +
+                 my face." Exactly right, and this line is why.
+                 `mask` is built over the WHOLE FRAME in pass 2 with a chroma tolerance
+                 of 56 - about 22% per channel - so it is not "the face", it is "every
+                 pixel anywhere that resembles the reference". Measured against fair skin
+                 [236,199,174]: a warm off-white wall scores 14.0 and is ADMITTED, a grey
+                 shirt 26.3 ADMITTED, pale pink 19.3 ADMITTED. The comment that used to
+                 sit here claimed this made "a wall the colour of a cheek impossible to
+                 sample by accident"; it was false by a factor of four.
+                 `label[i] === best.id` is the actual face: the connected component the
+                 face detector CHOSE. A wall pixel can look like skin, but it cannot be
+                 part of the component the head occupies. Both conditions now, so a
+                 sample is skin AND on the face. */
+              if (!mask[si]) continue;
+              if (label[si] !== best.id) continue;
+            }
             var q = px(pxx, py); acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
           }
         }
@@ -1905,8 +1923,9 @@
       }).filter(Boolean);
       return medianCol(cols);
     }
-    /* SKIN IS SAMPLED WHERE THE MASK SAYS SKIN. That single constraint is what
-       makes a wall the colour of a cheek impossible to sample by accident. */
+    /* SKIN IS SAMPLED WHERE THE MASK SAYS SKIN **AND THE FACE COMPONENT SAYS FACE**.
+       Either alone is not enough: the mask spans the whole frame, and the component
+       alone would include hair and spectacle frames that the mask excludes. */
     var skin = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
@@ -3076,14 +3095,20 @@
       }
       /* filled only AFTER a Match: before one, every value is trivially the doctor's
          own and labelling it would be noise. */
-      function setLookBadges(measured) {
-        var got = measured || [];
+      function setLookBadges(measured, aiRead) {
+        var got = measured || [], ai = aiRead || [];
         Object.keys(lookBadges).forEach(function (k) {
           var b = lookBadges[k]; if (!b) return;
-          var on = got.indexOf(k) >= 0;
-          b.textContent = on ? 'from your photo' : 'your setting';
-          b.style.color = on ? '#1f5c41' : '#8a938d';
-          b.style.background = on ? '#e6f7ef' : '#f2f1ec';
+          /* THREE STATES, NOT TWO (av-5.8.0). "read by AI" is a different fact from
+             "measured on this device": one is a model's confident answer, the other is
+             arithmetic over pixels. The doctor is entitled to know which one moved his
+             setting, because the two fail in different ways and he will trust them
+             differently once he has seen each be wrong. */
+          var byAi = ai.indexOf(k) >= 0;
+          var on = byAi || got.indexOf(k) >= 0;
+          b.textContent = byAi ? 'read by AI' : (on ? 'from your photo' : 'your setting');
+          b.style.color = byAi ? '#4a2d7a' : (on ? '#1f5c41' : '#8a938d');
+          b.style.background = byAi ? '#efe8fb' : (on ? '#e6f7ef' : '#f2f1ec');
         });
       }
       function colourControl(key, labelText) {
@@ -3196,6 +3221,58 @@
         lookNote.textContent = usedHi
           ? 'Reading the full-quality copy of your photo…'
           : 'Reading your photo… (only the stylized copy is on this device — retake it for a full-quality reading)';
+        /* ---- THE MODEL READS IT TOO (av-5.8.0) ------------------------------------
+           Owner, 2026-08-08: "do the api way and make it good."
+           The pixel matcher stays and runs first - it is offline, instant, and it is what
+           produces the shape verdicts. The model answers the questions pixels kept
+           getting wrong: which of these tones is his SKIN rather than his wall, is that a
+           moustache, are those spectacles.
+           WHERE THEY DISAGREE, THE MODEL WINS ONLY IF IT SAID 'high'. The route already
+           refuses to return anything less as a claim, so this cannot apply a guess over a
+           setting the doctor made by hand - the rule that governs `derived` is unchanged,
+           the model is simply another source that must earn its place in it.
+           AND IT NEVER BLOCKS: no backend, no key, a 502, a timeout - the pixel answer is
+           already applied by the time this resolves, so a failure costs the doctor
+           nothing except the extra precision. */
+        var visionSrc = src;
+        function applyVision(base, note) {
+          safe(function () {
+            /* api(path, options) takes FETCH options, not a body object - passing
+               { image: ... } here would have issued a GET with no payload and the route
+               would have answered 404 for the rest of time */
+            api('/api/avatar/office/facelook', {
+              method: 'POST',
+              body: JSON.stringify({ image: visionSrc })
+            }).then(function (vr) {
+              if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) {
+                lookNote.textContent = note + ' (the AI reading was unavailable, so this is the on-device measurement only)';
+                return;
+              }
+              var vl = vr.json.look || {}, vClaimed = vr.json.claimed || [], vUnsure = vr.json.unsure || [];
+              if (!vClaimed.length) {
+                lookNote.textContent = note + ' The AI looked too and was not confident about anything, so nothing of its was applied.';
+                return;
+              }
+              vClaimed.forEach(function (k) {
+                if (vl[k] === undefined) return;
+                lookNow[k] = vl[k];
+                if (aiKnobs.indexOf(k) < 0) aiKnobs.push(k);
+              });
+              lookNow = faceLookSafe(lookNow);
+              skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
+              shirtPick.value = lookNow.shirt; lipPick.value = lookNow.lip;
+              stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
+              glassesBox.checked = lookNow.glasses === true;
+              setLookBadges(base, aiKnobs);
+              lookApply();
+              lookNote.textContent = note + ' The AI also read it and was confident about ' +
+                vClaimed.join(', ') + (vUnsure.length ? ('; unsure about ' + vUnsure.join(', ') + ', so those were left as they were.') : '.');
+            }, function () {
+              lookNote.textContent = note + ' (the AI reading could not be reached, so this is the on-device measurement only)';
+            });
+          });
+        }
+        var aiKnobs = [];
         faceTintFromPortrait(src, function (res) {
           var look = res && res.look;
           /* av-5.7.0: the honest failure is "I could not FIND a face", and it
@@ -3249,9 +3326,14 @@
           /* say what it actually saw - a silent generic face is exactly what
              "it straight up does not work" looks like from the doctor's side */
           var found = (res && res.found && res.found.length) ? res.found.join(', ') : '';
-          lookNote.textContent = found
+          var pixNote = found
             ? ('Matched from your photo - detected ' + found + '. Adjust anything above to fine-tune.')
             : 'Matched from your photo - adjust anything above to fine-tune.';
+          lookNote.textContent = pixNote;
+          /* the model reads the same photo and refines what pixels get wrong. Started
+             AFTER the on-device answer is already applied, so a slow or missing backend
+             costs precision and never the feature. */
+          applyVision(got, pixNote);
         });
       });
       var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
