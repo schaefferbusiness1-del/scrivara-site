@@ -264,6 +264,27 @@
     return '[Avatar check-in #' + (checkin.id != null ? checkin.id : '?') + ' — completed ' +
       (formatDate(checkin.ready_at) || checkin.ready_at || '') + ']';
   }
+  /* THE AUDIT VERDICT TRAVELS WITH THE WORDS (av-5.7.2, review round three).
+     The summary the doctor reads is written by one model and checked by another.
+     Every surface that SHOWS the summary was rendering all four verdicts
+     identically, and both paths that write it into the permanent record - the
+     chart (importSummary) and the visit transcript (addToTranscript) - dropped the
+     verdict entirely. So a summary the auditor REJECTED, meaning it could not be
+     reconciled with what the patient actually said, landed in the chart under
+     "Added to chart ✓" and fed the note draft, indistinguishable from a verified one.
+     Every state gets a line, including the absent one: silence is what made
+     "never audited" and "audit failed" the same fact. Absent is real and expected -
+     an older backend does not send the field at all. */
+  function auditNote(audited) {
+    var a = clean(audited);
+    if (a === 'rejected') {
+      return '[⚠ AI AUDIT REJECTED THIS SUMMARY — it could not be reconciled with the ' +
+        'patient\'s own answers. Treat it as unverified and read the check-in itself before relying on it.]';
+    }
+    if (a === 'corrected') return '[AI audit: corrected against the patient\'s answers.]';
+    if (a === 'passed') return '[AI audit: checked against the patient\'s answers.]';
+    return '[AI audit: no verdict recorded for this check-in.]';
+  }
   function importSummary(checkin, button) {
     var patient = exactPatient(checkin.patient_external_id);
     if (!patient) {
@@ -278,7 +299,9 @@
       return;
     }
     var existingSummary = String(patient.summary || '').trim();
-    var block = stamp + '\n' + String(checkin.summary || '').trim();
+    /* the verdict sits between the stamp and the words, so it cannot be read as
+       part of either - see auditNote */
+    var block = stamp + '\n' + auditNote(checkin.audited) + '\n' + String(checkin.summary || '').trim();
     var updated = {};
     for (var k in patient) if (Object.prototype.hasOwnProperty.call(patient, k)) updated[k] = patient[k];
     updated.summary = existingSummary ? (existingSummary + '\n\n' + block) : block;
@@ -1927,7 +1950,23 @@
         ? 'hair could not be read — the top of the head is outside the photo'
         : 'hair could not be read — the background is too close to it in colour');
     }
-    else if (crownR < 0.20 || !hair) { look.hairStyle = 'bald'; derived.push('hairStyle'); found.push('little or no hair'); }
+    /* BALD IS SHOWN, NEVER CLAIMED (av-5.7.2, review round three). `!hair` means no
+       hair pixel was found ANYWHERE - a non-detection, and this branch asserted it
+       as a detection of absence, which is the exact mistake `derived` was rebuilt to
+       stop making. It is reachable on ordinary heads: light blond (#e8d79a) passes
+       faceIsSkinRgb and survives the pass-2 rebuild, so the hair joins the SKIN
+       component, faceT sits at the top of the hair, and the crown band above it is
+       background - byte-identical to a shaved head. Measured: 'bald' was claimed on
+       42 of 120 skin x hair x background combinations where the head demonstrably
+       HAD hair, overwriting the doctor's own hairStyle with 'bald' and greeting his
+       patients with a bald avatar.
+       A genuinely bald scalp and very light hair are the SAME measurement here, so
+       the honest answer is to report and refuse, not to pick one. */
+    else if (crownR < 0.20 || !hair) {
+      look.hairStyle = 'bald';
+      found.push('little or no hair — but very light hair measures the same as a shaved head, ' +
+        'so your own hair setting was left alone');
+    }
     else if (crownR < 0.42) { look.hairStyle = 'buzz'; derived.push('hairStyle'); found.push('very short hair'); }
     else if (sideR > 0.30) { look.hairStyle = 'long'; derived.push('hairStyle'); found.push('long hair'); }
     else { look.hairStyle = 'short'; derived.push('hairStyle'); found.push('short hair'); }
@@ -1946,7 +1985,13 @@
     if (beardDepth > 0.10 && beardPix.length > 20) {
       var bcol = medianCol(beardPix);
       look.beard = 'beard'; derived.push('beard'); found.push('beard');
-      if (bcol && !hair && lum(bcol) < skinL - 20) { look.hair = hex(bcol); derived.push('hair'); }
+      /* THE BEARD IS NOT THE HAIR. This branch fires exactly when no hair pixel was
+         found, which is both the genuinely-bald head AND the head whose hair the
+         background or the skin cluster swallowed - and in the second case it takes
+         the colour from the BEARD and claims it as scalp hair. Shown, never claimed:
+         a facial-hair colour applied to the head is a visible wrong answer, and
+         `hairUnreadable` two branches up has already told the doctor why. */
+      if (bcol && !hair && lum(bcol) < skinL - 20) { look.hair = hex(bcol); }
     } else {
       /* THE JAW, NOT THE MOUTH. Patches on or beside the lips made a dark lip
          colour read as a drop from the cheeks, and a clean-shaven face came
@@ -2076,18 +2121,33 @@
       var by0 = Math.max(faceT, (fringeBottom === null ? faceT : fringeBottom) + 2);
       var gap = Math.max(3, eyeY - by0);
       var by1 = Math.max(by0 + 1, Math.round(eyeY - Math.max(1, gap * 0.10)));
-      var browCols = [], browPix = [];
+      var browCols = [], browPix = [], bridgeCols = [];
       for (var bx2 = atX(0.14); bx2 <= atX(0.86); bx2++) {
         if (bx2 < 0 || bx2 >= M) continue;
-        if (bx2 > atX(0.44) && bx2 < atX(0.56)) continue;      /* the gap between the brows */
+        var isBridge = (bx2 > atX(0.44) && bx2 < atX(0.56));   /* the gap between the brows */
         var darkRows = 0;
         for (var byy2 = by0; byy2 < by1; byy2++) {
           var bp2 = px(bx2, byy2);
-          if (lum(bp2) < skinL - 34) { darkRows++; browPix.push(bp2); }
+          /* NOT THE WALL. Every other scan in this function carries !isBg() - the
+             crown, the beard and both fringe walks - and this one did not, so on a
+             head whose box reaches the edge of the frame the BACKGROUND was counted
+             as eyebrow. `mask` is deliberately not consulted: a brow is darker than
+             skin and is outside the skin component, exactly like hair. */
+          if (isBg(bp2)) continue;
+          if (lum(bp2) < skinL - 34) { darkRows++; if (!isBridge) browPix.push(bp2); }
         }
-        browCols.push(darkRows);
+        if (isBridge) bridgeCols.push(darkRows); else browCols.push(darkRows);
       }
       var browMed = median(browCols);
+      /* IS IT A BAR ACROSS THE FACE, OR TWO BROWS? A spectacle frame runs straight
+         over the nose bridge; eyebrows stop either side of it. The bridge columns
+         were being skipped entirely, so when the glasses detector missed, the frame
+         was measured as the doctor's eyebrows - 84 of 175 bespectacled framings
+         claimed a brow weight the same face without frames does not claim at all.
+         Now the bridge is measured too, and a band that continues across it is not
+         eyebrows and claims nothing. */
+      var bridgeMed = median(bridgeCols);
+      var frameLike = (browMed && bridgeMed !== null && bridgeMed >= browMed * 0.6);
       /* the brow read is the measurement this file has got wrong most often, so
          the numbers it came from ride back with the result for inspection */
       dbgBrow = { by0: by0, by1: by1, fringe: fringeBottom, med: browMed, cols: browCols.length };
@@ -2104,8 +2164,24 @@
            natural, 3% thin and 9%+ thick. The three-point test is what shows
            the classifier DISCRIMINATES; it is not what chose the numbers. */
         var bVal = bRatio < 0.054 ? 'thin' : (bRatio > 0.095 ? 'thick' : 'normal');
-        look.brows = bVal; derived.push('brows');
-        found.push(bVal === 'normal' ? 'natural brows' : bVal + ' brows');
+        /* CLAIMED ONLY WHEN IT WAS ACTUALLY MEASURABLE (av-5.7.2, review round three).
+           Round three found two independent ways this knob was confidently wrong: the
+           wall counted as brow (fixed above with !isBg), and a missed spectacle frame
+           measured as eyebrows (fixed above with the bridge test). The third is
+           resolution: browMed IS the brow's thickness in analysis rows, and below
+           three rows the darkest pixel in the band is a blend by construction, so
+           neither the weight nor the colour can be recovered - a thin brow is
+           sub-pixel at ordinary webcam distance. Blanket-declaiming this was my first
+           cure and it was too wide: it broke "dark brows under grey hair get their own
+           colour", a case the fixtures prove works. So the gate is the MEASUREMENT,
+           not the knob. */
+        var browReadable = (browMed >= 3 && !frameLike);
+        look.brows = bVal;
+        if (browReadable) derived.push('brows');
+        found.push((bVal === 'normal' ? 'natural brows' : bVal + ' brows') +
+          (browReadable ? '' : (frameLike
+            ? ' — but a bar runs across the nose bridge, so this may be a spectacle frame; your own setting was left alone'
+            : ' — too small in this photo to measure reliably, so your own setting was left alone')));
         /* THE INTERIOR OF THE BROW, NOT ITS MEDIAN. Every pixel counted here is
            merely "darker than the skin", so on a thin brow the set is mostly the
            ANTIALIASED EDGE - and its median is a mid-tan that exists nowhere on
@@ -2123,10 +2199,32 @@
            the right colour with the new estimator, and both of which the doubled
            floor was fine with, but the margin was gone. The estimator was the fix;
            the floor was never the problem, so it goes back to what it was. */
-        if (browPix.length > 12) {
+        /* back to >= 24 (av-5.7.2). Round two lowered this to > 12 on a measurement
+           taken from a NORMAL-thickness brow; on a thin brow the 13-23 band is the
+           antialiased edge, and a sweep over six fixtures x thirteen framings scored
+           the lower floor 9 new wrong colours against 4 new right ones. The whole
+           net loss lands at webcam framing, where the brow is sub-pixel. */
+        if (browPix.length >= 24) {
           browPix.sort(function (pp, qq) { return lum(pp) - lum(qq); });
           var bc = browPix[Math.floor(browPix.length * 0.25)];
-          if (hair && chDist(bc, hair) > 30) { look.browCol = hex(bc); derived.push('browCol'); found.push('brows a different colour from the hair'); }
+          /* shown, never claimed - see look.brows above. A thin brow is at most 1.5px
+             tall on the 128px analysis grid at any webcam framing, so the darkest
+             pixel in the band is a BLEND at every distance (measured #53402e against
+             a truth of #3a2a1c even at scale 1): the estimator cannot return the
+             right colour, so it must not overwrite the doctor's. */
+          if (hair && chDist(bc, hair) > 30) {
+            look.browCol = hex(bc);
+            /* same gate as the weight: three analysis rows of real brow, and not a
+               bar across the bridge. Above that the darkest quarter IS the brow and
+               the fixtures show it returns the right colour; below it, it is edge
+               blend and returned a mid-tan that exists nowhere on the face. */
+            if (browReadable) {
+              derived.push('browCol');
+              found.push('brows a different colour from the hair');
+            } else {
+              found.push('brows may be a different colour from the hair — not measurable in this photo, so your own setting was left alone');
+            }
+          }
         }
       }
     }
@@ -2451,25 +2549,128 @@
     safe(function () { cameraStream.getTracks().forEach(function (t) { t.stop(); }); });
     cameraStream = null;
   }
-  function stylizePortrait(video) {
+  /* ---- THE PHOTO THE MATCHER MEASURES IS NOT THE PHOTO PATIENTS SEE ------------
+     Owner, 2026-08-08: "it has to find my skin color my eyes and hair and more and
+     matches it and also make sure it takes a good picture and uses the high res
+     picture not the low res one."
+     He was describing a real defect, and it was worse than resolution alone. Three
+     things stood between his face and the measurement:
+       1. the camera was opened with facingMode ONLY, so the browser handed back its
+          default - typically 640x480;
+       2. stylizePortrait POSTERIZED every channel to SIX levels (steps of 51) and
+          re-compressed at JPEG 0.82 - and that posterized copy was the only image
+          stored, so "find my skin colour" was being asked of a 6-level image whose
+          every tone had been snapped up to 51 units away from the truth;
+       3. it was then downsampled again to the 128-px analysis grid.
+     Now there are TWO images from one chosen frame: a measurement-grade square crop
+     at capture resolution with no posterizing, which is what Match reads, and the
+     stylized portrait, which is only ever what patients see. The illustrated look was
+     deliberate and it stays - it just no longer defines what the doctor's skin, hair
+     and eyes are measured from.
+     MEASURE_MAX stays 512: the analysis grid is 128, so 512 gives a clean 4:1 box
+     average per analysis pixel (real averaging of real tones, which is what fixes the
+     colour) without carrying a megapixel data URL around. Raising the grid itself
+     needs every absolute pixel floor in faceReadPortrait re-derived first - they were
+     calibrated in 128-space - so that is a separate change, deliberately not smuggled
+     in here. */
+  var MEASURE_MAX = 512;
+  function captureSquare(video, out) {
+    var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+    if (!vw || !vh) return null;
+    var side = Math.min(vw, vh);
+    /* NEVER UPSCALE. Inventing pixels would make a low-res camera look like a
+       high-res one to every check below, which is the opposite of the point. */
+    var px2 = Math.max(64, Math.min(out, side));
+    var canvas = document.createElement('canvas');
+    canvas.width = px2; canvas.height = px2;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, px2, px2);
+    return canvas;
+  }
+  /* "MAKE SURE IT TAKES A GOOD PICTURE" - measured, not hoped for. Sharpness is mean
+     absolute gradient energy on a small grey copy (a blurred or motion-smeared frame
+     has little); exposure is the mean luminance, which catches both a dark room and a
+     blown-out window behind the doctor. Both are computed on the SAME downscale so
+     the numbers are comparable between frames. */
+  function frameQuality(canvas) {
+    return safe(function () {
+      var G = 96;
+      var g = document.createElement('canvas'); g.width = G; g.height = G;
+      var gx = g.getContext('2d');
+      gx.drawImage(canvas, 0, 0, G, G);
+      var d = gx.getImageData(0, 0, G, G).data;
+      var grey = new Float64Array(G * G), sum = 0;
+      for (var i = 0, j = 0; i < d.length; i += 4, j++) {
+        grey[j] = (d[i] * 3 + d[i + 1] * 4 + d[i + 2]) / 8;
+        sum += grey[j];
+      }
+      var mean = sum / (G * G), edge = 0, n = 0;
+      for (var y = 1; y < G - 1; y++) {
+        for (var x = 1; x < G - 1; x++) {
+          var c = grey[y * G + x];
+          edge += Math.abs(grey[y * G + x + 1] - c) + Math.abs(grey[(y + 1) * G + x] - c);
+          n += 2;
+        }
+      }
+      return { sharp: n ? edge / n : 0, exposure: mean };
+    }, { sharp: 0, exposure: 0 });
+  }
+  /* BEST OF SEVERAL FRAMES, not whichever frame the tap landed on. A single grab
+     catches a blink, a turn, or the frame the autofocus was still working on. */
+  function grabBestFrame(video, tries, then) {
+    var best = null, bestQ = null, left = Math.max(1, tries);
+    function step() {
+      var canvas = captureSquare(video, MEASURE_MAX);
+      if (canvas) {
+        var q = frameQuality(canvas);
+        if (!bestQ || q.sharp > bestQ.sharp) { best = canvas; bestQ = q; }
+      }
+      if (--left <= 0) { then(best, bestQ); return; }
+      safe(function () { setTimeout(step, 120); }, null);
+    }
+    step();
+  }
+  function stylizeCanvas(src) {
     var size = 256;
     var canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
     var ctx = canvas.getContext('2d');
-    var vw = video.videoWidth || size, vh = video.videoHeight || size;
-    var side = Math.min(vw, vh);
-    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, size, size);
+    ctx.drawImage(src, 0, 0, size, size);
     /* gentle stylization: posterized tones + a touch of warmth — a friendly
-       illustrated rendition of the doctor's face, not a raw photo */
+       illustrated rendition of the doctor's face, not a raw photo. DISPLAY ONLY:
+       nothing measures this copy any more. */
     var img = ctx.getImageData(0, 0, size, size), d = img.data;
-    var levels = 6, step = 255 / (levels - 1);
+    var levels = 6, step2 = 255 / (levels - 1);
     for (var i = 0; i < d.length; i += 4) {
-      d[i] = Math.round(Math.min(255, d[i] * 1.06) / step) * step;
-      d[i + 1] = Math.round(d[i + 1] / step) * step;
-      d[i + 2] = Math.round((d[i + 2] * 0.97) / step) * step;
+      d[i] = Math.round(Math.min(255, d[i] * 1.06) / step2) * step2;
+      d[i + 1] = Math.round(d[i + 1] / step2) * step2;
+      d[i + 2] = Math.round((d[i + 2] * 0.97) / step2) * step2;
     }
     ctx.putImageData(img, 0, 0);
     return canvas.toDataURL('image/jpeg', 0.82);
+  }
+  function stylizePortrait(video) {
+    var raw = captureSquare(video, MEASURE_MAX);
+    return raw ? stylizeCanvas(raw) : null;
+  }
+  /* the measurement copy lives on THIS DEVICE only. It is a real photograph of the
+     doctor's face at capture resolution, so it is not shipped to the server with the
+     stylized portrait patients see - and it is namespaced per account like every
+     other local key here. */
+  var FACE_HI_KEY = 'mlsAvFaceMeasureV1';
+  function faceHiKey() {
+    return safe(function () {
+      return isFn(window.uns) ? (window.uns(FACE_HI_KEY) || FACE_HI_KEY) : FACE_HI_KEY;
+    }, FACE_HI_KEY);
+  }
+  function faceHiSave(dataUrl) {
+    return safe(function () { localStorage.setItem(faceHiKey(), String(dataUrl)); return true; }, false);
+  }
+  function faceHiRead() {
+    return safe(function () {
+      var v = localStorage.getItem(faceHiKey());
+      return (v && String(v).indexOf('data:image/') === 0) ? v : '';
+    }, '');
   }
   function facePreviewNode(dataUrl, look) {
     var wrap = make('div', '');
@@ -2531,7 +2732,26 @@
       camBtn.addEventListener('click', function () {
         camHost.innerHTML = '';
         stopCamera();
-        var media = safe(function () { return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } }); }, null);
+        /* ASK FOR THE HIGH-RESOLUTION STREAM. With facingMode alone the browser hands
+           back its default - typically 640x480 - and every colour the matcher reports
+           was measured from that. `ideal` degrades gracefully: a camera that cannot do
+           1920x1080 still opens, at the best it has, and captureSquare never upscales
+           so a modest camera is never dressed up as a good one. */
+        var media = safe(function () {
+          return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'user',
+              width: { ideal: 1920 }, height: { ideal: 1080 }
+            }
+          });
+        }, null);
+        /* a browser that refuses the sized request must still get a camera, or asking
+           for quality would have COST him the feature */
+        if (!media) {
+          media = safe(function () {
+            return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+          }, null);
+        }
         if (!media) { camHost.appendChild(make('div', 'mlsAvNotice', 'This browser cannot open the camera here.')); return; }
         media.then(function (stream) {
           cameraStream = stream;
@@ -2546,16 +2766,46 @@
           camHost.appendChild(video); camHost.appendChild(row);
           cancelBtn.addEventListener('click', function () { stopCamera(); camHost.innerHTML = ''; });
           snapBtn.addEventListener('click', function () {
-            var dataUrl = safe(function () { return stylizePortrait(video); }, null);
-            stopCamera(); camHost.innerHTML = '';
-            if (!dataUrl || dataUrl.length > 150000) {
-              camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
-              return;
-            }
-            pendingFace = dataUrl;
-            var fresh = facePreviewNode(dataUrl);
-            faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
-            status.textContent = 'Portrait captured (stylized from your photo, processed on this device). Save to publish it to your patients.';
+            snapBtn.disabled = true; snapBtn.textContent = 'Taking the best of a few…';
+            grabBestFrame(video, 6, function (bestCanvas, q) {
+              var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+              stopCamera(); camHost.innerHTML = '';
+              if (!bestCanvas) {
+                camHost.appendChild(make('div', 'mlsAvNotice', 'The camera did not deliver a frame — try again.'));
+                return;
+              }
+              /* SAY WHAT IS WRONG WITH THE PICTURE, rather than storing a bad one and
+                 reporting invented colours from it. Both numbers are measured on the
+                 chosen frame (see frameQuality). */
+              var why = '';
+              if (q && q.exposure < 45) why = 'the picture is too dark — turn a light on, or face a window';
+              else if (q && q.exposure > 225) why = 'the picture is washed out — move the bright light behind you out of shot';
+              else if (q && q.sharp < 2.2) why = 'the picture is blurred — hold still, and give the camera a moment to focus';
+              if (why) {
+                camHost.appendChild(make('div', 'mlsAvNotice',
+                  'Not captured: ' + why + '. Nothing was saved, so your current photo is untouched.'));
+                return;
+              }
+              var dataUrl = safe(function () { return stylizeCanvas(bestCanvas); }, null);
+              var hiUrl = safe(function () { return bestCanvas.toDataURL('image/jpeg', 0.95); }, '');
+              if (!dataUrl || dataUrl.length > 150000) {
+                camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
+                return;
+              }
+              pendingFace = dataUrl;
+              /* the measurement copy, kept on this device for Match. If storage refuses
+                 it (quota), Match falls back to the stylized portrait AND says so - it
+                 must never silently go back to measuring the posterized copy. */
+              var hiOk = hiUrl ? faceHiSave(hiUrl) : false;
+              var fresh = facePreviewNode(dataUrl);
+              faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+              status.textContent = 'Portrait captured from a ' + (bestCanvas.width) + '×' + (bestCanvas.height) +
+                ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
+                ' — best of 6 frames, processed on this device' +
+                (hiOk ? '. Match my photo will measure the full-quality copy, not the stylized one.'
+                      : '. This device would not store the full-quality copy, so Match will measure the stylized one and say so.') +
+                ' Save to publish the portrait to your patients.';
+            });
           });
         }, function () {
           camHost.appendChild(make('div', 'mlsAvNotice', 'Camera permission was declined — nothing was captured.'));
@@ -2685,9 +2935,22 @@
       matchBtn.type = 'button';
       var lookNote = make('div', 'mlsAvMeta', '');
       matchBtn.addEventListener('click', function () {
-        var src = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        /* MEASURE THE PHOTOGRAPH, NOT THE ILLUSTRATION. The stylized portrait is
+           posterized to six levels per channel - snapping every tone up to 51 units
+           from the truth - so measuring it could not answer "what colour is my skin"
+           however good the camera was. The full-quality copy of the same frame is kept
+           on this device by the capture above; when it is missing (an older portrait
+           captured before av-5.7.2, or a device that refused to store it) the stylized
+           copy is still measured, because a refusal would be worse - but the note says
+           which one was read, so a wrong swatch can be explained rather than puzzled over. */
+        var hi = faceHiRead();
+        var src = hi || shown;
+        var usedHi = !!hi;
         if (!src) { lookNote.textContent = 'Capture your photo above first, then Match my photo.'; return; }
-        lookNote.textContent = 'Reading your photo…';
+        lookNote.textContent = usedHi
+          ? 'Reading the full-quality copy of your photo…'
+          : 'Reading your photo… (only the stylized copy is on this device — retake it for a full-quality reading)';
         faceTintFromPortrait(src, function (res) {
           var look = res && res.look;
           /* av-5.7.0: the honest failure is "I could not FIND a face", and it
@@ -3802,21 +4065,96 @@
       return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY) || AMBIENT_STORE_KEY) : AMBIENT_STORE_KEY;
     }, AMBIENT_STORE_KEY);
   }
-  function ambientStoreRead() {
-    return safe(function () {
-      var raw = localStorage.getItem(ambientStoreKey());
-      if (!raw) return null;
-      var rec = JSON.parse(raw);
-      if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) return null;
-      /* an UNBOUND backup could only ever end in a refusal to write (see
-         kioskAmbientFile), so it is not a recoverable capture at all */
-      if (!clean(rec.bound)) return null;
-      return rec;
-    }, null);
+  /* ONE SLOT WAS ONE PATIENT TOO FEW (fixed av-5.7.2, found by review round three
+     and confirmed by executing the store against a fake localStorage).
+     Every capture wrote the SAME key, so the first backup write of the next room
+     recording overwrote the previous one — unconditionally, with setItem. A visit
+     that failed to file (wrong chart open, no transcript box on screen) keeps only
+     its crash copy, and the very next patient's hand-off tap destroyed it, along
+     with the Visit card's offer to recover it. Nothing said so: the panel simply
+     never appeared again.
+     The record is now keyed BY THE CHART IT IS BOUND TO, so held captures for
+     different patients coexist and each is offered to the chart it belongs to.
+     The bare legacy key is still read, so a capture taken by b954 or earlier is
+     still recoverable, and it is dropped by its own key when it is filed. */
+  function ambientStoreKeyFor(bound) {
+    var b = clean(bound);
+    return b ? (ambientStoreKey() + ':' + b) : ambientStoreKey();
   }
-  function ambientStoreDrop() { safe(function () { localStorage.removeItem(ambientStoreKey()); }); }
+  function ambientRecParse(raw) {
+    if (!raw) return null;
+    var rec = safe(function () { return JSON.parse(raw); }, null);
+    if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) return null;
+    /* an UNBOUND backup could only ever end in a refusal to write (see
+       kioskAmbientFile), so it is not a recoverable capture at all */
+    if (!clean(rec.bound)) return null;
+    return rec;
+  }
+  /* every held capture, newest first. Enumerated from localStorage rather than
+     from a remembered list, because the list is exactly what a reload loses. */
+  function ambientStoreList() {
+    var base = ambientStoreKey();
+    var out = [], seen = {};
+    function add(k) {
+      if (!k || seen[k]) return;
+      var rec = ambientRecParse(safe(function () { return localStorage.getItem(k); }, null));
+      if (rec) { seen[k] = 1; out.push({ key: k, rec: rec }); }
+    }
+    /* enumeration is the general case: any chart may be holding one */
+    safe(function () {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || (k !== base && k.indexOf(base + ':') !== 0)) continue;
+        add(k);
+      }
+    });
+    /* AND A DIRECT LOOK, ALWAYS. If enumeration is unavailable or throws part-way
+       (a storage implementation without length/key, a partitioned or blocked store),
+       an empty list is indistinguishable from "no capture is waiting" - so the
+       recovery offer would silently disappear and the consultation with it. These two
+       keys are the ones that matter: the legacy single slot, and the chart on screen. */
+    add(base);
+    var open = clean(safe(function () { return activePtIdSafe(); }, ''));
+    if (open) add(ambientStoreKeyFor(open));
+    if (kiosk && clean(kiosk.ambBound)) add(ambientStoreKeyFor(clean(kiosk.ambBound)));
+    out.sort(function (a, b) { return (Number(b.rec.savedAt) || 0) - (Number(a.rec.savedAt) || 0); });
+    return out;
+  }
+  /* WHICH held capture to offer. A CAPTURE RUNNING IN THIS TAB IS NOT A RECOVERED
+     ONE - the backup is written continuously while the room is being recorded, so
+     without this filter the Visit card would offer to file a visit still in
+     progress, writing half a consultation and dropping the backup protecting the
+     other half. The open chart's own capture wins over a newer one belonging to a
+     different chart: it is the only one the doctor can file from where he stands. */
+  function ambientStorePick() {
+    var live = clean(kiosk.sid);
+    var list = ambientStoreList().filter(function (e) {
+      return !(kiosk.ambient === true && live && clean(e.rec.sid) === live);
+    });
+    if (!list.length) return null;
+    var open = clean(safe(function () { return activePtIdSafe(); }, ''));
+    var chosen = null;
+    if (open) {
+      for (var i = 0; i < list.length; i++) {
+        if (clean(list[i].rec.bound) === open) { chosen = list[i]; break; }
+      }
+    }
+    if (!chosen) chosen = list[0];
+    chosen.held = list.length;
+    return chosen;
+  }
+  /* drop BY KEY. A drop that recomputed the key from current state would delete
+     whichever capture the store happens to be pointing at now, not the one the
+     doctor just filed or deliberately discarded. */
+  function ambientStoreDrop(key) {
+    var k = clean(key);
+    safe(function () { localStorage.removeItem(k || ambientStoreKey()); });
+  }
   function ambientStoreWrite(rec) {
-    var key = ambientStoreKey();
+    /* keyed by the bound chart, so this write can never land on another
+       patient's held capture. An unbound record is unrecoverable by
+       construction (ambientRecParse refuses it), so it keeps the bare key. */
+    var key = ambientStoreKeyFor(rec.bound);
     var parts = (rec.parts || []).slice();
     var trimmed = false;
     for (var guard = 0; guard < 40; guard++) {
@@ -4507,7 +4845,12 @@
        interim synchronously, with no paint in between, so staff saw the ordinary
        "Recording stopped" and never learned the microphone had gone. */
     kiosk.ambSayOverride = 'The microphone stopped working, so I stopped recording.';
-    kiosk.ambInterimOverride = 'Staff: the microphone was refused or lost, so nothing more is being recorded. Anything already captured is in the transcript.';
+    /* THE CAUSE ONLY. This line used to end "Anything already captured is in the
+       transcript" - a constant, asserted before the filing attempt had happened and
+       printed unchanged when that attempt was REFUSED, so staff were told the words
+       were safe at the exact moment they were not. kioskAmbientStop appends the real
+       verdict to whatever a caller passes in. */
+    kiosk.ambInterimOverride = 'Staff: the microphone was refused or lost, so nothing more is being recorded.';
     kioskAmbientStop('no-microphone');
   }
   function kioskAmbientRetry() {
@@ -4661,8 +5004,14 @@
     /* THE BACKUP DIES ONLY ON A PROVEN WRITE. Every refusal above returns
        before this line, so a capture that could not be filed (wrong chart
        open, no transcript box on screen) keeps its crash copy and can still
-       be recovered on the next load. */
-    ambientStoreDrop();
+       be recovered on the next load. By KEY: another chart's held capture must
+       survive this one being filed - and THIS path is the live one, so the key is
+       this capture's own binding. (An earlier version of this line said info.key
+       here; there is no `info` in the live path - that identifier belongs to
+       ambientRecoverFile - so it was a ReferenceError on every successful file,
+       caught by the keyless-drop assertion in avatar-visit-copilot rather than by
+       node --check, which cannot see an undefined identifier.) */
+    ambientStoreDrop(ambientStoreKeyFor(kiosk.ambBound));
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
     return { ok: true, chars: block.length };
   }
@@ -4673,20 +5022,26 @@
      WRITE time, and a mismatch refuses and says which chart the words belong
      to rather than filing them somewhere plausible. ---------------------- */
   function ambientRecoverInfo() {
-    var rec = ambientStoreRead();
-    if (!rec) return null;
-    /* A CAPTURE RUNNING IN THIS TAB IS NOT A RECOVERED ONE. The backup is
-       written continuously while the room is being recorded, so without this
-       the Visit card would offer "File the recovered visit" for a visit still
-       in progress - filing half a consultation and dropping the backup that
-       protects the other half. Recovery means the tab that took it is gone. */
-    if (kiosk.ambient === true && clean(rec.sid) && clean(rec.sid) === clean(kiosk.sid)) return null;
+    /* the live-capture filter and the choice of WHICH held capture to offer both
+       live in ambientStorePick now - see the comment there */
+    var picked = ambientStorePick();
+    if (!picked) return null;
+    var rec = picked.rec;
     var body = (rec.parts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
     if (!body) return null;
     var start = Number(rec.start) || 0, saved = Number(rec.savedAt) || 0;
     return {
       bound: clean(rec.bound), body: body, chars: body.length,
       words: body.split(/\s+/).filter(Boolean).length,
+      /* the record's OWN key, so filing and discarding delete the capture the
+         doctor acted on rather than whatever the store points at afterwards */
+      key: picked.key,
+      /* which SESSION took it - the only way ambientRecoverFile can tell whether the
+         words it just filed are also sitting in this tab's kiosk.ambParts */
+      sid: clean(rec.sid),
+      /* how many captures are held in total. A second one belongs to another
+         chart and would otherwise be invisible until someone opened that chart. */
+      held: Number(picked.held) || 1,
       savedAt: saved, trimmed: rec.trimmed === true,
       mins: (start && saved && saved > start) ? Math.max(1, Math.round((saved - start) / 60000)) : 0,
       actions: Array.isArray(rec.actions) ? rec.actions : [],
@@ -4737,13 +5092,26 @@
     /* filing the same recovered capture twice would duplicate a whole visit
        in the note - the body is its own idempotency key */
     if (box.value.indexOf(info.body) >= 0) {
-      ambientStoreDrop();
+      ambientStoreDrop(info.key);
       return { ok: true, chars: 0, already: true };
     }
     var prior = box.value;
     box.value = prior + (prior ? '\n\n' : '') + block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
-    ambientStoreDrop();
+    /* BY KEY: this recovered record, not whichever capture the store points at now -
+       another chart may be holding one, and a keyless drop would delete that instead
+       and leave this one to offer itself again forever. */
+    ambientStoreDrop(info.key);
+    /* AND THIS TAB MUST LEARN THAT ITS OWN WORDS ARE NOW FILED. Recovery files from
+       the STORE and never touched the in-memory copy, so after a stop that failed to
+       file, a recovery from the Visit card followed by the rest screen's hand-off tap
+       carried the same sentences into the resumed capture - they are unfiled as far as
+       kiosk.ambFiled knows - and filed the whole body a SECOND time. The record's own
+       sid is what says whether these are this tab's words. */
+    if (clean(info.sid) && clean(info.sid) === clean(kiosk.sid)) {
+      kiosk.ambFiled = true;
+      kiosk.intakeFiled = true;
+    }
     return { ok: true, chars: block.length };
   }
   function kioskAmbientStart() {
@@ -4797,11 +5165,28 @@
        ambParts and then immediately overwrite the backup with the empty new record,
        destroying the only copy of a consultation that had just failed to file.
        Whatever was captured and not filed is carried into the resumed capture. */
-    var carried = (!kiosk.ambFiled && Array.isArray(kiosk.ambParts) && kiosk.ambParts.length)
+    var unfiled = !kiosk.ambFiled;
+    var carried = (unfiled && Array.isArray(kiosk.ambParts) && kiosk.ambParts.length)
       ? kiosk.ambParts.slice() : [];
+    /* THE ORDERS LEDGER IS CARRIED TOO (av-5.7.2). Carrying the words but not the
+       actions was worse than carrying neither: the resumed capture's first backup
+       write serialises ambientActionsForStore() - i.e. [] - straight over the
+       stored record, so a prescription the doctor had CONFIRMED on screen, and
+       which the review panel still listed under "confirmed and written into the
+       note", vanished from memory and from the crash copy in the same tap. The
+       resumed capture is the same room, the same visit and the same patient
+       (openKiosk clears all of this between patients), so the ledger belongs to it. */
+    var carriedActions = (unfiled && Array.isArray(kiosk.ambActions) && kiosk.ambActions.length)
+      ? kiosk.ambActions.slice() : [];
+    /* A RESUMED CAPTURE MUST NOT BE BORN DEAF. kiosk.paused is cleared only on the
+       mount path (openKiosk), and neither the pause toggle nor the stop clears it -
+       so pausing the interview, stopping, and then tapping the hand-off produced a
+       capture whose recogniser kioskListen refuses to start while the screen said
+       "Recording this visit" with a running clock. Nothing on screen contradicted it. */
+    kiosk.paused = false;
     kiosk.ambParts = carried; kiosk.ambLast = ''; kiosk.ambFails = 0;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null;
-    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
+    kiosk.ambActions = carriedActions; kiosk.ambWindow = ''; kiosk.ambClosing = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
     kiosk.ambSavedAt = 0;
     pvStopVoice();
@@ -5091,7 +5476,15 @@
     if (kiosk.ambSayOverride) {
       kioskSetSay(kiosk.ambSayOverride);
       var ivO = gid('mlsAvKioskInterim');
-      if (ivO && kiosk.ambInterimOverride) ivO.textContent = kiosk.ambInterimOverride;
+      if (ivO && kiosk.ambInterimOverride) {
+        /* the caller explains the CAUSE; the OUTCOME is this function's to state, and
+           it must be the measured one. Replacing the interim line wholesale erased a
+           refusal and left a reassuring constant in its place. */
+        ivO.textContent = kiosk.ambInterimOverride + ' ' + (res.ok
+          ? (res.chars + ' characters were filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
+          : ('NOTHING was filed — ' + (res.why || 'the capture could not be filed.') +
+             ' The words are still held in this browser and can be recovered from the chart.'));
+      }
       kiosk.ambSayOverride = ''; kiosk.ambInterimOverride = '';
     }
     return kiosk.ambResult;
@@ -5336,7 +5729,9 @@
       if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
       return true;
     }
-    var block = stamp + '\n' + String(checkin.summary || '').trim() + '\n';
+    /* the note is DRAFTED from this transcript, so an unverified summary must
+       carry its verdict here too - see auditNote */
+    var block = stamp + '\n' + auditNote(checkin.audited) + '\n' + String(checkin.summary || '').trim() + '\n';
     box.value = box.value.trim() ? (box.value.replace(/\s+$/, '') + '\n\n' + block) : block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
     if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
@@ -5384,8 +5779,18 @@
     }
     /* Same content -> no rebuild (buttons keep their done/disabled states). */
     var pend = safe(function () { return ambientRecoverInfo(); }, null);
-    var sig = (activeHit ? 'a' + activeHit.id : 'n') + '|' + total + '|' + activeId +
-      '|' + (pend ? 'r' + pend.bound + ':' + pend.chars : 'r0');
+    /* the signature must include EVERY fact the card draws, or the card will not
+       repaint when only that fact changed. `audited` is the case that matters: the
+       verdict is written by a second model AFTER the row goes ready, so it arrives
+       on a later poll with the id, count and chart all identical - and the card
+       would keep painting the unverified summary as if nothing had been decided.
+       headline and bullet count are here for the same reason. */
+    var sig = (activeHit ? 'a' + activeHit.id + ':' + clean(activeHit.audited) +
+        ':' + String(activeHit.headline || '').length +
+        ':' + (Array.isArray(activeHit.bullets) ? activeHit.bullets.length : 0) : 'n') + '|' + total + '|' + activeId +
+      /* pend.held is in the signature, or a SECOND held capture appearing would
+         not rebuild the card and its line would never be drawn */
+      '|' + (pend ? 'r' + pend.bound + ':' + pend.chars + ':' + pend.held : 'r0');
     if (card.getAttribute('data-mls-av-sig') === sig) return;
     card.setAttribute('data-mls-av-sig', sig);
     card.innerHTML = '';
@@ -5438,6 +5843,19 @@
         trimLine.style.cssText = 'font:600 11.5px/1.45 system-ui;color:#7a1f16;margin-top:3px';
         rec.appendChild(trimLine);
       }
+      /* A SECOND HELD CAPTURE MUST NOT BE INVISIBLE. Captures are now kept per
+         chart, so more than one can be waiting; this panel can only offer the one
+         it picked. Before the per-chart keys the extra ones did not exist at all -
+         each new recording overwrote the last - so silence here would read as
+         "nothing else is waiting" when a whole other consultation is. */
+      if (pend.held > 1) {
+        var moreLine = make('div', '',
+          (pend.held - 1) + ' other recorded visit' + (pend.held - 1 === 1 ? '' : 's') +
+          ' ' + (pend.held - 1 === 1 ? 'is' : 'are') + ' also held for other charts. ' +
+          'Open the chart it belongs to and this panel will offer it.');
+        moreLine.style.cssText = 'font:600 11.5px/1.45 system-ui;color:#7a1f16;margin-top:3px';
+        rec.appendChild(moreLine);
+      }
       var recActions = make('div', 'mlsAvActions');
       recActions.style.marginTop = '8px';
       if (mine) {
@@ -5482,7 +5900,7 @@
           });
           return;
         }
-        ambientStoreDrop();
+        ambientStoreDrop(pend.key);
         toast('The recovered recording was deleted.');
         safe(function () { ensureVisitCard(); });
       }));
@@ -5498,9 +5916,25 @@
          doctor is already looking at when he opens the visit, so the brief has
          to arrive here or it may as well not exist. */
       if (activeHit.headline) {
-        card.appendChild(make('div', 'mlsAvBrief' + (/^⚠/.test(String(activeHit.headline)) ? ' flag' : ''),
+        /* A REJECTED SUMMARY MUST NOT BE PAINTED REASSURINGLY. The flag class was
+           chosen from the HEADLINE's leading ⚠ alone, which the server writes for
+           clinical red flags - so an unverified brief with a calm headline arrived
+           in the same green block as a verified one. The audit verdict is an
+           independent fact from the clinical one and now colours the block too. */
+        var rejectedBrief = clean(activeHit.audited) === 'rejected';
+        card.appendChild(make('div', 'mlsAvBrief' +
+          ((rejectedBrief || /^⚠/.test(String(activeHit.headline))) ? ' flag' : ''),
           String(activeHit.headline)));
       }
+      /* the verdict itself, on the surface the doctor reads before the room. All four
+         states were rendering byte-identically here: `audited` was added to this
+         card's own cache payload by av-5.7.0 and then read by nothing. */
+      card.appendChild(make('div', 'mlsAvMeta' + (clean(activeHit.audited) === 'rejected' ? ' flag' : ''),
+        clean(activeHit.audited) === 'rejected'
+          ? '⚠ The AI audit REJECTED this summary — it could not be reconciled with the patient\'s answers. Read the check-in before relying on it.'
+          : (clean(activeHit.audited) === 'corrected' ? 'AI audit: corrected against the patient\'s answers.'
+            : (clean(activeHit.audited) === 'passed' ? 'AI audit: checked against the patient\'s answers.'
+              : 'AI audit: no verdict recorded for this check-in.'))));
       if (Array.isArray(activeHit.bullets) && activeHit.bullets.length) {
         var ul = make('ul', 'mlsAvBullets');
         activeHit.bullets.forEach(function (bullet) {
@@ -5510,7 +5944,11 @@
       }
       var actions = make('div', 'mlsAvActions');
       actions.style.marginTop = '9px';
-      var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null };
+      /* `audited` MUST be on this object. Both write paths stamp the verdict beside
+         the words now (auditNote), and this hand-built copy was the one place it was
+         dropped - so a REJECTED summary filed from the Visit card, the surface the
+         doctor actually uses, would have been stamped "no verdict recorded". */
+      var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null, audited: activeHit.audited || null };
       var needSummary = !detail.summary || activeHit.truncated === true;
       function withSummary(run, button) {
         if (!needSummary) { run(); return; }
@@ -5528,6 +5966,9 @@
           for (var j = 0; j < rows.length; j++) if (rows[j].id === detail.id) { found = rows[j]; break; }
           if (found && found.summary) {
             detail.summary = found.summary; detail.ready_at = found.ready_at;
+            /* the refetch is the FRESHER verdict - an audit that finished after the
+               cache row was built arrives here and must not be thrown away */
+            detail.audited = found.audited || detail.audited || null;
             needSummary = false; run();
           } else toast('Could not load the full summary — open All check-ins and use it from there.');
         }, function () { button.disabled = false; button.textContent = was; toast('Could not load the full summary — try again.'); });
@@ -5648,7 +6089,15 @@
        fail-closed write the visit card calls. Reading never files. */
     pendingCapture: function () { return ambientRecoverInfo(); },
     fileRecoveredCapture: function () { return ambientRecoverFile(); },
-    discardRecoveredCapture: function () { ambientStoreDrop(); return true; },
+    /* discards the capture currently being OFFERED, by its own key - never
+       "whatever the store points at", which is how another chart's held
+       recording would be deleted by a discard aimed at this one */
+    discardRecoveredCapture: function () {
+      var info = safe(function () { return ambientRecoverInfo(); }, null);
+      if (!info) return false;
+      ambientStoreDrop(info.key);
+      return true;
+    },
     refreshCount: refreshCount,
     exactPatient: exactPatient,
     importSummary: importSummary,

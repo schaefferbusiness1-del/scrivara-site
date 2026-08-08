@@ -132,6 +132,10 @@ button.row:active{background:var(--surface-2)}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .meta{display:block;font-size:13.5px;color:var(--ink-3);margin-top:1px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the one line in a row that is allowed to wrap: a warning that gets ellipsised is
+   worse than no warning, because the row then looks ordinary */
+.row .rowwarn{display:block;font-size:13px;font-weight:700;color:#b3261e;margin-top:2px;
+  white-space:normal;overflow-wrap:break-word}
 .row .chev{flex:0 0 auto;color:var(--ink-3);opacity:.8}
 .row .chev svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;
   stroke-linecap:round;stroke-linejoin:round;display:block}
@@ -1159,12 +1163,17 @@ function checkinSection(body){
     /* the backend gained 'rejected' and every consumer gave it the empty arm —
        identical to null, which means "never audited". A refused summary read
        exactly like an ordinary one. */
-    else if (c.audited === 'rejected') meta.push('⚠ THE AUDIT REJECTED THIS SUMMARY');
+    else if (c.audited !== 'rejected') meta.push('audit verdict not recorded');
     return {
       name: String(c.headline || (c.inProgress
         ? 'Check-in still in progress — flagged, tap to read what there is.'
         : 'Check-in complete — tap to read it.')),
       meta: meta.join(' · '),
+      /* NOT in `meta`: that line is nowrap+ellipsis and this was its last segment,
+         so the whole warning was clipped off the end on a phone. See .rowwarn. */
+      warn: c.audited === 'rejected'
+        ? '⚠ The audit REJECTED this summary — it could not be reconciled with the patient\'s answers. Read the check-in itself.'
+        : '',
       onTap: function(){ touchIdle(); S.ckOpen = (S.ckOpen === c.id ? 0 : c.id); render(); }
     };
   }));
@@ -1249,6 +1258,12 @@ function listCard(items){
     var bd = el('span','body');
     bd.appendChild(el('span','name', it.name));
     if (it.meta) bd.appendChild(el('span','meta', it.meta));
+    /* A WARNING MUST NOT RIDE THE ELLIPSIS. `.meta` is nowrap + text-overflow, so
+       anything appended to that ' · '-joined line is clipped on a phone - and the
+       audit-rejected warning was its LAST segment, i.e. the first thing to vanish
+       (measured 475px of content in a 284px box). A row that must say the summary
+       could not be verified says it on a line of its own that WRAPS. */
+    if (it.warn) bd.appendChild(el('span','rowwarn', it.warn));
     r.appendChild(bd);
     if (it.onTap){ r.appendChild(chev()); r.addEventListener('click', it.onTap); }
     rows.appendChild(r);

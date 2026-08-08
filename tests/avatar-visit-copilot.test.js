@@ -263,6 +263,12 @@ function makeStore(limitBytes) {
   return {
     mem,
     api: {
+      /* the real Storage API carries length and key(i), and av-5.7.2 enumerates the
+         per-chart capture slots through them. A stub missing them made the store
+         return "no held captures", which is the exact silent-loss shape this fake is
+         supposed to catch - a stub looser than the real thing hides the call. */
+      get length() { return Object.keys(mem).length; },
+      key: i => { const ks = Object.keys(mem); return i >= 0 && i < ks.length ? ks[i] : null; },
       getItem: k => (Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null),
       removeItem: k => { delete mem[k]; },
       setItem: (k, v) => {
@@ -282,8 +288,23 @@ function bootStore(limitBytes, nsFn) {
     'function safe(fn,fb){try{return fn();}catch(e){return fb;}}\n' +
     'function isFn(f){return typeof f==="function";}\n' +
     'function clean(v){var t=v==null?"":String(v).trim();return(!t||/^(undefined|null)$/i.test(t))?"":t;}\n' +
+    /* av-5.7.2 — the store is keyed PER CHART now, so choosing which held capture to
+       offer needs the two facts the real module has: whether THIS tab is recording
+       (kiosk.ambient/kiosk.sid, so a live capture is never offered as a recovered one)
+       and which chart is open (activePtIdSafe, so the open chart's own capture wins
+       over a newer one belonging to someone else). Both are settable per test. */
+    'var kiosk = { ambient:false, sid:"" };\n' +
+    'var __openChart = "";\n' +
+    'function activePtIdSafe(){ return __openChart; }\n' +
     storeSrc +
-    '\nthis.read=ambientStoreRead; this.write=ambientStoreWrite; this.drop=ambientStoreDrop; this.key=ambientStoreKey;',
+    /* read() keeps its old shape - the record or null - so every assertion written
+       against the single-slot store still means what it meant. pick()/list() are the
+       new surface. */
+    '\nthis.kiosk=kiosk; this.setOpenChart=function(v){ __openChart = v==null?"":String(v); };' +
+    '\nthis.read=function(){ var p=ambientStorePick(); return p ? p.rec : null; };' +
+    '\nthis.pick=ambientStorePick; this.list=ambientStoreList;' +
+    '\nthis.write=ambientStoreWrite; this.drop=ambientStoreDrop; this.key=ambientStoreKey;' +
+    '\nthis.keyFor=ambientStoreKeyFor;',
     sandbox);
   return { sandbox, store };
 }
@@ -347,13 +368,92 @@ function bootStore(limitBytes, nsFn) {
   assert.strictEqual(res.why, 'quota');
 }
 
-/* 2e. drop actually drops */
+/* 2e. drop actually drops — BY KEY. av-5.7.2 keys the record by the chart it is bound
+   to, so a drop that recomputed the key from current state would delete whichever
+   capture the store happens to point at rather than the one that was just filed. */
 {
   const a = bootStore(0, s => s);
   a.sandbox.write({ sid: 's', bound: 'PT-1', start: 1, parts: ['x y z'], intake: [], actions: [] });
   assert(a.sandbox.read(), 'sanity');
-  a.sandbox.drop();
+  a.sandbox.drop(a.sandbox.keyFor('PT-1'));
   assert.strictEqual(a.sandbox.read(), null, 'drop must remove the record');
+}
+
+/* 2f. TWO PATIENTS, TWO CAPTURES — the defect that shipped in b954 and was found by
+   review round three. Every capture used to write ONE key, so the first backup write
+   of the next patient's room recording overwrote an unfiled consultation outright,
+   and the Visit card's offer to recover it disappeared with it. Nothing said so.
+   Its control is the last assertion here: with a single shared key, patient A's words
+   are gone, which is what this test would have caught. */
+{
+  const a = bootStore(0, s => 'acct::' + s);
+  a.sandbox.write({ sid: 'kioskA', bound: 'PT-A', start: 1000,
+    parts: ['the pain started in the left shoulder', 'it wakes her at night'], intake: [], actions: [] });
+  a.sandbox.write({ sid: 'kioskB', bound: 'PT-B', start: 2000,
+    parts: ['follow up on the knee injection'], intake: [], actions: [] });
+
+  const keys = Object.keys(a.store.mem);
+  assert.strictEqual(keys.length, 2,
+    'two patients must occupy two slots — one key means the second capture destroys the first');
+  assert(keys.indexOf(a.sandbox.keyFor('PT-A')) >= 0 && keys.indexOf(a.sandbox.keyFor('PT-B')) >= 0,
+    'each capture must be keyed by the chart it is bound to');
+
+  const held = a.sandbox.list();
+  assert.strictEqual(held.length, 2, 'both held captures must be enumerable after a reload');
+
+  /* ORDERING NEEDS A CLOCK DIFFERENCE, and both writes above land in the same
+     millisecond - savedAt is stamped with Date.now() inside the store, so the two
+     records tie and a stable sort simply keeps insertion order. Asserting "newest
+     first" on a tie was my own mistake and it failed honestly. The stored savedAt is
+     rewritten here so the sort has something to sort BY. */
+  const keyB = a.sandbox.keyFor('PT-B');
+  a.store.mem[keyB] = JSON.stringify(Object.assign(JSON.parse(a.store.mem[keyB]), { savedAt: 9e12 }));
+  assert.strictEqual(a.sandbox.list()[0].rec.bound, 'PT-B', 'the newest capture sorts first');
+  /* with NO chart open there is nothing to prefer, so the newest is what is offered */
+  a.sandbox.setOpenChart('');
+  assert.strictEqual(a.sandbox.pick().rec.bound, 'PT-B',
+    'with no chart open the newest held capture is the one offered');
+
+  /* the OPEN chart's own capture wins over the newer one — it is the only one the
+     doctor can file from where he is standing */
+  a.sandbox.setOpenChart('PT-A');
+  const pickA = a.sandbox.pick();
+  assert.strictEqual(pickA.rec.bound, 'PT-A',
+    'the capture belonging to the open chart must be the one offered');
+  assert.strictEqual(pickA.held, 2, 'the offer must report how many captures are held in total');
+  assert(pickA.rec.parts.join(' ').indexOf('left shoulder') >= 0,
+    "patient A's words must still be there after patient B recorded");
+
+  /* filing A must not touch B */
+  a.sandbox.drop(pickA.key);
+  a.sandbox.setOpenChart('PT-B');
+  const pickB = a.sandbox.pick();
+  assert(pickB && pickB.rec.bound === 'PT-B', "filing one chart's capture must leave the other's alone");
+  assert.strictEqual(pickB.held, 1, 'one capture remains');
+
+  /* a capture running in THIS tab is not a recovered one */
+  a.sandbox.kiosk.ambient = true; a.sandbox.kiosk.sid = 'kioskB';
+  assert.strictEqual(a.sandbox.pick(), null,
+    'the live capture of this tab must never be offered as a recovered one');
+  a.sandbox.kiosk.ambient = false;
+  assert(a.sandbox.pick(), 'and it becomes recoverable again once this tab is no longer recording');
+}
+
+/* 2g. a b954-era record written under the BARE key is still recoverable — the
+   migration case. Losing an unfiled consultation to a key rename would be the same
+   data loss by another route. */
+{
+  const a = bootStore(0, s => 'acct::' + s);
+  a.store.mem[a.sandbox.key()] = JSON.stringify({
+    v: 1, sid: 'old', bound: 'PT-LEGACY', start: 1, savedAt: 5,
+    parts: ['recorded before the per-chart keys existed'], intake: [], actions: [],
+    consentAt: 7, intakeFiled: false
+  });
+  const pick = a.sandbox.pick();
+  assert(pick && pick.rec.bound === 'PT-LEGACY', 'a legacy single-slot record must still be offered');
+  assert.strictEqual(pick.key, a.sandbox.key(), 'and it must carry its own (bare) key so it can be dropped');
+  a.sandbox.drop(pick.key);
+  assert.strictEqual(a.sandbox.pick(), null, 'dropping a legacy record must remove it');
 }
 
 /* ===========================================================================
@@ -368,7 +468,12 @@ assert(/kiosk\.ambParts\.push\(v\);[\s\S]{0,400}kioskAmbientSave\(false\)[\s\S]{
    kioskAmbientFile returns BEFORE that line */
 {
   const fileFn = slice('function kioskAmbientFile', 'function kioskAmbientStart', 'the file path');
-  const dropAt = fileFn.indexOf('ambientStoreDrop()');
+  /* the CALL, not one spelling of it. This read `ambientStoreDrop()` literally, so
+     giving the drop its key (av-5.7.2, per-chart capture slots) made indexOf return
+     -1 and the pin failed on a change that left its invariant - drop only after the
+     write is marked filed - exactly as it was. The ORDER is the claim; the argument
+     list is not. */
+  const dropAt = fileFn.indexOf('ambientStoreDrop(');
   const filedAt = fileFn.indexOf('kiosk.ambFiled = true');
   assert(dropAt > 0 && filedAt > 0 && dropAt > filedAt,
     'the backup must be dropped only AFTER the write is marked filed');
@@ -438,14 +543,51 @@ assert(/function kioskReviewShow[\s\S]{0,3000}Nothing was written: /.test(source
   /* a capture still RUNNING in this tab is not a recovered one — offering it
      would file half a consultation and drop the backup protecting the rest */
   {
-    const info = slice('function ambientRecoverInfo', 'function ambientRecoverFile', 'the recovery reader');
-    assert(/kiosk\.ambient === true && clean\(rec\.sid\)[\s\S]{0,80}return null;/.test(info),
+    /* av-5.7.2 — the filter MOVED. Captures are keyed per chart now, so choosing
+       which held capture to offer (and excluding this tab's live one) belongs in
+       ambientStorePick, where the whole set is in hand; ambientRecoverInfo just
+       formats what it is given. This pin used to name ambientRecoverInfo and failed
+       on a refactor that kept the invariant exactly - a text pin bound to a LOCATION
+       rather than a behaviour. The behaviour itself is now proved by EXECUTION in 2f
+       above ("the live capture of this tab must never be offered as a recovered
+       one"), which no rename can quietly satisfy; this stays as the cheap structural
+       check that the filter did not simply vanish. */
+    const pick = slice('function ambientStorePick', 'function ambientStoreDrop', 'the capture chooser');
+    assert(/kiosk\.ambient === true && live && clean\(e\.rec\.sid\) === live/.test(pick),
       'a capture running in THIS tab must not be offered as recoverable');
+    const info = slice('function ambientRecoverInfo', 'function ambientRecoverFile', 'the recovery reader');
+    assert(/ambientStorePick\(\)/.test(info),
+      'ambientRecoverInfo must go through ambientStorePick, or it would offer a capture nobody filtered');
   }
   assert(rec.includes('is not the one this recording belongs to'),
     'a chart mismatch must refuse and name the chart the words belong to');
-  assert(rec.lastIndexOf('ambientStoreDrop()') > rec.indexOf('box.value = prior'),
+  /* the drop takes the record's OWN key now (av-5.7.2), so another chart's held
+     capture survives this one being filed */
+  assert(rec.lastIndexOf('ambientStoreDrop(info.key)') > rec.indexOf('box.value = prior'),
     'the recovered backup must not be discarded before it is written');
+  assert(!/ambientStoreDrop\(\)/.test(rec),
+    'a keyless drop in the recovery path would delete whichever capture the store points at, not the one just filed');
+  /* `info` IS THE RECOVERY PATH'S OWN VARIABLE, and the LIVE path has no such name.
+     A fix meant for recovery landed in kioskAmbientFile once, which made every
+     successful room-capture file throw ReferenceError - invisible to node --check,
+     because an undefined identifier is valid syntax, and invisible to every proof
+     that does not execute that exact branch. The live path files its own capture, so
+     it addresses the store by its binding. */
+  {
+    /* CODE ONLY. The first version of this assertion failed on the COMMENT that
+       explains the bug it guards ("an earlier version of this line said info.key") -
+       the same way a "never promise a push" pin once failed on the sentence
+       describing the rule. A pin that a comment can defeat is a pin that will be
+       silenced by whoever documents the fix. (Block/line comments are stripped
+       crudely; that is sound here because this slice contains no string literal
+       carrying a comment opener.) */
+    const stripComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    const live = stripComments(slice('function kioskAmbientFile', 'function ambientRecoverInfo', 'the live filing path'));
+    assert(!/\binfo\./.test(live),
+      'kioskAmbientFile references `info`, which only exists in ambientRecoverFile — that is a ReferenceError on every successful file');
+    assert(/ambientStoreDrop\(ambientStoreKeyFor\(kiosk\.ambBound\)\)/.test(live),
+      'the live path must drop ITS OWN capture by key, or another chart\'s held recording is deleted instead');
+  }
   /* the ONE earlier drop is the idempotency branch: the words are already in
      the transcript, so the backup has done its job and must not keep offering
      itself. It must return WITHOUT appending anything a second time. */
