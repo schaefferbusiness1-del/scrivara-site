@@ -190,6 +190,7 @@
     "feat_mls_recording_segments.js",
     "feat_mls_recs_exact.js",
     "feat_mls_redesign.js",
+    "feat_mls_saveshield.js",
     "feat_mls_sched_datesync.js",
     "feat_mls_schedimport_exact.js",
     "feat_mls_schedpull_fix.js",
