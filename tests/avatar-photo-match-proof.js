@@ -41,7 +41,10 @@
  */
 const { chromium } = require('playwright');
 const path = require('path');
-const ROOT = 'C:/Users/Micha/Desktop/MLS_EVERYTHING/dispatch-work/wt-copilot-power-20260805';
+/* the tree this file lives in, not a machine-specific absolute path: a proof
+   pinned to one worktree silently measures ANOTHER lane's bytes when it is run
+   from anywhere else. MLS_AVATAR_DIR overrides it for old-vs-new controls. */
+const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
 
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome' });

@@ -27,6 +27,11 @@
  * Run: NODE_PATH=<playwright> node tests/avatar-visit-copilot-proof.js
  *      AVATAR_PROOF_EXECUTABLE=/path/to/chrome  (or AVATAR_PROOF_CHANNEL)
  */
+/* av-5.7.0 — THE STAFF CONSENT TAP. The kiosk now asks "Did the patient
+   consent to being recorded?" before it opens a microphone, posts a turn or
+   goes fullscreen, so every scenario below answers it exactly as a member of
+   staff does. If that button ever disappears these harnesses stop dead at the
+   first turn, which is the correct failure: no consent, no interview. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -191,7 +196,7 @@ async function toAmbient(page) {
       { ok: true, say: 'Thanks. How long has it been going on?', done: false, progress: { covered: 2, total: 2 } },
       { ok: true, say: 'Thank you, that is everything I needed.', done: true }
     ];
-    window.__mlsAvatar.openKiosk();
+    window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
   });
   await page.clock.runFor(1200);
   await page.evaluate(function () { window.__emit('my knee has been hurting', true); });
@@ -448,7 +453,7 @@ async function say(page, text) {
         window.__cancels = 0;
         window.speechSynthesis.cancel = function () { window.__cancels++; };
         window.speechSynthesis.speak = function () { /* keeps "speaking" */ };
-        window.__mlsAvatar.openKiosk();
+        window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
       });
       await page.clock.runFor(1500);
 
@@ -557,7 +562,7 @@ async function say(page, text) {
       await page.waitForTimeout(1200);
       await page.evaluate(function () {
         window.__turnQueue = [{ ok: true, say: 'Hello?', done: true }];
-        window.__mlsAvatar.openKiosk();
+        window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
       });
       await page.waitForTimeout(900);
       await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });
@@ -719,7 +724,7 @@ async function say(page, text) {
 
         await page.addScriptTag({ content: src });
         await page.waitForTimeout(900);
-        await page.evaluate(function () { window.__mlsAvatar.openKiosk(); });
+        await page.evaluate(function () { window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); });
         /* let the opening turn finish so we measure a STEADY-STATE turn, not
            the one that also pays for mic preflight and the face mounting */
         await page.waitForTimeout(3500);
@@ -877,7 +882,7 @@ async function say(page, text) {
       });
 
       /* --- Start Visit --- */
-      await page.evaluate(function () { window.__mlsAvatar.openKiosk(); });
+      await page.evaluate(function () { window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); });
       await page.clock.runFor(1500);
       const visH = function (id) {
         return page.evaluate(function (i) {
@@ -1060,7 +1065,7 @@ async function say(page, text) {
             }
             return real(url, opts);
           };
-          window.__mlsAvatar.openKiosk();
+          window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
         });
         await page.clock.runFor(1500);
         await page.evaluate(function () {
@@ -1208,7 +1213,7 @@ async function say(page, text) {
         };
         await page.evaluate(function () {
           window.__turnQueue = [{ ok: true, say: 'What brings you in today?', done: false, progress: { covered: 1, total: 2 } }];
-          window.__mlsAvatar.openKiosk();
+          window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
         });
         await page.clock.runFor(1600);
         const listening = await chip();
@@ -1259,7 +1264,7 @@ async function say(page, text) {
         await page.waitForTimeout(900);
         await page.evaluate(function () {
           window.__turnQueue = [{ ok: true, say: 'Hello?', done: true }];
-          window.__mlsAvatar.openKiosk();
+          window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
         });
         await page.waitForTimeout(900);
         await page.evaluate(function () { document.getElementById('mlsAvKioskEnd').click(); });

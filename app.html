@@ -139,6 +139,24 @@ button.row:active{background:var(--surface-2)}
 .sechead{font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
   color:var(--ink-3);margin:22px 4px 2px}
 
+/* ---- the avatar pre-visit brief ----------------------------------------
+   A check-in headline is a sentence, not a name, so it WRAPS - the row's
+   default ellipsis would cut the one line the doctor came here to read. */
+.ckCard .row .name{white-space:normal;overflow:visible;text-overflow:clip;
+  font-size:16px;line-height:1.35}
+.ckCard .row.ckFlag .name{color:var(--bad)}
+.ckCard .row.ckOn{background:var(--surface-2)}
+.ckDetail{margin:10px 4px 0;font-size:14.5px;line-height:1.5;color:var(--ink-2)}
+.ckBullet{margin-top:6px}
+.ckBullet.flag{color:var(--bad);font-weight:650}
+.ckFull{margin:10px 0 0;padding:12px 13px;background:var(--surface);
+  border-radius:var(--r-sm);box-shadow:var(--shadow);font:14px/1.5 inherit;
+  white-space:pre-wrap;overflow-x:auto}
+.ckAskHead{margin-top:12px;font-size:12px;font-weight:700;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--ink-3)}
+.ckAsk{margin-top:4px;color:var(--brand)}
+.ckMeta{margin:8px 4px 0;font-size:13px;color:var(--ink-3);line-height:1.45}
+
 /* ---- the patient identity block ---------------------------------------- */
 .who{padding:18px 4px 4px}
 .who h2{font-size:29px;font-weight:700;letter-spacing:-.7px;margin:0;line-height:1.18}
@@ -352,7 +370,21 @@ var S = {
   found: null,           // its results, or null = no search running
   patient: null,         // the open patient
   visits: null,          // that patient's visits
-  pull: null             // {phase, note} while a relay job is in flight
+  pull: null,            // {phase, note} while a relay job is in flight
+  /* av-5.7.0 — AVATAR CHECK-INS ON THE PHONE. Owner, 2026-08-07: "it should
+     show up on the docotrs phone if hes on the mobel app when the sumamry is
+     done he shouild get a ping form the app and up on the phone wshould bea
+     suimamry".
+     `ckSeen` is IN MEMORY, like everything else here: it is keyed by check-in
+     id, which is an identifier for a patient's visit, and this app writes no
+     PHI to disk (tests/phone-app-no-phi-at-rest.test.js is the fence). The cost
+     is that a reopened app re-announces what is still unread, which is the safe
+     direction to be wrong in. */
+  checkins: null,        // ready check-ins, or null = not loaded
+  ckSeen: {},            // ids already announced this session
+  ckOpen: 0,             // the id whose full summary is expanded
+  ckPing: null,          // {n, headline} banner for a just-arrived brief
+  ckErr: ''              // why the check-in list is unavailable, if it is
 };
 
 /* ---------- tiny DOM helpers. Everything patient-derived goes in as TEXT. -- */
@@ -464,6 +496,11 @@ function signOut(reason){
   S.token = ''; S.user = null; S.pending2fa = '';
   S.appts = null; S.patient = null; S.visits = null; S.office = null; S.pull = null;
   S.find = ''; S.found = null;
+  /* the check-in briefs go with the session, and so does the record of which
+     ones were announced - a second doctor signing in on this phone must not
+     inherit either */
+  S.checkins = null; S.ckSeen = {}; S.ckOpen = 0; S.ckPing = null; S.ckErr = '';
+  stopCheckinWatch();
   S.busy = false;
   S.screen = 'signin';
   S.msg = reason ? { kind:'warn', text: reason } : null;
@@ -486,7 +523,12 @@ setInterval(function(){
   document.addEventListener(ev, touchIdle, { passive:true });
 });
 document.addEventListener('visibilitychange', function(){
-  if (document.visibilityState === 'visible') touchIdle();
+  if (document.visibilityState !== 'visible') { stopCheckinWatch(); return; }
+  touchIdle();
+  /* coming back to the app is the moment a doctor wants to know, so check
+     immediately rather than waiting out the interval - and announce, because
+     anything that arrived while he was away is news to him. */
+  if (S.token) refreshCheckins(true).then(armCheckinWatch, armCheckinWatch);
 });
 
 /* ---------- sign in ------------------------------------------------------ */
@@ -548,6 +590,8 @@ function afterAuth(j){
     S.busy = false; S.msg = null; S.screen = 'today';
     render();
     refreshToday();
+    /* announce:false on the first load - see refreshCheckins. Then the watch. */
+    refreshCheckins(false).then(armCheckinWatch, armCheckinWatch);
   }, function(e){
     /* Never invent a verdict from a network hiccup — say what happened. */
     S.busy = false;
@@ -578,6 +622,64 @@ function refreshToday(){
     S.msg = { kind:'bad', text: e && e.message ? e.message : 'Could not load the day.' };
     render();
   });
+}
+
+/* ---------- avatar check-ins: the ping, and the brief itself -------------
+   THE PING IS HONEST ABOUT WHAT IT IS. This fires while the app is OPEN. A
+   device-level alert would need APNs/FCM credentials and a server holding device
+   tokens, neither of which exists yet, and a banner implying otherwise would
+   have the doctor trusting a phone that stays silent in his pocket. So: the app
+   checks while it is on screen, vibrates once, and puts the brief at the top of
+   Today. Nothing is claimed beyond that. (The words this must never say are
+   asserted in tests/phone-app-checkin-brief.test.js, over string literals - so
+   this comment is free to explain the rule without tripping it.)
+   The watch is VISIBILITY-GATED, and not merely as an optimisation - a webview
+   timer in a backgrounded app is frozen, so a poll that ignored visibility
+   would fire a burst of stale checks on resume. */
+var CK_POLL_MS = 45000;
+var ckTimer = null;
+function refreshCheckins(announce){
+  if (!S.token) return Promise.resolve();
+  return api('GET','/api/avatar/checkins?status=ready').then(function(j){
+    var rows = (j && j.checkins) || [];
+    S.ckErr = '';
+    var fresh = [];
+    for (var i = 0; i < rows.length; i++){
+      var id = String(rows[i].id);
+      if (!S.ckSeen[id]){ S.ckSeen[id] = 1; fresh.push(rows[i]); }
+    }
+    S.checkins = rows;
+    /* the FIRST load after sign-in marks what is already there WITHOUT
+       announcing it - a doctor opening the app at 9am must not be buzzed for
+       yesterday's unread check-ins. Only arrivals while he is looking ping. */
+    if (announce && fresh.length){
+      S.ckPing = { n: fresh.length, headline: String(fresh[0].headline || '').slice(0, 160) };
+      buzz();
+      if (fresh.length === 1) S.ckOpen = fresh[0].id;
+    }
+    render();
+  }, function(e){
+    if (handleAuthLoss(e)) return;
+    /* a check-in list that cannot be fetched must SAY SO on the card rather
+       than render as "no check-ins" - the two look identical and mean opposite
+       things. */
+    S.ckErr = (e && e.message) ? e.message : 'Could not check for pre-visit check-ins.';
+    render();
+  });
+}
+function buzz(){
+  try { if (navigator.vibrate) navigator.vibrate([90, 60, 90]); } catch(e){}
+}
+function stopCheckinWatch(){ if (ckTimer){ clearTimeout(ckTimer); ckTimer = null; } }
+function armCheckinWatch(){
+  stopCheckinWatch();
+  if (!S.token) return;
+  ckTimer = setTimeout(function(){
+    ckTimer = null;
+    if (!S.token) return;
+    if (document.visibilityState !== 'visible'){ armCheckinWatch(); return; }
+    refreshCheckins(true).then(armCheckinWatch, armCheckinWatch);
+  }, CK_POLL_MS);
 }
 
 /* ---------- find a patient ----------------------------------------------- */
@@ -892,6 +994,7 @@ function renderToday(){
 
   var body = $('todayBody'); clear(body);
   var m = msgNode(); if (m) body.appendChild(m);
+  checkinSection(body);
 
   var searching = !!S.find.trim();
   if (searching){
@@ -940,6 +1043,77 @@ function renderToday(){
   if (S.pull) b.appendChild(el('span','spin'));
   b.appendChild(el('span', null, S.pull ? 'Pulling…' : 'Pull today'));
   dockNote(S.pull ? S.pull.note : '');
+}
+
+/* THE BRIEF, ON THE PHONE. It sits above the schedule because that is the
+   order the doctor needs it in: a check-in that finished sixty seconds ago
+   outranks the rest of the day. Every string goes in as TEXT (el() sets
+   textContent), so a patient's own words can never become markup. */
+function checkinSection(body){
+  if (S.ckPing){
+    var ping = el('div','status ok');
+    ping.appendChild(el('span','dot'));
+    ping.appendChild(el('span', null, S.ckPing.n === 1
+      ? 'A pre-visit check-in just finished.'
+      : (S.ckPing.n + ' pre-visit check-ins just finished.')));
+    body.appendChild(ping);
+    S.ckPing = null;   /* announced once - it is news, not state */
+  }
+  if (S.ckErr){
+    var bad = el('div','status bad');
+    bad.appendChild(el('span','dot'));
+    bad.appendChild(el('span', null, S.ckErr));
+    body.appendChild(bad);
+    return;
+  }
+  var rows = S.checkins;
+  if (!rows || !rows.length) return;
+  body.appendChild(el('div','sechead', rows.length === 1 ? 'Check-in ready' : rows.length + ' check-ins ready'));
+  /* THROUGH listCard, not a card of its own. Rows are this app's ONE dynamic
+     control (tests/phone-app-control-budget.test.js counts the button factories
+     and there may be exactly one), and a check-in is a row like any other: a
+     headline, a meta line, and a tap. Tapping again closes it, so reading a
+     brief costs no new control at all. */
+  var shown = rows.slice(0, 8);
+  var card = listCard(shown.map(function(c){
+    var meta = [];
+    if (c.ready_at) meta.push(shortDate(String(c.ready_at).slice(0, 10)));
+    if (c.turns) meta.push(c.turns + ' turns');
+    if (c.audited === 'corrected') meta.push('summary corrected by the audit');
+    else if (c.audited === 'passed') meta.push('summary audited');
+    return {
+      name: String(c.headline || 'Check-in complete — tap to read it.'),
+      meta: meta.join(' · '),
+      onTap: function(){ touchIdle(); S.ckOpen = (S.ckOpen === c.id ? 0 : c.id); render(); }
+    };
+  }));
+  card.classList.add('ckCard');
+  /* a flagged check-in colours its row - the flag arrives already in the
+     headline text from the server, and the class follows the content */
+  var rowNodes = card.querySelectorAll('.row');
+  for (var i = 0; i < rowNodes.length && i < shown.length; i++){
+    var flagged = (shown[i].flags && shown[i].flags.length) || /^⚠/.test(String(shown[i].headline || ''));
+    if (flagged) rowNodes[i].classList.add('ckFlag');
+    if (S.ckOpen === shown[i].id) rowNodes[i].classList.add('ckOn');
+  }
+  body.appendChild(card);
+  if (rows.length > 8) body.appendChild(el('div','ckMeta', (rows.length - 8) + ' more are waiting in MLS on the office computer.'));
+  /* the open brief, BELOW the list and text-only: bullets, the note itself, and
+     what the check-in did not settle */
+  var open = null;
+  for (var k = 0; k < shown.length; k++) if (shown[k].id === S.ckOpen) open = shown[k];
+  if (!open) return;
+  var det = el('div','ckDetail');
+  (open.bullets || []).forEach(function(b){
+    det.appendChild(el('div','ckBullet' + (/^⚠/.test(String(b)) ? ' flag' : ''), '• ' + String(b)));
+  });
+  if (open.summary) det.appendChild(el('pre','ckFull', String(open.summary)));
+  if (open.askAbout && open.askAbout.length){
+    det.appendChild(el('div','ckAskHead','Worth asking — this check-in did not settle:'));
+    (open.askAbout || []).forEach(function(a){ det.appendChild(el('div','ckAsk', '• ' + String(a))); });
+  }
+  det.appendChild(el('div','ckMeta','Tap the row again to close. Importing into the chart happens in MLS on the office computer.'));
+  body.appendChild(det);
 }
 
 function renderPatient(){

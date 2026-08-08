@@ -33,6 +33,11 @@
  *   NODE_PATH=<scratch>/node_modules node tests/avatar-face-expression-proof.js
  * It also writes tests/face-gallery.png so a human can judge the drawing.
  */
+/* av-5.7.0 — THE STAFF CONSENT TAP. The kiosk now asks "Did the patient
+   consent to being recorded?" before it opens a microphone, posts a turn or
+   goes fullscreen, so every scenario below answers it exactly as a member of
+   staff does. If that button ever disappears these harnesses stop dead at the
+   first turn, which is the correct failure: no consent, no interview. */
 const { chromium } = require('playwright');
 const path = require('path');
 const ROOT = 'C:/Users/Micha/Desktop/MLS_EVERYTHING/dispatch-work/wt-copilot-power-20260805';
@@ -648,7 +653,7 @@ async function boot(browser, opts) {
       /* the mic preflight must not hang the test; a refusal is a supported path */
       navigator.mediaDevices = navigator.mediaDevices || {};
       navigator.mediaDevices.getUserMedia = () => Promise.reject(new Error('no mic in this harness'));
-      window.__mlsAvatar.openKiosk();
+      window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
       await wait(400);
       const mount = document.getElementById('mlsAvKioskFace');
       const svg = mount && mount.querySelector('svg');

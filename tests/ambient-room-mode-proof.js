@@ -26,6 +26,11 @@
  *   C  90 MIN CAP   - the capture ends itself at the cap and says so on screen,
  *                     and what it heard is still filed.
  * =========================================================================== */
+/* av-5.7.0 — THE STAFF CONSENT TAP. The kiosk now asks "Did the patient
+   consent to being recorded?" before it opens a microphone, posts a turn or
+   goes fullscreen, so every scenario below answers it exactly as a member of
+   staff does. If that button ever disappears these harnesses stop dead at the
+   first turn, which is the correct failure: no consent, no interview. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -240,7 +245,7 @@ async function runIntake(page) {
       { ok: true, say: 'How long has the knee been like that?', progress: { covered: 2, total: 3 } },
       { ok: true, done: true, say: 'Thank you, that is everything I needed.' }
     ];
-    window.__mlsAvatar.openKiosk();
+    window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
   });
   await page.clock.runFor(2000);                       /* preflight + turn 1 + speak */
   await page.evaluate(function () { window.__emit('My right knee is swollen and it hurts', true); });
@@ -290,7 +295,7 @@ async function unlockWith(page, buttonId) {
         window.__turnQueue = [
           { ok: true, say: 'Hello, what brings you in today?', avatar: { name: 'Ava', exitPinSet: true }, progress: { covered: 1, total: 3 } }
         ];
-        window.__mlsAvatar.openKiosk();
+        window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
       });
       await page.clock.runFor(2000);
       const before = await page.evaluate(function () { return window.__turnPosts().length; });
@@ -311,9 +316,30 @@ async function unlockWith(page, buttonId) {
       const page = h.page;
       await runIntake(page);
 
-      const rest = await page.evaluate(function () { return window.__say(); });
-      check('the interview rests behind the staff PIN (no auto-exit into the app)',
-        /hand the screen back/i.test(rest.say || ''), JSON.stringify(rest.say));
+      /* av-5.7.0 — THE REST SCREEN IS THE HAND-OFF, AND IT SAYS SO TO THE
+         PATIENT. Owner: "this avatar once its done should say ... your docotr
+         will be in wi th u soon but it needs to stay up so when the docot
+         entirer the room they click one button and the avatar just l;istens."
+         The invariant asserted here is unchanged in substance - the finished
+         kiosk does NOT close into the doctor's app - and now also covers the
+         one-tap hand-off the owner asked for. The old pin matched a staff
+         instruction in the SAY line; that line belongs to the patient. */
+      const rest = await page.evaluate(function () {
+        return {
+          say: (window.__say() || {}).say || '',
+          staff: (document.getElementById('mlsAvKioskInterim') || {}).textContent || '',
+          stillUp: !!document.getElementById('mlsAvKiosk'),
+          roomBtn: window.__vis('mlsAvKioskRoomGo')
+        };
+      });
+      check('the finished interview STAYS UP - it never closes into the doctor\'s app',
+        rest.stillUp, JSON.stringify(rest.stillUp));
+      check('and it tells the PATIENT what happens next',
+        /doctor will be in with you soon/i.test(rest.say), JSON.stringify(rest.say));
+      check('the staff line still says to hand the screen back',
+        /hand the screen back/i.test(rest.staff), JSON.stringify(rest.staff));
+      check('ONE BUTTON starts listening to the visit, with no PIN in the way',
+        rest.roomBtn.visible, JSON.stringify(rest.roomBtn));
 
       /* the PIN pad must offer TWO outcomes, both staff-gated */
       await page.evaluate(function () { const e = document.getElementById('mlsAvKioskEnd'); if (e) e.click(); });

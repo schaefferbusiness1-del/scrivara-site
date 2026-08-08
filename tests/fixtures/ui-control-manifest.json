@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 275,
  "totals": {
-  "controls": 1348,
+  "controls": 1351,
   "gated": 99,
-  "active": 1249,
+  "active": 1252,
   "byKind": {
-   "button": 1292,
+   "button": 1295,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 963
+  "dynamic": 966
  },
  "controls": [
   {
@@ -9115,7 +9115,7 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4163,
+   "line": 4703,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9129,7 @@
    "domId": "mlsAvKioskMute",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4179,
+   "line": 4719,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9143,21 @@
    "domId": "mlsAvKioskEndVisit",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4188,
+   "line": 4728,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsAvKioskRoomGo",
+   "label": "Doctor — start listening to the visit",
+   "accessibleName": "Doctor — start listening to the visit",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsAvKioskRoomGo",
+   "view": "dynamic",
+   "file": "feat_mls_avatar.js",
+   "line": 4738,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9171,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4198,
+   "line": 4744,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9185,7 @@
    "domId": "mlsAvKioskPinGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4205,
+   "line": 4751,
    "gated": false,
    "handler": null
   },
@@ -9185,7 +9199,7 @@
    "domId": "mlsAvKioskPinAmb",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4206,
+   "line": 4752,
    "gated": false,
    "handler": null
   },
@@ -9199,7 +9213,35 @@
    "domId": "mlsAvKioskPinBack",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4207,
+   "line": 4753,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsAvKioskConsentYes",
+   "label": "Yes — they consented",
+   "accessibleName": "Yes — they consented",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsAvKioskConsentYes",
+   "view": "dynamic",
+   "file": "feat_mls_avatar.js",
+   "line": 4766,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsAvKioskConsentNo",
+   "label": "No — cancel",
+   "accessibleName": "No — cancel",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsAvKioskConsentNo",
+   "view": "dynamic",
+   "file": "feat_mls_avatar.js",
+   "line": 4767,
    "gated": false,
    "handler": null
   },
@@ -10744,7 +10786,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-daybrain-js-721-draft-anyway",
+   "id": "feat-mls-opnote-daybrain-js-738-draft-anyway",
    "label": "Draft anyway",
    "accessibleName": "Draft anyway",
    "title": "",
@@ -10753,12 +10795,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_daybrain.js",
-   "line": 721,
+   "line": 738,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-daybrain-js-725-draft-a-new-one",
+   "id": "feat-mls-opnote-daybrain-js-742-draft-a-new-one",
    "label": "Draft a new one",
    "accessibleName": "Draft a new one",
    "title": "",
@@ -10767,12 +10809,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_daybrain.js",
-   "line": 725,
+   "line": 742,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-opnote-daybrain-js-761-k-0-esc-opts-k-name-template",
+   "id": "feat-mls-opnote-daybrain-js-778-k-0-esc-opts-k-name-template",
    "label": "' + (k === 0 ? ' ' : '') + esc(opts[k].name || 'Template') + '",
    "accessibleName": "' + (k === 0 ? ' ' : '') + esc(opts[k].name || 'Template') + '",
    "title": "",
@@ -10781,7 +10823,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_opnote_daybrain.js",
-   "line": 761,
+   "line": 778,
    "gated": false,
    "handler": null
   },
@@ -10795,7 +10837,7 @@
    "domId": "opdbFold",
    "view": "dynamic",
    "file": "feat_mls_opnote_daybrain.js",
-   "line": 801,
+   "line": 818,
    "gated": false,
    "handler": null
   },

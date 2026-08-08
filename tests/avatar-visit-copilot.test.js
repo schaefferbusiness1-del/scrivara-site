@@ -639,11 +639,17 @@ assert(/classList\.contains\('speaking'\) \? 'duplex' : 'listening'/.test(source
 }
 
 /* 3r. the module still reports itself honestly */
-assert(source.includes("var VERSION = 'av-5.6.7'"), 'VERSION must move with this train');
+assert(source.includes("var VERSION = 'av-5.7.0'"), 'VERSION must move with this train');
 {
+  /* av-5.7.0: the loader follows the BUILD NUMBER now. A hand-typed token on
+     this file went stale the same afternoon it was written - av566 and av567
+     were both set on 2026-08-07, and the file changed three more times that
+     day. See tests/immutable-satellite-loader-cache-contract.test.js. */
   const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-  const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  assert(tokenM && tokenM[1] === '567', 'the loader cache token must name av-5.6.7 (found ' + (tokenM && tokenM[1]) + ')');
+  assert(connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())"),
+    'the avatar loader must use the build-number cache-buster');
+  assert(!/feat_mls_avatar\.js\?v=\d{8}av\d+/.test(connect),
+    'a hand-maintained avatar cache token is back');
 }
 
 console.log('PASS avatar visit copilot (av-5.6.7): detector executed on ' + (12 + REFUSALS.length + 4) +
