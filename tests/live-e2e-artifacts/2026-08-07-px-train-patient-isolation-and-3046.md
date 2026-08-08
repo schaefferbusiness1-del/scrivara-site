@@ -489,6 +489,48 @@ reload. The 2026-08-08 day-pull receipt: first-attempt, 67s, ok:true
 complete:true reason:empty-day with athena VERIFYING the empty Friday —
 banked as the EMPTY-DAY SHAPE only, never as convergence proof.
 
+## 2026-08-08 evening — the July-1 popup runs, the denylist defect, and ext 3.0.48 (b961)
+
+**Run 1 on b957 + ext 3.0.47 (the fixed-code proof the owner asked for):**
+schedule 19/19 idempotent (0 created, 19 skipped — no duplicates), histories
+19/19 attempted, **Elizabeth ✓ SAVED (the px-6.0 arithmetic fix held live:
+identityVerified, organized, organizationComplete, visitsComplete,
+clinicalFieldCount 5) and Matthew ✓ SAVED (real read replacing his 621-char
+index shells)** — 11/19 clean, honestly marked INCOMPLETE with 8 NAMED
+failures (the 3.0.47 receipts working): 6× idx:nogroup + 2×
+visit-bodies-incomplete. NOT a pass — the bar is all 19.
+
+**Run 2 (same day re-check): 14/19 ✓** (Lorraine, Cheryl, Diann recovered),
+5 persist {Edward, Herbert: nogroup; Carol, Nancy: unchanged-stuck; Atoussa:
+bodies} — and the persisters SWAP failure classes between runs. Run 2
+persisted per-patient enumDiag, and it named the real defect: **on every
+index-failure, ONE frame (7307) answered ok while every sibling was
+no-group — and the URL denylist (inbox|messag|stm.esp|…) dropped the ok
+frame before best-pick.** An ok:true enumerate result has already passed the
+in-frame positive gates (Visits-and-Cases ancestor, declared SHOW total or
+explicit empty-state, row stability) — a URL token was outvoting the
+positive assertion. The collector-denylist class, in the reader itself.
+
+**ext 3.0.48 (b961 `3accf8c2`, gate PASS all 514):** the noise filter rescues
+ok:true results (non-ok noise stays excluded — the denylist keeps its
+original job of blocking junk no-group frames), and failure receipts now
+persist okShape + noiseTails so the next unexplained failure names itself.
+Both-arms control (16 checks): the gated ok result survives the filter —
+pre-3.0.48 code fails EXIT=1; non-ok noise stays excluded; non-noise frames
+untouched. Upload chain re-proven at 3.0.48: feed 3.0.48 + honest notes;
+served GET×2 200/420,933B sha `b8bc12fb…` = build sha; installed folder
+20/20 byte-identical; pong `3.0.48+core-sha256:f9a55e7b…`.
+
+**Session state at this writing:** the MLS server session expired on BOTH app
+tabs mid-evening (sign-in is the owner's click, never mine) and fresh athena
+frameset loads are interstitial'd again (his own athena tab stays healthy but
+carries a pre-reload content script until he refreshes it). The decisive
+day-1 run 3 on the rescue fix — expected to flip the 5 persisters — plus the
+full July sweep, cohort, recounts and pace wait on those two owner clicks.
+Heal-round-4 recovery evidence is on disk (2026-08-08-heal4-recovered.json:
+80/98 at-or-above healed values after a full server round-trip, 18 short
+listed, verified-at-90s 78/78 before the ledger died in a tab reload).
+
 ### The op-note "wrong medications" link (stated as code-established, not yet outcome-proven)
 
 The op-note context consumes `p.meds` (feat_opnote_history.js:261; ScribeFlow.html
