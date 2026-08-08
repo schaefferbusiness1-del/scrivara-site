@@ -103,9 +103,28 @@ assert(/\/forget/.test(dr), 'stale-device Forget action missing');
 assert(/visibilitychange/.test(dr), 'wake-from-sleep must trigger a fresh heartbeat (Mac lid-close case)');
 assert(/last heartbeat/.test(dr), 'panel must show last heartbeat');
 assert(/\(this device\)/.test(dr), 'panel must mark the current device');
-assert(/suggestRole/.test(dr) && !/innerWidth/.test(dr),
+/* Graded against COMMENT-STRIPPED source (2026-08-07). The rule is about what
+   the code reads, not about what the file is allowed to discuss, and this
+   module's own history is the thing most worth explaining in it — dr-1.4.0's
+   comment has to name the geometry signal in order to record why it must never
+   come back. Matching the raw text made that comment fail the rule it was
+   describing. Same correction, same reason, as the __mlsKbd assertion in
+   phone-install-contract.test.js. The ban itself is unchanged and still
+   two-sided: suggestRole must exist, and no EXECUTABLE line may read width. */
+const drCode = dr.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+assert(/suggestRole/.test(drCode) && !/innerWidth|outerWidth|clientWidth|matchMedia\(\s*['"]\s*\(\s*max-width/.test(drCode),
   'role suggestion must come from evidence, never window size');
 assert(/What is this device\?/.test(dr), 'first-run role confirmation card missing — roles must be chosen, not silently inferred');
+/* dr-1.4.0: ...except where the evidence is unambiguous. A handheld is adopted
+   as 'phone' from mobile UA + touch and is never shown the three-button card —
+   that card is how the owner's iPhone came to be registered as the office
+   computer. The card still owns every AMBIGUOUS device, which is the case the
+   assertion above exists for: on a desktop, office vs secondary is a real
+   choice the app cannot infer. */
+assert(/function adoptObviousRole\(\)/.test(dr) && /if \(!handheldEvidence\(\)\) return false;/.test(dr),
+  'a handheld must be adopted as a phone from evidence, not asked');
+assert(/if \(handheldEvidence\(\)\) \{ var exH = \$\('mlsDrBanner'\); if \(exH\) exH\.remove\(\); return; \}/.test(dr),
+  'the role card must stand down on a handheld — an unanswerable question in front of a doctor is worse than a defaulted one');
 assert(/does not report the MLS Assist extension/.test(dr),
   'setting office role without the extension must warn (it cannot run pulls)');
 

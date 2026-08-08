@@ -396,7 +396,36 @@ const LOADER = 'mls-connect.js';
  *     bounded setTimeout chain that never schedules while the tab is hidden and
  *     resumes on visibilitychange.
  *   - Renders nothing at all unless a real pending request comes back, so its
- *     boot work over a 1,481-patient store is a single conditional. */
+ *     boot work over a 1,481-patient store is a single conditional.
+ *
+ * 2026-08-07 ph2-1.0.0 (owner: "completely change the PHONE app UI from
+ *   scratch"): +1 loader, feat_mls_phone_ui.js — the phone app that replaces
+ *   the 28-rule body.mls-phone hide layer.
+ *   - This is the ONE loader in the file that is EAGER on purpose, and
+ *     EAGER_CEILING moves with it. The module's job is to own the screen; if
+ *     it lands on idle, the doctor watches the desktop header, the 8-item dock
+ *     and the crowded workspace paint first and get replaced a second later.
+ *     A flash of the exact UI the owner asked us to remove is not an
+ *     acceptable price for a pin.
+ *   - It costs the machine this ceiling actually guards — the office desktop,
+ *     mid post-login burst — EXACTLY ZERO. The loader is wrapped in a device
+ *     test (handheld UA + touch, or a stored 'phone' role, or ?phone=1) and
+ *     returns before creating the <script> element on anything else, so a
+ *     desktop never requests, parses or executes a byte of it. The +1 here is
+ *     a static count of a name in the loader, not a millisecond on the machine
+ *     the measurement in this header was taken on.
+ *   - NO setInterval, so INTERVAL_CEILING does not move — deliberately, on a
+ *     device that spends its life in a pocket. The ticker is a setTimeout loop
+ *     that runs only while something is live (recording / generating /
+ *     pulling) AND the tab is visible, and its MutationObserver is scoped to
+ *     #mlsEz3Body rather than the document, so OBSERVER_CEILING holds too.
+ *   - It could have been folded into mls-connect.js beside the hide layer it
+ *     replaces, to keep both counts flat. That is the dishonest version, for
+ *     the reason recorded above every other entry here: this is a whole
+ *     replacement UI for one class of device, and it is precisely the thing
+ *     you must be able to back out on its own (window.__mlsPhoneUI.revert()
+ *     hands the screen straight back to __mlsPhoneHome) without reverting the
+ *     relay, the day switch or the engine it drives. */
 /* 2026-08-07 opdb-1.0.0 (owner-ordered OP-NOTE DAY BRAIN): +1 loader,
  *   feat_mls_opnote_daybrain.js — AI-assisted template matching layered over
  *   the deterministic ranker, and the procedure-aware day triage that stops
@@ -425,7 +454,7 @@ const LOADER = 'mls-connect.js';
  * DEFERRED (requestIdleCallback, 4s timeout), does no boot work beyond two
  * function wraps, and its re-arm is a bounded timeout chain, so first paint
  * and the interval budget are untouched. */
-const CEILING = 257;
+const CEILING = 258;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
@@ -443,7 +472,12 @@ const FLOOR = 200;
  * 20 below the ceiling per the failure message's own instruction, so the
  * remaining win cannot erode back one feature at a time. */
 /* 196 -> 168 on 2026-08-02: the 28-loader idle sweep — analyzed-safe satellite loaders moved in place to the requestIdleCallback pattern (168 eager / 84 deferred). Floor stays 20 below per the failure message's own instruction. */
-const EAGER_CEILING = 168;
+/* 168 -> 169 on 2026-08-07 for feat_mls_phone_ui.js, and this is the only
+   entry in the file where the eager arm moves for a UI module. The reasoning
+   is in the ph2-1.0.0 block above CEILING: the loader is device-gated, so the
+   desktop this ceiling was measured on never requests the file, and the phone
+   that does cannot be shown the chrome this module exists to remove. */
+const EAGER_CEILING = 169;
 const EAGER_FLOOR = 148;
 
 /* A window of source before the reference is enough to tell how the insertion

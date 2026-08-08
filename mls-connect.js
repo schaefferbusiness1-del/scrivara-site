@@ -21903,6 +21903,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           ts: Date.now(), clock: fmtClock(), day: visitDay(), provider: activeProvider() || '',
           autoPull: S.autoPull, guards: guardInfo(),
           active: S.appt ? { id: S.appt.id, name: S.appt.name || '', dob: dobOf(S.appt), time: t12(S.appt) } : null,
+          /* ph2-1.0.0: the refusal/binding sentence travels with the snapshot.
+             It is the only explanation a control that just refused ever gives,
+             and a remote surface that cannot read it paints a dead button with
+             no reason beside it -- the exact defect class (a silent refusal
+             under a confident UI) this engine exists to avoid. Read-only; the
+             desktop keeps rendering it from S.lastWarn exactly as before. */
+          warn: S.lastWarn || '',
           phase: S.phase, recSecs: S.phase === 'rec' ? Math.floor((Date.now() - S.recStart) / 1000) : 0,
           signed: S.signedAt > 0,
           noteLen: note.trim().length,
@@ -35347,7 +35354,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b965';
+  window.__MLS_AV = window.__MLS_AV || 'b966';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35690,7 +35697,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b965';
+  var MLS_APP_BUILD='2026-07-25-b966';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44609,6 +44616,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260806wd112";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
+;(function(){try{var want=false;try{want=(sessionStorage.getItem('mls_phone_mode')==='1');}catch(e){}try{if(!want&&localStorage.getItem('mls_device_role')==='phone')want=true;}catch(e){}try{if(!want&&/[?&]phone=1/.test(location.search))want=true;}catch(e){}try{if(!want)want=/iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent||'')&&((navigator.maxTouchPoints||0)>0||'ontouchstart' in window);}catch(e){}if(!want)return;if(document.querySelector('script[data-mls-asset="feat_mls_phone_ui.js"]'))return;var s=document.createElement('script');s.src='feat_mls_phone_ui.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_phone_ui.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS on a phone (ph2-1.0.0): a phone app written for the phone, replacing the 28-rule body.mls-phone hide layer that produced every defect in PHONE_AUDIT_2026-07-27.md. Requested ONLY on a handheld / explicit phone role / ?phone=1, so a desktop pays nothing. Deliberately NOT routed through __mlsDeferAsset: this module hides the desktop chrome, and deferring it past first paint shows the doctor the 8-item dock and the crowded workspace for a second before replacing them (window.__mlsPhoneUI ph2-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;}catch(e){}},{timeout:1500,priority:0,owner:'__mlsCalmShell',retireVersion:'calm-1.0.0',barrier:true,fallback:'classic',asset:'feat_mls_calm_shell.js'});}catch(e){}})(); /* Calm Shell: gate-owned presentation foundation. It evaluates before the seven dependent polish/focus owners so no control can reshape after reveal; a real load failure fails back to the functional Classic shell. ?ui=classic remains the explicit escape hatch (window.__mlsCalmShell calm-1.0.0; revert()). */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_views.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_views.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_views.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000,priority:0,owner:'__mlsCalmViews',requiresFoundation:true});}catch(e){}})(); /* Calm Views: one primary action per screen on Calendar/History/AI Studio/Analysis, everything else class-folded behind an in-view More. Loaded on idle - it is chrome over views the doctor reaches after boot, and it must not join the post-login burst (window.__mlsCalmViews cv-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_room.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_room.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_room.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500});}catch(e){}})(); /* Op-note workroom home (opr-1.0.0, Stage 0 inert): the owner-approved full-screen room builds inside this one revertible module - see OPNOTE_WORKROOM_PLAN_2026-07-26.md. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
@@ -46678,10 +46686,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 /* ===== __mlsRelayLink rl-1.0.0 (2026-07-13, b257 - phone->Athena relay PHASE 1
  * app-side halves + QR pairing, owner: "dead simple - scan a QR and the phone
  * just connects").
- *  PAIRING = the account. The QR (Settings > Integrations "Use MLS on your
- *  phone") encodes only https://mlsscribe.com/ScribeFlow.html?phone=1 - no
- *  tokens, no credentials; the phone signs into the same account once and the
- *  relay is scoped to that account server-side (b250 queue, requireClinician).
+ *  PAIRING = the account. The QR (Settings > Integrations "Put MLS on your
+ *  phone") encodes only https://mlsscribe.com/phone-setup.html - a public
+ *  guide page, no tokens, no credentials (rl-2.1.0; it was the app URL until
+ *  2026-08-07, when the QR was pointed at the add-to-home-screen guide the app
+ *  URL skipped). The phone signs into the same account once and the relay is
+ *  scoped to that account server-side (b250 queue, requireClinician).
  *  DESKTOP AGENT: when this tab has the extension + a signed-in session, it
  *  polls /api/relay/jobs/next (4s, fetch - runs while hidden) and executes
  *  READ jobs through the existing lanes: pullDay -> __mlsSI.pull (same engine
@@ -46718,6 +46728,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function base() { try { return (typeof window.bkBase === 'function') ? window.bkBase() : ''; } catch (e) { return ''; } }
   function authed() { try { return typeof window.backendMode === 'function' && window.backendMode() && !!tok(); } catch (e) { return false; } }
   function H() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() }; }
+  /* rl-2.1.0 (owner 2026-08-07: "make sure a desktop is never called a phone").
+     THIS module runs on the RELAYING device, and a relaying device is a phone
+     only some of the time — a MacBook at home with role "secondary" relays too,
+     and so does any laptop opened through the QR link. Every sentence below used
+     to say "this phone" regardless, so a doctor on a laptop was told his pull had
+     synced to a phone he was not holding. One helper, one word, asked per call so
+     it is correct even if the role is set after this module loads. */
+  function devNoun() {
+    try { var dr = window.__mlsDeviceRole; if (dr && typeof dr.deviceNoun === 'function') return dr.deviceNoun(); } catch (e) {}
+    return 'device';
+  }
+  function thisDev() { return 'this ' + devNoun(); }
 
   /* ---- extension presence: the bundle already records mlsPong versions;
      also ping once ourselves at boot (listener-only). */
@@ -46918,7 +46940,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         run.then(function (out) {
           lb(false);
           postResult(job.id, out.ok, out.data, out.error).then(function () { agentBusy = false; });
-          toast(out.ok ? '📱 Done — result sent back to your phone.' : ('📱 Phone request failed: ' + (out.error || '')), out.ok ? 'ok' : 'err');
+          toast(out.ok ? '✓ Done — the result was sent back to the device that asked.' : ('Relayed request failed: ' + (out.error || '')), out.ok ? 'ok' : 'err');
         });
       })
       .catch(function () { agentBusy = false; });
@@ -46988,8 +47010,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!bar) {
         bar = document.createElement('div'); bar.id = 'mlsRlPhoneBar';
         bar.style.cssText = 'display:flex;align-items:center;gap:9px;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:9px 13px;margin:0 0 10px;font:600 12.5px "Public Sans",system-ui,sans-serif;color:#1A211C;box-shadow:0 1px 2px rgba(20,33,28,.04)';
-        var roleLbl = '📱 Phone mode';
-        try { var dr0 = window.__mlsDeviceRole; if (dr0 && dr0.role && dr0.role() === 'secondary') roleLbl = '💻 Remote mode'; } catch (e) {}
+        /* rl-2.1.0: name the DEVICE, not the mode. This bar appears on every
+           relaying device — a phone, an iPad, a MacBook at home, a laptop
+           opened through the QR link — and it read "📱 Phone mode" on all of
+           them. The word now comes from __mlsDeviceRole.deviceNoun(), so a Mac
+           says Mac; the icon follows the same fact. */
+        var roleLbl = '💻 This computer';
+        try {
+          var noun0 = devNoun();
+          var hand0 = /phone|iPod/i.test(noun0);
+          var pad0 = /iPad|tablet/i.test(noun0);
+          roleLbl = (hand0 ? '📱 ' : pad0 ? '📲 ' : '💻 ') + 'This ' + noun0;
+        } catch (e) {}
         bar.innerHTML = '<span>' + roleLbl + '</span><span id="mlsRlPresence" style="color:#79837C;font-weight:500">— checking your office computer…</span>';
         body.insertBefore(bar, body.firstChild);
         /* b392: one-time explainer so a new phone user knows the model without
@@ -47055,7 +47087,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var pi = setInterval(function () {
       tries++;
       /* 10.5 min — covers a real full-history day (agent budget 8.5m) with slack */
-      if (tries > 252) { clearInterval(pi); done(false, 'The pull is taking unusually long. It may still finish on ' + who + ' — pulled data syncs to this phone automatically. You can also retry from here.'); return; }
+      if (tries > 252) { clearInterval(pi); done(false, 'The pull is taking unusually long. It may still finish on ' + who + ' — pulled data syncs to ' + thisDev() + ' automatically. You can also retry from here.'); return; }
       fetch(base() + '/api/relay/jobs/' + encodeURIComponent(id), { headers: H() })
         .then(function (r) { if (r && r.status === 404) return { gone: true }; return r && r.ok ? r.json() : null; })
         .then(function (s) {
@@ -47083,7 +47115,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                  result must never read as success for this date */
               var pulled = job.result.data && job.result.data.pulled;
               if (pulled && date && pulled !== date) { done(false, 'The office computer answered with a different day (' + pulled + ' instead of ' + date + '). Nothing was assumed — pull again.'); return; }
-              stat('Pulled — syncing to this phone…');
+              stat('Pulled — syncing to ' + thisDev() + '…');
               try { if (typeof window.loadPatientsFromServer === 'function') window.loadPatientsFromServer(); } catch (e) {}
               /* rl-2.0.1 N1 (2026-07-25, phone lane): also re-read the CALENDAR.
                  Only loadPatientsFromServer() ran here, but the office computer
@@ -47129,17 +47161,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 } catch (e) { onDay = null; }
 
                 if (onDay === null) {
-                  done(true, date + ' pulled on ' + who + '. This phone could not confirm what arrived — open the day to check.');
+                  done(true, date + ' pulled on ' + who + '. ' + (thisDev().charAt(0).toUpperCase() + thisDev().slice(1)) + ' could not confirm what arrived — open the day to check.');
                 } else if (onDay > 0) {
-                  done(true, date + ' pulled on ' + who + ' — ' + onDay + ' appointment' + (onDay === 1 ? '' : 's') + ' now on this phone.');
+                  done(true, date + ' pulled on ' + who + ' — ' + onDay + ' appointment' + (onDay === 1 ? '' : 's') + ' now on ' + thisDev() + '.');
                 } else if (monthLoaded) {
                   /* The month IS loaded and the day is empty: say so plainly
                      rather than call an empty day a completed import. */
-                  done(false, date + ' ran on ' + who + ', but no appointments for that day have reached this phone. It may still be syncing — reopen the day before relying on it.');
+                  done(false, date + ' ran on ' + who + ', but no appointments for that day have reached ' + thisDev() + '. It may still be syncing — reopen the day before relying on it.');
                 } else {
                   /* The month is not loaded here, so an empty count proves
                      nothing. Never turn "I cannot see it" into "it failed". */
-                  done(true, date + ' pulled on ' + who + '. This phone has not loaded that month, so open the day to confirm what arrived.');
+                  done(true, date + ' pulled on ' + who + '. ' + (thisDev().charAt(0).toUpperCase() + thisDev().slice(1)) + ' has not loaded that month, so open the day to confirm what arrived.');
                 }
               }, 2500);
             } else { done(false, who + ' reported: ' + ((job.result && job.result.error) || 'pull failed') + '.'); }
@@ -47262,8 +47294,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
   }, 5000);
 
-  /* =================== QR PAIRING CARD (Settings > Integrations) =================== */
+  /* =================== QR PAIRING CARD (Settings > Integrations) ===================
+     rl-2.1.0 (owner 2026-08-07: "make a guide to download the app from the
+     desktop using a QR code that actually works and has the person click like
+     the save website to app").
+
+     The QR used to encode ScribeFlow.html?phone=1 — the APP. Scanning it opened
+     MLS in a browser tab and stopped there. Nothing anywhere told the doctor to
+     add it to the Home Screen, so the "app" was a bookmark they had to find
+     again through a browser every morning, and the one page that DID explain
+     add-to-home-screen was a mailto: body nobody had opened.
+
+     The QR now encodes the GUIDE. The phone that scans it lands on
+     phone-setup.html, which reads that phone's own platform and shows the exact
+     taps for it (Share -> Add to Home Screen on iOS, ⋮ -> Add to Home screen or
+     a real one-tap Install on Android), and only then hands over the Open MLS
+     button. The app URL is still shown here as the direct link for anyone who
+     wants it. */
   var PHONE_URL = 'https://mlsscribe.com/ScribeFlow.html?phone=1';
+  var PHONE_GUIDE_URL = 'https://mlsscribe.com/phone-setup.html';
   function ensureQrLib(cb) {
     if (window.QRCode) { cb(true); return; }
     if (document.querySelector('script[data-mls-asset="vendor_qrcode.js"]')) { setTimeout(function () { cb(!!window.QRCode); }, 600); return; }
@@ -47283,16 +47332,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!host) return;
       var card = document.createElement('div');
       card.id = 'mlsRlCard'; card.className = 'field';
-      card.innerHTML = '<label style="font-weight:600">📱 Use MLS on your phone</label>' +
-        '<p class="set-desc" style="margin:4px 0 8px">Scan with your phone camera and sign in with this same account — that’s the whole setup. Athena pulls you start on the phone run on THIS computer (keep MLS open here with the extension), and the results sync to the phone.</p>' +
-        '<div id="mlsRlQr" style="width:148px;height:148px;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:8px;box-sizing:content-box"></div>' +
-        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="mlsRlCopy" style="border:1px solid #E4E1D8;background:#FCFBF8;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:7px 12px;cursor:pointer">Copy link</button><span class="set-desc" style="align-self:center;margin:0">' + esc(PHONE_URL) + '</span></div>';
+      card.innerHTML = '<label style="font-weight:600">📱 Put MLS on your phone</label>' +
+        '<p class="set-desc" style="margin:4px 0 10px">Point your phone\'s camera at this square and tap the link. Your phone gets a short guide — the exact taps to save MLS to its Home Screen so it opens like an app — and then signs in with this same account.</p>' +
+        '<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">' +
+          '<div id="mlsRlQr" style="flex:none;width:148px;height:148px;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:8px;box-sizing:content-box"></div>' +
+          '<ol style="flex:1;min-width:190px;margin:0;padding:0 0 0 18px;font:500 12.5px/1.7 \'Public Sans\',system-ui,sans-serif;color:#1A211C">' +
+            '<li>Scan the square with your phone camera.</li>' +
+            '<li>Open Scrivara from the button it shows.</li>' +
+            '<li>Follow its three taps — <b>Add to Home Screen</b> — then sign in.</li>' +
+          '</ol>' +
+        '</div>' +
+        '<p class="set-desc" style="margin:10px 0 0">Athena pulls started on the phone run on THIS computer — keep MLS open here with the extension — and the results sync back to the phone.</p>' +
+        '<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+          '<button type="button" id="mlsRlCopy" style="border:1px solid #E4E1D8;background:#FCFBF8;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:7px 12px;cursor:pointer">Copy the setup link</button>' +
+          '<span class="set-desc" style="align-self:center;margin:0">' + esc(PHONE_GUIDE_URL) + '</span>' +
+        '</div>';
       host.appendChild(card);
-      $('mlsRlCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_URL); toast('Link copied — text or email it to your phone.', 'ok'); } catch (e) {} });
+      $('mlsRlCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_GUIDE_URL); toast('Setup link copied — text or email it to your phone.', 'ok'); } catch (e) {} });
       ensureQrLib(function (ok) {
         var box = $('mlsRlQr'); if (!box) return;
-        if (!ok) { box.innerHTML = '<p class="set-desc" style="margin:0">QR unavailable — use the link below.</p>'; return; }
-        try { new window.QRCode(box, { text: PHONE_URL, width: 148, height: 148, correctLevel: window.QRCode.CorrectLevel.M }); } catch (e) { box.innerHTML = '<p class="set-desc" style="margin:0">QR unavailable — use the link below.</p>'; }
+        /* A QR that cannot be drawn must say what to do instead, on the same
+           card. "QR unavailable — use the link below" pointed at a link that
+           had scrolled off; the address is named here. */
+        var fail = '<p class="set-desc" style="margin:0">The code could not be drawn. Type <b>' + esc(PHONE_GUIDE_URL.replace(/^https?:\/\//, '')) + '</b> into your phone\'s browser instead.</p>';
+        if (!ok) { box.innerHTML = fail; return; }
+        try { new window.QRCode(box, { text: PHONE_GUIDE_URL, width: 148, height: 148, correctLevel: window.QRCode.CorrectLevel.M }); } catch (e) { box.innerHTML = fail; }
       });
     } catch (e) {}
   }
@@ -47376,6 +47440,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function extPresent() { try { var rl = window.__mlsRelayLink; return rl ? rl.extPresent() : !!window.__mlsExtReportedVersion; } catch (e) { return false; } }
   function wantPhone() {
     try {
+      /* ph-1.3.0 / dr-1.5.0: the Settings LAYOUT preference is read first,
+         because it is the most explicit and most durable statement of intent
+         in this function — somebody opened Settings and chose. Everything
+         below it is inference or a URL parameter. Absent (the 'auto' default)
+         this is inert and the original precedence stands, which is why the
+         pinned cases in device-role-contract are untouched. Read through the
+         device-role module rather than localStorage directly: one owner for
+         the value, and no second definition of what 'simple' means. */
+      var drL = window.__mlsDeviceRole;
+      if (drL && typeof drL.layoutPref === 'function') {
+        var lp = drL.layoutPref();
+        if (lp === 'simple') return true;
+        if (lp === 'full') return false;
+      }
       if (sessionStorage.getItem('mls_phone_mode') === '1') return true;
       if (sessionStorage.getItem('mls_phone_mode') === '0') return false;
       /* dr-1.0.0 (device-role fix): an EXPLICIT role always wins — a MacBook/
@@ -47445,13 +47523,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      installation) - a once-per-account dismissible card on the DESKTOP visit
      view: email yourself the phone link (mailto, prefilled with add-to-home-
      screen steps) or copy it. Never shown in phone mode itself. */
-  var PHONE_URL2 = 'https://mlsscribe.com/ScribeFlow.html?phone=1';
+  /* ph-1.2.0: the link that travels to a phone is the GUIDE, not the app. An
+     app URL in an email opens a browser tab and ends there — these three
+     add-to-home-screen lines were the only instruction anywhere, buried in a
+     mail body, written for a phone the reader had to identify themselves. The
+     guide page reads the phone it is opened on and shows that phone's taps. */
+  var PHONE_GUIDE_URL2 = 'https://mlsscribe.com/phone-setup.html';
   function setupEmailParts() {
     var sub = 'MLS Scribe on your phone - setup link';
-    var body = 'Open this on your phone and sign in:\n' + PHONE_URL2 +
-      '\n\nAdd it to your home screen so it opens like an app:\n' +
-      '- iPhone (Safari): tap the Share button, then "Add to Home Screen".\n' +
-      '- Android (Chrome): tap the three-dot menu, then "Add to Home screen".\n\n' +
+    var body = 'Open this link on your phone:\n' + PHONE_GUIDE_URL2 +
+      '\n\nIt shows you the exact taps for your phone to save MLS to the Home Screen, ' +
+      'so it opens like an app instead of a browser page, and then signs you in.\n\n' +
       'Athena pulls you start on the phone run on your office computer - keep MLS open there with the MLS Assist extension.';
     return { subject: sub, body: body };
   }
@@ -47514,18 +47596,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var card = document.createElement('div');
       card.id = 'mlsPhPrompt';
       card.style.cssText = 'display:flex;align-items:center;gap:11px;flex-wrap:wrap;background:#F6FBF8;border:1px solid #D8E5DE;border-radius:12px;padding:11px 14px;margin:0 0 10px;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;';
-      card.innerHTML = '<span>📱 Put MLS on your phone — scan the QR in Settings → Integrations, or</span>' +
+      card.innerHTML = '<span>📱 Put MLS on your phone — scan the QR in Settings → Integrations (it walks the phone through saving MLS to its Home Screen), or</span>' +
         '<button type="button" id="mlsPhEmail" style="border:0;background:transparent;padding:0;color:#2E6A4B;font:700 13px Public Sans,system-ui,sans-serif;text-decoration:underline;text-underline-offset:2px;cursor:pointer">email yourself the setup link</button>' +
         '<button type="button" id="mlsPhCopy" style="border:1px solid #E4E1D8;background:#fff;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:6px 11px;cursor:pointer">Copy link</button>' +
         '<button type="button" id="mlsPhDismiss" title="Don’t show this again" style="margin-left:auto;border:0;background:transparent;color:#79837C;font-size:16px;cursor:pointer;line-height:1">×</button>';
       body.insertBefore(card, body.firstChild);
       $('mlsPhEmail').addEventListener('click', openSetupEmail);
-      $('mlsPhCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_URL2); if (typeof window.toast === 'function') window.toast('Link copied - text or email it to your phone.', 'ok'); } catch (e) {} });
+      $('mlsPhCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_GUIDE_URL2); if (typeof window.toast === 'function') window.toast('Setup link copied - text or email it to your phone.', 'ok'); } catch (e) {} });
       $('mlsPhDismiss').addEventListener('click', function () { try { localStorage.setItem('mls_phone_prompt_done', '1'); } catch (e) {} card.remove(); });
     } catch (e) {}
   }
+  /* ph-1.2.0 (2026-08-07): feat_mls_phone_ui.js (ph2-1.0.0) replaced the phone
+     experience with a real phone app instead of this subtractive hide layer.
+     While that module owns the screen there is nothing here left to do, and
+     leaving `mls-phone` on would only run 28 hide rules underneath an opaque
+     frame. This module stays installed and correct: the moment the new UI is
+     reverted or declines the device, the old behaviour resumes on the next
+     pass. The CSS layer above is untouched, so `revert()` still restores it. */
+  function newUiOwns() {
+    try {
+      var ui = window.__mlsPhoneUI;
+      return !!(ui && ui.installed && typeof ui.owns === 'function' && ui.owns() &&
+        ui.state && ui.state().mounted);
+    } catch (e) { return false; }
+  }
+  api.newUiOwns = newUiOwns;
   function ensure() {
     try {
+      if (newUiOwns()) {
+        if (document.body.classList.contains('mls-phone')) document.body.classList.remove('mls-phone');
+        return;
+      }
       var on = wantPhone();
       var has = document.body.classList.contains('mls-phone');
       if (on && !has) document.body.classList.add('mls-phone');
@@ -47547,7 +47648,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         b.addEventListener('click', function () {
           try { sessionStorage.setItem('mls_phone_mode', '0'); } catch (e) {}
           document.body.classList.remove('mls-phone');
-          try { if (typeof window.toast === 'function') window.toast('Full app shown — reopen the QR link (or add ?phone=1) to return to phone mode.', ''); } catch (e) {}
+          /* ph-1.2.0: "return to phone mode" was printed on whatever device was
+             reading it, including a Mac. Name the device, and name the control
+             that actually brings the simple layout back. */
+          try {
+            var noun1 = 'device';
+            try { var dr1 = window.__mlsDeviceRole; if (dr1 && dr1.deviceNoun) noun1 = dr1.deviceNoun(); } catch (eN) {}
+            if (typeof window.toast === 'function') {
+              window.toast('Full app shown on this ' + noun1 + '. Reopen the setup link, or set this ' + noun1 +
+                '’s role back to “Phone / remote” in Settings → Integrations, to return to the simple layout.', '');
+            }
+          } catch (e) {}
         });
         body.appendChild(b);
       }
@@ -47655,6 +47766,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   var OS = detectOS(), BROWSER = detectBrowser();
   api.os = OS; api.browser = BROWSER;
+
+  /* dr-1.3.0 (owner 2026-08-07: "make sure a desktop is never called a phone").
+     ONE place decides the WORD for the device the user is holding, so no surface
+     can invent its own. The old copy hard-coded "phone" wherever the stripped UI
+     was active — and the stripped UI is reachable from a MacBook through the QR
+     link and through an explicit role, so a laptop screen read "📱 Phone mode",
+     "on your phone", and "this phone". Every one of those was a sentence the app
+     could see was false. deviceNoun() answers from the same evidence detectOS()
+     already trusts, and returns "phone" only for something that is one. */
+  function deviceNoun() {
+    try {
+      var ua = navigator.userAgent || '';
+      switch (OS) {
+        case 'iOS': return /iPod/i.test(ua) ? 'iPod' : 'iPhone';
+        case 'iPadOS': return 'iPad';
+        case 'macOS': return 'Mac';
+        case 'Windows': return 'Windows PC';
+        case 'ChromeOS': return 'Chromebook';
+        case 'Android': return /Mobile/i.test(ua) ? 'Android phone' : 'Android tablet';
+        case 'Linux': return 'computer';
+      }
+    } catch (e) {}
+    return 'device';
+  }
+  api.deviceNoun = deviceNoun;
+  api.thisDevice = function () { return 'this ' + deviceNoun(); };
+  /* True only for something a person holds in one hand. The stripped UI may be
+     ON without this being true (an explicit role, or the QR link opened on a
+     laptop) — which is precisely why the WORD and the MODE are separate. */
+  api.isHandheldDevice = function () { return /phone|iPod/i.test(deviceNoun()); };
   function handheldEvidence() {
     try {
       return /iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent || '') &&
@@ -47667,7 +47808,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   var ROLES = { office: 'Office computer', secondary: 'Secondary computer', phone: 'Phone / remote' };
   function validRole(r) { return r === 'office' || r === 'secondary' || r === 'phone'; }
-  api.role = function () { var r = ls('mls_device_role'); return validRole(r) ? r : null; };
+  /* dr-1.3.0 (owner 2026-08-07, screenshot from his own iPhone): A ROLE THE
+     DEVICE CANNOT PHYSICALLY HONOUR IS NOT A ROLE.
+     His phone had 'office' stored. Three things followed from that one value,
+     and all three were visible in the one screenshot:
+       1. wantPhone() reads `r === 'phone'`, so the phone got the FULL DESKTOP
+          APP — 7-item dock, stage rail, the lot. No phone layer of any kind,
+          old or new, can ever mount on that device.
+       2. setRole() had also written mls_phone_mode='0' beside it, which
+          wantPhone() checks BEFORE the role, so the refusal was doubly locked.
+       3. The relay pointed every pull at an iPhone, which can never run the
+          Chrome extension that reads Athena — the presence line in the same
+          screenshot says exactly that, in amber, and had been saying it for
+          days.
+     canHostExtension() has known since dr-1.2.0 (b853, observed on this same
+     phone) that iOS/iPadOS/Android cannot host the extension. All that fixed
+     was the WORDING of the complaint. The value stayed, and kept costing.
+     So the check moves to where the value is read: an unhostable 'office' is
+     refused, which returns the device to "not chosen yet" — suggestRole() then
+     answers 'phone' from handheld evidence, and the relay stops aiming at a
+     target that can never answer. Nothing is erased; setRole() below refuses
+     at the door instead, so the state cannot come back. */
+  function roleUnhonourable(r) { return r === 'office' && !canHostExtension(); }
+  /* The repair runs ONCE AT INSTALL, not lazily inside role(), and the ordering
+     is the whole reason. wantPhone() reads mls_phone_mode BEFORE it reads the
+     role, so a clear that waits for the first role() call is a clear that never
+     runs — the '0' short-circuits first and the role is never consulted. This
+     module's IIFE evaluates at load; every ensure() tick that could act on the
+     flag comes later. Measured against the owner's exact state, this is the
+     line that turns wantPhone() from false to true. */
+  try {
+    if (roleUnhonourable(ls('mls_device_role')) && sessionStorage.getItem('mls_phone_mode') === '0') {
+      sessionStorage.removeItem('mls_phone_mode');
+    }
+  } catch (e) {}
+  api.role = function () {
+    var r = ls('mls_device_role');
+    if (!validRole(r) || roleUnhonourable(r)) return null;
+    return r;
+  };
+  /* What the panel shows so the refusal is visible rather than mysterious. */
+  api.roleRefused = function () {
+    var r = ls('mls_device_role');
+    return (validRole(r) && roleUnhonourable(r)) ? r : null;
+  };
   api.suggestRole = function () {
     try { if (sessionStorage.getItem('mls_phone_mode') === '1') return 'phone'; } catch (e) {}
     if (handheldEvidence()) return 'phone';
@@ -47675,8 +47859,59 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return 'secondary';
   };
   api.effectiveRole = function () { return api.role() || api.suggestRole(); };
+
+  /* dr-1.4.0 (owner 2026-08-07, verbatim: "my phone should auto be detected as
+     a phone"). He is right, and this is the defect underneath the one b948
+     fixed — b948 stopped a wrong answer from sticking; this stops the question
+     from being asked at all.
+     WHAT WAS HAPPENING. roleBanner() put "What is this device?" with THREE
+     buttons in front of every signed-in device, an iPhone included. One tap on
+     the wrong one of three and the phone was the office computer — which is
+     exactly the state his screenshot showed, and there is no reason a doctor
+     should ever have been offered that tap. An iPhone is not an ambiguous
+     device.
+     WHY THIS DOES NOT REOPEN dr-1.0.0. That rule exists because the old phone
+     signal was `window.innerWidth <= 760`, so any narrow window became a phone.
+     The rule worth keeping from it is "GEOMETRY NEVER CLASSIFIES", not "nothing
+     ever classifies". handheldEvidence() is mobile UA + touch — the same
+     evidence suggestRole() already uses to RECOMMEND 'phone', and it cannot be
+     true on a MacBook or a Windows laptop at any window size.
+     WHAT STILL ASKS. Everything ambiguous, which is where the human judgement
+     actually lives: on a desktop the choice is office vs secondary, and the app
+     cannot know which of two computers should be THE office one. iPads are also
+     left to the card on purpose — a modern iPad reports as Macintosh, so it is
+     not handheld evidence, and it genuinely might be a secondary machine.
+     An honourable explicit choice always still wins: this only adopts when
+     nothing is stored, or when what is stored is a role this device cannot
+     honour (the b948 case), which repairs his phone on its next load instead of
+     leaving it to fall through to a suggestion. */
+  function adoptObviousRole() {
+    try {
+      var stored = ls('mls_device_role');
+      if (validRole(stored) && !roleUnhonourable(stored)) return false;
+      if (!handheldEvidence()) return false;
+      lsSet('mls_device_role', 'phone');
+      /* Overwrites the '0' that a previous setRole('office') wrote beside the
+         role it is replacing. wantPhone() reads this flag first. */
+      try { sessionStorage.setItem('mls_phone_mode', '1'); } catch (e) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  api.adoptObviousRole = adoptObviousRole;
+  adoptObviousRole();
   api.setRole = function (r) {
     if (!validRole(r)) return false;
+    /* dr-1.3.0: refuse at the door, so the unhonourable state cannot be
+       re-created by the same tap that created it the first time. This is the
+       one role in the set that names a CAPABILITY (running the extension that
+       reads Athena) rather than a preference, and this device does not have
+       it — no setting can grant it. */
+    if (roleUnhonourable(r)) {
+      toast('This ' + deviceNoun() + ' cannot be the office computer: MLS Assist is a Chrome desktop ' +
+        'extension and ' + OS + ' cannot install one, so Athena pulls could never run here. Set the ' +
+        'Windows or Mac computer that has MLS Assist to "Office computer" instead.', 'err');
+      return false;
+    }
     lsSet('mls_device_role', r);
     /* phone role also drives the stripped UI flag the ph module reads */
     try {
@@ -47692,6 +47927,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { renderPanelRows(); } catch (e) {}
     return true;
   };
+  /* dr-1.5.0 (owner 2026-08-07: "Make a place in settings to change from
+     desktop to mobile or laptop").
+     THE ROLE AND THE LAYOUT ARE TWO DIFFERENT QUESTIONS, and until now they
+     were one welded answer. Role says what the device IS, and it drives the
+     relay — which machine reads Athena for the account. Layout says what the
+     device SHOWS. Welding them means a doctor who wants the simple layout on
+     his laptop for a day has to lie to the relay about which computer runs his
+     pulls, and the only ways to change the layout at all were a URL parameter
+     (?phone=1) and a text link buried at the bottom of the phone screen.
+     So layout becomes its own stored preference with three honest values:
+       auto    — follow the device (what everyone gets, and what dr-1.4.0 now
+                 answers correctly on a handheld without asking)
+       simple  — the phone app, on anything, deliberately
+       full    — the whole workspace, on anything, deliberately
+     It is read FIRST in wantPhone() because it is the most explicit and most
+     durable statement of intent in the system: a person opened Settings and
+     said so. Absent (the default), nothing about today's behaviour changes. */
+  var LAYOUT_KEY = 'mls_layout_pref';
+  function validLayout(v) { return v === 'auto' || v === 'full' || v === 'simple'; }
+  api.layoutPref = function () { var v = ls(LAYOUT_KEY); return validLayout(v) ? v : 'auto'; };
+  api.setLayoutPref = function (v) {
+    if (!validLayout(v)) return false;
+    lsSet(LAYOUT_KEY, v);
+    /* The session flag is the OLD channel for the same intent (?phone=1). A
+       stored preference must not be silently outvoted by a leftover from
+       earlier in the session, so it is cleared and the preference speaks. */
+    try { sessionStorage.removeItem('mls_phone_mode'); } catch (e) {}
+    try { if (window.__mlsPhoneHome && window.__mlsPhoneHome.ensure) window.__mlsPhoneHome.ensure(); } catch (e) {}
+    try { if (window.__mlsPhoneUI && window.__mlsPhoneUI.ensure) window.__mlsPhoneUI.ensure(); } catch (e) {}
+    try { renderPanelRows(); } catch (e) {}
+    toast(v === 'simple' ? 'This ' + deviceNoun() + ' now opens the simple phone layout.'
+      : v === 'full' ? 'This ' + deviceNoun() + ' now opens the full app.'
+      : 'Layout follows this ' + deviceNoun() + ' again.', 'ok');
+    return true;
+  };
+
   api.name = function () { return ls('mls_device_name') || (OS + ' · ' + BROWSER); };
   api.setName = function (n) {
     n = String(n || '').trim().slice(0, 80);
@@ -47732,6 +48003,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function roleBanner() {
     try {
       if (!authed() || api.role()) { var ex = $('mlsDrBanner'); if (ex) ex.remove(); return; }
+      /* dr-1.4.0: a handheld is never asked. adoptObviousRole() has already
+         answered from evidence the card would only have made the doctor
+         re-enter by hand — and the three-button row is how a phone came to be
+         registered as the office computer in the first place. This is belt to
+         the adopt's braces: if adoption were ever skipped, an unanswerable
+         question in front of a doctor is worse than a defaulted one. */
+      if (handheldEvidence()) { var exH = $('mlsDrBanner'); if (exH) exH.remove(); return; }
       try { if (sessionStorage.getItem('mls_dr_banner_snooze') === '1') return; } catch (e) {}
       if ($('mlsDrBanner')) return;
       var body = $('mlsEz3Body'); if (!body) return;
@@ -47774,9 +48052,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var rows = $('mlsDrRows'); if (!rows) return;
     var roleNow = api.role();
     var head = $('mlsDrThisLine');
-    if (head) head.innerHTML = '<b>' + esc(api.name()) + '</b> · ' + esc(OS) + ' · ' + esc(BROWSER) +
-      ' · role: <b>' + esc(roleNow ? ROLES[roleNow] : (ROLES[api.suggestRole()] + ' (suggested, not confirmed)')) + '</b>' +
-      (extPresent() ? ' · extension ✓' : '');
+    /* dr-1.5.0: the identity line names the device the way its owner would,
+       and reports the ROLE as the consequence it actually has. A refused role
+       is said out loud here rather than silently ignored — a panel showing
+       "Office computer" for a value the app has already overruled is the
+       mismatch dr-1.3.0 exists to stop. */
+    if (head) {
+      var refused = api.roleRefused();
+      head.innerHTML = '<b>' + esc(api.name()) + '</b> · this ' + esc(deviceNoun()) + ' · ' + esc(BROWSER) +
+        (extPresent() ? ' · MLS Assist ✓' : '') +
+        (refused ? '<br><span style="color:#8A5A00">Was set as the office computer, which ' + esc(OS) +
+          ' can never do — MLS Assist is a Chrome desktop extension. Treated as a phone until you choose otherwise.</span>' : '');
+    }
     var seg = $('mlsDrSeg');
     if (seg) {
       var bs = seg.querySelectorAll('button[data-role]');
@@ -47785,6 +48072,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         bs[i].style.background = on ? '#204034' : '#FCFBF8';
         bs[i].style.color = on ? '#fff' : '#1A211C';
         bs[i].style.borderColor = on ? '#204034' : '#E4E1D8';
+      }
+    }
+    var lay = $('mlsDrLayout');
+    if (lay) {
+      var lp = api.layoutPref();
+      var ls2 = lay.querySelectorAll('button[data-layout]');
+      for (var k = 0; k < ls2.length; k++) {
+        var onL = ls2[k].getAttribute('data-layout') === lp;
+        ls2[k].style.background = onL ? '#204034' : '#FCFBF8';
+        ls2[k].style.color = onL ? '#fff' : '#1A211C';
+        ls2[k].style.borderColor = onL ? '#204034' : '#E4E1D8';
       }
     }
     rows.innerHTML = '<p class="set-desc" style="margin:6px 0">Loading devices…</p>';
@@ -47836,16 +48134,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!host) return;
       var card = document.createElement('div');
       card.id = 'mlsDrCard'; card.className = 'field';
-      card.innerHTML = '<label style="font-weight:600">🖥 This device & connected devices</label>' +
+      /* dr-1.5.0: the card asks the two questions separately and in plain
+         words. It used to ask one, in ours: "Office computer / Secondary
+         computer / Phone / remote" are role names out of the relay's head, and
+         a doctor holding a laptop has to work out which of them he is. He said
+         it himself — "change from desktop to mobile or laptop" — so those are
+         the words on the buttons, with the consequence written underneath
+         rather than encoded in the label. */
+      card.innerHTML = '<label style="font-weight:600">🖥 This device</label>' +
         '<p class="set-desc" id="mlsDrThisLine" style="margin:4px 0 8px"></p>' +
+        '<p class="set-desc" style="margin:8px 0 4px;color:#1A211C;font-weight:600">What kind of device is this?</p>' +
         '<div id="mlsDrSeg" style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px">' +
-        '<button type="button" data-role="office" style="' + segBtnCss() + '">🖥 Office computer</button>' +
-        '<button type="button" data-role="secondary" style="' + segBtnCss() + '">💻 Secondary computer</button>' +
-        '<button type="button" data-role="phone" style="' + segBtnCss() + '">📱 Phone / remote</button>' +
-        '<button type="button" id="mlsDrRename" style="' + segBtnCss() + '">✎ Rename</button>' +
+        '<button type="button" data-role="office" style="' + segBtnCss() + '">🖥 Desktop</button>' +
+        '<button type="button" data-role="secondary" style="' + segBtnCss() + '">💻 Laptop</button>' +
+        '<button type="button" data-role="phone" style="' + segBtnCss() + '">📱 Phone</button>' +
+        '</div>' +
+        '<p class="set-desc" style="margin:2px 0 10px;color:#79837C">This decides where Athena pulls RUN. Exactly one device — the one with the MLS Assist extension — reads Athena for the whole account; pick <b>🖥 Desktop</b> there. Everything else sends its pulls to it and the results sync back.</p>' +
+        '<p class="set-desc" style="margin:8px 0 4px;color:#1A211C;font-weight:600">Which layout should this device open?</p>' +
+        '<div id="mlsDrLayout" style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px">' +
+        '<button type="button" data-layout="auto" style="' + segBtnCss() + '">Automatic</button>' +
+        '<button type="button" data-layout="full" style="' + segBtnCss() + '">🖥 Full app</button>' +
+        '<button type="button" data-layout="simple" style="' + segBtnCss() + '">📱 Simple phone app</button>' +
+        '</div>' +
+        '<p class="set-desc" style="margin:2px 0 10px;color:#79837C">Separate from the question above, because it is a separate question. <b>Automatic</b> gives a phone the simple layout and a computer the full one. Choose a side to override that on this device only — useful for previewing the phone screens from your desk, or for using the whole workspace on a tablet.</p>' +
+        '<div style="display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px">' +
+        '<button type="button" id="mlsDrRename" style="' + segBtnCss() + '">✎ Rename this device</button>' +
         '<button type="button" id="mlsDrRefresh" style="' + segBtnCss() + '">↻ Refresh</button>' +
         '</div>' +
-        '<p class="set-desc" style="margin:2px 0 6px;color:#79837C">The office computer is the machine with the MLS Assist extension that runs Athena pulls. Phones and secondary computers send their pulls to it.</p>' +
+        '<p class="set-desc" style="margin:10px 0 4px;color:#1A211C;font-weight:600">Your devices</p>' +
         '<div id="mlsDrRows"></div>';
       host.appendChild(card);
       var segBtns = card.querySelectorAll('#mlsDrSeg button[data-role]');
@@ -47867,6 +48183,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           api.setRole(r);
         });
+      }
+      var layBtns = card.querySelectorAll('#mlsDrLayout button[data-layout]');
+      for (var L = 0; L < layBtns.length; L++) {
+        layBtns[L].addEventListener('click', function () { api.setLayoutPref(this.getAttribute('data-layout')); });
       }
       $('mlsDrRename').addEventListener('click', async function () {
         var n = await window.mlsPrompt('Name this device (shown to your other devices):', api.name());
