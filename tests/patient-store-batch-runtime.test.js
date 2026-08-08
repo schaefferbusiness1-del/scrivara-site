@@ -49,7 +49,7 @@ vm.createContext(context);
 vm.runInContext(html.slice(start, end), context, { filename: 'ScribeFlow.patient-store.js' });
 
 const api = context.window.__mlsPatientStoreBatch;
-assert(api && api.version === 'pts-batch-1.0.0', 'account-scoped patient batch API did not install');
+assert(api && api.version === 'pts-batch-1.1.0', 'account-scoped patient batch API did not install');
 assert(importer.includes('withPatientBatch("schedule-pull"'), 'managed schedule pull is not bracketed by the patient persistence batch');
 assert(importer.includes('checkpointPatientBatch(opts.__patientStoreBatch, "schedule-import", true)'), 'schedule identities are not force-flushed before history navigation');
 assert(importer.includes('withPatientBatch("history-retry"'), 'manual failed-history retry bypasses batched persistence');

@@ -32,8 +32,20 @@
     try { if (isFn(window.findPatient)) return window.findPatient(id); } catch (e) {}
     return null;
   }
+  function _stagePatient(p) {
+    try { return JSON.parse(JSON.stringify(p)); }
+    catch (e) { throw new Error('Could not stage the patient visit batch safely. Nothing from this batch was saved.'); }
+  }
   function _upsert(p) {
-    try { if (isFn(window.upsertPatient)) { window.upsertPatient(p); return true; } } catch (e) {}
+    if (isFn(window.upsertPatient)) {
+      try {
+        var result = window.upsertPatient(p);
+        /* Save Shield deliberately returns an explicit refusal instead of
+           throwing. A bulk writer may never report success or mutate the
+           canonical alias when that final commit was rejected. */
+        return !(result === false || (result && result.ok === false));
+      } catch (e) { return false; }
+    }
     try {
       if (isFn(window.getPatients) && isFn(window.savePatients)) {
         var arr = window.getPatients(); var i = arr.findIndex(function (x) { return x.id === p.id; });
@@ -361,7 +373,11 @@
 
   function addVisit(patientId, raw, opts) {
     opts = opts || {};
-    var p = _findPatient(patientId); if (!p) return null;
+    /* Bulk chart readers pass the one canonical, current patient object through
+       every wrapped addVisit call. This keeps all safety/source wrappers in the
+       chain while avoiding a fresh roster lookup and a full patient upsert for
+       every row. Public one-row callers retain the historical lookup path. */
+    var p = opts._patientRef && String(opts._patientRef.id || '') === String(patientId || '') ? opts._patientRef : _findPatient(patientId); if (!p) return null;
     if (!Array.isArray(p.visits)) p.visits = [];
     var v = _normVisit(raw, opts.source, opts);
     var key = _visitKey(v);
@@ -472,8 +488,9 @@
     return v;
   }
 
-  function reconcileVerifiedAthenaVisits(patientId, batchRows) {
-    var p = _findPatient(patientId); if (!p) return { removed: 0, kept: 0 };
+  function reconcileVerifiedAthenaVisits(patientId, batchRows, opts) {
+    opts = opts || {};
+    var p = opts._patientRef && String(opts._patientRef.id || '') === String(patientId || '') ? opts._patientRef : _findPatient(patientId); if (!p) return { removed: 0, kept: 0 };
     if (!Array.isArray(p.visits)) p.visits = [];
     var rows = Array.isArray(batchRows) ? batchRows : [], accepted = {}, canonical = [];
     for (var r = 0; r < rows.length; r++) {
@@ -539,28 +556,72 @@
     });
     _compactHydratedPlaceholders(p);
     var removed = before - p.visits.length;
-    if (removed) _upsert(p);
+    if (removed && opts.persist !== false) _upsert(p);
     return { removed: removed, kept: p.visits.length, complete: true };
+  }
+
+  function saveVerifiedVisitBatch(patientId, rows, opts) {
+    opts = opts || {};
+    var current = _findPatient(patientId);
+    if (!current) throw new Error('Verified visit patient is no longer current. Nothing from this batch was saved.');
+    var staged = _stagePatient(current), added = [], list = Array.isArray(rows) ? rows : [];
+    if (opts.reconcile === true) {
+      var receiptAliases = Object.create(null);
+      for (var ri = 0; ri < list.length; ri++) {
+        var aliases = _stableVisitKeys(list[ri]);
+        if (!aliases.length) throw new Error('Verified visit identities were incomplete. Nothing from this batch was saved.');
+        for (var rai = 0; rai < aliases.length; rai++) {
+          if (receiptAliases[aliases[rai]]) throw new Error('Verified visit receipt repeated an encounter identity. Nothing from this batch was saved.');
+          receiptAliases[aliases[rai]] = 1;
+        }
+      }
+    }
+    var addOne = window.__mlsVisitModel && isFn(window.__mlsVisitModel.addVisit) ? window.__mlsVisitModel.addVisit : addVisit;
+    for (var i = 0; i < list.length; i++) {
+      var stored = addOne(staged.id, list[i], {
+        source: opts.source || 'athena-copy', identityVerified: true,
+        identityBinding: String(staged.id), bodyComplete: opts.bodyComplete === true,
+        persist: false, _patientRef: staged
+      });
+      if (stored) { added.push(stored); if (isFn(opts.onStored)) opts.onStored(stored, i, list.length); }
+    }
+    /* Every row in an authoritative receipt must survive the full wrapper
+       chain. A safety/source wrapper returning null makes the set incomplete;
+       reconciling that subset could delete previously verified encounters. */
+    if (added.length !== list.length) throw new Error('Verified visit batch was filtered before persistence. Nothing from this batch was saved.');
+    var reconciled = null;
+    if (opts.reconcile === true) {
+      reconciled = reconcileVerifiedAthenaVisits(staged.id, list, { persist: false, _patientRef: staged });
+      if (!reconciled || reconciled.complete !== true) throw new Error('Verified visit identities conflicted. Nothing from this batch was saved.');
+    }
+    if ((added.length || (reconciled && reconciled.removed)) && !_upsert(staged)) {
+      throw new Error('Verified visit batch could not be committed. Nothing from this batch was saved.');
+    }
+    return { saved: added.length, reconcile: reconciled };
   }
 
   function ingestChart(patient, chart, source, opts) {
     if (!patient || !chart) return [];
-    var p = (typeof patient === 'string') ? _findPatient(patient) : patient;
-    if (!p) return [];
+    var patientId = (typeof patient === 'string') ? patient : (patient && patient.id);
+    /* Always stage the post-await canonical row. An object caller may have
+       captured its patient minutes before Athena returned. */
+    var current = patientId ? _findPatient(patientId) : null;
+    if (!current) return [];
+    var p = _stagePatient(current);
     if (!Array.isArray(p.visits)) p.visits = [];
     var added = [];
     var src = source || 'athena-copy';
     var list = [];
+    var addOne = window.__mlsVisitModel && isFn(window.__mlsVisitModel.addVisit) ? window.__mlsVisitModel.addVisit : addVisit;
     if (Array.isArray(chart.visits)) list = list.concat(chart.visits);
     if (Array.isArray(chart.history) && (!chart.visits || !chart.visits.length)) list = list.concat(chart.history);
     list.forEach(function (item) {
-      var v = addVisit(p.id, item, {
+      var v = addOne(p.id, item, {
         source: src,
-        /* Persist each normalized row through the canonical patient lookup.
-           Production getPatients/findPatient may return JSON clones; mutating a
-           persist:false clone and then upserting the stale caller object loses
-           every visit even though reference-based tests appear to pass. */
-        persist: true,
+        /* Keep every addVisit safety/source wrapper, but mutate this one current
+           patient object and persist once after the complete chart batch. */
+        persist: false,
+        _patientRef: p,
         identityVerified: !!(opts && opts.identityVerified),
         identityBinding: opts && opts.identityBinding,
         /* Parser-produced strings are encounter-index metadata, never a proven
@@ -570,9 +631,10 @@
       if (v) added.push(v);
     });
     if (!added.length && trim(chart.summary)) {
-      var v2 = addVisit(p.id, { type: 'Chart summary', date: '', raw: chart.summary }, {
+      var v2 = addOne(p.id, { type: 'Chart summary', date: '', raw: chart.summary }, {
         source: src,
-        persist: true,
+        persist: false,
+        _patientRef: p,
         identityVerified: !!(opts && opts.identityVerified),
         identityBinding: opts && opts.identityBinding
       });
@@ -584,10 +646,12 @@
        redundant twins. b485: run even when THIS batch added nothing — a
        fully-merged re-pull is exactly when pairs stranded by an earlier
        session get their only chance to heal. */
-    try {
-      var freshP = _findPatient(typeof patient === 'string' ? patient : p.id);
-      if (freshP && _collapseExactIndexDuplicates(freshP)) _upsert(freshP);
-    } catch (eDup) {}
+    var healed = false;
+    try { healed = !!_collapseExactIndexDuplicates(p); } catch (eDup) {}
+    if (added.length || healed) {
+      if (!_upsert(p)) return [];
+      current.visits = p.visits;
+    }
     return added;
   }
 
@@ -1564,6 +1628,7 @@
   window.__mlsVisitModel = {
     getVisits: getVisits,
     addVisit: addVisit,
+    saveVerifiedVisitBatch: saveVerifiedVisitBatch,
     reconcileVerifiedAthenaVisits: reconcileVerifiedAthenaVisits,
     ingestChart: ingestChart,
     deriveFromLegacy: deriveFromLegacy,
@@ -1983,25 +2048,33 @@
     var arr = Array.isArray(visits) ? visits : [];
     var fullBatch = !!(batchReceipt && batchReceipt.complete === true && batchReceipt.indexComplete === true && batchReceipt.bodyComplete === true && batchReceipt.fullDetail === true && Number(batchReceipt.parsed) === Number(batchReceipt.expected));
     var scopedRead = !!(batchReceipt && batchReceipt.onlyDate);
+    /* Some safety wrappers intentionally remove non-visit rows before this
+       function. A receipt for N rows may never authorize reconciliation after
+       that filtering unless all N rows still reached this exact boundary. */
+    if (fullBatch && (arr.length !== Number(batchReceipt.parsed) || arr.length !== Number(batchReceipt.expected))) {
+      throw new Error('Safety stop — the complete visit receipt no longer matches the rows to save. Nothing from this batch was saved.');
+    }
     if (arr.some(function (raw) { return !visitIdentityAgrees(p, raw, fullBatch); })) {
       throw new Error('Safety stop — at least one returned visit identifies a different patient. Nothing from this batch was saved. Re-open the correct chart and pull again.');
     }
-    var saved = 0;
-    arr.forEach(function (raw, i) {
-      var stored = M().addVisit(p.id, raw, {
-        source: 'athena-copy',
-        identityVerified: true,
-        identityBinding: S(p.id),
-        bodyComplete: fullBatch
-      });
-      if (stored) { saved++; if (onStatus) try { onStatus('Saved visit ' + (stored.date || (i + 1)) + ' (' + (i + 1) + ' of ' + arr.length + ')…'); } catch (e) {} }
-    });
+    var target = null;
+    try {
+      var currentPatients = isFn(window.getPatients) ? (window.getPatients() || []) : [];
+      target = currentPatients.find(function (row) { return String(row && row.id || '') === String(p.id || ''); }) || null;
+      if (!target) throw new Error('patient-no-longer-current');
+      var currentIdentity = verifyIdentity(target, identity || {});
+      if (!currentIdentity.ok) throw new Error('patient-identity-changed');
+    } catch (eCurrent) { throw new Error('Could not stage the verified visit batch safely. Nothing from this batch was saved.'); }
     /* 2026-07-28 invariant fix: a DAY-SCOPED read (runOpts.onlyDate) returns
        a complete receipt for ONE day - reconciling it as the verified FULL
        set would let a one-day slice speak for the whole history. Scoped
        saves stay additive; only a genuine every-visit batch reconciles. */
-    if (fullBatch && !scopedRead && isFn(M().reconcileVerifiedAthenaVisits)) M().reconcileVerifiedAthenaVisits(p.id, arr);
-    return saved;
+    if (!isFn(M().saveVerifiedVisitBatch)) throw new Error('Safety stop — the verified visit batch writer is unavailable. Nothing from this batch was saved.');
+    var result = M().saveVerifiedVisitBatch(target.id, arr, {
+      source: 'athena-copy', bodyComplete: fullBatch, reconcile: fullBatch && !scopedRead,
+      onStored: function (stored, i, total) { if (onStatus) try { onStatus('Saved visit ' + (stored.date || (i + 1)) + ' (' + (i + 1) + ' of ' + total + ')…'); } catch (e) {} }
+    });
+    return Number(result && result.saved || 0);
   }
 
   // ---- main flow -------------------------------------------------------------
@@ -2290,6 +2363,7 @@
       return r;
     };
     wrapped.__mlsWrapped = true;
+    wrapped.__mlsVisitWireOwner = true;
     try { wrapped.__mlsOrig = orig; } catch (e) {}
     window._savePatientChart = wrapped;
     return true;

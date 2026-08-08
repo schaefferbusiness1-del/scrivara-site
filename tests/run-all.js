@@ -407,6 +407,7 @@ const tests = [
   'analysis-scope-chip-fits-a-phone.test.js',
   'patient-store-compression-runtime.test.js',
   'patient-store-batch-runtime.test.js',
+  'managed-pull-persistence-performance-runtime.test.js',
   'patient-store-sync-rollback-runtime.test.js',
   'visit-shell-merge-alias-survival.test.js',
   'visit-index-dupe-collapse.test.js',

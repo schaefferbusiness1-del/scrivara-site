@@ -83,8 +83,8 @@ const baseRosterRead = baseSanitize.indexOf('window.getPatients');
 assert(baseSanitize.includes('window.__mlsPullBusyAt') && baseSanitize.includes('.state.running') &&
   baseBusyReturn >= 0 && baseRosterRead >= 0 && baseBusyReturn < baseRosterRead,
   'base startup scrub must defer before reading or rewriting the roster during a pull');
-assert(si.includes('maxChanges: 12, maxDelayMs: 15000'),
-  'the pull batch flushes at the clamp ceiling, not every 4 upserts');
+assert(si.includes('cooperative: true, maxChanges: 64, maxDelayMs: 15000'),
+  'the pull batch no longer uses unique-patient cooperative checkpoints');
 assert(si.includes('if (isFn(window.upsertPatient)) window.upsertPatient(arr[i]);'),
   'stampVisitsProof joins the batch instead of forcing unbatched compresses');
 

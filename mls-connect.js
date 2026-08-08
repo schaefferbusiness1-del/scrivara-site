@@ -22940,6 +22940,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     setTimeout(check, 1500);
   }
+  function visitWireOwnsChartSave() {
+    var fn = window._savePatientChart, seen = [], depth = 0;
+    while (isFn(fn) && depth++ < 48) {
+      if (fn.__mlsVisitWireOwner === true) return true;
+      if (seen.indexOf(fn) >= 0) break;
+      seen.push(fn);
+      fn = fn.__mlsOrig || fn.__orig || fn.__vfxOrig || fn.__prfOrig || null;
+    }
+    return false;
+  }
   function installF7() {
     /* history saves must refresh the workspace + notify honestly */
     if (isFn(window._savePatientChart) && !window._savePatientChart.__prf) {
@@ -22953,11 +22963,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         });
         var r = orig._savePatientChart.apply(this, arguments);
         if (r !== true) return r;
-        /* F13a belt-and-braces: make sure INDIVIDUAL VISITS materialize on the
-           patient record even if feat_visits' own _savePatientChart wrap didn't
-           install (its ingest is _visitKey-deduped, so double-ingest is a no-op).
-           This runs only after the exact ID-bound base save returned true. */
+        /* F13a remains a fallback only. When VisitWire owns the active wrapper,
+           its verified ingest is canonical; repeating the same rows here was
+           data-idempotent but caused one full patient write per visit. */
         safe(function () {
+          if (visitWireOwnsChartSave()) return;
           if (!chart || !window.__mlsVisitModel || !isFn(window.__mlsVisitModel.ingestChart)) return;
           var targetId = String((name && typeof name === 'object' && (name.patientId || name.id)) || (appt && (appt._mlsTargetPatientId || appt.patientId)) || '');
           if (!targetId) return;
@@ -22972,7 +22982,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         safe(function () { var ms = mlsStatus(); if (ms && typeof ms.note === 'function') ms.note('Chart history saved.'); });
         return r;
       };
-      sp.__prf = 1; window._savePatientChart = sp;
+      sp.__prf = 1; sp.__mlsOrig = orig._savePatientChart; window._savePatientChart = sp;
     }
     /* first paint after boot */
     setTimeout(function () { refreshEasy('boot'); }, 4000);
@@ -43432,7 +43442,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260808asst220perf1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.0.0 - the cross-tab stale-lineage save shield: an upsert descending from an older copy of a record is refused, a stale bulk save is per-row protected, refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.20 (mdx-2.0.1 the display-echo test now accepts the extension's real athena:&lt;display text&gt; keys, which made mdx-2.0.0 a no-op; mdx-2.0.2 asserts a credential only when comma- or underscore-delimited, so a surname that spells one cannot invent a second clinician; mdx-1.1.0 history refusal sub-cause capture + empty-read pace guard) - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + escalating first-click nav settle-retry + ping-aware duplicate detection + merge-deferral busy stamp + outdated-extension hint + counted import-phase statuses + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + PHI-free per-stage timing receipts + b346 engine-lease mutual exclusion */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.21 (managed-pull roster persistence is unique-patient batched and cooperatively encoded; mdx-2.0.1 display-echo + mdx-2.0.2 credential delimiter + mdx-1.1.0 history refusal diagnostics retained) - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + b346 engine-lease mutual exclusion */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
