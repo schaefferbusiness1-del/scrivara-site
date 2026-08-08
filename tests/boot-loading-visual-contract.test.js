@@ -42,13 +42,16 @@ assert(showSource.includes("bootVeil=document.getElementById('mlsBootVeil'); if(
 /* Owner directive 2026-07-20: near-instant first load. The veil keeps a small
    anti-flash floor and the bounded max; local-store accounts reveal before
    cloud hydration (startup-hydration-contract pins that path). */
-assert(app.includes('const SF_GATE_MIN_MS=300, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=350'), 'bounded, quiet-window loading contract was lost');
+assert(app.includes('const SF_GATE_MIN_MS=300, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=180'), 'bounded, quiet-window loading contract was lost');
 assert(app.includes('const SF_GATE_READY_HOLD_MS=40, SF_GATE_FADE_MS=120'), 'Ready-to-app handoff is no longer bounded below 200ms');
 assert(showSource.includes('@keyframes sfGateAdvance') && showSource.includes('transform:scaleX('), 'loader progress is not compositor driven');
 assert(showSource.includes('animation:sfGateAdvance 4300ms'), 'loader progress no longer matches the faster safe startup floor');
 assert(app.includes("[1100,'Loading your schedule…']") && app.includes("[2500,'Preparing your workspace…']") && app.includes("[3900,'Almost ready…']") && app.includes("[8000,'Still preparing your workspace…']"), 'loader stage copy no longer matches the safe startup cadence');
 assert(showSource.includes('if(sfGateLoadingVisible&&el.style.display!==\'none\') return el'), 'duplicate startup calls can reset visible progress again');
 assert(app.includes("window.dispatchEvent(new Event('mls:loader-ready'))"), 'Ready is not announced before the smooth reveal');
+assert(app.includes("window.__mlsLoaderReadyAt=Date.now(); window.dispatchEvent(new Event('mls:loader-ready'))"), 'late optional modules cannot detect an already-completed loader handoff');
+assert(!app.slice(app.indexOf('function sfWaitForStableFirstFrame('), app.indexOf('function sfShowGateLoading')).includes('priorityQueued'),
+  'noncritical queued presentation work can still hold the secure loader after the critical bundle is ready');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
 assert(app.includes("window.__MLS_AV='b964'"), 'ScribeFlow loader was not cache-busted to b964');
 

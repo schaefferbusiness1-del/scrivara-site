@@ -6992,7 +6992,17 @@ function savePatients(arr){
   localStorage.setItem(uns('patients'),JSON.stringify(arr));
 }
 function getActivePtId(){ return localStorage.getItem(uns('activePt'))||''; }
-function setActivePtId(id){ if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt')); }
+/* Staging mirrors production's changed-only, write-before-dispatch contract so
+   event-driven patient owners observe every same-tab switch. */
+function setActivePtId(id){
+  var previous=''; try{previous=getActivePtId();}catch(e){}
+  var next=String(id||''),changed=String(previous||'')!==next;
+  if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
+  if(changed){
+    try{window.dispatchEvent(new CustomEvent('mls:active-patient-changed',{detail:{previousId:String(previous||''),patientId:next}}));}
+    catch(e2){try{var ev=new Event('mls:active-patient-changed');ev.detail={previousId:String(previous||''),patientId:next};window.dispatchEvent(ev);}catch(e3){}}
+  }
+}
 function activePatient(){ const id=getActivePtId(); return getPatients().find(p=>p.id===id)||null; }
 function findPatient(id){ return getPatients().find(p=>p.id===id)||null; }
 function upsertPatient(p){

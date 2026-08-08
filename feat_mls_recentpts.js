@@ -25,10 +25,10 @@
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__mlsRecentPts && window.__mlsRecentPts.__booted) return;
 
-  var VERSION='rp-2.1.0'; /* layout-stable + indexed/event-driven patient switching */
+  var VERSION='rp-2.2.0'; /* layout-stable + indexed/event-driven + frame-coalesced switching */
   var WRAP_ID='mlsRecentPts', MENU_ID='mlsRecentPtsMenu', STYLE_ID='mlsRecentPts-style';
   var WRAP_STYLE_ID='mls-ctxbar-wrap-style', LS_KEY='mls_recent_pts_v1', MAX=6;
-  var backTimer=null, origRenderBar=null, lastSeenId=null, obs=null, obsTarget=null;
+  var backTimer=null, renderFrame=0, renderFrameKind='', origRenderBar=null, lastSeenId=null, obs=null, obsTarget=null;
   var lastCommitted=null;
 
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -141,25 +141,41 @@
     }catch(e){}
   }
 
+  /* setActivePtId fires before the base patient bar finishes its own update.
+     Rebuilding the recent-patient index in both places forced two roster scans
+     into the same click. Coalesce presentation work before the next paint;
+     pushRecent still persists the new id synchronously. */
+  function scheduleRender(){
+    if(renderFrame)return;
+    renderFrameKind='timer';
+    renderFrame=setTimeout(function(){renderFrame=0;renderFrameKind='';render();},40);
+  }
+  function cancelScheduledRender(){
+    if(!renderFrame)return;
+    try{clearTimeout(renderFrame);}catch(e){}
+    renderFrame=0;renderFrameKind='';
+  }
+
   function attachObs(bar){try{if(obs&&obsTarget===bar)return;detachObs();obsTarget=bar;
     obs=new MutationObserver(function(){try{if(!document.getElementById(WRAP_ID))render();}catch(e){}});
     obs.observe(bar,{childList:true});}catch(e){}}
   function detachObs(){try{if(obs){obs.disconnect();obs=null;obsTarget=null;}}catch(e){}}
 
-  function onPatientChanged(ev){try{var d=ev&&ev.detail,id=(d&&d.patientId)||activeId();if(id&&id!==lastSeenId){lastSeenId=id;pushRecent(id);render();}}catch(e){}}
+  function onPatientChanged(ev){try{var d=ev&&ev.detail,id=(d&&d.patientId)||activeId();if(id&&id!==lastSeenId){lastSeenId=id;pushRecent(id);scheduleRender();}}catch(e){}}
 
   function wrapRenderBar(){try{if(typeof window.renderPatientBar==='function'&&!origRenderBar){
     origRenderBar=window.renderPatientBar;
-    window.renderPatientBar=function(){var r;try{r=origRenderBar.apply(this,arguments);}catch(e){}try{render();}catch(e){}return r;};}}catch(e){}}
+    window.renderPatientBar=function(){var r;try{r=origRenderBar.apply(this,arguments);}catch(e){}try{scheduleRender();}catch(e){}return r;};}}catch(e){}}
 
   function boot(){injectCss();wrapRenderBar();lastSeenId=activeId();if(lastSeenId)pushRecent(lastSeenId);render();
     try{window.removeEventListener('mls:active-patient-changed',onPatientChanged);window.addEventListener('mls:active-patient-changed',onPatientChanged);}catch(e){}
-    if(!backTimer)backTimer=setInterval(render,15000);}
+    if(!backTimer)backTimer=setInterval(scheduleRender,15000);}
 
   window.__mlsRecentPts={
     __booted:true, rerender:render, list:loadIds,
     revert:function(){
       try{if(backTimer){clearInterval(backTimer);backTimer=null;}}catch(e){}
+      try{cancelScheduledRender();}catch(e){}
       try{window.removeEventListener('mls:active-patient-changed',onPatientChanged);}catch(e){}
       try{detachObs();}catch(e){}
       try{document.removeEventListener('mousedown',onDocClick,true);}catch(e){}

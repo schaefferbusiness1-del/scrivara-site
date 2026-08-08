@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS Scribe - PATIENT/NOTES STORE PARSE CACHE  (__mlsStoreCache) sc-1.1.0
+ * MLS Scribe - PATIENT/NOTES STORE PARSE CACHE  (__mlsStoreCache) sc-1.4.0
  * 2026-07-11 (freeze fix, single-tab "clicking around" lockups)
  * -------------------------------------------------------------------------
  * ROOT CAUSE THIS FIXES
@@ -54,31 +54,111 @@
 
   var TTL_MS = 30000;
   var api = {
-    version: 'sc-1.1.0',
+    version: 'sc-1.4.0',
     enabled: true,
     stats: { hits: 0, misses: 0, fallbacks: 0, invalidations: 0 },
     _wrapped: []
   };
 
-  /* b366 perf: every localStorage write (any key) bumps VER; cross-tab writes
-     arrive via the storage event. An unchanged VER proves the stored blob
-     cannot have changed, so reads skip getItem + the full string compare. */
+  /* The public VER remains this standalone copy's deliberately conservative
+     compatibility clock: every Storage.prototype write attempt bumps it
+     before the native call, even for borrowed/session receivers or when the
+     call throws. KEY_VER is an additional exact-localStorage-key clock for
+     derived read caches. Its stamp includes the complete namespaced key and a
+     clear epoch, so account switches and clear()/key-null events cannot alias.
+     If all three native hooks plus the storage listener cannot be installed,
+     verFor() returns null and consumers fall back to the global VER. */
   var VER = { n: 1 };
+  var KEY_CLEAR = { n: 1 };
+  var KEY_VER = Object.create(null);
+  var keyTrackingReady = false;
+  function bumpAllKeys() {
+    KEY_CLEAR.n++;
+    KEY_VER = Object.create(null);
+  }
+  function bumpOneKey(rawKey) {
+    /* Native Storage performs its own WebIDL coercion. Never coerce an object
+       twice (a user-defined toString may have side effects or return a
+       different value); only already-resolved string keys are scoped. */
+    if (typeof rawKey !== 'string') { bumpAllKeys(); return; }
+    KEY_VER[rawKey] = (KEY_VER[rawKey] || 0) + 1;
+  }
+  function bumpScopedWrite(method, args) {
+    if (method === 'clear') bumpAllKeys();
+    else bumpOneKey(args && args[0]);
+  }
   (function () {
     try {
-      var proto = Object.getPrototypeOf(window.localStorage);
+      var localStore = window.localStorage;
+      var proto = Object.getPrototypeOf(localStore);
+      var installed = 0;
       if (proto && typeof proto.setItem === 'function' && !proto.setItem.__mlsScVer) {
         ['setItem', 'removeItem', 'clear'].forEach(function (m) {
           var orig = proto[m];
           if (typeof orig !== 'function') return;
-          var w = function () { VER.n++; return orig.apply(this, arguments); };
+          var w = function () {
+            /* Preserve this standalone copy's legacy clock literally: its
+               prototype hook counted sessionStorage and borrowed/illegal
+               receivers too. Only the new scoped clock requires a proven
+               localStorage receiver. */
+            VER.n++;
+            var scopedLocal = this === localStore;
+            if (scopedLocal) bumpScopedWrite(m, arguments);
+            var result = orig.apply(this, arguments);
+            /* Native Storage coerces key/value objects after entry. Their
+               toString() can re-enter a cached read and stamp the pre-write
+               generation over old bytes. A second successful-write bump makes
+               that re-entrant snapshot immediately stale without coercing the
+               arguments ourselves. */
+            if (scopedLocal) {
+              VER.n++;
+              bumpScopedWrite(m, arguments);
+            }
+            return result;
+          };
           w.__mlsScVer = 1;
-          proto[m] = w;
+          try {
+            proto[m] = w;
+            if (proto[m] === w) installed++;
+          } catch (eSet) {}
         });
       }
-      window.addEventListener('storage', function () { VER.n++; });
+      var onStorageGeneration = function (ev) {
+        /* sessionStorage shares Storage.prototype in browsers but is a
+           different data domain. Only a proven localStorage event belongs to
+           these clocks; missing storageArea stays conservative for older and
+           synthetic StorageEvent implementations. */
+        VER.n++;
+        try { var eventArea = ev && ev.storageArea; if (eventArea && eventArea !== localStore) return; }
+        catch (eArea) { bumpAllKeys(); return; }
+        try {
+          var eventKey = ev && ev.key;
+          if (eventKey == null) bumpAllKeys();
+          else bumpOneKey(eventKey);
+        } catch (eKey) { bumpAllKeys(); }
+      };
+      window.addEventListener('storage', onStorageGeneration, false);
+      keyTrackingReady = installed === 3;
     } catch (e) {}
   })();
+  /* Without all three same-tab hooks, this instance cannot prove that VER saw
+     every write. NaN deliberately compares unequal to itself, forcing legacy
+     consumers to rebuild instead of treating a frozen clock as stable. */
+  api.ver = function () { return keyTrackingReady ? VER.n : NaN; };
+  api.verFor = function (fullKeyOrKeys) {
+    if (!api.enabled || !keyTrackingReady) return null;
+    var keys = Array.isArray(fullKeyOrKeys) ? fullKeyOrKeys : [fullKeyOrKeys];
+    if (!keys.length) return null;
+    var out = 'scoped:' + keys.length + ':' + KEY_CLEAR.n;
+    for (var i = 0; i < keys.length; i++) {
+      if (typeof keys[i] !== 'string') return null;
+      var key = keys[i];
+      /* Length-prefix every full key: no delimiter/account collision can
+         produce the same composite stamp. */
+      out += '|' + key.length + ':' + key + ':' + (KEY_VER[key] || 0);
+    }
+    return out;
+  };
 
   function wrapPair(getName, keySuffix, passthrough) {
     var orig = window[getName];
@@ -103,7 +183,7 @@
         k = currentKey();
         if (!k) { api.stats.fallbacks++; return orig(); }
         var nowV = Date.now();
-        if (cache.val && cache.key === k && cache.ver === VER.n && (nowV - cache.at) < TTL_MS) {
+        if (keyTrackingReady && cache.val && cache.key === k && cache.ver === VER.n && (nowV - cache.at) < TTL_MS) {
           api.stats.hits++;
           return cache.val.slice();
         }

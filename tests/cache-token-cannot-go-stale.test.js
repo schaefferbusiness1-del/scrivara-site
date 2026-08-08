@@ -101,8 +101,8 @@ while ((m = RE.exec(sources))) if (!pins.has(m[1])) pins.set(m[1], m[2]);
  * captured; if a third loader spelling ever appears, extend this — the
  * assertion below counts BOTH forms so a silent regression in either shrinks
  * the checked set and fails the floor. */
-const SPLIT_RE = /var A="([A-Za-z0-9_.-]+\.js)";[^\n]*?s\.src=A\+"\?v=([A-Za-z0-9._-]+)"/g;
-while ((m = SPLIT_RE.exec(sources))) if (!pins.has(m[1])) pins.set(m[1], m[2]);
+const SPLIT_RE = /var A=(['"])([A-Za-z0-9_.-]+\.js)\1;(?:(?!var A=)[\s\S]){0,2000}?s\.src=A\+\1\?v=([A-Za-z0-9._-]+)\1/g;
+while ((m = SPLIT_RE.exec(sources))) if (!pins.has(m[2])) pins.set(m[2], m[3]);
 
 assert.ok(pins.size >= 120,
   'the pin scanner found only ' + pins.size + ' tokens — it used to find 130 (83 quoted + 47 split). ' +

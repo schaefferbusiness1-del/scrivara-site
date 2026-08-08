@@ -10,8 +10,8 @@ const source = fs.readFileSync(path.join(root, 'feat_mls_strip_day_couple.js'), 
 const connectSource = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 new Function(source); // syntax gate
 
-assert(source.includes('VERSION = "sdc-2.0.1"'), 'presentation-free sdc-2.0.1 release marker is missing');
-assert(connectSource.includes("?v=20260719sdc201"), 'sdc-2.0.1 is not loaded through a fresh immutable asset URL');
+assert(source.includes('VERSION = "sdc-2.0.2"'), 'presentation-free sdc-2.0.2 release marker is missing');
+assert(connectSource.includes("?v=20260808sdc202perf1"), 'sdc-2.0.2 is not loaded through a fresh immutable asset URL');
 assert(!/\.id\s*=\s*["']mlsSdcQuick/.test(source), 'feature still builds the removed second patient strip');
 assert(!source.includes('mlsDsList .ds-row'), 'feature still depends on the removed alternate-day list');
 assert(!/new\s+MutationObserver/.test(source), 'feature must not synthesize UI from DOM mutations');
@@ -55,7 +55,7 @@ assert(!source.includes('_athenaSetVisitBinding'), 'binding ownership must remai
   assert.deepStrictEqual(removed.sort(), ['mlsSdcQuick', 'mlsSdcStyle', 'stale-script'].sort(),
     'the loader left the duplicate strip, style, or stale marker behind');
   assert.strictEqual(appended.length, 1, 'the current sdc asset was not loaded exactly once');
-  assert.strictEqual(appended[0].src, 'feat_mls_strip_day_couple.js?v=20260719sdc201');
+  assert.strictEqual(appended[0].src, 'feat_mls_strip_day_couple.js?v=20260808sdc202perf1');
   assert.strictEqual(appended[0].attributes['data-mls-asset'], 'feat_mls_strip_day_couple.js');
 }
 
@@ -70,7 +70,7 @@ assert(!source.includes('_athenaSetVisitBinding'), 'binding ownership must remai
   const nodes = new Map(['mlsSdcQuick', 'mlsSdcStyle'].map(id => [id, { label: id, parentNode: parent }]));
   let reverted = 0;
   const context = {
-    NS: '__mlsStripDayCouple', VERSION: 'sdc-2.0.1',
+    NS: '__mlsStripDayCouple', VERSION: 'sdc-2.0.2',
     window: { __mlsStripDayCouple: { installed: true, version: 'sdc-1.0.0', revert() { reverted += 1; } } },
     document: { getElementById(id) { return nodes.get(id) || null; } }
   };
@@ -161,7 +161,7 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'feat_mls_strip_day_couple.js' });
 
 const api = window.__mlsStripDayCouple;
-assert(api && api.installed && api.version === 'sdc-2.0.1', 'single-strip coupling owner did not install');
+assert(api && api.installed && api.version === 'sdc-2.0.2', 'single-strip coupling owner did not install');
 assert.strictEqual(registry.mlsSdcQuick, null, 'legacy duplicate strip was not removed');
 assert.strictEqual(registry.mlsSdcStyle, null, 'legacy duplicate-strip style was not removed');
 

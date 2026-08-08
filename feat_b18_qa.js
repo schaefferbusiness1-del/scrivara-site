@@ -6,13 +6,17 @@
 
 /* One lifecycle for the bundle: a single filtered MutationObserver fans relevant
  * changes out to coalesced tasks. Short-lived timers are registered here so a
- * single revert reliably leaves no background work behind. */
+ * single revert reliably leaves no background work behind. During the signed-in
+ * startup gate, this optional QA bundle records its work but does not observe or
+ * scan the thousands of nodes being mounted. It starts after the canonical
+ * loader handoff, when those checks can no longer delay the first usable frame. */
 (function(){
   "use strict";
   if(window.__mlsB18QA && window.__mlsB18QA.installed) return;
-  var timers=[], listeners=[], cleanups=[], watchers=[], mutationSubs=[];
-  var tasks={}, pending={}, queued=false, observer=null;
-  var Q={installed:true,v:'b18.1'};
+  var timers=[], listeners=[], cleanups=[], pauseHooks=[], resumeHooks=[], watchers=[], mutationSubs=[];
+  var tasks={}, pending={}, queued=false, observer=null, active=false;
+  var activeHooks=[], readyListener=null, loaderStartListener=null, sessionBoundaryListener=null, startTimer=null, fallbackTimer=null, startIdle=null;
+  var Q={installed:true,v:'b18.3',active:false};
 
   function drop(arr,item){ var i=arr.indexOf(item); if(i>=0) arr.splice(i,1); }
   Q.later=function(fn,ms){
@@ -21,24 +25,32 @@
     timers.push(id); return id;
   };
   Q.cancel=function(id){ if(!id) return null; try{ clearTimeout(id); }catch(e){} drop(timers,id); return null; };
+  function attach(rec){
+    if(rec.active||!Q.installed) return;
+    try{ rec.target.addEventListener(rec.type,rec.fn,rec.opts); rec.active=true; }catch(e){}
+  }
   Q.listen=function(target,type,fn,opts){
     var rec={target:target,type:type,fn:fn,opts:opts,active:false};
-    try{ target.addEventListener(type,fn,opts); rec.active=true; listeners.push(rec); }catch(e){}
+    listeners.push(rec); if(active) attach(rec);
     return function(){
-      if(!rec.active) return; rec.active=false;
-      try{ rec.target.removeEventListener(rec.type,rec.fn,rec.opts); }catch(e){}
+      if(rec.active){
+        rec.active=false;
+        try{ rec.target.removeEventListener(rec.type,rec.fn,rec.opts); }catch(e){}
+      }
       drop(listeners,rec);
     };
   };
   Q.cleanup=function(fn){ if(typeof fn==='function') cleanups.push(fn); return fn; };
+  Q.onPause=function(fn){ if(typeof fn==='function') pauseHooks.push(fn); return fn; };
+  Q.onResume=function(fn){ if(typeof fn!=='function') return fn; resumeHooks.push(fn); if(active){ try{ fn(); }catch(e){} } return fn; };
   Q.schedule=function(name,fn){
-    if(!Q.installed) return;
+    if(!Q.installed||!active) return;
     if(fn){ tasks[name]=fn; }
     if(!tasks[name]) return;
     pending[name]=tasks[name];
     if(queued) return; queued=true;
     Promise.resolve().then(function(){
-      if(!Q.installed){ pending={}; queued=false; return; }
+      if(!Q.installed||!active){ pending={}; queued=false; return; }
       var run=pending; pending={}; queued=false;
       Object.keys(run).forEach(function(k){ try{ run[k](); }catch(e){} });
     });
@@ -61,31 +73,133 @@
   Q.watch=function(name,selectors,fn){
     if(typeof selectors==='string') selectors=[selectors];
     tasks[name]=fn; watchers.push({name:name,selectors:selectors,fn:fn});
-    Q.schedule(name,fn);
+    if(active) Q.schedule(name,fn);
   };
   Q.onMutations=function(fn){ mutationSubs.push(fn); return function(){ drop(mutationSubs,fn); }; };
+  Q.whenActive=function(fn){
+    if(typeof fn!=='function') return fn;
+    if(active){ try{ fn(); }catch(e){} }
+    else activeHooks.push(fn);
+    return fn;
+  };
+  Q.shown=function(el){
+    if(!el) return false;
+    try{
+      for(var n=el;n&&n!==document.documentElement;n=n.parentElement){
+        if(n.hidden||n.getAttribute('aria-hidden')==='true') return false;
+        if(n.style&&(n.style.display==='none'||n.style.visibility==='hidden')) return false;
+      }
+      return true;
+    }catch(e){ return false; }
+  };
   Q.trigger=function(name){ Q.schedule(name); };
   Q.revert=function(){
     if(!Q.installed) return true; Q.installed=false;
+    active=false; Q.active=false;
+    if(readyListener){ try{ window.removeEventListener('mls:loader-ready',readyListener); }catch(e){} readyListener=null; }
+    if(loaderStartListener){ try{ window.removeEventListener('mls:loader-start',loaderStartListener); }catch(e){} loaderStartListener=null; }
+    if(sessionBoundaryListener){ try{ window.removeEventListener('mls:session-boundary',sessionBoundaryListener); }catch(e){} sessionBoundaryListener=null; }
+    if(startTimer) startTimer=Q.cancel(startTimer);
+    if(fallbackTimer) fallbackTimer=Q.cancel(fallbackTimer);
+    if(startIdle!=null){ try{ (window.cancelIdleCallback||clearTimeout)(startIdle); }catch(e){} startIdle=null; }
     if(observer){ try{ observer.disconnect(); }catch(e){} observer=null; }
     while(timers.length) Q.cancel(timers[timers.length-1]);
     while(listeners.length){ var l=listeners.pop(); if(l.active){ try{ l.target.removeEventListener(l.type,l.fn,l.opts); }catch(e){} l.active=false; } }
     for(var i=cleanups.length-1;i>=0;i--){ try{ cleanups[i](); }catch(e){} }
-    cleanups=[]; watchers=[]; mutationSubs=[]; tasks={}; pending={}; queued=false;
+    cleanups=[]; pauseHooks=[]; resumeHooks=[]; watchers=[]; mutationSubs=[]; activeHooks=[]; tasks={}; pending={}; queued=false;
     return true;
   };
-  Q.stats=function(){ return {timers:timers.length,listeners:listeners.length,watchers:watchers.length,observer:!!observer}; };
+  Q.stats=function(){ return {active:active,timers:timers.length,listeners:listeners.length,watchers:watchers.length,observer:!!(active&&observer)}; };
   window.__mlsB18QA=Q;
   try{
     observer=new MutationObserver(function(records){
-      if(!Q.installed) return;
+      if(!Q.installed||!active) return;
       mutationSubs.slice().forEach(function(fn){ try{ fn(records); }catch(e){} });
       watchers.forEach(function(w){
         for(var i=0;i<records.length;i++) if(recordTouches(records[i],w.selectors)){ Q.schedule(w.name,w.fn); break; }
       });
     });
-    observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']});
-  }catch(e){}
+  }catch(e){ observer=null; }
+
+  function primeWatchers(index){
+    if(!Q.installed||!active||index>=watchers.length) return;
+    Q.schedule(watchers[index].name,watchers[index].fn);
+    Q.later(function(){ primeWatchers(index+1); },16);
+  }
+  function start(){
+    if(active||!Q.installed) return;
+    active=true; Q.active=true;
+    if(startTimer) startTimer=Q.cancel(startTimer);
+    if(fallbackTimer) fallbackTimer=Q.cancel(fallbackTimer);
+    if(readyListener){ try{ window.removeEventListener('mls:loader-ready',readyListener); }catch(e){} readyListener=null; }
+    listeners.forEach(attach);
+    try{ if(observer) observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['class','style']}); }catch(e){}
+    var hooks=activeHooks.slice(); activeHooks=[];
+    hooks.forEach(function(fn){ try{ fn(); }catch(e){} });
+    resumeHooks.slice().forEach(function(fn){ try{ fn(); }catch(e){} });
+    primeWatchers(0);
+  }
+  function queueStart(delay){
+    if(active||!Q.installed||startTimer||startIdle!=null) return;
+    if(fallbackTimer) fallbackTimer=Q.cancel(fallbackTimer);
+    startTimer=Q.later(function(){
+      startTimer=null;
+      var idle=window.requestIdleCallback||function(fn){ return setTimeout(fn,32); };
+      startIdle=idle(function(){ startIdle=null; start(); },{timeout:700});
+    },delay==null?180:delay);
+  }
+  function startupBusy(){
+    try{
+      var gateBusy=window.sfGateLoadingVisible===true||document.documentElement.classList.contains('mls-secure-loading');
+      var signedOut=false;
+      try{ var auth=document.getElementById('authScreen'), app=document.getElementById('appScreen'); signedOut=!!(auth&&auth.style.display!=='none'&&(!app||app.style.display==='none')); }catch(e){}
+      return !!(gateBusy||signedOut);
+    }catch(e){ return false; }
+  }
+  function fallbackCheck(){
+    fallbackTimer=null;
+    try{
+      var auth=document.getElementById('authScreen'), app=document.getElementById('appScreen');
+      if(auth&&auth.style.display!=='none'&&(!app||app.style.display==='none')) return;
+    }catch(e){}
+    if(startupBusy()){
+      fallbackTimer=Q.later(fallbackCheck,1000);
+      return;
+    }
+    queueStart(window.__mlsLoaderReadyAt?180:0);
+  }
+  function armReady(){
+    if(!readyListener){
+      readyListener=function(){ readyListener=null; queueStart(180); };
+      try{ window.addEventListener('mls:loader-ready',readyListener,{once:true}); }catch(e){}
+    }
+    if(!fallbackTimer) fallbackTimer=Q.later(fallbackCheck,12000);
+  }
+  function pause(){
+    if(!Q.installed) return;
+    active=false; Q.active=false; pending={}; queued=false;
+    if(observer){ try{ observer.disconnect(); }catch(e){} }
+    if(startTimer) startTimer=Q.cancel(startTimer);
+    if(fallbackTimer) fallbackTimer=Q.cancel(fallbackTimer);
+    if(startIdle!=null){ try{ (window.cancelIdleCallback||clearTimeout)(startIdle); }catch(e){} startIdle=null; }
+    while(timers.length) Q.cancel(timers[timers.length-1]);
+    listeners.forEach(function(rec){ if(!rec.active) return; rec.active=false; try{ rec.target.removeEventListener(rec.type,rec.fn,rec.opts); }catch(e){} });
+    pauseHooks.slice().forEach(function(fn){ try{ fn(); }catch(e){} });
+    if(readyListener){ try{ window.removeEventListener('mls:loader-ready',readyListener); }catch(e){} readyListener=null; }
+    armReady();
+  }
+  loaderStartListener=pause;
+  sessionBoundaryListener=pause;
+  try{ window.addEventListener('mls:loader-start',loaderStartListener); }catch(e){}
+  try{ window.addEventListener('mls:session-boundary',sessionBoundaryListener); }catch(e){}
+  if(startupBusy()){
+    /* A lost custom event must delay optional QA, never disable it forever. */
+    armReady();
+  }else if(window.__mlsLoaderReadyAt){
+    queueStart(180);
+  }else{
+    start();
+  }
 })();
 var __mlsB18Q=window.__mlsB18QA;
 
@@ -101,7 +215,7 @@ var __mlsB18Q=window.__mlsB18QA;
   "use strict";
   if(window.__mlsCalDataFix) return; window.__mlsCalDataFix={v:'b18',keptGood:0,rerenders:0};
   var M=window.__mlsCalDataFix;
-  function visible(el){ return !!(el && el.offsetParent!==null); }
+  function visible(el){ return __mlsB18Q.shown(el); }
   function calView(){ return document.getElementById('calendarView'); }
   function sig(){
     var a=window._calAppts; if(!a||!a.length) return '0';
@@ -165,7 +279,11 @@ var __mlsB18Q=window.__mlsB18QA;
     bootTimer=null; wrapLoad(); refresh();
     if(!wrappedLoad && bootTries++<40) bootTimer=__mlsB18Q.later(bootWrap,250);
   }
-  bootWrap();
+  /* The wrapper is a cheap safety boundary and must protect hydration itself;
+     only its layout/data reconciliation waits until the gate has cleared. */
+  wrapLoad();
+  __mlsB18Q.onResume(bootWrap);
+  __mlsB18Q.onPause(function(){ bootTimer=null; bootTries=0; });
   __mlsB18Q.cleanup(function(){
     if(bootTimer) bootTimer=__mlsB18Q.cancel(bootTimer);
     try{ if(origLoad && window.loadCalendar===wrappedLoad) window.loadCalendar=origLoad; }catch(e){}
@@ -189,7 +307,7 @@ var __mlsB18Q=window.__mlsB18QA;
   if(window.__mlsPullScreenFix) return; window.__mlsPullScreenFix={v:'b18'};
   var startTs=0, pulseTimer=null;
   function pill(){ return document.getElementById('mls-pull-progress'); }
-  function modal(){ var m=document.getElementById('mlsPickModal'); return (m && m.offsetParent!==null)?m:null; }
+  function modal(){ var m=document.getElementById('mlsPickModal'); return __mlsB18Q.shown(m)?m:null; }
   function ensureCss(){
     if(document.getElementById('mls-pullfix-css')) return;
     var s=document.createElement('style'); s.id='mls-pullfix-css';
@@ -260,6 +378,7 @@ var __mlsB18Q=window.__mlsB18QA;
     }catch(e){}
   }
   __mlsB18Q.watch('pull-screen',['#mls-pull-progress','#mlsPickModal'],update);
+  __mlsB18Q.onPause(function(){ pulseTimer=null; startTs=0; });
   __mlsB18Q.cleanup(function(){
     if(pulseTimer) pulseTimer=__mlsB18Q.cancel(pulseTimer);
     var p=pill();
@@ -293,9 +412,17 @@ var __mlsB18Q=window.__mlsB18QA;
   var GATED=/^mlsApp(PasteNote|PasteRequest|PushVisit|PrepProcTemplate|PrepProcTemplateRequest|SignAndSave)$/;
   var originalPost=window.postMessage;
   var origPost=originalPost.bind(window);
-  var open=false, activeHost=null;
+  var open=false, activeHost=null, gateEpoch=0, pendingOffs=[];
   var api={installed:true,v:'b18',intercepted:0,confirmed:0,blocked:0,cancelled:0};
   window.__mlsWbSafetyGate=api;
+
+  function trackOff(detach){
+    var tracked=function(){
+      var at=pendingOffs.indexOf(tracked); if(at>=0) pendingOffs.splice(at,1);
+      try{ if(detach) detach(); }catch(e){} detach=null;
+    };
+    pendingOffs.push(tracked); return tracked;
+  }
 
   function safe(f,d){ try{ return f(); }catch(e){ return d; } }
   function trim(s){ return String(s==null?'':s).trim(); }
@@ -349,7 +476,7 @@ var __mlsB18Q=window.__mlsB18QA;
           resolve(idn);
         }
       }
-      try{ off=__mlsB18Q.listen(window,'message',on); origPost({source:'mls-app',type:'mlsAppReadChart'},'*'); }
+      try{ off=trackOff(__mlsB18Q.listen(window,'message',on)); origPost({source:'mls-app',type:'mlsAppReadChart'},'*'); }
       catch(e){ to=__mlsB18Q.cancel(to); if(off) off(); resolve(null); }
     });
   }
@@ -388,6 +515,7 @@ var __mlsB18Q=window.__mlsB18QA;
   }
 
   function showGate(msg,args){
+    var myEpoch=gateEpoch;
     notePatientSwitch();
     open=true; api.intercepted++;
     var pt=activePt();
@@ -417,6 +545,7 @@ var __mlsB18Q=window.__mlsB18QA;
     host.__autoT=__mlsB18Q.later(function(){ if(open){ cancel('timeout'); safe(function(){ if(typeof window.toast==='function') window.toast('The final write check waited 45 seconds with no answer — nothing was written. Click Send again and confirm the check when it appears.','err'); }); } },45000);
 
     readChart().then(function(chart){
+      if(myEpoch!==gateEpoch){ try{ close(); }catch(e){} return; }
       chart=chart||{};
       var chartName=trim(chart.name), chartDob=normDob(chart.dob), ptDob=normDob(pt.dob);
       var chartMrn=trim(chart.mrn||chart.id||chart.patientId||''), ptMrn=trim(pt.mrn||pt.patient_external_id||pt.athena_id||'');
@@ -508,7 +637,7 @@ var __mlsB18Q=window.__mlsB18QA;
         };
       }
       card.querySelector('#mlsWbCancel').onclick=function(){ cancel('user'); };
-      offOutside=__mlsB18Q.listen(host,'mousedown',function(e){ if(e.target===host) cancel('outside'); });
+      offOutside=trackOff(__mlsB18Q.listen(host,'mousedown',function(e){ if(e.target===host) cancel('outside'); }));
       log({ts:Date.now(),type:msg.type,patient:trim(pt.name),chart:chartName||'(unread)',dest:dest.label,decision:blocked?'blocked':'shown',hard:hard});
     });
   }
@@ -516,6 +645,11 @@ var __mlsB18Q=window.__mlsB18QA;
   var wrappedPost=function(message,targetOrigin,transfer){
     try{
       if(message && typeof message==='object' && message.source==='mls-app' && GATED.test(String(message.type||'')) && !message.__mlsGateOk){
+        if(!__mlsB18Q.active){
+          api.cancelled++;
+          safe(function(){ origPost({source:'mls-ext',type:'mlsAppPasteResult',resp:{error:'cancelled during an account transition — nothing was written'}},'*'); });
+          return;
+        }
         if(open){ safe(function(){ if(typeof window.toast==='function') window.toast('A write confirmation is already open — finish that one first.','err'); }); return; }
         showGate(message,[message,targetOrigin||'*',transfer]);
         return;
@@ -527,6 +661,12 @@ var __mlsB18Q=window.__mlsB18QA;
   };
   window.postMessage=wrappedPost;
   api.revert=__mlsB18Q.revert;
+  __mlsB18Q.onPause(function(){
+    gateEpoch++;
+    while(pendingOffs.length){ try{ pendingOffs.pop()(); }catch(e){} }
+    if(activeHost){ try{ if(activeHost.__autoT) activeHost.__autoT=__mlsB18Q.cancel(activeHost.__autoT); activeHost.remove(); }catch(e){} activeHost=null; }
+    open=false;
+  });
   __mlsB18Q.cleanup(function(){
     if(activeHost){ try{ activeHost.remove(); }catch(e){} activeHost=null; }
     open=false;
@@ -564,7 +704,7 @@ var __mlsB18Q=window.__mlsB18QA;
   }
   function build(){
     var box=document.getElementById('mlsPtfBox');
-    if(!box || box.offsetParent===null) return;
+    if(!__mlsB18Q.shown(box)) return;
     if(!/No patients on the Athena calendar/i.test(box.textContent||'') && !box.__mlsSmart) return;
     var all=window._calAppts||[];
     var day=selDay(), prov=provName(), provKey=normProv(prov);
@@ -648,7 +788,7 @@ var __mlsB18Q=window.__mlsB18QA;
   function run(){
     try{
       var dp=document.getElementById('calDayPanel');
-      if(dp && dp.offsetParent!==null){
+      if(__mlsB18Q.shown(dp)){
         sweep(dp,'[onclick*="calApptInfo"], [data-appt]',function(r){
           var t=(r.textContent||'').trim();
           var m=t.match(/^\s*\d{1,2}:\d{2}\s*(AM|PM)?\s*(.+?)(booked|Details|$)/i);
@@ -690,7 +830,7 @@ var __mlsB18Q=window.__mlsB18QA;
   function run(){
     try{
       var vv=document.getElementById('visitView');
-      if(!vv || vv.offsetParent===null) return;
+      if(!__mlsB18Q.shown(vv)) return;
       if(!/still ahead today/i.test(vv.textContent||'')) return;
       var els=vv.querySelectorAll('div,span,section');
       for(var i=0;i<els.length;i++){
@@ -824,8 +964,8 @@ var __mlsB18Q=window.__mlsB18QA;
   function pass(){
     var _av=document.getElementById('analysisView'), _sv=document.getElementById('studioView');
     var roots=[];
-    if(_av&&_av.offsetParent!==null) roots.push(_av);
-    if(_sv&&_sv.offsetParent!==null) roots.push(_sv);
+    if(__mlsB18Q.shown(_av)) roots.push(_av);
+    if(__mlsB18Q.shown(_sv)) roots.push(_sv);
     if(!roots.length) return;
     ensureCss();
     var tiles=[];
@@ -868,7 +1008,7 @@ var __mlsB18Q=window.__mlsB18QA;
 (function(){
   "use strict";
   if(window.__mlsCalmBoot) return;
-  var api={v:'b18.2',ready:!!window.__mlsCalmBootDone,settledMs:0,visualOwner:'sfGateLoading'};
+  var api={v:'b18.3',ready:!!window.__mlsCalmBootDone,settledMs:0,visualOwner:'sfGateLoading'};
   window.__mlsCalmBoot=api;
   try{
     if(window.__mlsCalmBootDone) return;
@@ -889,7 +1029,7 @@ var __mlsB18Q=window.__mlsB18QA;
       var dt=Date.now()-t0;
       var delta=muts-lastCount; lastCount=muts;
       var login=false;
-      try{ var lv=document.getElementById('loginView'); login=!!(lv&&lv.offsetParent!==null); }catch(e){}
+      try{ var lv=document.getElementById('loginView'); login=__mlsB18Q.shown(lv); }catch(e){}
       if(dt>=2600) return release();
       if(login && dt>=700) return release();
       if(dt>=450 && delta<90) return release();
@@ -969,6 +1109,7 @@ var __mlsB18Q=window.__mlsB18QA;
     }catch(err){}
   },true);
   __mlsB18Q.listen(document,'mousedown',function(e){ try{ if(chip && chip.style.display==='block' && e.target!==chip) chip.style.display='none'; }catch(err){} },true);
+  __mlsB18Q.onPause(function(){ askTimer=null; if(chip){ chip.__t=null; chip.style.display='none'; chip.textContent=''; } });
   __mlsB18Q.cleanup(function(){
     askTimer=__mlsB18Q.cancel(askTimer);
     if(chip){ chip.__t=__mlsB18Q.cancel(chip.__t); try{ chip.remove(); }catch(e){} chip=null; }

@@ -42,6 +42,7 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
+const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const oniSource = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
 const opdbSource = fs.readFileSync(path.join(root, 'feat_mls_opnote_daybrain.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
@@ -544,6 +545,10 @@ async function main() {
     'the day brain must be idle-deferred - EAGER_CEILING in boot-script-budget is at its limit');
   assert.ok(/feat_mls_opnote_daybrain\.js\?v='\s*\+\s*\(window\.__MLS_AV/.test(connect),
     'the loader must cache-bust on __MLS_AV, or it needs a hand-maintained token in cache-token-cannot-go-stale');
+  assert.ok(appSource.includes('function _opEnsureDayBrain()') &&
+    appSource.includes("target.closest('#opPrepGenAllBtn')") &&
+    appSource.includes('e.stopImmediatePropagation()'),
+    'Draft all must fail closed and demand-load day-brain safety before any deferred runner can act');
   const dbAt = connect.indexOf('feat_mls_opnote_daybrain.js');
   const oniAt = connect.indexOf('feat_mls_opnote_integrity.js');
   assert.ok(dbAt > oniAt,

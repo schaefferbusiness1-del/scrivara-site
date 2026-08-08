@@ -139,7 +139,7 @@ const h = makeHarness();
 const context = vm.createContext(h.context);
 vm.runInContext(read('feat_mls_assistant_exact.js'), context, { filename: 'feat_mls_assistant_exact.js' });
 assert(context.__mlsAsst && context.__mlsAsst.installed, 'assistant core did not install on production ScribeFlow');
-assert.strictEqual(context.__mlsAsst.version, 'asst-2.1.5');
+assert.strictEqual(context.__mlsAsst.version, 'asst-2.1.6');
 assert(h.document.getElementById('mlsAsstFab'), 'production assistant FAB was not created');
 assert(h.document.getElementById('mlsAsstPanel'), 'production assistant panel was not created');
 

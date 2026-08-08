@@ -53,11 +53,11 @@ function offendersIn(name) {
 
 /* mls-connect.staging.js is the staging bundle: it is loaded by
    ScribeFlow-staging.html and by nothing on the production page. It still
-   carries 35 of these loaders. They are real debt, but they are not on the
-   clinician's path, and rewriting 35 loader sites in the staging bundle is not
+   carries 32 of these loaders. They are real debt, but they are not on the
+   clinician's path, and rewriting 32 loader sites in the staging bundle is not
    something to fold into an unrelated production fix. This is a ratchet: the
    count may fall, never rise. When it reaches 0, delete the exemption. */
-const STAGING = { 'mls-connect.staging.js': 35 };
+const STAGING = { 'mls-connect.staging.js': 32 };
 
 const production = fs.readdirSync(root)
   .filter((name) => /\.(js|html)$/i.test(name))
@@ -86,4 +86,4 @@ for (const asset of ['feat_mls_record_backup.js', 'feat_mls_uxpack1.js']) {
 }
 
 console.log('PASS deterministic cache tokens: ' + production.length +
-  ' production assets carry the release token, none builds a per-load URL (staging ratchet <= 35)');
+  ' production assets carry the release token, none builds a per-load URL (staging ratchet <= 32)');

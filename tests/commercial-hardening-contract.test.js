@@ -31,8 +31,24 @@ assert(!/existingKeys=\{\};\s*\n\s*try\{ var er=await fetch/.test(app),
 /* 3. Boot hydration retries and tells an empty-store device the truth. */
 assert(app.includes('__mlsHydrateFailNoticed'),
   'hydration failure on an empty device is silent again');
-assert(/for\(let _h=1;_h<=3;_h\+\+\)/.test(app),
-  'patient hydration lost its bounded retry');
+const pagedListHelper = app.slice(
+  app.indexOf('async function sfFetchPagedList('),
+  app.indexOf('function ptServerLabel(', app.indexOf('async function sfFetchPagedList('))
+);
+const patientHydration = app.slice(
+  app.indexOf('async function loadPatientsFromServer(opts)'),
+  app.indexOf('async function loadTeamPatients()', app.indexOf('async function loadPatientsFromServer(opts)'))
+);
+assert(/const attempts=Math\.max\(1,Number\(config\.attempts\)\|\|1\)/.test(pagedListHelper) &&
+  /for\(let attempt=0;attempt<attempts;attempt\+\+\)/.test(pagedListHelper) &&
+  /if\(attempt\+1<attempts\)/.test(pagedListHelper),
+  'paged hydration helper lost its bounded configurable retry');
+assert(patientHydration.includes("sfFetchPagedList('/api/patients','patients',opts,{scopeOwn:true,attempts:3,retryDelays:[600,1500]})"),
+  'patient hydration no longer requests exactly three bounded attempts with backoff');
+const authStop = pagedListHelper.indexOf("if(response&&(response.ok||response.status===401))break");
+const retryWait = pagedListHelper.indexOf('if(attempt+1<attempts)');
+assert(authStop >= 0 && retryWait >= 0 && authStop < retryWait,
+  'patient hydration can retry an expired session instead of failing closed');
 
 /* 4. Patient-mirror pending queue: a failed mirror persists per-account and
    re-pushes while the session lives; only a server-confirmed write removes it.

@@ -79,6 +79,119 @@ assert(app.includes('return getNotes().filter(function(n){return n.patientId===i
   assert(a !== b, 'patientNotes must return fresh arrays');
 }
 
+/* ---------- 2b. patient/history derived-data caches ---------- */
+assert(app.includes('var __mlsPtRosterCache='), 'patient roster derived-data cache is missing');
+assert(app.includes('var ranked=sortMode===\'visits\'?__mlsPtVisitRows(roster):roster.nameRows;'),
+  'Patients no longer filters a cached stable ranking');
+assert(app.includes('const noteSummary=__mlsPatientNoteSummary(p.id);'),
+  'patient cards returned to allocating/sorting a note list per row');
+assert(app.includes('var __mlsHistoryPerfCache='), 'History derived-data cache is missing');
+assert(app.includes("__mlsHistorySearchBase(histData,n)"),
+  'History search returned to rebuilding every normalized note document per keystroke');
+assert(app.includes('var ds=__mlsHistoryDateSearch(d);'),
+  'History search returned to constructing locale formatters for every note');
+
+{
+  const start = app.indexOf('var __mlsNotesIdx={ver:-1,map:null};');
+  const end = app.indexOf('/* ---------- SERVER SYNC (hosted mode only) ----------', start);
+  assert(start > 0 && end > start, 'could not extract patient/history cache helpers');
+  const src = app.slice(start, end);
+  let version = 11;
+  let notesReads = 0;
+  let textReads = 0;
+  const newest = { id: 'n-new', patientId: 'p2', patient: 'Patient Two', cc: 'Follow up', updated: Date.parse('2026-08-03T12:00:00Z') };
+  Object.defineProperty(newest, 'text', { configurable: true, enumerable: true, get() { textReads++; return 'needle content'; } });
+  let notes = [
+    { id: 'n-old', patientId: 'p1', patient: 'Patient One', cc: 'Visit', updated: Date.parse('2026-08-02T10:00:00Z'), text: 'older' },
+    { id: 'n-mid', patientId: 'p1', patient: 'Patient One', cc: 'Visit', updated: Date.parse('2026-08-02T12:00:00Z'), text: 'newer' },
+    newest
+  ];
+  let patientRaw = 'patients-v1';
+  const sandbox = {
+    window: { __mlsStoreCache: { ver() { return version; } } },
+    getNotes() { notesReads++; return notes.slice(); },
+    uns(s) { return 'u::' + s; },
+    localStorage: { getItem() { return patientRaw; } },
+    __mlsPtsBatchByKey: Object.create(null),
+    __mlsPtsMemo: { key: 'u::patients', raw: patientRaw },
+    setTimeout, clearTimeout, Date, Map, Object, Number, String, Array, isNaN
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(src + '\nthis.cacheApi={roster:__mlsPtRosterData,visits:__mlsPtVisitRows,summary:__mlsPatientNoteSummary,history:__mlsHistoryData,search:__mlsHistorySearchBase,dateSearch:__mlsHistoryDateSearch};', sandbox);
+  const api = sandbox.cacheApi;
+  const patients = [{ id: 'p2', name: 'Zulu', dob: '02/02/1980', mrn: '2' }, { id: 'p1', name: 'Alpha', dob: '01/01/1980', mrn: '1' }];
+
+  const roster1 = api.roster(patients);
+  const roster2 = api.roster(patients.slice());
+  assert.strictEqual(roster2, roster1, 'unchanged patient store rebuilt its derived roster');
+  assert.deepStrictEqual(Array.from(roster1.nameRows, row => row.patient.id), ['p1', 'p2'], 'cached A-Z order is wrong');
+  assert.strictEqual(roster1.rows.find(row => row.patient.id === 'p1').search, 'alpha 01/01/1980 1', 'normalized patient search key is wrong');
+
+  const visitRows1 = api.visits(roster1);
+  const readsAfterVisitIndex = notesReads;
+  const visitRows2 = api.visits(roster1);
+  assert.strictEqual(visitRows2, visitRows1, 'unchanged note store re-sorted the visit ranking');
+  assert.strictEqual(notesReads, readsAfterVisitIndex, 'unchanged note store was re-read for the visit ranking');
+  assert.deepStrictEqual(Array.from(visitRows1, row => row.patient.id), ['p1', 'p2'], 'visit-count ranking is wrong');
+  assert.strictEqual(api.summary('p1').last.id, 'n-mid', 'patient note summary did not keep the newest updated note');
+
+  const history1 = api.history(notes);
+  const history2 = api.history(notes.slice());
+  assert.strictEqual(history2, history1, 'unchanged note store rebuilt History derived data');
+  assert.deepStrictEqual(Array.from(history1.ordered, note => note.id), ['n-new', 'n-mid', 'n-old'], 'cached History chronology is wrong');
+  const search1 = api.search(history1, newest);
+  const readsAfterSearch = textReads;
+  const search2 = api.search(history1, newest);
+  assert.strictEqual(search2, search1, 'cached History search document changed');
+  assert.strictEqual(textReads, readsAfterSearch, 'repeated History keystroke rebuilt the full normalized note body');
+  assert(search1.includes('needle content') && search1.includes('follow up'), 'History search cache lost searchable fields');
+  [
+    new Date('2026-01-02T03:04:05Z'),
+    new Date('2026-08-04T12:00:00Z'),
+    new Date('2026-12-31T23:59:59Z')
+  ].forEach(date => {
+    const former = (date.toLocaleDateString() + ' ' + date.toLocaleString([], { month: 'long' })).toLowerCase();
+    assert.strictEqual(api.dateSearch(date), former,
+      'shared History date formatters changed the searchable date/month words');
+  });
+
+  patientRaw = 'patients-v2';
+  sandbox.__mlsPtsMemo.raw = patientRaw;
+  const roster3 = api.roster(patients);
+  assert.notStrictEqual(roster3, roster1, 'patient-store change did not invalidate the roster cache');
+
+  /* An open managed pull has two independent array-replacement clocks.
+     upsertPatient advances totalChanges, while a direct savePatients call
+     replaces batch.arr and advances externalWrites only. The derived roster
+     must observe both or a background hydration/bulk save can leave stale
+     patient lookup rows for the remainder of the batch. */
+  const batchKey = 'u::patients';
+  const batch = sandbox.__mlsPtsBatchByKey[batchKey] = {
+    depth: 1, totalChanges: 7, externalWrites: 0,
+    arr: [{ id: 'batch-old', name: 'Old Patient' }]
+  };
+  const batchRoster1 = api.roster(batch.arr.slice());
+  assert(batchRoster1.byId.has('batch-old'), 'managed-batch fixture did not warm the old roster');
+  batch.arr = [{ id: 'batch-new', name: 'New Patient' }];
+  batch.externalWrites++;
+  const batchRoster2 = api.roster(batch.arr.slice());
+  assert.notStrictEqual(batchRoster2, batchRoster1,
+    'direct savePatients replacement did not invalidate the managed-batch roster cache');
+  assert(!batchRoster2.byId.has('batch-old') && batchRoster2.byId.has('batch-new'),
+    'managed-batch external replacement retained stale patient lookup rows');
+
+  version++;
+  notes = notes.concat({ id: 'n-latest', patientId: 'p2', patient: 'Patient Two', cc: 'Latest', updated: Date.parse('2026-08-04T12:00:00Z'), text: 'latest' });
+  const visitRows3 = api.visits(roster3);
+  assert.notStrictEqual(visitRows3, visitRows1, 'note-store change did not invalidate the visit ranking');
+  assert.strictEqual(api.summary('p2').count, 2, 'note-store invalidation retained a stale patient count');
+  const history3 = api.history(notes);
+  assert.notStrictEqual(history3, history1, 'note-store change did not invalidate History derived data');
+  assert.strictEqual(history3.ordered[0].id, 'n-latest', 'History invalidation retained stale chronology');
+  assert.strictEqual(history3.duplicates.length, 1, 'duplicate-note cache changed duplicate semantics');
+  assert.strictEqual(history3.duplicates[0].id, 'n-old', 'duplicate-note cache kept the wrong duplicate');
+}
+
 /* ---------- 3. debounced searches ---------- */
 assert(app.includes('window.__mlsDebRender=(function(){'), 'shared search debounce was removed');
 assert(app.includes('oninput="__mlsDebRender(\'pt\',renderPatients)"'), 'ptSearch keystrokes are no longer debounced');
@@ -90,8 +203,9 @@ assert(app.includes("ordered=ordered.slice(0,HIST_CAP)"), 'renderHistory no long
 assert(app.includes('most recent of '), 'capped history lost its user-facing note');
 
 /* ---------- 5. embedded store-cache VER fast path ---------- */
-assert(connect.includes("version: 'sc-1.2.0', enabled: true, early: true"), 'embedded store cache is not sc-1.2.0');
-assert(connect.includes('api.ver = function () { return VER.n; };'), 'store-cache no longer exposes ver()');
+assert(connect.includes("version: 'sc-1.4.0', enabled: true, early: true"), 'embedded store cache is not sc-1.4.0');
+assert(connect.includes('api.ver = function () { return keyTrackingReady ? VER.n : NaN; };'),
+  'store-cache legacy generation does not fail closed when hooks are incomplete');
 assert(connect.includes('cache.val && cache.key === k && cache.ver === VER.n'), 'VER fast path (skip getItem) was lost');
 assert(connect.includes("w.__mlsScVer = 1;"), 'Storage.prototype VER hook was lost');
 assert(!connect.includes('__mlsPatientStoreHasPending'), 'retired worker-journal cache branch returned');
@@ -122,7 +236,7 @@ assert(!connect.includes('__mlsPatientStoreHasPending'), 'retired worker-journal
   const sandbox = { window: win, localStorage, Date };
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox);
-  assert(win.__mlsStoreCache && win.__mlsStoreCache.version === 'sc-1.2.0', 'embedded cache did not install in vm');
+  assert(win.__mlsStoreCache && win.__mlsStoreCache.version === 'sc-1.4.0', 'embedded cache did not install in vm');
   assert.strictEqual(typeof win.__mlsStoreCache.ver, 'function', 'ver() missing at runtime');
   const first = win.getPatients();
   assert.strictEqual(first.length, 2, 'wrapped getPatients wrong result');

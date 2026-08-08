@@ -220,10 +220,13 @@ for (const [file, expected] of Object.entries(SITES)) {
  */
 
 const connect = read('mls-connect.js');
+assert(connect.includes("var A='feat_athena_tooltip_dedupe.js'") &&
+  connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+  'feat_athena_tooltip_dedupe.js must follow the shared build cache token');
+assert(!connect.includes('20260808ui127perf2') && !connect.includes('20260808ui126perf1'),
+  'feat_athena_tooltip_dedupe.js still exposes a retired hand-maintained token');
 for (const [asset, token, retired] of [
-  ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
-  ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
-  ['feat_mls_redesign.js', '20260804rd331', '20260802rd330']
+  ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1']
 ]) {
   /* The loaders build the URL from a variable — s.src = A + '?v=' + token — so
      the literal "asset.js?v=token" never appears in the source. Assert on the
@@ -237,5 +240,10 @@ for (const [asset, token, retired] of [
   assert(!connect.includes(retired),
     asset + ' still exposes the retired cache token ' + retired + ' somewhere in the loader bundle');
 }
+assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.3'") &&
+  connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+  'redesign is a high-churn performance owner and must follow the shared build token');
+assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
+  'a retired hand-maintained redesign cache token is still reachable');
 
-console.log('PASS body-class churn: the 3 measured add()/remove() writers (54+14+5 no-op attribute re-commits) now compare first, 10 further toggle sites carry belt-and-braces guards, and all three changed satellites ship under moved cache tokens (' + scanned + ' published files scanned)');
+console.log('PASS body-class churn: the 3 measured add()/remove() writers (54+14+5 no-op attribute re-commits) now compare first, 10 further toggle sites carry belt-and-braces guards, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');

@@ -28,6 +28,7 @@
   var rows = [];            // [{id,name,dob,sub,...}]
   var activeIdx = -1;       // highlighted row index in the *filtered* view
   var filtered = [];        // current filtered rows
+  var selectedEl = null;    // the one mounted row carrying .sel
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === 'function'; }
@@ -108,11 +109,18 @@
     var act = activeId();
     rows = ps.map(function (p) {
       var vc = visitCount(p);
-      var sub = (p.dob ? 'DOB ' + S(p.dob) : 'DOB —') + (vc != null ? '  ·  ' + vc + ' visit' + (vc === 1 ? '' : 's') : '');
+      var name = S(p.name) || '(unnamed)';
+      var dob = S(p.dob);
+      var sub = (p.dob ? 'DOB ' + dob : 'DOB —') + (vc != null ? '  ·  ' + vc + ' visit' + (vc === 1 ? '' : 's') : '');
       return {
-        id: p.id, name: S(p.name) || '(unnamed)', dob: S(p.dob), sub: sub,
+        id: p.id, name: name, dob: dob, sub: sub,
         isActive: act != null && p.id === act,
-        hay: norm(p.name) + ' ' + normDob(p.dob)
+        hay: norm(p.name) + ' ' + normDob(p.dob),
+        dobDigits: normDob(p.dob),
+        idAttr: esc(String(p.id)),
+        initialsHtml: esc(initials(name)),
+        nameHtml: esc(name),
+        subHtml: esc(sub)
       };
     });
     rows.sort(function (a, b) {
@@ -124,57 +132,64 @@
   function render(q) {
     var query = norm(q);
     var qdob = normDob(q);
+    var toks = query.split(' ').filter(Boolean);
     filtered = !query ? rows.slice() : rows.filter(function (r) {
       if (query && r.hay.indexOf(query) >= 0) return true;
-      if (qdob && qdob.length >= 2 && normDob(r.dob).indexOf(qdob) >= 0) return true;
-      var toks = query.split(' ').filter(Boolean);
+      if (qdob && qdob.length >= 2 && r.dobDigits.indexOf(qdob) >= 0) return true;
       return toks.length > 1 && toks.every(function (t) { return r.hay.indexOf(t) >= 0; });
     });
-    listEl.innerHTML = '';
     if (!filtered.length) {
+      listEl.innerHTML = '';
       var em = document.createElement('div');
       em.className = 'mlsps-empty';
       em.textContent = q ? 'No patients match “' + q + '”.' : 'No patients yet.';
       listEl.appendChild(em);
       countEl.textContent = '0 of ' + rows.length + ' patients';
       activeIdx = -1;
+      selectedEl = null;
       return;
     }
-    filtered.forEach(function (r, i) {
-      var li = document.createElement('li');
-      li.className = 'mlsps-row' + (i === 0 ? ' sel' : '');
-      li.setAttribute('role', 'option');
-      li.dataset.id = r.id;
-      li.innerHTML =
-        '<span class="mlsps-av">' + esc(initials(r.name)) + '</span>' +
-        '<span class="mlsps-meta"><div class="mlsps-nm">' + esc(r.name) + '</div>' +
-        '<div class="mlsps-sub">' + esc(r.sub) + '</div></span>' +
-        (r.isActive ? '<span class="mlsps-badge">ACTIVE</span>' : '');
-      li.addEventListener('click', function () { choose(r.id); });
-      listEl.appendChild(li);
-    });
+    listEl.innerHTML = filtered.map(function (r, i) {
+      return '<li class="mlsps-row' + (i === 0 ? ' sel' : '') + '" role="option" data-id="' + r.idAttr + '" data-mlsps-index="' + i + '">' +
+        '<span class="mlsps-av">' + r.initialsHtml + '</span>' +
+        '<span class="mlsps-meta"><div class="mlsps-nm">' + r.nameHtml + '</div>' +
+        '<div class="mlsps-sub">' + r.subHtml + '</div></span>' +
+        (r.isActive ? '<span class="mlsps-badge">ACTIVE</span>' : '') +
+        '</li>';
+    }).join('');
     activeIdx = 0;
+    selectedEl = listEl.firstElementChild;
     countEl.textContent = filtered.length + ' of ' + rows.length + ' patients';
   }
 
   function highlight(idx) {
-    var els = listEl.querySelectorAll('.mlsps-row');
-    if (!els.length) return;
+    if (!filtered.length) return;
     if (idx < 0) idx = 0;
-    if (idx >= els.length) idx = els.length - 1;
-    for (var i = 0; i < els.length; i++) els[i].classList.toggle('sel', i === idx);
+    if (idx >= filtered.length) idx = filtered.length - 1;
+    var el = listEl.children[idx];
+    if (!el) return;
+    if (selectedEl && selectedEl !== el) selectedEl.classList.remove('sel');
+    if (!el.classList.contains('sel')) el.classList.add('sel');
+    selectedEl = el;
     activeIdx = idx;
-    var el = els[idx];
     if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
   }
 
   function choose(id) {
     close();
-    safe(function () {
-      if (isFn(window.openPatient)) window.openPatient(id);
-      else if (isFn(window.selectPatient)) window.selectPatient(id);
-    });
-    safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
+    var opened = safe(function () {
+      if (isFn(window.openPatient)) { window.openPatient(id); return true; }
+      if (isFn(window.selectPatient)) { window.selectPatient(id); return true; }
+      return false;
+    }, false);
+    if (!opened) safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
+  }
+
+  function onListClick(e) {
+    var row = e.target && e.target.closest ? e.target.closest('.mlsps-row') : null;
+    if (!row || !listEl || !listEl.contains(row)) return;
+    var idx = parseInt(row.getAttribute('data-mlsps-index'), 10);
+    if (idx >= 0 && filtered[idx]) choose(filtered[idx].id);
   }
 
   function ensureOverlay() {
@@ -199,6 +214,7 @@
     countEl = overlay.querySelector('.mlsps-cnt');
     overlay.querySelector('.x').addEventListener('click', close);
     overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
+    listEl.addEventListener('click', onListClick);
     input.addEventListener('input', function () { render(input.value); });
     input.addEventListener('keydown', onKey);
   }
@@ -250,7 +266,7 @@
     listeners = [];
     safe(function () { if (overlay) overlay.remove(); });
     safe(function () { var s = document.getElementById(STYLE_ID); if (s) s.remove(); });
-    overlay = input = listEl = countEl = null;
+    overlay = input = listEl = countEl = selectedEl = null;
     window.__mlsPatientSwitcher.installed = false;
   }
 

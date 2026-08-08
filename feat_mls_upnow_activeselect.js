@@ -24,9 +24,11 @@
   var done = false;                 // set once we've aligned (or confirmed alignment / deferred to user)
   var capturedInitial = false;      // have we snapshotted the initial active id yet
   var initialActiveId = null;       // the (possibly stale) active patient id at the moment we first looked
-  var origCalLoadNextUp = null;
-  var pollTimer = null, pollTries = 0;
-  var MAX_TRIES = 40;               // ~20s at 500ms — covers late-arriving patient/schedule data
+  var origCalLoadNextUp = null, wrappedCalLoadNextUp = null;
+  var retryTimers = [], pollTries = 0;
+  var disposed = false, started = false, domReadyListener = null;
+  var loaderReadyListener = null, loaderStartListener = null, sessionBoundaryListener = null, startTimer = null, fallbackTimer = null;
+  var RETRY_DELAYS = [500, 1500, 3500, 7000, 12000, 20000];
 
   function captureInProgress(){
     // True if the user is actively capturing/recording or has unsaved visit work.
@@ -78,7 +80,9 @@
   }
 
   function stopPoll(){
-    try { if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } } catch(e){}
+    while (retryTimers.length){
+      try { clearTimeout(retryTimers.pop()); } catch(e){}
+    }
   }
 
   function maybeSelect(reason){
@@ -111,45 +115,119 @@
     } catch(e){}
   }
 
+  function wrapperChainHas(fn){
+    var seen = [], depth = 0;
+    while (typeof fn === 'function' && depth++ < 16 && seen.indexOf(fn) < 0){
+      if (fn.__mlsActiveSelectWrapped && !fn.__mlsWrapperDisposed) return true;
+      seen.push(fn);
+      fn = fn.__mlsUnrOrig || fn.__t3Orig || fn.__mlsUpNowOrig || fn.__mlsOrig || null;
+    }
+    return false;
+  }
+
   function wrap(){
     // Wrap the auto-load so any future invocation re-checks alignment, idempotently.
     try {
       var fn = window._calLoadNextUp;
-      if (typeof fn === 'function' && !fn.__mlsWrapped){
-        origCalLoadNextUp = fn;
+      if (typeof fn === 'function' && !wrapperChainHas(fn)){
+        var orig = fn;
+        origCalLoadNextUp = orig;
         var wrapped = function(){
+          if (wrapped.__mlsWrapperDisposed || disposed || !started) return orig.apply(this, arguments);
           var r;
-          try { r = origCalLoadNextUp.apply(this, arguments); } catch(e){ r = undefined; }
+          try { r = orig.apply(this, arguments); } catch(e){ r = undefined; }
           try { maybeSelect('calLoadNextUp'); } catch(e){}
           return r;
         };
         wrapped.__mlsWrapped = true;
-        wrapped.__mlsOrig = origCalLoadNextUp;
+        wrapped.__mlsActiveSelectWrapped = true;
+        wrapped.__mlsOrig = orig;
+        wrappedCalLoadNextUp = wrapped;
         window._calLoadNextUp = wrapped;
       }
     } catch(e){}
   }
 
   function start(){
+    if (disposed || started) return;
+    started = true;
+    if (startTimer){ try { clearTimeout(startTimer); } catch(e){} startTimer = null; }
+    if (fallbackTimer){ try { clearTimeout(fallbackTimer); } catch(e){} fallbackTimer = null; }
+    if (loaderReadyListener){ try { window.removeEventListener('mls:loader-ready', loaderReadyListener); } catch(e){} loaderReadyListener = null; }
     wrap();
     maybeSelect('install');   // catch the case where auto-load already ran before we loaded
+    if (done) return;
     pollTries = 0;
+    RETRY_DELAYS.forEach(function(delay){
+      try {
+        var timer = setTimeout(function(){
+          var index = retryTimers.indexOf(timer);
+          if (index >= 0) retryTimers.splice(index, 1);
+          if (!started || disposed || done) return;
+          pollTries++;
+          try { wrap(); } catch(e){}   // in case _calLoadNextUp is defined after us
+          maybeSelect('retry-' + pollTries);
+        }, delay);
+        retryTimers.push(timer);
+      } catch(e){}
+    });
+  }
+
+  function startupBusy(){
     try {
-      pollTimer = setInterval(function(){
-        pollTries++;
-        try { wrap(); } catch(e){}   // in case _calLoadNextUp is defined after us
-        maybeSelect('poll');
-        if (done || pollTries >= MAX_TRIES) stopPoll();
-      }, 500);
+      var gateBusy = window.sfGateLoadingVisible === true || document.documentElement.classList.contains('mls-secure-loading');
+      var signedOut = false;
+      try { var auth = document.getElementById('authScreen'), app = document.getElementById('appScreen'); signedOut = !!(auth && auth.style.display !== 'none' && (!app || app.style.display === 'none')); } catch(e){}
+      return !!(gateBusy || signedOut);
+    } catch(e){ return false; }
+  }
+  function queueStart(delay){
+    if (disposed || started || startTimer) return;
+    if (fallbackTimer){ try { clearTimeout(fallbackTimer); } catch(e){} fallbackTimer = null; }
+    startTimer = setTimeout(function(){ startTimer = null; start(); }, delay == null ? 180 : delay);
+  }
+  function fallbackCheck(){
+    fallbackTimer = null;
+    try {
+      var auth = document.getElementById('authScreen'), app = document.getElementById('appScreen');
+      if (auth && auth.style.display !== 'none' && (!app || app.style.display === 'none')) return;
     } catch(e){}
+    if (startupBusy()) { fallbackTimer = setTimeout(fallbackCheck, 1000); return; }
+    queueStart(window.__mlsLoaderReadyAt ? 180 : 0);
+  }
+  function armReady(){
+    if (!loaderReadyListener){
+      loaderReadyListener = function(){ loaderReadyListener = null; queueStart(180); };
+      try { window.addEventListener('mls:loader-ready', loaderReadyListener, { once:true }); } catch(e){}
+    }
+    if (!fallbackTimer) fallbackTimer = setTimeout(fallbackCheck, 12000);
+  }
+  function pause(){
+    if (disposed) return;
+    started = false;
+    stopPoll();
+    if (startTimer){ try { clearTimeout(startTimer); } catch(e){} startTimer = null; }
+    if (fallbackTimer){ try { clearTimeout(fallbackTimer); } catch(e){} fallbackTimer = null; }
+    if (loaderReadyListener){ try { window.removeEventListener('mls:loader-ready', loaderReadyListener); } catch(e){} loaderReadyListener = null; }
+    if (domReadyListener){ try { document.removeEventListener('DOMContentLoaded', domReadyListener); } catch(e){} domReadyListener = null; }
+    done = false; capturedInitial = false; initialActiveId = null; pollTries = 0;
+    armReady();
   }
 
   window.__mlsUpNowActiveSelect = {
     __installed: true,
     revert: function(){
+      disposed = true;
+      started = false;
       try { stopPoll(); } catch(e){}
+      try { if (startTimer) clearTimeout(startTimer); startTimer = null; if (fallbackTimer) clearTimeout(fallbackTimer); fallbackTimer = null; } catch(e){}
+      try { if (loaderReadyListener) window.removeEventListener('mls:loader-ready', loaderReadyListener); loaderReadyListener = null; } catch(e){}
+      try { if (loaderStartListener) window.removeEventListener('mls:loader-start', loaderStartListener); loaderStartListener = null; } catch(e){}
+      try { if (sessionBoundaryListener) window.removeEventListener('mls:session-boundary', sessionBoundaryListener); sessionBoundaryListener = null; } catch(e){}
+      try { if (domReadyListener) document.removeEventListener('DOMContentLoaded', domReadyListener); domReadyListener = null; } catch(e){}
       try {
-        if (window._calLoadNextUp && window._calLoadNextUp.__mlsWrapped && origCalLoadNextUp){
+        if (wrappedCalLoadNextUp) wrappedCalLoadNextUp.__mlsWrapperDisposed = true;
+        if (window._calLoadNextUp === wrappedCalLoadNextUp && origCalLoadNextUp){
           window._calLoadNextUp = origCalLoadNextUp;
         }
       } catch(e){}
@@ -159,17 +237,32 @@
     status: function(){
       return {
         done: done,
+        started: started,
         capturedInitial: capturedInitial,
         initialActiveId: initialActiveId,
         currentActiveId: getActiveId(),
         upNowName: upNowName(),
-        wrapped: !!(window._calLoadNextUp && window._calLoadNextUp.__mlsWrapped)
+        wrapped: wrapperChainHas(window._calLoadNextUp)
       };
     }
   };
 
+  /* Keep load order deterministic with a pass-through wrapper during secure
+     hydration. Patient scans and bounded retries begin only after reveal. */
+  wrap();
+  loaderStartListener = pause;
+  sessionBoundaryListener = pause;
+  try { window.addEventListener('mls:loader-start', loaderStartListener); } catch(e){}
+  try { window.addEventListener('mls:session-boundary', sessionBoundaryListener); } catch(e){}
   try {
-    if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', start, { once:true }); }
+    if (startupBusy()){
+      armReady();
+    } else if (window.__mlsLoaderReadyAt){
+      queueStart(180);
+    } else if (document.readyState === 'loading'){
+      domReadyListener = function(){ domReadyListener = null; start(); };
+      document.addEventListener('DOMContentLoaded', domReadyListener, { once:true });
+    }
     else { start(); }
   } catch(e){ try { start(); } catch(e2){} }
 })();

@@ -35,7 +35,7 @@
    *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
    *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
    */
-  var VERSION = "pick-1.6.1";   /* scoped lifecycle + fail-closed canonical chart identity */
+  var VERSION = "pick-1.6.2";   /* scoped lifecycle + fail-closed canonical chart identity + hidden-route fast path */
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -642,9 +642,19 @@
   /* The Complex hero's "Pull today's patients" quick action (onclick=pullScheduleViaAssist)
      opens this selectable-card modal in addition to attempting the real pull. View-isolated. */
   var _obs = null, _ctxObs = null, _wireT = null, _bootTimers = [];
+  function visitViewShown() {
+    /* showView() owns block/none inline. Those exact values avoid a style/layout
+       flush; an unknown host keeps the old computed-style behavior and fails open. */
+    var v = $("visitView");
+    if (!v) return false;
+    var display = v.style && v.style.display;
+    if (display === "none") return false;
+    if (display === "block" || display === "flex" || display === "grid") return true;
+    try { return getComputedStyle(v).display !== "none"; } catch (e) { return true; }
+  }
   function onVisitComplex() {
     try {
-      var v = $("visitView"); if (!v || getComputedStyle(v).display === "none") return false;
+      if (!visitViewShown()) return false;
       return !document.documentElement.classList.contains("mls-sv-active"); /* Complex = not simple */
     } catch (e) { return false; }
   }
@@ -671,9 +681,13 @@
 
   /* ---- inline selectable grid for COMPLEX visit mode (not just the modal) ---- */
   var CX_WRAP = "mlsPickComplexWrap";
+  function hideComplexInline() {
+    var w = $(CX_WRAP);
+    if (w && w.style.display !== "none") w.style.display = "none";
+  }
   function renderComplexInline() {
     var w = $(CX_WRAP);
-    if (!onVisitComplex()) { if (w) w.style.display = "none"; return; }
+    if (!onVisitComplex()) { hideComplexInline(); return; }
     var v = $("visitView"); if (!v) return;
     if (!w || w.parentElement !== v) {
       if (w) { try { w.parentElement.removeChild(w); } catch (e) {} }
@@ -703,7 +717,9 @@
     try {
       var c = $("mlsCtxBar");
       if (!c || !c.querySelector(".mlsctx-id")) return;          /* only the real bar */
-      if (getComputedStyle(c).display === "none") c.style.display = "";
+      /* The only actionable hidden state here is the inline value written by app code.
+         A computed-style read forced layout even when there was nothing to repair. */
+      if (c.style.display === "none") c.style.display = "";
       var hdr = $("appHeader");
       var wrap = (hdr && hdr.parentElement) || $("appWrap");
       if (!hdr || !wrap) return;
@@ -712,20 +728,38 @@
     } catch (e) {}
   }
 
-  function tick() { wireComplex(); renderComplexInline(); ensureCtxBar(); }
+  function cancelTick() {
+    try { if (_wireT) clearTimeout(_wireT); } catch (e) {}
+    _wireT = null;
+  }
+  function tick() {
+    if (!visitViewShown()) {
+      hideComplexInline();
+      ensureCtxBar();                 /* global banner repair is not Visit-only */
+      return;
+    }
+    wireComplex(); renderComplexInline(); ensureCtxBar();
+  }
   function scheduleTick() {
     if (_wireT) return;
     _wireT = setTimeout(function () { _wireT = null; tick(); }, 120);
   }
   function onViewChanged(ev) {
     var d = ev && ev.detail;
-    if (!d || d.view === "visit" || d.previousView === "visit") scheduleTick();
+    if (d && d.view) {
+      if (d.view === "visit") { scheduleTick(); return; }
+      cancelTick();
+      hideComplexInline();
+      ensureCtxBar();
+      return;
+    }
+    scheduleTick();
   }
   function onPatientChanged() { scheduleTick(); }
   function stopWatchers() {
     try { if (_obs) _obs.disconnect(); } catch (e) {} _obs = null;
     try { if (_ctxObs) _ctxObs.disconnect(); } catch (e) {} _ctxObs = null;
-    try { if (_wireT) clearTimeout(_wireT); } catch (e) {} _wireT = null;
+    cancelTick();
     try { _bootTimers.forEach(function (timer) { clearTimeout(timer); }); } catch (e) {} _bootTimers = [];
     try { window.removeEventListener("mls:view-changed", onViewChanged); } catch (e) {}
     try { window.removeEventListener("mls:active-patient-changed", onPatientChanged); } catch (e) {}

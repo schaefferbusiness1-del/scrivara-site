@@ -1,4 +1,4 @@
-/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.2.2 "Editorial Calm")
+/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.2.3 "Editorial Calm")
  * =====================================================================
  *  MLSscribe 2026 GROUND-UP reskin v3 -- calm, premium, doctor-first.
  *  Replaces v2's dark-navy top-tab shell with the Editorial Calm shell:
@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "3.2.2", ASSET = "feat_mls_redesign.js";
+  var VERSION = "3.2.3", ASSET = "feat_mls_redesign.js";
   var _priorRedesign = null, _opaqueLegacyHistory = null;
   var _historyWrapper = null, _historyOriginal = null, _historyBeforeInstall;
   var _historyBeforeInstallCaptured = false, _historyBeforeInstallHadOwn = false;
@@ -378,6 +378,9 @@
   }
   function isOnLogin(){
     try{ var a=document.querySelector('#authScreen, .auth-wrap'); if(!a) return false;
+      /* Auth owns this inline value after sign-in. The exact hidden state is a
+         no-layout answer; ambiguous/initial states retain the original check. */
+      if(a.style&&a.style.display==='none') return false;
       var cs=getComputedStyle(a); if(cs.display==='none'||cs.visibility==='hidden') return false;
       return a.getBoundingClientRect().height>40; }catch(e){ return false; }
   }
@@ -748,7 +751,7 @@
         try{
           /* The opaque 3.2.1 forwarder reads the global state. Give it a
              locked throwaway state so one navigation produces one history
-             entry, then immediately restore the canonical 3.2.2 state. */
+             entry, then immediately restore the canonical 3.2.3 state. */
           if(opaque)window.__mlsViewHist={stack:[],lock:true,cur:'__pinned',owner:'retired-legacy'};
           out=original.apply(this,arguments);
         }finally{

@@ -1,4 +1,4 @@
-/* feat_mls_patient_context_safety.js  ->  window.__mlsPtCtxSafety  (pcs-1.0.0)  [Task 6]
+/* feat_mls_patient_context_safety.js  ->  window.__mlsPtCtxSafety  (pcs-1.2.0)  [Task 6]
  *
  * PATIENT-SCOPES the shared Copilot / AI Studio conversation so one patient's
  * chat can never bleed into another patient's context, and surfaces an identity
@@ -35,14 +35,14 @@
  * DESIGN CHOICES (safety-first)
  *   - OBSERVATION, not wrapping: two modules already wrap setActivePtId/selectPatient
  *     (order-dependence is the audit's R2 concern). This module adds NO third wrapper.
- *     It observes getActivePtId() via a light poll + a pre-typing focus guard on the
- *     Copilot inputs (closes the switch->type window deterministically).
+ *     It follows the canonical mls:active-patient-changed event plus a pre-typing
+ *     focus guard (closes the switch->type window deterministically).
  *   - Builds ON the Task 2 store (__mlsCopilotConvo) and the base globals
  *     (_copilotHistory / _copilotRenderThread / _copilotSaveHist); it is NOT a
  *     competing context system. Degrades gracefully if Task 2 is absent (still
  *     isolates the base _copilotHistory the Studio thread uses).
- *   - No storage-event listener (respects __mlsCardStormFix; the poll already sees
- *     cross-tab activePt changes because getActivePtId reads localStorage).
+ *   - The storage listener is exact-key filtered to the current account's activePt
+ *     key, so a cross-tab switch is seen without reacting to unrelated storage work.
  *
  * SAFETY: app-side only. Never touches the Chrome extension, never reads/writes/
  *   navigates/focuses athenaOne, never signs anyone out, no PHI logged. Additive,
@@ -55,7 +55,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsPtCtxSafety", VERSION = "pcs-1.0.0";
+  var NS = "__mlsPtCtxSafety", VERSION = "pcs-1.2.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   /* ---- self-gate: identical to Task 2 / the Copilot surfaces ---- */
@@ -86,6 +86,30 @@
   function saveHist() { safe(function () { if (isFn(window._copilotSaveHist)) window._copilotSaveHist(); }); }
   function renderChips() { safe(function () { if (isFn(window._copilotRenderChips)) window._copilotRenderChips(); }); }
   function unsKey(k) { return safe(function () { return isFn(window.uns) ? window.uns(k) : null; }, null); }
+  /* The conversation ARRAY must switch synchronously so a same-stack request
+     can never see the prior patient's turns. Its two DOM mirrors cannot paint
+     until the browser yields anyway, so coalesce those mirrors into the next
+     animation frame. This removes a large forced repaint from the patient-
+     selection task without weakening the ownership boundary. */
+  var conversationFrame = 0;
+  function flushConversationUi() {
+    conversationFrame = 0;
+    renderThread();
+    renderChips();
+  }
+  function scheduleConversationUi() {
+    if (conversationFrame) return;
+    if (isFn(window.setTimeout)) {
+      /* A timer is a separate browser task; unlike rAF it cannot be combined
+         with every other presentation owner's callback into one long frame. */
+      conversationFrame = window.setTimeout(flushConversationUi, 0);
+    } else flushConversationUi();
+  }
+  function cancelConversationUi() {
+    if (!conversationFrame) return;
+    safe(function () { if (isFn(window.clearTimeout)) window.clearTimeout(conversationFrame); });
+    conversationFrame = 0;
+  }
 
   /* only the real, sendable turns (never a transient pending bubble) */
   function realTurns(arr) {
@@ -101,15 +125,22 @@
    * EMPTY (fail-closed) -- a corrupted/mis-keyed bucket can never surface for the
    * wrong patient.
    * ================================================================= */
-  var BUCKETS_KEY = unsKey("copilotHistByPt");
-  var OWNER_KEY = unsKey("copilotConvoOwner");
+  var BUCKETS_KEY = null;
+  var OWNER_KEY = null;
   var buckets = {};
   var convoOwnerId = null;      /* whom the currently-loaded conversation belongs to (null = unknown) */
   var restoring = false;
 
+  function refreshStorageKeys() {
+    BUCKETS_KEY = unsKey("copilotHistByPt");
+    OWNER_KEY = unsKey("copilotConvoOwner");
+  }
+  refreshStorageKeys();
+
   function ownerKey(id) { id = norm(id); return id ? ("pt:" + id) : "_none_"; }
 
   function loadPersisted() {
+    buckets = {};
     safe(function () {
       if (BUCKETS_KEY) { var raw = localStorage.getItem(BUCKETS_KEY); if (raw) { var o = JSON.parse(raw); if (o && typeof o === "object") buckets = o; } }
     });
@@ -143,8 +174,7 @@
     h.length = 0;
     for (var i = 0; i < msgs.length; i++) h.push(msgs[i]);
     saveHist();       /* keep Task 2's single-key cache aligned to the loaded convo */
-    renderThread();   /* wrapped by Task 2 -> notify() -> Studio + panel repaint */
-    renderChips();
+    scheduleConversationUi(); /* Task 2 mirrors both surfaces before next paint */
   }
 
   var api = { switches: 0, stashes: 0, deferrals: 0 };
@@ -159,6 +189,18 @@
   function hasPending() { return safe(function () { return baseHist().some(function (m) { return m && m.role === "pending"; }); }, false); }
   var DEFER_CAP_MS = 30000;
   var deferredSince = 0;
+  var deferredTimer = null;
+
+  function cancelDeferred() {
+    if (deferredTimer) { safe(function () { clearTimeout(deferredTimer); }); deferredTimer = null; }
+  }
+  function armDeferred() {
+    if (deferredTimer) return;
+    deferredTimer = setTimeout(function () {
+      deferredTimer = null;
+      safe(function () { reconcile("pending-settle"); });
+    }, 600);
+  }
 
   function reconcile(reason) {
     if (restoring) return "busy";
@@ -167,15 +209,17 @@
       /* first observation: adopt whatever is loaded as belonging to the current patient */
       convoOwnerId = cur;
       if (baseHist().length && !buckets[ownerKey(cur)]) stashCurrentInto(cur);
+      cancelDeferred();
       persist(); updateIdentityChip(); return "adopt";
     }
-    if (cur === convoOwnerId) { deferredSince = 0; updateIdentityChip(); return "same"; }
+    if (cur === convoOwnerId) { deferredSince = 0; cancelDeferred(); updateIdentityChip(); return "same"; }
     /* owner change pending: defer while a request is completing (unless it hangs) */
     if (hasPending()) {
       if (!deferredSince) deferredSince = nowMs();
-      if (nowMs() - deferredSince < DEFER_CAP_MS) { api.deferrals++; updateIdentityChip(); return "deferred"; }
+      if (nowMs() - deferredSince < DEFER_CAP_MS) { api.deferrals++; armDeferred(); updateIdentityChip(); return "deferred"; }
     }
     deferredSince = 0;
+    cancelDeferred();
     restoring = true;
     try {
       stashCurrentInto(convoOwnerId);   /* save OUTGOING under its owner (never `cur`) */
@@ -249,10 +293,39 @@
     safe(function () { [CHIP_ID, CHIP_STYLE_ID].forEach(function (idv) { var n = document.getElementById(idv); if (n && n.parentNode) n.parentNode.removeChild(n); }); });
   }
 
+  function resetForSession(ev) {
+    cancelDeferred();
+    deferredSince = 0;
+    /* Persist only through the keys captured for the outgoing account. The
+       session event fires after the next namespace is adopted, so recomputing
+       first would write the outgoing conversation into the incoming account. */
+    if (convoOwnerId !== null) { safe(function () { stashCurrentInto(convoOwnerId); persist(); }); }
+    var h = baseHist(); h.length = 0;
+    buckets = {};
+    convoOwnerId = null;
+    var detail = ev && ev.detail;
+    var nextAccount = detail && Object.prototype.hasOwnProperty.call(detail, "nextAccount")
+      ? norm(detail.nextAccount)
+      : safe(function () { return norm(window.__mlsSessionAccount); }, "");
+    if (!nextAccount) {
+      BUCKETS_KEY = null;
+      OWNER_KEY = null;
+      renderThread(); renderChips(); removeChip();
+      return "cleared";
+    }
+    refreshStorageKeys();
+    var persistedOwner = loadPersisted();
+    if (persistedOwner !== null && persistedOwner !== undefined) {
+      convoOwnerId = norm(persistedOwner);
+      loadInto(convoOwnerId);
+    }
+    return reconcile("session-boundary");
+  }
+
   /* =================================================================
-   * triggers: poll (safety net for any switch path) + pre-typing focus guard
+   * triggers: exact patient/session/storage events + pre-typing focus guard
    * ================================================================= */
-  var poll = null, focusCap = null;
+  var focusCap = null, activeCap = null, storageCap = null, sessionCap = null;
   function isCopilotInput(el) {
     return safe(function () {
       if (!el) return false;
@@ -266,12 +339,24 @@
   }
   function startTriggers() {
     stopTriggers();
-    poll = setInterval(function () { safe(function () { reconcile("poll"); }); }, 600);
+    activeCap = function () { safe(function () { reconcile("active-patient"); }); };
+    storageCap = function (ev) {
+      if (!ev || ev.key !== unsKey("activePt")) return;
+      safe(function () { if (ev.storageArea && ev.storageArea !== window.localStorage) return; reconcile("storage"); });
+    };
+    sessionCap = function (ev) { safe(function () { resetForSession(ev); }); };
     focusCap = function (ev) { if (isCopilotInput(ev && ev.target)) safe(function () { reconcile("focus"); }); };
+    safe(function () { window.addEventListener("mls:active-patient-changed", activeCap); });
+    safe(function () { window.addEventListener("storage", storageCap); });
+    safe(function () { window.addEventListener("mls:session-boundary", sessionCap); });
     safe(function () { document.addEventListener("focusin", focusCap, true); });
   }
   function stopTriggers() {
-    if (poll) { clearInterval(poll); poll = null; }
+    cancelDeferred();
+    cancelConversationUi();
+    if (activeCap) { safe(function () { window.removeEventListener("mls:active-patient-changed", activeCap); }); activeCap = null; }
+    if (storageCap) { safe(function () { window.removeEventListener("storage", storageCap); }); storageCap = null; }
+    if (sessionCap) { safe(function () { window.removeEventListener("mls:session-boundary", sessionCap); }); sessionCap = null; }
     if (focusCap) { safe(function () { document.removeEventListener("focusin", focusCap, true); }); focusCap = null; }
   }
 
@@ -288,7 +373,7 @@
       convoOwnerId = norm(persistedOwner);
       if (baseHist().length && !buckets[ownerKey(convoOwnerId)]) stashCurrentInto(convoOwnerId);
     } else {
-      convoOwnerId = null; /* reconcile() will adopt on first tick */
+      convoOwnerId = null; /* reconcile() adopts the current patient below */
     }
     reconcile("boot");
     startTriggers();
@@ -319,7 +404,8 @@
       return {
         convoOwnerId: convoOwnerId, activeId: activeIdSafe(), restoring: restoring,
         loadedTurns: realTurns(baseHist()).length, switches: api.switches,
-        hasStore: !!convoStore(), bucketKeys: safe(function () { return Object.keys(buckets); }, [])
+        hasStore: !!convoStore(), bucketKeys: safe(function () { return Object.keys(buckets); }, []),
+        storageKey: BUCKETS_KEY || "", deferred: !!deferredTimer
       };
     }
   };

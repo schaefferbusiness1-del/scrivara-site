@@ -462,12 +462,38 @@
 
   /* ---- observer, coalesced into one frame; NEVER a timer ----------------- */
   var frame = 0, obs = null;
+  function visitActive() {
+    var view = $('visitView');
+    if (!view) return false;
+    /* showView publishes this before it changes the view DOM. Prefer that
+       cheap route truth over a layout read: quickRow() used to call
+       getBoundingClientRect() three or four times during an off-screen patient
+       switch, turning otherwise independent frames into one >50 ms task. */
+    var route = safe(function () { return W.__mlsCurrentView; }, '');
+    if (route) return route === 'visit';
+    /* Startup predates the first showView() call, but the canonical view has
+       an inline display state, so this fallback is still layout-free. */
+    return safe(function () { return view.style.display !== 'none'; }, false);
+  }
   function schedule() {
-    if (frame) return;
+    if (frame || !visitActive()) return;
     frame = safe(function () {
-      return W.requestAnimationFrame(function () { frame = 0; safe(mount); });
+      return W.requestAnimationFrame(function () {
+        frame = 0;
+        /* A route can change after the observer queued this frame. Recheck at
+           execution time so a Patients click never pays Visit layout work. */
+        if (!visitActive()) return;
+        safe(mount);
+      });
     }, 0);
-    if (!frame) safe(mount);
+    if (!frame && visitActive()) safe(mount);
+  }
+  function onViewChanged(ev) {
+    var next = safe(function () { return ev && ev.detail && ev.detail.view; }, '');
+    if (next === 'visit' || (!next && visitActive())) { schedule(); return; }
+    /* Do not allow a frame queued on Visit to spill into the next screen. */
+    if (frame) safe(function () { W.cancelAnimationFrame(frame); });
+    frame = 0;
   }
   function observe() {
     if (obs) return;
@@ -482,9 +508,17 @@
 
   function boot() {
     if (!D.body) { safe(function () { W.requestAnimationFrame(boot); }); return; }
+    /* The owner retired Copilot Voice and MLS Assistant from this disclosure,
+       leaving one static option. The safety rule below requires at least two,
+       so mounting is provably impossible in this build. Do not install a
+       subtree observer or spend animation frames rediscovering that fact on
+       every patient switch. The guarded lifecycle remains below for a future
+       build that deliberately restores a second named tool. */
+    if (ITEMS.length < 2) return;
     css();
     D.addEventListener('keydown', onKey, true);
     D.addEventListener('click', onDocClick, true);
+    W.addEventListener('mls:view-changed', onViewChanged);
     observe();
     schedule();
   }
@@ -511,6 +545,7 @@
     revert: function () {
       try { D.removeEventListener('keydown', onKey, true); } catch (e) {}
       try { D.removeEventListener('click', onDocClick, true); } catch (e) {}
+      try { W.removeEventListener('mls:view-changed', onViewChanged); } catch (e) {}
       try { if (obs) obs.disconnect(); } catch (e) {}
       obs = null;
       try { if (frame) W.cancelAnimationFrame(frame); } catch (e) {}

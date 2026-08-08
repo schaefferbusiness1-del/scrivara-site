@@ -15,6 +15,7 @@ const { chromium } = require('playwright');
 
 const root = path.resolve(process.argv[2] || path.join(__dirname, '..'));
 const port = Number(process.argv[3] || 8891);
+const profileOnly = process.argv.includes('--profile');
 const chrome = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe'
@@ -70,22 +71,30 @@ async function measure(page, label, action, settleMs) {
   await page.evaluate(() => {
     window.__perfProbe.longTasks.length = 0;
     window.__perfProbe.mutations = 0;
+    window.__perfProbe.activePatientListeners.length = 0;
+    window.__perfProbe.animationFrames.length = 0;
+    window.__perfProbe.measureStarted = performance.now();
   });
   const started = Date.now();
-  await action();
+  const actionResult = await action();
   await wait(settleMs || 700);
   const result = await page.evaluate(() => {
     const tasks = window.__perfProbe.longTasks.slice();
+    const measureStarted = window.__perfProbe.measureStarted || 0;
     return {
       longTaskCount: tasks.length,
       longTaskMs: Math.round(tasks.reduce((sum, item) => sum + item.duration, 0) * 10) / 10,
       maxLongTaskMs: Math.round(tasks.reduce((max, item) => Math.max(max, item.duration), 0) * 10) / 10,
+      longTasks: tasks.map(item => ({ offset: Math.round((item.startTime - measureStarted) * 10) / 10, duration: Math.round(item.duration * 10) / 10 })),
       mutations: window.__perfProbe.mutations,
-      domNodes: document.getElementsByTagName('*').length
+      domNodes: document.getElementsByTagName('*').length,
+      activePatientListeners: window.__perfProbe.activePatientListeners.slice().sort((a, b) => b.duration - a.duration),
+      animationFrames: window.__perfProbe.animationFrames.filter(item => item.duration >= 1).sort((a, b) => b.duration - a.duration).slice(0, 20)
     };
   });
   result.label = label;
   result.wallMs = Date.now() - started;
+  if (actionResult !== undefined) result.action = actionResult;
   return result;
 }
 
@@ -100,7 +109,51 @@ async function measure(page, label, action, settleMs) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 850 } });
     const page = await context.newPage();
     await page.addInitScript(() => {
-      window.__perfProbe = { longTasks: [], observers: 0, intervals: 0, mutations: 0 };
+      window.__perfProbe = { longTasks: [], observers: 0, intervals: 0, mutations: 0, activePatientListeners: [], animationFrames: [], measureStarted: 0 };
+      try {
+        const nativeFrame = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = function (callback) {
+          const registered = String(new Error().stack || '').split('\n').slice(2, 4).join(' | ');
+          return nativeFrame(function (stamp) {
+            const started = performance.now();
+            try { return callback(stamp); }
+            finally {
+              window.__perfProbe.animationFrames.push({
+                name: callback.name || '(anonymous)',
+                source: registered,
+                duration: Math.round((performance.now() - started) * 100) / 100
+              });
+            }
+          });
+        };
+      } catch (error) {}
+      try {
+        const nativeAdd = window.addEventListener.bind(window);
+        const nativeRemove = window.removeEventListener.bind(window);
+        const activeWrappers = new WeakMap();
+        window.addEventListener = function (type, listener, options) {
+          if (type !== 'mls:active-patient-changed' || typeof listener !== 'function') return nativeAdd(type, listener, options);
+          let wrapped = activeWrappers.get(listener);
+          if (!wrapped) {
+            wrapped = function () {
+              const started = performance.now();
+              try { return listener.apply(this, arguments); }
+              finally {
+                window.__perfProbe.activePatientListeners.push({
+                  name: listener.name || '(anonymous)',
+                  duration: Math.round((performance.now() - started) * 100) / 100
+                });
+              }
+            };
+            activeWrappers.set(listener, wrapped);
+          }
+          return nativeAdd(type, wrapped, options);
+        };
+        window.removeEventListener = function (type, listener, options) {
+          const wrapped = type === 'mls:active-patient-changed' && typeof listener === 'function' ? activeWrappers.get(listener) : null;
+          return nativeRemove(type, wrapped || listener, options);
+        };
+      } catch (error) {}
       try {
         const NativeObserver = window.MutationObserver;
         window.MutationObserver = function (callback) {
@@ -204,7 +257,21 @@ async function measure(page, label, action, settleMs) {
         intervals: window.__perfProbe.intervals,
         domNodes: document.getElementsByTagName('*').length,
         startupReason: document.documentElement.dataset.mlsStartupReason || '',
-        startupPending: Number(document.documentElement.dataset.mlsStartupAllPending || 0)
+        startupPending: Number(document.documentElement.dataset.mlsStartupAllPending || 0),
+        bundleReady: window.__mlsUiBundleReady,
+        bundleFailed: window.__mlsUiBundleFailed,
+        deferredAssets: window.__mlsDeferAsset && typeof window.__mlsDeferAsset.stats === 'function' ? window.__mlsDeferAsset.stats() : null,
+        priorityAssetsLoaded: ['feat_mls_calm_shell.js', 'feat_mls_calm_views.js', 'feat_mls_ui_clinical.js', 'feat_mls_ui_shell.js', 'feat_mls_motion.js',
+          'feat_mls_visit_focus.js', 'feat_mls_polish_everywhere.js', 'feat_mls_visit_voice_one.js'].reduce((state, name) => {
+            state[name] = !!document.querySelector('script[data-mls-asset="' + name + '"]');
+            return state;
+          }, {}),
+        priorityOwnersInstalled: ['__mlsCalmShell', '__mlsCalmViews', '__mlsUiClinical', '__mlsUiShell', '__mlsMotion',
+          '__mlsVisitFocus', '__mlsPolishEverywhere', '__mlsVisitVoiceOne'].reduce((state, name) => {
+            const owner = window[name];
+            state[name] = !!(owner && owner.installed !== false);
+            return state;
+          }, {})
       };
     });
 
@@ -252,22 +319,98 @@ async function measure(page, label, action, settleMs) {
       try { _calAppts = appts; } catch (error) {}
     });
 
+    if (profileOnly) {
+      await page.evaluate(() => showView('visit'));
+      await wait(150);
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Profiler.enable');
+      await cdp.send('Profiler.start');
+      const action = await page.evaluate(() => {
+        const started = performance.now(); showView('patients');
+        return Math.round((performance.now() - started) * 100) / 100;
+      });
+      const stopped = await cdp.send('Profiler.stop');
+      const byId = new Map(stopped.profile.nodes.map(node => [node.id, node]));
+      const selfUs = new Map();
+      (stopped.profile.samples || []).forEach((id, index) => {
+        selfUs.set(id, (selfUs.get(id) || 0) + Number((stopped.profile.timeDeltas || [])[index] || 0));
+      });
+      const hottest = [...selfUs.entries()].map(([id, us]) => {
+        const node = byId.get(id) || {}, frame = node.callFrame || {};
+        return { ms: Math.round(us / 10) / 100, function: frame.functionName || '(anonymous)', url: frame.url || '', line: Number(frame.lineNumber || 0) + 1 };
+      }).sort((a, b) => b.ms - a.ms).slice(0, 30);
+      process.stdout.write(JSON.stringify({ build: await page.evaluate(() => window.__MLS_APP_BUILD || ''), actionMs: action, hottest }, null, 2) + '\n');
+      await cdp.detach();
+      await context.close();
+      return;
+    }
+
     const samples = [login];
-    samples.push(await measure(page, 'open-patients', () => page.evaluate(() => showView('patients')), 1000));
-    samples.push(await measure(page, 'select-patient', () => page.evaluate(() => selectPatient('perf-p-149')), 700));
-    samples.push(await measure(page, 'switch-patient', () => page.evaluate(() => selectPatient('perf-p-148')), 700));
+    samples.push(await measure(page, 'open-patients', () => page.evaluate(() => {
+      const calls = {}, originals = {};
+      ['_renderDailyBrief','renderPatientBar','updateNavCounts','renderPatients','renderProfile','loadPendingIntakes','hideClinicalForReceptionist','initCollapsibleExtras','_renderPinnedTabs'].forEach(name => {
+        if (typeof window[name] !== 'function') return;
+        const original = originals[name] = window[name];
+        window[name] = function () {
+          const began = performance.now();
+          try { return original.apply(this, arguments); }
+          finally { const rec = calls[name] || (calls[name] = { count: 0, ms: 0 }); rec.count++; rec.ms += performance.now() - began; }
+        };
+      });
+      const started = performance.now(); showView('patients');
+      Object.keys(originals).forEach(name => { window[name] = originals[name]; });
+      Object.keys(calls).forEach(name => { calls[name].ms = Math.round(calls[name].ms * 100) / 100; });
+      return { showView: Math.round((performance.now() - started) * 100) / 100, calls };
+    }), 1000));
+    samples.push(await measure(page, 'select-patient', () => page.evaluate(() => {
+      const elapsed = {};
+      const step = (name, fn) => { const started = performance.now(); fn(); elapsed[name] = Math.round((performance.now() - started) * 100) / 100; };
+      step('resetSuperbill', () => _athenaResetSuperbill(true));
+      step('setActive', () => setActivePtId('perf-p-149'));
+      step('renderPatients', () => renderPatients());
+      step('renderProfile', () => renderProfile());
+      step('renderPatientBar', () => renderPatientBar());
+      return elapsed;
+    }), 700));
+    samples.push(await measure(page, 'switch-patient', () => page.evaluate(() => {
+      const elapsed = {};
+      const step = (name, fn) => { const started = performance.now(); fn(); elapsed[name] = Math.round((performance.now() - started) * 100) / 100; };
+      step('resetSuperbill', () => _athenaResetSuperbill(true));
+      step('setActive', () => setActivePtId('perf-p-148'));
+      step('renderPatients', () => renderPatients());
+      step('renderProfile', () => renderProfile());
+      step('renderPatientBar', () => renderPatientBar());
+      return elapsed;
+    }), 700));
     samples.push(await measure(page, 'rerender-patients', () => page.evaluate(() => renderPatients()), 700));
     samples.push(await measure(page, 'search-patients', () => page.evaluate(() => {
       document.getElementById('ptSearch').value = '1499';
       renderPatients();
     }), 700));
     samples.push(await measure(page, 'open-calendar', () => page.evaluate(() => {
+      const calls = {}, originals = {};
+      ['loadCalendar','renderCalendar','renderCalCheckin','renderPatientBar','updateNavCounts','initCollapsibleExtras'].forEach(name => {
+        if (typeof window[name] !== 'function') return;
+        const original = originals[name] = window[name];
+        window[name] = function () {
+          const began = performance.now();
+          try { return original.apply(this, arguments); }
+          finally { const rec = calls[name] || (calls[name] = { count: 0, ms: 0 }); rec.count++; rec.ms += performance.now() - began; }
+        };
+      });
+      const started = performance.now();
       document.getElementById('ptSearch').value = '';
       showView('calendar');
+      Object.keys(originals).forEach(name => { window[name] = originals[name]; });
+      Object.keys(calls).forEach(name => { calls[name].ms = Math.round(calls[name].ms * 100) / 100; });
+      return { showView: Math.round((performance.now() - started) * 100) / 100, calls };
     }), 1600));
     samples.push(await measure(page, 'rerender-calendar', () => page.evaluate(() => renderCalendar()), 800));
     samples.push(await measure(page, 'calendar-next-month', () => page.evaluate(() => calNext()), 800));
-    samples.push(await measure(page, 'calendar-to-patients', () => page.evaluate(() => showView('patients')), 1000));
+    samples.push(await measure(page, 'calendar-to-patients', () => page.evaluate(() => {
+      const started = performance.now(); showView('patients');
+      return { showView: Math.round((performance.now() - started) * 100) / 100 };
+    }), 1000));
     samples.push(await measure(page, 'idle-two-seconds', () => Promise.resolve(), 2000));
 
     process.stdout.write(JSON.stringify({

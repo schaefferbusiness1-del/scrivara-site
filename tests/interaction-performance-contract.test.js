@@ -69,6 +69,9 @@ assert(fab.includes('function scheduleLayout()') && fab.includes('function touch
 
 assert(!connect.includes('reg[i].f()'), 'navigation still synchronously replays every registered UI timer');
 assert(!connect.includes("document.addEventListener('click',onMaybeFlip,true)"), 'navigation still installs the global timer-replay click detector');
+assert(connect.includes("if (visit && visit.style.display === 'none') return;") &&
+  connect.includes("window.addEventListener('mls:view-changed', laneViewChanged)"),
+  'the Visit-only primary lane can still perform layout work after another route becomes active');
 const messageFix = connect.slice(connect.indexOf('if(window.__mlsAthenaMsgFix)'), connect.indexOf('/* feat_canon_provider'));
 assert(!messageFix.includes("document.querySelectorAll('div,span,p,li,small,em')"), 'one status-text mutation still triggers a whole-document text scan');
 assert(messageFix.includes('function queue(node,deep)') && messageFix.includes('fix(batch[i].node,batch[i].deep)'), 'status text repair is not scoped to changed subtrees');

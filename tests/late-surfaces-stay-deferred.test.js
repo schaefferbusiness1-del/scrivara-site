@@ -13,11 +13,11 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 const TRANCHE = [
   'feat_opnote_pdf_anyview.js',
   'feat_after_visit_summary.js',
-  'mls-template-stdline.js',
   'feat_stdline_insert.js',
   'feat_mls_dictate_letter.js',
   'feat_mls_study_calm.js',
@@ -80,13 +80,37 @@ const TRANCHE = [
   'feat_mls_whosnext_cleanfix.js',
   'feat_mls_portal_request_inbox.js',
   'feat_mls_widget_deck.js',
-  'feat_mls_stop_confirm.js',
   'feat_mls_caldedupe_render.js',
   'feat_mls_apptabs_menu.js',
   'feat_mls_dob_format_unify.js',
   'feat_mls_ctxbar_age_dedupe.js',
   'feat_mls_ctxbar_dob_slash.js'
 ];
+
+/* These modules alter clinical safety or data integrity on the first action.
+   They stay off the eager boot chain, but use the scheduler's priority lane
+   and the secure-gate critical list so they finish before interactivity. */
+for (const name of [
+  'feat_mls_stop_confirm.js',
+  'mls-template-stdline.js',
+  'feat_mls_copilot_power.js',
+  'feat_mls_audio_capture.js',
+  'feat_mls_athena_follow.js'
+]) {
+  const positions = [
+    connect.indexOf('data-mls-asset="' + name + '"'),
+    connect.indexOf('var A="' + name + '"'),
+    connect.indexOf("var A='" + name + "'")
+  ].filter((position) => position >= 0);
+  assert(positions.length >= 1, name + ' loader locator is missing');
+  const i = Math.min(...positions);
+  const lineStart = connect.lastIndexOf('\n', i) + 1;
+  const line = connect.slice(lineStart, connect.indexOf('\n', i));
+  assert(line.includes('priority:0') && line.includes('s.async=false') && line.includes('return s;'),
+    name + ' must be scheduler-owned on the pre-interaction priority lane');
+  assert(app.includes("'" + name + "'"),
+    name + ' must remain in the secure-gate critical asset list');
+}
 
 for (const name of TRANCHE) {
   const positions = [
@@ -106,10 +130,15 @@ for (const name of TRANCHE) {
 
 /* 2026-07-29: Procedure Report snapshots RVU values on first mount, so its
  * deferred loader must wait for the RVU script or reach a bounded fallback. */
-const procedureLoaderLine = connect.split(/\r?\n/).find((line) => line.includes("s.src='mls-procedure-report.js?v=20260807lib7'"));
-assert(procedureLoaderLine && procedureLoaderLine.includes('function waitForRvu(tries)') &&
-  procedureLoaderLine.includes('window.__mlsRVU||tries>=30') &&
-  procedureLoaderLine.includes('setTimeout(function(){waitForRvu(tries+1);},100)'),
+const procedureStart = connect.indexOf('/* ---- loader: mls-procedure-report');
+const procedureEnd = connect.indexOf(";(function(){try{if(!document.querySelector('script[data-mls-asset=\"feat_source_clarity.js\"]'))", procedureStart);
+const procedureLoader = procedureStart >= 0 && procedureEnd > procedureStart
+  ? connect.slice(procedureStart, procedureEnd)
+  : '';
+assert(procedureLoader.includes("s.src='mls-procedure-report.js?v=20260807lib7'") &&
+  procedureLoader.includes('function waitForRvu(tries)') &&
+  procedureLoader.includes('window.__mlsRVU||tries>=30') &&
+  procedureLoader.includes('setTimeout(function(){waitForRvu(tries+1);},100)'),
   'Procedure Report can race RVU and freeze fallback totals into its first render');
 assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260807lib7/g) || []).length, 1,
   'Procedure Report must retain one bounded production loader');

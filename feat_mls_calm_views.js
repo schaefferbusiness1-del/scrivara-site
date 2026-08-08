@@ -34,11 +34,13 @@
  * the calendar's date range looks AT THE CALENDAR. Sending it to a global menu
  * would be a worse answer that happened to satisfy a reach test.
  *
- * CHURN. This module installs no interval. It reconciles on one MutationObserver
- * over the nav rail (which view is `.on`) plus one debounced observer per mounted
- * view, and every write is guarded by a read — the reconcile of an unchanged
- * screen performs zero DOM writes. (b640: 86 no-op body-class writes in 44s were
- * a whole-document recalc 1.4x/sec. classList.add/remove re-commit
+ * CHURN. This module installs no interval. It observes the nav rail only for an
+ * ACTUAL active-view change, and a mounted view only for the small pieces this
+ * module owns. Unrelated class/list churn never queues a frame. Async-owner
+ * retries compare a cheap concern snapshot first, so an unchanged screen does
+ * not even enter reconcile. Every write inside a real reconcile is still
+ * guarded by a read. (b640: 86 no-op body-class writes in 44s were a
+ * whole-document recalc 1.4x/sec. classList.add/remove re-commit
  * unconditionally; toggle does not.)
  *
  * Escape hatch: window.__mlsCalmViews.revert(), or ?ui=classic (honoured below).
@@ -66,6 +68,14 @@
     if (!el) return false;
     var r = safe(function () { return el.getBoundingClientRect(); });
     if (!r || !(r.width > 0 && r.height > 0)) return false;
+    var cs = safe(function () { return W.getComputedStyle(el); });
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden';
+  }
+  /* The active nav tab already establishes which view is being opened. At that
+     boundary we only need to reject an explicitly hidden root; a rect read
+     would force layout before this module has finished its guarded inserts. */
+  function styleVisible(el) {
+    if (!el) return false;
     var cs = safe(function () { return W.getComputedStyle(el); });
     return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden';
   }
@@ -356,27 +366,36 @@
   }
 
   function foldCount(v) {
-    var n = 0;
-    v.fold.forEach(function (sel) { n += qsa(sel).length; });
-    return n;
+    /* A disclosure only needs to know whether at least one fold exists. The
+       old pass enumerated every match for all five Calendar selectors even
+       though every caller reduced the result back to boolean. */
+    for (var i = 0; i < v.fold.length; i++) {
+      if (qs(v.fold[i])) return 1;
+    }
+    return 0;
   }
 
-  function mountMore(v) {
+  function mountMore(v, verifyNow, verifyRequested) {
     var host = qs(v.more.anchor);
-    if (!host) return;
+    if (!host) return { count: 0, host: null, el: null };
     var id = 'mlsCvMore_' + v.key;
     var existing = byId(id);
     /* Nothing folded on this screen right now -> no disclosure. An empty "More"
        is exactly the kind of button this module exists to remove. */
-    if (!foldCount(v)) { if (existing) existing.remove(); return; }
+    var count = foldCount(v);
+    if (!count) {
+      if (existing) existing.remove();
+      return { count: 0, host: host, el: null };
+    }
     var b = existing || D.createElement('button');
-    if (b.id !== id) b.id = id;
-    if (b.type !== 'button') b.type = 'button';
-    if (b.className !== 'mls-cv-more') b.className = 'mls-cv-more';
+    var changed = !existing;
+    if (b.id !== id) { b.id = id; changed = true; }
+    if (b.type !== 'button') { b.type = 'button'; changed = true; }
+    if (b.className !== 'mls-cv-more') { b.className = 'mls-cv-more'; changed = true; }
     var open = isOpen(v);
     var want = (open ? 'Hide' : 'Show') + ' ' + v.more.label.replace(/^More /, 'more ');
-    if (b.getAttribute('aria-expanded') !== String(open)) b.setAttribute('aria-expanded', String(open));
-    if (b.textContent !== want) b.textContent = want;
+    if (b.getAttribute('aria-expanded') !== String(open)) { b.setAttribute('aria-expanded', String(open)); changed = true; }
+    if (b.textContent !== want) { b.textContent = want; changed = true; }
     b.onclick = function () { toggleOpen(v); };
     /* Never above the primary. When both land in the same card the disclosure
        must sit UNDER the one big obvious thing, or the screen has two things
@@ -385,9 +404,10 @@
        screen must perform no DOM write at all. */
     var nxt = byId('mlsCvNxt_' + v.key);
     if (nxt && nxt.parentElement === host) {
-      if (nxt.nextSibling !== b) host.insertBefore(b, nxt.nextSibling);
+      if (nxt.nextSibling !== b) { host.insertBefore(b, nxt.nextSibling); changed = true; }
     } else if (host.firstChild !== b) {
       host.insertBefore(b, host.firstChild);
+      changed = true;
     }
 
     /* THE INVARIANT: a fold whose route back cannot be SEEN unfolds itself.
@@ -395,18 +415,20 @@
        mounted into a card that its own rebuild module had replaced: the button
        existed, was in the DOM, had an onclick, and had rect 0x0 — so the fold
        hid a control and left no way to it. Every check that asserts "the
-       disclosure exists" passes on that. Assert that it RENDERS.
-       Cost is one rect read per reconcile of a mounted view. */
-    var shown = visible(b);
-    if (!shown && !isOpen(v)) {
-      autoOpened[v.key] = true;
-      safe(function () { D.body.classList.add('mls-cv-open-' + v.key); });
-      safe(function () {
+       disclosure exists" passes on that. Assert that it RENDERS. Route mounts
+       perform this rect read in the following frame, after their guarded DOM
+       writes have settled, so the interaction frame never forces layout. */
+    if (verifyNow) {
+      var shown = visible(b);
+      if (!shown && !isOpen(v)) {
+        autoOpened[v.key] = true;
+        safe(function () { D.body.classList.add('mls-cv-open-' + v.key); });
+        safe(function () {
         if (W.console && W.console.warn) {
           W.console.warn('[MLS calm views] ' + v.key + ': the More disclosure is not visible, so nothing is folded on this screen. Its anchor (' + v.more.anchor + ') no longer resolves to a rendered node.');
         }
-      });
-    } else if (shown && autoOpened[v.key]) {
+        });
+      } else if (shown && autoOpened[v.key]) {
       /* AND IT MUST BE REVERSIBLE, which the first version was not.
          Measured: a census that resized to 390x844 and back left AI Studio
          permanently unfolded — 33 controls where the fold had measured 17 —
@@ -414,9 +436,17 @@
          the one-way guard latched open forever. A safety valve that cannot
          re-close is a defect wearing a safety valve's clothes. Only an
          AUTO-open is withdrawn; a doctor who pressed the button keeps it. */
-      autoOpened[v.key] = false;
-      safe(function () { D.body.classList.remove('mls-cv-open-' + v.key); });
+        autoOpened[v.key] = false;
+        safe(function () { D.body.classList.remove('mls-cv-open-' + v.key); });
+      }
+    } else if (verifyRequested || changed) {
+      /* A rect read immediately after the insertions above forces layout inside
+         this interaction frame. Let the browser finish it, then verify the
+         rendered route in the next frame. A timer keeps the occluded-tab
+         guarantee intact. */
+      scheduleMoreVerification(v);
     }
+    return { count: count, host: host, el: b };
   }
 
   /* Which views this module opened ITSELF (because their disclosure was not
@@ -440,16 +470,22 @@
   }
 
   function mountPrimary(v) {
-    if (!v.primary) return;
+    if (!v.primary) return { available: false, host: null, el: null };
     var id = 'mlsCvNxt_' + v.key;
     var el = byId(id);
     var ok = safe(function () { return v.primary.available(); }, false);
-    if (!ok) { if (el) el.remove(); return; }
+    if (!ok) {
+      if (el) el.remove();
+      return { available: false, host: null, el: null };
+    }
     var narrow = safe(function () { return W.innerWidth <= 760; }, false);
     var host = (narrow && v.primary.anchorNarrow && qs(v.primary.anchorNarrow)) || qs(v.primary.anchor);
-    if (!host) return;
+    if (!host) return { available: true, host: null, el: el };
     var label = safe(function () { return String(v.primary.label() || ''); }, '');
-    if (!label) { if (el) el.remove(); return; }
+    if (!label) {
+      if (el) el.remove();
+      return { available: true, host: host, el: null };
+    }
     if (!el) {
       el = D.createElement('button');
       el.id = id;
@@ -470,12 +506,23 @@
     var subText = String(v.primary.sub || '');
     if (sub && sub.textContent !== subText) sub.textContent = subText;
     if (el.parentElement !== host || host.firstChild !== el) host.insertBefore(el, host.firstChild);
+    return { available: true, host: host, el: el };
   }
 
   /* ------------------------------------------------------------- reconcile */
 
   var observers = [];
   var pending = 0;
+  var scheduleSeq = 0;
+  var dirtyViews = Object.create(null);
+  var viewStates = Object.create(null);
+  var moreVerifySeq = 0;
+  var moreVerifyPending = Object.create(null);
+  var lastActiveKey = '';
+  var stopped = false;
+
+  var viewByKey = Object.create(null);
+  VIEWS.forEach(function (v) { viewByKey[v.key] = v; });
 
   function activeViewKey() {
     var on = qs('.mainnav .navtab.on');
@@ -483,6 +530,140 @@
     var id = String(on.id || '');
     var m = /^nav_(.+)$/.exec(id);
     return m ? m[1] : '';
+  }
+
+  function connected(el) {
+    if (!el) return false;
+    return safe(function () {
+      if (typeof el.isConnected === 'boolean') return el.isConnected;
+      return !!D.documentElement && D.documentElement.contains(el);
+    }, false);
+  }
+
+  function primaryOwnerToken(v) {
+    if (v.key === 'calendar') {
+      return String(!!qs('#mlsT3Empty .t3e-pull')) + '|' + String(typeof W.pullScheduleViaAssist === 'function');
+    }
+    if (v.key === 'history') return String(!!byId('pullChartBtn'));
+    if (v.key === 'team') return String(typeof W.loadTeamPatients === 'function');
+    return '';
+  }
+
+  function activePatientToken() {
+    var p = null;
+    try { p = (typeof W.verifiedActivePatient === 'function' && W.verifiedActivePatient()) || null; } catch (e) {}
+    if (!p) { try { p = (typeof W.activePatient === 'function' && W.activePatient()) || null; } catch (e2) {} }
+    if (!p || p.id == null) return '';
+    return String(p.id) + '|' + String(p.name || '') + '|' +
+      String(p.athena_patient_id || p.external_id || p.patient_external_id || '');
+  }
+
+  function captureCalendarInputs(st) {
+    var rows = Array.isArray(W._calAppts) ? W._calAppts : [];
+    st.calRows = rows;
+    st.calRowsLength = rows.length;
+    st.calPatient = activePatientToken();
+    st.calRefDate = String(W._calRefDate || '');
+  }
+
+  function calendarInputsChanged(st) {
+    if (!st) return true;
+    var rows = Array.isArray(W._calAppts) ? W._calAppts : [];
+    return st.calRows !== rows || st.calRowsLength !== rows.length ||
+      st.calPatient !== activePatientToken() || st.calRefDate !== String(W._calRefDate || '');
+  }
+
+  function rememberView(v, root, primaryInfo, moreInfo) {
+    var st = viewStates[v.key] || (viewStates[v.key] = {});
+    st.root = root;
+    st.ready = true;
+    st.primaryAvailable = !!(primaryInfo && primaryInfo.available);
+    st.primaryHost = primaryInfo && primaryInfo.host;
+    st.primaryEl = primaryInfo && primaryInfo.el;
+    st.primaryOwner = primaryOwnerToken(v);
+    st.moreCount = moreInfo ? moreInfo.count : 0;
+    st.moreHost = moreInfo && moreInfo.host;
+    st.moreEl = moreInfo && moreInfo.el;
+    if (v.key === 'calendar') captureCalendarInputs(st);
+  }
+
+  /* A retry is allowed to queue a frame only when an input that can change our
+     output changed. In particular, the 20 bounded async-owner checks below are
+     cheap no-ops after a view is settled; they no longer run layout-sensitive
+     fold/visibility work every 700ms. */
+  function viewNeedsReconcile(v) {
+    if (!v) return false;
+    var root = byId(v.id);
+    var st = viewStates[v.key];
+    if (!st || st.root !== root || !st.ready) return true;
+    if (!D.body.classList.contains(BODY_CLASS) || !byId(STYLE_ID)) return true;
+    if (st.primaryOwner !== primaryOwnerToken(v)) return true;
+    if (st.primaryAvailable && st.primaryHost && !connected(st.primaryEl)) return true;
+    if (st.primaryAvailable && !st.primaryHost) {
+      var narrow = safe(function () { return W.innerWidth <= 760; }, false);
+      var primaryHost = (narrow && v.primary.anchorNarrow && qs(v.primary.anchorNarrow)) || qs(v.primary.anchor);
+      if (primaryHost) return true;
+    }
+    if (!st.primaryAvailable && connected(byId('mlsCvNxt_' + v.key))) return true;
+    if (st.moreCount > 0 && st.moreHost && !connected(st.moreEl)) return true;
+    if (st.moreCount === 0 && connected(byId('mlsCvMore_' + v.key))) return true;
+    if (v.key === 'calendar' && calendarInputsChanged(st)) return true;
+    return false;
+  }
+
+  function nodeTouches(node, selector) {
+    if (!node) return false;
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    if (!el) return false;
+    return safe(function () {
+      return (typeof el.matches === 'function' && el.matches(selector)) ||
+        (typeof el.closest === 'function' && !!el.closest(selector)) ||
+        !!qs(selector, el);
+    }, false);
+  }
+
+  function recordsTouch(records, selector) {
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (nodeTouches(r.target, selector)) return true;
+      var groups = [r.addedNodes || [], r.removedNodes || []];
+      for (var g = 0; g < groups.length; g++) {
+        for (var n = 0; n < groups[g].length; n++) {
+          if (nodeTouches(groups[g][n], selector)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function recordsAddFold(v, records) {
+    var st = viewStates[v.key];
+    if (st && st.moreCount > 0) return false;
+    for (var i = 0; i < v.fold.length; i++) {
+      if (recordsTouch(records, v.fold[i])) return true;
+    }
+    return false;
+  }
+
+  function mutationsConcernView(v, records) {
+    if (!v || activeViewKey() !== v.key) return false;
+    if (viewNeedsReconcile(v) || recordsAddFold(v, records)) return true;
+    var st = viewStates[v.key];
+    if ((!st || !connected(st.moreHost)) && recordsTouch(records, v.more.anchor)) return true;
+    if ((!st || (st.primaryAvailable && !connected(st.primaryHost))) && v.primary) {
+      var anchors = v.primary.anchor + (v.primary.anchorNarrow ? (', ' + v.primary.anchorNarrow) : '');
+      if (recordsTouch(records, anchors)) return true;
+    }
+    if (v.key === 'history') {
+      return recordsTouch(records, '#histList, #historyView h2, #pullChartBtn');
+    }
+    if (v.key === 'team') {
+      return recordsTouch(records, '#teamList, #teamView h2');
+    }
+    /* Calendar grid churn matters only when its actual inputs changed. The
+       fold selectors are CSS-scoped and survive a grid rebuild without a DOM
+       pass; calendarInputsChanged covers date, patient and appointment data. */
+    return v.key === 'calendar' && calendarInputsChanged(viewStates.calendar);
   }
 
   /* Lift the toast clear of the dock. Read the dock's real rect; write only on
@@ -520,23 +701,25 @@
     var extId = String(p.athena_patient_id || p.external_id || p.patient_external_id || '');
     var nm = String(p.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
     var todayKey = safe(function () { return typeof W._acctTodayKey === 'function' ? W._acctTodayKey() : ''; }) || '';
-    var mine = appts.filter(function (a) {
-      if (!a) return false;
-      if (extId && String(a.patient_external_id || '') === extId) return true;
-      var an = String(a.name || a.patient || '').trim().toLowerCase().replace(/\s+/g, ' ');
-      return !!nm && an === nm;
-    });
-    var next = null;
-    mine.forEach(function (a) {
+    var next = null, count = 0;
+    appts.forEach(function (a) {
+      if (!a) return;
+      var match = extId && String(a.patient_external_id || '') === extId;
+      if (!match) {
+        var an = String(a.name || a.patient || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        match = !!nm && an === nm;
+      }
+      if (!match) return;
+      count++;
       var d = String(a.appt_date || a.date || '').slice(0, 10);
       if (!d || (todayKey && d < todayKey)) return;
       if (!next || d < next) next = d;
     });
-    return { name: p.name, count: mine.length, next: next, sig: String(p.id) + '|' + (next || '-') + '|' + mine.length };
+    return { name: p.name, count: count, next: next, sig: String(p.id) + '|' + (next || '-') + '|' + count };
   }
-  function ensureCalStrip() {
+  function ensureCalStrip(rootKnownVisible) {
     var root = byId('calendarView');
-    if (!root || !visible(root)) return;
+    if (!root || (!rootKnownVisible && !visible(root))) return;
     var st = calStripSig();
     var el = byId('mlsCvPtStrip');
     if (!st) { if (el && el.parentNode) safe(function () { el.parentNode.removeChild(el); }); return; }
@@ -572,24 +755,27 @@
   }
   function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-  function reconcile() {
+  function reconcile(key, verifyMore) {
     if (classic()) { teardown(); return; }
     safe(function () {
       if (!D.body.classList.contains(BODY_CLASS)) D.body.classList.add(BODY_CLASS);
     });
     installCss();
-    liftToast();
-    VIEWS.forEach(function (v) {
-      var root = byId(v.id);
-      if (!root || !visible(root)) return;
-      markFolds(v);
-      mountPrimary(v);
-      mountMore(v);
-    });
-    safe(ensureCalStrip);
+    var v = viewByKey[key || activeViewKey()];
+    if (!v) return;
+    var root = byId(v.id);
+    if (!root || !styleVisible(root)) {
+      viewStates[v.key] = { root: root, ready: false, primaryOwner: primaryOwnerToken(v) };
+      return;
+    }
+    markFolds(v);
+    var primaryInfo = mountPrimary(v);
+    var moreInfo = mountMore(v, false, !!verifyMore);
+    if (v.key === 'calendar') safe(function () { ensureCalStrip(true); });
+    rememberView(v, root, primaryInfo, moreInfo);
   }
 
-  function onResize() { liftToast(); schedule(); }
+  function onResize() { liftToast(); schedule(activeViewKey(), true); }
 
   /* Frame-vs-timer race, the parity engine's occluded-tab lesson (2026-07-26):
      rAF never fires in an occluded tab, and MLS's normal posture is behind
@@ -598,10 +784,45 @@
      observers keep calling schedule(), the latch is up, and nothing ever
      mounts. Whichever of the frame or the 300ms timer fires first runs;
      single-flight; timers throttle in background tabs but always fire. */
-  function schedule() {
+  function schedule(key, verifyMore) {
+    if (stopped) return;
+    key = key || activeViewKey();
+    if (!viewByKey[key]) return;
+    /* bit 1 = reconcile; bit 2 = verify the More rect after this frame */
+    dirtyViews[key] = (dirtyViews[key] || 0) | 1 | (verifyMore === false ? 0 : 2);
     if (pending) return;
-    pending = 1;
-    var run = function () { if (!pending) return; pending = 0; safe(reconcile); };
+    var token = ++scheduleSeq;
+    pending = token;
+    var run = function () {
+      if (pending !== token) return;
+      pending = 0;
+      var now = activeViewKey();
+      if (!viewByKey[now] || !dirtyViews[now]) return;
+      var reason = dirtyViews[now];
+      dirtyViews[now] = 0;
+      safe(function () { reconcile(now, !!(reason & 2)); });
+    };
+    if (W.requestAnimationFrame) W.requestAnimationFrame(run);
+    setTimeout(run, 300);
+  }
+
+  function scheduleMoreVerification(v) {
+    if (stopped || !v || moreVerifyPending[v.key]) return;
+    var key = v.key;
+    var token = ++moreVerifySeq;
+    moreVerifyPending[key] = token;
+    var run = function () {
+      if (moreVerifyPending[key] !== token) return;
+      moreVerifyPending[key] = 0;
+      if (stopped || activeViewKey() !== key) return;
+      var info = mountMore(v, true, false);
+      var st = viewStates[key];
+      if (st && info) {
+        st.moreCount = info.count;
+        st.moreHost = info.host;
+        st.moreEl = info.el;
+      }
+    };
     if (W.requestAnimationFrame) W.requestAnimationFrame(run);
     setTimeout(run, 300);
   }
@@ -609,21 +830,23 @@
   function watch() {
     var nav = qs('.mainnav');
     if (nav && W.MutationObserver) {
-      var mo = new W.MutationObserver(schedule);
+      lastActiveKey = activeViewKey();
+      var mo = new W.MutationObserver(function () {
+        var next = activeViewKey();
+        if (next === lastActiveKey) return;
+        lastActiveKey = next;
+        schedule(next, true);
+      });
       mo.observe(nav, { attributes: true, attributeFilter: ['class'], subtree: true });
       observers.push(mo);
     }
     VIEWS.forEach(function (v) {
       var root = byId(v.id);
       if (!root || !W.MutationObserver) return;
-      var mo = new W.MutationObserver(function () {
-        /* Only re-mount when this module's own furniture went missing. The
-           calendar rebuilds its grid constantly; reconciling on every rebuild
-           would make this module a churn source instead of a cure. */
-        if (!visible(root)) return;
-        var needPrimary = !!v.primary && !byId('mlsCvNxt_' + v.key) && safe(function () { return v.primary.available(); }, false);
-        var needMore = foldCount(v) > 0 && !byId('mlsCvMore_' + v.key);
-        if (needPrimary || needMore) schedule();
+      var mo = new W.MutationObserver(function (records) {
+        /* No layout read in the observer. Only the active view, and only a
+           mutation that can change owned furniture, may queue reconciliation. */
+        if (mutationsConcernView(v, records || [])) schedule(v.key, false);
       });
       mo.observe(root, { childList: true, subtree: true });
       observers.push(mo);
@@ -631,6 +854,10 @@
   }
 
   function teardown() {
+    stopped = true;
+    pending = 0;
+    dirtyViews = Object.create(null);
+    moreVerifyPending = Object.create(null);
     observers.forEach(function (o) { safe(function () { o.disconnect(); }); });
     observers = [];
     safe(function () { D.body.classList.remove(BODY_CLASS); });
@@ -646,7 +873,10 @@
 
   function start() {
     if (classic()) return;
-    reconcile();
+    stopped = false;
+    lastActiveKey = activeViewKey();
+    reconcile(lastActiveKey, true);
+    liftToast();
     watch();
     /* One resize listener, not two: the toast lift and the narrow-viewport
        primary anchor both depend on the viewport, and schedule() is
@@ -661,8 +891,18 @@
        while idle. A timeout chain cannot outlive its own budget. */
     var tries = 0;
     (function retry() {
-      if (tries++ > 20) return;
-      setTimeout(function () { schedule(); retry(); }, 700);
+      if (stopped || tries++ > 20) return;
+      setTimeout(function () {
+        if (stopped) return;
+        var key = activeViewKey();
+        if (key !== lastActiveKey) {
+          lastActiveKey = key;
+          schedule(key, true);
+        } else if (viewNeedsReconcile(viewByKey[key])) {
+          schedule(key, false);
+        }
+        retry();
+      }, 700);
     })();
   }
 
