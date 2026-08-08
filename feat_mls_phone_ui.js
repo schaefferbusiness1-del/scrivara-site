@@ -1,11 +1,37 @@
 'use strict';
 /* =============================================================================
- * MLS on a phone -- feat_mls_phone_ui.js -> window.__mlsPhoneUI, ph2-1.0.0
+ * MLS on a phone -- feat_mls_phone_ui.js -> window.__mlsPhoneUI, ph2-1.1.0
  *
  * Owner, 2026-08-07, verbatim: "The phone version needs a lot of fixing like it
  * needs to be way simpler to use and the pulls needs to be better and simpler
  * to understand. Don't change the desktop app UI but completely change the
  * PHONE app UI from scratch."
+ *
+ * ph2-1.1.0 (owner, 2026-08-08): "the UI looks great but get rid of the
+ * Scrivara stuff and make all the buttons and settings actually work and add
+ * any quality of life features it needs also the top right 3 lined button
+ * doesn't work."
+ *
+ * THE THREE-LINED BUTTON. It drew the universal sign for "there is a menu
+ * here" and then did the one thing already sitting in the tab bar six
+ * millimetres below it (go('setup')). Pressed from the Setup tab -- where a
+ * person looking for account controls has usually already landed -- it
+ * produced no change at all, which is indistinguishable from a dead control.
+ * It is now the menu it always claimed to be.
+ *
+ * AND THE MENU IS NOT DECORATION: it carries the six things this phone app
+ * could not reach by ANY route. Sign out and Settings are the load-bearing
+ * two. The desktop keeps both in #appHeader, which body.mls-ph2 hides, so
+ * until now a doctor could not sign this phone out of a PHI workspace or open
+ * Settings from it -- while the Setup screen printed "Go to Settings ->
+ * Integrations" twice, an instruction that pointed at nothing reachable from
+ * the device reading it (the-instruction-points-nowhere class).
+ *
+ * SCRIVARA. app.html ("Scrivara", lane 014) is a separate store-shipped app.
+ * This workspace advertised it in a Setup card and sent "Open the full setup
+ * guide" to phone-setup.html, which is that app's install guide -- so the two
+ * routes out of MLS on a phone both left MLS. Both are gone. The other app and
+ * its store lane are untouched; only this app's references to it are removed.
  *
  * WHAT WAS THERE BEFORE, AND WHY REPLACING IT WAS THE ONLY HONEST FIX
  * ------------------------------------------------------------------
@@ -118,12 +144,9 @@
  * ===========================================================================*/
 (function () {
   if (window.__mlsPhoneUI) return;
-  var VERSION = 'ph2-1.0.0';
+  var VERSION = 'ph2-1.1.0';
   var api = { installed: true, version: VERSION };
   window.__mlsPhoneUI = api;
-
-  var SETUP_URL = 'https://mlsscribe.com/phone-setup.html';
-  var SMALL_APP_URL = 'https://mlsscribe.com/app.html';
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -138,6 +161,48 @@
   function daySwitch() { return safe(function () { return window.__mlsDaySwitch; }, null); }
   function relay() { return safe(function () { return window.__mlsRelayLink; }, null); }
   function deviceRole() { return safe(function () { return window.__mlsDeviceRole; }, null); }
+  /* The host app's own globals. They are called, never reimplemented: logout()
+     carries the unsynced-note warning and the session-boundary scrub, and
+     openSettings() re-reads every stored value into the form. A phone copy of
+     either would be a second, quieter version of a thing that must not have
+     two versions. */
+  function hostFn(name) {
+    return safe(function () { return typeof window[name] === 'function' ? window[name] : null; }, null);
+  }
+
+  /* ---------------------------------------------------------------------------
+   * Copy, which must not claim more than it did.
+   * navigator.clipboard.writeText returns a PROMISE. The old code toasted
+   * "Note copied." on the same tick and swallowed the rejection, so a browser
+   * that refused the write said it had succeeded -- and the doctor pasted the
+   * previous clipboard into a chart. Report the settled result, and fall back
+   * to the selection path before reporting failure.
+   * -------------------------------------------------------------------------*/
+  function legacyCopy(text) {
+    return !!safe(function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      try { ta.setSelectionRange(0, text.length); } catch (e) {}
+      var ok = document.execCommand('copy');
+      try { ta.parentNode.removeChild(ta); } catch (e2) {}
+      return ok === true;
+    }, false);
+  }
+  function copyText(text, done) {
+    var fin = function (ok) { safe(function () { done(!!ok); }); };
+    var p = safe(function () {
+      return (navigator.clipboard && navigator.clipboard.writeText) ? navigator.clipboard.writeText(text) : null;
+    }, null);
+    if (p && typeof p.then === 'function') {
+      p.then(function () { fin(true); }, function () { fin(legacyCopy(text)); });
+      return;
+    }
+    fin(legacyCopy(text));
+  }
 
   /* ---------------------------------------------------------------------------
    * The word for the thing in the doctor's hand.
@@ -212,7 +277,13 @@
        saving the doctor's work. It is lifted clear of the tab bar instead. */
     'body.mls-ph2 #_backupBadge{bottom:calc(84px + env(safe-area-inset-bottom))!important;z-index:7100!important}',
 
-    '#mlsPh2{position:fixed;inset:0;z-index:7000;display:flex;flex-direction:column;',
+    /* `bottom` is the on-screen keyboard, not zero. iOS does not shrink the
+       layout viewport when the keyboard opens, so a frame pinned to inset:0
+       keeps its tab bar and the bottom of its scroller UNDER the keys --
+       including the transcript line being typed. --ph2-kbd is written from
+       visualViewport (0 unless a real keyboard is up), so the whole frame
+       shortens and its own flex layout does the rest. */
+    '#mlsPh2{position:fixed;top:0;left:0;right:0;bottom:var(--ph2-kbd,0px);z-index:7000;display:flex;flex-direction:column;',
     'background:var(--ph2-bg);color:var(--ph2-ink);',
     "font-family:'Public Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;",
     '-webkit-tap-highlight-color:transparent;}',
@@ -308,7 +379,46 @@
     '#mlsPh2 .ph2-steps{margin:10px 0 0;padding:0 0 0 20px;font:500 13.5px/1.7 inherit;color:var(--ph2-ink)}',
     '#mlsPh2 .ph2-steps li{margin:0 0 4px}',
     '#mlsPh2 .ph2-kv{display:flex;gap:10px;font:500 13px/1.6 inherit;color:var(--ph2-dim);margin:2px 0}',
-    '#mlsPh2 .ph2-kv b{flex:none;width:104px;color:var(--ph2-ink);font-weight:700}'
+    '#mlsPh2 .ph2-kv b{flex:none;width:104px;color:var(--ph2-ink);font-weight:700}',
+
+    /* find a patient. The list is the only screen that can carry twenty rows,
+       and scrolling twenty names one-handed between rooms is the thing a
+       search box exists for. */
+    '#mlsPh2 .ph2-find{position:relative;margin:0 0 10px}',
+    '#mlsPh2 .ph2-find input{width:100%;min-height:48px;border:1px solid var(--ph2-line);border-radius:13px;',
+    'background:#fff;color:var(--ph2-ink);padding:12px 40px 12px 14px;font:500 16px/1.2 inherit;-webkit-appearance:none}',
+    '#mlsPh2 .ph2-find .ph2-clear{position:absolute;top:50%;right:5px;transform:translateY(-50%);width:38px;height:38px;',
+    'border:0;background:transparent;color:var(--ph2-dim);font-size:19px;line-height:1;cursor:pointer}',
+    '#mlsPh2 .ph2-count{font:600 12px/1.4 inherit;color:var(--ph2-dim);margin:0 0 8px;padding:0 2px}',
+
+    /* Today, beside the arrows. Walking back from Friday one tap at a time is
+       not a way home. */
+    '#mlsPh2 .ph2-day .ph2-todaybtn{flex:none;width:auto;padding:0 13px;font:700 13.5px/1 inherit;color:var(--ph2-green2)}',
+
+    /* THE MENU. A sheet, not a nav: it is a list of one-shot destinations, and
+       it lives on the FRAME rather than in the scrolling body so an engine
+       repaint underneath can never blow it away mid-tap. */
+    '#mlsPh2Sheet{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:flex-end}',
+    '#mlsPh2Sheet .ph2-scrim{position:absolute;inset:0;background:rgba(9,20,14,.44);border:0;padding:0;',
+    'width:100%;height:100%;cursor:pointer}',
+    '#mlsPh2Sheet .ph2-panel{position:relative;background:var(--ph2-card);border-radius:20px 20px 0 0;',
+    'padding:8px 12px calc(env(safe-area-inset-bottom) + 12px);box-shadow:0 -8px 34px rgba(9,20,14,.22);',
+    'max-height:88%;overflow-y:auto;overscroll-behavior:contain}',
+    '#mlsPh2Sheet .ph2-grab{width:38px;height:4px;border-radius:99px;background:var(--ph2-line);margin:6px auto 10px}',
+    '#mlsPh2Sheet .ph2-who{font:600 12.5px/1.4 inherit;color:var(--ph2-dim);padding:0 10px 10px;',
+    'border-bottom:1px solid var(--ph2-line);margin:0 0 6px;word-break:break-word}',
+    '#mlsPh2Sheet .ph2-item{display:flex;align-items:center;gap:13px;width:100%;text-align:left;min-height:56px;',
+    'border:0;background:transparent;color:var(--ph2-ink);font:700 15.5px/1.3 inherit;padding:10px 10px;cursor:pointer;',
+    'border-radius:13px}',
+    '#mlsPh2Sheet .ph2-item:active{background:#F1F4F2}',
+    '#mlsPh2Sheet .ph2-item .ph2-ig{flex:none;width:26px;font-size:19px;line-height:1;text-align:center}',
+    '#mlsPh2Sheet .ph2-item small{display:block;font:500 12px/1.35 inherit;color:var(--ph2-dim);margin-top:2px}',
+    '#mlsPh2Sheet .ph2-item.ph2-danger{color:var(--ph2-red)}',
+    '#mlsPh2Sheet .ph2-sep{height:1px;background:var(--ph2-line);margin:6px 10px}',
+    '@media (prefers-reduced-motion: no-preference){',
+    '  #mlsPh2Sheet .ph2-panel{animation:ph2Rise .18s ease-out}',
+    '  @keyframes ph2Rise{from{transform:translateY(14px)}to{transform:none}}',
+    '}'
   ].join('\n');
   (document.head || document.documentElement).appendChild(st);
 
@@ -320,9 +430,12 @@
     mounted: false,
     lastSig: '',
     pullDetail: '',
-    installEvt: null
+    installEvt: null,
+    q: '',            /* the patient filter, kept in state so a repaint restores it */
+    menu: false,
+    pullAt: 0         /* the last accepted pull press, for the double-tap guard */
   };
-  api.state = function () { return { tab: S.tab, mounted: S.mounted }; };
+  api.state = function () { return { tab: S.tab, mounted: S.mounted, menu: S.menu }; };
 
   var frame = null, bodyEl = null, hdrEl = null, tabsEl = null;
 
@@ -335,7 +448,7 @@
     frame.innerHTML =
       '<div id="mlsPh2Hdr">' +
         '<div class="ph2-grow"><div class="ph2-t" id="mlsPh2Title">MLS</div><div class="ph2-s" id="mlsPh2Sub"></div></div>' +
-        '<button type="button" class="ph2-dot" id="mlsPh2Help" aria-label="Setup and help">☰</button>' +
+        '<button type="button" class="ph2-dot" id="mlsPh2Help" aria-label="Menu" aria-haspopup="true" aria-expanded="false">☰</button>' +
       '</div>' +
       '<div id="mlsPh2Body"></div>' +
       '<div id="mlsPh2Tabs" role="tablist">' +
@@ -350,27 +463,116 @@
       if (!b) return;
       go(b.getAttribute('data-tab'));
     });
-    $('mlsPh2Help').addEventListener('click', function () { go('setup'); });
+    $('mlsPh2Help').addEventListener('click', function () { toggleMenu(); });
     document.body.classList.add('mls-ph2');
     S.mounted = true;
     return frame;
   }
 
   function unmount() {
+    closeMenu();
     try { if (frame && frame.parentNode) frame.parentNode.removeChild(frame); } catch (e) {}
     frame = bodyEl = hdrEl = tabsEl = null;
     try { document.body.classList.remove('mls-ph2'); } catch (e) {}
     S.mounted = false; S.lastSig = '';
   }
 
+  /* ===========================================================================
+   * THE MENU
+   * Six destinations, and every one of them is a thing this app could not reach
+   * from any other control. Sign out and Settings are why it exists: the
+   * desktop keeps both in #appHeader, which body.mls-ph2 hides.
+   * =========================================================================*/
+  function accountLine() {
+    var who = safe(function () { var w = $('whoLabel'); return String((w && w.textContent) || '').trim(); }, '');
+    if (who) return who;
+    return safe(function () { return typeof window.getSessionEmail === 'function' ? String(window.getSessionEmail() || '') : ''; }, '');
+  }
+  function menuItem(act, glyph, label, sub, danger) {
+    return '<button type="button" class="ph2-item' + (danger ? ' ph2-danger' : '') + '" data-act="' + act + '">' +
+      '<span class="ph2-ig" aria-hidden="true">' + glyph + '</span>' +
+      '<span>' + esc(label) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>' +
+      '</button>';
+  }
+  function menuHtml() {
+    var who = accountLine();
+    var tk = todayKey();
+    var offToday = !!(tk && today() && today() !== tk);
+    var h = '<button type="button" class="ph2-scrim" data-act="menu-close" aria-label="Close the menu"></button>' +
+      '<div class="ph2-panel" role="dialog" aria-modal="true" aria-label="Menu">' +
+      '<div class="ph2-grab" aria-hidden="true"></div>' +
+      (who ? '<p class="ph2-who">Signed in as ' + esc(who) + '</p>' : '');
+    h += menuItem('refresh', '↻', 'Refresh', 'Re-read your schedule and your office computer');
+    if (offToday) h += menuItem('today-jump', '📅', 'Jump back to today', '');
+    h += menuItem('settings', '⚙️', 'Settings', 'Note defaults, display, security');
+    h += menuItem('device-settings', '📱', 'This ' + deviceNoun() + ' and where pulls run', 'Role, layout and your other devices');
+    h += menuItem('setup', '🛟', 'Setup and help', '');
+    h += '<div class="ph2-sep"></div>';
+    h += menuItem('signout', '🚪', 'Sign out', 'Clears this ' + deviceNoun() + "'s local copy of your day", true);
+    h += '</div>';
+    return h;
+  }
+  var sheetEl = null;
+  function openMenu() {
+    if (!frame) return;
+    closeMenu();
+    sheetEl = document.createElement('div');
+    sheetEl.id = 'mlsPh2Sheet';
+    sheetEl.innerHTML = menuHtml();
+    frame.appendChild(sheetEl);
+    S.menu = true;
+    /* An inline style, deliberately: the body-class tripwire counts every
+       classList write in this file, and a scroll lock is not a thing worth
+       spending one of those sites on. */
+    safe(function () { if (bodyEl) bodyEl.style.overflow = 'hidden'; });
+    safe(function () { var b = $('mlsPh2Help'); if (b) b.setAttribute('aria-expanded', 'true'); });
+    safe(function () {
+      var first = sheetEl.querySelector('.ph2-item');
+      if (first && first.focus) first.focus();
+    });
+  }
+  function closeMenu() {
+    if (sheetEl) { try { if (sheetEl.parentNode) sheetEl.parentNode.removeChild(sheetEl); } catch (e) {} }
+    sheetEl = null;
+    if (S.menu) safe(function () { var b = $('mlsPh2Help'); if (b) { b.setAttribute('aria-expanded', 'false'); if (b.focus) b.focus(); } });
+    S.menu = false;
+    safe(function () { if (bodyEl) bodyEl.style.overflow = ''; });
+  }
+  function toggleMenu() { if (S.menu) closeMenu(); else openMenu(); }
+  api.menu = function (open) { if (open === false) closeMenu(); else openMenu(); };
+
+  /* Settings is one modal with a runtime-built section rail, and "This device"
+     lives in Integrations. Land ON it rather than dropping the doctor at the
+     top of a long form and asking them to hunt -- the tab is matched by its
+     own text, because the rail is built at runtime and an index would rot the
+     first time a section is added. Failing to find it leaves Settings open,
+     which is still better than where this button used to go (nowhere). */
+  function showDeviceSection() {
+    safe(function () {
+      var bar = $('settingsTabBar');
+      if (bar && bar.querySelectorAll) {
+        var btns = bar.querySelectorAll('button, .set-tab');
+        for (var i = 0; i < btns.length; i++) {
+          if (/integration/i.test(String(btns[i].textContent || ''))) { btns[i].click(); break; }
+        }
+      }
+      var seg = $('mlsDrSeg') || $('mlsDrLayout') || $('mlsDrHead');
+      if (seg && seg.scrollIntoView) seg.scrollIntoView({ block: 'center' });
+    });
+  }
+
   function go(tab) {
     if (tab !== 'today' && tab !== 'visit' && tab !== 'setup') tab = 'today';
+    closeMenu();
     S.tab = tab;
     S.lastSig = '';
     /* The engine's own view must follow, or a Send confirm card would open on a
        screen the doctor is not looking at. */
     if (tab === 'visit') safe(function () { if (typeof window.showView === 'function') window.showView('visit'); });
-    render();
+    /* FORCED. A press is a person asking for a different screen, and it must
+       out-rank the caret guard in render(): with a transcript field focused,
+       the guard used to refuse the repaint and the tap did nothing at all. */
+    render(true);
     safe(function () { if (bodyEl) bodyEl.scrollTop = 0; });
     tick();
   }
@@ -539,35 +741,76 @@
     return null;
   }
 
-  function todayScreen() {
-    var d = fmtDayLabel(today());
+  /* The patient list, rendered on its own so a keystroke in the find box can
+     repaint it WITHOUT repainting the box the caret is sitting in. */
+  function listHtml() {
     var list = rows();
+    var total = list.length;
+    var q = String(S.q || '').trim().toLowerCase();
     var sn = snap();
     var activeId = sn && sn.active ? String(sn.active.id || '') : '';
 
+    if (q) {
+      list = list.filter(function (a) {
+        return (rowName(a) + ' ' + String((a && a.provider) || '') + ' ' + rowTime(a)).toLowerCase().indexOf(q) >= 0;
+      });
+    }
+
+    if (!total) {
+      return '<div class="ph2-empty">Nothing scheduled here yet.<br>You can still record a walk-in from the Visit tab.</div>';
+    }
+    var h = '';
+    if (q) {
+      h += '<p class="ph2-count">Showing ' + list.length + ' of ' + total + '</p>';
+      if (!list.length) {
+        return h + '<div class="ph2-empty">No one on this day matches “' + esc(S.q) + '”.</div>';
+      }
+    }
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i], id = rowId(a);
+      var seen = !!(a && (a.seen === true));
+      h += '<button type="button" class="ph2-row' + (id && id === activeId ? ' ph2-on' : '') + '" data-act="open" data-id="' + esc(id) + '">' +
+        '<span class="ph2-time">' + esc(rowTime(a) || '—') + '</span>' +
+        '<span class="ph2-nm">' + esc(rowName(a)) +
+          (a && a.provider ? '<small>' + esc(String(a.provider)) + '</small>' : '') +
+        '</span>' +
+        (seen ? '<span class="ph2-seen">done</span>' : '') +
+        '<span class="ph2-go" aria-hidden="true">›</span>' +
+        '</button>';
+    }
+    return h;
+  }
+
+  function todayScreen() {
+    var d = fmtDayLabel(today());
+    var count = rows().length;
+    var tk = todayKey();
+    var offToday = !!(tk && today() && today() !== tk);
+    var busy = pulling();
+
+    /* The arrows are disabled DURING a pull because the engine refuses a day
+       change while one is running -- an enabled control whose only outcome is
+       an error toast is a control that lies about being available. */
     var h = '<div class="ph2-day">' +
-      '<button type="button" data-act="day-prev" aria-label="Previous day">‹</button>' +
+      '<button type="button" data-act="day-prev" aria-label="Previous day"' + (busy ? ' disabled' : '') + '>‹</button>' +
       '<span class="ph2-dl">' + esc(d.main) + '<small>' + esc(d.sub) + '</small></span>' +
-      '<button type="button" data-act="day-next" aria-label="Next day">›</button>' +
+      (offToday ? '<button type="button" class="ph2-todaybtn" data-act="today-jump"' + (busy ? ' disabled' : '') + '>Today</button>' : '') +
+      '<button type="button" data-act="day-next" aria-label="Next day"' + (busy ? ' disabled' : '') + '>›</button>' +
       '</div>';
     h += pullCard();
 
-    if (!list.length) {
-      h += '<div class="ph2-empty">Nothing scheduled here yet.<br>You can still record a walk-in from the Visit tab.</div>';
-    } else {
-      for (var i = 0; i < list.length; i++) {
-        var a = list[i], id = rowId(a);
-        var seen = !!(a && (a.seen === true));
-        h += '<button type="button" class="ph2-row' + (id && id === activeId ? ' ph2-on' : '') + '" data-act="open" data-id="' + esc(id) + '">' +
-          '<span class="ph2-time">' + esc(rowTime(a) || '—') + '</span>' +
-          '<span class="ph2-nm">' + esc(rowName(a)) +
-            (a && a.provider ? '<small>' + esc(String(a.provider)) + '</small>' : '') +
-          '</span>' +
-          (seen ? '<span class="ph2-seen">done</span>' : '') +
-          '<span class="ph2-go" aria-hidden="true">›</span>' +
-          '</button>';
-      }
+    /* Five is where a one-handed scroll between rooms starts costing more than
+       the box does. Below it the box would be the largest thing on a screen
+       whose whole job is the list underneath. */
+    if (count >= 5 || String(S.q || '')) {
+      h += '<div class="ph2-find">' +
+        '<input type="search" id="mlsPh2Find" inputmode="search" enterkeyhint="search" autocomplete="off" ' +
+        'autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Find a patient on this day" ' +
+        'placeholder="Find a patient" value="' + esc(S.q) + '">' +
+        (String(S.q || '') ? '<button type="button" class="ph2-clear" data-act="find-clear" aria-label="Clear the search">✕</button>' : '') +
+        '</div>';
     }
+    h += '<div id="mlsPh2List">' + listHtml() + '</div>';
     return h;
   }
 
@@ -663,6 +906,11 @@
       '<p class="ph2-h">This ' + esc(noun) + '</p>' +
       '<div class="ph2-kv"><b>Name</b><span>' + esc(name || noun) + '</span></div>' +
       '<div class="ph2-kv"><b>Set up as</b><span>' + esc(roleWord) + '</span></div>' +
+      /* The row above is a READING. Until ph2-1.1.0 it was the whole story --
+         the screen stated what the device was and offered no way to change it,
+         while two paragraphs below sent the reader to a Settings screen this
+         app had no route to. Both are buttons now. */
+      '<button type="button" class="ph2-secondary" data-act="device-settings">Change what this ' + esc(noun) + ' is, and see your other devices →</button>' +
       '</div>';
 
     /* Where pulls run. The live presence line, in sentences. */
@@ -678,7 +926,7 @@
       head = 'No office computer yet';
       why = 'Pulls you start here need one computer that reads Athena for you.';
       steps = ['On the Windows or Mac computer that has the MLS Assist extension, open MLS.',
-        'Go to Settings → Integrations.',
+        'Open the ☰ menu there, or Settings → Integrations.',
         'Set that computer\'s role to "Office computer".'];
     } else if (p.online && p.ext && p.officeAth === 'no-tab') {
       head = 'athenaOne is signed out on ' + p.officeName;
@@ -732,24 +980,29 @@
         '<li>Tap <b>Add to Home screen</b> (or <b>Install app</b>).</li>' +
         '<li>Tap <b>Install</b>.</li></ol>';
     } else {
-      h += '<p class="ph2-p">Open <b>' + esc(SETUP_URL.replace(/^https?:\/\//, '')) + '</b> on your phone for the exact steps.</p>';
+      /* Not a handheld: this is a computer running the simple layout on
+         purpose. It has a Home Screen for nothing, so it is told the truth
+         rather than sent to a guide about a different device. */
+      h += '<p class="ph2-p">This is a ' + esc(noun) + ', so there is no Home Screen to add MLS to. ' +
+        'To put MLS on a phone, open MLS in that phone\'s browser and use its own “Add to Home Screen”.</p>';
     }
-    h += '<button type="button" class="ph2-secondary" data-act="setup-guide">Open the full setup guide</button></div>';
+    h += '</div>';
 
-    /* Name the other app rather than compete with it. Somebody who only ever
-       pulls and reads charts should be using the small one; hiding that here
-       would leave them carrying the whole workspace for two verbs. */
+    /* Your account. Both of these were unreachable from this app: the desktop
+       keeps them in #appHeader, which body.mls-ph2 hides. They are in the ☰
+       menu too -- a control a person can find by looking belongs on the screen
+       that is about it, not only behind a glyph. */
     h += '<div class="ph2-card">' +
-      '<p class="ph2-h">Only need your day and the pull?</p>' +
-      '<p class="ph2-p">Scrivara is the smaller phone app — your patients and one pull button, ' +
-      'nothing else. This workspace is the one that records a visit and writes the note.</p>' +
-      '<button type="button" class="ph2-secondary" data-act="small-app">Open Scrivara</button>' +
+      '<p class="ph2-h">Your account</p>' +
+      '<p class="ph2-p">' + esc(accountLine() ? 'Signed in as ' + accountLine() + '.' : 'Signed in on this ' + noun + '.') + '</p>' +
+      '<button type="button" class="ph2-secondary" data-act="settings">⚙️ Open Settings</button>' +
+      '<button type="button" class="ph2-secondary" data-act="signout">🚪 Sign out of this ' + esc(noun) + '</button>' +
       '</div>';
 
     h += '<div class="ph2-card">' +
       '<p class="ph2-h">Need the desktop layout?</p>' +
       '<p class="ph2-p">The full app has every screen, built for a big monitor. It will be cramped here — and this ' +
-      esc(noun) + ' will keep opening it until you switch back in Settings → Integrations → This device.</p>' +
+      esc(noun) + ' will keep opening it until you switch back, which is the “Layout” control on the button above.</p>' +
       '<button type="button" class="ph2-secondary" data-act="full-app">Show the full app on this ' + esc(noun) + '</button>' +
       '</div>';
     return h;
@@ -776,22 +1029,80 @@
     if (!el) return;
     var act = el.getAttribute('data-act');
 
+    if (act === 'menu-close') { closeMenu(); return; }
     if (act === 'tab-today') { go('today'); return; }
     if (act === 'setup') { go('setup'); return; }
 
+    /* ---- the menu's own destinations ------------------------------------ */
+    if (act === 'settings' || act === 'device-settings') {
+      closeMenu();
+      var open = hostFn('openSettings');
+      if (!open) { toast('Settings has not finished loading yet. Try again in a moment.', 'err'); return; }
+      safe(function () { open(); });
+      if (act === 'device-settings') safe(function () { setTimeout(showDeviceSection, 80); });
+      return;
+    }
+    if (act === 'signout') {
+      closeMenu();
+      var out = hostFn('logout');
+      if (!out) { toast('Sign-out has not finished loading yet. Try again in a moment.', 'err'); return; }
+      /* No argument: logout(force) treats a bare call as the human path, which
+         is the one that warns about notes this device has not backed up yet.
+         Passing force here would skip that warning and silently destroy them. */
+      safe(function () { out(); });
+      return;
+    }
+    if (act === 'refresh') {
+      closeMenu();
+      refreshPresence(true);
+      var did = 0;
+      var cal = hostFn('loadCalendar');
+      if (cal) { safe(function () { cal({ fresh: true }); }); did++; }
+      var pts = hostFn('loadPatientsFromServer');
+      if (pts) { safe(function () { pts(); }); did++; }
+      S.lastSig = ''; render(true);
+      toast(did ? 'Refreshing your day…' : 'Checked your office computer. The schedule reloads when the app is ready.', '');
+      return;
+    }
+    if (act === 'today-jump') {
+      closeMenu();
+      var ds0 = daySwitch(), tk0 = todayKey();
+      if (!ds0 || typeof ds0.setDay !== 'function' || !tk0) { toast('The day selector has not finished loading yet.', 'err'); return; }
+      safe(function () { ds0.setDay(tk0); });
+      S.lastSig = ''; render(true); return;
+    }
+    if (act === 'find-clear') {
+      S.q = '';
+      S.lastSig = ''; render(true);
+      safe(function () { var f = $('mlsPh2Find'); if (f && f.focus) f.focus(); });
+      return;
+    }
+
     if (act === 'day-prev' || act === 'day-next') {
       var ds = daySwitch();
-      if (ds && typeof ds.shiftDay === 'function') safe(function () { ds.shiftDay(act === 'day-prev' ? -1 : 1); });
-      S.lastSig = ''; render(); return;
+      if (!ds || typeof ds.shiftDay !== 'function') { toast('The day selector has not finished loading yet.', 'err'); return; }
+      safe(function () { ds.shiftDay(act === 'day-prev' ? -1 : 1); });
+      /* A day the doctor did not choose must not inherit the previous day's
+         filter -- "Showing 0 of 6" on a list nobody searched reads as an empty
+         day. */
+      S.q = '';
+      S.lastSig = ''; render(true); return;
     }
 
     if (act === 'pull-start') {
       var d2 = daySwitch();
       if (!d2 || typeof d2.pullDay !== 'function') { toast('The Athena pull engine has not finished loading yet.', 'err'); return; }
+      /* A phone registers a double-tap as two clicks far more often than a
+         mouse does, and pulling() cannot see the second one until the engine
+         has disabled its own button. Two pulls over one store is the exact
+         shape the cross-tab shield exists to refuse; do not hand it the case. */
+      var now = Date.now();
+      if (now - (S.pullAt || 0) < 1500) return;
+      S.pullAt = now;
       /* Same call the desktop button makes: the cross-tab shield, the session
          serial, the receipt check and the relay routing all still apply. */
       safe(function () { d2.pullDay(); });
-      S.lastSig = ''; render(); startTicking(); return;
+      S.lastSig = ''; render(true); startTicking(); return;
     }
     if (act === 'pull-stop') {
       var rl = relay();
@@ -823,8 +1134,14 @@
     }
     if (act === 'stop') {
       var r3 = remote();
-      if (r3) safe(function () { r3.stopRecording(); });
-      S.lastSig = ''; render(); return;
+      if (!r3) { toast('The visit engine has not finished loading yet.', 'err'); return; }
+      /* stopRecording() returns false when the engine believes nothing is
+         running. That disagreement is exactly what the doctor is looking at --
+         a Stop button over a screen that says Recording -- so it has to be
+         said out loud rather than absorbed. */
+      var stopped = safe(function () { return r3.stopRecording(); }, false);
+      if (stopped === false) toast('There was no live recording to stop. If this screen still says Recording, reload MLS.', 'err');
+      S.lastSig = ''; render(true); startTicking(); return;
     }
     if (act === 'generate') {
       var r4 = remote();
@@ -843,7 +1160,10 @@
     if (act === 'copy-note') {
       var n = noteText();
       if (!n.trim()) { toast('There is no note to copy yet.', 'err'); return; }
-      safe(function () { navigator.clipboard.writeText(n); toast('Note copied.', 'ok'); });
+      copyText(n, function (ok) {
+        toast(ok ? 'Note copied.' : 'This browser would not let MLS use the clipboard. Press and hold the note above, then choose Copy.',
+          ok ? 'ok' : 'err');
+      });
       return;
     }
 
@@ -851,11 +1171,21 @@
       var evt = S.installEvt;
       if (!evt) return;
       S.installEvt = null;
-      safe(function () { evt.prompt(); });
-      S.lastSig = ''; render(); return;
+      safe(function () {
+        evt.prompt();
+        /* The card disappears the moment prompt() is called, so a doctor who
+           taps "Cancel" in the system sheet would be left with no button and
+           no explanation. Say where it went. */
+        if (evt.userChoice && typeof evt.userChoice.then === 'function') {
+          evt.userChoice.then(function (c) {
+            if (!c || c.outcome !== 'accepted') {
+              toast('Not added. You can still add MLS to your Home Screen from your browser\'s own menu.', '');
+            }
+          }, function () {});
+        }
+      });
+      S.lastSig = ''; render(true); return;
     }
-    if (act === 'setup-guide') { safe(function () { window.open(SETUP_URL, '_blank', 'noopener'); }); return; }
-    if (act === 'small-app') { safe(function () { window.open(SMALL_APP_URL, '_blank', 'noopener'); }); return; }
 
     if (act === 'full-app') {
       /* dr-1.5.0: this used to write a SESSION flag, so the choice evaporated
@@ -880,6 +1210,16 @@
   function onEdit(ev) {
     var t = ev.target;
     if (!t || !t.id) return;
+    if (t.id === 'mlsPh2Find') {
+      S.q = String(t.value || '');
+      /* Repaint the LIST ONLY. Rewriting the whole screen would destroy the
+         input the caret is in on every keystroke, which is the same bug as
+         repainting under a transcript -- just faster to notice. */
+      var host = $('mlsPh2List');
+      if (host) host.innerHTML = listHtml();
+      S.lastSig = '';
+      return;
+    }
     if (t.id === 'mlsPh2Tx') {
       var real = transcriptEl();
       if (real && real.value !== t.value) {
@@ -900,13 +1240,20 @@
    * A signature guard, because this screen carries two textareas the doctor may
    * be typing into. Re-rendering identical HTML would move the caret.
    * =========================================================================*/
+  /* The caret guard, as its own question. It used to live INSIDE signature(),
+     returning S.lastSig -- so a caller that had just cleared lastSig to force a
+     repaint (every go(), every action) compared '' with '' and rendered
+     NOTHING. Pressing a tab while the transcript held focus did nothing at all.
+     It is a separate gate now, and force() overrides it. */
+  function caretIsOurs() {
+    var focusId = safe(function () { return (document.activeElement && document.activeElement.id) || ''; }, '');
+    return focusId === 'mlsPh2Tx' || focusId === 'mlsPh2Note' || focusId === 'mlsPh2Find';
+  }
   function signature() {
     var sn = snap();
-    var focusId = safe(function () { return document.activeElement && document.activeElement.id; }, '');
-    if (focusId === 'mlsPh2Tx' || focusId === 'mlsPh2Note') return S.lastSig; /* never repaint under the caret */
     var p = api._presence;
     return [
-      S.tab, today(), rows().length, pulling() ? 1 : 0, pullSentence(),
+      S.tab, today(), rows().length, pulling() ? 1 : 0, pullSentence(), S.q,
       sn ? sn.phase : '-', sn && sn.active ? sn.active.id : '-', sn ? sn.recSecs : 0,
       transcriptText().length, noteText().length,
       p ? [p.online, p.ext, p.officeName, p.officeAth].join('|') : '-',
@@ -914,10 +1261,11 @@
     ].join('');
   }
 
-  function render() {
+  function render(force) {
     if (!frame || !bodyEl) return;
+    if (!force && caretIsOurs()) return;   /* never repaint under the caret */
     var sig = signature();
-    if (sig === S.lastSig) return;
+    if (!force && sig === S.lastSig) return;
     S.lastSig = sig;
 
     var t = $('mlsPh2Title'), s = $('mlsPh2Sub');
@@ -934,7 +1282,7 @@
 
     bodyEl.innerHTML = S.tab === 'visit' ? visitScreen() : S.tab === 'setup' ? setupScreen() : todayScreen();
   }
-  api.render = function () { S.lastSig = ''; render(); };
+  api.render = function () { S.lastSig = ''; render(true); };
 
   /* ===========================================================================
    * PRESENCE -- read once on mount and refreshed only when the Setup or Today
@@ -1025,8 +1373,41 @@
   function onVisible() {
     if (document.visibilityState !== 'visible') { stopTicking(); return; }
     refreshPresence(true);
-    S.lastSig = ''; render(); startTicking();
+    S.lastSig = ''; render(true); startTicking();
   }
+
+  /* ---------------------------------------------------------------------------
+   * THE ON-SCREEN KEYBOARD
+   * iOS does not shrink the layout viewport when the keyboard opens, so a frame
+   * pinned to the bottom of it keeps its tab bar -- and the last lines of the
+   * transcript being dictated into -- underneath the keys. visualViewport is
+   * the only surface that reports the real occlusion. Nothing here runs on a
+   * timer: the events fire only while a keyboard is actually moving.
+   * -------------------------------------------------------------------------*/
+  var vv = safe(function () { return window.visualViewport || null; }, null);
+  function onViewport() {
+    if (!frame) return;
+    var hidden = 0;
+    hidden = safe(function () {
+      return Math.max(0, Math.round((window.innerHeight || 0) - (vv.height + vv.offsetTop)));
+    }, 0);
+    /* A threshold, because browser chrome (the collapsing Safari toolbar) moves
+       this number by tens of pixels with no keyboard anywhere. No keyboard is
+       90px tall. */
+    safe(function () { frame.style.setProperty('--ph2-kbd', (hidden > 90 ? hidden : 0) + 'px'); });
+  }
+  if (vv && vv.addEventListener) {
+    safe(function () { vv.addEventListener('resize', onViewport); });
+    safe(function () { vv.addEventListener('scroll', onViewport); });
+  }
+
+  /* Escape closes the menu. A dialog that cannot be dismissed from the keyboard
+     is not a dialog -- and an external keyboard on an iPad is ordinary. */
+  function onKey(ev) {
+    if (!S.menu) return;
+    if (ev && ev.key === 'Escape') { safe(function () { ev.preventDefault(); }); closeMenu(); }
+  }
+  safe(function () { document.addEventListener('keydown', onKey); });
 
   safe(function () { document.addEventListener('visibilitychange', onVisible); });
   safe(function () {
@@ -1046,6 +1427,8 @@
     try { if (settleTimer) clearTimeout(settleTimer); } catch (e) {}
     try { if (mo) mo.disconnect(); } catch (e) {}
     try { document.removeEventListener('visibilitychange', onVisible); } catch (e) {}
+    try { document.removeEventListener('keydown', onKey); } catch (e) {}
+    try { if (vv && vv.removeEventListener) { vv.removeEventListener('resize', onViewport); vv.removeEventListener('scroll', onViewport); } } catch (e) {}
     unmount();
     try { st.remove(); } catch (e) {}
     /* Hand the screen back to the layer this replaced, exactly as it was. */

@@ -687,6 +687,7 @@ const tests = [
      suite above stays: it pins the LEGACY layer, which is still installed and
      still correct the moment the new UI is reverted or declines the device. */
   'phone-app-is-its-own-app.test.js',
+  'phone-menu-and-controls.test.js',
   /* From the owner's own iPhone screenshot: his phone had mls_device_role='office'
      stored, which made wantPhone() answer false and handed a 390px screen the full
      desktop workspace — AND aimed every Athena pull at a device that can never run
