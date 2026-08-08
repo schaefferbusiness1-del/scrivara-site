@@ -232,8 +232,15 @@ assert(/if \(!kiosk\.consentAt\) \{/.test(source.slice(source.indexOf('function 
     'the CIELAB conversion was removed — the hue gate has no axis to measure on');
   assert(/if \(fromIllustration\) \{[\s\S]{0,400}derived\.filter/.test(code),
     'colour claims are no longer stripped when the source is the illustration — shape survives a posterized copy, hue does not');
-  assert(/if \(frameLike && look\.glasses !== true\)/.test(code),
+  /* the CLAIM, not the spelling. The first version of this pin matched the exact
+     expression `if (frameLike && look.glasses !== true)` and broke the moment a real
+     photograph forced a third condition into it — the fifth pin today to fail on how the
+     code is written rather than what it does. Two facts are asserted instead:
+     glasses are concluded from bridge continuity, and only for a THIN band. */
+  assert(/frameLike[\s\S]{0,40}look\.glasses !== true/.test(code) && /derived\.push\('glasses'\)/.test(code),
     'glasses are back to needing a solid dark bar. Swept against stroked rims the old detector returns false at 0.5-4.1px; the bridge-continuity test is what sees a real frame, because an eyebrow stops at the bridge and a rim crosses it');
+  assert(/var rimThin = browMed <= \d+/.test(code) && /frameLike && rimThin/.test(code),
+    'the thinness gate is gone — measured on a REAL photograph, a brow ridge in hard sunlight (browMed 8 rows) crosses the bridge and CLAIMED glasses on a man wearing none. A rim is 1-3 rows; a brow-plus-shadow band is 6-10');
   assert(/noseB\.val === nVal/.test(code) && /noseNearCut/.test(code),
     'the nose claims an unstable verdict again — every threshold there is relative to skinL, so the SAME nose read wide on fair skin and button on a warmer complexion');
 }

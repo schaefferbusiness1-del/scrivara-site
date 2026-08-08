@@ -503,3 +503,61 @@ the two pink arms could not be drawn at all.
 
 Gate: **PASS all 514** on a run that reached the end. Two negative controls fail by name: removing the
 bridge test, and removing the hue gate.
+
+## b962 (av-5.8.1) — A REAL PHOTOGRAPH FOUND A DEFECT FORTY SYNTHETIC CHECKS COULD NOT
+
+> Owner: **"upload a photo of someones face from online and then check the avatar and see if it is good
+> and if not fix it"**, and **"make sure animations and stuff still work"**.
+
+Two free-licensed portraits from Wikimedia Commons (CC BY-SA 4.0 and public domain), used locally and
+never published. Every fixture in this lane is synthesized — analytic ellipses, flat fills, a painted
+wall — which is why 79 green checks coexisted with "it did an awful job".
+
+### 🚨 THE DEFECT: A BROW RIDGE IN HARD SUNLIGHT IS NOT A SPECTACLE FRAME
+
+On an outdoor selfie in harsh sun, **with no spectacles anywhere in the frame**, the matcher CLAIMED
+glasses. b960's bridge test asks whether a dark band crosses the nose bridge; a brow ridge under hard
+light casts exactly that band. Measured on the photograph: **`brow.med = 8` rows.**
+
+⛔ **NO SYNTHETIC FIXTURE COULD SHOW THIS — painted brows cast no shadow.** All 40 framed checks passed.
+
+CURE: **thinness**, which was already being measured. A spectacle rim is 1–3 rows at the 128 grid (the
+owner's own thin-rim fixture measures 3); a brow-plus-shadow band is 6–10. A thick band now says so.
+
+| arm | glasses |
+|---|---|
+| the real photograph (no spectacles) | **false, UNCLAIMED**, with "too thick to be a spectacle rim — usually a brow ridge in hard light" |
+| the owner's thin-rim fixture | **true, claimed** |
+
+### A refusal followed by a description, in the same list
+
+The `found` list read *"the skin sample came back #9d6c64, which is outside the range real skin occupies
+(hue 34°) … so your own skin colour was left alone"* and then, on the next line, *"tan skin"*. The tone
+word now prints only when the sample was accepted.
+
+### What the real photographs said, recorded rather than dressed up
+
+* **p1** (harsh sun, street background with sky and trees, plaid shirt): skin correctly REFUSED on hue,
+  nose refused, glasses refused after the fix, top read `#3c4a25` — a fair reading of an olive plaid.
+  `hairStyle` came back **'bald' on short dark hair** — wrong, but refused, so his setting stands.
+  **Only `lips` and `shirt` were claimed.** Honest, and thin.
+* **p2** (indoor, warm light, prominent moustache): **REFUSED ENTIRELY.** His head fills about a fifth
+  of a tall frame, so after the square centre-crop there is not enough face to measure. An honest
+  "I cannot see a face", not a wrong answer — but the feature does not serve that framing at all.
+
+**Both are the argument for the vision route** (live on the backend as `35e86bc`): a model reads a face
+that pixel geometry cannot locate, and needs neither a large face nor a plain wall.
+
+### ANIMATIONS — the owner asked directly
+
+`tests/avatar-face-expression-proof.js` → **PASS 107/107**: breathing, blinking, lip-sync amplitude and
+every expression path intact after the whole day's changes.
+
+### ⛔ THE FIFTH PIN TO FAIL ON A SPELLING
+
+The b960 pin matched the literal expression `if (frameLike && look.glasses !== true)` and broke the
+moment the real-photo fix added a third condition — a change that STRENGTHENED the behaviour it guards.
+Five times today: a text window mistaken for a call graph, one spelling of a call, a filter that moved
+function, a comment satisfying its own rule, and an expression that grew a term.
+🔑 It now asserts two CLAIMS: glasses are concluded from bridge continuity, and only for a thin band.
+Control: replacing the thinness gate with `true` fails by name.
