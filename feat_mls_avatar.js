@@ -1475,6 +1475,26 @@
     var cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
     return cr >= 134 && cr <= 178 && cb >= 76 && cb <= 128 && r > b;
   }
+  /* CIELAB, because skin is a HUE band and RGB has no such axis. Standard sRGB ->
+     linear -> XYZ (D65) -> L*a*b*; h_ab = atan2(b*,a*) is the one number that separates
+     every real skin tone from pink, and C* keeps lip vermilion out. Used by the skin
+     gate in faceReadPortrait. */
+  function faceLab(rgb) {
+    function lin(v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+    var r = lin(rgb[0]), g = lin(rgb[1]), b = lin(rgb[2]);
+    var X = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    var Y = (r * 0.2126 + g * 0.7152 + b * 0.0722);
+    var Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    function f(t) { return t > 0.008856 ? Math.pow(t, 1 / 3) : (7.787 * t + 16 / 116); }
+    var fx = f(X), fy = f(Y), fz = f(Z);
+    return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  }
+  function faceHueAb(lab) {
+    var h = Math.atan2(lab.b, lab.a) * 180 / Math.PI;
+    return h < 0 ? h + 360 : h;
+  }
+  function faceChroma(lab) { return Math.sqrt(lab.a * lab.a + lab.b * lab.b); }
+
   function faceReadPortrait(img) {
     var M = 128;
     var c = document.createElement('canvas'); c.width = M; c.height = M;
@@ -1927,7 +1947,55 @@
        the detector missed his frames - which, until the fix above, was every
        bald or shaved head. A detector that finds nothing has measured nothing.
        Each of these is now pushed by the branch that positively decides it. */
-    var derived = ['skin'];
+    /* ⛔ EVEN THE SKIN MUST EARN ITS PLACE (av-5.7.6). The owner's swatch came back PALE
+       PINK and pink is not a skin tone - but the file was seeding 'skin' unconditionally,
+       which is the one exemption from the rule stated directly above.
+       TWO INDEPENDENT REASONS a pink answer arrives, and both are refused here:
+       1. THE SOURCE IS THE ILLUSTRATION, NOT THE PHOTOGRAPH. stylizeCanvas posterizes
+          every channel to six levels (steps of 51). Measured: the whole ordinary
+          fair-skin gamut - 4,305 RGB triples, R 222-250 / G 182-214 / B 160-196 -
+          collapses to exactly TWO output colours, 76% #ffcc99 and 24% #ffcccc, and
+          #ffcccc IS pale pink. No estimator can recover a tone from that. The source is
+          detected from its own pixels rather than trusted from a storage flag, because
+          the flag is per-device and a portrait taken before av-5.7.2 has no
+          full-quality copy at all: the chance of a real photograph having all three
+          channels within +-6 of a multiple of 51 is (13/51)^3 = 1.7%, against ~100%
+          for the posterized copy - a 50x separation that survives JPEG chroma
+          subsampling.
+       2. THE SAMPLE IS NOT SKIN-COLOURED. Skin of every tone sits in a narrow band of
+          CIELAB hue: measured across all ten Monk Skin Tone shades, h_ab spans
+          48.8-89.1 degrees, while every pink candidate falls below it (#f6d5d0 32.1,
+          #f2cdc8 31.0, #efd0cf 22.8, a flushed cheek #e8b4a8 38.0, and the quantiser's
+          own #ffcccc 21.0). ⛔ NOT the intuitive b*-a*>2 form: MST8 #604134 measures
+          1.7 there and real deep skin would be refused. C* < 32 is the secondary guard,
+          which excludes lip vermilion at 38.5 (MST maximum is 27.9). */
+    var posterFrac = 0;
+    (function () {
+      var hits = 0, seen = 0;
+      for (var pi = 0; pi < d.length; pi += 4 * 7) {          /* every 7th pixel is plenty */
+        seen++;
+        if (Math.abs(d[pi] % 51) <= 6 || Math.abs(d[pi] % 51) >= 45) {
+          if ((Math.abs(d[pi + 1] % 51) <= 6 || Math.abs(d[pi + 1] % 51) >= 45) &&
+              (Math.abs(d[pi + 2] % 51) <= 6 || Math.abs(d[pi + 2] % 51) >= 45)) hits++;
+        }
+      }
+      posterFrac = seen ? hits / seen : 0;
+    }());
+    var fromIllustration = posterFrac > 0.5;
+    var skinLab = faceLab(skin);
+    var skinHue = faceHueAb(skinLab), skinChroma = faceChroma(skinLab);
+    var skinIsSkinColoured = skinHue >= 45 && skinChroma < 32;
+    var derived = [];
+    if (fromIllustration) {
+      found.push('this is the stylized copy of your photo, not the photograph — its colours are ' +
+        'reduced to six steps per channel, so no colour was taken from it. Retake your photo and Match again.');
+    } else if (!skinIsSkinColoured) {
+      found.push('the skin sample came back ' + hex(skin) + ', which is outside the range real skin ' +
+        'occupies (hue ' + Math.round(skinHue) + '°, needs 45°+) — usually the wall behind you ' +
+        'bleeding into the sample, so your own skin colour was left alone');
+    } else {
+      derived.push('skin');
+    }
     found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
 
     /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
@@ -2321,22 +2389,71 @@
        OUTERMOST shaded offset, not a contiguous run - the middle of a nose is
        the lit ridge, and a contiguity scan starting there measures zero on
        every real face. Scaled against the FACE width. */
-    var spans = [];
-    for (var nyy = belowEye(0.22); nyy < belowEye(0.42); nyy++) {
-      var half = 0;
-      for (var off = 2; off < faceW * 0.30; off++) {
-        var lx = cxMid - off, rx3 = cxMid + off;
-        if (lx < 0 || rx3 >= M || nyy < 0 || nyy >= M) break;
-        if (lum(px(lx, nyy)) < skinL - 10 || lum(px(rx3, nyy)) < skinL - 10) half = off;
+    /* the widest offset this scan is ABLE to test. Kept as a number so a span that
+       reaches it can be recognised as a floor rather than read as a measurement. */
+    var noseMaxOff = Math.floor(faceW * 0.30) - 1;
+    /* MEASURED TWICE, AT TWO DARKNESS CUTS. Everything here is relative to skinL, so the
+       span depends on how much darker than the skin a pixel has to be before it counts as
+       nostril shadow - and that made the verdict move with the SKIN rather than with the
+       nose. Measured on one fixture: 'wide' on fair skin, 'button' on the same geometry
+       with a warmer tone, a swing across two whole categories. A verdict that changes when
+       the subject's complexion changes is not a description of a nose. Two cuts eight
+       apart must AGREE before this is applied. */
+    function noseScan(cut) {
+      var s = [], sat = 0;
+      for (var nyy = belowEye(0.22); nyy < belowEye(0.42); nyy++) {
+        var half = 0;
+        for (var off = 2; off < faceW * 0.30; off++) {
+          var lx = cxMid - off, rx3 = cxMid + off;
+          if (lx < 0 || rx3 >= M || nyy < 0 || nyy >= M) break;
+          if (lum(px(lx, nyy)) < skinL - cut || lum(px(rx3, nyy)) < skinL - cut) half = off;
+        }
+        if (half) { s.push(half * 2); if (half >= noseMaxOff) sat++; }
       }
-      if (half) spans.push(half * 2);
+      var med = median(s);
+      var r = med ? med / faceW : 0;
+      return { med: med, spans: s, sat: sat, val: r < 0.24 ? 'button' : (r > 0.36 ? 'wide' : 'straight'), ratio: r };
     }
-    var noseMed = median(spans);
+    var noseA = noseScan(10), noseB = noseScan(18);
+    var spans = noseA.spans, noseSat = noseA.sat;
+    var noseMed = noseA.med;
     if (noseMed) {
-      var nRatio = noseMed / faceW;
-      var nVal = nRatio < 0.24 ? 'button' : (nRatio > 0.36 ? 'wide' : 'straight');
-      look.nose = nVal; derived.push('nose');
-      found.push(nVal + ' nose');
+      var nRatio = noseA.ratio;
+      var nVal = noseA.val;
+      look.nose = nVal;
+      /* A SATURATED SCAN IS A FLOOR, NOT A MEASUREMENT (av-5.7.6). The owner's fixture
+         claimed "wide nose" and the same face at a slightly different framing claimed
+         "button" - a verdict that moves with the crop is not a description of a nose.
+         The mechanism: `half` can run all the way to the loop's own bound, so the span
+         reported is "at least this wide", and dividing a bound by faceW manufactures a
+         ratio of exactly 0.60 which is always past the 0.36 'wide' cut. Shadow at the
+         nostril line also reaches the loop bound on any strongly side-lit face.
+         So: claim only when the shaded span STOPPED on its own, on most of the rows,
+         and there were enough rows to take a median of. Otherwise show the value and
+         say why it is not being applied - the doctor's own setting stands. */
+      /* AND NOT SITTING ON A BOUNDARY. The owner's fixture measures 0.375 against the
+         'wide' cut of 0.36 - a 4% margin on a quantity whose own inputs move by more
+         than that between framings, which is the definition of a verdict that flips.
+         Within 0.02 of a cut the two neighbouring answers are indistinguishable, so
+         neither is claimed. This is deliberately NOT a wider dead band: the fixtures
+         hold genuinely wide and genuinely button noses well clear of the cuts, and
+         widening it until nothing is claimed would be the blanket refusal that broke
+         the eyebrow case. */
+      var noseNearCut = Math.abs(nRatio - 0.24) < 0.02 || Math.abs(nRatio - 0.36) < 0.02;
+      var noseSolid = spans.length >= 3 && noseSat * 2 <= spans.length &&
+        noseB.val === nVal && !noseNearCut;
+      if (noseSolid) {
+        derived.push('nose');
+        found.push(nVal + ' nose');
+      } else {
+        found.push(spans.length < 3
+          ? 'nose width could not be read from this photo, so your own setting was left alone'
+          : (noseB.val !== nVal
+            ? 'the nose measured ' + nVal + ' or ' + noseB.val + ' depending on how much shadow is counted, so your own nose setting was left alone'
+            : (noseNearCut
+              ? 'the nose measured right on the line between two shapes, so your own nose setting was left alone'
+              : 'the shading at the base of the nose runs past what this photo can measure, so your own nose setting was left alone')));
+      }
     }
 
     /* ---- 13. TOP COLOUR: the strip below the chin, outside the neck column.
@@ -2493,6 +2610,17 @@
        lighting, so any verdict here would be a guess wearing a measurement's
        clothes - and guessing that a doctor looks old is the one wrong answer
        this feature must never volunteer. It stays a choice in Setup. */
+    /* NO COLOUR SURVIVES THE ILLUSTRATION. Shape can still be read from a posterized
+       copy - an outline is an outline - but every hue in it has been snapped to one of
+       six steps per channel, so hair, eyes, lips and the top are as unrecoverable as the
+       skin was. Stripped here, at the single exit, rather than at each of the four
+       pushes: a fifth colour knob added later would otherwise quietly escape. */
+    if (fromIllustration) {
+      derived = derived.filter(function (k) {
+        return k !== 'skin' && k !== 'hair' && k !== 'eyes' && k !== 'lip' &&
+               k !== 'shirt' && k !== 'browCol';
+      });
+    }
     return { look: look, found: found, derived: derived,
              box: { L: faceRun.L, R: faceRun.R, T: faceT, B: lowerChin, eyeY: eyeY,
                     w: faceW, h: faceH, crownR: Math.round(crownR * 100) / 100,
