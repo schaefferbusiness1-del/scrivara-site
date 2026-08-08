@@ -432,6 +432,73 @@
      finishes; (2) a duration watchdog fires the continuation even if Chrome
      never does; (3) the continuation is once-only so double-fires are safe. */
   var pvHeld = [], pvSpeakSeq = 0, pvWatchdog = null, pvVoice;
+  /* WHICH OF THE EIGHT BACKEND VOICES IS CONFIGURED, so the fallback can pick a
+     browser voice of the same sex. Filled from the turn response (see
+     kioskSetIdentity); null until the first turn lands, which is honest - before
+     that we genuinely do not know. */
+  var pvWantMale = null;
+  /* THE FALLBACK USED TO CHANGE THE AVATAR'S SEX MID-INTERVIEW — av-5.8.1.
+     This runs on every network hiccup, not in some corner case: one failed or
+     slow TTS fetch sets ttsDownUntil two minutes into the future, so the browser
+     voice speaks the next several questions. The old picker took the first of
+     four hard-coded names and, failing all four, THE FIRST en VOICE IN THE LIST
+     - which on Windows is normally "Microsoft David", a man. A practice running
+     the default `coral` (female) therefore had its avatar answer in a male voice
+     for two minutes and then switch back, wearing the same face, mid-interview.
+     Nothing about that reads as "a person"; it reads as a broken machine.
+     Three things changed:
+       1. SEX FIRST. The configured backend voice is known (pvWantMale), so
+          candidates of the wrong sex are ranked below every candidate of the
+          right one. Continuity of identity outranks absolute voice quality -
+          a slightly worse voice of the right sex is far less jarring.
+       2. THE NATURAL VOICES WIN WHEN THEY EXIST. Windows ships its good voices
+          as "Microsoft Aria Online (Natural)" and the robotic ones as plain
+          "Microsoft Zira"/"David". The old list named 'Microsoft Aria' without
+          preferring the Natural variant, and put 'Google US English' - the
+          synthetic-sounding one - ahead of both. Scored on the name now, so a
+          machine that HAS a natural voice always uses it.
+       3. IT SCORES INSTEAD OF SHORT-CIRCUITING. `indexOf(name) >= 0` returning
+          the first match meant list order inside the browser decided the
+          outcome, which is not something we control or can test against.
+     Deliberately NOT a denylist: a voice we have never heard of scores 0 and is
+     still usable, which is the only behaviour that survives a new browser. */
+  /* language is a HARD gate and separate from the score, because a score can go
+     negative (wrong sex) and "no voice at all" must never win against a usable
+     English one - that would hand the line to whatever the browser defaults to,
+     which is the outcome this function exists to avoid */
+  function pvVoiceUsable(v) { return /^en(-|_)/i.test(String((v && v.lang) || '')); }
+  function pvVoiceScore(v) {
+    var n = String((v && v.name) || '');
+    var lang = String((v && v.lang) || '');
+    var s = 0;
+    /* SEX MATCH, weighted above every quality signal - see note 1 */
+    /* Chrome's own voices are named by LOCALE, not by person, so they have to be
+       named explicitly or they score as unknown-sex and lose to a worse voice
+       that happens to have a first name: "Google US English" is a female voice,
+       and without this line a coral practice fell back to Microsoft Zira (a
+       robotic SAPI voice) purely because "Zira" is a recognisable name. */
+    var male = /\b(david|mark|guy|christopher|eric|roger|steffan|daniel|alex|fred|tom|onyx|ash|echo)\b/i.test(n) ||
+      /google uk english male/i.test(n);
+    var female = /\b(aria|jenny|zira|michelle|ana|samantha|victoria|karen|moira|tessa|fiona|susan|allison|ava|coral|nova|shimmer|sage)\b/i.test(n) ||
+      /google us english/i.test(n) || /google uk english female/i.test(n);
+    if (pvWantMale === true && male) s += 100;
+    else if (pvWantMale === false && female) s += 100;
+    else if (pvWantMale !== null && (male || female)) s -= 100;   /* known, and it is the wrong one */
+    if (/natural/i.test(n)) s += 40;                   /* Windows' good voices say so in the name */
+    if (/online/i.test(n)) s += 8;
+    if (v && v.localService === false) s += 6;         /* network voices are the modern ones */
+    if (/\b(aria|jenny|samantha|ava|michelle|christopher|eric|guy)\b/i.test(n)) s += 12;
+    if (/google us english/i.test(n)) s += 5;          /* usable, but the synthetic one */
+    if (/\b(zira|david|mark)\b/i.test(n)) s -= 10;     /* the old robotic SAPI voices */
+    /* ACCENT CONTINUITY, weighted above every quality signal but below sex.
+       All eight backend voices are American, so an en-GB or en-AU fallback
+       swaps the avatar's accent mid-interview - the same defect as swapping its
+       sex, and just as audible. At +3 this lost: "Google UK English Male"
+       (network voice, +6) outranked the American "Microsoft David" for a
+       practice running `ash`, so a hiccup turned a US assistant British. */
+    if (/^en-US/i.test(lang)) s += 25;
+    return s;
+  }
   function pvPickVoice() {
     if (pvVoice !== undefined) return pvVoice;
     pvVoice = null;
@@ -439,13 +506,13 @@
       var synth = window.speechSynthesis; if (!synth || !isFn(synth.getVoices)) return;
       var voices = synth.getVoices() || [];
       if (!voices.length) { safe(function () { synth.addEventListener('voiceschanged', function () { pvVoice = undefined; }, { once: true }); }); return; }
-      var prefer = ['Google US English', 'Microsoft Aria', 'Microsoft Jenny', 'Samantha'];
-      for (var i = 0; i < prefer.length && !pvVoice; i++) {
-        for (var j = 0; j < voices.length; j++) {
-          if (voices[j].name && voices[j].name.indexOf(prefer[i]) >= 0) { pvVoice = voices[j]; break; }
-        }
+      var best = null, bestScore = 0;
+      for (var i = 0; i < voices.length; i++) {
+        if (!pvVoiceUsable(voices[i])) continue;
+        var sc = pvVoiceScore(voices[i]);
+        if (best === null || sc > bestScore) { bestScore = sc; best = voices[i]; }
       }
-      if (!pvVoice) for (var k = 0; k < voices.length; k++) if (/^en(-|_)/i.test(voices[k].lang || '')) { pvVoice = voices[k]; break; }
+      pvVoice = best;
     });
     return pvVoice;
   }
@@ -492,7 +559,11 @@
      browser's speechSynthesis only as fallback. The completion contract is
      identical either way: `then` fires exactly once — event, error, or
      watchdog — so the speak->listen chain can never strand. */
-  function pvSpeak(text, then) { pvSpeakVoiced(text, then, null); }
+  function pvSpeak(text, then) { pvSpeakVoiced(text, then, null, null); }
+  /* the same speak engine, told WHAT KIND of line this is so the backend can
+     shape the delivery (see ttsFetchUrl). Separate from pvSpeak only so the
+     four existing call sites keep their exact two-argument shape. */
+  function pvSpeakShaped(text, then, shape) { pvSpeakVoiced(text, then, null, shape); }
   /* the sentence currently leaving the speaker, normalised - any recognition
      result that is merely a piece of THIS is the avatar hearing itself. */
   var pvSaying = '';
@@ -591,7 +662,7 @@
     }
     return false;
   }
-  function pvSpeakVoiced(text, then, voiceOverride) {
+  function pvSpeakVoiced(text, then, voiceOverride, shape) {
     /* AMBIENT ROOM MODE IS SILENT: a scribe in the room does not talk.
        Enforced HERE, at the ONE place any voice can start, rather than by
        disarming a list of call sites - a list is a denylist, and the next
@@ -641,10 +712,15 @@
        lands exactly where it landed before: if the first piece fails nothing
        has played yet, so the WHOLE line falls back to browser speech, which is
        the pre-existing behaviour. */
-    var chunks = ttsSplitForSpeech(t);
+    /* AN EMERGENCY WARNING IS NEVER SPLIT. Two independent generations cannot
+       carry one continuous urgent contour, and the piece that matters most is
+       the instruction to call for help - it is spoken as one line, with one
+       delivery, or the shaping means nothing. The extra second of latency on the
+       rarest line in the interview is the right trade. */
+    var chunks = (shape === 'alert') ? [t] : ttsSplitForSpeech(t);
     if (chunks.length === 2 && Date.now() >= ttsDownUntil) {
-      var second = ttsFetchUrl(chunks[1], voiceOverride);   /* started FIRST so it overlaps the first piece */
-      ttsFetchUrl(chunks[0], voiceOverride).then(function (u1) {
+      var second = ttsFetchUrl(chunks[1], voiceOverride, 'cont');   /* started FIRST so it overlaps the first piece */
+      ttsFetchUrl(chunks[0], voiceOverride, 'open').then(function (u1) {
         if (mySeq !== pvSpeakSeq || finished || started) return;
         started = true;
         if (!u1) { pvSpeakSynth(t, mySeq, finish); return; }   /* nothing played yet — the old path, whole line */
@@ -665,7 +741,7 @@
       });
       return;
     }
-    ttsFetchUrl(t, voiceOverride).then(function (url) {
+    ttsFetchUrl(t, voiceOverride, shape).then(function (url) {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
       if (url) { ttsPlayUrl(url, mySeq, finish); return; }
@@ -683,8 +759,29 @@
     try {
       synth.cancel();
       var u = new window.SpeechSynthesisUtterance(String(text));
-      u.rate = 0.98; u.pitch = 1.02;
-      var voice = pvPickVoice(); if (voice) u.voice = voice;
+      /* rate 0.94, pitch 1.0. Two deliberate changes from 0.98/1.02:
+         PITCH IS NO LONGER TOUCHED. 1.02 bought nothing audible and it is not
+         free - several SAPI voices implement a pitch shift by resampling, which
+         adds exactly the metallic edge this lane exists to remove. A 2% shift is
+         inaudible as pitch and audible as artifact, which is the worst trade
+         available.
+         RATE DROPS to 0.94. The browser voices are the ones a patient hears when
+         the network hiccups, and they are markedly less intelligible than the
+         backend voice; the thing that most reliably makes a synthetic voice
+         easier to listen to is giving it more time. It also brings the fallback
+         closer in pace to the real voice, so a mid-interview downgrade is less
+         of a jolt. */
+      u.rate = 0.94; u.pitch = 1.0; u.volume = 1;
+      var voice = pvPickVoice();
+      if (voice) {
+        u.voice = voice;
+        /* SET THE LANG WITH THE VOICE. Chrome resolves an utterance against
+           BOTH, and with lang left at the document's value a chosen en-GB or
+           en-AU voice can be silently overridden back to the platform default -
+           which is how a carefully picked voice turns into Microsoft David
+           anyway, with nothing in the code looking wrong. */
+        if (voice.lang) u.lang = voice.lang;
+      }
       u.onend = finish;
       u.onerror = finish;
       pvHeld.push(u); /* defeat the GC */
@@ -897,10 +994,16 @@
     open3:   'M79 127 Q100 134 121 127 Q100 167 79 127'
   };
   var FACE_HAIR_PATHS = {
-    short: 'M42 92 Q40 30 100 28 Q160 30 158 92 Q158 64 138 58 Q140 44 118 44 Q96 40 78 50 Q58 52 60 70 Q44 72 42 92 Z',
+    /* THE HAIRLINE IS THE INNER BOUNDARY OF THESE PATHS, and it was a stepped,
+       asymmetric sweep with a notch above the left temple — at kiosk size that reads as
+       the rubber edge of a swim cap, which is what made "flat cap" the first thing the
+       owner said about the hair. It is now one continuous line: a smooth temple corner,
+       a slight forward bulge over the forehead, and the same on the other side. Even and
+       unnoticeable is the whole goal — a hairline is only ever noticed when it is wrong. */
+    short: 'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 64 140 55 Q120 48 100 56 Q80 48 60 55 Q43 64 42 92 Z',
     wavy:  'M42 94 Q38 28 100 26 Q162 28 158 94 Q152 74 146 84 Q140 62 130 74 Q124 52 112 62 Q104 44 92 58 Q80 46 72 64 Q62 56 58 76 Q50 70 42 94 Z',
-    long:  'M42 92 Q40 30 100 28 Q160 30 158 92 Q158 64 138 58 Q140 44 118 44 Q96 40 78 50 Q58 52 60 70 Q44 72 42 92 Z',
-    bun:   'M46 90 Q44 34 100 32 Q156 34 154 90 Q154 62 134 56 Q136 46 112 46 Q92 44 76 54 Q58 58 60 72 Q48 74 46 90 Z',
+    long:  'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 64 140 55 Q120 48 100 56 Q80 48 60 55 Q43 64 42 92 Z',
+    bun:   'M46 90 Q44 34 100 32 Q156 34 154 90 Q153 64 136 56 Q118 50 100 57 Q82 50 64 56 Q47 64 46 90 Z',
     buzz:  'M46 90 Q46 40 100 38 Q154 40 154 90 Q150 62 132 58 Q118 52 100 52 Q82 52 68 58 Q50 62 46 90 Z',
     bald:  ''
   };
@@ -908,11 +1011,20 @@
      next. Each is a plain geometry table, so the whitelist in faceLookSafe is
      the only thing that decides which one is ever rendered. */
   var FACE_BROW_WEIGHT = { thin: 3.2, normal: 5, thick: 7.8 };
+  /* EVERY NOSE NEEDS THE LINE UNDER THE TIP (av-6.0.0). Three of these four were a
+     single one-sided bridge stroke ending in mid-air, which from the front reads as a
+     tick or a question mark drawn on the cheek — it was the weakest feature on the face
+     once the eyes and the skull were rebuilt. `wide` was the only one that already had
+     the second sub-path (the ala curve under the tip), and it was also the only one that
+     read as a nose. So all four now carry one: a bridge shadow down ONE side, and the
+     underside of the tip spanning both nostrils, which is exactly what a front-lit nose
+     shows. The four `d` strings stay mutually distinct and the nostril geometry (nx/ny/nr)
+     is untouched, so the pins on shape-distinctness and on wide nostrils still hold. */
   var FACE_NOSE_PARTS = {
-    button:   { d: 'M100 103 Q104 109 99 112', w: 3, nx: 5.2, ny: 112.4, nr: 1.5 },
-    straight: { d: 'M100 98 Q105 111 97 115', w: 3, nx: 6.4, ny: 114.6, nr: 1.7 },
-    wide:     { d: 'M100 100 Q106 111 100 114 M91 111 Q100 119.5 109 111', w: 2.8, nx: 7.6, ny: 113.2, nr: 2.1 },
-    roman:    { d: 'M99 95 Q108 104 104 112 Q102 116 96 115', w: 3.2, nx: 6.2, ny: 114.8, nr: 1.7 }
+    button:   { d: 'M100 104 Q104 109 100 111 M93.5 109.5 Q100 115.5 106.5 109.5', w: 3, nx: 5.2, ny: 112.4, nr: 1.5 },
+    straight: { d: 'M100 99 Q104.5 110 100 113 M92.5 111.5 Q100 118 107.5 111.5', w: 3, nx: 6.4, ny: 114.6, nr: 1.7 },
+    wide:     { d: 'M100 100 Q106 111 100 114 M90.5 111 Q100 119.5 109.5 111', w: 2.8, nx: 7.6, ny: 113.2, nr: 2.1 },
+    roman:    { d: 'M99 95 Q107.5 104 103.5 112 Q102 114.5 100 114.5 M93 112 Q100 118.5 107 112', w: 3.2, nx: 6.2, ny: 114.8, nr: 1.7 }
   };
   /* LIPS. Volume is a real scale on the mouth group, and the lip line is the
      SAME path stroked in a darker shade of the chosen lip colour - so both the
@@ -939,8 +1051,14 @@
      lenses, the crow's feet - is placed FROM this rather than repeating 71
      and 129, which is why moving the eyes used to be impossible. */
   var FACE_EYE_DX = { close: 25.5, normal: 29, wide: 32.5 };
+  /* every drawn face needs its OWN gradient and clip ids. Setup renders a preview beside
+     the kiosk, the Visit card can render another, and duplicate SVG ids in one document
+     silently cross-wire: the second face would paint with the first face's skin ramp and
+     iris. A counter is enough and stays stable within a render. */
+  var faceUidSeq = 0;
   function faceSvg(look) {
     look = faceLookSafe(look || FACE_LOOK);
+    var faceUid = 'f' + (++faceUidSeq);
     /* THE HEAD IS MEASURED FIRST AND EVERY FEATURE IS PLACED FROM IT.
        Until this pass every doctor got one ellipse - rx 58, ry 66 - with the
        eyes, the blush, the spectacle lenses and the temples nailed to
@@ -969,46 +1087,183 @@
     /* one transform for everything that has to hug the skull: the crown, the
        beard, the cap and the back hair are all drawn for the default head. */
     var fit = 'translate(100,98) scale(' + n2(FX) + ',' + n2(FY) + ') translate(-100,-98)';
+    /* ---- THE EYE, REBUILT FOR A HUMAN FACE (av-6.0.0) --------------------------
+       Owner: "make the avatar much more human like and more like profetional completly
+       cahgne the avatar."
+       The old eye was a 23x25 white ellipse with a 14-wide iris and a 5-wide pupil —
+       taller than it was wide, which is an owl, not a person. Rendered side by side with
+       three other looks it was the single strongest cartoon signal on the face.
+       A human eye is an ALMOND roughly twice as wide as it is tall, the iris is partly
+       hidden by the upper lid, the sclera is never pure white, and there is a dark lash
+       line along the upper aperture. All of that is here, and every animation hook
+       (fPupil / fLid / fLow) keeps its name and its transform origin so blinking, gaze,
+       the sleepy lid and the smiling lower-lid arc all still drive it. */
+    /* one ear, mirrored by sign. Top at the brow line, lobe at the nose base — the two
+       landmarks a real ear is actually placed between. */
+    function earOf(sgn) {
+      /* the ear is anchored INSIDE the skull edge (0.90rx) and projects past it, so the
+         skull drawn on top of it hides the anchored part and leaves a real ear standing
+         off the head. Anchoring it at 0.94rx with a 9.5 projection left only a 5-unit
+         sliver visible — measured, not guessed: getBBox put the ear at x 155-163 against
+         a face whose own edge is 158. */
+      var ex = 100 + sgn * sh.rx * 0.90;
+      var top = 98 - sh.ry * 0.26, bot = 98 + sh.ry * 0.22;
+      var out = sgn * 13;
+      return '<g class="fSkin fEar' + (sgn < 0 ? 'L' : 'R') + '" pointer-events="none">' +
+        '<path d="M' + n2(ex) + ' ' + n2(top) +
+          ' C' + n2(ex + out) + ' ' + n2(top + 1) + ' ' + n2(ex + out * 1.05) + ' ' + n2(bot - 6) + ' ' + n2(ex + out * 0.42) + ' ' + n2(bot) +
+          ' C' + n2(ex + out * 0.18) + ' ' + n2(bot + 2.5) + ' ' + n2(ex - out * 0.10) + ' ' + n2(bot - 1) + ' ' + n2(ex) + ' ' + n2(bot - 4) +
+          ' Z" fill="' + faceShade(look.skin, -0.06) + '"/>' +
+        '<path d="M' + n2(ex + out * 0.30) + ' ' + n2(top + 4) + ' C' + n2(ex + out * 0.72) + ' ' + n2(top + 5) + ' ' + n2(ex + out * 0.70) + ' ' + n2(bot - 7) + ' ' + n2(ex + out * 0.34) + ' ' + n2(bot - 5) + '" ' +
+          'fill="none" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="1.5" stroke-linecap="round" opacity=".6"/>' +
+      '</g>';
+    }
     function eye(cx, side) {
+      var apId = 'mlsAvEyeAp' + side + faceUid;
+      var irisId = 'mlsAvIris' + side + faceUid;
+      /* the aperture: 24 wide, 13 tall, corners lower than the centre so the lid has a
+         natural lift toward the outer canthus */
+      var ap = 'M' + n2(cx - 12) + ' 94.6 Q' + n2(cx - 6) + ' 87.4 ' + cx + ' 87.6 Q' + n2(cx + 6) + ' 87.9 ' + n2(cx + 12) + ' 94.2 ' +
+               'Q' + n2(cx + 6) + ' 100.8 ' + cx + ' 101 Q' + n2(cx - 6) + ' 100.9 ' + n2(cx - 12) + ' 94.6 Z';
       return '<g class="fEye' + side + '" style="transform-box:fill-box;transform-origin:center;transition:transform .12s ease">' +
-        '<ellipse cx="' + cx + '" cy="94" rx="11.5" ry="12.5" fill="#fff"/>' +
-        '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
-          '<circle cx="' + cx + '" cy="95" r="7" fill="' + look.eyes + '"/>' +
-          '<circle cx="' + cx + '" cy="95" r="2.5" fill="#1d1710"/>' +
-          '<circle cx="' + n2(cx + 2.4) + '" cy="92.2" r="2.1" fill="#fff"/>' +
-        '</g>' +
+        '<defs>' +
+          '<clipPath id="' + apId + '"><path d="' + ap + '"/></clipPath>' +
+          '<radialGradient id="' + irisId + '" cx="42%" cy="34%" r="72%">' +
+            '<stop offset="0%" stop-color="' + faceShade(look.eyes, 0.34) + '"/>' +
+            '<stop offset="62%" stop-color="' + look.eyes + '"/>' +
+            '<stop offset="100%" stop-color="' + faceShade(look.eyes, -0.42) + '"/>' +
+          '</radialGradient>' +
+        '</defs>' +
+        '<g clip-path="url(#' + apId + ')">' +
+          /* sclera: warm off-white, never #fff, with the upper half in lid shadow */
+          '<rect x="' + n2(cx - 13) + '" y="86" width="26" height="17" fill="#f3efe8"/>' +
+          '<ellipse cx="' + cx + '" cy="88.6" rx="13" ry="4.4" fill="' + faceShade(look.skin, -0.3) + '" opacity=".28"/>' +
+          '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
+            /* the iris sits high and is CROPPED by the upper lid, as a real one is */
+            '<circle cx="' + cx + '" cy="94.1" r="5.5" fill="url(#' + irisId + ')"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="5.5" fill="none" stroke="' + faceShade(look.eyes, -0.55) + '" stroke-width="0.9" opacity=".75"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="2.15" fill="#120d09"/>' +
+            '<ellipse cx="' + n2(cx - 1.9) + '" cy="91.9" rx="1.5" ry="1.1" fill="#fff" opacity=".92"/>' +
+            '<ellipse cx="' + n2(cx + 2.2) + '" cy="96.4" rx="1.1" ry="0.7" fill="#fff" opacity=".3"/>' +
+          '</g>' +
         /* the LOWER lid: it rises into a smiling-eye arc on a genuine smile -
-           the single strongest cue that a face means it */
-        '<path class="fLow' + side + '" d="M' + n2(cx - 12) + ' 96 q12 12 24 0 v18 h-24 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
+           the single strongest cue that a face means it. Inside the clip now, so it
+           sweeps the aperture instead of painting a slab over the cheek. */
+        '<path class="fLow' + side + '" d="M' + n2(cx - 13) + ' 96 q13 10 26 0 v10 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
         /* upper lid: a skin-coloured shutter that DROPS for sleepy/caring
            looks and lifts for surprise - real eyelid acting, not just scale */
-        '<path class="fLid' + side + '" d="M' + n2(cx - 12) + ' 94 a12 12 0 0 1 24 0 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
+        '<path class="fLid' + side + '" d="M' + n2(cx - 13) + ' 94 q13 -11 26 0 v-11 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
+        '</g>' +
+        /* THE LASH LINE. A human upper lid casts a dark edge over the eye; without it the
+           aperture reads as a hole cut in a mask. Drawn OUTSIDE the clip so it survives
+           the lid shutters, and tapered - heavier at the outer third, like real lashes. */
+        '<path d="M' + n2(cx - 12.4) + ' 94.4 Q' + n2(cx - 6) + ' 86.9 ' + cx + ' 87.2 Q' + n2(cx + 6) + ' 87.5 ' + n2(cx + 12.4) + ' 94" ' +
+          'fill="none" stroke="' + faceShade(look.hair, -0.25) + '" stroke-width="1.7" stroke-linecap="round" opacity=".9"/>' +
+        /* the lid CREASE above it, and the inner-corner shadow - both are why an eye
+           looks set INTO a face rather than printed on one */
+        '<path d="M' + n2(cx - 9.5) + ' 85.2 Q' + cx + ' 81.4 ' + n2(cx + 9.5) + ' 84.8" fill="none" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="1.1" stroke-linecap="round" opacity=".5"/>' +
+        '<path d="M' + n2(cx - 12.6) + ' 94.6 q2.6 1.8 4.4 2.2" fill="none" stroke="' + faceShade(look.skin, -0.4) + '" stroke-width="1.1" stroke-linecap="round" opacity=".45"/>' +
         '</g>';
     }
+    /* ---- HAIR WITH VOLUME (av-6.0.0) ------------------------------------------------
+       Owner, on the previous version: the hair "is still a flat cap shape".
+       That was literal: one closed path filled flat, drawn INSIDE the skull silhouette.
+       Hair drawn inside the skull is paint on a scalp; real hair has a mass that stands
+       OFF the skull, and the silhouette of the head-plus-hair is bigger than the head.
+       So volume is now a shape drawn BEHIND the head, deliberately taller and wider than
+       the skull by an amount that depends on the cut: a buzz stands off almost nothing,
+       a wavy cut a lot. Only the rim of it shows past the skull, which is exactly what
+       hair looks like from the front. Built from sh.rx / sh.ry so a long narrow head
+       gets a long narrow head of hair. */
+    var VOL = { short: { dx: 6, dy: 11 }, wavy: { dx: 10, dy: 16 }, long: { dx: 8, dy: 13 },
+      bun: { dx: 3, dy: 6 }, buzz: { dx: 1.5, dy: 3 }, bald: null };
+    var vol = look.hairStyle === 'bald' ? null : (VOL[look.hairStyle] || VOL.short);
     var back = '';
+    if (vol) {
+      var vR = 58 + vol.dx, vT = 32 - vol.dy;   /* nominal skull half-width 58, crown y 32 */
+      back += '<path class="fHairVol" d="M' + n2(100 - vR) + ' 104' +
+        ' C' + n2(100 - vR) + ' ' + n2(vT + 14) + ' ' + n2(100 - vR * 0.55) + ' ' + n2(vT) + ' 100 ' + n2(vT) +
+        ' C' + n2(100 + vR * 0.55) + ' ' + n2(vT) + ' ' + n2(100 + vR) + ' ' + n2(vT + 14) + ' ' + n2(100 + vR) + ' 104' +
+        ' Z" fill="url(#mlsAvHair' + faceUid + ')"/>';
+    }
     if (look.hairStyle === 'long') {
-      back = '<path class="fHairBack" d="M40 96 Q34 168 56 178 Q48 120 52 96 Z M160 96 Q166 168 144 178 Q152 120 148 96 Z" fill="' + look.hair + '"/>';
+      /* LONG HAIR FALLS BEHIND THE SHOULDERS. It was two thin sickles hugging the jaw,
+         which read as sideburns. A mass that reaches the shoulder line and passes behind
+         the neck is what makes it read as length. */
+      back += '<path class="fHairBack" d="M' + n2(100 - 58 - 8) + ' 96 C' + n2(100 - 74) + ' 150 ' + n2(100 - 70) + ' 186 ' + n2(100 - 52) + ' 198' +
+        ' C' + n2(100 - 60) + ' 160 ' + n2(100 - 58) + ' 124 ' + n2(100 - 54) + ' 96 Z' +
+        ' M' + n2(100 + 58 + 8) + ' 96 C' + n2(100 + 74) + ' 150 ' + n2(100 + 70) + ' 186 ' + n2(100 + 52) + ' 198' +
+        ' C' + n2(100 + 60) + ' 160 ' + n2(100 + 58) + ' 124 ' + n2(100 + 54) + ' 96 Z" fill="' + faceShade(look.hair, -0.16) + '"/>';
     } else if (look.hairStyle === 'bun') {
-      back = '<circle class="fHairBack" cx="100" cy="30" r="20" fill="' + look.hair + '"/>';
+      /* a bun sits at the BACK of the crown, so from the front only its top shows above
+         the head - a circle centred on the crown read as a ball balanced on the skull */
+      back += '<ellipse class="fHairBack" cx="100" cy="26" rx="19" ry="14" fill="' + faceShade(look.hair, -0.12) + '"/>' +
+        '<path class="fHairBand" d="M84 32 Q100 26 116 32" fill="none" stroke="' + faceShade(look.hair, -0.34) + '" stroke-width="2.4"/>';
     }
     if (back) back = '<g class="fBackFit" transform="' + fit + '">' + back + '</g>';
     var hairPath = FACE_HAIR_PATHS[look.hairStyle] || FACE_HAIR_PATHS.short;
-    var hair = hairPath ? '<path class="fHair" d="' + hairPath + '" fill="' + look.hair + '"/>' : '';
+    var hairClip = 'mlsAvHairClip' + faceUid;
+    /* the front hair, in three layers that cost almost nothing and do all the work:
+         1. a CONTACT SHADOW - the same path nudged down, in a dark hair shade. Where the
+            hair meets the forehead this is the HAIRLINE: hair casts a shadow on the brow,
+            and without it hair and forehead look like two flat colours meeting at a line.
+         2. the hair itself, on the vertical hair ramp rather than one flat fill.
+         3. a highlight sweep across the upper crown, CLIPPED to the hair so it cannot
+            escape onto the forehead on a low cut like a buzz. */
+    var hair = hairPath
+      ? '<clipPath id="' + hairClip + '"><path d="' + hairPath + '"/></clipPath>' +
+        '<path class="fHairLine" d="' + hairPath + '" fill="' + faceShade(look.hair, -0.45) + '" opacity=".55" transform="translate(0,3.2)"/>' +
+        '<path class="fHair" d="' + hairPath + '" fill="url(#mlsAvHair' + faceUid + ')"/>' +
+        '<g clip-path="url(#' + hairClip + ')">' +
+          /* a SOFT sheen, not a stripe. A solid wedge at .30 read as a plastic highlight
+             — on a buzz cut it looked like a parting shaved into the crown. A radial
+             fade has no edge to notice, and the clip keeps it off the forehead. */
+          '<ellipse class="fHairShine" cx="76" cy="48" rx="30" ry="22" fill="url(#mlsAvShine' + faceUid + ')"/>' +
+        '</g>'
+      : '';
     /* A RECEDING HAIRLINE is two bare temples, so that is exactly what it is
        drawn as: skin-coloured wedges laid over the crown, inside the crown
        group so they ride the head and a cap still covers them. One pair of
        shapes works for every hair cut - there is no receding variant of each
        path to keep in step. */
     var temples = (look.hairline === 'receding' && look.hairStyle !== 'bald')
-      ? '<path class="fTempleL" d="M46 94 Q49 60 82 44 Q63 66 60 94 Z" fill="' + look.skin + '"/>' +
-        '<path class="fTempleR" d="M154 94 Q151 60 118 44 Q137 66 140 94 Z" fill="' + look.skin + '"/>'
+      ? '<path class="fTempleL" d="M46 94 Q49 60 82 44 Q63 66 60 94 Z" fill="url(#mlsAvSkin' + faceUid + ')"/>' +
+        '<path class="fTempleR" d="M154 94 Q151 60 118 44 Q137 66 140 94 Z" fill="url(#mlsAvSkin' + faceUid + ')"/>'
       : '';
+    /* ---- THE BEARD FOLLOWS THE JAW (av-6.0.0) ---------------------------------------
+       ⛔ It used to be a near-full-face slab: `M50 104 Q54 164 100 168 Q146 164 150 104`
+       filled at .92 opacity spans the ENTIRE lower face out to the head's own silhouette,
+       so on a dark beard the whole lower half of the head went to one flat near-black
+       field with a hard horizontal edge across both cheeks. It read as a balaclava, and
+       it was also why the ears looked wrong: they are ordinary brown, but a brown ear
+       against a black cheek reads as a pale blob stuck on the side.
+       A beard is a CRESCENT. Its outer edge is the jaw silhouette; its inner edge climbs
+       from the corner of the mouth out to the sideburn in front of the ear, and it leaves
+       the upper cheek bare. Nominal skull coordinates (rx 58 / ry 66) because this sits
+       inside .fCrownFit, which applies the face-shape fit for us. */
+    /* the sideburn starts BELOW the eye line, not at it. Starting at y=94 (the eye line)
+       put beard on the upper cheek and the ears ended up sitting on a black field, which
+       is what made ordinary brown ears look like pale blobs stuck on the sides. */
+    /* and the beard reaches the CHIN. Ending at y=157 left a bare crescent of chin below
+       it, which reads as a chin strap. y=164 is the chin for every face shape here, not
+       just the oval one: this sits inside .fCrownFit, whose fit scales nominal y by
+       sh.ry/66 about y=98, so nominal 164 maps to 98+sh.ry exactly — the chin — whatever
+       shape the matcher chose. 162 keeps it a hair inside the silhouette. */
+    var beardOuter = ' C50 128 66 154 100 162 C134 154 150 128 152 106';
     var beard = '';
     if (look.beard === 'stubble') {
-      beard = '<path class="fBeard" d="M52 108 Q56 160 100 164 Q144 160 148 108 Q140 150 100 152 Q60 150 52 108 Z" fill="' + look.hair + '" opacity=".28"/>';
+      /* stubble is the same crescent, thinner and much fainter — shadow, not hair */
+      beard = '<path class="fBeard" d="M52 108' + beardOuter.replace('152 106', '148 108') +
+        ' C146 118 136 124 120 128 C113 130 106 131 100 131 C94 131 87 130 80 128 C64 124 54 118 52 108 Z" ' +
+        'fill="' + look.hair + '" opacity=".26"/>';
     } else if (look.beard === 'beard') {
-      beard = '<path class="fBeard" d="M50 104 Q54 164 100 168 Q146 164 150 104 Q142 148 100 150 Q58 148 50 104 Z" fill="' + look.hair + '" opacity=".92"/>' +
-        '<path class="fStache" d="M80 124 Q100 118 120 124 Q100 130 80 124 Z" fill="' + look.hair + '" opacity=".92"/>';
+      beard = '<path class="fBeard" d="M48 106' + beardOuter +
+        ' C150 118 139 126 122 131 C114 134 107 135 100 135 C93 135 86 134 78 131 C61 126 50 118 48 106 Z" ' +
+        'fill="' + look.hair + '" opacity=".9"/>' +
+        /* a moustache sits ON the upper lip, so it is placed off the mouth's own line
+           rather than at a fixed y - on a long face the mouth travels and it must follow */
+        '<path class="fStache" d="M80 ' + n2(124 + dyM) + ' Q100 ' + n2(117 + dyM) + ' 120 ' + n2(124 + dyM) +
+          ' Q100 ' + n2(129 + dyM) + ' 80 ' + n2(124 + dyM) + ' Z" fill="' + look.hair + '" opacity=".9"/>';
     }
     var glasses = look.glasses
       ? '<g class="fGlasses" fill="none" stroke="#3d4a44" stroke-width="3" opacity=".85">' +
@@ -1050,18 +1305,30 @@
         ' L' + n2(100 - jw2) + ' ' + n2(jt2) +
         ' Q' + n2(100 - jw2) + ' ' + n2(jt3) + ' 100 ' + n2(jt3) +
         ' Q' + n2(100 + jw2) + ' ' + n2(jt3) + ' ' + n2(100 + jw2) + ' ' + n2(jt2) +
-        ' L' + n2(100 + jw1) + ' ' + n2(jt1) + ' Z" fill="' + look.skin + '"/>';
+        ' L' + n2(100 + jw1) + ' ' + n2(jt1) + ' Z" fill="url(#mlsAvSkin' + faceUid + ')"/>';
     }
     /* AGE. Read from how much of the hair mass has gone grey, drawn as the
        two lines a face actually earns: the nasolabial folds and crow's feet.
        Both are in the skin's own shadow colour, both track the eyes and the
        mouth so they still land on a long face or a wide-set one. */
     var ageLines = look.age === 'mature'
-      ? '<g class="fAge" fill="none" stroke="' + shadeNose + '" stroke-width="1.7" stroke-linecap="round" opacity=".5">' +
-          '<path class="fFoldL" d="M89 ' + n2(110 + dyN) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
-          '<path class="fFoldR" d="M111 ' + n2(110 + dyN) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>' +
-          '<path class="fCrowL" d="M' + n2(cxL - 13) + ' 89 l-7 -4 M' + n2(cxL - 14) + ' 95 l-8 0 M' + n2(cxL - 13) + ' 101 l-7 4"/>' +
-          '<path class="fCrowR" d="M' + n2(cxR + 13) + ' 89 l7 -4 M' + n2(cxR + 14) + ' 95 l8 0 M' + n2(cxR + 13) + ' 101 l7 4"/>' +
+      /* the crow's feet were 8 units long at .5 opacity and 1.7 wide: three straight rays
+         off each outer corner, which read as WHISKERS at kiosk size rather than as age —
+         and on dark skin the light shade made them look like scratches. Age is carried by
+         the nasolabial folds; the eye corners only need a hint, so they are half the
+         length, thinner, fainter and just two rays. */
+      ? '<g class="fAge" fill="none" stroke="' + shadeNose + '" stroke-width="1.7" stroke-linecap="round" opacity=".45">' +
+          /* a nasolabial fold is a crease in SKIN. Drawn over a full beard it is painted in
+             the skin's shadow colour, which is lighter than the beard — so on a dark beard
+             the two folds rendered as pale scratches down the chin. A bearded face simply
+             does not show them, so they are omitted rather than recoloured. */
+          (look.beard === 'beard' ? '' :
+            '<path class="fFoldL" d="M89 ' + n2(110 + dyN) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
+            '<path class="fFoldR" d="M111 ' + n2(110 + dyN) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>') +
+          '<g stroke-width="1.1" opacity=".55">' +
+            '<path class="fCrowL" d="M' + n2(cxL - 13.5) + ' 91 l-4 -2.5 M' + n2(cxL - 14) + ' 96.5 l-4.5 1.5"/>' +
+            '<path class="fCrowR" d="M' + n2(cxR + 13.5) + ' 91 l4 -2.5 M' + n2(cxR + 14) + ' 96.5 l4.5 1.5"/>' +
+          '</g>' +
         '</g>'
       : '';
     var browW = FACE_BROW_WEIGHT[look.brows] || FACE_BROW_WEIGHT.normal;
@@ -1069,12 +1336,93 @@
     var lips = FACE_LIP_PARTS[look.lips] || FACE_LIP_PARTS.normal;
     var noseRy = (nose.nr * 0.7).toFixed(2);
     return '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" data-mood="idle" style="width:100%;height:100%;display:block">' +
+      /* ---- THE PAINT (av-6.0.0) ------------------------------------------------------
+         Skin, hair and garment all ramp instead of filling flat. The skin ramp is
+         deliberately narrow — +18% at the forehead to -22% at the jaw — because a wide
+         ramp on a stylised face reads as plastic rather than as light. */
+      '<defs>' +
+        /* userSpaceOnUse, NOT the default objectBoundingBox: the skull is not the only
+           shape filled with skin — the squarer-jaw panel and the bare temples of a
+           receding hairline are too. Per-object bounding boxes would run a fresh
+           forehead-to-jaw ramp across each of those small shapes, so the jaw panel came
+           out up to 22% lighter than the face it is welded to and the temples up to 15%
+           darker: a bright chin and two dark patches, seams exactly where the redesign
+           was trying to remove them. One ramp in head coordinates makes every skin
+           shape sample the same light. */
+        '<linearGradient id="mlsAvSkin' + faceUid + '" gradientUnits="userSpaceOnUse" ' +
+          'x1="100" y1="' + n2(98 - sh.ry) + '" x2="100" y2="' + n2(98 + sh.ry) + '">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.skin, 0.18) + '"/>' +
+          '<stop offset="46%" stop-color="' + look.skin + '"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.skin, -0.22) + '"/>' +
+        '</linearGradient>' +
+        '<linearGradient id="mlsAvHair' + faceUid + '" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.hair, 0.24) + '"/>' +
+          '<stop offset="55%" stop-color="' + look.hair + '"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.hair, -0.30) + '"/>' +
+        '</linearGradient>' +
+        '<linearGradient id="mlsAvShirt' + faceUid + '" x1="0" y1="0" x2="0.35" y2="1">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.shirt, 0.16) + '"/>' +
+          '<stop offset="60%" stop-color="' + look.shirt + '"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.shirt, -0.26) + '"/>' +
+        '</linearGradient>' +
+        /* the face vignette: nothing at all across the middle two thirds, then a gentle
+           fall-off at the silhouette. Transparent-to-dark on the SAME hue as the skin, so
+           it deepens the tone instead of greying it. */
+        '<radialGradient id="mlsAvShine' + faceUid + '" cx="50%" cy="50%" r="50%">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.hair, 0.46) + '" stop-opacity=".38"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.hair, 0.46) + '" stop-opacity="0"/>' +
+        '</radialGradient>' +
+        '<radialGradient id="mlsAvVig' + faceUid + '" cx="50%" cy="42%" r="62%">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.skin, 0.20) + '" stop-opacity=".28"/>' +
+          '<stop offset="58%" stop-color="' + look.skin + '" stop-opacity="0"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.skin, -0.40) + '" stop-opacity=".42"/>' +
+        '</radialGradient>' +
+      '</defs>' +
       /* the CHEST is a real group: breathing moves GEOMETRY in here (the shirt
          ellipse itself grows and lifts), not a scale on the drawing */
       '<g class="fBody" style="transform-box:view-box;transform-origin:100px 180px;transition:transform .09s linear">' +
-        '<ellipse class="fShirt" cx="100" cy="206" rx="74" ry="50" fill="' + look.shirt + '"/>' +
-        '<path class="fCollar" d="M78 158 Q100 188 122 158 Q100 172 78 158 Z" fill="' + faceShade(look.shirt, -0.2) + '"/>' +
+        /* ---- SHOULDERS, NOT A DOME (av-6.0.0) -----------------------------------------
+           The torso was one ellipse rx74 ry50, which gives a rounded hump — the silhouette
+           of a snowman, not a person in scrubs. A human shoulder line leaves the neck almost
+           horizontally, breaks at the acromion, and drops. Three curves do it, and the
+           breathing transform on .fBody moves this path exactly as it moved the ellipse. */
+        '<path class="fShirt" d="M100 168 C' + '82 168 68 174 54 186 C40 198 30 214 26 256 L174 256 C170 214 160 198 146 186 C132 174 118 168 100 168 Z" ' +
+          'fill="url(#mlsAvShirt' + faceUid + ')"/>' +
+        /* ---- SCRUBS, NOT A BLOB (av-6.0.0). The garment was one flat ellipse with a
+           notch, which read as a jumper. A clinician's top has shoulder seams, a V-neck
+           with a visible under-tee, and a chest pocket — three cheap shapes that carry
+           most of the "professional" signal. */
+        '<g class="fUniform" pointer-events="none">' +
+          /* ⛔ NO SHOULDER SEAMS, AND NO SLEEVE SHADOW EITHER. Two curves from the collar
+             out to the shoulder tips read as bag straps. Moved to the outer shoulder they
+             read as pale epaulettes — and that one was instructive: the arc crossed the
+             garment's edge, so half of a dark stroke at .45 opacity was landing on the
+             PAGE, which mixed it up to a light grey. Barely 30px of chest survives the
+             kiosk crop; the V-neck and collar carry the whole "clinician" signal, and
+             every extra mark here has cost more than it earned. */
+          /* the V opening shows the SHADOW INSIDE THE GARMENT, not skin. Filling it with a
+             skin shade rendered as a brown wedge sitting on the chest. */
+          '<path d="M84 157 Q100 186 116 157 Q100 170 84 157 Z" fill="' + faceShade(look.shirt, -0.46) + '"/>' +
+          '<path class="fCollar" d="M80 156 Q100 192 120 156 Q100 174 80 156 Z" fill="none" stroke="' + faceShade(look.shirt, -0.34) + '" stroke-width="2.6" stroke-linejoin="round"/>' +
+          /* ⛔ AND NO POCKET. It was an outlined rectangle (a floating square), then two
+             strokes (a floating right-angle that read as a rendering glitch). Only ~30px
+             of chest is above the crop at kiosk size, and a pocket carries no clinical
+             signal — the V-neck and the sleeve shadow do all the "clinician" work. */
+        '</g>' +
         steth +
+      '</g>' +
+      /* ---- THE NECK (av-6.0.0) ------------------------------------------------------
+         There was none: the jaw sat straight on the garment, which is most of why the old
+         drawing read as a head-and-shoulders sticker rather than a person. It is drawn
+         AFTER the torso and BEFORE the head, so the collar overlaps its base and the jaw
+         overlaps its top — that overlap is what makes the three read as one body.
+         The shadow across the top is the jaw's own shadow falling on the throat; without
+         it a neck looks like a post the head is balanced on. */
+      '<g class="fNeck" pointer-events="none">' +
+        '<path d="M' + n2(100 - sh.rx * 0.40) + ' ' + n2(98 + sh.ry * 0.72) + ' L' + n2(100 - sh.rx * 0.34) + ' 172 Q100 178 ' + n2(100 + sh.rx * 0.34) + ' 172 L' + n2(100 + sh.rx * 0.40) + ' ' + n2(98 + sh.ry * 0.72) + ' Z" ' +
+          'fill="' + faceShade(look.skin, -0.13) + '"/>' +
+        '<path d="M' + n2(100 - sh.rx * 0.38) + ' ' + n2(98 + sh.ry * 0.74) + ' Q100 ' + n2(98 + sh.ry * 0.98) + ' ' + n2(100 + sh.rx * 0.38) + ' ' + n2(98 + sh.ry * 0.74) + ' L' + n2(100 + sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.86) + ' Q100 ' + n2(98 + sh.ry * 1.10) + ' ' + n2(100 - sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.86) + ' Z" ' +
+          'fill="' + faceShade(look.skin, -0.40) + '" opacity=".45"/>' +
       '</g>' +
       back +
       /* the RIG carries the FAST acting (breath bob, listening nod, concern
@@ -1082,13 +1430,67 @@
          transition, so the two never fight for one transform. */
       '<g class="fHeadRig" style="transform-box:view-box;transform-origin:100px 152px;transition:transform .16s ease-out">' +
       '<g class="fHead" style="transform-box:fill-box;transform-origin:50% 62%;transition:transform .45s ease">' +
-        '<ellipse class="fSkin fEarL" cx="' + n2(100 - sh.rx) + '" cy="' + n2(98 + 2 * FY) + '" rx="9" ry="' + n2(13 * FY) + '" fill="' + look.skin + '"/>' +
-        '<ellipse class="fSkin fEarR" cx="' + n2(100 + sh.rx) + '" cy="' + n2(98 + 2 * FY) + '" rx="9" ry="' + n2(13 * FY) + '" fill="' + look.skin + '"/>' +
-        '<ellipse class="fSkin fFace" cx="100" cy="98" rx="' + sh.rx + '" ry="' + sh.ry + '" fill="' + look.skin + '"/>' +
+        /* ---- EARS (av-6.0.0). They were two circles pinned to the widest point of the
+           balloon, which is exactly how a cartoon does it. A real ear is taller than it is
+           wide, its top sits level with the BROW and its lobe level with the nose base, it
+           tucks INTO the skull rather than being stuck on, and it has a visible helix rim
+           and inner fold. Placed off the skull's own temple landmark so a narrow face gets
+           narrow-set ears. */
+        earOf(-1) + earOf(1) +
+        /* ---- THE SKULL, BUILT FROM SCRATCH (av-6.0.0) ---------------------------------
+           Owner: "completly chan gei t liek from scratch."
+           It was ONE ELLIPSE. Every human head is widest at the temples, narrows through
+           the cheekbones, and tapers to a jaw and a chin — an ellipse has none of that, so
+           no amount of shading painted on top could stop it reading as a balloon with
+           features printed on it. This is a closed path in eight arcs, built from the same
+           sh.rx / sh.ry the matcher decides, so a round face is still round and a long face
+           still long; only the SHAPE of the boundary changed.
+           Landmarks, all as fractions of the skull so nothing is nailed to a constant:
+             temple  ±0.98rx at y = 98 - 0.34ry     (widest point, just above the eyes)
+             cheek   ±0.86rx at y = 98 + 0.16ry
+             jaw     ±0.52rx at y = 98 + 0.66ry     (the corner of the mandible)
+             chin     0      at y = 98 + 1.00ry     (with a slight square, not a point) */
+        '<path class="fSkin fFace" d="' +
+          'M100 ' + n2(98 - sh.ry) +
+          ' C' + n2(100 + sh.rx * 0.60) + ' ' + n2(98 - sh.ry) + ' ' + n2(100 + sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.72) + ' ' + n2(100 + sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.34) +
+          ' C' + n2(100 + sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.02) + ' ' + n2(100 + sh.rx * 0.90) + ' ' + n2(98 + sh.ry * 0.10) + ' ' + n2(100 + sh.rx * 0.86) + ' ' + n2(98 + sh.ry * 0.30) +
+          ' C' + n2(100 + sh.rx * 0.80) + ' ' + n2(98 + sh.ry * 0.50) + ' ' + n2(100 + sh.rx * 0.70) + ' ' + n2(98 + sh.ry * 0.62) + ' ' + n2(100 + sh.rx * 0.52) + ' ' + n2(98 + sh.ry * 0.74) +
+          ' C' + n2(100 + sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.90) + ' ' + n2(100 + sh.rx * 0.20) + ' ' + n2(98 + sh.ry * 1.00) + ' 100 ' + n2(98 + sh.ry) +
+          ' C' + n2(100 - sh.rx * 0.20) + ' ' + n2(98 + sh.ry * 1.00) + ' ' + n2(100 - sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.90) + ' ' + n2(100 - sh.rx * 0.52) + ' ' + n2(98 + sh.ry * 0.74) +
+          ' C' + n2(100 - sh.rx * 0.70) + ' ' + n2(98 + sh.ry * 0.62) + ' ' + n2(100 - sh.rx * 0.80) + ' ' + n2(98 + sh.ry * 0.50) + ' ' + n2(100 - sh.rx * 0.86) + ' ' + n2(98 + sh.ry * 0.30) +
+          ' C' + n2(100 - sh.rx * 0.90) + ' ' + n2(98 + sh.ry * 0.10) + ' ' + n2(100 - sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.02) + ' ' + n2(100 - sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.34) +
+          ' C' + n2(100 - sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.72) + ' ' + n2(100 - sh.rx * 0.60) + ' ' + n2(98 - sh.ry) + ' 100 ' + n2(98 - sh.ry) +
+          ' Z" fill="url(#mlsAvSkin' + faceUid + ')"/>' +
+        /* ---- MODELLING (av-6.0.0). A single flat fill is why the old face read as a
+           sticker: a real head is lit from above, so the forehead is the brightest plane,
+           the temples and the jaw fall away, and there is a shadow under the cheekbone and
+           beneath the chin. None of these are interactive and all sit UNDER the features,
+           so nothing here can intercept a click or change a measurement. */
+        /* ⛔ TWO ATTEMPTS AT PAINTED SHADING, BOTH REJECTED ON SIGHT (av-6.0.0).
+           First five hard ellipses: they read as blotches — dark bands down the sides with
+           a pale block stranded across the eye line. Then one radial vignette: it read as a
+           translucent BAND across the face, edge to edge over the ears. The owner's verdict
+           on the second was "that looks so weird".
+           The lesson is structural, not a tuning problem: an overlay painted ON a flat
+           ellipse always looks like an overlay, because the silhouette underneath is not a
+           head. Modelling belongs in the GEOMETRY — a skull that is wider at the temples
+           than at the jaw, with a chin — and in the skin ramp that follows it. So there is
+           no overlay layer here at all now; see fFace below. */
+        /* the chin's own shadow. At 0.86ry it sat ON the chin and read as a smudge on it;
+           a chin shadow falls BELOW the chin, onto the throat, so it belongs at the very
+           edge of the silhouette where the neck takes over. */
+        '<g class="fModel" pointer-events="none">' +
+          '<ellipse cx="100" cy="' + n2(98 + sh.ry * 1.00) + '" rx="' + n2(sh.rx * 0.26) + '" ry="' + n2(sh.ry * 0.055) + '" fill="' + faceShade(look.skin, -0.42) + '" opacity=".18"/>' +
+        '</g>' +
         jaw +
         '<g class="fCrownFit" transform="' + fit + '">' + beard + hair + temples + cap + '</g>' +
-        '<circle class="fBlush" cx="' + n2(100 - 37 * FX) + '" cy="' + n2(119 + dyN) + '" r="9" fill="' + blush + '" opacity=".22" style="transition:opacity .4s ease"/>' +
-        '<circle class="fBlush" cx="' + n2(100 + 37 * FX) + '" cy="' + n2(119 + dyN) + '" r="9" fill="' + blush + '" opacity=".22" style="transition:opacity .4s ease"/>' +
+        /* CHEEK WARMTH, not clown spots (av-6.0.0). Two hard-edged circles at 22% read as
+           a doll's painted cheeks. An adult's flush is a soft diffuse ellipse, wider than
+           it is tall, sitting on the cheekbone rather than the middle of the cheek. The
+           class and the opacity transition are unchanged, so the mood code that raises the
+           flush on a warm greeting still drives exactly this. */
+        '<ellipse class="fBlush" cx="' + n2(100 - 36 * FX) + '" cy="' + n2(114 + dyN) + '" rx="12" ry="7" fill="' + blush + '" opacity=".13" style="transition:opacity .4s ease"/>' +
+        '<ellipse class="fBlush" cx="' + n2(100 + 36 * FX) + '" cy="' + n2(114 + dyN) + '" rx="12" ry="7" fill="' + blush + '" opacity=".13" style="transition:opacity .4s ease"/>' +
         '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 1) + ' 72 ' + n2(cxL + 13) + ' 77" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
         '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' 77 Q' + n2(cxR + 1) + ' 72 ' + n2(cxR + 13) + ' 78" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
         /* the glabellar KNIT - two short creases between the brows. Concern is
@@ -1120,10 +1522,13 @@
     if (!root) return null;
     var ctl = null;
     function q(sel) { return root.querySelector(sel); }
-    var head, rig, body, shirt, browL, browR, eyeL, eyeR, pupL, pupR,
+    /* .fShirt is deliberately NOT bound any more: breathing drives .fBody, and a
+       binding kept only so a dead code path can write to it is how the chest came to
+       stop moving without anything noticing. */
+    var head, rig, body, browL, browR, eyeL, eyeR, pupL, pupR,
       lidL, lidR, lowL, lowR, mouth, lipUp, lipsG, mouthWrap, dimpleL, dimpleR, knit, blush;
     function bind() {
-      head = q('.fHead'); rig = q('.fHeadRig'); body = q('.fBody'); shirt = q('.fShirt');
+      head = q('.fHead'); rig = q('.fHeadRig'); body = q('.fBody');
       browL = q('.fBrowL'); browR = q('.fBrowR');
       eyeL = q('.fEyeL'); eyeR = q('.fEyeR'); pupL = q('.fPupilL'); pupR = q('.fPupilR');
       lidL = q('.fLidL'); lidR = q('.fLidR'); lowL = q('.fLowL'); lowR = q('.fLowR');
@@ -1143,7 +1548,6 @@
        by "thinking" was still overriding applyBrows() a moment later and the
        concern knit never rendered at all. */
     var gestureGen = 0;
-    var BREATH_CY = 206, BREATH_RY = 50;
     function faceLives() {
       /* a face whose mount has left the document is finished. The Setup preview
          controller is never explicitly destroyed, and a breathing loop on a
@@ -1250,14 +1654,23 @@
     }
     function breathe() {
       if (dead) return;
-      if (!reduced && shirt) {
+      if (!reduced && body) {
         breathT += 0.13;
         var p = Math.sin(breathT);
-        /* REAL geometry: the shoulders rise because the chest ellipse itself
-           grows and lifts. A scale on the whole drawing would zoom the head. */
-        shirt.setAttribute('ry', (BREATH_RY + p * 2.4).toFixed(2));
-        shirt.setAttribute('cy', (BREATH_CY - p * 1.6).toFixed(2));
-        if (body) body.style.transform = 'translateY(' + (-p * 1.1).toFixed(2) + 'px)';
+        /* ⛔ THE CHEST STOPPED BREATHING AND THE PIN WATCHING IT STILL PASSED (av-6.0.0).
+           This used to be setAttribute('ry') / setAttribute('cy') on .fShirt, which was
+           an <ellipse>. av-6.0.0 gave the torso a shoulder PATH instead — and `ry`/`cy`
+           mean nothing on a <path>, so both writes became no-ops. Nothing crashed: an
+           unrecognised attribute is still stored and still reads back, so the harness
+           sampling `shirt.getAttribute('ry')` watched a dead attribute tick up and down
+           and reported "the chest RADIUS itself changes over time" for a chest that was
+           only bobbing 1px. The measurement must be the RENDERED box, never an attribute.
+           The expansion now rides a transform on .fBody. That group holds ONLY the torso,
+           the uniform and the stethoscope — the head, neck and face are all outside it —
+           so this is a chest inflating, not a zoom of the drawing, which is what the old
+           comment here was rightly afraid of. */
+        body.style.transform = 'translateY(' + (-p * 1.1).toFixed(2) + 'px) scale(' +
+          (1 + p * 0.014).toFixed(4) + ',' + (1 + p * 0.010).toFixed(4) + ')';
         breathY = -p * 0.5;
         applyRig();
       }
@@ -2707,7 +3120,33 @@
   /* Split at the FIRST sentence boundary only, and only when there is real
      length to gain from it. A short line is already fast; splitting it would
      spend a second round trip to save nothing. */
+  /* THE HEAD IS AN ACKNOWLEDGEMENT OR THERE IS NO SPLIT — av-5.8.1.
+     Owner, 2026-08-08: "the voices they need to sound much more natural".
+     A split is not free the way the comment below assumed. The two pieces are
+     two SEPARATE TTS generations, sampled independently, played back to back
+     from two <audio> elements: the first lands on its own falling full stop with
+     the encoder's trailing silence, and the second opens at fresh-utterance
+     pitch and energy. That discontinuity is a machine seam, and it is the single
+     most-heard artifact in the product because almost every reply has an early
+     sentence boundary and therefore split.
+     The comment right below states exactly what the split is FOR — a tiny
+     acknowledgement in front of the real question — but the code never enforced
+     it: the head was allowed up to 150 characters. So a full content sentence
+     ("Hi there, I'm Ava, the practice's AI assistant.") was severed from what
+     followed, which is the case where the seam is most audible AND where the
+     latency gain is smallest, because a 150-character head takes nearly as long
+     to generate as the whole line does.
+     Capped at PV_ACK_MAX. Under the cap, a distinct beat after "Got it." is how
+     a person talks anyway, so the seam reads as a breath; over it, the line is
+     spoken as one generation with one continuous contour. This also makes FEWER
+     requests than before, so it costs nothing and saves a little. */
   function ttsSplitForSpeech(text) {
+    /* ⛔ DECLARED INSIDE, ON PURPOSE. avatar-visit-copilot.test.js lifts this function by
+       string slice and runs it through `new Function`, so it executes with NO module scope:
+       a `var PV_ACK_MAX` one line above the function is invisible there and the suite dies
+       with "PV_ACK_MAX is not defined" — which `node --check` cannot see, because the file
+       itself is perfectly valid. Any constant a liftable function reads has to live in it. */
+    var PV_ACK_MAX = 34;
     var t = String(text == null ? '' : text).trim();
     /* 28 chars, because the SHAPE this exists for is "Got it. How long has it
        been going on?" — a tiny acknowledgement in front of the real question.
@@ -2719,6 +3158,9 @@
     if (!m) return [t];
     var head = m[1].trim(), tail = m[2].trim();
     if (!head || !tail) return [t];
+    /* see PV_ACK_MAX — a real sentence is not an acknowledgement, and severing
+       one costs more in naturalness than the split saves in latency */
+    if (head.length > PV_ACK_MAX) return [t];
     /* AN ABBREVIATION IS NOT A SENTENCE END. "I think Dr. Smith should see
        you. How does that sound?" would otherwise be spoken as "I think
        Doctor." — pause — "Smith should see you...", which is worse than the
@@ -2729,17 +3171,43 @@
     if (/(?:^|\s)(?:[A-Za-z]|dr|drs|mr|mrs|ms|st|jr|sr|prof|rev|vs|approx|dept|est|fig|no|etc|e\.g|i\.e|a\.m|p\.m)\.$/i.test(head)) return [t];
     return [head, tail];
   }
-  function ttsFetchUrl(text, voice) {
-    var key = (voice || '') + '|' + text;
+  /* THE DELIVERY SHAPE. The backend used to build one identical delivery
+     instruction for every line it was ever asked to speak - the greeting, a
+     routine question, the 911 warning and the two HALVES of one sentence all
+     got "warm, gentle, unhurried, in person". Half of what makes a line sound
+     human is which KIND of line it is, and only this side knows: the backend
+     receives a bare string with no idea whether it is a whole sentence, an
+     opening clause that must not fall to a full stop, or a continuation that
+     must come in mid-flow. It is a short whitelisted token, never instruction
+     text — the server maps it (see SPEECH_SHAPE in routes/patientAvatar.js) and
+     ignores anything it does not recognise.
+       'open'  head of a split line — do not land it, no trailing pause
+       'cont'  tail of a split line — come in mid-flow, no fresh start
+       'calm'  the silence nudge — softer, slower, no impatience
+       'greet' the first thing this patient hears
+       'alert' an emergency warning (the server also detects this from the text
+               itself, so a missing or forged shape cannot soften it) */
+  function ttsFetchUrl(text, voice, shape) {
+    /* THE SHAPE IS PART OF THE CACHE KEY. Without it the first rendering of a
+       string wins forever: NUDGE_LINE is pre-fetched at consent time (see
+       kioskConsentYes) and spoken later, and the same text asked for with a
+       different shape is a DIFFERENT recording. Keyed on text alone, the
+       pre-fetch would either serve the wrong delivery or - if the shapes
+       disagreed - miss the cache entirely and pay a round trip at the one
+       moment the pre-fetch exists to avoid paying one. */
+    var key = (voice || '') + '|' + (shape || '') + '|' + text;
     if (ttsCache[key]) return Promise.resolve(ttsCache[key]);
     if (Date.now() < ttsDownUntil) return Promise.resolve(null);
     var ctrl = safe(function () { return new AbortController(); }, null);
     var timer = ctrl ? setTimeout(function () { safe(function () { ctrl.abort(); }); }, 6500) : null;
     var headers = { 'Content-Type': 'application/json' };
     var auth = token(); if (auth) headers.Authorization = 'Bearer ' + auth;
+    var payload = { text: text };
+    if (voice) payload.voice = voice;
+    if (shape) payload.shape = shape;
     return fetch(apiBase() + '/api/avatar/office/tts', {
       method: 'POST', headers: headers,
-      body: JSON.stringify(voice ? { text: text, voice: voice } : { text: text }),
+      body: JSON.stringify(payload),
       signal: ctrl ? ctrl.signal : undefined
     }).then(function (r) {
       if (timer) clearTimeout(timer);
@@ -3418,7 +3886,15 @@
       voiceTry.type = 'button';
       voiceTry.addEventListener('click', function () {
         pvStopVoice();
-        pvSpeakVoiced('Hi, I\'m ' + (nameInput.value.trim() || 'Ava') + '. It\'s lovely to meet you — this only takes a few minutes.', null, voiceSelect.value);
+        /* THE PREVIEW HAS TO BE THE REAL THING. The doctor chooses the voice his
+           patients will hear from this one button, and the sample was neither
+           what they hear nor how they hear it: no AI disclosure (so it was
+           shorter and simpler than every real greeting), and no delivery shape,
+           so it was generated with the generic instruction while the actual
+           greeting is generated with 'greet'. He was auditioning a voice on
+           material it never speaks. This mirrors INTERVIEW_SYSTEM rule 9's
+           example, spoken exactly as the kiosk speaks the opening line. */
+        pvSpeakVoiced('Hi there, I\'m ' + (nameInput.value.trim() || 'Ava') + ' — I\'m the practice\'s AI assistant, and I help get everyone settled before the doctor comes in. It\'s good to meet you. This only takes a few minutes, and you can just answer in your own words.', null, voiceSelect.value, 'greet');
       });
       voiceRow.appendChild(voiceSelect); voiceRow.appendChild(voiceTry);
 
@@ -3940,13 +4416,30 @@
          keeps the answer resendable and re-opens the mic. */
       if (!r.ok || j.ok === false) {
         if (answer) kiosk.lastTry = { answer: answer, nonce: nonce };
-        var msg = j.message || 'The connection hiccuped — your last answer is safe to say again.';
+        /* SPOKEN, so it apologises like a person and does not name our plumbing.
+           "The connection hiccuped" describes something the patient cannot see,
+           did not cause and cannot fix; what they need is permission to just say
+           it again. Shaped 'calm' for the same reason the silence nudge is: this
+           is the moment a patient decides the machine is broken, and a brisk
+           delivery here is what makes them give up and wait for a human. */
+        var msg = j.message || 'Sorry, I didn\'t quite catch that on my end. Could you say it once more?';
         kioskSetSay(msg);
         kioskMood('speaking', msg);
-        pvSpeak(msg, function () { kioskListen(); });
+        pvSpeakShaped(msg, function () { kioskListen(); }, 'calm');
         return;
       }
       kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
+      /* WHICH KIND OF LINE THIS IS, decided here because this is the only place
+         that can see it. `greet` fires once per interview — the first line the
+         patient ever hears, and the one the owner cares most about sounding
+         welcoming; `alert` rides the server's own emergency verdict rather than
+         any guess about the words, so the warning and its delivery are the same
+         fact. Read once into a local: kiosk.spoke flips below and the closing
+         branch must not accidentally re-greet. */
+      var saidShape = null;
+      if (j.emergency === true) saidShape = 'alert';
+      else if (!kiosk.spoke) saidShape = 'greet';
+      kiosk.spoke = true;
       /* Keep the check-in verbatim and LOCALLY: ambient room mode hands the
          doctor one transcript with the check-in and the visit both in it,
          and the patient's own answers are the check-in half. Recorded only
@@ -3964,7 +4457,7 @@
       if (pg && j.progress && j.progress.total) pg.textContent = j.done ? '' : ('Question ' + Math.min(j.progress.covered || 1, j.progress.total) + ' of ' + j.progress.total);
       if (j.done) {
         kioskMood('speaking', kiosk.lastSay);
-        pvSpeak(kiosk.lastSay, function () { kioskFinish(); });
+        pvSpeakShaped(kiosk.lastSay, function () { kioskFinish(); }, saidShape);
         setTimeout(function () { if (kiosk.open && !kiosk.completed) kioskFinish(); }, 12000);
       } else {
         kioskMood('speaking', kiosk.lastSay, answer);
@@ -3973,7 +4466,7 @@
            they understand, usually before the sentence ends; those first
            words used to be discarded and the kiosk looked frozen. */
         kioskListen(true);
-        pvSpeak(kiosk.lastSay, function () {
+        pvSpeakShaped(kiosk.lastSay, function () {
           if (!pvRec) { kioskListen(); return; }
           /* THE SILENCE CLOCK STARTS WHEN THE QUESTION ENDS. kioskListen arms
              it, and the microphone now opens WITH the question, so a long
@@ -3987,7 +4480,11 @@
     }, function () {
       kiosk.busy = false;
       if (!kiosk.open) return;
-      kioskSetSay('The connection hiccuped — your last answer is safe to say again.');
+      /* the same words the spoken refusal above uses. This path is DISPLAY only
+         (nothing is spoken when the fetch itself rejects), and two different
+         apologies for one condition is how a patient ends up reading one thing
+         and hearing another. */
+      kioskSetSay('Sorry, I didn\'t quite catch that on my end. Could you say it once more?');
       if (answer) kiosk.lastTry = { answer: answer, nonce: nonce };
       kioskListen();
     });
@@ -4037,7 +4534,10 @@
       kiosk.nudgedFor = kiosk.lastSay;
       pvStopVoice();
       kioskMood('speaking', '');
-      pvSpeak(NUDGE_LINE, function () { kioskListen(); });
+      /* 'calm' must match the shape the pre-fetch used in kioskConsentYes, or
+         the cache key differs and the one request this line exists to have
+         already made is paid for again, right when the patient is waiting */
+      pvSpeakShaped(NUDGE_LINE, function () { kioskListen(); }, 'calm');
     } else {
       pvStopVoice();
       kioskListen();
@@ -4296,10 +4796,31 @@
       then();
     });
   }
+  /* which of the eight backend voices are male. Named rather than inferred: the
+     list is fixed server-side (TTS_VOICES in openai.js) and a voice we do not
+     recognise leaves pvWantMale null, which means "do not guess". */
+  var PV_MALE_VOICES = { ash: 1, echo: 1, onyx: 1 };
+  var PV_FEMALE_VOICES = { coral: 1, nova: 1, shimmer: 1, sage: 1 };
   function kioskSetIdentity(av) {
     var name = gid('mlsAvKioskName');
     if (name && av && av.name) name.textContent = av.name;
     if (av && clean(av.name)) kiosk.avName = clean(av.name);   /* speaker label in the filed transcript */
+    /* THE CONFIGURED VOICE WAS DELIVERED AND THROWN AWAY. The turn response has
+       carried `avatar.voice` for several releases specifically so the client can
+       see which voice is speaking, and this function - the one place that reads
+       the identity payload - ignored it. That is why the browser fallback could
+       answer in the wrong sex: the information it needed was already on the
+       wire. `alloy` is deliberately in NEITHER table; it is the neutral voice
+       and guessing a sex for it would be worse than not matching.
+       The pick is CACHED in pvVoice, so learning this has to invalidate it -
+       the first turn can easily land after something has already spoken. */
+    safe(function () {
+      if (!av || typeof av.voice !== 'string') return;
+      var want = PV_MALE_VOICES[av.voice] ? true : (PV_FEMALE_VOICES[av.voice] ? false : null);
+      if (want === pvWantMale) return;
+      pvWantMale = want;
+      pvVoice = undefined;   /* re-pick against the new preference */
+    });
     /* explicit — an identity payload that says "no PIN" must be able to LOWER
        the gate, and only a real payload resolves the unknown state */
     if (av && typeof av.exitPinSet === 'boolean') kiosk.pinSet = av.exitPinSet === true;
@@ -5864,6 +6385,13 @@
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.finishTries = 0; kiosk.heard = false;
+    /* NOTHING HAS BEEN SAID TO *THIS* PATIENT YET. kioskTurn uses this to mark
+       the opening line as a greeting so it is delivered as a welcome rather
+       than as question four. Left un-reset it is a one-patient flag on a screen
+       that sees a patient an hour: the FIRST check-in after a page load would be
+       greeted warmly and every one after it would not, which is both the harder
+       bug to notice and the one that affects almost every patient. */
+    kiosk.spoke = false;
     /* consent is per PATIENT, so it resets with the screen. A carried-over
        flag would let the next patient be recorded on the last one's answer. */
     kiosk.consentAt = 0;
@@ -6037,7 +6565,7 @@
        trip at that exact moment is the worst possible time to spend one. Costs
        one request per interview and warms the TTS connection for the first
        real question as a side effect. */
-    safe(function () { ttsFetchUrl(NUDGE_LINE, null); });
+    safe(function () { ttsFetchUrl(NUDGE_LINE, null, 'calm'); });
     kioskSetSay('Getting ready…');
     kioskMicPreflight(function () { kioskTurn(null, null); });
   }

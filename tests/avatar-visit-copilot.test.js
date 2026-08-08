@@ -727,7 +727,13 @@ assert(source.includes('function ttsSplitForSpeech'), 'the two-piece speech spli
     'the two pieces must reconstruct the sentence exactly');
 }
 {
-  const speak = slice('var chunks = ttsSplitForSpeech(t);', 'ttsFetchUrl(t, voiceOverride).then', 'the chunked speak path');
+  /* av-5.8.1 moved both anchors: the head now reads
+     `var chunks = (shape === 'alert') ? [t] : ttsSplitForSpeech(t);` — an emergency line is
+     never split — and the whole-line fallback takes the delivery shape too. Anchored on the
+     stable prefixes so a further argument cannot break the lift again. */
+  const speak = slice('var chunks = ', 'ttsFetchUrl(t, voiceOverride', 'the chunked speak path');
+  assert(/shape === 'alert'\s*\)\s*\?\s*\[t\]/.test(speak),
+    'the 911 line must never be split across two generations — one continuous contour');
   assert(/var second = ttsFetchUrl\(chunks\[1\][\s\S]{0,200}ttsFetchUrl\(chunks\[0\]/.test(speak),
     'both pieces must be requested in PARALLEL — a sequential second fetch would be slower than not splitting');
   assert(speak.includes('pvSpeakSynth(t, mySeq, finish)'),
@@ -739,9 +745,18 @@ assert(source.includes('function ttsSplitForSpeech'), 'the two-piece speech spli
 }
 /* the silence nudge is a CONSTANT, so its audio is made before it is needed */
 assert(source.includes('var NUDGE_LINE'), 'the nudge constant was removed');
-assert(/safe\(function \(\) \{ ttsFetchUrl\(NUDGE_LINE, null\); \}\);/.test(source),
-  'the nudge audio must be prefetched at kiosk open — it is needed at the exact moment a patient is already waiting');
-assert(source.includes('pvSpeak(NUDGE_LINE,'), 'the nudge must SPEAK the same string it prefetched, or the cache never hits');
+/* av-5.8.1 — THE CACHE KEY NOW CARRIES THE DELIVERY SHAPE, so "same string" is no longer
+   enough for a hit: the prefetch and the speak must agree on the SHAPE as well. Both halves
+   are lifted and compared, which is a stronger version of the original claim rather than a
+   looser one — a future edit that shapes the nudge differently from its prefetch would have
+   silently cost the prefetch, and this now catches it. */
+const nudgePre = /ttsFetchUrl\(NUDGE_LINE,\s*null\s*(?:,\s*'([a-z]+)')?\s*\)/.exec(source);
+const nudgeSay = /pvSpeak[A-Za-z]*\(NUDGE_LINE,\s*function[^)]*\)\s*\{[^}]*\}\s*(?:,\s*'([a-z]+)')?/.exec(source);
+assert(nudgePre, 'the nudge audio must be prefetched at kiosk open — it is needed at the exact moment a patient is already waiting');
+assert(nudgeSay, 'the nudge must SPEAK the same string it prefetched, or the cache never hits');
+assert((nudgePre[1] || '') === (nudgeSay[1] || ''),
+  'the nudge prefetch and the nudge speak must use the SAME delivery shape, or the prefetched audio is never used: prefetch=' +
+  (nudgePre[1] || '(none)') + ' speak=' + (nudgeSay[1] || '(none)'));
 
 /* 3p. THE DRAFT NOTE. "End Visit -> complete note ready for review" is the
    acceptance line, and a filed transcript is not a note. */

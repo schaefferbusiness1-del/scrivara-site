@@ -148,7 +148,19 @@ async function boot(browser, opts) {
         junkLipScale: window.__tf(junk.box, '.fLips'),
         junkHasCap: junk.box.innerHTML.indexOf('fCap') >= 0,
         junkHasSteth: junk.box.innerHTML.indexOf('fSteth') >= 0,
-        junkSkin: window.__at(junk.box, '.fFace', 'fill'),
+        /* the skin colour moved INTO a gradient at av-6.0.0, so reading `fill` off the
+           face now returns "url(#mlsAvSkinf3)" and the fallback claim became unmeasurable.
+           Follow the reference and read the ramp's middle stop, which IS look.skin —
+           that keeps the claim (a junk colour falls back to the default hex) intact
+           instead of quietly retiring it. */
+        junkSkin: (function () {
+          const f = junk.box.querySelector('.fFace');
+          const m = /url\(#([^)]+)\)/.exec((f && f.getAttribute('fill')) || '');
+          if (!m) return (f && f.getAttribute('fill')) || null;
+          const g = junk.box.querySelector('[id="' + m[1] + '"]');
+          const stops = g ? g.querySelectorAll('stop') : [];
+          return stops.length ? stops[Math.floor(stops.length / 2)].getAttribute('stop-color') : null;
+        })(),
         refNose: window.__at(window.__mk({ nose: 'straight' }).box, '.fNose', 'd')
       };
     });
@@ -238,7 +250,33 @@ async function boot(browser, opts) {
     const r = await page.evaluate(async () => {
       const a = window.__mk({ cap: true, stethoscope: true, glasses: true, beard: 'beard', hairStyle: 'long' });
       const b = window.__mk({ nose: 'wide', lips: 'full', brows: 'thick' });
-      const ids = a.box.querySelectorAll('[id]').length + b.box.querySelectorAll('[id]').length;
+      /* av-6.0.0 — THIS USED TO BE `ids === 0`. The face now NEEDS ids: the skin ramp,
+         the hair ramp, the two iris gradients and the eye apertures are gradients and
+         clipPaths, and those can only be referenced by id. So "zero ids" stopped being
+         the invariant and became a rule the drawing had to break. The invariant it was
+         standing in for is the one measured here, and it is strictly stronger:
+           (1) no id is shared between two faces in one document, and
+           (2) every url(#…) inside a face resolves to a node INSIDE THAT FACE.
+         Both are what actually breaks when ids collide — the second face silently
+         paints with the first face's skin ramp and iris. `idsA.length > 0` is asserted
+         too, so a build that renders no gradients at all cannot pass this vacuously. */
+      const idsOf = box => Array.from(box.querySelectorAll('[id]')).map(n => n.id);
+      const idsA = idsOf(a.box), idsB = idsOf(b.box);
+      const refsOut = box => {
+        const bad = [];
+        Array.prototype.forEach.call(box.querySelectorAll('*'), n => {
+          ['fill', 'stroke', 'clip-path', 'filter', 'mask'].forEach(att => {
+            const m = /url\(#([^)]+)\)/.exec(n.getAttribute(att) || '');
+            /* getElementById would find the OTHER face's node and call it resolved -
+               the exact cross-wiring this is here to catch. Scope the lookup to the box. */
+            if (m && !box.querySelector('[id="' + m[1] + '"]')) bad.push(att + '=' + m[1]);
+          });
+        });
+        return bad;
+      };
+      const dupShared = idsA.filter(x => idsB.indexOf(x) >= 0);
+      const dupInside = (idsA.length !== new Set(idsA).size) || (idsB.length !== new Set(idsB).size);
+      const dangling = refsOut(a.box).concat(refsOut(b.box));
       /* face B blinks and breathes on its OWN timers, so those channels move
          whatever A does. The question here is only whether DRIVING A can reach
          B, so compare the channels a drive would move: mood, brows, mouth, head
@@ -251,10 +289,15 @@ async function boot(browser, opts) {
       await new Promise(r2 => setTimeout(r2, 260));
       const afterA = window.__read(a);
       const afterB = driven(window.__read(b));
-      return { ids, before, afterA, afterB, aParts: a.box.querySelectorAll('[class^="f"]').length,
+      return { nIdsA: idsA.length, nIdsB: idsB.length, dupShared, dupInside, dangling,
+        before, afterA, afterB, aParts: a.box.querySelectorAll('[class^="f"]').length,
         aMoved: JSON.stringify(driven(afterA)) !== JSON.stringify(before) };
     });
-    ok(r.ids === 0, 'zero id attributes anywhere in either rendered face', r.ids);
+    ok(r.nIdsA > 0 && r.nIdsB > 0 && r.dupShared.length === 0 && !r.dupInside,
+      'two faces on one page share NO svg id (per-face ramps and clips, not zero ids)',
+      { a: r.nIdsA, b: r.nIdsB, shared: r.dupShared.slice(0, 4), dupInside: r.dupInside });
+    ok(r.dangling.length === 0,
+      'and every url(#...) reference resolves INSIDE its own face (no cross-wiring)', r.dangling.slice(0, 4));
     ok(r.aParts > 20, 'face A is built from many class-scoped parts', r.aParts);
     ok(r.afterA.mood.indexOf('caring') >= 0, 'face A took the caring mood');
     ok(r.aMoved, '(and the drive really did move A on those same channels - so the comparison below has teeth)');
@@ -465,21 +508,34 @@ async function boot(browser, opts) {
       const shirt = h.box.querySelector('.fShirt');
       const body = h.box.querySelector('.fBody');
       if (!shirt || !body) return { ryMin: 0, ryMax: 0, cyMin: 0, cyMax: 0, distinctBody: 0, topSpread: 0, missing: true };
-      const ry = [], cy = [], bt = [], tops = [];
+      /* THE RENDERED BOX, NOT AN ATTRIBUTE. Until av-6.0.0 this read `ry`/`cy` off
+         .fShirt. The torso became a <path> and those attributes stopped rendering —
+         but setAttribute still stored them and getAttribute still read them back, so
+         this check reported an expanding chest for a chest that only bobbed. Height
+         and top of the painted box cannot be satisfied by writing a dead attribute. */
+      const hs = [], tops = [], bt = [];
       for (let i = 0; i < 26; i++) {
-        ry.push(parseFloat(shirt.getAttribute('ry')));
-        cy.push(parseFloat(shirt.getAttribute('cy')));
+        const b0 = shirt.getBoundingClientRect();
+        hs.push(b0.height); tops.push(b0.top);
         bt.push(body.style.transform);
-        tops.push(shirt.getBoundingClientRect().top);
         await wait(100);
       }
-      return { ryMin: Math.min.apply(null, ry), ryMax: Math.max.apply(null, ry),
-        cyMin: Math.min.apply(null, cy), cyMax: Math.max.apply(null, cy),
-        distinctBody: new Set(bt).size, topSpread: Math.max.apply(null, tops) - Math.min.apply(null, tops) };
+      /* the head must NOT be inside the group that scales, or "the chest breathes"
+         is just the whole drawing pulsing - the thing the old comment warned about */
+      const headInBody = !!body.querySelector('.fHead');
+      const faceH = [];
+      const faceEl = h.box.querySelector('.fFace');
+      for (let i = 0; i < 4; i++) { faceH.push(faceEl.getBoundingClientRect().height); await wait(220); }
+      return { hMin: Math.min.apply(null, hs), hMax: Math.max.apply(null, hs),
+        distinctBody: new Set(bt).size, headInBody: headInBody,
+        faceSpread: Math.max.apply(null, faceH) - Math.min.apply(null, faceH),
+        topSpread: Math.max.apply(null, tops) - Math.min.apply(null, tops) };
     });
-    ok(normal.ryMax - normal.ryMin > 2, 'the chest ellipse RADIUS itself changes over time (geometry, not a scale)',
-      { min: normal.ryMin, max: normal.ryMax });
-    ok(normal.cyMax - normal.cyMin > 1.5, 'and its centre lifts and settles', { min: normal.cyMin, max: normal.cyMax });
+    ok(normal.hMax - normal.hMin > 0.8, 'the chest itself EXPANDS on screen (real geometry, not a zoom of the drawing)',
+      { min: normal.hMin, max: normal.hMax });
+    ok(normal.headInBody === false && normal.faceSpread < 0.35,
+      'and the HEAD does not scale with it - the face keeps its size while the chest inflates',
+      { headInBody: normal.headInBody, faceSpread: normal.faceSpread });
     ok(normal.topSpread > 1, 'the rendered shoulder line actually moves on screen (px)', normal.topSpread);
     ok(normal.distinctBody > 8, 'the chest group travels through many distinct positions', normal.distinctBody);
     ok(errs.length === 0, 'no page errors', errs.slice(0, 2));
@@ -492,17 +548,17 @@ async function boot(browser, opts) {
       const h = window.__mk({ stethoscope: true });
       const shirt = h.box.querySelector('.fShirt');
       const rig = h.box.querySelector('.fHeadRig') || document.createElement('div');
-      const ry = [], tops = [];
+      const hs = [], tops = [];
       h.ctl.mood('listening', false, false);
       window.__call(h.ctl, 'nod'); window.__call(h.ctl, 'shake'); window.__call(h.ctl, 'curious');
       for (let i = 0; i < 26; i++) {
-        ry.push(parseFloat(shirt.getAttribute('ry')));
-        tops.push(shirt.getBoundingClientRect().top);
+        const b0 = shirt.getBoundingClientRect();
+        hs.push(b0.height); tops.push(b0.top);
         await wait(100);
       }
       const eye = h.box.querySelector('.fEyeL') || { style: {} };
       return {
-        ryMin: Math.min.apply(null, ry), ryMax: Math.max.apply(null, ry),
+        hMin: Math.min.apply(null, hs), hMax: Math.max.apply(null, hs),
         topSpread: Math.max.apply(null, tops) - Math.min.apply(null, tops),
         rigT: window.__tf(h.box, '.fHeadRig'),
         headT: window.__tf(h.box, '.fHead'),
@@ -511,9 +567,14 @@ async function boot(browser, opts) {
         stillMoods: (function () { h.ctl.mood('caring', true, false); return h.box.querySelector('svg').getAttribute('data-mood'); })()
       };
     });
-    ok(reduced.ryMax === reduced.ryMin && reduced.ryMax === 50,
-      'CONTROL C: under prefers-reduced-motion the chest geometry NEVER moves (same 2.6s window)',
-      { min: reduced.ryMin, max: reduced.ryMax });
+    /* the SAME rendered measurement as the normal arm, so the two numbers are
+       comparable: normally the chest height spreads > 0.8px, here it must not move at
+       all. Asserting `=== 50` on an attribute could only ever be satisfied by the one
+       implementation that wrote 50 there, which is why it broke the moment the torso
+       changed shape and reported null in a control whose whole job is to fail loudly. */
+    ok(reduced.hMax - reduced.hMin < 0.35,
+      'CONTROL C: under prefers-reduced-motion the chest geometry NEVER moves (same 2.6s window, same rendered measure)',
+      { min: reduced.hMin, max: reduced.hMax, normalSpread: normal.hMax - normal.hMin });
     ok(reduced.topSpread < 0.6, 'and the shoulder line does not move on screen either', reduced.topSpread);
     ok(reduced.rigT === '', 'the gesture rig carries no transform under reduced motion', reduced.rigT);
     ok(reduced.headT === '', 'the head tilt is suppressed under reduced motion', reduced.headT);
@@ -659,19 +720,43 @@ async function boot(browser, opts) {
       const svg = mount && mount.querySelector('svg');
       if (!svg) return { mounted: false };
       const shirt = svg.querySelector('.fShirt');
-      const ry = [];
+      const hs = [];
       /* the SAME 2.6s window section 7 uses. The breath cycle is ~4.35s, so a
          shorter window samples an arc, not the amplitude, and the two numbers
-         would not be comparable. */
-      for (let i = 0; i < 26; i++) { ry.push(parseFloat(shirt.getAttribute('ry'))); await wait(100); }
+         would not be comparable.
+         MEASURED ON SCREEN, not off an attribute: this sampled shirt.getAttribute('ry')
+         until av-6.0.0, and when the torso became a <path> that attribute stopped
+         meaning anything — but setAttribute still stored it, so this kept reporting a
+         breathing chest that had stopped moving. A rendered height cannot be faked. */
+      /* THE RATIO, not the height. #mlsAvKioskFace svg carries its own CSS keyframe that
+         scales the WHOLE face 1.008, so the shirt's rendered height moves even when the
+         chest is frozen — measured: with the chest deliberately broken this pin still
+         passed on the CSS pulse alone. Dividing by the face's height cancels any transform
+         applied to the svg as a whole and leaves only the chest's own expansion. */
+      const faceEl = svg.querySelector('.fFace');
+      for (let i = 0; i < 26; i++) {
+        const sh0 = shirt.getBoundingClientRect().height, fh0 = faceEl.getBoundingClientRect().height;
+        hs.push(fh0 > 0 ? sh0 / fh0 : 0);
+        await wait(100);
+      }
       const root = document.getElementById('mlsAvKiosk');
+      const idsK = Array.from(mount.querySelectorAll('[id]')).map(n => n.id);
+      const danglingK = [];
+      Array.prototype.forEach.call(mount.querySelectorAll('*'), n => {
+        ['fill', 'stroke', 'clip-path', 'filter', 'mask'].forEach(att => {
+          const m = /url\(#([^)]+)\)/.exec(n.getAttribute(att) || '');
+          if (m && !mount.querySelector('[id="' + m[1] + '"]')) danglingK.push(att + '=' + m[1]);
+        });
+      });
       const out = {
         mounted: true,
-        ids: mount.querySelectorAll('[id]').length,
+        nIds: idsK.length,
+        idsUnique: idsK.length === new Set(idsK).size,
+        danglingK: danglingK,
         hasRig: !!svg.querySelector('.fHeadRig'), hasBody: !!svg.querySelector('.fBody'),
         hasKnit: !!svg.querySelector('.fKnit'), hasLipUp: !!svg.querySelector('.fLipUp'),
         hasNostril: !!svg.querySelector('.fNostrilL'),
-        breathSpread: Math.max.apply(null, ry) - Math.min.apply(null, ry),
+        breathSpread: Math.max.apply(null, hs) - Math.min.apply(null, hs),
         dataMood: svg.getAttribute('data-mood'),
         rootClass: root ? root.className : null
       };
@@ -682,12 +767,14 @@ async function boot(browser, opts) {
     });
     ok(r.mounted, 'openKiosk mounts a drawn face into #mlsAvKioskFace');
     if (r.mounted) {
-      ok(r.ids === 0, 'the kiosk face is still id-free (it coexists with the Setup preview)', r.ids);
+      ok(r.nIds > 0 && r.idsUnique && r.danglingK.length === 0,
+        'the kiosk face owns UNIQUE ids and every url(#...) resolves inside it (it coexists with the Setup preview)',
+        { ids: r.nIds, unique: r.idsUnique, dangling: r.danglingK.slice(0, 4) });
       ok(r.hasRig && r.hasBody, 'the gesture rig and the breathing chest are present on the SHIPPED face',
         { rig: r.hasRig, body: r.hasBody });
       ok(r.hasKnit && r.hasLipUp && r.hasNostril, 'the new expression/feature parts are present too',
         { knit: r.hasKnit, lipUp: r.hasLipUp, nostril: r.hasNostril });
-      ok(r.breathSpread > 2, 'and it BREATHES in the kiosk, not just in the harness (same 2.6s window, same threshold as section 7)', r.breathSpread);
+      ok(r.breathSpread > 0.004, 'and the CHEST itself breathes in the kiosk, not just in the harness (chest:face height ratio over the same 2.6s window, so the kiosk CSS pulse cannot satisfy it)', r.breathSpread);
       ok(typeof r.dataMood === 'string', 'the kiosk face carries a mood attribute', r.dataMood);
       ok(r.closedClean, 'closing the kiosk removes the overlay (and destroys the face)');
     }
