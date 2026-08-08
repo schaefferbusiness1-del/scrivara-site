@@ -60,12 +60,17 @@ const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'latin1');
    POSITIVE claim that the patient has no encounters — asserting that from the
    doctor's inbox would be a clinical negative drawn from a worklist. */
 const frameUrlSites = (bg.match(/frameUrl: \(function \(\) \{ try \{ return String\(location\.href\)/g) || []).length;
-assert.strictEqual(frameUrlSites, 2,
-  'both enumerate ok-returns must report the URL of the frame they ran in (success and authoritative-empty) — without it the exclusion needs a second injected call per candidate, which is why it only ever lived in the walk');
+/* 3.0.47 raised this from 2 to 3 DELIBERATELY: the no-group REFUSAL now also
+   names its frame (reason 'no-encounter-group' + frameUrl + visitsPaneSeen) —
+   the same principle this suite demands of the ok-returns, extended to the
+   refusal that used to render as the anonymous [idx:other;0/0] on the owner's
+   screen (Matthew, live 2026-08-08). */
+assert.strictEqual(frameUrlSites, 3,
+  'all three enumerate returns must report the URL of the frame they ran in (success, authoritative-empty, and the named no-group refusal) — without it the exclusion needs a second injected call per candidate, which is why it only ever lived in the walk');
 
 const okReturn = bg.slice(bg.indexOf('        ok: true, selector: g.selector, count: expectedCount'), bg.indexOf('    if (op === \'readExpanded\')'));
 assert(/frameUrl:/.test(okReturn), 'the enumerate SUCCESS return must carry frameUrl');
-const emptyReturn = bg.slice(bg.indexOf("if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state'"), bg.indexOf("return { ok: false, count: 0, score: 0 };"));
+const emptyReturn = bg.slice(bg.indexOf("if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state'"), bg.indexOf("reason: 'no-encounter-group'"));
 assert(/frameUrl:/.test(emptyReturn), 'the enumerate AUTHORITATIVE-EMPTY return must carry frameUrl — it claims the patient has no encounters');
 
 assert(/var eb = bestResult\(enChart,/.test(bg),
