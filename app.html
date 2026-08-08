@@ -653,7 +653,17 @@ function refreshCheckins(announce){
        announcing it - a doctor opening the app at 9am must not be buzzed for
        yesterday's unread check-ins. Only arrivals while he is looking ping. */
     if (announce && fresh.length){
-      S.ckPing = { n: fresh.length, headline: String(fresh[0].headline || '').slice(0, 160) };
+      /* ACCUMULATE, and describe them HONESTLY. Two things were wrong here: the
+         banner was overwritten rather than added to, so two arrivals in one poll
+         window under-reported; and a FLAGGED INTERVIEW STILL IN PROGRESS - which
+         this endpoint returns alongside the ready ones, by design, so a red flag
+         reaches the doctor before the patient has finished - was announced as
+         "just finished". It has not finished. */
+      var done = fresh.filter(function(c){ return !c.inProgress; }).length;
+      var live = fresh.length - done;
+      var prev = (S.ckPing && S.ckPing.n) || 0;
+      S.ckPing = { n: prev + done, live: ((S.ckPing && S.ckPing.live) || 0) + live,
+        headline: String(fresh[0].headline || '').slice(0, 160) };
       buzz();
       if (fresh.length === 1) S.ckOpen = fresh[0].id;
     }
@@ -669,6 +679,38 @@ function refreshCheckins(announce){
 }
 function buzz(){
   try { if (navigator.vibrate) navigator.vibrate([90, 60, 90]); } catch(e){}
+}
+/* WHOSE BRIEF. The check-in row carries a portal id and no name, so the brief was
+   anonymous on the phone — three ready check-ins and no way to tell which room.
+   Today's schedule already holds the names, so the id is resolved against it, and
+   when it is not there the brief says so rather than inventing an attribution. */
+function ckName(extId){
+  var id = String(extId || '').trim();
+  if (!id) return '';
+  var list = S.appts || [];
+  for (var i = 0; i < list.length; i++){
+    if (String(list[i].patient_external_id || '').trim() === id) return list[i].name || '';
+  }
+  return 'not on today’s list';
+}
+/* WHEN IT ARRIVED. The old line printed the first ten characters of a UTC
+   timestamp through a date formatter, so the TIME was thrown away and the date
+   was shifted: a brief from sixty seconds ago and one from three weeks ago could
+   read the same, and after midnight UTC a fresh one read as tomorrow. */
+function ckWhen(iso){
+  if (!iso) return '';
+  var t = Date.parse(String(iso).indexOf('Z') >= 0 || /[+-]\d\d:?\d\d$/.test(String(iso))
+    ? String(iso) : (String(iso).replace(' ', 'T') + 'Z'));
+  if (!t || isNaN(t)) return '';
+  var mins = Math.round((Date.now() - t) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + ' min ago';
+  if (mins < 60 * 20){
+    var h = Math.round(mins / 60);
+    return h + (h === 1 ? ' hour ago' : ' hours ago');
+  }
+  var d = new Date(t);
+  return shortDate(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
 }
 function stopCheckinWatch(){ if (ckTimer){ clearTimeout(ckTimer); ckTimer = null; } }
 function armCheckinWatch(){
@@ -1051,12 +1093,20 @@ function renderToday(){
    textContent), so a patient's own words can never become markup. */
 function checkinSection(body){
   if (S.ckPing){
-    var ping = el('div','status ok');
-    ping.appendChild(el('span','dot'));
-    ping.appendChild(el('span', null, S.ckPing.n === 1
-      ? 'A pre-visit check-in just finished.'
-      : (S.ckPing.n + ' pre-visit check-ins just finished.')));
-    body.appendChild(ping);
+    var parts = [];
+    if (S.ckPing.n === 1) parts.push('A pre-visit check-in just finished.');
+    else if (S.ckPing.n > 1) parts.push(S.ckPing.n + ' pre-visit check-ins just finished.');
+    /* a flagged interview that is STILL RUNNING is not a finished check-in, and
+       saying it is would send the doctor looking for a summary that does not
+       exist yet */
+    if (S.ckPing.live === 1) parts.push('A check-in in progress raised a flag.');
+    else if (S.ckPing.live > 1) parts.push(S.ckPing.live + ' check-ins in progress raised flags.');
+    if (parts.length){
+      var ping = el('div','status ' + (S.ckPing.live ? 'warn' : 'ok'));
+      ping.appendChild(el('span','dot'));
+      ping.appendChild(el('span', null, parts.join(' ')));
+      body.appendChild(ping);
+    }
     S.ckPing = null;   /* announced once - it is news, not state */
   }
   if (S.ckErr){
@@ -1064,11 +1114,23 @@ function checkinSection(body){
     bad.appendChild(el('span','dot'));
     bad.appendChild(el('span', null, S.ckErr));
     body.appendChild(bad);
-    return;
+    /* NO `return` HERE. One failed poll used to erase the brief the doctor was
+       reading — the rows were still in memory, this function simply stopped
+       before drawing them. A failure to REFRESH is not a reason to withdraw what
+       we already have; the line above says the list may be stale, and the list
+       stays on screen. */
   }
   var rows = S.checkins;
   if (!rows || !rows.length) return;
-  body.appendChild(el('div','sechead', rows.length === 1 ? 'Check-in ready' : rows.length + ' check-ins ready'));
+  /* the heading counts what is READY, separately from what is merely flagged and
+     still running - "3 check-ins ready" when one of them is mid-interview is a
+     count the doctor would act on wrongly */
+  var readyN = rows.filter(function(c){ return !c.inProgress; }).length;
+  var liveN = rows.length - readyN;
+  var head = readyN === 1 ? 'Check-in ready' : (readyN + ' check-ins ready');
+  if (readyN === 0) head = liveN === 1 ? 'A check-in in progress raised a flag' : liveN + ' check-ins in progress raised flags';
+  else if (liveN) head += ' · ' + liveN + ' in progress, flagged';
+  body.appendChild(el('div','sechead', head));
   /* THROUGH listCard, not a card of its own. Rows are this app's ONE dynamic
      control (tests/phone-app-control-budget.test.js counts the button factories
      and there may be exactly one), and a check-in is a row like any other: a
@@ -1077,12 +1139,27 @@ function checkinSection(body){
   var shown = rows.slice(0, 8);
   var card = listCard(shown.map(function(c){
     var meta = [];
-    if (c.ready_at) meta.push(shortDate(String(c.ready_at).slice(0, 10)));
+    /* WHOSE BRIEF IS THIS? The row carries only the portal id, so the phone
+       matched it against nothing and every brief was anonymous - a doctor
+       holding three ready check-ins could not tell which room any of them
+       belonged to. Today's schedule already has the names, so the id is
+       resolved against it and falls back to saying it could not be. */
+    var who = ckName(c.patient_external_id);
+    if (who) meta.push(who);
+    /* the ARRIVAL TIME, not a date shifted by a timezone. The old line took the
+       first ten characters of a UTC timestamp and printed them as a local date,
+       so a brief from three weeks ago and one from sixty seconds ago could read
+       identically - and after midnight UTC the fresh one read as tomorrow. */
+    var when = ckWhen(c.ready_at);
+    if (when) meta.push(when);
     if (c.turns) meta.push(c.turns + ' turns');
+    if (c.inProgress) meta.push('STILL IN PROGRESS');
     if (c.audited === 'corrected') meta.push('summary corrected by the audit');
     else if (c.audited === 'passed') meta.push('summary audited');
     return {
-      name: String(c.headline || 'Check-in complete — tap to read it.'),
+      name: String(c.headline || (c.inProgress
+        ? 'Check-in still in progress — flagged, tap to read what there is.'
+        : 'Check-in complete — tap to read it.')),
       meta: meta.join(' · '),
       onTap: function(){ touchIdle(); S.ckOpen = (S.ckOpen === c.id ? 0 : c.id); render(); }
     };
@@ -1284,6 +1361,13 @@ scroller.addEventListener('scroll', function(){
     if (!(a && a.userAccess && a.userAccess.status === 'granted')) throw new Error('not-released');
     S.busy = false; S.screen = 'today'; touchIdle(); render();
     refreshToday();
+    /* THE RESUMED SESSION IS THE COMMON CASE, and it was the one path that never
+       loaded the briefs or armed the watch: those two calls lived only in
+       afterAuth, which a doctor reopening the app with a stored token never
+       reaches. So the brief never appeared and the ping never fired at all until
+       he happened to background and foreground the app. announce:false, for the
+       same reason as sign-in - what was already waiting is not news. */
+    refreshCheckins(false).then(armCheckinWatch, armCheckinWatch);
   }).catch(function(){
     S.busy = false; S.token = ''; saveToken(''); S.screen = 'signin'; render();
   });

@@ -188,7 +188,14 @@
                the surface the doctor actually looks at - would be the one place
                the brief never reaches. It is one short line; nothing about the
                cache's size argument applies to it. */
-            headline: c.headline ? String(c.headline).slice(0, 200) : null
+            /* 280, not 200. The server may PREPEND "⚠ EMERGENCY LANGUAGE IN
+               CHECK-IN — " to a headline that is already up to 200 characters, so
+               the stamped line runs to about 250 - and a 200-character cut here
+               silently amputated the end of the one line the doctor reads first,
+               on exactly the check-ins where it matters most. A cap below the
+               longest value the writer can produce is a truncation presented as a
+               field. */
+            headline: c.headline ? String(c.headline).slice(0, 280) : null
           };
         })
       };
@@ -1621,20 +1628,41 @@
        widest row" cut landed 8px above the real chin on the drawn heads and
        ran straight down the throat on a photograph. */
     var chinY = best.maxY, prevW = null, flat = 0;
+    /* WHY the scan stopped is part of the answer, not a debugging aid: a scan that
+       ended because the outline WIDENED has not found a jaw, it has found the top
+       edge of something else (a bridged shadow, a collar, a shoulder). */
+    var chinStop = 'mask-end';
     var flatCap = Math.max(3, Math.round(maxW * 0.10));
     for (var dy = maxWY + Math.max(2, Math.round(maxW * 0.12)); dy <= best.maxY; dy++) {
       var rw = runAt(dy);
-      if (!rw) { chinY = dy - 1; break; }
+      if (!rw) { chinY = dy - 1; chinStop = 'mask-hole'; break; }
       /* PAST THE CHEEKS FIRST. Around the widest row a face barely narrows at
          all, so both end tests fire there: measured, the plateau test stopped
          at the cheekbones and returned a face 29px long instead of 70. Neither
          test is asked anything until the width has actually come down. */
+      /* AND A PLATEAU IS ONLY A NECK IF IT IS NECK-WIDTH. An under-chin shadow
+         bridged by the GAP closing manufactures its own plateau - measured, one
+         face with a shadow growing monotonically moved the chin 103 -> 91 and
+         flipped faceShape from round to square, with faceShape asserted as
+         measured every time. The shadow's plateau sat at 0.65 of the widest row;
+         a real neck is nearer 0.45. So a run that is still more than 0.62 of the
+         face wide is not the neck, and the scan keeps going down. */
       if (prevW !== null && rw.w < maxW * 0.85) {
-        if (rw.w > prevW + 1) { chinY = dy - 1; break; }          /* widening again: shoulders */
-        if (Math.abs(rw.w - prevW) <= 1) {
+        /* WIDENING ALWAYS ENDS THE FACE, at any width. Below the jaw, anything
+           that gets WIDER again is not face: shoulders, a collar, or - the case
+           this was measured on - an under-chin shadow whose hole the GAP closing
+           bridges back at the shadow's own (wider) extent. Gating this test on a
+           width bound was my own error: the shadow sat at 0.80 of the widest row,
+           the test was skipped, and the scan ran on down the neck. One face, one
+           shadow growing monotonically, moved the chin 103 -> 91 and flipped
+           faceShape round -> square with faceShape asserted as measured. */
+        if (rw.w > prevW + 1) { chinY = dy - 1; chinStop = 'widening'; break; }
+        /* the FLAT test is the one that needs a width bound - a plateau is only a
+           neck if it is neck-width. 0.75, not 0.62: a broad neck is ordinary. */
+        if (Math.abs(rw.w - prevW) <= 1 && rw.w <= maxW * 0.75) {
           flat++;
-          if (flat >= flatCap) { chinY = dy - flat; break; }      /* a neck, held at one width */
-        } else flat = 0;
+          if (flat >= flatCap) { chinY = dy - flat; chinStop = 'neck'; break; }
+        } else if (Math.abs(rw.w - prevW) > 1) flat = 0;
       }
       prevW = rw.w;
       chinY = dy;
@@ -1643,6 +1671,35 @@
     var faceRun = runAt(maxWY) || { L: best.minX, R: best.maxX, w: best.maxX - best.minX + 1 };
     var faceW = faceRun.w;
     var cxMid = Math.round((faceRun.L + faceRun.R) / 2);
+    /* A FACE IS SYMMETRIC ABOUT ITS OWN CENTRE LINE; A HAND ON THE CHEEK IS NOT.
+       Measured: a skin-coloured hand held clear of the face is correctly a
+       separate component at every gap down to 0.03N - but TOUCHING, it merges,
+       faceW goes 74 -> 97 (+32%), and every width-normalised verdict moves with
+       it: a thick brow read as thin, an oval face as round, both asserted in
+       `derived`. The nose centre line is the robust centre here (the median x of
+       the mask across the mid-face), so an arm on one side cannot move it. Where
+       the two halves disagree by more than a third, the WIDTH is taken from the
+       narrower half - which is the face - and the group that describes the skull
+       declines, because the outline it would measure is not all face. */
+    /* THE CENTRE LINE COMES FROM THE UPPER FACE, where a hand is not. Taking it
+       from the mid-face rows was my own first attempt and it cannot work: the
+       hand is IN those rows, so it drags the centre with it and the two halves
+       come out balanced - measured, asym stayed under the threshold and the
+       clamp never fired. The forehead and temples are above where a hand rests
+       against a cheek, so their centre is the face's own. */
+    var midCols = [];
+    for (var mcy = faceT; mcy <= Math.min(best.maxY, faceT + Math.max(2, Math.round((maxWY - faceT) * 0.45))); mcy++) {
+      var mr = runAt(mcy);
+      if (mr) midCols.push(Math.round((mr.L + mr.R) / 2));
+    }
+    var trueMid = midCols.length ? median(midCols.slice()) : cxMid;
+    var halfL = Math.max(1, trueMid - faceRun.L), halfR = Math.max(1, faceRun.R - trueMid);
+    var asym = Math.max(halfL, halfR) / Math.min(halfL, halfR);
+    var lopsided = asym > 1.35;
+    if (lopsided) {
+      faceW = 2 * Math.min(halfL, halfR);
+      cxMid = trueMid;
+    }
 
     /* ---- 4. facial hair as GEOMETRY, before anything below the eyes is
        measured. A beard is not skin, so the mask STOPS at the moustache line:
@@ -1751,7 +1808,10 @@
                  hairStyle: 'short', glasses: false, beard: 'none' };
     /* THE LEDGER OF WHAT WAS ACTUALLY MEASURED. A knob absent from it is one
        the caller leaves exactly as the doctor set it. */
-    var derived = ['skin', 'hairStyle', 'beard', 'glasses'];
+    /* hairStyle is NOT seeded here any more - it is pushed by whichever branch of
+       the hair read actually decides, and stays absent when the background makes
+       the question unanswerable. A knob in this list is a claim. */
+    var derived = ['skin', 'beard', 'glasses'];
     found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
 
     /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
@@ -1782,6 +1842,21 @@
     }
     var crownR = crownN ? crown / crownN : 0;
     var hair = medianCol(hairPix);
+    /* HAIR THE COLOUR OF THE WALL IS NOT A BALD HEAD - IT IS AN UNANSWERABLE
+       QUESTION. isBg() is a distance test, so when the wall lands within 26 of
+       the hair the whole hair mass classifies as background: measured on one
+       fixture face with only the wall changing, #454a50 gave crownR 0.79 and
+       "short hair", #3a3f45 gave crownR 0 and "BALD" - a cliff, from a wall.
+       The two cases are told apart by GEOMETRY, not colour. A genuinely bald
+       scalp is part of the skin mass, so the mask's top row is a narrow DOME. A
+       head whose hair was mistaken for wall has its mask cut off flat at the
+       forehead, so the top row is nearly as wide as the cheeks. When the top is
+       wide, something is covering the crown and this photo cannot say what
+       colour it is - so hairStyle and hair are left out of `derived` and the
+       doctor's own setting stands. */
+    var topRun = runAt(faceT);
+    var flatTop = !!(topRun && maxW && (topRun.w / maxW) > 0.55);
+    var hairUnreadable = (crownR < 0.20 && flatTop);
     /* side columns BESIDE the box, below the eye line: hair that hangs */
     var sideHit = 0, sideN = 0;
     var sideW = Math.max(2, Math.round(faceW * 0.28));
@@ -1802,11 +1877,16 @@
       }
     }
     var sideR = sideN ? sideHit / sideN : 0;
-    if (crownR < 0.20 || !hair) { look.hairStyle = 'bald'; found.push('little or no hair'); }
-    else if (crownR < 0.42) { look.hairStyle = 'buzz'; found.push('very short hair'); }
-    else if (sideR > 0.30) { look.hairStyle = 'long'; found.push('long hair'); }
-    else { look.hairStyle = 'short'; found.push('short hair'); }
-    if (look.hairStyle !== 'bald' && hair) {
+    if (hairUnreadable) {
+      /* say it out loud rather than answering. `hairStyle` never enters
+         `derived`, so Match leaves the doctor's own choice alone. */
+      found.push('hair could not be read — the background is too close to it in colour');
+    }
+    else if (crownR < 0.20 || !hair) { look.hairStyle = 'bald'; derived.push('hairStyle'); found.push('little or no hair'); }
+    else if (crownR < 0.42) { look.hairStyle = 'buzz'; derived.push('hairStyle'); found.push('very short hair'); }
+    else if (sideR > 0.30) { look.hairStyle = 'long'; derived.push('hairStyle'); found.push('long hair'); }
+    else { look.hairStyle = 'short'; derived.push('hairStyle'); found.push('short hair'); }
+    if (!hairUnreadable && look.hairStyle !== 'bald' && hair) {
       look.hair = hex(hair);
       derived.push('hair');
       var hairL = lum(hair);
@@ -1826,7 +1906,18 @@
       /* THE JAW, NOT THE MOUTH. Patches on or beside the lips made a dark lip
          colour read as a drop from the cheeks, and a clean-shaven face came
          back bearded. */
-      var chin = patchMedian([[atX(0.30), belowEye(0.88)], [atX(0.70), belowEye(0.88)], [cxMid, belowEye(1.0)]], 2, false);
+      /* skinOnly, and CLAMPED ABOVE THE CHIN. The three patch centres are on the
+         face, but with r=2 the 5x5 window of the lowest one reached rows past
+         lowerChin - so on a dark wall it sampled the WALL and the jaw came back
+         "stubble" on a clean-shaven face. Measured with a resolving control, one
+         face, wall only: #f2f2f2 -> drop -6 (none); #4a4f55 -> 25 (stubble);
+         #3a3f45 -> 28; #000000 -> 40. The same three patches with skinOnly gave
+         drop 1 in every case. Real stubble stays inside the mask - it darkens
+         skin without leaving the skin-chroma cluster - so nothing that should be
+         detected is lost by demanding the mask. */
+      var jawY = Math.min(belowEye(0.88), lowerChin - 3);
+      var chinY2 = Math.min(belowEye(1.0), lowerChin - 3);
+      var chin = patchMedian([[atX(0.30), jawY], [atX(0.70), jawY], [cxMid, chinY2]], 2, true);
       if (chin) {
         var drop = skinL - lum(chin);
         if (drop > 46) { look.beard = 'beard'; found.push('beard'); }
@@ -1849,8 +1940,33 @@
        at -1 meant no row was ever darker than the seed and the scan silently
        found nothing. A frame detector that always declines looks exactly like a
        face with no glasses. */
+    /* WHERE THE HAIR STOPS, measured before the frame is looked for. A fringe
+       hanging to the eye line is dark all the way across INCLUDING the bridge,
+       and the bridge is the one thing this detector treats as proof of a frame:
+       measured, a face with no spectacles anywhere read GLASSES at fringe bottoms
+       0.40, 0.41 and 0.42 of the frame, and then abandoned the brow read too,
+       because the brow measure stands down whenever glasses are "found". A
+       spectacle frame sits on a nose, not in hair - so the scan starts below the
+       hair mass. */
+    var fringeStop = faceT;
+    {
+      var fcols = [];
+      for (var ffx = atX(0.14); ffx <= atX(0.86); ffx++) {
+        if (ffx < 0 || ffx >= M) continue;
+        var flow = faceT, fseen = false;
+        for (var ffy = Math.max(0, faceT - Math.round(faceH * 0.55)); ffy < eyeY; ffy++) {
+          var fpx = px(ffx, ffy);
+          var fhair = !isBg(fpx) && !mask[ffy * M + ffx] && unlikeSkin(fpx);
+          if (fhair) { fseen = true; flow = ffy; }
+          else if (fseen) break;
+        }
+        fcols.push(flow);
+      }
+      var fmed = median(fcols);
+      if (fmed !== null) fringeStop = Math.max(faceT, fmed + 2);
+    }
     var frameY = -1, frameDark = -1e9;
-    for (var gy = Math.max(faceT, eyeY - Math.round(faceH * 0.22)); gy <= Math.min(lowerChin, eyeY + Math.round(faceH * 0.06)); gy++) {
+    for (var gy = Math.max(fringeStop, eyeY - Math.round(faceH * 0.22)); gy <= Math.min(lowerChin, eyeY + Math.round(faceH * 0.06)); gy++) {
       var brg = patchMedian([[cxMid, gy]], 1, false);
       if (!brg) continue;
       var darkness = -lum(brg);
@@ -1938,9 +2054,19 @@
         var bVal = bRatio < 0.054 ? 'thin' : (bRatio > 0.095 ? 'thick' : 'normal');
         look.brows = bVal; derived.push('brows');
         found.push(bVal === 'normal' ? 'natural brows' : bVal + ' brows');
-        if (browPix.length > 12) {
+        /* THE INTERIOR OF THE BROW, NOT ITS MEDIAN. Every pixel counted here is
+           merely "darker than the skin", so on a thin brow the set is mostly the
+           ANTIALIASED EDGE - and its median is a mid-tan that exists nowhere on
+           the face. Measured, with brows painted in EXACTLY the hair colour
+           #3a2a1c: browPx 3 -> browCol #7f6147, browPx 4 -> #7c634c, browPx 6 ->
+           #7f6147, each ~56 from the hair and so clearing the guard below, each
+           then painted into the SVG and saved as the doctor's own choice. The
+           pattern is not monotonic in thickness (5, 7 and 8 were fine), which is
+           why one pinned thickness could never have caught it.
+           The darkest quarter is the brow itself; the blend sorts above it. */
+        if (browPix.length >= 24) {
           browPix.sort(function (pp, qq) { return lum(pp) - lum(qq); });
-          var bc = browPix[Math.floor(browPix.length / 2)];
+          var bc = browPix[Math.floor(browPix.length * 0.25)];
           if (hair && chDist(bc, hair) > 30) { look.browCol = hex(bc); derived.push('browCol'); found.push('brows a different colour from the hair'); }
         }
       }
@@ -2030,8 +2156,48 @@
        reading of a jaw that is under hair, so there is no reading. */
     var eyeRun = runAt(eyeY) || faceRun;
     var eyeW = eyeRun.w;
-    var offFrame = (eyeRun.L <= 0 || eyeRun.R >= M - 1 || faceRun.L <= 0 || faceRun.R >= M - 1);
-    if (!offFrame && eyeW > M * 0.10 && lowerH > faceH * 0.20 && look.beard === 'none') {
+    /* `lopsided` joins offFrame here: when one half of the outline is a third
+       wider than the other, the thing being measured is not only a face, and a
+       shape verdict from it would overwrite the doctor's own setting with the
+       geometry of his hand. */
+    var offFrame = (eyeRun.L <= 0 || eyeRun.R >= M - 1 || faceRun.L <= 0 || faceRun.R >= M - 1 || lopsided);
+    /* AND THE CHIN HAS TO HAVE BEEN FOUND FOR A GOOD REASON.
+       My first attempt at this gate demanded that eye-to-chin be at least 0.48 of
+       the face's width, on the reasoning that no adult face is near 0.40 - and it
+       broke two cases that had been passing, because a WIDE SHORT face is exactly
+       a short lower face over a wide one (the fixture's round head measures 0.37).
+       The lesson: a proportion cannot separate "an unusual face" from "a bad
+       measurement", because unusual faces are the ones this feature exists for.
+       WHY the scan stopped can. A scan that ended on a WIDENING did not find a
+       jaw - it found the top edge of something else, and an under-chin shadow
+       bridged by the closing is exactly that. When it stopped that way AND there
+       is a lot of unexplained mask left below the chin, the chin is not
+       trustworthy and neither is anything measured from it. */
+    var unexplained = best.maxY - chinY;
+    /* MEASURED, not reasoned about: chinStop came back "neck" for BOTH the
+       shadowed and the unshadowed face, so a gate on the stop reason could never
+       have fired. What actually happens is that the shadow REMOVES the jaw's
+       lowest rows from the skin mask, so the narrowing reaches neck-width eleven
+       rows early and the plateau is genuinely there. The mask is wrong, not the
+       scan.
+       So the question to ask is whether the SILHOUETTE continues below the chin
+       we found: a band of pixels that are neither background nor skin, inside the
+       face's own columns, means the face goes on and this chin is not the chin. A
+       real beard is already handled above (it moves lowerChin), and a real neck is
+       skin, so neither fires this. */
+    var belowDark = 0, belowTot = 0;
+    var belowHalf = Math.max(2, Math.round(faceW * 0.30));
+    for (var qy = lowerChin + 1; qy <= Math.min(M - 1, lowerChin + Math.round(faceH * 0.25)); qy++) {
+      for (var qx = cxMid - belowHalf; qx <= cxMid + belowHalf; qx++) {
+        if (qx < 0 || qx >= M) continue;
+        belowTot++;
+        var qp = px(qx, qy);
+        if (!isBg(qp) && !mask[qy * M + qx]) belowDark++;
+      }
+    }
+    var belowR = belowTot ? belowDark / belowTot : 0;
+    var chinPlausible = belowR < 0.35;
+    if (!offFrame && chinPlausible && eyeW > M * 0.10 && lowerH > faceH * 0.20 && look.beard === 'none') {
       var shapeR = eyeW / lowerH;
       var sVal = shapeR < 1.48 ? 'long' : (shapeR > 1.80 ? 'round' : 'oval');
       /* A SQUARE JAW OUTRANKS ALL THREE: it is not a proportion, it is the face
@@ -2102,6 +2268,8 @@
                     sideR: Math.round(sideR * 100) / 100, beardDepth: Math.round(beardDepth * 100) / 100,
                     skinL: Math.round(skinL), bgL: Math.round(bgL),
                     maxWY: maxWY, maxW: maxW, brow: dbgBrow,
+                    chinStop: chinStop, unexplained: unexplained, asym: Math.round(asym * 100) / 100,
+                    lopsided: lopsided, hairUnreadable: hairUnreadable, flatTop: flatTop,
                     eL: eL && { y: eL.medY, cx: Math.round(eL.cx), sp: eL.spread, n: eL.n },
                     eR: eR && { y: eR.medY, cx: Math.round(eR.cx), sp: eR.spread, n: eR.n } } };
   }

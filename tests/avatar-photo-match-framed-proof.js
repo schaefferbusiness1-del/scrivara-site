@@ -68,6 +68,34 @@ const FIXTURE = function (o) {
     if (o.longHair) { x.fillStyle = o.hair; x.fillRect(N * (0.5 - rx - 0.09), N * 0.55, N * 0.09, N * 0.34); x.fillRect(N * (0.5 + rx), N * 0.55, N * 0.09, N * 0.34); }
     if (o.beard) { x.fillStyle = o.beard; x.beginPath(); x.ellipse(N / 2, N * (cy + ry * 0.72), N * rx * 0.69, N * ry * 0.33, 0, 0, 7); x.fill(); }
     if (o.glasses) { x.fillStyle = '#20242a'; x.fillRect(N * 0.22, N * 0.38, N * 0.56, N * 0.06); }
+    /* --- the inputs an adversarial review used to break the matcher --- */
+    /* a fringe that hangs LOWER, down to o.fringeTo of the frame */
+    if (o.fringeTo) {
+      x.fillStyle = o.hair;
+      x.beginPath();
+      x.ellipse(N / 2, N * (o.fringeTo - 0.14), N * rx, N * 0.14, 0, 0, 7);
+      x.fill();
+    }
+    /* eyebrows, so a brow-colour claim can be checked against a known truth */
+    if (o.browPx) {
+      x.fillStyle = o.browColor || '#2a1d12';
+      x.fillRect(N * 0.28, N * 0.37, N * 0.15, o.browPx);
+      x.fillRect(N * 0.57, N * 0.37, N * 0.15, o.browPx);
+    }
+    /* the shadow under a chin that a ceiling light throws */
+    if (o.chinShadow) {
+      x.fillStyle = '#8f6d4e';
+      x.beginPath();
+      x.ellipse(N / 2, N * (cy + ry), N * rx * 0.8, N * o.chinShadow, 0, 0, 7);
+      x.fill();
+    }
+    /* a hand resting against the cheek: skin-coloured, TOUCHING the face */
+    if (o.hand) {
+      x.fillStyle = o.skin;
+      x.beginPath();
+      x.ellipse(N * (0.5 + rx), N * (cy + 0.06), N * 0.12, N * 0.16, 0, 0, 7);
+      x.fill();
+    }
   }
   x.restore();
   return c.toDataURL('image/jpeg', 0.92);
@@ -90,7 +118,23 @@ const CASES = {
   W10: { label: 'NO FACE - a beige wall', o: { face: false, bg: '#e8d9c0', skin: '#e8d9c0' } },
   W11: { label: 'a warm beige wall AND a small face', o: { skin: '#f3d3b3', hair: '#241a12', scale: 0.44, bg: '#e8d9c0' } },
   W12: { label: 'shoulders in shot (a teal top)', o: { skin: '#f0c9a0', hair: '#3a2a1c', scale: 0.55, shoulders: '#1f6f78' } },
-  W13: { label: 'irises visible, small in frame', o: { skin: '#f0c9a0', hair: '#3a2a1c', scale: 0.55, irisDx: 0.195 } }
+  W13: { label: 'irises visible, small in frame', o: { skin: '#f0c9a0', hair: '#3a2a1c', scale: 0.55, irisDx: 0.195 } },
+  /* ---- the inputs a 13-agent adversarial review used to make this matcher
+     print a WRONG ANSWER as a detection. Each of these fails on the matcher as
+     committed in c17016cf/aea29124; the control run at the end proves it. ---- */
+  X1: { label: 'a wall the colour of the hair', o: { skin: '#f0c9a0', hair: '#3a2a1c', bg: '#3a3f45' } },
+  X2: { label: 'the same face on a light wall (control)', o: { skin: '#f0c9a0', hair: '#3a2a1c', bg: '#f2f2f2' } },
+  /* X3 is drawn in the TIGHT-CROP geometry the review reproduced the leak in
+     (scale 1, wall #4a4f55): at 0.62 scale the jaw patch's window did not reach
+     the wall, so the case passed on the broken matcher too — an assertion that
+     passes either way is not an assertion. */
+  X3: { label: 'clean-shaven on a DARK wall (tight crop)', o: { skin: '#f0c9a0', hair: '#3a2a1c', bg: '#4a4f55' } },
+  X4: { label: 'no under-chin shadow', o: { skin: '#f0c9a0', hair: '#3a2a1c' } },
+  X5: { label: 'the same face with a ceiling-light shadow under the chin', o: { skin: '#f0c9a0', hair: '#3a2a1c', chinShadow: 0.05 } },
+  X6: { label: 'a thick brow, no hand', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 16 } },
+  X7: { label: 'the same thick brow with a hand ON the cheek', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 16, hand: true } },
+  X8: { label: 'a fringe hanging to the eye line, NO spectacles', o: { skin: '#f0c9a0', hair: '#3a2a1c', fringeTo: 0.41 } },
+  X9: { label: 'thin brows painted in EXACTLY the hair colour', o: { skin: '#f0c9a0', hair: '#3a2a1c', browPx: 3, browColor: '#3a2a1c' } }
 };
 
 async function probe(file) {
@@ -163,7 +207,35 @@ function checks(out) {
     ['W12 the top colour comes off the shoulders', D('W12').indexOf('shirt') >= 0 && lumOf(L('W12').shirt) >= 0],
     ['W12 and it is not the stock scrub green', L('W12').shirt !== '#2E6A4B'],
     ['W13 eye spacing is read when the irises are visible', D('W13').indexOf('eyeSet') >= 0],
-    ['W13 and wide-set irises read as wide', L('W13').eyeSet === 'wide']
+    ['W13 and wide-set irises read as wide', L('W13').eyeSet === 'wide'],
+
+    /* ---- X: THE ANSWERS THAT MUST BE REFUSALS -------------------------------
+       Every one of these is a case where the matcher used to print a confident
+       wrong answer AND put the knob in `derived`, which is what makes Match
+       overwrite a setting the doctor chose by hand. ---------------------------- */
+    ['X1 hair the colour of the WALL is not a bald head', L('X1').hairStyle !== 'bald'],
+    ['X1 and the unanswerable knob is REFUSED, not guessed', D('X1').indexOf('hairStyle') < 0],
+    ['X1 the refusal is said out loud', ((out.X1 && out.X1.found) || []).some(function (f) { return /could not be read/i.test(f); })],
+    ['X2 CONTROL: the same face on a light wall still reads its hair',
+      L('X2').hairStyle === 'short' && D('X2').indexOf('hairStyle') >= 0],
+    ['X2 CONTROL: and reads it dark', lumOf(L('X2').hair) >= 0 && lumOf(L('X2').hair) < 90],
+    ['X3 a DARK WALL does not put stubble on a clean-shaven face', L('X3').beard === 'none'],
+    /* THE CLAIM IS "NEVER A DIFFERENT ASSERTED SHAPE", NOT "ALWAYS THE SAME
+       ANSWER". A refusal is a correct outcome here: `derived` without faceShape
+       means Match leaves whatever the doctor chose alone, which is exactly what
+       should happen when the chin could not be trusted. My first version of this
+       assertion demanded equality and would have forced a guess. */
+    ['X4/X5 a ceiling-light shadow never asserts a DIFFERENT face shape',
+      D('X5').indexOf('faceShape') < 0 || L('X5').faceShape === L('X4').faceShape],
+    ['X5 and it does not invent a square jaw',
+      !(D('X5').indexOf('faceShape') >= 0 && L('X5').faceShape === 'square')],
+    ['X4 CONTROL: the unshadowed twin still reads a shape', D('X4').indexOf('faceShape') >= 0],
+    ['X6 CONTROL: a thick brow with no hand reads thick', L('X6').brows === 'thick'],
+    ['X7 A HAND ON THE CHEEK MUST NOT MAKE A THICK BROW THIN', L('X7').brows !== 'thin'],
+    ['X7 and the skull group declines when the outline is not all face', D('X7').indexOf('faceShape') < 0],
+    ['X8 a fringe to the eye line is NOT spectacles', L('X8').glasses !== true],
+    ['X8 and the brow read is not abandoned with it', D('X8').indexOf('brows') >= 0 || !L('X8').glasses],
+    ['X9 brows painted in the hair colour claim NO separate colour', D('X9').indexOf('browCol') < 0]
   ];
 }
 
