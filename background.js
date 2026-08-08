@@ -9509,7 +9509,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       if (!g) {
         if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true, frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eU2) { return ''; } })() };
-        return { ok: false, count: 0, score: 0 };
+        /* 3.0.47 (Matthew, live 2026-08-08): this bare return carried NO reason,
+           so ten identical passes of it rendered as the cryptic [idx:other;0/0]
+           and nobody could tell WHICH surface answered. Name the state and
+           prove the surface: no encounter-row group exists here AND no explicit
+           empty-state marker is present - a refusal, never a guessed empty. */
+        return { ok: false, count: 0, score: 0, reason: 'no-encounter-group', frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eNg) { return ''; } })(), visitsPaneSeen: (function () { try { return /visits\s+and\s+cases/i.test(String((document.body && document.body.innerText) || '').slice(0, 300000)); } catch (eNg2) { return false; } })() };
       }
       var rows = g.rows.map(function (n, i) {
         var t = txt(n); var d = t.match(DATE_RE);
@@ -10456,7 +10461,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var ehStuck = ehStuckPasses >= EH_STUCK_LIMIT;
         if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline && Date.now() + 7000 < indexPhaseDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
-          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped || !enChart.length ? '[' + (enNoiseDropped ? 'noise-frames-excluded:' + enNoiseDropped : '') + (!enChart.length ? ((enNoiseDropped ? ';' : '') + 'no-chart-frame-answered') : '') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : '') + (function (er) { try { if (!er) return ''; var erR = String(er.reason || ''); var gate = erR.indexOf('visits-panel-not-open') >= 0 ? 'panel' : erR.indexOf('visits-total-not-readable') >= 0 ? 'total' : erR.indexOf('visits-list-still-rendering') >= 0 ? 'lstill' : (er.ok ? 'ok' : 'other'); return '[idx:' + gate + ';' + (Number(er.renderedListItems) || 0) + '/' + (Number(er.declaredEvents) || 0) + ';r' + (Number(er.parsedRows) || 0) + ';eN' + (Number(er.effStabN) || 0) + ';eMs' + (Number(er.effStabMs) || 0) + ';p' + (ehPass + 1) + ']'; } catch (eIdxTag) { return ''; } })(enumRes), identity: {}, visits: [], diag: diag,
+          ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped || !enChart.length ? '[' + (enNoiseDropped ? 'noise-frames-excluded:' + enNoiseDropped : '') + (!enChart.length ? ((enNoiseDropped ? ';' : '') + 'no-chart-frame-answered') : '') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : '') + (function (er) { try { if (!er) return ''; var erR = String(er.reason || ''); var gate = erR.indexOf('visits-panel-not-open') >= 0 ? 'panel' : erR.indexOf('visits-total-not-readable') >= 0 ? 'total' : erR.indexOf('visits-list-still-rendering') >= 0 ? 'lstill' : erR.indexOf('no-encounter-group') >= 0 ? 'nogroup' : (er.ok ? 'ok' : 'other'); return '[idx:' + gate + ';' + (Number(er.renderedListItems) || 0) + '/' + (Number(er.declaredEvents) || 0) + ';r' + (Number(er.parsedRows) || 0) + ';eN' + (Number(er.effStabN) || 0) + ';eMs' + (Number(er.effStabMs) || 0) + ';p' + (ehPass + 1) + ']'; } catch (eIdxTag) { return ''; } })(enumRes), identity: {}, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
@@ -14588,6 +14593,29 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
  * router. Never reads chart content; operational metadata only. */
 try { if (typeof self !== 'undefined' && !self.__mlsWorkerBootAt) self.__mlsWorkerBootAt = Date.now(); } catch (e) {}
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+  if (msg && msg.type === 'mlsAthenaPresenceRequest') {
+    /* 3.0.47: lease-free athena presence for the app checklist. Runs the SAME
+       verified picker the pull engine trusts (heartbeat-preferred, login and
+       identity pages excluded) but takes NO engine lease and reads NO chart -
+       measured 2026-08-08: the chart-read probe wedged with a killed pull's
+       lease and the checklist could not prove an open signed-in athena. */
+    (async function () {
+      var out = { ok: true, athenaOpen: false, certain: true, reason: 'no-athena-tab' };
+      try {
+        var all = await chrome.tabs.query({});
+        var picked = null;
+        try { picked = await mlsPickAthenaTab(all, { athenaOnly: true }); } catch (ePk) { picked = null; }
+        if (picked) { out.athenaOpen = true; out.reason = 'presence-verified'; }
+        else {
+          var rawAthena = 0;
+          for (var pi = 0; pi < all.length; pi++) { if (mlsIsAthenaTab(all[pi])) rawAthena++; }
+          if (rawAthena) { out.reason = 'athena-tab-unverified'; out.certain = false; }
+        }
+      } catch (e) { out = { ok: true, athenaOpen: false, certain: false, reason: 'presence-probe-error' }; }
+      try { sendResponse(out); } catch (e2) {}
+    })();
+    return true;
+  }
   if (!msg || msg.type !== 'mlsExtHealthRequest') return;
   (async function () {
     var out = { ok: true, at: Date.now() };

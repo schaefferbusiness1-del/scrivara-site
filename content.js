@@ -37,7 +37,7 @@
      row is on screen to open. Read-only navigation (clicks the athenaOne Home logo). */
   /* wsg-1.0.0: five write-safety verbs added — mlsAppReviewScreen (extension-side review overlay),
      mlsAppTeachRecall/DryRun/Forget/MemoryList (taught-destination memory; all read-only). */
-  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1, mlsAppChartIdentity: 1 };
+  var MLS_BRIDGE_TYPES = { mlsPing: 1, mlsAppCapture: 1, mlsAppPasteNote: 1, mlsAppPullSchedule: 1, mlsAppReadChart: 1, mlsAppReadReport: 1, mlsAppPushVisit: 1, mlsAppSearchProcedure: 1, mlsAppPrepProcTemplate: 1, mlsAppSignAndSave: 1, mlsAppAthenaActionV2: 1, mlsAppTeachStart: 1, mlsAppTeachCancel: 1, mlsAppGotoDate: 1, mlsAppScrapeReviews: 1, mlsAppGoHome: 1, mlsAppFocusMlsTab: 1, mlsDevReload: 1, mlsAppVerifiedWrite: 1, mlsFgState: 1, mlsIdDiag: 1, mlsAppReadVisits: 1, mlsNameShadowState: 1, mlsAppReviewScreen: 1, mlsAppTeachRecall: 1, mlsAppTeachDryRun: 1, mlsAppTeachForget: 1, mlsAppTeachMemoryList: 1, mlsExtHealth: 1, mlsAthenaPresence: 1, mlsAppChartIdentity: 1 };
   // Optional operator-set extra origins (e.g. a staging domain, or http://localhost:PORT
   // for development). Defaults to none, so out of the box ONLY mlsscribe.com is trusted.
   var _mlsExtraOrigins = [];
@@ -258,6 +258,15 @@
     // v1.60 DEV: reload the unpacked extension from disk (build iteration without a
     // manual chrome://extensions click). Reload only - nothing else.
     /* v2.9.11: read the accumulated shadow-parser totals (cutover evidence). Read-only. */
+    /* 3.0.47: lease-free athena presence relay (app checklist probe). */
+    if (d.type === 'mlsAthenaPresence') {
+      try {
+        chrome.runtime.sendMessage({ type: 'mlsAthenaPresenceRequest' }, function (resp) {
+          reply({ source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: resp || { error: 'no response' } });
+        });
+      } catch (err) { reply({ source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: { error: 'extension error' } }); }
+      return;
+    }
     if (d.type === 'mlsNameShadowState') {
       try {
         chrome.runtime.sendMessage({ type: 'mlsNameShadowStateRequest' }, function (resp) {
