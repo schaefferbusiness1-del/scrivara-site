@@ -531,6 +531,61 @@ Heal-round-4 recovery evidence is on disk (2026-08-08-heal4-recovered.json:
 80/98 at-or-above healed values after a full server round-trip, 18 short
 listed, verified-at-90s 78/78 before the ledger died in a tab reload).
 
+## 2026-08-08 night — runs 3 and 4, the 1,340 never-read class, and the honesty trains
+
+**Run 3 (b961 + ext 3.0.48): 13/19 ✓ full-proof-chain, 6 failed, all named
+`no-chart-frame-candidate[stm.esp~noise-surface]`** — the 3.0.48 index rescue
+worked and the failure moved one stage upstream to the body-walk's own copy of
+the URL denylist. ext 3.0.49 (b964): the walk's noise drop is
+identity-decided — a noise-URL candidate reaches the SAME visitIdentityGate
+every chart frame passes and is dropped only when its own identity fails the
+frozen patient; the 2026-07-24 enterprise-worklist weld stays dead; both arms
+pinned, pre-fix EXIT=1 proven. Set-shift evidence across runs (Diann/Atoussa
+flipped ✓, Sarah flipped fail) fingerprints per-session frame-layout rotation
+— which is why the fix is identity-based, never URL-based.
+
+**Run 4 (b964 + 3.0.49, owner-watched, stopped on his order at ~30 min):**
+partials before the stop: **Edward ✓ SAVED — a two-day persister flipped by
+the walk rescue** — Matthew ✓ again; Elizabeth FLAPPED (✓ in run 3 → ⚠
+`visit-bodies-incomplete(encounter-surface-not-open ×1,
+stable-source-keys-incomplete ×1)` in run 4): her body-detail surface failed
+to open in the frame variant that session dealt her. The flap itself is the
+finding — draw-dependent frame variance survives at the per-row detail stage;
+the census-evidence pass on her chart is the queued next diagnostic. Statuses
+and timing serialized (`__pxJul1dPartial`).
+
+**Pace, honestly:** run 3 ≈ 26 min and run 4 ≥ 30 min for a 19-chart history
+day against the sub-10 bar. Run 4 main-pass per-chart gaps averaged ~52s
+(16-117s spread) — comparable to run 3, so 3.0.49's identity checks did NOT
+triple per-chart cost; the balloon is the automatic RE-CHECK TAIL cycling
+incomplete charts. Pull correctness is converging; **pull pace misses the bar
+~3× and the fronted warm-day pace sample has still never been run.** Open
+engineering, not a footnote.
+
+**Patricia Kirwin and the 1,340 (the day's most important finding):** her
+Monday-imported card rendered six empty boxes and a stored lone "NKDA" as if
+it were a chart fact — record `p_sched_voax7p`, ZERO chart reads ever
+(coverage receipt null, 2 index shells, 0 raw bytes). She is not in any prior
+cohort: she is the **never-read class — 1,340 of 1,567 records (85%) have no
+coverage receipt and no clinical content.** Every fix this train made reads
+CORRECT; nothing yet made them RUN for the back catalog (the fleet heal only
+ever touched the 153 records that had raw content to re-parse). Program, not
+a claim: day pulls with history close it day-by-day; at ~19 charts per
+20-30-min run, the backlog is ~70 pull-days of work as currently paced —
+pace engineering shortens that directly.
+
+**The honesty trains (shipped b963-b96x):** the cross-tab stale-lineage save
+shield (svs-1.0.0 — a writer may only replace a record it has observed;
+wrapper-chain suite caught my own first cut mutually recursing in 4 of 30
+load orders before it shipped); and the three-state rendered-card contract —
+never-read says "not pulled yet" IN WORDS on both card surfaces, an
+unverifiable lone-NKDA is annotated "unverified (no Athena chart pulled
+yet)", read-and-empty keeps its quiet dash, content renders as content
+(11-check suite, both arms, on both surfaces). Deploy-chain scar repeated
+and cured structurally: a NEW root file must join
+pages-publication-inventory.json or the Pages audit refuses the whole deploy
+(b963+b964 both failed on the undeclared shield file; the b954 class).
+
 ### The op-note "wrong medications" link (stated as code-established, not yet outcome-proven)
 
 The op-note context consumes `p.meds` (feat_opnote_history.js:261; ScribeFlow.html
