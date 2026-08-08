@@ -231,3 +231,41 @@ date-key adversarial set, release coherence (zip/.bin byte-identical, every pin 
   fronted virgin-day pace sample (sub-10 target) + eyes-on athena source comparison
   (real-allergy patient, Mucha problems, NKDA confirmation). Owner-gated and untouched:
   Web Store publish, meds decision, cohort re-pull repair beyond the visible markers.
+
+## Owner-present window (2026-08-08 ~01:0x-01:2x ET) — comparison DONE, pace sample VOID (athena weather)
+
+Michael fronted Chrome on the athenaOne tab and walked away (detected by the in-page focus
+recorder, hasFocus true throughout; the supervisor correctly replaced the verbal handshake
+with a condition poll - a confirmation would have destroyed the state it confirms).
+
+### Eyes-on source comparison — Geoffrey Mucha, MRN 7781274 (side by side, actual text)
+
+| field | athenaOne facesheet (source) | MLS store/panel |
+|---|---|---|
+| Allergies | **bee pollen** / **mite extract** / **NKDA** | **NKDA** only |
+| Problems | annular tear of lumbar disc; degeneration of lumbar intervertebral disc; low back pain; Lumbar radiculitis; Lumbar radiculopathy; Lumbar spondylosis; Spondylosis of lumbar spine; Raynaud's phenomenon; Vertebrogenic low back pain; Vertebrogenic pain | same condition set, ICD-coded (19 lines incl. code variants: "Lumbar radiculopathy M54.16", "Annular tear of lumbar disc M51.369", "Raynaud's phenomenon I73.00" ...) — MATCH |
+| Medications | None recorded | empty — MATCH |
+| Surgical hx | operative procedure on shoulder (left x3 following dislocations); RFA of peripheral nerve w/ fluoro guidance 05-29-2026 (L5+S1 Intracept, Dr. Schaeffer) | present in visit history — MATCH |
+
+**FINDING (real, new): allergies under-capture.** athena documents two ENVIRONMENTAL
+allergens the pull never stored. The stored NKDA is genuinely documented (the drug-allergy
+line) - NOT a silent default - so this is an incompleteness in the allergies-section read,
+not a wrong-patient or fabrication defect. Follow-up task spawned (task_2927163d). The
+IODINE-Hives patient could not be compared this window (no stored MRN on that legacy record).
+
+### Pace sample — VOID, twice, honestly
+
+- Attempt 1 (18-row warm Thu, fronted): refused ~T+6-7 min with no day outcome. Cause:
+  my own setup - the athena tab was parked on the Mucha chart from the comparison (the
+  documented stale-view class). Reason toast not captured (console tracking armed late).
+- Attempt 2 (after navigating athena to the frameset): stalled in the schedule phase and
+  released the mutex ~T+5:34 with zero history counters. Diagnosis: the athena tab was on
+  the "We were unable to complete the requested action" interstitial the WHOLE attempt -
+  and the interstitial now RE-PRESENTS on every fresh frameset load (Continue click, /ax
+  round-trip, direct navigate all tried) while the SESSION IS ALIVE (dashboard fetch
+  200/92,314 bytes/no Re-Login every probe). Server-side athena weather (~1 AM ET,
+  maintenance hours; athenaNetwork panel carries maintenance notices). Per the standing
+  rule: cool down, never grind - the fronted window was not spent on a wedged backend.
+- **The sub-10-minute fronted pace clause therefore stays OPEN, unsampled tonight - not
+  failed, not passed. No virgin July/August day exists any more (all 28 clinic days are
+  warm), so the next sample will be the heaviest warm day, honestly labeled as such.**
