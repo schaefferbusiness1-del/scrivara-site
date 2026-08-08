@@ -398,6 +398,97 @@ meds 150, surgical 139 empty), and — if the athena frameset is also healthy an
 has OS focus ~10 min — the fronted warm-day pace sample (18-row day, labeled warm,
 never compared to the 16-virgin benchmark).
 
+## 2026-08-08 afternoon — the owner-watched sweep, the stop order, and the px-6 / ext-3.0.47 train
+
+Michael watched the July month pull live and saw three rows: `Matthew ⚠
+encounter-index-incomplete[idx:other;0/0;p10]`, `Elizabeth ⚠
+history-organization-unproven`, `Edward ✓ saved` — and ordered the sweep
+stopped and the causes fixed on sight ("its not done till all these say saved
+and its actually right"). The sweep was hard-stopped (the si engine exposes no
+stop flag — tab reload after persisting every receipt), and all three causes
+were found, fixed, controlled, and shipped as b956 + extension 3.0.47.
+
+**Elizabeth's root cause was NEITHER a print shape NOR the parser — it was the
+coverage tracker's arithmetic.** Her tracker receipt read `history.family:
+detected 7 / parsed 2 / complete false`. Live extraction of her own raw proved
+the parser fine: `_sectionValues(raw, ['family history','family'])` returned
+`["Father - Family history of stroke"]` on the exact "failing" text. The five
+"misses" were visits where athena prints a REVIEWED section with zero rows as
+the bare heading pair ("Family History Reviewed Family History" → straight
+into Social History): 0 entries + 0 explicit-empties → `missed++` → the whole
+chart refused as semantic-coverage-incomplete — while the one real family fact
+WAS captured. px-6.0: a PRINT-form heading whose block ends empty records
+explicitEmpty (that is the section's own honest empty); colon-form empties
+keep missing honestly, pinned by a control so ambiguity can never be flipped
+to ok. Old code fails the control at EXIT=1 on "an empty Reviewed section was
+booked as a coverage MISS"; new suite 84/84 with an end-to-end organize arm.
+**This arithmetic is the fleet's 47-refusal class from the round-3 heal.**
+
+**px-6.1 — a gate that discards the evidence of its own refusal** (class named
+here for the artifact): si's history proof chain required organize `ok:true`
+and threw a bare "history-organization-unproven", discarding organize's reason
+and missed-section list — which is why Elizabeth's row was an unexplained
+warning on the owner's screen while organize knew exactly what refused. The
+row now renders "history-organization-unproven: <reason> - sections detected
+but not captured: <list>". The control executes the REAL extracted throw
+block against a stubbed refusal and asserts the exact composed message — a
+placeholder cannot pass it.
+
+**Matthew's `[idx:other;0/0]` decoded**: the enumerate op's no-group return was
+a bare `{ok:false,count:0,score:0}` — no reason, no surface proof — fired when
+NO encounter-row group exists in the reached frame AND no explicit empty-state
+marker is present. Ten identical passes of an anonymous refusal. ext 3.0.47:
+the return names itself `no-encounter-group` and proves its surface (frameUrl
++ whether the "Visits and Cases" pane text was on screen); the receipt tag
+maps it `nogroup`. BOTH arms pinned per supervision rule: the named-refusal
+arm fails pre-fix (EXIT=1 proven), the verified-empty ACCEPT arm stays
+distinguishable — a refusal can never degenerate into refusing everything,
+and an honest empty stays recognized. His stored state (28 visits totaling
+621 chars — index shells from the failed read) is queued for a live re-read
+on 3.0.47, which will now NAME any failure it hits.
+
+**The checklist that could not prove a true fact**: `probeAthenaOpen` rode a
+full `mlsAppReadChart` — which rides the read-engine lease — so the killed
+sweep's stale lease wedged the probe (2×12s timeouts) while athena sat open
+and signed in, and the first-run card sat on "1 of 3" refusing (honestly) to
+accuse. devReload cleared the stale lease; durable fix = ext 3.0.47's new
+lease-free `mlsAthenaPresence` verb (same verified tab picker the pull engine
+trusts, login/identity pages excluded, no lease, no chart read) + px-6.2
+feature-detected in feat_athena_guard (older extensions fall through to the
+old probe unchanged).
+
+**The twin-tab clobber (measured before the fixes, repaired by round 4):** the
+round-3 heal's results were overwritten ~45.6s behind each write (machine-
+regular deltas, 45,594–47,515ms) by the second app tab — signed in with a
+pre-heal roster, renderer wedged, hidden-tab timers clamped — and its stale
+lineage won at sign-in re-hydration. 98 of 153 records regressed (97
+summaries / 98 problems / 35 meds) vs the serialized 08:43 export; the twin
+was closed; a 150s zombie census (0 foreign writes across 1,567 records)
+cleared the field before round 4. Round-4 re-heal ran with the ≥90s staggered
+verify + final full sweep the supervision demanded (numbers in the table
+below). Durable fix still OPEN: a cross-tab save shield for the roster save
+path (the pull engines have one; saves do not). Until it ships: ONE app tab
+at a time.
+
+**The ship itself took three drift-merges**: the avatar lane shipped b955 +
+guards during my gates (their new stale-tree suite twice refused my stale
+baseline — correctly), and the landing window came from a coordinated
+push-hold ("change the traffic, not the gate"). b956 `b485d05f`, gate PASS
+all 513 with "PASS all NNN" confirmed as text (a truncated run is no
+verdict). Three escaped-regex pin instances moved this train
+(zip form, digest form, span-wrapped versions) — that class now has three
+scars in one night.
+
+**3.0.47 upload chain, re-proven at the new version (all three assertions):**
+feed publishes 3.0.47 with honest notes; served GET×2 through the app origin
+= 200 / 420,631 bytes / sha `81c7bd84…7ae113` = build sha exactly; installed
+folder (the audited `Downloads\MLS_Assist_v3.0.45` path — same folder, never
+a new identity) 20/20 byte-identical to the published zip; running copy pongs
+`3.0.47+core-sha256:3c6f6c95…4b7168`. Settings-card eyeball pending the app
+reload. The 2026-08-08 day-pull receipt: first-attempt, 67s, ok:true
+complete:true reason:empty-day with athena VERIFYING the empty Friday —
+banked as the EMPTY-DAY SHAPE only, never as convergence proof.
+
 ### The op-note "wrong medications" link (stated as code-established, not yet outcome-proven)
 
 The op-note context consumes `p.meds` (feat_opnote_history.js:261; ScribeFlow.html

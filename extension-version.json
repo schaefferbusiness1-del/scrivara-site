@@ -1,5 +1,5 @@
 {
-  "version": "3.0.47",
+  "version": "3.0.48",
   "minChrome": 116,
-  "notes": "v3.0.47 - When the chart reader cannot find the encounter list it now says exactly which athena surface answered (and whether the Visits pane was even on screen) instead of a cryptic code, so a failed history read tells you what to fix. A stuck or cancelled pull can no longer wedge the athenaOne signed-in checklist row - that check now runs lease-free. Everything from v3.0.46 remains. Requires Chrome 116+."
+  "notes": "v3.0.48 - The chart reader no longer discards a fully verified encounter list just because of which athena frame it rendered in (four charts on one live day failed exactly this way while every other check passed); when a read does fail, the receipt now also records what every frame answered so the cause is visible. Everything from v3.0.47 remains. Requires Chrome 116+."
 }

@@ -10446,8 +10446,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var u = String((r && r.result && r.result.frameUrl) || '');
         return !!u && NOISE_SURFACE_RE.test(u);
       }
-      var enChart = (enR || []).filter(function (r) { return !noiseResult(r); });
+      var enChart = (enR || []).filter(function (r) { return !(noiseResult(r) && !(r && r.result && r.result.ok === true)); });
       var enNoiseDropped = (enR || []).length - enChart.length;
+      /* 3.0.48 diagnostic: keep the evidence a failure needs. urlTail only
+         (path tail, no query) - PHI-free. */
+      var enOkShape = null, enNoiseTails = [];
+      try {
+        (enR || []).forEach(function (r0) {
+          var res0 = r0 && r0.result;
+          var tail0 = '';
+          try { tail0 = String((res0 && res0.frameUrl) || '').replace(/[?#].*$/, '').split('/').slice(-1)[0].slice(0, 40); } catch (eT0) {}
+          if (res0 && res0.ok && !enOkShape) enOkShape = { frameId: r0.frameId, selector: String(res0.selector || '').slice(0, 40), count: Number(res0.count) || 0, indexComplete: res0.indexComplete === true, authoritativeEmpty: res0.authoritativeEmpty === true, urlTail: tail0, urlNoise: noiseResult(r0) };
+          if (noiseResult(r0)) { if (enNoiseTails.length < 8) enNoiseTails.push(String(r0.frameId) + ':' + tail0); return; }
+        });
+      } catch (eDg48) {}
       var eb = bestResult(enChart, function (r) {
         if (!(r && r.ok)) return 0;
         return (r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0);
@@ -10462,7 +10474,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline && Date.now() + 7000 < indexPhaseDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
           ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped || !enChart.length ? '[' + (enNoiseDropped ? 'noise-frames-excluded:' + enNoiseDropped : '') + (!enChart.length ? ((enNoiseDropped ? ';' : '') + 'no-chart-frame-answered') : '') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : '') + (function (er) { try { if (!er) return ''; var erR = String(er.reason || ''); var gate = erR.indexOf('visits-panel-not-open') >= 0 ? 'panel' : erR.indexOf('visits-total-not-readable') >= 0 ? 'total' : erR.indexOf('visits-list-still-rendering') >= 0 ? 'lstill' : erR.indexOf('no-encounter-group') >= 0 ? 'nogroup' : (er.ok ? 'ok' : 'other'); return '[idx:' + gate + ';' + (Number(er.renderedListItems) || 0) + '/' + (Number(er.declaredEvents) || 0) + ';r' + (Number(er.parsedRows) || 0) + ';eN' + (Number(er.effStabN) || 0) + ';eMs' + (Number(er.effStabMs) || 0) + ';p' + (ehPass + 1) + ']'; } catch (eIdxTag) { return ''; } })(enumRes), identity: {}, visits: [], diag: diag,
-          enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },
+          enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, noiseTails: enNoiseTails, okShape: enOkShape, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },
           receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, expected: (enumRes && enumRes.count) || 0, parsed: 0, attempted: 0, cap: cfg.maxVisits },
           error: 'No complete patient-scoped encounter index was recognized. Nothing was reported as a full history.'
         };

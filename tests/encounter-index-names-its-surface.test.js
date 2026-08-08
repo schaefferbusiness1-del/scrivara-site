@@ -74,4 +74,26 @@ assert(/mlsAthenaPresenceResult/.test(content), 'content.js must relay the prese
 assert(/mlsAthenaPresenceRequest/.test(bg), 'background.js must answer the presence request');
 assert(/athena-tab-unverified/.test(bg), 'presence must distinguish unverified athena tabs from none');
 
-console.log('encounter-index-names-its-surface: PASS (11 checks)');
+// 3.0.48 (Edward/Herbert/Carol/Nancy, live 2026-08-08): all four failing charts
+// showed ONE frame answering ok while the receipt still said nogroup — the URL
+// denylist dropped the ok frame before best-pick. An ok:true enumerate result
+// has already passed the in-frame positive gates (Visits-and-Cases ancestor,
+// declared total or explicit empty-state, stability) — a URL token must not
+// outvote them. BOTH arms: the gated ok result survives the filter (fails
+// pre-3.0.48), and non-ok noise stays excluded (the denylist keeps its job).
+{
+  const filterLine = "var enChart = (enR || []).filter(function (r) { return !(noiseResult(r) && !(r && r.result && r.result.ok === true)); });";
+  assert(bg.indexOf(filterLine) >= 0, 'the noise filter must rescue ok:true results (pre-3.0.48 dropped them by URL alone)');
+  const noiseResult = (r) => /inbox|messag/i.test(String((r && r.result && r.result.frameUrl) || ''));
+  const runFilter = new Function('enR', 'noiseResult', filterLine + ' return enChart;');
+  const okNoise = { frameId: 7307, result: { ok: true, count: 9, frameUrl: 'https://x/inbox/visits.esp' } };
+  const badNoise = { frameId: 7401, result: { ok: false, reason: 'no-encounter-group', frameUrl: 'https://x/inbox/list.esp' } };
+  const plain = { frameId: 7302, result: { ok: false, reason: 'no-encounter-group', frameUrl: 'https://x/chart/main.esp' } };
+  const kept = runFilter([okNoise, badNoise, plain], noiseResult);
+  assert(kept.some(r => r.frameId === 7307), 'a fully-gated ok result in a noise-URL frame must SURVIVE the filter');
+  assert(!kept.some(r => r.frameId === 7401), 'a non-ok noise-URL frame must STAY excluded — the denylist keeps its original job');
+  assert(kept.some(r => r.frameId === 7302), 'a non-noise frame is untouched by the rescue');
+  assert(/okShape: enOkShape/.test(bg) && /noiseTails: enNoiseTails/.test(bg), 'the failure enumDiag must persist the ok-frame shape and the dropped-frame tails');
+}
+
+console.log('encounter-index-names-its-surface: PASS (16 checks)');
