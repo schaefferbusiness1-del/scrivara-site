@@ -872,14 +872,14 @@
       var dblm = clean.match(_printDoubledHeadingRe);
       if (dblm) {
         var dlbl = trim(dblm[1]).toLowerCase().replace(/\s+/g, ' ');
-        if (_clinicalSectionLookup[dlbl]) return { label: dlbl, value: trim(dblm[2]) };
+        if (_clinicalSectionLookup[dlbl]) return { label: dlbl, value: trim(dblm[2]), printForm: true };
       }
     }
     if (_printReviewedHeadingRe) {
       var revm = clean.match(_printReviewedHeadingRe);
       if (revm) {
         var rlbl = trim(revm[1]).toLowerCase().replace(/\s+/g, ' ');
-        if (_clinicalSectionLookup[rlbl]) return { label: rlbl, value: trim(revm[2]) };
+        if (_clinicalSectionLookup[rlbl]) return { label: rlbl, value: trim(revm[2]), printForm: true };
       }
     }
     var m = clean.match(/^([^:]{1,72}?)(?::|\s+-\s+)(.*)$/);
@@ -968,7 +968,7 @@
   }
 
   function _sectionValues(text, labels, tracker, coverageKey) {
-    var wanted = {}, out = [], active = false, blockParsed = 0, blockExplicitEmpty = 0;
+    var wanted = {}, out = [], active = false, blockParsed = 0, blockExplicitEmpty = 0, activePrintForm = false;
     (labels || []).forEach(function (x) { wanted[trim(x).toLowerCase().replace(/\s+/g, ' ')] = 1; });
     var lines = _sectionSource(text).split('\n');
     function consume(value) {
@@ -981,7 +981,21 @@
     }
     function finishBlock() {
       if (!active) return;
-      _recordSectionCoverage(tracker, coverageKey, 1, blockParsed, blockExplicitEmpty);
+      /* px-6.0 (Elizabeth, 2026-08-08): athena's print view renders a REVIEWED
+         section with zero rows as the bare heading pair ("Family History
+         Reviewed Family History") followed directly by the next section. That
+         is the section's own honest empty state - the clinician reviewed it
+         and nothing is recorded - not a parse miss. Booking it as missed made
+         semanticCoverage refuse whole charts (7 detected / 2 parsed / 5
+         "missed" empties on one live patient) and organize then refused the
+         summary rebuild. Only the PRINT heading forms carry this semantics; a
+         colon-form heading with no inline value keeps missing honestly, since
+         its content may simply live on following lines this call never saw. */
+      if (!blockParsed && !blockExplicitEmpty && activePrintForm) {
+        _recordSectionCoverage(tracker, coverageKey, 1, 0, 1);
+      } else {
+        _recordSectionCoverage(tracker, coverageKey, 1, blockParsed, blockExplicitEmpty);
+      }
       blockParsed = 0; blockExplicitEmpty = 0;
     }
     for (var i = 0; i < lines.length; i++) {
@@ -989,6 +1003,7 @@
       if (heading) {
         finishBlock();
         active = !!wanted[heading.label];
+        activePrintForm = !!(active && heading.printForm);
         if (active) {
           if (heading.value) consume(heading.value);
         }

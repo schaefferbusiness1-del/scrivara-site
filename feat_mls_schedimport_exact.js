@@ -2864,7 +2864,18 @@
       });
     });
     var organization=safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
-    if(!organization||organization.ok!==true) throw new Error("history-organization-unproven");
+    if(!organization||organization.ok!==true){
+      /* px-6.1 (Elizabeth, 2026-08-08): a gate that discards the evidence of
+         its own refusal makes every downstream failure unexplainable - the
+         row said only "history-organization-unproven" while organize knew
+         exactly which section refused and why. Carry organize's own reason
+         and the missed-section list into the thrown message; the pull row
+         renders this text, so the doctor sees what is actually missing. */
+      var orgReason=String((organization&&organization.reason)||"organize-returned-no-result");
+      var orgMissed=[];
+      safe(function(){orgMissed=(organization&&organization.semanticCoverage&&organization.semanticCoverage.missedSections)||[];return null;});
+      throw new Error("history-organization-unproven: "+orgReason+(orgMissed.length?(" - sections detected but not captured: "+orgMissed.join(", ")):""));
+    }
     var refreshedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };

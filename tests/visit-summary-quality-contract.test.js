@@ -299,7 +299,44 @@ async function main() {
     assert(!/Reviewed/i.test(probs) && !/Reviewed/i.test(meds), 'the Reviewed marker leaked into clinical fields');
   }
 
-  console.log('visit-summary-quality-contract: PASS (77 checks)');
+  /* ---- px-6.0: an EMPTY Reviewed print section is that section's own honest
+     empty, never a coverage miss. Live Elizabeth chart 2026-08-08: family
+     history was "detected 7 / parsed 2" because five visits print the bare
+     heading pair ("Family History Reviewed Family History") straight into the
+     next section; the tracker booked each as MISSED and organize refused the
+     whole chart as semantic-coverage-incomplete while the one real family
+     fact WAS extracted. Exact captured shapes below. */
+  {
+    const emptyReviewed = 'Problems Reviewed Problems Atrial fibrillation Family History Reviewed Family History Social History Reviewed Social History Social History Illicit Drug Use?: No Employment Status: retired';
+    const trackerA = { sections: {} };
+    M._sectionValues(emptyReviewed, ['family history', 'family'], trackerA, 'history.family');
+    const rowA = trackerA.sections['history.family'];
+    assert(rowA && rowA.detected >= 1, 'empty reviewed family block was not detected at all');
+    assert.strictEqual(rowA.missed, 0, 'an empty Reviewed section was booked as a coverage MISS (the pre-px-6.0 defect)');
+    assert(rowA.explicitEmpty >= 1, 'an empty Reviewed section did not register as explicit-empty');
+    const withContent = 'Family History Reviewed Family History Father - Family history of stroke Social History Reviewed Social History Employment Status: retired';
+    const trackerB = { sections: {} };
+    const famVals = M._sectionValues(withContent, ['family history', 'family'], trackerB, 'history.family');
+    assert(famVals.some(v => /Father - Family history of stroke/.test(v)), 'family content was not extracted from the Reviewed form');
+    assert.strictEqual(trackerB.sections['history.family'].missed, 0, 'a parsed family block was booked as missed');
+    const colonEmpty = 'Family History:\nSocial History: retired';
+    const trackerC = { sections: {} };
+    M._sectionValues(colonEmpty, ['family history', 'family'], trackerC, 'history.family');
+    const rowC = trackerC.sections['history.family'];
+    assert(rowC && rowC.missed >= 1, 'a colon-form empty heading stopped missing - ambiguity must never be flipped to ok');
+    /* end to end: a chart whose only family evidence is the empty Reviewed
+       block must organize ok:true (pre-fix: semantic-coverage-incomplete). */
+    const pE = { id: 'pt-e6', name: 'E', dob: '01/01/1970', problems: '', meds: '', allergies: '', summary: '', visits: [] };
+    context.upsertPatient(pE);
+    M.addVisit('pt-e6', {
+      date: '2026-07-01', type: 'Office visit', encounterId: 'e-e6', fullDetail: true,
+      raw: 'Patient: E\nAllergies Reviewed Allergies NKDA Problems Reviewed Problems Atrial fibrillation Family History Reviewed Family History Social History Reviewed Social History Employment Status: retired\nPlan: anticoagulation continues.'
+    }, { source: 'athena-copy', identityVerified: true, identityBinding: 'pt-e6', bodyComplete: true });
+    const recE = await M.summarizeAll('pt-e6');
+    assert.strictEqual(recE.ok, true, 'a chart with an empty Reviewed section still refuses to organize: ' + JSON.stringify(recE.reason || ''));
+  }
+
+  console.log('visit-summary-quality-contract: PASS (84 checks)');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

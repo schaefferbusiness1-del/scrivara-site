@@ -507,6 +507,36 @@ async function main() {
   assert.strictEqual(stopped.retry.dates.length, 31, 'every unfinished day must stay in Retry failed days, got ' + stopped.retry.dates.length);
   h.incompleteDays.clear();
 
+  // px-6.1 (Elizabeth, 2026-08-08): the history proof chain must carry
+  // organize's ACTUAL refusal evidence into the thrown row message - a gate
+  // that discards the evidence of its own refusal makes every downstream
+  // failure unexplainable. The control runs the REAL extracted throw block
+  // against a stubbed refusal, so a placeholder string cannot pass it.
+  {
+    const throwStart = siSource.indexOf('var orgReason=String((organization&&organization.reason)||"organize-returned-no-result")');
+    assert(throwStart >= 0, 'px-6.1 reason-propagation block missing from the si source');
+    const throwEnd = siSource.indexOf('throw new Error("history-organization-unproven: "', throwStart);
+    assert(throwEnd > throwStart, 'px-6.1 throw does not interpolate the organize reason');
+    const blockEnd = siSource.indexOf('}', siSource.indexOf(';', throwEnd));
+    const throwBlock = siSource.slice(throwStart, blockEnd);
+    const runThrow = new Function('organization', 'safe', throwBlock);
+    let thrownMsg = '';
+    try {
+      runThrow(
+        { ok: false, reason: 'semantic-coverage-incomplete', semanticCoverage: { missedSections: ['history.family'] } },
+        (fn, d) => { try { return fn(); } catch (e) { return d; } }
+      );
+    } catch (e) { thrownMsg = String(e.message || e); }
+    assert.strictEqual(
+      thrownMsg,
+      'history-organization-unproven: semantic-coverage-incomplete - sections detected but not captured: history.family',
+      'the row message must carry the real reason and the missed sections, got: ' + thrownMsg
+    );
+    let bareMsg = '';
+    try { runThrow(null, (fn, d) => { try { return fn(); } catch (e) { return d; } }); } catch (e) { bareMsg = String(e.message || e); }
+    assert.strictEqual(bareMsg, 'history-organization-unproven: organize-returned-no-result', 'a null organize result must still name itself, got: ' + bareMsg);
+  }
+
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');
 }
 

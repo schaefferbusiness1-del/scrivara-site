@@ -61,6 +61,24 @@
       setTimeout(function () { fin(false); }, ms || 3000);
     });
   }
+  /* px-6.2: lease-free presence probe (ext >= 3.0.47). The chart-read probe
+     below rides the read engine's lease, so a wedged or killed pull holds the
+     lease and the probe times out while athena sits open and signed in
+     (measured live 2026-08-08: 2x12s timeouts, checklist stuck at "1 of 3").
+     This verb runs the same verified tab picker (login/identity pages
+     excluded) without any engine work. Older extensions never answer; the
+     3.5s timeout falls through to the original probe unchanged. */
+  function presenceProbe(ms) {
+    return new Promise(function (res) {
+      var done = false;
+      function h(e) { var d = e && e.data; if (d && d.source === 'mls-ext' && d.type === 'mlsAthenaPresenceResult') fin(d.resp || {}); }
+      function fin(v) { if (done) return; done = true; window.removeEventListener('message', h); res(v); }
+      window.addEventListener('message', h);
+      try { window.postMessage({ source: 'mls-app', type: 'mlsAthenaPresence' }, '*'); } catch (_) {}
+      setTimeout(function () { fin(null); }, ms || 3500);
+    });
+  }
+
   // Read-only: asks the extension to read the current EMR tab (opened:false → no
   // navigation). We use only resp.url / resp.title; resp.text is never inspected.
   function readChartProbe(ms) {
@@ -85,11 +103,18 @@
       if (!pong) {
         out = { open: false, certain: true, reason: 'no-ext' };
       } else {
-        var resp = await readChartProbe(12000);
-        if (resp == null) resp = await readChartProbe(12000); // retry once
-        // Only a strip of url/title is needed; never keep chart text.
-        var lite = resp ? { ok: resp.ok, url: resp.url, title: resp.title } : null;
-        out = classify(lite);
+        var pres = await presenceProbe(3500);
+        if (pres && pres.ok === true && typeof pres.athenaOpen === 'boolean') {
+          out = pres.athenaOpen
+            ? { open: true, certain: true, reason: 'presence-verified' }
+            : { open: false, certain: pres.certain === true, reason: pres.reason || 'no-athena-tab' };
+        } else {
+          var resp = await readChartProbe(12000);
+          if (resp == null) resp = await readChartProbe(12000); // retry once
+          // Only a strip of url/title is needed; never keep chart text.
+          var lite = resp ? { ok: resp.ok, url: resp.url, title: resp.title } : null;
+          out = classify(lite);
+        }
       }
     } catch (e) {
       out = { open: false, certain: false, reason: 'probe-error' };

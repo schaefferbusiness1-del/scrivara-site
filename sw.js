@@ -119,7 +119,7 @@ function isInternalDirectory(pathname) {
  * every test saw a healthy 200 on the origin.
  *
  * Measured live by the QA lane on 2026-08-06 (owner's Chrome, build b903):
- *   /MLS_Assist_v3.0.46.zip -> 410      (the current release, blocked)
+ *   /MLS_Assist_v3.0.47.zip -> 410      (the current release, blocked)
  *   /MLS_Assist_v3.0.44.zip -> 404      (passthrough — the stale worker's literal)
  *   getRegistration() -> active + waiting, and the worker did NOT roll across
  *   three successive production deploys.
@@ -134,7 +134,7 @@ function isInternalDirectory(pathname) {
  * network fetch inside the fetch decision and must then choose a failure
  * direction), and a bare family regex (would re-open 60+ historical archives and
  * every candidate build). */
-const RELEASED_PACKAGE_FLOOR = [3, 0, 46];
+const RELEASED_PACKAGE_FLOOR = [3, 0, 47];
 const RELEASE_PACKAGE_NAME = /^mls_assist_v(\d{1,6}(?:\.\d{1,6}){1,3})\.zip$/;
 
 function packageVersionAtOrAboveFloor(version) {

@@ -1,5 +1,5 @@
 {
-  "version": "3.0.46",
+  "version": "3.0.47",
   "minChrome": 116,
-  "notes": "v3.0.46 - The day's visit note now imports even when Full visit notes is off and athenaOne prints the date with dashes or dots (07-21-2026): the day-scoped reader recognized only slash dates, so on those charts it skipped every encounter row and the day stored nothing. The green in-Athena panel's Pull history line now says exactly what it did - it reads the open chart for that panel's own note flow and does not import into MLS (importing is the app's Copy every visit button). Everything from v3.0.45 remains. Requires Chrome 116+."
+  "notes": "v3.0.47 - When the chart reader cannot find the encounter list it now says exactly which athena surface answered (and whether the Visits pane was even on screen) instead of a cryptic code, so a failed history read tells you what to fix. A stuck or cancelled pull can no longer wedge the athenaOne signed-in checklist row - that check now runs lease-free. Everything from v3.0.46 remains. Requires Chrome 116+."
 }
