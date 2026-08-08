@@ -2015,7 +2015,14 @@
     } else {
       derived.push('skin');
     }
-    found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
+    /* ONLY DESCRIBE A TONE THAT WAS ACCEPTED. Measured on a real photograph, the list read
+       "the skin sample came back #9d6c64, which is outside the range real skin
+       occupies ... so your own skin colour was left alone" and then, on the very next
+       line, "tan skin" - two contradictory statements about the same sample. A refusal
+       followed by a description reads as though the refusal did not happen. */
+    if (derived.indexOf('skin') >= 0) {
+      found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
+    }
 
     /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
        Not a fixed row near the top of the picture - the band directly above
@@ -2331,10 +2338,23 @@
            fires. A frame is thin, so its rows are few; the bridge continuity is what
            identifies it, not its darkness. Claimed only when the existing detector has
            not already spoken, so the two never disagree in `derived`. */
-        if (frameLike && look.glasses !== true) {
+        /* ⛔ AND IT MUST BE THIN, or a brow ridge in hard light IS a frame (av-5.8.1).
+           Measured on a REAL photograph (an outdoor selfie in harsh sun, no spectacles
+           anywhere): browMed came back 8 rows - the brow plus the shadow under the brow
+           ridge - and that band crosses the bridge, so bridge continuity alone CLAIMED
+           glasses on a man who wears none. My own b960 change did that, and no synthetic
+           fixture could show it: painted brows have no shadow.
+           A spectacle rim at this grid is 1-3 rows on any real framing; the owner's own
+           thin-rim fixture measures 3. A brow-and-shadow band is 6-10. Thinness is the
+           property that separates them, and it is already measured. */
+        var rimThin = browMed <= 4;
+        if (frameLike && rimThin && look.glasses !== true) {
           look.glasses = true;
           derived.push('glasses');
-          found.push('glasses — a rim runs across the nose bridge, where an eyebrow would stop');
+          found.push('glasses — a thin rim runs across the nose bridge, where an eyebrow would stop');
+        } else if (frameLike && !rimThin) {
+          found.push('a dark band crosses the nose bridge but it is too thick to be a spectacle rim — ' +
+            'usually a brow ridge in hard light, so your glasses setting was left alone');
         }
         look.brows = bVal;
         if (browReadable) derived.push('brows');
