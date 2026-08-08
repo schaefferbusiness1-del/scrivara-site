@@ -1278,10 +1278,16 @@
        whose regex proves the summary carries zero content. Clinician-authored
        text is never touched either way. */
     if (trim(aggregate)) p.athenaHistorySummary = aggregate;
-    else if (athenaSliceReRead && /^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(S(p.athenaHistorySummary)))) p.athenaHistorySummary = '';
+    else if (athenaSliceReRead && /^[\s—–-]*(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(S(p.athenaHistorySummary)))) p.athenaHistorySummary = '';
     /* Preserve a clinician-authored free-text summary. Only fill/refresh the
        legacy summary slot when it is empty or clearly owned by this importer. */
-    if (!trim(p.summary) || /^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(p.summary))) {
+    /* px-2.7: the pre-b7xx stamp era wrapped the header in em-dashes
+       ("— Pulled from Athena 7/27/2026 —"), which defeated this anchored
+       ownership test - the mirror then refused to replace the app's own old
+       stamp, and the panel kept rendering the bare header forever (measured
+       live on b949). Leading dash/space is tolerated; the phrase+date shape
+       is unmistakably the importer's own. */
+    if (!trim(p.summary) || /^[\s—–-]*(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(p.summary))) {
       p.summary = p.athenaHistorySummary;
     }
     p.athenaHistoryFactsSnapshot={
@@ -1364,7 +1370,7 @@
         if (_storeHygieneOnce._tries <= 5) { try { setTimeout(_storeHygieneOnce, 20000); } catch (eRe) {} }
         return;
       }
-      var HDR_ONLY = /^(?:Pulled from Athena|Longitudinal summary refreshed)\s+[\d\/.\-]+\s*(?:—|–|-)?\s*$/;
+      var HDR_ONLY = /^[\s—–-]*(?:Pulled from Athena|Longitudinal summary refreshed)\s+[\d\/.\-]+\s*(?:—|–|-)?\s*$/;
       var winStart = Date.parse('2026-06-24T00:00:00'), winEnd = Date.parse('2026-06-30T00:00:00');
       var dobCounts = {};
       pts.forEach(function (p) {
@@ -1384,7 +1390,10 @@
           p.athenaImportSuspect = { window: '2026-06-24..2026-06-29', reason: 'shared-dob-cluster', markedAt: new Date().toISOString() };
           dirty = true;
         }
-        if (dirty) touched++;
+        /* px-2.5.2: bump `updated` on every cleaned record so a
+           timestamp-based server-mirror merge PREFERS the cleaned copy and
+           pushes it back, instead of restoring the dirty one. */
+        if (dirty) { touched++; try { p.updated = Date.now(); } catch (eUp) {} }
       });
       if (touched) {
         /* one bulk write, not N upserts - the store is MLSZ1-compressed and
@@ -1392,8 +1401,43 @@
         if (typeof window.savePatients === 'function') window.savePatients(pts);
         else pts.forEach(function (p) { try { window.upsertPatient(p); } catch (eU) {} });
       }
-      try { localStorage.setItem(flagKey, '1'); } catch (eW) {}
-      if (touched) { try { console.log('[MLS visits] store hygiene: cleaned ' + touched + ' record(s) (header-only summaries / empty aiSummary keys / import-window suspect markers)'); } catch (eL) {} }
+      /* px-2.5.2 (measured live on b949's first load): the 4.5s pass raced the
+         ASYNC server-mirror hydration - the console said "cleaned 434" while
+         the roster the mirror materialized moments later still carried every
+         one of them, and the consumed flag made that permanent. The flag is
+         now set only after a VERIFY pass ~25s later re-reads the store and
+         finds it actually clean; dirt returned means the mirror overwrote us,
+         so clean again (bounded rounds). A pass that cleaned nothing verifies
+         trivially and flags immediately. */
+      if (!touched) {
+        try { localStorage.setItem(flagKey, '1'); } catch (eW0) {}
+        return;
+      }
+      console.log('[MLS visits] store hygiene: cleaned ' + touched + ' record(s) (header-only summaries / empty aiSummary keys / import-window suspect markers)');
+      _storeHygieneOnce._verifyRounds = (_storeHygieneOnce._verifyRounds || 0) + 1;
+      if (_storeHygieneOnce._verifyRounds > 3) {
+        /* three clean-then-dirty rounds means something keeps rewriting the
+           roster; give up THIS load without consuming the flag - the next
+           page load starts fresh rather than recording a false done. */
+        try { console.log('[MLS visits] store hygiene: roster kept reverting after 3 rounds - will retry on the next load'); } catch (eL3) {}
+        return;
+      }
+      try { setTimeout(function () {
+        try {
+          var again = (window.getPatients && window.getPatients()) || [];
+          var stillDirty = again.some(function (q) {
+            if (!q) return false;
+            if (typeof q.athenaHistorySummary === 'string' && HDR_ONLY.test(trim(q.athenaHistorySummary))) return true;
+            if (typeof q.summary === 'string' && HDR_ONLY.test(trim(q.summary))) return true;
+            if ((Array.isArray(q.visits) ? q.visits : []).some(function (v) { return v && typeof v.aiSummary === 'string' && !v.aiSummary.trim(); })) return true;
+            if (q.created >= winStart && q.created < winEnd && trim(S(q.dob)) && dobCounts[trim(S(q.dob))] >= 5 && !q.athenaImportSuspect) return true;
+            return false;
+          });
+          if (stillDirty) { _storeHygieneOnce(); return; }
+          try { localStorage.setItem(flagKey, '1'); } catch (eW1) {}
+          try { console.log('[MLS visits] store hygiene: verified clean after hydration - done'); } catch (eL2) {}
+        } catch (eV) {}
+      }, 25000); } catch (eArm) {}
     } catch (e) {}
   }
   try { setTimeout(_storeHygieneOnce, 4500); } catch (eHyg) {}
