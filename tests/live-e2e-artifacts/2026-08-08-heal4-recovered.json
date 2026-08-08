@@ -1,0 +1,54 @@
+{
+ "at": 1786211108488,
+ "heal4LastPolledCounters": {
+  "done": 94,
+  "ok": 82,
+  "refused": 12,
+  "verified90": 78,
+  "verifyFailed90": 0,
+  "note": "ledger died in owner tab reload at ~94-99/99; final in-page sweep never ran"
+ },
+ "heal4RefusedIds": [
+  "pmr2kyt3n46mf",
+  "p_sched_mum2h",
+  "p_sched_1j4x9vt",
+  "p_sched_1nywqlb",
+  "p_sched_1nqbad5",
+  "p_sched_1svl4oq",
+  "p_sched_16gi2ha",
+  "p_sched_1w0unon",
+  "p_sched_dmndve",
+  "pmrfjf6zet9wl",
+  "p_sched_g3xq5j",
+  "p_sched_2101zs"
+ ],
+ "postReloadStoreSweep": {
+  "of98": 98,
+  "atOrAboveHealedValues": 80,
+  "stillShort": [
+   "p_sched_mum2h",
+   "p_sched_1j4x9vt",
+   "p_sched_1nywqlb",
+   "p_sched_atuj0p",
+   "p_sched_cenmlv",
+   "p_sched_za2f7o",
+   "p_sched_1nqbad5",
+   "p_sched_1svl4oq",
+   "p_sched_16gi2ha",
+   "p_sched_1w0unon",
+   "p_sched_dmndve",
+   "pmrfjf6zet9wl",
+   "p_sched_g3xq5j",
+   "p_sched_ibb0sq",
+   "p_sched_2101zs",
+   "p_sched_lw58kt",
+   "pmqv3muw2qayu",
+   "p_sched_1jn8ql0"
+  ],
+  "note": "measured AFTER reload + server re-hydration on b957  - survived a full server round-trip; the post-hoc clobber test"
+ },
+ "jul1": {
+  "running": false,
+  "nStatuses": 70
+ }
+}

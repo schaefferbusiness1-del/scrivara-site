@@ -3816,12 +3816,12 @@
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.47</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.47.bin" download="MLS_Assist_v3.0.47.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.47</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.48</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.48.bin" download="MLS_Assist_v3.0.48.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.48</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.47</span></summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.47 - When the chart reader cannot find the encounter list it now says exactly which athena surface answered (and whether the Visits pane was even on screen) instead of a cryptic code, so a failed history read tells you what to fix. A stuck or cancelled pull can no longer wedge the athenaOne signed-in checklist row - that check now runs lease-free. Everything from v3.0.46 remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.48</span></summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.48 - The chart reader no longer discards a fully verified encounter list just because of which athena frame it rendered in (four charts on one live day failed exactly this way while every other check passed); when a read does fail, the receipt now also records what every frame answered so the cause is visible. Everything from v3.0.47 remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -23848,6 +23848,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b960';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b961';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

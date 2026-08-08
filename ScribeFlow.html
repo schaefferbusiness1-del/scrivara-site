@@ -5036,12 +5036,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.47</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.47.bin" download="MLS_Assist_v3.0.47.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.47</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.48</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.48.bin" download="MLS_Assist_v3.0.48.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.48</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.47</span></summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.47 - When the chart reader cannot find the encounter list it now says exactly which athena surface answered (and whether the Visits pane was even on screen) instead of a cryptic code, so a failed history read tells you what to fix. A stuck or cancelled pull can no longer wedge the athenaOne signed-in checklist row - that check now runs lease-free. Everything from v3.0.46 remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.48</span></summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.48 - The chart reader no longer discards a fully verified encounter list just because of which athena frame it rendered in (four charts on one live day failed exactly this way while every other check passed); when a read does fail, the receipt now also records what every frame answered so the cause is visible. Everything from v3.0.47 remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5235,7 +5235,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during an Athena pull, also open and save every encounter note (slower, most complete). Off: the schedule and each patient's chart history cards only — much faster. Applies to every pull on this account, wherever you start it.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.47.zip" download="MLS_Assist_v3.0.47.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.47 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.48.zip" download="MLS_Assist_v3.0.48.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.48 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
         <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
           <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
@@ -16101,7 +16101,7 @@ async function extractPdfText(file){
    This whole subsystem is additive and is ONLY consulted when the
    toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
    ========================================================= */
-/* b960 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
+/* b961 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
    MEASURED on the owner's real library (96 templates, ~520KB of JSON): one
    getTemplates() call costs ~7ms of JSON.parse plus two normalisation passes,
    and the op-note room calls it PER ROW. opPrepRender's tplOpts closure alone
@@ -16197,7 +16197,7 @@ function setTemplates(arr){
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
-/* b960 PERF: find in the cached store, then clone only the ONE template that
+/* b961 PERF: find in the cached store, then clone only the ONE template that
    matched. This is called inside draft loops and per-row matchers; cloning the
    whole library to throw 95 of them away was pure waste. Same contract: a fresh
    object the caller may mutate, or null. */
@@ -16606,7 +16606,7 @@ function opPrepRender(){
      "Remove duplicates" button, which announces what it did. A duplicate sitting
      in the dropdown is a cosmetic annoyance; deleting an op-note template is not
      recoverable. Do not put an automatic call back here. */
-  /* b960 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
+  /* b961 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
      tplOpts used to call getTemplates() and re-escape every template name
      INSIDE the per-row map, so a 19-patient day parsed the library 19 times and
      built 19 × 96 escaped <option> strings on every single repaint — and this
@@ -16643,7 +16643,7 @@ function opPrepRender(){
     h+='</div>';
     return h;
   }).join('');
-  /* b960 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
+  /* b961 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
      This function is the app's answer to almost every control in the op-note
      room, and the room's own rail builder calls it again on top; a good share of
      those calls produce byte-identical markup. Writing it anyway destroyed and
@@ -16687,7 +16687,7 @@ function _opNeedleHtml(i, mf, row){
   return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:150px">'+esc(mf.label||'Needle size')+'</label><select onchange="_opNeedlePick('+i+',\''+key+'\',this.value)" style="font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">'+optHtml+'</select>'+txt+hint+'</div>';
 }
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
-/* b960 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
+/* b961 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
    Until now "did this draft succeed, and if not why" lived in three window
    globals (__mlsLastOpFidelityPass / __mlsLastOpFidelityError /
    __mlsLastOpErrorCode) that the drafter cleared on entry and the runner read
@@ -16773,7 +16773,7 @@ async function opPrepGenerateOne(i){
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
-    /* b960: reaching here means the generator RESOLVED. Every fidelity,
+    /* b961: reaching here means the generator RESOLVED. Every fidelity,
        clinical-consistency, identity and transport failure throws (the template
        owner builds a real Error and rethrows it), so "the try block completed
        and a note exists" is the same verdict __mlsLastOpFidelityPass carries -
@@ -16789,7 +16789,7 @@ async function opPrepGenerateOne(i){
   }catch(e){
     /* b500: show the ACTUAL reason (identity, template conflict, network,
        server error) — a generic "try again" hid every diagnosable failure.
-       b960: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
+       b961: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
        so once two drafts can overlap it may already belong to another patient;
        `e` never does. The global stays as the fallback for a thrower that only
        wrote there. */
@@ -16841,7 +16841,7 @@ function opPrepAutosaveDraft(i){
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
-    /* b960 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
+    /* b961 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
        This autosave runs after every drafted row, and it rebuilt the whole
        History view and the nav counts synchronously each time - a screen the
        doctor cannot even see, because the op-note room is over it. On a
@@ -32848,7 +32848,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b960';
+  window.__MLS_AV='b961';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
