@@ -16081,7 +16081,7 @@ async function extractPdfText(file){
    This whole subsystem is additive and is ONLY consulted when the
    toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
    ========================================================= */
-/* b956 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
+/* b957 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
    MEASURED on the owner's real library (96 templates, ~520KB of JSON): one
    getTemplates() call costs ~7ms of JSON.parse plus two normalisation passes,
    and the op-note room calls it PER ROW. opPrepRender's tplOpts closure alone
@@ -16177,7 +16177,7 @@ function setTemplates(arr){
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
-/* b956 PERF: find in the cached store, then clone only the ONE template that
+/* b957 PERF: find in the cached store, then clone only the ONE template that
    matched. This is called inside draft loops and per-row matchers; cloning the
    whole library to throw 95 of them away was pure waste. Same contract: a fresh
    object the caller may mutate, or null. */
@@ -16586,7 +16586,7 @@ function opPrepRender(){
      "Remove duplicates" button, which announces what it did. A duplicate sitting
      in the dropdown is a cosmetic annoyance; deleting an op-note template is not
      recoverable. Do not put an automatic call back here. */
-  /* b956 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
+  /* b957 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
      tplOpts used to call getTemplates() and re-escape every template name
      INSIDE the per-row map, so a 19-patient day parsed the library 19 times and
      built 19 × 96 escaped <option> strings on every single repaint — and this
@@ -16623,7 +16623,7 @@ function opPrepRender(){
     h+='</div>';
     return h;
   }).join('');
-  /* b956 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
+  /* b957 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
      This function is the app's answer to almost every control in the op-note
      room, and the room's own rail builder calls it again on top; a good share of
      those calls produce byte-identical markup. Writing it anyway destroyed and
@@ -16667,7 +16667,7 @@ function _opNeedleHtml(i, mf, row){
   return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:150px">'+esc(mf.label||'Needle size')+'</label><select onchange="_opNeedlePick('+i+',\''+key+'\',this.value)" style="font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">'+optHtml+'</select>'+txt+hint+'</div>';
 }
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
-/* b956 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
+/* b957 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
    Until now "did this draft succeed, and if not why" lived in three window
    globals (__mlsLastOpFidelityPass / __mlsLastOpFidelityError /
    __mlsLastOpErrorCode) that the drafter cleared on entry and the runner read
@@ -16753,7 +16753,7 @@ async function opPrepGenerateOne(i){
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
-    /* b956: reaching here means the generator RESOLVED. Every fidelity,
+    /* b957: reaching here means the generator RESOLVED. Every fidelity,
        clinical-consistency, identity and transport failure throws (the template
        owner builds a real Error and rethrows it), so "the try block completed
        and a note exists" is the same verdict __mlsLastOpFidelityPass carries -
@@ -16769,7 +16769,7 @@ async function opPrepGenerateOne(i){
   }catch(e){
     /* b500: show the ACTUAL reason (identity, template conflict, network,
        server error) — a generic "try again" hid every diagnosable failure.
-       b956: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
+       b957: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
        so once two drafts can overlap it may already belong to another patient;
        `e` never does. The global stays as the fallback for a thrower that only
        wrote there. */
@@ -16821,7 +16821,7 @@ function opPrepAutosaveDraft(i){
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
-    /* b956 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
+    /* b957 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
        This autosave runs after every drafted row, and it rebuilt the whole
        History view and the nav counts synchronously each time - a screen the
        doctor cannot even see, because the op-note room is over it. On a
@@ -32828,7 +32828,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b956';
+  window.__MLS_AV='b957';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
