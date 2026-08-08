@@ -807,6 +807,7 @@
     'assessment and plan', 'assessment/plan', 'assessment', 'problem list', 'problems', 'diagnoses', 'diagnosis',
     'medication list', 'current medications', 'medications', 'meds', 'allergies', 'allergy',
     'past medical history', 'medical history', 'pmh', 'past surgical history', 'surgical history', 'psh',
+    'surgical & procedure history', 'surgical and procedure history', 'procedure history',
     'social history', 'social', 'family history', 'family', 'smoking status', 'tobacco use', 'smoking',
     'immunization history', 'immunizations', 'vaccines', 'last menstrual period', 'pregnancy status', 'lmp',
     'code status', 'primary care provider', 'referring provider', 'pcp', 'preferred pharmacy', 'pharmacy',
@@ -843,6 +844,16 @@
       src = src.replace(dbl, '\n');
       var noneRec = new RegExp('\\s+(?=(?:' + _clinicalSectionPattern + ')\\s+None recorded\\b)', 'ig');
       src = src.replace(noneRec, '\n');
+      /* px-5.2 (2026-08-08, measured on a second real chart): the reviewed
+         variant doubles the heading with "Reviewed" BETWEEN the copies -
+         "Problems Reviewed Problems Lumbar spondylosis - Onset: ...",
+         "Medications Reviewed Medications Name Date Source amLODIPine ...",
+         "Surgical & Procedure History Reviewed Surgical & Procedure History
+          Operation on shoulder ...". Counted on that chart: 5 problems ->
+         2 captured, 5+ meds -> 0, 4 surgical -> 0, because this shape was
+         also invisible. Same doubled-heading proof, same split. */
+      var revDbl = new RegExp('\\s+(?=(' + _clinicalSectionPattern + ')\\s+(?:Not\\s+)?Reviewed\\s+\\1\\b)', 'ig');
+      src = src.replace(revDbl, '\n');
     }
     return src;
   }
@@ -850,6 +861,8 @@
   /* px-5.0: the print-view heading shapes ("Allergies Allergies not reviewed
      (...) <entries>" and "Vitals None recorded.") - precompiled once. */
   var _printDoubledHeadingRe = _clinicalSectionPattern ? new RegExp('^(' + _clinicalSectionPattern + ')\\s+(\\1\\s+not reviewed\\b.*|None recorded\\b.*)$', 'i') : null;
+  /* px-5.2: "<H> Reviewed <H> <entries>" / "<H> Not Reviewed <H> <entries>" */
+  var _printReviewedHeadingRe = _clinicalSectionPattern ? new RegExp('^(' + _clinicalSectionPattern + ')\\s+(?:Not\\s+)?Reviewed\\s+\\1\\b\\s*(.*)$', 'i') : null;
   function _headingFromLine(line) {
     var clean = S(line).replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').replace(/\*\*/g, '').trim();
     if (!clean) return null;
@@ -860,6 +873,13 @@
       if (dblm) {
         var dlbl = trim(dblm[1]).toLowerCase().replace(/\s+/g, ' ');
         if (_clinicalSectionLookup[dlbl]) return { label: dlbl, value: trim(dblm[2]) };
+      }
+    }
+    if (_printReviewedHeadingRe) {
+      var revm = clean.match(_printReviewedHeadingRe);
+      if (revm) {
+        var rlbl = trim(revm[1]).toLowerCase().replace(/\s+/g, ' ');
+        if (_clinicalSectionLookup[rlbl]) return { label: rlbl, value: trim(revm[2]) };
       }
     }
     var m = clean.match(/^([^:]{1,72}?)(?::|\s+-\s+)(.*)$/);
@@ -897,6 +917,35 @@
       return out;
     }
     return [stripped];
+  }
+
+  /* px-5.2: the reviewed-variant print flattens PROBLEM entries into one run
+     ("Lumbar spondylosis - Onset: 06/23/2026 Thoracic spine pain - Onset:
+     05/13/2026 ...") and MEDICATION rows into a header-led table run
+     ("Name Date Source amLODIPine 5 mg tablet 04/11/26 filled surescripts
+     ..."). Both expanders keep the clinical qualifier with its entry and
+     fail OPEN - text without the run markers passes through unchanged. */
+  function _expandOnsetRun(v) {
+    var s = trim(S(v));
+    if (!s) return [];
+    var re = /(.{2,120}?)\s*-\s*Onset:\s*([\d\/\-.]{4,12})\s*/g;
+    var out = [], m, consumed = 0;
+    while ((m = re.exec(s))) { out.push(trim(m[1]) + ' (onset ' + m[2] + ')'); consumed = re.lastIndex; }
+    if (!out.length) return [s];
+    var rest = trim(s.slice(consumed));
+    if (rest && !_notData(rest)) out.push(rest);
+    return out;
+  }
+  function _expandMedTableRun(v) {
+    var s = trim(S(v)).replace(/^Name\s+Date\s+Source\s*/i, '');
+    if (!s) return [];
+    var re = /(.{2,120}?)\s+(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(filled|prescribed|entered|reported|dispensed)\s+(\S+)\s*/gi;
+    var out = [], m, consumed = 0;
+    while ((m = re.exec(s))) { out.push(trim(m[1]) + ' (' + m[3].toLowerCase() + ' ' + m[2] + ')'); consumed = re.lastIndex; }
+    if (!out.length) return [s];
+    var rest = trim(s.slice(consumed));
+    if (rest && !_notData(rest)) out.push(rest);
+    return out;
   }
 
   function _splitSectionValue(value) {
@@ -1248,13 +1297,17 @@
       var text = [v.raw, v.aiSummary, v.findings, v.plan].join('\n').slice(0, 24000);
       (v.icd10 || []).forEach(function (c) { facts.problems.push('ICD-10 ' + c); });
       facts.meds = facts.meds.concat(_structuredValues(v.meds || []));
-      facts.problems = facts.problems.concat(_sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment', 'assessment and plan', 'assessment/plan'], semanticTracker, 'problems'));
-      facts.meds = facts.meds.concat(_sectionValues(text, ['medications', 'medication list', 'current medications', 'meds'], semanticTracker, 'meds'));
+      _sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment', 'assessment and plan', 'assessment/plan'], semanticTracker, 'problems').forEach(function (pRun) {
+        facts.problems = facts.problems.concat(_expandOnsetRun(pRun));
+      });
+      _sectionValues(text, ['medications', 'medication list', 'current medications', 'meds'], semanticTracker, 'meds').forEach(function (mRun) {
+        facts.meds = facts.meds.concat(_expandMedTableRun(mRun));
+      });
       _sectionValues(text, ['allergies', 'allergy'], semanticTracker, 'allergies').forEach(function (avRun) {
         facts.allergies = facts.allergies.concat(_expandAllergyRun(avRun));
       });
       facts.history.pmh = facts.history.pmh.concat(_sectionValues(text, ['past medical history', 'medical history', 'pmh'], semanticTracker, 'history.pmh'));
-      facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh'], semanticTracker, 'history.psh'));
+      facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh', 'surgical & procedure history', 'surgical and procedure history', 'procedure history'], semanticTracker, 'history.psh'));
       facts.history.social = facts.history.social.concat(_sectionValues(text, ['social history', 'social'], semanticTracker, 'history.social'));
       facts.history.family = facts.history.family.concat(_sectionValues(text, ['family history', 'family'], semanticTracker, 'history.family'));
       facts.history.smoking = facts.history.smoking.concat(_sectionValues(text, ['smoking status', 'tobacco use', 'smoking'], semanticTracker, 'history.smoking'));
@@ -1521,7 +1574,9 @@
     _validVisitSummary: _validVisitSummary,
     _cleanVisitTypeForDisplay: _cleanVisitTypeForDisplay,
     _storeHygieneOnce: _storeHygieneOnce,
-    _expandAllergyRun: _expandAllergyRun
+    _expandAllergyRun: _expandAllergyRun,
+    _expandOnsetRun: _expandOnsetRun,
+    _expandMedTableRun: _expandMedTableRun
   };
 })();
 

@@ -266,7 +266,40 @@ async function main() {
     assert.deepStrictEqual([...cleanAllergies('IODINE: Hives\nSUNITINIB: - Contrast dye')], ['IODINE: Hives', 'SUNITINIB: - Contrast dye'], 'real-only list broke');
   }
 
-  console.log('visit-summary-quality-contract: PASS (67 checks)');
+  /* ---- 15. px-5.2: the REVIEWED print variant ("<H> Reviewed <H> ...")
+          must be seen, and its flattened runs expanded. Fixture lines are the
+          EXACT captured substrings from a second real chart on which the
+          measured counts were: problems 5 present -> 2 captured, meds 5+
+          present -> 0, surgical 4 present -> 0. ---- */
+  {
+    const reviewedBlock = [
+      'Problems Reviewed Problems Lumbar spondylosis - Onset: 06/23/2026 Thoracic spine pain - Onset: 05/13/2026 Spasm of back muscles - Onset: 02/19/2025 Lumbar spine pain - Onset: 05/05/2026 Sprain of iliolumbar ligament, initial encounter - Onset: 06/23/2026',
+      'Medications Reviewed Medications Name Date Source amLODIPine 5 mg tablet 04/11/26 filled surescripts butalbital-acetaminophen-caffeine 50 mg-325 mg-40 mg tablet 04/27/26 filled surescripts fluocinonide 0.05 % topical solution 04/27/26 filled surescripts',
+      'Surgical & Procedure History Reviewed Surgical & Procedure History Operation on shoulder joint - bilateral Prosthetic total replacement of bilateral knee joints Hysterectomy Cholecystectomy'
+    ].join(' ');
+    const pF2 = { id: 'pt-f', name: 'F', dob: '01/01/1970', problems: '', meds: '', allergies: '', summary: '', visits: [] };
+    context.upsertPatient(pF2);
+    M.addVisit('pt-f', {
+      date: '2026-07-10', type: 'Office visit', encounterId: 'e-f1', fullDetail: true,
+      raw: 'Patient: F\n' + reviewedBlock + '\nPlan: continue current regimen.'
+    }, { source: 'athena-copy', identityVerified: true, identityBinding: 'pt-f', bodyComplete: true });
+    const recF = await M.summarizeAll('pt-f');
+    assert.strictEqual(recF.ok, true, 'reviewed-variant visit did not organize');
+    const afterF = context.findPatient('pt-f');
+    const probs = String(afterF.problems || '');
+    const meds = String(afterF.meds || '');
+    const psh = String((afterF.history && afterF.history.psh) || '');
+    for (const want of ['Lumbar spondylosis (onset 06/23/2026)', 'Thoracic spine pain (onset 05/13/2026)', 'Spasm of back muscles (onset 02/19/2025)', 'Lumbar spine pain (onset 05/05/2026)']) {
+      assert(probs.indexOf(want) >= 0, 'problem entry missing: ' + want + ' in ' + JSON.stringify(probs.slice(0, 200)));
+    }
+    assert(/amLODIPine 5 mg tablet \(filled 04\/11\/26\)/.test(meds), 'med row 1 missing: ' + JSON.stringify(meds.slice(0, 160)));
+    assert(/butalbital-acetaminophen-caffeine[^(]*\(filled 04\/27\/26\)/.test(meds), 'med row 2 missing');
+    assert(!/Name Date Source/i.test(meds), 'the med table header leaked into medications');
+    assert(/Cholecystectomy/.test(psh) && /Hysterectomy/.test(psh), 'surgical history run not captured: ' + JSON.stringify(psh.slice(0, 160)));
+    assert(!/Reviewed/i.test(probs) && !/Reviewed/i.test(meds), 'the Reviewed marker leaked into clinical fields');
+  }
+
+  console.log('visit-summary-quality-contract: PASS (77 checks)');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
