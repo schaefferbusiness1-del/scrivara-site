@@ -1,4 +1,4 @@
-/* feat_mls_upnow_sync.js  ->  window.__mlsUpNowSync  (upnowsync-1.1.0)
+/* feat_mls_upnow_sync.js  ->  window.__mlsUpNowSync  (upnowsync-1.2.1)
  *
  *  BUG (Complex Visit page)
  *  ------------------------
@@ -60,7 +60,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "upnowsync-1.2.0";
+  var VERSION = "upnowsync-1.2.1";
   try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.version === VERSION) return; } catch (e) { return; }
   try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.revert) { window.__mlsUpNowSync.revert(); } } catch (e) {}
 
@@ -132,8 +132,15 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function heroBox() { return $(HERO); }
+  function visitDefinitelyHidden() {
+    /* showView() writes this inline before it emits the route lifecycle event.
+       Only treat the exact hidden value as authoritative; unknown hosts fall
+       through to the existing visibility measurement. */
+    try { var v = $("visitView"); return !!(v && v.style && v.style.display === "none"); }
+    catch (e) { return false; }
+  }
   function heroVisible() {
-    try { var h = heroBox(); if (!h) return false; if (getComputedStyle(h).display === "none") return false; return true; }
+    try { if (visitDefinitelyHidden()) return false; var h = heroBox(); if (!h) return false; if (getComputedStyle(h).display === "none") return false; return true; }
     catch (e) { return false; }
   }
   function topVal() { try { var n = $(NAME_IN); return n ? (n.value || "") : ""; } catch (e) { return ""; } }
@@ -257,8 +264,8 @@
   }
 
   function scheduleSync() {
-    if (_t) return;
-    _t = setTimeout(function () { _t = null; try { sync(); } catch (e) {} }, 60);
+    if (_t || visitDefinitelyHidden()) return;
+    _t = setTimeout(function () { _t = null; if (visitDefinitelyHidden()) return; try { sync(); } catch (e) {} }, 60);
   }
 
   function wrapRender() {

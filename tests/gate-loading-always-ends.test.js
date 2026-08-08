@@ -30,6 +30,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
@@ -136,6 +137,8 @@ assert.ok(/appScreen'\)/.test(arm) && /app\.style\.display='none'/.test(arm),
 assert.ok(/agreementsGate/.test(arm),
   'the watchdog must leave an already-visible agreements gate alone — it is an ' +
   'actionable screen (Retry), and replacing it with sign-in loses the context');
+assert.ok(/legalState!=='verified'/.test(arm) && /showAgreementsGate\(false\)/.test(arm),
+  'an authenticated identity can still be mistaken for verified legal release');
 
 /* ---- 7. the last line of defence is unconditional ----
  * Whatever else throws, the body must not stay hidden. */
@@ -176,6 +179,66 @@ assert.ok(/classList\.add\('mls-secure-loading'\)/.test(show),
     'detector #5 cannot tell clear-at-top from clear-at-completion — it would pass on the regression');
 }
 
+/* ---- 11. execute the legal-state branches, not just their vocabulary ----
+ * bkUser proves identity only. A hung /api/agreements/me must land on the
+ * locked Retry surface; only the explicit verified state may reveal the app. */
+function runWatchdog(legalState, live) {
+  let scheduled = null, locked = 0, login = 0;
+  const classes = new Set(['mls-secure-loading']);
+  const elements = {
+    agreementsGate: { style: { display: 'none' } },
+    appScreen: { style: { display: 'block' } },
+    authScreen: { style: { display: 'none' } }
+  };
+  const context = {
+    SF_GATE_WATCHDOG_MS: 40000,
+    sfGateWatchdog: 0,
+    sfSessionLegalState: legalState,
+    bkUser: live ? { email: 'doctor@example.test' } : null,
+    backendMode() { return true; },
+    bkToken() { return live ? 'token' : ''; },
+    clearTimeout() {},
+    setTimeout(fn, ms) { scheduled = { fn, ms }; return 1; },
+    document: {
+      documentElement: { classList: {
+        contains(name) { return classes.has(name); },
+        remove(...names) { names.forEach(name => classes.delete(name)); }
+      } },
+      getElementById(id) { return elements[id] || null; }
+    },
+    sfCancelGateLoading() { classes.delete('mls-secure-loading'); classes.delete('mls-app-revealing'); },
+    showAgreementsGate() {
+      locked++;
+      elements.appScreen.style.display = 'none';
+      elements.authScreen.style.display = 'none';
+      elements.agreementsGate.style.display = 'block';
+    },
+    switchAuth(mode) { if (mode === 'login') login++; }
+  };
+  vm.createContext(context);
+  vm.runInContext(arm + '\nthis.arm=sfArmGateWatchdog;', context);
+  context.arm();
+  assert(scheduled && scheduled.ms === 40000, 'watchdog runtime did not arm at its declared deadline');
+  scheduled.fn();
+  return { elements, classes, locked, login };
+}
+
+{
+  const unknownIdentity = runWatchdog('unknown', true);
+  assert.strictEqual(unknownIdentity.locked, 1, 'unknown legal state with bkUser did not open the locked Retry surface');
+  assert.strictEqual(unknownIdentity.elements.appScreen.style.display, 'none', 'unknown legal state exposed the clinical app');
+  assert.strictEqual(unknownIdentity.elements.agreementsGate.style.display, 'block');
+
+  const verifiedIdentity = runWatchdog('verified', true);
+  assert.strictEqual(verifiedIdentity.locked, 0, 'verified legal state was incorrectly re-locked');
+  assert.strictEqual(verifiedIdentity.elements.appScreen.style.display, 'block', 'verified legal state did not reach the app recovery path');
+
+  const unknownIdentityAndAuth = runWatchdog('unknown', false);
+  assert.strictEqual(unknownIdentityAndAuth.elements.appScreen.style.display, 'none');
+  assert.strictEqual(unknownIdentityAndAuth.elements.authScreen.style.display, 'flex');
+  assert.strictEqual(unknownIdentityAndAuth.login, 1, 'unresolved identity did not return to actionable sign-in');
+}
+
 console.log('PASS gate-loading-always-ends: the watchdog is armed on every show path, ' +
-  'outlives every early-returning hide, ignores document.hidden, and fails closed ' +
-  'to a screen the doctor can act on');
+  'outlives every early-returning hide, ignores document.hidden, and executes a ' +
+  'fail-closed legal-state recovery to a screen the doctor can act on');

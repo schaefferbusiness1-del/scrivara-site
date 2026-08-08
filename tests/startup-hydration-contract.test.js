@@ -8,7 +8,9 @@ const app = fs.readFileSync(path.join(__dirname, '..', 'ScribeFlow.html'), 'utf8
 
 const session = app.slice(app.indexOf('function startSession(email)'), app.indexOf('function logout(force)'));
 assert.strictEqual((session.match(/refreshMe\(_startupOpts\)/g) || []).length, 1, 'startup must issue exactly one identity/hydration pass');
-assert(session.includes('Promise.all([') && session.includes('!bkToken()?Promise.resolve(true):_identityReady.then(()=>checkAgreementsGate(_startupOpts))'), 'legal readiness must fail closed without auth and otherwise follow canonical identity while data hydrates');
+assert(session.includes('!bkToken()?Promise.resolve(true):_identityReady.then(()=>checkAgreementsGate(_startupOpts))') &&
+  session.includes('sfStartupRevealBarrier(gated,_uiReady)'),
+  'legal readiness must fail closed without auth and otherwise gate critical UI while data hydrates in background');
 assert(session.includes('_startupOpts.cancelled=true') && session.includes('_startupController.abort()'), 'startup deadline must cancel late network results');
 assert(session.includes('_armDeadline(30200)') && session.includes('window.__mlsSessionReady=_sessionReady'), 'startup must expose a bounded readiness promise inside the 32-second loader deadline');
 // b419: deadlines re-arm instead of aborting while document.hidden (throttled
@@ -24,8 +26,53 @@ const uiGate = session.slice(session.indexOf('const _uiReady='), session.indexOf
 assert(uiGate.includes('_gateCheck.then(gated=>') && uiGate.includes('if(gated) return true;'), 'unsigned startup no longer bypasses the optional UI bundle');
 assert(uiGate.indexOf('if(gated) return true;') < uiGate.indexOf('window.__mlsEnsureUiBundle()'), 'UI bundle can start before the agreement gate decision');
 const hydrateGate = session.slice(session.indexOf('const _hydrate='), session.indexOf('const _deadline=', session.indexOf('const _hydrate=')));
-assert(hydrateGate.includes('if(gated) return true;') && hydrateGate.includes('Promise.all([_refreshPromise,_uiReady])'), 'unsigned compliance handoff can still wait for unrelated cloud hydration');
+assert(hydrateGate.includes('sfStartupRevealBarrier(gated,_uiReady)'), 'startup reveal no longer uses the security/UI-only barrier');
+assert(!hydrateGate.includes('_refreshPromise'), 'fresh-device reveal can still wait for complete patient/record hydration');
+assert(session.indexOf('_refreshPromise=Promise.resolve(refreshMe(_startupOpts))') < session.indexOf('const _hydrate='),
+  'background hydration is no longer dispatched before the reveal barrier');
 assert(session.includes("typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():Promise.resolve(false)"), 'local/demo sessions lost their on-demand UI bundle handoff');
+
+const barrierStart = app.indexOf('function sfStartupRevealBarrier(');
+const barrierEnd = app.indexOf('/* A browser tab can authenticate', barrierStart);
+assert(barrierStart >= 0 && barrierEnd > barrierStart, 'startup reveal barrier helper is missing');
+const barrierContext = { Promise };
+vm.createContext(barrierContext);
+vm.runInContext(app.slice(barrierStart, barrierEnd) + '\nthis.sfStartupRevealBarrier=sfStartupRevealBarrier;', barrierContext);
+
+async function verifyStartupRevealBarrier() {
+  let cloudFinished = false;
+  const cloudHydration = new Promise(resolve => { barrierContext.finishCloud = () => { cloudFinished = true; resolve(); }; });
+  void cloudHydration;
+  const ready = await barrierContext.sfStartupRevealBarrier(false, Promise.resolve(true));
+  assert.strictEqual(ready, false, 'verified startup did not reveal after critical UI readiness');
+  assert.strictEqual(cloudFinished, false, 'startup reveal unexpectedly required the never-settling cloud hydration sentinel');
+
+  let releaseUi;
+  const pendingUi = new Promise(resolve => { releaseUi = resolve; });
+  let uiSettled = false;
+  const uiWait = barrierContext.sfStartupRevealBarrier(false, pendingUi).then(value => { uiSettled = true; return value; });
+  await Promise.resolve();
+  assert.strictEqual(uiSettled, false, 'verified startup revealed before critical UI readiness');
+  releaseUi(true);
+  assert.strictEqual(await uiWait, false);
+
+  const gated = await barrierContext.sfStartupRevealBarrier(true, new Promise(() => {}));
+  assert.strictEqual(gated, true, 'blocked legal state waited for unrelated UI work instead of handing off to the locked gate');
+
+  let finishHydration;
+  const hydration = new Promise(resolve => { finishHydration = resolve; });
+  const controller = new AbortController();
+  barrierContext.sfActiveStartupController = controller;
+  barrierContext.sfRetireStartupControllerAfter(hydration, controller);
+  assert.strictEqual(barrierContext.sfActiveStartupController, controller,
+    'the startup controller was retired at reveal while background hydration was still active');
+  controller.abort();
+  assert.strictEqual(controller.signal.aborted, true, 'post-reveal background hydration controller was no longer cancellable');
+  finishHydration();
+  await Promise.resolve(); await Promise.resolve();
+  assert.strictEqual(barrierContext.sfActiveStartupController, null,
+    'the startup controller was not retired after background hydration settled');
+}
 
 // Execute the tiny loader definition. Merely parsing the signed-out page must
 // not append mls-connect; two callers after auth must share one script/promise.
@@ -37,10 +84,17 @@ const loaderCode = app.slice(app.indexOf('/* MLS-CONNECT', loaderOpen), loaderCl
 const criticalBlock = /var CRITICAL=\[([\s\S]*?)\];/.exec(loaderCode);
 const criticalNames = criticalBlock ? Array.from(criticalBlock[1].matchAll(/'([^']+\.js)'/g), match => match[1]) : [];
 assert(criticalNames.length >= 25, 'critical startup asset inventory is unexpectedly incomplete');
+assert(!criticalNames.includes('feat_mls_widget_deck.js'),
+  'a normally deferred widget deck cannot also be critical or startup deadlocks behind its own gate');
+assert(criticalNames.includes('feat_mls_stop_confirm.js'),
+  'recording-stop confirmation must load before the app becomes interactive');
+for (const name of ['mls-template-stdline.js','feat_mls_copilot_power.js','feat_mls_audio_capture.js','feat_mls_athena_follow.js']) {
+  assert(criticalNames.includes(name), name + ' must settle before its first action can be used');
+}
 assert(loaderCode.includes("window.addEventListener('load',onLoad,true)") && loaderCode.includes("window.addEventListener('error',onLoad,true)"), 'critical assets are not captured from both load and error events');
 assert(loaderCode.includes("state[name]='pending'") && loaderCode.includes("if(!state[name]) state[name]='missing'") && loaderCode.includes('var pending=assets.pending()'), 'critical asset settlement no longer distinguishes pending and missing assets');
 assert(loaderCode.includes("expected.forEach(function(name){ if(state[name]!=='loaded') count++; })") && loaderCode.includes('assets.errors.length===0'), 'critical error/missing states can still satisfy readiness');
-assert(loaderCode.includes('var quiet=now-assets.lastActivity>=900'), 'critical asset wave lost its 900ms quiet window');
+assert(loaderCode.includes('var quiet=now-assets.lastActivity>=180'), 'critical asset wave lost its short load-burst debounce');
 assert(loaderCode.includes("abort(assets.errors.length?'critical-asset-error':'critical-ui-missing')") && loaderCode.includes("abort('critical-assets-timeout')"), 'critical errors or unfinished critical assets no longer fail closed');
 assert(loaderCode.includes("s.src='mls-connect.js?v='+window.__MLS_AV") && loaderCode.includes('s.async=true') && loaderCode.includes('s.onload=function()'), 'main UI no longer uses a streaming exact-version external script');
 assert(!loaderCode.includes('response.text()') && !loaderCode.includes("s.text=String(source||'')"), 'main UI is still buffered and copied as a multi-megabyte text blob');
@@ -193,11 +247,11 @@ async function verifyLoaderRuntime() {
   const secondBundle = success.window.__mlsEnsureUiBundle();
   assert.strictEqual(firstBundle, secondBundle, 'concurrent UI-bundle callers did not share one in-flight promise');
   assert.strictEqual(success.mainScripts.length, 1, 'on-demand loader appended duplicate main scripts');
-  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b964', 'main UI script is not exact-versioned');
+  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b965', 'main UI script is not exact-versioned');
   assert(success.timerDelays().includes(30440), 'loader-derived hard deadline was not scheduled');
   await success.flush();
   assert.strictEqual(success.mainScripts[0].id, 'mlsUiBundleScript');
-  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b964');
+  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b965');
   assert.strictEqual(success.window.__externalMainRuns, 1, 'external main source did not execute exactly once');
   await success.advance(2000);
   assert.strictEqual(await firstBundle, true, 'complete critical UI did not publish ready');
@@ -215,14 +269,14 @@ async function verifyLoaderRuntime() {
   const missingResult = missing.window.__mlsEnsureUiBundle();
   await missing.flush();
   assert.strictEqual(missing.window.__mlsStartupAssets.state[criticalNames[criticalNames.length - 1]], 'missing', 'missing critical asset was not recorded');
-  await missing.advance(31500);
+  await missing.advance(31650);
   assert.strictEqual(await missingResult, false, 'missing critical asset incorrectly published readiness');
 
   const pending = makeLoaderHarness({ assets: 'pending' });
   const pendingResult = pending.window.__mlsEnsureUiBundle();
   await pending.flush();
   assert(Object.values(pending.window.__mlsStartupAssets.state).some(value => value === 'pending'), 'unsettled critical scripts were not marked pending');
-  await pending.advance(31500);
+  await pending.advance(31650);
   assert.strictEqual(await pendingResult, false, 'pending critical assets incorrectly published readiness');
 
   const optionalPending = makeLoaderHarness({ assets: 'success', optionalPending: true });
@@ -271,23 +325,37 @@ assert(patientHydration.includes('const localIndex=new Map()') && patientHydrati
 assert(patientHydration.includes('const additions=[]') && patientHydration.includes('additions.concat(local)'), 'new cloud patients are not batched into one saved merge');
 assert(!patientHydration.includes('.findIndex('), 'patient hydration still performs O(server x local) findIndex scans');
 assert(patientHydration.includes('if(!opts.deferRender)') && patientHydration.indexOf('if(!opts.deferRender)') < patientHydration.indexOf('updateNavCounts()'), 'deferred patient hydration can repaint hidden navigation');
+assert(/await sfHydrationYield\(\);\s*savePatients\([\s\S]*?\);\s*await sfHydrationYield\(\);/.test(patientHydration),
+  'monolithic patient persistence no longer yields before and after its post-reveal write');
 
 const recordHydration = app.slice(app.indexOf('async function loadRecordsFromServer(opts)'), app.indexOf('function renderHistory()', app.indexOf('async function loadRecordsFromServer(opts)')));
 assert(recordHydration.includes('const localIndex=new Map()') && recordHydration.includes('localIndex.has(rec.id)?localIndex.get(rec.id):-1'), 'record hydration regressed to repeated linear identity scans');
 assert(recordHydration.includes('localIndex.set(rec.id,local.length-1)'), 'new records are not added to the hydration index');
 assert(!recordHydration.includes('.findIndex('), 'record hydration still performs O(server x local) findIndex scans');
 assert(recordHydration.includes('if(!opts.deferRender)') && recordHydration.indexOf('if(!opts.deferRender)') < recordHydration.indexOf('renderHistory()'), 'deferred record hydration can repaint hidden History');
+assert(/await sfHydrationYield\(\);\s*saveNotes\(local\);\s*await sfHydrationYield\(\);/.test(recordHydration),
+  'monolithic record persistence no longer yields before and after its post-reveal write');
+
+const prefHydration = app.slice(app.indexOf('async function loadPrefsFromServer(opts)'), app.indexOf('function applyAppearance()', app.indexOf('async function loadPrefsFromServer(opts)')));
+assert(prefHydration.includes("const init={headers:{'Authorization':'Bearer '+bkToken()}}") &&
+  prefHydration.includes("fetch(bkBase()+'/api/prefs',init)"),
+  'preference hydration lost its authenticated request initializer');
 
 for (const fn of ['loadPrefsFromServer(opts)', 'loadPatientsFromServer(opts)', 'loadRecordsFromServer(opts)']) {
   assert(app.includes('async function ' + fn), fn + ' does not accept the shared startup signal');
 }
-assert((app.match(/if\(opts\.signal\) init\.signal=opts\.signal/g) || []).length >= 5, 'not every startup request is abortable');
+assert((app.match(/if\(opts\.signal\)\s*init\.signal=opts\.signal/g) || []).length >= 3 &&
+  app.includes('sfFetchListRequest(bkBase()+endpoint+query,init,opts.signal,requestTimeoutMs)'),
+  'startup request helpers no longer share or relay the cancellation signal');
+assert(patientHydration.includes("sfFetchPagedList('/api/patients','patients',opts") &&
+  recordHydration.includes("sfFetchPagedList('/api/records','records',opts"),
+  'paged patient or record hydration stopped forwarding the startup cancellation signal');
 const gate = app.slice(app.indexOf('async function checkAgreementsGate(opts)'), app.indexOf('async function agBuildReceiptPdf'));
 assert(!gate.includes('showAgreementsGate()'), 'agreement lookup must return a decision instead of bypassing loader timing');
 assert(gate.includes('if(!sfStartupValid(opts)) return true'), 'late legal-readiness responses can still fail open after startup cancellation');
 
-verifyLoaderRuntime().then(function () {
-  console.log('PASS startup hydration: phased session, streaming external UI load, critical-only readiness, fail-closed critical assets, and loader-owned deadline');
+Promise.all([verifyStartupRevealBarrier(), verifyLoaderRuntime()]).then(function () {
+  console.log('PASS startup hydration: safety/UI-only reveal, background cloud hydration, streaming external UI load, fail-closed critical assets, and loader-owned deadline');
 }).catch(function (error) {
   console.error(error);
   process.exit(1);

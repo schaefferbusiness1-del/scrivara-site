@@ -27,10 +27,10 @@ const assets = [
      skipped as untouched, which is what every seed advance quietly buys. A
      literal token is only as good as the human bumping it; this one now
      follows the build number and cannot go stale again. */
-  ['feat_athena_tooltip_dedupe.js', '20260726ui125', '20260725ui124'],
-  ['feat_b18_qa.js', '20260726b18v10', '20260719b18v9'],
+  ['feat_b18_qa.js', '20260808b18v14perf2', '20260808b18v13perf1'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   ['feat_mls_asst_fix.js', '20260802asst145', '20260719asst143'],
+  ['feat_mls_assistant_exact.js', '20260808asst220perf1', '20260725asst217'],
   /* feat_mls_b121_pack.js left this list on 2026-08-07 (px train): the pack
      changed (matchRow lost its name-only merge leg - the cross-patient weld)
      and rather than mint 20260807p2c7 for the same date-granularity blindness
@@ -44,15 +44,16 @@ const assets = [
   ['feat_mls_header_exact.js', '20260802hx303', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
   ['feat_mls_provider_passthrough.js', '20260722pp1c5', '20260702pp1c1'],
-  ['feat_mls_recentpts.js', '20260727rp210', '20260722rp3'],
+  ['feat_mls_recentpts.js', '20260808rp220perf1', '20260727rp210'],
   /* Bumped, not reshaped: two suites pin this asset to a LITERAL token, and the
      service worker serves versioned assets cache-first. It had drifted - the
      file changed three times after '20260728rd328' while the token stood still,
      so a returning browser kept the cached copy. Caught by
      tests/cache-token-cannot-go-stale.test.js. */
-  ['feat_mls_redesign.js', '20260804rd331', '20260802rd330'],
+  ['feat_mls_patientpick.js', '20260808pick162perf1', '20260716pick161'],
   ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
+  ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
   ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],
     /* 2026-08-06: the deck's empty state was #C9DCD2 on white (~1.4:1) and
      effectively invisible; it now follows --muted. The service worker serves
@@ -61,13 +62,15 @@ const assets = [
   ['feat_mls_widget_deck.js', '20260806wd112', '20260802wd111'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
-  ['feat_mls_command_palette.js', '20260724cmd104', '20260719cmd103'],
+  ['feat_mls_command_palette.js', '20260808cmd106perf2', '20260808cmd105perf1'],
   ['feat_mls_copilot_request_safety.js', '20260802crs121', '20260718crs111'],
   ['feat_mls_copilot_dock_fix.js', '20260726cdf210', '20260716cdf200'],
   ['feat_mls_dictate_anywhere.js', '20260719da111h1', "s.src='feat_mls_dictate_anywhere.js?v='+(window.__MLS_AV||Date.now())"],
   ['feat_mls_pervisit_unify.js', '20260725pvu1c2', '20260629pvu1c1'],
   ['feat_mls_progress_stages.js', '20260722ps131', "s.src='feat_mls_progress_stages.js?v='+(window.__MLS_AV||Date.now())"],
-  ['feat_task3_frontsync.js', '20260727t3110', '20260727t3109'],
+  ['feat_task3_frontsync.js', '20260808t3112perf1', '20260727t3110'],
+  ['feat_mls_upnow_activeselect.js', '20260808uas5perf1', '20260804uas4'],
+  ['feat_mls_upnow_sync.js', '20260808uns5perf1', '20260727uns4'],
   /* 2026-08-05, unr-1.1.0 -> unr-1.1.1: the module's boot() poll re-ran its
      three installers 60 times while each guarded only on its own window marker,
      so a co-wrapper that did not carry that marker forward made the poll
@@ -78,7 +81,6 @@ const assets = [
      Same class as b870's renderProfile cycle. The token MUST move or a
      returning browser keeps the cycling copy cache-first. Pinned by
      tests/wrapper-chains-reach-their-base.test.js. */
-  ['feat_mls_upnow_realtime.js', '20260805unr111', '20260723unr110'],
   /* 2026-08-06: feat_visits.js LEAVES this table. It gained the history identity
      binding and immediately went stale against '20260729vis11' — the third
      hand-maintained token to go stale in one evening, each hiding a fix from
@@ -165,6 +167,30 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
     label + ': a hand-maintained feat_visits token came back — it will go stale at the next change');
 }
 
+/* These high-churn performance owners follow the shared build token. That
+   makes the cache URL move with every release instead of relying on a second
+   hand-maintained version that can drift from the file it serves. */
+for (const [label, text] of [['production', connect], ['staging', staging]]) {
+  assert(text.includes("var A='feat_athena_tooltip_dedupe.js'") &&
+    text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+    label + ': tooltip/UI owner must use the shared build cache token');
+  assert(!text.includes('20260808ui127perf2') && !text.includes('20260808ui126perf1'),
+    label + ': a retired hand-maintained tooltip/UI token is still reachable');
+  assert(text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())") &&
+    text.includes("var A='feat_mls_redesign.js',V='3.2.3'"),
+    label + ': redesign must use the shared build cache token with its version-aware loader');
+  assert(!text.includes('20260808rd332perf2') && !text.includes('20260804rd331'),
+    label + ': a retired hand-maintained redesign token is still reachable');
+  assert(text.includes("feat_mls_upnow_realtime.js?v='+(window.__MLS_AV||Date.now())"),
+    label + ': UP NOW realtime must follow the build-number cache-buster');
+  assert(!text.includes('20260808unr122perf1') && !text.includes('20260805unr111'),
+    label + ': a retired UP NOW realtime cache token is still reachable');
+}
+assert(connect.includes("feat_mls_store_cache.js?v='+(window.__MLS_AV||Date.now())"),
+  'production: exact-key store cache must follow the build-number cache-buster');
+assert(!connect.includes('20260808sc14perf1') && !connect.includes('20260806sc13b924'),
+  'production: a retired exact-key store cache token is still reachable');
+
 /* TWO LANES, ONE CURE, 2026-08-07. The px train and the avatar train reached the
    same conclusion about this list independently and on the same afternoon: a
    hand-maintained token cannot protect a file that changes more than once a day,
@@ -195,7 +221,16 @@ assert(staging.includes('feat_mls_checker.js?v=20260808chk3049'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
-assert(staging.includes('feat_mls_command_palette.js?v=20260724cmd104'),
+assert(staging.includes('feat_mls_command_palette.js?v=20260808cmd106perf2'),
   'staging must load the same canonical Ctrl/Cmd+K owner as production');
+assert(staging.includes('feat_mls_assistant_exact.js?v=20260808asst220perf1') &&
+  !staging.includes('20260725asst217'),
+  'staging must use the current assistant asset URL and retire the prior one');
+for (const assetUrl of [
+  'feat_mls_patientpick.js?v=20260808pick162perf1',
+  'feat_mls_upnow_sync.js?v=20260808uns5perf1'
+]) {
+  assert(staging.includes(assetUrl), 'staging must use the current performance asset URL: ' + assetUrl);
+}
 
 console.log('PASS immutable satellite loaders: ' + assets.length + ' changed assets use fresh, unique cache URLs and retired URLs are unreachable');

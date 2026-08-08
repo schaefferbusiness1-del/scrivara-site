@@ -15,7 +15,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_recentpts.js'), 'utf8');
 
-assert(source.includes("var VERSION='rp-2.1.0'"), 'recent-chip indexed/event-driven version missing');
+assert(source.includes("var VERSION='rp-2.2.0'"), 'recent-chip indexed/event-driven version missing');
 assert(source.includes('min-width:118px'), 'chip wrapper must reserve stable width');
 assert(source.includes('min-width:112px'), 'chip button must reserve stable width');
 assert(source.includes('font-variant-numeric:tabular-nums'), 'count digits must not change button width');
@@ -25,7 +25,7 @@ assert(!/if\(!loc\|\|!others\.length\)/.test(source), 'retired remove-on-empty b
 for (const bundle of ['mls-connect.js', 'mls-connect.staging.js']) {
   const connect = fs.readFileSync(path.join(root, bundle), 'utf8');
   assert(connect.includes('feat_mls_recentpts.js'), `${bundle} must load the recent chip`);
-  assert(connect.includes('?v=20260727rp210'), `${bundle} must cache-bust the rp-2.1.0 performance release`);
+  assert(connect.includes('?v=20260808rp220perf1'), `${bundle} must cache-bust the rp-2.2.0 performance release`);
   assert(!connect.includes('?v=20260722rp3'), `${bundle} still pins the repeated-scan chip`);
 }
 

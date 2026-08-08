@@ -152,8 +152,8 @@ for (const g of ['_didAutoPos', '_didLoadNextUp', '_didRenderGuard']) {
   assert(new RegExp('if \\(' + g + '\\) return;').test(unr),
     'feat_mls_upnow_realtime.js must return early on ' + g + ' before touching window');
 }
-assert(connect.includes('feat_mls_upnow_realtime.js?v=20260805unr111'),
-  'mls-connect.js must cache-bust feat_mls_upnow_realtime.js to the unr-1.1.1 fix');
+assert(connect.includes("feat_mls_upnow_realtime.js?v='+(window.__MLS_AV||Date.now())"),
+  'mls-connect.js must cache-bust feat_mls_upnow_realtime.js with the shared build token');
 assert(!connect.includes('20260723unr110'),
   'the pre-fix upnow-realtime pin is still in mls-connect.js — returning browsers keep the cycling build');
 

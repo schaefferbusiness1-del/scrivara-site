@@ -35,12 +35,21 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.0.9';
-  var wrapped = [], trackedTimeouts = [], destroyed = false;
+  var VERSION = 't3-1.1.2';
+  var wrapped = [], trackedTimeouts = [], destroyed = false, started = false, runtimeGeneration = 0;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function viewShown(id) {
+    var el = $(id); if (!el) return false;
+    var app = $('appScreen');
+    if (app && (app.hidden || app.getAttribute('aria-hidden') === 'true' || (app.style && app.style.display === 'none'))) return false;
+    /* showView owns these static roots through inline display state. Reading it
+       avoids offsetParent/getClientRects, which forced layout during every
+       calendar/status reconciliation. */
+    return !el.hidden && el.getAttribute('aria-hidden') !== 'true' && (!el.style || el.style.display !== 'none');
+  }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isFn(f) { return typeof f === 'function'; }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -102,9 +111,9 @@
   /* --- the one visible status strip (no conflicting per-tab spinners) --- */
   function stripHost() {
     var cal = $('calendarView');
-    if (cal && cal.offsetParent !== null) return { host: cal, mode: 'cal' };
+    if (cal && viewShown('calendarView')) return { host: cal, mode: 'cal' };
     var hero = $('heroToday');
-    if (hero && hero.parentElement && $('visitView') && $('visitView').offsetParent !== null) return { host: hero.parentElement, before: hero, mode: 'visit' };
+    if (hero && hero.parentElement && viewShown('visitView')) return { host: hero.parentElement, before: hero, mode: 'visit' };
     return null;
   }
   var stripState = { txt: '', kind: '' };
@@ -144,7 +153,7 @@
   var hadActivity = false, settleTimer = null, stripHideTimer = null;
   var originalStatusSet = S.set;
   function afterStatusChange() {
-    if (destroyed) return;
+    if (destroyed || !started) return;
     safe(renderStrip);
     try { if (stripHideTimer) clearTimeout(stripHideTimer); stripHideTimer = setTimeout(function () { stripHideTimer = null; safe(renderStrip); }, 3200); } catch (e) {}
     safe(function () { if (typeof scheduleTick === 'function') scheduleTick(30); });
@@ -154,7 +163,7 @@
     var wait = Math.max(0, 1150 - (Date.now() - Number(S.activity || 0)));
     settleTimer = setTimeout(function () {
       settleTimer = null;
-      if (destroyed || S.running() || !hadActivity) return;
+      if (destroyed || !started || S.running() || !hadActivity) return;
       hadActivity = false; S.set(8, 'ok');
     }, wait);
   }
@@ -173,11 +182,12 @@
       var stage = 0;
       if (method === 'GET' && /\/api\/appointments/.test(url)) stage = /[?&]date=/.test(url) ? 2 : 1;
       else if (method === 'GET' && /\/api\/providers/.test(url)) stage = 3;
-      if (stage) S.set(stage, 'run');
+      var statusGeneration = runtimeGeneration, trackStage = !!(stage && started);
+      if (trackStage) S.set(stage, 'run');
       var p = _fetch.apply(this, arguments);
-      if (stage) {
-        p = p.then(function (r) { S.set(stage, (r && r.ok) ? 'ok' : 'err', r && !r.ok ? ('HTTP ' + r.status) : ''); return r; },
-          function (e) { S.set(stage, 'err', 'network'); throw e; });
+      if (trackStage) {
+        p = p.then(function (r) { if (started && statusGeneration === runtimeGeneration) S.set(stage, (r && r.ok) ? 'ok' : 'err', r && !r.ok ? ('HTTP ' + r.status) : ''); return r; },
+          function (e) { if (started && statusGeneration === runtimeGeneration) S.set(stage, 'err', 'network'); throw e; });
       }
       return p;
     };
@@ -447,9 +457,10 @@
   function wrapGlobal(name, stageK, post) {
     if (wrappedOnce[name]) return false;                                   /* wrap exactly once per load: never build w3-over-w2 chains */
     var cur = window[name];
-    if (!isFn(cur) || cur.__t3Wrapped) return false;
+    if (!isFn(cur) || (cur.__t3Wrapped && !cur.__mlsWrapperDisposed)) return false;
     var w = function () {
       var self = this, args = arguments;
+      if (w.__mlsWrapperDisposed || destroyed || !started) return cur.apply(self, args);
       if (stageK) S.set(stageK, 'run');
       var r, failed = null;
       try { r = withScopedAppts(cur, self, args); }
@@ -466,7 +477,7 @@
     };
     w.__t3Wrapped = 1; w.__t3Orig = cur;
     window[name] = w; wrappedOnce[name] = true;
-    wrapped.push([name, function () { if (window[name] === w) window[name] = cur; }]);
+    wrapped.push([name, function () { if (window[name] === w) window[name] = cur; }, w]);
     return true;
   }
   function ensureWraps() {
@@ -503,7 +514,7 @@
   var rosterSig = '';
   function renderRoster() {
     var wrap = $('calSplitWrap') || $('calGrid');
-    var visible = $('calendarView') && $('calendarView').offsetParent !== null;
+    var visible = viewShown('calendarView');
     var ros = $('mlsT3Roster');
     if (!visible || !wrap || !wrap.parentNode) { if (ros) ros.style.display = 'none'; return; }
     var opt = unitOpt();
@@ -576,22 +587,31 @@
     });
   }
   var pickSig = '';
+  function wrapperChainHas(fn, marker) {
+    var seen = [], depth = 0;
+    while (isFn(fn) && depth++ < 12 && seen.indexOf(fn) < 0) {
+      if (fn[marker] && !fn.__mlsWrapperDisposed) return true;
+      seen.push(fn);
+      fn = fn.__t3Orig || fn.__mlsUnrOrig || fn.__mlsUpNowOrig || fn.__mlsOrig || null;
+    }
+    return false;
+  }
   function wrapHeroRender() {
     var cur = window._renderTodayPatients;
-    if (!isFn(cur) || cur.__t3Wrapped) return;
+    if (!isFn(cur) || wrapperChainHas(cur, '__t3Wrapped')) return;
     var w = function (appts) {
       var self = this, args = arguments;
       var r = safe(function () { return cur.apply(self, args); });
-      safe(augmentHero);
+      if (started && !destroyed && viewShown('visitView')) safe(augmentHero);
       return r;
     };
     w.__t3Wrapped = 1; w.__t3Orig = cur;
     window._renderTodayPatients = w;
-    wrapped.push(['_renderTodayPatients', function () { if (window._renderTodayPatients === w) window._renderTodayPatients = cur; }]);
+    wrapped.push(['_renderTodayPatients', function () { if (window._renderTodayPatients === w) window._renderTodayPatients = cur; }, w]);
   }
   function feedSelector(force) {
     if (!isFn(window._renderTodayPatients)) return;
-    var vv = $('visitView'); if (!vv || vv.offsetParent === null) return;
+    var vv = $('visitView'); if (!vv || !viewShown('visitView')) return;
     var date = viewingDate();
     var list = canonicalList(date);
     var scope = Cal.getScope();
@@ -606,6 +626,7 @@
     S.set(5, 'run'); S.set(5, 'ok');                                        /* Who's Next = same canonical surface now */
   }
   function augmentHero() {
+    if (!viewShown('visitView')) return;
     var box = $('heroToday'); if (!box) return;
     var date = viewingDate();
     var scope = Cal.getScope();
@@ -818,8 +839,9 @@
   }
   function wrapHeroPick() {
     var cur = window._heroPickPatient;
-    if (!isFn(cur) || cur.__t3Wrapped) return;
+    if (!isFn(cur) || (cur.__t3Wrapped && !cur.__mlsWrapperDisposed)) return;
     var w = function (i) {
+      if (w.__mlsWrapperDisposed || destroyed || !started) return cur.apply(this, arguments);
       var a = (window._heroTodayList || [])[i] || {};
       var patients = safe(function () { return isFn(window.getPatients) ? window.getPatients() : []; }, []);
       var refs = pickRefs(a), chart = resolveStoredPick(a, patients);
@@ -847,7 +869,7 @@
     };
     w.__t3Wrapped = 1; w.__t3Orig = cur;
     window._heroPickPatient = w;
-    wrapped.push(['_heroPickPatient', function () { if (window._heroPickPatient === w) window._heroPickPatient = cur; }]);
+    wrapped.push(['_heroPickPatient', function () { if (window._heroPickPatient === w) window._heroPickPatient = cur; }, w]);
   }
   var restoredPick = false, restoreT0 = Date.now();
   function restorePick() {
@@ -933,7 +955,7 @@
   /* ==================== 7. ORCHESTRATION ================================== */
   function rerenderAll(why) {
     safe(function () { Cal.normalize(); });
-    safe(function () { if (isFn(window.renderCalendar) && $('calendarView') && $('calendarView').offsetParent !== null) window.renderCalendar(); });
+    safe(function () { if (isFn(window.renderCalendar) && viewShown('calendarView')) window.renderCalendar(); });
     safe(renderRoster);
     safe(glanceNote);
     safe(function () { feedSelector(true); });
@@ -941,7 +963,8 @@
   }
   var lastStoreSig = '', lastDate = '', lastCalVis = false;
   function tick() {
-    if (destroyed) return;
+    if (destroyed || !started) return;
+    if (!viewShown('visitView') && !viewShown('calendarView')) return;
     injectCSS();
     retireCompetitors();
     ensureWraps();
@@ -949,7 +972,7 @@
     wrapHeroPick();
     var changed = Cal.normalize();
     var date = viewingDate();
-    var calVis = !!($('calendarView') && $('calendarView').offsetParent !== null);
+    var calVis = viewShown('calendarView');
     if (changed || Cal._sig !== lastStoreSig) {
       lastStoreSig = Cal._sig;
       restorePick();
@@ -964,38 +987,162 @@
     safe(glanceNote);
     safe(renderStrip);
   }
-  var tickTimer = null, slowTimer = null;
+  var tickTimer = null, slowTimer = null, startTimer = null, startFallback = null, startIdle = null, pulseIdle = null;
+  var startupPassTimers = [];
   function scheduleTick(delay) {
-    if (destroyed || tickTimer) return;
+    if (destroyed || !started || tickTimer) return;
     tickTimer = setTimeout(function () { tickTimer = null; safe(tick); }, delay == null ? 60 : delay);
   }
   function slowPulse() {
-    if (destroyed) return;
-    if (!document.hidden) safe(tick);
+    if (destroyed || !started) return;
+    if (!document.hidden && (viewShown('visitView') || viewShown('calendarView'))) {
+      var idle = window.requestIdleCallback;
+      if (idle) pulseIdle = idle(function () { pulseIdle = null; if (started && !destroyed) safe(tick); }, { timeout: 1200 });
+      else scheduleTick(0);
+    }
     slowTimer = setTimeout(slowPulse, document.hidden ? 30000 : 10000);
   }
   function onReady() { scheduleTick(0); }
   function onDocumentClick(ev) {
-    var chip = ev.target && ev.target.closest ? ev.target.closest('.wn-chip') : null;
-    if (chip) trackedTimeouts.push(setTimeout(function () { safe(function () { var nm = $('heroPtName'); if (nm && String(nm.value || '').trim()) persistPick(nm.value.trim(), ($('heroPtDob') || {}).value || ''); S.set(7, 'run'); S.set(7, 'ok'); }); }, 120));
+    var target = ev && ev.target;
+    var chip = target && target.closest ? target.closest('.wn-chip') : null;
+    if (chip) {
+      var operationTimer = setTimeout(function () {
+        var timerIndex = trackedTimeouts.indexOf(operationTimer);
+        if (timerIndex >= 0) trackedTimeouts.splice(timerIndex, 1);
+        if (!started || destroyed) return;
+        safe(function () { var nm = $('heroPtName'); if (nm && String(nm.value || '').trim()) persistPick(nm.value.trim(), ($('heroPtDob') || {}).value || ''); S.set(7, 'run'); S.set(7, 'ok'); });
+      }, 120);
+      trackedTimeouts.push(operationTimer);
+    }
+    var relevant = target && target.closest ? target.closest('.wn-chip,#nav_calendar,#nav_visit,#nav_patients,#heroToday,#calProvFilter,#calJump') : null;
+    if (!relevant) return;
     scheduleTick(80);
   }
   function onDocumentInput(ev) {
     var t = ev && ev.target;
     if (!t) return;
-    if (t.id === 'calProvFilter' || t.id === 'calJump' || t.type === 'date' || t.type === 'month') scheduleTick(40);
+    var ownedDate = (t.type === 'date' || t.type === 'month') && t.closest && t.closest('#calendarView,#visitView');
+    if (t.id === 'calProvFilter' || t.id === 'calJump' || ownedDate) scheduleTick(40);
   }
   function onVisibility() { if (!document.hidden) scheduleTick(0); }
   function onFocus() { scheduleTick(0); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
-  try { document.addEventListener('click', onDocumentClick, true); } catch (e) {}
-  try { document.addEventListener('input', onDocumentInput, true); document.addEventListener('change', onDocumentInput, true); } catch (e) {}
-  try { document.addEventListener('visibilitychange', onVisibility); } catch (e) {}
-  try { window.addEventListener('focus', onFocus); } catch (e) {}
-  try { window.addEventListener('pageshow', onFocus); } catch (e) {}
-  safe(tick);
-  [400, 1200, 2500, 5000, 9000].forEach(function (ms) { trackedTimeouts.push(setTimeout(function () { safe(tick); }, ms)); });
-  slowTimer = setTimeout(slowPulse, 10000);
+  function onViewChanged() { scheduleTick(40); }
+  var runtimeListeners = false, loaderReadyListener = null, loaderStartListener = null, sessionBoundaryListener = null;
+  function installRuntimeListeners() {
+    if (runtimeListeners || destroyed) return; runtimeListeners = true;
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
+    try { document.addEventListener('click', onDocumentClick, true); } catch (e) {}
+    try { document.addEventListener('input', onDocumentInput, true); document.addEventListener('change', onDocumentInput, true); } catch (e) {}
+    try { document.addEventListener('visibilitychange', onVisibility); } catch (e) {}
+    try { window.addEventListener('focus', onFocus); } catch (e) {}
+    try { window.addEventListener('pageshow', onFocus); } catch (e) {}
+    try { window.addEventListener('mls:view-changed', onViewChanged); } catch (e) {}
+  }
+  function removeRuntimeListeners() {
+    if (!runtimeListeners) return; runtimeListeners = false;
+    safe(function () { document.removeEventListener('DOMContentLoaded', onReady); document.removeEventListener('click', onDocumentClick, true); document.removeEventListener('input', onDocumentInput, true); document.removeEventListener('change', onDocumentInput, true); document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('focus', onFocus); window.removeEventListener('pageshow', onFocus); window.removeEventListener('mls:view-changed', onViewChanged); });
+  }
+  function restoreCalData() {
+    safe(function () {
+      var a = Cal._full;
+      /* Core clears the retained array and replaces window._calAppts before a
+         session-boundary event. Never repopulate that detached Account-A ref. */
+      if (a === window._calAppts && Array.isArray(a) && Cal._removedDups.length) Cal._removedDups.forEach(function (row) { if (a.indexOf(row) < 0) a.push(row); });
+      Cal._removedDups = []; Cal._dupCount = 0; Cal._full = null; Cal._sig = ''; Cal._provIdx = {};
+    });
+  }
+  function resetStatusState() {
+    hadActivity = false; stripState = { txt: '', kind: '' };
+    safe(function () {
+      for (var k = 1; k <= 8; k++) {
+        var g = S.stages && S.stages[k]; if (!g) continue;
+        g.state = 'idle'; g.detail = ''; g.ts = 0;
+      }
+      S.lastErr = null; S.activity = 0; S.settled = true;
+    });
+  }
+  function clearSessionUi() {
+    safe(function () {
+      var empty = $('mlsT3PickEmpty'), hero = $('heroToday');
+      if (empty && hero && hero.style && hero.style.display === 'none') hero.style.display = '';
+      nodes.forEach(function (id) { if (id === 'mlsT3Css') return; var el = $(id); if (el && el.parentNode) el.parentNode.removeChild(el); });
+      var tags = document.querySelectorAll('.t3p-tag');
+      for (var i = 0; i < tags.length; i++) if (tags[i].parentNode) tags[i].parentNode.removeChild(tags[i]);
+    });
+    rosterSig = ''; pickSig = ''; lastStoreSig = ''; lastDate = ''; lastCalVis = false;
+  }
+  function startRuntime() {
+    if (destroyed || started) return;
+    if (startupBusy()) { queueStart(80); return; }
+    runtimeGeneration++;
+    clearSessionUi(); resetStatusState();
+    started = true;
+    if (startTimer) { clearTimeout(startTimer); startTimer = null; }
+    if (startFallback) { clearTimeout(startFallback); startFallback = null; }
+    if (loaderReadyListener) { safe(function () { window.removeEventListener('mls:loader-ready', loaderReadyListener); }); loaderReadyListener = null; }
+    installRuntimeListeners();
+    /* Wrappers are cheap and must exist before the first click. The expensive
+       roster/hero normalization gets the first post-reveal idle slice. */
+    safe(ensureWraps); safe(wrapHeroRender); safe(wrapHeroPick);
+    var idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 48); };
+    startIdle = idle(function () { startIdle = null; if (started && !destroyed) safe(tick); }, { timeout: 800 });
+    [500, 1800, 5000].forEach(function (ms) { startupPassTimers.push(setTimeout(function () { if (started && !destroyed) safe(tick); }, ms)); });
+    slowTimer = setTimeout(slowPulse, 10000);
+  }
+  function queueStart(delay) {
+    if (destroyed || started || startTimer) return;
+    startTimer = setTimeout(function () { startTimer = null; startRuntime(); }, delay == null ? 180 : delay);
+  }
+  function startupBusy() {
+    return safe(function () {
+      var gateBusy = window.sfGateLoadingVisible === true || document.documentElement.classList.contains('mls-secure-loading');
+      var auth = $('authScreen'), app = $('appScreen');
+      var authVisible = !!(auth && auth.style && auth.style.display !== 'none' && (!app || !app.style || app.style.display === 'none'));
+      return !!(gateBusy || authVisible);
+    }, false);
+  }
+  function fallbackCheck() {
+    startFallback = null;
+    var signedOut = safe(function () { var auth = $('authScreen'), app = $('appScreen'); return !!(auth && auth.style && auth.style.display !== 'none' && (!app || !app.style || app.style.display === 'none')); }, false);
+    if (signedOut) return; /* loader-start/ready is the wake-up; never poll the login screen */
+    if (startupBusy()) { startFallback = setTimeout(fallbackCheck, 1000); return; }
+    queueStart(window.__mlsLoaderReadyAt ? 180 : 0);
+  }
+  function armReady() {
+    if (!loaderReadyListener) {
+      loaderReadyListener = function () { loaderReadyListener = null; queueStart(180); };
+      safe(function () { window.addEventListener('mls:loader-ready', loaderReadyListener, { once: true }); });
+    }
+    if (!startFallback) startFallback = setTimeout(fallbackCheck, 12000);
+  }
+  function pauseRuntime() {
+    if (destroyed) return;
+    runtimeGeneration++;
+    started = false;
+    safe(function () { if (tickTimer) clearTimeout(tickTimer); tickTimer = null; if (slowTimer) clearTimeout(slowTimer); slowTimer = null; if (settleTimer) clearTimeout(settleTimer); settleTimer = null; if (stripHideTimer) clearTimeout(stripHideTimer); stripHideTimer = null; if (startTimer) clearTimeout(startTimer); startTimer = null; if (startFallback) clearTimeout(startFallback); startFallback = null; if (startIdle != null) (window.cancelIdleCallback || clearTimeout)(startIdle); startIdle = null; if (pulseIdle != null) (window.cancelIdleCallback || clearTimeout)(pulseIdle); pulseIdle = null; });
+    while (startupPassTimers.length) safe(function () { clearTimeout(startupPassTimers.pop()); });
+    while (trackedTimeouts.length) safe(function () { clearTimeout(trackedTimeouts.pop()); });
+    removeRuntimeListeners();
+    restoreCalData(); clearSessionUi(); resetStatusState();
+    restoredPick = false; restoreT0 = Date.now(); swapping = false;
+    wrappedOnce = {}; retired = { picker: false, wn: false };
+    armReady();
+  }
+  /* CSS is a tiny style insertion and remains under the gate, avoiding a visual
+     flash. All patient/calendar scans wait for the real loader handoff. */
+  safe(injectCSS);
+  loaderStartListener = pauseRuntime;
+  sessionBoundaryListener = pauseRuntime;
+  safe(function () { window.addEventListener('mls:loader-start', loaderStartListener); });
+  safe(function () { window.addEventListener('mls:session-boundary', sessionBoundaryListener); });
+  if (startupBusy()) {
+    armReady();
+  } else if (window.__mlsLoaderReadyAt) {
+    queueStart(180);
+  } else {
+    startRuntime();
+  }
 
   /* ==================== API / REVERT ====================================== */
   window.__mlsT3 = {
@@ -1008,14 +1155,21 @@
     rerender: rerenderAll,
     revert: function () {
       destroyed = true;
-      safe(function () { if (tickTimer) clearTimeout(tickTimer); if (slowTimer) clearTimeout(slowTimer); if (settleTimer) clearTimeout(settleTimer); if (stripHideTimer) clearTimeout(stripHideTimer); });
-      trackedTimeouts.forEach(function (i) { safe(function () { clearTimeout(i); }); });
-      safe(function () { document.removeEventListener('DOMContentLoaded', onReady); document.removeEventListener('click', onDocumentClick, true); document.removeEventListener('input', onDocumentInput, true); document.removeEventListener('change', onDocumentInput, true); document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('focus', onFocus); window.removeEventListener('pageshow', onFocus); });
-      wrapped.forEach(function (p) { safe(p[1]); });
+      started = false;
+      safe(function () { if (tickTimer) clearTimeout(tickTimer); if (slowTimer) clearTimeout(slowTimer); if (settleTimer) clearTimeout(settleTimer); if (stripHideTimer) clearTimeout(stripHideTimer); if (startTimer) clearTimeout(startTimer); if (startFallback) clearTimeout(startFallback); });
+      safe(function () { if (startIdle != null) (window.cancelIdleCallback || clearTimeout)(startIdle); startIdle = null; if (pulseIdle != null) (window.cancelIdleCallback || clearTimeout)(pulseIdle); pulseIdle = null; });
+      if (loaderReadyListener) { safe(function () { window.removeEventListener('mls:loader-ready', loaderReadyListener); }); loaderReadyListener = null; }
+      if (loaderStartListener) { safe(function () { window.removeEventListener('mls:loader-start', loaderStartListener); }); loaderStartListener = null; }
+      if (sessionBoundaryListener) { safe(function () { window.removeEventListener('mls:session-boundary', sessionBoundaryListener); }); sessionBoundaryListener = null; }
+      while (startupPassTimers.length) safe(function () { clearTimeout(startupPassTimers.pop()); });
+      while (trackedTimeouts.length) safe(function () { clearTimeout(trackedTimeouts.pop()); });
+      removeRuntimeListeners();
+      wrapped.forEach(function (p) { safe(function () { if (p[2]) p[2].__mlsWrapperDisposed = true; }); safe(p[1]); });
       nodes.forEach(function (id) { safe(function () { var el = $(id); if (el && el.parentNode) el.parentNode.removeChild(el); }); });
       safe(function () {                                                    /* restore pruned duplicate rows */
-        var a = Cal._full || window._calAppts;
-        if (Array.isArray(a) && Cal._removedDups.length) { Cal._removedDups.forEach(function (x) { a.push(x); }); Cal._removedDups = []; }
+        var a = Cal._full;
+        if (a === window._calAppts && Array.isArray(a) && Cal._removedDups.length) { Cal._removedDups.forEach(function (x) { if (a.indexOf(x) < 0) a.push(x); }); }
+        Cal._removedDups = [];
       });
       safe(function () { window.__mlsT3.installed = false; });
     }

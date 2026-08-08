@@ -11,7 +11,7 @@ const end = app.indexOf('function sfShowGateLoading', start);
 assert(start >= 0 && end > start, 'loader lifecycle source is missing');
 const source = app.slice(start, end);
 
-function harness(ready, assetsSettled = true) {
+function harness(ready, assetsSettled = true, priorityQueued = 0) {
   let now = 0, seq = 0;
   const tasks = [];
   const rect = { x: 0, y: 0, width: 1000, height: 700 };
@@ -26,7 +26,8 @@ function harness(ready, assetsSettled = true) {
       __mlsUiBundleReady: !!ready,
       __mlsUiBundleFailed: false,
       __mlsUiUnification: ready ? { installed: true } : null,
-      __mlsStartupAssets: { settled: !!assetsSettled }
+      __mlsStartupAssets: { settled: !!assetsSettled },
+      __mlsDeferAsset: { stats() { return { priorityQueued }; } }
     },
     document: { getElementById(id) { return ids[id]; } },
     setTimeout(fn, ms) { const id = ++seq; tasks.push({ id, at: now + ms, fn }); return id; },
@@ -59,6 +60,14 @@ function harness(ready, assetsSettled = true) {
   await fast.advance(920);
   assert.strictEqual(fastResult, true, 'stable ready UI did not release shortly after the minimum');
 
+  const queuedPresentation = harness(true, true, 8);
+  queuedPresentation.context.api.setStart(0); queuedPresentation.context.api.setToken(2);
+  let queuedResult = 'pending';
+  queuedPresentation.context.api.wait(2, false).then(v => { queuedResult = v; });
+  await queuedPresentation.advance(920);
+  assert.strictEqual(queuedResult, true,
+    'noncritical queued presentation work held the loader after critical UI/frame readiness');
+
   const deferred = harness(true, false);
   deferred.context.api.setStart(0); deferred.context.api.setToken(5);
   let deferredResult = 'pending';
@@ -88,5 +97,5 @@ function harness(ready, assetsSettled = true) {
   await stale.advance(140);
   assert.strictEqual(staleResult, false, 'a stale hide request can clear a newer loading owner');
 
-  console.log('PASS loader lifecycle: 300ms anti-flash floor, deferred layout sampling, 32s bounded reveal, and stale-token safety');
+  console.log('PASS loader lifecycle: 300ms anti-flash floor, critical-only reveal despite queued presentation work, deferred layout sampling, 32s bound, and stale-token safety');
 })().catch(err => { console.error(err); process.exit(1); });

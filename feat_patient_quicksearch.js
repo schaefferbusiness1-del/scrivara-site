@@ -38,6 +38,7 @@
   var _results = [];            // current rendered result patient objects
   var _activeIdx = -1;          // keyboard-highlighted row index
   var _booted = false;
+  var _patientSearchCache = { stamp: null, rows: null };
 
   /* ---------- tiny helpers ---------- */
   function esc(s) {
@@ -56,6 +57,53 @@
       }
     } catch (e) { /* ignore */ }
     return [];
+  }
+
+  /* The shared roster cache already proves the exact raw patients blob plus
+     open-batch totalChanges/externalWrites and account key. Its stable object
+     identity is therefore the strongest (and cheapest) production stamp.
+     Partial/older boots may not expose it yet; only then accept the exact-key
+     storage generation combined with getPatients()' read generation. If no
+     complete proof exists, rebuild for this search instead of risking stale
+     normalized PHI. */
+  function patientSnapshotStamp(pats) {
+    try {
+      if (typeof window.__mlsPtRosterData === 'function') {
+        var roster = window.__mlsPtRosterData(pats);
+        if (roster && (typeof roster === 'object' || typeof roster === 'function')) return roster;
+      }
+    } catch (eRoster) { /* use the exact-key fallback */ }
+    try {
+      var generation = pats && pats.__mlsReadGen;
+      if (typeof generation !== 'number' || !isFinite(generation)) return null;
+      if (typeof window.uns !== 'function') return null;
+      var key = window.uns('patients');
+      if (typeof key !== 'string' || !key) return null;
+      var cache = window.__mlsStoreCache;
+      if (!cache || typeof cache.verFor !== 'function') return null;
+      var version = cache.verFor(key);
+      var stable = (typeof version === 'string' && version.length > 0) ||
+        (typeof version === 'number' && isFinite(version));
+      if (!stable) return null;
+      var versionText = String(version);
+      return 'fallback|' + key.length + ':' + key + '|read:' + generation +
+        '|store:' + typeof version + ':' + versionText.length + ':' + versionText;
+    } catch (e) { return null; }
+  }
+
+  function normalizedPatientRows(pats) {
+    var stamp = patientSnapshotStamp(pats);
+    if (stamp !== null && _patientSearchCache.stamp === stamp && _patientSearchCache.rows) {
+      return _patientSearchCache.rows;
+    }
+    var rows = [];
+    for (var i = 0; i < pats.length; i++) {
+      var p = pats[i];
+      rows.push({ p: p, i: i, nameLc: lc(p && p.name), dobDigits: digits(p && p.dob) });
+    }
+    if (stamp === null) _patientSearchCache = { stamp: null, rows: null };
+    else _patientSearchCache = { stamp: stamp, rows: rows };
+    return rows;
   }
 
   function activeIdSafe() {
@@ -93,21 +141,24 @@
   }
 
   /* ---------- matching (name + DOB), pure & testable ---------- */
-  // Returns a score (>0 match, higher = better) or 0 for no match.
-  function scorePatient(p, q) {
-    if (!p) return 0;
+  function normalizedQuery(q) {
     var qRaw = String(q || '').trim();
-    if (!qRaw) return 0;
-    var name = lc(p.name);
-    var dob = String(p.dob == null ? '' : p.dob);
-    var dobDigits = digits(dob);
     var qLc = lc(qRaw);
-    var qDigits = digits(qRaw);
+    var tokens = qLc.split(/\s+/).filter(Boolean);
+    return { raw: qRaw, lc: qLc, digits: digits(qRaw), tokens: tokens };
+  }
+
+  // Returns a score (>0 match, higher = better) or 0 for no match.
+  function scoreNormalizedPatient(row, query) {
+    if (!row || !row.p || !query.raw) return 0;
+    var name = row.nameLc;
+    var dobDigits = row.dobDigits;
+    var qDigits = query.digits;
 
     var score = 0;
 
     // Name matching: every whitespace token must appear somewhere in the name.
-    var tokens = qLc.split(/\s+/).filter(Boolean);
+    var tokens = query.tokens;
     var nameTokenMatch = tokens.length > 0 && tokens.every(function (t) {
       // a pure-digit token is a DOB token, not a name token
       return /\D/.test(t) ? name.indexOf(t) !== -1 : false;
@@ -136,23 +187,44 @@
     return score;
   }
 
-  function search(q) {
-    var pats = getPatientsSafe();
+  function scorePatient(p, q) {
+    if (!p) return 0;
+    return scoreNormalizedPatient({ p: p, i: 0, nameLc: lc(p.name), dobDigits: digits(p.dob) }, normalizedQuery(q));
+  }
+
+  function compareScoredPatients(a, b) {
+    if (b.s !== a.s) return b.s - a.s;
+    if (a.nameLc < b.nameLc) return -1;
+    if (a.nameLc > b.nameLc) return 1;
+    return a.i - b.i;
+  }
+
+  /* Maintain the exact prefix a stable full sort would produce, while holding
+     at most the eight rows the panel can render. Equal comparator values are
+     inserted after earlier input rows, matching stable Array#sort order. */
+  function insertTopPatient(top, item) {
+    var lo = 0, hi = top.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (compareScoredPatients(item, top[mid]) < 0) hi = mid;
+      else lo = mid + 1;
+    }
+    top.splice(lo, 0, item);
+    if (top.length > MAX_RESULTS) top.pop();
+  }
+
+  function search(q, patientSnapshot) {
+    var pats = Array.isArray(patientSnapshot) ? patientSnapshot : getPatientsSafe();
     var qTrim = String(q || '').trim();
     if (!qTrim) return [];
+    var query = normalizedQuery(qTrim);
+    var rows = normalizedPatientRows(pats);
     var scored = [];
-    for (var i = 0; i < pats.length; i++) {
-      var s = scorePatient(pats[i], qTrim);
-      if (s > 0) scored.push({ p: pats[i], s: s, i: i });
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i], s = scoreNormalizedPatient(row, query);
+      if (s > 0) insertTopPatient(scored, { p: row.p, s: s, i: row.i, nameLc: row.nameLc });
     }
-    scored.sort(function (a, b) {
-      if (b.s !== a.s) return b.s - a.s;
-      // stable-ish tiebreak: by name
-      var an = lc(a.p && a.p.name), bn = lc(b.p && b.p.name);
-      if (an < bn) return -1; if (an > bn) return 1;
-      return a.i - b.i;
-    });
-    return scored.slice(0, MAX_RESULTS).map(function (x) { return x.p; });
+    return scored.map(function (x) { return x.p; });
   }
 
   /* ---------- open a patient (confirmed-present globals, graceful) ---------- */
@@ -281,7 +353,7 @@
     if (!q.trim()) { closePanel(); return; }
 
     var allPats = getPatientsSafe();
-    _results = search(q);
+    _results = search(q, allPats);
     _activeIdx = _results.length ? 0 : -1;
 
     panel.innerHTML = '';
@@ -476,6 +548,7 @@
     try { var s = document.getElementById(STYLE_ID); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e) {}
     if (_debTimer) { clearTimeout(_debTimer); _debTimer = null; }
     _results = []; _activeIdx = -1; _booted = false;
+    _patientSearchCache = { stamp: null, rows: null };
     try { if (window.__mlsPatientQuickSearch) window.__mlsPatientQuickSearch.installed = false; } catch (e) {}
   }
 

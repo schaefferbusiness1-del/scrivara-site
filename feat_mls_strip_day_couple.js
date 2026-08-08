@@ -1,4 +1,4 @@
-/* feat_mls_strip_day_couple.js -> window.__mlsStripDayCouple (sdc-2.0.1)
+/* feat_mls_strip_day_couple.js -> window.__mlsStripDayCouple (sdc-2.0.2)
  *
  * The Visit page has one native Easy workspace and one native quick strip for
  * every selected date.  This satellite only keeps that workspace and the
@@ -14,7 +14,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsStripDayCouple", VERSION = "sdc-2.0.1";
+  var NS = "__mlsStripDayCouple", VERSION = "sdc-2.0.2";
   /* sdc-1.0.0 built a second non-today patient strip and kept it alive with
      a whole-body observer plus interval.  Backend asset refreshes happen in
      the existing document, so a truthy-only guard preserved that old owner.
@@ -132,6 +132,10 @@
     }, null);
   }
   function workspaceVisible() {
+    /* showView owns this inline display flag. Read it before offsetParent so a
+       patient switch outside Visit does not force a full style/layout flush. */
+    var view = byId("visitView");
+    if (view && view.style.display === "none") return false;
     var wrap = byId("ez3Wrap");
     return !!(wrap && wrap.offsetParent);
   }

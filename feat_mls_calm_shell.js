@@ -2922,13 +2922,20 @@
     safe(dropControlNames);
     if (observer) safe(function () { observer.disconnect(); });
     if (idleTimer) clearTimeout(idleTimer);
+    if (cooldownTimer) { clearTimeout(cooldownTimer); cooldownTimer = 0; }
+    passJobs = [];
+    passIndex = 0;
+    pending = false;
     D.removeEventListener('mousemove', onMove, true);
     D.removeEventListener('keydown', onKey, true);
-    D.removeEventListener('click', schedule, true);
+    D.removeEventListener('click', onDocumentClick, true);
+    bindLifecycle(false);
     var css = qs('#mlsCalmShellCss');
     if (css && css.parentNode) css.parentNode.removeChild(css);
     dockEl = null;
     observer = null;
+    watchRoots = [];
+    dirty = newBits();
     lastRnSig = '';
     lastStage = -2;
     W.__mlsCalmShell.active = false;
@@ -2965,47 +2972,162 @@
 
   var observer = null;
   var pending = false;
+  var cooldownTimer = 0;
+  var lastPassAt = 0;
+  var passJobs = [];
+  var passIndex = 0;
 
-  /* One observer, scoped to the two roots that actually tell us something:
-     the rail (view state) and the visit view (stage state). Coalesced into a
-     single rAF so a busy render cannot turn into a feedback loop. */
-  function schedule() {
+  /* Reconcile only the owners a mutation can affect. The previous all-owner
+     pass ran seven independent DOM scans after every patient-list/profile
+     mutation; at 1,500 patients that produced repeated 50-100ms frames even
+     when six owners had no possible state change. Unknown callers retain the
+     conservative full pass. */
+  function newBits() {
+    return { route: false, counts: false, visit: false, patient: false, bar: false, actions: false };
+  }
+  var dirty = newBits();
+  var watchRoots = [];
+
+  function markDirty(bit) { dirty[bit] = true; }
+  function markAll() {
+    dirty.route = true;
+    dirty.counts = true;
+    dirty.visit = true;
+    dirty.patient = true;
+    dirty.bar = true;
+    dirty.actions = true;
+  }
+  function markFromTarget(node) {
+    for (var i = 0; i < watchRoots.length; i++) {
+      var item = watchRoots[i], root = item.node;
+      if (root === node || (root.contains && root.contains(node))) {
+        for (var j = 0; j < item.bits.length; j++) dirty[item.bits[j]] = true;
+        return;
+      }
+    }
+    markAll();
+  }
+  function markFrom(records) {
+    if (!records || typeof records.length !== 'number' || !records.length || !records[0] || !records[0].target) {
+      markAll();
+      return;
+    }
+    for (var i = 0; i < records.length; i++) markFromTarget(records[i].target);
+  }
+  function hasDirty() {
+    return dirty.route || dirty.counts || dirty.visit || dirty.patient || dirty.bar || dirty.actions;
+  }
+  function buildPasses() {
+    var d = dirty;
+    dirty = newBits();
+    var jobs = [];
+    if (d.route || d.counts) jobs.push(syncDock);
+    if (d.route || d.actions) jobs.push(renderRightNow);
+    if (d.route || d.visit) jobs.push(renderStages);
+    if (d.route || d.patient) jobs.push(prepRows);
+    if (d.route || d.patient) jobs.push(patientScreen);
+    if (d.route || d.patient || d.bar) jobs.push(contextBar);
+    if (d.route || d.visit) jobs.push(arm);
+    return jobs;
+  }
+  function runNextPass() {
+    cooldownTimer = 0;
+    if (!W.__mlsCalmShell.active) { pending = false; passJobs = []; return; }
+    if (passIndex < passJobs.length) {
+      safe(passJobs[passIndex++]);
+      cooldownTimer = setTimeout(runNextPass, 0);
+      return;
+    }
+    passJobs = [];
+    passIndex = 0;
+    pending = false;
+    lastPassAt = Date.now();
+    if (hasDirty()) queuePass();
+  }
+  function beginPasses() {
+    cooldownTimer = 0;
+    if (!W.__mlsCalmShell.active) { pending = false; return; }
+    passJobs = buildPasses();
+    passIndex = 0;
+    runNextPass();
+  }
+  function queuePass() {
     if (!W.__mlsCalmShell.active) return;
     if (pending) return;
+    var wait = Math.max(0, 48 - (Date.now() - lastPassAt));
     pending = true;
-    requestAnimationFrame(function () {
-      pending = false;
-      if (!W.__mlsCalmShell.active) return;
-      safe(syncDock);
-      safe(renderRightNow);
-      safe(renderStages);
-      safe(prepRows);
-      safe(patientScreen);
-      safe(contextBar);
-      safe(arm);
-    });
+    cooldownTimer = setTimeout(beginPasses, wait);
+  }
+
+  function schedule(records) {
+    if (!W.__mlsCalmShell.active) return;
+    markFrom(records);
+    queuePass();
+  }
+
+  function onDocumentClick(e) {
+    if (!W.__mlsCalmShell.active) return;
+    var target = e && e.target;
+    if (target && target.nodeType !== 1) target = target.parentElement;
+    if (!target || !target.closest) { markAll(); queuePass(); return; }
+    var shell = target.closest('#mlsDock,#mlsRightNow,#mlsAskResults,#mlsToolsMenu');
+    if (shell) {
+      if (shell.id === 'mlsDock') {
+        var dockDest = target.closest('button[data-dest]');
+        if (dockDest && dockDest.getAttribute('data-dest') !== 'tools') markDirty('route');
+      }
+      queuePass();
+      return;
+    }
+    if (target.closest('.navtab')) markDirty('route');
+    else if (target.closest('#visitView')) markDirty('visit');
+    else if (target.closest('#patientBar,#mlsCtxBar')) markDirty('bar');
+    else if (target.closest('#patientsView')) markDirty('patient');
+    else markDirty('actions');
+    queuePass();
+  }
+
+  function observeRoot(node, options, bits) {
+    if (!node || !observer) return;
+    safe(function () { observer.observe(node, options); });
+    watchRoots.push({ node: node, bits: bits });
   }
 
   function watch() {
     if (observer) return;
+    watchRoots = [];
     observer = new MutationObserver(schedule);
     var rail = qs('.mainnav');
     var visit = qs('#visitView');
+    /* Most-specific roots lead so a count or patient-bar mutation does not get
+       widened to the surrounding rail/patient view. */
+    DEST.forEach(function (d) {
+      if (d.count) observeRoot(D.getElementById(d.count), { childList: true, characterData: true, subtree: true }, ['counts']);
+    });
+    observeRoot(qs('#patientBar,#mlsCtxBar'), { childList: true, subtree: true }, ['bar']);
     /* class -> which view is active; style -> navFeatOn un-gating a tab mid
        session, which has to make its dock destination appear. The shell never
        writes to the rail, so watching it cannot feed back into itself. Tabs are
        observed individually as well, because some no longer live in the rail. */
-    if (rail) observer.observe(rail, { attributes: true, attributeFilter: ['class', 'style'], subtree: true });
     ALL_NAV_IDS.forEach(function (id) {
-      var el = D.getElementById(id);
-      if (el) observer.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+      observeRoot(D.getElementById(id), { attributes: true, attributeFilter: ['class', 'style'] }, ['route']);
     });
-    if (visit) observer.observe(visit, { childList: true, subtree: true });
+    observeRoot(rail, { attributes: true, attributeFilter: ['class', 'style'], subtree: true }, ['route']);
+    observeRoot(visit, { childList: true, subtree: true }, ['visit']);
     /* The prep summary only exists once a patient is selected, so watch the
        patients view too. prepRows() no-ops when its signature is unchanged, so
        its own insertion cannot drive a render loop. */
-    var pts = qs('#patientsView');
-    if (pts) observer.observe(pts, { childList: true, subtree: true });
+    observeRoot(qs('#patientsView'), { childList: true, subtree: true }, ['patient']);
+  }
+
+  function onViewChanged() { markDirty('route'); queuePass(); }
+  function onActivePatientChanged() { markDirty('patient'); markDirty('bar'); queuePass(); }
+  function onSessionBoundary() { markAll(); queuePass(); }
+  function bindLifecycle(on) {
+    var fn = on ? 'addEventListener' : 'removeEventListener';
+    safe(function () { W[fn]('mls:view-changed', onViewChanged); });
+    safe(function () { W[fn]('mls:active-patient-changed', onActivePatientChanged); });
+    safe(function () { W[fn]('mls:session-boundary', onSessionBoundary); });
   }
 
   /* --------------------------------------------- returning from classic */
@@ -3088,6 +3210,7 @@
       renderStages();
       safe(prepRows);
       watch();
+      bindLifecycle(true);
       D.addEventListener('mousemove', onMove, true);
       D.addEventListener('keydown', onKey, true);
       /* The first render can land before the rail has marked a tab .on or before
@@ -3102,7 +3225,7 @@
          actually laid out — the same two-beat cover the rest of boot uses. */
       setTimeout(function () { safe(function () { if (dockSide() === 'top') applyDockSide('top'); }); }, 500);
       setTimeout(function () { safe(function () { if (dockSide() === 'top') applyDockSide('top'); }); }, 1600);
-      D.addEventListener('click', schedule, true);
+      D.addEventListener('click', onDocumentClick, true);
       return true;
     } catch (e) {
       safe(function () { W.__mlsCalmShell.error = String((e && e.message) || e); });

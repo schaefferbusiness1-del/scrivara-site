@@ -43,12 +43,12 @@ assert(source.includes('_historyWrapper.__rdHistOrig=original') && source.includ
 assert(functionBlock('ensureBackControl').includes('replaceChild(back,prior)'),
   'hot upgrade keeps the old closure-bound Back button');
 for (const [name, bundle] of [['production', production], ['staging', staging]]) {
-  assert(bundle.includes("V='3.2.2',api=window.__mlsRedesign") && bundle.includes("old.removeAttribute('data-mls-asset')"),
+  assert(bundle.includes("V='3.2.3',api=window.__mlsRedesign") && bundle.includes("old.removeAttribute('data-mls-asset')"),
     `${name} loader blocks the version-aware redesign from evaluating in an existing document`);
 }
 
 /* A reversible 3.2.1 owner is fully unwrapped and its stale controls are
- * removed before 3.2.2 evaluates the idempotent shell builders. */
+ * removed before 3.2.3 evaluates the idempotent shell builders. */
 {
   const removed = [];
   const nodes = Object.create(null);
@@ -72,7 +72,7 @@ for (const [name, bundle] of [['production', production], ['staging', staging]])
   const context = {
     window,
     document: { getElementById(id) { return nodes[id] || null; } },
-    VERSION: '3.2.2',
+    VERSION: '3.2.3',
     _priorRedesign: null,
     _opaqueLegacyHistory: null
   };
@@ -109,7 +109,7 @@ for (const [name, bundle] of [['production', production], ['staging', staging]])
   window.showView = opaqueOld;
   const context = {
     window,
-    VERSION: '3.2.2',
+    VERSION: '3.2.3',
     _opaqueLegacyHistory: null,
     _historyWrapper: null,
     _historyOriginal: null,
@@ -129,7 +129,7 @@ for (const [name, bundle] of [['production', production], ['staging', staging]])
   ].join('\n'), context);
   context.ensureHistoryOwner();
   const current = window.showView;
-  assert.strictEqual(current.__rdHistVersion, '3.2.2');
+  assert.strictEqual(current.__rdHistVersion, '3.2.3');
   assert.strictEqual(current.__rdHistOrig, opaqueOld);
   assert.strictEqual(current.__rdOpaqueLegacy, true);
   assert.strictEqual(window.showView('patients'), 'base:patients');
@@ -140,7 +140,7 @@ for (const [name, bundle] of [['production', production], ['staging', staging]])
   function title(view) { return current(view); }
   title.__rdTitleWrapped = true;
   title.__rdTitleOrig = current;
-  title.__rdTitleVersion = '3.2.2';
+  title.__rdTitleVersion = '3.2.3';
   window.showView = title;
   context.restoreShowViewOwners();
   assert.strictEqual(window.showView, opaqueOld, 'revert did not remove both current redesign wrappers');
@@ -163,7 +163,7 @@ for (const [name, bundle] of [['production', production], ['staging', staging]])
   window.showView = reversibleOld;
   const context = {
     window,
-    VERSION: '3.2.2',
+    VERSION: '3.2.3',
     _opaqueLegacyHistory: null,
     _historyWrapper: null,
     _historyOriginal: null,
@@ -190,4 +190,4 @@ for (const [name, bundle] of [['production', production], ['staging', staging]])
   assert.strictEqual(Object.prototype.hasOwnProperty.call(window, '__mlsViewHist'), false, 'revert left current history state behind');
 }
 
-console.log('PASS redesign hot upgrade: 3.2.1 nodes/wrappers retire and 3.2.2 records one reversible history owner');
+console.log('PASS redesign hot upgrade: 3.2.1 nodes/wrappers retire and 3.2.3 records one reversible history owner');

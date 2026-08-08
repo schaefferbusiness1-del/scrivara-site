@@ -31,12 +31,13 @@ assert(redesign.includes('#mlsRdKbd{ display:none !important; }'), 'mobile icon-
 assert(redesign.includes('#mlsFab, #mlsFabMenu{ display:none !important; }'), 'mobile quick actions must not float over working controls');
 assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38px;'), 'mobile quick actions need one compact top-bar owner');
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
-/* Bumped to 20260804rd331. The point of this line is that the repaired asset
-   ships behind a MOVED url - and the token had stopped moving: the file changed
-   three times after '20260728rd328' while the loader still asked for it, so the
-   service worker (versioned assets, cache-first) kept serving the old copy.
-   tests/cache-token-cannot-go-stale.test.js now catches that class on its own. */
-assert(siteBundle.includes("feat_mls_redesign.js?v=20260804rd331"), 'the repaired responsive/performance asset needs a fresh deployment URL');
+/* The redesign is a high-churn performance owner, so its deployment URL follows
+   the shared build rather than relying on a second hand-maintained token. */
+assert(siteBundle.includes("var A='feat_mls_redesign.js',V='3.2.3'") &&
+  siteBundle.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+  'the repaired responsive/performance asset must follow the current build URL');
+assert(!siteBundle.includes('20260808rd332perf2') && !siteBundle.includes('20260804rd331'),
+  'a retired hand-maintained redesign cache URL is still reachable');
 
 assert(loading.includes("visualOwner: 'mlsProgressStages'") && !loading.includes('window.fetch = wrapped'),
   'shared loading store must stay headless and must not turn background requests into UI');

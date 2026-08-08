@@ -48,7 +48,7 @@ assert(ui.includes("var dedicated = key === 'legal' || key === 'integrations' ||
 assert(ui.includes("var primaryDisplay = dedicated ? 'none' : ''") && ui.includes('if (primary.style.display !== primaryDisplay) primary.style.display = primaryDisplay'), 'global save must be hidden idempotently where it cannot save the visible controls');
 assert(ui.includes("var closeLabel = dedicated ? 'Done' : 'Cancel'") && ui.includes('if (close.textContent !== closeLabel)'), 'specialized settings need an honest, idempotent close action');
 assert(ui.includes("/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/"), 'settings navigation must support keyboard movement');
-assert(ui.includes("settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] })"), 'settings observer must watch only modal open/close state');
+assert(ui.includes("settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'], attributeOldValue: true })"), 'settings observer must watch only modal open/close state and retain the prior class for no-op filtering');
 assert(ui.includes("settingsObserver.observe(settingsBody, { childList: true })"), 'settings observer may watch only direct section additions');
 assert(!ui.includes("settingsObserver.observe(settings, { childList: true, subtree: true, attributes: true"), 'settings observer must not feed descendant class changes back into a rebuild');
 assert(!/ensureSettingsScrollGuard|preserveSettingsScroll|settingsDesiredTop|settingsApplyingScroll|settingsScrollToken/.test(ui), 'Settings still installs a background scroll guard/restorer');

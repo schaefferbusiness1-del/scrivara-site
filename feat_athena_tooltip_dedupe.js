@@ -439,7 +439,7 @@
   } catch (e) { try { boot(); } catch (e2) {} }
 })();
 
-/*! single-owner UI + account access -> window.__mlsUiUnification (v1.1.4)
+/*! single-owner UI + account access -> window.__mlsUiUnification (v1.1.6)
  * Keeps the easy visit recorder authoritative until the user deliberately
  * opens Advanced, removes duplicate entry points, and puts account/security
  * access in the always-visible top bar. The extension is not involved.
@@ -449,7 +449,7 @@
   var W = (typeof window !== 'undefined') ? window : null;
   if (!W || (W.__mlsUiUnification && W.__mlsUiUnification.installed)) return;
 
-  var VERSION = '1.1.4';
+  var VERSION = '1.1.6';
   var STYLE_ID = 'mlsUiUnificationStyle';
   var ACCOUNT_WRAP_ID = 'mlsAccountAccess';
   var retryTimer = null;
@@ -468,7 +468,7 @@
   var settingsSearchQuery = '';
   var settingsWasOpen = false;
   var settingsMoves = [];
-  var concernRaf = 0;
+  var concernRaf = {};
   var concernQueue = {};
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
@@ -632,7 +632,7 @@
     for (var i = 1; i < all.length; i++) markHidden(all[i], 'duplicate-how-to');
   }
 
-  function ensureAccountAccess() {
+  function ensureAccountAccess(skipGuideDedupe) {
     var slot = byId('mlsRdMenuSlot');
     if (!slot) return false;
     var existing = byId(ACCOUNT_WRAP_ID);
@@ -680,7 +680,11 @@
       if (id && id.textContent !== nextId) id.textContent = nextId;
     }
     hideLegacyAccountRows();
-    dedupeHowTo();
+    /* Guide visibility needs a computed-style/layout read to avoid hiding the
+       only visible guide when retired buttons still exist under CSS. Keep that
+       exact safety rule at boot and on actual guide mutations, but do not pay
+       it again when a route merely rebuilds Settings/Log out menu rows. */
+    if (skipGuideDedupe !== true) dedupeHowTo();
     return true;
   }
 
@@ -1299,19 +1303,211 @@
     reconciling = false;
   }
 
+  /* The stable roots below also host presentation widgets that repaint on
+     patient and route changes. Those unrelated childList records used to run
+     account/menu scans and visit-owner reconciliation in the same animation
+     frame, even when none of this module's inputs changed. Keep the observers
+     scoped, then make their callbacks dirty-aware as well: a mutation matters
+     only when its target is inside an owned node or an owned node was actually
+     added/removed. Independent repairs also own independent browser callbacks;
+     a menu cleanup can no longer join the presentation RAF long task. */
+  var CONCERN_SELECTORS = {
+    top: '#mlsRdMenuSlot,#mlsAccountAccess,#mlsRdUserChip,#mlsRdNav,#mlsTbMenu,.mlsRdFootBtn,.mlsTbItem',
+    visit: '.ez3fl-openws,#ez3Adv',
+    portal: '#mlsPortalInviteBtn'
+  };
+
+  function elementInConcern(node, selector) {
+    if (!node || node.nodeType !== 1) return false;
+    return safe(function () {
+      return !!((node.matches && node.matches(selector)) || (node.closest && node.closest(selector)));
+    }, false);
+  }
+
+  function subtreeHasConcern(node, selector) {
+    if (!node || node.nodeType !== 1) return false;
+    return safe(function () {
+      return !!((node.matches && node.matches(selector)) || (node.querySelector && node.querySelector(selector)));
+    }, false);
+  }
+
+  function classToken(value, token) {
+    return (' ' + String(value || '').replace(/\s+/g, ' ') + ' ').indexOf(' ' + token + ' ') >= 0;
+  }
+
+  function mutationConcerns(name, muts) {
+    if (!muts || !muts.length) return true; /* explicit lifecycle request */
+    for (var i = 0; i < muts.length; i++) {
+      var mutation = muts[i];
+      if (name === 'settings') {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+          var wasOpen = classToken(mutation.oldValue, 'show');
+          var isOpen = safe(function () { return mutation.target.classList.contains('show'); }, wasOpen);
+          /* Ignore our own one-time clean-class write and unrelated modal
+             classes. Opening/closing, or an external removal of our owner
+             class, still reconciles immediately. */
+          if (wasOpen !== isOpen || !safe(function () { return mutation.target.classList.contains('mls-settings-clean'); }, false)) return true;
+        } else if (mutation.type === 'childList' && ((mutation.addedNodes && mutation.addedNodes.length) || (mutation.removedNodes && mutation.removedNodes.length))) {
+          return true;
+        }
+        continue;
+      }
+      var selector = CONCERN_SELECTORS[name];
+      if (!selector) return true;
+      if (elementInConcern(mutation.target, selector)) return true;
+      var added = mutation.addedNodes || [];
+      for (var a = 0; a < added.length; a++) if (subtreeHasConcern(added[a], selector)) return true;
+      var removed = mutation.removedNodes || [];
+      for (var r = 0; r < removed.length; r++) if (subtreeHasConcern(removed[r], selector)) return true;
+    }
+    return false;
+  }
+
+  function howToNode(node, includeDescendants) {
+    if (!node || node.nodeType !== 1) return false;
+    return safe(function () {
+      if (node.matches && node.matches('button') && /(how-to guide|guided tour\s*\/\s*how-to)/i.test(text(node))) return true;
+      if (!includeDescendants || !node.querySelectorAll) return false;
+      var buttons = node.querySelectorAll('button');
+      for (var i = 0; i < buttons.length; i++) {
+        if (/(how-to guide|guided tour\s*\/\s*how-to)/i.test(text(buttons[i]))) return true;
+      }
+      return false;
+    }, false);
+  }
+
+  function mutationAddsHowTo(muts) {
+    if (!muts || !muts.length) return false;
+    for (var i = 0; i < muts.length; i++) {
+      var mutation = muts[i];
+      /* textContent replacement reports the button as the target. */
+      if (howToNode(mutation.target, false)) return true;
+      var added = mutation.addedNodes || [];
+      for (var a = 0; a < added.length; a++) if (howToNode(added[a], true)) return true;
+    }
+    return false;
+  }
+
+  function repairTopMutationRows(muts) {
+    var candidates = [], seen = [];
+    var selector = '.mlsRdFootBtn,.mlsTbItem,#mlsRdUserChip';
+    function add(el) {
+      if (!el || seen.indexOf(el) >= 0) return;
+      seen.push(el); candidates.push(el);
+    }
+    function scan(node, descendants) {
+      if (!node || node.nodeType !== 1) return;
+      safe(function () {
+        if (node.matches && node.matches(selector)) add(node);
+        else if (node.closest) add(node.closest(selector));
+        if (descendants && node.querySelectorAll) {
+          var nested = node.querySelectorAll(selector);
+          for (var i = 0; i < nested.length; i++) add(nested[i]);
+        }
+      });
+    }
+    for (var i = 0; muts && i < muts.length; i++) {
+      scan(muts[i].target, false);
+      var added = muts[i].addedNodes || [];
+      for (var a = 0; a < added.length; a++) scan(added[a], true);
+    }
+    for (var c = 0; c < candidates.length; c++) {
+      var el = candidates[c];
+      if (el.id === 'mlsRdUserChip') markHidden(el, 'account-menu');
+      else if (/(settings|sign out|log out)$/i.test(text(el))) markHidden(el, 'account-menu');
+    }
+  }
+
+  /* A relevant mutation can still be a no-op by the time its shared RAF runs
+     (or can be the record produced by our own equality-guarded repair). These
+     checks are intentionally limited to the small owned surfaces and perform
+     no layout reads. */
+  function topConcernNeedsWork() {
+    var slot = byId('mlsRdMenuSlot');
+    if (!slot) return false;
+    var existing = byId(ACCOUNT_WRAP_ID);
+    if (!existing || existing.parentNode !== slot) return true;
+    var email = accountEmail();
+    var avatar = existing.querySelector('.mls-account-avatar');
+    var identity = existing.querySelector('.mls-account-id');
+    if (avatar && avatar.textContent !== initials(email)) return true;
+    if (identity && identity.textContent !== (email || 'Signed-in MLS account')) return true;
+    var rows = document.querySelectorAll('#mlsRdNav .mlsRdFootBtn,#mlsTbMenu .mlsTbItem');
+    for (var i = 0; i < rows.length; i++) {
+      if (/(settings|sign out|log out)$/i.test(text(rows[i])) && rows[i].getAttribute('data-mls-ui-owner-hidden') !== '1') return true;
+    }
+    var chip = byId('mlsRdUserChip');
+    if (chip && chip.getAttribute('data-mls-ui-owner-hidden') !== '1') return true;
+    return false;
+  }
+
+  function visitConcernNeedsWork() {
+    var trigger = document.querySelector('#mlsEz3 .ez3fl-openws');
+    var owner = byId('ez3Adv');
+    if (!trigger || !owner || !document.body) {
+      return !!(document.body && document.body.classList.contains('mls-has-easy-advanced-trigger'));
+    }
+    if (!initialAdvancedSettled || !document.body.classList.contains('mls-has-easy-advanced-trigger')) return true;
+    var open = document.body.classList.contains('ez3adv');
+    var label = open ? 'Hide advanced workspace' : 'Advanced visit workspace';
+    return trigger.getAttribute('data-mls-advanced-owner') !== '1' ||
+      trigger.textContent !== label ||
+      trigger.getAttribute('aria-expanded') !== (open ? 'true' : 'false') ||
+      trigger.getAttribute('aria-controls') !== 'captureCard';
+  }
+
+  function portalConcernNeedsWork() {
+    if (!document.body) return false;
+    var exact = byId('mlsPortalInviteBtn');
+    var wantPortal = !!(exact && exact.isConnected);
+    return document.body.classList.contains('mls-has-exact-portal-action') !== wantPortal;
+  }
+
+  function concernNeedsWork(name) {
+    if (name === 'top') return topConcernNeedsWork();
+    if (name === 'visit') return visitConcernNeedsWork();
+    if (name === 'portal') return portalConcernNeedsWork();
+    return true;
+  }
+
+  function scheduleObservedConcern(name, muts) {
+    if (!mutationConcerns(name, muts)) return;
+    if (name === 'top') {
+      /* Topbar rebuilds replace their menu rows as a batch. Repair those exact
+         added rows from the records before paint; a 1,500-patient route must
+         not launch a second global top-menu scan just to hide Settings/Logout. */
+      repairTopMutationRows(muts);
+      if (concernNeedsWork('top')) scheduleConcern('top');
+      /* The two intentionally CSS-hidden retired guide buttons must not make
+         every top-menu mutation look dirty. Re-run the exact visibility-safe
+         dedupe only when a guide button itself was actually added/renamed. */
+      if (mutationAddsHowTo(muts)) scheduleConcern('guide');
+      return;
+    }
+    if (concernNeedsWork(name)) scheduleConcern(name);
+  }
+
   function scheduleConcern(name) {
     concernQueue[name] = true;
-    if (concernRaf) return;
+    if (concernRaf[name]) return;
     var run = function () {
-      concernRaf = 0;
-      var queue = concernQueue; concernQueue = {};
-      if (queue.top) safe(ensureAccountAccess);
-      if (queue.visit) safe(reconcileAdvanced);
-      if (queue.portal) safe(reconcilePortalOwner);
+      delete concernRaf[name];
+      var queue = {}; queue[name] = !!concernQueue[name]; delete concernQueue[name];
+      if (queue.top && concernNeedsWork('top')) safe(function () { ensureAccountAccess(true); });
+      if (queue.visit && concernNeedsWork('visit')) safe(reconcileAdvanced);
+      if (queue.portal && concernNeedsWork('portal')) safe(reconcilePortalOwner);
+      if (queue.guide) safe(dedupeHowTo);
       if (queue.settings) safe(reconcileSettings);
       if (queue.auth) safe(reconcileAuth);
     };
-    concernRaf = W.requestAnimationFrame ? W.requestAnimationFrame(run) : setTimeout(run, 16);
+    if (name === 'top' || name === 'guide') {
+      /* Account/menu repairs are independent of route paint. A zero-delay task
+         keeps them prompt while preventing their DOM scans (and the guide's
+         required visibility read) from joining presentation RAF callbacks. */
+      concernRaf[name] = { type: 'timer', id: setTimeout(run, 0) };
+    } else {
+      concernRaf[name] = { type: 'raf', id: W.requestAnimationFrame ? W.requestAnimationFrame(run) : setTimeout(run, 16) };
+    }
   }
 
   function scheduleReconcile(reset) {
@@ -1328,25 +1524,33 @@
   function observeStableRoots() {
     var top = byId('mlsRdTop'), visit = byId('mlsEz3'), portal = byId('mlsCtxBar'), settings = byId('settingsModal');
     if (top && !topObserver) {
-      topObserver = new MutationObserver(function () { scheduleConcern('top'); });
+      topObserver = new MutationObserver(function (muts) { scheduleObservedConcern('top', muts); });
       topObserver.observe(top, { childList: true, subtree: true });
     }
     if (visit && !visitObserver) {
-      visitObserver = new MutationObserver(function () { scheduleConcern('visit'); });
+      visitObserver = new MutationObserver(function (muts) { scheduleObservedConcern('visit', muts); });
       visitObserver.observe(visit, { childList: true, subtree: true });
     }
     if (portal && !portalObserver) {
-      portalObserver = new MutationObserver(function () { scheduleConcern('portal'); });
+      portalObserver = new MutationObserver(function (muts) { scheduleObservedConcern('portal', muts); });
       portalObserver.observe(portal, { childList: true, subtree: true });
       scheduleConcern('portal');
     } else if (!portal && !portalMountObserver) {
       var app = byId('appScreen');
       if (app) {
-        portalMountObserver = new MutationObserver(function () {
+        portalMountObserver = new MutationObserver(function (muts) {
+          var mountedInBatch = false;
+          for (var i = 0; i < muts.length && !mountedInBatch; i++) {
+            var added = muts[i].addedNodes || [];
+            for (var j = 0; j < added.length; j++) {
+              if (subtreeHasConcern(added[j], '#mlsCtxBar')) { mountedInBatch = true; break; }
+            }
+          }
+          if (!mountedInBatch) return;
           var mounted = byId('mlsCtxBar'); if (!mounted) return;
           portalMountObserver.disconnect(); portalMountObserver = null;
           if (!portalObserver) {
-            portalObserver = new MutationObserver(function () { scheduleConcern('portal'); });
+            portalObserver = new MutationObserver(function (portalMuts) { scheduleObservedConcern('portal', portalMuts); });
             portalObserver.observe(mounted, { childList: true, subtree: true });
           }
           scheduleConcern('portal');
@@ -1355,10 +1559,10 @@
       }
     }
     if (settings && !settingsObserver) {
-      settingsObserver = new MutationObserver(function () { scheduleConcern('settings'); });
+      settingsObserver = new MutationObserver(function (muts) { scheduleObservedConcern('settings', muts); });
       /* Do not observe descendant classes: selected-tab classes are our own
          output and previously fed back into another rebuild and scroll reset. */
-      settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'] });
+      settingsObserver.observe(settings, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
       var settingsBody = settings.querySelector('.modal');
       if (settingsBody) settingsObserver.observe(settingsBody, { childList: true });
     }
@@ -1432,7 +1636,13 @@
     settingsSearchQuery = '';
     clearSettingsSearchClasses();
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    if (concernRaf) { if (W.cancelAnimationFrame) W.cancelAnimationFrame(concernRaf); else clearTimeout(concernRaf); concernRaf = 0; }
+    Object.keys(concernRaf).forEach(function (name) {
+      var handle = concernRaf[name];
+      if (!handle) return;
+      if (handle.type === 'raf' && W.cancelAnimationFrame) W.cancelAnimationFrame(handle.id);
+      else clearTimeout(handle.id);
+    });
+    concernRaf = {};
     concernQueue = {};
     if (topObserver) { topObserver.disconnect(); topObserver = null; }
     if (visitObserver) { visitObserver.disconnect(); visitObserver = null; }

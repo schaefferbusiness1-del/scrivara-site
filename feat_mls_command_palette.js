@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS -- Find shortcut compatibility  (feat_mls_command_palette.js -> window.__mlsCmdPalette, cpal-1.0.3)
+ * MLS -- Find shortcut compatibility  (feat_mls_command_palette.js -> window.__mlsCmdPalette, cpal-1.0.4)
  * 2026-07-12, final integration sweep (demo polish lane).
  * ----------------------------------------------------------------------------
  * Ctrl+K / Cmd+K opens the same canonical Find surface as the persistent
@@ -19,7 +19,7 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  var VERSION = 'cpal-1.0.3';
+  var VERSION = 'cpal-1.0.4';
   var _priorPalette = null;
   try {
     _priorPalette = window.__mlsCmdPalette || null;
@@ -36,6 +36,7 @@
   function S(x) { return x == null ? '' : String(x); }
   function esc(s) { return S(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function toast(m, k) { safe(function () { if (isFn(window.toast)) window.toast(m, k || ''); }); }
+  var _patientSearchCache = { stamp: null, rows: null };
 
   /* ---------------- css ---------------- */
   function css() {
@@ -65,10 +66,57 @@
   }
 
   /* ---------------- data sources ---------------- */
-  function patients() { return safe(function () { return isFn(window.getPatients) ? (window.getPatients() || []) : []; }, []); }
+  function patients() { return safe(function () { var ps = isFn(window.getPatients) ? window.getPatients() : []; return Array.isArray(ps) ? ps : []; }, []); }
   function notes() { return safe(function () { return isFn(window.getNotes) ? (window.getNotes() || []) : []; }, []); }
   function activePt() { return safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null); }
   function nav(view) { var b = $('nav_' + view); if (b) { b.click(); return true; } return safe(function () { if (isFn(window.showView)) { window.showView(view); return true; } return false; }, false); }
+
+  function patientSnapshotStamp(ps) {
+    try {
+      if (isFn(window.__mlsPtRosterData)) {
+        var roster = window.__mlsPtRosterData(ps);
+        if (roster && (typeof roster === 'object' || typeof roster === 'function')) return roster;
+      }
+    } catch (eRoster) { /* use the exact-key fallback */ }
+    try {
+      var generation = ps && ps.__mlsReadGen;
+      if (typeof generation !== 'number' || !isFinite(generation)) return null;
+      if (!isFn(window.uns)) return null;
+      var key = window.uns('patients');
+      if (typeof key !== 'string' || !key) return null;
+      var cache = window.__mlsStoreCache;
+      if (!cache || !isFn(cache.verFor)) return null;
+      var version = cache.verFor(key);
+      var stable = (typeof version === 'string' && version.length > 0) ||
+        (typeof version === 'number' && isFinite(version));
+      if (!stable) return null;
+      var versionText = S(version);
+      return 'fallback|' + key.length + ':' + key + '|read:' + generation +
+        '|store:' + typeof version + ':' + versionText.length + ':' + versionText;
+    } catch (e) { return null; }
+  }
+
+  function normalizedPatientRows(ps) {
+    var stamp = patientSnapshotStamp(ps);
+    if (stamp !== null && _patientSearchCache.stamp === stamp && _patientSearchCache.rows) {
+      return _patientSearchCache.rows;
+    }
+    var rows = [];
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i], rawName = p && p.name; if (!p || !rawName) continue;
+      var name = S(rawName), mrn = S(p.mrn || ''), dob = S(p.dob || '');
+      rows.push({
+        p: p,
+        name: name,
+        nameLc: name.toLowerCase(),
+        mrnLc: mrn.toLowerCase(),
+        dobLc: dob.toLowerCase()
+      });
+    }
+    if (stamp === null) _patientSearchCache = { stamp: null, rows: null };
+    else _patientSearchCache = { stamp: stamp, rows: rows };
+    return rows;
+  }
 
   function actionList() {
     var acts = [
@@ -112,17 +160,40 @@
     for (var i = 0; i < words.length; i++) if (hay.indexOf(words[i]) < 0) { all = false; break; }
     return all ? 30 : 0;
   }
-  function search(q) {
+  function scoreNormalizedText(hay, q, words) {
+    if (!q) return 1;
+    var idx = hay.indexOf(q);
+    if (idx === 0) return 100;
+    if (idx > 0) return 60 - Math.min(40, idx);
+    var all = true;
+    for (var i = 0; i < words.length; i++) if (hay.indexOf(words[i]) < 0) { all = false; break; }
+    return all ? 30 : 0;
+  }
+  function comparePatientHits(a, b) {
+    return b.sc - a.sc || a.name.localeCompare(b.name);
+  }
+  function insertTopPatient(top, item, limit) {
+    var lo = 0, hi = top.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (comparePatientHits(item, top[mid]) < 0) hi = mid;
+      else lo = mid + 1;
+    }
+    top.splice(lo, 0, item);
+    if (top.length > limit) top.pop();
+  }
+  function search(q, patientSnapshot) {
     q = S(q).trim();
     var out = { patients: [], actions: [], notes: [] };
-    var ps = patients();
-    for (var i = 0; i < ps.length; i++) {
-      var p = ps[i]; if (!p || !p.name) continue;
-      var sc = Math.max(scoreText(S(p.name), q), scoreText(S(p.mrn || ''), q), q.length >= 4 ? scoreText(S(p.dob || ''), q) : 0);
-      if (sc > 0) out.patients.push({ p: p, sc: sc });
+    var ps = Array.isArray(patientSnapshot) ? patientSnapshot : patients();
+    var patientRows = normalizedPatientRows(ps);
+    var qLc = q.toLowerCase(), qWords = qLc.split(/\s+/), patientLimit = q ? 7 : 5;
+    for (var i = 0; i < patientRows.length; i++) {
+      var pr = patientRows[i];
+      var sc = Math.max(scoreNormalizedText(pr.nameLc, qLc, qWords), scoreNormalizedText(pr.mrnLc, qLc, qWords), q.length >= 4 ? scoreNormalizedText(pr.dobLc, qLc, qWords) : 0);
+      if (sc > 0) insertTopPatient(out.patients, { p: pr.p, sc: sc, name: pr.name }, patientLimit);
     }
-    out.patients.sort(function (a, b) { return b.sc - a.sc || S(a.p.name).localeCompare(S(b.p.name)); });
-    out.patients = out.patients.slice(0, q ? 7 : 5);
+    out.patients = out.patients.map(function (hit) { return { p: hit.p, sc: hit.sc }; });
     var acts = actionList();
     for (var j = 0; j < acts.length; j++) {
       var a = acts[j];
@@ -135,7 +206,7 @@
       var ns = notes(), hits = 0;
       for (var k = 0; k < ns.length && hits < 5; k++) {
         var n = ns[k]; if (!n || !n.note) continue;
-        var pos = S(n.note).toLowerCase().indexOf(q.toLowerCase());
+        var pos = S(n.note).toLowerCase().indexOf(qLc);
         if (pos >= 0) {
           hits++;
           var snip = S(n.note).slice(Math.max(0, pos - 24), pos + q.length + 40).replace(/\s+/g, ' ');
@@ -189,7 +260,8 @@
   }
   function render(q) {
     var list = $('mlsCpalList'); if (!list) return;
-    var res = search(q);
+    var patientSnapshot = patients();
+    var res = search(q, patientSnapshot);
     flatRows = []; selIdx = 0;
     var html = '';
     function row(icon, title, desc, run) {
@@ -290,6 +362,7 @@
     close();
     ['mlsCpalBtn', STYLE_ID].forEach(function (id) { var n = $(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
     try { if (window.__mlsCmdK === _compatCmdK) window.__mlsCmdK = _legacyCmdK; } catch (e) {}
+    _patientSearchCache = { stamp: null, rows: null };
     try { window.__mlsCmdPalette.installed = false; } catch (e) {}
     return 'command palette reverted';
   }

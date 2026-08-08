@@ -1,4 +1,4 @@
-/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.4)
+/* feat_mls_assistant_exact.js  ->  window.__mlsAsst  (asst-2.1.6)
  *
  *  THE full design-language MLS Assistant panel (Slice 3 of the Assistant rework).
  *  STAGING-FIRST, then prod via the data: staging marker (self-gated exactly like the
@@ -48,7 +48,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "asst-2.1.5";
+  var VERSION = "asst-2.1.6";
   try { if (window.__mlsAsst && window.__mlsAsst.installed) return; } catch (e) { return; }
 
   /* ---------- self-gate: the real ScribeFlow app (production or staging) ----------
@@ -128,6 +128,22 @@
    *  lights up across the picker + calendar-feed + this panel at once.
    * ===================================================================== */
   var EST_TZ = "America/New_York";
+  var _estPartsFormatter, _estTimeFormatter;
+  var _estPartsCache = Object.create(null), _estPartsCacheKeys = [], EST_PARTS_CACHE_MAX = 8192;
+  function estPartsFormatter() {
+    if (_estPartsFormatter !== undefined) return _estPartsFormatter;
+    try {
+      _estPartsFormatter = new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, hour12: false,
+        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { _estPartsFormatter = null; }
+    return _estPartsFormatter;
+  }
+  function estTimeFormatter() {
+    if (_estTimeFormatter !== undefined) return _estTimeFormatter;
+    try { _estTimeFormatter = new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, hour: "numeric", minute: "2-digit" }); }
+    catch (e) { _estTimeFormatter = null; }
+    return _estTimeFormatter;
+  }
   function estDateObj(iso) {
     var s = String(iso == null ? "" : iso);
     if (!/T/.test(s)) return null;
@@ -137,12 +153,21 @@
   }
   function estParts(d) {
     try {
-      var f = new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, hour12: false,
-        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+      var stamp = d && d.getTime ? d.getTime() : NaN;
+      if (!isFinite(stamp)) return null;
+      /* The result is minute-granular. The picker commonly asks for both the
+         date and minutes of the same appointment, so share that expensive
+         timezone conversion instead of formatting every row twice. */
+      var key = "m" + Math.floor(stamp / 60000), cached = _estPartsCache[key];
+      if (cached) return cached;
+      var f = estPartsFormatter(); if (!f) return null;
       var ps = f.formatToParts(d), o = {};
       for (var i = 0; i < ps.length; i++) o[ps[i].type] = ps[i].value;
       var h = +o.hour; if (h === 24) h = 0;
-      return { y: +o.year, mo: +o.month, da: +o.day, h: h, mi: +o.minute };
+      var parts = { y: +o.year, mo: +o.month, da: +o.day, h: h, mi: +o.minute };
+      if (_estPartsCacheKeys.length >= EST_PARTS_CACHE_MAX) delete _estPartsCache[_estPartsCacheKeys.shift()];
+      _estPartsCacheKeys.push(key); _estPartsCache[key] = parts;
+      return parts;
     } catch (e) { return null; }
   }
   function apptMins(t) {                                /* minutes-since-midnight in Eastern */
@@ -165,7 +190,7 @@
   }
   function fmtTime(t) {                                 /* "h:mm AM" in Eastern */
     var d = estDateObj(t);
-    if (d) { try { return new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, hour: "numeric", minute: "2-digit" }).format(d); } catch (e) {} }
+    if (d) { try { var f = estTimeFormatter(); if (f) return f.format(d); } catch (e) {} }
     var mins = apptMins(t); if (mins == null) return "";
     var h = Math.floor(mins / 60), mi = mins % 60;
     var ap = h < 12 ? "AM" : "PM"; var h12 = h % 12; if (h12 === 0) h12 = 12;
@@ -177,7 +202,7 @@
     return p.y + "-" + pad2(p.mo) + "-" + pad2(p.da);
   }
   function nowMins() { var p = estParts(new Date()); var dd = new Date(); return p ? (p.h * 60 + p.mi) : (dd.getHours() * 60 + dd.getMinutes()); }
-  function nowClock() { try { return new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, hour: "numeric", minute: "2-digit" }).format(new Date()); } catch (e) { return "now"; } }
+  function nowClock() { try { var f = estTimeFormatter(); return f ? f.format(new Date()) : "now"; } catch (e) { return "now"; } }
 
   /* Install the forced-Eastern hooks the app already calls (saving originals for revert). */
   var _origHooks = {}, _hooksInstalled = false;

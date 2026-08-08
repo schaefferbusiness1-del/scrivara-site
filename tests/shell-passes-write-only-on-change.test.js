@@ -12,12 +12,12 @@
  *     span.mls-dock-count[class]  242 writes / 40s   ALL 242 no-ops
  *     span.mls-dock-count childList 121 writes       unchanged text
  *
- * 605 aria-current writes across five dock buttons is ~3 FULL SHELL PASSES PER
+ * 605 aria-current writes across five dock buttons was ~3 FULL SHELL PASSES PER
  * SECOND. The shell is not the source of the cadence — other modules run a 4s
- * rebuild of #visitOrdersBody, a 3s mount, and ~1s tooltip rewrites — but
- * `renderNow` is wired to a MutationObserver on #visitView, so every one of
- * those external mutations triggers a full eight-pass render, and each pass was
- * writing unconditionally.
+ * rebuild of #visitOrdersBody, a 3s mount, and ~1s tooltip rewrites. The broad
+ * #visitView observer remains necessary to repair the stages rail after an
+ * external rebuild, but its records are now tagged as the Visit concern: they
+ * run only the two Visit-owned repairs instead of every independent shell pass.
  *
  * THE THING THAT MAKES THIS A LOOP RATHER THAN MERE WASTE: `setAttribute` fires
  * a MutationObserver record even when the value it writes is identical, and so
@@ -113,11 +113,31 @@ for (const [fn, [readGuard, writeStore]] of Object.entries(GUARDED_BY_SIGNATURE)
     fn + '() lost the signature STORE; a signature that is read but never written never matches, so the short-circuit is dead and the compare is decoration');
 }
 
-/* ---- the observer that makes all of this matter -------------------------- */
+/* ---- scoped observer + repair routing ------------------------------------ */
 
 assert(/observer = new MutationObserver\(schedule\)/.test(shell),
   'the shell still renders in response to DOM mutations');
-assert(/observer\.observe\(visit, \{ childList: true, subtree: true \}\)/.test(shell),
-  'it observes #visitView childList/subtree — which is WHY a 4s external rebuild becomes 3 shell passes a second, and why every write in those passes must be conditional');
+const observeRoot = body('observeRoot');
+const watch = body('watch');
+const markFromTarget = body('markFromTarget');
+const buildPasses = body('buildPasses');
+assert(/observer\.observe\(node, options\)/.test(observeRoot) &&
+  /watchRoots\.push\(\{ node: node, bits: bits \}\)/.test(observeRoot),
+  'the scoped observer helper must both observe the real root and retain its concern tag');
+assert(/observeRoot\(visit, \{ childList: true, subtree: true \}, \['visit'\]\)/.test(watch),
+  'the shell must still observe the complete #visitView subtree so an external rebuild repairs Visit-owned shell furniture');
+assert(/dirty\[item\.bits\[j\]\] = true;[\s\S]*?return;/.test(markFromTarget),
+  'a known observed root must map to its scoped concern instead of widening to a full shell pass');
+
+const visitJobs = [...buildPasses.matchAll(/if \([^\n]*d\.visit[^\n]*\) jobs\.push\((\w+)\);/g)].map(m => m[1]);
+assert.deepStrictEqual(visitJobs, ['renderStages', 'arm'],
+  'Visit subtree churn must retain stage/heads-down repair without waking unrelated dock, patient, or context scans');
+const routeJobs = [...buildPasses.matchAll(/if \([^\n]*d\.route[^\n]*\) jobs\.push\((\w+)\);/g)].map(m => m[1]);
+assert.deepStrictEqual(routeJobs,
+  ['syncDock', 'renderRightNow', 'renderStages', 'prepRows', 'patientScreen', 'contextBar', 'arm'],
+  'a real route lifecycle must still repair every shell owner after scoped mutation routing');
+assert(/function onViewChanged\(\) \{ markDirty\('route'\); queuePass\(\); \}/.test(shell) &&
+  /W\[fn\]\('mls:view-changed', onViewChanged\)/.test(shell),
+  'canonical view changes must drive the full route repair lane');
 
 console.log('PASS shell passes write only on change: the dock, its pill and the stages strip no longer re-write identical values on every externally-triggered render (measured 605 no-op aria-current writes in 40s before this)');

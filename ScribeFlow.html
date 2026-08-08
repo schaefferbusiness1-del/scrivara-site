@@ -7013,7 +7013,19 @@ function regTwofaFinish(){
   toast('Account created. Welcome!','ok');
 }
 
-var sfSessionStartupId=0, sfActiveStartupController=null;
+var sfSessionStartupId=0, sfActiveStartupController=null, sfSessionLegalState='unknown';
+/* The visible workspace is gated only by the security-critical identity/legal
+   decision and the critical UI bundle. Cloud roster/history hydration is an
+   eventual background operation and must never own first interaction. */
+function sfStartupRevealBarrier(gated,uiReady){
+  if(gated) return Promise.resolve(true);
+  return Promise.resolve(uiReady).then(()=>false);
+}
+function sfRetireStartupControllerAfter(hydration,controller){
+  const retire=()=>{ if(sfActiveStartupController===controller) sfActiveStartupController=null; };
+  if(hydration) Promise.resolve(hydration).then(retire,retire);
+  else retire();
+}
 /* A browser tab can authenticate more than one MLS account without reloading.
    Treat that as a real security boundary: optional feature modules are loaded
    once, so their closures and body-level UI must be reset explicitly. */
@@ -7120,6 +7132,7 @@ function startSession(email){
   let _bundleReadyPromise=null;
   let _identityReady=null, _startupOpts=null, _refreshPromise=null;
   if(_gateMode){
+    sfSessionLegalState='unknown';
     _startupId=++sfSessionStartupId;
     try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
     try{ _startupController=typeof AbortController==='function'?new AbortController():null; }catch(e){ _startupController=null; }
@@ -7187,6 +7200,7 @@ function startSession(email){
     const _gateCheck=Promise.race([_gateAttempt,_gateTimeout]).then(value=>{
       clearTimeout(_gatePhaseTimer);
       _gateDecision=!!value;
+      if(_startupId===sfSessionStartupId) sfSessionLegalState=_gateDecision?'blocked':'verified';
       return _gateDecision;
     }).catch(()=>true);
     /* Do not parse and initialize the 200+ optional feature assets for an
@@ -7198,18 +7212,11 @@ function startSession(email){
       return typeof window.__mlsEnsureUiBundle==='function'?window.__mlsEnsureUiBundle():false;
     }).catch(()=>false);
     const _hydrate=_gateCheck.then(gated=>{
-      /* An unsigned user can use only the compliance gate. Do not keep the
-         green boot cover up while unrelated patient/prefs hydration finishes;
-         that work may safely continue behind the already-mounted gate. */
-      if(gated) return true;
-      /* Local-first boot (owner directive 2026-07-20): when this device already
-         holds the account's patient store, the app is fully usable immediately —
-         reveal after the UI bundle and let cloud refresh finish behind the app.
-         First sign-in on a fresh device still waits for hydration. */
-      let _hasLocalStore=false;
-      try{ _hasLocalStore=(typeof getPatients==='function'&&(getPatients()||[]).length>0); }catch(e){}
-      const _revealWait=_hasLocalStore?_uiReady:Promise.all([_refreshPromise,_uiReady]);
-      return Promise.resolve(_revealWait).then(()=>false);
+      /* Hydration was already dispatched above and deliberately keeps running.
+         A fresh device must not hold the whole app behind every patient/record
+         page or a synchronous local persistence pass. Legal verification and
+         the critical UI remain the complete reveal barrier. */
+      return sfStartupRevealBarrier(gated,_uiReady);
     }).then(gated=>sfStartupValid(_startupOpts)?!!gated:true).catch(()=>true);
     /* Absolute recovery still exists, but it now leaves a full protected budget
        after the gate phase for the large first-run UI bundle and quiet-frame
@@ -7236,7 +7243,9 @@ function startSession(email){
     }).catch(()=>{
       if(_startupId===sfSessionStartupId&&typeof sfHideGateLoading==='function') return sfHideGateLoading(true);
     }).finally(()=>{
-      if(sfActiveStartupController===_startupController) sfActiveStartupController=null;
+      /* Keep the controller reachable while background hydration is alive so a
+         logout/account switch can still abort it after the app is revealed. */
+      sfRetireStartupControllerAfter(_refreshPromise,_startupController);
     });
     window.__mlsSessionReady=_sessionReady;
   }else{
@@ -7279,6 +7288,7 @@ async function logout(force){
      identity still exists, before storage/tokens are purged. */
   sfResetSessionBoundary('',{reason:'logout',force:true});
   sfSessionStartupId++;
+  sfSessionLegalState='unknown';
   try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
   sfActiveStartupController=null;
   try{ if(typeof sfCancelGateLoading==='function') sfCancelGateLoading(); }catch(e){}
@@ -7342,6 +7352,7 @@ function refreshMe(opts){
     const notifyIdentity=()=>{ if(identityNotified) return; identityNotified=true; try{ resolveSharedIdentity(); }catch(e){} try{ if(typeof opts.onIdentity==='function') opts.onIdentity(); }catch(e){} };
     try{
       const init={headers:{'Authorization':'Bearer '+token}};
+      if(opts.signal) init.signal=opts.signal;
       if(opts.signal) init.signal=opts.signal;
       /* Identity is the backbone of every namespaced read (uns, gate check,
          hydration). A single transient /api/me failure used to leave a fresh
@@ -8906,7 +8917,6 @@ async function loadPrefsFromServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return false;
   try{
-    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
     const r=await fetch(bkBase()+'/api/prefs',init);
     if(!sfStartupValid(opts)||!r.ok) return false; // incl. 401 — refreshMe handles auth
     let d={}; try{ d=await r.json(); }catch(e){ return false; }
@@ -10216,6 +10226,13 @@ function upsertPatient(p){
     if(__batch.changesSinceFlush>=__batch.maxChanges)__mlsPtsFlushBatch(__batch,'max-changes');
     else __mlsPtsArmBatch(__batch);
   }else savePatients(arr);
+  /* Same-ID edits do not emit mls:active-patient-changed. Tell only the
+     exact-record observers after the logical upsert has been accepted (or
+     its required persistence completed), so Visit identity can reconcile on
+     the next task without restoring a roster poll. The account-bound store
+     key prevents a queued old-session event from crossing a login boundary. */
+  try{ window.dispatchEvent(new CustomEvent('mls:patient-record-updated',{detail:{patientId:String(p.id||''),patientStoreKey:String(__key||'')}})); }
+  catch(e6){ try{ var __puEv=new Event('mls:patient-record-updated');__puEv.detail={patientId:String(p.id||''),patientStoreKey:String(__key||'')};window.dispatchEvent(__puEv); }catch(e7){} }
   // hosted mode: mirror to the server (best-effort, non-blocking)
   if(backendMode() && bkToken()){ try{ syncPatientToServer(p); }catch(e){} }
 }
@@ -10270,25 +10287,193 @@ function ptInitials(name){
    exists yet (pre-bundle boot) the index is rebuilt per call, which costs what
    the old filter did. Returns a fresh array either way. */
 var __mlsNotesIdx={ver:-1,map:null};
+function __mlsNotesStoreVersion(){
+  var sc=null;
+  try{ sc=window.__mlsStoreCache; }catch(e){ return null; }
+  /* Notes-derived maps change only with the exact account-scoped notes blob.
+     verFor() includes that fully resolved key, so an account switch cannot
+     reuse another account's zero-generation stamp. Older/partial cache builds
+     retain the former global clock through the compatibility fallback. */
+  try{
+    if(sc&&typeof sc.verFor==='function'&&typeof uns==='function'){
+      var keyed=sc.verFor(uns('notes'));
+      if(keyed!==null&&keyed!==undefined)return keyed;
+    }
+  }catch(eKey){}
+  try{ return (sc&&typeof sc.ver==='function')?sc.ver():null; }
+  catch(eVer){ return null; }
+}
+function __mlsNotesVersionStable(v){
+  return (typeof v==='string'&&v.length>0)||(typeof v==='number'&&isFinite(v));
+}
+function __mlsEnsureNotesIdx(){
+  try{
+    var v=__mlsNotesStoreVersion(),stable=__mlsNotesVersionStable(v);
+    if(!(__mlsNotesIdx.map&&stable&&__mlsNotesIdx.ver===v)){
+      var all=getNotes()||[], m=new Map(), summaries=new Map(), orphanCount=0;
+      for(var i=0;i<all.length;i++){
+        var n=all[i], key=n?n.patientId:undefined, b=m.get(key);
+        if(b)b.push(n); else m.set(key,[n]);
+        if(!n||!n.patientId)orphanCount++;
+        var s=summaries.get(key), at=Number((n&&n.updated)||0);
+        if(!s) summaries.set(key,{count:1,last:n,lastUpdated:at});
+        else { s.count++; if(at>s.lastUpdated){ s.last=n; s.lastUpdated=at; } }
+      }
+      __mlsNotesIdx={ver:stable?v:-1,map:m,summaries:summaries,total:all.length,orphanCount:orphanCount};
+    }
+    return {v:v,stable:stable};
+  }catch(e){ return {v:null,stable:false,error:e}; }
+}
 function patientNotes(id){
   try{
-    var sc=window.__mlsStoreCache;
-    var v=(sc&&typeof sc.ver==='function')?sc.ver():NaN;
-    if(!(__mlsNotesIdx.map&&!isNaN(v)&&__mlsNotesIdx.ver===v)){
-      var all=getNotes()||[], m=new Map();
-      for(var i=0;i<all.length;i++){ var n=all[i]; var key=n?n.patientId:undefined; var b=m.get(key); if(b)b.push(n); else m.set(key,[n]); }
-      __mlsNotesIdx={ver:isNaN(v)?-1:v,map:m};
-    }
+    var state=__mlsEnsureNotesIdx();
+    if(state.error) throw state.error;
     var got=__mlsNotesIdx.map.get(id);
     var out=got?got.slice():[];
-    if(isNaN(v))__mlsNotesIdx={ver:-1,map:null};
+    if(!state.stable)__mlsNotesIdx={ver:-1,map:null};
     return out;
   }catch(e){ try{return getNotes().filter(function(n){return n.patientId===id;});}catch(_){return [];} }
+}
+/* Patient rows only need a count and newest note. Reuse the same per-store
+   index instead of allocating + sorting one note array for every visible row. */
+function __mlsPatientNoteSummary(id){
+  try{
+    var state=__mlsEnsureNotesIdx();
+    if(state.error) throw state.error;
+    var s=(__mlsNotesIdx.summaries&&__mlsNotesIdx.summaries.get(id))||null;
+    var out=s||__mlsEmptyNoteSummary;
+    if(!state.stable)__mlsNotesIdx={ver:-1,map:null};
+    return out;
+  }catch(e){
+    var notes=[]; try{notes=patientNotes(id)||[];}catch(_){}
+    var last=null,lastUpdated=-Infinity;
+    for(var i=0;i<notes.length;i++){ var at=Number((notes[i]&&notes[i].updated)||0); if(!last||at>lastUpdated){last=notes[i];lastUpdated=at;} }
+    return {count:notes.length,last:last};
+  }
+}
+var __mlsEmptyNoteSummary={count:0,last:null,lastUpdated:0};
+/* Navigation badges need only totals, not allocated note arrays. The same
+   exact-generation pass that builds patientNotes already knows all three. */
+function __mlsNoteCounts(id){
+  try{
+    var state=__mlsEnsureNotesIdx();
+    if(state.error)throw state.error;
+    var s=(__mlsNotesIdx.summaries&&__mlsNotesIdx.summaries.get(id))||__mlsEmptyNoteSummary;
+    var out={total:Number(__mlsNotesIdx.total||0),orphanCount:Number(__mlsNotesIdx.orphanCount||0),patientCount:Number(s.count||0)};
+    if(!state.stable)__mlsNotesIdx={ver:-1,map:null,summaries:null,total:0,orphanCount:0};
+    return out;
+  }catch(e){
+    var all=[]; try{all=getNotes()||[];}catch(_){}
+    var patientCount=0,orphanCount=0;
+    for(var i=0;i<all.length;i++){
+      var n=all[i];
+      if(!n||!n.patientId)orphanCount++;
+      if(n&&n.patientId===id)patientCount++;
+    }
+    return {total:all.length,orphanCount:orphanCount,patientCount:patientCount};
+  }
 }
 /* b377 perf: shared 150ms trailing debounce for keystroke-driven list renders
    (ptSearch / histSearch). On a 1,500-patient roster each keystroke used to
    sort + rebuild the full list synchronously. */
 window.__mlsDebRender=(function(){var t={};return function(key,fn){ if(typeof fn!=='function')return; clearTimeout(t[key]); t[key]=setTimeout(function(){ try{fn();}catch(e){} },150); };})();
+
+/* Repeated Patients/History renders used to rebuild the same normalized roster,
+   patient-id map and A-Z ordering. Cache only derived read data, keyed by the
+   exact persisted roster (or the active batch generations); no write semantics
+   or patient objects are changed. */
+var __mlsPtRosterCache={key:null,raw:null,batch:null,batchChanges:-1,batchExternalWrites:-1,rows:null,nameRows:null,byId:null,visitsVer:-1,visitRows:null};
+function __mlsPtRosterData(all){
+  all=Array.isArray(all)?all:[];
+  var key=''; try{key=uns('patients');}catch(e){}
+  var batch=null;
+  try{ var candidate=__mlsPtsBatchByKey&&__mlsPtsBatchByKey[key]; if(candidate&&candidate.depth>0)batch=candidate; }catch(e){}
+  var batchChanges=batch?Number(batch.totalChanges||0):-1;
+  /* savePatients() can replace an open batch's array without advancing
+     totalChanges (server hydration, maintenance and explicit bulk writes use
+     that path). Track that existing monotonic counter too, or Patients and
+     History can keep the derived rows from before the replacement. */
+  var batchExternalWrites=batch?Number(batch.externalWrites||0):-1;
+  var raw=null;
+  if(!batch){
+    try{ if(__mlsPtsMemo&&__mlsPtsMemo.key===key)raw=__mlsPtsMemo.raw; else raw=localStorage.getItem(key); }
+    catch(e){ raw=null; }
+  }
+  var c=__mlsPtRosterCache;
+  var cacheable=!!batch||raw!==null||all.length===0;
+  if(cacheable&&c.rows&&c.key===key&&c.batch===batch&&c.batchChanges===batchChanges&&c.batchExternalWrites===batchExternalWrites&&(batch||c.raw===raw))return c;
+  var rows=[],byId=new Map();
+  for(var i=0;i<all.length;i++){
+    var p=all[i]; if(!p)continue;
+    var row={patient:p,search:[p.name,p.dob,p.mrn].filter(Boolean).join(' ').toLowerCase()};
+    rows.push(row); byId.set(p.id,p);
+  }
+  var nameRows=rows.slice().sort(function(a,b){ return (a.patient.name||'').localeCompare(b.patient.name||'',undefined,{sensitivity:'base'}); });
+  __mlsPtRosterCache={key:key,raw:raw,batch:batch,batchChanges:batchChanges,batchExternalWrites:batchExternalWrites,rows:rows,nameRows:nameRows,byId:byId,visitsVer:-1,visitRows:null};
+  return __mlsPtRosterCache;
+}
+function __mlsPtVisitRows(data){
+  var v=__mlsNotesStoreVersion();
+  var stable=__mlsNotesVersionStable(v);
+  if(data.visitRows&&stable&&data.visitsVer===v)return data.visitRows;
+  var rows=data.rows.slice();
+  for(var i=0;i<rows.length;i++)rows[i].visitCount=__mlsPatientNoteSummary(rows[i].patient.id).count;
+  rows.sort(function(a,b){return b.visitCount-a.visitCount||(a.patient.name||'').localeCompare(b.patient.name||'',undefined,{sensitivity:'base'});});
+  if(stable){data.visitsVer=v;data.visitRows=rows;}
+  return rows;
+}
+
+/* History derives one chronological order, duplicate set and normalized search
+   document per note-store generation. Search still examines every note (so an
+   older chart remains findable), but repeated keystrokes no longer re-sort,
+   re-group and lowercase every full note body. */
+var __mlsHistoryPerfCache={ver:-1,ordered:null,duplicates:null,searchByNote:null,byPatient:null,orphans:null};
+var __mlsHistoryDateFmt=null,__mlsHistoryMonthFmt=null;
+function __mlsHistoryDateSearch(d){
+  /* Constructing two locale formatters per note dominated the first History
+     search at scale (2,250 notes: about 95ms in Chrome/Node). The locale is
+     stable for a document, so create the same two default formatters lazily
+     once. Their output is byte-for-byte the former toLocale* output. */
+  try{
+    if(!__mlsHistoryDateFmt)__mlsHistoryDateFmt=new Intl.DateTimeFormat();
+    if(!__mlsHistoryMonthFmt)__mlsHistoryMonthFmt=new Intl.DateTimeFormat(undefined,{month:'long'});
+    return (__mlsHistoryDateFmt.format(d)+' '+__mlsHistoryMonthFmt.format(d)).toLowerCase();
+  }catch(e){ return (d.toLocaleDateString()+' '+d.toLocaleString([], {month:'long'})).toLowerCase(); }
+}
+function __mlsHistoryData(all){
+  all=Array.isArray(all)?all:[];
+  var v=__mlsNotesStoreVersion(),stable=__mlsNotesVersionStable(v),c=__mlsHistoryPerfCache;
+  if(c.ordered&&stable&&c.ver===v)return c;
+  var ordered=all.slice().sort(function(a,b){return (b.updated||0)-(a.updated||0);});
+  var byPatient=new Map(),orphans=[];
+  for(var oi=0;oi<ordered.length;oi++){
+    var on=ordered[oi];
+    if(!on||!on.patientId)orphans.push(on);
+    else { var ob=byPatient.get(on.patientId); if(ob)ob.push(on); else byPatient.set(on.patientId,[on]); }
+  }
+  var byKey=Object.create(null),remove=[];
+  for(var i=0;i<all.length;i++){
+    var n=all[i],d=new Date((n&&n.updated)||(n&&n.created)||0);
+    var day=isNaN(d.getTime())?'':(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2));
+    var key=String((n&&n.patient)||'').trim().toLowerCase()+'|'+String((n&&n.cc)||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+day;
+    (byKey[key]=byKey[key]||[]).push(n);
+  }
+  Object.keys(byKey).forEach(function(key){
+    var rows=byKey[key]; if(rows.length<2)return;
+    rows.sort(function(a,b){var u=(b.updated||b.created||0)-(a.updated||a.created||0);if(u)return u;return String(b.text||b.soap||'').length-String(a.text||a.soap||'').length;});
+    for(var j=1;j<rows.length;j++)remove.push(rows[j]);
+  });
+  __mlsHistoryPerfCache={ver:stable?v:-1,ordered:ordered,duplicates:remove,searchByNote:new Map(),byPatient:byPatient,orphans:orphans};
+  return __mlsHistoryPerfCache;
+}
+function __mlsHistorySearchBase(data,n){
+  if(data.searchByNote.has(n))return data.searchByNote.get(n);
+  var stamp=(n&&n.updated)||(n&&n.created)||0,d=new Date(stamp||Date.now());
+  var ds=__mlsHistoryDateSearch(d);
+  var base=[(n&&n.cc)||'',(n&&(n.text||n.soap))||'',ds,(n&&n.signed?'signed':(n&&n.isDraft?'draft':'unsigned')),(n&&n.kind)||''].join(' \n ').toLowerCase();
+  if(stamp)data.searchByNote.set(n,base);
+  return base;
+}
 
 /* ---------- SERVER SYNC (hosted mode only) ----------
    Patients live in localStorage as the source of truth on each device.
@@ -10297,6 +10482,93 @@ window.__mlsDebRender=(function(){var t={};return function(key,fn){ if(typeof fn
    All server calls are best-effort and never block the local save. */
 // Map of local external_id -> server patient id, learned from the last GET.
 let _serverPtIds={};
+/* Bound encrypted list hydration so neither the server nor Chrome must
+   decrypt/parse one practice-sized JSON response on the main thread. New
+   servers advertise has_more; older servers ignore these additive query
+   parameters and return their legacy complete payload in one response. */
+const SF_SERVER_LIST_PAGE_SIZE=200, SF_SERVER_LIST_MAX_PAGES=500, SF_SERVER_LIST_REQUEST_TIMEOUT_MS=12000;
+function sfHydrationYield(){ return new Promise(resolve=>setTimeout(resolve,0)); }
+async function sfFetchListRequest(url,init,parentSignal,timeoutMs){
+  let timer=0, relay=null, controller=null, timedOut=false;
+  const requestInit=Object.assign({},init||{});
+  try{
+    if(typeof AbortController==='function'){
+      controller=new AbortController();
+      if(parentSignal){
+        if(parentSignal.aborted) controller.abort();
+        else if(typeof parentSignal.addEventListener==='function'){
+          relay=()=>{ try{ controller.abort(); }catch(e){} };
+          parentSignal.addEventListener('abort',relay,{once:true});
+        }
+      }
+      requestInit.signal=controller.signal;
+    }else if(parentSignal) requestInit.signal=parentSignal;
+    const timeout=new Promise((resolve,reject)=>{
+      timer=setTimeout(()=>{
+        timedOut=true;
+        try{ if(controller) controller.abort(); }catch(e){}
+        const error=new Error('list-request-timeout'); error.code='MLS_LIST_TIMEOUT'; reject(error);
+      },timeoutMs);
+    });
+    const response=await Promise.race([Promise.resolve(fetch(url,requestInit)),timeout]);
+    return {response:response,timedOut:false};
+  }catch(error){ return {response:null,timedOut:timedOut,error:error}; }
+  finally{
+    if(timer) clearTimeout(timer);
+    if(relay&&parentSignal&&typeof parentSignal.removeEventListener==='function'){
+      try{ parentSignal.removeEventListener('abort',relay); }catch(e){}
+    }
+  }
+}
+async function sfFetchPagedList(endpoint,collection,opts,config){
+  opts=opts||{}; config=config||{};
+  const rows=[];
+  let offset=0,pages=0,lastStatus=0,anyTimeout=false;
+  const attempts=Math.max(1,Number(config.attempts)||1);
+  const configuredPages=Math.floor(Number(config.maxPages));
+  const maxPages=Number.isSafeInteger(configuredPages)&&configuredPages>0?Math.min(configuredPages,SF_SERVER_LIST_MAX_PAGES):SF_SERVER_LIST_MAX_PAGES;
+  const configuredTimeout=Number(config.requestTimeoutMs);
+  const requestTimeoutMs=Number.isFinite(configuredTimeout)&&configuredTimeout>0?Math.min(configuredTimeout,60000):SF_SERVER_LIST_REQUEST_TIMEOUT_MS;
+  while(pages<maxPages){
+    if(!sfStartupValid(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
+    const query=(endpoint.indexOf('?')>=0?'&':'?')+(config.scopeOwn?'scope=own&':'')+'limit='+SF_SERVER_LIST_PAGE_SIZE+'&offset='+offset;
+    let response=null;
+    for(let attempt=0;attempt<attempts;attempt++){
+      const init={headers:{'Authorization':'Bearer '+bkToken()}};
+      const request=await sfFetchListRequest(bkBase()+endpoint+query,init,opts.signal,requestTimeoutMs);
+      response=request.response; anyTimeout=anyTimeout||request.timedOut;
+      if(!sfStartupValid(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
+      if(response&&(response.ok||response.status===401))break;
+      if(attempt+1<attempts){
+        const waits=Array.isArray(config.retryDelays)?config.retryDelays:[];
+        await new Promise(resolve=>setTimeout(resolve,Number(waits[attempt])||600));
+      }
+    }
+    lastStatus=response?response.status:0;
+    if(!response||!response.ok) return {ok:false,status:lastStatus,timeout:anyTimeout,rows:[]};
+    pages++;
+    await sfHydrationYield();
+    let payload={}; try{payload=await response.json();}catch(e){return {ok:false,status:lastStatus,rows:[]};}
+    if(!sfStartupValid(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
+    const pageRows=Array.isArray(payload)?payload:((payload&&Array.isArray(payload[collection]))?payload[collection]:[]);
+    for(let i=0;i<pageRows.length;i++)rows.push(pageRows[i]);
+    /* A legacy unpaged response is complete unless it is exactly one requested
+       page, which is ambiguous (old /api/records honored limit but exposed no
+       has_more). Refuse that mismatch rather than silently deleting history. */
+    const hasPagingMeta=!!(payload&&!Array.isArray(payload)&&Object.prototype.hasOwnProperty.call(payload,'has_more'));
+    if(!hasPagingMeta){
+      if(pageRows.length===SF_SERVER_LIST_PAGE_SIZE) return {ok:false,status:lastStatus,incompatible:true,rows:[]};
+      return {ok:true,status:lastStatus,rows:rows};
+    }
+    if(payload.has_more!==true) return {ok:true,status:lastStatus,rows:rows};
+    const returned=Number(payload.returned);
+    if(!Number.isSafeInteger(returned)||returned<=0||returned!==pageRows.length) return {ok:false,status:lastStatus,protocol:true,rows:[]};
+    offset+=returned;
+    /* Let rendering/input get a turn even against a zero-latency local server. */
+    await sfHydrationYield();
+  }
+  return {ok:false,status:lastStatus,capped:true,rows:[]};
+}
 function ptServerLabel(p){
   // Short, non-PHI label: prefer initials; never send the full name as the label.
   try{ return ptInitials(p&&p.name)||''; }catch(e){ return ''; }
@@ -10382,21 +10654,14 @@ async function loadPatientsFromServer(opts){
   const _hyEnd=(ok,msg)=>{ _hyDone=true; try{ if(!_hyJob) return; const j=_hyJob; _hyJob=null; if(ok) j.complete(msg||''); else if(typeof j.fail==='function') j.fail({message:msg||''}); }catch(e){} };
   _hyStart();
   try{
-    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
     /* Commercial hardening 2026-07-21: a single-attempt hydration meant one
        transient blip on a fresh device showed the doctor ZERO patients with no
        explanation. Retry briefly; on final failure with an empty local store,
        say so honestly (once per session). 401 and aborts never retry. */
-    let r=null;
-    for(let _h=1;_h<=3;_h++){
-      try{ r=await fetch(bkBase()+'/api/patients',init); }catch(e){ r=null; if(opts.signal&&opts.signal.aborted){ _hyEnd(true,''); return false; } }
-      if(r&&(r.ok||r.status===401)) break;
-      if(!sfStartupValid(opts)){ _hyEnd(true,''); return false; }
-      if(_h<3) await new Promise(rs=>setTimeout(rs,_h===1?600:1500));
-    }
+    const pageResult=await sfFetchPagedList('/api/patients','patients',opts,{scopeOwn:true,attempts:3,retryDelays:[600,1500]});
     if(!sfStartupValid(opts)){ _hyEnd(true,''); return false; }
-    if(r&&r.status===401){ _hyEnd(false,'Your MLS sign-in expired.'); handle401(); return false; }
-    if(!r||!r.ok){
+    if(pageResult.status===401){ _hyEnd(false,'Your MLS sign-in expired.'); handle401(); return false; }
+    if(!pageResult.ok){
       _hyEnd(false,'Could not refresh from MLS — the copy on this device is unchanged.');
       try{
         if(!window.__mlsHydrateFailNoticed && (getPatients()||[]).length===0){
@@ -10406,25 +10671,28 @@ async function loadPatientsFromServer(opts){
       }catch(e){}
       return false;
     }
-    let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
-    if(!sfStartupValid(opts)){ _hyEnd(true,''); return false; }
     _hyStart(); _hyStage('Merging on this device');
-    const rows=Array.isArray(d)?d:(d&&d.patients)||[];
+    const rows=pageResult.rows;
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     let changed=false;
     const local=getPatients();
     const localIndex=new Map();
-    local.forEach((patient,index)=>{ if(patient&&patient.id!=null) localIndex.set(patient.id,index); });
+    for(let index=0;index<local.length;index++){
+      if(index>0&&index%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      const patient=local[index]; if(patient&&patient.id!=null) localIndex.set(patient.id,index);
+    }
     const additions=[];
-    rows.forEach(row=>{
+    for(let rowIndex=0;rowIndex<rows.length;rowIndex++){
+      if(rowIndex>0&&rowIndex%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      const row=rows[rowIndex];
       // remember server id for every visible row (used for delete + team open)
       if(row.external_id && row.id!=null) _serverPtIds[row.external_id]=row.id;
       // only merge the caller's OWN patients into their local list
       const isMine = !row.owner_email || (myEmail && String(row.owner_email).toLowerCase()===myEmail);
-      if(!isMine) return;
-      if(!row.data || !row.external_id) return;
+      if(!isMine) continue;
+      if(!row.data || !row.external_id) continue;
       const i=localIndex.has(row.external_id)?localIndex.get(row.external_id):-1;
-      if(i===-2) return;
+      if(i===-2) continue;
       if(i<0){
         const np=Object.assign({},row.data,{id:row.external_id});
         if(!np.created) np.created=Date.now();
@@ -10458,9 +10726,11 @@ async function loadPatientsFromServer(opts){
           local[i]=adopted; changed=true;
         }
       }
-    });
+    }
     if(changed){
+      await sfHydrationYield();
       savePatients(additions.length?additions.concat(local):local);
+      await sfHydrationYield();
       if(!opts.deferRender){
         if(currentView==='patients'){ renderPatients(); renderProfile(); }
         updateNavCounts();
@@ -10537,11 +10807,10 @@ async function loadTeamPatients(){
   const isHead=!!(bkUser&&(bkUser.isHead||bkUser.role==='head'));
   if(!isHead){ if(empty){ empty.style.display='block'; empty.innerHTML='<span class="big">👥</span>The Team view is only available to head doctors.'; } if(list) list.innerHTML=''; return; }
   try{
-    const r=await fetch(bkBase()+'/api/patients',{headers:{'Authorization':'Bearer '+bkToken()}});
-    if(r.status===401){ handle401(); return; }
-    if(!r.ok){ throw new Error('Request failed ('+r.status+').'); }
-    let d=[]; try{ d=await r.json(); }catch(e){ d=[]; }
-    const rows=Array.isArray(d)?d:(d&&d.patients)||[];
+    const pageResult=await sfFetchPagedList('/api/patients','patients',{},{});
+    if(pageResult.status===401){ handle401(); return; }
+    if(!pageResult.ok){ throw new Error('Request failed ('+pageResult.status+').'); }
+    const rows=pageResult.rows;
     // keep ALL rows (own + team) and tag each with a stable _idx
     _teamRows=rows.map((row,i)=>Object.assign({_idx:i},row));
     // optional: a roster endpoint so doctors with no patients still show up.
@@ -12804,7 +13073,7 @@ function showView(v){
   /* A route switch can change several layouts in the same frame. An animated
      document scroll fights those renders and feels like the page is pulling
      away from the pointer; reset atomically and let in-view controls animate. */
-  window.scrollTo({top:0,behavior:'auto'});
+  if(window.pageXOffset||window.pageYOffset) window.scrollTo({top:0,behavior:'auto'});
   if(previousView!==v){
     try{ window.dispatchEvent(new CustomEvent('mls:view-changed',{detail:{previousView:previousView||'',view:v||''}})); }
     catch(e){ try{ var ev=new Event('mls:view-changed'); ev.detail={previousView:previousView||'',view:v||''}; window.dispatchEvent(ev); }catch(_){} }
@@ -12856,19 +13125,22 @@ function _renderPatientFace(){
   wrap.style.display='block';
   var av=document.getElementById('_pfAvatar'); if(av){ av.textContent=_patientInitials(p.name); av.setAttribute('data-tip',(p.name||'Patient')+' — click to open chart'); }
 }
-function updateNavCounts(){
-  const pc=document.getElementById('navPtCount'); if(pc) pc.textContent=getPatients().length;
+function updateNavCounts(patientSnapshot){
+  const patients=Array.isArray(patientSnapshot)?patientSnapshot:getPatients();
+  const pc=document.getElementById('navPtCount'); if(pc) pc.textContent=patients.length;
   // History badge reflects the ACTIVE patient's real saved-visit count (per-patient,
   // matching what the History view shows). With no active patient it shows the total.
   const hc=document.getElementById('navHistCount');
   if(hc){
-    const ap=activePatient();
+    const activeId=getActivePtId();
+    let ap=null;
+    for(let i=0;i<patients.length;i++){ if(patients[i]&&patients[i].id===activeId){ ap=patients[i]; break; } }
+    const counts=__mlsNoteCounts(ap?ap.id:null);
     if(ap){
       // patient's own visits + any unassigned visits that are still surfaced in History
-      const orphans=getNotes().filter(n=>!n.patientId).length;
-      hc.textContent = patientNotes(ap.id).length + orphans;
+      hc.textContent = counts.patientCount + counts.orphanCount;
     } else {
-      hc.textContent = getNotes().length;
+      hc.textContent = counts.total;
     }
   }
   const oc=document.getElementById('navOrdCount');
@@ -15334,8 +15606,8 @@ async function dismissIntake(id){
   }catch(e){ toast('Could not dismiss.','err'); }
 }
 function renderPatients(){
-  updateNavCounts();
   const all=getPatients();
+  updateNavCounts(all);
   const list=document.getElementById('ptList');
   const empty=document.getElementById('ptEmpty');
   const noMatch=document.getElementById('ptNoMatch');
@@ -15349,6 +15621,7 @@ function renderPatients(){
   // No patients at all → empty state, hide the search bar.
   if(!all.length){
     empty.style.display='block'; list.innerHTML='';
+    list._mlsRoster=null; list._mlsNotesVer=null;
     if(searchRow) searchRow.style.display='none';
     if(noMatch) noMatch.style.display='none';
     return;
@@ -15357,20 +15630,21 @@ function renderPatients(){
   if(searchRow) searchRow.style.display='flex';
   // The Copilot "View top patients" action selects Most visits; the control is
   // visible so the ranking is explicit and the user can return to A–Z anytime.
-  var visitCounts={};
-  function ptVisits(p){ var k=String((p&&p.id)||''); if(visitCounts[k]!=null) return visitCounts[k]; var n=0; try{ n=((typeof patientNotes==='function'?patientNotes(p.id):[])||[]).length; }catch(e){} visitCounts[k]=n; return n; }
-  let arr=all.slice().sort(sortMode==='visits'
-    ? function(a,b){ return ptVisits(b)-ptVisits(a)||(a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'}); }
-    : function(a,b){ return (a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'}); });
-  // Match against name, date of birth, and MRN / chart #.
-  if(ql) arr=arr.filter(p=>[p.name,p.dob,p.mrn].filter(Boolean).join(' ').toLowerCase().includes(ql));
+  // Reuse normalized search keys and stable rankings until the underlying
+  // patient or note store changes. A keystroke now filters one cached ordering
+  // instead of lowercasing + sorting the full roster again.
+  var roster=__mlsPtRosterData(all);
+  var ranked=sortMode==='visits'?__mlsPtVisitRows(roster):roster.nameRows;
+  var matched=ql?ranked.filter(function(row){return row.search.indexOf(ql)>=0;}):ranked;
   const PT_CAP=150;                 // cap rendered rows so the DOM stays fast on huge rosters
-  const capped=arr.length>PT_CAP;
-  const shown=capped?arr.slice(0,PT_CAP):arr;
-  if(countEl){ var baseCount=ql ? `${arr.length} of ${all.length}` : (capped ? `${all.length} patients · showing 150` : `${all.length} patient${all.length===1?'':'s'}`); countEl.textContent=baseCount+(sortMode==='visits'?' · ranked by visits':''); }
+  const matchCount=matched.length;
+  const capped=matchCount>PT_CAP;
+  const shown=(capped?matched.slice(0,PT_CAP):matched).map(function(row){return row.patient;});
+  if(countEl){ var baseCount=ql ? `${matchCount} of ${all.length}` : (capped ? `${all.length} patients · showing 150` : `${all.length} patient${all.length===1?'':'s'}`); countEl.textContent=baseCount+(sortMode==='visits'?' · ranked by visits':''); }
   // Searched but nothing matched → offer to add that name as a new patient.
-  if(ql && !arr.length){
+  if(ql && !matchCount){
     list.innerHTML='';
+    list._mlsRoster=null; list._mlsNotesVer=null;
     if(noMatch){
       noMatch.style.display='block';
       noMatch.innerHTML=`No patient matching “<b>${esc(q)}</b>”.<br><button class="btn-primary" style="margin-top:12px;font-size:14px;padding:9px 16px" onclick="newPatientFromSearch()">＋ Add “${esc(q)}” as a new patient</button>`;
@@ -15379,10 +15653,15 @@ function renderPatients(){
   }
   if(noMatch) noMatch.style.display='none';
   const activeId=getActivePtId();
-  const capNote = capped ? `<div class="pt-cap-note">Showing the first 150 of ${arr.length}. Search by name or date of birth to find anyone else.</div>` : '';
+  const capNote = capped ? `<div class="pt-cap-note">Showing the first 150 of ${matchCount}. Search by name or date of birth to find anyone else.</div>` : '';
   try{ if(typeof syncPtGroupBar==='function') syncPtGroupBar(); }catch(e){}
   var _ptMode = (typeof getPtGroupMode==='function') ? getPtGroupMode() : 'all';
   if(_ptMode==='all' && typeof getQolGroupProc==='function' && getQolGroupProc()) _ptMode='procedure';
+  var _ptNotesVer=__mlsNotesStoreVersion(),_ptNotesStable=__mlsNotesVersionStable(_ptNotesVer);
+  if(_ptNotesStable&&list.childElementCount&&list._mlsRoster===roster&&list._mlsNotesVer===_ptNotesVer&&list._mlsQuery===ql&&list._mlsSort===sortMode&&list._mlsGroupMode===_ptMode){
+    _ptPatchActive(list,activeId,false);
+    return;
+  }
   if(_ptMode!=='all'){
     var groups={};
     shown.forEach(function(p){ var g=_ptGroupKey(p,_ptMode); (groups[g]=groups[g]||[]).push(p); });
@@ -15396,6 +15675,11 @@ function renderPatients(){
     var _ph=shown.map(function(p){ return _ptItemHtml(p,''); }).join('') + capNote, _phRebuilt=false;
     if(list._mlsSig!==_ph||!list.childElementCount){ list.innerHTML=_ph; list._mlsSig=_ph; _phRebuilt=true; }
     _ptPatchActive(list,activeId,_phRebuilt);
+  }
+  if(_ptNotesStable){
+    list._mlsRoster=roster; list._mlsNotesVer=_ptNotesVer; list._mlsQuery=ql; list._mlsSort=sortMode; list._mlsGroupMode=_ptMode;
+  }else{
+    list._mlsRoster=null; list._mlsNotesVer=null;
   }
 }
 function _ptPatchActive(list, activeId, force){
@@ -15426,10 +15710,11 @@ function _ptLastSeenText(note){
   return 'last seen '+canonical;
 }
 function _ptItemHtml(p, activeId){
-  const notes=patientNotes(p.id);
+  const noteSummary=__mlsPatientNoteSummary(p.id);
+  const noteCount=noteSummary.count;
   const docs=(p.docs||[]).length;
   let lastTxt='New patient';
-  if(notes.length){ notes.sort((a,b)=>(b.updated||0)-(a.updated||0)); lastTxt=_ptLastSeenText(notes[0]); }
+  if(noteCount&&noteSummary.last) lastTxt=_ptLastSeenText(noteSummary.last);
   const isActive=p.id===activeId;
   const demo=[p.sex, p.dob, (p.mrn?('#'+p.mrn):'')].filter(Boolean).join(' · ');
   // Clinical context: top problem from the (pulled) chart, else the scheduled reason.
@@ -15439,7 +15724,7 @@ function _ptItemHtml(p, activeId){
   let chips='';
   if(fromAthena) chips+='<span style="font-size:11px;color:#204034;background:#EAF1EC;border:1px solid #d3e4fb;border-radius:999px;padding:2px 9px;font-weight:700;white-space:nowrap">📥 Athena</span>';
   chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
-  if(notes.length) chips+='<span style="'+chip+'">'+notes.length+' note'+(notes.length===1?'':'s')+'</span>';
+  if(noteCount) chips+='<span style="'+chip+'">'+noteCount+' note'+(noteCount===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
   return `<div class="pt-item ${isActive?'active':''}" data-patient-id="${esc(p.id)}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart">
       <div class="pt-avatar"${p.photo?` style="background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent"`:''}>${p.photo?'':esc(ptInitials(p.name))}</div>
@@ -15478,7 +15763,8 @@ function selectPatient(id){
   if(!id) return;
   _athenaResetSuperbill(true);
   setActivePtId(id);
-  renderPatients(); renderProfile(); renderPatientBar();
+  if(currentView==='patients') renderPatients(); else updateNavCounts();
+  renderProfile(); renderPatientBar();
 }
 /* Always OPEN a patient (never toggle off) — for "open patient X" intents from Copilot,
    AI Studio widgets, and the calendar, where deselecting on a re-click would be surprising. */
@@ -15486,18 +15772,21 @@ function openPatient(id){
   if(!id) return;
   _athenaResetSuperbill(true);
   setActivePtId(id);
-  renderPatients(); renderProfile(); renderPatientBar();
+  if(currentView==='patients') renderPatients(); else updateNavCounts();
+  renderProfile(); renderPatientBar();
 }
 function deselectPatient(){
   _athenaResetSuperbill(true);
   setActivePtId('');
-  renderPatients(); renderProfile(); renderPatientBar();
+  if(currentView==='patients') renderPatients(); else updateNavCounts();
+  renderProfile(); renderPatientBar();
   toast('No patient selected. Visits will be unassigned.','');
 }
 function goNewUnassignedVisit(){
   // Start a fresh visit with no patient attached — saves to History as an unassigned note.
   setActivePtId('');
-  renderPatients(); renderProfile(); renderPatientBar();
+  if(currentView==='patients') renderPatients(); else updateNavCounts();
+  renderProfile(); renderPatientBar();
   showView('visit');
   newVisit();
 }
@@ -16113,7 +16402,7 @@ async function extractPdfText(file){
    This whole subsystem is additive and is ONLY consulted when the
    toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
    ========================================================= */
-/* b964 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
+/* b965 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
    MEASURED on the owner's real library (96 templates, ~520KB of JSON): one
    getTemplates() call costs ~7ms of JSON.parse plus two normalisation passes,
    and the op-note room calls it PER ROW. opPrepRender's tplOpts closure alone
@@ -16209,7 +16498,7 @@ function setTemplates(arr){
 function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
 function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
-/* b964 PERF: find in the cached store, then clone only the ONE template that
+/* b965 PERF: find in the cached store, then clone only the ONE template that
    matched. This is called inside draft loops and per-row matchers; cloning the
    whole library to throw 95 of them away was pure waste. Same contract: a fresh
    object the caller may mutate, or null. */
@@ -16407,7 +16696,22 @@ function _opApptsForDay(key){
     .map(function(a){ return {patientId:String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||''), name:(a.name||(typeof _calLabelOf==='function'?_calLabelOf(a):'')), reason:String(a.reason||''), dob:a.dob||'', time:_apptHHMMTz(a.start_at), providerId:String(a.providerId||a.provider_id||''), providerName:String(a.providerName||a.provider_name||a.provider||''), facilityId:String(a.facilityId||a.facility_id||a.departmentId||a.department_id||''), facilityName:String(a.facilityName||a.facility_name||a.departmentName||a.department_name||a.location||'')}; })
     .filter(function(a){ return String(a.name||'').trim(); }); }catch(e){ return []; }
 }
+function _opEnsureDayBrain(){
+  try{
+    var owner=window.__mlsOpNoteDayBrain;
+    if(owner&&owner.installed===true) return true;
+    if(!document.querySelector('script[data-mls-asset="feat_mls_opnote_daybrain.js"]')){
+      var s=document.createElement('script');
+      s.src='feat_mls_opnote_daybrain.js?v='+(window.__MLS_AV||Date.now());
+      s.setAttribute('data-mls-asset','feat_mls_opnote_daybrain.js');
+      s.async=true;
+      (document.body||document.head||document.documentElement).appendChild(s);
+    }
+  }catch(e){}
+  return !!(window.__mlsOpNoteDayBrain&&window.__mlsOpNoteDayBrain.installed===true);
+}
 function openOpPrep(dayKey){
+  _opEnsureDayBrain();
   window._opPrepMode='all';
   if(!dayKey){ var d=new Date(); d.setDate(d.getDate()+1); dayKey=_opDayKey(d); }   // default = tomorrow
   window._opPrepDay=dayKey;
@@ -16420,6 +16724,7 @@ function opPrepSetDayToday(){ openOpPrep(_opDayKey(new Date())); }
 function opPrepSetDayTomorrow(){ var d=new Date(); d.setDate(d.getDate()+1); openOpPrep(_opDayKey(d)); }
 /* Draft an op note for ONE specific patient (active or by id) — reachable from the chart. */
 function openOpPrepForPatient(pid){
+  _opEnsureDayBrain();
   var p=null; try{ var pts=(typeof getPatients==='function'?getPatients():[])||[]; p=pid?pts.find(function(x){return x.id===pid;}):(typeof activePatient==='function'?activePatient():null); }catch(e){}
   if(!p){ try{ toast('Open a patient first, then draft their op note.','err'); }catch(e){} return; }
   var reason=''; try{
@@ -16434,6 +16739,14 @@ function openOpPrepForPatient(pid){
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 function closeOpPrep(){ var m=document.getElementById('opPrepModal'); if(m) m.classList.remove('show'); }
+document.addEventListener('click',function(e){
+  try{
+    var target=e&&e.target&&e.target.closest?e.target.closest('#opPrepGenAllBtn'):null;
+    if(!target||_opEnsureDayBrain()) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    toast('Op-note safety checks are still loading. Try Draft all again in a moment.','warn');
+  }catch(err){}
+},true);
 /* b500 a11y: ESC closes op-prep and Tab stays inside it while open (same
    pattern as the patient modal). Drafts are safe to close over — every draft
    autosaves to History and reopening resumes it. */
@@ -16618,7 +16931,7 @@ function opPrepRender(){
      "Remove duplicates" button, which announces what it did. A duplicate sitting
      in the dropdown is a cosmetic annoyance; deleting an op-note template is not
      recoverable. Do not put an automatic call back here. */
-  /* b964 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
+  /* b965 PERF — ONE READ AND ONE ESCAPE PASS FOR THE WHOLE REPAINT.
      tplOpts used to call getTemplates() and re-escape every template name
      INSIDE the per-row map, so a 19-patient day parsed the library 19 times and
      built 19 × 96 escaped <option> strings on every single repaint — and this
@@ -16655,7 +16968,7 @@ function opPrepRender(){
     h+='</div>';
     return h;
   }).join('');
-  /* b964 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
+  /* b965 PERF — A REPAINT THAT CHANGES NOTHING MUST COST NOTHING.
      This function is the app's answer to almost every control in the op-note
      room, and the room's own rail builder calls it again on top; a good share of
      those calls produce byte-identical markup. Writing it anyway destroyed and
@@ -16699,7 +17012,7 @@ function _opNeedleHtml(i, mf, row){
   return '<div style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap"><label style="font-size:12.5px;min-width:150px">'+esc(mf.label||'Needle size')+'</label><select onchange="_opNeedlePick('+i+',\''+key+'\',this.value)" style="font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:10px">'+optHtml+'</select>'+txt+hint+'</div>';
 }
 function _opNeedlePick(i,key,v){ var row=(window._opPrep||[])[i]; if(!row) return; row._needleOther=row._needleOther||{}; if(v==='__other'){ row._needleOther[key]=true; row.values[key]=''; } else { row._needleOther[key]=false; row.values[key]=v; } opPrepRender(); }
-/* b964 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
+/* b965 — THE VERDICT FOR A DRAFT BELONGS TO THAT ROW, NOT TO A GLOBAL.
    Until now "did this draft succeed, and if not why" lived in three window
    globals (__mlsLastOpFidelityPass / __mlsLastOpFidelityError /
    __mlsLastOpErrorCode) that the drafter cleared on entry and the runner read
@@ -16785,7 +17098,7 @@ async function opPrepGenerateOne(i){
     _opReconcileBlanks(row);   // make sure EVERY [[key]] in the note is in row.missing (no unfillable stray blanks)
     // Start needle size on the BMI-predicted length (else the last size used) so it's usually right already.
     (row.missing||[]).forEach(function(mf){ if(_isNeedleField(mf)){ var pred=_predictNeedleSize(ctx.bmi); var prev=getOpFieldVals(mf.key); row.values[mf.key]= pred || (prev[0]||''); } });
-    /* b964: reaching here means the generator RESOLVED. Every fidelity,
+    /* b965: reaching here means the generator RESOLVED. Every fidelity,
        clinical-consistency, identity and transport failure throws (the template
        owner builds a real Error and rethrows it), so "the try block completed
        and a note exists" is the same verdict __mlsLastOpFidelityPass carries -
@@ -16801,7 +17114,7 @@ async function opPrepGenerateOne(i){
   }catch(e){
     /* b500: show the ACTUAL reason (identity, template conflict, network,
        server error) — a generic "try again" hid every diagnosable failure.
-       b964: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
+       b965: THE ERROR ITSELF COMES FIRST. __mlsLastOpFidelityError is a global,
        so once two drafts can overlap it may already belong to another patient;
        `e` never does. The global stays as the fallback for a thrower that only
        wrote there. */
@@ -16853,7 +17166,7 @@ function opPrepAutosaveDraft(i){
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
     else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
-    /* b964 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
+    /* b965 PERF — THE HISTORY LIST DOES NOT NEED REBUILDING ONCE PER PATIENT.
        This autosave runs after every drafted row, and it rebuilt the whole
        History view and the nav counts synchronously each time - a screen the
        doctor cannot even see, because the op-note room is over it. On a
@@ -16867,6 +17180,10 @@ function opPrepAutosaveDraft(i){
   }catch(e){ return false; }
 }
 async function opPrepGenerateAll(){
+  if(!_opEnsureDayBrain()){
+    try{ toast('Op-note safety checks are still loading. Try Draft all again in a moment.','warn'); }catch(e){}
+    return {drafted:0,failed:0,skipped:(window._opPrep||[]).length};
+  }
   /* 2026-07-29 ONE OWNER. The body below is UNREACHABLE from the button:
      mls-connect.js:~15934 installs a capture-phase click listener on
      #opPrepGenAllBtn that calls stopPropagation()+preventDefault() and runs
@@ -18901,24 +19218,26 @@ async function loadRecordsFromServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return false;
   try{
-    const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
-    const r=await fetch(bkBase()+'/api/records',init);
+    const pageResult=await sfFetchPagedList('/api/records','records',opts,{scopeOwn:true});
     if(!sfStartupValid(opts)) return false;
-    if(r.status===401){ handle401(); return false; }
-    if(!r.ok) return false;
-    let d={}; try{ d=await r.json(); }catch(e){ d={}; }
-    if(!sfStartupValid(opts)) return false;
-    const rows=(d&&d.records)||[];
+    if(pageResult.status===401){ handle401(); return false; }
+    if(!pageResult.ok) return false;
+    const rows=pageResult.rows;
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     const local=getNotes();
     const localIndex=new Map();
-    local.forEach((record,index)=>{ if(record&&record.id!=null) localIndex.set(record.id,index); });
+    for(let index=0;index<local.length;index++){
+      if(index>0&&index%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      const record=local[index]; if(record&&record.id!=null) localIndex.set(record.id,index);
+    }
     let changed=false;
-    rows.forEach(row=>{
+    for(let rowIndex=0;rowIndex<rows.length;rowIndex++){
+      if(rowIndex>0&&rowIndex%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      const row=rows[rowIndex];
       const isMine=!row.owner_email||(myEmail&&String(row.owner_email).toLowerCase()===myEmail);
-      if(!isMine) return;
+      if(!isMine) continue;
       const rec=row.record;
-      if(!rec||!rec.id) return;
+      if(!rec||!rec.id) continue;
       const i=localIndex.has(rec.id)?localIndex.get(rec.id):-1;
       if(i<0){
         if(!rec.created) rec.created=rec.updated||Date.now();
@@ -18927,10 +19246,13 @@ async function loadRecordsFromServer(opts){
         const sUpd=rec.updated||0, lUpd=local[i].updated||0;
         if(sUpd>lUpd){ const created=local[i].created||rec.created; local[i]=rec; local[i].created=created; changed=true; }
       }
-    });
+    }
     if(changed){
+      await sfHydrationYield();
       local.sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0));
+      await sfHydrationYield();
       saveNotes(local);
+      await sfHydrationYield();
       if(!opts.deferRender){
         if(currentView==='history') renderHistory();
         if(currentView==='patients'){ renderPatients(); renderProfile(); }
@@ -18943,9 +19265,10 @@ async function loadRecordsFromServer(opts){
 
 function renderHistory(){
   const all=getNotes();
+  const histData=__mlsHistoryData(all);
   const ap=activePatient();
   // Surface duplicate notes (e.g. an op note saved several times) so they can be cleaned in one tap.
-  try{ var _dups=(typeof _dupNoteList==='function')?_dupNoteList():[]; var _db=document.getElementById('histDedupeBtn'); var _bn=document.getElementById('histDupBanner');
+  try{ var _dups=(typeof _dupNoteList==='function')?_dupNoteList(all):[]; var _db=document.getElementById('histDedupeBtn'); var _bn=document.getElementById('histDupBanner');
     if(_db) _db.style.display=_dups.length?'':'none';
     if(_bn){ if(_dups.length){ _bn.style.display='block'; _bn.innerHTML='⚠ Found <b>'+_dups.length+'</b> duplicate note'+(_dups.length===1?'':'s')+' (same patient, same note, same day). <a href="#" onclick="cleanupDuplicateNotes();return false;" style="color:#a12c2c;font-weight:700">Remove the extras →</a>'; } else { _bn.style.display='none'; } }
   }catch(e){}
@@ -18957,10 +19280,10 @@ function renderHistory(){
   // can be one-click attached to the active patient.
   let mine=[], orphans=[];
   if(ap){
-    mine    = all.filter(n=>n.patientId===ap.id);
-    orphans = all.filter(n=>!n.patientId);
+    mine=(histData.byPatient&&histData.byPatient.get(ap.id))||[];
+    orphans=histData.orphans||[];
   } else {
-    mine = all.slice();
+    mine = histData.ordered.slice();
   }
   const arr=mine.concat(orphans);
   const list=document.getElementById('histList');
@@ -18973,15 +19296,13 @@ function renderHistory(){
     : 'Click a past visit to reopen it. Notes are '+(hosted?'synced to your account (encrypted) and cached in this browser':'saved locally in this browser')+' for <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.';
   if(!arr.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
   empty.style.display='none';
-  mine.sort((a,b)=>(b.updated||0)-(a.updated||0));
-  orphans.sort((a,b)=>(b.updated||0)-(a.updated||0));
   let ordered=mine.concat(orphans);
   // ---- Search + type filter so the doctor can find anything fast ----
   const qEl=document.getElementById('histSearch'); const q=(qEl&&qEl.value?qEl.value:'').trim().toLowerCase();
   const fEl=document.getElementById('histFilter'); const fv=fEl?fEl.value:'';
   /* b377 perf: name fallback used to call getPatients().find PER NOTE — one
      full-roster copy per unnamed note. Build the id map lazily, once. */
-  let _plm=null; const _plistMap=()=>{ if(!_plm){ _plm=new Map(); try{ (typeof getPatients==='function'?getPatients():[]).forEach(x=>{ if(x)_plm.set(x.id,x); }); }catch(e){} } return _plm; };
+  let _plm=null; const _plistMap=()=>{ if(!_plm){ try{ _plm=__mlsPtRosterData((typeof getPatients==='function'?getPatients():[])).byId; }catch(e){ _plm=new Map(); } } return _plm; };
   const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=_plistMap().get(n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
   const total=ordered.length;
   /* b392 History cleanup: bulk chart pulls save one "Athena chart import"
@@ -18994,7 +19315,7 @@ function renderHistory(){
   if(fv==='imports'){ ordered=ordered.filter(_isImportNote); }
   else if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
   else if(!q){ _importNotes=ordered.filter(_isImportNote); if(_importNotes.length>3){ ordered=ordered.filter(n=>!_isImportNote(n)); } else { _importNotes=[]; } }
-  if(q){ ordered=ordered.filter(n=>{ const d=new Date(n.updated||n.created||Date.now()); const ds=(d.toLocaleDateString()+' '+d.toLocaleString([], {month:'long'})).toLowerCase(); const hay=[_pname(n), n.cc||'', n.text||n.soap||'', ds, (n.signed?'signed':(n.isDraft?'draft':'unsigned')), (n.kind||'')].join(' \n ').toLowerCase(); return hay.indexOf(q)>=0; }); }
+  if(q){ ordered=ordered.filter(n=>{ const hay=String(_pname(n)||'').toLowerCase()+' \n '+__mlsHistorySearchBase(histData,n); return hay.indexOf(q)>=0; }); }
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (total+' visit'+(total===1?'':'s'));
   if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
   empty.style.display='none';
@@ -19079,12 +19400,9 @@ function attachNoteToActive(id){
 }
 
 /* How many duplicate notes exist (same patient + same note title + same day). */
-function _dupNoteList(){
-  var ns=(typeof getNotes==='function'?getNotes():[])||[]; var byKey={};
-  ns.forEach(function(n){ var d=new Date(n.updated||n.created||0); var day=isNaN(d.getTime())?'':(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)); var k=String(n.patient||'').trim().toLowerCase()+'|'+String(n.cc||'').trim().toLowerCase().replace(/\s+/g,' ')+'|'+day; (byKey[k]=byKey[k]||[]).push(n); });
-  var remove=[];
-  Object.keys(byKey).forEach(function(k){ var arr=byKey[k]; if(arr.length<2) return; arr.sort(function(a,b){ var u=(b.updated||b.created||0)-(a.updated||a.created||0); if(u) return u; return String(b.text||b.soap||'').length-String(a.text||a.soap||'').length; }); arr.slice(1).forEach(function(n){ remove.push(n); }); });
-  return remove;
+function _dupNoteList(source){
+  var ns=Array.isArray(source)?source:((typeof getNotes==='function'?getNotes():[])||[]);
+  return __mlsHistoryData(ns).duplicates.slice();
 }
 /* Collapse duplicate notes — same patient, same note title, same day — keeping the most
    complete/most-recent one. Cleans up over-saves (e.g. an op note saved several times). */
@@ -27817,7 +28135,7 @@ var sfGateWatchdog=0;
    veil is now just long enough to avoid a flash; accounts WITH a local store
    reveal before cloud hydration finishes (it continues behind the app).
    Still bounded: an optional service can slow startup, never trap it. */
-const SF_GATE_MIN_MS=300, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=350;
+const SF_GATE_MIN_MS=300, SF_GATE_MAX_MS=32000, SF_GATE_QUIET_MS=180;
 /* Above BOTH the 32s force release and startSession's 30.2s hydrate deadline, so
    the watchdog only ever fires when those two have already failed to fire. */
 const SF_GATE_WATCHDOG_MS=40000;
@@ -27934,11 +28252,11 @@ function sfWaitForStableFirstFrame(token,force,gated){
       const enhancedReady=!!(gated||window.__mlsUiBundleFailed||(document.getElementById('mlsRdTop')&&document.getElementById('mlsEz3')));
       /* Avoid forcing layout while the feature wave is still invalidating it.
          The scoped asset tracker owns that phase; sample rects only afterward. */
-      if(!(bundleReady&&ownerReady&&assetReady&&coreReady&&enhancedReady)){ setTimeout(check,160); return; }
+      if(!(bundleReady&&ownerReady&&assetReady&&coreReady&&enhancedReady)){ setTimeout(check,80); return; }
       const sig=sfLoaderFrameSignature();
       if(sig===last){ if(!stableAt) stableAt=now; }else{ last=sig; stableAt=now; }
       if(now>=minAt&&now-stableAt>=SF_GATE_QUIET_MS) return resolve(true);
-      setTimeout(check,140);
+      setTimeout(check,80);
     };
     check();
   });
@@ -28005,15 +28323,21 @@ function sfArmGateWatchdog(){
       try{ live=!!(typeof backendMode==='function'&&backendMode()&&typeof bkToken==='function'&&bkToken()&&typeof bkUser!=='undefined'&&bkUser); }catch(e){}
       let hosted=false;
       try{ hosted=!!(typeof backendMode==='function'&&backendMode()); }catch(e){}
+      let legalState='unknown';
+      try{ legalState=String(typeof sfSessionLegalState==='string'?sfSessionLegalState:'unknown'); }catch(e){}
       sfCancelGateLoading();
-      if(hosted&&!live){
-        /* Fail closed on the CLINICAL surface, but never into a dead end.
-           The locked agreements screen (showAgreementsGate) hides #authScreen
-           and offers only Retry — measured: a returning visitor whose /api/me
-           stalls lands there with NO route back to sign-in, which is the
-           literal complaint "I can't even sign in". Sign-in withholds the
-           clinical app just as completely and is something the doctor can act
-           on, so that is where an unresolved session goes. */
+      if(hosted&&(legalState!=='verified'||!live)){
+        /* Identity alone is never legal release. Authenticated users whose
+           legal state is unknown land on the locked Retry surface; unresolved
+           identity returns to sign-in. Both remain actionable without exposing
+           the clinical workspace. */
+        if(live&&legalState!=='verified'){
+          try{
+            if(typeof showAgreementsGate==='function') showAgreementsGate(false);
+            const gate=document.getElementById('agreementsGate');
+            if(gate&&gate.style.display==='block') return;
+          }catch(e){}
+        }
         const app=document.getElementById('appScreen'); if(app) app.style.display='none';
         const auth=document.getElementById('authScreen'); if(auth) auth.style.display='flex';
         try{ if(typeof switchAuth==='function') switchAuth('login'); }catch(e){}
@@ -28040,6 +28364,7 @@ function sfShowGateLoading(){
      hydration settle.  A second call must never reset progress or restart the
      minimum clock. */
   if(sfGateLoadingVisible&&el.style.display!=='none') return el;
+  try{ window.__mlsLoaderReadyAt=0; window.dispatchEvent(new Event('mls:loader-start')); }catch(e){}
   sfGateLoadingVisible=true;
   el.setAttribute('role','status');
   el.setAttribute('aria-live','polite');
@@ -28116,7 +28441,7 @@ function sfHideGateLoading(gated,options){
     sfClearGateStages();
     if(bar){ bar.classList.add('done'); bar.style.width='100%'; bar.style.transform='scaleX(1)'; }
     if(msg) msg.textContent='Ready';
-    try{ window.dispatchEvent(new Event('mls:loader-ready')); }catch(e){}
+    try{ window.__mlsLoaderReadyAt=Date.now(); window.dispatchEvent(new Event('mls:loader-ready')); }catch(e){}
     return new Promise(resolve=>setTimeout(resolve,SF_GATE_READY_HOLD_MS));
   }).then(()=>new Promise(resolve=>{
     if(token!==sfGateHideToken){ resolve(); return; }
@@ -32860,7 +33185,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b964';
+  window.__MLS_AV='b965';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -32871,8 +33196,10 @@ function _ptGroupSort(mode){
     'feat_source_clarity.js','feat_athena_actions.js',
     'feat_mls_dayprogress.js','feat_mls_recentpts.js','feat_mls_ptsnapshot.js',
     'feat_mls_agenda_popover.js','feat_mls_appwidth_responsive.js',
-    'feat_mls_theme_polish.js','feat_mls_widget_deck.js',
-    'feat_athena_tooltip_dedupe.js'
+    'feat_mls_theme_polish.js',
+    'feat_athena_tooltip_dedupe.js','feat_mls_stop_confirm.js',
+    'mls-template-stdline.js','feat_mls_copilot_power.js',
+    'feat_mls_audio_capture.js','feat_mls_athena_follow.js'
   ];
   function assetName(node){
     try{ return new URL(node.src,location.href).pathname.split('/').pop(); }catch(e){ return ''; }
@@ -33036,7 +33363,11 @@ function _ptGroupSort(mode){
             var pending=assets.pending();
             var incomplete=assets.incomplete();
             var allPending=assets.allPending();
-            var quiet=now-assets.lastActivity>=900;
+            /* sfWaitForStableFirstFrame performs the final geometry quiet check.
+               Holding the same screen behind a second 900ms silence made every
+               healthy login pay twice. This short critical-script debounce only
+               coalesces the last load burst; the frame barrier remains authoritative. */
+            var quiet=now-assets.lastActivity>=180;
             if(pending===0&&quiet){
               if(incomplete===0&&assets.errors.length===0&&critical&&visible){
                 if(allPending||assets.satelliteErrors.length) assets.degraded=true;
