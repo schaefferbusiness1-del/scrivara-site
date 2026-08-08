@@ -7,6 +7,18 @@ patients**. Treated as the patient-safety lane it is.
 Lane: ext-goal (wt-ext-3040, branch ext/3.0.40-audit-fixes). Sign-off request posted for
 `50441052a955dadd432a02a2b046a202e031e04c` — gate **PASS all 511** at that commit.
 
+> **THE LESSON OF THIS TRAIN, at the top on purpose: every automated instrument reported
+> green while the store was wrong.** The ratios passed, the hashes were unique, the
+> receipts said ok:true, the suites were green — and athena documented "bee pollen / mite
+> extract / NKDA" where MLS held only "NKDA"; problems/meds/surgical sections sat in the
+> visit raws fleet-wide while the stored fields were empty; 26 of 34 summaries were bare
+> headers under green receipts. Every one of those was found only by READING the actual
+> chart against the actual panel, or by measuring raws against stored fields. An
+> instrument can only fail the checks someone thought to write; the source comparison is
+> the check that catches the checks. (Second form of the same law, from the fleet heal
+> below: the loss column caught a 665-char deletion that every per-field "gained" number
+> would have hidden.)
+
 ## What was measured BEFORE any change (live store, 1,559 patients, owner's browser)
 
 | finding | number | class |
@@ -301,3 +313,97 @@ Coverage disclosure (owner should see the size): **1,240 of 1,561 store records 
 carry NO stable athena key (mrn/athenaId both empty; 222 of them hold clinical content).
 Those are legacy name-only rows - they cannot be source-verified by id and cannot
 exact-bind until a fresh identity-gated pull stamps them. New pulls stamp MRN.
+
+## 2026-08-08 — the 153-record fleet heal (round 3, on live b953) — measured, not asserted
+
+The b951/b953 extraction fixes made the print-shape sections visible; this pass re-ran
+`organizePatientHistory` over every record whose visit raws contain any of the four
+run shapes (allergen CRIT runs, "- Onset:" problem runs, med-table rows, Surgical &
+Procedure History sections) — 153 records, the union of four independent regex sweeps.
+**Complete pre-state snapshotted per record BEFORE the run** (`__pxPreHeal3`: summary/
+problems/meds/psh lengths + visits count + total raw chars), exported with the run
+ledger and the post-state to `2026-08-08-fleet-heal-run3-export.json` (canonical, on
+disk; extraction from page memory chunk-verified against totalLen=50257 + JSON.parse).
+
+**Run ledger: 153/153 processed, 92 committed, 61 refused fail-closed, 0 errors.**
+~57s/record (model-backed), 05:51→08:02. The refusals are the guards working, not
+failures — and the supervisor's pre-registered falsifier ("0 refusals is what a
+non-checking guard looks like") did not fire.
+
+### Before/after loss table (all 153 records, current store vs pre-snapshot)
+
+| field | gained | unchanged | SHRANK | total chars before → after |
+|---|---|---|---|---|
+| athenaHistorySummary | 87 | 66 | **0** | 203,934 → 804,450 |
+| problems | 92 | 61 | **0** | 39,910 → 96,647 |
+| meds | 91 | 62 | **0** | 11,428 → 203,802 |
+| psh (standalone field) | 0 | 151 | **2** | 665 → 0 (see finding below) |
+| visits count | — | **153** | 0 | unchanged everywhere |
+| visit raw total | — | **153** | 0 | unchanged everywhere — source material intact |
+
+Cross-checks that make the table trustworthy: the 14 records with `updated` older than
+the run's start are EXACTLY the 14 `identity-unverified` refusals (the 6/24–6/29 import
+cohort: rawTotal 118–1,889 chars, import fragments only, no real visit bodies — the
+identity gate refused before any write, so their rows are bit-identical). The other 139
+were touched: 92 committed, 47 `semantic-coverage-incomplete` (organize refused the
+summary rebuild; 33 of those still have no summary — honest empty, not a bare header).
+
+### The loss column caught something (the reason it exists)
+
+**`p.psh` went 444→0 (p_sched_2b0k06) and 221→0 (p_sched_16gi2ha).** Root cause read
+from code, not guessed: `psh` is NOT a canonical patient field — b953's design carries
+surgical history as the "Surgical and procedural history" SECTION inside the aggregate
+summary (feat_visits.js:1193); the standalone field existed on exactly these two records
+because the round-2 spot-heal wrote it directly. The base `upsertPatient`
+(ScribeFlow.html:10133) is REPLACE-shaped: `arr[i]` becomes the caller's object, and only
+the four athena receipt fields + attested clinical fields are explicitly carried forward
+— a key absent from the caller's object does not survive. organize→upsert therefore
+dropped the non-canonical key. The clinical content is NOT destroyed: both records'
+visit raws are unchanged (rawTotal identical), and the surgical text regenerates from
+them. Disposition: re-run organize on these two ids once the app session is back and
+verify the Surgical section lands in the summary (16gi2ha's rebuild was coverage-refused
+this round, so it needs the re-read to pass or a hand-written section from its raws).
+Class recorded: **any non-canonical field dies on the next replace-shaped upsert** —
+never park clinical data outside the canonical schema + summary.
+
+### Refusal disposition — what actually closes the 61 (Michael: the fleet is NOT "all repaired")
+
+| reason | n | what closes it |
+|---|---|---|
+| semantic-coverage-incomplete | 47 | a fresh athena slice re-read per record (next pull of each patient's chart); organize then has section coverage and rebuilds. 33/47 currently hold NO summary (honest empty). |
+| identity-unverified | 14 | the 6/24–6/29 import cohort — no stable identity, no real visit bodies. Closes only via the owner-gated cohort re-pull repair; visibly flagged in the meantime. |
+
+So: 92 of 153 repaired now; 47 repair themselves as charts get re-pulled; 14 wait on the
+owner-gated cohort decision.
+
+### Spot-check pmrfjgnk73ft0 (the hand-verified calibration chart)
+
+From the export: summary 887→3,766 chars, problems 30→253, meds 0→499, allergies
+4→324 chars ("NKDA" → the real allergen strings measured live earlier on b952/b953).
+Content-level eye-check of amLODIPine (filled 04/11/26) + Cholecystectomy/Hysterectomy
+and the #profProblems/#profMeds panel render: **blocked by the app idle-logout** (below).
+
+### Honest blocker + the single owner ask
+
+At ~08:5x the MLS app tab idle-logged-out mid-analysis. The signed-in roster is
+server-mirror + in-memory only (no localStorage/IndexedDB copy — verified by key census;
+that is PHI hygiene working as designed). All heal writes landed before logout (every
+committed record's `updated` stamp is inside the run window, and the post-state was
+captured at 08:43 before the logout). Signing in is the owner's action, never mine.
+**ONE ask when Michael is next at the machine: sign the MLS app back in** (tab
+"MLS — Ambient AI Medical Scribe"). Then, without further input: the 2-record psh
+re-organize + verify, the pmrfjgnk73ft0 content/panel check, the four raw-vs-stored
+population recounts (before-numbers on record: allergens 52 missing, problems 137,
+meds 150, surgical 139 empty), and — if the athena frameset is also healthy and Chrome
+has OS focus ~10 min — the fronted warm-day pace sample (18-row day, labeled warm,
+never compared to the 16-virgin benchmark).
+
+### The op-note "wrong medications" link (stated as code-established, not yet outcome-proven)
+
+The op-note context consumes `p.meds` (feat_opnote_history.js:261; ScribeFlow.html
+~16338). Before this train, ~98% of med-table rows present in visit raws were absent
+from `p.meds` — the op-note model was drafting against starved context, which is a
+plausible mechanism for the owner's "wrong medication" complaints. After the heal,
+`p.meds` fleet-wide went 11,428→203,802 chars. Whether this closes the complaint is
+NOT yet proven — that takes op-note drafts on real charts compared against the owner's
+template expectations, which stays on the op-note quality lane.
