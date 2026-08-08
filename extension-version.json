@@ -1,5 +1,5 @@
 {
-  "version": "3.0.49",
+  "version": "3.0.50",
   "minChrome": 116,
-  "notes": "v3.0.49 - Charts whose Visits panel athena renders in an unusual frame now read correctly: the reader accepts that frame only after the frame itself proves it is showing this exact patient, so the six charts that failed on one live day now load while the old wrong-patient worklist trap stays blocked. Everything from v3.0.48 remains. Requires Chrome 116+."
+  "notes": "v3.0.50 - Two live failure shapes fixed: when athenaOne's scheduling view replaces the chart surface mid-read (it does this on its own every ~25-30 seconds), the reader now detects the swap, re-proves the patient identity, and re-binds the same encounter row instead of failing it; and the new-style athena chart (athena's gradual rollout) no longer stalls at the exam-prep screen - the reader now finds athena's navigation even where it is hidden in shadow DOM. Everything from v3.0.49 remains. Requires Chrome 116+."
 }

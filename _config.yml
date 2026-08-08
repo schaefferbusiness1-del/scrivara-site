@@ -188,18 +188,18 @@ include:
   - "jspdf.umd-4.2.1.min.js"
 
   # The exact released MLS Assist package (owner directive 2026-07-20).
-  # SHA-256 05027f4a17e15cbcfb34f8f08c96f2cd4e6c52cd4325a6e633421b2cba8fa217 —
+  # SHA-256 5e107b2c454e7320bb7344a0388ffe0871fa69342f3bfe0bd4a93f0b471732f3 —
   # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.49.zip"
+  - "MLS_Assist_v3.0.50.zip"
   # Byte-identical mirror of the line above, under an extension no service
   # worker generation retires. A worker keeps controlling a tab until every tab
   # closes and this app's worker deliberately declines skipWaiting(), so an
   # already-installed worker answers the .zip with 410 no matter what we ship.
   # Measured: the worker did not roll across three production deploys. The .bin
   # is the only route that reaches those browsers; the button carries
-  # download="MLS_Assist_v3.0.49.zip" so the doctor still saves a .zip.
-  - "MLS_Assist_v3.0.49.bin"
+  # download="MLS_Assist_v3.0.50.zip" so the doctor still saves a .zip.
+  - "MLS_Assist_v3.0.50.bin"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

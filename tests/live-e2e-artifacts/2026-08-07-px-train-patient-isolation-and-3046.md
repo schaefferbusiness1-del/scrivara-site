@@ -595,3 +595,46 @@ plausible mechanism for the owner's "wrong medication" complaints. After the hea
 `p.meds` fleet-wide went 11,428→203,802 chars. Whether this closes the complaint is
 NOT yet proven — that takes op-note drafts on real charts compared against the owner's
 template expectations, which stays on the op-note quality lane.
+
+
+## srr-1.0 (3.0.50): the surface recycles itself - 2026-08-08 post-midnight
+
+**The rotating per-session variant is athena's own auto-recycle + the ax rollout.**
+James (p_sched_1wt53y8, athena id 7631733) driven read died exam-prep-stuck; the chart
+landed on /ax/briefing/<id> (the CLINCMP rollout SPA; datadog Rollout Toggle errors in
+console). Census by CDP same-origin walk because the census verb's allFrames
+executeScript HUNG - injection into a navigating frame never resolves.
+
+Measured, engines quiet:
+- 44-tick sampler: node count 152 -> 5,320 (stable ~5s) -> 69 -> rebuild. Two full
+  teardowns in one window.
+- Frame-age probes: 50s, then 3s, then 11s across 95s wall - repeated full
+  renavigation, ~25-30s period. No meta-refresh; athena's own JS.
+- The briefing exposes ONE encounter anchor (/ax/encounter/<id>/summary, enc tail 5577,
+  an EMG study) and hides its nav in shadow roots (sh=3..5) - the light-DOM escape
+  clicker found nothing safe to click for 5 rounds, hence exam-prep-stuck.
+- One-shot DOM probes ALTERNATED hit/miss with the render cycle - two sightings, two
+  misses of the same anchor in ~4 min. Interval sampling with synchronous capture is
+  the only honest probe here.
+
+Why Monday's rows failed THROUGH two cold retries: the retries re-clicked a REPLACED
+document whose enumerate-time row stamps were gone (accordion-not-open,
+no-bound-clinical-detail = stages of the same death). James x4 + Christopher x1 fit
+row-straddles-a-recycle exactly.
+
+Fix shipped in 3.0.50 (srr-1.0, background.js, latin1 splice +5,963 bytes):
+1. visitsListFrameDocId - documentId epoch, guard-disciplined, '' = UNKNOWN.
+2. Epoch frozen at index acceptance; cold-retry probes it; changed epoch ->
+   openVisits -> SAME visitIdentityGate -> re-enumerate -> whole-row-set rowKey
+   re-bind -> retry on fresh stamps. Bounded 3/chart; receipt.surfaceResets;
+   identity/row-set mismatch after recycle FAILS CLOSED.
+3. Briefing escape collects controls through open shadow roots (2 levels, bounded);
+   BAD-verb filter + visibility test byte-identical (test-pinned).
+
+tests/surface-recycle-rebind.test.js: 31 checks - live pins, envelope byte-pins,
+functional rowKey harness (reorder-accept / key-change-refuse / count-change-refuse /
+missing-binding-refuse), and the control arm: pre-fix source fails >=8 pins.
+
+Package: 3.0.50, zip sha 5e107b2c454e7320bb7344a0388ffe0871fa69342f3bfe0bd4a93f0b471732f3,
+core digest f517bd33...c6c15, 15-file pin sweep, .bin mirror, 3.0.49 retired from tree.
+Rides with stp-1.0.0 (Stop pull button). Live James re-read is the acceptance test.
