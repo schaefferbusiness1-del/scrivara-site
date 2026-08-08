@@ -161,8 +161,21 @@ assert(source.includes('function kioskConsentYes') && source.includes('function 
      consent handler. openKiosk may not carry them: if it does, the patient is
      being listened to while staff are still reading the question. */
   const open = source.slice(source.indexOf('function openKiosk'), source.indexOf('function kioskConsentYes'));
-  assert(!/kioskMicPreflight/.test(open),
-    'openKiosk opens the microphone again — it must wait for the consent answer');
+  /* This window is TEXT, not a call graph: it contains openKiosk's statements AND
+     the bodies of every listener openKiosk registers. A bare `!/kioskMicPreflight/`
+     therefore also refuses the room button's re-probe — a listener that cannot run
+     until the doctor taps a button living inside #mlsAvKioskRest, which is
+     display:none by default and display:none!important under .preconsent. That
+     spelling failed on the honest fix, so it is pinned precisely instead: EXACTLY
+     ONE mention, and it must be the re-probe. A bare call added to the open path
+     makes it two; deleting the re-probe makes the second clause fail. */
+  const preflights = open.match(/kioskMicPreflight/g) || [];
+  assert(preflights.length === 1,
+    'openKiosk mentions kioskMicPreflight ' + preflights.length + ' times — the open path must not touch the microphone before the consent answer');
+  assert(/#mlsAvKioskRoomGo'\)\.addEventListener\('click', function \(\) \{[\s\S]{0,900}?kiosk\.mic === false\) \{ kioskMicPreflight\(/.test(open),
+    'the one preflight in openKiosk is no longer the room-button re-probe — something else in the open path is opening the microphone');
+  assert(/\.preconsent #mlsAvKioskRest\b/.test(source),
+    'the rest screen left the .preconsent hide list — the room button becomes reachable before consent, which is what makes its re-probe safe');
   assert(!/requestFullscreen/.test(open),
     'openKiosk goes fullscreen again — that gesture belongs to the consent answer');
   assert(!/kioskTurn\(null, null\)/.test(open),
