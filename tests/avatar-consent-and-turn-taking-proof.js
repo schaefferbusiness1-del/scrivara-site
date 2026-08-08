@@ -230,6 +230,91 @@ async function newPage(browser) {
       await page.close();
     }
 
+    /* ------------------------------------------------------------- 1b */
+    section('1b - THE CARD IS A GATE, NOT PAINT (an adversarial review found it was paint)');
+    {
+      /* WHY THIS SCENARIO EXISTS. Scenario 1 above passed against a build where
+         the consent card was containment by Z-INDEX ALONE: no `inert`, no focus
+         trap, no pointer-events rule, and nothing focused inside it. Tab reached
+         #mlsAvKioskMute and #mlsAvKioskEnd behind the card, and Pause→Resume and
+         the PIN pad's "Back to the interview" each call kioskListen() — so the
+         microphone opened with consentAt === 0 and the patient's words were
+         POSTed. "Nothing ran while I sat still" is not the same claim as "nothing
+         CAN run", and only the second one is worth anything. */
+      const h = await newPage(browser);
+      const page = h.page;
+      await page.evaluate(function () {
+        window.__turnQueue = [{ ok: true, say: 'Hello, what brings you in today?', avatar: { name: 'Ava', exitPinSet: true }, progress: { covered: 1, total: 3 } }];
+        window.__mlsAvatar.openKiosk();
+      });
+      await page.clock.runFor(500);
+      const trap = await page.evaluate(function () {
+        const root = document.getElementById('mlsAvKiosk');
+        const sel = 'button,input,select,textarea,a[href],[tabindex]:not([tabindex="-1"])';
+        const all = Array.prototype.slice.call(root.querySelectorAll(sel));
+        /* what a TAB KEY can actually reach: display:none and visibility:hidden
+           subtrees are not focusable, so measure the computed state rather than
+           the markup */
+        const reachable = all.filter(function (el) {
+          if (el.disabled) return false;
+          let n = el;
+          while (n && n !== document.documentElement) {
+            const cs = getComputedStyle(n);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            n = n.parentElement;
+          }
+          return true;
+        }).map(function (el) { return el.id || (el.tagName + '.' + el.className); });
+        return { reachable: reachable, active: (document.activeElement && document.activeElement.id) || '(none)' };
+      });
+      check('EXACTLY TWO controls are reachable by keyboard before consent',
+        trap.reachable.length === 2, JSON.stringify(trap.reachable));
+      check('and they are the two answers', trap.reachable.indexOf('mlsAvKioskConsentYes') >= 0 && trap.reachable.indexOf('mlsAvKioskConsentNo') >= 0,
+        JSON.stringify(trap.reachable));
+      check('the keyboard starts INSIDE the card', trap.active === 'mlsAvKioskConsentYes', trap.active);
+
+      /* now defeat the visual layer entirely and press the buttons anyway - a
+         .click() reaches a display:none element, which is exactly the test of
+         whether the CODE gate exists behind the CSS one */
+      const forced = await page.evaluate(function () {
+        const hit = [];
+        ['mlsAvKioskMute', 'mlsAvKioskMute', 'mlsAvKioskEnd', 'mlsAvKioskEndVisit', 'mlsAvKioskRoomGo', 'mlsAvKioskPinBack'].forEach(function (id) {
+          const el = document.getElementById(id);
+          if (el) { el.click(); hit.push(id); }
+        });
+        return hit;
+      });
+      await page.clock.runFor(12000);        /* long enough for any watchdog to fire */
+      const still = await page.evaluate(function () {
+        return { mic: window.__log.mic, recs: window.__log.recStarts, turns: window.__turnPosts().length,
+          fetches: window.__log.fetches.length, up: !!document.getElementById('mlsAvKiosk'),
+          consented: !!(window.__mlsAvatar.kioskState ? 0 : 0) };
+      });
+      check('every control behind the card was pressed programmatically', forced.length >= 3, JSON.stringify(forced));
+      check('STILL no microphone', still.mic === 0, 'getUserMedia = ' + still.mic);
+      check('STILL no recogniser', still.recs === 0, 'starts = ' + still.recs);
+      check('STILL no turn — so no phantom check-in can be created in the doctor\'s inbox',
+        still.turns === 0, 'posts = ' + still.turns);
+      check('and the consent screen is still up', still.up);
+
+      /* THE CONTROL: the gate is not simply "nothing works". After Yes, the same
+         Pause button does what it always did. */
+      await page.evaluate(function () { var y = document.getElementById('mlsAvKioskConsentYes'); if (y) y.click(); });
+      await page.clock.runFor(1200);
+      const afterYes = await page.evaluate(function () {
+        const root = document.getElementById('mlsAvKiosk');
+        return { pre: root ? root.classList.contains('preconsent') : null,
+          mic: window.__log.mic, turns: window.__turnPosts().length,
+          muteVisible: window.__vis('mlsAvKioskMute').visible };
+      });
+      check('CONTROL: consent lifts the containment class', afterYes.pre === false, String(afterYes.pre));
+      check('CONTROL: and the interview really does start', afterYes.mic === 1 && afterYes.turns === 1,
+        'mic ' + afterYes.mic + ', turns ' + afterYes.turns);
+      check('CONTROL: Pause becomes reachable again', afterYes.muteVisible, JSON.stringify(afterYes.muteVisible));
+      check('scenario 1b threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      await page.close();
+    }
+
     /* ------------------------------------------------------------- 2 */
     section('2 - YES starts everything, and the avatar never hears ITSELF');
     {
@@ -345,6 +430,94 @@ async function newPage(browser) {
         (String(filed || '').match(/Recording consent[^\]]*/) || ['(absent)'])[0]);
       check('and the check-in answers are in it too', /My knee hurts/.test(filed || ''));
       check('scenario 3 threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      await page.close();
+    }
+    /* ------------------------------------------------------------- 4 */
+    section('4 - A DENIED MICROPHONE NEVER SAYS "Recording this visit"');
+    {
+      /* The one lie this feature must not tell. Chrome's recogniser makes it easy
+         to tell: rec.start() SUCCEEDS on a denied microphone and only reports it
+         later through onerror, where the ordinary retry loop treated it as a
+         hiccup and tried again forever - red banner up, clock ticking, zero words
+         captured. */
+      const h = await newPage(browser);
+      const page = h.page;
+      await page.evaluate(function () {
+        /* the microphone is refused, as it is on a machine where the doctor said
+           "block" once, months ago */
+        try {
+          Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+            getUserMedia: function () { window.__log.mic++; return Promise.reject(new Error('NotAllowedError')); }
+          } });
+        } catch (e) {}
+        window.__turnQueue = [
+          { ok: true, say: 'What brings you in today?', avatar: { name: 'Ava', exitPinSet: true }, progress: { covered: 1, total: 2 } },
+          { ok: true, done: true, say: 'Thank you, that is everything.' }
+        ];
+        window.__mlsAvatar.openKiosk();
+        var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
+      });
+      await page.clock.runFor(1500);
+      const typed = await page.evaluate(function () {
+        return { row: window.__vis('mlsAvKioskTypeRow'), interim: window.__vis('mlsAvKioskInterim').text };
+      });
+      check('the typed row appears when the mic is refused', typed.row.visible, typed.row.display);
+      check('and it says the microphone is off', /microphone is (off|not available)/i.test(typed.interim), typed.interim);
+
+      /* finish by typing, then try the hand-off */
+      await page.evaluate(function () {
+        const i = document.getElementById('mlsAvKioskInput'); if (i) i.value = 'My knee hurts';
+        const s = document.getElementById('mlsAvKioskSend'); if (s) s.click();
+      });
+      await page.clock.runFor(3000);
+      await tap(page, 'mlsAvKioskRoomGo');
+      await page.clock.runFor(2000);
+      const lie = await page.evaluate(function () {
+        return { recording: window.__mlsAvatar.ambientState().running,
+          banner: window.__vis('mlsAvKioskRec'), say: window.__say(),
+          staff: window.__vis('mlsAvKioskInterim').text };
+      });
+      check('the room capture REFUSES rather than pretending', lie.recording !== true, JSON.stringify(lie.recording));
+      check('THE RED "Recording this visit" BANNER IS NOT SHOWN', !lie.banner.visible, lie.banner.display);
+      check('and the screen says why, in words', /microphone is not available/i.test(lie.say || '') || /nothing is being recorded/i.test(lie.staff),
+        JSON.stringify(lie.say) + ' | ' + lie.staff);
+      check('scenario 4 threw nothing', h.errors.length === 0, h.errors.join(' | '));
+      await page.close();
+    }
+
+    /* ------------------------------------------------------------- 5 */
+    section('5 - PAUSE IS A STOP: no orphaned timer speaks after it');
+    {
+      const h = await newPage(browser);
+      const page = h.page;
+      await page.evaluate(function () {
+        window.__turnQueue = [
+          { ok: true, say: 'What brings you in today?', avatar: { name: 'Ava', exitPinSet: true }, progress: { covered: 1, total: 3 } },
+          { ok: true, say: 'And how long has that been going on?', progress: { covered: 2, total: 3 } }
+        ];
+        window.__mlsAvatar.openKiosk();
+        var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click();
+      });
+      await page.clock.runFor(1500);
+      const before = await page.evaluate(function () { return window.__turnPosts().length; });
+      /* the patient speaks, and staff hit Pause INSIDE the 1.3s quiet window -
+         the exact race: the timer is armed, the recogniser is then torn down */
+      await page.evaluate(function () { window.__emit('It is my left knee', true); });
+      await page.clock.runFor(400);
+      await page.evaluate(function () { var m = document.getElementById('mlsAvKioskMute'); if (m) m.click(); });
+      await page.clock.runFor(6000);         /* far past the quiet timer */
+      const paused = await page.evaluate(function () {
+        return { turns: window.__turnPosts().length, before: 0,
+          chip: window.__vis('mlsAvKioskState').text, say: window.__say(),
+          speaks: window.__log.speaks.length, micLive: window.__micLive() };
+      });
+      check('PAUSE STOPS THE TURN: no answer is posted after it', paused.turns === before,
+        'posts ' + before + ' -> ' + paused.turns);
+      check('the chip says Paused', /paused/i.test(paused.chip), paused.chip);
+      check('and the avatar does not speak the next question over a paused screen',
+        /paused/i.test(paused.say || ''), JSON.stringify(paused.say));
+      check('the microphone is closed while paused', paused.micLive === false, String(paused.micLive));
+      check('scenario 5 threw nothing', h.errors.length === 0, h.errors.join(' | '));
       await page.close();
     }
   } finally {

@@ -9115,7 +9115,7 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4703,
+   "line": 4862,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9129,7 @@
    "domId": "mlsAvKioskMute",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4719,
+   "line": 4878,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9143,7 @@
    "domId": "mlsAvKioskEndVisit",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4728,
+   "line": 4887,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9157,7 @@
    "domId": "mlsAvKioskRoomGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4738,
+   "line": 4897,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9171,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4744,
+   "line": 4903,
    "gated": false,
    "handler": null
   },
@@ -9185,7 +9185,7 @@
    "domId": "mlsAvKioskPinGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4751,
+   "line": 4910,
    "gated": false,
    "handler": null
   },
@@ -9199,7 +9199,7 @@
    "domId": "mlsAvKioskPinAmb",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4752,
+   "line": 4911,
    "gated": false,
    "handler": null
   },
@@ -9213,7 +9213,7 @@
    "domId": "mlsAvKioskPinBack",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4753,
+   "line": 4912,
    "gated": false,
    "handler": null
   },
@@ -9227,7 +9227,7 @@
    "domId": "mlsAvKioskConsentYes",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4766,
+   "line": 4925,
    "gated": false,
    "handler": null
   },
@@ -9241,7 +9241,7 @@
    "domId": "mlsAvKioskConsentNo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 4767,
+   "line": 4926,
    "gated": false,
    "handler": null
   },

@@ -423,12 +423,29 @@
   }
   function pvStopVoice() {
     pvSpeakSeq++;
+    /* THE TEMPLATE EXPIRES HERE TOO. This function used to leave pvSaying set
+       forever - deliberately, so ambient could clear it by hand - which meant
+       kioskTurn's network-failure path reopened the microphone against a
+       PERMANENT echo template: every later answer built from that question's
+       words was silently deleted, for the rest of the interview. It goes to the
+       bounded tail like every other stop. */
+    pvEchoHold(pvSaying);
+    pvSaying = '';
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
     pvHeld.length = 0;
     if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
     faceTalkStop();
     safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
-    if (pvRec) { safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); }); pvRec = null; }
+    if (pvRec) {
+      /* KILL THE QUIET TIMER, not just the recogniser. It lives in pvListen's
+         closure, so nulling the handlers and calling stop() left it armed: 1.3s
+         later it fired, submit() saw pvRec was already null so it skipped the
+         teardown, and handed the buffered text to onFinal anyway - posting a
+         turn and speaking the next question while the screen read "Paused". */
+      safe(function () { if (isFn(pvRec.__killQuiet)) pvRec.__killQuiet(); });
+      safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); });
+      pvRec = null;
+    }
   }
   /* pvSpeak: the NATURAL backend voice first (MP3 + real lip-sync), the
      browser's speechSynthesis only as fallback. The completion contract is
@@ -489,17 +506,32 @@
        AFTER IT STOPS, the same words are far more likely to be the ANSWER: the
      reply to "is it worse at night?" is "worse at night". Only a LONG
      contiguous quote counts, and the window itself is short. */
+  /* the answers a patient gives in ONE word, which are also the answers it costs
+     the most to lose: a laterality, a refusal, a number on a pain scale. These
+     are never treated as echo, whatever the avatar happens to be saying. */
+  var PV_ANSWER_WORDS = /^(yes|yeah|yep|yup|no|nope|none|never|left|right|both|neither|better|worse|same|zero|one|two|three|four|five|six|seven|eight|nine|ten)$/;
   function pvIsSelfEcho(heard) {
     var h = pvNorm(heard);
     if (!h) return false;
     var words = h.split(' ').filter(Boolean);
-    /* one word is too short to be the echo of a sentence and too valuable to
-       throw away on a guess */
-    if (words.length < 2) return false;
+    if (words.length < 2) {
+      /* A ONE-WORD RESULT USED TO BE EXEMPT BEFORE pvSaying WAS EVEN CONSULTED,
+         which meant the last word of the avatar's own question - "today", "ten",
+         "worse" - was filed as the patient's answer. It is only exempt now if it
+         is one of the answers above, or if we are not speaking at all. */
+      return !!pvSaying && !PV_ANSWER_WORDS.test(h) && pvHasRun(pvSaying, h);
+    }
     if (pvSaying && pvEchoMatch(pvSaying, h, words, 2, 2)) return true;
     var now = Date.now();
     for (var i = 0; i < pvEchoTail.length; i++) {
-      if (pvEchoTail[i].until > now && pvEchoMatch(pvEchoTail[i].norm, h, words, 4, 5)) return true;
+      /* THE TAIL IS CONTIGUITY ONLY. The overlap branch (>80% of the heard words
+         appearing anywhere in the sentence) could delete a real answer for 1.6
+         seconds after the question ended - including a red-flag answer, which is
+         the worst thing in this file to lose - because a short reply reuses the
+         question's words by nature. The comment always claimed only a long
+         contiguous quote counted here; now that is what the code does. The
+         minOverlapWords argument is deliberately unreachable. */
+      if (pvEchoTail[i].until > now && pvEchoMatch(pvEchoTail[i].norm, h, words, 4, 9999)) return true;
     }
     return false;
   }
@@ -623,8 +655,13 @@
     var rec; try { rec = new C(); } catch (e) { return false; }
     pvRec = rec;
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
-    var finalText = '', quiet = null;
+    var finalText = '', quiet = null, dead = false;
+    /* published on the recogniser so a teardown can reach into this closure and
+       disarm the quiet timer - see pvStopVoice */
+    function killQuiet() { if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; } dead = true; }
+    rec.__killQuiet = killQuiet;
     function submit() {
+      if (dead) return;
       var v = finalText.trim();
       /* NOTHING TO SUBMIT IS NOT A REASON TO GO DEAF. The echo filter now runs
          below, at the source, so a result that was entirely the avatar's own
@@ -2794,6 +2831,19 @@
       '#mlsAvKioskConsentYes{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:15px 28px;font:800 16px system-ui;cursor:pointer}' +
       '#mlsAvKioskConsentYes:hover{background:#26583E}' +
       '#mlsAvKioskConsentNo{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:15px 24px;font:700 16px system-ui;cursor:pointer}' +
+      /* CONTAINMENT, NOT PAINT. The consent card used to cover the screen by
+         z-index and nothing more: no `inert`, no focus trap, no pointer-events
+         rule. Tab still reached Pause and End interview behind it, and both of
+         those lead to kioskListen - so the microphone opened with no consent
+         recorded. An opaque card is not a gate against a keyboard.
+         display:none is the point: a hidden control is not focusable, so the tab
+         order genuinely contains two buttons while this class is on. The code
+         path is gated as well (kioskListen/kioskTurn/kioskCloseServerSide test
+         kiosk.consentAt), because one mechanism is a single point of failure. */
+      '#mlsAvKiosk.preconsent #mlsAvKioskEnd,#mlsAvKiosk.preconsent #mlsAvKioskMute,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskEndVisit,#mlsAvKiosk.preconsent #mlsAvKioskTypeRow,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskRest,#mlsAvKiosk.preconsent #mlsAvKioskPin,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskOrders,#mlsAvKiosk.preconsent #mlsAvKioskReview{display:none!important}' +
       /* av-5.7.0 - THE REST SCREEN AND ITS ONE BUTTON. A finished check-in
          stays up and tells the patient the doctor is coming; the doctor walks
          in and taps once to start the room recording. Starting a disclosed
@@ -2909,7 +2959,12 @@
     /* the headline behaviour: the microphone is open WHILE the question plays,
        so the chip must be able to say both rather than picking one and lying */
     duplex: 'Speaking · listening',
-    documenting: 'Ambiently documenting', saving: 'Saving', paused: 'Paused'
+    documenting: 'Ambiently documenting', saving: 'Saving', paused: 'Paused',
+    /* av-5.7.0: a FINISHED check-in is not "Speaking". kioskFinish set the mood
+       to speaking so the closing line would play, and the chip then read Speaking
+       - with the wave animating - for the whole rest period, sometimes for
+       minutes, while the screen was silent and waiting. */
+    resting: 'Waiting for the doctor'
   };
   function kioskState(name) {
     var el = gid('mlsAvKioskState');
@@ -2999,6 +3054,14 @@
   }
   function kioskTurn(answer, nonce, finish) {
     if (!kiosk.open || kiosk.busy) return;
+    /* AND NO TURN EITHER, including a `finish`. This is the second half of the
+       same defect: from the consent screen, Tab+Enter on "End interview" reached
+       kioskCloseServerSide, which POSTs finish:true — and the backend INSERTS the
+       row for that session id, runs the summary model over a transcript with no
+       patient turns, and flips it to 'ready'. A phantom completed check-in, with
+       an AI-written headline, in the doctor's inbox and on his phone, for a
+       patient who never consented and never spoke. */
+    if (!kiosk.consentAt) return;
     /* A FINISHED interview accepts nothing more. The typed row stays on screen
        in mic-off mode, so without this a patient could Send into a completed
        session: the server answers "this check-in is already complete", which
@@ -3153,19 +3216,49 @@
       kioskClose('ended');
     }
   }
+  /* NO CONSENT, NO MICROPHONE — enforced INSIDE this function, at the one place
+     the interview opens one. An adversarial pass on av-5.7.0 found the consent
+     card was containment by Z-INDEX ALONE: nothing behind it was inert, so Tab
+     reached #mlsAvKioskMute and #mlsAvKioskEnd, and Pause→Resume and the PIN
+     pad's "Back to the interview" both call this function. The microphone opened
+     with consentAt === 0 and the patient's words were POSTed. The card is now
+     genuinely contained (see .preconsent in kioskStyle) AND consent is a term in
+     the code, because either mechanism alone is a single point of failure.
+     The guard lives on the first line of the body and this note lives out here on
+     purpose: the contract suite reads the first 400 characters of this function
+     looking for the paused guard, and a comment that long inside the body pushed
+     it out of that window. A pin that stops seeing its subject is a pin that has
+     stopped working. */
   function kioskListen(keepMood) {
+    if (!kiosk.consentAt) return;     /* see the note above this function */
     if (kiosk.ambient) return;
     if (kiosk.paused) return;         /* see kioskPauseToggle */   /* the ambient loop owns the microphone and never takes turns */
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
+      kioskArmWatchdog(20000);   /* typed mode self-ends too — armed on the FIRST
+         line of this branch so it sits beside its subject: the contract suite
+         reads a 320-character window from `kiosk.mic === false` looking for it,
+         and a comment added below once pushed it out of view. */
       var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
       var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
-      kioskArmWatchdog(20000);   /* typed mode self-ends too */
+      /* SAID HERE, not only at the preflight. kioskTurn blanks the interim line
+         at the start of every turn, so the preflight's "Microphone is off" notice
+         survived exactly until the first question - after which a patient faced a
+         typing box with no explanation. This runs on every turn, so it holds. */
+      var ivOff = gid('mlsAvKioskInterim');
+      if (ivOff && !ivOff.textContent) ivOff.textContent = 'The microphone is off on this screen — type your answer below.';
       return;
     }
     if (!keepMood) kioskMood('listening', kiosk.lastSay);
     kiosk.heard = false;
+    /* THE SILENCE CLOCK IS NOT ARMED HERE ON THE DUPLEX PATH. keepMood means the
+       microphone is opening WITH a question that is about to play, and the arm at
+       the bottom of this function used to start the 9-second countdown against
+       the question's own duration: any question longer than that nudged "take
+       your time" over its own second half. pvSpeak's continuation arms it when
+       the question actually ends (see kioskTurn). Every other caller - the nudge,
+       the recogniser-died path, resume - passes no keepMood and still arms below. */
     /* the chip is set HERE too, because the mic opens WITH the question: at
        kioskMood time the recogniser is not open yet, so 'speaking' alone
        would under-report what the kiosk is actually doing. */
@@ -3206,7 +3299,7 @@
       kioskArmWatchdog(20000);   /* a failed mic start must still self-end */
       return;
     }
-    kioskArmWatchdog(9000);
+    if (!keepMood) kioskArmWatchdog(9000);
   }
   /* Natural completion must not expose the app either — with a PIN set, the
      finished kiosk RESTS ("hand the screen back") until staff unlock it.
@@ -3243,6 +3336,16 @@
   function kioskRestShow() {
     var host = gid('mlsAvKioskRest'); if (!host) return;
     host.style.display = 'flex';
+    /* AND THE SCREEN STOPS CLAIMING TO SPEAK. kioskFinish sets the mood to
+       'speaking' so the closing line plays; without this the chip read "Speaking"
+       and the waveform animated for the whole rest period, which on a busy day is
+       minutes of a silent screen insisting it is talking. The class goes too, or
+       the wave keeps running underneath a corrected chip. */
+    safe(function () {
+      var root = gid('mlsAvKiosk');
+      if (root) root.classList.remove('speaking', 'listening', 'thinking');
+    });
+    kioskState('resting');
   }
   /* End interview is a STAFF action: with an exit PIN configured, a patient
      holding the screen cannot end the kiosk into the doctor's app. The PIN is
@@ -4206,7 +4309,18 @@
       }
       kioskAmbientPaint(interim);
     };
-    rec.onerror = function () { if (kiosk.ambRec === rec) { kiosk.ambRec = null; kioskAmbientRetry(); } };
+    rec.onerror = function (ev) {
+      if (kiosk.ambRec !== rec) return;
+      kiosk.ambRec = null;
+      /* PERMISSION IS NOT A HICCUP. `not-allowed` and `service-not-allowed` mean
+         the microphone will not open on the next try either, and the bounded
+         backoff then keeps the recording disclosure on screen forever over a
+         capture that never records a word. Ordinary `no-speech` / `network`
+         blips still retry - that is what the loop is for. */
+      var code = String((ev && ev.error) || '');
+      if (code === 'not-allowed' || code === 'service-not-allowed') { kioskAmbientNoMic(); return; }
+      kioskAmbientRetry();
+    };
     rec.onend = function () { if (kiosk.ambRec === rec) { kiosk.ambRec = null; kioskAmbientRetry(); } };
     var ok = safe(function () { rec.start(); return true; }, false);
     if (!ok) { if (kiosk.ambRec === rec) kiosk.ambRec = null; kioskAmbientRetry(); return false; }
@@ -4231,6 +4345,19 @@
   function kioskAmbientBlock(body) {
     var mins = Math.max(1, Math.round((Date.now() - (kiosk.ambStart || Date.now())) / 60000));
     var lines = [];
+    /* THE CHECK-IN GOES IN ONCE. "Keep listening" on the review screen starts a
+       SECOND capture on the same session, and this block always led with the
+       whole intake - so the patient's answers, and the consent attestation with
+       them, were appended to the transcript a second time. A doctor reading that
+       chart cannot tell a repeated question from a duplicated paste. */
+    if (kiosk.intakeFiled) {
+      lines.push('--- visit, continued ---');
+      lines.push('[Room capture resumed. The check-in and the earlier part of this visit are already above.]');
+      lines.push(body);
+      var ordersMore = ordersBlock();
+      if (ordersMore) { lines.push(''); lines.push(ordersMore); }
+      return lines.join('\n');
+    }
     lines.push(AMBIENT_HEAD_CHECKIN);
     lines.push('[Avatar check-in - the patient\'s own words, chart ' + clean(kiosk.ambBound) + ']');
     /* THE CONSENT IS PART OF THE RECORD. A recording whose consent lives only
@@ -4279,6 +4406,9 @@
     box.value = prior + (prior ? '\n\n' : '') + block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
     kiosk.ambFiled = true;
+    /* the check-in has now reached the transcript, so a resumed capture must not
+       lead with it again - see kioskAmbientBlock */
+    kiosk.intakeFiled = true;
     /* THE BACKUP DIES ONLY ON A PROVEN WRITE. Every refusal above returns
        before this line, so a capture that could not be filed (wrong chart
        open, no transcript box on screen) keeps its crash copy and can still
@@ -4358,6 +4488,19 @@
       kioskSetSay('I cannot record this visit — recording consent was not confirmed.');
       var ivC = gid('mlsAvKioskInterim');
       if (ivC) ivC.textContent = 'Staff: start the check-in again and confirm consent. Nothing is being recorded.';
+      return false;
+    }
+    /* AND NOT WITHOUT A MICROPHONE. The preflight already knows the answer, and
+       starting anyway paints the red "Recording this visit" banner and its
+       ticking clock over a session that captures nothing - the one lie this
+       feature must never tell. Chrome's recogniser makes this easy to get wrong:
+       rec.start() SUCCEEDS on a denied microphone and only reports it later
+       through onerror, where the retry loop treated it as an ordinary hiccup and
+       tried again forever behind the banner. */
+    if (kiosk.mic === false) {
+      kioskSetSay('I cannot record this visit — the microphone is not available on this screen.');
+      var ivM = gid('mlsAvKioskInterim');
+      if (ivM) ivM.textContent = 'Staff: nothing is being recorded. Allow the microphone for this site, then start the check-in again.';
       return false;
     }
     var bound = clean(kiosk.ext);
@@ -4639,6 +4782,13 @@
     var root = gid('mlsAvKiosk');
     if (root) root.classList.remove('ambient');
     if (!root) return kiosk.ambResult;      /* the overlay is already gone */
+    /* GIVE THE HAND-OFF BUTTON BACK. kioskAmbientStart hides it with an INLINE
+       display:none, which the .ambient class rule cannot undo - so after any stop
+       that is not End-visit-review (the 90-minute cap, a chart change, a dead
+       microphone, a staff exit that leaves the screen up) the rest screen came
+       back with no way to resume listening, and the only remaining control was
+       the door out of the kiosk. */
+    if (kiosk.completed) kioskRestShow();
     kioskMood('speaking', 'thank you');
     var head = res.ok ? 'Recording stopped. The visit is in the doctor\'s transcript.'
                       : 'Recording stopped. Nothing was written.';
@@ -4660,6 +4810,9 @@
      kioskEndForStaff for why an 'active' row that is never closed strands the
      patient's answers in every surface. */
   function kioskCloseServerSide() {
+    /* A session that never had consent has no row to close - and asking the
+       server to close it CREATES one. See the comment in kioskTurn. */
+    if (!kiosk.consentAt) return;
     if (kiosk.open && !kiosk.completed && kiosk.sid && kiosk.ext) {
       safe(function () {
         api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
@@ -4680,6 +4833,9 @@
     /* consent is per PATIENT, so it resets with the screen. A carried-over
        flag would let the next patient be recorded on the last one's answer. */
     kiosk.consentAt = 0;
+    /* and this patient's check-in has never been filed, whatever the last one
+       did - see kioskAmbientBlock */
+    kiosk.intakeFiled = false;
     /* undefined means "not resolved yet"; null means "resolved to nothing".
        Both must reset, or the previous patient's chart block would ride into
        the next interview. */
@@ -4699,6 +4855,9 @@
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
+    /* mounted PRE-CONSENT: every other control is display:none until the consent
+       question is answered, so the tab order contains exactly Yes and No */
+    root.className = 'preconsent';
     root.innerHTML =
       '<button type="button" id="mlsAvKioskEnd">End interview</button>' +
       '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace"></div></div>' +
@@ -4799,6 +4958,10 @@
     });
     root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskConsentYes);
     root.querySelector('#mlsAvKioskConsentNo').addEventListener('click', kioskConsentNo);
+    /* put the keyboard INSIDE the card. Without this the focus stays wherever it
+       was in the doctor's app, and Tab walks his own page - which is how the
+       controls behind an "impassable" overlay turned out to be reachable. */
+    safe(function () { root.querySelector('#mlsAvKioskConsentYes').focus(); });
     /* the LIVING face */
     kiosk.face = makeFace(gid('mlsAvKioskFace'), kiosk.look || null);
     kioskState('ready');
@@ -4819,6 +4982,8 @@
     if (!kiosk.open || kiosk.consentAt) return;
     kiosk.consentAt = Date.now();
     var pad = gid('mlsAvKioskConsent'); if (pad) pad.style.display = 'none';
+    /* the rest of the kiosk becomes reachable only now */
+    var rootNow = gid('mlsAvKiosk'); if (rootNow) rootNow.classList.remove('preconsent');
     safe(function () {
       var el = document.documentElement;
       if (el.requestFullscreen) { var p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function () {}); }

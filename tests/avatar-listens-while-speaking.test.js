@@ -200,6 +200,38 @@ assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
 assert.strictEqual(sandbox.pvIsSelfEcho('yes it is definitely worse at night when i lie down'), false,
   'and the long form of that answer survives too');
 
+/* ---- 5d. THE ONE-WORD HOLE. Exempting every single-word result BEFORE pvSaying
+   was consulted meant the avatar's own trailing word — "today", "ten", "pain" —
+   was filed as the patient's answer. The exemption now applies only to the
+   answers that are actually given in one word, and only they survive being
+   spoken by the avatar. ---- */
+sandbox.dropTail();
+sandbox.setSaying(sandbox.pvNorm('Is the pain better or worse, or about the same?'));
+assert.strictEqual(sandbox.pvIsSelfEcho('pain'), true,
+  'D: a bare word the avatar is saying right now is the avatar, not an answer');
+assert.strictEqual(sandbox.pvIsSelfEcho('worse'), false,
+  'D: "worse" is an ANSWER to that question and must survive even though the avatar said it');
+assert.strictEqual(sandbox.pvIsSelfEcho('same'), false, 'D: so is "same"');
+sandbox.setSaying(sandbox.pvNorm('Which knee is bothering you, the left or the right?'));
+assert.strictEqual(sandbox.pvIsSelfEcho('left'), false,
+  'D: A LATERALITY MUST NEVER BE DELETED — it is the answer that causes a wrong-site error');
+assert.strictEqual(sandbox.pvIsSelfEcho('right'), false, 'D: either side of it');
+assert.strictEqual(sandbox.pvIsSelfEcho('knee'), true, 'D: but the question\'s own noun is still the avatar');
+
+/* ---- 5e. THE TAIL IS CONTIGUITY ONLY, AND LONG. The overlap branch could
+   delete a real answer for 1.6s after the question ended, because a short reply
+   reuses the question's words by nature — and the answer it deletes may be the
+   red flag. ---- */
+const NIGHT2 = 'Is the pain worse at night, or in the morning?';
+sandbox.dropTail();
+sandbox.setSaying('');
+sandbox.hold(sandbox.pvNorm(NIGHT2));
+assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
+  'E: a three-word quote AFTER the question is the answer, not an echo');
+assert.strictEqual(sandbox.pvIsSelfEcho('in the morning'), false, 'E: and so is the other branch of it');
+assert.strictEqual(sandbox.pvIsSelfEcho('is the pain worse at night'), true,
+  'E: a long contiguous quote is still caught in the tail');
+
 // nothing being spoken and no tail -> nothing is echo
 sandbox.dropTail();
 sandbox.setSaying('');
@@ -207,6 +239,8 @@ assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), false,
   'with silence and an expired tail there is no self-echo — otherwise real answers would be dropped forever');
 
 console.log('PASS avatar listens while speaking: echo cancellation requested, the filter runs at the SOURCE, ' +
-  'the echo template outlives the speech but EXPIRES (13 executed cases incl. the late-tail defect and the eaten "no"), ' +
+  'the echo template outlives the speech but EXPIRES, the tail is contiguity-only so a short reply survives it, ' +
+  'a one-word laterality or refusal is never deleted while the avatar\'s own trailing noun is ' +
+  '(27 executed cases, incl. the late-tail defect, the eaten "no", and the one-word hole) — ' +
   'an all-echo result never costs the microphone, the mic opens with the question, the silence clock starts when it ends, ' +
   'and barge-in stays guarded at two words');
