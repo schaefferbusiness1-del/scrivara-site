@@ -65,10 +65,63 @@ assert.strictEqual(
   matchRow([{ id: 1, name: 'Smith, John', dob: '', athenaId: '7001' }], 'John Smith', '', '7001').id,
   1, 'stable-id + full-name-equality merge broke');
 
-/* athenaId + DOB equality + one-token overlap - merges */
+/* athenaId + DOB equality + BOTH name tokens shared - merges (name variant) */
 assert.strictEqual(
   matchRow([{ id: 1, name: 'John A Adams-Smith', dob: '03/04/1980', athenaId: '7001' }], 'John Smith', '03/04/1980', '7001').id,
   1, 'stable-id + DOB-equality merge broke');
+
+/* px-1.5 TWINS: same DOB, same surname, same (mis-stamped) athenaId - REFUSE.
+   One shared token was the stamper's own predicate, so every possible
+   mis-stamp was guaranteed to "corroborate". */
+assert.strictEqual(
+  matchRow([{ id: 1, name: 'John Smith', dob: '03/04/1980', athenaId: '7001' }], 'James Smith', '03/04/1980', '7001'),
+  null, 'twins (same DOB + surname) merged on a stable-id hit');
+
+/* px-1.5 stampIfExpected leg A now requires BOTH name tokens too */
+{
+  const stampSrc = between(packSource, '  var EXPECT = null;', '  /* public: stamp a row');
+  const mk = new Function('window', 'Date', `
+    var DISABLED = false; var JR = []; var api = { state: { stamped: 0 } };
+    ${utilsSrc}
+    ${stampSrc}
+    return { stamp: stampIfExpected, set: function (e) { EXPECT = e; } };
+  `)({ addEventListener() {} }, Date);
+  const expectFor = (name, ndob) => ({ mrn: '8811', name, tokset: name.toLowerCase().split(' ').sort().join(' '), tokn: 2, ndob, at: Date.now(), used: false });
+  const twin = { id: 't1', name: 'Mary Smith', dob: '05/12/1962' };
+  mk.set(expectFor('Robert Smith', '05/12/1962'));
+  assert.strictEqual(mk.stamp(twin), false, 'the stamper still stamps a twin (1 shared token + shared DOB)');
+  assert(!twin.athenaId, 'the twin was stamped with the other chart MRN');
+  const variant = { id: 't2', name: 'John A Smith', dob: '05/12/1962' };
+  mk.set(expectFor('John Smith', '05/12/1962'));
+  assert.strictEqual(mk.stamp(variant), true, 'a legitimate name-variant stamp broke');
+  assert.strictEqual(variant.athenaId, '8811');
+}
+
+/* px-1.5 the migration scan() applies the SAME corroboration */
+{
+  const scanSrc = between(packSource, '  function scan(arr) {', '  function calRefCounts()');
+  const scanFn = new Function('window', 'FLAGS', `
+    ${utilsSrc}
+    ${scanSrc}
+    return scan;
+  `)({ __mlsVisitModel: null }, { athenaIdMerges: true });
+  const dobless = scanFn([
+    { id: 'a', name: 'John Adams', dob: '', athenaId: '7001' },
+    { id: 'b', name: 'John Smith', dob: '', athenaId: '7001' }
+  ]);
+  assert.strictEqual(dobless.groups.length, 0, 'scan() still unions DOB-less same-id different-name rows');
+  assert(dobless.vetoed.some(v => v.reason === 'athenaId-equal-but-name-dob-uncorroborated'), 'scan() veto reason missing');
+  const twins = scanFn([
+    { id: 'a', name: 'John Smith', dob: '03/04/1980', athenaId: '7001' },
+    { id: 'b', name: 'James Smith', dob: '03/04/1980', athenaId: '7001' }
+  ]);
+  assert.strictEqual(twins.groups.length, 0, 'scan() still unions twins');
+  const samePerson = scanFn([
+    { id: 'a', name: 'Smith, John', dob: '03/04/1980', athenaId: '7001' },
+    { id: 'b', name: 'John Smith', dob: '', athenaId: '7001' }
+  ]);
+  assert.strictEqual(samePerson.groups.length, 1, 'scan() no longer unions a full-name-equal pair');
+}
 
 /* ---- autopull resolvePatient: exact-identifier-first, never name-only ---- */
 const baseUtilsSrc = between(autopullSource, '  function S(x)', '  /* ---------- robust NAME normalization');
@@ -104,6 +157,25 @@ function makeResolver(store) {
   assert.strictEqual(r.created, false, 'unique MRN did not bind');
   assert.strictEqual(r.patient.id, 'x2');
   assert.strictEqual(r.via, 'athena-id');
+}
+
+/* px-1.5: an MRN hit with NEITHER a name match NOR a DOB corroboration is a
+   suspected mis-stamp - create, never bind the differently-named chart */
+{
+  const store = [{ id: 'x9', name: 'Margaret Holloway', dob: '', mrn: '4411' }];
+  const { resolve } = makeResolver(store);
+  const r = resolve({ name: 'John Smith', dob: '', mrn: '4411' });
+  assert.strictEqual(r.created, true, 'an uncorroborated MRN hit bound a differently-named chart');
+}
+
+/* px-1.5: an MRN hit corroborated by DOB alone (name differs in form beyond
+   namesMatch) still binds */
+{
+  const store = [{ id: 'x10', name: 'M. H. Holloway-Grant', dob: '02/02/1970', mrn: '4412' }];
+  const { resolve } = makeResolver(store);
+  const r = resolve({ name: 'Margaret Grant', dob: '02/02/1970', mrn: '4412' });
+  assert.strictEqual(r.created, false, 'a DOB-corroborated MRN hit failed to bind');
+  assert.strictEqual(r.patient.id, 'x10');
 }
 
 /* MRN claimed by TWO records - refuse the bind, create */
@@ -145,4 +217,4 @@ function makeResolver(store) {
   assert.strictEqual(r.patient.athenaId, '5555', 'created record dropped the athenaId');
 }
 
-console.log('patient-isolation-strong-key-binding: PASS (13 checks)');
+console.log('patient-isolation-strong-key-binding: PASS (24 checks)');

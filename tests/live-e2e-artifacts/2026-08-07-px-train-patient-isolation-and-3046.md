@@ -1,0 +1,190 @@
+# 2026-08-07 — px train: patient isolation, summary quality, same-day safety + ext 3.0.46
+
+Owner directive (verbatim /goal): fix, test, publish, verify the extension so patient
+history/allergies/visits/summaries work reliably and **never leak or repeat data between
+patients**. Treated as the patient-safety lane it is.
+
+Lane: ext-goal (wt-ext-3040, branch ext/3.0.40-audit-fixes). Sign-off request posted for
+`50441052a955dadd432a02a2b046a202e031e04c` — gate **PASS all 511** at that commit.
+
+## What was measured BEFORE any change (live store, 1,559 patients, owner's browser)
+
+| finding | number | class |
+|---|---|---|
+| identical allergy string "CEPHALEXIN, KEFLEX" across distinct patients | 25 records, ONE shared DOB, identical problems+meds, all created 2026-06-25 | the KNOWN closed 6/24–6/29 window, still displayed un-marked |
+| `athenaHistorySummary` = ONLY the header line ("Longitudinal summary refreshed <d> —") | 26 of 34 records with a summary; dates through 8/5 | live defect |
+| summaries with an internally duplicated passage | 8 | live defect (the "lead" + Recent-visits double print) |
+| visit `aiSummary` keys holding an EMPTY STRING | 1,383 of 1,444 | unvalidated model replies stored as done |
+| visits with no body (raw/aiSummary/findings/plan all <10 chars) | 2,070 of 3,329 (117 patients all-stub) | mostly by-design index rows + the visit-notes-OFF gap |
+| mojibake / HTML / JSON / selector text in STORED summaries | 0 / 0 / 0 / 0 | the corruption the owner sees renders from raw bodies + [object Object] paths, not stored summaries |
+| patients holding `history` as an OBJECT (renders "[object Object]" through String()) | 61 | latent render + op-note prompt defect |
+
+## Root causes found (each verified in code by me, not only by subagents)
+
+1. **feat_mls_b121_pack.js `matchRow` leg 3** — an upsert that would CREATE a row was merged
+   into an existing record on NAME ALONE (no DOB needed on either side), and `mergeRows`
+   then **concatenated allergies/problems/meds/summary across the two records** (JOINY '; ').
+   Leg 1 accepted an athenaId hit with ONE shared name token. This is the live
+   "new patient receives another patient's history and allergies" weld.
+2. **feat_athena_autopull.js `resolvePatient`** — bound the athena chart to the FIRST
+   name-match, accepted the bind when EITHER side lacked a DOB, ignored the chart MRN
+   entirely, then stamped the chart DOB onto the record (papering the mismatch over).
+3. **Same-day encounters could cross-hydrate**: `addVisit`'s shell upgrade took the FIRST
+   empty shell on the service date (no encounter-id check), an incoming index shell could
+   "upgrade" another shell, and `_compactHydratedPlaceholders` deleted EVERY keyless
+   same-day shell once one body landed — a two-visit day rendered as one visit.
+4. **`_aggregateSummary`** printed visits[0] twice (lead + Recent visits), had NO sections
+   for problems/allergies/meds, and emitted a bare header for empty charts.
+5. **`summarizeVisit`** stored the raw model reply unvalidated (1,383 empty strings) and
+   summarized bodyless rows from the literal string "(no raw text captured)".
+6. **Stale-async in the Patients lane**: no patient-switch epoch existed; `analyzeDoc`
+   upserted its pre-await patient object (rollback class) and repainted unconditionally;
+   the copy-visits bar and Summarize-all wrote patient A's progress into patient B's panel.
+7. **`mlsVisitDateKeyForHint` (extension)** accepted only slash/strict-ISO dates while the
+   row parser emits dash/dot dates — a dashed date keyed to '' so the day-scoped read
+   (the visit-notes-OFF lane) skipped EVERY row and the day stored nothing, silently.
+8. **cohort-injection visits** bypassed the identity gate (source string outside
+   `_remoteVisit`); the legacy `_importPulledSchedule` fallback matched by bare name and
+   stamped DOBs; `_todayStr`/connect range filters used UTC date keys (wrong after ~8 PM ET).
+9. **Green athena panel "Pull history"** claimed "N visit(s) on file" while its persist
+   hook (`saveVisitsViaApp`) has never existed — session-only read reported as saved.
+
+## Fixes (px-1.0 … px-4.1, e1/e2) — see commit b087c13a + fd5d4b01 + 50441052
+
+Strong-key-only merging/binding; ambiguity-safe same-day handling; sectioned summary with
+honest empties + verified-absent lines; model-reply validation with failure receipts;
+patient-switch epoch + still-active guards; object-safe rendering; local date keys;
+identity-gated cohort rows; one-time store hygiene (header-only summary clearing, empty
+aiSummary key removal, VISIBLE 6/24–6/29 suspect markers + profile banner — fields never
+blanked); extension date-key widening + honest popup line.
+
+## Negative controls (mandatory: old code vs new tests)
+
+- patient-isolation-strong-key-binding vs origin/main: **FAILS at "name-only create-merge
+  was accepted (leg 3 resurrected)"** ✓
+- visit-summary-quality-contract vs origin/main: fails (validation absent) ✓
+- same-day-shell-upgrade-contract vs origin/main: **FAILS at "ambiguous same-day shells
+  were not preserved (a shell was hydrated by guess)"** ✓
+
+## Extension 3.0.46
+
+- zip `MLS_Assist_v3.0.46.zip` sha256 `dd9ece28d9df9ba7c829451a1cdac41282bc3ab2cd266a9fdc1517434440bb41` (419,941 bytes)
+- core digest `3.0.46+core-sha256:85ce765dc5c7af1417a8444b11ceb89e123a2c3d8935107ad4bb894fd554d44c`
+- Delta vs installed 3.0.45: ONLY px-e1 (date-key) + px-e2 (popup honesty) — the parked
+  wf3-port/diagnostics candidate content was already absorbed into the released 3.0.45
+  root via origin/main (verified by byte diff, not assumption).
+- **Installed via the proven autoreload protocol** (audit → push-build.ps1 into
+  `Downloads\MLS_Assist_v3.0.45`, the folder Chrome actually runs → mlsDevReload
+  `{ok:true,reloading:true}` → both tabs reloaded → **pong 3.0.46 with the exact stamped
+  buildId**). Installed build == tested build, by digest.
+
+## Live E2E (running log)
+
+- Athena signed in (dashboard fetch 200 / 92,314 bytes / no Re-Login). MLS signed in.
+- Pull today (Fri Aug 7, 7 patients on the list) started on the session's own tab pair;
+  receipts to follow below.
+- ⚠ Instrument note: a `[role=status]` sweep read the HIDDEN agreements-gate's baked text
+  ("Clinical workspace access could not be verified") and looked like a P0 — the gate was
+  display:none and #appScreen visible. textContent welds hidden nodes; verified before
+  believing, nothing was actually blocked.
+
+### Fri Aug 7 live day pull under installed 3.0.46 — COMPLETE AND CLEAN
+
+- `__mlsDayHistoryPull.state`: running:false, **done 7, ok 7, failed 0**, rows 7, no failure
+  reasons. `__mlsPullLastOutcome {ok:true, at:1786150762939}` (~20:59 ET).
+- Hidden-tab run, zero human clicks after the start click, self-converged (one chart took
+  several extra minutes mid-batch — the documented presence pace, not a failure).
+- **Store delta (the accepted proof), fresh 7-patient cohort:** 7 distinct names, 7 distinct
+  DOBs — **ratio 1.00, zero identity collapse**; 1,095 problem chars; 73 visits imported,
+  52 with real bodies; **zero header-only summaries in the fresh cohort; zero duplicated
+  summary hashes** (two equal LENGTH pairs were checked by content hash — coincidence);
+  the one repeated allergy value across all seven is literally **"NKDA"** — athena's own
+  benign literal (the b754-documented shape), correct data.
+- Instrument notes: (a) the hidden agreements-gate text false-alarm above; (b) the first
+  "no receipts 20s after click" read was the schedule phase not yet stamping the history
+  receipt — the disabled button was the honest running signal.
+
+### Proof runs 2 and 3 (same evening, same installed 3.0.46)
+
+- **Run 2 — Fri Aug 7 warm re-pull:** 7/7 ok, 0 failed, fresh `__mlsPullLastOutcome
+  {ok:true, at:1786151211947}`, finished in **under ~3 minutes** hidden-tab.
+  **Idempotency delta vs pre-pull snapshot: zero visit duplication, zero field loss**
+  (anyLoss:false on all five tracked fields × 7 patients); one chart legitimately
+  ENRICHED (+62 problem chars, +1,637 summary chars — the re-read completed what run 1
+  left thinner). Re-pull = enrich, never delete, never duplicate: held.
+- **Run 3 — Thu Aug 6 (the full 18-row clinic day), warm-ish:** day outcome
+  `{ok:true, at:1786152378497}` at ~19 min hidden-tab including convergence rounds.
+  First pass 16/18; the `visit-bodies-incomplete` row **self-healed in the auto-converge
+  sweeps** (gone from the failure set); ONE honest refusal settled: "athenaOne patient
+  search found no matching patient" — the documented hidden-tab presence class (heals
+  fronted; fronting is correctly REFUSED while Chrome lacks OS focus, owner AFK). Zero
+  wrong data.
+- **Cross-cohort isolation, all 26 records touched tonight: 26 distinct names, 26
+  distinct DOBs — ratio 1.00.** 316 visits on those records, 243 (77%) carrying real
+  bodies.
+- Honest count for the owner's clause 1: consecutive-clean = 2 (runs 1–2); run 3 is a
+  17/18-plus-named-refusal day, not a clean sample, and the refusal class is presence,
+  not identity.
+
+### Allergy census (owner order: "double make sure allergies are not all the same") — actual strings
+
+Whole store, 440 records with allergies populated, 19 distinct values:
+
+| value (verbatim, truncated at 70 chars) | count |
+|---|---|
+| `NKDA` | 397 |
+| `CEPHALEXIN, KEFLEX` | 25 — the known 6/25 contamination cluster, the ONLY non-trivial collapse |
+| `[]` | 2 — empty-array junk; renders as honest placeholder after the fieldBody fix |
+| `ERYTHROMYCIN BASE: Abdominal pain (Moderate severity)\nFAMOTIDINE\nLISIN…` | 1 |
+| `DOXYCYCLINE\nEPINEPHRINE: Other - Shaky\nVENOM-HONEY BEE\nhigh criticalit…` | 1 |
+| `IODINE: Hives\nSUNITINIB: - Contrast dye` | 1 |
+| `MEPERIDINE: Vomiting - Severe body convulsions` | 1 |
+| (…every remaining value a singleton) | 1 each |
+
+Ratios: all-values 19/440 = 0.043 (NKDA-dominated, expected); non-trivial 18/43 = 0.419 —
+but 25 of the 43 are the single known 6/25 cluster; **excluding it, 17 distinct / 18 rows
+≈ 0.94** — no new collapse. Tonight's 26-patient cohort: 26 × `NKDA` — consistent with the
+practice and with athena printing the literal; the singleton rows above prove real
+multi-line allergies WITH reactions do land when documented. Still owed (post-deploy, on
+the source side): per-chart confirmation including one patient verified in athenaOne to
+HAVE real allergies, so "all NKDA" is proven a read, not a default.
+
+## Adversarial review (in place of the owner-waived Codex leg) — and the fixes it forced
+
+The owner waived the Codex sign-off for this train (his words on the board, 2026-08-08) and an
+independent adversarial review ran instead. It refused to co-sign `50441052` — correctly. The
+findings I confirmed and fixed (px-1.5 / 2.3–2.6 / 3.6):
+
+1. **Twins could still weld** — matchRow leg 1's DOB arm (≥1 shared token) was the SAME
+   predicate the stamper uses, so a sibling pair (same DOB + same surname) could be
+   mis-stamped and then merged. Both ends now require ≥2 shared name tokens; the migration
+   `scan()` got the same rule (its missing-DOB "never conflicts" hole closed). Control:
+   pre-fix code fails the new suite at "twins (same DOB + surname) merged on a stable-id hit".
+2. **A good summary could be blanked under ok:true** — organize's empty-aggregate clear now
+   fires only when `athenaSliceReRead` proves this pass actually re-read the chart slice.
+3. **The type cleaner ate laterality** ("Injection, Right Knee" → "Injection") and the
+   stripped text persisted into summary + op-note context — wrong-site class. The cleaner is
+   render-only now with a clinical-vocabulary tail guard (9 pinned keep-cases); the persisted
+   aggregate keeps the raw type, and bodyless lines carry "(scheduled visit — no note text
+   captured)" so a schedule label can never masquerade as a note.
+4. Autopull's stable-id leg now requires name-or-DOB corroboration (a typo'd MRN no longer
+   binds a differently-named chart); the hygiene pass no longer consumes its run-once flag on
+   an unhydrated roster; the reply validator no longer refuses "<no known drug allergies>" or
+   `"pain": 7` prose; the dob-conflict check is suppressed on suspect-marked records (whose
+   stored DOB is the untrustworthy side); the legacy schedule fallback creates NO patient
+   record for DOB-less rows (appointment posts unlinked) instead of minting a duplicate per day.
+
+Review-verified clean (its own execution, not my claims): HDR_ONLY regex, suspect-marker
+criteria, bulk savePatients safety, all shell/compaction scenarios, epoch TDZ/XSS, 43-string
+date-key adversarial set, release coherence (zip/.bin byte-identical, every pin agrees).
+
+## Status at artifact close
+
+- Site deploy: **staged, awaiting CODEX SIGN-OFF** on `50441052a955dadd432a02a2b046a202e031e04c`
+  (board post at top of AGENT_COORDINATION.md; the one running Claude lane was pinged).
+- Post-deploy still owed: multi-patient switching E2E against the DEPLOYED app-side fixes
+  (rapid switch, similar names, delayed prior-patient response, allergies→no-allergies pair),
+  Settings card offering 3.0.46, live zip/bin byte-verify, and the store-hygiene pass receipt
+  on the owner's browser.
+- The installed extension (3.0.46) is already the exact tested build by digest; the live
+  day-pull proof above ran on it.

@@ -59,6 +59,13 @@ async function main() {
     const dup = chunk + chunk + chunk;
     assert.strictEqual(V(dup, {}, pt).reason, 'duplicated-passage', 'a verbatim duplicated passage was accepted');
   }
+  /* px-2.6: clinical prose with angle brackets or quoted keys is NOT markup/JSON */
+  assert.strictEqual(V('Allergies <no known drug allergies>. Plan: TFESI at L4-L5 under fluoroscopy next month.', {}, pt).ok, true, 'angle-bracket clinical prose refused as html');
+  assert.strictEqual(V('The chart records "pain": 7 at this visit and the plan is unchanged going forward.', {}, pt).ok, true, 'quoted-key prose refused as json');
+  assert.strictEqual(V('{\n"summary": "a serialized reply that is long enough to pass"\n}', {}, pt).reason, 'json-scaffolding', 'line-start JSON accepted');
+  /* px-2.6: a suspect-marked record must not refuse the chart-correct DOB */
+  const suspectPt = { id: 'pt-s', name: 'S', dob: '01/01/1900', athenaImportSuspect: { reason: 'shared-dob-cluster' } };
+  assert.strictEqual(V('Patient seen in clinic. DOB: 03/04/1980. Lumbar pain improving with home PT program.', {}, suspectPt).ok, true, 'suspect-marked record refused a correct chart DOB');
   const mojibake = 'Patient reports the pain â€œcomes and goesâ€ and worsens at night, though function is preserved.';
   assert.strictEqual(V(mojibake, {}, pt).reason, 'encoding-garbage', 'mojibake accepted');
   assert.strictEqual(V(M._normalizeClinicalText(mojibake), {}, pt).ok, true, 'normalized text still refused');
@@ -145,8 +152,36 @@ async function main() {
   /* ---- 9. provider tail cleaned from the type, display-only ---- */
   assert.strictEqual(M._cleanVisitTypeForDisplay('fluoro non sedation, Matthew Schaeffer, '), 'fluoro non sedation', 'provider tail survived');
   assert.strictEqual(M._cleanVisitTypeForDisplay('follow up, lumbar'), 'follow up, lumbar', 'legitimate lowercase type text was eaten');
+  /* px-2.3: laterality/site tails are CLINICAL, never stripped (wrong-site class) */
+  for (const keep of ['Injection, Right Knee', 'Epidural Steroid Injection, Right Side', 'Radiofrequency Ablation, Left Cervical', 'Trigger Point Injection, Left Trapezius', 'Nerve Block, Genicular Right', 'Medial Branch Block, Bilateral Lumbar', 'MRI Lumbar Spine, With Contrast', 'Consult, New Patient', 'Follow Up, Post Op']) {
+    assert.strictEqual(M._cleanVisitTypeForDisplay(keep), keep, 'laterality/site tail stripped from: ' + keep);
+  }
 
-  console.log('visit-summary-quality-contract: PASS (30 checks)');
+  /* ---- 10. the persisted aggregate keeps the RAW type and labels bodyless
+          lines honestly (px-2.3/2.4) ---- */
+  {
+    const pB = { id: 'pt-b', name: 'B', visits: [] };
+    context.upsertPatient(pB);
+    const shell = M.addVisit('pt-b', { date: '2026-08-05', type: 'Injection, Right Knee' }, { source: 'athena-copy', identityVerified: true, identityBinding: 'pt-b' });
+    assert(shell, 'bodyless typed visit did not store');
+    const aggB = M._aggregateSummary(context.findPatient('pt-b'), M.getVisits(context.findPatient('pt-b')), emptyFacts);
+    assert(/Injection, Right Knee \(scheduled visit — no note text captured\)/.test(aggB), 'bodyless line lost its laterality or its honesty marker: ' + JSON.stringify(aggB));
+  }
+
+  /* ---- 11. organizePatientHistory PRESERVES a good summary when nothing was
+          re-read (px-2.3; the read-gate-feeds-a-write class) ---- */
+  {
+    const good = 'Pulled from Athena 8/5/2026 —\n\nActive or significant problems:\n• Lumbar radiculopathy (M54.16)';
+    const pC = { id: 'pt-c', name: 'C', dob: '01/01/1970', problems: 'Lumbar radiculopathy', meds: '', allergies: '', summary: good, athenaHistorySummary: good, visits: [] };
+    context.upsertPatient(pC);
+    const rec = await M.summarizeAll('pt-c');
+    assert.strictEqual(rec.ok, true, 'organize refused a 0-visit patient');
+    const after = context.findPatient('pt-c');
+    assert.strictEqual(after.athenaHistorySummary, good, 'a good summary was blanked with no re-read (found-nothing erased it)');
+    assert.strictEqual(after.summary, good, 'the mirrored summary was blanked with no re-read');
+  }
+
+  console.log('visit-summary-quality-contract: PASS (47 checks)');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

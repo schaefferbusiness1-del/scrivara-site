@@ -20239,7 +20239,13 @@ async function _importPulledSchedule(appts){
       if(existing) ext=existing.id;
     }catch(e){}
     // Durable, server-synced patient record (dedup by verified identity → reused on re-sync).
-    if(!existing && typeof upsertPatient==='function'){
+    /* px-3.6 (adversarial review): a row with NO DOB gets NO patient record at
+       all (ext stays '') — matching the exact importer's materializePatient
+       rule. Creating one would mint a fresh same-name row on EVERY pulled day
+       (the day-key dedupe is per-day), and those DOB-less/id-less duplicates
+       can never be safely collapsed later. The appointment still posts,
+       unlinked. */
+    if(!existing && aDobKey && typeof upsertPatient==='function'){
       var np={ id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name:name, dob:String(a.dob||''), reason:String(a.reason||''), source:'athena-schedule', created:Date.now() };
       try{ upsertPatient(np); pts.push(np); ext=np.id; }catch(e){}
     }

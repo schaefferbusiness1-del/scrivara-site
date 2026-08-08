@@ -755,15 +755,27 @@
      Matthew Schaeffer, "). Display-only - stored types are never modified
      (legacy id-less rows key their dedupe on type). Conservative: requires a
      credential, or a Two Capitalized Token person shape, at end of string. */
+  /* px-2.3 (2026-08-08 adversarial review): the two-capitalized-token arm was
+     eating LATERALITY AND SITE tails - "Injection, Right Knee" became
+     "Injection", and via the aggregate that stripped text PERSISTED and fed
+     op-note context: the wrong-site class. The tail is now refused whenever it
+     contains clinical/anatomy/laterality vocabulary, and this cleaner is used
+     at RENDER sites only - the persisted aggregate keeps the raw type. */
+  var _TYPE_TAIL_CLINICAL_RE = /\b(?:right|left|bilateral|knee|shoulder|hip|spine|spinal|lumbar|cervical|thoracic|sacral|sacroiliac|caudal|elbow|wrist|ankle|foot|hand|neck|back|joint|nerve|block|branch|medial|lateral|genicular|trapezius|gluteal|femoral|occipital|epidural|facet|contrast|with|without|side|level|new|patient|post|pre|op|follow|episode|injection|ablation|steroid)\b/i;
   function _cleanVisitTypeForDisplay(t) {
     t = _normalizeClinicalText(S(t));
-    t = t.replace(/,\s*(?:[A-Z][a-zA-Z'.-]+\s+[A-Z][a-zA-Z'.-]+\s*,?\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|CRNP|RN|DPM|PhD)?\.?|[A-Z][a-zA-Z'.-]+\s*,?\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|CRNP|RN|DPM|PhD)\.?)\s*,?\s*$/, '');
+    var m = t.match(/,\s*((?:[A-Z][a-zA-Z'.-]+\s+[A-Z][a-zA-Z'.-]+\s*,?\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|CRNP|RN|DPM|PhD)?\.?|[A-Z][a-zA-Z'.-]+\s*,?\s*(?:MD|DO|NP|PA-?C?|APRN|FNP|DNP|CRNP|RN|DPM|PhD)\.?))\s*,?\s*$/);
+    if (m && !_TYPE_TAIL_CLINICAL_RE.test(m[1])) t = t.slice(0, m.index);
     return trim(t).replace(/[,\s]+$/, '');
   }
 
   var _MOJIBAKE_RE = /\u00E2\u20AC|\u00C3[\u0080-\u00BF]|\uFFFD/;
-  var _HTML_TAG_RE = /<\/?[a-z][a-z0-9-]*(?:\s[^<>]*)?>/i;
-  var _JSON_SCAFFOLD_RE = /^\s*[\[{]\s*"|"[a-z_]{2,24}"\s*:\s*["\[{0-9]/i;
+  /* px-2.6 (adversarial review): clinical prose legitimately writes
+     "<no known drug allergies>" and '"pain": 7' - the old shapes refused
+     both. HTML is asserted only on a real closing tag or a KNOWN tag name;
+     JSON scaffolding only when a line STARTS like serialized JSON. */
+  var _HTML_TAG_RE = /<\/[a-z][a-z0-9-]*>|<(?:div|span|br|p|table|thead|tbody|td|tr|th|ul|ol|li|b|i|em|strong|style|script|html|head|body|h[1-6]|a|img|input|button|form|pre|code)\b[^<>]*>/i;
+  var _JSON_SCAFFOLD_RE = /^\s*[\[{]\s*"|^\s*"[a-z_]{2,24}"\s*:\s*["\[{0-9]/im;
   /* Validate a model-produced visit summary BEFORE it is stored. A reply that
      is empty, encoding-garbled, markup/JSON-shaped, echoes the prompt, names a
      conflicting DOB, or repeats itself verbatim is refused - the raw captured
@@ -777,7 +789,10 @@
     if (_JSON_SCAFFOLD_RE.test(s)) return { ok: false, reason: 'json-scaffolding' };
     if (/RAW CAPTURED VISIT DATA|clinical documentation summarizer/i.test(s)) return { ok: false, reason: 'prompt-echo' };
     var dm = s.match(/\bDOB\b\s*:?\s*([0-9]{1,2}[\/\-.][0-9]{1,2}[\/\-.][0-9]{2,4}|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2})/i);
-    if (dm && p && trim(p.dob)) {
+    /* px-2.6: on records the hygiene pass marked athenaImportSuspect the
+       STORED DOB is the untrustworthy side - a summary quoting the chart's
+       CORRECT DOB must not be refused against it. */
+    if (dm && p && trim(p.dob) && !(p.athenaImportSuspect && p.athenaImportSuspect.reason)) {
       var da = _normDob(dm[1]), db = _normDob(p.dob);
       if (da && db && da !== db) return { ok: false, reason: 'dob-conflict' };
     }
@@ -1087,9 +1102,14 @@
     if (visits.length) {
       lines.push('', 'Recent visits:');
       visits.slice(0, 12).forEach(function (v, i) {
-        var reason = _typeIsRenderableReason(v.type) ? _cleanVisitTypeForDisplay(v.type) : '';
-        var detail = norm(_stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || reason)));
-        if (!detail) detail = trim(reason) || 'Visit — no readable note text captured';
+        /* px-2.3: raw type here - the display cleaner is render-only so a
+           stripped laterality can never persist into summary/op-note text.
+           px-2.4 (owner bar): a bodyless visit's TYPE must not masquerade as
+           its note - when the line's content is only the schedule label, say
+           so on the line itself. */
+        var reason = _typeIsRenderableReason(v.type) ? trim(_normalizeClinicalText(S(v.type))) : '';
+        var body = norm(_stripIdentityLines(_stripPageDebris(v.aiSummary || v.findings || v.plan || v.raw || '')));
+        var detail = body || (reason ? reason + ' (scheduled visit — no note text captured)' : 'Visit — no readable note text captured');
         lines.push('• ' + (v.date || 'Undated') + ' — ' + detail.slice(0, i === 0 ? 700 : 320));
       });
       any = true;
@@ -1248,11 +1268,17 @@
     Object.keys(facts.history).forEach(function (k) { p.history[k] = _mergeOwnedText(p.history[k], oldHistory[k], facts.history[k]); });
     _mergeVitalsForPatient(p,facts.vitals);
     var aggregate = _aggregateSummary(p, visits, facts);
-    /* px-2.0: an empty aggregate means NOTHING was captured or verified -
-       clear a previously importer-owned summary rather than leaving a stale
-       or header-only one behind. Clinician-authored text is never touched. */
+    /* px-2.0/2.3: an empty aggregate CLEARS a previously importer-owned
+       summary ONLY when this very pass provably RE-READ the athena slice
+       (athenaSliceReRead) - "I looked and it is empty" may erase; "I found
+       nothing to look at" may not (adversarial review 2026-08-08: a 0-visit
+       patient with a stale/mismatched receipt was blanking a good summary
+       under ok:true - the read-gate-feeds-a-write class re-opened). The
+       header-only JUNK class is cleaned by the run-once hygiene pass instead,
+       whose regex proves the summary carries zero content. Clinician-authored
+       text is never touched either way. */
     if (trim(aggregate)) p.athenaHistorySummary = aggregate;
-    else if (/^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(S(p.athenaHistorySummary)))) p.athenaHistorySummary = '';
+    else if (athenaSliceReRead && /^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(S(p.athenaHistorySummary)))) p.athenaHistorySummary = '';
     /* Preserve a clinician-authored free-text summary. Only fill/refresh the
        legacy summary slot when it is empty or clearly owned by this importer. */
     if (!trim(p.summary) || /^(?:Pulled from Athena|Longitudinal summary refreshed)\b/i.test(trim(p.summary))) {
@@ -1326,6 +1352,18 @@
       var flagKey = (typeof window.uns === 'function') ? window.uns('mlsPxHygiene1') : 'mlsPxHygiene1';
       try { if (localStorage.getItem(flagKey) === '1') return; } catch (eR) { return; }
       var pts = window.getPatients() || [];
+      /* px-2.5 (adversarial review): an EMPTY roster means the store has not
+         hydrated yet (server-mirror rebuild in flight) - inspecting nothing
+         must not consume the run-once flag or the suspect banners never
+         write. Re-arm BOUNDED (px-2.5.1: an unbounded re-arm held the node
+         event loop open forever on genuinely-empty stores and hung the suite
+         runner's child process): five tries ~100s covers hydration, then this
+         page load gives up and the next load starts fresh. */
+      if (!pts.length) {
+        _storeHygieneOnce._tries = (_storeHygieneOnce._tries || 0) + 1;
+        if (_storeHygieneOnce._tries <= 5) { try { setTimeout(_storeHygieneOnce, 20000); } catch (eRe) {} }
+        return;
+      }
       var HDR_ONLY = /^(?:Pulled from Athena|Longitudinal summary refreshed)\s+[\d\/.\-]+\s*(?:—|–|-)?\s*$/;
       var winStart = Date.parse('2026-06-24T00:00:00'), winEnd = Date.parse('2026-06-30T00:00:00');
       var dobCounts = {};

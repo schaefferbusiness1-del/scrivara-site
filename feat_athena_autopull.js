@@ -116,7 +116,12 @@
         var pm = trim(p.athenaId || p.mrn || '').toLowerCase();
         if (!pm || pm !== chartMrn) return false;
         var pd = normDob(p.dob);
-        return !(pd && chartDob && pd !== chartDob); // DOB conflict vetoes a stable-id hit
+        if (pd && chartDob && pd !== chartDob) return false; // DOB conflict vetoes a stable-id hit
+        /* px-1.5 (2026-08-08 adversarial review): a stable-id hit still needs
+           the record to LOOK like the same person - a mis-stamped or typo'd
+           MRN must not silently bind a differently-named chart. Name match, or
+           DOB present-and-equal, corroborates; neither -> create instead. */
+        return namesMatch(p.name, identity.name) || !!(pd && chartDob && pd === chartDob);
       });
       if (idHits.length === 1) { found = idHits[0]; via = 'athena-id'; }
       else if (idHits.length > 1) { found = null; via = 'athena-id-ambiguous'; }
