@@ -4343,9 +4343,27 @@
     /* NB: no trailing \b after the 'allerg' prefix alternatives - a trailing \b
        between 'g' and 'ies' can never match (the live bundle's allergiesFrom at
        3708 carries this exact latent bug) */
-    if (/\b(?:nkda\b|no known (?:drug )?allerg|denies allerg|no allergies\b)/.test(joined) &&
-        !/\b(?:penicillin|sulfa|codeine|latex|morphine|nsaid|aspirin|iodine|contrast|shellfish|peanut|statin|opioid)\b/.test(joined)) return ['NKDA'];
-    return cleanList(v, keepAllergy, 20);
+    var hasNeg = /\b(?:nkda\b|no known (?:drug )?allerg|denies allerg|no allergies\b)/.test(joined);
+    /* px-5.1 (2026-08-08, proven live by direct assignment + upsert): the old
+       collapse rule kept a hardcoded 13-DRUG allowlist as its only escape, so
+       whenever NKDA co-appeared with any allergen OUTSIDE that list -
+       "BEE POLLEN, low criticality", "MITE EXTRACT, low criticality",
+       environmental and food allergens generally - the ENTIRE field was
+       rewritten to ['NKDA'], deleting documented allergens on every upsert
+       forever (this is why the athena chart showed three rows and MLS showed
+       one, even after extraction was fixed). Membership in a fixed vocabulary
+       is not the test of whether something is an allergen. Now: clean the
+       list first; if REAL entries remain beyond the negation lines, keep
+       NKDA alongside them (a documented drug-negative plus environmental
+       allergens is a coherent, common chart state); collapse to ['NKDA']
+       only when nothing but negation/furniture is present. */
+    var cleaned = cleanList(v, keepAllergy, 20);
+    var NEG_LINE = /^(?:nkda|nka|no known (?:drug |food )?allerg(?:y|ies)|denies allerg(?:y|ies)|no allergies)\b[\s.]*$/i;
+    var real = [];
+    for (var i = 0; i < cleaned.length; i++) { if (!NEG_LINE.test(trim(S(cleaned[i])))) real.push(cleaned[i]); }
+    if (!real.length) return hasNeg ? ['NKDA'] : cleaned;
+    if (hasNeg) { var outA = ['NKDA'].concat(real); return outA.slice(0, 20); }
+    return real.slice(0, 20);
   }
 
   /* ---------- per-patient application (stash-once, idempotent) ---------- */

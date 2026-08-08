@@ -231,3 +231,73 @@ date-key adversarial set, release coherence (zip/.bin byte-identical, every pin 
   fronted virgin-day pace sample (sub-10 target) + eyes-on athena source comparison
   (real-allergy patient, Mucha problems, NKDA confirmation). Owner-gated and untouched:
   Web Store publish, meds decision, cohort re-pull repair beyond the visible markers.
+
+## Owner-present window (2026-08-08 ~01:0x-01:2x ET) — comparison DONE, pace sample VOID (athena weather)
+
+Michael fronted Chrome on the athenaOne tab and walked away (detected by the in-page focus
+recorder, hasFocus true throughout; the supervisor correctly replaced the verbal handshake
+with a condition poll - a confirmation would have destroyed the state it confirms).
+
+### Eyes-on source comparison — Geoffrey Mucha, MRN 7781274 (side by side, actual text)
+
+| field | athenaOne facesheet (source) | MLS store/panel |
+|---|---|---|
+| Allergies | **bee pollen** / **mite extract** / **NKDA** | **NKDA** only |
+| Problems | annular tear of lumbar disc; degeneration of lumbar intervertebral disc; low back pain; Lumbar radiculitis; Lumbar radiculopathy; Lumbar spondylosis; Spondylosis of lumbar spine; Raynaud's phenomenon; Vertebrogenic low back pain; Vertebrogenic pain | same condition set, ICD-coded (19 lines incl. code variants: "Lumbar radiculopathy M54.16", "Annular tear of lumbar disc M51.369", "Raynaud's phenomenon I73.00" ...) — MATCH |
+| Medications | None recorded | empty — MATCH |
+| Surgical hx | operative procedure on shoulder (left x3 following dislocations); RFA of peripheral nerve w/ fluoro guidance 05-29-2026 (L5+S1 Intracept, Dr. Schaeffer) | present in visit history — MATCH |
+
+**FINDING (real, new): allergies under-capture.** athena documents two ENVIRONMENTAL
+allergens the pull never stored. The stored NKDA is genuinely documented (the drug-allergy
+line) - NOT a silent default - so this is an incompleteness in the allergies-section read,
+not a wrong-patient or fabrication defect. Follow-up task spawned (task_2927163d). The
+IODINE-Hives patient could not be compared this window (no stored MRN on that legacy record).
+
+### Pace sample — VOID, twice, honestly
+
+- Attempt 1 (18-row warm Thu, fronted): refused ~T+6-7 min with no day outcome. Cause:
+  my own setup - the athena tab was parked on the Mucha chart from the comparison (the
+  documented stale-view class). Reason toast not captured (console tracking armed late).
+- Attempt 2 (after navigating athena to the frameset): stalled in the schedule phase and
+  released the mutex ~T+5:34 with zero history counters. Diagnosis: the athena tab was on
+  the "We were unable to complete the requested action" interstitial the WHOLE attempt -
+  and the interstitial now RE-PRESENTS on every fresh frameset load (Continue click, /ax
+  round-trip, direct navigate all tried) while the SESSION IS ALIVE (dashboard fetch
+  200/92,314 bytes/no Re-Login every probe). Server-side athena weather (~1 AM ET,
+  maintenance hours; athenaNetwork panel carries maintenance notices). Per the standing
+  rule: cool down, never grind - the fronted window was not spent on a wedged backend.
+- **The sub-10-minute fronted pace clause therefore stays OPEN, unsampled tonight - not
+  failed, not passed. No virgin July/August day exists any more (all 28 clinic days are
+  warm), so the next sample will be the heaviest warm day, honestly labeled as such.**
+
+## The allergy under-capture: THREE stages, all found, all fixed, chart-proven (b951+b952)
+
+The supervisor was right to refuse the follow-up chip - fixing it in-lane exposed a second,
+worse defect the first one was hiding.
+
+1. **Extraction blind to the print shape (px-5.0, b951).** The athena print view flattens
+   sections with NO colon: "... Vitals None recorded. Allergies Allergies not reviewed
+   (last reviewed 06/16/2026) BEE POLLEN, low criticality MITE EXTRACT, low criticality
+   Medications ...". The splitter required ":" or " - " after a heading, so the whole run
+   stayed one line, no heading was recognized, coverage said detected:0, every receipt
+   passed. Fixed with two unmistakable print markers (doubled heading + "not reviewed",
+   heading + "None recorded") and an allergen-run expander (criticality kept, review-status
+   furniture dropped, NKDA / "PENICILLIN - rash" pass through unchanged). The fixture is the
+   EXACT captured substring; the control fails on the pre-fix tree.
+2. **The b121 allergy cleaner erased off-list allergens on EVERY upsert (px-5.1, b952).**
+   Proven live by direct assignment + read-back: p.allergies = the three-line value,
+   upsertPatient, read back "NKDA". cleanAllergies collapsed the whole field to [NKDA]
+   whenever NKDA co-appeared with anything outside a hardcoded 13-DRUG list - bee pollen
+   and mite extract are not drugs, so they were deleted forever, which is also why the
+   px-5.0 extraction fix alone did not stick. A fixed vocabulary is not the test of
+   clinical reality. Now the collapse happens only when nothing but negation/furniture
+   remains; five behavioral rows pinned.
+3. **Chain-proof on live b952** (deployed code, real store): organize ->
+   p.allergies = "NKDA / BEE POLLEN (low criticality) / MITE EXTRACT (low criticality)";
+   upsert ROUND-TRIP SURVIVES; the rendered #profAllergies panel shows all three -
+   side-by-side equal to the athena facesheet rows (bee pollen, mite extract, NKDA).
+
+Coverage disclosure (owner should see the size): **1,240 of 1,561 store records (79%)**
+carry NO stable athena key (mrn/athenaId both empty; 222 of them hold clinical content).
+Those are legacy name-only rows - they cannot be source-verified by id and cannot
+exact-bind until a fresh identity-gated pull stamps them. New pulls stamp MRN.
