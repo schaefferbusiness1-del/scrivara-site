@@ -10526,13 +10526,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
            has not earned trust either. This TIGHTENS the safety contract. */
         var ecUrl = String((ecIdentity && ecIdentity.url) || '');
         var ecScoreN = Number((ecIdentity && ecIdentity.score) || 0);
+        /* 3.0.49 (six live charts, 2026-08-08): some patients' REAL Visits panel
+           renders inside an stm.esp frame, so the 3.0.8 URL exclusion starved
+           their body reads even after 3.0.48 rescued the index (walk reason:
+           no-chart-frame-candidate[stm.esp~noise-surface] on all six). The
+           2026-07-24 weld (enterprise worklist banner naming a DIFFERENT
+           patient, 38 pseudo-encounters) stays dead: a noise-URL candidate is
+           dropped UNLESS its OWN frame identity strong-matches the frozen
+           patient through the same visitIdentityGate every chart frame must
+           pass - identity decides, never the URL alone - and the per-visit
+           identity/alias proof chain still backstops every body it yields. */
+        var ecNoise = /stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp/i.test(ecUrl);
         var ecDrop = '';
-        if (/stm\.esp|globalnav|statusbar|inbox|messag|findpatient\.esp/i.test(ecUrl)) ecDrop = 'noise-surface';
-        else if (!ecRelaxed && /globalframeset|globaliframe|framecontent/i.test(ecUrl)) ecDrop = 'container-frame';
-        else if (!ecRelaxed && ecScoreN < 0) ecDrop = 'negative-score';
-        if (!ecRelaxed) ecSeen.push({ url: ecUrl.slice(0, 110), score: ecScoreN, nm: String((ecIdentity && ecIdentity.name) || '').slice(0, 34), drop: ecDrop || 'kept' });
+        if (!ecRelaxed && /globalframeset|globaliframe|framecontent/i.test(ecUrl)) ecDrop = 'container-frame';
+        else if (!ecRelaxed && ecScoreN < 0 && !ecNoise) ecDrop = 'negative-score';
+        var ecGate = null;
+        if (!ecDrop) {
+          ecGate = visitIdentityGate(frozenHint, ecIdentity);
+          if (ecNoise && !(ecGate && ecGate.ok)) ecDrop = 'noise-surface';
+        }
+        if (!ecRelaxed) ecSeen.push({ url: ecUrl.slice(0, 110), score: ecScoreN, nm: String((ecIdentity && ecIdentity.name) || '').slice(0, 34), drop: ecDrop || (ecNoise ? 'noise-identity-verified' : 'kept') });
         if (ecDrop) continue;
-        var ecGate = visitIdentityGate(frozenHint, ecIdentity);
         if (!ecPicked || ecGate.ok) { identity = ecIdentity; gate = ecGate; ecPicked = true; }
         if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }
         if (Date.now() >= readDeadline) break;

@@ -96,4 +96,25 @@ assert(/athena-tab-unverified/.test(bg), 'presence must distinguish unverified a
   assert(/okShape: enOkShape/.test(bg) && /noiseTails: enNoiseTails/.test(bg), 'the failure enumDiag must persist the ok-frame shape and the dropped-frame tails');
 }
 
-console.log('encounter-index-names-its-surface: PASS (16 checks)');
+// 3.0.49 (six live charts, 2026-08-08): after 3.0.48 rescued the INDEX, the
+// body-reading walk still dropped the same frame by URL alone
+// (no-chart-frame-candidate[stm.esp~noise-surface] on all six). The cure is
+// identity-decided, never URL-decided — and the 2026-07-24 worklist weld
+// (a noise frame naming a DIFFERENT patient) must STAY dead. Source-pinned
+// both ways because the walk's drop logic is the safety contract itself.
+{
+  assert(
+    bg.indexOf("if (ecNoise && !(ecGate && ecGate.ok)) ecDrop = 'noise-surface';") >= 0,
+    'a noise-URL walk candidate must be dropped ONLY when its own frame identity fails the gate (pre-3.0.49 dropped by URL alone)'
+  );
+  assert(
+    bg.indexOf("if (/stm\\.esp|globalnav|statusbar|inbox|messag|findpatient\\.esp/i.test(ecUrl)) ecDrop = 'noise-surface';") < 0,
+    'the unconditional URL-only drop must be gone from the walk'
+  );
+  const walkBlock = bg.slice(bg.indexOf('var ecNoise = /stm'), bg.indexOf('if (ecDrop) continue;', bg.indexOf('var ecNoise = /stm')));
+  assert(/visitIdentityGate\(frozenHint, ecIdentity\)/.test(walkBlock), 'the noise decision must run through the SAME visitIdentityGate every chart frame passes');
+  assert(/noise-identity-verified/.test(walkBlock), 'an identity-verified noise frame must be visibly marked in the walk receipt, never silently kept');
+  assert(/ecScoreN < 0 && !ecNoise/.test(walkBlock), 'noise frames reach the identity gate despite their URL penalty score — the gate decides, not the penalty');
+}
+
+console.log('encounter-index-names-its-surface: PASS (21 checks)');

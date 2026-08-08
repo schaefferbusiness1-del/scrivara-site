@@ -1,5 +1,5 @@
 {
-  "version": "3.0.48",
+  "version": "3.0.49",
   "minChrome": 116,
-  "notes": "v3.0.48 - The chart reader no longer discards a fully verified encounter list just because of which athena frame it rendered in (four charts on one live day failed exactly this way while every other check passed); when a read does fail, the receipt now also records what every frame answered so the cause is visible. Everything from v3.0.47 remains. Requires Chrome 116+."
+  "notes": "v3.0.49 - Charts whose Visits panel athena renders in an unusual frame now read correctly: the reader accepts that frame only after the frame itself proves it is showing this exact patient, so the six charts that failed on one live day now load while the old wrong-patient worklist trap stays blocked. Everything from v3.0.48 remains. Requires Chrome 116+."
 }
