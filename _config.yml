@@ -65,6 +65,13 @@ exclude:
   - "**/*.[Hh][Tt][Mm][Ll]"
   - "*.[Zz][Ii][Pp]"
   - "**/*.[Zz][Ii][Pp]"
+  # 2026-08-08 (b948 deploy failure, the b946 class): .bin had NO exclude glob,
+  # so when the released-package mirror moved 3.0.45 -> 3.0.46 the superseded
+  # MLS_Assist_v3.0.45.bin still published, UNDECLARED, and the generated-tree
+  # audit refused the deploy. Same rule as *.zip: every .bin is excluded and
+  # only the include-allowlisted CURRENT release mirror publishes.
+  - "*.[Bb][Ii][Nn]"
+  - "**/*.[Bb][Ii][Nn]"
   - "*.[Ss][Tt][Aa][Gg][Ii][Nn][Gg].[Jj][Ss]"
   - "**/*.[Ss][Tt][Aa][Gg][Ii][Nn][Gg].[Jj][Ss]"
   - "*_[Ss][Tt][Aa][Gg][Ii][Nn][Gg]_*.[Jj][Ss]"
