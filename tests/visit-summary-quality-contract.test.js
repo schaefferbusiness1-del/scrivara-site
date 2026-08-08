@@ -245,7 +245,28 @@ async function main() {
   assert.deepStrictEqual([...M._expandAllergyRun('PENICILLIN - rash')], ['PENICILLIN - rash'], 'reaction-form passthrough broke');
   assert.deepStrictEqual([...M._expandAllergyRun('Allergies not reviewed (last reviewed 06/16/2026)')], [], 'a status-only line minted a fake allergen');
 
-  console.log('visit-summary-quality-contract: PASS (62 checks)');
+  /* ---- 14. px-5.1: the b121 allergy cleaner must not delete documented
+          allergens. Proven live 2026-08-08 by direct assignment + upsert:
+          with NKDA co-present, any allergen outside a hardcoded 13-drug list
+          was erased on every upsert (the reason the chart showed three rows
+          and MLS showed one even after extraction was fixed). ---- */
+  {
+    const packSource = fs.readFileSync(path.join(root, 'feat_mls_b121_pack.js'), 'utf8');
+    const segA = packSource.indexOf('  function low(x)');
+    const segB = packSource.indexOf('  /* ---------- per-patient application');
+    assert(segA >= 0 && segB > segA, 'cleaner extraction anchors missing');
+    const cleanAllergies = new Function('S', 'trim', packSource.slice(segA, segB) + '; return cleanAllergies;')(
+      x => x == null ? '' : String(x), x => String(x == null ? '' : x).trim());
+    const eaten = cleanAllergies('NKDA\nBEE POLLEN (low criticality)\nMITE EXTRACT (low criticality)');
+    assert.deepStrictEqual([...eaten], ['NKDA', 'BEE POLLEN (low criticality)', 'MITE EXTRACT (low criticality)'],
+      'NKDA + off-list allergens collapsed to NKDA (the 13-drug allowlist eraser)');
+    assert.deepStrictEqual([...cleanAllergies('NKDA')], ['NKDA'], 'pure NKDA no longer collapses');
+    assert.deepStrictEqual([...cleanAllergies('NKDA\nAllergies\nSeverity')], ['NKDA'], 'NKDA + furniture no longer collapses');
+    assert.deepStrictEqual([...cleanAllergies('No known drug allergies\nPENICILLIN - rash')], ['NKDA', 'PENICILLIN - rash'], 'drug + negation pair broke');
+    assert.deepStrictEqual([...cleanAllergies('IODINE: Hives\nSUNITINIB: - Contrast dye')], ['IODINE: Hives', 'SUNITINIB: - Contrast dye'], 'real-only list broke');
+  }
+
+  console.log('visit-summary-quality-contract: PASS (67 checks)');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
