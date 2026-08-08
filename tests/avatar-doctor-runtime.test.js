@@ -186,6 +186,35 @@ assert(source.includes('function kioskConsentYes') && source.includes('function 
 }
 assert(/if \(!kiosk\.consentAt\) \{/.test(source.slice(source.indexOf('function kioskAmbientStart'))),
   'room capture must refuse without recorded consent — and the check belongs in kioskAmbientStart, which is reachable from the rest screen, the PIN pad AND the review');
+
+/* ---- av-5.7.4 — THE CENTRE LINE, which decided five knobs on the owner's own face --
+   He pressed Match and got "Clean-shaven" over a moustache. Measured on a fixture built
+   to his photo, faceW came back 12 on a head whose widest row is 48, because his swept
+   fringe leaves a few 3-7px slivers of forehead, every sliver row voted equally for the
+   centre, and median() returns the UPPER middle of an even list — so the centre landed
+   on the sliver at x=81 instead of the head at x=64, asym read 6.83, the lopsided clamp
+   fired, and every lower-face window was aimed into his hair (jaw patches at x 44/48/81
+   with FOUR skin pixels across three 5x5 windows; luminance drop 4 against a stubble
+   threshold of 24). It was also handedness-dependent: mirrored, the same face measured
+   asym 1.04 and detected stubble.
+   The executable proof is the owner-geometry harness (scratchpad/ownerface) — it drives
+   the real matcher in Chrome and reports beard 'none' -> 'stubble', brows thick ->
+   natural, lips unread -> thin. These three pins are the cheap structural guard that
+   the mechanism has not been removed, asserted over comment-stripped source so writing
+   ABOUT the fix cannot satisfy it. */
+{
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  assert(/mr\.w >= Math\.max\(3, maxW \* 0\.35\)/.test(code),
+    'the centre-line vote accepts narrow rows again — a 3px sliver of forehead beside a fringe carries no information about where the middle of a head is, and there are often more sliver rows than real ones');
+  assert(/function midOf\(pairs\)/.test(code) && /midOf\(midPairs\)/.test(code),
+    'the centre is back to a bare median() — that returns the UPPER middle of an even list, which is exactly how the owner\'s fringe sliver won the vote');
+  assert(/clamped >= Math\.max\(6, maxW \* 0\.45\)/.test(code),
+    'the lopsided clamp lost its plausibility floor — collapsing a 48px face to 12px is not a measurement of a head, and it aims every lower-face window off the face');
+  /* the clamp itself must SURVIVE: a hand across one cheek still has to halve the face,
+     and the framed suite's hand fixture is the resolving control that proves it fires */
+  assert(/var lopsided = asym > 1\.20;/.test(code),
+    'the lopsided clamp was removed entirely — a hand on the cheek would inflate faceW by a third again');
+}
 assert(/Recording consent confirmed by practice staff at/.test(source),
   'the filed transcript must carry the consent and its clock time — a consent nobody can produce later is not a consent');
 assert(source.includes('kiosk.consentAt = 0;'),

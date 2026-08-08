@@ -1736,12 +1736,52 @@
        come out balanced - measured, asym stayed under the threshold and the
        clamp never fired. The forehead and temples are above where a hand rests
        against a cheek, so their centre is the face's own. */
-    var midCols = [];
+    /* 🚨 THE OWNER'S OWN FACE MEASURED 12 PIXELS WIDE (av-5.7.4). He pressed Match,
+       got "Clean-shaven" over his moustache and a pink swatch, and said it did an
+       awful job. Measured on a fixture built to his photo, faceW came back 12 on a
+       head whose widest row is 48, and that one number aims the beard, brow, nose
+       and lip windows off his face entirely: the jaw patches landed at x 44/48/81
+       with FOUR skin pixels across three 5x5 windows, so the luminance drop read 4
+       against a stubble threshold of 24.
+       WHY. His hair sweeps to one side, so the first four mask rows are a narrow
+       sliver of exposed forehead - rowRuns [41,81,83,3] [42,80,83,4] [43,78,83,6]
+       [44,78,84,7] before the head proper starts at [45,43,84,42]. Every one of
+       those rows entered midCols with equal weight, and `median()` returns the
+       UPPER middle of an even-length list, so [64,64,64,64,81,81,82,82] chose 81
+       instead of 64. asym then read 6.83, the lopsided clamp fired, and
+       faceW = 2*min(41,6) = 12.
+       It was also HANDEDNESS-DEPENDENT: the same fixture mirrored measures asym
+       1.04, faceW 48, and correctly detects stubble. A face cannot be allowed to
+       get a different answer for parting its hair the other way.
+       TWO FIXES, both narrow: only rows wide enough to HAVE a centre may vote, and
+       the vote is width-weighted rather than a bare median. `median()` itself is
+       untouched - it also feeds maxWY and wideRows, both calibrated in 128-space. */
+    var midPairs = [];
     for (var mcy = faceT; mcy <= Math.min(best.maxY, faceT + Math.max(2, Math.round((maxWY - faceT) * 0.45))); mcy++) {
       var mr = runAt(mcy);
-      if (mr) midCols.push(Math.round((mr.L + mr.R) / 2));
+      /* a 3-px sliver of forehead beside a fringe carries no information about where
+         the middle of a head is, and there are often more sliver rows than real ones */
+      if (mr && mr.w >= Math.max(3, maxW * 0.35)) midPairs.push({ c: Math.round((mr.L + mr.R) / 2), w: mr.w });
     }
-    var trueMid = midCols.length ? median(midCols.slice()) : cxMid;
+    var midCols = midPairs.map(function (p) { return p.c; });
+    /* width-weighted median: a 42-px row counts fourteen times what a 3-px row does,
+       and on an even split it interpolates instead of preferring the upper value */
+    function midOf(pairs) {
+      if (!pairs.length) return null;
+      var sorted = pairs.slice().sort(function (a, b) { return a.c - b.c; });
+      var total = 0, i;
+      for (i = 0; i < sorted.length; i++) total += sorted[i].w;
+      var half = total / 2, run = 0;
+      for (i = 0; i < sorted.length; i++) {
+        run += sorted[i].w;
+        if (run >= half) {
+          if (run === half && i + 1 < sorted.length) return (sorted[i].c + sorted[i + 1].c) / 2;
+          return sorted[i].c;
+        }
+      }
+      return sorted[sorted.length - 1].c;
+    }
+    var trueMid = midPairs.length ? midOf(midPairs) : cxMid;
     var halfL = Math.max(1, trueMid - faceRun.L), halfR = Math.max(1, faceRun.R - trueMid);
     var asym = Math.max(halfL, halfR) / Math.min(halfL, halfR);
     /* 1.20, not 1.35. An adversarial sweep of the SAME hand fixture across ten
@@ -1753,9 +1793,24 @@
        tilt, so 1.20 separates the two populations with room on both sides instead
        of splitting one of them. */
     var lopsided = asym > 1.20;
+    /* AND THE CLAMP MUST STAY PLAUSIBLE. Halving a face is a reasonable response to an
+       arm across one cheek; collapsing it to a quarter is not a measurement of a head.
+       A hand fixture clamps to roughly 0.7 of the widest row; the owner's swept fringe
+       drove it to 12/48 = 0.25, which then aimed every lower-face window into his hair.
+       Below this floor the asymmetry is evidence that the OUTLINE is unreliable, not
+       that the face is narrow, so the honest move is to keep the measured width and
+       say the outline looked odd rather than to act on a number this far from the
+       silhouette. */
+    var geomOdd = false;
     if (lopsided) {
-      faceW = 2 * Math.min(halfL, halfR);
-      cxMid = trueMid;
+      var clamped = 2 * Math.min(halfL, halfR);
+      if (clamped >= Math.max(6, maxW * 0.45)) {
+        faceW = clamped;
+        cxMid = trueMid;
+      } else {
+        geomOdd = true;
+        lopsided = false;
+      }
     }
 
     /* ---- 4. facial hair as GEOMETRY, before anything below the eyes is
@@ -2301,6 +2356,17 @@
     if (topCol && chDist(topCol, skin) > 34 && (!bg || chDist(topCol, bg) > 26)) {
       look.shirt = hex(topCol); derived.push('shirt');
       found.push('top colour');
+    } else {
+      /* SAY THE REFUSAL OUT LOUD (av-5.7.4). This branch had no else, so a refused top
+         left the product default - scrub green - sitting in the swatch with nothing to
+         explain it, and the owner reasonably read it as the answer. Measured on a
+         fixture built to his photo: a light grey tee scores chDist 19 against skin
+         (needs >34) and 2-6 against a light wall (needs >26), so it is refused at every
+         realistic shoulder height. Both reasons are worth telling apart, because one is
+         fixable by standing somewhere else and the other by wearing something else. */
+      found.push(topCol && bg && chDist(topCol, bg) <= 26
+        ? 'your top and the wall behind you are too close in colour to tell apart, so your own choice was left alone'
+        : 'I could not see your top in this photo, so your own choice was left alone');
     }
 
     /* ---- 14. THE SKULL. Width at the eye line over the LOWER face height -
@@ -2838,14 +2904,41 @@
       var lookGrid = make('div', '');
       lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
       function lookApply() { if (lookCtl) safe(function () { lookCtl.retint(lookNow); }); }
-      function lookRow(labelText, node) {
+      var lookBadges = {};
+      function lookRow(labelText, node, key) {
         var row = make('div', '');
         row.style.cssText = 'display:flex;flex-direction:column;gap:3px';
         var l = make('span', '', labelText);
         l.style.cssText = 'font:600 11.5px system-ui;color:#69736d';
+        /* WHICH OF THESE CAME FROM THE PHOTO (av-5.7.4). The owner pressed Match, saw a
+           green top and salmon lips, and reported that it "did an aweful job
+           completely" - counting eight wrong answers. He was right about what he saw
+           and it was worse than a wrong measurement: THREE of those knobs had never
+           been measured at all. The top was refused (a grey tee against a light wall
+           cannot clear the guard) and left showing the product's scrub green, and lip
+           COLOUR has no measurement path in this file at all - only lip shape. A
+           correct refusal and a wrong answer were pixel-identical in this grid, so
+           every future improvement would still read as "awful". Each control now says
+           where its value came from, driven directly off `derived` rather than prose. */
+        var badge = make('span', '', '');
+        badge.style.cssText = 'font:700 9.5px system-ui;letter-spacing:.2px;padding:1px 5px;border-radius:5px;margin-left:6px';
+        l.appendChild(badge);
+        if (key) lookBadges[key] = badge;
         row.appendChild(l); row.appendChild(node);
         lookGrid.appendChild(row);
         return row;
+      }
+      /* filled only AFTER a Match: before one, every value is trivially the doctor's
+         own and labelling it would be noise. */
+      function setLookBadges(measured) {
+        var got = measured || [];
+        Object.keys(lookBadges).forEach(function (k) {
+          var b = lookBadges[k]; if (!b) return;
+          var on = got.indexOf(k) >= 0;
+          b.textContent = on ? 'from your photo' : 'your setting';
+          b.style.color = on ? '#1f5c41' : '#8a938d';
+          b.style.background = on ? '#e6f7ef' : '#f2f1ec';
+        });
       }
       function colourControl(key, labelText) {
         var input = document.createElement('input');
@@ -2853,7 +2946,7 @@
         input.id = 'mlsAvLook_' + key;
         input.style.cssText = 'width:100%;height:32px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer';
         input.addEventListener('input', function () { lookNow[key] = input.value; lookApply(); });
-        lookRow(labelText, input);
+        lookRow(labelText, input, key);
         return input;
       }
       function pickControl(key, labelText, options) {
@@ -2866,14 +2959,20 @@
           sel.appendChild(o);
         });
         sel.addEventListener('change', function () { lookNow[key] = sel.value; lookApply(); });
-        lookRow(labelText, sel);
+        lookRow(labelText, sel, key);
         return sel;
       }
       var skinPick = colourControl('skin', 'Skin');
       var hairPick = colourControl('hair', 'Hair');
       var eyesPick = colourControl('eyes', 'Eyes');
       var lipPick = colourControl('lip', 'Lip colour');
-      colourControl('shirt', 'Scrubs / top');
+      /* THE HANDLE WAS THROWN AWAY. `colourControl('shirt', ...)` discarded its return
+         and nothing ever assigned to it, so this swatch was frozen at whatever
+         lookNow.shirt held when the row was built - it read green even on a photo
+         where the top WAS measured and pushed into `derived`, while the drawn avatar
+         beside it got the measured colour. The swatch and the face could disagree,
+         which is worse than either being wrong on its own. */
+      var shirtPick = colourControl('shirt', 'Scrubs / top');
       var stylePick = pickControl('hairStyle', 'Hair', [['short', 'Short'], ['wavy', 'Wavy'], ['long', 'Long'], ['bun', 'Tied back'], ['buzz', 'Buzzed'], ['bald', 'None']]);
       var beardPick = pickControl('beard', 'Facial hair', [['none', 'Clean-shaven'], ['stubble', 'Stubble'], ['beard', 'Beard']]);
       var browColWell = null;
@@ -2981,7 +3080,7 @@
           });
           lookNow = faceLookSafe(merged);
           skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
-          lipPick.value = lookNow.lip;
+          lipPick.value = lookNow.lip; shirtPick.value = lookNow.shirt;
           stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
           browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
           shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
@@ -2997,6 +3096,9 @@
           glassesBox.checked = lookNow.glasses === true;
           capBox.checked = lookNow.cap === true;
           stethBox.checked = lookNow.stethoscope === true;
+          /* every control now states its provenance from the SAME list that decided
+             what to overwrite, so "your setting" and "not measured" cannot drift apart */
+          setLookBadges(got);
           lookApply();
           /* say what it actually saw - a silent generic face is exactly what
              "it straight up does not work" looks like from the doctor's side */
