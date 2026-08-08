@@ -4686,10 +4686,10 @@
 
   function loadAuthoritativeNextUpConsumer() {
     safe(function () {
-      if (window.__mlsNextUp && window.__mlsNextUp.version === "nextup-2.0.0") return;
+      if (window.__mlsNextUp && window.__mlsNextUp.version === "nextup-2.0.1") return;
       if (document.querySelector('script[data-mls-asset="feat_nextup_connect.js"]')) return;
       var s = document.createElement("script");
-      s.src = "feat_nextup_connect.js?v=20260714auth1";
+      s.src = "feat_nextup_connect.js?v=20260808auth3perf1";
       s.async = false; s.setAttribute("data-mls-asset", "feat_nextup_connect.js");
       (document.head || document.documentElement).appendChild(s);
     });

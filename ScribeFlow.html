@@ -7353,7 +7353,6 @@ function refreshMe(opts){
     try{
       const init={headers:{'Authorization':'Bearer '+token}};
       if(opts.signal) init.signal=opts.signal;
-      if(opts.signal) init.signal=opts.signal;
       /* Identity is the backbone of every namespaced read (uns, gate check,
          hydration). A single transient /api/me failure used to leave a fresh
          tab tokened-but-anonymous — "_" namespace, gate fail-closed to
@@ -7402,15 +7401,28 @@ function refreshMe(opts){
         }
         applyAccessUI();
         notifyIdentity();
-        /* Hydrate all first-session stores together, then reconcile once. Three
-           independent late renders were the source of the post-login flicker,
-           moving controls, and slow first clicks. */
+        /* Keep normal/manual refresh parallel, but give a newly revealed tab's
+           input lane priority over cloud hydration. Preferences are small and
+           restore account settings first; patient and record paging then run
+           one at a time, each after a genuine no-input window. */
         const childOpts={signal:opts.signal,startupId:opts.startupId,deferRender:true};
-        const settled=await Promise.allSettled([
-          loadPatientsFromServer(childOpts),
-          loadRecordsFromServer(childOpts),
-          loadPrefsFromServer(childOpts)
-        ]);
+        let settled;
+        if(opts.startupId){
+          const prefSettled=(await Promise.allSettled([loadPrefsFromServer(childOpts)]))[0];
+          if(!sfStartupValid(opts)) return false;
+          if(!await sfAwaitStartupHydrationQuiet(childOpts)) return false;
+          const patientSettled=(await Promise.allSettled([loadPatientsFromServer(childOpts)]))[0];
+          if(!sfStartupValid(opts)) return false;
+          if(!await sfAwaitStartupHydrationQuiet(childOpts)) return false;
+          const recordSettled=(await Promise.allSettled([loadRecordsFromServer(childOpts)]))[0];
+          settled=[patientSettled,recordSettled,prefSettled];
+        }else{
+          settled=await Promise.allSettled([
+            loadPatientsFromServer(childOpts),
+            loadRecordsFromServer(childOpts),
+            loadPrefsFromServer(childOpts)
+          ]);
+        }
         if(!sfStartupValid(opts)) return false;
         const changed=settled.map(x=>x.status==='fulfilled'&&x.value===true);
         if(changed[2]){
@@ -8917,6 +8929,8 @@ async function loadPrefsFromServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return false;
   try{
+    const init={headers:{'Authorization':'Bearer '+bkToken()}};
+    if(opts.signal) init.signal=opts.signal;
     const r=await fetch(bkBase()+'/api/prefs',init);
     if(!sfStartupValid(opts)||!r.ok) return false; // incl. 401 — refreshMe handles auth
     let d={}; try{ d=await r.json(); }catch(e){ return false; }
@@ -10487,7 +10501,107 @@ let _serverPtIds={};
    servers advertise has_more; older servers ignore these additive query
    parameters and return their legacy complete payload in one response. */
 const SF_SERVER_LIST_PAGE_SIZE=200, SF_SERVER_LIST_MAX_PAGES=500, SF_SERVER_LIST_REQUEST_TIMEOUT_MS=12000;
+const SF_STARTUP_HYDRATION_QUIET_MS=1500, SF_STARTUP_HYDRATION_SOFT_CAP_MS=30000, SF_STARTUP_HYDRATION_MIN_QUIET_MS=300, SF_STARTUP_HYDRATION_POLL_MS=80;
 function sfHydrationYield(){ return new Promise(resolve=>setTimeout(resolve,0)); }
+function sfStartupHydrationInteractive(){
+  try{
+    if(typeof document==='undefined') return true;
+    if(document.hidden) return false;
+    if(typeof sfGateLoadingVisible!=='undefined'&&sfGateLoadingVisible) return false;
+    const root=document.documentElement;
+    if(root&&root.classList&&(root.classList.contains('mls-secure-loading')||root.classList.contains('mls-app-revealing'))) return false;
+    const gate=document.getElementById&&document.getElementById('sfGateLoading');
+    if(gate&&gate.style&&gate.style.display!=='none') return false;
+    const app=document.getElementById&&document.getElementById('appScreen');
+    if(app&&app.style&&app.style.display==='none') return false;
+  }catch(e){ return false; }
+  return true;
+}
+function sfStartupHydrationSchedulerStats(){
+  try{
+    if(typeof window==='undefined') return null;
+    const scheduler=window.__mlsDeferAsset;
+    if(!scheduler||typeof scheduler.stats!=='function') return null;
+    const stats=scheduler.stats();
+    return stats&&Number.isFinite(Number(stats.lastBusy))&&Number(stats.lastBusy)>0?stats:null;
+  }catch(e){ return null; }
+}
+function sfStartupHydrationInputPending(){
+  try{
+    const scheduling=typeof navigator!=='undefined'&&navigator.scheduling;
+    return !!(scheduling&&typeof scheduling.isInputPending==='function'&&scheduling.isInputPending({includeContinuous:true}));
+  }catch(e){ return false; }
+}
+/* Startup cloud work is intentionally background work. Wait until the secure
+   reveal is actually complete and clicks/routes have been quiet before each
+   bounded page, merge batch, sort, or persistence pass. The optional-asset
+   scheduler already owns the normal input listeners, so consume its lastBusy
+   clock; install temporary fallbacks only when that scheduler is unavailable. */
+async function sfAwaitStartupHydrationQuiet(opts){
+  opts=opts||{};
+  if(!opts.startupId) return sfStartupValid(opts);
+  const state=opts._sfHydrationQuietState||(opts._sfHydrationQuietState={interactiveAt:0,fallbackBusyAt:Date.now(),releasedBusyAt:0,hasReleased:false});
+  let fallbackAttached=false, fallbackListeners=[], checkedAfterYield=false;
+  const markFallbackBusy=()=>{ state.fallbackBusyAt=Date.now(); };
+  const detachFallback=()=>{
+    for(let i=0;i<fallbackListeners.length;i++){
+      const item=fallbackListeners[i];
+      try{ item[0].removeEventListener(item[1],markFallbackBusy,item[2]); }catch(e){}
+    }
+    fallbackListeners=[]; fallbackAttached=false;
+  };
+  const attachFallback=()=>{
+    if(fallbackAttached) return;
+    fallbackAttached=true;
+    const add=(target,type,options)=>{ try{ if(target&&target.addEventListener){ target.addEventListener(type,markFallbackBusy,options); fallbackListeners.push([target,type,options]); } }catch(e){} };
+    if(typeof document!=='undefined'){
+      add(document,'pointerdown',{capture:true,passive:true}); add(document,'keydown',true); add(document,'input',true);
+      add(document,'wheel',{capture:true,passive:true}); add(document,'touchstart',{capture:true,passive:true});
+    }
+    if(typeof window!=='undefined'){
+      add(window,'mls:view-changed',true); add(window,'mls:active-patient-changed',true); add(window,'mls:session-boundary',true);
+    }
+  };
+  try{
+    while(sfStartupValid(opts)){
+      if(typeof sfSessionLegalState!=='undefined'&&sfSessionLegalState==='blocked') return false;
+      const at=Date.now();
+      if(!sfStartupHydrationInteractive()){
+        state.interactiveAt=0; state.hasReleased=false; state.releasedBusyAt=0; checkedAfterYield=false;
+        await new Promise(resolve=>setTimeout(resolve,SF_STARTUP_HYDRATION_POLL_MS));
+        continue;
+      }
+      if(!state.interactiveAt){ state.interactiveAt=at; state.fallbackBusyAt=at; state.hasReleased=false; }
+      const stats=sfStartupHydrationSchedulerStats();
+      if(stats) detachFallback(); else attachFallback();
+      /* Between bounded batches, yield once with the input listeners armed.
+         If no new activity advanced lastBusy, the next batch may start at once
+         instead of paying another 1.5-second tax for every 200 rows. */
+      if(state.hasReleased&&!checkedAfterYield){
+        checkedAfterYield=true;
+        await sfHydrationYield();
+        continue;
+      }
+      if(sfStartupHydrationInputPending()) state.fallbackBusyAt=at;
+      let schedulerBusyAt=stats?Number(stats.lastBusy)||0:0, loaderReadyAt=0;
+      try{ loaderReadyAt=typeof window!=='undefined'?Number(window.__mlsLoaderReadyAt)||0:0; }catch(e){}
+      const lastBusyAt=Math.max(state.interactiveAt,state.fallbackBusyAt,schedulerBusyAt,loaderReadyAt);
+      if(state.hasReleased&&lastBusyAt<=state.releasedBusyAt) return true;
+      /* After an unusually long interactive spell, make progress only in a
+         smaller real gap instead of forcing work directly on top of input. */
+      const quietNeeded=(at-state.interactiveAt)>=SF_STARTUP_HYDRATION_SOFT_CAP_MS?SF_STARTUP_HYDRATION_MIN_QUIET_MS:SF_STARTUP_HYDRATION_QUIET_MS;
+      const remaining=quietNeeded-(at-lastBusyAt);
+      if(remaining<=0){ state.hasReleased=true; state.releasedBusyAt=lastBusyAt; return true; }
+      await new Promise(resolve=>setTimeout(resolve,Math.max(16,Math.min(SF_STARTUP_HYDRATION_POLL_MS,remaining))));
+    }
+    return false;
+  }finally{ detachFallback(); }
+}
+async function sfHydrationBoundary(opts){
+  if(opts&&opts.startupId) return sfAwaitStartupHydrationQuiet(opts);
+  await sfHydrationYield();
+  return sfStartupValid(opts);
+}
 async function sfFetchListRequest(url,init,parentSignal,timeoutMs){
   let timer=0, relay=null, controller=null, timedOut=false;
   const requestInit=Object.assign({},init||{});
@@ -10534,6 +10648,7 @@ async function sfFetchPagedList(endpoint,collection,opts,config){
     const query=(endpoint.indexOf('?')>=0?'&':'?')+(config.scopeOwn?'scope=own&':'')+'limit='+SF_SERVER_LIST_PAGE_SIZE+'&offset='+offset;
     let response=null;
     for(let attempt=0;attempt<attempts;attempt++){
+      if(opts.startupId&&!await sfAwaitStartupHydrationQuiet(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
       const init={headers:{'Authorization':'Bearer '+bkToken()}};
       const request=await sfFetchListRequest(bkBase()+endpoint+query,init,opts.signal,requestTimeoutMs);
       response=request.response; anyTimeout=anyTimeout||request.timedOut;
@@ -10547,7 +10662,7 @@ async function sfFetchPagedList(endpoint,collection,opts,config){
     lastStatus=response?response.status:0;
     if(!response||!response.ok) return {ok:false,status:lastStatus,timeout:anyTimeout,rows:[]};
     pages++;
-    await sfHydrationYield();
+    if(!await sfHydrationBoundary(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
     let payload={}; try{payload=await response.json();}catch(e){return {ok:false,status:lastStatus,rows:[]};}
     if(!sfStartupValid(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
     const pageRows=Array.isArray(payload)?payload:((payload&&Array.isArray(payload[collection]))?payload[collection]:[]);
@@ -10565,7 +10680,7 @@ async function sfFetchPagedList(endpoint,collection,opts,config){
     if(!Number.isSafeInteger(returned)||returned<=0||returned!==pageRows.length) return {ok:false,status:lastStatus,protocol:true,rows:[]};
     offset+=returned;
     /* Let rendering/input get a turn even against a zero-latency local server. */
-    await sfHydrationYield();
+    if(!await sfHydrationBoundary(opts)) return {ok:false,aborted:true,status:lastStatus,rows:[]};
   }
   return {ok:false,status:lastStatus,capped:true,rows:[]};
 }
@@ -10673,17 +10788,18 @@ async function loadPatientsFromServer(opts){
     }
     _hyStart(); _hyStage('Merging on this device');
     const rows=pageResult.rows;
+    if(opts.startupId&&!await sfAwaitStartupHydrationQuiet(opts)){ _hyEnd(true,''); return false; }
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     let changed=false;
     const local=getPatients();
     const localIndex=new Map();
     for(let index=0;index<local.length;index++){
-      if(index>0&&index%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      if(index>0&&index%SF_SERVER_LIST_PAGE_SIZE===0&&!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
       const patient=local[index]; if(patient&&patient.id!=null) localIndex.set(patient.id,index);
     }
     const additions=[];
     for(let rowIndex=0;rowIndex<rows.length;rowIndex++){
-      if(rowIndex>0&&rowIndex%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      if(rowIndex>0&&rowIndex%SF_SERVER_LIST_PAGE_SIZE===0&&!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
       const row=rows[rowIndex];
       // remember server id for every visible row (used for delete + team open)
       if(row.external_id && row.id!=null) _serverPtIds[row.external_id]=row.id;
@@ -10728,9 +10844,9 @@ async function loadPatientsFromServer(opts){
       }
     }
     if(changed){
-      await sfHydrationYield();
+      if(!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
       savePatients(additions.length?additions.concat(local):local);
-      await sfHydrationYield();
+      if(!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
       if(!opts.deferRender){
         if(currentView==='patients'){ renderPatients(); renderProfile(); }
         updateNavCounts();
@@ -19223,16 +19339,17 @@ async function loadRecordsFromServer(opts){
     if(pageResult.status===401){ handle401(); return false; }
     if(!pageResult.ok) return false;
     const rows=pageResult.rows;
+    if(opts.startupId&&!await sfAwaitStartupHydrationQuiet(opts)) return false;
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     const local=getNotes();
     const localIndex=new Map();
     for(let index=0;index<local.length;index++){
-      if(index>0&&index%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      if(index>0&&index%SF_SERVER_LIST_PAGE_SIZE===0&&!await sfHydrationBoundary(opts)) return false;
       const record=local[index]; if(record&&record.id!=null) localIndex.set(record.id,index);
     }
     let changed=false;
     for(let rowIndex=0;rowIndex<rows.length;rowIndex++){
-      if(rowIndex>0&&rowIndex%SF_SERVER_LIST_PAGE_SIZE===0) await sfHydrationYield();
+      if(rowIndex>0&&rowIndex%SF_SERVER_LIST_PAGE_SIZE===0&&!await sfHydrationBoundary(opts)) return false;
       const row=rows[rowIndex];
       const isMine=!row.owner_email||(myEmail&&String(row.owner_email).toLowerCase()===myEmail);
       if(!isMine) continue;
@@ -19248,11 +19365,11 @@ async function loadRecordsFromServer(opts){
       }
     }
     if(changed){
-      await sfHydrationYield();
+      if(!await sfHydrationBoundary(opts)) return false;
       local.sort((a,b)=>(b.updated||b.created||0)-(a.updated||a.created||0));
-      await sfHydrationYield();
+      if(!await sfHydrationBoundary(opts)) return false;
       saveNotes(local);
-      await sfHydrationYield();
+      if(!await sfHydrationBoundary(opts)) return false;
       if(!opts.deferRender){
         if(currentView==='history') renderHistory();
         if(currentView==='patients'){ renderPatients(); renderProfile(); }

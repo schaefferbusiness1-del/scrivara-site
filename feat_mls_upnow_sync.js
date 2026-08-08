@@ -1,4 +1,4 @@
-/* feat_mls_upnow_sync.js  ->  window.__mlsUpNowSync  (upnowsync-1.2.1)
+/* feat_mls_upnow_sync.js  ->  window.__mlsUpNowSync  (upnowsync-1.2.2)
  *
  *  BUG (Complex Visit page)
  *  ------------------------
@@ -60,7 +60,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "upnowsync-1.2.1";
+  var VERSION = "upnowsync-1.2.2";
   try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.version === VERSION) return; } catch (e) { return; }
   try { if (window.__mlsUpNowSync && window.__mlsUpNowSync.installed && window.__mlsUpNowSync.revert) { window.__mlsUpNowSync.revert(); } } catch (e) {}
 
@@ -73,7 +73,7 @@
   var _busy = false;          /* guard: our own DOM writes / re-render */
   var _depth = 0;             /* guard: bounded re-render recursion */
   var _origRender = null;
-  var _obs = null, _poll = null, _t = null;
+  var _obs = null, _obsRoot = null, _obsMuteDepth = 0, _poll = null, _t = null, _bootRetry = null;
   var _chartCap = null;       /* capture-phase Chart-button interceptor */
 
   /* ---------------------------------------------------------------------------
@@ -132,6 +132,28 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function heroBox() { return $(HERO); }
+  function observeHero() {
+    if (!_obs) return false;
+    var root = heroBox(); if (!root) return false;
+    try { _obs.observe(root, { childList: true, subtree: true }); _obsRoot = root; return true; }
+    catch (e) { _obsRoot = null; return false; }
+  }
+  /* MutationObserver callbacks run after _busy has already been cleared, so a
+     boolean inside sync() cannot suppress records caused by our own label
+     insertion/removal. Disconnect around the synchronous owned mutation,
+     discard those exact records, then restore the narrow hero observer. */
+  function mutateHero(fn) {
+    var outer = _obsMuteDepth++ === 0;
+    if (outer && _obs) { try { _obs.disconnect(); } catch (e) {} }
+    try { return fn(); }
+    finally {
+      _obsMuteDepth = Math.max(0, _obsMuteDepth - 1);
+      if (outer && _obs) {
+        try { _obs.takeRecords(); } catch (e) {}
+        _obsRoot = null; observeHero();
+      }
+    }
+  }
   function visitDefinitelyHidden() {
     /* showView() writes this inline before it emits the route lifecycle event.
        Only treat the exact hidden value as authoritative; unknown hosts fall
@@ -140,7 +162,18 @@
     catch (e) { return false; }
   }
   function heroVisible() {
-    try { if (visitDefinitelyHidden()) return false; var h = heroBox(); if (!h) return false; if (getComputedStyle(h).display === "none") return false; return true; }
+    /* #heroToday and #visitView are both owned through inline display state.
+       getComputedStyle() here forced Chrome to synchronously style/layout the
+       entire just-mounted app on every observer/timer reconciliation. On a
+       large first session that single visibility question could monopolize
+       the main thread for seconds before a queued click was dispatched. */
+    try {
+      if (visitDefinitelyHidden()) return false;
+      var h = heroBox(); if (!h) return false;
+      if (h.hidden || h.getAttribute("aria-hidden") === "true") return false;
+      if (h.style && h.style.display === "none") return false;
+      return true;
+    }
     catch (e) { return false; }
   }
   function topVal() { try { var n = $(NAME_IN); return n ? (n.value || "") : ""; } catch (e) { return ""; } }
@@ -228,7 +261,7 @@
       if (target) {
         if (target === cur) return;          /* already in sync */
         _busy = true;
-        try { if (cur) setCurrent(cur, false); setCurrent(target, true); } catch (e) {}
+        try { mutateHero(function () { if (cur) setCurrent(cur, false); setCurrent(target, true); }); } catch (e) {}
         _busy = false;
         return;
       }
@@ -244,7 +277,7 @@
           _busy = true; _depth++;
           try {
             window._heroSelIdx = li; window._heroWinOff = 0;
-            if (typeof _origRender === "function") _origRender(window._heroTodayList || []);
+            if (typeof _origRender === "function") mutateHero(function () { _origRender(window._heroTodayList || []); });
           } catch (e) {}
           _busy = false;
           try { sync(); } catch (e) {}
@@ -258,7 +291,7 @@
     /* 3) adopt: make the TOP follow the highlighted card so both agree */
     if (cur && chipPerson(cur) !== tp) {
       _busy = true;
-      try { adoptTopFromChip(cur); } catch (e) {}
+      try { mutateHero(function () { adoptTopFromChip(cur); }); } catch (e) {}
       _busy = false;
     }
   }
@@ -268,11 +301,29 @@
     _t = setTimeout(function () { _t = null; if (visitDefinitelyHidden()) return; try { sync(); } catch (e) {} }, 60);
   }
 
+  var RENDER_ORIGIN_LINKS = ["__orig", "__t3Orig", "__mlsUnrOrig", "__mlsUpNowOrig", "__mlsOrig"];
+  function findRendererMarker(start, marker) {
+    var queue = [start], seen = [], checked = 0;
+    while (queue.length && checked < 64) {
+      var fn = queue.shift(), i, next;
+      if (typeof fn !== "function" || seen.indexOf(fn) >= 0) continue;
+      seen.push(fn); checked++;
+      try { if (fn[marker]) return fn; } catch (e) {}
+      for (i = 0; i < RENDER_ORIGIN_LINKS.length; i++) {
+        try { next = fn[RENDER_ORIGIN_LINKS[i]]; } catch (e) { next = null; }
+        if (typeof next === "function" && seen.indexOf(next) < 0) queue.push(next);
+      }
+    }
+    return null;
+  }
+
   function wrapRender() {
     try {
-      if (typeof window._renderTodayPatients !== "function") return false;
-      if (window._renderTodayPatients.__mlsUpNowWrapped) { _origRender = _origRender || window._renderTodayPatients.__mlsUpNowOrig; return true; }
-      _origRender = window._renderTodayPatients;
+      var current = window._renderTodayPatients;
+      if (typeof current !== "function") return false;
+      var owner = findRendererMarker(current, "__mlsUpNowWrapped");
+      if (owner) { _origRender = _origRender || owner.__mlsUpNowOrig; return true; }
+      _origRender = current;
       var wrapped = function () {
         var r = _origRender.apply(this, arguments);
         if (!_busy) { try { sync(); } catch (e) {} }
@@ -291,16 +342,21 @@
 
   function boot() {
     var ok = wrapRender();
-    if (!ok) { try { setTimeout(boot, 800); } catch (e) {} }
+    if (!ok && !_bootRetry) { try { _bootRetry = setTimeout(function () { _bootRetry = null; boot(); }, 800); } catch (e) {} }
     bindName();
     installChartFix();
-    try {
+    try { if (!_obs) {
       _obs = new MutationObserver(function () { if (_busy) return; scheduleSync(); });
-      _obs.observe(heroBox() || document.documentElement, { childList: true, subtree: true });
-    } catch (e) {}
+    } } catch (e) { _obs = null; }
+    /* Never escalate a missing static hero into a permanent document observer.
+       Retry the narrow bind; the core hero is static in supported hosts. */
+    if (_obs && !_obsRoot && !observeHero() && !_bootRetry) {
+      try { _bootRetry = setTimeout(function () { _bootRetry = null; boot(); }, 800); } catch (e) {}
+    }
     try {
-      _poll = setInterval(function () {
+      if (!_poll) _poll = setInterval(function () {
         if (!window._renderTodayPatients || !window._renderTodayPatients.__mlsUpNowWrapped) wrapRender();
+        if (_obs && !_obsRoot) observeHero();
         bindName(); try { sync(); } catch (e) {}
       }, 1500);
     } catch (e) {}
@@ -309,8 +365,10 @@
 
   function revert() {
     try { if (_obs) _obs.disconnect(); } catch (e) {}
+    _obsRoot = null;
     try { if (_poll) { clearInterval(_poll); _poll = null; } } catch (e) {}
     try { if (_t) { clearTimeout(_t); _t = null; } } catch (e) {}
+    try { if (_bootRetry) { clearTimeout(_bootRetry); _bootRetry = null; } } catch (e) {}
     uninstallChartFix();
     try {
       if (_origRender && window._renderTodayPatients && window._renderTodayPatients.__mlsUpNowWrapped) {

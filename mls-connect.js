@@ -35320,7 +35320,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsBootLoader={installed:true,version:'single-owner-1.0.0',owner:'ScribeFlow'};
 })();
 
-;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260808t3112perf1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
+;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260808t3113perf2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
 
 /* ============================================================================
  * __mlsT6Stab — Task 6: reload / flicker / layout-jump stabilizer (b19).
@@ -38297,10 +38297,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){
   'use strict';
   if(window.__mlsDeferAsset) return;
-  var queue=[], timer=0, idleId=0, sequence=0, lastBusy=Date.now(), lastJobEnd=0, resumeAfter=0;
+  var queue=[], timer=0, idleId=0, sequence=0, lastBusy=Date.now(), lastJobEnd=0, resumeAfter=0, firstUseUntil=0;
   var activeJob=null, priorityInFlight=0, priorityBarrierInFlight=0, priorityErrors=0, assetErrors=0, readyAt=0, listeners=[];
   var priorityFoundationFailed=false, errorJobs=[];
+  var INITIAL_QUIET_MS=2500, FIRST_USE_MS=30000, FIRST_USE_GAP=250, STEADY_GAP=80;
   function now(){ return Date.now(); }
+  function normalGap(){ return now()<firstUseUntil?FIRST_USE_GAP:STEADY_GAP; }
+  function inputPending(){
+    try{
+      var scheduling=window.navigator&&window.navigator.scheduling;
+      return !!(scheduling&&typeof scheduling.isInputPending==='function'&&scheduling.isInputPending({includeContinuous:true}));
+    }catch(e){ return false; }
+  }
   function authVisible(){
     try{
       var auth=document.getElementById('authScreen'), app=document.getElementById('appScreen');
@@ -38334,7 +38342,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        post-reveal evaluation race this scheduler exists to prevent. */
     if(priorityInFlight) return -1;
     var at=now(), wait=Math.max(0,resumeAfter-at);
-    wait=Math.max(wait,1100-(at-lastBusy),40-(at-lastJobEnd));
+    /* A trusted event normally updates lastBusy first. isInputPending closes
+       the smaller race where a click is queued behind the script that just
+       finished evaluating but its capture listener has not run yet. */
+    if(inputPending()){ lastBusy=at; return 1100; }
+    wait=Math.max(wait,1100-(at-lastBusy),normalGap()-(at-lastJobEnd));
     return Math.max(0,wait);
   }
   function clearIdle(){
@@ -38446,11 +38458,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     activeJob=null;
     var failed=kind==='error'||!verifyOwner(job);
     if(failed){ recordFailure(job,kind==='error'?'load-error':'owner-missing'); if(job.priority===0) priorityErrors++; }
-    /* A script's load event fires after its evaluation. Keep a short gap
-       between optional initializers; direct user/route activity still owns the
-       separate full 1.1-second pause above. */
+    /* A script's load event fires after its evaluation. Keep a real first-use
+       breathing gap between optional initializers, then retain a smaller
+       steady-state gap. Direct user/route activity still owns the separate
+       full 1.1-second pause above. */
     lastJobEnd=now();
-    announceReady(); arm(40);
+    announceReady(); arm(normalGap());
   }
   function runJob(job,deadline){
     activeJob=job;
@@ -38573,7 +38586,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     for(var i=0;i<queue.length;i++) if(queue[i].priority===0) priorityQueued++;
     priorityQueued+=priorityInFlight;
     if(activeJob&&activeJob.priority===0) priorityQueued++;
-    return {queued:queue.length,active:!!(activeJob||priorityInFlight),priorityQueued:priorityQueued,priorityBarrier:!!priorityBarrierInFlight,priorityErrors:priorityErrors,errors:assetErrors,errorJobs:errorJobs.slice(),fallback:window.__mlsPresentationFallback||'',waiting:!!(timer||idleId||activeJob||priorityInFlight),readyAt:readyAt,lastBusy:lastBusy,lastJobEnd:lastJobEnd};
+    return {queued:queue.length,active:!!(activeJob||priorityInFlight),priorityQueued:priorityQueued,priorityBarrier:!!priorityBarrierInFlight,priorityErrors:priorityErrors,errors:assetErrors,errorJobs:errorJobs.slice(),fallback:window.__mlsPresentationFallback||'',waiting:!!(timer||idleId||activeJob||priorityInFlight),readyAt:readyAt,lastBusy:lastBusy,lastJobEnd:lastJobEnd,firstUseUntil:firstUseUntil,normalGap:normalGap()};
   };
   listen(document,'pointerdown',markBusy,{capture:true,passive:true});
   listen(document,'keydown',markBusy,true);
@@ -38585,7 +38598,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   listen(window,'mls:active-patient-changed',markBusy);
   listen(window,'mls:session-boundary',boundaryBusy);
   listen(window,'mls:loader-start',boundaryBusy);
-  listen(window,'mls:loader-ready',function(){ lastBusy=now(); resumeAfter=now()+1100; arm(1100); });
+  listen(window,'mls:loader-ready',function(){ var at=now(); lastBusy=at; firstUseUntil=at+FIRST_USE_MS; resumeAfter=at+INITIAL_QUIET_MS; arm(INITIAL_QUIET_MS); });
   window.__mlsDeferAsset=defer;
 })();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_caption_entityfix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_caption_entityfix.js?v=20260626cef1c1';s.setAttribute('data-mls-asset','feat_mls_caption_entityfix.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* item40: fix double-escaped "today's schedule" caption entity (additive, reversible: window.__mlsCaptionEntityFix.revert()) */
@@ -43279,7 +43292,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260808chk3049';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns5perf1';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260808chk3049';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */

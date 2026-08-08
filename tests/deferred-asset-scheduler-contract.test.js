@@ -40,7 +40,9 @@ assert(source.includes("listen(window,'mls:session-boundary',boundaryBusy)") &&
   !source.includes('retryFromScripts') && !source.includes('retireScripts'),
   'the scheduler can poll hidden state or double-evaluate a removed/requeued dynamic script');
 assert(source.includes('if(priorityInFlight) return -1;') &&
-  source.includes('wait=Math.max(wait,1100-(at-lastBusy),40-(at-lastJobEnd))'),
+  source.includes('wait=Math.max(wait,1100-(at-lastBusy),normalGap()-(at-lastJobEnd))') &&
+  source.includes("scheduling.isInputPending({includeContinuous:true})") &&
+  source.includes('INITIAL_QUIET_MS=2500, FIRST_USE_MS=30000, FIRST_USE_GAP=250, STEADY_GAP=80'),
   'a deadline or forced gate release can bypass fresh interaction/in-flight priority ownership');
 assert(source.includes("priority:0,owner:'__mlsCalmShell',retireVersion:'calm-1.0.0',barrier:true") &&
   source.includes('if(priorityBarrierInFlight) return -1;') &&
@@ -91,6 +93,7 @@ const document = {
 };
 const window = {
   sfGateLoadingVisible: true,
+  navigator: { scheduling: { isInputPending() { return false; } } },
   __mlsRedesign: { installed: true, revert() { redesignReverts++; this.installed = false; } },
   MutationObserver: MockMutationObserver,
   addEventListener(type, fn) { add(windowListeners, type, fn); },
@@ -181,16 +184,22 @@ assert.strictEqual(window.__mlsDeferAsset.stats().priorityQueued, 0,
 fireTimer();
 assert.strictEqual(timers.size, 0, 'normal-only queue polls repeatedly beneath the secure gate');
 secure = false; window.sfGateLoadingVisible = false;
+const loaderReadyAt = clock;
 emit(windowListeners, 'mls:loader-ready');
 reachIdle(); fireIdle();
 assert.deepStrictEqual(ran, ['priority', 'one'], 'first normal asset did not wait for post-reveal quiet');
+assert(clock - loaderReadyAt >= 2500,
+  'normal optional work entered the first-interaction window after reveal');
 
 /* A second callback may not start while the first script is still in flight. */
 clock += 5000;
 assert.deepStrictEqual(ran, ['priority', 'one'], 'async script loads overlapped despite callback serialization');
 one.emit('load');
+const firstUseLoadAt = clock;
 reachIdle(); fireIdle();
 assert.deepStrictEqual(ran, ['priority', 'one', 'two'], 'second normal asset did not resume after load + quiet');
+assert(clock - firstUseLoadAt >= 250,
+  'post-reveal optional assets still burst inside the first-use window');
 
 two.emit('load');
 emit(windowListeners, 'mls:active-patient-changed');
@@ -220,6 +229,19 @@ assert.deepStrictEqual(ran, ['priority', 'one', 'two', 'three', 'four'], 'queue 
 four.emit('load');
 assert.strictEqual(window.__mlsDeferAsset.stats().queued, 0, 'scheduler queue did not drain');
 assert.strictEqual(window.__mlsDeferAsset.stats().active, false, 'scheduler retained a completed active script');
+
+/* Queued browser input can exist before the capture listener gets a turn.
+   That race must postpone the next optional initializer too. */
+let browserInputPending = true;
+window.navigator.scheduling.isInputPending = () => browserInputPending;
+const pendingInputNode = script('pending-input');
+window.__mlsDeferAsset(() => { ran.push('pending-input'); return pendingInputNode; }, { timeout: 2500 });
+fireTimer();
+assert(!ran.includes('pending-input'), 'queued browser input did not preempt optional evaluation');
+browserInputPending = false;
+reachIdle(); fireIdle();
+assert(ran.includes('pending-input'), 'optional work did not resume after queued input cleared');
+pendingInputNode.emit('load');
 
 /* A prepared dynamic script cannot be canceled by removing its node. Keep the
    one admitted file owned until the browser reports its real completion, while

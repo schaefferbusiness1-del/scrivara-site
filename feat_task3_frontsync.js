@@ -35,7 +35,7 @@
   'use strict';
   if (window.__mlsT3 && window.__mlsT3.installed) return;
 
-  var VERSION = 't3-1.1.2';
+  var VERSION = 't3-1.1.3';
   var wrapped = [], trackedTimeouts = [], destroyed = false, started = false, runtimeGeneration = 0;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -987,14 +987,86 @@
     safe(glanceNote);
     safe(renderStrip);
   }
-  var tickTimer = null, slowTimer = null, startTimer = null, startFallback = null, startIdle = null, pulseIdle = null;
-  var startupPassTimers = [];
+  var tickTimer = null, slowTimer = null, startTimer = null, startFallback = null, startIdle = null, pulseIdle = null, startQuietTimer = null;
+  var T3_FIRST_USE_QUIET_MS = 2500, firstUseLastBusy = 0, firstUseReconciled = false;
+  function inputPending() {
+    return safe(function () {
+      var scheduling = window.navigator && window.navigator.scheduling;
+      return !!(scheduling && isFn(scheduling.isInputPending) && scheduling.isInputPending({ includeContinuous: true }));
+    }, false);
+  }
+  function sharedLastBusy() {
+    return safe(function () {
+      var scheduler = window.__mlsDeferAsset;
+      var stats = scheduler && isFn(scheduler.stats) ? scheduler.stats() : null;
+      return Math.max(firstUseLastBusy, Number(stats && stats.lastBusy) || 0);
+    }, firstUseLastBusy);
+  }
+  function firstUseQuietDelay() {
+    return Math.max(0, T3_FIRST_USE_QUIET_MS - (Date.now() - sharedLastBusy()));
+  }
+  function scheduleFirstUseReconcile() {
+    if (destroyed || !started || firstUseReconciled || startQuietTimer || startIdle != null) return;
+    var wait = firstUseQuietDelay();
+    if (inputPending()) { firstUseLastBusy = Date.now(); wait = T3_FIRST_USE_QUIET_MS; }
+    if (wait > 0) {
+      startQuietTimer = setTimeout(function () { startQuietTimer = null; scheduleFirstUseReconcile(); }, Math.max(32, wait));
+      return;
+    }
+    var idle = window.requestIdleCallback;
+    if (!idle) {
+      startQuietTimer = setTimeout(function () {
+        startQuietTimer = null;
+        if (inputPending()) { firstUseLastBusy = Date.now(); scheduleFirstUseReconcile(); return; }
+        if (firstUseQuietDelay() > 0) { scheduleFirstUseReconcile(); return; }
+        firstUseReconciled = true;
+        removeFirstUseActivityListeners();
+        safe(tick);
+        if (!slowTimer && started && !destroyed) slowTimer = setTimeout(slowPulse, 10000);
+      }, 48);
+      return;
+    }
+    /* No timeout: a timed-out idle callback is ordinary queued work and can
+       run directly in front of the first click. This reconciliation is
+       presentation-only and may wait for a genuine browser idle slice. */
+    startIdle = idle(function (deadline) {
+      startIdle = null;
+      if (destroyed || !started || firstUseReconciled) return;
+      var quietWait = firstUseQuietDelay();
+      if (inputPending()) { firstUseLastBusy = Date.now(); quietWait = T3_FIRST_USE_QUIET_MS; }
+      if (quietWait > 0 || (deadline && isFn(deadline.timeRemaining) && deadline.timeRemaining() < 8)) {
+        startQuietTimer = setTimeout(function () { startQuietTimer = null; scheduleFirstUseReconcile(); }, Math.max(48, quietWait));
+        return;
+      }
+      firstUseReconciled = true;
+      removeFirstUseActivityListeners();
+      safe(tick);
+      if (!slowTimer && started && !destroyed) slowTimer = setTimeout(slowPulse, 10000);
+    });
+  }
+  function noteFirstUseActivity() {
+    if (destroyed || !started || firstUseReconciled) return;
+    firstUseLastBusy = Date.now();
+    /* Leave an existing quiet timer in place; it will recompute the remaining
+       silence at its boundary. Continuous wheel/touch input therefore updates
+       one timestamp instead of churning a timer for every event. A browser
+       idle callback must be cancelled immediately because it may otherwise
+       start the heavy scan before that boundary runs. */
+    if (startIdle != null) { safe(function () { (window.cancelIdleCallback || clearTimeout)(startIdle); }); startIdle = null; }
+    if (!startQuietTimer) scheduleFirstUseReconcile();
+  }
   function scheduleTick(delay) {
-    if (destroyed || !started || tickTimer) return;
+    if (destroyed || !started) return;
+    /* Route and status events before the first reconciliation are not lost;
+       they join the one input-aware idle pass instead of starting a competing
+       patient/calendar scan directly behind the user's action. */
+    if (!firstUseReconciled) { scheduleFirstUseReconcile(); return; }
+    if (tickTimer) return;
     tickTimer = setTimeout(function () { tickTimer = null; safe(tick); }, delay == null ? 60 : delay);
   }
   function slowPulse() {
     if (destroyed || !started) return;
+    if (!firstUseReconciled) { scheduleFirstUseReconcile(); return; }
     if (!document.hidden && (viewShown('visitView') || viewShown('calendarView'))) {
       var idle = window.requestIdleCallback;
       if (idle) pulseIdle = idle(function () { pulseIdle = null; if (started && !destroyed) safe(tick); }, { timeout: 1200 });
@@ -1017,21 +1089,34 @@
     }
     var relevant = target && target.closest ? target.closest('.wn-chip,#nav_calendar,#nav_visit,#nav_patients,#heroToday,#calProvFilter,#calJump') : null;
     if (!relevant) return;
+    noteFirstUseActivity();
     scheduleTick(80);
   }
   function onDocumentInput(ev) {
     var t = ev && ev.target;
     if (!t) return;
     var ownedDate = (t.type === 'date' || t.type === 'month') && t.closest && t.closest('#calendarView,#visitView');
-    if (t.id === 'calProvFilter' || t.id === 'calJump' || ownedDate) scheduleTick(40);
+    if (t.id === 'calProvFilter' || t.id === 'calJump' || ownedDate) { noteFirstUseActivity(); scheduleTick(40); }
   }
-  function onVisibility() { if (!document.hidden) scheduleTick(0); }
-  function onFocus() { scheduleTick(0); }
-  function onViewChanged() { scheduleTick(40); }
+  function onVisibility() { if (!document.hidden) { noteFirstUseActivity(); scheduleTick(0); } }
+  function onFocus() { noteFirstUseActivity(); scheduleTick(0); }
+  function onViewChanged() { noteFirstUseActivity(); scheduleTick(40); }
   var runtimeListeners = false, loaderReadyListener = null, loaderStartListener = null, sessionBoundaryListener = null;
+  var firstUseActivityListeners = false;
+  function installFirstUseActivityListeners() {
+    if (firstUseActivityListeners || destroyed || firstUseReconciled) return;
+    firstUseActivityListeners = true;
+    try { document.addEventListener('pointerdown', noteFirstUseActivity, true); document.addEventListener('keydown', noteFirstUseActivity, true); document.addEventListener('wheel', noteFirstUseActivity, true); document.addEventListener('touchstart', noteFirstUseActivity, true); } catch (e) {}
+  }
+  function removeFirstUseActivityListeners() {
+    if (!firstUseActivityListeners) return;
+    firstUseActivityListeners = false;
+    safe(function () { document.removeEventListener('pointerdown', noteFirstUseActivity, true); document.removeEventListener('keydown', noteFirstUseActivity, true); document.removeEventListener('wheel', noteFirstUseActivity, true); document.removeEventListener('touchstart', noteFirstUseActivity, true); });
+  }
   function installRuntimeListeners() {
     if (runtimeListeners || destroyed) return; runtimeListeners = true;
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady);
+    installFirstUseActivityListeners();
     try { document.addEventListener('click', onDocumentClick, true); } catch (e) {}
     try { document.addEventListener('input', onDocumentInput, true); document.addEventListener('change', onDocumentInput, true); } catch (e) {}
     try { document.addEventListener('visibilitychange', onVisibility); } catch (e) {}
@@ -1041,6 +1126,7 @@
   }
   function removeRuntimeListeners() {
     if (!runtimeListeners) return; runtimeListeners = false;
+    removeFirstUseActivityListeners();
     safe(function () { document.removeEventListener('DOMContentLoaded', onReady); document.removeEventListener('click', onDocumentClick, true); document.removeEventListener('input', onDocumentInput, true); document.removeEventListener('change', onDocumentInput, true); document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('focus', onFocus); window.removeEventListener('pageshow', onFocus); window.removeEventListener('mls:view-changed', onViewChanged); });
   }
   function restoreCalData() {
@@ -1078,17 +1164,15 @@
     runtimeGeneration++;
     clearSessionUi(); resetStatusState();
     started = true;
+    firstUseReconciled = false; firstUseLastBusy = Date.now();
     if (startTimer) { clearTimeout(startTimer); startTimer = null; }
     if (startFallback) { clearTimeout(startFallback); startFallback = null; }
     if (loaderReadyListener) { safe(function () { window.removeEventListener('mls:loader-ready', loaderReadyListener); }); loaderReadyListener = null; }
     installRuntimeListeners();
     /* Wrappers are cheap and must exist before the first click. The expensive
-       roster/hero normalization gets the first post-reveal idle slice. */
+       roster/hero normalization waits for one input-quiet, real-idle slice. */
     safe(ensureWraps); safe(wrapHeroRender); safe(wrapHeroPick);
-    var idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 48); };
-    startIdle = idle(function () { startIdle = null; if (started && !destroyed) safe(tick); }, { timeout: 800 });
-    [500, 1800, 5000].forEach(function (ms) { startupPassTimers.push(setTimeout(function () { if (started && !destroyed) safe(tick); }, ms)); });
-    slowTimer = setTimeout(slowPulse, 10000);
+    scheduleFirstUseReconcile();
   }
   function queueStart(delay) {
     if (destroyed || started || startTimer) return;
@@ -1120,8 +1204,8 @@
     if (destroyed) return;
     runtimeGeneration++;
     started = false;
-    safe(function () { if (tickTimer) clearTimeout(tickTimer); tickTimer = null; if (slowTimer) clearTimeout(slowTimer); slowTimer = null; if (settleTimer) clearTimeout(settleTimer); settleTimer = null; if (stripHideTimer) clearTimeout(stripHideTimer); stripHideTimer = null; if (startTimer) clearTimeout(startTimer); startTimer = null; if (startFallback) clearTimeout(startFallback); startFallback = null; if (startIdle != null) (window.cancelIdleCallback || clearTimeout)(startIdle); startIdle = null; if (pulseIdle != null) (window.cancelIdleCallback || clearTimeout)(pulseIdle); pulseIdle = null; });
-    while (startupPassTimers.length) safe(function () { clearTimeout(startupPassTimers.pop()); });
+    safe(function () { if (tickTimer) clearTimeout(tickTimer); tickTimer = null; if (slowTimer) clearTimeout(slowTimer); slowTimer = null; if (settleTimer) clearTimeout(settleTimer); settleTimer = null; if (stripHideTimer) clearTimeout(stripHideTimer); stripHideTimer = null; if (startTimer) clearTimeout(startTimer); startTimer = null; if (startFallback) clearTimeout(startFallback); startFallback = null; if (startQuietTimer) clearTimeout(startQuietTimer); startQuietTimer = null; if (startIdle != null) (window.cancelIdleCallback || clearTimeout)(startIdle); startIdle = null; if (pulseIdle != null) (window.cancelIdleCallback || clearTimeout)(pulseIdle); pulseIdle = null; });
+    firstUseReconciled = false; firstUseLastBusy = 0;
     while (trackedTimeouts.length) safe(function () { clearTimeout(trackedTimeouts.pop()); });
     removeRuntimeListeners();
     restoreCalData(); clearSessionUi(); resetStatusState();
@@ -1156,12 +1240,11 @@
     revert: function () {
       destroyed = true;
       started = false;
-      safe(function () { if (tickTimer) clearTimeout(tickTimer); if (slowTimer) clearTimeout(slowTimer); if (settleTimer) clearTimeout(settleTimer); if (stripHideTimer) clearTimeout(stripHideTimer); if (startTimer) clearTimeout(startTimer); if (startFallback) clearTimeout(startFallback); });
+      safe(function () { if (tickTimer) clearTimeout(tickTimer); if (slowTimer) clearTimeout(slowTimer); if (settleTimer) clearTimeout(settleTimer); if (stripHideTimer) clearTimeout(stripHideTimer); if (startTimer) clearTimeout(startTimer); if (startFallback) clearTimeout(startFallback); if (startQuietTimer) clearTimeout(startQuietTimer); startQuietTimer = null; });
       safe(function () { if (startIdle != null) (window.cancelIdleCallback || clearTimeout)(startIdle); startIdle = null; if (pulseIdle != null) (window.cancelIdleCallback || clearTimeout)(pulseIdle); pulseIdle = null; });
       if (loaderReadyListener) { safe(function () { window.removeEventListener('mls:loader-ready', loaderReadyListener); }); loaderReadyListener = null; }
       if (loaderStartListener) { safe(function () { window.removeEventListener('mls:loader-start', loaderStartListener); }); loaderStartListener = null; }
       if (sessionBoundaryListener) { safe(function () { window.removeEventListener('mls:session-boundary', sessionBoundaryListener); }); sessionBoundaryListener = null; }
-      while (startupPassTimers.length) safe(function () { clearTimeout(startupPassTimers.pop()); });
       while (trackedTimeouts.length) safe(function () { clearTimeout(trackedTimeouts.pop()); });
       removeRuntimeListeners();
       wrapped.forEach(function (p) { safe(function () { if (p[2]) p[2].__mlsWrapperDisposed = true; }); safe(p[1]); });

@@ -9,7 +9,7 @@
  */
 ;(function () {
   'use strict';
-  var VERSION = 'nextup-2.0.0';
+  var VERSION = 'nextup-2.0.1';
   try { if (window.__mlsNextUp && window.__mlsNextUp.version === VERSION) return; } catch (e) { }
   var previousApi = safe(function () { return window.__mlsNextUp || null; }, null);
 
@@ -102,10 +102,27 @@
     });
   }
 
+  var RENDER_ORIGIN_LINKS = ['__orig', '__t3Orig', '__mlsUnrOrig', '__mlsUpNowOrig', '__mlsOrig'];
+  function findRendererMarker(start, marker) {
+    var queue = [start], seen = [], checked = 0;
+    while (queue.length && checked < 64) {
+      var fn = queue.shift(), i, next;
+      if (!isFn(fn) || seen.indexOf(fn) >= 0) continue;
+      seen.push(fn); checked++;
+      if (safe(function () { return !!fn[marker]; }, false)) return fn;
+      for (i = 0; i < RENDER_ORIGIN_LINKS.length; i++) {
+        next = safe(function () { return fn[RENDER_ORIGIN_LINKS[i]]; }, null);
+        if (isFn(next) && seen.indexOf(next) < 0) queue.push(next);
+      }
+    }
+    return null;
+  }
+
   var guardedRenderer = null;
   function installRendererGuard() {
     var current = safe(function () { return window._renderTodayPatients; }, null);
-    if (!isFn(current) || current.__mlsAuthoritativeScheduleGuard) return !!(current && current.__mlsAuthoritativeScheduleGuard);
+    if (!isFn(current)) return false;
+    if (findRendererMarker(current, '__mlsAuthoritativeScheduleGuard')) return true;
     var original = current;
     var wrapper = function (rows) {
       var exact = authoritativeRows(todayKey());

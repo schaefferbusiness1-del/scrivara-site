@@ -33,21 +33,34 @@ function functionSource(source, signature) {
 
 const upnowFns = [
   functionSource(upnow, 'function heroBox()'),
+  functionSource(upnow, 'function observeHero()'),
+  functionSource(upnow, 'function mutateHero(fn)'),
   functionSource(upnow, 'function visitDefinitelyHidden()'),
   functionSource(upnow, 'function heroVisible()'),
   functionSource(upnow, 'function scheduleSync()')
 ].join('\n');
 
-assert(
-  upnow.indexOf('if (visitDefinitelyHidden()) return false;', upnow.indexOf('function heroVisible()')) <
-    upnow.indexOf('getComputedStyle(h)', upnow.indexOf('function heroVisible()')),
-  'Up Now reads computed style before its hidden-route fast path'
-);
+const heroVisibleSource = functionSource(upnow, 'function heroVisible()');
+assert(!/getComputedStyle\s*\(\s*h\s*\)/.test(heroVisibleSource) &&
+  heroVisibleSource.includes('h.style && h.style.display === "none"'),
+  'Up Now visibility can still force a whole-app style/layout flush');
+assert(upnow.includes('function mutateHero(fn)') && upnow.includes('_obs.takeRecords()') &&
+  upnow.includes('_obsRoot = null; observeHero();') &&
+  !upnow.includes('_obs.observe(heroBox() || document.documentElement'),
+  'Up Now can observe its own label writes or silently escalate to a document-wide observer');
 
 const visitView = { style: { display: 'none' } };
-const hero = { style: { display: 'block' } };
+const hero = { hidden: false, style: { display: 'block' }, getAttribute: () => null };
 let heroComputedReads = 0;
 let syncCalls = 0;
+let observerDisconnects = 0;
+let observerTakeRecords = 0;
+const observerRoots = [];
+const observer = {
+  disconnect() { observerDisconnects += 1; },
+  takeRecords() { observerTakeRecords += 1; return []; },
+  observe(root) { observerRoots.push(root); }
+};
 let nextTimer = 1;
 const timers = new Map();
 const upnowContext = {
@@ -55,11 +68,19 @@ const upnowContext = {
   document: { getElementById: id => ({ visitView, heroToday: hero }[id] || null) },
   $: id => ({ visitView, heroToday: hero }[id] || null),
   getComputedStyle: () => { heroComputedReads += 1; return { display: 'block' }; },
+  observer,
   setTimeout: fn => { const id = nextTimer++; timers.set(id, fn); return id; },
   sync: () => { syncCalls += 1; }
 };
 vm.createContext(upnowContext);
-vm.runInContext(`var _t = null; ${upnowFns}; this.api = { heroVisible, scheduleSync };`, upnowContext);
+vm.runInContext(`var _t = null, _obs = observer, _obsRoot = null, _obsMuteDepth = 0; ${upnowFns}; this.api = { heroVisible, scheduleSync, mutateHero };`, upnowContext);
+
+let ownedWrites = 0;
+upnowContext.api.mutateHero(() => { ownedWrites += 1; });
+assert.strictEqual(ownedWrites, 1, 'Up Now mutation guard skipped its owned update');
+assert.strictEqual(observerDisconnects, 1, 'Up Now stayed attached during its own hero mutation');
+assert.strictEqual(observerTakeRecords, 1, 'Up Now retained the mutation records it caused itself');
+assert.deepStrictEqual(observerRoots, [hero], 'Up Now did not restore the exact narrow hero observer');
 
 assert.strictEqual(upnowContext.api.heroVisible(), false, 'hidden Visit did not suppress Up Now work');
 upnowContext.api.scheduleSync();
@@ -68,7 +89,11 @@ assert.strictEqual(heroComputedReads, 0, 'hidden Visit forced a computed-style/l
 
 visitView.style.display = 'block';
 assert.strictEqual(upnowContext.api.heroVisible(), true, 'visible Visit lost the original hero visibility result');
-assert.strictEqual(heroComputedReads, 1, 'visible Visit did not use the original visibility fallback');
+assert.strictEqual(heroComputedReads, 0, 'visible Visit forced a computed-style/layout read');
+hero.style.display = 'none';
+assert.strictEqual(upnowContext.api.heroVisible(), false, 'inline-hidden hero was treated as visible');
+assert.strictEqual(heroComputedReads, 0, 'inline-hidden hero forced a computed-style/layout read');
+hero.style.display = 'block';
 upnowContext.api.scheduleSync();
 assert.strictEqual(timers.size, 1, 'visible Visit did not schedule Up Now reconciliation');
 visitView.style.display = 'none';
@@ -115,4 +140,4 @@ assert.strictEqual(redesignContext.isOnLogin(), true, 'visible login screen lost
 assert.strictEqual(authComputedReads, 1, 'ambiguous/visible login state did not use the original style fallback');
 assert.strictEqual(rectReads, 1, 'visible login state did not use the original geometry fallback');
 
-console.log('PASS route layout fast paths: hidden Visit/auth states avoid layout; ambiguous and visible states retain original checks');
+console.log('PASS route layout fast paths: Up Now never forces layout; hidden auth avoids layout and ambiguous login retains its fallback');
