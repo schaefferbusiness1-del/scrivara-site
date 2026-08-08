@@ -827,15 +827,41 @@
     if (_clinicalSectionPattern) {
       var inline = new RegExp('([.!?;|])\\s+(?=(?:[-*\\u2022]\\s*)?(?:\\*\\*)?(?:' + _clinicalSectionPattern + ')(?:\\*\\*)?\\s*(?::|\\s+-\\s+))', 'ig');
       src = src.replace(inline, '$1\n');
+      /* px-5.0 (2026-08-08, measured on a real chart): the athena print view
+         also flattens sections with NO colon at all - the heading is followed
+         by its own review-status line or an explicit-empty marker:
+           "... Fax (610) 444-5700 Vitals None recorded. Allergies Allergies
+            not reviewed (last reviewed 06/16/2026) BEE POLLEN, low
+            criticality MITE EXTRACT, low criticality Medications ..."
+         The old splitter required ":" or " - " after the heading, so the
+         WHOLE run stayed one line, no heading was ever recognized, and two
+         documented allergens never reached the store (coverage said
+         detected:0 - invisible, so every receipt passed). Split on the two
+         unmistakable print markers: a DOUBLED heading followed by "not
+         reviewed", and a heading followed by "None recorded". */
+      var dbl = new RegExp('\\s+(?=(' + _clinicalSectionPattern + ')\\s+\\1\\s+not reviewed\\b)', 'ig');
+      src = src.replace(dbl, '\n');
+      var noneRec = new RegExp('\\s+(?=(?:' + _clinicalSectionPattern + ')\\s+None recorded\\b)', 'ig');
+      src = src.replace(noneRec, '\n');
     }
     return src;
   }
 
+  /* px-5.0: the print-view heading shapes ("Allergies Allergies not reviewed
+     (...) <entries>" and "Vitals None recorded.") - precompiled once. */
+  var _printDoubledHeadingRe = _clinicalSectionPattern ? new RegExp('^(' + _clinicalSectionPattern + ')\\s+(\\1\\s+not reviewed\\b.*|None recorded\\b.*)$', 'i') : null;
   function _headingFromLine(line) {
     var clean = S(line).replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').replace(/\*\*/g, '').trim();
     if (!clean) return null;
     var exact = clean.toLowerCase().replace(/\s+/g, ' ');
     if (_clinicalSectionLookup[exact]) return { label: exact, value: '' };
+    if (_printDoubledHeadingRe) {
+      var dblm = clean.match(_printDoubledHeadingRe);
+      if (dblm) {
+        var dlbl = trim(dblm[1]).toLowerCase().replace(/\s+/g, ' ');
+        if (_clinicalSectionLookup[dlbl]) return { label: dlbl, value: trim(dblm[2]) };
+      }
+    }
     var m = clean.match(/^([^:]{1,72}?)(?::|\s+-\s+)(.*)$/);
     if (!m) return null;
     var label = trim(m[1]).toLowerCase().replace(/\s+/g, ' ');
@@ -848,6 +874,29 @@
       return { label: '__other__', value: trim(generic[2]) };
     }
     return null;
+  }
+
+  /* px-5.0: an athena print allergen run arrives as ONE flattened string:
+     "Allergies not reviewed (last reviewed 06/16/2026) BEE POLLEN, low
+      criticality MITE EXTRACT, low criticality". Expand into one entry per
+     allergen, criticality kept with its allergen; the review-status prefix is
+     furniture (a review date is not an allergen) and is dropped. Fails open:
+     text that does not match the run shape passes through unchanged, so
+     "NKDA" and "PENICILLIN - rash" behave exactly as before. */
+  function _expandAllergyRun(v) {
+    var s = trim(S(v));
+    if (!s) return [];
+    var stripped = trim(s.replace(/^(?:allergies\s+)?(?:not reviewed|reviewed)\s*\(last reviewed[^)]*\)\s*/i, ''));
+    if (!stripped) return [];
+    var re = /([A-Z][A-Z0-9()\/'&.\- ]{1,60}?),\s*(low|moderate|high|unknown)\s+criticality\b/g;
+    var out = [], m;
+    while ((m = re.exec(stripped))) out.push(trim(m[1]) + ' (' + m[2].toLowerCase() + ' criticality)');
+    if (out.length) {
+      var rest = trim(stripped.replace(re, ' ').replace(/\s{2,}/g, ' ').replace(/^[,\s]+|[,\s]+$/g, ''));
+      if (rest && !_notData(rest)) out.push(rest);
+      return out;
+    }
+    return [stripped];
   }
 
   function _splitSectionValue(value) {
@@ -1201,7 +1250,9 @@
       facts.meds = facts.meds.concat(_structuredValues(v.meds || []));
       facts.problems = facts.problems.concat(_sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment', 'assessment and plan', 'assessment/plan'], semanticTracker, 'problems'));
       facts.meds = facts.meds.concat(_sectionValues(text, ['medications', 'medication list', 'current medications', 'meds'], semanticTracker, 'meds'));
-      facts.allergies = facts.allergies.concat(_sectionValues(text, ['allergies', 'allergy'], semanticTracker, 'allergies'));
+      _sectionValues(text, ['allergies', 'allergy'], semanticTracker, 'allergies').forEach(function (avRun) {
+        facts.allergies = facts.allergies.concat(_expandAllergyRun(avRun));
+      });
       facts.history.pmh = facts.history.pmh.concat(_sectionValues(text, ['past medical history', 'medical history', 'pmh'], semanticTracker, 'history.pmh'));
       facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh'], semanticTracker, 'history.psh'));
       facts.history.social = facts.history.social.concat(_sectionValues(text, ['social history', 'social'], semanticTracker, 'history.social'));
@@ -1469,7 +1520,8 @@
     _visitBodyText: _visitBodyText,
     _validVisitSummary: _validVisitSummary,
     _cleanVisitTypeForDisplay: _cleanVisitTypeForDisplay,
-    _storeHygieneOnce: _storeHygieneOnce
+    _storeHygieneOnce: _storeHygieneOnce,
+    _expandAllergyRun: _expandAllergyRun
   };
 })();
 

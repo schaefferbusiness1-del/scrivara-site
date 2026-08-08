@@ -213,7 +213,39 @@ async function main() {
     assert(/p\.updated = Date\.now\(\)/.test(src.slice(src.indexOf('function _storeHygieneOnce'))), 'cleaned records no longer bump `updated` - a timestamp merge will prefer the dirty server copy');
   }
 
-  console.log('visit-summary-quality-contract: PASS (52 checks)');
+  /* ---- 13. px-5.0: the athena PRINT-VIEW section shape (no colon; doubled
+          heading + review-status; explicit "None recorded") must be seen and
+          its allergen run expanded. The fixture line is the EXACT substring
+          captured from a real chart on 2026-08-08, on which the live store
+          held ONLY "NKDA" while athena documented two environmental
+          allergens - coverage said detected:0, so every receipt passed. ---- */
+  {
+    const printLine = "Patient's Pharmacies CVS/PHARMACY (ERX): Ph (610) 444-9081, Fax (610) 444-5700 Vitals None recorded. Allergies Allergies not reviewed (last reviewed 06/16/2026) BEE POLLEN, low criticality MITE EXTRACT, low criticality Medications Medications not reviewed (last reviewed 06/16/2026) Name Date Source";
+    const pE = { id: 'pt-e', name: 'E', dob: '01/01/1970', problems: '', meds: '', allergies: 'NKDA', summary: '', visits: [] };
+    context.upsertPatient(pE);
+    M.addVisit('pt-e', {
+      date: '2026-07-08', type: 'Office visit', encounterId: 'e-e1', fullDetail: true,
+      raw: 'Patient: E\n' + printLine + '\nPlan: continue conservative management of symptoms.'
+    }, { source: 'athena-copy', identityVerified: true, identityBinding: 'pt-e', bodyComplete: true });
+    const recE = await M.summarizeAll('pt-e');
+    assert.strictEqual(recE.ok, true, 'print-shape visit did not organize');
+    const afterE = context.findPatient('pt-e');
+    const alg = String(afterE.allergies || '');
+    assert(/BEE POLLEN \(low criticality\)/.test(alg), 'environmental allergen 1 not captured: ' + JSON.stringify(alg));
+    assert(/MITE EXTRACT \(low criticality\)/.test(alg), 'environmental allergen 2 not captured: ' + JSON.stringify(alg));
+    assert(/NKDA/.test(alg), 'the documented NKDA was removed instead of preserved');
+    assert(!/not reviewed|last reviewed/i.test(alg), 'review-status furniture leaked into allergies');
+    assert(!/Medications|Name Date Source/i.test(alg), 'the neighbouring section leaked into allergies');
+    assert(!/BEE POLLEN|MITE EXTRACT/i.test(String(afterE.problems || '')), 'allergens leaked into problems');
+  }
+
+  /* _expandAllergyRun unit rows (spread into host arrays - vm-realm
+     prototypes fail deepStrictEqual's identity check) */
+  assert.deepStrictEqual([...M._expandAllergyRun('NKDA')], ['NKDA'], 'NKDA passthrough broke');
+  assert.deepStrictEqual([...M._expandAllergyRun('PENICILLIN - rash')], ['PENICILLIN - rash'], 'reaction-form passthrough broke');
+  assert.deepStrictEqual([...M._expandAllergyRun('Allergies not reviewed (last reviewed 06/16/2026)')], [], 'a status-only line minted a fake allergen');
+
+  console.log('visit-summary-quality-contract: PASS (62 checks)');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
