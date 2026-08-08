@@ -348,3 +348,90 @@ destroy an unfiled first. Recovery stores `consentAt` + `intakeFiled`. `'rejecte
 Proof: tight crops **39/39**; framed **40/40** including bald with and without spectacles, with
 **8 of 40 failing on the pre-fix matcher**; the echo suite passes here and **fails by name on the
 pre-fix file** on the case my own test had been enshrining ("back" is the ANSWER, not an echo).
+
+## ROUND THREE → b955 `61deaf70` (av-5.7.2), LIVE AND SERVING 2026-08-08
+
+43 agents, 66 candidates, **23 confirmed, 13 refuted**. ⚠️ Two honest limits on that sweep: the workflow
+capped verification at 6 findings per lens, so **30 candidates never got a verdict**, and the
+completeness critic found **2 of the 11 claims were never attacked at all** (the out-of-frame reason, and
+the resting chip — which it notes is ordered against the microphone fix in the same function).
+
+### Served-bytes proof (a push is not a deploy — b954 taught that the hard way)
+
+```
+origin/main 61deaf70 → Pages run 61deaf70 → GET https://mlsscribe.com/app-version.json  {"build":"2026-07-25-b955"}
+GET /feat_mls_avatar.js  366,142 bytes (was 337,931)
+  MEASURE_MAX 4 · grabBestFrame 2 · frameQuality 3 · faceHiRead 2
+  ambientStoreKeyFor 5 · ambientStorePick 3 · auditNote 6
+  "width: { ideal: 1920 }" 1 · "the picture is too dark" 1
+GET /app.html   rowwarn 3 · "audit verdict not recorded" 1 · "REJECTED this summary" 1
+```
+
+### THE OWNER'S PHOTO ASK, AND WHY HE WAS RIGHT
+
+> "it has to find my skin color my eyes and hair and more and matches it and also make sure it takes a
+> good picture and uses the high res picture not the low res one"
+
+Three independent causes stood between his face and the measurement:
+
+1. `getUserMedia({ video: { facingMode: 'user' } })` — **no size requested**, so the browser returned its
+   default, typically 640×480.
+2. `stylizePortrait` **posterized every channel to six levels** (steps of 51) and re-compressed at JPEG
+   0.82 — and that posterized copy was the ONLY image stored, so "what colour is my skin" was being
+   asked of an image whose tones had been snapped up to 51 units from the truth.
+3. It was then downsampled again to the **128px** analysis grid.
+
+Now: 1920×1080 `ideal` with a plain fallback (asking for quality must never COST the feature),
+**best of 6 frames** chosen by measured gradient energy, exposure and sharpness checked on the chosen
+frame with a refusal that names the fault and leaves the existing photo untouched, and **two images from
+one frame** — a measurement-grade square crop kept device-local (what Match reads) and the stylized
+portrait (display only). `captureSquare` never upscales.
+
+⏳ **The 128 grid is deliberately unchanged.** Absolute pixel floors inside `faceReadPortrait` were
+calibrated in 128-space; raising the grid without re-deriving them would silently change every verdict.
+That is the next step for thin features (brows, irises), not something to smuggle into this build.
+
+### The two patient-safety data-loss defects, reproduced by EXECUTING the store
+
+* **One key was one patient too few.** Every capture wrote `mlsAvRoomCaptureV1` with an unconditional
+  `setItem`, so the next patient's first backup write **destroyed an unfiled consultation** — and the
+  Visit card's offer to recover it disappeared with it, silently. Records are keyed by bound chart now;
+  the bare legacy key is still read; and enumeration ALWAYS also looks directly at the legacy key and the
+  open chart's key, because an empty list is indistinguishable from "nothing is waiting".
+* **The orders ledger was zeroed on resume** and then serialised as `[]` over the stored record, so a
+  prescription the doctor had CONFIRMED vanished from memory and from the crash copy in one tap.
+
+### 🚨 A ReferenceError I INTRODUCED INTO THE LIVE PATH AND ALMOST SHIPPED
+
+The double-filing fix landed in `kioskAmbientFile` (the LIVE path) instead of `ambientRecoverFile`,
+referencing `info`, which does not exist there — a throw on **every successful room-capture file**.
+
+* `node --check` **passed**: an undefined identifier is valid syntax.
+* Both photo suites **passed** (39/39, 40/40): neither executes that branch.
+* What caught it was a keyless-drop assertion written twenty minutes earlier for another reason.
+
+⛔ **An anchor string that appears in two similar functions edits the wrong one.** Print byte offsets;
+do not trust that an edit landed where you meant.
+
+### Four pins failed on HOW THE CODE IS WRITTEN, not on what it does
+
+None indicated a real regression; all four cost real time. Assert the claim:
+
+| pin | why it broke | cure |
+|---|---|---|
+| `openKiosk`→`kioskConsentYes` text window | contains every listener BODY openKiosk registers | count + shape, not absence |
+| `indexOf('ambientStoreDrop()')` | one SPELLING of a call; adding a key made it `-1` | match `name(` |
+| live-capture filter inside `ambientRecoverInfo` | the filter MOVED to `ambientStorePick` | pin where the logic lives; let an executing test be the guard |
+| `!/\binfo\./` over the live path | matched the COMMENT explaining the bug | strip comments before asserting |
+
+⛔ **A control that fails on the same message as the clean run proves nothing** — two of mine failed on an
+earlier assertion than the one they targeted. Each control must fail on a DISTINCT message.
+
+### Still open after round three (recorded, not fixed)
+
+* two tabs: the in-progress guard is `sid`-based, so a second tab can offer to file a LIVE capture;
+* `intakeFiled` gates the consent attestation it was added beside;
+* a denied re-probe resurrects the interview typing row on a finished kiosk;
+* the phone's seen-set is keyed by id alone, so a **flagged in-progress** interview that later finishes
+  produces no buzz — this is the owner's requirement #5 and goes first next build;
+* raising the analysis grid above 128 (needs every absolute floor re-derived).
