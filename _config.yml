@@ -148,6 +148,7 @@ include:
   - "intake.html"
   - "lawyers.html"
   - "patient-portal.html"
+  - "phone-setup.html"
   - "phone.html"
   - "privacy.html"
   - "review-finder.html"

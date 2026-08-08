@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v200';
+const CACHE = 'mls-v201';
 
 const SHELL = [
   '/ScribeFlow.html',
@@ -38,6 +38,7 @@ const PUBLIC_HTML_PATHS = new Set([
   'lawyers.html',
   'app.html',
   'patient-portal.html',
+  'phone-setup.html',
   'phone.html',
   'privacy.html',
   'review-finder.html',

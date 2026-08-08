@@ -46,8 +46,19 @@ assert(/start_at \|\| list\[i\]\.start_local/.test(block),
   'appointment dates must be read from the real fields');
 
 /* ---- the four outcomes, each stated honestly ---- */
-assert(/onDay > 0/.test(block) && /appointment' \+ \(onDay === 1 \? '' : 's'\) \+ ' now on this phone/.test(block),
-  'a successful pull must report the COUNT the phone can see');
+/* 2026-08-07 (rl-2.1.0): the literal moved from "now on this phone" to
+   "now on ' + thisDev() + '". The claim being pinned is unchanged — a success
+   must state the COUNT this device can actually see — but the DEVICE it names
+   is no longer hard-coded. This branch runs on whatever relayed the pull, and a
+   MacBook set to "secondary" relays too, so the old sentence told a laptop
+   owner his day had landed on a phone he was not holding. thisDev() reads
+   __mlsDeviceRole.deviceNoun(). */
+assert(/onDay > 0/.test(block) && /appointment' \+ \(onDay === 1 \? '' : 's'\) \+ ' now on ' \+ thisDev\(\)/.test(block),
+  'a successful pull must report the COUNT this device can see');
+assert(/function thisDev\(\)/.test(connect) && /function devNoun\(\)/.test(connect),
+  'the device word must come from one helper, not be re-guessed per sentence');
+assert(!/now on this phone/.test(connect),
+  'the hard-coded "this phone" is back — this branch also runs on laptops and tablets');
 assert(/could not confirm what arrived/.test(block),
   'with no calendar data the phone must say it could not confirm');
 assert(/has not loaded that month/.test(block),
@@ -57,7 +68,7 @@ assert(/has not loaded that month/.test(block),
  * `monthLoaded` must gate the failure branch. Without it, pulling a day whose
  * month this phone has not loaded would report a scary failure for a pull that
  * actually worked. */
-const failIdx = block.indexOf('but no appointments for that day have reached this phone');
+const failIdx = block.indexOf('but no appointments for that day have reached ');
 assert(failIdx > 0, 'the honest empty-day message is missing');
 const guardIdx = block.indexOf('} else if (monthLoaded) {');
 assert(guardIdx > 0, 'the empty-day failure must be guarded by monthLoaded');
