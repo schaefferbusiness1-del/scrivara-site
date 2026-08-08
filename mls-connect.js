@@ -35364,7 +35364,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b968';
+  window.__MLS_AV = window.__MLS_AV || 'b969';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35707,7 +35707,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b968';
+  var MLS_APP_BUILD='2026-07-25-b969';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -36893,6 +36893,178 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   wrap('aiCallRaw');
 })();
+
+/* =============================================================================
+   feat_mls_note_defaults_reach (ndr-1.0.0) — Settings -> Note defaults REACHES
+   EVERY DRAFTING PATH.
+   -----------------------------------------------------------------------------
+   MEASURED 2026-08-08 against origin/main b964, over all 44 aiCallRaw() sites in
+   the shipped asset set:
+
+     Practice billing codes (window.__mlsCodeTable.promptBlock)
+       reached 4 of 8 prompts that TELL the model to emit ICD-10/CPT.
+       NOT reached, though the Settings card promises "op-notes":
+         - ScribeFlow.html  _genOpNote          (op-note adapted from a template)
+         - mls-connect.js   op-note TEMPLATE FILL
+         - mls-opnote-pro.js op-note pro adapt
+         - ScribeFlow.html  prior-authorization letter (CPT/HCPCS + ICD-10)
+       All four carry the same "CODING -- fill real codes" paragraph, so the
+       practice's own codes were silently ignored on exactly the documents a
+       procedural practice bills from.
+
+     Note style (balanced/concise/detailed, carried by docPrefsBlock())
+       reached 4 of 44 paths: note generation, AVS, referral letter, legal
+       report. Op-notes, prior auth, handouts, chart timelines, section
+       rewrites and letters never saw it.
+
+   Patching each call site one at a time is how this drifted in the first place:
+   a site added later starts out uncovered and nothing notices. So this is a
+   single chokepoint on aiCallRaw, the same shape as feat_opnote_quality above.
+
+   THREE RULES, learned from the 2026-07-30 regression documented on that wrapper:
+     1. Only argument 0 (the system prompt) is ever touched. The user prompt ends
+        with the doctor's own template and the model has just been told to copy
+        its structure and fixed wording; appending instructions there puts MLS
+        text inside the block being copied.
+     2. Idempotent. A prompt that already carries a block is left alone, so the
+        four sites that inject inline keep exactly the text they inject today.
+     3. Classification is explicit and auditable, never "append to everything":
+        codes go only to prompts that ask for codes, style only to prompts that
+        write a clinical document. tests/note-defaults-reach-contract.test.js
+        prints the decision for every shipped prompt, with a denominator.
+
+   Installed AFTER feat_opnote_quality on purpose: that wrapper skips any
+   function already carrying __mlsWrapped, so wrapping first would silently
+   delete the op-note quality directive. This wrapper never sets that flag.
+   ===========================================================================*/
+(function(){
+  "use strict";
+  if(window.__mlsNoteDefaultsReach) return;
+
+  /* --- prompts that instruct the model to PRODUCE a billing code ----------- */
+  var CODES_WANTED=/fill real codes|ICD-?10 code|CPT code|CPT\/HCPCS|HCPCS code|DIAGNOSIS CODES \(ICD-10\)|PROCEDURE CODES \(CPT\)|billable/i;
+  /* ...but never an ingestion prompt. These read an EMR page and return JSON;
+     a practice table is not an instruction there, it is contamination. */
+  var INGEST=/You extract\b|You tag clinical note templates|appointment schedule from raw|You match a scheduled procedure/i;
+  /* the two openings promptBlock() can emit, plus our own stamp */
+  var CODES_PRESENT=/PRACTICE-APPROVED BILLING CODE TABLE|BILLING CODES: No practice-specific|\[MLS PRACTICE CODES\]/;
+
+  /* --- prompts that WRITE a clinical document the doctor signs or sends ---- */
+  var DOC_WANTED=/OPERATIVE ?\/ ?PROCEDURE NOTE|operative note|procedure note|operative\/procedure note|clinical note|visit note|SOAP|AFTER-VISIT SUMMARY|after-visit summary|REFERRAL LETTER|referral\/summary letter|PATIENT HANDOUT|CLINICAL TIMELINE|INDEPENDENT MEDICAL EXAMINATION|MEDICAL-LEGAL REPORT|EXPERT WITNESS|prior authorization|letter of medical necessity/i;
+  /* ...but not the graders, taggers, spec builders and style-miners. A writing
+     preference handed to a classifier changes its verdict, not its prose.
+     Nor the STRUCTURE-FAITHFUL fills: reformat-to-template, dictation-to-field
+     routing and the custom widget all have to reproduce a shape they were
+     given. "Write concisely" against a prompt whose job is to keep every
+     template field is the b900 shape -- a style rule that deletes clinical
+     lines. Those three keep the code table and lose only the prose preference;
+     the note they are reformatting already carried it at generation. */
+  var NOT_A_DOCUMENT=/Return ONLY (?:a )?JSON array|You tag |You extract |You match a scheduled|WIDGET SPEC|REUSABLE style|documentation quality analyst|EFFICIENCY SUMMARY|quality-measure auditor|decision-support assistant|clinical safety reviewer|study analyst|Normalize ONE dictated value|Output ONLY the filled template|custom clinical widget|Map the dictation onto the listed fields/i;
+  var DOC_PRESENT=/PROVIDER PREFERENCES \(follow these/;
+
+  function block(fn){ try{ var s=fn(); return (typeof s==='string')?s:''; }catch(e){ return ''; } }
+
+  /* THE TRANSPORT REFUSES, IT DOES NOT TRUNCATE.
+     POST /api/complete answers 413 "The prompt is too large." when the system
+     string exceeds 30000 characters -- the whole request fails, so an oversized
+     prompt is a DEAD op-note, not a slightly shorter one. promptBlock() already
+     self-limits its table body to 6000 chars and says how many entries it left
+     out, and docPrefsBlock() is the doctor's own free text with no cap at all,
+     so the ceiling has to be enforced here rather than assumed.
+     Margin is deliberate: the caller may append after us (feat_opnote_quality
+     adds ~700 chars to op-note prompts and runs INSIDE this call). */
+  var SYS_LIMIT=30000, SYS_BUDGET=26000;
+  /* A CAP THAT NOBODY CAN SEE READS AS "EVERYTHING FIT". Whenever the ceiling
+     actually bites, say so and keep a count, so a doctor asking "why is it
+     ignoring my preferences" has an answer that is not a guess. */
+  var dropped={codeTableTrimmed:0, codeTableDropped:0, prefsDropped:0};
+  function note(kind){
+    dropped[kind]++;
+    try{ if(dropped[kind]===1 && window.console && console.warn)
+      console.warn('[MLS note defaults] '+kind+': the system prompt reached the '+SYS_BUDGET+
+        '-char ceiling (/api/complete refuses above '+SYS_LIMIT+'), so this block was left out of that request. '+
+        'Shorten the standing preferences in Settings, or the practice code table.'); }catch(e){}
+  }
+  function fits(cur, add){ return (cur.length+add.length)<=SYS_BUDGET; }
+  /* Trim on an entry boundary so a code is never cut in half into a
+     plausible-looking wrong code. */
+  function trimToBudget(cur, add){
+    var room=SYS_BUDGET-cur.length;
+    if(room<400) return '';
+    var cut=add.lastIndexOf('\n', room-120);
+    if(cut<200) return '';
+    return add.slice(0,cut)+'\n- ...(list truncated to fit the request size limit; apply the same rule to anything not shown)\n';
+  }
+
+  /* Exported so the contract test classifies with the SHIPPED predicate rather
+     than a copy of it — a copy is how a test starts agreeing with itself. */
+  function wantsCodes(sys){ return CODES_WANTED.test(sys) && !INGEST.test(sys) && !CODES_PRESENT.test(sys); }
+  function wantsStyle(sys){ return DOC_WANTED.test(sys) && !NOT_A_DOCUMENT.test(sys) && !DOC_PRESENT.test(sys); }
+
+  function augment(sys){
+    var out=sys;
+    if(wantsCodes(out)){
+      var tbl=(window.__mlsCodeTable&&typeof window.__mlsCodeTable.promptBlock==='function')
+        ? block(function(){ return window.__mlsCodeTable.promptBlock(); }) : '';
+      if(tbl){
+        var head='\n\n[MLS PRACTICE CODES] ';
+        if(fits(out, head+tbl)) out=out+head+tbl;
+        else { var t=trimToBudget(out, head+tbl); if(t){ out=out+t; note('codeTableTrimmed'); } else note('codeTableDropped'); }
+      }
+    }
+    if(wantsStyle(out)){
+      var prefs=(typeof window.docPrefsBlock==='function')
+        ? block(function(){ return window.docPrefsBlock(); }) : '';
+      /* docPrefsBlock() returns '' when the doctor has no preferences and the
+         note style is the default, so an untouched account pays nothing. */
+      /* Several of these prompts END with their output contract ("Return ONLY
+         JSON, no prose, no code fence"). Appending anything after that makes a
+         writing preference the last thing the model reads, so the scope of the
+         block is stated explicitly rather than left to position. */
+      if(prefs){
+        var tail=prefs+'\n(Those are writing preferences only. They never change the output format, the required sections, or the JSON shape specified earlier in this prompt, and they never override clinical accuracy or coding ethics.)';
+        /* A style preference is worth less than a delivered note: if it does not
+           fit, it is dropped whole rather than half-written. */
+        if(fits(out, tail)) out=out+tail; else note('prefsDropped');
+      }
+    }
+    return out;
+  }
+
+  var installed=false;
+  function install(){
+    if(installed) return true;
+    var orig=window.aiCallRaw;
+    if(typeof orig!=='function') return false;
+    if(orig.__mlsReachWrapped) { installed=true; return true; }
+    var w=function(){
+      try{
+        var a0=arguments[0];
+        if(typeof a0==='string' && a0) arguments[0]=augment(a0);
+      }catch(e){}
+      return orig.apply(this,arguments);
+    };
+    w.__mlsReachWrapped=true;
+    /* deliberately NOT __mlsWrapped — see the header note */
+    window.aiCallRaw=w;
+    installed=true;
+    return true;
+  }
+
+  window.__mlsNoteDefaultsReach={
+    version:'ndr-1.0.0', wantsCodes:wantsCodes, wantsStyle:wantsStyle, augment:augment,
+    sysLimit:SYS_LIMIT, sysBudget:SYS_BUDGET,
+    dropped:function(){ return { codeTableTrimmed:dropped.codeTableTrimmed, codeTableDropped:dropped.codeTableDropped, prefsDropped:dropped.prefsDropped }; },
+    installed:function(){ return installed; }
+  };
+
+  if(!install()){
+    /* aiCallRaw lives in the ScribeFlow inline script; on any surface where it
+       never appears this stops on its own instead of spinning forever. */
+    var n=0, iv=setInterval(function(){ if(install()||++n>40) clearInterval(iv); },500);
+  }
+})();
+
 /* feat_pkg_templates — ship a few well-structured starter op-note templates (item 13), ADDED only if
    not already present (never overwrites or deletes the doctor's existing templates). Each is a proper
    operative-note skeleton with [BRACKET] fill-ins so the physician completes the specifics. */
