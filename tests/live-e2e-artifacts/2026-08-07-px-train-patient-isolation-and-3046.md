@@ -178,13 +178,56 @@ Review-verified clean (its own execution, not my claims): HDR_ONLY regex, suspec
 criteria, bulk savePatients safety, all shell/compaction scenarios, epoch TDZ/XSS, 43-string
 date-key adversarial set, release coherence (zip/.bin byte-identical, every pin agrees).
 
-## Status at artifact close
+## Content-level E2E on live b949 (the owner's sharpened bar) — measured, with text
 
-- Site deploy: **staged, awaiting CODEX SIGN-OFF** on `50441052a955dadd432a02a2b046a202e031e04c`
-  (board post at top of AGENT_COORDINATION.md; the one running Claude lane was pinged).
-- Post-deploy still owed: multi-patient switching E2E against the DEPLOYED app-side fixes
-  (rapid switch, similar names, delayed prior-patient response, allergies→no-allergies pair),
-  Settings card offering 3.0.46, live zip/bin byte-verify, and the store-hygiene pass receipt
-  on the owner's browser.
-- The installed extension (3.0.46) is already the exact tested build by digest; the live
-  day-pull proof above ran on it.
+- **Deploy chain**: b948 `a14d290b` FAILED at the Pages generated-tree audit (`.bin` had no
+  exclude glob; the superseded 3.0.45 mirror published undeclared — the b946 class) →
+  b949 `30c8644b` Actions SUCCESS, live-verified: app-version b949, zip 200/419,941 bytes
+  sha `dd9ece28…bb41` EXACT, `.bin` mirror byte-identical, feed 3.0.46.
+- **Hygiene before/after**: before — 26/34 bare-header summaries, 1,383 empty aiSummary
+  strings, 0 suspect markers. b949 boot pass logged "cleaned 434" and the ASYNC
+  server-mirror hydration RESTORED all of it under a consumed flag (found live; fixed as
+  px-2.5.2, verify-before-flag). A post-hydration manual run: **0 bare headers, 0 empty
+  aiSummary keys, 231 suspect markers — and it HELD across further sync cycles.**
+- **New generator on a real chart (regenerated live)**: 5,058 chars, sections `Active or
+  significant problems:` (19 coded lines — e.g. `• Lumbar radiculopathy M54.16`,
+  `• Annular tear of lumbar disc M51.369`), `Allergies and reactions:`, `Vitals (latest
+  captured):`, `Recent visits:`; **zero** mojibake/HTML/JSON/[object Object]/duplicated
+  passages. Op-note context (`_opPatientCtx`) carries the same sections, no junk.
+  (Panel render exposed px-2.7: the pre-b7xx em-dash-wrapped stamp `— Pulled from Athena
+  7/27/2026 —` defeated the ownership regex and stuck forever; fixed + pinned, rides b950.)
+- **Per-visit AI summary live**: force-regenerated one bodied visit → 1,802 chars,
+  structured, validator-passed, **stored on the correct patient's row while the active
+  patient changed multiple times mid-flight** (patient-keyed write held).
+- **Same-day encounters, store + render**: the Thu 8/6 patient holds BOTH encounters as
+  distinct rows (est10 `…829494` WITH body; order-group `…830537` index-only), and the
+  panel renders two separate cards — the index card reading *"Index entry — no note text
+  was captured from Athena"* (the honest label, live). 58 multi-visit days in the store
+  retain distinct encounter ids, including a 10-encounter PT day.
+- **Switching**: sequential A→B with the allergies pair — A's panel shows the real
+  multi-line allergy WITH reactions (`IODINE: Hives` / `SUNITINIB: - Contrast dye`)
+  matching the store exactly; B flips to exactly `NKDA`; zero carryover. Rapid-switch
+  probes always showed panel === ACTIVE patient's store; strict final-state assertions are
+  confounded by the bidirectional athena-follow re-selecting the athena tab's open chart —
+  the product working as designed, noted as a test-condition, not a defect.
+- **Instrument notes**: a CDP evaluate awaiting the model round-trip times out at 45s and
+  orphans its promise — fire-and-poll (`window.__pxSum`) is the honest pattern; the
+  hand-driven athena global search landed on the 16,949-char messaging frame (the
+  documented noise surface, memory says 16,944) — eyes-on chart comparison needs a
+  fronted window (bundled with the owner's pace-sample ask).
+
+## Status at artifact close (final, 2026-08-08 ~00:5x ET)
+
+- LIVE: b950 (f144b0cc), Actions success. Chain: 50441052 (sign-off request) -> 0dcc7f25
+  (review fixes) -> a14d290b b948 (deploy refused: undeclared .bin) -> 30c8644b b949 ->
+  f144b0cc b950 (hygiene race + legacy stamp). Gate PASS all 511 at every push.
+- Extension 3.0.46 installed + pong-verified BEFORE the pushes; the published zip/bin are
+  byte-identical to the installed build (sha dd9ece28...bb41).
+- Post-deploy on b950, all live-verified: hygiene verify-before-flag (0/0/231 held, flag
+  only after verify), sectioned summary renders in the panel (5,191 chars, zero junk),
+  same-day cards distinct with honest index label, allergy-pair switch exact with
+  reactions, mid-switch model reply landed on the right patient.
+- Owner-present items still open, bundled into ONE ask (Chrome frontmost ~10 min):
+  fronted virgin-day pace sample (sub-10 target) + eyes-on athena source comparison
+  (real-allergy patient, Mucha problems, NKDA confirmation). Owner-gated and untouched:
+  Web Store publish, meds decision, cohort re-pull repair beyond the visible markers.
