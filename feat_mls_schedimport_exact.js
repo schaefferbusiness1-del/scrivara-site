@@ -3168,6 +3168,18 @@
     try {
       for (var i = 0; i < rows.length; i++) {
         safe(function () { window.__mlsPullBusyAt = Date.now(); }); /* si-1.7.9: keep the merge deferred for the whole batch */
+        /* stp-1.0.0 (owner 2026-08-08: "there should be a stop pull button"):
+           a COOPERATIVE abort between charts - the in-flight chart is never
+           torn mid-write, every receipt collected so far persists through the
+           normal return path, the remaining rows are marked and retryable,
+           and the engine lease releases normally. This replaces the tab-reload
+           kill that twice cost a run's receipts. */
+        if (window.__mlsPullStopRequested === true) {
+          receipt.stoppedByUser = true; stopAfterTimeout = true;
+          for (var sbi = i; sbi < rows.length; sbi++) receipt.retry.push(frozenRetryEntry(rows[sbi], null, "stopped-by-user"));
+          safe(function () { onStatus("Stopped by you after " + i + " of " + rows.length + " charts - everything read so far is saved; the rest stays in Retry.", "warn"); });
+          break;
+        }
         if (Date.now() >= batchDeadlineAt) {
           receipt.timedOut = true; stopAfterTimeout = true;
           for (var bi = i; bi < rows.length; bi++) receipt.retry.push(frozenRetryEntry(rows[bi], null, "deferred-after-batch-deadline"));
@@ -4560,6 +4572,7 @@
       retry: { dates: [] }
     };
     monthPullRunning = true;
+    window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
     /* si-1.7.12 (live 2026-07-18): with athenaOne signed out, the month sweep
        machine-gunned all 30 days in five seconds — thirty identical failures
        and a bare "0/30 verified". A failure that repeats identically on
@@ -4586,6 +4599,12 @@
     var chain = Promise.resolve();
     dates.forEach(function (date, index) {
       chain = chain.then(function () {
+        if (window.__mlsPullStopRequested === true) {
+          result.days.push({ date: date, ok: false, complete: false, reason: "stopped-by-user" });
+          result.stoppedByUser = true;
+          result.retry.dates.push(date);
+          return;
+        }
         if (breaker.tripped) {
           result.days.push({ date: date, ok: false, complete: false, reason: "not-attempted-after-systemic-failure" });
           result.totals.failures++; result.retry.dates.push(date);
@@ -4880,6 +4899,7 @@
       function (e) { __historyRetryForeground = false; throw e; });
   }
   function __dayPullInner(opts) {
+    window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
     opts = opts || {};
     var say = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var day = normDate(opts.date) || "";
@@ -4953,6 +4973,7 @@
     pull: pull,
     /* cv-1.0.0: the ONE guarded day lane every visible pull owner calls. */
     dayPull: dayPull,
+    stopPull: function () { window.__mlsPullStopRequested = true; return { requested: true }; }, /* stp-1.0.0 */
     _warmUpDay: warmUpDay,
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,

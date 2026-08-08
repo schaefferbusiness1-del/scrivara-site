@@ -537,6 +537,32 @@ async function main() {
     assert.strictEqual(bareMsg, 'history-organization-unproven: organize-returned-no-result', 'a null organize result must still name itself, got: ' + bareMsg);
   }
 
+  // stp-1.0.0 (owner 2026-08-08: "there should be a stop pull button"): a
+  // cooperative abort between days. BOTH arms: with the flag set mid-run the
+  // sweep stops, marks every remaining day stopped-by-user AND retryable, and
+  // reports itself (fails pre-fix: the flag was ignored and every day ran);
+  // with the flag clear, a full run is untouched.
+  {
+    h.rt.__mlsPullStopRequested = false;
+    let stopArmedAfter = 2, daysStarted = 0;
+    const stopRun = await api.pullMonth({
+      month: '2026-05', provider: h.providerAlpha, includeHistory: false,
+      onStatus: (m) => { if (/^Month pull \d+\//.test(String(m))) { daysStarted++; if (daysStarted === stopArmedAfter) h.rt.__mlsPullStopRequested = true; } }
+    });
+    assert.strictEqual(stopRun.stoppedByUser, true, 'the run must report it was stopped by the user');
+    const stoppedDays = stopRun.days.filter(d => d.reason === 'stopped-by-user');
+    assert(stoppedDays.length >= 25, 'every unstarted day must be marked stopped-by-user, got ' + stoppedDays.length);
+    assert(stopRun.retry.dates.length >= stoppedDays.length, 'stopped days must remain retryable');
+    h.rt.__mlsPullStopRequested = false;
+    const cleanRun = await api.pullMonth({ month: '2026-05', provider: h.providerAlpha, includeHistory: false });
+    assert.strictEqual(cleanRun.stoppedByUser, undefined, 'an unstopped run must not claim a stop');
+    assert(!cleanRun.days.some(d => d.reason === 'stopped-by-user'), 'an unstopped run must run every day');
+    assert(/stopPull: function \(\) \{ window\.__mlsPullStopRequested = true;/.test(siSource), 'the engine must expose stopPull()');
+    assert(/window\.__mlsPullStopRequested === true\) \{\n          receipt\.stoppedByUser = true/.test(siSource), 'the per-chart batch loop must honor the flag between charts');
+    assert(connectSource.includes('id="mlsPullProgStop"') && connectSource.includes('>Stop pull</button>'), 'the Stop pull button must exist on the progress panel');
+    assert(connectSource.includes("getElementById('mlsPullProgStop')") && connectSource.includes('stopPull'), 'the button must be wired to the cooperative stopPull()');
+  }
+
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');
 }
 

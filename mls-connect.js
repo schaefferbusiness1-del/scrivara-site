@@ -4655,11 +4655,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<div class="pp-cur"><b>Now reading:</b> <span data-pp="current">&#8230;</span></div>' +
       '<div class="pp-rows" data-pp="rows" style="display:none"></div>' +
       '<div class="pp-note">athenaOne is being driven in its own tab and may flicker &#8212; that&#8217;s normal. MLS brings you back here when the pull finishes. Nothing is ever written to a chart during a pull.</div>' +
+      '<button type="button" class="pp-btn" id="mlsPullProgStop" style="margin-right:8px;border-color:#b3452f;color:#ffb4a6">Stop pull</button>' +
       '<button type="button" class="pp-btn" id="mlsPullProgHide">Hide (keep pulling)</button>' +
       '</div>';
     p.__ppBuilt = 1;
     var hb = document.getElementById('mlsPullProgHide');
     if (hb) hb.onclick = function () { hidden = true; render(); };
+    /* stp-1.0.0 (owner: 'there should be a stop pull button'): cooperative
+       abort - the engine checks the flag between charts and days, finishes the
+       chart in flight cleanly, keeps every receipt, releases the lease, and
+       reports how far it got. Never a tab reload. */
+    var sb = document.getElementById('mlsPullProgStop');
+    if (sb) sb.onclick = function () {
+      try { if (window.__mlsSI && typeof window.__mlsSI.stopPull === 'function') window.__mlsSI.stopPull(); else window.__mlsPullStopRequested = true; } catch (e) { window.__mlsPullStopRequested = true; }
+      sb.disabled = true; sb.textContent = 'Stopping after this chart&';
+    };
     return p;
   }
   function setText(p, key, val) {
