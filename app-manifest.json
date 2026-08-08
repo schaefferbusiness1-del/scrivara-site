@@ -1,7 +1,7 @@
 {
   "id": "/app.html",
-  "name": "Scrivara",
-  "short_name": "Scrivara",
+  "name": "MLS Scribe",
+  "short_name": "MLS Scribe",
   "description": "Pull a day out of athenaOne and read a patient's chart, from your phone.",
   "start_url": "/app.html",
   "scope": "/app.html",

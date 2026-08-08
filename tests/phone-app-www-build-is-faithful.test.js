@@ -72,10 +72,10 @@ try {
 let unstamped = built
   .split(`connect-src ${cfg.apiBase};`).join('connect-src https://scrivara-backend.onrender.com;')
   .split(`var API = '${cfg.apiBase}';`).join("var API = 'https://scrivara-backend.onrender.com';")
-  .split(`<title>${cfg.displayName}</title>`).join('<title>Scrivara</title>')
+  .split(`<title>${cfg.displayName}</title>`).join('<title>MLS Scribe</title>')
   .split(`<meta name="apple-mobile-web-app-title" content="${cfg.displayName}">`)
-    .join('<meta name="apple-mobile-web-app-title" content="Scrivara">')
-  .split(`<h1>${cfg.displayName}</h1>`).join('<h1>Scrivara</h1>')
+    .join('<meta name="apple-mobile-web-app-title" content="MLS Scribe">')
+  .split(`<h1>${cfg.displayName}</h1>`).join('<h1>MLS Scribe</h1>')
   .split(`<a href="${cfg.privacyUrl}" target="_blank" rel="noreferrer">Privacy</a>`)
     .join('<a href="privacy.html" target="_blank" rel="noreferrer">Privacy</a>')
   .split(`<a href="${cfg.termsUrl}" target="_blank" rel="noreferrer">Terms</a>`)

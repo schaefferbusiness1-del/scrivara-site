@@ -7,7 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow,noarchive">
 <meta name="theme-color" content="#204034">
-<title>Put Scrivara on your phone</title>
+<title>Put MLS Scribe on your phone</title>
 <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="fonts/fonts.css">
@@ -96,7 +96,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
     <div class="n">MLS<small>Ambient AI medical scribe</small></div>
   </header>
 
-  <h1 id="title">Put Scrivara on your phone</h1>
+  <h1 id="title">Put MLS Scribe on your phone</h1>
   <p class="lede" id="lede">It takes about thirty seconds, and you only do it once.</p>
 
   <!-- ===================== ON A COMPUTER ===================== -->
@@ -105,7 +105,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
   <section class="card" id="deskCard">
     <span class="eyebrow">Step 1 of 2 · on this computer</span>
     <h2>Scan this with your phone's camera</h2>
-    <p>Open the camera app, point it at the square below, and tap the link that appears. That opens this same page on your phone, which walks it through opening Scrivara and saving it to the Home Screen.</p>
+    <p>Open the camera app, point it at the square below, and tap the link that appears. That opens this same page on your phone, which walks it through opening MLS Scribe and saving it to the Home Screen.</p>
     <div class="qrbox">
       <div id="qr" aria-label="QR code linking to this page"><span class="fallback" id="qrFallback">Loading the code…</span></div>
       <div class="qrside">
@@ -118,7 +118,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
       </div>
     </div>
     <div class="note">
-      <b>Two apps, one account.</b> <b>Scrivara</b> is the small phone app — your day, your patients,
+      <b>Two apps, one account.</b> <b>MLS Scribe</b> is the small phone app — your day, your patients,
       and the pull. The full <b>MLS</b> workspace is also reachable on a phone when you need to record
       a visit and write the note. Either way the athenaOne reading happens on your office computer,
       the one with the MLS Assist extension: leave it on with MLS open and the results sync back.
@@ -132,22 +132,22 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
        So: open the app, THEN save the app. -->
   <section class="card hide" id="openCard">
     <span class="eyebrow">Step 1 of 2 · on this phone</span>
-    <h2>Open Scrivara</h2>
-    <p>Sign in with the same email and password you use on your office computer. Scrivara is the
+    <h2>Open MLS Scribe</h2>
+    <p>Sign in with the same email and password you use on your office computer. MLS Scribe is the
        small phone app: your day, your patients, and one button to pull them from Athena.</p>
-    <a class="cta" id="openApp" href="app.html">Open Scrivara →</a>
+    <a class="cta" id="openApp" href="app.html">Open MLS Scribe →</a>
     <a class="cta quiet" id="openFull" href="ScribeFlow.html?phone=1">I need to record a visit — open the full MLS workspace</a>
   </section>
 
   <section class="card hide" id="installCard">
     <span class="eyebrow" id="installEyebrow">Step 2 of 2 · once it is open</span>
     <h2 id="installTitle">Save it to your Home Screen</h2>
-    <p id="installWhy">This gives Scrivara its own icon and opens it with no browser bars — so it
+    <p id="installWhy">This gives MLS Scribe its own icon and opens it with no browser bars — so it
        behaves like an app, not a web page.</p>
     <ol class="steps" id="installSteps"></ol>
-    <button type="button" class="cta hide" id="installNow">⤓ Add Scrivara to my Home Screen</button>
+    <button type="button" class="cta hide" id="installNow">⤓ Add MLS Scribe to my Home Screen</button>
     <div class="note">
-      <b>Do this on the Scrivara screen, not on this one.</b> Your phone saves whichever page you
+      <b>Do this on the MLS Scribe screen, not on this one.</b> Your phone saves whichever page you
       are looking at, so adding this instruction sheet would give you an icon that opens the
       instructions instead of the app.
     </div>
@@ -230,12 +230,12 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
       : 'in ' + (B === 'chrome-ios' ? 'Chrome' : B === 'firefox-ios' ? 'Firefox' : B === 'edge-ios' ? 'Edge' : 'your browser') + '’s toolbar';
     return step('Tap the Share button ' + SHARE_IOS, 'It is the square with the arrow coming out of the top, ' + where + '.') +
       step('Scroll down and tap <b>Add to Home Screen</b>', 'It sits below the row of apps, in the list with Add Bookmark and Find on Page.') +
-      step('Tap <b>Add</b>', 'Scrivara lands on your Home Screen with its own icon.');
+      step('Tap <b>Add</b>', 'MLS Scribe lands on your Home Screen with its own icon.');
   }
   function androidSteps() {
     return step('Tap the menu ' + MENU_ANDROID, 'Three dots, at the top right of ' + (B === 'chrome' ? 'Chrome' : 'your browser') + '.') +
       step('Tap <b>Add to Home screen</b>', 'Some versions of Chrome call it <b>Install app</b> — either one is right.') +
-      step('Tap <b>Install</b> (or <b>Add</b>)', 'Scrivara lands on your Home Screen with its own icon.');
+      step('Tap <b>Install</b> (or <b>Add</b>)', 'MLS Scribe lands on your Home Screen with its own icon.');
   }
 
   /* ---- render ------------------------------------------------------------ */
@@ -246,7 +246,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
     openCard.classList.remove('hide');
     installCard.classList.remove('hide');
     afterCard.classList.remove('hide');
-    $('title').textContent = 'Put Scrivara on your ' + deviceWord;
+    $('title').textContent = 'Put MLS Scribe on your ' + deviceWord;
     $('lede').textContent = 'Two steps, about thirty seconds, and you only do it once.';
 
     if (installed()) {
@@ -254,7 +254,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
          reading the page FROM their home screen is the kind of confident-and-
          wrong instruction this page exists to avoid. */
       $('installEyebrow').textContent = 'Already done';
-      $('installTitle').textContent = '✓ Scrivara is already on your Home Screen';
+      $('installTitle').textContent = '✓ MLS Scribe is already on your Home Screen';
       $('installWhy').textContent = 'You are reading this inside the installed app right now. Nothing else to add.';
       $('installSteps').innerHTML = '';
       openCard.querySelector('.eyebrow').textContent = 'The only step';
@@ -263,7 +263,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
     }
   } else {
     /* A computer. Show the QR, and never pretend this machine is a phone. */
-    $('title').textContent = 'Put Scrivara on your phone';
+    $('title').textContent = 'Put MLS Scribe on your phone';
     $('lede').textContent = 'You are on a ' + (/Macintosh/i.test(ua) ? 'Mac' : /Windows/i.test(ua) ? 'Windows computer' : 'computer') +
       '. Scan the code below with the phone you want to use, and the phone takes it from there.';
     $('selfUrl').textContent = PRETTY;

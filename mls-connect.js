@@ -47949,7 +47949,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<div id="mlsRlQr" style="flex:none;width:148px;height:148px;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:8px;box-sizing:content-box"></div>' +
           '<ol style="flex:1;min-width:190px;margin:0;padding:0 0 0 18px;font:500 12.5px/1.7 \'Public Sans\',system-ui,sans-serif;color:#1A211C">' +
             '<li>Scan the square with your phone camera.</li>' +
-            '<li>Open Scrivara from the button it shows.</li>' +
+            '<li>Open MLS Scribe from the button it shows.</li>' +
             '<li>Follow its three taps — <b>Add to Home Screen</b> — then sign in.</li>' +
           '</ol>' +
         '</div>' +

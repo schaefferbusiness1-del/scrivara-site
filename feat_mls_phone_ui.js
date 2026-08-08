@@ -27,11 +27,20 @@
  * Integrations" twice, an instruction that pointed at nothing reachable from
  * the device reading it (the-instruction-points-nowhere class).
  *
- * SCRIVARA. app.html ("Scrivara", lane 014) is a separate store-shipped app.
- * This workspace advertised it in a Setup card and sent "Open the full setup
- * guide" to phone-setup.html, which is that app's install guide -- so the two
- * routes out of MLS on a phone both left MLS. Both are gone. The other app and
- * its store lane are untouched; only this app's references to it are removed.
+ * THE OTHER APP. app.html (lane 014) is a separate store-shipped app. This
+ * workspace advertised it in a Setup card and sent "Open the full setup guide"
+ * to phone-setup.html, which is that app's install guide -- so the two routes
+ * out of MLS on a phone both left MLS. Both are gone.
+ *
+ * It was called "Scrivara" until 2026-08-08, when the owner read "Put Scrivara
+ * on your iPhone" on his own phone and said: "this should save mlsscribe
+ * everywhere, fix everywhere what it says the wrong thing to." It is "MLS
+ * Scribe" now, in every string a person can read -- not bare "MLS", because
+ * this workspace already installs under that name and two icons reading "MLS"
+ * on one Home Screen are indistinguishable. The backend host
+ * (scrivara-backend.onrender.com) and the bundle id (com.scrivara.app) are
+ * NOT renamed: one is a live address and the other is permanent once a store
+ * build is uploaded under it.
  *
  * WHAT WAS THERE BEFORE, AND WHY REPLACING IT WAS THE ONLY HONEST FIX
  * ------------------------------------------------------------------
@@ -56,7 +65,7 @@
  *
  * THE OTHER PHONE APP, AND WHY THIS IS NOT IT
  * -------------------------------------------
- * app.html ("Scrivara", lane 014) is a separate, small, store-shipped phone app
+ * app.html ("MLS Scribe", lane 014) is a separate, small, store-shipped phone app
  * built in parallel for the two verbs the owner named there: PULL a day, and
  * SEE a patient. It does not record, does not write notes, does not load
  * mls-connect.js, and its lane claim states plainly that it is "not fixing that

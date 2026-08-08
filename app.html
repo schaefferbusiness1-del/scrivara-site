@@ -14,15 +14,15 @@
 <meta name="theme-color" content="#141A16" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Scrivara">
+<meta name="apple-mobile-web-app-title" content="MLS Scribe">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Scrivara</title>
+<title>MLS Scribe</title>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="app-manifest.json">
 <style>
 /* ============================================================================
-   Scrivara — the phone app.
+   MLS Scribe — the phone app.
 
    Three screens, nine controls, one job: pull a day out of athenaOne and read a
    patient. Everything that is not one of those two verbs was deliberately left
@@ -260,7 +260,7 @@ button.row:active{background:var(--surface-2)}
       <button class="hbtn lead hide" id="backBtn" aria-label="Back">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
       </button>
-      <h1 class="htitle" id="hTitle">Scrivara</h1>
+      <h1 class="htitle" id="hTitle">MLS Scribe</h1>
       <button class="hbtn hide" id="outBtn" aria-label="Sign out">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 17l5-5-5-5M20 12H9M12 20H6a2 2 0 01-2-2V6a2 2 0 012-2h6"/></svg>
       </button>
@@ -273,7 +273,7 @@ button.row:active{background:var(--surface-2)}
     <!-- SIGN IN -->
     <section id="signin" class="hide"><div class="wrap">
       <div class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h5l2.5-6 4 13L16 12h6"/></svg></div>
-      <h1>Scrivara</h1>
+      <h1>MLS Scribe</h1>
       <p class="tag">Your schedule and your charts, on your phone.</p>
 
       <div id="credFields">
@@ -338,7 +338,7 @@ button.row:active{background:var(--surface-2)}
 <script>
 'use strict';
 /* ===========================================================================
-   Scrivara app runtime.
+   MLS Scribe app runtime.
 
    State is one object and one render(). There is no router, no store, no
    component tree — three screens do not earn any of that, and a doctor holding
@@ -560,7 +560,7 @@ function doSignIn(){
 
   var email = ($('emailInput').value || '').trim().toLowerCase();
   var pw = $('pwInput').value || '';
-  if (!email || email.indexOf('@') < 0) return msg('bad','Enter the email address you use for Scrivara.');
+  if (!email || email.indexOf('@') < 0) return msg('bad','Enter the email address you use for MLS Scribe.');
   if (!pw) return msg('bad','Enter your password.');
   S.busy = true; S.msg = null; render();
   api('POST','/api/auth/login',{ email: email, password: pw })
@@ -1065,7 +1065,7 @@ function renderToday(){
       body.appendChild(emptyState('◌','Searching…',''));
     } else if (!S.found.length){
       body.appendChild(emptyState('○','No patient by that name',
-        'Only patients already saved in Scrivara are searchable. Pull the day they were seen to bring them over.'));
+        'Only patients already saved in MLS Scribe are searchable. Pull the day they were seen to bring them over.'));
     } else {
       body.appendChild(el('div','sechead', S.found.length + (S.found.length === 1 ? ' match' : ' matches')));
       body.appendChild(listCard(S.found.map(function(p){

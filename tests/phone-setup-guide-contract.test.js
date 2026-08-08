@@ -142,7 +142,7 @@ function run(ua, extra) {
   assert(openAt < installAt,
     'the OPEN step must come before the SAVE step: add-to-home-screen captures the page on screen, ' +
     'so instructing the save first produces an icon that opens this instruction sheet instead of the app');
-  assert(/Do this on the Scrivara screen, not on this one/.test(html),
+  assert(/Do this on the MLS Scribe screen, not on this one/.test(html),
     'the guide must say WHERE the taps happen — the one sentence that stops a doctor bookmarking the instructions');
   assert(/id="openApp" href="app\.html"/.test(html),
     'the primary button must open the installable app (app.html), which is the page that should end up on the Home Screen');
@@ -156,7 +156,7 @@ function run(ua, extra) {
   assert(/Share button/.test(r.steps) && /Add to Home Screen/.test(r.steps),
     'iOS must be told about the Share sheet: ' + r.steps.slice(0, 200));
   assert(!/three dots|⋮|Add to Home screen<\/b>/.test(r.steps), 'iOS must not be given Android instructions');
-  assert(/Put Scrivara on your iPhone/.test(r.title), 'the page must name the device it is being read on: ' + r.title);
+  assert(/Put MLS Scribe on your iPhone/.test(r.title), 'the page must name the device it is being read on: ' + r.title);
   assert.strictEqual(r.drawn.length, 0, 'a phone does not need a QR code pointing at the page it is already on');
 }
 
@@ -168,13 +168,13 @@ function run(ua, extra) {
   assert(/Install app/.test(r.steps),
     'Chrome calls it "Install app" on some versions — a doctor who cannot find the exact words gives up');
   assert(!/Share button/.test(r.steps), 'Android must not be given iOS instructions');
-  assert(/Put Scrivara on your Android phone/.test(r.title), 'the device must be named: ' + r.title);
+  assert(/Put MLS Scribe on your Android phone/.test(r.title), 'the device must be named: ' + r.title);
 }
 
 /* Already installed: it must not instruct a reader to do what they have done. */
 {
   const r = run(UAS.iphone, { standalone: true });
-  assert(/Scrivara is already on your Home Screen/i.test(r.nodes.get('installTitle').textContent),
+  assert(/MLS Scribe is already on your Home Screen/i.test(r.nodes.get('installTitle').textContent),
     'a page being read FROM the home screen must say so, not repeat the instructions');
   assert.strictEqual(r.steps, '', 'the steps must be cleared once they are done');
 }
@@ -187,7 +187,7 @@ for (const [name, ua] of [['Mac', UAS.mac], ['Windows', UAS.windows]]) {
   assert.strictEqual(r.drawn.length, 1, name + ' must get exactly one QR drawn locally');
   assert.strictEqual(r.drawn[0].text, 'https://mlsscribe.com/phone-setup.html',
     'the QR must encode this page\'s own address, built from the origin rather than a literal that can drift');
-  assert(!/Put Scrivara on your (Mac|Windows|computer)\b/.test(r.title),
+  assert(!/Put MLS Scribe on your (Mac|Windows|computer)\b/.test(r.title),
     name + ' was told to put MLS on itself: ' + r.title);
   assert(/You are on a /.test(r.lede), name + ' must be told plainly that it is a computer: ' + r.lede);
 }
