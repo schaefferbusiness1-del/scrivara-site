@@ -45,7 +45,7 @@ assert(/No Athena history pulled for this patient yet\./.test(app), 'the b940 ho
   const block = shell.slice(start, shell.indexOf(".join('');", start));
   assert(/_athenaChartLanded/.test(block), 'the never-read test must ride the app receipt predicate, never a guess');
   assert(/empty && neverRead/.test(block) && /not pulled yet<\/span>/.test(block), 'a never-read empty field must say "not pulled yet" in visible words (pre-fix rendered the same dash as read-and-thin)');
-  assert(/\} else if \(empty\) \{/.test(block) && block.indexOf('>—</span>') >= 0, 'a landed chart\'s empty field must KEEP the quiet dash - labeling everything not-pulled is as wrong as the default');
+  assert(/\} else if \(empty\) \{/.test(block) && /title="Not captured\. This does not mean the chart is empty/.test(block), 'a landed chart\'s empty field must KEEP the quiet dash - labeling everything not-pulled is as wrong as the default');
   assert(/these fields are unread, not empty/.test(block), 'the tooltip must state the unread-vs-empty distinction');
 }
 
