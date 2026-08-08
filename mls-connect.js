@@ -15441,7 +15441,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function healthOf(t) {
     /* honest heuristics -- never fabricates a success */
     var txt = S(t.text), len = txt.length;
-    /* b953 PERF: count without allocating. `txt.match(/[A-Za-z]/g)` builds an
+    /* b954 PERF: count without allocating. `txt.match(/[A-Za-z]/g)` builds an
        array holding one single-character string per letter in the template -
        on the owner's 96-template library that is roughly half a million throwaway
        strings, and the op-note room calls healthOf for every template on every
@@ -15946,7 +15946,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
     if (rows.length > 40) {
       var goBig = false;
-      /* b953: the estimate follows the runner. It still says one AI call per
+      /* b954: the estimate follows the runner. It still says one AI call per
          patient - that is unchanged and worth stating - but the wall-clock
          figure now divides by how many run at once, because quoting the old
          serial minutes for a parallel run would be a number the doctor watches
@@ -15982,7 +15982,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          an earlier patient can never be blamed on this row, then copy it onto
          the row when the draft comes back not-ok - the wrapper returns false
          instead of rejecting, so the catch below almost never fires. */
-      /* b953: also clear THIS ROW's stamp. Under the parallel runner below the
+      /* b954: also clear THIS ROW's stamp. Under the parallel runner below the
          globals are shared, so they are cleared only to keep single-flight
          behaviour byte-identical; the per-row fields are the ones that decide. */
       try { window.__mlsLastOpFidelityError = ""; window.__mlsLastOpErrorCode = ""; window.__mlsLastOpReconstructed = false; } catch (e0) {}
@@ -16032,7 +16032,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var noteNow = S(r && r.note).trim();
         var producedSomething = !!noteNow && (!hadGen || noteNow !== hadNote);
         var wrapperSaid = (drafted === true) ? true : (drafted === false ? false : null);
-        /* b953: THE THREE SIGNALS ARE READ FROM THE ROW WHEN THE ROW HAS THEM.
+        /* b954: THE THREE SIGNALS ARE READ FROM THE ROW WHEN THE ROW HAS THEM.
            Every clause below used to read a window global, which is correct for
            exactly one draft in flight and wrong for two. The base drafter now
            stamps _genPass / _genErr / _genErrCode / _reconstructed on the row it
@@ -16064,7 +16064,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return false;
       });
     }
-    /* b953 — A DAY'S DRAFTS NO LONGER QUEUE BEHIND EACH OTHER.
+    /* b954 — A DAY'S DRAFTS NO LONGER QUEUE BEHIND EACH OTHER.
        OWNER: "the op notes still draft pretty slowly and maybe could be drafted
        all at once for a day". They could not be, and the reason was not the AI:
        this runner drafted patient N+1 only after patient N's round trip had
@@ -16161,7 +16161,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            conflict, truncation and auth failures are deterministic - the old
            blind retry burned a second AI call to fail identically. */
         var code = "";
-        /* b953: this row's own code, for the same reason the verdict is per-row
+        /* b954: this row's own code, for the same reason the verdict is per-row
            now - the global belongs to whichever draft touched it last. */
         try { var rC2 = (window._opPrep || [])[idx]; code = S(rC2 && rC2._genErrCode) || S(window.__mlsLastOpErrorCode); } catch (eCc) {}
         if (code && !/^(NETWORK|TIMEOUT|HTTP_429|HTTP_5\d\d)$/.test(code)) return false;
@@ -16243,7 +16243,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           states[idx].st = "fail"; states[idx].msg = why + " \u2014 re-try this one from its card";
         }
-        /* b953: the completed-count is bumped by settleOne(), once per row, for
+        /* b954: the completed-count is bumped by settleOne(), once per row, for
            EVERY path - including the pre-checks that used to bump it themselves.
            Bumping here as well would double-count and run the bar past 100%. */
       });
@@ -35230,7 +35230,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b953';
+  window.__MLS_AV = window.__MLS_AV || 'b954';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -35573,7 +35573,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b953';
+  var MLS_APP_BUILD='2026-07-25-b954';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -42832,7 +42832,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* cpw-1.0.0: Copilot app-wide senses (providerCoverage + capabilities in the snapshot), absolute wire cap on /api/copilot, and confirm-by-tap executors for pullProviders (via __mlsSI.dayPull, roster fail-closed) and draftNote (via openOpPrepForPatient). DEFERRED past first paint: the Copilot cannot receive a question before sign-in completes, so this module has no claim on the boot burst -- additive, reversible (window.__mlsCopilotPower.revert()) */
-;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v=20260807av567';s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
+;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{var sched=window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260807chk3046';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260727uns4';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */

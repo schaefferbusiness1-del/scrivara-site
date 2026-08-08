@@ -22,6 +22,11 @@
  *   only roster-verified providers and runs the pull engine sequentially with
  *   honest receipts; a busy engine refuses; draftNote opens the exact patient.
  */
+/* av-5.7.0 — THE STAFF CONSENT TAP. The kiosk now asks "Did the patient
+   consent to being recorded?" before it opens a microphone, posts a turn or
+   goes fullscreen, so every scenario below answers it exactly as a member of
+   staff does. If that button ever disappears these harnesses stop dead at the
+   first turn, which is the correct failure: no consent, no interview. */
 
 const fs = require('fs');
 const path = require('path');
@@ -392,7 +397,7 @@ const server = http.createServer((req, res) => {
         headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' },
         body: JSON.stringify(body.pin === '4321' ? { ok: true } : { ok: false, message: 'That PIN isn\'t right — try again.' }) });
     });
-    await page.evaluate(() => window.__mlsAvatar.openKiosk());
+    await page.evaluate(() => { window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); });
     await page.waitForFunction(() => {
       const k = document.getElementById('mlsAvKiosk');
       return !!k && window.__spoken.some((t) => /What brings you in today/.test(t)) && window.__recs.length >= 1;
@@ -479,7 +484,7 @@ const server = http.createServer((req, res) => {
         body: JSON.stringify({ ok: true, say: 'Hi again! What brings you in today?', done: false, progress: { covered: 1, total: 1 }, avatar: identity }) });
     });
     const recsBefore = await page.evaluate(() => window.__recs.length);
-    await page.evaluate(() => window.__mlsAvatar.openKiosk());
+    await page.evaluate(() => { window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); });
     await page.waitForFunction((n) => {
       const say = document.getElementById('mlsAvKioskSay');
       return !!document.getElementById('mlsAvKiosk') && !!say && say.textContent.length > 0 && window.__recs.length > n;
@@ -543,7 +548,7 @@ const server = http.createServer((req, res) => {
         document.documentElement.requestFullscreen = () => Promise.resolve();
       });
       await p2.addScriptTag({ path: path.join(root, 'feat_mls_avatar.js') });
-      await p2.evaluate(() => window.__mlsAvatar.openKiosk());
+      await p2.evaluate(() => { window.__mlsAvatar.openKiosk(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); var __cy = document.getElementById('mlsAvKioskConsentYes'); if (__cy) __cy.click(); });
       await p2.waitForFunction(() => !!document.getElementById('mlsAvKiosk'), null, { timeout: 8000 });
       const typedMode = await p2.evaluate(() => getComputedStyle(document.getElementById('mlsAvKioskTypeRow')).display === 'flex');
       // idle in typed mode: 3 x 20s cycles must reach the finish turn

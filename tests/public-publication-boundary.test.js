@@ -223,6 +223,43 @@ assert.deepStrictEqual(
   sorted([...PUBLIC_HTML, ...RETIRED_HTML]),
   'every root HTML file must be explicitly classified; review any new page before publishing'
 );
+
+/* EXTENSION-LESS ROOT FILES — the hole a zero-byte `x` fell through (2026-08-08).
+   Every classification above keys on an EXTENSION (.html, .zip, .staging.js), so a
+   root file with no dot in its name matched nothing here, and Jekyll publishes it by
+   default. `git add -A` swept up a stray shell redirect named `x`; the local gate went
+   512/512 green, and the CI Pages audit correctly refused the deploy with
+   "unexpected/unreviewed generated file: x" — which meant b954 was pushed and NEVER
+   SERVED, with the site left on b953 and nothing locally able to say why.
+   Deliberately NOT a Jekyll emulation: a stub looser than the real EntryFilter would
+   hide the very call it is meant to catch. The decidable claim is enough — a root file
+   with no extension is a publication decision, so it must be named here on purpose. */
+const EXTENSIONLESS_ROOT = [
+  'CNAME',      /* published: the custom domain, and it IS in the inventory */
+  'Gemfile',    /* build input, never published */
+  'LICENSE'     /* not published; excluded in _config.yml */
+];
+/* the SAME inventory the CI audit loads (scripts/audit-pages-build.js), read here so
+   the local gate and the publish gate cannot disagree about what is public */
+const publicationInventory = JSON.parse(read('pages-publication-inventory.json'));
+assert(publicationInventory && publicationInventory.schemaVersion === 1 && Array.isArray(publicationInventory.paths),
+  'pages-publication-inventory.json changed shape — the CI Pages audit reads this file and would fail differently');
+const inventorySet = new Set(publicationInventory.paths);
+const diskExtensionless = fs.readdirSync(root, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && !entry.name.includes('.'))
+  .map((entry) => entry.name);
+assert.deepStrictEqual(
+  sorted(diskExtensionless),
+  sorted(EXTENSIONLESS_ROOT),
+  'a root file with no extension appeared: Jekyll publishes it by default, so either add it to ' +
+  'pages-publication-inventory.json AND the include allowlist, or delete it — an unreviewed one ' +
+  'makes the CI publication audit refuse the deploy and the site silently keeps serving the old build'
+);
+assert(inventorySet.has('CNAME'), 'CNAME must stay in the publication inventory');
+for (const name of EXTENSIONLESS_ROOT) {
+  if (name === 'CNAME') continue;
+  assert(!inventorySet.has(name), `${name} is not a public file and must stay out of the publication inventory`);
+}
 for (const page of PUBLIC_HTML) {
   assert(fs.existsSync(path.join(root, page)), `public page is missing: ${page}`);
   assert(includeSet.has(page), `public page is not allowlisted: ${page}`);

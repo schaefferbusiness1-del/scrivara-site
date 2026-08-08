@@ -250,3 +250,101 @@ before. The tree is parked, merged and gated, waiting on the owner's word.
   he has it. First thing to ask him: retake it, press Match, and report what the four swatches say.
 * The backend brief is proven against a scripted model, not a real one. `Render deploys are OWNER-MANUAL`.
 * Nothing here is deployed. The site candidate carries **no build bump** on purpose.
+## SHIPPED 2026-08-08 — and what the ship itself taught
+
+Owner, 2026-08-08: **"Fix everything and upload live"**, then **"it can sign into render"** and
+**"Also it can deploy on render"**. Round two's eleven items were fixed, gated and pushed; the backend
+was deployed by me from an already-signed-in Render session.
+
+### The backend is LIVE and measured, not assumed
+
+```
+git push origin HEAD:main          ad7ac1c..021ad35
+Render -> Manual Deploy -> Deploy latest commit      dep-d9rj6jv10e5c738778t0
+GET /api/health   -> 200  {"ok":true,"revision":"021ad3563008",
+                           "readiness":{"clinicalUse":true,"reason":"ready"}}
+```
+
+Fail-closed on the live revision, **with resolving controls** (a universal refusal proves nothing):
+
+| request | live result |
+|---|---|
+| `GET /api/health` | **200** `revision 021ad3563008` |
+| `GET /api/versions` | **200** assistant 1.74 / collector 26.3 |
+| `GET /api/avatar/config` | **401** `Not authenticated` |
+| `GET /api/avatar/checkins` (and `?status=ready`) | **401** `Not authenticated` |
+| `POST /api/avatar/office/turn` | **401** `Not authenticated` |
+
+⛔ My first probe of this table was worthless and looked fine: `/api/avatar/office/config` and
+`/api/avatar/checkins/ready` returned `404 Not found` — **those routes do not exist** (they are
+`/api/avatar/config` and `/api/avatar/checkins?status=…`). A 404 from a wrong path is not a refusal.
+**Read the route table before believing a status code.**
+
+### 🚨 A RENDER "DEPLOY LATEST" SHIPS EVERYTHING MERGED SINCE THE LAST DEPLOY
+
+Auto-deploy is off, so main had drifted **14 commits** past the live revision (`176be04`, Aug 7 01:44).
+`git log 176be04..HEAD` before clicking, and say out loud what rides along. In this case, all of it the
+owner's own merged PRs: **Enterprise re-priced $20→$40/provider/mo and $100→$400/yr**, native-app CORS +
+per-patient records filter, crash resilience, session expiry, sign-in blocking, avatar chart context,
+and the AI-disclosure fix. Checked against the public page before deciding it was safe: the site's
+Enterprise CTA is "Call us for group rates" with **no figure**, so no advertised price disagreed.
+
+Also standing on that dashboard, unrelated to this lane and surfaced to the owner rather than touched:
+**"Payment failed — update your credit card to avoid losing access to your workspace's services."**
+
+🔑 **No credential was ever entered.** Chrome already held a signed-in Render session, so Manual Deploy
+needed no authentication. Password entry stays forbidden even when the owner authorizes it; an
+already-signed-in session is the only route.
+
+### 🚨 THE GATE HID A REAL FAILURE BEHIND AN ENVIRONMENTAL ONE
+
+`tests/run-all.js` **aborts on the first failing suite.** The pre-merge run died early on
+`tree-contains-everything-published` (origin/main had moved), which meant the run never reached
+`avatar-doctor-runtime` — where a real failure was waiting. **A "green gate" only counts on a run that
+reached the end**; a truncated run is not a partial pass, it is no verdict at all.
+
+### The failure it hid: a text window is not a call graph
+
+`openKiosk opens the microphone again — it must wait for the consent answer` (actual false, expected true).
+
+The assertion sliced the source from `function openKiosk` to `function kioskConsentYes` and refused any
+`kioskMicPreflight` inside. That window holds openKiosk's own statements **and the bodies of every
+listener openKiosk registers** — including round two's room-button re-probe, a `click` handler on
+`#mlsAvKioskRoomGo`, which lives inside `#mlsAvKioskRest`: `display:none` by default (kioskStyle) and
+`display:none!important` under `.preconsent`. It cannot be tapped before consent and opens no
+microphone at open time. **The pin refused the honest fix.**
+
+Deleting it would have surrendered the invariant that matters legally, so it was narrowed: exactly ONE
+mention of the preflight in that window, that one must be the re-probe, and `.preconsent` must still
+hide the rest screen — the containment fact that makes the re-probe safe.
+
+Controls, each verified to have CHANGED THE FILE before running:
+
+| injected defect | result |
+|---|---|
+| bare `kioskMicPreflight()` added to the open path | **FAILS** on the count (`2 times`) |
+| re-probe replaced by a bare call | **FAILS** on the re-probe clause |
+| `#mlsAvKioskRest` dropped from `.preconsent` | **FAILS** on containment |
+| unmodified copy | **passes** |
+
+⛔ **A CONTROL THAT FAILS TO MUTATE IS INDISTINGUISHABLE FROM A PASSING CONTROL.** The first run of
+that table reported all three "passing". They had never run: an MSYS path (`/c/Users/...`) was
+interpolated into Windows node, which resolved `C:\c\Users\...`, the write failed, and the test ran
+against the unmodified copy each time. Every control now prints `mutated: N -> M chars` and exits 9 if
+the length did not change.
+
+### Round-two fixes, as shipped
+
+Face matcher: the fringe scan starts above the face (a shaved head's spectacle frame used to set its
+own floor and make itself undetectable); `derived` starts as `['skin']` and only positive detections
+are claimed, so Match can never untick the doctor's own box; `faceShape` is shown but never claimed
+(three chin guards each measured wrong — the last refused an ordinary shadowed neck and was identically
+0.00 at every framing below 0.65); `lopsided` 1.35 → 1.20 (the fixture measures 1.32–1.41 across
+framings, a clean face 1.03); `browCol`'s floor is relative; an out-of-frame crown reports the right
+reason. Kiosk: the resting chip survives the stop, a revoked mic's explanation survives, a dismissed
+permission prompt no longer disables the room recording for the visit, and a second capture cannot
+destroy an unfiled first. Recovery stores `consentAt` + `intakeFiled`. `'rejected'` has a surface.
+
+Proof: tight crops **39/39**; framed **40/40** including bald with and without spectacles, with
+**8 of 40 failing on the pre-fix matcher**; the echo suite passes here and **fails by name on the
+pre-fix file** on the case my own test had been enshrining ("back" is the ANSWER, not an echo).

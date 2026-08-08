@@ -129,7 +129,15 @@ const assets = [
      av-5.5.0 (2026-08-07, owner: 'have it conform to the picture of the
      person better'): Match applies exactly the knobs the photo answered,
      and reads brow weight, lip fullness, nose width and top colour. */
-  ['feat_mls_avatar.js', '20260807av567', '20260807av566'],
+  /* feat_mls_avatar.js LEFT THIS LIST on 2026-08-07, at av-5.7.0, for the
+     reason recorded under feat_mls_copilot_actions.js below: this file changes
+     several times in a single day, and the staleness gate that guards these
+     literals compares CALENDAR DATES. av567 and av566 were both set on
+     2026-08-07 - the same day av-5.7.0 rewrote the listen loop, the consent
+     gate and the photo matcher - so a literal bump is protection that expires
+     the moment the next edit lands, which on this file is the same afternoon.
+     The loader now follows the build number and there is no literal left to
+     pin; the form itself is asserted below, and both retired tokens stay dead. */
   /* feat_mls_copilot_actions.js left this list on 2026-08-06: token ca211 was
      set at 08-05 11:00 and the file changed again at 08-05 14:21 - the commit
      that added `appControl` to the still-loading guard. Same calendar day, so
@@ -157,12 +165,31 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
     label + ': a hand-maintained feat_visits token came back — it will go stale at the next change');
 }
 
+/* TWO LANES, ONE CURE, 2026-08-07. The px train and the avatar train reached the
+   same conclusion about this list independently and on the same afternoon: a
+   hand-maintained token cannot protect a file that changes more than once a day,
+   because the staleness gate that guards these literals compares CALENDAR DATES.
+   Both retirements are kept - they are additive and describe different files. The
+   only judgement in this resolution was the checker token, where the px train's
+   20260807chk3046 supersedes the base's chk3045. Trial-merged and gated at 512
+   before either landed, so this is the resolution as planned, not as improvised. */
 /* feat_mls_b121_pack.js: same cure as feat_visits/copilot_actions (px train,
    2026-08-07) - the loader follows the build number; hand tokens stay dead. */
 assert(connect.includes("feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now())"),
   'production: feat_mls_b121_pack must load with the build-number cache-buster');
 assert(!/feat_mls_b121_pack\.js\?v=20\d{6}/.test(connect),
   'production: a hand-maintained feat_mls_b121_pack token came back — it will go stale at the next change');
+
+/* feat_mls_avatar.js, same rule, from av-5.7.0. See the note in the list above:
+   this file changes more than once a day, which is exactly the drift a
+   date-granular staleness gate cannot see. */
+assert(connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())"),
+  'the avatar must load with the build-number cache-buster');
+assert(!/feat_mls_avatar\.js\?v=20\d{6}/.test(connect),
+  'a hand-maintained avatar token came back — on this file it goes stale the same afternoon');
+for (const dead of ['20260807av567', '20260807av566']) {
+  assert(!connect.includes(dead), 'retired avatar cache token ' + dead + ' is back in the loader');
+}
 
 assert(staging.includes('feat_mls_checker.js?v=20260807chk3046'),
   'staging checker loader must use the same corrected immutable URL');

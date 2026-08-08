@@ -29,7 +29,7 @@
     return;
   }
 
-  var VERSION = 'av-5.6.7';
+  var VERSION = 'av-5.7.0';
   var ASSET = 'feat_mls_avatar.js';
   var BUTTON_ID = 'mlsAvBtn';
   var BACK_ID = 'mlsAvBack';
@@ -93,6 +93,12 @@
       '.mlsAvNotice{border-radius:10px;padding:10px 12px;font-size:13px;background:#FCF8EF;border:1px solid #EFE4CE;color:#845d2d}' +
       '.mlsAvList{display:grid;gap:10px}.mlsAvCard{border:1px solid #E7E5DD;border-radius:12px;padding:13px;background:#FCFBF8}.mlsAvTitle{font-weight:800;color:#204034}.mlsAvMeta{font-size:12px;color:#69736d;margin-top:2px}' +
       '.mlsAvBullets{margin:10px 0 0;padding-left:19px;font-size:13.5px;display:grid;gap:4px}.mlsAvBullets li.flag{color:#9f2d2d;font-weight:700}' +
+      /* av-5.7.0 - the pre-visit headline. Bigger than the bullets on purpose:
+         it is the line a doctor reads while opening the door. */
+      '.mlsAvBrief{margin-top:9px;font:700 15.5px/1.4 \'Public Sans\',system-ui;color:#204034;background:#EAF1EE;border-left:4px solid #2E6A4B;border-radius:8px;padding:9px 11px}' +
+      '.mlsAvBrief.flag{color:#7a1f16;background:#F7E4E1;border-left-color:#c0392b}' +
+      '.mlsAvAskHead{margin-top:10px;font:800 12px system-ui;color:#55605A;text-transform:uppercase;letter-spacing:.4px}' +
+      '.mlsAvAsk{margin:4px 0 0;padding-left:19px;font-size:13px;color:#26417a;display:grid;gap:3px}' +
       '.mlsAvSummary{margin-top:9px;font-size:13px;color:#3a453f;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:9px 11px;white-space:pre-wrap;max-height:180px;overflow:auto}' +
       '.mlsAvActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.mlsAvAction{border:1px solid #cbd8d0;background:#EAF1EE;color:#204034;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}.mlsAvAction.primary{border-color:#204034;background:#204034;color:#fff}.mlsAvAction[disabled]{opacity:.6;cursor:default}' +
       '.mlsAvForm{display:grid;gap:9px}.mlsAvForm label{font-size:12.5px;font-weight:700;color:#55605A}.mlsAvForm input,.mlsAvForm textarea{width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif}' +
@@ -177,7 +183,25 @@
                mid-sentence cut would be stamped into the chart forever. */
             summary: c.summary ? String(c.summary).slice(0, 4000) : null,
             truncated: !!(c.summary && String(c.summary).length > 4000),
-            flags: Array.isArray(c.flags) ? c.flags : []
+            flags: Array.isArray(c.flags) ? c.flags : [],
+            /* av-5.7.0: the headline rides in the cache too, or the Visit card -
+               the surface the doctor actually looks at - would be the one place
+               the brief never reaches. It is one short line; nothing about the
+               cache's size argument applies to it. */
+            /* 280, not 200. The server may PREPEND "⚠ EMERGENCY LANGUAGE IN
+               CHECK-IN — " to a headline that is already up to 200 characters, so
+               the stamped line runs to about 250 - and a 200-character cut here
+               silently amputated the end of the one line the doctor reads first,
+               on exactly the check-ins where it matters most. A cap below the
+               longest value the writer can produce is a truncation presented as a
+               field. */
+            headline: c.headline ? String(c.headline).slice(0, 280) : null,
+            /* the Visit card never carried these, so the doctor's most-used surface
+               could not show the auditor's verdict or the gaps at all - a
+               pre-existing omission that only became visible once 'rejected'
+               existed to be dropped */
+            audited: c.audited || null,
+            askAbout: (Array.isArray(c.askAbout) ? c.askAbout : []).slice(0, 3).map(function (a) { return String(a).slice(0, 160); })
           };
         })
       };
@@ -277,7 +301,26 @@
     card.appendChild(make('div', 'mlsAvTitle', title));
     card.appendChild(make('div', 'mlsAvMeta',
       (checkin.status === 'ready' ? 'Ready ' : 'Seen ') + (formatDate(checkin.ready_at || checkin.created_at) || '') +
-      ' · ' + (Number(checkin.turns) || 0) + ' turns'));
+      ' · ' + (Number(checkin.turns) || 0) + ' turns' +
+      /* 'rejected' HAS A SURFACE NOW. The backend gained that state and every
+         consumer gave it the empty arm - byte-for-byte the rendering of null,
+         which means "never audited". A note the auditor refused and could not
+         replace read exactly like an ordinary one. */
+      (checkin.audited === 'corrected' ? ' · summary corrected by the audit pass' :
+       checkin.audited === 'passed' ? ' · summary audited' :
+       checkin.audited === 'rejected' ? ' · ⚠ THE AUDIT REJECTED THIS SUMMARY — read the transcript' : '')));
+    /* av-5.7.0 - THE HEADLINE, FIRST AND BIGGEST. The owner asked for a summary
+       that "tells the docotor the improatn parts before he sees the pateint",
+       and a brief the doctor has to read four labelled lines of is not that. A
+       flagged headline arrives already carrying its own ⚠ from the server, so
+       the class follows the content rather than being decided again here. */
+    /* mlsAvBrief, NOT mlsAvHead: .mlsAvHead is already the panel's own header
+       and carries `display:flex` - reusing it would have laid the headline out
+       as a flex row of words. */
+    if (checkin.headline) {
+      card.appendChild(make('div', 'mlsAvBrief' + (/^⚠/.test(String(checkin.headline)) ? ' flag' : ''),
+        String(checkin.headline)));
+    }
     if (Array.isArray(checkin.bullets) && checkin.bullets.length) {
       var ul = make('ul', 'mlsAvBullets');
       checkin.bullets.forEach(function (bullet) {
@@ -287,6 +330,16 @@
       card.appendChild(ul);
     }
     if (checkin.summary) card.appendChild(make('div', 'mlsAvSummary', String(checkin.summary)));
+    /* WHAT THE CHECK-IN DID NOT SETTLE. Kept visually distinct from the bullets
+       because it is the opposite kind of information: the bullets are what the
+       patient said, this is what nobody knows yet. It names gaps only - the
+       server's own prompt forbids a diagnosis, a test or a drug here. */
+    if (Array.isArray(checkin.askAbout) && checkin.askAbout.length) {
+      card.appendChild(make('div', 'mlsAvAskHead', 'Worth asking — this check-in did not settle:'));
+      var ask = make('ul', 'mlsAvAsk');
+      checkin.askAbout.forEach(function (item) { ask.appendChild(make('li', '', String(item))); });
+      card.appendChild(ask);
+    }
     var actions = make('div', 'mlsAvActions');
     if (checkin.summary) {
       var copyBtn = make('button', 'mlsAvAction', 'Copy summary');
@@ -375,6 +428,10 @@
   }
   function pvStopSpeechOnly() {
     pvSpeakSeq++;
+    /* BARGE-IN STILL ECHOES. The words already out of the speaker are still
+       travelling through the recogniser, so the template they came from has to
+       survive being cut off mid-sentence. */
+    pvEchoHold(pvSaying);
     pvSaying = '';
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
     pvHeld.length = 0;
@@ -384,12 +441,29 @@
   }
   function pvStopVoice() {
     pvSpeakSeq++;
+    /* THE TEMPLATE EXPIRES HERE TOO. This function used to leave pvSaying set
+       forever - deliberately, so ambient could clear it by hand - which meant
+       kioskTurn's network-failure path reopened the microphone against a
+       PERMANENT echo template: every later answer built from that question's
+       words was silently deleted, for the rest of the interview. It goes to the
+       bounded tail like every other stop. */
+    pvEchoHold(pvSaying);
+    pvSaying = '';
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
     pvHeld.length = 0;
     if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
     faceTalkStop();
     safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
-    if (pvRec) { safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); }); pvRec = null; }
+    if (pvRec) {
+      /* KILL THE QUIET TIMER, not just the recogniser. It lives in pvListen's
+         closure, so nulling the handlers and calling stop() left it armed: 1.3s
+         later it fired, submit() saw pvRec was already null so it skipped the
+         teardown, and handed the buffered text to onFinal anyway - posting a
+         turn and speaking the next question while the screen read "Paused". */
+      safe(function () { if (isFn(pvRec.__killQuiet)) pvRec.__killQuiet(); });
+      safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); });
+      pvRec = null;
+    }
   }
   /* pvSpeak: the NATURAL backend voice first (MP3 + real lip-sync), the
      browser's speechSynthesis only as fallback. The completion contract is
@@ -399,16 +473,100 @@
   /* the sentence currently leaving the speaker, normalised - any recognition
      result that is merely a piece of THIS is the avatar hearing itself. */
   var pvSaying = '';
+  /* av-5.7.0 - AND THE SENTENCES THAT JUST LEFT IT. Owner, 2026-08-07: "it
+     records itself talking and doesnt listen for answers and is just a mess".
+     THE MECHANISM: Chrome finalises a recognition result hundreds of
+     milliseconds - sometimes seconds - after the words were actually spoken.
+     `pvSaying` was cleared the instant the audio ended, so the TAIL of every
+     question arrived at an empty template, passed the echo filter, and was
+     posted to the server as the patient's answer. The avatar interviewed
+     itself, and the summary was built on its own questions.
+     The template therefore has to OUTLIVE the speech. It must not outlive it
+     for long: a patient answering in the question's own words ("it has been
+     going on for three weeks") must not be silenced, so the tail is bounded
+     and every entry expires by wall clock. */
+  /* 1.6s, not 4: Chrome finalises on the pause in the audio, so our own tail
+     arrives within a few hundred milliseconds of the speaker going quiet. The
+     longer the window, the more real answers it can eat - and the answer to
+     "is it worse at night?" is "worse at night". */
+  var PV_ECHO_TAIL_MS = 1600;
+  var pvEchoTail = [];
+  function pvEchoHold(norm) {
+    if (!norm) return;
+    pvEchoTail.push({ norm: norm, until: Date.now() + PV_ECHO_TAIL_MS });
+    while (pvEchoTail.length > 6) pvEchoTail.shift();
+  }
+  function pvEchoDrop() { pvEchoTail.length = 0; }
   function pvNorm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  /* WORD BOUNDARIES, not substrings. `indexOf` matched inside words, so a
+     patient answering "no" was deleted by any question carrying "not",
+     "know" or "now" - and a one-word refusal is the most consequential answer
+     in an intake. */
+  function pvHasRun(hay, needle) { return (' ' + hay + ' ').indexOf(' ' + needle + ' ') >= 0; }
+  function pvEchoMatch(tpl, h, words, minRun, minOverlapWords) {
+    if (!tpl) return false;
+    if (words.length >= minRun && pvHasRun(tpl, h)) return true;   /* a slice of our own sentence */
+    if (words.length < minOverlapWords) return false;
+    var hits = 0;
+    for (var i = 0; i < words.length; i++) if (pvHasRun(tpl, words[i])) hits++;
+    return (hits / words.length) > 0.8;                            /* mostly our words */
+  }
+  /* TWO REGIMES, because the evidence is not the same in both - and getting
+     this wrong is measurably expensive in BOTH directions. Run against the
+     live av-5.6.7 classifier, "no, nothing makes it worse" - the actual answer
+     to "does anything make it worse, or is there nothing that changes it?" -
+     came back as SELF-ECHO and was deleted. A patient answered and the chart
+     recorded nothing.
+       WHILE THE SPEAKER IS ACTIVE, any recognisable piece of our own sentence
+     is our own voice. A patient talking over the question produces words of
+     their own, and in the rare case they quote it back, the server already has
+     the question - so aggressive is right here.
+       AFTER IT STOPS, the same words are far more likely to be the ANSWER: the
+     reply to "is it worse at night?" is "worse at night". Only a LONG
+     contiguous quote counts, and the window itself is short. */
+  /* the answers a patient gives in ONE word, which are also the answers it costs
+     the most to lose: a laterality, a refusal, a number on a pain scale. These
+     are never treated as echo, whatever the avatar happens to be saying. */
+  var PV_ANSWER_WORDS = /^(yes|yeah|yep|yup|no|nope|none|never|left|right|both|neither|better|worse|same|zero|one|two|three|four|five|six|seven|eight|nine|ten)$/;
   function pvIsSelfEcho(heard) {
     var h = pvNorm(heard);
-    if (!h || !pvSaying) return false;
-    if (pvSaying.indexOf(h) >= 0) return true;            /* a slice of our own sentence */
+    if (!h) return false;
     var words = h.split(' ').filter(Boolean);
+    /* ⛔ REVERTED, AND THE MEASUREMENT IS WHY. av-5.7.0 made a one-word result
+       droppable when the avatar was saying that word and it was not on a
+       whitelist of answers (yes/no/left/right/numbers). The intent was sound: the
+       avatar's own trailing word was being filed as the patient's answer. The
+       effect was much worse than the defect.
+       MEASURED, twice, independently, by running this classifier against ordinary
+       intake questions: it deletes the answer to almost every "A or B?" question
+       this interview asks - "back", "neck", "morning", "evening", "sharp",
+       "weeks", "standing", "shoulder", "ibuprofen" - 9 of 12 in one sweep and 22
+       of 22 in another, against 0 of 12 for the code it replaced. The patient
+       answers "back" to "is the pain in your back, or in your neck?" and the word
+       is in the question, so it went in the bin. Worse, the whitelist exempted
+       exactly the tokens that END the programmed questions, so the guard could
+       barely catch the thing it was written for.
+       A one-word answer is the most common shape in an A-or-B intake question and
+       the most expensive to lose. A one-word ECHO fragment is rare, because
+       Chrome returns phrases, and when it happens the MA persona simply asks
+       again - visibly, in one turn. So the smaller harm is accepted deliberately:
+       one word is never treated as the echo of a sentence.
+       (The multi-word cases are untouched: they are what actually caught the
+       owner's "it records itself talking".) */
     if (words.length < 2) return false;
-    var hits = 0;
-    for (var i = 0; i < words.length; i++) if (pvSaying.indexOf(words[i]) >= 0) hits++;
-    return (hits / words.length) > 0.8;                   /* mostly our words */
+    if (pvSaying && pvEchoMatch(pvSaying, h, words, 2, 2)) return true;
+    var now = Date.now();
+    for (var i = 0; i < pvEchoTail.length; i++) {
+      /* THE TAIL IS CONTIGUITY ONLY. The overlap branch (>80% of the heard words
+         appearing anywhere in the sentence) could delete a real answer for 1.6
+         seconds after the question ended - including a red-flag answer, which is
+         the worst thing in this file to lose - because a short reply reuses the
+         question's words by nature. The comment always claimed only a long
+         contiguous quote counted here; now that is what the code does. The
+         minOverlapWords argument is deliberately unreachable. */
+      if (pvEchoTail[i].until > now && pvEchoMatch(pvEchoTail[i].norm, h, words, 4, 9999)) return true;
+    }
+    return false;
   }
   function pvSpeakVoiced(text, then, voiceOverride) {
     /* AMBIENT ROOM MODE IS SILENT: a scribe in the room does not talk.
@@ -422,6 +580,11 @@
     function finish() {
       if (finished || mySeq !== pvSpeakSeq) return;
       finished = true;
+      /* pvSaying clears, and the sentence moves to the bounded echo tail: the
+         recogniser is still delivering these words. Clearing it OUTRIGHT is
+         what made the avatar file its own questions as answers; keeping it
+         forever would silence a patient who answers in the question's words. */
+      pvEchoHold(pvSaying);
       pvSaying = '';
       if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
       pvHeld.length = 0;
@@ -525,11 +688,24 @@
     var rec; try { rec = new C(); } catch (e) { return false; }
     pvRec = rec;
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
-    var finalText = '', quiet = null;
+    var finalText = '', quiet = null, dead = false;
+    /* published on the recogniser so a teardown can reach into this closure and
+       disarm the quiet timer - see pvStopVoice */
+    function killQuiet() { if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; } dead = true; }
+    rec.__killQuiet = killQuiet;
     function submit() {
+      if (dead) return;
       var v = finalText.trim();
+      /* NOTHING TO SUBMIT IS NOT A REASON TO GO DEAF. The echo filter now runs
+         below, at the source, so a result that was entirely the avatar's own
+         voice leaves finalText empty - and the microphone must stay open.
+         Before this, an echo was accumulated, submitted, REJECTED by the
+         caller, and the recogniser was already torn down by then: mic dead, no
+         answer taken, and only the 9s watchdog could revive the question. That
+         is the "doesn't listen for answers" half of the owner's report. */
+      if (!v) return;
       if (pvRec === rec) { safe(function () { rec.stop(); }); pvRec = null; }
-      if (v && onFinal) onFinal(v);
+      if (onFinal) onFinal(v);
     }
     /* av-5.2.0: 1.3s of quiet after real speech submits — snappier turns */
     function armQuiet() { if (quiet) clearTimeout(quiet); quiet = setTimeout(function () { if (finalText.trim()) submit(); }, 1300); }
@@ -537,7 +713,12 @@
       var interim = '';
       for (var i = ev.resultIndex; i < ev.results.length; i++) {
         var r = ev.results[i];
-        if (r.isFinal) finalText += (finalText ? ' ' : '') + String(r[0].transcript || '').trim();
+        var piece = String(r[0].transcript || '').trim();
+        /* THE FILTER BELONGS HERE. It used to sit only in the caller, so the
+           avatar's own words entered finalText and the caller then had to
+           reject the WHOLE result - the patient's words with it. */
+        if (piece && pvIsSelfEcho(piece)) continue;
+        if (r.isFinal) { if (piece) finalText += (finalText ? ' ' : '') + piece; }
         else interim += String(r[0].transcript || '');
       }
       if (onInterim) onInterim((finalText + ' ' + interim).trim());
@@ -1205,427 +1386,959 @@
       destroy: destroy, node: root };
     return ctl;
   }
+  /* =========================================================================
+     av-5.7.0 - THE FACE IS FOUND BEFORE IT IS MEASURED.
+
+     Owner, 2026-08-07: "the match avataer to face doesnt work at all make it
+     actally match with skin tone beard or not and all that kinda stuff it needs
+     to have a facial algeraithum."
+
+     THE MECHANISM, and it explains every symptom at once. Every measurement in
+     the previous matcher was taken at a FIXED FRACTION OF THE PICTURE - skin at
+     (0.30, 0.52), hair at (0.50, 0.11), the jaw at (0.72) - on the stated
+     assumption that "the portrait is a centred square crop with the head
+     filling the frame". A webcam does not frame a head that way. Sitting at
+     arm's length the head fills perhaps a third of the frame and sits high, so
+     those coordinates land on the WALL and the SHIRT: the crown patches read
+     whatever was above the head (a pale ceiling reads as pale hair on a
+     black-haired doctor, which is exactly what the owner was shown), the jaw
+     patch reads collar, and the "skin" patches read chest. The classifiers
+     underneath were sound; they were being fed the wrong pixels.
+
+     So the geometry comes out of the picture now instead of being assumed:
+
+       1. A SKIN MASK in YCbCr. The chroma of skin is remarkably constant across
+          every skin tone while its luminance is not - which is why no
+          brightness test could ever have done this job.
+       2. A SECOND PASS, because DARK HAIR IS CHROMATICALLY SKIN. Measured:
+          #3a2a1b hair sits inside the skin-chroma cluster, so the hair mass
+          merged with the face, the box began at the top of the hair, and the
+          skin sample came back the colour of the hair. The first pass finds a
+          head; the brighter half of it estimates the skin; the mask is then
+          rebuilt against THAT estimate and the hair falls out of it.
+       3. CONNECTED COMPONENTS, and the face is chosen by shape and position,
+          not merely size. A beige wall is one enormous component and is
+          rejected for covering too much of the frame; an arm is rejected on
+          aspect ratio; a scatter of warm pixels is rejected on fill.
+       4. THE BOX comes from the component's own row-width profile: the widest
+          row is the cheekbones, and the chin is where the width collapses
+          toward the neck.
+       5. THE EYE LINE IS ANATOMICAL, NOT PROPORTIONAL. The cheekbones sit level
+          with the eyes, so the widest row IS the eye line - a measurement,
+          available even on a face whose eyes cannot be seen. When two dark
+          masses ARE found near it, they refine it.
+       6. EVERY MEASUREMENT IS THEN BOX-RELATIVE, so the same face read at three
+          different distances gives the same answer, and features are scaled
+          against the face's own WIDTH - the one dimension a fringe cannot move.
+
+     Refusals are unchanged in spirit and stricter in fact: `derived` names only
+     what was really measured, and a photo with no findable face returns null
+     rather than a confident description of somebody's living room.
+     ======================================================================= */
   function faceTintFromPortrait(dataUrl, then) {
-    /* "actually based off your face": derive as many of the character's knobs
-       from the portrait as the pixels honestly support - skin, hair colour,
-       hair length, facial hair, glasses and eye colour - and hand back BOTH the
-       look and a plain-language list of what was detected, so the doctor can
-       see it worked and correct any single knob by hand. Fails safe: an
-       unusable photo returns null rather than a stranger's face. */
     if (!dataUrl || String(dataUrl).indexOf('data:image/') !== 0) { then(null); return; }
     var img = new Image();
-    img.onload = function () {
-      then(safe(function () {
-        var N = 48;
-        var c = document.createElement('canvas'); c.width = N; c.height = N;
-        var x = c.getContext('2d'); x.drawImage(img, 0, 0, N, N);
-        var d = x.getImageData(0, 0, N, N).data;
-        function px(xx, yy) { var i = ((yy | 0) * N + (xx | 0)) * 4; return [d[i], d[i + 1], d[i + 2]]; }
-        function lum(p) { return (p[0] * 3 + p[1] * 4 + p[2]) / 8; }
-        function hex(p) { return '#' + p.map(function (v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }).join(''); }
-        /* MEDIAN of several small patches - one patch landing on a shadow, a
-           fringe or a frame no longer drags the whole sample. */
-        function patchMedian(spots, r) {
-          var cols = spots.map(function (s2) {
-            var acc = [0, 0, 0], n = 0;
-            for (var yy = s2[1] - r; yy <= s2[1] + r; yy++)
-              for (var xx = s2[0] - r; xx <= s2[0] + r; xx++) {
-                if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
-                var p = px(xx, yy); acc[0] += p[0]; acc[1] += p[1]; acc[2] += p[2]; n++;
-              }
-            return n ? [acc[0] / n, acc[1] / n, acc[2] / n] : null;
-          }).filter(Boolean);
-          if (!cols.length) return null;
-          cols.sort(function (a, b) { return lum(a) - lum(b); });
-          return cols[Math.floor(cols.length / 2)];
-        }
-        /* Regions as fractions of the frame: the portrait is a centred square
-           crop (stylizePortrait guarantees it), so these hold across faces. */
-        var F = function (fx, fy) { return [Math.round(N * fx), Math.round(N * fy)]; };
-        /* clear of the eye band: a spectacle frame sits around y 0.38-0.46 and
-           dragged the skin sample dark, which then made light hair look like
-           skin and read as bald. Cheeks and mid-face only. */
-        var skin = patchMedian([F(0.30, 0.52), F(0.70, 0.52), F(0.32, 0.60), F(0.68, 0.60), F(0.50, 0.30), F(0.50, 0.62)], 2);
-        /* background estimate from the four corners; hair patches that look
-           like background are discarded rather than averaged in. */
-        var bg = patchMedian([F(0.03, 0.03), F(0.97, 0.03), F(0.03, 0.97), F(0.97, 0.97)], 1);
-        var bgL = bg ? lum(bg) : -999;
-        function hairMedian() {
-          /* deep INSIDE the hair mass, not on the hairline: edge patches blend
-             hair with background and returned grey for a black-haired doctor. */
-          var spots = [F(0.44, 0.13), F(0.50, 0.11), F(0.56, 0.13), F(0.40, 0.16), F(0.60, 0.16)];
-          var keep = spots.filter(function (sp) {
-            var p = patchMedian([sp], 1);
-            return p && Math.abs(lum(p) - bgL) > 22;
-          });
-          return patchMedian(keep.length ? keep : spots, 1);
-        }
-        var hair = hairMedian();
-        if (!skin || !hair) return null;
-        var skinL = lum(skin), hairL = lum(hair);
-        if (skinL < 55) return null;                       /* too dark to read */
-
-        var found = [];
-        var look = { skin: hex(skin), hair: hex(hair), shirt: FACE_LOOK.shirt,
-                     lip: FACE_LOOK.lip, eyes: FACE_LOOK.eyes,
-                     hairStyle: 'short', glasses: false, beard: 'none' };
-        /* THE LEDGER OF WHAT WAS ACTUALLY MEASURED. Match used to hand back
-           a whole look, so the caller could not tell a real reading from a
-           default - and the only safe thing it could do with the knobs it
-           doubted was refuse to apply any of them, which is precisely why
-           the drawn face stopped resembling the photo. These five are
-           always written below; anything else appends itself HERE at the
-           moment it is genuinely detected. */
-        var derived = ['skin', 'hair', 'hairStyle', 'beard', 'glasses'];
-        found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
-
-        /* HAIR: how much of the crown is darker than the face, and do the low
-           side columns carry that same darkness (length)? */
-        /* DIFFERENCE from this face's own skin, not darkness: blond, grey and
-           white hair are LIGHTER than skin, and the old darker-than-threshold
-           test classified every one of them as bald. */
-        function unlikeSkin(p) {
-          return (Math.abs(lum(p) - skinL) +
-                  (Math.abs(p[0] - skin[0]) + Math.abs(p[1] - skin[1]) + Math.abs(p[2] - skin[2])) / 6) > 24;
-        }
-        var crown = 0, crownN = 0, sides = 0, sidesN = 0;
-        for (var xx1 = Math.round(N * 0.30); xx1 < N * 0.70; xx1++)
-          for (var yy1 = Math.round(N * 0.04); yy1 < N * 0.18; yy1++) { crownN++; if (unlikeSkin(px(xx1, yy1))) crown++; }
-        for (var yy2 = Math.round(N * 0.55); yy2 < N * 0.92; yy2++) {
-          for (var xx2 = 0; xx2 < N * 0.14; xx2++) { sidesN++; if (unlikeSkin(px(xx2, yy2))) sides++; }
-          for (var xx3 = Math.round(N * 0.86); xx3 < N; xx3++) { sidesN++; if (unlikeSkin(px(xx3, yy2))) sides++; }
-        }
-        function sideLooksLikeHair() {
-          var sp = patchMedian([F(0.06, 0.72), F(0.94, 0.72)], 2);
-          if (!sp || !hair) return false;
-          return (Math.abs(sp[0] - hair[0]) + Math.abs(sp[1] - hair[1]) + Math.abs(sp[2] - hair[2])) / 3 < 46;
-        }
-        var crownR = crownN ? crown / crownN : 0, sideR = sidesN ? sides / sidesN : 0;
-        if (crownR < 0.20) { look.hairStyle = 'bald'; found.push('little or no hair'); }
-        else if (crownR < 0.42) { look.hairStyle = 'buzz'; found.push('very short hair'); }
-        else if (sideR > 0.30 && sideLooksLikeHair()) { look.hairStyle = 'long'; found.push('long hair'); }
-        else { look.hairStyle = 'short'; found.push('short hair'); }
-        if (look.hairStyle !== 'bald') found.push(hairL < 70 ? 'dark hair' : hairL > 165 ? 'light hair' : 'mid-tone hair');
-
-        /* FACIAL HAIR: the chin/jaw measurably darker than the cheeks. Compared
-           against this face's own skin, not an absolute threshold. */
-        /* THE JAW, NOT THE MOUTH. These three patches used to sit at
-           (0.50,0.74) and (0.40/0.60,0.70) - on the lips and immediately
-           beside them - so a dark lip colour measured as a drop from the
-           cheeks and a clean-shaven face came back bearded. Facial hair is
-           read on the jaw sides and low on the chin, where a mouth is not. */
-        var chin = patchMedian([F(0.34, 0.72), F(0.66, 0.72), F(0.50, 0.79)], 2);
-        if (chin) {
-          var drop = skinL - lum(chin);
-          if (drop > 46) { look.beard = 'beard'; found.push('beard'); }
-          else if (drop > 24) { look.beard = 'stubble'; found.push('stubble'); }
-        }
-        /* GLASSES: a band at eye level darker than BOTH the forehead and the
-           cheeks below it, on both sides (a frame, not a shadow). */
-        var browRow = patchMedian([F(0.32, 0.40), F(0.68, 0.40)], 1);
-        var cheekRow = patchMedian([F(0.30, 0.56), F(0.70, 0.56)], 1);
-        var brow2 = patchMedian([F(0.50, 0.30)], 1);
-        /* THE BRIDGE IS WHAT MAKES A FRAME A FRAME. "Darker than the forehead
-           and darker than the cheeks, on both sides" is equally well explained
-           by THICK DARK EYEBROWS, and that is not a rare face. Measured: an
-           8px brow bar came back as spectacles - and because the brow measure
-           stands down whenever glasses are detected, the same face then lost
-           its eyebrows too. One misread, two wrong answers, in the direction
-           of adding a feature the doctor does not have.
-           Eyebrows have a gap between them. A frame crosses it. */
-        var bridge = patchMedian([F(0.50, 0.40)], 1);
-        if (browRow && cheekRow && brow2 && bridge) {
-          if (lum(bridge) < lum(cheekRow) - 20 &&
-              lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(brow2) - 20) {
-            look.glasses = true; found.push('glasses');
-          }
-        }
-        /* EYES: the iris sits just inside each eye centre. Take the darker of
-           the two samples but refuse near-black (that is pupil or lash). */
-        var eye = patchMedian([F(0.36, 0.44), F(0.64, 0.44)], 1);
-        if (eye && lum(eye) > 40 && lum(eye) < skinL - 20) { look.eyes = hex(eye); derived.push('eyes'); }
-
-        /* ---- SHAPE PASS ---------------------------------------------------
-           Brow weight, lip fullness and nose width are SHAPE questions, and
-           the 48px read above cannot answer them - one pixel there is a fifth
-           of an eyebrow. So the colour pass is left byte for byte as it was
-           (its thresholds are tuned against real portraits and were verified
-           live) and a SECOND, higher-resolution read answers only these.
-
-           Every measure REFUSES rather than guesses: an unreadable one leaves
-           the knob absent from `derived`, and the caller then keeps whatever
-           the doctor set by hand. A confident wrong nose is worse than no
-           nose - it makes the doctor correct the avatar instead of trust it.
-           `roman` is deliberately unreachable from here: it is a profile
-           feature and a front-on portrait carries no evidence for it, so it
-           stays a choice rather than a claim. --------------------------- */
-        safe(function () {
-          var M = 128;
-          var c2 = document.createElement('canvas'); c2.width = M; c2.height = M;
-          var x2 = c2.getContext('2d'); x2.drawImage(img, 0, 0, M, M);
-          var d2 = x2.getImageData(0, 0, M, M).data;
-          function px2(xx, yy) { var i = ((yy | 0) * M + (xx | 0)) * 4; return [d2[i], d2[i + 1], d2[i + 2]]; }
-          function lum2(p) { return (p[0] * 3 + p[1] * 4 + p[2]) / 8; }
-          function at(fr) { return Math.round(M * fr); }
-          function median(a) { if (!a.length) return null; a.sort(function (p, q) { return p - q; }); return a[Math.floor(a.length / 2)]; }
-          function apart(a, b, n) {
-            return !!(a && b) && (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3 > n;
-          }
-
-          /* BROWS: the vertical EXTENT of the dark band above each eye, taken
-             per column and reduced by median, so one stray lash or fringe
-             pixel cannot decide it. Skipped outright when glasses were
-             detected - a frame lies across exactly this band and would read
-             as the thickest brows on every bespectacled face in the practice. */
-          if (!look.glasses) {
-            /* BETWEEN the forehead and the eyes. It stops clear of the eyes
-               at y 0.44 (pupil and lash would read as eyebrow) and opens
-               BELOW the hair mass, whose bottom edge reaches y 0.34 - a band
-               that started at 0.30 measured the fringe on a face that had no
-               eyebrows drawn at all. */
-            var by0 = at(0.355), by1 = at(0.43), browCols = [], browPix = [];
-            for (var bx = at(0.26); bx < M * 0.75; bx++) {
-              if (bx > M * 0.44 && bx < M * 0.56) continue;      /* the gap between the brows */
-              var darkRows = 0;
-              for (var byy = by0; byy < by1; byy++) {
-                var bp = px2(bx, byy);
-                if (lum2(bp) < skinL - 34) { darkRows++; browPix.push(bp); }
-              }
-              browCols.push(darkRows);
-            }
-            var browMed = median(browCols);
-            if (browMed) {
-              /* against the FACE height, not the band: a fraction of the band
-                 changes meaning whenever the band moves, and the band had to
-                 move once already.
-                 The cut points come from proportions, not from the fixture: an
-                 eyebrow is roughly 7-10mm tall on a face that runs about
-                 185mm chin to hairline, so a natural brow is ~4-5% of the
-                 face. Thin is nearer 5mm (2.7%) and thick nearer 12mm (6.5%).
-                 The three-point test (thin / natural / thick) then shows the
-                 classifier DISCRIMINATES; it is not what chose the numbers. */
-              var bRatio = browMed / (M * 0.72);
-              var bVal = bRatio < 0.035 ? 'thin' : (bRatio > 0.06 ? 'thick' : 'normal');
-              look.brows = bVal; derived.push('brows');
-              found.push(bVal === 'normal' ? 'natural brows' : bVal + ' brows');
-              /* AND THEIR COLOUR, from the very pixels that were just counted.
-                 Painting brows in the hair colour is wrong on every blond,
-                 grey or balding head, and dark brows under light hair are one
-                 of the strongest likeness cues a drawn face has. Taken only
-                 when it actually differs from the hair - otherwise the honest
-                 answer is the follow-the-hair default this file already had. */
-              if (browPix.length > 12) {
-                browPix.sort(function (p, q) { return lum2(p) - lum2(q); });
-                var bc = browPix[Math.floor(browPix.length / 2)];
-                if (apart(bc, hair, 30)) { look.browCol = hex(bc); derived.push('browCol'); found.push('brows a different colour from the hair'); }
-              }
-            }
-          }
-
-          /* LIPS: how much of the mouth band is measurably REDDER than this
-             face's own cheek. Redness, not darkness - the shadow under a lip
-             is dark but not red, and a beard is dark across the whole band. */
-          function redness(p) { return p[0] - (p[1] + p[2]) / 2; }
-          var cheek = [];
-          for (var cx1 = at(0.20); cx1 < M * 0.32; cx1++)
-            for (var cy1 = at(0.48); cy1 < M * 0.58; cy1++) cheek.push(redness(px2(cx1, cy1)));
-          var cheekMed = median(cheek);
-          if (cheekMed !== null) {
-            var lipRows = 0, lipTot = 0;
-            for (var lyy = at(0.62); lyy < M * 0.82; lyy++) {
-              var hit = 0, wide = 0;
-              for (var lxx = at(0.40); lxx < M * 0.60; lxx++) { wide++; if (redness(px2(lxx, lyy)) > cheekMed + 10) hit++; }
-              lipTot++;
-              if (wide && hit / wide > 0.45) lipRows++;
-            }
-            if (lipTot > 0 && lipRows > 0) {
-              var lRatio = lipRows / lipTot;
-              var lVal = lRatio < 0.18 ? 'thin' : (lRatio > 0.38 ? 'full' : 'normal');
-              look.lips = lVal; derived.push('lips');
-              found.push(lVal === 'normal' ? 'natural lips' : lVal + ' lips');
-            }
-          }
-
-          /* NOSE WIDTH: the shaded span at the base of the nose, measured
-             outward from the centre line and reduced by median across the
-             rows. Scaled against the FACE width, not the frame, so a tight
-             crop and a loose one give the same answer. */
-          var mid = at(0.5), spans = [];
-          for (var nyy = at(0.54); nyy < M * 0.62; nyy++) {
-            /* the OUTERMOST shaded offset, not a contiguous run from the
-               centre. The middle of a nose is the lit ridge - a contiguity
-               scan starting there breaks on the first bright pixel and
-               measures zero on every real face. The rows stop short of the
-               mouth, which is darker than skin and is not a nose. */
-            var half = 0;
-            for (var off = 2; off < M * 0.22; off++) {
-              if (lum2(px2(mid - off, nyy)) < skinL - 10 || lum2(px2(mid + off, nyy)) < skinL - 10) half = off;
-            }
-            if (half) spans.push(half * 2);
-          }
-          var noseMed = median(spans);
-          if (noseMed) {
-            var nRatio = noseMed / (M * 0.72);
-            var nVal = nRatio < 0.17 ? 'button' : (nRatio > 0.26 ? 'wide' : 'straight');
-            look.nose = nVal; derived.push('nose');
-            found.push(nVal + ' nose');
-          }
-
-          /* TOP COLOUR: the strip below the chin. Taken only when it differs
-             from BOTH the skin (or it is the neck) and the corner background
-             (or it is the wall behind the doctor). A head-only crop fails one
-             of those two and correctly keeps the scrub colour already chosen. */
-          var tops = [];
-          for (var sx = at(0.18); sx < M * 0.84; sx++) {
-            if (sx > M * 0.38 && sx < M * 0.62) continue;        /* the chin and neck sit here */
-            for (var sy = at(0.90); sy < M * 0.99; sy++) tops.push(px2(sx, sy));
-          }
-          if (tops.length) {
-            tops.sort(function (p, q) { return lum2(p) - lum2(q); });
-            var top = tops[Math.floor(tops.length / 2)];
-            if (apart(top, skin, 34) && (!bg || apart(top, bg, 26))) {
-              look.shirt = hex(top); derived.push('shirt');
-              found.push('top colour');
-            }
-          }
-          /* ---- THE SKULL --------------------------------------------------
-             Everything above describes the paint. These describe the HEAD, and
-             they all rest on one measurement: where the face ENDS. Scan inward
-             from both edges at eye level until the pixels start looking like
-             this face's own skin. If that fails - a background the same colour
-             as the skin, a crop with no margin - the whole group declines
-             together rather than each guessing from a bad width. */
-          function chDist(a, b) { return (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3; }
-          function skinLike(p) {
-            /* nearer the measured skin than the measured background. A fixed
-               tolerance called a light wall skin and returned a face the full
-               width of the frame - measured, not hypothetical. */
-            if (!bg) return chDist(p, skin) < 30;
-            return chDist(p, skin) < chDist(p, bg);
-          }
-          /* skinLike answers FACE OR BACKGROUND, where those are the only two
-             options and a relative test is exactly right. Up on the crown
-             there is a THIRD option - hair - and dark hair happens to sit
-             nearer skin than it does a pale wall, so the relative test alone
-             called a full head of hair a bare temple. Anything asking 'is
-             this specifically skin' needs the absolute bound too. */
-          function skinExact(p) { return chDist(p, skin) < 34 && skinLike(p); }
-          function edgesAt(fy) {
-            var y = at(fy), L = -1, R = -1, i;
-            for (i = 0; i < M * 0.48; i++) if (skinLike(px2(i, y))) { L = i; break; }
-            for (i = M - 1; i > M * 0.52; i--) if (skinLike(px2(i, y))) { R = i; break; }
-            /* an edge ON the frame boundary is the face leaving the picture,
-               not the face being that wide. Refuse. */
-            if (L <= 0 || R >= M - 1) return null;
-            return (L >= 0 && R > L) ? { L: L, R: R, w: R - L } : null;
-          }
-          var eyeEdges = edgesAt(0.45);
-          if (eyeEdges && eyeEdges.w > M * 0.30) {
-            var faceW = eyeEdges.w, eyeY = at(0.45);
-            /* the chin: the last skin row down the centre line */
-            var chinY = 0;
-            for (var cy2 = at(0.60); cy2 < M; cy2++) if (skinLike(px2(mid, cy2))) chinY = cy2;
-            /* the chin at the bottom row means the jaw is cropped off, so the
-               lower-face height is a floor, not a measurement. Same refusal. */
-            if (chinY >= M - 1) chinY = 0;
-            var lowerH = chinY - eyeY;
-
-            /* SHAPE. width over the LOWER face height - eyes to chin - because
-               the upper bound of a face is hair, not bone. The three cut points
-               are the ratios of the three heads faceSvg actually draws
-               (oval 116/70 = 1.66, round 126/64 = 1.97, long 104/78 = 1.33),
-               so a photo is being matched to the nearest head that exists
-               rather than to a number invented here. */
-            /* A BEARD HIDES THE JAW, AND WORSE, IT IMPERSONATES IT. skinLike
-               is RELATIVE - nearer the measured skin than the measured
-               background - and a dark beard on a light wall is nearer the
-               skin, so the chin scan ran straight through the beard to its
-               bottom edge and every bearded face measured LONG. That is a
-               claimed shape, not a refusal: it overwrote whatever the doctor
-               had chosen. There is no honest reading of a jaw that is under
-               hair, so there is no reading. */
-            if (lowerH > M * 0.18 && look.beard === 'none') {
-              var shapeR = faceW / lowerH;
-              var sVal = shapeR < 1.48 ? 'long' : (shapeR > 1.80 ? 'round' : 'oval');
-              /* A SQUARE JAW OUTRANKS ALL THREE. It is not a proportion, it is
-                 the face still being wide 62% of the way down to the chin -
-                 the drawn oval has narrowed to 0.80 of its eye-level width by
-                 there, so anything still above 0.88 is a jaw, not an oval. */
-              var jawEdges = edgesAt(0.45 + (chinY - eyeY) * 0.62 / M);
-              if (jawEdges && jawEdges.w / faceW > 0.88) sVal = 'square';
-              look.faceShape = sVal; derived.push('faceShape');
-              found.push(sVal === 'square' ? 'a square jaw' : sVal + ' face');
-            }
-
-            /* EYE SPACING. The darkest column inside each eye region is the
-               iris. Measured against the SAME face's width, and compared with
-               the spacing faceSvg draws by default (2 x 29 over a 116-wide
-               head = 0.50), so the verdict names a head that exists. */
-            function irisX(fx0, fx1) {
-              /* THE DARK MASS, NOT THE DARKEST PIXEL. A solid iris has no
-                 unique darkest pixel - JPEG ringing round its edge is as
-                 dark as its centre - so 'the darkest pixel' is noise wearing
-                 a measurement's clothes. Measured that way, three portraits
-                 with byte-identical eyes came back close, normal and wide,
-                 decided only by the skin colour around them. The centroid of
-                 the whole dark mass does not move. */
-              var sx = 0, sn = 0, lo = 1e9, hi = -1, ex, ey, L2;
-              for (ex = at(fx0); ex < M * fx1; ex++)
-                for (ey = at(0.42); ey < M * 0.48; ey++) {
-                  L2 = lum2(px2(ex, ey));
-                  if (L2 < skinL - 45) { sx += ex; sn++; if (ex < lo) lo = ex; if (ex > hi) hi = ex; }
-                }
-              /* AN IRIS IS COMPACT, AND A SPECTACLE FRAME IS NOT. The frame
-                 is dark across the whole half of the face and was measured
-                 as one enormous eye, so a bespectacled portrait returned an
-                 eye spacing it had no way to see - and silently, because
-                 eyeSet is in derived and 'normal' looks like a default. The
-                 width test is the real gate here: it holds even on a frame
-                 the glasses detector missed. */
-              if (sn < 6 || (hi - lo + 1) > M * 0.14) return -1;
-              return sx / sn;
-            }
-            /* and a second, independent gate on the flag the colour pass
-               already raised - two gates, so a frame has to beat both. */
-            var ixL = look.glasses ? -1 : irisX(0.25, 0.47);
-            var ixR = look.glasses ? -1 : irisX(0.53, 0.75);
-            if (ixL >= 0 && ixR > ixL) {
-              var setR = (ixR - ixL) / faceW;
-              var eVal = setR < 0.44 ? 'close' : (setR > 0.56 ? 'wide' : 'normal');
-              look.eyeSet = eVal; derived.push('eyeSet');
-              if (eVal !== 'normal') found.push(eVal + '-set eyes');
-            }
-          }
-
-          /* A RECEDING HAIRLINE is bare TEMPLES with hair still on the crown -
-             so it is read as exactly that contrast, and never on a head with no
-             hair to recede from. Reading only the temples would call every bald
-             head receding; reading only the crown could never see it at all. */
-          if (look.hairStyle !== 'bald' && hair) {
-            function bare(fx0, fx1) {
-              var skinN = 0, tot = 0;
-              for (var tx = at(fx0); tx < M * fx1; tx++)
-                for (var ty = at(0.16); ty < M * 0.26; ty++) { tot++; if (skinExact(px2(tx, ty))) skinN++; }
-              return tot ? skinN / tot : 0;
-            }
-            var tL = bare(0.28, 0.37), tR = bare(0.63, 0.72), crown = bare(0.44, 0.56);
-            if (tL > 0.55 && tR > 0.55 && crown < 0.25) {
-              look.hairline = 'receding'; derived.push('hairline');
-              found.push('a receding hairline');
-            }
-          }
-          /* `age` is NOT derived. Nasolabial folds and crow's feet are a few
-             pixels of low-contrast texture at this resolution and are wiped out
-             by ordinary lighting, so any verdict here would be a guess wearing
-             a measurement's clothes - and guessing a doctor is old is the one
-             wrong answer this feature must never volunteer. It stays a choice
-             in Setup, which is why that control exists. */
-        });
-        return { look: look, found: found, derived: derived };
-      }, null));
-    };
+    img.onload = function () { then(safe(function () { return faceReadPortrait(img); }, null)); };
     img.onerror = function () { then(null); };
     img.src = dataUrl;
+  }
+  /* skin in YCbCr. The bounds are the standard skin-chroma cluster; the
+     luminance guard only throws away pixels that carry no usable chroma at all
+     (crushed shadow, blown highlight). */
+  function faceIsSkinRgb(r, g, b) {
+    var y = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (y < 32 || y > 250) return false;
+    var cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+    var cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+    return cr >= 134 && cr <= 178 && cb >= 76 && cb <= 128 && r > b;
+  }
+  function faceReadPortrait(img) {
+    var M = 128;
+    var c = document.createElement('canvas'); c.width = M; c.height = M;
+    var x = c.getContext('2d');
+    /* COVER, never stretch. A webcam frame is 4:3 or 16:9, and squeezing one
+       into a square turns a round head oval - a shape verdict invented by the
+       scaler. stylizePortrait already centre-crops what it captures; a photo
+       arriving from anywhere else gets the same treatment here. */
+    var iw = img.naturalWidth || img.width || M, ih = img.naturalHeight || img.height || M;
+    var side = Math.min(iw, ih) || M;
+    x.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, M, M);
+    var d = x.getImageData(0, 0, M, M).data;
+    function px(xx, yy) { var i = ((yy | 0) * M + (xx | 0)) * 4; return [d[i], d[i + 1], d[i + 2]]; }
+    function lum(p) { return (p[0] * 3 + p[1] * 4 + p[2]) / 8; }
+    function hex(p) { return '#' + p.map(function (v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }).join(''); }
+    function chDist(a, b) { return (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3; }
+    function medianCol(list) {
+      if (!list || !list.length) return null;
+      list.sort(function (p, q) { return lum(p) - lum(q); });
+      return list[Math.floor(list.length / 2)];
+    }
+    function median(a) { if (!a.length) return null; a.sort(function (p, q) { return p - q; }); return a[Math.floor(a.length / 2)]; }
+
+    /* ---- 1. the skin mask, and the components in it -------------------- */
+    var chroma = new Uint8Array(M * M);
+    var yy, xx, p;
+    for (yy = 0; yy < M; yy++) {
+      for (xx = 0; xx < M; xx++) {
+        p = px(xx, yy);
+        if (faceIsSkinRgb(p[0], p[1], p[2])) chroma[yy * M + xx] = 1;
+      }
+    }
+    var stack = new Int32Array(M * M);
+    function labelComponents(mask) {
+      var label = new Int32Array(M * M), comps = [], next = 0;
+      for (var s = 0; s < M * M; s++) {
+        if (!mask[s] || label[s]) continue;
+        next++;
+        var top = 0; stack[top++] = s; label[s] = next;
+        var area = 0, minX = M, maxX = -1, minY = M, maxY = -1;
+        while (top > 0) {
+          var cur = stack[--top], cy = (cur / M) | 0, cx = cur - cy * M;
+          area++;
+          if (cx < minX) minX = cx;
+          if (cx > maxX) maxX = cx;
+          if (cy < minY) minY = cy;
+          if (cy > maxY) maxY = cy;
+          if (cx > 0 && mask[cur - 1] && !label[cur - 1]) { label[cur - 1] = next; stack[top++] = cur - 1; }
+          if (cx < M - 1 && mask[cur + 1] && !label[cur + 1]) { label[cur + 1] = next; stack[top++] = cur + 1; }
+          if (cy > 0 && mask[cur - M] && !label[cur - M]) { label[cur - M] = next; stack[top++] = cur - M; }
+          if (cy < M - 1 && mask[cur + M] && !label[cur + M]) { label[cur + M] = next; stack[top++] = cur + M; }
+        }
+        comps.push({ id: next, area: area, minX: minX, maxX: maxX, minY: minY, maxY: maxY });
+      }
+      return { label: label, comps: comps };
+    }
+    function pickFace(comps) {
+      var best = null, bestScore = 0;
+      for (var ci = 0; ci < comps.length; ci++) {
+        var cp = comps[ci], cw = cp.maxX - cp.minX + 1, ch = cp.maxY - cp.minY + 1;
+        if (cp.area < M * M * 0.012) continue;          /* a face is never 1% of a portrait */
+        if (cp.area > M * M * 0.72) continue;           /* that is a wall the colour of skin */
+        if (cw < M * 0.10 || ch < M * 0.12) continue;
+        var aspect = cw / ch;
+        /* 1.9, not 1.7: a phone held close crops the forehead and the chin, and
+           what is left is a wide band of face. Measured - the tight-crop
+           fixture was REJECTED at 1.7, and the fallback then handed back the
+           unrefined head, whose "skin" was the colour of the hair. */
+        if (aspect < 0.42 || aspect > 1.9) continue;    /* an arm, a hand, a strip of background */
+        if (cp.area / (cw * ch) < 0.42) continue;       /* a face is a solid mass, not a scatter */
+        /* position matters as well as size: a portrait puts the head near the
+           middle and slightly high. Size alone picks the neck-and-chest mass
+           on a photo with an open collar. */
+        var mx = (cp.minX + cp.maxX) / 2 / M, my = (cp.minY + cp.maxY) / 2 / M;
+        var centre = 1 - Math.min(1, Math.abs(mx - 0.5) + Math.abs(my - 0.45));
+        var score = cp.area * (0.35 + centre);
+        if (score > bestScore) { bestScore = score; best = cp; }
+      }
+      return best;
+    }
+    var pass1 = labelComponents(chroma);
+    var head = pickFace(pass1.comps);
+    /* NO HEAD, NO VERDICT. Everything downstream is relative to this box, so a
+       guess here would not be one wrong knob - it would be a confident,
+       complete description of the wall behind the doctor. */
+    if (!head) return null;
+
+    /* ---- 2. the second pass: separate SKIN from HAIR inside that head ---
+       Dark brown and black hair fall inside the skin-chroma cluster, so pass 1
+       returns head-and-hair as one mass. The brighter half of it is skin (hair
+       is the darker half whichever tone the skin is), and rebuilding the mask
+       against that estimate drops the hair out. Blond, grey and white hair
+       never entered the mask at all - their chroma is outside the cluster - so
+       this pass cannot take them for skin either. */
+    var inHead = [];
+    for (yy = head.minY; yy <= head.maxY; yy++) {
+      for (xx = head.minX; xx <= head.maxX; xx++) {
+        if (pass1.label[yy * M + xx] === head.id) inHead.push(px(xx, yy));
+      }
+    }
+    var headMedL = median(inHead.map(lum)) || 0;
+    var bright = inHead.filter(function (q) { return lum(q) >= headMedL; });
+    var skinRef = medianCol(bright.length ? bright : inHead);
+    if (!skinRef) return null;
+    var refL = lum(skinRef);
+    var mask = new Uint8Array(M * M);
+    for (var s2 = 0; s2 < M * M; s2++) {
+      if (!chroma[s2]) continue;
+      var q2 = px(s2 % M, (s2 / M) | 0);
+      if (lum(q2) > refL - 42 && chDist(q2, skinRef) < 56) mask[s2] = 1;
+    }
+    /* ---- 2b. CLOSE THE HORIZONTAL CUTS before labelling. A spectacle frame is
+       a dark bar right across the face, so it SPLITS the skin into a forehead
+       component and a face component - and the picker then measured whichever
+       half was bigger, from below the frame. Measured on the fixture: the box
+       began at y=55 on a face that starts at y=20, and hair, brows and glasses
+       all came back wrong from that one cut. A moustache cuts the same way. So
+       gaps of up to ~8% of the frame are bridged for the GEOMETRY, while every
+       colour is still sampled from the raw skin mask - a filled gap is a
+       measurement of where the face IS, never of what colour it is. */
+    var closed = new Uint8Array(M * M);
+    closed.set(mask);
+    var GAP = Math.max(4, Math.round(M * 0.08));
+    for (var cxx = 0; cxx < M; cxx++) {
+      var lastOn = -1;
+      for (var cyy = 0; cyy < M; cyy++) {
+        if (mask[cyy * M + cxx]) {
+          if (lastOn >= 0 && cyy - lastOn <= GAP) {
+            for (var fy = lastOn + 1; fy < cyy; fy++) closed[fy * M + cxx] = 1;
+          }
+          lastOn = cyy;
+        }
+      }
+    }
+    var pass2 = labelComponents(closed);
+    var best = pickFace(pass2.comps);
+    /* NO FALLBACK TO THE UNREFINED HEAD. That fallback is how a hair-coloured
+       "skin tone" reached the doctor: pass 1 deliberately contains the hair. If
+       the refined pass cannot find a face, the honest answer is that this photo
+       could not be read. */
+    if (!best) return null;
+    var label = pass2.label;
+
+    /* the background, sampled from the frame border EXCLUDING the face mass */
+    var bgList = [];
+    for (xx = 0; xx < M; xx += 2) {
+      [0, 1, M - 2, M - 1].forEach(function (by) { if (label[by * M + xx] !== best.id) bgList.push(px(xx, by)); });
+    }
+    for (yy = 0; yy < M; yy += 2) {
+      [0, 1, M - 2, M - 1].forEach(function (bx) { if (label[yy * M + bx] !== best.id) bgList.push(px(bx, yy)); });
+    }
+    var bg = medianCol(bgList);
+    var bgL = bg ? lum(bg) : -999;
+    function isBg(pp) { return !!bg && chDist(pp, bg) < 26; }
+
+    /* ---- 3. the box, from the component's own row-width profile -------- */
+    function rowRun(ry) {
+      /* THE OUTER EXTENT OF THIS COMPONENT ON THIS ROW, not the widest
+         contiguous run of it. Every dark feature - lips, nostrils, a frame, a
+         moustache - is a HOLE in the skin mask, and a contiguity measure reads
+         a hole as the face having ended. Measured: the lip ellipse split the
+         mouth row into two 23px runs on a 74px face, so the chin was "found"
+         at the mouth and every proportion below the eyes was taken against a
+         face two thirds of its length. An earring or a raised hand cannot
+         widen this, because they are a different component. */
+      var bL = -1, bR = -2;
+      for (var rx = 0; rx < M; rx++) {
+        if (label[ry * M + rx] === best.id) { if (bL < 0) bL = rx; bR = rx; }
+      }
+      return bR >= bL && bL >= 0 ? { L: bL, R: bR, w: bR - bL + 1 } : null;
+    }
+    var rows = [], maxW = 0;
+    for (var ry2 = best.minY; ry2 <= best.maxY; ry2++) {
+      var rr2 = rowRun(ry2);
+      rows.push(rr2);
+      if (rr2 && rr2.w > maxW) maxW = rr2.w;
+    }
+    function runAt(ry) { return (ry >= best.minY && ry <= best.maxY) ? rows[ry - best.minY] : null; }
+    /* THE CHEEKBONE ROW IS THE MIDDLE OF THE WIDEST BAND, not the first row to
+       reach the maximum. A face barely narrows for ten rows either side of its
+       widest point, so the single widest row is decided by JPEG bleed at the
+       edge of the head - measured, it landed 10px above the true cheekbones,
+       and everything anchored on it (the eye line, the jaw sample, the hanging
+       hair) moved with it. */
+    var wideRows = [];
+    for (var wy = best.minY; wy <= best.maxY; wy++) {
+      var wr = runAt(wy);
+      if (wr && wr.w >= maxW * 0.97) wideRows.push(wy);
+    }
+    var maxWY = wideRows.length ? median(wideRows) : best.minY;
+    var faceT = best.minY;
+    /* the chin: below the cheeks, the first row whose width has collapsed. The
+       neck is narrower than the jaw, so this is where the face ends even when
+       the mask runs on down the throat. */
+    /* WHERE THE NARROWING STOPS, not where it reaches an arbitrary fraction. A
+       face narrows continuously from the cheekbones to the chin; below the chin
+       a NECK holds roughly constant width and shoulders widen again. So the chin
+       is the last row of the narrowing - which needs no threshold and works
+       whether or not the neck is in the picture at all. A fixed "55% of the
+       widest row" cut landed 8px above the real chin on the drawn heads and
+       ran straight down the throat on a photograph. */
+    var chinY = best.maxY, prevW = null, flat = 0;
+    /* WHY the scan stopped is part of the answer, not a debugging aid: a scan that
+       ended because the outline WIDENED has not found a jaw, it has found the top
+       edge of something else (a bridged shadow, a collar, a shoulder). */
+    var chinStop = 'mask-end';
+    var flatCap = Math.max(3, Math.round(maxW * 0.10));
+    for (var dy = maxWY + Math.max(2, Math.round(maxW * 0.12)); dy <= best.maxY; dy++) {
+      var rw = runAt(dy);
+      if (!rw) { chinY = dy - 1; chinStop = 'mask-hole'; break; }
+      /* PAST THE CHEEKS FIRST. Around the widest row a face barely narrows at
+         all, so both end tests fire there: measured, the plateau test stopped
+         at the cheekbones and returned a face 29px long instead of 70. Neither
+         test is asked anything until the width has actually come down. */
+      /* AND A PLATEAU IS ONLY A NECK IF IT IS NECK-WIDTH. An under-chin shadow
+         bridged by the GAP closing manufactures its own plateau - measured, one
+         face with a shadow growing monotonically moved the chin 103 -> 91 and
+         flipped faceShape from round to square, with faceShape asserted as
+         measured every time. The shadow's plateau sat at 0.65 of the widest row;
+         a real neck is nearer 0.45. So a run that is still more than 0.62 of the
+         face wide is not the neck, and the scan keeps going down. */
+      if (prevW !== null && rw.w < maxW * 0.85) {
+        /* WIDENING ALWAYS ENDS THE FACE, at any width. Below the jaw, anything
+           that gets WIDER again is not face: shoulders, a collar, or - the case
+           this was measured on - an under-chin shadow whose hole the GAP closing
+           bridges back at the shadow's own (wider) extent. Gating this test on a
+           width bound was my own error: the shadow sat at 0.80 of the widest row,
+           the test was skipped, and the scan ran on down the neck. One face, one
+           shadow growing monotonically, moved the chin 103 -> 91 and flipped
+           faceShape round -> square with faceShape asserted as measured. */
+        if (rw.w > prevW + 1) { chinY = dy - 1; chinStop = 'widening'; break; }
+        /* the FLAT test is the one that needs a width bound - a plateau is only a
+           neck if it is neck-width. 0.75, not 0.62: a broad neck is ordinary. */
+        if (Math.abs(rw.w - prevW) <= 1 && rw.w <= maxW * 0.75) {
+          flat++;
+          if (flat >= flatCap) { chinY = dy - flat; chinStop = 'neck'; break; }
+        } else if (Math.abs(rw.w - prevW) > 1) flat = 0;
+      }
+      prevW = rw.w;
+      chinY = dy;
+    }
+    if (chinY <= maxWY) chinY = best.maxY;
+    var faceRun = runAt(maxWY) || { L: best.minX, R: best.maxX, w: best.maxX - best.minX + 1 };
+    var faceW = faceRun.w;
+    var cxMid = Math.round((faceRun.L + faceRun.R) / 2);
+    /* A FACE IS SYMMETRIC ABOUT ITS OWN CENTRE LINE; A HAND ON THE CHEEK IS NOT.
+       Measured: a skin-coloured hand held clear of the face is correctly a
+       separate component at every gap down to 0.03N - but TOUCHING, it merges,
+       faceW goes 74 -> 97 (+32%), and every width-normalised verdict moves with
+       it: a thick brow read as thin, an oval face as round, both asserted in
+       `derived`. The nose centre line is the robust centre here (the median x of
+       the mask across the mid-face), so an arm on one side cannot move it. Where
+       the two halves disagree by more than a third, the WIDTH is taken from the
+       narrower half - which is the face - and the group that describes the skull
+       declines, because the outline it would measure is not all face. */
+    /* THE CENTRE LINE COMES FROM THE UPPER FACE, where a hand is not. Taking it
+       from the mid-face rows was my own first attempt and it cannot work: the
+       hand is IN those rows, so it drags the centre with it and the two halves
+       come out balanced - measured, asym stayed under the threshold and the
+       clamp never fired. The forehead and temples are above where a hand rests
+       against a cheek, so their centre is the face's own. */
+    var midCols = [];
+    for (var mcy = faceT; mcy <= Math.min(best.maxY, faceT + Math.max(2, Math.round((maxWY - faceT) * 0.45))); mcy++) {
+      var mr = runAt(mcy);
+      if (mr) midCols.push(Math.round((mr.L + mr.R) / 2));
+    }
+    var trueMid = midCols.length ? median(midCols.slice()) : cxMid;
+    var halfL = Math.max(1, trueMid - faceRun.L), halfR = Math.max(1, faceRun.R - trueMid);
+    var asym = Math.max(halfL, halfR) / Math.min(halfL, halfR);
+    /* 1.20, not 1.35. An adversarial sweep of the SAME hand fixture across ten
+       framings measured asym at 1.38, 1.39, 1.37, 1.38, 1.38, 1.41, 1.33, 1.32,
+       1.35, 1.33 - so a threshold of 1.35 sat INSIDE this measurement's own noise
+       band and the guard missed the hand at three framings (0.55, 0.50, 0.40),
+       leaving faceW inflated 18-20% exactly where the framed suite lives. The
+       clean face measures 1.03 on the same estimator, including under an 8-degree
+       tilt, so 1.20 separates the two populations with room on both sides instead
+       of splitting one of them. */
+    var lopsided = asym > 1.20;
+    if (lopsided) {
+      faceW = 2 * Math.min(halfL, halfR);
+      cxMid = trueMid;
+    }
+
+    /* ---- 4. facial hair as GEOMETRY, before anything below the eyes is
+       measured. A beard is not skin, so the mask STOPS at the moustache line:
+       the "chin" found above is the top of the beard, and every proportion
+       below the eyes would be taken against a face two thirds of its real
+       length. The extension below the mask is measured directly - not
+       background, not skin, inside the face's own column - and when it is
+       there it IS the lower face. */
+    var beardRows = 0, beardPix = [], beardBottom = chinY;
+    var beardHalf = Math.max(2, Math.round(faceW * 0.30));
+    for (var byy = chinY + 1; byy < Math.min(M, chinY + Math.round(faceW * 0.7)); byy++) {
+      var hit = 0, wide = 0, rowPix = [];
+      for (var bxx = cxMid - beardHalf; bxx <= cxMid + beardHalf; bxx++) {
+        if (bxx < 0 || bxx >= M) continue;
+        wide++;
+        var bp = px(bxx, byy);
+        if (!isBg(bp) && !mask[byy * M + bxx]) { hit++; rowPix.push(bp); }
+      }
+      if (wide && hit / wide > 0.6) { beardRows++; beardBottom = byy; beardPix = beardPix.concat(rowPix); }
+      else break;
+    }
+    var beardDepth = beardRows / Math.max(1, faceW);
+    var lowerChin = beardDepth > 0.10 ? beardBottom : chinY;
+    var faceH = lowerChin - faceT + 1;
+
+    /* ---- 5. the eye line. THE CHEEKBONES SIT LEVEL WITH THE EYES, so the
+       widest row of the face is the eye line - and unlike any proportion of the
+       box it does not move when a fringe hides the forehead. Two dark masses
+       found NEAR it refine it; two found far from it are the mouth, a beard
+       shadow or a shirt collar, and are ignored. --------------------------- */
+    /* EVERY STATISTIC HERE IS A MEDIAN OR A COUNT, never a min and a max. The
+       first version measured width as (rightmost - leftmost) dark pixel, and a
+       single stray pixel from JPEG ringing at the edge of the window made a
+       7px iris measure 26px wide - the same width as a spectacle frame. So the
+       one number that had to tell an eye from a bar could not. Columns carrying
+       at least two dark pixels are the mass; its width is HOW MANY of those
+       there are, its height is the median column, and `round` is the ratio. An
+       eye is about as tall as it is wide; a brow bar and a frame are three
+       times wider than they are tall, at any distance and under any blur. */
+    function darkMass(x0, x1, y0, y1, cut) {
+      var cols = {}, ys = [], n = 0;
+      for (var ey = y0; ey <= y1; ey++) {
+        for (var ex = x0; ex <= x1; ex++) {
+          if (ex < 0 || ex >= M || ey < 0 || ey >= M) continue;
+          if (lum(px(ex, ey)) < cut) { cols[ex] = (cols[ex] || 0) + 1; ys.push(ey); n++; }
+        }
+      }
+      if (!n) return null;
+      var keep = Object.keys(cols).map(Number).filter(function (k) { return cols[k] >= 2; })
+        .sort(function (a, b) { return a - b; });
+      if (!keep.length) return null;
+      var heights = keep.map(function (k) { return cols[k]; });
+      var tall = median(heights) || 1;
+      var wide = keep.length;
+      return { medY: median(ys), cx: median(keep.slice()), n: n,
+               spread: wide, tall: tall, round: tall / wide };
+    }
+    function atX(fr) { return Math.round(faceRun.L + faceW * fr); }
+    function atY(fr) { return Math.round(faceT + faceH * fr); }
+    function patchMedian(spots, r, skinOnly) {
+      var cols = spots.map(function (sp) {
+        var acc = [0, 0, 0], n = 0;
+        for (var py = sp[1] - r; py <= sp[1] + r; py++) {
+          for (var pxx = sp[0] - r; pxx <= sp[0] + r; pxx++) {
+            if (pxx < 0 || py < 0 || pxx >= M || py >= M) continue;
+            if (skinOnly && !mask[py * M + pxx]) continue;
+            var q = px(pxx, py); acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
+          }
+        }
+        return n ? [acc[0] / n, acc[1] / n, acc[2] / n] : null;
+      }).filter(Boolean);
+      return medianCol(cols);
+    }
+    /* SKIN IS SAMPLED WHERE THE MASK SAYS SKIN. That single constraint is what
+       makes a wall the colour of a cheek impossible to sample by accident. */
+    var skin = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
+                            [atX(0.24), maxWY + Math.round(faceH * 0.12)],
+                            [atX(0.76), maxWY + Math.round(faceH * 0.12)],
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true) || skinRef;
+    var skinL = lum(skin);
+    var eyeCut = skinL - 40;
+    var eyeY = maxWY;
+    var eyeBandTop = Math.max(faceT, maxWY - Math.round(faceH * 0.22));
+    var eyeBandBot = Math.min(lowerChin, maxWY + Math.round(faceH * 0.10));
+    var eL = darkMass(atX(0.10), atX(0.44), eyeBandTop, eyeBandBot, eyeCut);
+    var eR = darkMass(atX(0.56), atX(0.90), eyeBandTop, eyeBandBot, eyeCut);
+    /* THE CHEEKBONE ROW IS THE EYE LINE, FULL STOP. I tried refining it with
+       the two dark masses and it is not worth the risk: on a face whose irises
+       are not visible - a photo in ordinary room light, half of them - the
+       masses available in that band are the EYEBROWS or a spectacle frame, and
+       accepting either drags the eye line 11-14px above the cheekbones. The
+       brow band then opens across the brows' own lower half and a thick brow
+       measures thin, which is exactly the failure this pass was written to fix.
+       The cheekbones are level with the eyes anatomically, they are a
+       measurement rather than a proportion, and they do not move. The dark
+       masses still earn their keep: their CENTROIDS give eye spacing, gated on
+       roundness so a bar can never supply it. */
+    var compact = eL && eR && eL.round > 0.70 && eR.round > 0.70;
+    var lowerH = lowerChin - eyeY;
+    if (lowerH < faceH * 0.20) lowerH = Math.round(faceH * 0.55);
+    function belowEye(fr) { return Math.round(eyeY + lowerH * fr); }
+
+    var found = [];
+    var look = { skin: hex(skin), hair: FACE_LOOK.hair, shirt: FACE_LOOK.shirt,
+                 lip: FACE_LOOK.lip, eyes: FACE_LOOK.eyes,
+                 hairStyle: 'short', glasses: false, beard: 'none' };
+    /* THE LEDGER OF WHAT WAS ACTUALLY MEASURED. A knob absent from it is one
+       the caller leaves exactly as the doctor set it. */
+    /* NOTHING IS SEEDED HERE EXCEPT THE SKIN. A knob in this list is a CLAIM, and
+       the caller applies every claim over whatever the doctor set by hand. Seeding
+       'glasses' and 'beard' meant a NON-DETECTION was applied as a detection of
+       absence: a doctor who ticked Glasses had the box UNTICKED by Match whenever
+       the detector missed his frames - which, until the fix above, was every
+       bald or shaved head. A detector that finds nothing has measured nothing.
+       Each of these is now pushed by the branch that positively decides it. */
+    var derived = ['skin'];
+    found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
+
+    /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
+       Not a fixed row near the top of the picture - the band directly above
+       THIS face, as tall as the face is long. "Hair" is what is neither this
+       face's skin nor the background: the only definition that works for black
+       hair on a pale wall AND white hair on a dark one, which are the two cases
+       a brightness test gets backwards. */
+    function unlikeSkin(pp) {
+      /* 20, not 24: grey hair against fair skin scored 23.3 on this measure -
+         a marginal miss that classified a grey-haired head as BALD. The band
+         this runs in is ABOVE the face box, so the only other thing in it is
+         the background, and isBg has already removed that. */
+      return (Math.abs(lum(pp) - skinL) + chDist(pp, skin) * 0.5) > 20;
+    }
+    var bandTop = Math.max(0, faceT - Math.round(faceH * 0.55));
+    var hairPix = [], crown = 0, crownN = 0;
+    for (yy = bandTop; yy < faceT; yy++) {
+      for (xx = atX(0.12); xx <= atX(0.88); xx++) {
+        if (xx < 0 || xx >= M) continue;
+        crownN++;
+        p = px(xx, yy);
+        if (!isBg(p) && !mask[yy * M + xx] && unlikeSkin(p)) {
+          crown++;
+          if (xx > atX(0.25) && xx < atX(0.75)) hairPix.push(p);
+        }
+      }
+    }
+    var crownR = crownN ? crown / crownN : 0;
+    var hair = medianCol(hairPix);
+    /* HAIR THE COLOUR OF THE WALL IS NOT A BALD HEAD - IT IS AN UNANSWERABLE
+       QUESTION. isBg() is a distance test, so when the wall lands within 26 of
+       the hair the whole hair mass classifies as background: measured on one
+       fixture face with only the wall changing, #454a50 gave crownR 0.79 and
+       "short hair", #3a3f45 gave crownR 0 and "BALD" - a cliff, from a wall.
+       The two cases are told apart by GEOMETRY, not colour. A genuinely bald
+       scalp is part of the skin mass, so the mask's top row is a narrow DOME. A
+       head whose hair was mistaken for wall has its mask cut off flat at the
+       forehead, so the top row is nearly as wide as the cheeks. When the top is
+       wide, something is covering the crown and this photo cannot say what
+       colour it is - so hairStyle and hair are left out of `derived` and the
+       doctor's own setting stands. */
+    var topRun = runAt(faceT);
+    var flatTop = !!(topRun && maxW && (topRun.w / maxW) > 0.55);
+    var hairUnreadable = (crownR < 0.20 && flatTop);
+    /* side columns BESIDE the box, below the eye line: hair that hangs */
+    var sideHit = 0, sideN = 0;
+    var sideW = Math.max(2, Math.round(faceW * 0.28));
+    /* from the CHEEKBONES down, not from the eye line: hair that hangs starts
+       level with the ear. Beginning higher counts empty rows beside the temples
+       and dilutes the ratio - measured, it put a full head of long hair at
+       0.29 against a 0.30 threshold. */
+    for (yy = maxWY; yy <= Math.min(M - 1, lowerChin + Math.round(faceH * 0.15)); yy++) {
+      for (xx = Math.max(0, faceRun.L - sideW); xx < faceRun.L; xx++) {
+        sideN++;
+        p = px(xx, yy);
+        if (!isBg(p) && !mask[yy * M + xx] && (!hair || chDist(p, hair) < 52)) sideHit++;
+      }
+      for (xx = faceRun.R + 1; xx <= Math.min(M - 1, faceRun.R + sideW); xx++) {
+        sideN++;
+        p = px(xx, yy);
+        if (!isBg(p) && !mask[yy * M + xx] && (!hair || chDist(p, hair) < 52)) sideHit++;
+      }
+    }
+    var sideR = sideN ? sideHit / sideN : 0;
+    if (hairUnreadable) {
+      /* say it out loud rather than answering. `hairStyle` never enters
+         `derived`, so Match leaves the doctor's own choice alone.
+         AND SAY THE RIGHT REASON. When the photo is cropped above the hairline
+         there is no band to measure at all - bandTop clamps to 0, the loop never
+         runs, and crownR is 0 BY CONSTRUCTION rather than by measurement. Blaming
+         the background then sends the doctor to change his wall. crownN tells the
+         two apart: zero means nothing was looked at. */
+      found.push(crownN === 0
+        ? 'hair could not be read — the top of the head is outside the photo'
+        : 'hair could not be read — the background is too close to it in colour');
+    }
+    else if (crownR < 0.20 || !hair) { look.hairStyle = 'bald'; derived.push('hairStyle'); found.push('little or no hair'); }
+    else if (crownR < 0.42) { look.hairStyle = 'buzz'; derived.push('hairStyle'); found.push('very short hair'); }
+    else if (sideR > 0.30) { look.hairStyle = 'long'; derived.push('hairStyle'); found.push('long hair'); }
+    else { look.hairStyle = 'short'; derived.push('hairStyle'); found.push('short hair'); }
+    if (!hairUnreadable && look.hairStyle !== 'bald' && hair) {
+      look.hair = hex(hair);
+      derived.push('hair');
+      var hairL = lum(hair);
+      found.push(hairL < 70 ? 'dark hair' : hairL > 165 ? 'light hair' : 'mid-tone hair');
+    }
+
+    /* ---- 7. FACIAL HAIR. The geometric read from step 4 is the strong
+       evidence - a mass below the mask, in the face's own column, that is
+       neither skin nor background. Stubble does not break the mask, so it is
+       still read as the jaw being measurably darker than the cheeks, and both
+       are compared against THIS face's own skin rather than a threshold. */
+    if (beardDepth > 0.10 && beardPix.length > 20) {
+      var bcol = medianCol(beardPix);
+      look.beard = 'beard'; derived.push('beard'); found.push('beard');
+      if (bcol && !hair && lum(bcol) < skinL - 20) { look.hair = hex(bcol); derived.push('hair'); }
+    } else {
+      /* THE JAW, NOT THE MOUTH. Patches on or beside the lips made a dark lip
+         colour read as a drop from the cheeks, and a clean-shaven face came
+         back bearded. */
+      /* skinOnly, and CLAMPED ABOVE THE CHIN. The three patch centres are on the
+         face, but with r=2 the 5x5 window of the lowest one reached rows past
+         lowerChin - so on a dark wall it sampled the WALL and the jaw came back
+         "stubble" on a clean-shaven face. Measured with a resolving control, one
+         face, wall only: #f2f2f2 -> drop -6 (none); #4a4f55 -> 25 (stubble);
+         #3a3f45 -> 28; #000000 -> 40. The same three patches with skinOnly gave
+         drop 1 in every case. Real stubble stays inside the mask - it darkens
+         skin without leaving the skin-chroma cluster - so nothing that should be
+         detected is lost by demanding the mask. */
+      var jawY = Math.min(belowEye(0.88), lowerChin - 3);
+      var chinY2 = Math.min(belowEye(1.0), lowerChin - 3);
+      var chin = patchMedian([[atX(0.30), jawY], [atX(0.70), jawY], [cxMid, chinY2]], 2, true);
+      if (chin) {
+        var drop = skinL - lum(chin);
+        if (drop > 46) { look.beard = 'beard'; derived.push('beard'); found.push('beard'); }
+        else if (drop > 24) { look.beard = 'stubble'; derived.push('beard'); found.push('stubble'); }
+      }
+    }
+
+    /* ---- 8. GLASSES: a bar across the BRIDGE at the measured eye line.
+       "Darker than the forehead and the cheeks on both sides" is equally well
+       explained by thick dark eyebrows - and eyebrows have a gap between them
+       that a frame crosses. */
+    /* THE FRAME'S OWN ROW IS FOUND, not assumed to be the eye line. Frames sit
+       anywhere from the brow line to mid-eye depending on the face and the
+       photograph, and probing one row missed a frame drawn 9px higher - which
+       then had its bar measured as the thickest eyebrows in the practice. The
+       darkest BRIDGE in the band is the candidate, because the bridge is what
+       makes a frame a frame: eyebrows have a gap there and a frame crosses it. */
+    var cheekRow = patchMedian([[atX(0.20), belowEye(0.30)], [atX(0.80), belowEye(0.30)]], 1, false);
+    /* -1e9, not -1: darkness is a NEGATIVE luminance, so seeding the comparator
+       at -1 meant no row was ever darker than the seed and the scan silently
+       found nothing. A frame detector that always declines looks exactly like a
+       face with no glasses. */
+    /* WHERE THE HAIR STOPS, measured before the frame is looked for. A fringe
+       hanging to the eye line is dark all the way across INCLUDING the bridge,
+       and the bridge is the one thing this detector treats as proof of a frame:
+       measured, a face with no spectacles anywhere read GLASSES at fringe bottoms
+       0.40, 0.41 and 0.42 of the frame, and then abandoned the brow read too,
+       because the brow measure stands down whenever glasses are "found". A
+       spectacle frame sits on a nose, not in hair - so the scan starts below the
+       hair mass. */
+    var fringeStop = faceT;
+    {
+      var fcols = [];
+      for (var ffx = atX(0.14); ffx <= atX(0.86); ffx++) {
+        if (ffx < 0 || ffx >= M) continue;
+        var flow = faceT, fseen = false, fstart = -1;
+        for (var ffy = Math.max(0, faceT - Math.round(faceH * 0.55)); ffy < eyeY; ffy++) {
+          var fpx = px(ffx, ffy);
+          var fhair = !isBg(fpx) && !mask[ffy * M + ffx] && unlikeSkin(fpx);
+          if (fhair) { if (!fseen) fstart = ffy; fseen = true; flow = ffy; }
+          else if (fseen) break;
+        }
+        /* THE RUN MUST START ABOVE THE FACE, or it is not hair.
+           ON A BALD OR SHAVED HEAD THE SCALP IS IN THE SKIN MASK, so the only
+           thing this definition can find above the eyes is the SPECTACLE FRAME
+           ITSELF - and it then set its own floor, the frame scan started below the
+           frame, and glasses became undetectable on exactly the heads that have no
+           hair to hide them. Measured and swept. A fringe begins above faceT (the
+           top of the skin); a frame sits inside the face. */
+        fcols.push((fstart >= 0 && fstart < faceT) ? flow : faceT);
+      }
+      var fmed = median(fcols);
+      if (fmed !== null) fringeStop = Math.max(faceT, fmed + 2);
+    }
+    var frameY = -1, frameDark = -1e9;
+    for (var gy = Math.max(fringeStop, eyeY - Math.round(faceH * 0.22)); gy <= Math.min(lowerChin, eyeY + Math.round(faceH * 0.06)); gy++) {
+      var brg = patchMedian([[cxMid, gy]], 1, false);
+      if (!brg) continue;
+      var darkness = -lum(brg);
+      if (darkness > frameDark) { frameDark = darkness; frameY = gy; }
+    }
+    var browRow = frameY >= 0 ? patchMedian([[atX(0.26), frameY], [atX(0.74), frameY]], 1, false) : null;
+    var foreRow = patchMedian([[cxMid, Math.round((faceT + eyeY) / 2)]], 1, false);
+    var bridge = frameY >= 0 ? patchMedian([[cxMid, frameY]], 1, false) : null;
+    if (browRow && cheekRow && foreRow && bridge) {
+      if (lum(bridge) < lum(cheekRow) - 20 &&
+          lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(foreRow) - 20) {
+        look.glasses = true; derived.push('glasses'); found.push('glasses');
+      }
+    }
+    /* ---- 9. EYE COLOUR: just inside each eye centre; refuse near-black,
+       which is pupil or lash rather than iris. */
+    var eye = patchMedian([[atX(0.30), eyeY], [atX(0.70), eyeY]], 1, false);
+    if (eye && lum(eye) > 40 && lum(eye) < skinL - 20) { look.eyes = hex(eye); derived.push('eyes'); }
+
+    /* ---- 10. BROWS, in the band between the top of the face and the eyes,
+       clear of both. Skipped outright when glasses were detected: a frame lies
+       across exactly this band and would read as the thickest brows on every
+       bespectacled face. Thickness is scaled against the face's own WIDTH,
+       which no fringe can move - the visible height of a face changes with how
+       much forehead the hair leaves showing. */
+    var dbgBrow = null;
+    if (!look.glasses) {
+      /* THE BAND OPENS BELOW THE HAIR, AND THE HAIR SAYS WHERE THAT IS.
+         A fraction of the forehead is not good enough: a fringe curves down
+         into the top of any fixed band, its antialiased edge reads as dark, and
+         measured on the fixtures it reached a MAJORITY of the columns - so the
+         median column carried one dark row and a face with no eyebrows drawn at
+         all came back with thin brows. The lowest hair-like pixel in each
+         column is measured instead, and the band starts below it. */
+      /* CONTIGUOUS with the hair mass, which is what makes it a fringe. The
+         first version took the LOWEST hair-like row above the eyes, and an
+         eyebrow is hair-like: measured, the brow bar itself set the bottom of
+         the fringe, the band opened below it, and a thick brow read as thin.
+         The walk starts at the first hair-like row and stops at the first row
+         that is not - so a brow, separated from the hair by forehead, is never
+         mistaken for the bottom of the hair. */
+      var fringe = [];
+      for (var fx = atX(0.14); fx <= atX(0.86); fx++) {
+        if (fx < 0 || fx >= M) continue;
+        var low = faceT, started = false;
+        for (var fyy = Math.max(0, faceT - Math.round(faceH * 0.55)); fyy < eyeY; fyy++) {
+          var fp = px(fx, fyy);
+          var isHair = !isBg(fp) && !mask[fyy * M + fx] && unlikeSkin(fp);
+          if (isHair) { started = true; low = fyy; }
+          else if (started) break;
+        }
+        fringe.push(low);
+      }
+      var fringeBottom = median(fringe);
+      var by0 = Math.max(faceT, (fringeBottom === null ? faceT : fringeBottom) + 2);
+      var gap = Math.max(3, eyeY - by0);
+      var by1 = Math.max(by0 + 1, Math.round(eyeY - Math.max(1, gap * 0.10)));
+      var browCols = [], browPix = [];
+      for (var bx2 = atX(0.14); bx2 <= atX(0.86); bx2++) {
+        if (bx2 < 0 || bx2 >= M) continue;
+        if (bx2 > atX(0.44) && bx2 < atX(0.56)) continue;      /* the gap between the brows */
+        var darkRows = 0;
+        for (var byy2 = by0; byy2 < by1; byy2++) {
+          var bp2 = px(bx2, byy2);
+          if (lum(bp2) < skinL - 34) { darkRows++; browPix.push(bp2); }
+        }
+        browCols.push(darkRows);
+      }
+      var browMed = median(browCols);
+      /* the brow read is the measurement this file has got wrong most often, so
+         the numbers it came from ride back with the result for inspection */
+      dbgBrow = { by0: by0, by1: by1, fringe: fringeBottom, med: browMed, cols: browCols.length };
+      if (browMed) {
+        /* an eyebrow is roughly 7-10mm tall on a face about 140mm wide, so a
+           natural brow is ~5-7% of the face's WIDTH; thin is nearer 3% and
+           thick nearer 9%. The three-point test (thin / natural / thick) then
+           shows the classifier DISCRIMINATES; it is not what chose the
+           numbers. */
+        var bRatio = browMed / faceW;
+        /* the three drawn brows measure 3, 5 and 9 rows on a 74px face - 0.041,
+           0.068 and 0.122 - so the cuts sit between them, and they agree with
+           the anatomy: a brow is 7-10mm on a face about 140mm wide, so 5-7% is
+           natural, 3% thin and 9%+ thick. The three-point test is what shows
+           the classifier DISCRIMINATES; it is not what chose the numbers. */
+        var bVal = bRatio < 0.054 ? 'thin' : (bRatio > 0.095 ? 'thick' : 'normal');
+        look.brows = bVal; derived.push('brows');
+        found.push(bVal === 'normal' ? 'natural brows' : bVal + ' brows');
+        /* THE INTERIOR OF THE BROW, NOT ITS MEDIAN. Every pixel counted here is
+           merely "darker than the skin", so on a thin brow the set is mostly the
+           ANTIALIASED EDGE - and its median is a mid-tan that exists nowhere on
+           the face. Measured, with brows painted in EXACTLY the hair colour
+           #3a2a1c: browPx 3 -> browCol #7f6147, browPx 4 -> #7c634c, browPx 6 ->
+           #7f6147, each ~56 from the hair and so clearing the guard below, each
+           then painted into the SVG and saved as the doctor's own choice. The
+           pattern is not monotonic in thickness (5, 7 and 8 were fine), which is
+           why one pinned thickness could never have caught it.
+           The darkest quarter is the brow itself; the blend sorts above it. */
+        /* > 12, NOT >= 24. The count scales with head AREA, so doubling the floor
+           while also changing the estimator (median -> darkest quarter) refused a
+           correct brow colour at ordinary webcam distance: measured on one fixture,
+           scale 1.0 gave 111 pixels and scale 0.55 gave 41 - both of which return
+           the right colour with the new estimator, and both of which the doubled
+           floor was fine with, but the margin was gone. The estimator was the fix;
+           the floor was never the problem, so it goes back to what it was. */
+        if (browPix.length > 12) {
+          browPix.sort(function (pp, qq) { return lum(pp) - lum(qq); });
+          var bc = browPix[Math.floor(browPix.length * 0.25)];
+          if (hair && chDist(bc, hair) > 30) { look.browCol = hex(bc); derived.push('browCol'); found.push('brows a different colour from the hair'); }
+        }
+      }
+    }
+
+    /* ---- 11. LIPS: how much of the mouth band is measurably REDDER than this
+       face's own cheek. Redness, not darkness - the shadow under a lip is dark
+       but not red, and a beard is dark across the whole band. */
+    function redness(pp) { return pp[0] - (pp[1] + pp[2]) / 2; }
+    var cheekRed = [];
+    for (var cx1 = atX(0.12); cx1 < atX(0.30); cx1++) {
+      for (var cy1 = belowEye(0.12); cy1 < belowEye(0.40); cy1++) {
+        if (cx1 < 0 || cx1 >= M || cy1 < 0 || cy1 >= M) continue;
+        cheekRed.push(redness(px(cx1, cy1)));
+      }
+    }
+    var cheekMed = median(cheekRed);
+    if (cheekMed !== null) {
+      var lipRows = 0, lipTot = 0;
+      for (var lyy = belowEye(0.40); lyy < belowEye(1.02); lyy++) {
+        var lhit = 0, lwide = 0;
+        for (var lxx = atX(0.38); lxx < atX(0.62); lxx++) {
+          if (lxx < 0 || lxx >= M || lyy < 0 || lyy >= M) continue;
+          lwide++;
+          if (redness(px(lxx, lyy)) > cheekMed + 10) lhit++;
+        }
+        lipTot++;
+        if (lwide && lhit / lwide > 0.45) lipRows++;
+      }
+      if (lipTot > 0 && lipRows > 0) {
+        var lRatio = lipRows / lipTot;
+        var lVal = lRatio < 0.18 ? 'thin' : (lRatio > 0.38 ? 'full' : 'normal');
+        look.lips = lVal; derived.push('lips');
+        found.push(lVal === 'normal' ? 'natural lips' : lVal + ' lips');
+      }
+    }
+
+    /* ---- 12. NOSE WIDTH: the shaded span at the base of the nose, measured
+       outward from the centre line and reduced by median across the rows. The
+       OUTERMOST shaded offset, not a contiguous run - the middle of a nose is
+       the lit ridge, and a contiguity scan starting there measures zero on
+       every real face. Scaled against the FACE width. */
+    var spans = [];
+    for (var nyy = belowEye(0.22); nyy < belowEye(0.42); nyy++) {
+      var half = 0;
+      for (var off = 2; off < faceW * 0.30; off++) {
+        var lx = cxMid - off, rx3 = cxMid + off;
+        if (lx < 0 || rx3 >= M || nyy < 0 || nyy >= M) break;
+        if (lum(px(lx, nyy)) < skinL - 10 || lum(px(rx3, nyy)) < skinL - 10) half = off;
+      }
+      if (half) spans.push(half * 2);
+    }
+    var noseMed = median(spans);
+    if (noseMed) {
+      var nRatio = noseMed / faceW;
+      var nVal = nRatio < 0.24 ? 'button' : (nRatio > 0.36 ? 'wide' : 'straight');
+      look.nose = nVal; derived.push('nose');
+      found.push(nVal + ' nose');
+    }
+
+    /* ---- 13. TOP COLOUR: the strip below the chin, outside the neck column.
+       Taken only when it differs from BOTH the skin (or it is the neck) and the
+       background (or it is the wall). A head-only crop fails one of those two
+       and correctly keeps the colour the doctor already chose. */
+    var tops = [];
+    for (var sx = atX(-0.15); sx < atX(1.15); sx++) {
+      if (sx < 0 || sx >= M) continue;
+      if (sx > atX(0.28) && sx < atX(0.72)) continue;          /* the neck sits here */
+      for (var sy = lowerChin + Math.round(faceH * 0.08); sy < lowerChin + Math.round(faceH * 0.45); sy++) {
+        if (sy < 0 || sy >= M) continue;
+        tops.push(px(sx, sy));
+      }
+    }
+    var topCol = medianCol(tops);
+    if (topCol && chDist(topCol, skin) > 34 && (!bg || chDist(topCol, bg) > 26)) {
+      look.shirt = hex(topCol); derived.push('shirt');
+      found.push('top colour');
+    }
+
+    /* ---- 14. THE SKULL. Width at the eye line over the LOWER face height -
+       eyes to chin - because the upper bound of a face is hair, not bone. The
+       three cut points are the ratios of the three heads faceSvg actually draws
+       (oval 116/70 = 1.66, round 126/64 = 1.97, long 104/78 = 1.33), so a photo
+       is matched to the nearest head that EXISTS rather than to a number
+       invented here.
+       A BEARD HIDES THE JAW, AND WORSE, IT IMPERSONATES IT: there is no honest
+       reading of a jaw that is under hair, so there is no reading. */
+    var eyeRun = runAt(eyeY) || faceRun;
+    var eyeW = eyeRun.w;
+    /* `lopsided` joins offFrame here: when one half of the outline is a third
+       wider than the other, the thing being measured is not only a face, and a
+       shape verdict from it would overwrite the doctor's own setting with the
+       geometry of his hand. */
+    var offFrame = (eyeRun.L <= 0 || eyeRun.R >= M - 1 || faceRun.L <= 0 || faceRun.R >= M - 1 || lopsided);
+    /* AND THE CHIN HAS TO HAVE BEEN FOUND FOR A GOOD REASON.
+       My first attempt at this gate demanded that eye-to-chin be at least 0.48 of
+       the face's width, on the reasoning that no adult face is near 0.40 - and it
+       broke two cases that had been passing, because a WIDE SHORT face is exactly
+       a short lower face over a wide one (the fixture's round head measures 0.37).
+       The lesson: a proportion cannot separate "an unusual face" from "a bad
+       measurement", because unusual faces are the ones this feature exists for.
+       WHY the scan stopped can. A scan that ended on a WIDENING did not find a
+       jaw - it found the top edge of something else, and an under-chin shadow
+       bridged by the closing is exactly that. When it stopped that way AND there
+       is a lot of unexplained mask left below the chin, the chin is not
+       trustworthy and neither is anything measured from it. */
+    var unexplained = best.maxY - chinY;
+    /* MEASURED, not reasoned about: chinStop came back "neck" for BOTH the
+       shadowed and the unshadowed face, so a gate on the stop reason could never
+       have fired. What actually happens is that the shadow REMOVES the jaw's
+       lowest rows from the skin mask, so the narrowing reaches neck-width eleven
+       rows early and the plateau is genuinely there. The mask is wrong, not the
+       scan.
+       So the question to ask is whether the SILHOUETTE continues below the chin
+       we found: a band of pixels that are neither background nor skin, inside the
+       face's own columns, means the face goes on and this chin is not the chin. A
+       real beard is already handled above (it moves lowerChin), and a real neck is
+       skin, so neither fires this. */
+    /* ⛔ chinPlausible IS GONE, and faceShape is no longer CLAIMED. Read the
+       measurements before restoring either.
+       This guard was my third attempt to make the face-SHAPE verdict safe against
+       an under-chin shadow, and an adversarial sweep measured it doing both wrong
+       things at once: it FIRED on an ordinary shaded neck where the chin had been
+       measured exactly right (belowR jumped 0 -> 0.53 the moment the shade crossed
+       the mask's luminance cut, with chinY byte-identical to the unshadowed twin),
+       and it was exactly 0.00 at EVERY framing at or below 0.65 - the entire band
+       this file exists for - so where it was aimed it could not fire at all.
+       Three calibrations, three failures, on a signal that is not there at the
+       distances that matter. So the honest answer is not a fourth threshold: the
+       photo does not reliably support a shape verdict, so it stops making one.
+       look.faceShape is still computed and still reported in `found` (it is useful
+       information), but it NEVER enters `derived` - which means Match never
+       overwrites the Face-shape control the doctor set by hand. A cosmetic knob is
+       not worth a wrong answer, and the four knobs the owner actually asked about
+       (skin, hair, beard, glasses) do not depend on the chin. */
+    if (!offFrame && eyeW > M * 0.10 && lowerH > faceH * 0.20 && look.beard === 'none') {
+      var shapeR = eyeW / lowerH;
+      var sVal = shapeR < 1.48 ? 'long' : (shapeR > 1.80 ? 'round' : 'oval');
+      /* A SQUARE JAW OUTRANKS ALL THREE: it is not a proportion, it is the face
+         still being wide 62% of the way down to the chin. The drawn oval has
+         narrowed to about 0.79 of its widest by there; a drawn jaw is at 0.97.
+         MEASURED FROM THE CHEEKBONE ROW, the widest row, because that landmark
+         does not move - hung off the eye line instead, the same ellipse scored
+         0.875 or 0.914 depending only on whether the portrait happened to show
+         an iris, and 0.88 sat between them. */
+      var jawRun = runAt(Math.round(maxWY + (lowerChin - maxWY) * 0.62));
+      if (jawRun && jawRun.w / maxW > 0.88) sVal = 'square';
+      /* COMPUTED AND REPORTED, NEVER CLAIMED — see the note above. It goes into
+         `found` so the doctor can see what the photo looked like, and stays out of
+         `derived` so Match cannot overwrite his own choice with it. */
+      look.faceShape = sVal;
+      found.push(sVal === 'square' ? 'a square jaw' : sVal + ' face');
+    }
+    /* EYE SPACING, from the two dark masses measured in step 5. THE DARK MASS,
+       NOT THE DARKEST PIXEL: a solid iris has no unique darkest pixel, so "the
+       darkest pixel" is noise wearing a measurement's clothes. AN IRIS IS
+       COMPACT AND A SPECTACLE FRAME IS NOT - the spread test holds even on a
+       frame the glasses detector missed. */
+    if (!offFrame && !look.glasses && compact && eR.cx > eL.cx && eL.n >= 6 && eR.n >= 6) {
+      var setR = (eR.cx - eL.cx) / eyeW;
+      var eVal = setR < 0.44 ? 'close' : (setR > 0.56 ? 'wide' : 'normal');
+      look.eyeSet = eVal; derived.push('eyeSet');
+      if (eVal !== 'normal') found.push(eVal + '-set eyes');
+    }
+    /* A RECEDING HAIRLINE is bare TEMPLES with hair still on the crown - so it
+       is read as exactly that contrast, and never on a head with no hair to
+       recede from. Reading only the temples would call every bald head
+       receding; reading only the crown could never see it at all. */
+    if (look.hairStyle !== 'bald' && hair) {
+      /* WHERE THE SKIN STARTS, COLUMN BY COLUMN. A receding head is not "bare
+         temples" - every head with an ordinary fringe has bare temples, because
+         a fringe is narrower than the skull. It is bare temples that reach
+         MEASURABLY HIGHER than the middle of the forehead does, and that
+         difference is scale-free.
+         Measured on the fixtures: the ordinary head's temples start 5px above
+         its centre parting and the receding one's start 24px above, on faces
+         81px long - so the honest cut is a fraction of the face, and a
+         coverage-ratio test inside one fixed band called both of them the
+         same. */
+      function skinTopIn(f0, f1) {
+        var tops = [];
+        for (var tx = atX(f0); tx < atX(f1); tx++) {
+          if (tx < 0 || tx >= M) continue;
+          for (var ty = Math.max(0, faceT - Math.round(faceH * 0.10)); ty <= lowerChin; ty++) {
+            if (mask[ty * M + tx]) { tops.push(ty); break; }
+          }
+        }
+        return median(tops);
+      }
+      var tL = skinTopIn(0.05, 0.25), tR = skinTopIn(0.75, 0.95), midTop = skinTopIn(0.40, 0.60);
+      if (tL !== null && tR !== null && midTop !== null) {
+        var lift = midTop - Math.max(tL, tR);
+        if (lift > faceH * 0.12 && crownR > 0.20) {
+          look.hairline = 'receding'; derived.push('hairline');
+          found.push('a receding hairline');
+        }
+      }
+    }
+    /* `age` is NOT derived. Nasolabial folds and crow's feet are a few pixels of
+       low-contrast texture at this resolution and are wiped out by ordinary
+       lighting, so any verdict here would be a guess wearing a measurement's
+       clothes - and guessing that a doctor looks old is the one wrong answer
+       this feature must never volunteer. It stays a choice in Setup. */
+    return { look: look, found: found, derived: derived,
+             box: { L: faceRun.L, R: faceRun.R, T: faceT, B: lowerChin, eyeY: eyeY,
+                    w: faceW, h: faceH, crownR: Math.round(crownR * 100) / 100,
+                    sideR: Math.round(sideR * 100) / 100, beardDepth: Math.round(beardDepth * 100) / 100,
+                    skinL: Math.round(skinL), bgL: Math.round(bgL),
+                    maxWY: maxWY, maxW: maxW, brow: dbgBrow,
+                    chinStop: chinStop, unexplained: unexplained, asym: Math.round(asym * 100) / 100,
+                    lopsided: lopsided, hairUnreadable: hairUnreadable, flatTop: flatTop,
+                    eL: eL && { y: eL.medY, cx: Math.round(eL.cx), sp: eL.spread, n: eL.n },
+                    eR: eR && { y: eR.medY, cx: Math.round(eR.cx), sp: eR.spread, n: eR.n } } };
   }
   function faceTalkStop() {
     if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
@@ -1977,7 +2690,16 @@
         lookNote.textContent = 'Reading your photo…';
         faceTintFromPortrait(src, function (res) {
           var look = res && res.look;
-          if (!look) { lookNote.textContent = 'That photo was too dark or too flat to read - set the colours by hand.'; return; }
+          /* av-5.7.0: the honest failure is "I could not FIND a face", and it
+             names the two things that actually cause it - because the previous
+             message ("too dark or too flat") sent the doctor to the colour
+             pickers when the real problem was that the head filled a third of
+             the frame and the matcher had measured the wall. */
+          if (!look) {
+            lookNote.textContent = 'I could not find a face in that photo. Retake it with your face filling more of the frame, ' +
+              'looking straight at the camera, and with a background that is not the same colour as your skin - or set the colours by hand.';
+            return;
+          }
 
 
           /* APPLY EXACTLY WHAT THE PHOTO ANSWERED, AND NOTHING ELSE.
@@ -2330,6 +3052,43 @@
       '#mlsAvKioskTypeRow textarea{flex:1;border:1px solid #cfd9d2;border-radius:16px;padding:14px;font:2.2vh system-ui;resize:none}' +
       '#mlsAvKioskTypeRow button{border:0;border-radius:999px;padding:0 26px;background:#204034;color:#fff;font:700 2.1vh system-ui;cursor:pointer}' +
       '#mlsAvKioskPinNote{font:500 12px/1.45 system-ui;color:#55605A;max-width:340px}' +
+      /* av-5.7.0 - THE CONSENT GATE. Opaque, not translucent: until staff
+         answer, the patient must not be able to read the doctor's app through
+         it, and nothing behind it is running - no microphone, no turn, no
+         fullscreen. It covers the whole overlay including the End and Pause
+         buttons, so the only two things reachable on this screen are Yes and
+         No. */
+      '#mlsAvKioskConsent{display:flex;position:absolute;inset:0;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);align-items:center;justify-content:center;z-index:12;padding:4vh 5vw}' +
+      '#mlsAvKioskConsentCard{background:#fff;border-radius:22px;padding:30px 32px;display:flex;flex-direction:column;gap:14px;box-shadow:0 26px 74px rgba(32,64,52,.28);width:min(680px,94vw);text-align:left}' +
+      '#mlsAvKioskConsentTitle{font:800 26px/1.3 \'Newsreader\',Georgia,serif;color:#204034}' +
+      '#mlsAvKioskConsentSub{font:600 15px/1.55 system-ui;color:#55605A}' +
+      '#mlsAvKioskConsentRow{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}' +
+      '#mlsAvKioskConsentYes{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:15px 28px;font:800 16px system-ui;cursor:pointer}' +
+      '#mlsAvKioskConsentYes:hover{background:#26583E}' +
+      '#mlsAvKioskConsentNo{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:15px 24px;font:700 16px system-ui;cursor:pointer}' +
+      /* CONTAINMENT, NOT PAINT. The consent card used to cover the screen by
+         z-index and nothing more: no `inert`, no focus trap, no pointer-events
+         rule. Tab still reached Pause and End interview behind it, and both of
+         those lead to kioskListen - so the microphone opened with no consent
+         recorded. An opaque card is not a gate against a keyboard.
+         display:none is the point: a hidden control is not focusable, so the tab
+         order genuinely contains two buttons while this class is on. The code
+         path is gated as well (kioskListen/kioskTurn/kioskCloseServerSide test
+         kiosk.consentAt), because one mechanism is a single point of failure. */
+      '#mlsAvKiosk.preconsent #mlsAvKioskEnd,#mlsAvKiosk.preconsent #mlsAvKioskMute,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskEndVisit,#mlsAvKiosk.preconsent #mlsAvKioskTypeRow,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskRest,#mlsAvKiosk.preconsent #mlsAvKioskPin,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskOrders,#mlsAvKiosk.preconsent #mlsAvKioskReview{display:none!important}' +
+      /* av-5.7.0 - THE REST SCREEN AND ITS ONE BUTTON. A finished check-in
+         stays up and tells the patient the doctor is coming; the doctor walks
+         in and taps once to start the room recording. Starting a disclosed
+         recording is not a door into the app, so it carries no PIN - the door
+         still does. */
+      '#mlsAvKioskRest{display:none;flex-direction:column;align-items:center;gap:1.4vh}' +
+      '#mlsAvKioskRoomGo{border:0;background:#204034;color:#fff;border-radius:999px;padding:2vh 4vh;font:800 2.4vh system-ui;cursor:pointer;box-shadow:0 10px 30px rgba(32,64,52,.28)}' +
+      '#mlsAvKioskRoomGo:hover{background:#2E6A4B}' +
+      '#mlsAvKioskRestNote{font:600 1.8vh/1.45 system-ui;color:#55605A;max-width:min(680px,92vw)}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskRest{display:none}' +
       /* AMBIENT ROOM MODE disclosure. It is CSS-driven off ONE class on the
          root, so "is it recording" and "does the screen say so" are the same
          fact and cannot drift apart. Never a toast: a toast fades, and the
@@ -2435,7 +3194,12 @@
     /* the headline behaviour: the microphone is open WHILE the question plays,
        so the chip must be able to say both rather than picking one and lying */
     duplex: 'Speaking · listening',
-    documenting: 'Ambiently documenting', saving: 'Saving', paused: 'Paused'
+    documenting: 'Ambiently documenting', saving: 'Saving', paused: 'Paused',
+    /* av-5.7.0: a FINISHED check-in is not "Speaking". kioskFinish set the mood
+       to speaking so the closing line would play, and the chip then read Speaking
+       - with the wave animating - for the whole rest period, sometimes for
+       minutes, while the screen was silent and waiting. */
+    resting: 'Waiting for the doctor'
   };
   function kioskState(name) {
     var el = gid('mlsAvKioskState');
@@ -2474,6 +3238,9 @@
     kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = [];
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
     kiosk.paused = false;
+    /* the consent dies with the screen it was given on - nothing reached from a
+       later session may act on it */
+    kiosk.consentAt = 0;
     if (reason === 'done' || kiosk.completed) {
       refreshCount(true);
       safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
@@ -2522,6 +3289,14 @@
   }
   function kioskTurn(answer, nonce, finish) {
     if (!kiosk.open || kiosk.busy) return;
+    /* AND NO TURN EITHER, including a `finish`. This is the second half of the
+       same defect: from the consent screen, Tab+Enter on "End interview" reached
+       kioskCloseServerSide, which POSTs finish:true — and the backend INSERTS the
+       row for that session id, runs the summary model over a transcript with no
+       patient turns, and flips it to 'ready'. A phantom completed check-in, with
+       an AI-written headline, in the doctor's inbox and on his phone, for a
+       patient who never consented and never spoke. */
+    if (!kiosk.consentAt) return;
     /* A FINISHED interview accepts nothing more. The typed row stays on screen
        in mic-off mode, so without this a patient could Send into a completed
        session: the server answers "this check-in is already complete", which
@@ -2585,7 +3360,16 @@
            they understand, usually before the sentence ends; those first
            words used to be discarded and the kiosk looked frozen. */
         kioskListen(true);
-        pvSpeak(kiosk.lastSay, function () { if (!pvRec) kioskListen(); });
+        pvSpeak(kiosk.lastSay, function () {
+          if (!pvRec) { kioskListen(); return; }
+          /* THE SILENCE CLOCK STARTS WHEN THE QUESTION ENDS. kioskListen arms
+             it, and the microphone now opens WITH the question, so a long
+             question spent its own patience: a 6-second question left 3
+             seconds before the kiosk talked over the patient's first words
+             with "take your time". Re-armed here, from the moment there is
+             actually something to answer. */
+          kioskArmWatchdog(9000);
+        });
       }
     }, function () {
       kiosk.busy = false;
@@ -2659,24 +3443,57 @@
     if (iv) iv.textContent = 'Staff: the check-in could not reach the server — end the interview and check the connection.';
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
     var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    /* the visit still deserves a transcript even when the check-in could not
+       reach the server, so the hand-off button is offered here too */
+    kioskRestShow();
     if (kiosk.pinSet === false) {
       safe(function () { if (isFn(window.toast)) window.toast('The check-in stopped early — the server could not be reached.', ''); });
       kioskClose('ended');
     }
   }
+  /* NO CONSENT, NO MICROPHONE — enforced INSIDE this function, at the one place
+     the interview opens one. An adversarial pass on av-5.7.0 found the consent
+     card was containment by Z-INDEX ALONE: nothing behind it was inert, so Tab
+     reached #mlsAvKioskMute and #mlsAvKioskEnd, and Pause→Resume and the PIN
+     pad's "Back to the interview" both call this function. The microphone opened
+     with consentAt === 0 and the patient's words were POSTed. The card is now
+     genuinely contained (see .preconsent in kioskStyle) AND consent is a term in
+     the code, because either mechanism alone is a single point of failure.
+     The guard lives on the first line of the body and this note lives out here on
+     purpose: the contract suite reads the first 400 characters of this function
+     looking for the paused guard, and a comment that long inside the body pushed
+     it out of that window. A pin that stops seeing its subject is a pin that has
+     stopped working. */
   function kioskListen(keepMood) {
+    if (!kiosk.consentAt) return;     /* see the note above this function */
     if (kiosk.ambient) return;
     if (kiosk.paused) return;         /* see kioskPauseToggle */   /* the ambient loop owns the microphone and never takes turns */
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
+      kioskArmWatchdog(20000);   /* typed mode self-ends too — armed on the FIRST
+         line of this branch so it sits beside its subject: the contract suite
+         reads a 320-character window from `kiosk.mic === false` looking for it,
+         and a comment added below once pushed it out of view. */
       var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
       var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
-      kioskArmWatchdog(20000);   /* typed mode self-ends too */
+      /* SAID HERE, not only at the preflight. kioskTurn blanks the interim line
+         at the start of every turn, so the preflight's "Microphone is off" notice
+         survived exactly until the first question - after which a patient faced a
+         typing box with no explanation. This runs on every turn, so it holds. */
+      var ivOff = gid('mlsAvKioskInterim');
+      if (ivOff && !ivOff.textContent) ivOff.textContent = 'The microphone is off on this screen — type your answer below.';
       return;
     }
     if (!keepMood) kioskMood('listening', kiosk.lastSay);
     kiosk.heard = false;
+    /* THE SILENCE CLOCK IS NOT ARMED HERE ON THE DUPLEX PATH. keepMood means the
+       microphone is opening WITH a question that is about to play, and the arm at
+       the bottom of this function used to start the 9-second countdown against
+       the question's own duration: any question longer than that nudged "take
+       your time" over its own second half. pvSpeak's continuation arms it when
+       the question actually ends (see kioskTurn). Every other caller - the nudge,
+       the recogniser-died path, resume - passes no keepMood and still arms below. */
     /* the chip is set HERE too, because the mic opens WITH the question: at
        kioskMood time the recogniser is not open yet, so 'speaking' alone
        would under-report what the kiosk is actually doing. */
@@ -2717,7 +3534,7 @@
       kioskArmWatchdog(20000);   /* a failed mic start must still self-end */
       return;
     }
-    kioskArmWatchdog(9000);
+    if (!keepMood) kioskArmWatchdog(9000);
   }
   /* Natural completion must not expose the app either — with a PIN set, the
      finished kiosk RESTS ("hand the screen back") until staff unlock it.
@@ -2729,12 +3546,41 @@
   function kioskFinish() {
     if (!kiosk.open) return;
     kiosk.completed = true;
-    if (kiosk.pinSet === false) { kioskClose('done'); return; }
+    /* av-5.7.0 - IT ALWAYS RESTS NOW, PIN OR NO PIN. A no-PIN practice used to
+       have the finished kiosk close itself straight into the doctor's app - the
+       whole roster, in front of the patient who was still holding the screen -
+       and it also meant the hand-off the owner asked for could not exist,
+       because the screen was gone before the doctor walked in. The exit is
+       still one tap for a no-PIN office (End interview), so nobody is trapped. */
     pvStopVoice();
     kioskMood('speaking', 'thank you');
-    kioskSetSay('All set — thank you! Please hand the screen back to the team.');
-    var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'Staff: “End interview” (top right) unlocks with the PIN, then End or Keep listening for the visit.';
+    kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
+    var iv = gid('mlsAvKioskInterim');
+    if (iv) iv.textContent = 'Please hand the screen back to the team. Staff: the button below starts listening to the visit; “End interview” leaves.';
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    kioskRestShow();
+  }
+  /* THE ONE BUTTON. Owner: "this avatar once its done should say your doctor
+     will be in with you soon ... but it needs to stay up so when the doctor
+     enters the room they click one button and the avatar just listens."
+     It is not behind the exit PIN on purpose: the PIN guards the way back into
+     the app, and starting a recording that the screen declares in words, that
+     Pause stops instantly and that can only ever be written to the chart this
+     check-in was bound to, is not that. */
+  function kioskRestShow() {
+    var host = gid('mlsAvKioskRest'); if (!host) return;
+    host.style.display = 'flex';
+    /* AND THE SCREEN STOPS CLAIMING TO SPEAK. kioskFinish sets the mood to
+       'speaking' so the closing line plays; without this the chip read "Speaking"
+       and the waveform animated for the whole rest period, which on a busy day is
+       minutes of a silent screen insisting it is talking. The class goes too, or
+       the wave keeps running underneath a corrected chip. */
+    safe(function () {
+      var root = gid('mlsAvKiosk');
+      if (root) root.classList.remove('speaking', 'listening', 'thinking');
+    });
+    kioskState('resting');
   }
   /* End interview is a STAFF action: with an exit PIN configured, a patient
      holding the screen cannot end the kiosk into the doctor's app. The PIN is
@@ -2978,7 +3824,14 @@
         return JSON.stringify({
           v: 1, sid: rec.sid || '', bound: rec.bound || '', start: rec.start || 0,
           savedAt: Date.now(), avName: rec.avName || '', trimmed: trimmed,
-          intake: rec.intake || [], actions: rec.actions || [], parts: parts
+          intake: rec.intake || [], actions: rec.actions || [], parts: parts,
+          /* THE CONSENT AND THE FILED FLAG ARE PART OF THE RECORD, not of this
+             tab's memory. Without them a recovered capture filed with NO consent
+             attestation - breaking the invariant this train exists to enforce -
+             and re-filed the whole check-in block a second time, so the patient's
+             intake answers landed in the chart twice. Both are in-memory-only
+             flags that a reload is exactly the event that loses. */
+          consentAt: rec.consentAt || 0, intakeFiled: rec.intakeFiled === true
         });
       }, '');
       if (!body) return { ok: false, why: 'serialise', trimmed: trimmed };
@@ -3007,7 +3860,10 @@
     if (kiosk.ambFiled || !clean(kiosk.ambBound)) return null;
     var res = ambientStoreWrite({
       sid: kiosk.sid, bound: kiosk.ambBound, start: kiosk.ambStart, avName: kiosk.avName || '',
-      intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || []
+      intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || [],
+      /* carried so a RECOVERED capture can state its consent and can tell whether
+         the check-in has already reached the transcript - see ambientStoreWrite */
+      consentAt: kiosk.consentAt || 0, intakeFiled: kiosk.intakeFiled === true
     });
     kiosk.ambSavedAt = Date.now();
     kiosk.ambSaveOk = res.ok === true;
@@ -3643,11 +4499,15 @@
     kioskAmbientClock();
   }
   function kioskAmbientNoMic() {
-    /* No recogniser at all. Say so and STOP: a red recording badge over a
-       microphone that was never open is the one lie this feature must not
-       tell. */
-    var iv = gid('mlsAvKioskInterim');
-    if (iv) iv.textContent = 'Staff: this browser cannot listen here, so nothing is being recorded.';
+    /* No recogniser, or a microphone that has been revoked mid-capture. Say so and
+       STOP: a red recording badge over a microphone that is not open is the one lie
+       this feature must not tell.
+       THE MESSAGE RIDES THROUGH THE STOP. Writing it here and calling the stop on
+       the next line lost it every time - the stop rewrites the say line and the
+       interim synchronously, with no paint in between, so staff saw the ordinary
+       "Recording stopped" and never learned the microphone had gone. */
+    kiosk.ambSayOverride = 'The microphone stopped working, so I stopped recording.';
+    kiosk.ambInterimOverride = 'Staff: the microphone was refused or lost, so nothing more is being recorded. Anything already captured is in the transcript.';
     kioskAmbientStop('no-microphone');
   }
   function kioskAmbientRetry() {
@@ -3698,7 +4558,18 @@
       }
       kioskAmbientPaint(interim);
     };
-    rec.onerror = function () { if (kiosk.ambRec === rec) { kiosk.ambRec = null; kioskAmbientRetry(); } };
+    rec.onerror = function (ev) {
+      if (kiosk.ambRec !== rec) return;
+      kiosk.ambRec = null;
+      /* PERMISSION IS NOT A HICCUP. `not-allowed` and `service-not-allowed` mean
+         the microphone will not open on the next try either, and the bounded
+         backoff then keeps the recording disclosure on screen forever over a
+         capture that never records a word. Ordinary `no-speech` / `network`
+         blips still retry - that is what the loop is for. */
+      var code = String((ev && ev.error) || '');
+      if (code === 'not-allowed' || code === 'service-not-allowed') { kioskAmbientNoMic(); return; }
+      kioskAmbientRetry();
+    };
     rec.onend = function () { if (kiosk.ambRec === rec) { kiosk.ambRec = null; kioskAmbientRetry(); } };
     var ok = safe(function () { rec.start(); return true; }, false);
     if (!ok) { if (kiosk.ambRec === rec) kiosk.ambRec = null; kioskAmbientRetry(); return false; }
@@ -3723,8 +4594,32 @@
   function kioskAmbientBlock(body) {
     var mins = Math.max(1, Math.round((Date.now() - (kiosk.ambStart || Date.now())) / 60000));
     var lines = [];
+    /* THE CHECK-IN GOES IN ONCE. "Keep listening" on the review screen starts a
+       SECOND capture on the same session, and this block always led with the
+       whole intake - so the patient's answers, and the consent attestation with
+       them, were appended to the transcript a second time. A doctor reading that
+       chart cannot tell a repeated question from a duplicated paste. */
+    if (kiosk.intakeFiled) {
+      lines.push('--- visit, continued ---');
+      lines.push('[Room capture resumed. The check-in and the earlier part of this visit are already above.]');
+      lines.push(body);
+      var ordersMore = ordersBlock();
+      if (ordersMore) { lines.push(''); lines.push(ordersMore); }
+      return lines.join('\n');
+    }
     lines.push(AMBIENT_HEAD_CHECKIN);
     lines.push('[Avatar check-in - the patient\'s own words, chart ' + clean(kiosk.ambBound) + ']');
+    /* THE CONSENT IS PART OF THE RECORD. A recording whose consent lives only
+       in someone's memory is a recording nobody can defend later, so the
+       confirmation and its clock time ride in the same block as the words it
+       authorised. It is written from kiosk.consentAt, the same flag that gates
+       the microphone - the transcript cannot claim a consent the kiosk did not
+       actually have. */
+    if (kiosk.consentAt) {
+      lines.push('[Recording consent confirmed by practice staff at ' +
+        safe(function () { return new Date(kiosk.consentAt).toLocaleString(); }, String(kiosk.consentAt)) +
+        ', before any microphone was opened]');
+    }
     lines.push(kioskIntakeText());
     lines.push('');
     lines.push(AMBIENT_HEAD_VISIT);
@@ -3760,6 +4655,9 @@
     box.value = prior + (prior ? '\n\n' : '') + block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
     kiosk.ambFiled = true;
+    /* the check-in has now reached the transcript, so a resumed capture must not
+       lead with it again - see kioskAmbientBlock */
+    kiosk.intakeFiled = true;
     /* THE BACKUP DIES ONLY ON A PROVEN WRITE. Every refusal above returns
        before this line, so a capture that could not be filed (wrong chart
        open, no transcript box on screen) keeps its crash copy and can still
@@ -3792,7 +4690,13 @@
       savedAt: saved, trimmed: rec.trimmed === true,
       mins: (start && saved && saved > start) ? Math.max(1, Math.round((saved - start) / 60000)) : 0,
       actions: Array.isArray(rec.actions) ? rec.actions : [],
-      intake: Array.isArray(rec.intake) ? rec.intake : []
+      intake: Array.isArray(rec.intake) ? rec.intake : [],
+      /* both persisted from av-5.7.1 - an OLDER record simply has neither, which
+         reads as "consent not recorded" and "check-in not yet filed": the safe
+         direction on both counts (it states the gap, and it errs toward including
+         the check-in rather than losing it) */
+      consentAt: Number(rec.consentAt) || 0,
+      intakeFiled: rec.intakeFiled === true
     };
   }
   function ambientRecoverFile() {
@@ -3804,10 +4708,24 @@
     var box = gid('ez3flTranscript') || gid('ez3Transcript');
     if (!box || typeof box.value !== 'string') return { ok: false, why: 'the visit transcript box is not on this screen — open the Visit recorder first.' };
     var lines = [];
-    lines.push(AMBIENT_HEAD_CHECKIN);
-    lines.push('[Avatar check-in - the patient\'s own words, chart ' + info.bound + ']');
-    lines.push(intakeTextFrom(info.intake));
-    lines.push('');
+    /* THE CHECK-IN GOES IN ONCE, ACROSS A RELOAD TOO. The live path tracks this
+       with kiosk.intakeFiled, which is in-memory - so before the flag was
+       persisted, a recovered capture led with the whole intake again and the
+       patient's answers landed in the chart twice. */
+    if (!info.intakeFiled) {
+      lines.push(AMBIENT_HEAD_CHECKIN);
+      lines.push('[Avatar check-in - the patient\'s own words, chart ' + info.bound + ']');
+      /* AND IT CARRIES ITS CONSENT, or says it cannot. A recovered recording used
+         to file with no attestation at all, which is the one thing this train
+         exists to prevent - and silence reads as "nobody asked". */
+      lines.push(info.consentAt
+        ? ('[Recording consent confirmed by practice staff at ' +
+            safe(function () { return new Date(info.consentAt).toLocaleString(); }, String(info.consentAt)) +
+            ', before any microphone was opened]')
+        : '[Recording consent: NOT RECORDED in the recovered file — confirm with the staff member who ran this check-in before relying on this transcript]');
+      lines.push(intakeTextFrom(info.intake));
+      lines.push('');
+    }
     lines.push(AMBIENT_HEAD_VISIT);
     lines.push('[Room capture RECOVERED after this page reloaded' +
       (info.trimmed ? ' - the backup had run out of room, so the EARLIEST part of this visit is missing' : '') +
@@ -3831,6 +4749,29 @@
   function kioskAmbientStart() {
     if (!kiosk.open) return false;
     if (kiosk.ambient) return true;
+    /* NO CONSENT, NO MICROPHONE - and the gate is here rather than only on the
+       button, because this function is reachable from the PIN pad, the review
+       screen's "Keep listening" and the rest screen. A list of call sites is a
+       denylist; the next one added would not be on it. */
+    if (!kiosk.consentAt) {
+      kioskSetSay('I cannot record this visit — recording consent was not confirmed.');
+      var ivC = gid('mlsAvKioskInterim');
+      if (ivC) ivC.textContent = 'Staff: start the check-in again and confirm consent. Nothing is being recorded.';
+      return false;
+    }
+    /* AND NOT WITHOUT A MICROPHONE. The preflight already knows the answer, and
+       starting anyway paints the red "Recording this visit" banner and its
+       ticking clock over a session that captures nothing - the one lie this
+       feature must never tell. Chrome's recogniser makes this easy to get wrong:
+       rec.start() SUCCEEDS on a denied microphone and only reports it later
+       through onerror, where the retry loop treated it as an ordinary hiccup and
+       tried again forever behind the banner. */
+    if (kiosk.mic === false) {
+      kioskSetSay('I cannot record this visit — the microphone is not available on this screen.');
+      var ivM = gid('mlsAvKioskInterim');
+      if (ivM) ivM.textContent = 'Staff: nothing is being recorded. Allow the microphone for this site, then start the check-in again.';
+      return false;
+    }
     var bound = clean(kiosk.ext);
     if (!bound) {
       /* refuse BEFORE the microphone opens - an unbindable recording could
@@ -3849,7 +4790,16 @@
     kiosk.ambient = true;
     kiosk.ambBound = bound;
     kiosk.ambStart = Date.now();
-    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambFails = 0;
+    /* AN UNFILED CAPTURE IS NEVER DISCARDED BY STARTING A NEW ONE. Before the rest
+       screen existed, a stop that failed to file left only the exit control, so the
+       words stayed in memory and in the crash backup. Restoring the hand-off button
+       on every stop created a one-tap path to this line - which used to reset
+       ambParts and then immediately overwrite the backup with the empty new record,
+       destroying the only copy of a consultation that had just failed to file.
+       Whatever was captured and not filed is carried into the resumed capture. */
+    var carried = (!kiosk.ambFiled && Array.isArray(kiosk.ambParts) && kiosk.ambParts.length)
+      ? kiosk.ambParts.slice() : [];
+    kiosk.ambParts = carried; kiosk.ambLast = ''; kiosk.ambFails = 0;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null;
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
@@ -3857,13 +4807,21 @@
     pvStopVoice();
     /* pvStopVoice deliberately LEAVES pvSaying set, so the last question would
        stay the echo template and the self-echo filter would silently eat real
-       speech built from its words. Ambient never speaks - drop the template. */
+       speech built from its words. Ambient never speaks - drop the template,
+       and the bounded tail with it: a room capture is verbatim, and a doctor
+       who repeats the avatar's last question back to the patient must appear in
+       the transcript. */
     pvSaying = '';
+    pvEchoDrop();
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
     kioskAmbientClear();
     var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
     var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    /* explicitly, not by class: kioskRestShow sets an INLINE display, and an
+       inline style outranks the .ambient rule that would otherwise hide it -
+       the hand-off button would sit on screen through the whole recording. */
+    var rest = gid('mlsAvKioskRest'); if (rest) rest.style.display = 'none';
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
     var root = gid('mlsAvKiosk'); if (root) root.classList.add('ambient');
     kioskSetSay('I am listening to the visit and taking notes for the doctor.');
@@ -4102,6 +5060,11 @@
     var root = gid('mlsAvKiosk');
     if (root) root.classList.remove('ambient');
     if (!root) return kiosk.ambResult;      /* the overlay is already gone */
+    /* the hand-off button comes back BELOW, after the mood and the say line are
+       written - see the end of this function. Calling it here put the 'resting'
+       chip on screen one line before kioskMood('speaking') took it straight back
+       off, so the screen read "Speaking", waveform animating, over a stopped
+       recording. */
     kioskMood('speaking', 'thank you');
     var head = res.ok ? 'Recording stopped. The visit is in the doctor\'s transcript.'
                       : 'Recording stopped. Nothing was written.';
@@ -4116,6 +5079,21 @@
         ? ('Staff: ' + res.chars + ' characters filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
         : ('Staff: ' + (res.why || 'the capture could not be filed.'));
     }
+    /* NOW the hand-off comes back, after the mood/say/interim writes above rather
+       than before them. It is also the LAST thing that touches the chip, so
+       "Waiting for the doctor" is what actually stays on screen. */
+    if (kiosk.completed) kioskRestShow();
+    /* AND THE REASON SURVIVES. kioskAmbientNoMic writes its explanation and then
+       calls this function on the next line, which used to overwrite both the say
+       line and the interim synchronously - so the only sentence telling staff the
+       microphone had been revoked never reached a paint. A caller that has already
+       explained itself passes its line in, and it wins. */
+    if (kiosk.ambSayOverride) {
+      kioskSetSay(kiosk.ambSayOverride);
+      var ivO = gid('mlsAvKioskInterim');
+      if (ivO && kiosk.ambInterimOverride) ivO.textContent = kiosk.ambInterimOverride;
+      kiosk.ambSayOverride = ''; kiosk.ambInterimOverride = '';
+    }
     return kiosk.ambResult;
   }
   /* Split out of kioskEndForStaff so BOTH staff outcomes close the interview
@@ -4123,6 +5101,9 @@
      kioskEndForStaff for why an 'active' row that is never closed strands the
      patient's answers in every surface. */
   function kioskCloseServerSide() {
+    /* A session that never had consent has no row to close - and asking the
+       server to close it CREATES one. See the comment in kioskTurn. */
+    if (!kiosk.consentAt) return;
     if (kiosk.open && !kiosk.completed && kiosk.sid && kiosk.ext) {
       safe(function () {
         api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
@@ -4140,6 +5121,12 @@
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.finishTries = 0; kiosk.heard = false;
+    /* consent is per PATIENT, so it resets with the screen. A carried-over
+       flag would let the next patient be recorded on the last one's answer. */
+    kiosk.consentAt = 0;
+    /* and this patient's check-in has never been filed, whatever the last one
+       did - see kioskAmbientBlock */
+    kiosk.intakeFiled = false;
     /* undefined means "not resolved yet"; null means "resolved to nothing".
        Both must reset, or the previous patient's chart block would ride into
        the next interview. */
@@ -4159,6 +5146,9 @@
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
+    /* mounted PRE-CONSENT: every other control is display:none until the consent
+       question is answered, so the tab order contains exactly Yes and No */
+    root.className = 'preconsent';
     root.innerHTML =
       '<button type="button" id="mlsAvKioskEnd">End interview</button>' +
       '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace"></div></div>' +
@@ -4192,6 +5182,12 @@
       '<div id="mlsAvKioskReview" role="dialog" aria-label="Visit review"></div>' +
       '<div id="mlsAvKioskInterim"></div>' +
       '<div id="mlsAvKioskProgress"></div>' +
+      /* av-5.7.0 - the hand-off: ONE button, mounted with the kiosk and shown
+         only once the check-in is finished. See kioskRestShow. */
+      '<div id="mlsAvKioskRest">' +
+        '<button type="button" id="mlsAvKioskRoomGo">Doctor — start listening to the visit</button>' +
+        '<div id="mlsAvKioskRestNote">One tap. The screen says it is recording the whole time, Pause stops it instantly, and “End visit &amp; review” writes the visit into the transcript.</div>' +
+      '</div>' +
       /* NO buttons for the patient — the conversation IS the interface. The
          typed row appears by itself only when the microphone is unavailable.
          Saying "can you repeat that?" is handled by the interviewer itself. */
@@ -4206,6 +5202,20 @@
           '<button type="button" id="mlsAvKioskPinAmb">Unlock &amp; keep listening</button>' +
           '<button type="button" id="mlsAvKioskPinBack">Back to the interview</button></div>' +
         '<div id="mlsAvKioskPinNote">Keep listening records this visit in the room and puts it in the transcript under the check-in. The screen says so, in words, the whole time.</div>' +
+      '</div></div>' +
+      /* av-5.7.0 - THE CONSENT GATE, mounted LAST so it sits over everything
+         and shown by default. Owner: "when u start avatar it should say did the
+         patient consent to recording then then u click yes and then it goes."
+         It is also the trusted gesture the browser demands: fullscreen, the
+         audio engine and the microphone prompt all need a click, and that
+         prompt must land on the doctor rather than in front of the patient. */
+      '<div id="mlsAvKioskConsent" role="dialog" aria-label="Recording consent"><div id="mlsAvKioskConsentCard">' +
+        '<div id="mlsAvKioskConsentTitle">Did the patient consent to being recorded?</div>' +
+        '<div id="mlsAvKioskConsentSub">Ask them out loud, in the room. The check-in listens to their voice, and if you choose to keep listening afterwards the visit itself is recorded too. Nothing is recorded — and no microphone is opened — until you tap Yes.</div>' +
+        '<div id="mlsAvKioskConsentRow">' +
+          '<button type="button" id="mlsAvKioskConsentYes">Yes — they consented</button>' +
+          '<button type="button" id="mlsAvKioskConsentNo">No — cancel</button>' +
+        '</div>' +
       '</div></div>';
     (document.body || document.documentElement).appendChild(root);
     root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskRequestEnd);
@@ -4233,11 +5243,46 @@
     /* typing IS activity — it must reset the self-end watchdog the same way
        speech does, or a slow typist gets cut off mid-answer */
     root.querySelector('#mlsAvKioskInput').addEventListener('input', function () { kiosk.heard = true; });
+    root.querySelector('#mlsAvKioskRoomGo').addEventListener('click', function () {
+      /* THE HAND-OFF, in one tap. See kioskRestShow.
+         kiosk.mic IS A ONE-SHOT LATCH: it is written once, by the preflight on the
+         consent tap, and never again. So a doctor who dismissed the permission
+         prompt at the start of the check-in found the room recording permanently
+         unavailable for the rest of the visit, with the new refusal telling him the
+         microphone was not available and no way to change that answer. This tap is
+         a fresh user gesture, which is exactly what a permission prompt needs, so
+         it re-probes before refusing. */
+      if (kiosk.mic === false) { kioskMicPreflight(function () { kioskAmbientStart(); }); return; }
+      kioskAmbientStart();
+    });
+    root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskConsentYes);
+    root.querySelector('#mlsAvKioskConsentNo').addEventListener('click', kioskConsentNo);
+    /* put the keyboard INSIDE the card. Without this the focus stays wherever it
+       was in the doctor's app, and Tab walks his own page - which is how the
+       controls behind an "impassable" overlay turned out to be reachable. */
+    safe(function () { root.querySelector('#mlsAvKioskConsentYes').focus(); });
     /* the LIVING face */
     kiosk.face = makeFace(gid('mlsAvKioskFace'), kiosk.look || null);
     kioskState('ready');
-    /* TRUE fullscreen + the audio engine, both on the doctor's click (the
-       one user gesture Chrome honours for either) */
+    kioskSetSay('One more thing before we start.');
+    /* NOTHING ELSE HAPPENS HERE. Fullscreen, the audio engine, the microphone
+       prompt and the first turn all used to run on this click - which meant the
+       microphone was opened, and the patient was being listened to, before
+       anyone had been asked whether that was allowed. They now run on the
+       consent answer, which is a click of its own and therefore just as
+       trusted a gesture. See kioskConsentYes. */
+  }
+  /* av-5.7.0 - CONSENT, THEN EVERYTHING ELSE. The Yes tap carries three jobs
+     that all need a user gesture and were previously spent on the Start click:
+     true fullscreen, the audio context the lip-sync analyser needs, and the
+     microphone permission prompt (which must reach the DOCTOR, never the
+     patient mid-interview). */
+  function kioskConsentYes() {
+    if (!kiosk.open || kiosk.consentAt) return;
+    kiosk.consentAt = Date.now();
+    var pad = gid('mlsAvKioskConsent'); if (pad) pad.style.display = 'none';
+    /* the rest of the kiosk becomes reachable only now */
+    var rootNow = gid('mlsAvKiosk'); if (rootNow) rootNow.classList.remove('preconsent');
     safe(function () {
       var el = document.documentElement;
       if (el.requestFullscreen) { var p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function () {}); }
@@ -4250,9 +5295,16 @@
        one request per interview and warms the TTS connection for the first
        real question as a side effect. */
     safe(function () { ttsFetchUrl(NUDGE_LINE, null); });
-    /* mic permission FIRST (the doctor's click is the gesture, the doctor
-       still holds the screen), then the conversation begins. */
+    kioskSetSay('Getting ready…');
     kioskMicPreflight(function () { kioskTurn(null, null); });
+  }
+  /* Refused: no microphone was ever opened, no turn was ever posted, and there
+     is no server row to close - the session id was never used. The kiosk closes
+     with nothing recorded and says exactly that. */
+  function kioskConsentNo() {
+    if (!kiosk.open) return;
+    safe(function () { if (isFn(window.toast)) window.toast('Check-in cancelled — nothing was recorded.', ''); });
+    kioskClose('no-consent');
   }
 
   /* ---- the Visit-page presence: check-ins meet the doctor where he works.
@@ -4442,6 +5494,13 @@
       /* THE REVIEW UI: the doctor sees the patient's key points right here,
          no click required, and files them where they belong with one tap. */
       var full = null; /* full summary text arrives via the panel cache rows */
+      /* av-5.7.0: the HEADLINE leads here too. This card is the surface the
+         doctor is already looking at when he opens the visit, so the brief has
+         to arrive here or it may as well not exist. */
+      if (activeHit.headline) {
+        card.appendChild(make('div', 'mlsAvBrief' + (/^⚠/.test(String(activeHit.headline)) ? ' flag' : ''),
+          String(activeHit.headline)));
+      }
       if (Array.isArray(activeHit.bullets) && activeHit.bullets.length) {
         var ul = make('ul', 'mlsAvBullets');
         activeHit.bullets.forEach(function (bullet) {

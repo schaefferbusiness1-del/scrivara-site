@@ -752,6 +752,13 @@ const tests = [
   'phone-app-boundaries.test.js',
   'phone-app-control-budget.test.js',
   'phone-app-www-build-is-faithful.test.js',
+  /* av-5.7.0: the pre-visit brief reaches the phone. The ping fires while the
+     app is OPEN and says nothing more than that — there is no APNs/FCM path, and
+     a doctor who believes his pocket will buzz is worse off than one who knows
+     it will not. The watch is visibility-gated because a backgrounded webview's
+     timers are frozen, the first load never announces, and neither the briefs
+     nor the ids of the check-ins they belong to may reach disk. */
+  'phone-app-checkin-brief.test.js',
   /* "Draft all op notes" wrote an operative note for every name on the day,
      including follow-ups, cancellations and no-shows, because nothing in the
      op-note path had ever asked whether a procedure happened. This pins the

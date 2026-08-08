@@ -29,14 +29,19 @@ function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
    shipped while VERSION still read av-5.3.0, so window.__mlsAvatar.version
    could never confirm the build QA had been told to gate on — a module that
    misreports itself makes every downstream verification unfalsifiable. */
-assert(source.includes("var VERSION = 'av-5.6.7'"), 'version token moved without updating this contract');
+assert(source.includes("var VERSION = 'av-5.7.0'"), 'version token moved without updating this contract');
+/* av-5.7.0 REPLACES THE PAIRING WITH THE FORM. The pair only ever mattered
+   because the loader carried a hand-maintained literal, and the gate that
+   guards those literals compares CALENDAR DATES: av566 and av567 were both set
+   on 2026-08-07, the same day this file changed three more times, so a browser
+   holding either could be served whichever bytes it had. The loader now follows
+   the build number, which moves on every ship — so the cache-bust is coupled to
+   the release rather than to somebody remembering to type a new token. */
 {
-  const tokenM = connect.match(/feat_mls_avatar\.js\?v=\d{8}av(\d+)/);
-  const verM = source.match(/var VERSION = 'av-(\d)\.(\d)\.(\d)'/);
-  assert(tokenM && verM, 'cannot read the avatar version/token pair');
-  assert.strictEqual(tokenM[1], verM[1] + verM[2] + verM[3],
-    'the loader token and the module VERSION must name the same release (token av' + tokenM[1] +
-    ' vs VERSION av-' + verM[1] + '.' + verM[2] + '.' + verM[3] + ')');
+  assert(connect.includes("feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now())"),
+    'the avatar loader must use the build-number cache-buster, not a hand-maintained token');
+  assert(!/feat_mls_avatar\.js\?v=\d{8}av\d+/.test(connect),
+    'a hand-maintained avatar cache token is back — it goes stale on the same day it is written');
 }
 /* av-5.3.0 — the customizable face, the retired preview, and the six defects
    an adversarial review caught BEFORE this train reached a patient:
@@ -72,8 +77,12 @@ assert(!/look\.brows = lookNow\.brows/.test(source),
   'the keep-list is back: pinning brows/nose/lips to their previous values makes the photo unable to move them');
 assert(!/patchMedian\(\[F\(0\.50, 0\.74\)/.test(source),
   'the beard sample is back ON THE MOUTH — a dark lip colour reads as facial hair on a clean-shaven face');
-assert(/var by0 = at\(0\.355\)/.test(source),
-  'the brow band reopened onto the hairline, where the bottom of the hair mass sits (y 0.34) — every face measures its own fringe');
+/* av-5.7.0: the same claim, no longer expressed as a frame fraction — see the
+   brow-band pins in the facial-algorithm block further down. The band now opens
+   below the MEASURED bottom of the hair, which is the only anchor that survives
+   a photo where the head does not fill the picture. */
+assert(/var by0 = Math\.max\(faceT, \(fringeBottom === null \? faceT : fringeBottom\) \+ 2\);/.test(source),
+  'the brow band reopened onto the hairline — it must open below the measured bottom of the hair mass');
 assert(source.includes('if (!look.glasses) {'),
   'the brow measure no longer stands down for glasses — a frame lies across that band and reads as the thickest brows on every bespectacled face');
 assert(source.includes('faceLook: lookNow'), 'Setup no longer saves the chosen appearance');
@@ -133,8 +142,65 @@ assert(source.includes("typeof av.exitPinSet === 'boolean'"), 'the kiosk no long
 assert(source.includes("exitPin: pinInput.value.trim()"), 'Setup no longer saves the exit PIN');
 assert(source.includes("av.faceMode === 'photo'"), 'the photo face mode was removed');
 assert(source.includes('mlsAvKBreathe'), 'the idle breathing animation was removed');
-assert(source.includes('Please hand the screen back to the team'), 'the finished kiosk must REST behind the PIN, never auto-close into the app');
+assert(source.includes('Please hand the screen back to the team'), 'the finished kiosk must REST, never auto-close into the app');
 assert(source.includes('!kiosk.completed) kioskListen()'), 'Back on the PIN pad must never reopen the mic on a finished interview');
+/* ---- av-5.7.0 — THE CONSENT GATE AND THE ONE-BUTTON HAND-OFF ------------
+   Owner, 2026-08-07: "when u start avatar it should say did the patient concent
+   to recording then then u click yes and then it goes" and "this avatar once
+   its done should say ... your docotr will be in wi th u soon but it needs to
+   stay up so when the docot entirer the room they click one button and the
+   avatar just l;istens".
+   Three invariants, and the first one is the one that matters legally: NOTHING
+   may run before the answer. Not the microphone, not a turn, not fullscreen. */
+assert(source.includes('Did the patient consent to being recorded?'),
+  'the consent question was removed — the kiosk would open the microphone without anyone being asked');
+assert(source.includes('function kioskConsentYes') && source.includes('function kioskConsentNo'),
+  'the consent handlers were removed');
+{
+  /* the mic preflight, fullscreen and the first turn must all live INSIDE the
+     consent handler. openKiosk may not carry them: if it does, the patient is
+     being listened to while staff are still reading the question. */
+  const open = source.slice(source.indexOf('function openKiosk'), source.indexOf('function kioskConsentYes'));
+  /* This window is TEXT, not a call graph: it contains openKiosk's statements AND
+     the bodies of every listener openKiosk registers. A bare `!/kioskMicPreflight/`
+     therefore also refuses the room button's re-probe — a listener that cannot run
+     until the doctor taps a button living inside #mlsAvKioskRest, which is
+     display:none by default and display:none!important under .preconsent. That
+     spelling failed on the honest fix, so it is pinned precisely instead: EXACTLY
+     ONE mention, and it must be the re-probe. A bare call added to the open path
+     makes it two; deleting the re-probe makes the second clause fail. */
+  const preflights = open.match(/kioskMicPreflight/g) || [];
+  assert(preflights.length === 1,
+    'openKiosk mentions kioskMicPreflight ' + preflights.length + ' times — the open path must not touch the microphone before the consent answer');
+  assert(/#mlsAvKioskRoomGo'\)\.addEventListener\('click', function \(\) \{[\s\S]{0,900}?kiosk\.mic === false\) \{ kioskMicPreflight\(/.test(open),
+    'the one preflight in openKiosk is no longer the room-button re-probe — something else in the open path is opening the microphone');
+  assert(/\.preconsent #mlsAvKioskRest\b/.test(source),
+    'the rest screen left the .preconsent hide list — the room button becomes reachable before consent, which is what makes its re-probe safe');
+  assert(!/requestFullscreen/.test(open),
+    'openKiosk goes fullscreen again — that gesture belongs to the consent answer');
+  assert(!/kioskTurn\(null, null\)/.test(open),
+    'openKiosk posts the first turn again — no server turn may precede consent');
+  const yes = source.slice(source.indexOf('function kioskConsentYes'), source.indexOf('function kioskConsentNo'));
+  assert(/kiosk\.consentAt = Date\.now\(\)/.test(yes) && /kioskMicPreflight\(function \(\) \{ kioskTurn\(null, null\); \}\)/.test(yes),
+    'the consent answer must be what records consent AND starts the interview');
+}
+assert(/if \(!kiosk\.consentAt\) \{/.test(source.slice(source.indexOf('function kioskAmbientStart'))),
+  'room capture must refuse without recorded consent — and the check belongs in kioskAmbientStart, which is reachable from the rest screen, the PIN pad AND the review');
+assert(/Recording consent confirmed by practice staff at/.test(source),
+  'the filed transcript must carry the consent and its clock time — a consent nobody can produce later is not a consent');
+assert(source.includes('kiosk.consentAt = 0;'),
+  'consent must reset — a carried-over flag would record the NEXT patient on the last one\'s answer');
+/* the hand-off: one button, and it is NOT behind the exit PIN */
+assert(source.includes('mlsAvKioskRoomGo') && source.includes('function kioskRestShow'),
+  'the one-button hand-off into room listening was removed');
+assert(source.includes('Your doctor will be in with you soon'),
+  'the rest screen no longer tells the patient what happens next');
+assert(!/if \(kiosk\.pinSet === false\) \{ kioskClose\('done'\); return; \}/.test(source),
+  'a finished kiosk auto-closes into the doctor\'s app again when no PIN is set — the roster in front of the patient, and no screen left for the doctor to tap');
+{
+  const finish = source.slice(source.indexOf('function kioskFinish'), source.indexOf('function kioskRestShow'));
+  assert(/kioskRestShow\(\);/.test(finish), 'the finished interview must raise the rest screen');
+}
 /* av-5.0.0 — natural voice + the living face + true fullscreen:
    the backend TTS proxy speaks first (browser speech only as fallback, with a
    circuit-breaker so an outage cannot stall every question), a LATE fetch
@@ -161,6 +227,55 @@ assert(/found\.push\('beard'\)/.test(source) && /found\.push\('glasses'\)/.test(
 assert(source.includes('detected '),
   'the matcher must report what it detected, or a default face is indistinguishable from a failure');
 assert(source.includes('function faceTintFromPortrait'), 'portrait tinting was removed — the face would stop following the doctor\'s look');
+/* ---- av-5.7.0 — THE FACE IS LOCATED BEFORE IT IS MEASURED ---------------
+   Owner, 2026-08-07: "the match avataer to face doesnt work at all ... it needs
+   to have a facial algeraithum." Every previous measurement was taken at a
+   fixed fraction of the PICTURE, on the stated assumption that the head filled
+   the frame. A webcam at arm's length puts the head in the middle third, so the
+   crown patches read the wall (a pale ceiling became pale hair on a
+   black-haired doctor) and the jaw patch read a collar. These pins hold the
+   geometry to the FACE, and every one of them replaces a fixed-fraction pin
+   that could only be true for a tightly cropped head. */
+assert(source.includes('function faceIsSkinRgb') && /cr >= 134 && cr <= 178 && cb >= 76 && cb <= 128/.test(source),
+  'the skin-chroma classifier was removed — a luminance test cannot find a face across skin tones');
+assert(/label\[cur - 1\]/.test(source) && /comps\.push/.test(source),
+  'connected-component labelling was removed — without it the largest warm blob (a beige wall) is the "face"');
+/* the NUMBER is calibrated against executed fixtures (a blank beige wall must
+   be refused, a phone-close crop must still be read), so the form is pinned
+   here and the behaviour is proven in tests/avatar-photo-match-framed-proof.js
+   case W10 - where the LIVE matcher describes a wall as a face. */
+assert(/if \(cp\.area > M \* M \* 0\.\d+\) continue;/.test(source),
+  'the too-large guard was removed — a wall the colour of skin would be measured as a head');
+assert(source.includes('function rowRun'),
+  'the row-width profile was removed — the chin can only be found where the width collapses toward the neck');
+assert(/if \(!best\) return null;/.test(source),
+  'the matcher must REFUSE when it cannot find a face rather than describe the background');
+assert(/patchMedian\(\[\[atX\(0\.20\), maxWY\]/.test(source) && /\], 2, true\)/.test(source),
+  'skin must be sampled inside the MASK (skinOnly) on the box-relative cheekbone row — sampling by frame fraction is what read the doctor\'s shirt as skin');
+assert(!/F\(0\.50, 0\.11\)/.test(source) && !/F\(0\.30, 0\.52\)/.test(source),
+  'the fixed-fraction hair/skin patches are back — on a normal webcam frame they land on the wall and the chest');
+assert(/var beardDepth = beardRows/.test(source) && /var lowerChin = beardDepth > 0\.10/.test(source),
+  'facial hair is no longer read as GEOMETRY — the skin mask stops at the moustache line, so a bearded face measures two thirds of its real length');
+/* THE EYE LINE IS A LANDMARK, NOT A PROPORTION. Anything hung off the top of
+   the skin mass moves when a fringe hides the forehead, and the dark masses in
+   that band are the eyebrows on any face whose irises the light does not reach.
+   The cheekbone row - the middle of the widest band, level with the eyes - is
+   measured and does not move. */
+assert(/var eyeY = maxWY;/.test(source) && /var maxWY = wideRows\.length \? median\(wideRows\) : best\.minY;/.test(source),
+  'the eye line is a proportion again instead of the measured cheekbone row — a fringe moves the top of the skin mass and every proportion with it');
+assert(/var compact = eL && eR && eL\.round > 0\.70 && eR\.round > 0\.70;/.test(source),
+  'eye spacing no longer gates on roundness — a brow bar and a spectacle frame are dark masses in that band too, and either would supply a spacing the photo never showed');
+{
+  /* the brow band must open BELOW the hair and close ABOVE the eyes, and it
+     must be anchored on the measured eye line rather than on the frame. The
+     old pin demanded the literal `at(0.355)`, which only meant anything while
+     the head was assumed to fill the picture. */
+  assert(/var isHair = !isBg\(fp\) && !mask\[fyy \* M \+ fx\] && unlikeSkin\(fp\);/.test(source) &&
+         /else if \(started\) break;/.test(source),
+    'the fringe scan no longer stops at the bottom of the CONTIGUOUS hair mass — an eyebrow is hair-like too, and taking the lowest hair-like row let the brow set the bottom of the fringe');
+  assert(/var by1 = Math\.max\(by0 \+ 1, Math\.round\(eyeY - Math\.max\(1, gap \* 0\.10\)\)\);/.test(source),
+    'the brow band no longer stops clear of the eyes — pupil and lash count as eyebrow');
+}
 assert(!/mlsAvKioskFace"><\/div>[\s\S]{0,400}appendChild\(img\)/.test(source), 'sanity: nothing re-installs a photo INSTEAD of the drawn face in the kiosk');
 assert(source.includes('requestFullscreen'), 'true fullscreen on Start was removed');
 assert(/function kioskClose[\s\S]{0,600}exitFullscreen/.test(source), 'closing the kiosk must leave fullscreen');
@@ -263,8 +378,11 @@ assert(!/postMessage|mlsApp(Read|Write|Pull)|runPull|pullSchedule/.test(source),
    checking. The token is read out of mls-connect.js and the only thing
    asserted is that it AGREES with the module's own VERSION (the block at the
    top of this file) and that there is exactly one of it. */
-const marker = (connect.match(/feat_mls_avatar\.js\?v=\d{8}av\d+/) || [null])[0];
-assert(marker, 'mls-connect.js is missing the Avatar loader entirely');
+/* av-5.7.0: and now not even derived - the loader follows the BUILD NUMBER, so
+   there is no token to read. The two things still worth asserting are that
+   there is exactly one loader and that it stays idle-deferred. */
+const marker = (connect.match(/feat_mls_avatar\.js\?v='\+\(window\.__MLS_AV\|\|Date\.now\(\)\)/) || [null])[0];
+assert(marker, 'mls-connect.js is missing the Avatar loader entirely (or it went back to a hand-typed token)');
 assert.strictEqual(connect.split(marker).length - 1, 1, 'duplicate Avatar loaders');
 const loaderLine = connect.slice(connect.indexOf(marker) - 400, connect.indexOf(marker) + 100);
 assert(/requestIdleCallback/.test(loaderLine), 'the Avatar loader must stay idle-deferred');
