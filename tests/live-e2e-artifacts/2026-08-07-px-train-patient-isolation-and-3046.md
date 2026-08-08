@@ -269,3 +269,35 @@ IODINE-Hives patient could not be compared this window (no stored MRN on that le
 - **The sub-10-minute fronted pace clause therefore stays OPEN, unsampled tonight - not
   failed, not passed. No virgin July/August day exists any more (all 28 clinic days are
   warm), so the next sample will be the heaviest warm day, honestly labeled as such.**
+
+## The allergy under-capture: THREE stages, all found, all fixed, chart-proven (b951+b952)
+
+The supervisor was right to refuse the follow-up chip - fixing it in-lane exposed a second,
+worse defect the first one was hiding.
+
+1. **Extraction blind to the print shape (px-5.0, b951).** The athena print view flattens
+   sections with NO colon: "... Vitals None recorded. Allergies Allergies not reviewed
+   (last reviewed 06/16/2026) BEE POLLEN, low criticality MITE EXTRACT, low criticality
+   Medications ...". The splitter required ":" or " - " after a heading, so the whole run
+   stayed one line, no heading was recognized, coverage said detected:0, every receipt
+   passed. Fixed with two unmistakable print markers (doubled heading + "not reviewed",
+   heading + "None recorded") and an allergen-run expander (criticality kept, review-status
+   furniture dropped, NKDA / "PENICILLIN - rash" pass through unchanged). The fixture is the
+   EXACT captured substring; the control fails on the pre-fix tree.
+2. **The b121 allergy cleaner erased off-list allergens on EVERY upsert (px-5.1, b952).**
+   Proven live by direct assignment + read-back: p.allergies = the three-line value,
+   upsertPatient, read back "NKDA". cleanAllergies collapsed the whole field to [NKDA]
+   whenever NKDA co-appeared with anything outside a hardcoded 13-DRUG list - bee pollen
+   and mite extract are not drugs, so they were deleted forever, which is also why the
+   px-5.0 extraction fix alone did not stick. A fixed vocabulary is not the test of
+   clinical reality. Now the collapse happens only when nothing but negation/furniture
+   remains; five behavioral rows pinned.
+3. **Chain-proof on live b952** (deployed code, real store): organize ->
+   p.allergies = "NKDA / BEE POLLEN (low criticality) / MITE EXTRACT (low criticality)";
+   upsert ROUND-TRIP SURVIVES; the rendered #profAllergies panel shows all three -
+   side-by-side equal to the athena facesheet rows (bee pollen, mite extract, NKDA).
+
+Coverage disclosure (owner should see the size): **1,240 of 1,561 store records (79%)**
+carry NO stable athena key (mrn/athenaId both empty; 222 of them hold clinical content).
+Those are legacy name-only rows - they cannot be source-verified by id and cannot
+exact-bind until a fresh identity-gated pull stamps them. New pulls stamp MRN.
