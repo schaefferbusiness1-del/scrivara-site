@@ -105,14 +105,17 @@ assert(/pvEchoDrop\(\);/.test(source), 'ambient room mode must DROP the tail —
 
 /* ---- 3. the mic opens WITH the question ---- */
 assert(source.includes('kioskListen(true);'), 'the mic must open alongside the question, not after it');
-assert(/kioskListen\(true\);[\s\S]{0,200}pvSpeak\(kiosk\.lastSay/.test(source),
-  'listening must start BEFORE/with pvSpeak, not in its completion callback');
+/* av-5.8.1 gave the speak call a delivery SHAPE, so the entry point is now pvSpeakShaped.
+   The ordering guarantee is unchanged and is what this asserts; `pvSpeak[A-Za-z]*` admits the
+   renamed entry without admitting anything that is not a speak call. */
+assert(/kioskListen\(true\);[\s\S]{0,200}pvSpeak[A-Za-z]*\(kiosk\.lastSay/.test(source),
+  'listening must start BEFORE/with the speak call, not in its completion callback');
 assert(source.includes('function kioskListen(keepMood)'), 'kioskListen must accept the keep-mood flag');
 assert(source.includes('if (keepMood && pvRec) return;'), 'opening the mic twice for one question must be a no-op');
 /* av-5.7.0: and the silence clock starts when the QUESTION ENDS. Armed from
    kioskListen it started when the question began, so a six-second question left
    three seconds before the kiosk talked over the patient's first words. */
-assert(/pvSpeak\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmWatchdog\(9000\);/.test(source),
+assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmWatchdog\(9000\);/.test(source),
   'the silence watchdog must be re-armed when the question finishes playing, not when it starts');
 
 /* ---- 4. barge-in stops the VOICE only, and is guarded ---- */
