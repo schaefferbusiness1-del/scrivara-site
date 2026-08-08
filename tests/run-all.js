@@ -459,6 +459,10 @@ const tests = [
   'enumerate-gives-up-when-provably-stuck.test.js',
   'enumerate-all-events-is-not-the-row-count.test.js',
   'encounter-index-names-its-surface.test.js',
+  /* svs-1.0.0 - the 2026-08-08 twin-tab clobber (98/153 healed rows overwritten
+     by a wedged tab's ~45.6s trailing re-saves). A writer may only replace a
+     record it has observed; stale bulk saves are per-row protected. */
+  'stale-lineage-save-shield.test.js',
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
   'settings-cleanup-contract.test.js',

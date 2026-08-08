@@ -418,7 +418,14 @@ const LOADER = 'mls-connect.js';
  *     for rows the deterministic matcher itself declined to call confident.
  *     With no key and no session it never fires at all and the surface falls
  *     back to exactly today's deterministic behaviour. */
-const CEILING = 256;
+/* 256 -> 257 on 2026-08-08: feat_mls_saveshield.js (svs-1.0.0), the cross-tab
+ * stale-lineage save shield. Raised deliberately: a wedged twin tab's trailing
+ * re-saves overwrote 98 of 153 freshly healed patient records that same day,
+ * and this is the write guard that refuses stale-lineage writes. It loads
+ * DEFERRED (requestIdleCallback, 4s timeout), does no boot work beyond two
+ * function wraps, and its re-arm is a bounded timeout chain, so first paint
+ * and the interval budget are untouched. */
+const CEILING = 257;
 const FLOOR = 200;
 
 /* arm B - deferral. 234 of the 242 are eager; the voice cluster was the first
