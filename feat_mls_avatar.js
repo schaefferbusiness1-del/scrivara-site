@@ -521,13 +521,28 @@
     var h = pvNorm(heard);
     if (!h) return false;
     var words = h.split(' ').filter(Boolean);
-    if (words.length < 2) {
-      /* A ONE-WORD RESULT USED TO BE EXEMPT BEFORE pvSaying WAS EVEN CONSULTED,
-         which meant the last word of the avatar's own question - "today", "ten",
-         "worse" - was filed as the patient's answer. It is only exempt now if it
-         is one of the answers above, or if we are not speaking at all. */
-      return !!pvSaying && !PV_ANSWER_WORDS.test(h) && pvHasRun(pvSaying, h);
-    }
+    /* ⛔ REVERTED, AND THE MEASUREMENT IS WHY. av-5.7.0 made a one-word result
+       droppable when the avatar was saying that word and it was not on a
+       whitelist of answers (yes/no/left/right/numbers). The intent was sound: the
+       avatar's own trailing word was being filed as the patient's answer. The
+       effect was much worse than the defect.
+       MEASURED, twice, independently, by running this classifier against ordinary
+       intake questions: it deletes the answer to almost every "A or B?" question
+       this interview asks - "back", "neck", "morning", "evening", "sharp",
+       "weeks", "standing", "shoulder", "ibuprofen" - 9 of 12 in one sweep and 22
+       of 22 in another, against 0 of 12 for the code it replaced. The patient
+       answers "back" to "is the pain in your back, or in your neck?" and the word
+       is in the question, so it went in the bin. Worse, the whitelist exempted
+       exactly the tokens that END the programmed questions, so the guard could
+       barely catch the thing it was written for.
+       A one-word answer is the most common shape in an A-or-B intake question and
+       the most expensive to lose. A one-word ECHO fragment is rare, because
+       Chrome returns phrases, and when it happens the MA persona simply asks
+       again - visibly, in one turn. So the smaller harm is accepted deliberately:
+       one word is never treated as the echo of a sentence.
+       (The multi-word cases are untouched: they are what actually caught the
+       owner's "it records itself talking".) */
+    if (words.length < 2) return false;
     if (pvSaying && pvEchoMatch(pvSaying, h, words, 2, 2)) return true;
     var now = Date.now();
     for (var i = 0; i < pvEchoTail.length; i++) {

@@ -200,23 +200,35 @@ assert.strictEqual(sandbox.pvIsSelfEcho('worse at night'), false,
 assert.strictEqual(sandbox.pvIsSelfEcho('yes it is definitely worse at night when i lie down'), false,
   'and the long form of that answer survives too');
 
-/* ---- 5d. THE ONE-WORD HOLE. Exempting every single-word result BEFORE pvSaying
-   was consulted meant the avatar's own trailing word — "today", "ten", "pain" —
-   was filed as the patient's answer. The exemption now applies only to the
-   answers that are actually given in one word, and only they survive being
-   spoken by the avatar. ---- */
+/* ---- 5d. ⛔ THIS GROUP USED TO ASSERT THE OPPOSITE, AND IT WAS WRONG.
+   av-5.7.0 made a one-word result droppable when the avatar was saying that word
+   and it was not on a whitelist of answers. This group pinned that behaviour —
+   including `pvIsSelfEcho('knee') === true` — which means the suite was ENSHRINING
+   a defect: an adversarial review then measured the classifier against ordinary
+   intake questions and found it deleted the answer to almost every "A or B?"
+   question (9 of 12 in one sweep, 22 of 22 in another, versus 0 for the code it
+   replaced). "Is the pain in your back, or in your neck?" → "back" was binned.
+   A pin that holds a defect in place is worse than no pin, so the rule was
+   reverted and this group now asserts the property that actually matters: A
+   ONE-WORD ANSWER IS NEVER DELETED, whatever the avatar happens to be saying.
+   The accepted cost is stated in the module: a rare one-word echo fragment gets
+   through and the MA persona asks again. ---- */
 sandbox.dropTail();
+sandbox.setSaying(sandbox.pvNorm('Is the pain in your back, or is it in your neck?'));
+assert.strictEqual(sandbox.pvIsSelfEcho('back'), false,
+  'D: "back" is the ANSWER to that question — deleting it is the regression this group now guards');
+assert.strictEqual(sandbox.pvIsSelfEcho('neck'), false, 'D: and so is the other branch of it');
 sandbox.setSaying(sandbox.pvNorm('Is the pain better or worse, or about the same?'));
-assert.strictEqual(sandbox.pvIsSelfEcho('pain'), true,
-  'D: a bare word the avatar is saying right now is the avatar, not an answer');
-assert.strictEqual(sandbox.pvIsSelfEcho('worse'), false,
-  'D: "worse" is an ANSWER to that question and must survive even though the avatar said it');
-assert.strictEqual(sandbox.pvIsSelfEcho('same'), false, 'D: so is "same"');
+assert.strictEqual(sandbox.pvIsSelfEcho('worse'), false, 'D: "worse" survives');
+assert.strictEqual(sandbox.pvIsSelfEcho('same'), false, 'D: so does "same"');
+assert.strictEqual(sandbox.pvIsSelfEcho('pain'), false,
+  'D: even the question\'s own noun survives — one word is never the echo of a sentence');
 sandbox.setSaying(sandbox.pvNorm('Which knee is bothering you, the left or the right?'));
 assert.strictEqual(sandbox.pvIsSelfEcho('left'), false,
   'D: A LATERALITY MUST NEVER BE DELETED — it is the answer that causes a wrong-site error');
 assert.strictEqual(sandbox.pvIsSelfEcho('right'), false, 'D: either side of it');
-assert.strictEqual(sandbox.pvIsSelfEcho('knee'), true, 'D: but the question\'s own noun is still the avatar');
+assert.strictEqual(sandbox.pvIsSelfEcho('knee'), false,
+  'D: and the noun too — this assertion was inverted in the version that shipped this group');
 
 /* ---- 5e. THE TAIL IS CONTIGUITY ONLY, AND LONG. The overlap branch could
    delete a real answer for 1.6s after the question ended, because a short reply
@@ -240,7 +252,8 @@ assert.strictEqual(sandbox.pvIsSelfEcho('how bad is the pain right now'), false,
 
 console.log('PASS avatar listens while speaking: echo cancellation requested, the filter runs at the SOURCE, ' +
   'the echo template outlives the speech but EXPIRES, the tail is contiguity-only so a short reply survives it, ' +
-  'a one-word laterality or refusal is never deleted while the avatar\'s own trailing noun is ' +
-  '(27 executed cases, incl. the late-tail defect, the eaten "no", and the one-word hole) — ' +
+  'and NO ONE-WORD ANSWER IS EVER DELETED — a laterality, a refusal, a number, or the question\'s own noun ' +
+  '(the rule that dropped those was reverted after it was measured deleting 9 of 12 ordinary A-or-B answers, ' +
+  'and this group used to pin the damage) — ' +
   'an all-echo result never costs the microphone, the mic opens with the question, the silence clock starts when it ends, ' +
   'and barge-in stays guarded at two words');
