@@ -2299,6 +2299,24 @@
            colour", a case the fixtures prove works. So the gate is the MEASUREMENT,
            not the knob. */
         var browReadable = (browMed >= 3 && !frameLike);
+        /* 🕶 AND THE BAR ACROSS THE BRIDGE IS THE GLASSES DETECTOR (av-5.7.6).
+           The existing detector at step 9 hunts a DARK BAR and needs a solid one: swept
+           against stroked rims it returns false at 0.5, 1.0, 1.5, 2.6 and 4.1 px and
+           only refuses (null) at 7.7 - and the framed suite's own fixture draws
+           fillRect(N*0.22, N*0.38, N*0.56, N*0.06), a filled bar 7.7px at the analysis
+           grid, which is the ONLY thing it can see. That is why it looked like it
+           worked while the owner's thin rims were invisible.
+           The discriminator was already here, doing the opposite job: eyebrows STOP
+           either side of the nose bridge and a spectacle frame CROSSES it, which is
+           exactly what `frameLike` measures - and on the owner's own fixture it already
+           fires. A frame is thin, so its rows are few; the bridge continuity is what
+           identifies it, not its darkness. Claimed only when the existing detector has
+           not already spoken, so the two never disagree in `derived`. */
+        if (frameLike && look.glasses !== true) {
+          look.glasses = true;
+          derived.push('glasses');
+          found.push('glasses — a rim runs across the nose bridge, where an eyebrow would stop');
+        }
         look.brows = bVal;
         if (browReadable) derived.push('brows');
         found.push((bVal === 'normal' ? 'natural brows' : bVal + ' brows') +
