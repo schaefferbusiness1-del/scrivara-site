@@ -6094,6 +6094,42 @@
   var pendingSetupTab = false;
   function openSetupTab() { pendingSetupTab = true; }
 
+  /* ---- THE AVATAR IN SETTINGS (av-5.7.5) --------------------------------------
+     Owner: "add avatar to settings like I like the set up thing to start but add it to
+     settings so u can chagne it whenever and easily found."
+     The setup wizard stays exactly where it was; this is a second door, and the door
+     that is always there. Before this, the only way back into the questions, the voice
+     and the face was the Visit card's "Set up" button, which renders only when the open
+     patient has NO completed check-in - so the more the practice used the feature, the
+     harder it became to change it.
+     THE SAME FORM, NOT A COPY. setupForm() owns that markup; a second set of controls
+     in ScribeFlow.html would be a second source of truth for the questions a patient is
+     asked, and two sources of truth for clinical questions drift.
+     MOUNTED LAZILY AND ONCE PER OPEN. setupForm fetches /api/avatar/config, so it must
+     not run on every reconcile - that event fires on any Settings mutation. */
+  var settingsMountedFor = 0;
+  function mountAvatarSettings(open) {
+    var host = gid('mlsAvSettingsHost');
+    if (!host) return;                       /* an older ScribeFlow without the section */
+    if (!open) { settingsMountedFor = 0; return; }
+    /* one mount per opening: re-rendering under the doctor's fingers would discard an
+       edit he had not saved yet */
+    var stamp = Date.now();
+    if (settingsMountedFor) return;
+    settingsMountedFor = stamp;
+    safe(function () { setupForm(host); });
+  }
+  function onSettingsReconciled(ev) {
+    var open = !!(ev && ev.detail && ev.detail.open);
+    /* the organizer tells us; when it is absent, fall back to the modal's own class -
+       "exists" and "open" are independent facts and neither implies the other */
+    if (!ev || !ev.detail) {
+      var modal = gid('settingsModal');
+      open = !!(modal && modal.classList && modal.classList.contains('show'));
+    }
+    mountAvatarSettings(open);
+  }
+
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
   var retryTimers = [], lifecycleBound = [], visBound = false;
   function scheduleEnsure() {
@@ -6134,6 +6170,13 @@
     if (!visBound) {
       safe(function () { document.addEventListener('visibilitychange', onVisibility, false); visBound = true; });
     }
+    /* the Settings organizer's one canonical lifecycle signal - documented there as
+       existing precisely so a small augmentation like this does not have to install its
+       own page-wide observer or poll */
+    safe(function () {
+      window.addEventListener('mls:settings-reconciled', onSettingsReconciled, false);
+      lifecycleBound.push(['mls:settings-reconciled', onSettingsReconciled]);
+    });
   }
   function revert() {
     retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });

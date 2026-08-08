@@ -6,6 +6,9 @@ const { spawnSync } = require('child_process');
 
 const tests = [
   'public-publication-boundary.test.js',
+  /* an unmapped Settings heading is INVISIBLE with no error - measured, 1 of 12
+     sections was reachable from no tab at all */
+  'settings-every-section-reachable.test.js',
   'pages-build-output-audit.test.js',
   'static-site.test.js',
   'hex-colour-integrity.test.js',

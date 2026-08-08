@@ -5005,6 +5005,26 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div id="navFeatToggles"></div>
     </div><!-- /App tabs section -->
 
+    <!-- ============ SECTION: Patient check-in avatar (av-5.7.5, owner order 2026-08-08) ============
+         Owner: "add avatar to settings like I like the set up thing to start but add it
+         to settings so u can chagne it whenever and easily found."
+         The setup wizard STAYS - this is additive. Before this, the avatar's questions,
+         voice and appearance could only be reached through the Visit card's "Set up"
+         button, which appears only when the open patient has no completed check-in - so
+         once a practice was running, the way back in was effectively hidden.
+         THE FORM IS MOUNTED, NOT COPIED. feat_mls_avatar.js renders the whole setup into
+         any host element (setupForm), and it is the single owner of that markup: a second
+         copy of the controls here would be a second source of truth for the questions a
+         patient is asked, and the two would drift. The host stays empty until Settings is
+         actually opened, because setupForm fetches /api/avatar/config. -->
+    <div class="set-section" id="avatarSettingsSection">
+      <p class="set-head">🧑‍⚕️ Patient check-in avatar</p>
+      <p class="set-desc">The AI assistant that greets patients and takes their history before you walk in — the questions it asks, its voice, and the face it wears. Changes here take effect on the next check-in.</p>
+      <div class="field">
+        <div id="mlsAvSettingsHost"><p class="note">Opening your avatar setup…</p></div>
+      </div>
+    </div><!-- /Patient check-in avatar section -->
+
     <!-- ============ SECTION: Security & privacy ============ -->
     <!-- ============ SECTION: MLS Assist extension download (mdx-1.0.0, owner order 2026-08-05) ============
          The version and zip name are BAKED and the release gate pins them to
