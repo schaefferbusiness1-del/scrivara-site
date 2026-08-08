@@ -181,7 +181,39 @@ async function main() {
     assert.strictEqual(after.summary, good, 'the mirrored summary was blanked with no re-read');
   }
 
-  console.log('visit-summary-quality-contract: PASS (47 checks)');
+  /* ---- 11b. px-2.7: the legacy em-dash-wrapped stamp is IMPORTER-OWNED -
+          the mirror must replace it (measured live on b949: the panel kept
+          rendering "— Pulled from Athena 7/27/2026 —" forever because the
+          anchored ownership regex refused the app's own old stamp) ---- */
+  {
+    const pD = { id: 'pt-d', name: 'D', dob: '01/01/1970', problems: '', meds: '', allergies: '',
+      summary: '— Pulled from Athena 7/27/2026 —', athenaHistorySummary: '', visits: [] };
+    context.upsertPatient(pD);
+    M.addVisit('pt-d', {
+      date: '2026-08-05', type: 'Office visit', encounterId: 'e-d1', fullDetail: true,
+      raw: 'Patient: D\nDiagnoses: cervical radiculopathy (M54.12)\nPlan: continue conservative care.'
+    }, { source: 'athena-copy', identityVerified: true, identityBinding: 'pt-d', bodyComplete: true });
+    await M.summarizeAll('pt-d');
+    const afterD = context.findPatient('pt-d');
+    assert(/^Pulled from Athena /.test(String(afterD.summary)), 'the em-dash legacy stamp was not replaced by the importer mirror');
+    assert(/cervical radiculopathy/i.test(String(afterD.summary)), 'the mirrored summary lost the clinical content');
+  }
+
+  /* ---- 12. px-2.5.2 hygiene persistence contract (source-level; the
+          functional proof was measured live on b949's first load: the 4.5s
+          pass "cleaned 434" and the async server-mirror hydration restored
+          every one of them under an already-consumed run-once flag) ---- */
+  {
+    const src = visitsSource;
+    const flagSets = (src.match(/localStorage\.setItem\(flagKey, '1'\)/g) || []).length;
+    assert.strictEqual(flagSets, 2, 'the hygiene flag must be set in exactly two places: the cleaned-nothing branch and the post-hydration verify callback (found ' + flagSets + ')');
+    assert(/if \(!touched\) \{\s*\n?\s*try \{ localStorage\.setItem\(flagKey, '1'\)/.test(src), 'the cleaned-nothing branch no longer flags immediately');
+    assert(/_storeHygieneOnce\._verifyRounds/.test(src) && /stillDirty/.test(src), 'the post-write verify pass is gone - the flag can be consumed while the server mirror restores dirty rows');
+    assert(/_verifyRounds > 3/.test(src), 'the verify re-clean loop lost its bound');
+    assert(/p\.updated = Date\.now\(\)/.test(src.slice(src.indexOf('function _storeHygieneOnce'))), 'cleaned records no longer bump `updated` - a timestamp merge will prefer the dirty server copy');
+  }
+
+  console.log('visit-summary-quality-contract: PASS (52 checks)');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
