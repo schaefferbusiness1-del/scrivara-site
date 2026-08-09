@@ -8740,7 +8740,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b990: persist:false work belongs to this exact COW candidate. Passing
+    /* b991: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -8981,7 +8981,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b990: the retired 3-second owner synchronously regex-scanned every
+      /* b991: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -35901,7 +35901,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b990';
+  window.__MLS_AV = window.__MLS_AV || 'b991';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36244,7 +36244,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b990';
+  var MLS_APP_BUILD='2026-07-25-b991';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44009,6 +44009,77 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return f();};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;},{timeout:2500,priority:0,asset:'feat_mls_copilot_power.js'});}catch(e){}})(); /* pre-action integrity: secure-gate priority lane installs bounded large-roster Copilot context and provider coverage before the first request */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
+/* av-6.0.8: THE AVATAR CARD NOW APPEARS AT ONCE. Owner, on a screenshot of the Visit page:
+   "this top thing show shoup uop right away not take a secod". Measured cause, and it is not in
+   feat_mls_avatar.js: __mlsDeferAsset runs deferred assets STRICTLY SERIALLY, one script at a
+   time, waiting for each real load event with a 250ms gap between jobs for the first 30s, after
+   a 2500ms initial quiet period. There are ~100 such loaders and the avatar (default priority 5,
+   registered near the end of this file) is roughly the 52nd, so its card was TENS of seconds
+   late -- far worse than the second he described.
+   Rather than move a 471KB module into the boot burst and spend the boot budget the perf lane
+   fought for, this paints the card's BOX AND TITLE immediately and lets the real module ADOPT
+   the very same node: feat_mls_avatar.js:ensureVisitCard already reuses an existing
+   #mlsAvVisitCard, and it now also calls style() unconditionally and clears the skeleton marker,
+   because adopting a node it did not create used to skip its stylesheet.
+   Honesty rules kept: it never claims to be ready, a tap loads the module at once, a 404 removes
+   the placeholder instead of leaving a card that can never work, and it stands down the moment
+   the module's script tag exists so the two can never fight over position (see av-6.0.2). */
+;(function(){try{
+  var ASSET='feat_mls_avatar.js', ID='mlsAvVisitCard';
+  var BOX='margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
+  var timers=[], bound=[], stopped=false, hurried=false, drawnAt=0;
+  function tag(){ try{ return document.querySelector('script[data-mls-asset="'+ASSET+'"]'); }catch(e){ return null; } }
+  function stop(){ if(stopped) return; stopped=true;
+    for(var i=0;i<timers.length;i++){ try{ clearTimeout(timers[i]); }catch(e){} }
+    for(var j=0;j<bound.length;j++){ try{ window.removeEventListener(bound[j][0],bound[j][1],false); }catch(e){} }
+    timers=[]; bound=[]; }
+  function hurry(){ if(hurried) return; hurried=true;
+    try{ if(tag()) return;
+      var s=document.createElement('script');
+      s.src=ASSET+'?v='+(window.__MLS_AV||Date.now());
+      s.setAttribute('data-mls-asset',ASSET); s.async=true;
+      /* a placeholder for a module that will never arrive is a lie on screen: take it away */
+      s.addEventListener('error',function(){ try{ var c=document.getElementById(ID);
+        if(c&&c.getAttribute('data-mls-av-skeleton')&&c.parentNode) c.parentNode.removeChild(c); }catch(e){} },{once:true});
+      (document.body||document.head||document.documentElement).appendChild(s);
+    }catch(e){} }
+  function draw(){
+    if(stopped) return;
+    if(tag()){ stop(); return; }
+    var view=document.getElementById('visitView'); if(!view) return;
+    var card=document.getElementById(ID);
+    if(card&&!card.getAttribute('data-mls-av-skeleton')){ stop(); return; }
+    if(!card){
+      card=document.createElement('div');
+      card.id=ID; card.setAttribute('data-mls-av-skeleton','1'); card.style.cssText=BOX;
+      var inner=document.createElement('div');
+      inner.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer';
+      inner.title='Tap to load your check-in assistant now';
+      var t=document.createElement('span'); t.style.cssText='font-weight:800;color:#204034;font-size:13.5px'; t.textContent='\uD83E\uDDD1\u200D\u2695\uFE0F Avatar';
+      var l=document.createElement('span'); l.style.cssText='font-size:12.5px;color:#55605A'; l.textContent='Getting your check-in assistant ready\u2026';
+      inner.appendChild(t); inner.appendChild(l);
+      /* the listener is on the INNER node on purpose: the module clears card.innerHTML when it
+         adopts this node, which takes this handler with it -- no cross-module removeEventListener */
+      inner.addEventListener('click',function(){ l.textContent='Loading your check-in assistant\u2026'; hurry(); },false);
+      card.appendChild(inner);
+      drawnAt=Date.now();
+      /* He is LOOKING at the Visit page, so this module is the one he wants next. Promote it
+         once, shortly after the skeleton lands -- not at boot, and only on this view, so login
+         keeps its budget while the card he asked for becomes real in about a second. */
+      timers.push(setTimeout(function(){ try{ if(document.getElementById(ID)) hurry(); }catch(e){} },1200));
+    }
+    var rail=null; try{ rail=view.querySelector('#mlsStages'); }catch(e){}
+    var after=(rail&&rail.parentNode===view)?rail.nextElementSibling:view.firstElementChild;
+    if(card!==after){ try{ view.insertBefore(card,after); }catch(e){} }
+  }
+  var RUNGS=[0,120,400,900,1800,3200];
+  for(var r=0;r<RUNGS.length;r++) timers.push(setTimeout(draw,RUNGS[r]));
+  var EVENTS=['mls:ui-ready','mls:view-changed','mls:active-patient-changed','mls:easy-mode-changed'];
+  for(var e2=0;e2<EVENTS.length;e2++){ (function(n){ var fn=function(){ draw(); };
+    try{ window.addEventListener(n,fn,false); bound.push([n,fn]); }catch(e){} })(EVENTS[e2]); }
+  /* bounded by construction: no permanent polling, and it lets go after 30s regardless */
+  timers.push(setTimeout(stop,30000));
+}catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260808chk3055';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */

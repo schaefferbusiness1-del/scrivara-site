@@ -547,6 +547,17 @@ const tests = [
      patient-facing check-in — no polling, fail-closed chart match, idempotent
      stamped import, one idle-deferred loader. */
   'avatar-doctor-runtime.test.js',
+  /* 2026-08-09 av-6.0.8: the Visit-page Avatar card must appear AT ONCE. Owner: "this top
+     thing show shoup uop right away not take a secod". The loader drains ~100 deferred
+     assets one at a time and the avatar is ~52nd, so the card was tens of seconds late;
+     the loader now paints it and the module adopts the same node. Executes the shim. */
+  'avatar-visit-card-appears-at-once.test.js',
+  /* 2026-08-09 av-6.0.9: the avatar must FINISH ITS SENTENCES. Owner: "it doesnt even say
+     eve4ryhhting its going to say it hears its self its a MESS FIX IT" — one defect, not
+     two: the barge-in rule cut the question off whenever the echo filter missed the
+     avatar's own voice (measured 18% overall, 52% on merged words). Barge-in now needs
+     positive evidence of another voice; the filing path is deliberately unchanged. */
+  'avatar-finishes-its-sentences.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',

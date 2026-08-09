@@ -707,6 +707,69 @@
      "know" or "now" - and a one-word refusal is the most consequential answer
      in an intake. */
   function pvHasRun(hay, needle) { return (' ' + hay + ' ').indexOf(' ' + needle + ' ') >= 0; }
+  /* ── BARGE-IN NEEDS EVIDENCE OF ANOTHER VOICE ──────────────────────────────
+     Owner: "it doesnt even say eve4ryhhting its going to say it hears its self its a MESS."
+     Those are ONE defect. pvStopSpeechOnly has exactly one call site — the interim handler in
+     kioskListen — so the ONLY thing that can cut a question off mid-sentence is barge-in, and
+     the only thing standing between barge-in and the avatar's own voice was pvIsSelfEcho.
+     Every time that filter missed, the avatar heard itself, concluded it was being interrupted,
+     and silenced its own question.
+     MEASURED (scratchpad/echo-bargein-probe.js, the shipped classifier over this interview's
+     real questions with the ordinary microphone-hearing-a-loudspeaker error modes):
+         clean transcript   0% missed
+         one word dropped   0% missed
+         a homophone       21% missed
+         two words merged  52% missed      overall 42 of 232 = 18%
+     and the misses are concentrated in SHORT prefixes — 2 to 5 words — which is precisely what
+     the recogniser emits FIRST, at the start of every single question. Two causes: pvEchoMatch's
+     overlap test is `> 0.8`, so a 5-word echo with one wrong word scores exactly 0.8 and fails;
+     and a merged pair ("bringsyou") is not a word in the sentence, so no contiguous run matches.
+     The old rule was NEGATIVE — cut the question unless we can prove this is our own voice.
+     This one is POSITIVE: cut the question only when at least two words are ones we are NOT
+     saying. A mis-heard echo has no novel words; a person talking over the avatar has plenty.
+     ⚠️ Deliberately NOT applied to the filing path. pvIsSelfEcho stays exactly as calibrated,
+     because a novel-word rule there would delete the one-word answers that reuse the question's
+     own words ("back", "worse", "ten") — measured at 9 of 12 and 22 of 22 in a previous round,
+     and the most expensive answers in the interview to lose. This gate only decides whether to
+     STOP TALKING, which is never destructive. */
+  function pvEditDistance1(a, b) {
+    if (a === b) return true;
+    var la = a.length, lb = b.length;
+    if (Math.abs(la - lb) > 1) return false;
+    var i = 0, j = 0, edits = 0;
+    while (i < la && j < lb) {
+      if (a.charAt(i) === b.charAt(j)) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (la === lb) { i++; j++; }
+      else if (la > lb) i++;
+      else j++;
+    }
+    if (i < la || j < lb) edits++;
+    return edits <= 1;
+  }
+  function pvNovelWordCount(tpl, heard) {
+    var t = pvNorm(tpl || ''), h = pvNorm(heard);
+    if (!h) return 0;
+    if (!t) return h.split(' ').filter(Boolean).length;
+    var mine = t.split(' ').filter(Boolean);
+    var words = h.split(' ').filter(Boolean);
+    var novel = 0;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (w.length < 2) continue;                    /* 'a', 'i' carry no evidence either way */
+      if (pvHasRun(t, w)) continue;                  /* a word we are saying right now */
+      var ours = false;
+      for (var j = 0; j < mine.length && !ours; j++) {
+        var m = mine[j];
+        /* a MERGE: the recogniser ran two of our words together, or clipped one of them */
+        if (m.length >= 4 && (w.indexOf(m) >= 0 || (w.length >= 4 && m.indexOf(w) >= 0))) ours = true;
+        /* a HOMOPHONE or a single mis-heard letter: pain->pane, back->bag, ten->tan */
+        else if (m.length >= 4 && w.length >= 4 && pvEditDistance1(w, m)) ours = true;
+      }
+      if (!ours) novel++;
+    }
+    return novel;
+  }
   function pvEchoMatch(tpl, h, words, minRun, minOverlapWords) {
     if (!tpl) return false;
     if (words.length >= minRun && pvHasRun(tpl, h)) return true;   /* a slice of our own sentence */
@@ -3689,7 +3752,16 @@
     step();
   }
   function stylizeCanvas(src) {
-    var size = 256;
+    /* 512, NOT 256 (av-6.0.7). Owner: "the photo needs to be higher res like not try to image
+       to avatar off a small low quaility image it saves."
+       This is the copy that is SAVED and shown to patients, and it was rendered at 256 and then
+       displayed at 302px in the kiosk — upscaled, so visibly soft on every screen, and softer
+       again on a retina panel where 302 CSS px is 604 device px. 512 covers the kiosk at 1x and
+       is close at 2x, and it costs one JPEG: measured below against the capture guard.
+       The MEASUREMENT copy is separate and already 1024 (MEASURE_MAX) — nothing here is what the
+       matcher or the vision model reads, so raising this cannot move a single verdict. It is
+       purely what he and his patients look at. */
+    var size = 512;
     var canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
     var ctx = canvas.getContext('2d');
@@ -3855,7 +3927,18 @@
               }
               var dataUrl = safe(function () { return stylizeCanvas(bestCanvas); }, null);
               var hiUrl = safe(function () { return bestCanvas.toDataURL('image/jpeg', 0.95); }, '');
-              if (!dataUrl || dataUrl.length > 150000) {
+              /* the guard rises WITH the portrait (av-6.0.7), as HEADROOM — not because 150000
+                 was observed to fail. MEASURED in Chrome through this exact pipeline over the
+                 real photographs in scratchpad/realfaces (probe: measure-portrait-size.js):
+                     440x586  -> 256: 35,471   512: 105,715
+                     960x1444 -> 256: 22,195   512:  73,191
+                 So a 512 stylized JPEG is far SMALLER than I first assumed — the 6-level
+                 posterize flattens the image and JPEG pays almost nothing for the extra pixels,
+                 and 0 of 2 would have tripped the old cap. What the old number left was thin
+                 margin: 105,715 is 70% of 150000, i.e. 1.4x, and a live webcam frame carries
+                 more sensor noise than a downloaded photograph. 600000 keeps the guard's real
+                 job — stopping a pathological encode — with 5.7x margin on the largest measured. */
+              if (!dataUrl || dataUrl.length > 600000) {
                 camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
                 return;
               }
@@ -3882,10 +3965,23 @@
                  through the button's own handler rather than a copy of it: a second
                  implementation of the match would be a second thing to keep in step, and the
                  whole reason the AI read was ever missing from a surface is that it had two.
-                 matchBtn is declared later in this same function scope, so it is assigned by
+                 matchBtn is declared further down this same function scope, so it is assigned by
                  the time this runs; guarded anyway, because a build that removes the button
-                 must degrade to 'no auto-match', never to a thrown error inside a capture. */
-              later(function () { safe(function () { if (matchBtn && !matchBtn.disabled) matchBtn.click(); }); }, 60);
+                 must degrade to 'no auto-match', never to a thrown error inside a capture.
+                 ⛔ AND IT DID THROW, from b982 until now: this line called `later(fn, ms)`, a
+                 helper that exists ONLY inside makeFace's scope — setupForm has no such
+                 binding, so every capture raised "later is not defined" and the auto-match
+                 never ran once. `node --check` cannot see an undefined identifier, and the
+                 safe() was one level too deep: it wrapped the callback, not the call that
+                 threw, so the guard this comment promises was never in the throwing position.
+                 Found by driving the real capture with a real photograph through a fake camera
+                 (scratchpad/facelook/autocapture.js) and reading pageerror — the owner's
+                 symptom, "once the image is taken it sohuld auto change avatar", exactly. */
+              safe(function () {
+                setTimeout(function () {
+                  safe(function () { if (matchBtn && !matchBtn.disabled) matchBtn.click(); });
+                }, 60);
+              });
             });
           });
         }, function () {
@@ -4363,9 +4459,21 @@
               /* read the AUTHORITATIVE echo — what the server actually stored */
               var saved = r2.json.config || {};
               pinInput.value = saved.exitPin || '';
+              /* av-6.0.7 — DID THE PHOTO SURVIVE THE ROUND TRIP? The server drops a portrait
+                 that fails its shape test or its size cap, and until now that drop was silent:
+                 you pressed Save, saw "Saved", and your face was simply not there. Judge it by
+                 the ECHO, not by the flag — a stored portrait comes back in the config. */
+              var sentPhoto = (pendingFace === undefined ? (cfg.faceImage || '') : pendingFace);
+              var photoLost = !!(sentPhoto && sentPhoto.indexOf('data:image/') === 0 &&
+                String(saved.faceImage || '').indexOf('data:image/') !== 0);
+              var why = String(r2.json.faceImageRefused || '');
               status.textContent =
                 (questions.length ? ('Saved — the avatar now asks ' + questions.length + ' question' + (questions.length === 1 ? '' : 's') + '. Patients see it in their portal.') : 'Saved, but with no questions the check-in stays OFF for patients.') +
-                (saved.exitPin ? ' Kiosk exit PIN is set.' : ' No exit PIN — “End interview” closes straight into your app.');
+                (saved.exitPin ? ' Kiosk exit PIN is set.' : ' No exit PIN — “End interview” closes straight into your app.') +
+                (photoLost || why ? (' ⚠ Your photo was NOT saved' +
+                  (why === 'too_large' ? ' — it came out too large for the server (' + Math.round(sentPhoto.length / 1024) + 'KB). Retake it a little further back.'
+                    : why === 'shape' ? ' — the camera returned something this server will not store. Retake it.'
+                    : ' — the server did not store it. Retake the photo and save again.')) : '');
             } else status.textContent = 'Could not save — check your connection and try again.';
           }, function () { saveBtn.disabled = false; status.textContent = 'Could not save — check your connection and try again.'; });
       });
@@ -5015,11 +5123,20 @@
     }, function (interim) {
       /* the avatar hearing ITSELF must never become the patient's answer */
       if (pvIsSelfEcho(interim)) return;
+      /* BARGE-IN: real speech while the question is still playing stops the question
+         mid-sentence, the way a person would — but it must be SOMEONE ELSE's speech.
+         Two words is not evidence of another person when the avatar is mid-sentence and
+         the microphone is pointed at the speaker playing it; see pvNovelWordCount for the
+         measured miss rate of the old negative rule (18% overall, 52% on merged words),
+         every miss silencing the avatar's own question. While nothing is playing there is
+         no question to protect, so the old two-word floor stands unchanged. */
+      var novel = pvSaying ? pvNovelWordCount(pvSaying, interim) : 0;
+      var otherVoice = pvSaying
+        ? (novel >= 2)
+        : (interim.trim().split(/\s+/).filter(Boolean).length >= 2);
+      if (pvSaying && !otherVoice) return;   /* our own voice coming back: do not stop, do not paint */
       if (interim.trim()) kiosk.heard = true;
-      /* BARGE-IN: real speech while the question is still playing stops the
-         question mid-sentence, the way a person would. Guarded at two words
-         so a cough, an 'mhm' or a nod-noise cannot cut it off. */
-      if (pvSaying && interim.trim().split(/\s+/).filter(Boolean).length >= 2) pvStopSpeechOnly();
+      if (pvSaying && otherVoice) pvStopSpeechOnly();
       var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
     }, function () {
       /* the recogniser died on its own with nothing to submit — re-open the
@@ -7020,11 +7137,26 @@
   function ensureVisitCard() {
     var view = gid('visitView'); if (!view) return;
     var card = gid('mlsAvVisitCard');
+    /* av-6.0.8 — UNCONDITIONAL, because this card may have been created by someone else.
+       The loader in mls-connect.js paints an instant skeleton under this exact id (owner:
+       "this top thing show shoup uop right away not take a secod" — this module is the ~52nd
+       of ~100 serially-loaded deferred assets, so the real card was tens of seconds late).
+       style() is id-guarded and idempotent, but it used to be called ONLY on the create
+       branch — adopting a skeleton would therefore have skipped it and left every
+       .mlsAvAction button in this card unstyled. */
+    style();
+    var CARD_BOX = 'margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
+    if (card && card.getAttribute('data-mls-av-skeleton')) {
+      /* take ownership: drop the placeholder's click-to-hurry handler by replacing the node's
+         guts, and re-assert the canonical box so the skeleton's copy can never drift from it */
+      safe(function () { card.removeAttribute('data-mls-av-skeleton'); });
+      safe(function () { card.style.cssText = CARD_BOX; });
+      safe(function () { card.removeAttribute('data-mls-av-sig'); });
+    }
     if (!card) {
-      style();
       card = document.createElement('div');
       card.id = 'mlsAvVisitCard';
-      card.style.cssText = 'margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
+      card.style.cssText = CARD_BOX;
       /* TOP of the visit view — where the doctor's eye already is. (The app's
          top patient banner is untouched; this lives inside the Visit content.) */
       view.insertBefore(card, view.firstChild);
@@ -7310,12 +7442,39 @@
     var host = gid('mlsAvSettingsHost');
     if (!host) return;                       /* an older ScribeFlow without the section */
     if (!open) { settingsMountedFor = 0; return; }
-    /* one mount per opening: re-rendering under the doctor's fingers would discard an
-       edit he had not saved yet */
-    var stamp = Date.now();
-    if (settingsMountedFor) return;
-    settingsMountedFor = stamp;
+    /* ⛔ THE LATCH IS NOT THE AUTHORITY — THE DOM IS (av-6.0.7).
+       Owner, on a screenshot of Settings > Check-in avatar showing nothing but the static
+       placeholder: "Its not acatlly there."
+       `if (settingsMountedFor) return;` is a one-shot latch that only ever resets when this
+       function is called with open === false. TWO ordinary paths leave it set with no form on
+       screen, and both end in the placeholder sitting there forever:
+         1. Settings is closed WITHOUT a reconciled event carrying open:false — nothing resets
+            the latch, so the next open returns early and never mounts.
+         2. setupForm THROWS. It is called inside safe(), which swallows the throw by design,
+            but the latch was already set one line earlier — so the failure is permanent and
+            silent, and the doctor sees "Opening your avatar setup…" for the rest of the tab's
+            life with no way to retry.
+       The original intent is still honoured and is the reason this is not simply unconditional:
+       a MOUNTED form must never be re-rendered under the doctor's fingers, because that would
+       discard an edit he had not saved. But "mounted" is a fact about the DOM, not about a
+       variable — a host that holds no control at all cannot be holding an unsaved edit. */
+    var hasForm = safe(function () { return !!host.querySelector('input,select,textarea'); }, false);
+    if (settingsMountedFor && hasForm) return;
+    settingsMountedFor = Date.now();
     safe(function () { setupForm(host); });
+  }
+  /* whether the settings modal is on screen right now, read from the modal itself rather than
+     from an event we may have missed — see mountAvatarSettings */
+  function settingsOpenNow() {
+    return safe(function () {
+      var modal = gid('settingsModal');
+      if (!modal) return false;
+      if (modal.classList && modal.classList.contains('show')) return true;
+      /* "exists" and "visible" are independent facts: a modal shown by inline style rather
+         than a class is still open, and this panel is reachable that way. */
+      var host = gid('mlsAvSettingsHost');
+      return !!(host && host.offsetParent !== null);
+    }, false);
   }
   function onSettingsReconciled(ev) {
     var open = !!(ev && ev.detail && ev.detail.open);
@@ -7340,11 +7499,21 @@
       retryTimers.push(setTimeout(function () {
         ensureButton();
         ensureVisitCard();
+        /* AND THE SETTINGS PANEL, from the same ladder (av-6.0.7). Its mount was driven by the
+           mls:settings-reconciled event and NOTHING ELSE, so a settings modal opened by any
+           route that does not emit that event showed the static placeholder forever. This rung
+           asks the modal itself whether it is open, and mountAvatarSettings is now idempotent
+           against a mounted form, so calling it here cannot re-render over an unsaved edit. */
+        if (settingsOpenNow()) mountAvatarSettings(true);
         if (index === all.length - 1) refreshCount(false);
       }, delay));
     });
   }
-  function onLifecycle() { scheduleEnsure(); refreshCount(false); ensureVisitCard(); }
+  function onLifecycle() {
+    scheduleEnsure(); refreshCount(false); ensureVisitCard();
+    /* a view or account change can happen with Settings already open — see mountAvatarSettings */
+    if (settingsOpenNow()) mountAvatarSettings(true);
+  }
   function onVisibility() { if (!document.hidden) refreshCount(false); }
   function onVisitContext() {
     /* THE CHART CHANGED UNDER A LIVE RECORDING. Everything said from here
