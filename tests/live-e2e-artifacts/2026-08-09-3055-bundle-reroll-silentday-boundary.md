@@ -205,6 +205,61 @@ history-refusal-diagnostics-contract ✓ · provider-month-exact-routing ✓ ·
 department-scope-primitives 10 ✓ · encounter-index-stability ✓ ·
 enumerate-gives-up ✓. Full gate runs at train time (digest stamp refreshes then).
 
+## 7. DAY 9 COLLAPSED — the stop, the diagnosis, and two more cures (added ~21:15)
+
+The owner watched day 9's live panel read "✓ 2 saved · ⚠ 19 skipped" and asked
+the fair binary: either the orange text is right and the extension sucks, or
+it's wrong and it needs to go. **Both horns were true.**
+
+- **Real collapse**: 22 distinct charts, latest-state 2 ok / 20 failed when I
+  set the cooperative stop (his standing order). Sequence `xxxOxxxxxxxxxxxO…` —
+  failing from CHART 1, so his activity (he closed his app tabs mid-day) is
+  exonerated. The 2 oks both landed via clincmp-ax. Mix: no-chart-frame ×11,
+  bodies-incomplete ×11, source-key ×2, one explicit no-signed-in-tab.
+- **Session ALIVE**: authenticated fetch from the engine's own tab = 92,314
+  bytes, no Re-Login, no prompt=login (signed-out page is ~16KB). NOT the
+  signed-out asymmetry.
+- **The cause**: two-run position-degradation curve — July4 by position
+  1/5/8/6; July5 0→1→(3 empty)→0→2→20, empties resting the renderer. The
+  driven tab degrades under continuous driving (the known ~40-min storm class;
+  cure = cool-down-then-converge). Month closed "4/31 days verified; retry 27"
+  — store safe, everything retryable.
+- **The label**: mls-connect.js:4706 wired "skipped" to the FAILED counter,
+  counting settle EVENTS (a chart failing 3 re-check passes then clearing
+  counts 3 skipped + 1 saved forever — ppTally over rows, cleared charts' old
+  rows keep ok=false).
+- **Runway receipts** (the 42s challenge): the only rows persisting
+  first-attempt diag are end-state failures. Day 8's two (the re-roll's exact
+  target class): failed at 8s and 7s elapsed of a 165s budget — **157s/158s of
+  runway left**. The no-group class is a fast structural refusal, not budget
+  exhaustion.
+- **Instrument confession ×2**: my run wrapper compacted the month result to 5
+  fields (day-6's exception text lost this run); and my first gate line piped
+  through tail so `$?` reported tail's 0 — a FALSE GREEN over a module-load
+  crash (the runner's registry fence had correctly refused my two unregistered
+  test files). Both recorded; the gate re-ran with the exit taken honestly.
+
+### fb-1.0 — the renderer-fatigue breaker (scripts/fb-splice.js)
+
+4 consecutive hydration-class refusals (identity refusals NEVER count) → the
+engine reloads its OWN work tab (surfaceRefresh op, top frame, reload-only) +
+12s cool-down; bounded ≥15min apart, ≤2/rolling hour; every receipt carries
+hydStreak; a refresh stamps the next receipt fatigueRefresh. Classification at
+the single normalize hop every outcome crosses. 16 checks incl. vm runs of the
+real classifier (day-9 signature reaches threshold; identity/no-tab refusals
+don't; one proven chart resets).
+
+### ppt-2.0 — the panel tells the truth
+
+Chart-level tally (latest state per name+pid key; done = distinct charts,
+monotonic); "skipped" dies ("✓ N saved · ⚠ M not saved · K re-checking");
+rows dedup to one per chart with HUMAN verdicts (raw reason in hover title;
+internal tallies like {no-group×2} never render); charts entering re-check
+settle as calm "re-checking…" (pending, never final-⚠); a redo renders
+"saved (1 redo)" and the day line counts redos separately — a redo can never
+launder the first-attempt metric. New acceptance dimension per the owner:
+**every patient positively resolved, every pull, panel telling the truth.**
+
 ## Open at write time
 
 - Day 9 (22 charts, biggest of the month) mid-flight; splits at close.
