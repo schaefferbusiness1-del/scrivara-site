@@ -37,7 +37,7 @@ const assets = [
      that bit copilot_actions, its loader now follows the build number. The
      build-form + dead-literal assertions live below with feat_visits'. */
   ['feat_mls_calbox_uniform.js', '20260727cb110', '20260625cb1c1'],
-  ['feat_mls_checker.js', '20260808chk3052', '20260808chk3051'],
+  ['feat_mls_checker.js', '20260808chk3053', '20260808chk3052'],
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
@@ -224,7 +224,7 @@ assert(!connect.includes('20260806wd112') && !connect.includes('20260802wd111'),
    because the staleness gate that guards these literals compares CALENDAR DATES.
    Both retirements are kept - they are additive and describe different files. The
    only judgement in this resolution was the checker token, where the px train's
-   20260808chk3052 supersedes the base's chk3045. Trial-merged and gated at 512
+   20260808chk3053 supersedes the base's chk3045. Trial-merged and gated at 512
    before either landed, so this is the resolution as planned, not as improvised. */
 /* feat_mls_b121_pack.js: same cure as feat_visits/copilot_actions (px train,
    2026-08-07) - the loader follows the build number; hand tokens stay dead. */
@@ -244,7 +244,7 @@ for (const dead of ['20260807av567', '20260807av566']) {
   assert(!connect.includes(dead), 'retired avatar cache token ' + dead + ' is back in the loader');
 }
 
-assert(staging.includes('feat_mls_checker.js?v=20260808chk3052'),
+assert(staging.includes('feat_mls_checker.js?v=20260808chk3053'),
   'staging checker loader must use the same corrected immutable URL');
 assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');

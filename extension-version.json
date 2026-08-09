@@ -1,5 +1,5 @@
 {
-  "version": "3.0.52",
+  "version": "3.0.53",
   "minChrome": 116,
-  "notes": "v3.0.52 - Charts on athena's new-style (rollout) UI can now be read natively: encounter links are harvested directly (no clicking), each encounter page is identity-verified against the expected patient before a single word is read, and anything the reader does not recognize is refused with its shape recorded rather than guessed at - those refusals are expected to shrink build over build as shapes are learned. This route runs ONLY when the classic reader finds no usable chart frame. Everything from v3.0.51 remains. Requires Chrome 116+."
+  "notes": "v3.0.53 - The new-style (rollout) reader now always gets its turn: on charts where the classic reader grinds against a stubborn visit list, MLS previously spent the chart's whole time budget before the new-style route could run - five charts on one live day failed exactly that way. The classic phases now hand over with guaranteed time remaining, so the fallback is a real fallback. Everything from v3.0.52 remains. Requires Chrome 116+."
 }
