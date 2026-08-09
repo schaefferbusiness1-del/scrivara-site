@@ -211,7 +211,8 @@ for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
 for (const file of ['ScribeFlow.html', 'ScribeFlow-staging.html']) {
   const src = fs.readFileSync(path.join(root, file), 'utf8');
   const saveStart = src.indexOf('function savePatients(');
-  const saveSlice = src.slice(saveStart, saveStart + 2500);
+  const saveEnd = src.indexOf('var __mlsPtsBaseSavePatients=savePatients;', saveStart);
+  const saveSlice = src.slice(saveStart, saveEnd > saveStart ? saveEnd : saveStart + 12000);
   assert(saveSlice.includes('__mlsAthenaProofGuard('), file + ': savePatients never calls the proof guard');
 }
 

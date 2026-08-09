@@ -495,12 +495,21 @@ function makeNotes(count) {
   const sanitizer = { strip(value) { return value; }, hasCode() { counts.scrubRows++; return false; } };
   h.window.__mlsContinuousScrub = { version: '1.0.0', cleaned: 0 };
   h.window.__mlsSummarySanitize = sanitizer;
+  /* Production installs the cooperative maintenance owner before these legacy
+     sweeps. Keep the extraction harness on that real dependency boundary; a
+     clean roster must scan once but can never enqueue persistence. */
+  h.window.__mlsMaintenancePersist = {
+    capture() { return { key: patientKey, account: 'acct-a', token: '', raw: h.localStorage.getItem(patientKey) }; },
+    enqueue() { throw new Error('clean synthetic roster reached maintenance persistence'); }
+  };
   h.window.getPatients = function () { counts.patientReads++; return patients.slice(); };
   const context = {
     window: h.window,
     document: { hidden: false },
     STATS: { structured: 0, savesWrapped: 0, sweepPasses: 0 },
     API: { summaryMode: 'digest' },
+    sweepPersistPending: false,
+    scrubPersistPending: false,
     getPatients() { return h.window.getPatients(); },
     needsWork() { counts.chartRows++; return false; },
     sweepPatient() { throw new Error('clean synthetic patient reached sweepPatient'); },
@@ -634,6 +643,10 @@ function assertLegacyConsumerFallback(mode) {
   };
   h.window.__mlsSummarySanitize = sanitizer;
   h.window.__mlsContinuousScrub = { version: '1.0.0', cleaned: 0 };
+  h.window.__mlsMaintenancePersist = {
+    capture() { return { key: patientKey, account: 'acct-a', token: '', raw: h.localStorage.getItem(patientKey) }; },
+    enqueue() { throw new Error('clean fallback roster reached maintenance persistence'); }
+  };
   h.window.getPatients = function () { counts.patientReads++; return patients.slice(); };
   const context = {
     window: h.window,
@@ -646,6 +659,8 @@ function assertLegacyConsumerFallback(mode) {
     __mlsPtsMemo: { key: patientKey, raw: h.localBacking[patientKey] },
     STATS: { structured: 0, savesWrapped: 0, sweepPasses: 0 },
     API: { summaryMode: 'digest' },
+    sweepPersistPending: false,
+    scrubPersistPending: false,
     needsWork() { counts.chartRows++; return false; },
     sweepPatient() { throw new Error('clean fallback patient reached sweepPatient'); },
     persistSweep() { throw new Error('clean fallback roster reached persistence'); },

@@ -404,9 +404,15 @@ assert(patientHydration.includes('const localIndex=new Map()') && patientHydrati
 assert(patientHydration.includes('const additions=[]') && patientHydration.includes('additions.concat(local)'), 'new cloud patients are not batched into one saved merge');
 assert(!patientHydration.includes('.findIndex('), 'patient hydration still performs O(server x local) findIndex scans');
 assert(patientHydration.includes('if(!opts.deferRender)') && patientHydration.indexOf('if(!opts.deferRender)') < patientHydration.indexOf('updateNavCounts()'), 'deferred patient hydration can repaint hidden navigation');
-const patientSaveAt = patientHydration.indexOf('savePatients(additions.length?additions.concat(local):local)');
+const patientSaveAt = patientHydration.indexOf('await savePatients(_hyRows,_hyStoreKey,{cooperative:true');
 assert(patientSaveAt > 0 && patientHydration.lastIndexOf('sfHydrationBoundary(opts)', patientSaveAt) >= 0 && patientHydration.indexOf('sfHydrationBoundary(opts)', patientSaveAt) > patientSaveAt,
   'patient persistence is no longer protected by input-aware boundaries before and after its write');
+assert(patientHydration.includes("const _hyStoreKey=uns('patients'),_hyToken=bkToken()") &&
+  patientHydration.includes("sfStartupValid(opts)&&uns('patients')===_hyStoreKey&&bkToken()===_hyToken") &&
+  patientHydration.includes('if(_hySaved&&_hySaved.stale)'),
+  'startup patient persistence lost its off-main worker or exact startup/account/token completion fence');
+assert(!patientHydration.includes('savePatients(additions.length?additions.concat(local):local)'),
+  'startup patient hydration can still run the multi-megabyte codec synchronously');
 
 const recordHydration = app.slice(app.indexOf('async function loadRecordsFromServer(opts)'), app.indexOf('function renderHistory()', app.indexOf('async function loadRecordsFromServer(opts)')));
 assert(recordHydration.includes('const localIndex=new Map()') && recordHydration.includes('localIndex.has(rec.id)?localIndex.get(rec.id):-1'), 'record hydration regressed to repeated linear identity scans');

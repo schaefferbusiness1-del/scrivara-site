@@ -202,7 +202,7 @@ const api = context.__mlsSI;
 /* pin moved si-1.7.18 -> si-1.7.19 deliberately: mdx-2.0.0 same-clinician
    roster-echo collapse for the selected-provider name fallback; every
    adversarial identity behavior this suite pins is unchanged and re-run. */
-assert(api && api.version === 'si-1.7.21');
+assert(api && api.version === 'si-1.7.22');
 
 (async () => {
   const bootstrapDate = '2026-07-22';

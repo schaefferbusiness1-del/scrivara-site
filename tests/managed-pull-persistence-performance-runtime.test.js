@@ -174,7 +174,7 @@ function largeRoster(count, repeats) {
 function patientStoreHarness(options) {
   options = options || {};
   let account = 'alpha@example.test';
-  let workerSeq = 0;
+  let workerSeq = 0, workerFailuresRemaining = Math.max(0, Number(options.workerFailures) || 0);
   const blobs = new Map(), held = [], timers = new Map(), listeners = new Map(), workers = [];
   const data = new Map();
   const writes = [];
@@ -199,16 +199,22 @@ function patientStoreHarness(options) {
         this.node.on('message', data => { if (this.onmessage) this.onmessage({ data }); });
         this.node.on('error', error => { if (this.onerror) this.onerror(error); });
         this.node.unref(); workers.push(this.node);
+      } else {
+        this.workerCtx = { String, Object, Array, Math, Date, JSON, Error, postMessage: result => { if (this.onmessage) this.onmessage({ data: result }); } };
+        vm.createContext(this.workerCtx);
+        vm.runInContext(this.source, this.workerCtx, { filename: 'patient-codec.worker.js' });
       }
     }
     postMessage(payload) {
+      if (workerFailuresRemaining > 0) {
+        workerFailuresRemaining--;
+        setImmediate(() => { if (this.onerror) this.onerror(new Error('synthetic patient-codec failure')); });
+        return;
+      }
       if (this.node) { this.node.postMessage(payload); return; }
       const deliver = () => {
         try {
-          const workerCtx = { String, Object, Array, Math, Date, JSON, Error, postMessage: result => { if (this.onmessage) this.onmessage({ data: result }); } };
-          vm.createContext(workerCtx);
-          vm.runInContext(this.source, workerCtx, { filename: 'patient-codec.worker.js' });
-          workerCtx.onmessage({ data: payload });
+          this.workerCtx.onmessage({ data: payload });
         } catch (error) { if (this.onerror) this.onerror(error); }
       };
       if (options.holdWorker) held.push(deliver); else setImmediate(deliver);
@@ -229,7 +235,7 @@ function patientStoreHarness(options) {
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
     Event: class { constructor(type) { this.type = type; } }
   };
-  if (typeof options.bgSleep === 'function') ctx.__mlsBgSleep = options.bgSleep;
+  ctx.__mlsBgSleep = typeof options.bgSleep === 'function' ? options.bgSleep : (ms => (Number(ms) || 0) <= 0 ? new Promise(resolve => setImmediate(resolve)) : new Promise(() => {}));
   ctx.window = ctx;
   ctx.addEventListener = (type, fn) => { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); };
   ctx.dispatchEvent = event => { for (const fn of listeners.get(event.type) || []) fn(event); };
@@ -253,10 +259,15 @@ function patientStoreHarness(options) {
 }
 
 function nextTurn() { return new Promise(resolve => setImmediate(resolve)); }
+async function waitForHeld(harness, count, rounds) {
+  count = count || 1;
+  for (let i = 0; i < (rounds || 300) && harness.held.length < count; i++) await nextTurn();
+  return harness.held.length;
+}
 async function releaseHeldUntil(harness, promise, maxRounds) {
   let done = false, failure = null, value;
   Promise.resolve(promise).then(v => { done = true; value = v; }, e => { done = true; failure = e; });
-  for (let round = 0; round < (maxRounds || 20) && !done; round++) {
+  for (let round = 0; round < (maxRounds || 500) && !done; round++) {
     const deliveries = harness.held.splice(0);
     deliveries.forEach(deliver => deliver());
     await nextTurn();
@@ -264,6 +275,15 @@ async function releaseHeldUntil(harness, promise, maxRounds) {
   if (!done) throw new Error('held worker operation did not settle');
   if (failure) throw failure;
   return value;
+}
+async function drainHeldUntil(harness, predicate, maxRounds) {
+  for (let round = 0; round < (maxRounds || 500); round++) {
+    const deliveries = harness.held.splice(0);
+    deliveries.forEach(deliver => deliver());
+    await nextTurn();
+    if (predicate()) return true;
+  }
+  return false;
 }
 
 const mirrorStart = html.indexOf('function _pendingSyncGet(key)');
@@ -310,6 +330,87 @@ function mirrorHarness() {
 }
 
 (async function run() {
+  const interactive = patientStoreHarness();
+  const interactiveRoster = largeRoster();
+  const interactiveBytes = JSON.stringify(interactiveRoster).length;
+  assert(interactiveRoster.length === 1571 && interactiveBytes > 4000000 && interactiveBytes < 4600000,
+    'interactive fixture must match the measured 1,571-patient / ~4.27 MB roster');
+  interactive.data.set(interactive.patientKey('alpha@example.test'), JSON.stringify(interactiveRoster));
+  let interactiveEvents = 0;
+  interactive.ctx.addEventListener('mls:patient-record-updated', () => { interactiveEvents++; });
+  let interactivePulseAt = performance.now(), interactiveMaxGap = 0;
+  const interactivePulse = setInterval(() => { const now = performance.now(); interactiveMaxGap = Math.max(interactiveMaxGap, now - interactivePulseAt); interactivePulseAt = now; }, 5);
+  const interactiveStart = performance.now();
+  interactive.ctx.upsertPatient(Object.assign({}, interactive.ctx.getPatients().find(row => row.id === 'p-7'), { summary: 'interactive-latest' }));
+  const interactiveReturnMs = performance.now() - interactiveStart;
+  assert(interactiveReturnMs < 250, 'ordinary large-roster upsert blocked its caller for ' + interactiveReturnMs.toFixed(1) + 'ms');
+  assert.strictEqual(interactive.ctx.getPatients().find(row => row.id === 'p-7').summary, 'interactive-latest',
+    'ordinary cooperative upsert was not immediately visible from the in-memory roster');
+  assert.notStrictEqual(JSON.parse(interactive.ctx.__mlsPtsDecode(interactive.data.get(interactive.patientKey('alpha@example.test')))).find(row => row.id === 'p-7').summary, 'interactive-latest',
+    'ordinary cooperative upsert synchronously rewrote the multi-megabyte roster');
+  assert.strictEqual(interactive.writes.filter(w => w.key === interactive.patientKey('alpha@example.test')).length, 0,
+    'ordinary cooperative upsert wrote the patient key before returning');
+  assert.strictEqual(interactive.directMirrors(), 0, 'ordinary cooperative upsert sent a server mirror before local durability');
+  for (let i = 0; i < 2000; i++) {
+    const key = interactive.patientKey('alpha@example.test');
+    if (!interactive.ctx.__mlsPtsBatchByKey[key] && interactive.writes.filter(w => w.key === key).length === 1 && interactive.pendingIds('alpha@example.test').length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  clearInterval(interactivePulse);
+  interactiveMaxGap = Math.max(interactiveMaxGap, performance.now() - interactivePulseAt);
+  const interactiveKey = interactive.patientKey('alpha@example.test');
+  assert.strictEqual(interactive.ctx.__mlsPtsBatchByKey[interactiveKey], undefined, 'ordinary cooperative upsert left its implicit batch open');
+  assert.strictEqual(interactive.writes.filter(w => w.key === interactiveKey).length, 1, 'ordinary cooperative upsert rewrote the full roster more than once');
+  assert.strictEqual(JSON.parse(interactive.ctx.__mlsPtsDecode(interactive.data.get(interactiveKey))).find(row => row.id === 'p-7').summary, 'interactive-latest',
+    'ordinary cooperative upsert acknowledged stale durable data');
+  assert.deepStrictEqual(interactive.pendingIds('alpha@example.test'), ['p-7'], 'ordinary cooperative upsert did not queue exactly one patient mirror');
+  assert.strictEqual(interactive.directMirrors(), 0, 'ordinary cooperative upsert bypassed the terminal mirror queue');
+  assert.strictEqual(interactiveEvents, 1, 'ordinary cooperative upsert emitted duplicate patient update events');
+  assert(interactiveMaxGap < 250, 'ordinary 4.27 MB upsert blocked the event loop for ' + interactiveMaxGap.toFixed(1) + 'ms');
+  interactive.cleanup();
+
+  const smallInteractive = patientStoreHarness();
+  smallInteractive.data.set(smallInteractive.patientKey('alpha@example.test'), JSON.stringify(largeRoster(2, 1)));
+  smallInteractive.ctx.upsertPatient(Object.assign({}, smallInteractive.ctx.getPatients()[0], { summary: 'small-sync' }));
+  assert.strictEqual(smallInteractive.ctx.__mlsPtsBatchByKey[smallInteractive.patientKey('alpha@example.test')], undefined,
+    'small ordinary upsert unexpectedly changed to an asynchronous batch');
+  assert.strictEqual(smallInteractive.writes.filter(w => w.key === smallInteractive.patientKey('alpha@example.test')).length, 1,
+    'small ordinary upsert lost synchronous local durability');
+  assert.strictEqual(smallInteractive.directMirrors(), 1, 'small ordinary upsert lost its direct best-effort mirror');
+  smallInteractive.cleanup();
+
+  const rapidInteractive = patientStoreHarness({ holdWorker: true });
+  rapidInteractive.data.set(rapidInteractive.patientKey('alpha@example.test'), JSON.stringify(largeRoster(128, 67)));
+  rapidInteractive.ctx.upsertPatient(Object.assign({}, rapidInteractive.ctx.getPatients()[7], { summary: 'rapid-first' }));
+  await waitForHeld(rapidInteractive);
+  rapidInteractive.ctx.upsertPatient(Object.assign({}, rapidInteractive.ctx.getPatients()[7], { summary: 'rapid-latest' }));
+  assert.strictEqual(rapidInteractive.ctx.getPatients().find(row => row.id === 'p-7').summary, 'rapid-latest',
+    'second ordinary edit was hidden behind the first in-flight worker');
+  assert(await drainHeldUntil(rapidInteractive, () => !rapidInteractive.ctx.__mlsPtsBatchByKey[rapidInteractive.patientKey('alpha@example.test')], 1000),
+    'rapid ordinary edits did not settle their implicit batch');
+  assert.strictEqual(JSON.parse(rapidInteractive.ctx.__mlsPtsDecode(rapidInteractive.data.get(rapidInteractive.patientKey('alpha@example.test')))).find(row => row.id === 'p-7').summary, 'rapid-latest',
+    'in-flight ordinary edit worker overwrote the latest edit');
+  assert.strictEqual(rapidInteractive.writes.filter(w => w.key === rapidInteractive.patientKey('alpha@example.test')).length, 1,
+    'rapid same-patient edits produced more than one full-roster write');
+  assert.deepStrictEqual(rapidInteractive.pendingIds('alpha@example.test'), ['p-7'], 'rapid ordinary edits duplicated/lost their mirror intent');
+  rapidInteractive.cleanup();
+
+  const failedInteractive = patientStoreHarness({ workerFailures: 1 });
+  failedInteractive.data.set(failedInteractive.patientKey('alpha@example.test'), JSON.stringify(largeRoster(128, 67)));
+  failedInteractive.ctx.upsertPatient(Object.assign({}, failedInteractive.ctx.getPatients()[9], { summary: 'failure-pagehide-latest' }));
+  const failedKey = failedInteractive.patientKey('alpha@example.test');
+  for (let i = 0; i < 100 && !(failedInteractive.ctx.__mlsPtsBatchByKey[failedKey] && failedInteractive.ctx.__mlsPtsBatchByKey[failedKey].lastError); i++) await nextTurn();
+  assert(failedInteractive.ctx.__mlsPtsBatchByKey[failedKey] && failedInteractive.ctx.__mlsPtsBatchByKey[failedKey].dirty,
+    'codec failure discarded the only in-memory ordinary edit');
+  assert.strictEqual(failedInteractive.writes.filter(w => w.key === failedKey).length, 0,
+    'failed worker falsely acknowledged ordinary edit durability');
+  failedInteractive.dispatch('pagehide');
+  assert.strictEqual(JSON.parse(failedInteractive.ctx.__mlsPtsDecode(failedInteractive.data.get(failedKey))).find(row => row.id === 'p-9').summary, 'failure-pagehide-latest',
+    'pagehide did not rescue an ordinary edit after worker failure');
+  assert.deepStrictEqual(failedInteractive.pendingIds('alpha@example.test'), ['p-9'],
+    'worker failure/pagehide path lost the ordinary edit mirror intent');
+  failedInteractive.cleanup();
+
   const h = patientStoreHarness();
   const roster = largeRoster();
   const rosterBytes = JSON.stringify(roster).length;
@@ -334,6 +435,12 @@ function mirrorHarness() {
   assert.deepStrictEqual(pending, ['p-7'], 'server durability queue did not coalesce the patient id');
   const durable = JSON.parse(h.ctx.__mlsPtsDecode(h.data.get(h.patientKey('alpha@example.test'))));
   assert.strictEqual(durable.find(row => row.id === 'p-7').summary, 'latest-48', 'terminal worker checkpoint acknowledged stale patient data');
+  let postSaveDecodes = 0;
+  const decodeAfterSave = h.ctx.__mlsLZ.decompressFromUTF16;
+  h.ctx.__mlsLZ.decompressFromUTF16 = function () { postSaveDecodes++; return decodeAfterSave.apply(this, arguments); };
+  const memoRead = h.ctx.getPatients();
+  assert.strictEqual(memoRead.length, 1571, 'post-save memo did not return the durable roster');
+  assert.strictEqual(postSaveDecodes, 0, 'the first post-save read synchronously decompressed the roster we just encoded');
   assert.strictEqual(h.writes.filter(w => w.key === h.patientKey('alpha@example.test')).length, 1,
     'cooperative terminal checkpoint rewrote the full roster more than once');
   assert(maxGap < 250, '4.27 MB worker checkpoint blocked the event loop for ' + maxGap.toFixed(1) + 'ms');
@@ -347,20 +454,26 @@ function mirrorHarness() {
   await nextTurn();
   assert.strictEqual(threshold.held.length, 0, '63 unique patients crossed the 64-patient checkpoint');
   threshold.ctx.upsertPatient(Object.assign({}, threshold.ctx.getPatients()[63], { thresholdMarker: 'threshold-63' }));
-  await nextTurn();
+  await waitForHeld(threshold);
   assert.strictEqual(threshold.held.length, 1, '64 unique patients did not start the cooperative checkpoint: ' + JSON.stringify(threshold.ctx.__mlsPatientStoreBatch.state(thresholdToken)));
   const thresholdEnding = threshold.ctx.__mlsPatientStoreBatch.end(thresholdToken, 'terminal');
   const thresholdReceipt = await releaseHeldUntil(threshold, thresholdEnding);
   assert.strictEqual(thresholdReceipt.flushes, 1, 'the 64-patient checkpoint and terminal receipt duplicated a full-roster write');
 
   let releaseHiddenSleep = null, hiddenSleepCalls = 0;
-  const hiddenTimer = patientStoreHarness({ bgSleep() { hiddenSleepCalls++; return new Promise(resolve => { releaseHiddenSleep = resolve; }); } });
+  const hiddenTimer = patientStoreHarness({ bgSleep(ms) {
+    if ((Number(ms) || 0) <= 0) return new Promise(resolve => setImmediate(resolve));
+    hiddenSleepCalls++; return new Promise(resolve => { releaseHiddenSleep = resolve; });
+  } });
   hiddenTimer.data.set(hiddenTimer.patientKey('alpha@example.test'), JSON.stringify(largeRoster(20, 1)));
   const hiddenToken = hiddenTimer.ctx.__mlsPatientStoreBatch.begin({ cooperative: true, maxChanges: 64, maxDelayMs: 15000 });
   hiddenTimer.ctx.upsertPatient(Object.assign({}, hiddenTimer.ctx.getPatients()[0], { hiddenTimerMarker: true }));
   assert.strictEqual(hiddenSleepCalls, 1, 'cooperative max-delay durability still depends on a throttled renderer timer');
   assert.strictEqual(hiddenTimer.timers.size, 0, 'cooperative hidden-tab checkpoint armed a main-thread setTimeout');
-  releaseHiddenSleep(); await nextTurn(); await nextTurn();
+  releaseHiddenSleep();
+  for (let i = 0; i < 100 && hiddenTimer.ctx.__mlsPatientStoreBatch.state(hiddenToken).flushes < 1; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
   assert.strictEqual(hiddenTimer.ctx.__mlsPatientStoreBatch.state(hiddenToken).flushes, 1, 'worker-backed hidden-tab deadline did not checkpoint the patient');
   await hiddenTimer.ctx.__mlsPatientStoreBatch.end(hiddenToken, 'terminal');
 
@@ -376,7 +489,7 @@ function mirrorHarness() {
   external.ctx.upsertPatient(Object.assign({}, external.ctx.getPatients().find(row => row.id === 'dirty-existing'), { marker: 'local-first' }));
   external.ctx.upsertPatient(Object.assign({}, external.ctx.getPatients().find(row => row.id === 'dirty-deleted'), { marker: 'local-before-delete' }));
   const externalEnding = external.ctx.__mlsPatientStoreBatch.end(externalToken, 'terminal');
-  await nextTurn();
+  await waitForHeld(external);
   assert.strictEqual(external.held.length, 1, 'external-race worker did not start');
   external.data.set(external.patientKey('alpha@example.test'), JSON.stringify([
     { id: 'dirty-existing', name: 'Dirty', marker: 'external-conflict', visits: [] },
@@ -400,7 +513,7 @@ function mirrorHarness() {
   const pageToken = pagehide.ctx.__mlsPatientStoreBatch.begin({ cooperative: true, maxChanges: 64, maxDelayMs: 15000 });
   pagehide.ctx.upsertPatient(Object.assign({}, pagehide.ctx.getPatients()[5], { summary: 'pagehide-latest' }));
   const pageEnding = pagehide.ctx.__mlsPatientStoreBatch.end(pageToken, 'terminal');
-  await nextTurn();
+  await waitForHeld(pagehide);
   assert.strictEqual(pagehide.held.length, 1, 'pagehide test worker did not start');
   pagehide.dispatch('pagehide');
   const pageDurableBeforeWorker = JSON.parse(pagehide.ctx.__mlsPtsDecode(pagehide.data.get(pagehide.patientKey('alpha@example.test'))));
@@ -409,6 +522,49 @@ function mirrorHarness() {
   await releaseHeldUntil(pagehide, pageEnding);
   assert.strictEqual(pagehide.writes.filter(w => w.key === pagehide.patientKey('alpha@example.test')).length, writesBeforeLateWorker,
     'late worker completion overwrote the pagehide durability barrier');
+
+  const implicitPagehide = patientStoreHarness({ holdWorker: true });
+  implicitPagehide.data.set(implicitPagehide.patientKey('alpha@example.test'), JSON.stringify(largeRoster(128, 67)));
+  implicitPagehide.ctx.upsertPatient(Object.assign({}, implicitPagehide.ctx.getPatients()[5], { summary: 'implicit-pagehide-latest' }));
+  await waitForHeld(implicitPagehide);
+  assert(implicitPagehide.ctx.__mlsPtsBatchByKey[implicitPagehide.patientKey('alpha@example.test')],
+    'ordinary large-roster edit did not retain an implicit durability owner while its worker was pending');
+  implicitPagehide.dispatch('pagehide');
+  const implicitPageRaw = implicitPagehide.data.get(implicitPagehide.patientKey('alpha@example.test'));
+  assert.strictEqual(JSON.parse(implicitPagehide.ctx.__mlsPtsDecode(implicitPageRaw)).find(row => row.id === 'p-5').summary, 'implicit-pagehide-latest',
+    'pagehide did not synchronously persist an ordinary large-roster edit');
+  assert.deepStrictEqual(implicitPagehide.pendingIds('alpha@example.test'), ['p-5'],
+    'pagehide did not retain the ordinary edit server-mirror intent');
+  const implicitPageWrites = implicitPagehide.writes.filter(w => w.key === implicitPagehide.patientKey('alpha@example.test')).length;
+  assert(await drainHeldUntil(implicitPagehide, () => !implicitPagehide.ctx.__mlsPtsBatchByKey[implicitPagehide.patientKey('alpha@example.test')]),
+    'ordinary pagehide durability owner did not close after its stale worker settled');
+  assert.strictEqual(implicitPagehide.writes.filter(w => w.key === implicitPagehide.patientKey('alpha@example.test')).length, implicitPageWrites,
+    'late ordinary-edit worker rewrote the pagehide snapshot');
+  implicitPagehide.cleanup();
+
+  const implicitBoundary = patientStoreHarness({ holdWorker: true });
+  implicitBoundary.data.set(implicitBoundary.patientKey('alpha@example.test'), JSON.stringify(largeRoster(128, 67)));
+  implicitBoundary.data.set(implicitBoundary.patientKey('beta@example.test'), JSON.stringify([{ id: 'beta-only', name: 'Beta' }]));
+  implicitBoundary.ctx.upsertPatient(Object.assign({}, implicitBoundary.ctx.getPatients()[3], { summary: 'implicit-boundary-latest' }));
+  await waitForHeld(implicitBoundary);
+  implicitBoundary.account('beta@example.test');
+  implicitBoundary.dispatch('mls:session-boundary', { previousAccount: 'alpha@example.test', nextAccount: 'beta@example.test' });
+  assert.strictEqual(implicitBoundary.ctx.__mlsPtsBatchByKey[implicitBoundary.patientKey('alpha@example.test')], undefined,
+    'account boundary left the ordinary-edit token blocking the new account');
+  assert.strictEqual(JSON.parse(implicitBoundary.ctx.__mlsPtsDecode(implicitBoundary.data.get(implicitBoundary.patientKey('alpha@example.test')))).find(row => row.id === 'p-3').summary, 'implicit-boundary-latest',
+    'account boundary did not durably preserve the ordinary old-account edit');
+  assert(!JSON.stringify(JSON.parse(implicitBoundary.data.get(implicitBoundary.patientKey('beta@example.test')))).includes('implicit-boundary-latest'),
+    'ordinary old-account edit leaked into the new account');
+  assert.deepStrictEqual(implicitBoundary.pendingIds('alpha@example.test'), ['p-3'],
+    'account boundary lost the ordinary old-account mirror intent');
+  implicitBoundary.ctx.upsertPatient(Object.assign({}, implicitBoundary.ctx.getPatients()[0], { marker: 'beta-edit-after-boundary' }));
+  assert.strictEqual(JSON.parse(implicitBoundary.data.get(implicitBoundary.patientKey('beta@example.test')))[0].marker, 'beta-edit-after-boundary',
+    'released old-account ordinary token still blocked a new-account upsert');
+  const implicitBoundaryWrites = implicitBoundary.writes.filter(w => w.key === implicitBoundary.patientKey('alpha@example.test')).length;
+  for (let i = 0; i < 20; i++) { implicitBoundary.held.splice(0).forEach(deliver => deliver()); await nextTurn(); }
+  assert.strictEqual(implicitBoundary.writes.filter(w => w.key === implicitBoundary.patientKey('alpha@example.test')).length, implicitBoundaryWrites,
+    'late ordinary-edit worker overwrote the account-boundary snapshot');
+  implicitBoundary.cleanup();
 
   const manyMirrors = patientStoreHarness({ holdWorker: true });
   manyMirrors.data.set(manyMirrors.patientKey('alpha@example.test'), JSON.stringify(largeRoster(520, 15)));
@@ -428,7 +584,7 @@ function mirrorHarness() {
   const boundaryToken = boundary.ctx.__mlsPatientStoreBatch.begin({ cooperative: true, maxChanges: 64, maxDelayMs: 15000 });
   boundary.ctx.upsertPatient(Object.assign({}, boundary.ctx.getPatients()[3], { summary: 'old-account-latest', updated: 9999 }));
   const ending = boundary.ctx.__mlsPatientStoreBatch.end(boundaryToken, 'terminal');
-  await Promise.resolve(); await Promise.resolve();
+  await waitForHeld(boundary);
   assert.strictEqual(boundary.held.length, 1, 'cooperative worker did not start before the account switch');
   boundary.account('beta@example.test');
   boundary.dispatch('mls:session-boundary', { previousAccount: 'alpha@example.test', nextAccount: 'beta@example.test' });

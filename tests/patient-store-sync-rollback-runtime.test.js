@@ -26,18 +26,30 @@ const saveStart = source.indexOf('function savePatients(arr,__storageKey,__opts)
 const saveEnd = source.indexOf('var __mlsPtsBaseSavePatients=savePatients;', saveStart);
 assert(saveStart >= 0 && saveEnd > saveStart, 'savePatients source was not found');
 const saveSource = source.slice(saveStart, saveEnd);
-const cooperativeStart = saveSource.indexOf('if(__opts&&__opts.cooperative===true){');
+const cooperativeStart = saveSource.indexOf('if(__cooperative){');
 const syncEncode = saveSource.indexOf('var packed=_mlsPtsEncode(__json);');
 assert(cooperativeStart >= 0 && syncEncode > cooperativeStart,
   'normal and cooperative patient-save branches are no longer explicit');
-assert(saveSource.slice(cooperativeStart, syncEncode).includes('_mlsPtsEncodeAsync(__json)'),
-  'managed cooperative saves lost off-main-thread encoding');
-assert(!saveSource.slice(syncEncode).includes('_mlsPtsEncodeAsync('),
+assert(saveSource.slice(cooperativeStart, syncEncode).includes('__mlsPtsPrepareCooperative(') &&
+  saveSource.slice(cooperativeStart, syncEncode).includes('_mlsPtsEncodeRowsAsync(arr,function') &&
+  cooperativeStart < saveSource.indexOf('var __json=JSON.stringify(arr);'),
+  'managed cooperative saves run guards/stringify/encoding before leaving the renderer thread');
+assert(!saveSource.slice(syncEncode).includes('_mlsPtsEncodeRowsAsync('),
   'normal patient saves can unexpectedly enter the async worker path');
-assert(source.includes("version:'pts-batch-1.1.0'") && source.includes('st.cooperative?__mlsPtsFlushBatchCooperative'),
+assert(source.includes("version:'pts-batch-1.2.0'") && source.includes('st.cooperative?__mlsPtsFlushBatchCooperative'),
   'managed-only cooperative batch routing was removed');
-assert(source.includes('function compressVerifiedAsync(input)') && source.includes("packed='MLSZ1|'"),
-  'cooperative worker no longer verifies and returns the legacy MLSZ1 format');
+assert(source.includes('function compressRowsVerifiedAsync(rows,options)') && source.includes("d.kind==='rows-start'") &&
+  source.includes('JSON.stringify(d.rows[i])') && source.includes("packed='MLSZ1|'"),
+  'cooperative worker no longer streams row serialization, verifies, and returns the legacy MLSZ1 format');
+const asyncEncodeStart = source.indexOf('function _mlsPtsEncodeAsync(json){');
+const asyncEncodeEnd = source.indexOf('window.__mlsPtsDecode=_mlsPtsDecode;', asyncEncodeStart);
+const asyncEncodeSource = source.slice(asyncEncodeStart, asyncEncodeEnd);
+assert(asyncEncodeStart >= 0 && asyncEncodeEnd > asyncEncodeStart &&
+  asyncEncodeSource.includes("Promise.reject(new Error('patient-codec-worker-unavailable'))") &&
+  !asyncEncodeSource.includes('return _mlsPtsEncode(json)'),
+  'a failed cooperative Worker can still fall back to a multi-second renderer-thread codec');
+assert((saveSource.match(/__mlsPtsMemo=\{key:__key,raw:packed,arr:Array\.from\(arr\)\}/g) || []).length >= 2,
+  'successful patient writes no longer seed the exact raw-identity read memo');
 
 for (const retired of [
   'patient-store worker + durable patch journal',
@@ -80,10 +92,11 @@ function makeHarness(store, globals) {
   const listeners = new Map();
   const toasts = [];
   const context = {
-    console, localStorage: store, Date, JSON, Object, Array, String, Number, Math, Map, Set,
+    console, localStorage: store, Date, JSON, Object, Array, String, Number, Math, Map, Set, Promise,
     uns: suffix => 'sf_u::' + account + '::' + suffix,
     backendMode: () => false, bkToken: () => '', syncPatientToServer: () => {},
     toast: message => toasts.push(String(message)),
+    __mlsBgSleep: () => Promise.resolve(), navigator: { scheduling: { isInputPending: () => false } },
     setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
@@ -187,14 +200,29 @@ function stageBatchRow(harness, token, row) {
 (async function verifyManagedWorkerRouting() {
   const base = bigPatients();
   const store = makeStore({ [pkey('alpha@example.test')]: JSON.stringify(base) });
-  let harness = null, workerStarts = 0, workerPosts = 0;
+  let harness = null, workerStarts = 0, workerPosts = 0, workerFinishes = 0;
   class FakeWorker {
-    constructor() { workerStarts++; }
+    constructor() { workerStarts++; this.jobs = new Map(); }
     postMessage(message) {
       workerPosts++;
-      Promise.resolve().then(() => this.onmessage({
-        data: { id: message.id, packed: harness.context.__mlsPtsEncode(message.input) }
-      }));
+      let data = null;
+      if (message.kind === 'rows-start') { this.jobs.set(message.id, []); data = { id: message.id, ack: message.seq }; }
+      else if (message.kind === 'rows-chunk') {
+        const parts = this.jobs.get(message.id); assert(parts, 'streamed worker row job was not started');
+        for (const row of message.rows || []) { const part = JSON.stringify(row); parts.push(part === undefined ? 'null' : part); }
+        data = { id: message.id, ack: message.seq };
+      } else if (message.kind === 'rows-finish') {
+        workerFinishes++;
+        const parts = this.jobs.get(message.id); assert(parts, 'streamed worker row job disappeared before finish');
+        this.jobs.delete(message.id);
+        const json = '[' + parts.join(',') + ']';
+        data = { id: message.id, packed: harness.context.__mlsPtsEncode(json), json };
+      } else if (message.kind === 'rows-cancel') { this.jobs.delete(message.id); return; }
+      else {
+        const json = String(message.input == null ? '' : message.input);
+        data = { id: message.id, packed: harness.context.__mlsPtsEncode(json) };
+      }
+      Promise.resolve().then(() => this.onmessage({ data }));
     }
     terminate() {}
   }
@@ -220,11 +248,26 @@ function stageBatchRow(harness, token, row) {
   stageBatchRow(harness, cooperative, cooperativeRow);
   await harness.context.__mlsPatientStoreBatch.end(cooperative, 'cooperative-end');
   assert.strictEqual(workerStarts, 1, 'cooperative managed batch did not initialize exactly one codec worker');
-  assert.strictEqual(workerPosts, 1, 'one cooperative flush did not produce exactly one worker encode');
+  assert.strictEqual(workerFinishes, 1, 'one cooperative flush did not finish exactly one worker encode');
+  assert(workerPosts > 2, 'cooperative flush did not stream bounded row chunks through the worker');
   assert(decoded(harness, store, 'alpha@example.test').some(patient => patient.id === cooperativeRow.id && /cooperative managed save/.test(patient.summary)),
     'cooperative worker save was not durable in the legacy patient key');
   assert.strictEqual(store.getItem(pendingKey('alpha@example.test')), null, 'cooperative worker created a pending sidecar');
   assert.strictEqual(store.getItem(commitKey('alpha@example.test')), null, 'cooperative worker created a commit marker');
+
+  const emptyStore = makeStore({});
+  const emptyHarness = makeHarness(emptyStore, {
+    Blob: class FakeBlob {}, URL: { createObjectURL() { return 'blob:patient-codec-empty-test'; } }, Worker: FakeWorker
+  });
+  harness = emptyHarness;
+  const firstBatch = emptyHarness.context.__mlsPatientStoreBatch.begin({ cooperative: true, maxChanges: 64, maxDelayMs: 15000 });
+  const firstState = emptyHarness.context.__mlsPtsBatchByKey[firstBatch.key];
+  firstState.arr.push({ id: 'first-patient', name: 'First Patient', updated: 1, visits: [] });
+  firstState.dirty = true; firstState.totalChanges++; firstState.changesSinceFlush++; firstState.flushEpoch++;
+  firstState.dirtyIds['first-patient'] = 1; firstState.syncIds['first-patient'] = 1; firstState.uniqueSinceFlush++;
+  const firstReceipt = await emptyHarness.context.__mlsPatientStoreBatch.end(firstBatch, 'first-roster');
+  assert.strictEqual(firstReceipt.flushes, 1, 'missing patient key could not complete its first cooperative flush');
+  assert.strictEqual(decoded(emptyHarness, emptyStore, 'alpha@example.test')[0].id, 'first-patient', 'first roster on a missing key was lost to null/empty raw normalization');
 
   console.log('PASS patient-store persistence: normal saves remain synchronous, cooperative worker routing is managed-only, same-key crash reads work, sidecars stay inert, and quota failure is loud');
 })().catch(error => { console.error(error); process.exit(1); });

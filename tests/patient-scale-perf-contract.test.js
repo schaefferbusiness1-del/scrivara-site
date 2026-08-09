@@ -11,8 +11,8 @@
  *  5. The EMBEDDED store cache (mls-connect.js byte-0 copy — the one that
  *     actually runs in production) carries the VER fast path: unchanged VER
  *     serves hits without getItem or the 2MB string compare.
- *  6. The summary-sanitize sweep batches its local write (one savePatients per
- *     pass, not one per patient) and self-retires after 5 clean passes.
+ *  6. The summary-sanitize sweep batches its dirty rows through one cooperative
+ *     maintenance save (never savePatients/upsertPatient per row) and retires.
  */
 'use strict';
 const fs = require('fs');
@@ -255,8 +255,14 @@ assert(!connect.includes('__mlsPatientStoreHasPending'), 'retired worker-journal
 
 /* ---------- 6. sanitize sweep batches + self-retires ---------- */
 assert(connect.includes('ONE local write for the whole pass'), 'sanitize batching comment/anchor lost');
-assert(connect.includes('try { if (typeof window.savePatients === \'function\') window.savePatients(ps); } catch (e) {}'),
-  'sanitize sweep no longer batches its local write');
+const sanitizeV2Start = connect.indexOf('SUMMARY SANITIZER v2 + RETROACTIVE SCRUB');
+const sanitizeV2End = connect.indexOf('window.__mlsSanitizeV2_revert', sanitizeV2Start);
+assert(sanitizeV2Start >= 0 && sanitizeV2End > sanitizeV2Start, 'sanitize-v2 runtime slice is missing');
+const sanitizeV2 = connect.slice(sanitizeV2Start, sanitizeV2End);
+assert(sanitizeV2.includes('queue.enqueue(ps, dirty, {') && sanitizeV2.includes("fields: ['summary', 'updated']"),
+  'sanitize sweep no longer submits one exact cooperative dirty-row batch');
+assert(!sanitizeV2.includes('window.savePatients(ps)') && !sanitizeV2.includes('window.upsertPatient('),
+  'sanitize sweep returned to renderer-thread whole-roster/per-row persistence');
 assert(!/if \(c && c !== s\) \{ p\.summary = c; fixed\+\+; try \{ if \(typeof window\.upsertPatient/.test(connect),
   'per-patient upsertPatient write returned to the sanitize sweep');
 assert(connect.includes('window.__mlsSanitizeV2.retired = true;'), 'sanitize sweep no longer self-retires');
@@ -269,41 +275,48 @@ assert(chartStart >= 0 && chartEnd > chartStart, 'Chart Structure slice is missi
 const chartStructure = connect.slice(chartStart, chartEnd);
 assert(!chartStructure.includes('if (changed) upsert(p);'),
   'automatic chart structuring returned to one full-store upsert per patient');
-assert.strictEqual((chartStructure.match(/sweepPatient\(ps\[i\], true\)/g) || []).length, 2,
+assert.strictEqual((chartStructure.match(/sweepPatient\(candidate, true\)/g) || []).length, 2,
   'automatic and manual Chart Structure callers must both defer row persistence');
-assert.strictEqual((chartStructure.match(/persistSweep\(ps, dirty\);/g) || []).length, 2,
-  'automatic and manual Chart Structure callers must both persist one outer batch');
-assert.strictEqual((chartStructure.match(/else ps\[i\]\._mlsStructuredV1 = priorStructured;/g) || []).length, 2,
-  'a shared outer save must restore unchanged rows before persisting the batch');
-assert.strictEqual((chartStructure.match(/window\.savePatients\(ps\)/g) || []).length, 1,
-  'Chart Structure must have exactly one normal-path batch save');
+assert.strictEqual((chartStructure.match(/persistSweep\(ps, dirty, persistScope/g) || []).length, 2,
+  'automatic and manual Chart Structure callers must both submit one cooperative outer batch');
+assert.strictEqual((chartStructure.match(/var candidate = copyPatientForSweep\(ps\[i\]\)/g) || []).length, 2,
+  'automatic and manual Chart Structure repairs must stay copy-on-write');
+assert(!chartStructure.includes('window.savePatients(ps)'),
+  'Chart Structure automatic persistence returned to a renderer-thread roster save');
 const chartSweepStart = chartStructure.indexOf('function sweep() {');
 const chartVersionStamp = chartStructure.indexOf('STATS.lastSweepVer = vNow;', chartSweepStart);
 const chartBusyReturn = chartStructure.indexOf('if (pulling) return;', chartSweepStart);
 assert(chartBusyReturn >= 0 && chartBusyReturn < chartVersionStamp,
   'Chart Structure must not stamp a pull-busy store version as clean');
 
-const persistStart = chartStructure.indexOf('function persistSweep(ps, dirty) {');
+const persistStart = chartStructure.indexOf('function persistSweep(ps, dirty, scope, onSaved) {');
 const persistEnd = chartStructure.indexOf('\n  function sweep() {', persistStart);
 assert(persistStart >= 0 && persistEnd > persistStart, 'Chart Structure batch helper is missing');
-const persistCtx = { saveCalls: 0, syncCalls: 0, upsertCalls: 0, window: {}, Date };
-persistCtx.window.savePatients = function (rows) { persistCtx.saveCalls++; persistCtx.savedRows = rows; };
-persistCtx.window.syncPatientToServer = function () { persistCtx.syncCalls++; };
+const persistSource = chartStructure.slice(persistStart, persistEnd);
+assert(!persistSource.includes('upsertPatient') && !persistSource.includes('savePatients'),
+  'Chart Structure cooperative batch helper regained a direct persistence fallback');
+const persistCtx = { enqueueCalls: 0, completionCalls: 0, window: {}, Date, Promise };
+persistCtx.window.__mlsMaintenancePersist = { enqueue(rows, dirty, opts) {
+  persistCtx.enqueueCalls++; persistCtx.savedRows = rows; persistCtx.dirtyRows = dirty; persistCtx.persistOptions = opts;
+  if (opts && typeof opts.onSaved === 'function') opts.onSaved();
+  return Promise.resolve({ saved: true, rows });
+} };
 vm.createContext(persistCtx);
 vm.runInContext(
-  "var isFn=function(f){return typeof f==='function';};" +
-  'var upsert=function(){upsertCalls++;};' +
-  chartStructure.slice(persistStart, persistEnd) +
+  "var isFn=function(f){return typeof f==='function';};var sweepPersistPending=false;var STATS={lastSweepVer:0};" +
+  persistSource +
   ';this.persistSweep=persistSweep;',
   persistCtx, { filename: 'chart-structure-batch.js' });
 const chartDirty = Array.from({ length: 8 }, function (_, i) {
   return { id: 'synthetic-' + i, problems: 'Synthetic problem', meds: 'Synthetic medication',
     proof: { sentinel: i }, visits: [{ date: '2026-07-01', raw: 'Synthetic visit' }] };
 });
-persistCtx.persistSweep(chartDirty, chartDirty.slice());
-assert.strictEqual(persistCtx.saveCalls, 1, 'eight chart repairs must produce one local save');
-assert.strictEqual(persistCtx.upsertCalls, 0, 'normal batch path must produce zero per-row upserts');
-assert.strictEqual(persistCtx.syncCalls, 8, 'every dirty chart row must retain its server mirror');
+persistCtx.persistSweep(chartDirty, chartDirty.slice(), { key: 'u::patients' }, function () { persistCtx.completionCalls++; });
+assert.strictEqual(persistCtx.enqueueCalls, 1, 'eight chart repairs must produce one cooperative enqueue');
+assert.strictEqual(persistCtx.completionCalls, 1, 'chart repair completion did not wait for the durable queue receipt');
+assert.strictEqual(persistCtx.dirtyRows.length, 8, 'cooperative chart batch lost a dirty patient mirror intent');
+assert(persistCtx.persistOptions.fields.includes('visits') && persistCtx.persistOptions.fields.includes('problems'),
+  'cooperative chart batch lost its clinical field allowlist');
 chartDirty.forEach(function (p, i) {
   assert(Number(p.updated) > 0 && p.proof.sentinel === i && p.visits.length === 1 && p.problems && p.meds,
     'batch persistence changed a clinical/proof field or failed to stamp updated');
@@ -314,164 +327,38 @@ const continuousStart = connect.indexOf('CONTINUOUS SUMMARY SCRUB');
 const continuousEnd = connect.indexOf('var iv = null; try { iv = setInterval(scrub, 2500);', continuousStart);
 assert(continuousStart >= 0 && continuousEnd > continuousStart, 'Continuous Scrub slice is missing');
 const continuousScrub = connect.slice(continuousStart, continuousEnd);
-assert(continuousScrub.includes('fallbackOk = typeof window.upsertPatient') &&
-  continuousScrub.includes('window.upsertPatient(dirty[u])'),
-  'Continuous Scrub lacks a per-row fallback after a failed batch save');
-assert.strictEqual((continuousScrub.match(/savePatients\(ps\)/g) || []).length, 1,
-  'Continuous Scrub must make exactly one local batch save');
+assert(continuousScrub.includes('queue.enqueue(ps, dirty, {') &&
+  continuousScrub.includes("fields: ['summary', 'updated']"),
+  'Continuous Scrub no longer submits one exact cooperative dirty-row batch');
+assert(!continuousScrub.includes('savePatients(ps)') && !continuousScrub.includes('window.upsertPatient('),
+  'Continuous Scrub returned to renderer-thread roster/per-row persistence');
 assert(continuousScrub.includes('ps[i] = next') && continuousScrub.includes('dirty.push(next)') &&
-  continuousScrub.includes('syncPatientToServer(dirty[d])') &&
   continuousScrub.includes('next.updated = Date.now()'),
-  'Continuous Scrub lost isolated dirty-row collection, timestamping, or server mirrors');
+  'Continuous Scrub lost isolated dirty-row collection or timestamping');
+assert(continuousScrub.includes('onSaved: function ()') && continuousScrub.includes('onFailed: function ()') &&
+  continuousScrub.includes('st8.lastScrubVer = null'),
+  'Continuous Scrub no longer completes/retries from the cooperative durability receipt');
 
 const baseSanitizeStart = connect.indexOf("try { if (window.__mlsSummarySanitize) return; }");
 const baseSanitizeEnd = connect.indexOf('window.__mlsSummarySanitize_revert', baseSanitizeStart);
 assert(baseSanitizeStart >= 0 && baseSanitizeEnd > baseSanitizeStart, 'base sanitizer slice is missing');
 const baseSanitize = connect.slice(baseSanitizeStart, baseSanitizeEnd);
-assert(baseSanitize.includes('fallbackOk = typeof window.upsertPatient') &&
-  baseSanitize.includes('window.upsertPatient(dirty[u])'),
-  'base startup scrub lacks a per-row fallback after a failed batch save');
-assert.strictEqual((baseSanitize.match(/savePatients\(ps\)/g) || []).length, 1,
-  'base startup scrub must make exactly one local batch save');
+assert(baseSanitize.includes('queue.enqueue(ps, dirty, {') &&
+  baseSanitize.includes("fields: ['summary', 'updated']"),
+  'base startup scrub no longer submits one exact cooperative dirty-row batch');
+assert(!baseSanitize.includes('savePatients(ps)') && !baseSanitize.includes('window.upsertPatient('),
+  'base startup scrub returned to renderer-thread roster/per-row persistence');
 assert(baseSanitize.includes('ps[i] = next') && baseSanitize.includes('dirty.push(next)') &&
-  baseSanitize.includes('syncPatientToServer(dirty[d])') &&
   baseSanitize.includes('next.updated = Date.now()'),
-  'base startup scrub lost isolated dirty-row collection, timestamping, or server mirrors');
+  'base startup scrub lost isolated dirty-row collection or timestamping');
+assert(baseSanitize.includes('onSaved: function ()') && baseSanitize.includes('scrubbed = true') &&
+  baseSanitize.includes('onFailed: function () { scrubPersistPending = false; }'),
+  'base startup scrub no longer retires/retries from the cooperative durability receipt');
 
-/* 2026-07-29: dirty rows are cloned before persistence so failed writers
- * cannot make the shared store cache appear clean. Successful per-row fallback
- * completes normally; total failure must retry on the next heartbeat. */
-const continuousFnStart = continuousScrub.indexOf('  function scrub() {');
-const continuousFnEnd = continuousScrub.length;
-assert(continuousFnStart >= 0 && continuousFnEnd > continuousFnStart,
-  'Continuous Scrub function could not be extracted');
-const continuousFn = continuousScrub.slice(continuousFnStart, continuousFnEnd);
-function runContinuousPersistence(mode, passes) {
-  const rows = new Array(8).fill(0).map(function (_, i) {
-    return { id: 'synthetic-continuous-' + i, summary: 'x'.repeat(90) };
-  });
-  const counts = { save: 0, upsert: 0, sync: 0, render: 0 };
-  const syntheticWindow = {
-    __mlsContinuousScrub: { cleaned: 0 },
-    __mlsStoreCache: { ver() { return 7; } },
-    __mlsSummarySanitize: { hasCode() { return true; }, strip() { return 'clean synthetic summary'; } },
-    getPatients() { return rows.slice(); },
-    upsertPatient() {
-      counts.upsert++;
-      if (mode === 'allThrow') throw new Error('synthetic upsert refusal');
-    },
-    syncPatientToServer() { counts.sync++; },
-    renderProfile() { counts.render++; }
-  };
-  if (mode !== 'absent') {
-    syntheticWindow.savePatients = function () {
-      counts.save++;
-      if (mode === 'throw' || mode === 'allThrow') throw new Error('synthetic save refusal');
-    };
-  }
-  const ctx = {
-    window: syntheticWindow,
-    document: { hidden: false },
-    Date,
-    Number,
-    console: { log() {} }
-  };
-  vm.createContext(ctx);
-  vm.runInContext(continuousFn + '\nthis.runContinuousScrub=scrub;', ctx,
-    { filename: 'continuous-summary-scrub.js' });
-  for (let pass = 0; pass < (passes || 1); pass++) ctx.runContinuousScrub();
-  return {
-    counts,
-    state: syntheticWindow.__mlsContinuousScrub,
-    sourceDirty: rows.filter(function (row) { return row.summary === 'x'.repeat(90); }).length
-  };
-}
-const continuousSaved = runContinuousPersistence('save');
-assert.deepStrictEqual(continuousSaved.counts, { save: 1, upsert: 0, sync: 8, render: 1 },
-  'Continuous Scrub successful batch did not save, mirror, and finish once');
-assert.strictEqual(continuousSaved.state.cleaned, 8,
-  'Continuous Scrub successful batch did not record eight cleaned rows');
-['throw', 'absent'].forEach(function (mode) {
-  const result = runContinuousPersistence(mode);
-  assert.deepStrictEqual(result.counts,
-    { save: mode === 'throw' ? 1 : 0, upsert: 8, sync: 0, render: 1 },
-    'Continuous Scrub ' + mode + ' batch path did not complete through fallback');
-  assert.strictEqual(result.state.cleaned, 8,
-    'Continuous Scrub ' + mode + ' successful fallback lost completion diagnostics');
-});
-const continuousFailed = runContinuousPersistence('allThrow', 2);
-assert.deepStrictEqual(continuousFailed.counts, { save: 2, upsert: 16, sync: 0, render: 0 },
-  'Continuous Scrub total failure did not retry every writer on heartbeat two');
-assert.strictEqual(continuousFailed.state.cleaned, 0,
-  'Continuous Scrub total failure falsely recorded cleaned rows');
-assert.strictEqual(continuousFailed.state.lastScrubVer, null,
-  'Continuous Scrub total failure retained its optimistic version stamp');
-assert.strictEqual(continuousFailed.sourceDirty, 8,
-  'Continuous Scrub total failure mutated the shared source rows');
-
-const baseFnStart = baseSanitize.indexOf('  function scrubExisting() {');
-const baseFnEnd = baseSanitize.indexOf('\n\n  function tick()', baseFnStart);
-assert(baseFnStart >= 0 && baseFnEnd > baseFnStart,
-  'base startup scrub function could not be extracted');
-const baseFn = baseSanitize.slice(baseFnStart, baseFnEnd);
-function runBasePersistence(mode, passes) {
-  const rows = new Array(8).fill(0).map(function (_, i) {
-    return { id: 'synthetic-base-' + i, summary: 'x'.repeat(90) };
-  });
-  const counts = { save: 0, upsert: 0, sync: 0, render: 0 };
-  const syntheticWindow = {
-    getPatients() { return rows.slice(); },
-    upsertPatient() {
-      counts.upsert++;
-      if (mode === 'allThrow') throw new Error('synthetic upsert refusal');
-    },
-    syncPatientToServer() { counts.sync++; },
-    renderProfile() { counts.render++; }
-  };
-  if (mode !== 'absent') {
-    syntheticWindow.savePatients = function () {
-      counts.save++;
-      if (mode === 'throw' || mode === 'allThrow') throw new Error('synthetic save refusal');
-    };
-  }
-  const ctx = {
-    window: syntheticWindow,
-    Date,
-    Number,
-    console: { log() {} },
-    hasCode() { return true; },
-    stripChartCode() { return 'clean synthetic summary'; }
-  };
-  vm.createContext(ctx);
-  vm.runInContext('var scrubbed=false;\n' + baseFn +
-    '\nthis.runBaseScrub=scrubExisting;this.wasScrubbed=function(){return scrubbed;};', ctx,
-    { filename: 'base-summary-scrub.js' });
-  for (let pass = 0; pass < (passes || 1); pass++) ctx.runBaseScrub();
-  return {
-    counts,
-    scrubbed: ctx.wasScrubbed(),
-    sourceDirty: rows.filter(function (row) { return row.summary === 'x'.repeat(90); }).length
-  };
-}
-const baseSaved = runBasePersistence('save');
-assert.deepStrictEqual(baseSaved.counts, { save: 1, upsert: 0, sync: 8, render: 1 },
-  'base startup scrub successful batch did not save, mirror, and finish once');
-assert.strictEqual(baseSaved.scrubbed, true, 'base startup scrub successful batch did not retire');
-['throw', 'absent'].forEach(function (mode) {
-  const result = runBasePersistence(mode);
-  assert.deepStrictEqual(result.counts,
-    { save: mode === 'throw' ? 1 : 0, upsert: 8, sync: 0, render: 1 },
-    'base startup scrub ' + mode + ' batch path did not complete through fallback');
-  assert.strictEqual(result.scrubbed, true,
-    'base startup scrub ' + mode + ' successful fallback did not retire');
-});
-const baseFailed = runBasePersistence('allThrow', 2);
-assert.deepStrictEqual(baseFailed.counts, { save: 2, upsert: 16, sync: 0, render: 0 },
-  'base startup scrub total failure did not retry every writer on heartbeat two');
-assert.strictEqual(baseFailed.scrubbed, false,
-  'base startup scrub total failure retired');
-assert.strictEqual(baseFailed.sourceDirty, 8,
-  'base startup scrub total failure mutated the shared source rows');
+/* Executable generation/account/input/failure/coalescing coverage for the shared
+ * queue now lives in maintenance-persistence-queue-runtime.test.js; the two
+ * boot scrub owners are exercised at production roster scale by their focused
+ * maintenance runtime suites. Keep this file as the cross-module static gate. */
 
 /* ---------- veil floor (also pinned by boot-loading-visual-contract) ---------- */
 assert(app.includes('const SF_GATE_MIN_MS=300'), 'veil anti-flash floor regressed (owner-directed near-instant first load, 2026-07-20)');

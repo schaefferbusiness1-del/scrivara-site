@@ -4046,6 +4046,11 @@
  * one. Athena receipts (athenaProfileCoverage / athenaChartSnapshot) are
  * computed before this hook runs and are never touched here.
  *
+ * v1.3.1 (2026-08-08) - automatic corpus repair starts only after session
+ * readiness and runs in input-aware 24-row chunks through the shared verified
+ * maintenance queue. Cooperative bulk saves never repeat the corpus scan on
+ * their caller's task; manual migration and write-time cleaning stay immediate.
+ *
  * v1.3.0 (2026-07-28) - THE DENY-LIST OBEYS THE FOLD LAW. Reproduced by
  * running THIS module's triageList: three deny-list rules were eating real
  * diagnoses silently (no keep, no fold): the audit-label rule's bare [:\-]
@@ -4059,7 +4064,7 @@
  * ========================================================================= */
 (function () {
   'use strict';
-  try { if (window.__mlsCleanSections && window.__mlsCleanSections.version === '1.0.0') return; } catch (e) { return; }
+  try { if (window.__mlsCleanSections && window.__mlsCleanSections.version === '1.3.1') return; } catch (e) { return; }
   function S(x) { return (x == null ? '' : String(x)); }
   function trim(x) { return S(x).trim(); }
   function low(x) { return S(x).toLowerCase(); }
@@ -4441,29 +4446,34 @@
     p.summary = out.join('\n');
     return true;
   }
-  function cleanPatient(p) {
+  function cleanPatient(p, countStats) {
     if (!p || typeof p !== 'object') return false;
     var c = false;
     try { if (triageField(p, 'problems', '_rawProblems', 100)) c = true; } catch (e) {}
     try { if (triageField(p, 'meds', '_rawMeds', 60)) c = true; } catch (e) {}
     try { if (cleanField(p, 'allergies', cleanAllergies, '_rawAllergies')) c = true; } catch (e) {}
     try { if (cleanSummary(p)) c = true; } catch (e) {}
-    if (c) { p._mlsCleanV1 = Date.now(); STATS.cleaned++; }
+    if (c) { p._mlsCleanV1 = Date.now(); if (countStats !== false) STATS.cleaned++; }
     return c;
   }
 
   /* ---------- choke point: wrap window.upsertPatient (parse-time for ALL producers) ---------- */
   var DISABLED = false;
+  function chainHasOwner(fn,marker){
+    var stack=[fn],seen=[],steps=0,keys=['__mlsOrig','__mlsWipeGuardOrig','__vfxOrig','__mlsCleanSecSaveOrig','__mlsCleanSecOrig','__mlsDobOrig','__orig','__t3Orig','__mlsUnrOrig','__mlsUpNowOrig'];
+    while(stack.length&&steps++<64){var cur=stack.pop();if(typeof cur!=='function'||seen.indexOf(cur)>=0)continue;seen.push(cur);if(cur[marker])return true;for(var i=0;i<keys.length;i++)if(typeof cur[keys[i]]==='function')stack.push(cur[keys[i]]);}
+    return false;
+  }
   function wrapUpsert() {
     var f = window.upsertPatient;
     if (typeof f !== 'function') return false;
-    if (f.__mlsCleanSecWrapped) return true;
+    if (chainHasOwner(f,'__mlsCleanSecWrapped')) return true;
     var w = function (p) {
       STATS.upserts++;
       if (!DISABLED) { try { if (p && typeof p === 'object') cleanPatient(p); } catch (e) {} }
       return f.apply(this, arguments);
     };
-    w.__mlsCleanSecWrapped = 1; w.__mlsCleanSecOrig = f;
+    w.__mlsCleanSecWrapped = 1; w.__mlsCleanSecOrig = f; w.__mlsOrig = f;
     /* carry the dedup module's head-marker forward so it never re-wraps (it IS
        still in the chain below us) - upsert markers are safe to forward here,
        unlike the addVisit chain (see module 1's cycle-guard notes) */
@@ -4481,12 +4491,24 @@
   function wrapSave() {
     var f = window.savePatients;
     if (typeof f !== 'function') return false;
-    if (f.__mlsCleanSecSaveWrap) return true;
+    if (chainHasOwner(f,'__mlsCleanSecSaveWrap')) return true;
     var w = function (arr) {
+      var cooperative=!!(arguments[2]&&arguments[2].cooperative===true);
+      if(cooperative){
+        /* Cooperative callers are already the large-roster/background lane.
+           Never do another whole-roster parser pass before their Worker can
+           start. The post-save scan below is session-ready, chunked and exact-
+           generation fenced; ordinary/manual saves retain immediate cleaning. */
+        var asyncResult=f.apply(this,arguments);
+        if(asyncResult&&typeof asyncResult.then==='function'){
+          return Promise.resolve(asyncResult).then(function(receipt){if(receipt&&!receipt.stale)scheduleAutomaticScan();return receipt;});
+        }
+        return asyncResult;
+      }
       if (!DISABLED && arr && arr.length) { try { for (var i = 0; i < arr.length; i++) { if (arr[i] && typeof arr[i] === 'object') cleanPatient(arr[i]); } } catch (e) {} }
-      return f.apply(this, arguments);
+      return f.apply(this,arguments);
     };
-    w.__mlsCleanSecSaveWrap = 1; w.__mlsCleanSecSaveOrig = f;
+    w.__mlsCleanSecSaveWrap = 1; w.__mlsCleanSecSaveOrig = f; w.__mlsOrig = f;
     try { if (f.__mlsDobWrap) { w.__mlsDobWrap = f.__mlsDobWrap; } } catch (e) {}
     window.savePatients = w;
     return true;
@@ -4500,51 +4522,88 @@
    * only upserts rows that actually changed. */
   var _lastCount = -1, _scans = 0, _cleanedInScan = 0;
   var MAX_SCANS = 40;
+  var _autoScan={scheduled:false,running:false,rerun:false,seq:0,lastScope:null};
+  function reportMigration(n) {
+    if(!n)return;
+    try { console.log('[MLS clean-sections v1.3.1] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary; unclassified rows under _mlsUnsortedMeds/_mlsUnsortedProblems'); } catch (e) {}
+    try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
+    try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
+  }
+  function scheduleAutomaticScan(){
+    var owner=window.__mlsMaintenancePersist;
+    if(DISABLED||_scans>=MAX_SCANS)return;
+    if(_autoScan.scheduled||_autoScan.running){_autoScan.rerun=true;return;}
+    if(!owner||typeof owner.scan!=='function'||typeof owner.capture!=='function')return;
+    var scope=owner.capture();if(!scope)return;
+    var last=_autoScan.lastScope;
+    if(last&&last.key===scope.key&&last.account===scope.account&&last.token===scope.token&&last.raw===scope.raw)return;
+    _autoScan.scheduled=true;_autoScan.running=true;var seq=++_autoScan.seq,n=0,sourceLength=-1;
+    var finish=function(){
+      _autoScan.scheduled=false;_autoScan.running=false;
+      var again=_autoScan.rerun;_autoScan.rerun=false;
+      if(again)Promise.resolve().then(scheduleAutomaticScan);
+    };
+    var remember=function(){try{_autoScan.lastScope=owner.capture()||null;}catch(e){_autoScan.lastScope=null;}};
+    var failed=function(){
+      _autoScan.lastScope=null;_lastCount=-1;_autoScan.rerun=true;finish();
+    };
+    _scans++;
+    var request=owner.scan({scope:scope,chunkSize:24,mirror:true,
+      fields:['problems','meds','allergies','summary','_rawProblems','_rawMeds','_rawAllergies','_rawSummary','_mlsUnsortedMeds','_mlsUnsortedProblems','_mlsCleanV1','updated'],
+      prepare:function(p,index,source){
+        if(index===0)sourceLength=source.length;
+        if(DISABLED||seq!==_autoScan.seq||!p||typeof p!=='object')return null;
+        /* The cleaner writes only top-level clinical/fold fields; a shallow
+           shell is a complete COW boundary and avoids copying visit bodies. */
+        var next=Object.assign({},p);
+        if(!cleanPatient(next,false))return null;
+        next.updated=Date.now();
+        ['_mlsUnsortedMeds','_mlsUnsortedProblems'].forEach(function(key){if(Object.prototype.hasOwnProperty.call(p,key)&&!Object.prototype.hasOwnProperty.call(next,key))next[key]=undefined;});
+        n++;return next;
+      },
+      onEmpty:function(value,rows){_lastCount=sourceLength<0?(rows&&rows.length||0):sourceLength;remember();finish();},
+      onSaved:function(){_lastCount=sourceLength;remember();finish();STATS.cleaned+=n;STATS.migrated+=n;reportMigration(n);},
+      onFailed:failed
+    });
+    if(!request||typeof request.then!=='function')failed();
+  }
   function migrate(force) {
     try {
+      if(!force){scheduleAutomaticScan();return 0;}
       if (typeof window.getPatients !== 'function' || typeof window.upsertPatient !== 'function') return -1; /* not ready */
       var ps = window.getPatients() || [];
-      if (!force && _scans > 0 && ps.length === _lastCount) return 0; /* nothing new since last scan */
-      if (_scans >= MAX_SCANS && !force) return 0;
       _lastCount = ps.length; _scans++;
       var n = 0;
       for (var i = 0; i < ps.length; i++) {
         try { if (cleanPatient(ps[i])) { window.upsertPatient(ps[i]); n++; } } catch (e) {}
       }
       STATS.migrated += n;
-      if (n) {
-        try { console.log('[MLS clean-sections v1.3.0] cleaned ' + n + ' record(s) (scan ' + _scans + '); originals stashed under _rawProblems/_rawMeds/_rawAllergies/_rawSummary; unclassified rows under _mlsUnsortedMeds/_mlsUnsortedProblems'); } catch (e) {}
-        try { if (typeof window.renderProfile === 'function') window.renderProfile(); } catch (e) {}
-        try { if (typeof window.renderPatients === 'function') window.renderPatients(); } catch (e) {}
-      }
+      reportMigration(n);
       return n;
     } catch (e) { return -1; }
   }
 
-  /* ---------- install: Worker timer + capture-phase listeners (NO main-thread setInterval) ---------- */
+  /* ---------- install: wrappers now; event-driven maintenance only ---------- */
   var _wkUrl = null, _wk = null, _hooked = false;
   function tick() {
     try {
       var w = wrapUpsert(); wrapSave();
       _hooked = !!w;
-      if (w) migrate(false); /* re-scans while the roster is still growing; self-limits once stable */
+      if (w) {
+        scheduleAutomaticScan(); /* post-ready/input-aware chunks; self-limits once stable */
+        if(_wk)stopWorker(); /* defensive cleanup for a same-document old owner */
+      }
     } catch (e) {}
   }
   function stopWorker() { try { if (_wk) _wk.terminate(); } catch (e) {} try { if (_wkUrl) URL.revokeObjectURL(_wkUrl); } catch (e) {} _wk = null; _wkUrl = null; }
-  try {
-    _wkUrl = URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},1500);'], { type: 'application/javascript' }));
-    _wk = new Worker(_wkUrl); _wk.onmessage = tick;
-  } catch (e) {}
   function evTick() { try { tick(); } catch (e) {} }
-  window.addEventListener('message', evTick, true);
   document.addEventListener('visibilitychange', evTick, true);
   function onStorage(ev) { try { if (ev && ev.key && /::patients$/.test(ev.key)) tick(); } catch (e) {} }
   window.addEventListener('storage', onStorage, false);
-  tick();
 
   /* ---------- public API ---------- */
   var api = {
-    version: '1.3.0',
+    version: '1.3.1',
     mode: 'balanced',            /* 'balanced' (code-or-name) | 'strict' (ICD code required) */
     stats: STATS,
     cleanPatient: cleanPatient,
@@ -4640,11 +4699,10 @@
       return { pass: pass, problems: got, meds: medsGot, allergies: algGot, grid: gridT, problemTriage: probT, rescue: rescueT, rescuePass: rescuePass };
     },
     revert: function () {
-      DISABLED = true; _scans = MAX_SCANS + 1;
+      DISABLED = true; _scans = MAX_SCANS + 1; _autoScan.seq++; _autoScan.scheduled=false; _autoScan.running=false; _autoScan.rerun=false; _autoScan.lastScope=null;
       try { if (window.upsertPatient && window.upsertPatient.__mlsCleanSecWrapped) window.upsertPatient = window.upsertPatient.__mlsCleanSecOrig; } catch (e) {}
       try { if (window.savePatients && window.savePatients.__mlsCleanSecSaveWrap) window.savePatients = window.savePatients.__mlsCleanSecSaveOrig; } catch (e) {}
       stopWorker();
-      try { window.removeEventListener('message', evTick, true); } catch (e) {}
       try { document.removeEventListener('visibilitychange', evTick, true); } catch (e) {}
       try { window.removeEventListener('storage', onStorage, false); } catch (e) {}
       try { delete window.__mlsCleanSections; } catch (e) { window.__mlsCleanSections = undefined; }
@@ -4654,6 +4712,7 @@
   };
   window.__mlsCleanSections = api;
   window.__mlsCleanSections_revert = api.revert; /* deploy-convention alias */
+  tick(); /* wrappers now; roster scan only after session-ready/quiet admission */
 })();
 
 /* ============================================================================
@@ -4748,14 +4807,87 @@
     }
     return changed.length;
   }
+  function chainHasDob(fn,marker){
+    var stack=[fn],seen=[],steps=0,keys=['__mlsOrig','__mlsWipeGuardOrig','__vfxOrig','__mlsCleanSecSaveOrig','__mlsCleanSecOrig','__mlsDobOrig','__orig','__t3Orig','__mlsUnrOrig','__mlsUpNowOrig'];
+    while(stack.length&&steps++<64){var cur=stack.pop();if(typeof cur!=='function'||seen.indexOf(cur)>=0)continue;seen.push(cur);if(cur[marker])return true;for(var i=0;i<keys.length;i++)if(typeof cur[keys[i]]==='function')stack.push(cur[keys[i]]);}
+    return false;
+  }
   api.apply = applyNow;
 
-  /* microtask-coalesced scheduler - no setTimeout/setInterval on this tab */
-  var _pending = false;
+  var _dobCache = { key: '', raw: null, index: null, ambiguous: 0 };
+  function dobInputPending(){try{var n=window.navigator&&window.navigator.scheduling;return !!(n&&typeof n.isInputPending==='function'&&n.isInputPending({includeContinuous:true}));}catch(e){return false;}}
+  function dobOneTurn(){try{if(typeof window.__mlsBgSleep==='function')return Promise.resolve(window.__mlsBgSleep(0));}catch(e){}return new Promise(function(resolve){setTimeout(resolve,0);});}
+  function dobScopeCurrent(scope){try{return typeof window.uns==='function'&&String(window.uns('patients')||'')===scope.key&&localStorage.getItem(scope.key)===scope.raw;}catch(e){return false;}}
+  function dobQuietTurn(scope){return dobOneTurn().then(function wait(){if(!dobScopeCurrent(scope))return false;return dobInputPending()?dobOneTurn().then(wait):true;});}
+  async function dobIndexResponsive(scope){
+    if(_dobCache.index&&_dobCache.key===scope.key&&_dobCache.raw===scope.raw){api.ambiguous=_dobCache.ambiguous;return _dobCache.index;}
+    if(!await dobQuietTurn(scope))return null;
+    var pts=[];try{pts=(typeof window.getPatients==='function'?window.getPatients():[])||[];}catch(e){pts=[];}
+    if(!dobScopeCurrent(scope))return null;
+    var m={},amb={},i=0,CHUNK=24;
+    while(i<pts.length){
+      if(!await dobQuietTurn(scope))return null;
+      var end=Math.min(i+CHUNK,pts.length);
+      for(;i<end;i++){
+        var p=pts[i];if(!p||!p.name||!p.dob)continue;
+        var dd=dobDigits(p.dob);if(!dd)continue;
+        if(p.id!=null&&p.id!=='')m['#'+String(p.id)]=String(p.dob).trim();
+        var k=nameKey(p.name);if(!k)continue;
+        if(m[k]!=null&&dobDigits(m[k])!==dd){amb[k]=1;continue;}
+        m[k]=String(p.dob).trim();
+      }
+    }
+    var ambiguous=0;for(var key in amb){delete m[key];ambiguous++;}
+    if(!dobScopeCurrent(scope))return null;
+    _dobCache={key:scope.key,raw:scope.raw,index:m,ambiguous:ambiguous};api.ambiguous=ambiguous;
+    return m;
+  }
+  async function applyResponsive(){
+    var scope={key:'',raw:null};
+    try{scope.key=String(window.uns('patients')||'');scope.raw=localStorage.getItem(scope.key);}catch(e){return {stale:true};}
+    var idx=await dobIndexResponsive(scope);if(!idx)return {stale:true};
+    var rows=calRows(),planned=[],i=0,CHUNK=24;
+    while(i<rows.length){
+      if(!await dobQuietTurn(scope))return {stale:true};
+      var end=Math.min(i+CHUNK,rows.length);
+      for(;i<end;i++){
+        var a=rows[i];if(!a||!a.name||(a.dob&&String(a.dob).trim()))continue;
+        var d='',k='';
+        if(a.patient_external_id!=null&&a.patient_external_id!=='')d=idx['#'+String(a.patient_external_id)]||'';
+        if(!d){k=nameKey(a.name);if(k)d=idx[k]||'';}
+        if(d)planned.push({a:a,dob:d});
+      }
+    }
+    if(!dobScopeCurrent(scope))return {stale:true};
+    var changed=[];
+    for(i=0;i<planned.length;){
+      if(!await dobQuietTurn(scope))return {stale:true};
+      var ce=Math.min(i+CHUNK,planned.length);
+      for(;i<ce;i++){var item=planned[i];if(item.a&&!(item.a.dob&&String(item.a.dob).trim())){item.a.dob=item.dob;changed.push(item);}}
+    }
+    api.lastRun=Date.now();
+    if(changed.length){api.applied+=changed.length;try{repaint(changed);}catch(e){}if(api.persist)try{persistChanged(changed);}catch(e2){}}
+    return {stale:false,changed:changed.length};
+  }
+
+  /* One input-aware run per exact roster generation. New triggers arriving
+     mid-scan coalesce into one rerun; they never add a second full-roster task. */
+  var _pending = false, _rerun = false;
   function applySoon() {
-    if (_pending) return;
+    if (_pending) { _rerun=true; return; }
     _pending = true;
-    Promise.resolve().then(function () { _pending = false; try { applyNow(); } catch (e) {} });
+    function finish(result){_pending=false;var again=_rerun||!result||result.stale;_rerun=false;if(again)applySoon();}
+    function admit(){
+      if(dobInputPending()){defer();return;}
+      try{Promise.resolve(applyResponsive()).then(finish,function(){finish({stale:false});});}catch(e){finish({stale:false});}
+    }
+    function defer(){
+      try{if(typeof window.__mlsDeferAsset==='function'){window.__mlsDeferAsset(admit,{timeout:5000,priority:4});return;}}catch(e){}
+      try{if(typeof window.requestIdleCallback==='function'){window.requestIdleCallback(admit,{timeout:5000});return;}}catch(e2){}
+      Promise.resolve().then(admit);
+    }
+    try{var ready=window.__mlsSessionReady;if(ready&&typeof ready.then==='function'){Promise.resolve(ready).then(defer,defer);return;}}catch(e){}
+    defer();
   }
 
   /* ---- repaint already-rendered Easy DOM (keys + dob spans) --------------- */
@@ -4816,7 +4948,7 @@
   var _origLoad = null, _wrappedLoad = null, _origSave = null;
   function wrapLoad() {
     var f = window.loadCalendar;
-    if (typeof f !== 'function' || f.__mlsDobWrap) return;
+    if (typeof f !== 'function' || chainHasDob(f,'__mlsDobWrap')) return;
     _origLoad = f;
     var w = function () {
       var r;
@@ -4826,20 +4958,21 @@
       return r;
     };
     ['__prf', '__dkf', '__mlsDobWrap', '__mlsWrapped'].forEach(function (marker) { if (f[marker]) w[marker] = f[marker]; });
-    w.__mlsDobWrap = 1;
+    w.__mlsDobWrap = 1;w.__mlsDobOrig=f;w.__mlsOrig=f;
     _wrappedLoad = w;
     window.loadCalendar = w;
   }
   function wrapSave() {
     var f = window.savePatients;
-    if (typeof f !== 'function' || f.__mlsDobWrap) return;
+    if (typeof f !== 'function' || chainHasDob(f,'__mlsDobWrap')) return;
     _origSave = f;
     var w = function () {
       var r = f.apply(this, arguments);
+      if(r&&typeof r.then==='function')return Promise.resolve(r).then(function(receipt){if(!receipt||!receipt.stale)applySoon();return receipt;},function(error){throw error;});
       applySoon();
       return r;
     };
-    w.__mlsDobWrap = 1;
+    w.__mlsDobWrap = 1;w.__mlsDobOrig=f;w.__mlsOrig=f;
     window.savePatients = w;
   }
   function ensureWraps() { try { wrapLoad(); wrapSave(); } catch (e) {} }

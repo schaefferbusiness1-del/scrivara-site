@@ -25,6 +25,10 @@ const ROOT = path.resolve(__dirname, '..');
 const src = fs.readFileSync(path.join(ROOT, 'feat_mls_saveshield.js'), 'utf8');
 
 function freshWorld() {
+  const timers = [];
+  let patientReads = 0;
+  let rawValue = 'stable-raw';
+  const localStorage = { getItem() { return rawValue; } };
   const patients = [
     { id: 'pt-a', name: 'A', meds: 'FRESH MEDS 1200 chars worth', updated: 2000 },
     { id: 'pt-b', name: 'B', meds: 'B meds', updated: 2000 }
@@ -32,14 +36,17 @@ function freshWorld() {
   const world = {
     console: { warn() {}, log() {}, error() {} },
     setInterval() { return 1; }, clearInterval() {},
-    setTimeout() { return 1; }, clearTimeout() {},
+    setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {},
     Date, Number, String, Array, Object, JSON, Math, isFinite,
-    patients,
-    getPatients() { return patients; },
+    patients, timers, localStorage, uns() { return 'acct::patients'; }, __mlsPtsBatchByKey: {},
+    setRaw(value) { rawValue = String(value); }, onPatientRead: null,
+    patientReads() { return patientReads; },
+    getPatients() { patientReads++; const rows = patients; if (typeof world.onPatientRead === 'function') world.onPatientRead(); return rows; },
     upsertPatient(p) {
       const i = patients.findIndex(x => x.id === p.id);
       p.updated = 999999; /* the base always stamps now — the clobber vector */
       if (i >= 0) patients[i] = p; else patients.push(p);
+      if (world.__testBatch) world.__testBatch.totalChanges++;
       return { ok: true };
     },
     savePatients(arr) { patients.length = 0; arr.forEach(p => patients.push(p)); return true; },
@@ -48,6 +55,49 @@ function freshWorld() {
   world.window = world;
   vm.runInNewContext(src, world, { filename: 'feat_mls_saveshield.js' });
   return world;
+}
+
+/* ---- a scope change during map construction must retry, never bless A as B ---- */
+{
+  const w = freshWorld();
+  w.onPatientRead = function () { w.onPatientRead = null; w.setRaw('new-raw-generation'); };
+  const accepted = w.upsertPatient({ id: 'pt-b', name: 'B', meds: 'new', updated: 2000 });
+  assert.strictEqual(accepted && accepted.ok, true, 'stable retry after a map-generation change was refused');
+  assert.strictEqual(w.patientReads(), 2, 'save shield cached rows from an old raw generation under a new generation');
+}
+
+/* ---- rearm ownership: a wipe/other wrapper above us must not duplicate the shield ---- */
+{
+  const w = freshWorld();
+  const shield = w.savePatients;
+  const outer = function () { return shield.apply(this, arguments); };
+  outer.__mlsWipeGuarded = true; outer.__mlsWipeGuardOrig = shield; outer.__mlsOrig = shield;
+  w.savePatients = outer;
+  assert(w.timers.length >= 1, 'save-shield rearm was not scheduled');
+  w.timers[0]();
+  assert.strictEqual(w.savePatients, outer, 'save-shield duplicated itself below an interoperable wrapper owner');
+}
+
+/* ---- active managed batch: build the safety index once, then update it O(1) ---- */
+{
+  const w = freshWorld();
+  while (w.patients.length < 1571) w.patients.push({ id: 'bulk-' + w.patients.length, name: 'Bulk', updated: 2000 });
+  const batch = { depth: 1, arr: w.patients, totalChanges: 0, externalWrites: 0 };
+  w.__testBatch = batch; w.__mlsPtsBatchByKey['acct::patients'] = batch;
+  for (let i = 0; i < 80; i++) {
+    const current = w.patients[i];
+    const result = w.upsertPatient(Object.assign({}, current, { meds: 'batch-' + i, updated: current.updated }));
+    assert.strictEqual(result && result.ok, true, 'fresh managed-batch upsert was refused');
+  }
+  assert.strictEqual(w.patientReads(), 1, 'save shield rebuilt the full 1,571-patient safety map per managed upsert');
+  batch.externalWrites++;
+  const refreshed = w.upsertPatient(Object.assign({}, w.patients[90], { meds: 'after-external-generation', updated: w.patients[90].updated }));
+  assert.strictEqual(refreshed && refreshed.ok, true, 'post-external-generation upsert was refused');
+  assert.strictEqual(w.patientReads(), 2, 'external batch generation did not invalidate the cached safety map exactly once');
+  const beforeChanges = batch.totalChanges;
+  const refused = w.upsertPatient({ id: w.patients[90].id, name: 'Bulk', meds: 'stale', updated: 1 });
+  assert.strictEqual(refused && refused.refused, 'stale-lineage', 'cached safety lookup stopped refusing a stale managed-batch row');
+  assert.strictEqual(batch.totalChanges, beforeChanges, 'a refused inner write was incorrectly recorded as accepted');
 }
 
 /* ---- in-suite pre-fix control: WITHOUT the shield the stale write wins ---- */

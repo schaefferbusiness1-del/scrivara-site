@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.21";
+  var VERSION = "si-1.7.22";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -2879,8 +2879,9 @@
       });
       if(stagedAdministrative){var adminCommit=window.upsertPatient(adminStaged);if(adminCommit===false||(adminCommit&&adminCommit.ok===false))throw new Error("administrative-visit-commit-refused");administrativeSaved=stagedAdministrative;}
     });
-    var organization=safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
-    if(!organization||organization.ok!==true){
+    var responsiveOrganization=!!(r&&r.__mlsResponsiveOrganization===true&&isFn(vm.organizePatientHistoryResponsive));
+    var organization=responsiveOrganization?{ok:true,deferred:true}:safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
+    if(!responsiveOrganization&&(!organization||organization.ok!==true)){
       /* px-6.1 (Elizabeth, 2026-08-08): a gate that discards the evidence of
          its own refusal makes every downstream failure unexplainable - the
          row said only "history-organization-unproven" while organize knew
@@ -2892,7 +2893,7 @@
       safe(function(){orgMissed=(organization&&organization.semanticCoverage&&organization.semanticCoverage.missedSections)||[];return null;});
       throw new Error("history-organization-unproven: "+orgReason+(orgMissed.length?(" - sections detected but not captured: "+orgMissed.join(", ")):""));
     }
-    var refreshedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
+    var refreshedCoverage=responsiveOrganization?null:safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount };
   }
@@ -3454,7 +3455,20 @@
             }
             await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); overlapParse = null;
             var __visitSaveT0 = Date.now();
-            var savedVisits = saveVerifiedVisits(target, vr);
+            var saveInput=Object.assign({},vr,{__mlsResponsiveOrganization:true});
+            var savedVisits = saveVerifiedVisits(target, saveInput);
+            if(savedVisits.organization&&savedVisits.organization.deferred===true){
+              var responsiveReceipt=await window.__mlsVisitModel.organizePatientHistoryResponsive(target.patientId);
+              if(!responsiveReceipt||responsiveReceipt.ok!==true){
+                var responsiveReason=String((responsiveReceipt&&responsiveReceipt.reason)||"organize-returned-no-result");
+                var responsiveMissed=[];
+                safe(function(){responsiveMissed=(responsiveReceipt&&responsiveReceipt.semanticCoverage&&responsiveReceipt.semanticCoverage.missedSections)||[];return null;});
+                throw new Error("history-organization-unproven: "+responsiveReason+(responsiveMissed.length?(" - sections detected but not captured: "+responsiveMissed.join(", ")):""));
+              }
+              savedVisits.organization=responsiveReceipt;
+              savedVisits.profileCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
+              savedVisits.clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(savedVisits.profileCoverage&&savedVisits.profileCoverage.cards&&savedVisits.profileCoverage.cards[k]&&savedVisits.profileCoverage.cards[k].populated?1:0);},0);
+            }
             stageMs.visitSave = Date.now() - __visitSaveT0;
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization;
             /* si-2.0.0: a COMPLETED body pass earns the carry stamp. */
