@@ -763,3 +763,53 @@ THE srr THREE-STATEMENT SEPARATION (keep apart, never merge):
 chartSurface: 7 rows on one roster tagged clincmp-ax (climbing past the earlier
 22%) - the rollout is becoming the majority path while currently getting only
 leftover budget, which is the whole case for the carve-out.
+
+
+## THE SHAPE-WITH-EMPTY-CONTENT CLASS (2026-08-09, found in srr-1.2's own output)
+
+The day-end 'Charts needing retry:' namer shipped EMPTY NAMES - ' (reason)' with
+nothing before the parenthesis - because the per-patient receipt object is
+constructed { patientId, ... } with NO name key, and the namer reads p.name.
+The feature FIRES; the content is empty strings. Every instrument that counts
+occurrences (does the line appear? does the suite pin match the string?) calls
+this WORKING - the same family as print-view blindness's green receipts. The
+pin that would have caught it: assert the rendered line contains a NON-EMPTY
+name from a fixture receipt, not that the label exists. Fix (two lines,
+app-side) queued behind the running gate. Mitigations while it ships: the
+day-close row snapshot (names from state.rows) + month-end receipt patientId
+joins. Ledger rule adopted same session: EMPTY DAYS ARE LABELED, NEVER COUNTED
+- 'days closed: 5' must read '2 charted days + 3 empty holiday days'.
+
+
+## THE THREE BUCKETS - read is not correct (2026-08-09)
+
+Day 2 proved a 5-failure day presents at store level as 20/20 fresh saves with
+complete profile coverage - store shape CANNOT see visit-body incompleteness.
+Consequence adopted for every fleet claim: three buckets, stated separately:
+- NEVER-READ: 1,437 of 1,571
+- READ-BUT-UNVERIFIED-AT-VISIT-DEPTH: bounded 0-117 (9 visitless + 117 with a
+  body-less visit; the ~62%-legitimately-bodyless law makes this a BOUND, not a
+  count - designed index-only rows conflate with missed reads)
+- RECEIPT-VERIFIABLE-COMPLETE: only what per-visit receipts can prove; today 8
+  records have every visit bodied, and NO record persists its reader receipt.
+FIX NAMED: persist the per-chart visits receipt (expected/parsed/coverage) onto
+the record at save time - the surfaceResets persistence class again. Until it
+ships, no fleet claim may let 'read' or 'healed' imply 'good'.
+KEYING TRAP (same session): calendar rows' id = APPOINTMENT id; the store
+patient id rides patient_external_id ('external' from the calendar's view).
+Joined on it: 20/20 zero-ambiguous where name-equality reported 19+1 phantom.
+
+
+## READ-COUNT RECONCILIATION - definition drift, arrow UP (2026-08-09)
+
+An apparent 93-record fall in the read count (227 -> 134) was PREDICATE DRIFT:
+the original figure counted receipt-OR-content; the three-bucket sweep counted
+receipt-only. One-query decomposition of 1,571: receipt+content 135; receipt
+without content 0; content WITHOUT receipt 409 (pre-receipt-era reads); neither
+1,027. Under the consistent predicate the night is monotonic-up: read-any-
+evidence 227 -> 544; never-touched 1,340 -> 1,027. receiptOnly=0 doubles as a
+no-strip proof (no record kept its receipt while losing content). WITHDRAWN:
+both '1,340/1,567 never-read' and '1,437/1,571 never-read' as stated - the
+canonical frame is the three-way decomposition above. LAW: never compare
+counts across predicates; a bucket figure carries its predicate or it carries
+nothing.

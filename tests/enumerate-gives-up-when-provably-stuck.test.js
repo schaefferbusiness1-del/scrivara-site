@@ -53,8 +53,8 @@ assert(/var EH_STUCK_LIMIT = 16;/.test(bg), 'the stuck threshold must stay expli
    the entire 165s read budget, so the body phase was admitted with nothing left
    — measured as visits-time-budget-exceeded on patients with 14 and 20
    encounters, whose bodies were then never read at all. */
-assert(/if \(!ehStuck && ehPass < 47 && Date\.now\(\) \+ 7000 < readDeadline && Date\.now\(\) \+ 7000 < indexPhaseDeadline\)/.test(bg),
-  'the retry must be skipped when the answer is provably fixed — and must respect the pass cap, the read deadline, and the index-phase deadline');
+assert(/if \(!ehStuck && ehPass < 47 && Date\.now\(\) \+ 24000 < readDeadline && Date\.now\(\) \+ 7000 < indexPhaseDeadline\)/.test(bg),
+  'the retry must be skipped when the answer is provably fixed — and must respect the pass cap, the read deadline, and the index-phase deadline (readDeadline margin 7s->24s with axc-1.0: the ax runway reserve; the triple-bound intent is unchanged and the index-phase bound stays 7s)');
 assert(/\[unchanged-for-' \+ ehStuckPasses \+ '-passes;gave-up-early\]/.test(bg),
   'the refusal must say it stopped early and after how many identical passes');
 assert(/identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck/.test(bg),
