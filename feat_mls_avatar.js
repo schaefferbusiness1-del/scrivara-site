@@ -3977,6 +3977,18 @@
               shirtPick.value = lookNow.shirt; lipPick.value = lookNow.lip;
               stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
               glassesBox.checked = lookNow.glasses === true;
+              /* ⛔ EVERY CONTROL, OR THE SCREEN CONTRADICTS ITSELF (av-6.0.4). This path synced
+                 EIGHT pickers while the pixel path below syncs all fifteen — which was harmless
+                 only because the route was never asked about the other seven. Now that the model
+                 answers faceShape / eyeSet / brows / browCol / nose / lips / hairline / age, a
+                 missing sync would leave the drawing showing the model's read while the SELECT
+                 next to it still showed the old value — and the next Save writes back whatever
+                 the control says, so the model's answer would be silently undone by the doctor
+                 doing nothing. Same list, same order as the pixel path, deliberately. */
+              browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
+              shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
+              hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
+              if (browColPick) browColPick.value = lookNow.browCol || '';
               setLookBadges(base, aiKnobs);
               lookApply();
               lookNote.textContent = note + ' The AI also read it and was confident about ' +

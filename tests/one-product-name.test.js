@@ -85,7 +85,8 @@ const NATIVE = [
    So comments are stripped ONLY in the two files whose job is to record why the
    name changed. Everywhere else, a comment counts. */
 const EXPLAINS_THE_RENAME = new Set([
-  'feat_mls_phone_ui.js',       /* the module header quotes the owner's words */
+  /* feat_mls_phone_ui.js no longer needs an exemption: its header was rewritten
+     to explain the change without naming the old brand (b983). */
   'mobile/app.config.json'      /* the _comment block records the decision */
 ]);
 function codeOnly(src, file) {
