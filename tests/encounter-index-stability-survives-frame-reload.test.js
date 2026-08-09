@@ -118,8 +118,8 @@ assert(/indexPhaseDeadline = readStartedAt \+ Math\.min\(70000, Math\.max\(20000
   assert(stale > 60000,
     'sanity: the old nominal-budget derivation really did land outside a 60s window — that was the bug');
 }
-assert(/Date\.now\(\) \+ 7000 < readDeadline && Date\.now\(\) \+ 7000 < indexPhaseDeadline/.test(src),
-  'the index retry loop must respect the index-phase deadline as well as the read deadline');
+assert(/Date\.now\(\) \+ 24000 < readDeadline && Date\.now\(\) \+ 7000 < indexPhaseDeadline/.test(src),
+  'the index retry loop must respect the index-phase deadline as well as the read deadline (readDeadline margin moved 7s->24s with axc-1.0: the ax route runway reserve; the DUAL-deadline intent this pin guards is unchanged)');
 
 /* ---- 5. the deadlock itself, simulated ----------------------------------- *
  *
