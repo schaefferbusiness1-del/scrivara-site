@@ -687,6 +687,18 @@ const tests = [
      suite above stays: it pins the LEGACY layer, which is still installed and
      still correct the moment the new UI is reverted or declines the device. */
   'phone-app-is-its-own-app.test.js',
+  'phone-menu-and-controls.test.js',
+  /* The avatar intake summary reaching the workspace app, and the quick history
+     under the patient. Both are about ABSENCES: "none recorded" and "never read
+     from athenaOne" are the same empty field and opposite clinical claims, and a
+     brief attached to the wrong patient is one person's answers in another
+     person's room. */
+  'phone-checkin-and-quick-history.test.js',
+  /* The old product name reached seven surfaces across four lanes. This sweeps
+     the reviewed publication inventory rather than a hand-list, and asserts the
+     three lowercase infrastructure names are UNTOUCHED — renaming the live API
+     host is an outage and renaming the bundle id is permanent. */
+  'one-product-name.test.js',
   /* From the owner's own iPhone screenshot: his phone had mls_device_role='office'
      stored, which made wantPhone() answer false and handed a 390px screen the full
      desktop workspace — AND aimed every Athena pull at a device that can never run

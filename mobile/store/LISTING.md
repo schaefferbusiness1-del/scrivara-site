@@ -9,7 +9,7 @@ a clinical tool that oversells itself in a store listing is one a reviewer reads
 
 ## Both stores
 
-**App name** — `Scrivara`
+**App name** — `MLS Scribe`
 
 Not "MLS". In an app store "MLS" reads as Multiple Listing Service: the search results are real
 estate, and a reviewer's first impression is of an app that does not match its name. The website,
@@ -41,7 +41,7 @@ Pull today's schedule out of athenaOne from your phone, and read a patient's vis
 **Description** (4000 max)
 
 ```
-Scrivara puts two things on your phone: today's schedule, and a patient's chart.
+MLS Scribe puts two things on your phone: today's schedule, and a patient's chart.
 
 That is the whole app. There is one button on each screen.
 
@@ -54,7 +54,7 @@ Name, age, date of birth, MRN, and their visit history — dates, visit types, a
 Pull chart to read their history from athenaOne right now.
 
 HOW THE PULL WORKS
-Scrivara does not connect to athenaOne from your phone. It asks the office computer where you
+MLS Scribe does not connect to athenaOne from your phone. It asks the office computer where you
 are already signed in to do the reading, and shows you the result. Before it asks, it checks
 that the computer is actually reachable and tells you plainly if it is not — you never watch a
 spinner that was never going to finish.
@@ -65,7 +65,7 @@ arrived on your phone and reports that number, rather than repeating what the of
 claimed.
 
 FOR CLINICIANS
-Scrivara requires an existing Scrivara account with clinical access released by your practice.
+MLS Scribe requires an existing MLS Scribe account with clinical access released by your practice.
 It is a tool for licensed clinicians and their staff. It does not provide medical advice,
 diagnosis, or treatment recommendations.
 
@@ -125,4 +125,4 @@ Sizes:
   phone app; set the Xcode target to iPhone-only and skip these.
 - **Android phone** — anything from 1080 × 1920 up. Play needs at least 2; give it 5.
 - **Play feature graphic** — 1024 × 500, required. The app icon centred on `#F7F5EF` with the
-  word "Scrivara" beside it is enough; Play shows it small.
+  word "MLS Scribe" beside it is enough; Play shows it small.

@@ -35763,7 +35763,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b974';
+  window.__MLS_AV = window.__MLS_AV || 'b975';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36106,7 +36106,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b974';
+  var MLS_APP_BUILD='2026-07-25-b975';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -47949,7 +47949,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           '<div id="mlsRlQr" style="flex:none;width:148px;height:148px;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:8px;box-sizing:content-box"></div>' +
           '<ol style="flex:1;min-width:190px;margin:0;padding:0 0 0 18px;font:500 12.5px/1.7 \'Public Sans\',system-ui,sans-serif;color:#1A211C">' +
             '<li>Scan the square with your phone camera.</li>' +
-            '<li>Open Scrivara from the button it shows.</li>' +
+            '<li>Open MLS Scribe from the button it shows.</li>' +
             '<li>Follow its three taps — <b>Add to Home Screen</b> — then sign in.</li>' +
           '</ol>' +
         '</div>' +

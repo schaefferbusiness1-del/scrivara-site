@@ -102,7 +102,7 @@ These are the ones the app talks to. Nothing new is needed for any of them.
 |---|---|---|
 | **Render** — `scrivara-backend.onrender.com` | the API the app calls | `mobile/app.config.json` → `apiBase`, and the CSP `connect-src` in `app.html` |
 | **GitHub Pages** — `mlsscribe.com` | serves `app.html`, `privacy.html`, `terms.html` | the store listings' privacy-policy URL |
-| the doctor's **own Scrivara login** | email + password (+ TOTP if enabled) | the app's sign-in screen |
+| the doctor's **own MLS Scribe login** | email + password (+ TOTP if enabled) | the app's sign-in screen |
 
 The app creates no account of its own, has no separate password, and has no admin console. A
 clinician signs in with the same credentials they use on the desktop, and the server decides

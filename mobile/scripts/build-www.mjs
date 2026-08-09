@@ -45,10 +45,10 @@ let html = fs.readFileSync(path.join(ROOT, 'app.html'), 'utf8');
 const stamps = [
   ["connect-src https://scrivara-backend.onrender.com;", `connect-src ${cfg.apiBase};`],
   ["var API = 'https://scrivara-backend.onrender.com';", `var API = '${cfg.apiBase}';`],
-  ['<title>Scrivara</title>', `<title>${cfg.displayName}</title>`],
-  ['<meta name="apple-mobile-web-app-title" content="Scrivara">',
+  ['<title>MLS Scribe</title>', `<title>${cfg.displayName}</title>`],
+  ['<meta name="apple-mobile-web-app-title" content="MLS Scribe">',
     `<meta name="apple-mobile-web-app-title" content="${cfg.displayName}">`],
-  ['<h1>Scrivara</h1>', `<h1>${cfg.displayName}</h1>`],
+  ['<h1>MLS Scribe</h1>', `<h1>${cfg.displayName}</h1>`],
   /* A bundled app has no sibling pages, so a relative legal link is a 404 in
      the binary — and both stores require the privacy policy to be reachable
      from inside the app. Absolute, opened in the system browser. */

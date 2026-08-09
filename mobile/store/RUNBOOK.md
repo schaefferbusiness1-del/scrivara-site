@@ -1,4 +1,4 @@
-# Shipping Scrivara to the App Store and Google Play
+# Shipping MLS Scribe to the App Store and Google Play
 
 Everything below is done except the parts that need a store account. `ACCOUNTS.md` is the list
 of accounts and why I could not create them.
@@ -102,7 +102,7 @@ Then fill in what Play requires before the production track will accept anything
 Store listing (copy in `LISTING.md`), Data safety (answers in `PRIVACY-ANSWERS.md`), Content
 rating questionnaire, Target audience, App access (see below), Privacy policy URL.
 
-**App access is the one that will bounce you.** Scrivara is entirely behind a clinician login,
+**App access is the one that will bounce you.** MLS Scribe is entirely behind a clinician login,
 and a reviewer who cannot sign in will reject it. Play Console → App content → **App access** →
 "All or some functionality is restricted", and provide working demo credentials. Make a real
 account on a synthetic-data practice for this; do not hand a reviewer a live clinician login.
@@ -143,7 +143,7 @@ HTML ships inside the binary and only the API is remote. Say so: *"The app's int
 bundled in the binary; it contacts one HTTPS API for the signed-in clinician's own data. It is
 not a wrapper around a website."*
 
-**Health data (Guideline 1.4.1 / 5.1.3).** *"Scrivara is a clinical tool for licensed
+**Health data (Guideline 1.4.1 / 5.1.3).** *"MLS Scribe is a clinical tool for licensed
 clinicians, not a consumer health app. It does not provide medical advice, diagnosis, or dosage
 information. It displays a clinician's own schedule and their own patients' visit history from
 the practice's system of record."*

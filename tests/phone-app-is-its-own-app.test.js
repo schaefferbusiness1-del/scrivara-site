@@ -439,14 +439,39 @@ assert(!/setInterval/.test(code),
   'setTimeout loop gated on live() AND document visibility.');
 assert(/observe\(host, \{ childList: true, subtree: true/.test(source) && /\$\('mlsEz3Body'\)/.test(source),
   'the observer must be scoped to the visit body, never to the document');
+/* 2026-08-08 (ph2-1.1.0): "an idle mounted phone must schedule nothing" was
+   tightened rather than relaxed when the avatar check-in watch landed.
+   The owner asked for the finished-intake summary to reach this app, and a
+   summary that arrives while the doctor is looking at Today has to be noticed
+   somehow. So ONE timer is now permitted on an idle VISIBLE screen, and this
+   names which one and at what period — a stronger statement than "0", which
+   would have been satisfied by a module that also stopped ticking a recording.
+   The hidden case is unchanged and now genuinely enforced: the watch refuses to
+   ARM while hidden, rather than arming and checking visibility on fire. */
 {
   const idle = makeHarness({ wantPhone: true });
   const running = makeHarness({ wantPhone: true, snapshot: { phase: 'rec' } });
   const hidden = makeHarness({ wantPhone: true, snapshot: { phase: 'rec' }, hidden: true });
   const fired = (h) => { h.timers.filter(t => t.live).forEach(t => { t.live = false; t.fn(); }); return h.liveTimers(); };
+
   assert.strictEqual(fired(running) > 0, true, 'a live recording must keep the screen ticking');
-  assert.strictEqual(fired(hidden), 0, 'a hidden tab must schedule nothing, even mid-recording');
-  assert.strictEqual(fired(idle), 0, 'an idle mounted phone must schedule nothing');
+
+  assert.strictEqual(fired(hidden), 0,
+    'THE POCKET RULE: a hidden tab must schedule nothing, even mid-recording. A hidden tab\'s timers ' +
+    'are frozen, not throttled, so one armed here cannot fire — it only releases a burst of stale ' +
+    'checks on resume, which onVisible() already covers sooner.');
+
+  /* Settled: fire everything once, so the mount-time 250ms tick has run and
+     declined to re-arm. What is still live after that is what this screen holds
+     for as long as it is left alone. */
+  const idleLive = (fired(idle), idle.timers.filter(t => t.live));
+  assert.strictEqual(idleLive.length, 1,
+    'a SETTLED idle visible phone may hold exactly one timer — the check-in watch — and nothing else. ' +
+    'Held: ' + idleLive.map(t => t.ms + 'ms').join(', '));
+  assert.strictEqual(idleLive[0].ms, idle.api()._ckPoll,
+    'and it must be the 45s check-in watch, not the 1s screen ticker left running on an idle screen');
+  assert(idle.api()._ckPoll >= 30000,
+    'the watch period must stay in seconds-tens: this runs on battery, in a pocket, between rooms');
 }
 {
   const h = makeHarness({ wantPhone: true });

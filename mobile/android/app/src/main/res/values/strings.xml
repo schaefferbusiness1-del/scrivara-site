@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Scrivara</string>
-    <string name="title_activity_main">Scrivara</string>
+    <string name="app_name">MLS Scribe</string>
+    <string name="title_activity_main">MLS Scribe</string>
     <string name="package_name">com.scrivara.app</string>
     <string name="custom_url_scheme">com.scrivara.app</string>
 </resources>

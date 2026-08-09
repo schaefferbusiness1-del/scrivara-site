@@ -1,6 +1,6 @@
 {
   "appId": "com.scrivara.app",
-  "appName": "Scrivara",
+  "appName": "MLS Scribe",
   "webDir": "www",
   "android": {
     "allowMixedContent": false
