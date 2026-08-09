@@ -41,10 +41,10 @@ edit('android/app/build.gradle', 'version + release hardening + signing', (s) =>
   /* A clinical app must not have its private data auto-uploaded to the user's
      Google Drive backup. There is nothing on the device worth restoring anyway
      — the app holds a session token and nothing else. */
-  if (!out.includes('// scrivara: release config')) {
+  if (!out.includes('// mlsscribe: release config')) {
     out = out.replace(
       /    buildTypes \{\n        release \{\n            minifyEnabled false\n            proguardFiles getDefaultProguardFile\('proguard-android.txt'\), 'proguard-rules.pro'\n        \}\n    \}/,
-      `    // scrivara: release config
+      `    // mlsscribe: release config
     signingConfigs {
         release {
             // Supplied by keystore.properties (local) or by the CI workflow's

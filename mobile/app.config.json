@@ -21,7 +21,7 @@
     "upload, not after."
   ],
   "displayName": "MLS Scribe",
-  "appId": "com.scrivara.app",
+  "appId": "com.mlsscribe.app",
   "version": "1.0.0",
   "androidVersionCode": 1,
   "iosBuildNumber": "1",

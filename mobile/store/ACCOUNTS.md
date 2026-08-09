@@ -45,7 +45,7 @@ Once enrolled you will create, inside App Store Connect:
 
 | thing | where | used by |
 |---|---|---|
-| An **App Record** with bundle id `com.scrivara.app` | App Store Connect → Apps → + | the listing |
+| An **App Record** with bundle id `com.mlsscribe.app` | App Store Connect → Apps → + | the listing |
 | An **Apple Distribution certificate** (.p12) | Certificates, IDs & Profiles | `IOS_CERTIFICATE_P12_BASE64` |
 | An **App Store provisioning profile** for that bundle id | Certificates, IDs & Profiles | `IOS_PROVISIONING_PROFILE_BASE64` |
 | An **App Store Connect API key** (.p8, Developer role or higher) | Users and Access → Integrations → App Store Connect API | `APPSTORE_API_*` |
@@ -62,7 +62,7 @@ Then, inside Play Console:
 
 | thing | where | used by |
 |---|---|---|
-| An **app** with package name `com.scrivara.app` | Play Console → Create app | the listing |
+| An **app** with package name `com.mlsscribe.app` | Play Console → Create app | the listing |
 | An **upload keystore** | you generate it — see RUNBOOK.md § "Create the upload key" | `ANDROID_KEYSTORE_*` |
 | **Play App Signing** enabled | Release → Setup → App signing | lets Google hold the real signing key |
 
@@ -79,7 +79,7 @@ ANDROID_KEY_PASSWORD
 
 IOS_CERTIFICATE_P12_BASE64       base64 -i dist.p12
 IOS_CERTIFICATE_PASSWORD
-IOS_PROVISIONING_PROFILE_BASE64  base64 -i Scrivara.mobileprovision
+IOS_PROVISIONING_PROFILE_BASE64  base64 -i MLSScribe.mobileprovision
 IOS_TEAM_ID
 
 APPSTORE_API_KEY_ID

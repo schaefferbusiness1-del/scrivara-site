@@ -72,7 +72,9 @@ const PREEXISTING = {
                   //          mls-popup.css copy), +3 again on 2026-08-03
                   //          (the 3.0.44 full-file candidate, same copy)
   '#6b7684': 1,   // "b768"
-  '#b9770a': 6,   // "b977"
+  '#b9770a': 6,   // "b977" — collided with the live build number on 2026-08-08.
+                  //          The bump script rewrote all 6 to #b9780a before a
+                  //          diff caught it; the bump now masks hex literals.
   '#e0b877': 2,   // "b877" — the fill-box amber border and its dictation-
                   //          correction twin in feat_mls_opnote_fill.js.
                   //          Collided with the live build number on 2026-08-05

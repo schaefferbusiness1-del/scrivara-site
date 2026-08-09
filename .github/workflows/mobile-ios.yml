@@ -106,7 +106,7 @@ jobs:
 
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 -d \
-            > ~/Library/MobileDevice/Provisioning\ Profiles/scrivara.mobileprovision
+            > ~/Library/MobileDevice/Provisioning\ Profiles/mlsscribe.mobileprovision
 
           rm -f "$RUNNER_TEMP/cert.p12"
           echo "signed=true" >> "$GITHUB_OUTPUT"
@@ -154,13 +154,13 @@ jobs:
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
-          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/scrivara.mobileprovision || true
+          rm -f ~/Library/MobileDevice/Provisioning\ Profiles/mlsscribe.mobileprovision || true
           rm -rf ~/.appstoreconnect || true
 
       - uses: actions/upload-artifact@v4
         if: steps.signing.outputs.signed == 'true'
         with:
-          name: scrivara-ios-${{ github.sha }}
+          name: mlsscribe-ios-${{ github.sha }}
           path: ${{ runner.temp }}/export/*.ipa
           if-no-files-found: error
           retention-days: 14

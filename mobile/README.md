@@ -1,4 +1,4 @@
-# mobile/ — Scrivara on the App Store and Google Play
+# mobile/ — MLS Scribe on the App Store and Google Play
 
 This directory turns `../app.html` into a native iOS and Android app. It adds no code to the
 app itself; Capacitor puts the same HTML inside a native shell and the app talks to the same
@@ -40,7 +40,7 @@ is derived from it by the build; the Android `versionCode`/`versionName` and the
 `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` are written from it by
 `scripts/configure-native.mjs`. Change the one file and re-run the build.
 
-`appId` (`com.scrivara.app`) is **permanent** once a build is uploaded. Neither store lets you
+`appId` (`com.mlsscribe.app`) is **permanent** once a build is uploaded. Neither store lets you
 change it; a different id is a different app with a different listing and no upgrade path for
 anyone who installed the first one.
 
