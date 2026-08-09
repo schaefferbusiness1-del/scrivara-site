@@ -6271,6 +6271,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        card — but ACTIVE (.on) chips keep their dark fills, so they stay white. */
     '#mlsEz3 .ez3-sm:not(.pri),#mlsEz3 .ez3-exbtn:not(.rec):not(.send),#mlsEz3 .ez3-qchip:not(.on),#mlsEz3 .ez3-chip:not(.on),#mlsEz3 .ez3-more{color:#1A211C !important;}',
     '#mlsEz3 .ez3-warnbar{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;font-weight:650 !important;}',
+    '#mlsEz3 .ez3-infobar{color:#3E4B44 !important;background:#F4F6F3 !important;border-color:#D9DFD9 !important;font-weight:500 !important;}',
     '#mlsEz3 .ez3-qchip.on,#mlsEz3 .ez3-chip.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;font-weight:800 !important;box-shadow:0 0 0 2px rgba(32,64,52,.24) !important;}',
     '#mlsEz3 .ez3-qchip.on.seen{opacity:1 !important;}',
     /* 1d) Easy step-flow sub-states on the light card */
@@ -19195,6 +19196,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-status{font-size:12.5px;color:#C9DCD2;text-align:center;margin:8px 0 0;line-height:1.6;}',
     '.ez3-warnbar{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
       'border-radius:12px;padding:10px 13px;font-size:13px;margin:0 0 12px;}',
+    '.ez3-infobar{background:rgba(201,220,210,.10);border:1px solid rgba(201,220,210,.32);color:#DDE7E1;',
+      'border-radius:12px;padding:10px 13px;font-size:13px;line-height:1.45;margin:0 0 12px;}',
     '.ez3-back{background:none;border:0;color:#C9DCD2;font-size:14px;font-weight:700;cursor:pointer;padding:6px 2px;margin-bottom:2px;}',
     '.ez3-more{width:100%;border:1px dashed rgba(255,255,255,.28);background:transparent;color:#EAF1EE;',
       'border-radius:12px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px;}',
@@ -19946,7 +19949,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return false;
     }
     safe(function () { if (typeof window._athenaSetVisitBinding === 'function') window._athenaSetVisitBinding(null, true); else window.currentVisitAthenaBinding = null; });
-    S.lastWarn = '⚠️ Proceeding as an UNSCHEDULED visit — MLS could not verify the exact Athena appointment for ' + (actionLabel || 'this action') + '. The note will not auto-file to a schedule row; assign it afterward.';
+    S.lastWarn = 'Athena appointment not linked — recording and note generation still work normally. This note will stay in MLS until you assign it to a schedule row.';
     toast(S.lastWarn);
     render();
     return true;
@@ -20881,7 +20884,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<button type="button" class="ez3-back" id="ez3HomeTop" title="Go straight to the visit home screen - everything here is saved">🏠 Home</button>' +
       '</div>';
     h += quickStripHtml();
-    if (S.lastWarn) h += '<div class="ez3-warnbar">⚠️ ' + esc(S.lastWarn) + '</div>';
+    if (S.lastWarn) {
+      var calmNotice = /^(?:Athena appointment not linked|Unscheduled visit)\b/.test(S.lastWarn);
+      h += '<div class="' + (calmNotice ? 'ez3-infobar' : 'ez3-warnbar') + '" role="status">' + (calmNotice ? '' : '⚠️ ') + esc(S.lastWarn) + '</div>';
+    }
     h += '<div class="ez3-card">' +
       '<div class="ez3-pt">' + esc(nm) + '</div>' +
       '<div class="ez3-badges">' +
@@ -22392,7 +22398,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              visible warning; only a proven cross-patient conflict blocks.
              The old hard refusal here blocked generation - and therefore the
              entire write chain - for every walk-in and add-on. */
-          S.lastWarn = '\u26A0\uFE0F ' + label + ' is proceeding as an UNSCHEDULED visit - no schedule row is locked to this patient, so nothing will auto-file to an Athena appointment.';
+          S.lastWarn = 'Unscheduled visit — ' + label + ' works normally. This note will stay in MLS until you assign it to a schedule row.';
           try { toast(S.lastWarn); } catch (eT) {}
           try { render(); } catch (eR) {}
           return true;

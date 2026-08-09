@@ -38,7 +38,11 @@ assert(!/if\s*\(!exactBindingReady\)\s*\{\s*render\(\);\s*return;\s*\}/.test(bod
 /* the demotion gate itself keeps both halves of the ruling */
 const gate = connect.slice(connect.indexOf('function requireExactScheduledBinding'),
   connect.indexOf('function lockAndStart(a, opts)'));
-assert(gate.includes('UNSCHEDULED'),
-  'the demotion gate must proceed as an explicitly-unscheduled visit');
+assert(gate.includes('Athena appointment not linked') && gate.includes('recording and note generation still work normally'),
+  'the demotion gate must calmly explain that an Athena link is optional for recording/generation');
 assert(gate.includes('DIFFERENT patient'),
   'the demotion gate must still block a proven cross-patient conflict');
+assert(connect.includes("calmNotice ? 'ez3-infobar' : 'ez3-warnbar'") && connect.includes("(calmNotice ? '' : '⚠️ ')"),
+  'the calm schedule notice must use neutral information presentation without a warning icon');
+assert(!connect.includes('⚠️ Proceeding as an UNSCHEDULED visit'),
+  'the retired double-warning Athena copy returned');
