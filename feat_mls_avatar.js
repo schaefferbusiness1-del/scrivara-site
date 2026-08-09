@@ -3988,7 +3988,14 @@
               browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
               shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
               hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
-              if (browColPick) browColPick.value = lookNow.browCol || '';
+              if (lookNow.browCol) {
+                if (browColPick.options.length < 2) {
+                  var vbo = document.createElement('option'); vbo.value = 'set'; vbo.textContent = 'Its own colour';
+                  browColPick.appendChild(vbo);
+                }
+                browColPick.value = 'set';
+                if (browColWell) browColWell.value = lookNow.browCol;
+              } else { browColPick.value = ''; }
               setLookBadges(base, aiKnobs);
               lookApply();
               lookNote.textContent = note + ' The AI also read it and was confident about ' +
