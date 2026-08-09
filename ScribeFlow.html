@@ -3512,7 +3512,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="sec-copy" aria-label="Regenerate the clinical note" onclick="regenerateNote()" title="Re-run AI on the same transcript">🔄 Regenerate</button>
       </div>
 
-      <!-- Teach Scrivara: suggested preferences learned from edits -->
+      <!-- Teach MLS: suggested preferences learned from edits -->
       <div class="extra-card" id="teachCard" style="display:none">
         <h3>💡 Teach MLS</h3>
         <div class="xbody" id="teachBody" style="white-space:normal"></div>
@@ -5966,7 +5966,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
 <script>
 /* =========================================================
-   Scrivara — single-file client app (v4)
+   MLS Scribe — single-file client app (v4)
    Local accounts + per-user note history in localStorage.
    v4 adds: Recommendations tab + unlabeled-transcript handling.
    ========================================================= */
@@ -5974,7 +5974,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 /* =========================================================
    ⚙️ BACKEND MODE CONFIG  (read this before deploying)
    ---------------------------------------------------------
-   Scrivara can run in TWO modes:
+   MLS Scribe can run in TWO modes:
 
    1) PER-DEVICE KEY MODE  (default — BACKEND_URL is "")
       Each doctor pastes their own OpenAI API key in Settings.
@@ -5983,7 +5983,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
    2) HOSTED BACKEND MODE  (set BACKEND_URL below)
       Point BACKEND_URL at your deployed server, e.g.
-        const BACKEND_URL = "https://scrivara-api.example.com";
+        const BACKEND_URL = "https://mlsscribe-api.example.com";
       The app then POSTs to  BACKEND_URL + "/api/generate"
       and your server holds the OpenAI key SERVER-SIDE.
       NO API key is needed in the browser, and the API-key
@@ -7173,6 +7173,11 @@ function startSession(email){
   renderDots();
   newVisit({preserveRecovery:true});
   showView('visit');   // land ready to record the first patient — not the busy Patients list
+  /* Counts are data-owned, not route-owned. Refresh them after sign-in only
+     when the browser is genuinely idle so an existing large roster cannot
+     block the first Visit click, while local/offline accounts never remain at
+     the markup's temporary zero badges. */
+  scheduleNavCounts();
   applyBackendModeUI();
   if(!_gateMode) applyAccessUI();
   renderDocPrefs();
@@ -13681,8 +13686,10 @@ function showView(v){
   document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq'||v==='studio'||v==='calendar')?'none':'flex';
   if(v==='calendar' && typeof loadCalendar==='function') loadCalendar();
   if(v==='studio' && typeof renderStudio==='function') renderStudio();
-  renderPatientBar();
-  if(v!=='patients') updateNavCounts();
+  /* Patient identity and badge counts are data-owned, not route-owned. Their
+     exact save/selection/hydration paths already refresh them. Re-reading the
+     multi-megabyte roster here made an otherwise visual tab switch decode it
+     up to three times after another tab invalidated the memo. */
   if(v==='patients'){ renderPatients(); renderProfile(); if(typeof loadPendingIntakes==='function') loadPendingIntakes(false); try{ if(typeof hideClinicalForReceptionist==='function') hideClinicalForReceptionist(); }catch(e){} }
   if(v==='history'){
     renderHistory();
@@ -13766,26 +13773,56 @@ function _renderPatientFace(){
   wrap.style.display='block';
   var av=document.getElementById('_pfAvatar'); if(av){ av.textContent=_patientInitials(p.name); av.setAttribute('data-tip',(p.name||'Patient')+' — click to open chart'); }
 }
+function updateHistoryNavCount(activeId){
+  const hc=document.getElementById('navHistCount');
+  if(!hc) return;
+  const id=String(activeId||'');
+  const counts=__mlsNoteCounts(id||null);
+  hc.textContent=id?(counts.patientCount+counts.orphanCount):counts.total;
+}
 function updateNavCounts(patientSnapshot){
   const patients=Array.isArray(patientSnapshot)?patientSnapshot:getPatients();
   const pc=document.getElementById('navPtCount'); if(pc) pc.textContent=patients.length;
   // History badge reflects the ACTIVE patient's real saved-visit count (per-patient,
   // matching what the History view shows). With no active patient it shows the total.
-  const hc=document.getElementById('navHistCount');
-  if(hc){
-    const activeId=getActivePtId();
-    let ap=null;
-    for(let i=0;i<patients.length;i++){ if(patients[i]&&patients[i].id===activeId){ ap=patients[i]; break; } }
-    const counts=__mlsNoteCounts(ap?ap.id:null);
-    if(ap){
-      // patient's own visits + any unassigned visits that are still surfaced in History
-      hc.textContent = counts.patientCount + counts.orphanCount;
-    } else {
-      hc.textContent = counts.total;
-    }
-  }
+  const activeId=getActivePtId();
+  let ap=null;
+  for(let i=0;i<patients.length;i++){ if(patients[i]&&patients[i].id===activeId){ ap=patients[i]; break; } }
+  updateHistoryNavCount(ap?ap.id:'');
   const oc=document.getElementById('navOrdCount');
   if(oc) oc.textContent = currentOrders.length;
+}
+let __mlsNavCountTask=null, __mlsNavCountTaskIdle=false, __mlsNavCountPendingSnapshot=null, __mlsNavCountEpoch=0;
+function __mlsNavCountInputPending(){
+  try{ const s=window.navigator&&window.navigator.scheduling; return !!(s&&typeof s.isInputPending==='function'&&s.isInputPending({includeContinuous:true})); }catch(e){ return false; }
+}
+function scheduleNavCounts(patientSnapshot){
+  const currentEpoch=typeof sfSessionUiEpoch==='number'?sfSessionUiEpoch:0;
+  if(Array.isArray(patientSnapshot)) __mlsNavCountPendingSnapshot=patientSnapshot;
+  if(__mlsNavCountTask!==null){
+    if(__mlsNavCountEpoch===currentEpoch) return;
+    try{
+      if(__mlsNavCountTaskIdle&&typeof window.cancelIdleCallback==='function') window.cancelIdleCallback(__mlsNavCountTask);
+      else clearTimeout(__mlsNavCountTask);
+    }catch(e){}
+    __mlsNavCountTask=null; __mlsNavCountTaskIdle=false; __mlsNavCountPendingSnapshot=null;
+  }
+  __mlsNavCountEpoch=currentEpoch;
+  const run=function(){
+    __mlsNavCountTask=null; __mlsNavCountTaskIdle=false;
+    if(__mlsNavCountEpoch!==(typeof sfSessionUiEpoch==='number'?sfSessionUiEpoch:0)) return;
+    if(__mlsNavCountInputPending()){ scheduleNavCounts(); return; }
+    const snapshot=__mlsNavCountPendingSnapshot; __mlsNavCountPendingSnapshot=null;
+    try{ updateNavCounts(snapshot); }catch(e){}
+  };
+  try{
+    if(typeof window.requestIdleCallback==='function'){
+      __mlsNavCountTaskIdle=true;
+      __mlsNavCountTask=window.requestIdleCallback(run);
+      return;
+    }
+  }catch(e){}
+  __mlsNavCountTask=setTimeout(run,900);
 }
 
 /* ---------- PATIENTS LIST ---------- */
@@ -20063,6 +20100,9 @@ async function deleteNote(id){
   try{ deleteNoteOnServer(id); }catch(e){} // hosted: hide it server-side too (soft delete)
   if(currentNoteId===id){ currentNoteId=null; }
   renderHistory();
+  /* The notes array is already hot after saveNotes, so repair the History
+     badge immediately without touching the multi-megabyte patient roster. */
+  try{ updateHistoryNavCount(getActivePtId()); }catch(e){ scheduleNavCounts(); }
   toast('Visit deleted.','');
 }
 
@@ -21742,7 +21782,7 @@ let currentVisitAthenaBinding=null, currentSuperbillSnapshot=null;
 let currentVisitAthenaCompromised=false, currentVisitAthenaAwayFingerprint=null;
 let currentVisitAthenaEpoch=0;
 /* Snapshot of the AI's ORIGINAL note draft, captured at generation time BEFORE
-   the physician edits it. Used by "Teach Scrivara" to diff draft vs. edited. */
+   the physician edits it. Used by "Teach MLS" to diff draft vs. edited. */
 let lastAIDraft='';
 let lastEMR=null;
 let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='', currentIME='';
@@ -22136,7 +22176,7 @@ async function generateNote(){
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
       currentSoap=_reorderNoteForStyle(offlineExampleNote(), getGenStyle());
-      lastAIDraft=currentSoap; // baseline for "Teach Scrivara"
+      lastAIDraft=currentSoap; // baseline for "Teach MLS"
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
       _athenaSetVisitBinding(generationBinding);
@@ -22184,7 +22224,7 @@ async function generateNote(){
       return false;
     }
     currentSoap=_reorderNoteForStyle(result.note, getGenStyle());
-    lastAIDraft=currentSoap; // baseline snapshot for "Teach Scrivara" before edits
+    lastAIDraft=currentSoap; // baseline snapshot for "Teach MLS" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
     _athenaSetVisitBinding(generationBinding);
@@ -26578,7 +26618,7 @@ function showExtra(cardId,bodyId,text){
 }
 
 /* =========================================================
-   "TEACH SCRIVARA" — learn reusable preferences from the doctor's edits.
+   "TEACH MLS" — learn reusable preferences from the doctor's edits.
    Compares the ORIGINAL AI draft (lastAIDraft) to the physician's CURRENT
    (edited) note, asks the AI to extract 1-3 REUSABLE style/format/content
    rules (no patient-specific PHI), and lets the doctor add the ones they want
@@ -33602,6 +33642,7 @@ function _ptGroupSort(mode){
                  dob ? ('DOB '+dob) : '',
                  p.mrn ? ('MRN '+p.mrn) : '' ].filter(Boolean).join('  ·  ');
     bar.style.display='flex';
+    bar.__mlsPatientId=String(p.id||'');
     /* Owner 2026-07-27, looking at the live bar ("I hate this banner… way too
        complicated. Completely reworked with almost no buttons. Clicking on the
        patient's name takes you to the chart, and that's it. Every feature there
@@ -33770,11 +33811,55 @@ function _ptGroupSort(mode){
       +'}';
     (document.head||document.documentElement).appendChild(css);
   }
-  function refresh(){ safe(build); }
+  var _routeRefreshTask=null,_routeRefreshIdle=false;
+  function cancelRouteRefresh(){
+    if(_routeRefreshTask===null)return;
+    var task=_routeRefreshTask,wasIdle=_routeRefreshIdle;
+    _routeRefreshTask=null;_routeRefreshIdle=false;
+    safe(function(){
+      if(wasIdle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task);
+      else clearTimeout(task);
+    });
+  }
+  function refresh(){ cancelRouteRefresh(); safe(build); }
+  function scheduleRouteRefresh(){
+    if(_routeRefreshTask!==null)return;
+    var run=function(){_routeRefreshTask=null;_routeRefreshIdle=false;safe(build);};
+    try{
+      if(typeof window.requestIdleCallback==='function'){
+        _routeRefreshIdle=true;
+        _routeRefreshTask=window.requestIdleCallback(run);
+      }else _routeRefreshTask=setTimeout(run,500);
+    }catch(_e){_routeRefreshTask=null;_routeRefreshIdle=false;}
+  }
+  function syncRouteLayout(){
+    var id=String(activeId()||''),bar=$(BAR_ID);
+    if(!id){
+      if(bar)bar.style.display='none';
+      safe(function(){if(document.body.classList.contains(BODY_CLS))document.body.classList.remove(BODY_CLS);});
+      return;
+    }
+    if(bar&&String(bar.__mlsPatientId||'')===id&&bar.querySelector('.mlsctx-id')){
+      bar.style.display='flex';
+      safe(function(){if(!document.body.classList.contains(BODY_CLS))document.body.classList.add(BODY_CLS);});
+      return;
+    }
+    /* Never show a stale patient's identity while its idle refresh waits. */
+    if(bar)bar.style.display='none';
+    safe(function(){if(document.body.classList.contains(BODY_CLS))document.body.classList.remove(BODY_CLS);});
+    scheduleRouteRefresh();
+  }
   function init(){
     injectCss();
     refresh();
     window.addEventListener('mls:active-patient-changed', refresh);
+    /* Same-tab patient edits already publish the exact changed id while the
+       roster memo/batch is hot. Refresh only when that row is the banner row;
+       a cross-tab write to any other one of thousands of patients must not
+       force this tab to synchronously decode the entire compressed roster. */
+    window.addEventListener('mls:patient-record-updated', function(e){
+      try{ var id=String(e&&e.detail&&e.detail.patientId||''); if(id&&id===String(activeId()||''))refresh(); }catch(_){}
+    });
     /* 2026-07-28 owner sweep: this init runs at DOMContentLoaded - PRE-AUTH -
        so refresh() sees an empty store, hides the card, and nothing re-runs
        it at boot (the active-patient event fires only on a CHANGE, and
@@ -33784,25 +33869,22 @@ function _ptGroupSort(mode){
        catches up after auth exactly the way the redesign does: on every view
        change plus a bounded timeout ladder. No interval, no observer - the
        banner-minimal contract forbids both. */
-    window.addEventListener('mls:view-changed', refresh);
-    [400, 1200, 3000].forEach(function(d){ setTimeout(refresh, d); });
+    window.addEventListener('mls:view-changed', syncRouteLayout);
+    [400, 1200, 3000].forEach(function(d){ setTimeout(syncRouteLayout, d); });
     (function(){ /* __mlsCardStormFix v1 */
-      /* Every localStorage write from ANY other MLS tab used to fire this
-         card's refresh(), which does a full getPatients() JSON.parse (~2MB on
-         a clinic-sized store) plus a card rebuild. Same-origin tabs share one
-         renderer process, so two write-chatty tabs (AI-summary pump, boot
-         rehydrate, day-pull ingest) amplified each other until the renderer
-         pegged at 100% and every MLS tab froze - the owner-reported
-         "freezes after sign-in / while clicking around" bug. React only to
-         the keys this card actually renders from, at most twice a second. */
-      var _stT = null;
+      /* Patient-row writes are handled by the exact same-tab event above.
+         Reacting to the broad patients key here made every unrelated edit in
+         another tab decode the multi-MB roster on this tab too. Only a remote
+         active-id change (or localStorage.clear) can change which card belongs
+         here; coalesce that rare compatibility path. */
       window.addEventListener('storage', function(e){
         try {
           var k = (e && e.key != null) ? String(e.key) : '';
-          if (k && k.indexOf('patients') < 0 && k.indexOf('activePt') < 0) return;
+          if (k && k.indexOf('activePt') < 0) return;
         } catch(_) {}
-        if (_stT) return;
-        _stT = setTimeout(function(){ _stT = null; refresh(); }, 500);
+        /* Hide a stale identity synchronously using only the active id, then
+           let the patient-record lookup wait for idle. */
+        syncRouteLayout();
       });
     })();
     /* The b439 action-row self-heal is gone with the action row it healed.
@@ -33827,7 +33909,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b979';
+  window.__MLS_AV='b981';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

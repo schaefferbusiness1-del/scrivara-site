@@ -109,10 +109,10 @@ function testActivePatientFieldSync() {
   });
 
   vm.runInContext(read('feat_mls_active_patient_sync.js'), context, { filename: 'feat_mls_active_patient_sync.js' });
-  assert(window.__mlsActivePtSync && window.__mlsActivePtSync.version === 'aps-1.2.1', 'reviewed active-patient runtime did not install');
+  assert(window.__mlsActivePtSync && window.__mlsActivePtSync.version === 'aps-1.2.2', 'reviewed active-patient runtime did not install');
   assert.strictEqual(clock.intervalCreates, 1, 'active-patient sync must install exactly one compatibility backstop');
   assert.strictEqual(clock.intervalDelay, 15000, 'active-patient rename backstop is not the reviewed 15-second cadence');
-  assert.strictEqual(patientReads, 1, 'active-patient sync did more than its one read-only seed at boot');
+  assert.strictEqual(patientReads, 0, 'active-patient sync decoded the roster while installing');
   assert.strictEqual(window.listenerCount('mls:active-patient-changed'), 1, 'canonical patient event is not wired exactly once');
   assert.strictEqual(window.listenerCount('mls:patient-record-updated'), 1, 'exact patient-record event is not wired exactly once');
   assert.strictEqual(document.listenerCount('focusout'), 1, 'focused-field recovery listener is not wired exactly once');
@@ -127,14 +127,48 @@ function testActivePatientFieldSync() {
   assert.strictEqual(fields.heroPtName.value, patients[99999].name, 'hero patient name did not recover after downstream reset');
   assert.strictEqual(fields.patientLabel.value, patients[99999].name, 'visit patient label did not recover after downstream reset');
   assert.deepStrictEqual(fields.heroPtName.events, ['input', 'change'], 'field sync changed its input/change contract');
-  assert.strictEqual(patientReads, 2, 'one patient selection caused duplicate full-roster reads');
+  assert.strictEqual(patientReads, 1, 'one patient selection caused duplicate full-roster reads');
 
   window.emit('storage', { key: 'unrelated', storageArea: localStorage });
-  assert.strictEqual(patientReads, 2, 'unrelated storage traffic triggered a patient-store scan');
+  assert.strictEqual(patientReads, 1, 'unrelated storage traffic triggered a patient-store scan');
   activeId = 'p-50000';
   window.emit('storage', { key: window.uns('activePt'), storageArea: localStorage });
+  assert.strictEqual(fields.heroPtName.value, '', 'remote patient switch left the previous patient name visible while refresh waited');
+  assert.strictEqual(fields.patientLabel.value, '', 'remote patient switch left the previous visit label visible while refresh waited');
+  assert.strictEqual(patientReads, 1, 'remote patient switch decoded the roster in the storage callback');
   clock.runOne();
   assert.strictEqual(fields.patientLabel.value, patients[50000].name, 'exact cross-tab active-patient storage change was missed');
+
+  const readsBeforeFocusedRemote = patientReads;
+  activeId = 'p-50001';
+  document.activeElement = fields.patientLabel;
+  window.emit('storage', { key: window.uns('activePt'), storageArea: localStorage });
+  assert.strictEqual(fields.heroPtName.value, '', 'remote patient switch did not fail-close the nonfocused identity field');
+  assert.strictEqual(fields.patientLabel.value, patients[50000].name,
+    'remote patient switch erased a clinician\'s actively typed patient label');
+  assert.strictEqual(patientReads, readsBeforeFocusedRemote, 'focused remote switch decoded the roster in the storage callback');
+  clock.runOne();
+  assert.strictEqual(fields.heroPtName.value, patients[50001].name, 'idle remote repair missed the nonfocused identity field');
+  assert.strictEqual(fields.patientLabel.value, patients[50000].name, 'idle repair overwrote the still-focused patient label');
+  document.activeElement = null;
+  document.emit('focusout', { target: fields.patientLabel });
+  clock.runOne();
+  assert.strictEqual(fields.patientLabel.value, patients[50001].name, 'focused remote patient label did not reconcile after focusout');
+
+  const readsBeforeRemoteClear = patientReads;
+  activeId = '';
+  document.activeElement = fields.patientLabel;
+  window.emit('storage', { key: window.uns('activePt'), storageArea: localStorage });
+  assert.strictEqual(fields.heroPtName.value, '', 'remote patient clear did not fail-close the nonfocused identity field');
+  assert.strictEqual(fields.patientLabel.value, patients[50001].name, 'remote patient clear erased active typing');
+  clock.runOne();
+  assert.strictEqual(patientReads, readsBeforeRemoteClear, 'remote no-patient repair decoded the roster');
+  assert.strictEqual(fields.patientLabel.value, patients[50001].name, 'no-patient idle repair overwrote the focused field');
+  document.activeElement = null;
+  document.emit('focusout', { target: fields.patientLabel });
+  clock.runOne();
+  assert.strictEqual(fields.patientLabel.value, '', 'remote patient clear did not finish fail-closed on focusout');
+  assert.strictEqual(patientReads, readsBeforeRemoteClear, 'no-patient focusout decoded the roster');
 
   activeId = 'p-2';
   window.emit('mls:active-patient-changed', { detail: { patientId: activeId } });
@@ -172,10 +206,39 @@ function testActivePatientFieldSync() {
   assert.strictEqual(fields.patientLabel.value, patients[5].name, 'same-ID rename left the Visit label stale');
   assert.strictEqual(patientReads, readsBeforeRecordUpdate + 1, 'same-ID rename performed duplicate roster scans');
 
-  patients[5].name = 'Backstop Rename Compatibility';
-  clock.runInterval();
-  assert.strictEqual(fields.heroPtName.value, patients[5].name, 'slow backstop missed a same-ID rename');
-  assert.strictEqual(fields.patientLabel.value, patients[5].name, 'renamed patient label stayed stale');
+  const readsBeforeSettledBackstop = patientReads;
+  for (let i = 0; i < 1000; i++) clock.runInterval();
+  assert.strictEqual(patientReads, readsBeforeSettledBackstop,
+    'a settled 15-second compatibility tick decoded the full roster');
+
+  patients[5].name = 'Backstop Repair Compatibility';
+  fields.heroPtName.value = '';
+  for (let i = 0; i < 1000; i++) clock.runInterval();
+  assert.strictEqual(fields.heroPtName.value, '', 'compatibility timer repaired inside the interaction task');
+  assert.strictEqual(patientReads, readsBeforeSettledBackstop,
+    'structurally stale compatibility timer synchronously decoded the roster');
+  assert.strictEqual(clock.pendingCount, 1, 'structural compatibility ticks did not coalesce one idle repair');
+  clock.runOne();
+  assert.strictEqual(fields.heroPtName.value, patients[5].name, 'slow backstop missed a structurally stale patient field');
+  assert.strictEqual(fields.patientLabel.value, patients[5].name, 'structural backstop left the paired patient label stale');
+  assert.strictEqual(patientReads, readsBeforeSettledBackstop + 1,
+    'one structurally stale backstop performed duplicate roster reads');
+
+  activeId = '';
+  window.emit('mls:active-patient-changed', { detail: { previousId: 'p-5', patientId: '' } });
+  clock.runOne();
+  const readsBeforeEmptyBackstop = patientReads;
+  for (let i = 0; i < 1000; i++) clock.runInterval();
+  assert.strictEqual(patientReads, readsBeforeEmptyBackstop,
+    'no-selected-patient backstop decoded the full roster');
+
+  activeId = 'missing-patient';
+  window.emit('mls:active-patient-changed', { detail: { patientId: activeId } });
+  clock.runOne();
+  const readsAfterMissingLookup = patientReads;
+  for (let i = 0; i < 1000; i++) clock.runInterval();
+  assert.strictEqual(patientReads, readsAfterMissingLookup,
+    'known-missing active record was re-read on every compatibility tick');
 
   account = 'doctor-b@example.test';
   activeId = 'p-1';
@@ -183,6 +246,15 @@ function testActivePatientFieldSync() {
   assert.strictEqual(clock.pendingCount, 1, 'account switch did not coalesce to one bounded reconciliation');
   clock.runOne();
   assert.strictEqual(fields.patientLabel.value, patients[1].name, 'next account did not reconcile its active patient');
+
+  const readsBeforeSameIdBoundary = patientReads;
+  account = 'doctor-c@example.test';
+  window.emit('mls:session-boundary', { detail: { previousAccount: 'doctor-b@example.test', nextAccount: account } });
+  assert.strictEqual(fields.heroPtName.value, '', 'same-id account boundary left the prior account identity visible');
+  assert.strictEqual(fields.patientLabel.value, '', 'same-id account boundary left the prior account visit label visible');
+  assert.strictEqual(patientReads, readsBeforeSameIdBoundary, 'same-id account boundary decoded the roster synchronously');
+  clock.runOne();
+  assert.strictEqual(fields.patientLabel.value, patients[1].name, 'same-id next account did not reconcile at idle');
 
   const readsBeforeRevert = patientReads;
   window.__mlsActivePtSync.revert();
@@ -289,7 +361,7 @@ function testConversationIsolationEvents() {
 
   vm.runInContext(read('feat_mls_patient_context_safety.js'), context, { filename: 'feat_mls_patient_context_safety.js' });
   const api = window.__mlsPtCtxSafety;
-  assert(api && api.installed && api.version === 'pcs-1.2.0', 'event-driven context safety did not install');
+  assert(api && api.installed && api.version === 'pcs-1.2.1', 'event-driven context safety did not install');
   assert.strictEqual(clock.intervalCreates, 0, 'conversation isolation installed a permanent interval');
   assert.strictEqual(api.owner(), 'a-1', 'boot did not adopt the exact active patient');
 
@@ -383,8 +455,32 @@ const activeSyncSource = read('feat_mls_active_patient_sync.js');
 const contextSource = read('feat_mls_patient_context_safety.js');
 const connect = read('mls-connect.js');
 const staging = read('mls-connect.staging.js');
-assert(activeSyncSource.includes('backstopTimer = setInterval(tick, 15000)'), 'active-patient rename backstop changed');
+assert(activeSyncSource.includes('backstopTimer = setInterval(tick, 15000)'), 'active-patient structural backstop changed');
+assert(activeSyncSource.includes('lastName = lastActiveId ? seedNameFromFields() : null'),
+  'active-patient sync can decode the roster while installing again');
+assert(activeSyncSource.includes('id === lastActiveId &&') && activeSyncSource.includes('(!lastName && lastRecordMissing)'),
+  'settled or known-missing backstop can decode the full roster again');
+const recordListenerSource = activeSyncSource.slice(activeSyncSource.indexOf('recordListener = function'), activeSyncSource.indexOf('storageListener = function'));
+const storageListenerStart = activeSyncSource.indexOf('storageListener = function');
+const storageListenerSource = activeSyncSource.slice(storageListenerStart, activeSyncSource.indexOf('focusoutListener = function', storageListenerStart));
+assert(recordListenerSource.includes('queueSync()'), 'exact same-tab patient edits lost their immediate label repair');
+assert(storageListenerSource.includes('queueStorageSync()') && activeSyncSource.includes('window.requestIdleCallback(run)'),
+  'cross-tab active-patient changes can cold-decode the roster in the input lane');
+assert(storageListenerSource.includes('invalidateStorageIdentity()'),
+  'cross-tab active-patient changes can leave the prior patient label visible while idle work waits');
+assert(storageListenerSource.includes('boundaryListener = function') &&
+  storageListenerSource.includes('invalidateStorageIdentity(true)') && storageListenerSource.includes('queueStorageSync()'),
+  'session boundary can cold-decode the roster in the first post-login task');
+assert(storageListenerSource.includes('cancelPendingSync()'),
+  'session/storage boundary can inherit a prior account immediate patient task');
+assert(activeSyncSource.includes('document.activeElement === el') &&
+  activeSyncSource.includes("data-mls-patient-sync-pending"),
+  'cross-tab identity invalidation can erase a clinician\'s actively typed label');
+assert(activeSyncSource.includes("if (!id) {") && activeSyncSource.includes('(!lastName && lastRecordMissing)'),
+  'empty or known-missing active records can cold-decode the roster on every backstop');
 assert(!activeSyncSource.includes('setInterval(tick, 400)'), 'active-patient field sync regained high-frequency polling');
+assert(activeSyncSource.includes('function tick()') && activeSyncSource.includes('queueStorageSync();'),
+  'compatibility backstop can synchronously cold-decode the roster during input');
 assert(!/setInterval\s*\(/.test(contextSource), 'conversation isolation regained polling');
 assert(
   connect.includes("var A='feat_mls_active_patient_sync.js'") &&

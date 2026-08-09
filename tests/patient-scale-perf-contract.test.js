@@ -269,7 +269,8 @@ assert(connect.includes('window.__mlsSanitizeV2.retired = true;'), 'sanitize swe
 assert(connect.includes('cleanRuns >= 5'), 'sanitize self-retire threshold changed unexpectedly');
 
 /* ---------- 6c. chart structuring persists one outer batch ---------- */
-const chartStart = connect.indexOf("try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.1.0') return; }");
+const chartModuleStart = connect.indexOf('MLS Scribe - PULLED-CHART STRUCTURING');
+const chartStart = connect.indexOf("if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.2.0') return;", chartModuleStart);
 const chartEnd = connect.indexOf('window.__mlsChartStructure_revert = function ()', chartStart);
 assert(chartStart >= 0 && chartEnd > chartStart, 'Chart Structure slice is missing');
 const chartStructure = connect.slice(chartStart, chartEnd);
@@ -277,20 +278,33 @@ assert(!chartStructure.includes('if (changed) upsert(p);'),
   'automatic chart structuring returned to one full-store upsert per patient');
 assert.strictEqual((chartStructure.match(/sweepPatient\(candidate, true\)/g) || []).length, 2,
   'automatic and manual Chart Structure callers must both defer row persistence');
-assert.strictEqual((chartStructure.match(/persistSweep\(ps, dirty, persistScope/g) || []).length, 2,
-  'automatic and manual Chart Structure callers must both submit one cooperative outer batch');
-assert.strictEqual((chartStructure.match(/var candidate = copyPatientForSweep\(ps\[i\]\)/g) || []).length, 2,
+assert.strictEqual((chartStructure.match(/persistSweep\(ps, dirty, persistScope/g) || []).length, 1,
+  'manual Chart Structure repair must submit one cooperative outer batch');
+assert.strictEqual((chartStructure.match(/var candidate = copyPatientForSweep\(/g) || []).length, 2,
   'automatic and manual Chart Structure repairs must stay copy-on-write');
 assert(!chartStructure.includes('window.savePatients(ps)'),
   'Chart Structure automatic persistence returned to a renderer-thread roster save');
+const chartVisitsStart = chartStructure.indexOf('function addStructuredVisits(p, visits) {');
+const chartVisitsEnd = chartStructure.indexOf('\n  /* ---------- compose the new summary', chartVisitsStart);
+const chartVisits = chartStructure.slice(chartVisitsStart, chartVisitsEnd);
+assert(chartVisits.includes('_patientRef: p') && !chartVisits.includes('getPatients()'),
+  'Chart Structure visit repair escaped its copy-on-write row and regained a roster re-read');
+assert(chartStructure.includes('var receipt = queue.scan({') && chartStructure.includes('chunkSize: 8'),
+  'automatic Chart Structure repair is not routed through bounded yielded maintenance slices');
+assert(!chartStructure.includes('setInterval(sweep, 3000)') &&
+  chartStructure.includes("bindAutoSweep(window, 'mls:patient-record-updated'") &&
+  chartStructure.includes("detail.key !== 'patients:hydrate'") &&
+  chartStructure.includes("bindAutoSweep(window, 'storage'"),
+  'Chart Structure automatic repair regained the three-second roster scan or lost exact event admission');
 const chartSweepStart = chartStructure.indexOf('function sweep() {');
-const chartVersionStamp = chartStructure.indexOf('STATS.lastSweepVer = vNow;', chartSweepStart);
-const chartBusyReturn = chartStructure.indexOf('if (pulling) return;', chartSweepStart);
-assert(chartBusyReturn >= 0 && chartBusyReturn < chartVersionStamp,
-  'Chart Structure must not stamp a pull-busy store version as clean');
+const chartScanStart = chartStructure.indexOf('var receipt = queue.scan({', chartSweepStart);
+const chartHiddenReturn = chartStructure.indexOf('if (document.hidden)', chartSweepStart);
+const chartBusyReturn = chartStructure.indexOf('if (pullOwnsRoster())', chartSweepStart);
+assert(chartHiddenReturn >= 0 && chartHiddenReturn < chartScanStart && chartBusyReturn >= 0 && chartBusyReturn < chartScanStart,
+  'Chart Structure must not admit a pull-busy or hidden-roster maintenance scan');
 
 const persistStart = chartStructure.indexOf('function persistSweep(ps, dirty, scope, onSaved) {');
-const persistEnd = chartStructure.indexOf('\n  function sweep() {', persistStart);
+const persistEnd = chartStructure.indexOf('\n  var autoSweepRunning =', persistStart);
 assert(persistStart >= 0 && persistEnd > persistStart, 'Chart Structure batch helper is missing');
 const persistSource = chartStructure.slice(persistStart, persistEnd);
 assert(!persistSource.includes('upsertPatient') && !persistSource.includes('savePatients'),

@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_writeback_safety.js  ->  window.__mlsWritebackSafety   (wbs-1.0.0)
+ * feat_mls_writeback_safety.js  ->  window.__mlsWritebackSafety   (wbs-1.2.0)
  * -----------------------------------------------------------------------------
  * TASK 10 — Writeback Preview & Patient Safety (APP-SIDE ONLY).
  *
@@ -53,7 +53,7 @@
   'use strict';
   if (window.__mlsWritebackSafety && window.__mlsWritebackSafety.installed) return;
 
-  var VERSION = 'wbs-1.1.0';
+  var VERSION = 'wbs-1.2.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var DESTINATION = 'athenaOne encounter (open chart)';
 
@@ -225,6 +225,27 @@
   var stopped = false;
 
   function activePt() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
+  var previewPatientId = null, previewPatientValue = null;
+  function currentActiveId() {
+    try { return (typeof window.getActivePtId === 'function') ? S(window.getActivePtId()) : ''; } catch (e) { return ''; }
+  }
+  function previewPatient(force) {
+    var id = currentActiveId();
+    if (!force && previewPatientId === id) return previewPatientValue;
+    /* An unexpected id change must fail the presentation closed until its
+       exact lifecycle repair runs. Never cold-decode the roster from an input
+       event merely to make the preview prettier. The write click forces a
+       fresh record below before any bridge handler can run. */
+    if (!force && previewPatientId !== null && previewPatientId !== id) return null;
+    var p = activePt();
+    previewPatientId = id;
+    previewPatientValue = p ? {
+      id: p.id, name: p.name, dob: p.dob, mrn: p.mrn, athenaId: p.athenaId,
+      lastVisit: p.lastVisit, visitDate: p.visitDate
+    } : null;
+    return previewPatientValue;
+  }
+  function invalidatePreviewPatient() { previewPatientId = null; previewPatientValue = null; }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   /* Map the deployed __mlsConnTruth vocabulary to our 3-state model. PURE +
@@ -285,8 +306,8 @@
     return out;
   }
 
-  function gatherContext(panel) {
-    var p = activePt() || null;
+  function gatherContext(panel, forcePatient) {
+    var p = previewPatient(!!forcePatient) || null;
     var ctx = {
       patient: p ? { name: p.name, dob: p.dob, mrn: p.mrn || p.athenaId || '' } : null,
       chartDob: null,                 /* app has no pre-write chart DOB; extension checks it */
@@ -297,7 +318,7 @@
       athena: (api._athenaState || athenaState)(),
       athenaReason: (function () { try { var ct = window.__mlsConnTruth; return (ct && ct.state && String(ct.state.reason || '').slice(0, 220)) || ''; } catch (e) { return ''; } })(),
       sections: panel ? panelSections(panel) : [],
-      visitDate: (function () { try { var pp = activePt(); return pp && (pp.lastVisit || pp.visitDate) || ''; } catch (e) { return ''; } })()
+      visitDate: p && (p.lastVisit || p.visitDate) || ''
     };
     return ctx;
   }
@@ -305,9 +326,14 @@
   /* ---------------------------- preview render ----------------------------- */
   function chip(txt, bg, fg) { return '<span style="display:inline-block;background:' + bg + ';color:' + fg + ';border-radius:999px;padding:2px 9px;font:700 11px system-ui;margin:0 4px 4px 0">' + esc(txt) + '</span>'; }
 
-  function renderPreview(panel) {
+  function renderPreview(panel, forcePatient) {
     if (!panel || stopped) return null;
-    var v = evaluate(gatherContext(panel));
+    /* A remote-tab patient switch hides the old identity synchronously. Do
+       not let a textarea input cold-read the roster or repaint that identity
+       while the genuine-idle reconciliation is pending. The write click is
+       still allowed to force a fresh fail-closed verification below. */
+    if (!forcePatient && panel.getAttribute('data-wbs-identity-pending')) return null;
+    var v = evaluate(gatherContext(panel, forcePatient));
     var host = panel.querySelector('#mlsWbSafety');
     if (!host) {
       host = document.createElement('div');
@@ -316,6 +342,7 @@
       if (body && body.parentElement) body.parentElement.insertBefore(host, body);
       else panel.appendChild(host);
     }
+    try { host.style.display = ''; panel.removeAttribute('data-wbs-identity-pending'); } catch (e) {}
     var confColor = v.confidence === 'high' ? '#2E6A4B' : (v.confidence === 'medium' ? '#B07636' : '#B23B3B');
     var statusColor = v.safe ? '#2E6A4B' : '#B0791F'; /* calm amber: a human is mid-review, not blocked */
     var html = '';
@@ -399,7 +426,7 @@
       if (!isWriteTrigger(t)) return;
       var panel = document.getElementById('emrPanel');
       if (!panel) return;
-      var v = renderPreview(panel);   /* re-evaluate FRESH at click time */
+      var v = renderPreview(panel, true);   /* re-evaluate FRESH at click time */
       if (v && !v.safe) {
         ev.stopImmediatePropagation();
         ev.preventDefault();
@@ -421,15 +448,83 @@
 
   /* -------------------------------- boot ----------------------------------- */
   var STATE = { blocks: 0, allowed: 0, previews: 0 };
-  var mo = null, iv = null;
+  var mo = null, refreshTimer = null, activeHandler = null, recordHandler = null, boundaryHandler = null;
+  var storageHandler = null, storageTask = null, storageTaskIsIdle = false, readyHandler = null;
+  function inputPending() {
+    try { return !!(navigator.scheduling && navigator.scheduling.isInputPending && navigator.scheduling.isInputPending()); }
+    catch (e) { return false; }
+  }
+  function cancelStoragePreview() {
+    if (storageTask == null) return;
+    try {
+      if (storageTaskIsIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(storageTask);
+      else clearTimeout(storageTask);
+    } catch (e) {}
+    storageTask = null;
+    storageTaskIsIdle = false;
+  }
+  function schedulePatientPreview() {
+    cancelStoragePreview();
+    if (stopped || refreshTimer) return;
+    refreshTimer = setTimeout(function () {
+      refreshTimer = null;
+      if (stopped) return;
+      var panel = document.getElementById('emrPanel');
+      if (panel && panel.getAttribute('data-wbs')) renderPreview(panel, true);
+    }, 0);
+  }
+  function activeStorageKey() {
+    try { return (typeof window.uns === 'function') ? S(window.uns('activePt')) : ''; }
+    catch (e) { return ''; }
+  }
+  function hideStalePreview(panel) {
+    invalidatePreviewPatient();
+    if (!panel || !panel.getAttribute('data-wbs')) return;
+    try { panel.setAttribute('data-wbs-identity-pending', '1'); } catch (e) {}
+    try {
+      var host = panel.querySelector('#mlsWbSafety');
+      if (host) host.style.display = 'none';
+    } catch (e) {}
+    try {
+      var btn = panel.querySelector('#emrWbAthena');
+      if (btn) {
+        btn.setAttribute('data-wbs-blocked', '1');
+        btn.style.opacity = '.5';
+        btn.style.cursor = 'not-allowed';
+        if (btn.getAttribute('data-wbs-title') == null) btn.setAttribute('data-wbs-title', btn.title || '');
+        btn.title = 'Patient changed in another tab. Waiting to re-verify.';
+      }
+    } catch (e) {}
+    lastVerdict = null;
+  }
+  function scheduleStoragePreview() {
+    if (stopped || storageTask != null) return;
+    var run = function () {
+      storageTask = null;
+      storageTaskIsIdle = false;
+      if (stopped) return;
+      if (inputPending()) { scheduleStoragePreview(); return; }
+      var panel = document.getElementById('emrPanel');
+      if (panel && panel.getAttribute('data-wbs')) renderPreview(panel, true);
+    };
+    try {
+      if (typeof window.requestIdleCallback === 'function') {
+        storageTaskIsIdle = true;
+        storageTask = window.requestIdleCallback(run);
+        return;
+      }
+    } catch (e) {}
+    storageTaskIsIdle = false;
+    storageTask = setTimeout(run, 900);
+  }
   function attach(panel) {
     if (!panel || panel.getAttribute('data-wbs')) return;
     panel.setAttribute('data-wbs', '1');
-    renderPreview(panel);
+    renderPreview(panel, true);
     STATE.previews++;
     try {
-      panel.addEventListener('change', function () { renderPreview(panel); }, false);
-      panel.addEventListener('input', function () { renderPreview(panel); }, false);
+      panel.addEventListener('change', function () { renderPreview(panel, false); }, false);
+      panel.addEventListener('input', function () { renderPreview(panel, false); }, false);
     } catch (e) {}
   }
   function boot() {
@@ -439,14 +534,45 @@
       mo.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
     try { var p0 = document.getElementById('emrPanel'); if (p0) attach(p0); } catch (e) {}
-    /* light refresh so the preview tracks connTruth / patient changes while open */
-    try { iv = setInterval(function () { if (stopped) return; var p = document.getElementById('emrPanel'); if (p && p.getAttribute('data-wbs')) renderPreview(p); }, 4000); } catch (e) {}
+    activeHandler = function () { invalidatePreviewPatient(); schedulePatientPreview(); };
+    recordHandler = function (ev) {
+      try {
+        var id = S(ev && ev.detail && ev.detail.patientId);
+        if (!id || id !== currentActiveId()) return;
+      } catch (e) { return; }
+      invalidatePreviewPatient();
+      schedulePatientPreview();
+    };
+    boundaryHandler = function () { invalidatePreviewPatient(); schedulePatientPreview(); };
+    storageHandler = function (ev) {
+      try {
+        if (!ev || S(ev.key) !== activeStorageKey()) return;
+        if (ev.storageArea && window.localStorage && ev.storageArea !== window.localStorage) return;
+      } catch (e) { return; }
+      var panel = null;
+      try { panel = document.getElementById('emrPanel'); } catch (e) {}
+      if (!panel || !panel.getAttribute('data-wbs')) { invalidatePreviewPatient(); return; }
+      hideStalePreview(panel);
+      scheduleStoragePreview();
+    };
+    try { window.addEventListener('mls:active-patient-changed', activeHandler); } catch (e) {}
+    try { window.addEventListener('mls:patient-record-updated', recordHandler); } catch (e) {}
+    try { window.addEventListener('mls:session-boundary', boundaryHandler); } catch (e) {}
+    try { window.addEventListener('storage', storageHandler); } catch (e) {}
   }
   function revert() {
     stopped = true;
     try { document.removeEventListener('click', gateClick, true); } catch (e) {}
     try { if (mo) mo.disconnect(); } catch (e) {}
-    try { if (iv) clearInterval(iv); } catch (e) {}
+    try { if (refreshTimer) clearTimeout(refreshTimer); } catch (e) {} refreshTimer = null;
+    cancelStoragePreview();
+    try { if (activeHandler) window.removeEventListener('mls:active-patient-changed', activeHandler); } catch (e) {}
+    try { if (recordHandler) window.removeEventListener('mls:patient-record-updated', recordHandler); } catch (e) {}
+    try { if (boundaryHandler) window.removeEventListener('mls:session-boundary', boundaryHandler); } catch (e) {}
+    try { if (storageHandler) window.removeEventListener('storage', storageHandler); } catch (e) {}
+    try { if (readyHandler) document.removeEventListener('DOMContentLoaded', readyHandler); } catch (e) {}
+    activeHandler = recordHandler = boundaryHandler = storageHandler = readyHandler = null;
+    invalidatePreviewPatient();
     try { var h = document.querySelectorAll('#mlsWbSafety'); for (var i = 0; i < h.length; i++) h[i].remove(); } catch (e) {}
     window.__mlsWritebackSafety.installed = false;
   }
@@ -460,5 +586,8 @@
   };
   window.__mlsWritebackSafety = api;
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  if (document.readyState === 'loading') {
+    readyHandler = boot;
+    document.addEventListener('DOMContentLoaded', readyHandler);
+  } else boot();
 })();

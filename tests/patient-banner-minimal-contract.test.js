@@ -64,6 +64,21 @@ assert(!/no visits/.test(card), 'visit-count text is back in the banner meta lin
    changed nothing. It must not come back with the action row gone. */
 assert(!/new MutationObserver\(/.test(card), 'the banner arms a MutationObserver again');
 assert(!/setInterval\(/.test(card), 'the banner arms a polling interval again');
+assert(card.includes("window.addEventListener('mls:patient-record-updated'"),
+  'the banner lost its exact same-tab patient-row refresh');
+const cardStorage = card.slice(card.indexOf('/* __mlsCardStormFix v1 */'));
+assert(cardStorage.includes("if (k && k.indexOf('activePt') < 0) return;"),
+  'the banner storage owner no longer limits itself to active-id changes');
+assert(!cardStorage.includes("k.indexOf('patients')"),
+  'an unrelated cross-tab patient write can force a full banner roster decode again');
+assert(cardStorage.includes('syncRouteLayout();'),
+  'a cross-tab patient switch can leave the prior patient identity visible while refresh waits');
+assert(card.includes("window.requestIdleCallback(run)"),
+  'a remote active-patient change can decode the roster in the input lane again');
+assert(card.includes("window.addEventListener('mls:view-changed', syncRouteLayout)"),
+  'visual route changes can synchronously refresh/decode the patient roster again');
+assert(!card.includes("window.addEventListener('mls:view-changed', refresh)"),
+  'the retired route-to-roster listener returned');
 
 /* The chart link must resolve the patient AT CLICK TIME. A quick-pick can
    change the active patient without re-rendering this bar; a captured id then
@@ -141,7 +156,8 @@ assert(!/the patient banner shows a quiet/.test(connect),
 
 /* ------------------------------------------------- 4. runtime: the one click */
 
-let opened = null, view = null, noteReads = 0;
+let opened = null, view = null, noteReads = 0, patientReads = 0, currentActiveId = 'p1';
+const windowListeners = Object.create(null);
 
 function makeEl(tag) {
   const el = {
@@ -225,13 +241,16 @@ const nav = makeEl('div'); nav.className = 'mainnav';
 const navParent = makeEl('div'); navParent.appendChild(nav);
 
 global.window = {
-  activePatient: () => ({ id: 'p1', name: 'Bernard P Brooks', dob: '1951-06-13', sex: 'M', mrn: '8292441' }),
-  getActivePtId: () => 'p1',
+  activePatient: () => { patientReads++; return { id: 'p1', name: 'Bernard P Brooks', dob: '1951-06-13', sex: 'M', mrn: '8292441' }; },
+  getActivePtId: () => currentActiveId,
   findPatient: () => global.window.activePatient(),
   patientNotes: () => { noteReads++; return []; },
   openPatient: (id) => { opened = id; },
   showView: (v) => { view = v; },
-  addEventListener() {}, setTimeout, clearTimeout, setInterval, clearInterval
+  addEventListener(name, fn) { (windowListeners[name] || (windowListeners[name] = [])).push(fn); },
+  emit(name, event) { (windowListeners[name] || []).slice().forEach(fn => fn(event || { type: name })); },
+  requestIdleCallback() { return 1; }, cancelIdleCallback() {},
+  setTimeout, clearTimeout, setInterval, clearInterval
 };
 global.document = {
   readyState: 'complete',
@@ -257,6 +276,10 @@ new Function(html.slice(iifeStart, cardEnd) + 'window.__mlsCtxBar = window.__mls
 
 const bar = byId['mlsCtxBar'];
 assert(bar, 'the banner did not mount');
+const patientReadsAfterMount = patientReads;
+for (let i = 0; i < 1000; i++) global.window.emit('mls:view-changed', { detail: { view: i % 2 ? 'visit' : 'history' } });
+assert.strictEqual(patientReads, patientReadsAfterMount,
+  'visual route events synchronously re-read the patient roster through the banner');
 
 const idBlock = bar.querySelector('.mlsctx-id');
 assert(idBlock, 'identity block missing');
@@ -280,11 +303,22 @@ assert.strictEqual(opened, 'p1', 'Enter on the patient name must open their char
 /* A quick-pick changes the active patient WITHOUT re-rendering this bar. The
    name must follow the app's source of truth, not the id it was drawn with. */
 opened = null;
-global.window.getActivePtId = () => 'p2';
+currentActiveId = 'p2';
 idBlock.onclick();
 assert.strictEqual(opened, 'p2',
   'the patient name opened a stale chart after the active patient changed');
-global.window.getActivePtId = () => 'p1';
+currentActiveId = 'p1';
+
+/* A remote switch must hide the now-stale identity in the storage callback,
+   without reading the cold roster; its replacement waits for browser idle. */
+currentActiveId = 'p2';
+const readsBeforeRemoteSwitch = patientReads;
+global.window.emit('storage', { key: 'sf_u::doctor@example.test::activePt' });
+assert.strictEqual(bar.style.display, 'none', 'remote switch left the prior patient identity visible');
+assert.strictEqual(patientReads, readsBeforeRemoteSwitch, 'remote switch decoded the roster in the storage stack');
+currentActiveId = 'p1';
+global.window.emit('mls:view-changed', { detail: { view: 'visit' } });
+assert.strictEqual(bar.style.display, 'flex', 'cached banner did not remount after returning to its patient');
 
 /* A foreign chip (this is how Recent lives here) must survive a refresh: the
    rebuild is memoised on the rendered FACTS, never on a control count. */

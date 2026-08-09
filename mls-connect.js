@@ -8419,9 +8419,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.1.0') return; } catch (e) { return; }
+  try {
+    if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.2.0') return;
+    /* A same-document hot upgrade must stop the retired v1.1 three-second
+       closure before installing the event-owned scan. Full reloads also take
+       this harmless path with no prior owner. */
+    if (window.__mlsChartStructure && isFn(window.__mlsChartStructure_revert)) window.__mlsChartStructure_revert();
+  } catch (e) {}
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   /* ---------- tiny helpers ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -8698,10 +8704,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!M || !isFn(M.addVisit)) return 0;
     var n = 0;
     visits.forEach(function (v) {
-      try { M.addVisit(p.id, { date: v.date, type: v.type || 'Office visit', raw: v.raw }, { source: 'athena-copy', persist: false }); n++; } catch (e) {}
+      try {
+        M.addVisit(p.id, { date: v.date, type: v.type || 'Office visit', raw: v.raw },
+          { source: 'athena-copy', persist: false, _patientRef: p });
+        n++;
+      } catch (e) {}
     });
-    /* b121 clobber fix: the live honest addVisit drops our persist:false and writes each visit to localStorage via its own re-fetched clone; the caller's p is a SEPARATE stale clone whose later upsert(p) would wipe them. Re-adopt the freshly-persisted .visits onto p. */
-    if (n) { try { var _ps = getPatients(); for (var _i = 0; _i < _ps.length; _i++) { if (_ps[_i] && _ps[_i].id === p.id) { if (Array.isArray(_ps[_i].visits)) p.visits = _ps[_i].visits; break; } } } catch (e) {} }
+    /* b981: persist:false work belongs to this exact COW candidate. Passing
+       _patientRef prevents a second roster lookup/clone per repaired patient
+       and guarantees the one yielded maintenance row owns every new visit. */
     return n;
   }
 
@@ -8804,7 +8815,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* =========================================================================
-   * Interception 2 - path-agnostic heartbeat.
+   * Interception 2 - path-agnostic background repair.
    * Catches: the day-pull's DIRECT summary write (p.summary = ...+cleanText),
    * its giant {type:'Chart summary', raw:<all>} visit, and any record polluted
    * before this shipped. Idempotent via _mlsStructuredV1 + field-emptiness.
@@ -8861,70 +8872,161 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
     return true;
   }
-  function sweep() {
+  var autoSweepRunning = false, autoSweepRequested = false, autoSweepStopped = false;
+  var autoSweepSource = null, autoSweepListeners = [], bootSweepTimer = null, autoRetryTimer = null;
+  function sweepGeneration() {
+    var sweepCache = window.__mlsStoreCache, vNow = null;
+    var sweepSanitizer = window.__mlsSummarySanitize || null;
+    var sweepStrip = (sweepSanitizer && isFn(sweepSanitizer.strip)) ? sweepSanitizer.strip : null;
+    var sweepSummaryMode = (typeof API === 'object' && API) ? API.summaryMode : null;
+    var sweepGetPatients = isFn(window.getPatients) ? window.getPatients : null;
+    if (sweepCache && typeof sweepCache.verFor === 'function' && typeof window.uns === 'function') {
+      try { vNow = sweepCache.verFor(window.uns('patients')); } catch (eScoped) { vNow = null; }
+    }
+    if (vNow === null || vNow === undefined) {
+      vNow = (sweepCache && typeof sweepCache.ver === 'function') ? sweepCache.ver() : -1;
+    }
+    return { ver: vNow, sanitizer: sweepSanitizer, strip: sweepStrip, summaryMode: sweepSummaryMode, getPatients: sweepGetPatients };
+  }
+  function sameSweepGeneration(a, b) {
+    return !!(a && b && a.ver === b.ver && a.sanitizer === b.sanitizer && a.strip === b.strip &&
+      a.summaryMode === b.summaryMode && a.getPatients === b.getPatients);
+  }
+  function sameSweepDependencies(a, b) {
+    return !!(a && b && a.sanitizer === b.sanitizer && a.strip === b.strip &&
+      a.summaryMode === b.summaryMode && a.getPatients === b.getPatients);
+  }
+  function stampSweepGeneration(generation) {
+    generation = generation || sweepGeneration();
+    STATS.lastSweepVer = generation.ver;
+    STATS.lastSweepSanitizer = generation.sanitizer;
+    STATS.lastSweepStrip = generation.strip;
+    STATS.lastSweepSummaryMode = generation.summaryMode;
+    STATS.lastSweepGetPatients = generation.getPatients;
+  }
+  function lastSweepGeneration() {
+    return {
+      ver: STATS.lastSweepVer, sanitizer: STATS.lastSweepSanitizer, strip: STATS.lastSweepStrip,
+      summaryMode: STATS.lastSweepSummaryMode, getPatients: STATS.lastSweepGetPatients
+    };
+  }
+  function pullOwnsRoster() {
     try {
-      /* 2026-07-28 freeze fix: this 3s loop regex-scanned the WHOLE roster
-         forever. Gate on the store version counter - only a write can make
-         new work - and never burn CPU in a hidden tab. */
-      if (document.hidden || sweepPersistPending) return;
-      /* 2026-07-29: wait for pull ownership to clear before stamping a version. */
-      try {
-        var busyAt = Number(window.__mlsPullBusyAt || 0);
-        var pulling = (busyAt && (Date.now() - busyAt) < 10000) ||
-          !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running);
-        if (pulling) return;
-      } catch (eBusy) {}
-      try {
-        var sweepCache = window.__mlsStoreCache, vNow = null;
-        var sweepSanitizer = window.__mlsSummarySanitize || null;
-        var sweepStrip = (sweepSanitizer && isFn(sweepSanitizer.strip)) ? sweepSanitizer.strip : null;
-        var sweepSummaryMode = (typeof API === 'object' && API) ? API.summaryMode : null;
-        var sweepGetPatients = isFn(window.getPatients) ? window.getPatients : null;
-        if (sweepCache && typeof sweepCache.verFor === 'function' && typeof window.uns === 'function') {
-          try { vNow = sweepCache.verFor(window.uns('patients')); } catch (eScoped) { vNow = null; }
-        }
-        if (vNow === null || vNow === undefined) {
-          vNow = (sweepCache && typeof sweepCache.ver === 'function') ? sweepCache.ver() : -1;
-        }
-        if (vNow === STATS.lastSweepVer && sweepSanitizer === STATS.lastSweepSanitizer &&
-            sweepStrip === STATS.lastSweepStrip && sweepSummaryMode === STATS.lastSweepSummaryMode &&
-            sweepGetPatients === STATS.lastSweepGetPatients &&
-            STATS.sweepPasses > 0) return;
-        STATS.lastSweepVer = vNow;
-        STATS.lastSweepSanitizer = sweepSanitizer;
-        STATS.lastSweepStrip = sweepStrip;
-        STATS.lastSweepSummaryMode = sweepSummaryMode;
-        STATS.lastSweepGetPatients = sweepGetPatients;
-      } catch (eV) {}
-      var persistScope = window.__mlsMaintenancePersist && isFn(window.__mlsMaintenancePersist.capture) ? window.__mlsMaintenancePersist.capture() : null;
-      var ps = getPatients(); if (!ps.length) return;
-      var touched = 0, dirty = [];
-      for (var i = 0; i < ps.length; i++) {
-        if (needsWork(ps[i])) {
-          var candidate = copyPatientForSweep(ps[i]);
-          if (sweepPatient(candidate, true)) { ps[i] = candidate; touched++; dirty.push(candidate); }
-        }
-      }
-      STATS.sweepPasses++;
-      if (touched) {
-        persistSweep(ps, dirty, persistScope, function () {
-          try { console.log('[MLS chart-structure] structured ' + touched + ' patient record' + (touched === 1 ? '' : 's')); } catch (e) {}
-          try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
-          try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
-        });
-      }
+      var busyAt = Number(window.__mlsPullBusyAt || 0);
+      return !!((busyAt && (Date.now() - busyAt) < 10000) ||
+        (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running));
+    } catch (e) { return false; }
+  }
+  function armAutomaticRetry() {
+    if (autoSweepStopped || autoRetryTimer) return;
+    try {
+      autoRetryTimer = setTimeout(function () {
+        autoRetryTimer = null;
+        if (!autoSweepStopped) sweep();
+      }, 1500);
     } catch (e) {}
   }
+  function finishAutomaticSweep(result) {
+    autoSweepRunning = false; sweepPersistPending = false;
+    var completed = !!(result && !result.stale && !result.error);
+    var finalGeneration = sweepGeneration();
+    var dependencyChanged = !!(completed && autoSweepSource && !sameSweepDependencies(autoSweepSource, finalGeneration));
+    if (completed) {
+      STATS.sweepPasses++;
+      if (!dependencyChanged) stampSweepGeneration(finalGeneration);
+      else STATS.lastSweepVer = null;
+    } else {
+      STATS.lastSweepVer = null;
+    }
+    var requested = autoSweepRequested || dependencyChanged;
+    autoSweepRequested = false;
+    autoSweepSource = null;
+    /* Failures stay retryable, but never spin a failed account/session in a
+       microtask loop. The next exact patient/session/visibility signal owns
+       the retry; a newer generation observed while this run was active may
+       start immediately. */
+    if (!autoSweepStopped && requested) {
+      try { if (!document.hidden) sweep(); } catch (e) {}
+    }
+  }
+  function sweep() {
+    try {
+      /* b981: the retired 3-second owner synchronously regex-scanned every
+         patient and produced repeat 650ms+ long tasks on a large roster. The
+         timer is gone. Canonical signals now admit one exact-generation scan
+         through the shared session-ready/input-aware maintenance owner. At
+         most eight patients are prepared per yielded turn, keeping each slice
+         short while allowing a large account to finish in useful time. */
+      if (autoSweepStopped) return;
+      if (document.hidden) { autoSweepRequested = true; return; }
+      if (pullOwnsRoster()) { autoSweepRequested = true; armAutomaticRetry(); return; }
+      var generation = sweepGeneration();
+      if (STATS.sweepPasses > 0 && sameSweepGeneration(generation, lastSweepGeneration())) return;
+      if (autoSweepRunning) {
+        if (!sameSweepGeneration(generation, autoSweepSource)) autoSweepRequested = true;
+        return;
+      }
+      var queue = window.__mlsMaintenancePersist;
+      if (!queue || !isFn(queue.scan)) { autoSweepRequested = true; return; }
+      autoSweepRunning = true; autoSweepRequested = false; sweepPersistPending = true; autoSweepSource = generation;
+      var touched = 0;
+      var receipt = queue.scan({
+        chunkSize: 8,
+        fields: ['summary', 'problems', 'meds', 'allergies', 'insurance', 'visits', '_mlsStructuredV1', 'updated'],
+        prepare: function (patient) {
+          if (autoSweepStopped || !patient || !needsWork(patient)) return null;
+          var candidate = copyPatientForSweep(patient);
+          if (!sweepPatient(candidate, true)) return null;
+          candidate.updated = Date.now(); touched++;
+          return candidate;
+        },
+        onSaved: function () {
+          if (!touched) return;
+          try { console.log('[MLS chart-structure] structured ' + touched + ' patient record' + (touched === 1 ? '' : 's')); } catch (e) {}
+          try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e2) {}
+          try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e3) {}
+        }
+      });
+      if (!receipt || !isFn(receipt.then)) { finishAutomaticSweep({ error: new Error('Chart maintenance scan did not return a receipt.') }); return; }
+      Promise.resolve(receipt).then(finishAutomaticSweep, function (error) { finishAutomaticSweep({ error: error }); });
+    } catch (e) { finishAutomaticSweep({ error: e }); }
+  }
+  function exactPatientStorage(ev) {
+    try {
+      if (!ev || ev.storageArea && ev.storageArea !== localStorage) return false;
+      if (ev.key == null) return true;
+      return isFn(window.uns) && String(ev.key) === String(window.uns('patients'));
+    } catch (e) { return false; }
+  }
+  function bindAutoSweep(target, name, fn, capture) {
+    try { target.addEventListener(name, fn, !!capture); autoSweepListeners.push([target, name, fn, !!capture]); } catch (e) {}
+  }
+  function onPatientSignal() { sweep(); }
+  function onPatientStorage(ev) { if (exactPatientStorage(ev)) sweep(); }
+  function onHydrationProgress(ev) {
+    try {
+      var detail = ev && ev.detail;
+      if (!detail || detail.key !== 'patients:hydrate') return;
+      if (/^(?:completed|partial|failed|canceled|timed_out)$/.test(String(detail.status || ''))) sweep();
+    } catch (e) {}
+  }
+  function onVisibilitySweep() { try { if (!document.hidden) sweep(); } catch (e) {} }
 
   /* ---------- install (lazy: sinks/models appear after this prepended module) ---------- */
-  var installTimer = null, sweepTimer = null, installed = false;
+  var installTimer = null, installed = false;
   function tryInstall() {
     if (!installed && wrapSave()) { installed = true; if (installTimer) { clearInterval(installTimer); installTimer = null; } }
   }
   try { installTimer = setInterval(tryInstall, 800); } catch (e) {}
   tryInstall();
-  try { sweepTimer = setInterval(sweep, 3000); } catch (e) {}
-  setTimeout(sweep, 1500);
+  bindAutoSweep(window, 'storage', onPatientStorage, false);
+  bindAutoSweep(window, 'pageshow', onPatientSignal, false);
+  bindAutoSweep(document, 'visibilitychange', onVisibilitySweep, false);
+  bindAutoSweep(window, 'mls:patient-record-updated', onPatientSignal, false);
+  bindAutoSweep(window, 'mls:ui-ready', onPatientSignal, false);
+  bindAutoSweep(window, 'mls:job-progress', onHydrationProgress, false);
+  bindAutoSweep(window, 'mls:session-boundary', onPatientSignal, false);
+  try { bootSweepTimer = setTimeout(sweep, 1500); } catch (e) {}
 
   /* ---------- public API ---------- */
   var API = {
@@ -8956,8 +9058,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsChartStructure = API;
 
   window.__mlsChartStructure_revert = function () {
+    autoSweepStopped = true; autoSweepRequested = false;
     try { if (installTimer) clearInterval(installTimer); } catch (e) {}
-    try { if (sweepTimer) clearInterval(sweepTimer); } catch (e) {}
+    try { if (bootSweepTimer) clearTimeout(bootSweepTimer); } catch (e) {}
+    try { if (autoRetryTimer) clearTimeout(autoRetryTimer); } catch (eRetry) {}
+    for (var li = 0; li < autoSweepListeners.length; li++) {
+      try { autoSweepListeners[li][0].removeEventListener(autoSweepListeners[li][1], autoSweepListeners[li][2], autoSweepListeners[li][3]); } catch (eListener) {}
+    }
+    autoSweepListeners = [];
     try { if (window._savePatientChart && window._savePatientChart.__orig) window._savePatientChart = window._savePatientChart.__orig; } catch (e) {}
     try { delete window.__mlsChartStructure; } catch (e) { window.__mlsChartStructure = undefined; }
     return 'reverted (fields already written stay; nothing is unwritten)';
@@ -35763,7 +35871,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b979';
+  window.__MLS_AV = window.__MLS_AV || 'b981';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36106,7 +36214,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b979';
+  var MLS_APP_BUILD='2026-07-25-b981';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -43789,7 +43897,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simpleview_global.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_simpleview_global.js?v=20260625sv13c1';s.setAttribute('data-mls-asset','feat_mls_simpleview_global.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_viewtoggle.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_viewtoggle.js?v=20260716vt102';s.setAttribute('data-mls-asset','feat_mls_viewtoggle.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
-;(function(){try{var A='feat_mls_redesign.js',V='3.2.3',api=window.__mlsRedesign,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: version-aware same-document upgrade, additive and reversible. */
+;(function(){try{var A='feat_mls_redesign.js',V='3.2.4',api=window.__mlsRedesign,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){if(!api)return;old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe 2026 reskin: version-aware same-document upgrade, additive and reversible. */
 
 
 ;(function(){try{if(!document.querySelector('script[data-mls-exact-enable]')){var m=document.createElement('script');m.type='text/plain';m.src='data:,mls-connect.staging.js';m.setAttribute('data-mls-exact-enable','1');(document.head||document.documentElement).appendChild(m);}}catch(e){}})(); /* MLS prod-enable: satisfies *_exact isStaging() gate without loading the staging bundle; REVERT: delete this line + the 14 *_exact loader lines below */
@@ -43823,11 +43931,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_login_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_login_exact.js (STAGING ONLY) — additive, reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patientpick.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patientpick.js?v=20260808pick162perf1';s.setAttribute('data-mls-asset','feat_mls_patientpick.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patientpick.js (shared pull-and-select) — additive, reversible */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_simple_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_simple_exact.js?v=20260719simx142';s.setAttribute('data-mls-asset','feat_mls_simple_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_simple_exact.js (STAGING ONLY) — additive, reversible */
+;(function(){try{var A='feat_mls_simple_exact.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* simx-1.4.2: Simple Visit uses active-id input fast paths (STAGING ONLY), additive and reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_notetools_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_notetools_exact.js?v=20260624nt1c1';s.setAttribute('data-mls-asset','feat_mls_notetools_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_notetools_exact.js (PROD) - note+tools legibility, additive, reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_widgetinsert.js"]'))return;var s=document.createElement('script');s.src='feat_mls_widgetinsert.js?v=20260802wi4';s.setAttribute('data-mls-asset','feat_mls_widgetinsert.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* FIX 2: robust custom-widget Add-to-note (body/mirror fallback) + surface generated widgets (PROD) - additive, reversible */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_datalink_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_datalink_exact.js?v=20260727dl2';s.setAttribute('data-mls-asset','feat_mls_datalink_exact.js');s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe feat_mls_datalink_exact.js (PROD) - cross-surface data link (picker + Patients + Calendar), additive, reversible */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A='feat_mls_datalink_exact.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* MLSscribe link-1.1.0 event-driven cross-surface data link; shared build token prevents stale polling code (additive, reversible) */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260808asst220perf1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.2.0 - stale-lineage protection stays exact while cooperative bulk checks run in input-aware slices; refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
@@ -43864,7 +43972,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline_detail.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline_detail.js?v=20260625vtd1c1';s.setAttribute('data-mls-asset','feat_mls_visit_timeline_detail.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedpull_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedpull_fix.js?v=20260625spf1c1';s.setAttribute('data-mls-asset','feat_mls_schedpull_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item18: ONE-day-in/one-day-out per-doctor schedule pull (structured day-grid rows; one honest status) -- additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v=20260716unify110';s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Copilot one-conversation store, request-specific pending state, event-driven context */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_unify.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_unify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* unify-1.2.0: one Copilot conversation plus O(1) active-id no-patient hints, request-specific pending state and event-driven context */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_copilot_slim.js"]'))return;var s=document.createElement('script');s.src='feat_copilot_slim.js?v=20260719csp211';s.setAttribute('data-mls-asset','feat_copilot_slim.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* loss-aware Copilot context packing: keeps identities, counts, appointments and structured metrics */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_asst_fix.js"]'))return;var s=document.createElement('script');s.src='feat_mls_asst_fix.js?v=20260802asst145';s.setAttribute('data-mls-asset','feat_mls_asst_fix.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})();
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
@@ -43886,7 +43994,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{var A='feat_mls_nextup_autoscroll.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625nas2c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item26: auto-scroll the NEXT UP / today-patients picker (mlspk) to the current-time patient on load and advance as time passes (additive, reversible: window.__mlsNextUpAutoScroll.revert()) */
 
-;(function(){try{var A='feat_mls_active_patient_sync.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* aps-1.2.1: exact switch/update event sync plus a 15s noncanonical backstop (additive, reversible: window.__mlsActivePtSync.revert()) */
+;(function(){try{var A='feat_mls_active_patient_sync.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* aps-1.2.2: exact switch/update sync plus a 15s id/field-only structural backstop (additive, reversible: window.__mlsActivePtSync.revert()) */
 
 ;(function(){try{var A='feat_mls_athena_chip_conn.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260625acc1c1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item30: unify context-bar Athena chip with the connection source of truth (__mlsConnTruth) -- idle chip shows honest connected/not-connected instead of bare "idle" -- additive, reversible (window.__mlsAthenaChipConn.revert()) */
 
@@ -43912,7 +44020,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_outcome_pdf.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260807lib7";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* item69 (STAGING): Outcome Study report exports -- multi-page PDF report + standalone SVG chart download added to the existing Outcome Study results panel (sources live rendered cohort data; athenaOne untouched; never writes/deletes records) -- additive, reversible: window.__mlsOutcomePdf.revert() */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_pervisit_unify.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260725pvu1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item70: unify copy-every-visit + per-visit records into one coherent timeline/detail surface + verify single model; additive, reversible: window.__mlsPerVisitUnify.revert() */
 ;(function(){try{var A="feat_mls_dayprogress.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727dp7";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item72 (STAGING): Day Progress meter in the persistent patient bar -- seen X/Y today + Next-up patient (one shared schedule/seen/now source of truth, click reuses _heroPickPatient), visible on every clinical view (additive, reversible: window.__mlsDayProgress.revert()) */
-;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260808rp220perf1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73: frame-coalesced recent-patient quick-switcher (additive, reversible: window.__mlsRecentPts.revert()) */
+;(function(){try{var A="feat_mls_recentpts.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item73 rp-2.3.0: exact-event, hidden-aware, route-fast recent-patient quick-switcher (additive, reversible: window.__mlsRecentPts.revert()) */
 ;(function(){try{var A="feat_mls_ptsnapshot.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727ps3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* patient snapshot chip: stable, deduplicated header rendering */
 ;(function(){try{var A="feat_mls_agenda_popover.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727ag-stable5";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item77: Today's agenda popover + stable shared patient-bar layout; visual placement stays fixed across independent chip refreshes. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_visit_useactivept.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630ua2c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item78 (STAGING): "Use current patient" autofill on the Visit hero -- one click fills name+DOB+de-identified label from the active patient (no auto-submit, no record writes) (additive, reversible: window.__mlsUseActivePt.revert()) */
@@ -43937,7 +44045,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_pick_smartscope.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716pss1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* restore loader: picker smart scope (window.__mlsPickSmartScope) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_keyboard_layer.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260801kl1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: unified keyboard layer (window.__mlsKbd) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802dk1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
-;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727hcep2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: allergy safety strip (window.__mlsAllergyStrip) */
+;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* allergy-strip-1.1.0: event-driven allergy safety strip (window.__mlsAllergyStrip) */
 /* Stripe/legal payout onboarding is intentionally held. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260804sg1c8";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* idempotent Study Groups engine; one reconciled Studio mount, reviewed local imports */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sa3";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
@@ -45203,11 +45311,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 })();
 
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.4.0 exact-key generation fallback; normal builds install the cache at byte zero before boot work */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pcs-1.2.0: synchronous ownership swap, frame-coalesced conversation mirrors, identity confirm; no permanent roster poll (additive, reversible) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pcs-1.2.1: synchronous ownership swap, idle-coalesced identity lookup, frame-coalesced conversation mirrors; no roster poll (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v=20260802crs121';s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_recording_segments.js"]'))return;var s=document.createElement('script');s.src='feat_mls_recording_segments.js?v=20260802rs112';s.setAttribute('data-mls-asset','feat_mls_recording_segments.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 7: multi-segment recordings (window.__mlsRecSegments; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_note_editor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_note_editor.js?v=20260802ne113';s.setAttribute('data-mls-asset','feat_mls_note_editor.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 8: note editing/dictation + revision history (window.__mlsNoteEditor; revert()) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_safety.js?v=20260717wbs110-b356';s.setAttribute('data-mls-asset','feat_mls_writeback_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 10: pre-write safety preview + fail-closed click gate (window.__mlsWritebackSafety wbs-1.0.0; revert()) */
+;(function(){try{var A='feat_mls_writeback_safety.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* wbs-1.2.0: event-driven cached preview plus a fresh fail-closed write-click gate; shared build token */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_orders_draft_extra.js"]'))return;var s=document.createElement('script');s.src='feat_mls_orders_draft_extra.js?v=ode100c1';s.setAttribute('data-mls-asset','feat_mls_orders_draft_extra.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 9: four draft-only order categories (window.__mlsOrdersDraftExtra ode-1.0.0; revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_pullflow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_pullflow.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_pullflow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pullflow: state-driven "Getting today's patients ready" progress + recovery + debug panel; early-aborts the stale spinner; never an endless loading state (additive, reversible: window.__mlsPullFlow.revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calpro.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calpro.js?v=20260728cal16';s.setAttribute('data-mls-asset','feat_mls_calpro.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* Task 11 calendar controls; cp-1.0.3 prevents its calendar observer from self-triggering forever */
@@ -45225,7 +45333,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_timeline.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_timeline.js?v=20260805vtl103';s.setAttribute('data-mls-asset','feat_mls_visit_timeline.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1400);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_tele_doctor.js"]'))return;var s=document.createElement('script');s.src='feat_mls_tele_doctor.js?v=20260805td100';s.setAttribute('data-mls-asset','feat_mls_tele_doctor.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:3000});}catch(e){}})(); /* post-op video visits: the doctor's accept + call surface. Ships DARK  polls only when signed in to the backend and renders nothing without a real pending request. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_theme_polish.js"]'))return;var s=document.createElement('script');s.src='feat_mls_theme_polish.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_theme_polish.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* demo polish: calm theme + reflow-free view transitions (window.__mlsThemePolish thm-2.2.0; revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260806wd112";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* demo polish: widget deck on the Visit view - mirrors custom-widget cards into the main flow + curated starter picks + builder example chips (window.__mlsWidgetDeck wd-1.0.0; revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* event-driven widget deck on Visit (window.__mlsWidgetDeck wd-1.2.0; revert()); shared build token prevents stale polling code */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{var want=false;try{want=(sessionStorage.getItem('mls_phone_mode')==='1');}catch(e){}try{if(!want&&localStorage.getItem('mls_device_role')==='phone')want=true;}catch(e){}try{if(!want&&/[?&]phone=1/.test(location.search))want=true;}catch(e){}try{if(!want)want=/iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent||'')&&((navigator.maxTouchPoints||0)>0||'ontouchstart' in window);}catch(e){}if(!want)return;if(document.querySelector('script[data-mls-asset="feat_mls_phone_ui.js"]'))return;var s=document.createElement('script');s.src='feat_mls_phone_ui.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_phone_ui.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS on a phone (ph2-1.0.0): a phone app written for the phone, replacing the 28-rule body.mls-phone hide layer that produced every defect in PHONE_AUDIT_2026-07-27.md. Requested ONLY on a handheld / explicit phone role / ?phone=1, so a desktop pays nothing. Deliberately NOT routed through __mlsDeferAsset: this module hides the desktop chrome, and deferring it past first paint shows the doctor the 8-item dock and the crowded workspace for a second before replacing them (window.__mlsPhoneUI ph2-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;}catch(e){}},{timeout:1500,priority:0,owner:'__mlsCalmShell',retireVersion:'calm-1.0.0',barrier:true,fallback:'classic',asset:'feat_mls_calm_shell.js'});}catch(e){}})(); /* Calm Shell: gate-owned presentation foundation. It evaluates before the seven dependent polish/focus owners so no control can reshape after reveal; a real load failure fails back to the functional Classic shell. ?ui=classic remains the explicit escape hatch (window.__mlsCalmShell calm-1.0.0; revert()). */

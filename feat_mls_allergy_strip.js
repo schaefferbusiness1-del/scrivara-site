@@ -4,15 +4,24 @@
  * above the Capture/Note/EMR columns (.vx-grid) — the place where the doctor
  * reviews and signs — where allergies are currently NOT shown.
  * Single source of truth: window.activePatient().allergies (a string).
- * Read-only, display-only. Additive, reversible: window.__mlsAllergyStrip.revert()
+ * Read-only, display-only. Canonical route/patient/store signals update it without
+ * an idle full-roster poll. Additive, reversible: window.__mlsAllergyStrip.revert()
  */
 (function () {
   if (window.__mlsAllergyStrip && window.__mlsAllergyStrip.__live) return;
 
   var STRIP_ID = 'mlsAllergyStrip';
   var STYLE_ID = 'mlsAllergyStrip-style';
-  var timer = null;
+  var VERSION = 'allergy-strip-1.1.0';
+  var pending = null;
+  var storagePending = null;
+  var storagePendingIsIdle = false;
+  var listeners = [];
+  var readyListener = null;
+  var started = false;
+  var stopped = false;
   var lastKey = '';
+  var lastActiveId = '';
 
   function css() {
     if (document.getElementById(STYLE_ID)) return;
@@ -45,9 +54,17 @@
     catch (e) { return null; }
   }
 
-  function visitVisible() {
-    var g = document.querySelector('.vx-grid');
-    return !!(g && g.offsetParent !== null);
+  function activeId() {
+    try { return (typeof window.getActivePtId === 'function') ? String(window.getActivePtId() || '') : null; }
+    catch (e) { return null; }
+  }
+
+  function visitVisible(grid) {
+    try {
+      var current = window.__mlsCurrentView;
+      if (typeof current === 'string' && current) return current === 'visit' && !!grid;
+    } catch (e) {}
+    return !!(grid && grid.offsetParent !== null);
   }
 
   // Parse the allergies string into a normalized list. Returns {none:true} for NKDA/empty.
@@ -77,20 +94,23 @@
   }
 
   function render() {
-    if (window.__mlsAllergyStrip && window.__mlsAllergyStrip.__reverted) return;
+    if (stopped || (window.__mlsAllergyStrip && window.__mlsAllergyStrip.__reverted)) return;
     var grid = document.querySelector('.vx-grid');
     var strip = document.getElementById(STRIP_ID);
 
-    if (!visitVisible() || !grid) {
+    if (!grid || !visitVisible(grid)) {
       if (strip) strip.style.display = 'none';
       return;
     }
+    var id = activeId();
+    if (id === '') { if (strip) strip.style.display = 'none'; return; }
     var ap = activeP();
     var hasPt = !!(ap && ap.name && String(ap.name).trim());
     if (!hasPt) { if (strip) strip.style.display = 'none'; return; }
 
     var info = parseAllergies(ap.allergies);
-    var key = (ap.id || ap.name) + '|' + (ap.allergies || '') + '|' + visitVisible();
+    lastActiveId = String((id == null ? ap.id : id) || '');
+    var key = (ap.id || ap.name) + '|' + (ap.allergies || '') + '|1';
     if (strip && strip.style.display !== 'none' && key === lastKey) return; // no change
     lastKey = key;
 
@@ -128,28 +148,211 @@
     });
   }
 
+  function listen(target, name, fn) {
+    try {
+      target.addEventListener(name, fn, false);
+      listeners.push({ target: target, name: name, fn: fn });
+    } catch (e) {}
+  }
+
+  function cancelPending() {
+    if (!pending) return;
+    try {
+      if (pending.kind === 'raf' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(pending.id);
+      } else {
+        clearTimeout(pending.id);
+      }
+    } catch (e) {}
+    pending = null;
+  }
+
+  function cancelStoragePending() {
+    if (storagePending === null) return;
+    var task = storagePending;
+    var wasIdle = storagePendingIsIdle;
+    storagePending = null;
+    storagePendingIsIdle = false;
+    try {
+      if (wasIdle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(task);
+      else clearTimeout(task);
+    } catch (e) {}
+  }
+
+  function inputPending() {
+    try {
+      return !!(navigator && navigator.scheduling &&
+        typeof navigator.scheduling.isInputPending === 'function' &&
+        navigator.scheduling.isInputPending());
+    } catch (e) { return false; }
+  }
+
+  /* A cross-tab roster write has no patient id, so it cannot be filtered to
+     the active patient. Keep the safety refresh, but admit its one cold lookup
+     only in genuine browser idle time instead of the next animation frame. */
+  function scheduleStorageRender() {
+    if (stopped) return;
+    /* A same-tab signal may already own a next-frame render. Once a cold
+       cross-tab/lifecycle signal arrives that frame is no longer safe: cancel
+       it so roster reconciliation can only begin after genuine idle. */
+    cancelPending();
+    if (storagePending !== null) return;
+    var run = function () {
+      storagePending = null;
+      storagePendingIsIdle = false;
+      if (stopped) return;
+      if (inputPending()) {
+        scheduleStorageRender();
+        return;
+      }
+      scheduleRender();
+    };
+    try {
+      if (typeof window.requestIdleCallback === 'function') {
+        storagePendingIsIdle = true;
+        storagePending = window.requestIdleCallback(run);
+        return;
+      }
+    } catch (e) {}
+    storagePending = setTimeout(run, 1000);
+  }
+
+  function scheduleRender() {
+    if (stopped || pending) return;
+    var run = function () {
+      pending = null;
+      if (!stopped) render();
+    };
+    try {
+      if (typeof window.requestAnimationFrame === 'function') {
+        pending = { kind: 'raf', id: window.requestAnimationFrame(run) };
+        return;
+      }
+    } catch (e) {}
+    pending = { kind: 'timeout', id: setTimeout(run, 0) };
+  }
+
+  function patientStoreKey() {
+    try { return (typeof window.uns === 'function') ? String(window.uns('patients') || '') : ''; }
+    catch (e) { return ''; }
+  }
+
+  function activeStoreKey() {
+    try { return (typeof window.uns === 'function') ? String(window.uns('activePt') || '') : ''; }
+    catch (e) { return ''; }
+  }
+
+  function samePatientRecord(ev) {
+    if (!ev || !ev.detail) return true;
+    try {
+      var eventKey = ev.detail.patientStoreKey;
+      var expectedKey = patientStoreKey();
+      if (eventKey && expectedKey && String(eventKey) !== expectedKey) return false;
+      var eventId = String(ev.detail.patientId || '');
+      if (!eventId || typeof window.getActivePtId !== 'function') return true;
+      return eventId === String(window.getActivePtId() || '');
+    } catch (e) { return false; }
+  }
+
+  function patientStorageEvent(ev) {
+    if (!ev) return false;
+    try { if (ev.storageArea && window.localStorage && ev.storageArea !== window.localStorage) return false; }
+    catch (e) { return false; }
+    if (ev.key == null) return true;
+    var expected = patientStoreKey();
+    if (expected) return String(ev.key) === expected;
+    return /(^|::)patients$/.test(String(ev.key));
+  }
+
+  function hideStaleStrip() {
+    var strip = document.getElementById(STRIP_ID);
+    if (strip) strip.style.display = 'none';
+    lastKey = '';
+    lastActiveId = String(activeId() || '');
+  }
+
+  function onViewChanged(ev) {
+    var view = ev && ev.detail && ev.detail.view;
+    if (view && view !== 'visit') { scheduleRender(); return; }
+    /* Entering Visit can follow a cross-tab roster invalidation. Admit the
+       first record lookup at genuine idle instead of the navigation frame. */
+    scheduleStorageRender();
+  }
+
+  function onSessionBoundary() {
+    cancelPending();
+    hideStaleStrip();
+    scheduleStorageRender();
+  }
+
   function start() {
+    if (started || stopped) return;
+    started = true;
     css();
-    render();
-    if (timer) clearInterval(timer);
-    timer = setInterval(render, 1100);
+    listen(window, 'mls:view-changed', onViewChanged);
+    listen(window, 'mls:active-patient-changed', scheduleRender);
+    listen(window, 'mls:patient-record-updated', function (ev) {
+      if (samePatientRecord(ev)) scheduleRender();
+    });
+    listen(window, 'mls:session-boundary', onSessionBoundary);
+    listen(window, 'mls:ui-ready', scheduleStorageRender);
+    listen(window, 'pageshow', scheduleStorageRender);
+    listen(window, 'storage', function (ev) {
+      var activeKey = activeStoreKey();
+      if (ev && activeKey && String(ev.key || '') === activeKey) {
+        /* The shared active id changes before this callback. Hide the old
+           patient's allergies synchronously; the new record waits for idle. */
+        var nextId = activeId();
+        if (nextId == null || String(nextId) !== lastActiveId) {
+          hideStaleStrip();
+        }
+        scheduleStorageRender();
+        return;
+      }
+      if (patientStorageEvent(ev)) scheduleStorageRender();
+    });
+    listen(document, 'visibilitychange', function () {
+      try { if (document.hidden) return; } catch (e) {}
+      scheduleStorageRender();
+    });
+    /* This satellite can evaluate after the app is already clickable. Never
+       cold-decode the roster in module evaluation/startup; the same unchanged
+       strip mounts during the next genuine idle window. */
+    scheduleStorageRender();
+  }
+
+  function stop() {
+    stopped = true;
+    cancelPending();
+    cancelStoragePending();
+    if (readyListener) {
+      try { document.removeEventListener('DOMContentLoaded', readyListener, false); } catch (e) {}
+      readyListener = null;
+    }
+    for (var i = 0; i < listeners.length; i++) {
+      var row = listeners[i];
+      try { row.target.removeEventListener(row.name, row.fn, false); } catch (e) {}
+    }
+    listeners = [];
   }
 
   window.__mlsAllergyStrip = {
     __live: true,
     __reverted: false,
+    version: VERSION,
     render: render,
     revert: function () {
       this.__reverted = true;
       this.__live = false;
-      if (timer) { clearInterval(timer); timer = null; }
+      stop();
       var s = document.getElementById(STRIP_ID); if (s) s.remove();
       var st = document.getElementById(STYLE_ID); if (st) st.remove();
     }
   };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start);
+    readyListener = function () { readyListener = null; start(); };
+    document.addEventListener('DOMContentLoaded', readyListener, false);
   } else {
     start();
   }

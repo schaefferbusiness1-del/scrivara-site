@@ -44,22 +44,15 @@ const assets = [
   ['feat_mls_header_exact.js', '20260802hx303', '20260716hx301'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
   ['feat_mls_provider_passthrough.js', '20260722pp1c5', '20260702pp1c1'],
-  ['feat_mls_recentpts.js', '20260808rp220perf1', '20260727rp210'],
   /* Bumped, not reshaped: two suites pin this asset to a LITERAL token, and the
      service worker serves versioned assets cache-first. It had drifted - the
      file changed three times after '20260728rd328' while the token stood still,
      so a returning browser kept the cached copy. Caught by
      tests/cache-token-cannot-go-stale.test.js. */
   ['feat_mls_patientpick.js', '20260808pick162perf1', '20260716pick161'],
-  ['feat_mls_simple_exact.js', '20260719simx142', '20260716simx141'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
   ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
   ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],
-    /* 2026-08-06: the deck's empty state was #C9DCD2 on white (~1.4:1) and
-     effectively invisible; it now follows --muted. The service worker serves
-     this cache-first, so the token must move or a returning clinician keeps
-     the unreadable copy. */
-  ['feat_mls_widget_deck.js', '20260806wd112', '20260802wd111'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260808cmd106perf2', '20260808cmd105perf1'],
@@ -177,7 +170,7 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
   assert(!text.includes('20260808ui127perf2') && !text.includes('20260808ui126perf1'),
     label + ': a retired hand-maintained tooltip/UI token is still reachable');
   assert(text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())") &&
-    text.includes("var A='feat_mls_redesign.js',V='3.2.3'"),
+    text.includes("var A='feat_mls_redesign.js',V='3.2.4'"),
     label + ': redesign must use the shared build cache token with its version-aware loader');
   assert(!text.includes('20260808rd332perf2') && !text.includes('20260804rd331'),
     label + ': a retired hand-maintained redesign token is still reachable');
@@ -185,11 +178,45 @@ for (const [label, text] of [['production', connect], ['staging', staging]]) {
     label + ': UP NOW realtime must follow the build-number cache-buster');
   assert(!text.includes('20260808unr122perf1') && !text.includes('20260805unr111'),
     label + ': a retired UP NOW realtime cache token is still reachable');
+  assert(text.includes("var A='feat_mls_datalink_exact.js'") &&
+    text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+    label + ': event-driven data link must follow the shared build cache token');
+  assert(!text.includes('20260727dl2'),
+    label + ': retired polling data-link URL is still reachable');
+  assert(text.includes('var A="feat_mls_allergy_strip.js"') &&
+    text.includes('s.src=A+"?v="+(window.__MLS_AV||Date.now())'),
+    label + ': event-driven allergy strip must follow the shared build cache token');
+  assert(!text.includes('20260727hcep2'),
+    label + ': retired polling allergy-strip URL is still reachable');
+  assert(text.includes("var A='feat_mls_simple_exact.js'") &&
+    text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+    label + ': Simple Visit input fast path must follow the shared build cache token');
+  assert(!text.includes('20260719simx142') && !text.includes('20260624simx5'),
+    label + ': retired Simple Visit URL is still reachable');
+  assert(text.includes("feat_mls_copilot_unify.js?v='+(window.__MLS_AV||Date.now())"),
+    label + ': Copilot active-id fast path must follow the shared build cache token');
+  assert(!text.includes('20260716unify110'),
+    label + ': retired Copilot conversation-owner URL is still reachable');
+  assert(text.includes('var A="feat_mls_recentpts.js"') &&
+    text.includes('s.src=A+"?v="+(window.__MLS_AV||Date.now())'),
+    label + ': exact-event Recent Patients must follow the shared build cache token');
+  assert(!text.includes('20260808rp220perf1') && !text.includes('20260727rp210'),
+    label + ': retired polling Recent Patients URL is still reachable');
 }
 assert(connect.includes("feat_mls_store_cache.js?v='+(window.__MLS_AV||Date.now())"),
   'production: exact-key store cache must follow the build-number cache-buster');
 assert(!connect.includes('20260808sc14perf1') && !connect.includes('20260806sc13b924'),
   'production: a retired exact-key store cache token is still reachable');
+assert(connect.includes("var A='feat_mls_writeback_safety.js'") &&
+  connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+  'production: event-driven writeback preview must follow the shared build cache token');
+assert(!connect.includes('20260717wbs110-b356'),
+  'production: retired polling writeback-safety URL is still reachable');
+assert(connect.includes('var A="feat_mls_widget_deck.js"') &&
+  connect.includes('s.src=A+"?v="+(window.__MLS_AV||Date.now())'),
+  'production: event-driven widget deck must follow the shared build cache token');
+assert(!connect.includes('20260806wd112') && !connect.includes('20260802wd111'),
+  'production: a retired widget-deck cache token is still reachable');
 
 /* TWO LANES, ONE CURE, 2026-08-07. The px train and the avatar train reached the
    same conclusion about this list independently and on the same afternoon: a

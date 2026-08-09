@@ -471,12 +471,13 @@ function makeNotes(count) {
   assert.strictEqual(historyB.ordered[0].id, 'b1', 'account switch returned cross-account note data');
 }
 
-/* Chart Structure and Continuous Scrub: invoke the exact production timer
-   bodies. A "tick" below means the scheduled callback ran; zero additional
-   roster reads/row scans proves its expensive body was skipped. */
+/* Chart Structure and Continuous Scrub: invoke the exact production owners.
+   Chart Structure's signal path must only enqueue a yielded maintenance scan;
+   no roster read or row regex may execute in that stack. Continuous Scrub's
+   legacy generation check remains synchronous and is covered independently. */
 {
   const chartModule = connect.indexOf('MLS Scribe - PULLED-CHART STRUCTURING');
-  const chartFnStart = connect.indexOf('  function sweep() {', chartModule);
+  const chartFnStart = connect.indexOf('  var autoSweepRunning =', chartModule);
   const chartFnEnd = connect.indexOf('\n\n  /* ---------- install', chartFnStart);
   const scrubModule = connect.indexOf('CONTINUOUS SUMMARY SCRUB');
   const scrubFnStart = connect.indexOf('  function scrub() {', scrubModule);
@@ -491,7 +492,7 @@ function makeNotes(count) {
   const patients = makePatients(800);
   const patientKey = 'sf_u::acct-a::patients';
   const h = makeCacheHarness(embedded, { [patientKey]: JSON.stringify(patients) });
-  const counts = { patientReads: 0, chartRows: 0, scrubRows: 0 };
+  const counts = { patientReads: 0, chartRows: 0, chartScans: 0, scrubRows: 0 };
   const sanitizer = { strip(value) { return value; }, hasCode() { counts.scrubRows++; return false; } };
   h.window.__mlsContinuousScrub = { version: '1.0.0', cleaned: 0 };
   h.window.__mlsSummarySanitize = sanitizer;
@@ -500,7 +501,13 @@ function makeNotes(count) {
      clean roster must scan once but can never enqueue persistence. */
   h.window.__mlsMaintenancePersist = {
     capture() { return { key: patientKey, account: 'acct-a', token: '', raw: h.localStorage.getItem(patientKey) }; },
-    enqueue() { throw new Error('clean synthetic roster reached maintenance persistence'); }
+    enqueue() { throw new Error('clean synthetic roster reached maintenance persistence'); },
+    scan(options) {
+      counts.chartScans++;
+      assert(options && options.chunkSize > 0 && options.chunkSize <= 8, 'Chart Structure scan lost bounded yielded slices');
+      assert.strictEqual(typeof options.prepare, 'function', 'Chart Structure scan lost its row preparer');
+      return { then() {} };
+    }
   };
   h.window.getPatients = function () { counts.patientReads++; return patients.slice(); };
   const context = {
@@ -515,7 +522,8 @@ function makeNotes(count) {
     sweepPatient() { throw new Error('clean synthetic patient reached sweepPatient'); },
     persistSweep() { throw new Error('clean synthetic roster reached persistence'); },
     isFn(fn) { return typeof fn === 'function'; },
-    Date, Number, console: { log() {} }
+    Date, Number, Promise: { resolve(value) { return { then(ok) { ok({ saved: false, empty: true }); } }; } },
+    console: { log() {} }
   };
   vm.createContext(context);
   vm.runInContext(connect.slice(chartFnStart, chartFnEnd) + '\nthis.runChartSweep=sweep;', context,
@@ -526,8 +534,8 @@ function makeNotes(count) {
   context.runChartSweep();
   context.runContinuousScrub();
   const warm = Object.assign({}, counts);
-  assert.deepStrictEqual(warm, { patientReads: 2, chartRows: 800, scrubRows: 800 },
-    'warm timer passes did not scan exactly one 800-patient roster each');
+  assert.deepStrictEqual(warm, { patientReads: 1, chartRows: 0, chartScans: 1, scrubRows: 800 },
+    'Chart Structure signal did work inline or Continuous Scrub missed its warm pass');
   for (let i = 0; i < 100; i++) {
     h.localStorage.setItem(h.window.uns('ui-status'), String(i));
     context.runChartSweep();
@@ -538,72 +546,72 @@ function makeNotes(count) {
   h.localStorage.setItem(patientKey, JSON.stringify(patients));
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 4, chartRows: 1600, scrubRows: 1600 },
-    'one patient write did not re-arm each full-roster consumer exactly once');
+  assert.deepStrictEqual(counts, { patientReads: 2, chartRows: 0, chartScans: 2, scrubRows: 1600 },
+    'one patient write did not re-arm each consumer exactly once');
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 4, chartRows: 1600, scrubRows: 1600 },
+  assert.deepStrictEqual(counts, { patientReads: 2, chartRows: 0, chartScans: 2, scrubRows: 1600 },
     'one patient write re-armed a consumer more than once');
 
   const replacement = { strip(value) { return value; }, hasCode() { counts.scrubRows++; return false; } };
   h.window.__mlsSummarySanitize = replacement;
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 6, chartRows: 2400, scrubRows: 2400 },
+  assert.deepStrictEqual(counts, { patientReads: 3, chartRows: 0, chartScans: 3, scrubRows: 2400 },
     'sanitizer object/function replacement did not re-arm dependent consumers once');
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 6, chartRows: 2400, scrubRows: 2400 },
+  assert.deepStrictEqual(counts, { patientReads: 3, chartRows: 0, chartScans: 3, scrubRows: 2400 },
     'stable sanitizer identities repeatedly re-armed consumers');
 
   replacement.strip = function (value) { return value; };
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 8, chartRows: 3200, scrubRows: 3200 },
+  assert.deepStrictEqual(counts, { patientReads: 4, chartRows: 0, chartScans: 4, scrubRows: 3200 },
     'same-object strip replacement did not re-arm both strip consumers once');
   replacement.hasCode = function () { counts.scrubRows++; return false; };
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 9, chartRows: 3200, scrubRows: 4000 },
+  assert.deepStrictEqual(counts, { patientReads: 5, chartRows: 0, chartScans: 4, scrubRows: 4000 },
     'same-object hasCode replacement did not re-arm only Continuous Scrub once');
 
   context.API.summaryMode = 'short';
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 10, chartRows: 4000, scrubRows: 4000 },
+  assert.deepStrictEqual(counts, { patientReads: 5, chartRows: 0, chartScans: 5, scrubRows: 4000 },
     'summaryMode failed to re-arm only Chart Structure');
 
   h.window.getPatients = function () { counts.patientReads++; return patients.slice(); };
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 12, chartRows: 4800, scrubRows: 4800 },
+  assert.deepStrictEqual(counts, { patientReads: 6, chartRows: 0, chartScans: 6, scrubRows: 4800 },
     'getPatients replacement did not re-arm each dependent consumer once');
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 12, chartRows: 4800, scrubRows: 4800 },
+  assert.deepStrictEqual(counts, { patientReads: 6, chartRows: 0, chartScans: 6, scrubRows: 4800 },
     'stable getPatients identity repeatedly re-armed consumers');
 
   h.dispatchStorage(h.localStorage, h.window.uns('notes'));
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 12, chartRows: 4800, scrubRows: 4800 },
+  assert.deepStrictEqual(counts, { patientReads: 6, chartRows: 0, chartScans: 6, scrubRows: 4800 },
     'cross-tab notes event re-armed patient-only consumers');
   h.dispatchStorage(h.localStorage, patientKey);
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 14, chartRows: 5600, scrubRows: 5600 },
+  assert.deepStrictEqual(counts, { patientReads: 7, chartRows: 0, chartScans: 7, scrubRows: 5600 },
     'cross-tab patient event did not re-arm each patient consumer once');
 
   h.localStorage.clear();
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 16, chartRows: 6400, scrubRows: 6400 },
+  assert.deepStrictEqual(counts, { patientReads: 8, chartRows: 0, chartScans: 8, scrubRows: 6400 },
     'clear did not re-arm each patient consumer once');
 
   h.setAccount('acct-b');
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 18, chartRows: 7200, scrubRows: 7200 },
+  assert.deepStrictEqual(counts, { patientReads: 9, chartRows: 0, chartScans: 9, scrubRows: 7200 },
     'account-key switch did not re-arm each patient consumer once');
 }
 
@@ -627,7 +635,7 @@ function assertLegacyConsumerFallback(mode) {
   const helperStart = app.indexOf('var __mlsNotesIdx={ver:-1,map:null};');
   const helperEnd = app.indexOf('/* ---------- SERVER SYNC (hosted mode only) ----------', helperStart);
   const chartModule = connect.indexOf('MLS Scribe - PULLED-CHART STRUCTURING');
-  const chartFnStart = connect.indexOf('  function sweep() {', chartModule);
+  const chartFnStart = connect.indexOf('  var autoSweepRunning =', chartModule);
   const chartFnEnd = connect.indexOf('\n\n  /* ---------- install', chartFnStart);
   const scrubModule = connect.indexOf('CONTINUOUS SUMMARY SCRUB');
   const scrubFnStart = connect.indexOf('  function scrub() {', scrubModule);
@@ -636,7 +644,7 @@ function assertLegacyConsumerFallback(mode) {
   assert(chartFnStart > chartModule && chartFnEnd > chartFnStart, mode + ': chart sweep is missing');
   assert(scrubFnStart > scrubModule && scrubFnEnd > scrubFnStart, mode + ': continuous scrub is missing');
 
-  const counts = { patientReads: 0, chartRows: 0, scrubRows: 0 };
+  const counts = { patientReads: 0, chartRows: 0, chartScans: 0, scrubRows: 0 };
   const sanitizer = {
     strip(value) { return value; },
     hasCode() { counts.scrubRows++; return false; }
@@ -645,7 +653,12 @@ function assertLegacyConsumerFallback(mode) {
   h.window.__mlsContinuousScrub = { version: '1.0.0', cleaned: 0 };
   h.window.__mlsMaintenancePersist = {
     capture() { return { key: patientKey, account: 'acct-a', token: '', raw: h.localStorage.getItem(patientKey) }; },
-    enqueue() { throw new Error('clean fallback roster reached maintenance persistence'); }
+    enqueue() { throw new Error('clean fallback roster reached maintenance persistence'); },
+    scan(options) {
+      counts.chartScans++;
+      assert(options && options.chunkSize > 0 && options.chunkSize <= 8, mode + ': Chart Structure scan lost yielded row slices');
+      return { then() {} };
+    }
   };
   h.window.getPatients = function () { counts.patientReads++; return patients.slice(); };
   const context = {
@@ -666,6 +679,7 @@ function assertLegacyConsumerFallback(mode) {
     persistSweep() { throw new Error('clean fallback roster reached persistence'); },
     isFn(fn) { return typeof fn === 'function'; },
     setTimeout, clearTimeout, Date, Map, Object, Number, String, Array, isFinite,
+    Promise: { resolve(value) { return { then(ok) { ok({ saved: false, empty: true }); } }; } },
     console: { log() {} }
   };
   vm.createContext(context);
@@ -691,7 +705,7 @@ function assertLegacyConsumerFallback(mode) {
   const history0 = api.history(input);
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 2, chartRows: 12, scrubRows: 12 },
+  assert.deepStrictEqual(counts, { patientReads: 1, chartRows: 0, chartScans: 1, scrubRows: 12 },
     mode + ': fallback consumers did not complete one warm pass');
 
   h.localStorage.setItem(h.window.uns('ui-status'), mode);
@@ -704,8 +718,8 @@ function assertLegacyConsumerFallback(mode) {
   assert.notStrictEqual(map1, map0, mode + ': Notes Map ignored the legacy global write');
   assert.notStrictEqual(visits1, visits0, mode + ': visit ranking ignored the legacy global write');
   assert.notStrictEqual(history1, history0, mode + ': History ignored the legacy global write');
-  assert.deepStrictEqual(counts, { patientReads: 4, chartRows: 24, scrubRows: 24 },
-    mode + ': chart/scrub did not rescan exactly once after the legacy global write');
+  assert.deepStrictEqual(counts, { patientReads: 2, chartRows: 0, chartScans: 2, scrubRows: 24 },
+    mode + ': chart admission/scrub did not re-arm exactly once after the legacy global write');
 
   api.patientNotes('p0');
   assert.strictEqual(api.noteMap(), map1, mode + ': Notes Map rebuilt twice at one global generation');
@@ -713,8 +727,8 @@ function assertLegacyConsumerFallback(mode) {
   assert.strictEqual(api.history(input), history1, mode + ': History rebuilt twice at one global generation');
   context.runChartSweep();
   context.runContinuousScrub();
-  assert.deepStrictEqual(counts, { patientReads: 4, chartRows: 24, scrubRows: 24 },
-    mode + ': chart/scrub rescanned twice at one global generation');
+  assert.deepStrictEqual(counts, { patientReads: 2, chartRows: 0, chartScans: 2, scrubRows: 24 },
+    mode + ': chart admission/scrub repeated at one global generation');
 }
 
 assertLegacyConsumerFallback('absent');

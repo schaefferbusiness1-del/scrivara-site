@@ -220,7 +220,8 @@ assert(!/\.id\s*=\s*['"]wf2OneClick['"]/.test(writeflowSource),
 assert(/__mlsLegacyAthenaShortcutRetired/.test(writeflowSource),
   'legacy Athena shortcut retirement marker is missing');
 const surfaceSync = between(redesign, 'function syncClinicalSurfaceState(){', 'function installClinicalSurfaceState(){', 'clinical surface state sync');
-assert(/window\.activePatient/.test(surfaceSync), 'clinical surface state does not use the canonical activePatient owner');
+assert(/window\.getActivePtId/.test(surfaceSync), 'clinical surface state does not use the canonical O(1) active-patient id owner');
+assert(/window\.activePatient/.test(surfaceSync), 'clinical surface state lost its compatibility fallback for older hosts');
 assert(!/wf2OneClick/.test(surfaceSync), 'redesign still owns state for the retired shortcut');
 
 function runWriteflowSafety() {

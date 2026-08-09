@@ -1,4 +1,4 @@
-/* feat_mls_patient_context_safety.js  ->  window.__mlsPtCtxSafety  (pcs-1.2.0)  [Task 6]
+/* feat_mls_patient_context_safety.js  ->  window.__mlsPtCtxSafety  (pcs-1.2.1)  [Task 6]
  *
  * PATIENT-SCOPES the shared Copilot / AI Studio conversation so one patient's
  * chat can never bleed into another patient's context, and surfaces an identity
@@ -55,7 +55,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsPtCtxSafety", VERSION = "pcs-1.2.0";
+  var NS = "__mlsPtCtxSafety", VERSION = "pcs-1.2.1";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   /* ---- self-gate: identical to Task 2 / the Copilot surfaces ---- */
@@ -210,13 +210,13 @@
       convoOwnerId = cur;
       if (baseHist().length && !buckets[ownerKey(cur)]) stashCurrentInto(cur);
       cancelDeferred();
-      persist(); updateIdentityChip(); return "adopt";
+      persist(); scheduleIdentityChip(); return "adopt";
     }
-    if (cur === convoOwnerId) { deferredSince = 0; cancelDeferred(); updateIdentityChip(); return "same"; }
+    if (cur === convoOwnerId) { deferredSince = 0; cancelDeferred(); scheduleIdentityChip(); return "same"; }
     /* owner change pending: defer while a request is completing (unless it hangs) */
     if (hasPending()) {
       if (!deferredSince) deferredSince = nowMs();
-      if (nowMs() - deferredSince < DEFER_CAP_MS) { api.deferrals++; armDeferred(); updateIdentityChip(); return "deferred"; }
+      if (nowMs() - deferredSince < DEFER_CAP_MS) { api.deferrals++; armDeferred(); scheduleIdentityChip(); return "deferred"; }
     }
     deferredSince = 0;
     cancelDeferred();
@@ -228,7 +228,7 @@
       api.switches++;
       persist();
     } finally { restoring = false; }
-    updateIdentityChip();
+    scheduleIdentityChip();
     return "switched";
   }
   function nowMs() { return safe(function () { return Date.now(); }, 0); }
@@ -250,6 +250,49 @@
   }
 
   var CHIP_ID = "mlsPtCtxIdentity", CHIP_STYLE_ID = "mlsPtCtxStyle";
+  /* Conversation ownership must change in the lifecycle/storage callback, but
+     this label is presentation only. Looking its patient up through
+     findPatient() can decode the entire compressed roster after another tab
+     invalidates the memo. Coalesce that lookup outside the event stack and,
+     where supported, wait for browser idle time. */
+  var identityTask = null, identityTaskIsIdle = false;
+  function flushIdentityChip() {
+    identityTask = null;
+    identityTaskIsIdle = false;
+    updateIdentityChip();
+  }
+  function scheduleIdentityChip() {
+    if (identityTask !== null) return;
+    try {
+      var thread = document.getElementById("copilotThread");
+      if (!thread || !thread.parentNode) return;
+    } catch (e0) { return; }
+    try {
+      if (isFn(window.requestIdleCallback)) {
+        identityTaskIsIdle = true;
+        /* Presentation may wait for a genuine idle slice. A timeout would be
+           allowed to fire while input is pending and reintroduce the cold
+           multi-megabyte roster decode this owner is meant to move away. */
+        identityTask = window.requestIdleCallback(flushIdentityChip);
+      } else {
+        identityTaskIsIdle = false;
+        identityTask = setTimeout(flushIdentityChip, 0);
+      }
+    } catch (e) {
+      identityTask = null;
+      identityTaskIsIdle = false;
+    }
+  }
+  function cancelIdentityChip() {
+    if (identityTask === null) return;
+    var task = identityTask, wasIdle = identityTaskIsIdle;
+    identityTask = null;
+    identityTaskIsIdle = false;
+    safe(function () {
+      if (wasIdle && isFn(window.cancelIdleCallback)) window.cancelIdleCallback(task);
+      else clearTimeout(task);
+    });
+  }
   function injectChipStyle() {
     safe(function () {
       if (document.getElementById(CHIP_STYLE_ID)) return;
@@ -295,6 +338,7 @@
 
   function resetForSession(ev) {
     cancelDeferred();
+    cancelIdentityChip();
     deferredSince = 0;
     /* Persist only through the keys captured for the outgoing account. The
        session event fires after the next namespace is adopted, so recomputing
@@ -380,6 +424,7 @@
   }
 
   function revert() {
+    cancelIdentityChip();
     stopTriggers();
     removeChip();
     safe(function () { persist(); });
@@ -405,7 +450,8 @@
         convoOwnerId: convoOwnerId, activeId: activeIdSafe(), restoring: restoring,
         loadedTurns: realTurns(baseHist()).length, switches: api.switches,
         hasStore: !!convoStore(), bucketKeys: safe(function () { return Object.keys(buckets); }, []),
-        storageKey: BUCKETS_KEY || "", deferred: !!deferredTimer
+        storageKey: BUCKETS_KEY || "", deferred: !!deferredTimer,
+        identityPending: identityTask !== null
       };
     }
   };

@@ -1683,7 +1683,7 @@
         <button class="sec-copy" onclick="regenerateNote()" title="Re-run AI on the same transcript">🔄 Regenerate</button>
       </div>
 
-      <!-- Teach Scrivara: suggested preferences learned from edits -->
+      <!-- Teach MLS: suggested preferences learned from edits -->
       <div class="extra-card" id="teachCard" style="display:none">
         <h3>💡 Teach MLS</h3>
         <div class="xbody" id="teachBody" style="white-space:normal"></div>
@@ -3841,7 +3841,7 @@
 
 <script>
 /* =========================================================
-   Scrivara — single-file client app (v4)
+   MLS Scribe — single-file client app (v4)
    Local accounts + per-user note history in localStorage.
    v4 adds: Recommendations tab + unlabeled-transcript handling.
    ========================================================= */
@@ -3849,7 +3849,7 @@
 /* =========================================================
    ⚙️ BACKEND MODE CONFIG  (read this before deploying)
    ---------------------------------------------------------
-   Scrivara can run in TWO modes:
+   MLS Scribe can run in TWO modes:
 
    1) PER-DEVICE KEY MODE  (default — BACKEND_URL is "")
       Each doctor pastes their own OpenAI API key in Settings.
@@ -3858,7 +3858,7 @@
 
    2) HOSTED BACKEND MODE  (set BACKEND_URL below)
       Point BACKEND_URL at your deployed server, e.g.
-        const BACKEND_URL = "https://scrivara-api.example.com";
+        const BACKEND_URL = "https://mlsscribe-api.example.com";
       The app then POSTs to  BACKEND_URL + "/api/generate"
       and your server holds the OpenAI key SERVER-SIDE.
       NO API key is needed in the browser, and the API-key
@@ -12049,7 +12049,7 @@ function loadExample(){
 let signed=false;
 let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, currentFormat='soap';
 /* Snapshot of the AI's ORIGINAL note draft, captured at generation time BEFORE
-   the physician edits it. Used by "Teach Scrivara" to diff draft vs. edited. */
+   the physician edits it. Used by "Teach MLS" to diff draft vs. edited. */
 let lastAIDraft='';
 let lastEMR=null;
 let currentAVS='', currentReferral='', currentHandout='', currentChartSummary='', currentIME='';
@@ -12335,7 +12335,7 @@ async function generateNote(){
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
       currentSoap=_reorderNoteForStyle(offlineExampleNote(), getGenStyle());
-      lastAIDraft=currentSoap; // baseline for "Teach Scrivara"
+      lastAIDraft=currentSoap; // baseline for "Teach MLS"
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
       currentOpt=null;
@@ -12365,7 +12365,7 @@ async function generateNote(){
   try{
     const result=await callOpenAI(transcript,key);
     currentSoap=_reorderNoteForStyle(result.note, getGenStyle());
-    lastAIDraft=currentSoap; // baseline snapshot for "Teach Scrivara" before edits
+    lastAIDraft=currentSoap; // baseline snapshot for "Teach MLS" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
     currentOpt=null;
@@ -15698,7 +15698,7 @@ function showExtra(cardId,bodyId,text){
 }
 
 /* =========================================================
-   "TEACH SCRIVARA" — learn reusable preferences from the doctor's edits.
+   "TEACH MLS" — learn reusable preferences from the doctor's edits.
    Compares the ORIGINAL AI draft (lastAIDraft) to the physician's CURRENT
    (edited) note, asks the AI to extract 1-3 REUSABLE style/format/content
    rules (no patient-specific PHI), and lets the doctor add the ones they want

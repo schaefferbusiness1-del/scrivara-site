@@ -222,7 +222,11 @@ const scanned = PUBLISHED.length;
    add('mls-ph2') on mount and remove('mls-ph2') on unmount, both one-shot and
    both behind an isConnected/mounted check, plus the guarded `mls-phone`
    removal above. */
-const SITES = { 'mls-connect.js': 25, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 12, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
+/* b977 route fast-path: the three additional ScribeFlow sites are guarded
+   add/remove calls in syncRouteLayout(). They are O(1) route-state repairs,
+   never recurring passes, and prevent a stale patient identity from showing
+   while its cold record refresh waits for browser idle. */
+const SITES = { 'mls-connect.js': 25, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 15, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -261,7 +265,7 @@ for (const [asset, token, retired] of [
   assert(!connect.includes(retired),
     asset + ' still exposes the retired cache token ' + retired + ' somewhere in the loader bundle');
 }
-assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.3'") &&
+assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
   connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
   'redesign is a high-churn performance owner and must follow the shared build token');
 assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
