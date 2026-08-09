@@ -115,8 +115,9 @@ assert(
 for (const loader of ['mls-connect.js', 'mls-connect.staging.js']) {
   const text = fs.readFileSync(path.join(root, loader), 'utf8');
   assert(
-    text.includes("feat_mls_datalink_exact.js?v=20260727dl2"),
-    loader + ' does not publish the optimized data-link module under its new immutable URL'
+    text.includes("var A='feat_mls_datalink_exact.js'") &&
+      text.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+    loader + ' does not publish the optimized data-link module under the shared build URL'
   );
 }
 

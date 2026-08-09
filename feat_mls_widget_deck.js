@@ -1,5 +1,5 @@
 /* =========================================================================
- * MLS -- Widget Deck  (feat_mls_widget_deck.js -> window.__mlsWidgetDeck, wd-1.0.0)
+ * MLS -- Widget Deck  (feat_mls_widget_deck.js -> window.__mlsWidgetDeck, wd-1.2.0)
  * 2026-07-12, final integration sweep (owner: widgets belong IN the main flow).
  * ----------------------------------------------------------------------------
  * Custom widgets previously lived only on the AI Studio view -- a doctor in the
@@ -16,15 +16,16 @@
  *   - BUILDER POLISH: three example chips injected into the builder modal that
  *     fill the description box (the AI designer is easier to start when you
  *     can see what a good ask looks like).
- * Read-only + delegating; write-if-changed mirroring (no idle churn); polls only
- * while the Visit view is visible. Reversible: window.__mlsWidgetDeck.revert().
+ * Read-only + delegating; write-if-changed mirroring driven by canonical view /
+ * patient events and observers scoped to the base widget and builder roots.
+ * Reversible: window.__mlsWidgetDeck.revert().
  * ==========================================================================*/
 (function () {
   'use strict';
   try { if (window.__mlsWidgetDeck && window.__mlsWidgetDeck.installed) return; } catch (e) { return; }
 
-  /* wd-1.1.0: semantic identity, review indicator and single visible owner. */
-  var VERSION = 'wd-1.1.0';
+  /* wd-1.2.0: semantic identity, one visible owner, and event-driven repair. */
+  var VERSION = 'wd-1.2.0';
   var DECK_ID = 'mlsWdDeck', STYLE_ID = 'mlsWdStyle', CHIPS_ID = 'mlsWdBuilderChips';
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
@@ -64,9 +65,10 @@
     (document.head || document.documentElement).appendChild(st);
   }
 
-  /* wd-1.0.1: memoize the widget list by the raw stored string (same discipline
-     as the b132 store-cache fix) so the 1.2 s poll never re-parses unchanged JSON. */
-  var _wMemoRaw = null, _wMemoVal = [];
+  /* Memoize the widget list by the raw stored string (same discipline as the
+     b132 store-cache fix) so repeated real lifecycle signals never re-parse
+     unchanged JSON. */
+  var _wMemoRaw = {}, _wMemoVal = [];
   function widgets() {
     return safe(function () {
       if (!isFn(window.getCustomWidgets)) return [];
@@ -197,9 +199,12 @@
       dst.__mirror = html;
     }
   }
-  function sync() {
+  function visitViewVisible() {
     var vv = $('visitView');
-    if (!vv || !vv.offsetParent) return;      /* only work while the Visit view is visible */
+    return !!(vv && (!vv.style || vv.style.display !== 'none'));
+  }
+  function sync() {
+    if (!visitViewVisible()) return;
     /* make sure the base cards exist so there is something to mirror */
     safe(function () { if ($('customWidgetsHost') && !$('customWidgetsHost').children.length && widgets().length && isFn(window.renderCustomWidgets)) window.renderCustomWidgets(); });
     var list = widgets();
@@ -245,17 +250,17 @@
     wrap.appendChild(row);
   }
 
-  /* instant mirroring: the moment the base renders a widget's output (on
-     Generate or Refresh), sync the deck too -- the poll is just a fallback. */
+  /* Instant mirroring: the moment the base renders a widget's output (on
+     Generate or Refresh), sync the deck too. */
   var renderWrapped = false;
   function wrapRenderOutput() {
-    if (renderWrapped) return;
-    if (!isFn(window.cwRenderOutput) || window.cwRenderOutput.__wdWrapped) { renderWrapped = !!(window.cwRenderOutput && window.cwRenderOutput.__wdWrapped); return; }
+    if (!isFn(window.cwRenderOutput)) { renderWrapped = false; return; }
+    if (window.cwRenderOutput.__wdWrapped) { renderWrapped = true; return; }
     var orig = window.cwRenderOutput;
     var w = function () {
       var r;
       try { r = orig.apply(this, arguments); } catch (e) {}
-      safe(function () { setTimeout(function () { safe(sync); }, 30); });
+      scheduleSync();
       return r;
     };
     w.__wdWrapped = true; w.__wdOrig = orig;
@@ -263,26 +268,175 @@
     renderWrapped = true;
   }
 
-  var iv = null;
+  var lifecycleActive = false, lifecycleGeneration = 0, syncScheduled = false,
+      listenersAttached = false, hostObserver = null, builderObserver = null,
+      hostObserverRoot = null, builderObserverRoot = null,
+      renderCustomWidgetsWrapped = false, setCustomWidgetsWrapped = false,
+      domReadyWaiting = false;
+
+  function scheduleSync() {
+    if (!lifecycleActive || syncScheduled || !visitViewVisible()) return;
+    try { if (document.hidden) return; } catch (e) {}
+    syncScheduled = true;
+    var generation = lifecycleGeneration;
+    var request = isFn(window.requestAnimationFrame)
+      ? window.requestAnimationFrame
+      : function (fn) { return setTimeout(fn, 0); };
+    request(function () {
+      syncScheduled = false;
+      if (!lifecycleActive || generation !== lifecycleGeneration) return;
+      safe(sync);
+    });
+  }
+
+  function widgetsChanged() {
+    _wMemoRaw = {};
+    _wMemoVal = [];
+    lastKey = '';
+    scheduleSync();
+  }
+
+  function wrapRenderCustomWidgets() {
+    if (!isFn(window.renderCustomWidgets)) { renderCustomWidgetsWrapped = false; return; }
+    if (window.renderCustomWidgets.__wdDeckWrapped) { renderCustomWidgetsWrapped = true; return; }
+    var orig = window.renderCustomWidgets;
+    var wrapped = function () {
+      var result = orig.apply(this, arguments);
+      scheduleSync();
+      return result;
+    };
+    wrapped.__wdDeckWrapped = true;
+    wrapped.__wdDeckOrig = orig;
+    window.renderCustomWidgets = wrapped;
+    renderCustomWidgetsWrapped = true;
+  }
+
+  function wrapSetCustomWidgets() {
+    if (!isFn(window.setCustomWidgets)) { setCustomWidgetsWrapped = false; return; }
+    if (window.setCustomWidgets.__wdDeckWrapped) { setCustomWidgetsWrapped = true; return; }
+    var orig = window.setCustomWidgets;
+    var wrapped = function () {
+      var result = orig.apply(this, arguments);
+      widgetsChanged();
+      return result;
+    };
+    wrapped.__wdDeckWrapped = true;
+    wrapped.__wdDeckOrig = orig;
+    window.setCustomWidgets = wrapped;
+    setCustomWidgetsWrapped = true;
+  }
+
+  function startScopedObservers() {
+    if (typeof MutationObserver === 'undefined') return;
+    var host = $('customWidgetsHost');
+    if (host !== hostObserverRoot) {
+      try { if (hostObserver) hostObserver.disconnect(); } catch (e) {}
+      hostObserver = null;
+      hostObserverRoot = host || null;
+      if (host) {
+        hostObserver = new MutationObserver(function () { scheduleSync(); });
+        hostObserver.observe(host, { childList: true, subtree: true, characterData: true });
+      }
+    }
+    var builder = $('widgetBuilderModal');
+    if (builder !== builderObserverRoot) {
+      try { if (builderObserver) builderObserver.disconnect(); } catch (e) {}
+      builderObserver = null;
+      builderObserverRoot = builder || null;
+      if (builder) {
+        builderObserver = new MutationObserver(function () {
+          if (!$(CHIPS_ID)) safe(ensureChips);
+        });
+        builderObserver.observe(builder, { childList: true, subtree: true });
+      }
+    }
+  }
+
+  function onViewChanged(ev) {
+    var view = ev && ev.detail && ev.detail.view;
+    if (view ? view === 'visit' : visitViewVisible()) repair();
+  }
+  function onPatientChanged() { lastKey = ''; if (visitViewVisible()) repair(); }
+  function onSessionBoundary() { widgetsChanged(); if (visitViewVisible()) repair(); }
+  function onVisibilityChanged() { try { if (!document.hidden && visitViewVisible()) repair(); } catch (e) {} }
+  function onStorage(ev) {
+    var expected = safe(function () { return isFn(window.uns) ? window.uns('customWidgets') : ''; }, '');
+    var activeKey = safe(function () { return isFn(window.uns) ? window.uns('activePt') : ''; }, '');
+    if (ev && ev.key && activeKey && ev.key === activeKey) { onPatientChanged(); return; }
+    if (!ev || !ev.key || !expected || ev.key === expected) widgetsChanged();
+  }
+
+  function attachLifecycle() {
+    if (listenersAttached || typeof window.addEventListener !== 'function') return;
+    window.addEventListener('mls:view-changed', onViewChanged);
+    window.addEventListener('mls:active-patient-changed', onPatientChanged);
+    window.addEventListener('mls:session-boundary', onSessionBoundary);
+    window.addEventListener('storage', onStorage);
+    if (document && typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', onVisibilityChanged);
+    listenersAttached = true;
+  }
+
+  function detachLifecycle() {
+    if (!listenersAttached) return;
+    if (typeof window.removeEventListener === 'function') {
+      window.removeEventListener('mls:view-changed', onViewChanged);
+      window.removeEventListener('mls:active-patient-changed', onPatientChanged);
+      window.removeEventListener('mls:session-boundary', onSessionBoundary);
+      window.removeEventListener('storage', onStorage);
+    }
+    if (document && typeof document.removeEventListener === 'function') document.removeEventListener('visibilitychange', onVisibilityChanged);
+    listenersAttached = false;
+  }
+
+  function repair() {
+    if (!lifecycleActive) return false;
+    wrapRenderOutput();
+    wrapRenderCustomWidgets();
+    wrapSetCustomWidgets();
+    startScopedObservers();
+    ensureChips();
+    scheduleSync();
+    return true;
+  }
+
   function boot() {
+    domReadyWaiting = false;
+    lifecycleActive = true;
+    lifecycleGeneration++;
     css();
     safe(function () { if (document.body) document.body.classList.add('mls-widget-deck-owner'); });
     ensureChips();
     wrapRenderOutput();
+    wrapRenderCustomWidgets();
+    wrapSetCustomWidgets();
+    startScopedObservers();
+    attachLifecycle();
     sync();
-    iv = setInterval(function () { safe(sync); safe(ensureChips); safe(wrapRenderOutput); }, 1200);
   }
   function revert() {
-    if (iv) { clearInterval(iv); iv = null; }
+    lifecycleActive = false;
+    lifecycleGeneration++;
+    syncScheduled = false;
+    detachLifecycle();
+    if (domReadyWaiting && document && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('DOMContentLoaded', boot);
+      domReadyWaiting = false;
+    }
+    try { if (hostObserver) hostObserver.disconnect(); } catch (e) {}
+    try { if (builderObserver) builderObserver.disconnect(); } catch (e) {}
+    hostObserver = null; builderObserver = null;
+    hostObserverRoot = null; builderObserverRoot = null;
     try { if (window.cwRenderOutput && window.cwRenderOutput.__wdWrapped && window.cwRenderOutput.__wdOrig) window.cwRenderOutput = window.cwRenderOutput.__wdOrig; } catch (e) {}
+    try { if (window.renderCustomWidgets && window.renderCustomWidgets.__wdDeckWrapped && window.renderCustomWidgets.__wdDeckOrig) window.renderCustomWidgets = window.renderCustomWidgets.__wdDeckOrig; } catch (e) {}
+    try { if (window.setCustomWidgets && window.setCustomWidgets.__wdDeckWrapped && window.setCustomWidgets.__wdDeckOrig) window.setCustomWidgets = window.setCustomWidgets.__wdDeckOrig; } catch (e) {}
     [DECK_ID, STYLE_ID, CHIPS_ID].forEach(function (id) { var n = $(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
     safe(function () { if (document.body) document.body.classList.remove('mls-widget-deck-owner'); });
     try { window.__mlsWidgetDeck.installed = false; } catch (e) {}
     return 'widget deck reverted';
   }
 
-  window.__mlsWidgetDeck = { installed: true, version: VERSION, asset: 'feat_mls_widget_deck.js', sync: sync, revert: revert };
+  window.__mlsWidgetDeck = { installed: true, version: VERSION, asset: 'feat_mls_widget_deck.js', sync: sync, repair: repair, revert: revert };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  if (document.readyState === 'loading') { domReadyWaiting = true; document.addEventListener('DOMContentLoaded', boot, { once: true }); }
   else boot();
 })();

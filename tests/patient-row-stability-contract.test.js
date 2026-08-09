@@ -40,8 +40,9 @@ assert(render.includes('_ptPatchActive(list,activeId,_phRebuilt)') &&
   'patient selection does not patch the existing prior/next rows');
 assert(app.includes('data-patient-id="${esc(p.id)}"') && app.includes('pt-active-badge'),
   'patient rows lack stable identity or the targeted active badge');
-assert(app.includes("if(v!=='patients') updateNavCounts();"),
-  'Patients navigation still counts the whole workspace before renderPatients counts it again');
+const showView = app.slice(app.indexOf('function showView(v)'), app.indexOf('function renderPatientBar()', app.indexOf('function showView(v)')));
+assert(!showView.includes('renderPatientBar()') && !showView.includes('updateNavCounts()'),
+  'route navigation regained a full-roster patient-bar/count refresh');
 assert(!/renderPatients\(\);\s*renderProfile\(\);\s*renderPatientBar\(\);\s*updateNavCounts\(\)/.test(app),
   'patient selection/save still repeats navigation counting after renderPatients');
 const copilotNavigate = app.slice(app.indexOf('function _copilotNavigate'), app.indexOf('function _copilotDoAction'));

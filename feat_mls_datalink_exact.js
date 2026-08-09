@@ -28,8 +28,10 @@
  *     selectPatient -- used by the Patients list and calendar appt clicks) so that picking a
  *     patient anywhere re-highlights the picker cards, refreshes the patient context bar, and
  *     (when the Calendar is on screen) focuses that patient's appointment day.
- *  3) A light 2s signature poll (patient count + appt count) is a safety net: if any code path
- *     we did not wrap changes the data, shared chrome and the active surface still re-sync once.
+ *  3) Canonical view, active-patient, patient-record, account, calendar-session and exact
+ *     cross-tab storage signals keep the visible surfaces in sync without repeatedly reading
+ *     the full roster while the user is idle. The wrapped pull/selection entry points remain
+ *     the same compatibility net for older callers that do not publish lifecycle events.
  *
  *  Every refresh calls the app's OWN renderers for the active surface and the *_exact build()
  *  hook for that surface; nothing is rebuilt or deleted here. It is idempotent (re-syncs fire
@@ -40,7 +42,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "link-1.0.2";
+  var VERSION = "link-1.1.0";
   try { if (window.__mlsLink && window.__mlsLink.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -220,11 +222,15 @@
      here we add the missing mirrors (picker highlight, context bar, Calendar
      focus when it is on screen) WITHOUT re-rendering the heavy list again.
      ==================================================================== */
-  function reflectSelection() {
+  function reflectSelection(full) {
     try {
+      /* showView already rendered the route and did not change selection.
+         Its lifecycle event needs no patient-store work; the picker, record,
+         bar, and Calendar lookup belong to an actual patient change. */
+      if (full === false) return;
       pokePicker();                                            /* picker cards highlight the active id (idempotent) */
       if (isFn("renderPatientBar")) { try { window.renderPatientBar(); } catch (e) {} }
-      if (viewVisible("calendarView")) {                       /* only touch the Calendar when the user is looking at it */
+      if (viewActive("calendar", "calendarView")) {          /* only touch the Calendar when the user is looking at it */
         var d = activePatientApptDate();
         if (d) focusCalDay(d);
         buildCx();
@@ -233,10 +239,67 @@
   }
 
   /* ---------- debounced schedulers (coalesce bursts; no storms) ---------- */
-  var _selT = null;
-  function scheduleReflect() { if (_selT) return; _selT = setTimeout(function () { _selT = null; reflectSelection(); }, 80); }
+  var _stopped = false;
+  var _selT = null, _selFull = false;
+  function scheduleReflect(full) {
+    if (_stopped) return;
+    _selFull = _selFull || full !== false;
+    if (_selT) return;
+    _selT = setTimeout(function () {
+      var doFull = _selFull;
+      _selT = null; _selFull = false;
+      if (!_stopped) reflectSelection(doFull);
+    }, 80);
+  }
   var _pullT = null;
-  function schedulePull() { if (_pullT) clearTimeout(_pullT); _pullT = setTimeout(function () { _pullT = null; syncAll("pull", true); }, 140); }
+  function schedulePull() {
+    if (_stopped) return;
+    if (_pullT) clearTimeout(_pullT);
+    _pullT = setTimeout(function () { _pullT = null; if (!_stopped) syncAll("pull", true); }, 140);
+  }
+  var _dataT = null, _dataReason = "event";
+  function scheduleData(reason) {
+    if (_stopped) return;
+    _dataReason = reason || _dataReason;
+    if (_dataT) return;
+    _dataT = setTimeout(function () {
+      var why = _dataReason;
+      _dataT = null; _dataReason = "event";
+      if (!_stopped) syncAll(why, false);
+    }, 80);
+  }
+  var _externalT = null, _externalIdle = false, _externalReason = "storage";
+  function inputPending() {
+    try {
+      return !!(navigator && navigator.scheduling &&
+        typeof navigator.scheduling.isInputPending === "function" &&
+        navigator.scheduling.isInputPending());
+    } catch (e) { return false; }
+  }
+  function scheduleExternalData(reason) {
+    if (_stopped || _externalT) return;
+    /* A remote roster write cannot change shared chrome on Visit. When the
+       directory/calendar is actually visible it does matter, but decoding a
+       newly invalidated multi-MB store must wait for a genuine browser-idle
+       slice instead of landing unpredictably in the click lane. */
+    if (!viewActive("patients", "patientsView") && !viewActive("calendar", "calendarView")) return;
+    _externalReason = reason || "storage";
+    var run = function () {
+      _externalT = null; _externalIdle = false;
+      if (_stopped) return;
+      if (inputPending()) { scheduleExternalData(_externalReason); return; }
+      var why = _externalReason; _externalReason = "storage";
+      syncAll(why, false);
+    };
+    try {
+      if (typeof window.requestIdleCallback === "function") {
+        _externalIdle = true;
+        _externalT = window.requestIdleCallback(run);
+      } else {
+        _externalT = setTimeout(run, 250);
+      }
+    } catch (e) { _externalT = null; _externalIdle = false; }
+  }
 
   /* ---------- function wrapping (reversible) ---------- */
   var ORIG = {};
@@ -279,33 +342,96 @@
     for (i = 0; i < PULL_FNS.length; i++) wrap(PULL_FNS[i], schedulePull, true);
   }
 
-  /* ---------- safety-net change poll ---------- */
-  var _lastSig = null, _pollT = null;
-  function dataSig() { return getPatients().length + "|" + appts().length; }
-  function startPoll() {
-    _lastSig = dataSig();
+  /* ---------- event-driven lifecycle (no permanent roster poll) ---------- */
+  var _listeners = [], _eventsOn = false;
+  function listen(target, name, fn) {
     try {
-      _pollT = setInterval(function () {
-        var s = dataSig();
-        if (s !== _lastSig) { _lastSig = s; syncAll("poll", false); }
-      }, 2000);
+      target.addEventListener(name, fn, false);
+      _listeners.push({ target: target, name: name, fn: fn });
     } catch (e) {}
+  }
+  function patientStoreKey() {
+    try { return (typeof window.uns === "function") ? String(window.uns("patients") || "") : ""; }
+    catch (e) { return ""; }
+  }
+  function patientStoreEvent(ev) {
+    if (!ev) return false;
+    try { if (ev.storageArea && window.localStorage && ev.storageArea !== window.localStorage) return false; }
+    catch (e) { return false; }
+    if (ev.key == null) return true; /* localStorage.clear() */
+    var expected = patientStoreKey();
+    if (expected) return String(ev.key) === expected;
+    return /(^|::)patients$/.test(String(ev.key));
+  }
+  function patientRecordEvent(ev) {
+    try {
+      var eventKey = ev && ev.detail && ev.detail.patientStoreKey;
+      var expected = patientStoreKey();
+      return !eventKey || !expected || String(eventKey) === expected;
+    } catch (e) { return false; }
+  }
+  function installLifecycle() {
+    if (_eventsOn) return;
+    _eventsOn = true;
+    /* showView already owns the heavy surface render before publishing this
+       event. Reconcile only shared selection chrome here; a second directory
+       or Calendar build would turn navigation itself into a long task. */
+    listen(window, "mls:view-changed", function () { scheduleReflect(false); });
+    listen(window, "mls:active-patient-changed", function () { scheduleReflect(true); });
+    listen(window, "mls:patient-record-updated", function (ev) {
+      if (patientRecordEvent(ev)) scheduleData("patient-record");
+    });
+    listen(window, "mls:calendar-session-reset", function () { scheduleExternalData("calendar-session"); });
+    listen(window, "mls:session-boundary", function () { scheduleExternalData("session"); });
+    listen(window, "mls:ui-ready", function () { scheduleExternalData("ui-ready"); });
+    listen(window, "storage", function (ev) {
+      if (patientStoreEvent(ev)) scheduleExternalData("storage");
+    });
+    listen(window, "pageshow", function () { scheduleExternalData("pageshow"); });
+  }
+  function removeLifecycle() {
+    for (var i = 0; i < _listeners.length; i++) {
+      var row = _listeners[i];
+      try { row.target.removeEventListener(row.name, row.fn, false); } catch (e) {}
+    }
+    _listeners = [];
+    _eventsOn = false;
   }
 
   /* ---------- boot ---------- */
-  var _bootN = 0, _bootT = null;
+  var _bootN = 0, _bootT = null, _readyFn = null;
   function boot() {
+    _stopped = false;
     installHooks();
+    installLifecycle();
     /* a few retries in case any data fn is (re)defined slightly after we load */
     try {
+      if (_bootT) clearInterval(_bootT);
+      _bootN = 0;
       _bootT = setInterval(function () { installHooks(); if (++_bootN > 16) { clearInterval(_bootT); _bootT = null; } }, 700);
     } catch (e) {}
-    startPoll();
   }
 
   function revert() {
-    try { if (_pollT) clearInterval(_pollT); } catch (e) {}
+    _stopped = true;
     try { if (_bootT) clearInterval(_bootT); } catch (e) {}
+    try { if (_selT) clearTimeout(_selT); } catch (e) {}
+    try { if (_pullT) clearTimeout(_pullT); } catch (e) {}
+    try { if (_dataT) clearTimeout(_dataT); } catch (e) {}
+    try {
+      if (_externalT) {
+        if (_externalIdle && typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(_externalT);
+        else clearTimeout(_externalT);
+      }
+    } catch (e) {}
+    _bootT = _selT = _pullT = _dataT = _externalT = null;
+    _externalIdle = false;
+    _externalReason = "storage";
+    if (_readyFn) {
+      try { document.removeEventListener("DOMContentLoaded", _readyFn, false); } catch (e) {}
+      _readyFn = null;
+    }
+    removeLifecycle();
     for (var k in ORIG) {
       if (Object.prototype.hasOwnProperty.call(ORIG, k)) { try { window[k] = ORIG[k]; } catch (e) {} }
     }
@@ -320,6 +446,11 @@
     activePatientApptDate: activePatientApptDate,
     reapply: boot, revert: revert
   };
-  try { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot(); }
+  try {
+    if (document.readyState === "loading") {
+      _readyFn = function () { _readyFn = null; boot(); };
+      document.addEventListener("DOMContentLoaded", _readyFn, false);
+    } else boot();
+  }
   catch (e) { try { boot(); } catch (e2) {} }
 })();

@@ -33,7 +33,7 @@
      The inline schedule picker (#simPickGrid) now inherits the upgraded
      feat_mls_patientpick grid: appointment times, earliest-first order, first 6
      + Show more, and the auto-advancing "now" highlight. */
-  var VERSION = "simx-1.4.1";
+  var VERSION = "simx-1.4.2";
   try { if (window.__mlsSimX && window.__mlsSimX.installed) return; } catch (e) { return; }
 
   /* ---- staging gate (defense in depth; loader already staging-only) ---- */
@@ -89,6 +89,13 @@
     try { if (window.__mlsPick && typeof window.__mlsPick.activePatient === "function") { var a = window.__mlsPick.activePatient(); if (a) return a; } } catch (e) {}
     try { return window.activePatient ? window.activePatient() : null; } catch (e) {}
     return null;
+  }
+  function realActiveId() {
+    try {
+      if (typeof window.getActivePtId === "function") return String(window.getActivePtId() || "");
+    } catch (e) {}
+    var patient = realActive();
+    return patient && patient.id != null ? String(patient.id) : "";
   }
   function initials(name) {
     var parts = String(name || "").trim().split(/\s+/);
@@ -484,8 +491,11 @@
   function sync() {
     if (!isSimple()) { hideWrap(); _lastSig = ""; return; }
     injectCSS();
-    var ra = realActive();
-    var sig = String(curStep()) + "|" + isRecording() + "|" + hasTranscript() + "|" + hasNote() + "|" + patientName() + "|" + (ra ? ra.id : "") + "|" + (!!window.__mlsEzGenerating);
+    /* Input/view reconciliation needs only identity stability. realActive()
+       can cold-decode the whole roster after a cross-tab write; reserve that
+       record lookup for renderCard() when this cheap signature actually moves. */
+    var activeId = realActiveId();
+    var sig = String(curStep()) + "|" + isRecording() + "|" + hasTranscript() + "|" + hasNote() + "|" + patientName() + "|" + activeId + "|" + (!!window.__mlsEzGenerating);
     var w = $(WRAP_ID);
     if (!w || w.parentElement !== $("visitView") || sig !== _lastSig) {
       _lastSig = sig;

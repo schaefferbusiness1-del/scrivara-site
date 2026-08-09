@@ -13681,8 +13681,10 @@ function showView(v){
   document.getElementById('patientBar').style.display=(v==='patients'||v==='admin'||v==='team'||v==='analysis'||v==='legalreq'||v==='studio'||v==='calendar')?'none':'flex';
   if(v==='calendar' && typeof loadCalendar==='function') loadCalendar();
   if(v==='studio' && typeof renderStudio==='function') renderStudio();
-  renderPatientBar();
-  if(v!=='patients') updateNavCounts();
+  /* Patient identity and badge counts are data-owned, not route-owned. Their
+     exact save/selection/hydration paths already refresh them. Re-reading the
+     multi-megabyte roster here made an otherwise visual tab switch decode it
+     up to three times after another tab invalidated the memo. */
   if(v==='patients'){ renderPatients(); renderProfile(); if(typeof loadPendingIntakes==='function') loadPendingIntakes(false); try{ if(typeof hideClinicalForReceptionist==='function') hideClinicalForReceptionist(); }catch(e){} }
   if(v==='history'){
     renderHistory();
@@ -33602,6 +33604,7 @@ function _ptGroupSort(mode){
                  dob ? ('DOB '+dob) : '',
                  p.mrn ? ('MRN '+p.mrn) : '' ].filter(Boolean).join('  ·  ');
     bar.style.display='flex';
+    bar.__mlsPatientId=String(p.id||'');
     /* Owner 2026-07-27, looking at the live bar ("I hate this banner… way too
        complicated. Completely reworked with almost no buttons. Clicking on the
        patient's name takes you to the chart, and that's it. Every feature there
@@ -33770,11 +33773,55 @@ function _ptGroupSort(mode){
       +'}';
     (document.head||document.documentElement).appendChild(css);
   }
-  function refresh(){ safe(build); }
+  var _routeRefreshTask=null,_routeRefreshIdle=false;
+  function cancelRouteRefresh(){
+    if(_routeRefreshTask===null)return;
+    var task=_routeRefreshTask,wasIdle=_routeRefreshIdle;
+    _routeRefreshTask=null;_routeRefreshIdle=false;
+    safe(function(){
+      if(wasIdle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task);
+      else clearTimeout(task);
+    });
+  }
+  function refresh(){ cancelRouteRefresh(); safe(build); }
+  function scheduleRouteRefresh(){
+    if(_routeRefreshTask!==null)return;
+    var run=function(){_routeRefreshTask=null;_routeRefreshIdle=false;safe(build);};
+    try{
+      if(typeof window.requestIdleCallback==='function'){
+        _routeRefreshIdle=true;
+        _routeRefreshTask=window.requestIdleCallback(run);
+      }else _routeRefreshTask=setTimeout(run,500);
+    }catch(_e){_routeRefreshTask=null;_routeRefreshIdle=false;}
+  }
+  function syncRouteLayout(){
+    var id=String(activeId()||''),bar=$(BAR_ID);
+    if(!id){
+      if(bar)bar.style.display='none';
+      safe(function(){if(document.body.classList.contains(BODY_CLS))document.body.classList.remove(BODY_CLS);});
+      return;
+    }
+    if(bar&&String(bar.__mlsPatientId||'')===id&&bar.querySelector('.mlsctx-id')){
+      bar.style.display='flex';
+      safe(function(){if(!document.body.classList.contains(BODY_CLS))document.body.classList.add(BODY_CLS);});
+      return;
+    }
+    /* Never show a stale patient's identity while its idle refresh waits. */
+    if(bar)bar.style.display='none';
+    safe(function(){if(document.body.classList.contains(BODY_CLS))document.body.classList.remove(BODY_CLS);});
+    scheduleRouteRefresh();
+  }
   function init(){
     injectCss();
     refresh();
     window.addEventListener('mls:active-patient-changed', refresh);
+    /* Same-tab patient edits already publish the exact changed id while the
+       roster memo/batch is hot. Refresh only when that row is the banner row;
+       a cross-tab write to any other one of thousands of patients must not
+       force this tab to synchronously decode the entire compressed roster. */
+    window.addEventListener('mls:patient-record-updated', function(e){
+      try{ var id=String(e&&e.detail&&e.detail.patientId||''); if(id&&id===String(activeId()||''))refresh(); }catch(_){}
+    });
     /* 2026-07-28 owner sweep: this init runs at DOMContentLoaded - PRE-AUTH -
        so refresh() sees an empty store, hides the card, and nothing re-runs
        it at boot (the active-patient event fires only on a CHANGE, and
@@ -33784,25 +33831,22 @@ function _ptGroupSort(mode){
        catches up after auth exactly the way the redesign does: on every view
        change plus a bounded timeout ladder. No interval, no observer - the
        banner-minimal contract forbids both. */
-    window.addEventListener('mls:view-changed', refresh);
-    [400, 1200, 3000].forEach(function(d){ setTimeout(refresh, d); });
+    window.addEventListener('mls:view-changed', syncRouteLayout);
+    [400, 1200, 3000].forEach(function(d){ setTimeout(syncRouteLayout, d); });
     (function(){ /* __mlsCardStormFix v1 */
-      /* Every localStorage write from ANY other MLS tab used to fire this
-         card's refresh(), which does a full getPatients() JSON.parse (~2MB on
-         a clinic-sized store) plus a card rebuild. Same-origin tabs share one
-         renderer process, so two write-chatty tabs (AI-summary pump, boot
-         rehydrate, day-pull ingest) amplified each other until the renderer
-         pegged at 100% and every MLS tab froze - the owner-reported
-         "freezes after sign-in / while clicking around" bug. React only to
-         the keys this card actually renders from, at most twice a second. */
-      var _stT = null;
+      /* Patient-row writes are handled by the exact same-tab event above.
+         Reacting to the broad patients key here made every unrelated edit in
+         another tab decode the multi-MB roster on this tab too. Only a remote
+         active-id change (or localStorage.clear) can change which card belongs
+         here; coalesce that rare compatibility path. */
       window.addEventListener('storage', function(e){
         try {
           var k = (e && e.key != null) ? String(e.key) : '';
-          if (k && k.indexOf('patients') < 0 && k.indexOf('activePt') < 0) return;
+          if (k && k.indexOf('activePt') < 0) return;
         } catch(_) {}
-        if (_stT) return;
-        _stT = setTimeout(function(){ _stT = null; refresh(); }, 500);
+        /* Hide a stale identity synchronously using only the active id, then
+           let the patient-record lookup wait for idle. */
+        syncRouteLayout();
       });
     })();
     /* The b439 action-row self-heal is gone with the action row it healed.

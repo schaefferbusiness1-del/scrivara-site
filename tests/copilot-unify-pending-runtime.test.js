@@ -38,7 +38,7 @@ context.window = context;
 vm.runInNewContext(source, context, { filename: 'feat_mls_copilot_unify.js' });
 
 const store = context.__mlsCopilotConvo;
-assert.strictEqual(context.__mlsCopilotUnify.version, 'unify-1.1.0');
+assert.strictEqual(context.__mlsCopilotUnify.version, 'unify-1.2.0');
 const first = store.pushPending('First', { requestId: 1 });
 const second = store.pushPending('Second', { requestId: 2 });
 assert.strictEqual(store.dropPending(first), true);

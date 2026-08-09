@@ -1,4 +1,4 @@
-/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.2.3 "Editorial Calm")
+/* feat_mls_redesign.js  ->  window.__mlsRedesign  (v3.2.4 "Editorial Calm")
  * =====================================================================
  *  MLSscribe 2026 GROUND-UP reskin v3 -- calm, premium, doctor-first.
  *  Replaces v2's dark-navy top-tab shell with the Editorial Calm shell:
@@ -24,7 +24,7 @@
  */
 ;(function () {
   "use strict";
-  var VERSION = "3.2.3", ASSET = "feat_mls_redesign.js";
+  var VERSION = "3.2.4", ASSET = "feat_mls_redesign.js";
   var _priorRedesign = null, _opaqueLegacyHistory = null;
   var _historyWrapper = null, _historyOriginal = null, _historyBeforeInstall;
   var _historyBeforeInstallCaptured = false, _historyBeforeInstallHadOwn = false;
@@ -751,7 +751,7 @@
         try{
           /* The opaque 3.2.1 forwarder reads the global state. Give it a
              locked throwaway state so one navigation produces one history
-             entry, then immediately restore the canonical 3.2.3 state. */
+             entry, then immediately restore the canonical 3.2.4 state. */
           if(opaque)window.__mlsViewHist={stack:[],lock:true,cur:'__pinned',owner:'retired-legacy'};
           out=original.apply(this,arguments);
         }finally{
@@ -1266,13 +1266,23 @@
   function syncClinicalSurfaceState(){
     try{
       if(!document.body) return;
-      var patient=null;
+      var patient=null,hasPatient=false,hasActiveIdOwner=false;
       try{
-        if(typeof window.activePatient==='function') patient=window.activePatient();
+        /* These classes describe whether this tab has an active-patient
+           binding; they do not need the full patient record. activePatient()
+           decodes and scans the entire compressed roster on a cold cache.
+           Cross-tab patient/note writes can arrive in bursts, so doing that in
+           every storage callback produced measured 15-second input freezes on
+           large rosters. Prefer the canonical O(1) id owner. The record lookup
+           remains only as a compatibility fallback for older hosts. */
+        if(typeof window.getActivePtId==='function'){
+          hasActiveIdOwner=true;
+          hasPatient=!!String(window.getActivePtId()||'');
+        }else if(typeof window.activePatient==='function') patient=window.activePatient();
         else if(typeof window.activePt==='function') patient=window.activePt();
         else if(typeof activePt==='function') patient=activePt();
       }catch(e){}
-      var hasPatient=!!(patient&&patient.id&&patient.name);
+      if(!hasActiveIdOwner) hasPatient=!!(patient&&patient.id&&patient.name);
       var note=$('mls-note')||$('noteBox')||$('ez3flNote')||$('ez3Note');
       var noteText='';
       try{ noteText=String(note&&(note.value!=null?note.value:note.textContent)||'').trim(); }catch(e2){}
@@ -1299,7 +1309,10 @@
     _surfacePatientHandler=function(){ syncClinicalSurfaceState(); };
     _surfaceStorageHandler=function(ev){
       var k=String(ev&&ev.key||'');
-      if(!k||/activePt|patients|notes/i.test(k)) syncClinicalSurfaceState();
+      /* A remote notes write cannot change this tab's editor value. Patient
+         and active-id writes can change the binding classes, but the O(1) id
+         path above keeps even a burst of those events off the roster codec. */
+      if(!k||/activePt|patients/i.test(k)) syncClinicalSurfaceState();
     };
     try{ document.addEventListener('input',_surfaceInputHandler,true); }catch(e){}
     try{ window.addEventListener('mls:active-patient-changed',_surfacePatientHandler); }catch(e2){}

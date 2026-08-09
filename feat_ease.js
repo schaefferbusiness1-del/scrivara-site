@@ -17,10 +17,10 @@
  *     type remembered (user-scoped); score inputs get their scales (VAS/NRS 0–10,
  *     ODI 0–100%); the "Type / paste → AI" path is flagged as the fast lane.
  *
- * Triggering is belt-and-suspenders: wraps __mlsVisitUI.render, wraps showView,
- * a guarded #profileCard observer, AND a light idempotent poll — so the open-patient
- * enhancements appear whichever way the profile is shown. Every pass is idempotent
- * (no rewrites once applied), so there is no render churn and the §44 ctxbar is untouched.
+ * Triggering is event-driven: wraps __mlsVisitUI.render, listens to the canonical
+ * view/patient/session lifecycle, and keeps one observer scoped to #profileCard.
+ * Every pass is idempotent (no rewrites once applied), so there is no render churn
+ * and the §44 ctxbar is untouched.
  */
 (function () {
   'use strict';
@@ -296,30 +296,78 @@
   }
 
   /* ============================================================
-   *  Wiring — wrap render + open + showView, observer + idempotent poll
+   *  Wiring — wrap render/open, canonical lifecycle events + scoped observer
    * ============================================================ */
-  var origRender = null, origOpen = null, origShowView = null,
-      observer = null, observerAttached = false, rafPending = false, applying = false, pollTimer = null;
+  var origRender = null, origOpen = null,
+      observer = null, observerRoot = null, observerAttached = false,
+      rafPending = false, applying = false, listenersAttached = false,
+      lifecycleActive = false, domReadyWaiting = false;
+
+  function patientsViewVisible() {
+    var view = document.getElementById('patientsView');
+    return !!(view && (!view.style || view.style.display !== 'none'));
+  }
 
   function scheduleEnhance() {
-    if (rafPending || applying) return;
+    if (!lifecycleActive || rafPending || applying) return;
     rafPending = true;
     (window.requestAnimationFrame || setTimeout)(function () {
       rafPending = false;
+      if (!lifecycleActive) return;
       applying = true;
       try { if (observer) observer.disconnect(); } catch (e) {}
       try { enhanceProfile(); } catch (e) {}
-      try { if (observerAttached && observer) { var pc = document.getElementById('profileCard'); if (pc) observer.observe(pc, { childList: true, subtree: true }); } } catch (e) {}
+      try { if (observerAttached && observer) startObserver(); } catch (e) {}
       applying = false;
     });
   }
 
   function startObserver() {
+    if (!lifecycleActive) return;
     var pc = document.getElementById('profileCard');
     if (!pc) return;
-    if (!observer) observer = new MutationObserver(function () { scheduleEnhance(); });
+    if (typeof MutationObserver === 'undefined') return;
+    if (!observer) observer = new MutationObserver(function () {
+      if (patientsViewVisible()) scheduleEnhance();
+    });
+    if (observerRoot && observerRoot !== pc) {
+      try { observer.disconnect(); } catch (e) {}
+    }
     observer.observe(pc, { childList: true, subtree: true });
+    observerRoot = pc;
     observerAttached = true;
+  }
+
+  function onViewChanged(ev) {
+    var view = ev && ev.detail && ev.detail.view;
+    if (view ? view === 'patients' : patientsViewVisible()) {
+      startObserver();
+      scheduleEnhance();
+    }
+  }
+
+  function onPatientChanged() {
+    if (patientsViewVisible()) { startObserver(); scheduleEnhance(); }
+  }
+
+  function onSessionBoundary() {
+    if (patientsViewVisible()) { startObserver(); scheduleEnhance(); }
+  }
+
+  function attachLifecycle() {
+    if (listenersAttached || typeof window.addEventListener !== 'function') return;
+    window.addEventListener('mls:view-changed', onViewChanged);
+    window.addEventListener('mls:active-patient-changed', onPatientChanged);
+    window.addEventListener('mls:session-boundary', onSessionBoundary);
+    listenersAttached = true;
+  }
+
+  function detachLifecycle() {
+    if (!listenersAttached || typeof window.removeEventListener !== 'function') return;
+    window.removeEventListener('mls:view-changed', onViewChanged);
+    window.removeEventListener('mls:active-patient-changed', onPatientChanged);
+    window.removeEventListener('mls:session-boundary', onSessionBoundary);
+    listenersAttached = false;
   }
 
   function wrapRender() {
@@ -328,7 +376,7 @@
       origRender = window.__mlsVisitUI.render;
       var wrapped = function () {
         var r = origRender.apply(this, arguments);
-        try { enhanceProfile(); } catch (e) {}
+        try { startObserver(); enhanceProfile(); } catch (e) {}
         return r;
       };
       wrapped.__mlsEaseWrapped = true;
@@ -352,38 +400,28 @@
     }
   }
 
-  // Wrap showView so switching to the Patients/profile view enhances immediately.
-  function wrapShowView() {
-    if (typeof window.showView === 'function' && !window.showView.__mlsEaseWrapped) {
-      origShowView = window.showView;
-      var wrapped = function () {
-        var r = origShowView.apply(this, arguments);
-        try { enhanceProfile(); setTimeout(enhanceProfile, 80); } catch (e) {}
-        return r;
-      };
-      wrapped.__mlsEaseWrapped = true;
-      wrapped.__mlsEaseOrig = origShowView;
-      window.showView = wrapped;
-    }
-  }
-
   function install() {
     try {
+      domReadyWaiting = false;
+      lifecycleActive = true;
       injectStyle();
       wrapRender();
       wrapOpen();
-      wrapShowView();
+      attachLifecycle();
       startObserver();
       enhanceProfile();
-      // light idempotent safety-net poll: does nothing once applied, never touches #mlsCtxBar
-      if (!pollTimer) pollTimer = setInterval(function () { try { enhanceProfile(); } catch (e) {} }, 1200);
     } catch (e) { try { console.warn(LOG, 'install failed', e); } catch (_) {} }
   }
 
   function revert() {
-    try { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } } catch (e) {}
+    lifecycleActive = false;
+    detachLifecycle();
+    if (domReadyWaiting && document && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('DOMContentLoaded', install);
+      domReadyWaiting = false;
+    }
     try { if (observer) observer.disconnect(); } catch (e) {}
-    observer = null; observerAttached = false;
+    observer = null; observerRoot = null; observerAttached = false;
     try {
       if (window.__mlsVisitUI && window.__mlsVisitUI.render && window.__mlsVisitUI.render.__mlsEaseWrapped) {
         window.__mlsVisitUI.render = window.__mlsVisitUI.render.__mlsEaseOrig;
@@ -395,11 +433,6 @@
       }
     } catch (e) {}
     try {
-      if (window.showView && window.showView.__mlsEaseWrapped) {
-        window.showView = window.showView.__mlsEaseOrig;
-      }
-    } catch (e) {}
-    try {
       [].slice.call(document.querySelectorAll('.mlsease-addvisit')).forEach(function (n) { n.remove(); });
       var st = document.getElementById(STYLE_ID); if (st) st.remove();
     } catch (e) {}
@@ -408,7 +441,7 @@
 
   window.__mlsEase = {
     installed: true,
-    version: '1.1.0',
+    version: '1.2.0',
     enhanceProfile: enhanceProfile,
     enhanceModal: enhanceModal,
     addVisitForActive: addVisitForActive,
@@ -422,7 +455,8 @@
   };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', install);
+    domReadyWaiting = true;
+    document.addEventListener('DOMContentLoaded', install, { once: true });
   } else {
     install();
   }

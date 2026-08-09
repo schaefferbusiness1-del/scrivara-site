@@ -1,4 +1,4 @@
-/* feat_mls_copilot_unify.js  ->  window.__mlsCopilotUnify  (unify-1.1.0)  [Task 2]
+/* feat_mls_copilot_unify.js  ->  window.__mlsCopilotUnify  (unify-1.2.0)  [Task 2]
  *
  * ONE shared Copilot conversation across the two front-ends that used to keep
  * independent histories:
@@ -30,7 +30,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsCopilotUnify", STORE = "__mlsCopilotConvo", VERSION = "unify-1.1.0";
+  var NS = "__mlsCopilotUnify", STORE = "__mlsCopilotConvo", VERSION = "unify-1.2.0";
   try { if (window[NS] && window[NS].installed) return; } catch (e) { return; }
 
   /* ---- self-gate: identical to feat_mls_asst_fix / the assistant panel ---- */
@@ -128,7 +128,15 @@
         return ap ? { id: ap.id, name: String(ap.name || "") } : null;
       }, null);
     },
-    noActivePatient: function () { return !this.activePatient(); }
+    noActivePatient: function () {
+      /* The hint/route path needs only the binding, not the multi-megabyte
+         patient record. getActivePtId() is the canonical O(1) source. Hosts
+         predating that helper retain the original activePatient() fallback. */
+      if (isFn(window.getActivePtId)) {
+        try { return !String(window.getActivePtId() || ""); } catch (e) {}
+      }
+      return !this.activePatient();
+    }
   };
   try { window[STORE] = store; } catch (e) {}
 

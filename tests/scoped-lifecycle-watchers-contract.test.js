@@ -22,7 +22,7 @@ for (const [name, source] of Object.entries({ simple, patients, studio, picker, 
 }
 
 assert(!/setInterval\s*\(\s*sync\b/.test(simple), 'Simple Visit must not poll editor/patient state every 400ms');
-assert(simple.includes('var VERSION = "simx-1.4.1"'), 'Simple Visit lifecycle release version was not advanced');
+assert(simple.includes('var VERSION = "simx-1.4.2"'), 'Simple Visit lifecycle release version was not advanced');
 assert(simple.includes('_obs.observe(_visitRoot'), 'Simple Visit mutations must be scoped to #visitView');
 assert(!/_obs\.observe\(document\.documentElement[\s\S]*?subtree:\s*true/.test(simple), 'Simple Visit still observes the whole document subtree');
 assert(simple.includes('_modeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })'), 'Simple/full mode changes need a root-class-only observer');
@@ -262,9 +262,11 @@ pullCheckOn.window.__mlsPullCheck.revert();
   /* Patients exact now stays inert until Patients is the active view. */
   'feat_mls_patients_exact.js?v=20260727px130',
   'feat_mls_studio_exact.js?v=20260728sx241',
-  'feat_mls_patientpick.js?v=20260808pick162perf1',
-  'feat_mls_simple_exact.js?v=20260719simx142'
+  'feat_mls_patientpick.js?v=20260808pick162perf1'
 ].forEach(token => assert(connect.includes(token), `fresh lifecycle asset cache key is missing: ${token}`));
+assert(connect.includes("var A='feat_mls_simple_exact.js'") &&
+  connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
+  'Simple Visit must follow the shared build cache token');
 assert(connect.includes("var A='feat_athena_tooltip_dedupe.js'") &&
   connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"), 'unified Settings owner cache key was not advanced');
 assert(connect.includes('var A="feat_mls_settings_wb.js"') && connect.includes('A+"?v=20260722swb111"'), 'Settings writeback cache key was not advanced');

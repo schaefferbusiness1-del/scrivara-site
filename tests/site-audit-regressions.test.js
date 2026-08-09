@@ -33,7 +33,7 @@ assert(redesign.includes('#mlsRdNewBtn{ display:inline-flex !important; width:38
 assert(redesign.includes('#mlsAsstFab, #mlsDaDock, #mlsTabPickerChip'), 'the duplicate fixed dictate control must be absent on phones');
 /* The redesign is a high-churn performance owner, so its deployment URL follows
    the shared build rather than relying on a second hand-maintained token. */
-assert(siteBundle.includes("var A='feat_mls_redesign.js',V='3.2.3'") &&
+assert(siteBundle.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
   siteBundle.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),
   'the repaired responsive/performance asset must follow the current build URL');
 assert(!siteBundle.includes('20260808rd332perf2') && !siteBundle.includes('20260804rd331'),
