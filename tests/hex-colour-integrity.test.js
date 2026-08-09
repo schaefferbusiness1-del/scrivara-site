@@ -75,6 +75,10 @@ const PREEXISTING = {
   '#b9770a': 6,   // "b977" — collided with the live build number on 2026-08-08.
                   //          The bump script rewrote all 6 to #b9780a before a
                   //          diff caught it; the bump now masks hex literals.
+  '#8b9791': 1,   // "b979" — the write-back walkthrough's muted todo colour,
+                  //          byte-identical since its introduction in
+                  //          d1aa8a98 on 2026-07-27; the b979 bump did not
+                  //          edit that asset or this chosen colour.
   '#e0b877': 2,   // "b877" — the fill-box amber border and its dictation-
                   //          correction twin in feat_mls_opnote_fill.js.
                   //          Collided with the live build number on 2026-08-05
