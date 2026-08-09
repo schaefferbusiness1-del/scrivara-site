@@ -176,6 +176,14 @@
             patient_external_id: clean(c.patient_external_id),
             ready_at: c.ready_at || null,
             bullets: (Array.isArray(c.bullets) ? c.bullets : []).slice(0, 3).map(function (b) { return String(b).slice(0, 160); }),
+            /* A SLICE IS A TRUNCATION AND MUST SAY SO - the same law the summary
+               field above already obeys. The bullets now travel into the chart and
+               into the visit transcript (briefLines), and the server writes up to
+               SIX of them: filing this three-bullet display sample would have
+               dropped bullets 4-6 silently, and the ⚠ emergency bullet is
+               unshifted to the FRONT, so what went missing was the tail of the
+               clinical detail. The card refetches the full row before filing. */
+            bulletsTruncated: (Array.isArray(c.bullets) ? c.bullets : []).length > 3,
             /* av-2.0.0: the Visit card files the summary into transcript/chart
                without a second fetch — bounded to keep the cache small.
                av-2.0.2: a slice is a TRUNCATION and must say so — the card
@@ -252,6 +260,17 @@
       return isNaN(date.getTime()) ? '' : date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     }, '');
   }
+  /* Used only to decide whether the chart block may say "TODAY" out loud - see
+     importSummary. Unparseable or missing timestamps answer NO, so the sentence
+     is never printed on a check-in we cannot date. */
+  function isToday(value) {
+    return safe(function () {
+      var d = new Date(String(value).indexOf('T') < 0 ? String(value).replace(' ', 'T') + 'Z' : value);
+      if (isNaN(d.getTime())) return false;
+      var now = new Date();
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    }, false);
+  }
 
   /* ---- import into the exact chart, once ----
      av-1.1.0: NEVER mutate the store object before the save is confirmed —
@@ -285,6 +304,51 @@
     if (a === 'passed') return '[AI audit: checked against the patient\'s answers.]';
     return '[AI audit: no verdict recorded for this check-in.]';
   }
+  /* THE RED FLAG AND THE BULLETS TRAVEL WITH THE WORDS (av-5.7.6, review round four).
+     Both paths into the permanent record - the chart (importSummary) and the visit
+     transcript (addToTranscript, which is the box the note is DRAFTED from) - built
+     their block out of `checkin.summary` and NOTHING else. Every deterministic
+     emergency cure the backend has was installed on the two fields that did not
+     travel: patientAvatar.js unshifts "⚠ Patient used emergency-sounding language
+     during check-in" into bullets[0] and prefixes "⚠ EMERGENCY LANGUAGE IN CHECK-IN
+     — " onto the headline, and leaves summary.summary untouched. So a check-in the
+     server FLAGGED became byte-for-byte indistinguishable from a routine one the
+     moment the doctor filed it - under a line saying the summary had been checked.
+     It is patient WORDS, not a glyph: SUMMARY_VERIFY_SYSTEM rule 2 lets a
+     doctor-important patient-stated fact (it names medication changes and red flags)
+     live in the BULLETS ALONE and still pass the audit, so a borrowed nitroglycerin
+     tablet or a new arm numbness could be in bullets[1] and nowhere else.
+     askAbout deliberately does NOT travel. It is a list of what nobody knows yet,
+     not something the patient said, and neither note prompt has any notion of a
+     check-in block - "Worth asking whether the patient has taken aspirin today"
+     riding inside the transcript risks becoming a plan item never discussed.
+     A bullet whose text is already inside the note body is SKIPPED: the same
+     sentence written twice reads as the patient having said it twice. */
+  function briefLines(checkin) {
+    var lines = [];
+    var body = clean(checkin.summary).toLowerCase();
+    var head = clean(checkin.headline);
+    var flags = Array.isArray(checkin.flags) ? checkin.flags : [];
+    /* the flag is stamped from a column, so it survives a summary that never
+       mentioned it; the headline's own ⚠ is the same fact and is not repeated */
+    if (flags.indexOf('emergency-language') >= 0 && !/^⚠/.test(head)) {
+      lines.push('⚠ EMERGENCY LANGUAGE IN CHECK-IN — the patient used emergency-sounding words while checking in. Read the check-in itself before relying on the summary below.');
+    }
+    if (head) lines.push(head);
+    var bullets = Array.isArray(checkin.bullets) ? checkin.bullets : [];
+    var kept = [];
+    for (var bi = 0; bi < bullets.length; bi++) {
+      var b = clean(bullets[bi]);
+      if (!b) continue;
+      if (body && body.indexOf(b.toLowerCase()) >= 0) continue;
+      kept.push('• ' + b);
+    }
+    if (kept.length) {
+      lines.push('Check-in key points (patient-reported):');
+      lines = lines.concat(kept);
+    }
+    return lines.length ? (lines.join('\n') + '\n') : '';
+  }
   function importSummary(checkin, button) {
     var patient = exactPatient(checkin.patient_external_id);
     if (!patient) {
@@ -299,9 +363,21 @@
       return;
     }
     var existingSummary = String(patient.summary || '').trim();
+    /* THE CHART BLOCK SAYS WHEN IT IS FROM (av-5.7.6). patient.summary is emitted to
+       the note model as "Running history / prior-visit summary", inside a line that
+       tells it "this is history, NOT today's encounter - do NOT invent exam findings,
+       vitals, ROS, or new diagnoses from it". That is right for the running history and
+       wrong for a check-in the patient finished twenty minutes ago, and the note system
+       prompt never states today's date, so the model has no way to tell. This one
+       sentence is the only thing that can: it rides INSIDE summary (a new field on the
+       patient row would die on the next upsert - upsertPatient is REPLACE-shaped), and
+       it is added AFTER the stamp so the stamp stays the untouched idempotency key -
+       changing that key would have re-filed every block already in every chart. */
+    var todayLine = isToday(checkin.ready_at)
+      ? '[TODAY\'s pre-visit check-in — the patient\'s own reported words for THIS encounter, not prior history.]\n' : '';
     /* the verdict sits between the stamp and the words, so it cannot be read as
        part of either - see auditNote */
-    var block = stamp + '\n' + auditNote(checkin.audited) + '\n' + String(checkin.summary || '').trim();
+    var block = stamp + '\n' + todayLine + auditNote(checkin.audited) + '\n' + briefLines(checkin) + String(checkin.summary || '').trim();
     var updated = {};
     for (var k in patient) if (Object.prototype.hasOwnProperty.call(patient, k)) updated[k] = patient[k];
     updated.summary = existingSummary ? (existingSummary + '\n\n' + block) : block;
@@ -397,6 +473,40 @@
     if (patient && checkin.summary) importBtn.addEventListener('click', function () { importSummary(checkin, importBtn); });
     else { importBtn.disabled = true; importBtn.title = patient ? 'No summary to import.' : 'Needs an exact chart match first.'; }
     actions.appendChild(importBtn);
+    /* THE ROUTE INTO TODAY'S NOTE MUST SURVIVE "MARK SEEN" (av-5.7.6).
+       Filing into the visit TRANSCRIPT is the only route that stamps the words as
+       today-side, patient-reported text in the box the note is drafted from - and it
+       existed on the Visit card alone, which renders only while the row is still in
+       the status=ready answer that feeds lastReady. One tap on "Mark seen" - by the
+       doctor, a colleague, or the phone - removes the row from that answer, and the
+       transition is one-way (the backend's UPDATE is `WHERE id = ? AND status =
+       'ready'` and nothing anywhere sets 'seen' back). From then on this panel's only
+       file button was "Add to visit summary", i.e. the CHART, which ScribeFlow emits
+       to the note model as "Running history / prior-visit summary" under an
+       instruction not to build today's findings from it. So a symptom reported this
+       morning reached the note labelled as prior history, or not at all.
+       BOUND, NOT GLOBAL. addToTranscript writes into whichever visit is open, and the
+       Visit card could only ever offer it for the OPEN patient. Reached from the
+       panel it has to prove that itself: filing one patient's check-in into another
+       patient's visit transcript would be the worst defect on this screen, so this
+       refuses, names the chart to open, and writes nothing. */
+    var txBtn = make('button', 'mlsAvAction', 'Add to visit transcript');
+    txBtn.type = 'button';
+    if (patient && checkin.summary) {
+      txBtn.addEventListener('click', function () {
+        var openId = activePtIdSafe();
+        if (!openId || (openId !== clean(patient.id) && openId !== clean(checkin.patient_external_id))) {
+          toast('Nothing was written: open ' + (patient.name || 'this patient') +
+            '\'s visit first, then use this button — the transcript belongs to whichever chart is open.');
+          return;
+        }
+        addToTranscript(checkin, txBtn);
+      });
+    } else {
+      txBtn.disabled = true;
+      txBtn.title = patient ? 'No summary to file.' : 'Needs an exact chart match first.';
+    }
+    actions.appendChild(txBtn);
     if (checkin.status === 'ready') {
       var seenBtn = make('button', 'mlsAvAction', 'Mark seen');
       seenBtn.type = 'button';
@@ -1000,10 +1110,10 @@
        owner said about the hair. It is now one continuous line: a smooth temple corner,
        a slight forward bulge over the forehead, and the same on the other side. Even and
        unnoticeable is the whole goal — a hairline is only ever noticed when it is wrong. */
-    short: 'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 64 140 55 Q120 48 100 56 Q80 48 60 55 Q43 64 42 92 Z',
+    short: 'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 63 140 53 Q118 46 100 51 Q82 46 60 53 Q43 63 42 92 Z',
     wavy:  'M42 94 Q38 28 100 26 Q162 28 158 94 Q152 74 146 84 Q140 62 130 74 Q124 52 112 62 Q104 44 92 58 Q80 46 72 64 Q62 56 58 76 Q50 70 42 94 Z',
-    long:  'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 64 140 55 Q120 48 100 56 Q80 48 60 55 Q43 64 42 92 Z',
-    bun:   'M46 90 Q44 34 100 32 Q156 34 154 90 Q153 64 136 56 Q118 50 100 57 Q82 50 64 56 Q47 64 46 90 Z',
+    long:  'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 63 140 53 Q118 46 100 51 Q82 46 60 53 Q43 63 42 92 Z',
+    bun:   'M46 90 Q44 34 100 32 Q156 34 154 90 Q153 63 136 54 Q118 48 100 52 Q82 48 64 54 Q47 63 46 90 Z',
     buzz:  'M46 90 Q46 40 100 38 Q154 40 154 90 Q150 62 132 58 Q118 52 100 52 Q82 52 68 58 Q50 62 46 90 Z',
     bald:  ''
   };
@@ -1021,10 +1131,19 @@
      shows. The four `d` strings stay mutually distinct and the nostril geometry (nx/ny/nr)
      is untouched, so the pins on shape-distinctness and on wide nostrils still hold. */
   var FACE_NOSE_PARTS = {
-    button:   { d: 'M100 104 Q104 109 100 111 M93.5 109.5 Q100 115.5 106.5 109.5', w: 3, nx: 5.2, ny: 112.4, nr: 1.5 },
-    straight: { d: 'M100 99 Q104.5 110 100 113 M92.5 111.5 Q100 118 107.5 111.5', w: 3, nx: 6.4, ny: 114.6, nr: 1.7 },
-    wide:     { d: 'M100 100 Q106 111 100 114 M90.5 111 Q100 119.5 109.5 111', w: 2.8, nx: 7.6, ny: 113.2, nr: 2.1 },
-    roman:    { d: 'M99 95 Q107.5 104 103.5 112 Q102 114.5 100 114.5 M93 112 Q100 118.5 107 112', w: 3.2, nx: 6.2, ny: 114.8, nr: 1.7 }
+    /* ⛔ AND THEN THEY WERE TOO MUCH. Adding the ala line fixed "a tick mark on the cheek"
+       and created a new problem the square harness could not show: at the kiosk's real
+       302px the bridge stroke plus the ala curve plus two nostrils collide into a small
+       dark squiggle in the middle of the face — the owner saw it immediately. A nose on a
+       front-lit face is mostly a SHADOW, not a line. So: the bridge starts lower and is
+       shorter, the ala is flatter and wider (a base, not a bowl), the strokes are thinner,
+       and the whole group is drawn at .5 opacity in the skin's own shadow — see fNoseSet.
+       The four shapes stay mutually distinct and nx/ny/nr are untouched, so the pins on
+       distinctness and on wide nostrils still hold. */
+    button:   { d: 'M100.5 106 Q103 110 100 112 M94 111 Q100 114.5 106 111', w: 2.2, nx: 5.2, ny: 112.4, nr: 1.5 },
+    straight: { d: 'M100.5 103 Q103.5 111 100 113 M93 112 Q100 116 107 112', w: 2.2, nx: 6.4, ny: 114.6, nr: 1.7 },
+    wide:     { d: 'M100.5 104 Q104.5 112 100 114 M91 112.5 Q100 117.5 109 112.5', w: 2.2, nx: 7.6, ny: 113.2, nr: 2.1 },
+    roman:    { d: 'M99.5 99 Q105 106 103 112 Q102 114 100 114 M93.5 112.5 Q100 116.5 106.5 112.5', w: 2.4, nx: 6.2, ny: 114.8, nr: 1.7 }
   };
   /* LIPS. Volume is a real scale on the mouth group, and the lip line is the
      SAME path stroked in a darker shade of the chosen lip colour - so both the
@@ -1368,6 +1487,10 @@
         /* the face vignette: nothing at all across the middle two thirds, then a gentle
            fall-off at the silhouette. Transparent-to-dark on the SAME hue as the skin, so
            it deepens the tone instead of greying it. */
+        '<radialGradient id="mlsAvBlush' + faceUid + '" cx="50%" cy="50%" r="50%">' +
+          '<stop offset="0%" stop-color="' + blush + '" stop-opacity="1"/>' +
+          '<stop offset="100%" stop-color="' + blush + '" stop-opacity="0"/>' +
+        '</radialGradient>' +
         '<radialGradient id="mlsAvShine' + faceUid + '" cx="50%" cy="50%" r="50%">' +
           '<stop offset="0%" stop-color="' + faceShade(look.hair, 0.46) + '" stop-opacity=".38"/>' +
           '<stop offset="100%" stop-color="' + faceShade(look.hair, 0.46) + '" stop-opacity="0"/>' +
@@ -1378,6 +1501,23 @@
           '<stop offset="100%" stop-color="' + faceShade(look.skin, -0.40) + '" stop-opacity=".42"/>' +
         '</radialGradient>' +
       '</defs>' +
+      /* ---- COMPOSED FOR THE CIRCLE IT IS ACTUALLY SHOWN IN (av-6.0.1) ------------------
+         ⛔ EVERY judgement of this drawing was made in a SQUARE div, because that is what
+         faceDemo mounts and what the harnesses and the gallery use. The two shipped
+         surfaces are both ROUND with overflow:hidden — #mlsAvKioskFace is a 302px circle
+         and the Setup/Settings preview is 72px — so a square-framed portrait arrives
+         cropped on the diagonal: measured on the real kiosk, the crown crowded the top
+         arc, the ears were cut by the sides, and .fShirt spanned y 250-380 inside a
+         302-tall box, i.e. the shoulders, the V-neck and the collar — the parts that make
+         it read as a clinician — were almost entirely outside the mask. The owner's words
+         were "does not work correctly or look good".
+         The content is therefore inset so the whole head, both ears and a real shoulder
+         line all sit inside the inscribed circle. 0.84 with an 8-unit drop was chosen by
+         rendering five candidates INSIDE the real 302px and 72px masks and looking at
+         them, not by reasoning about the viewBox. .fFrame wraps everything except <defs>,
+         so every id reference still resolves and no animation hook moves: the rig, the
+         head tilt and the breathing transform are all inside it and compose with it. */
+      '<g class="fFrame" transform="translate(100,106) scale(0.84) translate(-100,-98)">' +
       /* the CHEST is a real group: breathing moves GEOMETRY in here (the shirt
          ellipse itself grows and lifts), not a scale on the drawing */
       '<g class="fBody" style="transform-box:view-box;transform-origin:100px 180px;transition:transform .09s linear">' +
@@ -1489,31 +1629,58 @@
            it is tall, sitting on the cheekbone rather than the middle of the cheek. The
            class and the opacity transition are unchanged, so the mood code that raises the
            flush on a warm greeting still drives exactly this. */
-        '<ellipse class="fBlush" cx="' + n2(100 - 36 * FX) + '" cy="' + n2(114 + dyN) + '" rx="12" ry="7" fill="' + blush + '" opacity=".13" style="transition:opacity .4s ease"/>' +
-        '<ellipse class="fBlush" cx="' + n2(100 + 36 * FX) + '" cy="' + n2(114 + dyN) + '" rx="12" ry="7" fill="' + blush + '" opacity=".13" style="transition:opacity .4s ease"/>' +
+        /* ⛔ STILL CLOWN CHEEKS AT REAL SIZE. Softening the SHAPE (hard circles -> ellipses)
+           was only half of it; at the kiosk's 302px two salmon patches at .13 on a pale skin
+           still read as painted-on doll blush — visible in the very first real-surface
+           screenshot. An adult's flush is barely there. .07 base, wider and flatter, and it
+           fades out at its own edge instead of ending on one, so there is no rim to notice.
+           The class and the transition are unchanged, so the mood code that raises the flush
+           on a warm greeting still drives exactly this, from a quieter floor. */
+        '<ellipse class="fBlush" cx="' + n2(100 - 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity=".07" style="transition:opacity .4s ease"/>' +
+        '<ellipse class="fBlush" cx="' + n2(100 + 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity=".07" style="transition:opacity .4s ease"/>' +
         '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 1) + ' 72 ' + n2(cxL + 13) + ' 77" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
         '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' 77 Q' + n2(cxR + 1) + ' 72 ' + n2(cxR + 13) + ' 78" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
         /* the glabellar KNIT - two short creases between the brows. Concern is
            read there before it is read anywhere else on a human face. */
         '<path class="fKnit" d="M96.5 72 Q97.5 66 96.5 61 M103.5 72 Q102.5 66 103.5 61" stroke="' + shadeKnit + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
         eye(cxL, 'L') + eye(cxR, 'R') + glasses +
-        '<g class="fNoseSet" transform="translate(0,' + n2(dyN) + ')">' +
+        /* the whole nose sits at half strength: a nose is a shadow, and at 302px full-strength
+           strokes plus two dark nostrils read as a squiggle drawn on the face. The nostrils
+           take the same treatment — shadeHole at full opacity punched two black dots either
+           side of the tip, which is the single most cartoon mark on the face. */
+        '<g class="fNoseSet" transform="translate(0,' + n2(dyN) + ')" opacity=".6">' +
           '<path class="fNose" d="' + nose.d + '" stroke="' + shadeNose + '" stroke-width="' + nose.w + '" stroke-linecap="round" fill="none"/>' +
-          '<ellipse class="fNostril fNostrilL" cx="' + n2(100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeHole + '"/>' +
-          '<ellipse class="fNostril fNostrilR" cx="' + n2(100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeHole + '"/>' +
+          '<ellipse class="fNostril fNostrilL" cx="' + n2(100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
+          '<ellipse class="fNostril fNostrilR" cx="' + n2(100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
         '</g>' +
         '<g class="fMouthSet" transform="translate(0,' + n2(dyM) + ')">' +
         '<g class="fMouthWrap" style="transform-box:fill-box;transform-origin:center top;transition:transform .1s ease">' +
           '<g class="fLips" style="transform-box:fill-box;transform-origin:center;transform:scaleY(' + lips.scale + ');transition:transform .3s ease">' +
             '<path class="fMouth" d="' + FACE_MOUTHS.smile + '" fill="' + look.lip + '"/>' +
-            '<path class="fLipUp" d="' + FACE_MOUTHS.smile + '" fill="none" stroke="' + faceShade(look.lip, -0.3) + '" stroke-width="' + lips.w + '" stroke-linejoin="round"/>' +
+            /* THE INSIDE OF THE MOUTH (av-6.0.1). Every shape — including open1/open2/open3
+               and the talking cycle — was one path filled with the LIP colour, so the moment
+               the avatar spoke its mouth became a flat lip-coloured disc. That is what the
+               patient sees for most of the visit, and it is the first thing the real-kiosk
+               screenshot caught. A mouth that is open shows the cavity behind the lips: the
+               same path, inset by a uniform scale so the lip colour survives as a RIM, filled
+               with a dark shade OF look.lip so it still tracks the doctor's chosen colour.
+               On the closed shapes the inset collapses to a thin line, which is exactly what
+               a closed mouth is, so one shape table serves both. */
+            '<path class="fMouthIn" d="' + FACE_MOUTHS.smile + '" fill="' + faceShade(look.lip, -0.66) + '" ' +
+              'style="transform-box:fill-box;transform-origin:center;transform:scale(0.82,0.62)"/>' +
+            /* the LINER, not an outline. Stroked at full strength around a shape only ~8
+               units tall, the dark liner covered most of the lip fill, so at 302px the
+               mouth read as a thin brown SLIT rather than lips — the shape was right and
+               the weight was wrong. Thinner and half-transparent lets the lip colour show
+               between the lines, which is what makes a mouth look soft. */
+            '<path class="fLipUp" d="' + FACE_MOUTHS.smile + '" fill="none" stroke="' + faceShade(look.lip, -0.34) + '" stroke-width="' + (Math.round(lips.w * 0.62 * 100) / 100) + '" stroke-linejoin="round" opacity=".7"/>' +
           '</g>' +
           '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
           '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
         '</g>' +
         '</g>' +
         ageLines +
-      '</g></g></svg>';
+      '</g></g></g></svg>';   /* fHead / fHeadRig / fFrame */
   }
   function makeFace(mount, look) {
     if (!mount) return null;
@@ -1525,14 +1692,14 @@
     /* .fShirt is deliberately NOT bound any more: breathing drives .fBody, and a
        binding kept only so a dead code path can write to it is how the chest came to
        stop moving without anything noticing. */
-    var head, rig, body, browL, browR, eyeL, eyeR, pupL, pupR,
+    var head, rig, body, mouthIn, browL, browR, eyeL, eyeR, pupL, pupR,
       lidL, lidR, lowL, lowR, mouth, lipUp, lipsG, mouthWrap, dimpleL, dimpleR, knit, blush;
     function bind() {
       head = q('.fHead'); rig = q('.fHeadRig'); body = q('.fBody');
       browL = q('.fBrowL'); browR = q('.fBrowR');
       eyeL = q('.fEyeL'); eyeR = q('.fEyeR'); pupL = q('.fPupilL'); pupR = q('.fPupilR');
       lidL = q('.fLidL'); lidR = q('.fLidR'); lowL = q('.fLowL'); lowR = q('.fLowR');
-      mouth = q('.fMouth'); lipUp = q('.fLipUp'); lipsG = q('.fLips'); mouthWrap = q('.fMouthWrap');
+      mouth = q('.fMouth'); mouthIn = q('.fMouthIn'); lipUp = q('.fLipUp'); lipsG = q('.fLips'); mouthWrap = q('.fMouthWrap');
       dimpleL = q('.fDimpleL'); dimpleR = q('.fDimpleR'); knit = q('.fKnit');
       blush = root.querySelectorAll('.fBlush');
     }
@@ -1581,6 +1748,7 @@
       /* the lip line is the SAME path - a separately drawn upper lip detaches
          the instant the mouth opens */
       if (lipUp) lipUp.setAttribute('d', d);
+      if (mouthIn) mouthIn.setAttribute('d', d);
     }
     function baseMouth() {
       return caringNow ? 'concern'
@@ -2342,8 +2510,32 @@
     var skin = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
-                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true) || skinRef;
-    var skinL = lum(skin);
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skinRef;
+    /* ⛔ REVERTED, HONESTLY, AND LEFT WIRED FOR THE NEXT ATTEMPT. The per-patch statistic
+       here is still the MEAN (asMean=true), i.e. exactly what shipped. Switching this one
+       call to the true median — which is the right statistic and is what the owner is asking
+       for when he says "it needs to see the skin color of my face not my background + my
+       face" — reproducibly costs the glasses detection on fixture C of
+       avatar-photo-match-proof (39 -> 38). I re-based skinL and both chDist thresholds on the
+       mean to insulate them and it STILL failed, so the coupling is somewhere I have not yet
+       measured, and three guesses is where guessing stops. The median path is implemented and
+       one argument away; it does not ship until the glasses regression is explained, because a
+       matcher that trades a correct spectacle read for a better swatch is not an improvement.
+       NEXT: instrument fixture C and print browMed / rimThin / frameLike under both statistics
+       before touching anything. */
+    /* the SAME five patches read as a mean, used ONLY to place the dark-mass cuts below.
+       Every one of those thresholds is an offset from this number and was tuned against it;
+       re-basing them on the median moved them all at once and cost a glasses detection that
+       had been passing. The claim the doctor sees is `skin`, the median — an actual pixel
+       colour from his face rather than an average of his cheek and whatever shared the patch. */
+    var skinCut = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
+                            [atX(0.24), maxWY + Math.round(faceH * 0.12)],
+                            [atX(0.76), maxWY + Math.round(faceH * 0.12)],
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skin;
+    var skinL = lum(skinCut);
+    /* the BAND THE DOCTOR IS TOLD must describe the colour he is SHOWN, so it reads the
+       median like the swatch does — not the threshold statistic. */
+    var skinLsaid = lum(skin);
     var eyeCut = skinL - 40;
     var eyeY = maxWY;
     var eyeBandTop = Math.max(faceT, maxWY - Math.round(faceH * 0.22));
@@ -2434,7 +2626,7 @@
        line, "tan skin" - two contradictory statements about the same sample. A refusal
        followed by a description reads as though the refusal did not happen. */
     if (derived.indexOf('skin') >= 0) {
-      found.push(skinL > 190 ? 'fair skin' : skinL > 140 ? 'medium skin' : skinL > 95 ? 'tan skin' : 'deep skin');
+      found.push(skinLsaid > 190 ? 'fair skin' : skinLsaid > 140 ? 'medium skin' : skinLsaid > 95 ? 'tan skin' : 'deep skin');
     }
 
     /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
@@ -2448,7 +2640,7 @@
          a marginal miss that classified a grey-haired head as BALD. The band
          this runs in is ABOVE the face box, so the only other thing in it is
          the background, and isBg has already removed that. */
-      return (Math.abs(lum(pp) - skinL) + chDist(pp, skin) * 0.5) > 20;
+      return (Math.abs(lum(pp) - skinL) + chDist(pp, skinCut) * 0.5) > 20;
     }
     var bandTop = Math.max(0, faceT - Math.round(faceH * 0.55));
     var hairPix = [], crown = 0, crownN = 0;
@@ -2940,7 +3132,7 @@
       }
     }
     var topCol = medianCol(tops);
-    if (topCol && chDist(topCol, skin) > 34 && (!bg || chDist(topCol, bg) > 26)) {
+    if (topCol && chDist(topCol, skinCut) > 34 && (!bg || chDist(topCol, bg) > 26)) {
       look.shirt = hex(topCol); derived.push('shirt');
       found.push('top colour');
     } else {
@@ -6608,8 +6800,10 @@
       return true;
     }
     /* the note is DRAFTED from this transcript, so an unverified summary must
-       carry its verdict here too - see auditNote */
-    var block = stamp + '\n' + auditNote(checkin.audited) + '\n' + String(checkin.summary || '').trim() + '\n';
+       carry its verdict here too - see auditNote; and the flag and the bullets
+       must arrive with it, or the note is drafted from the half of the brief
+       that carries no red flag at all - see briefLines */
+    var block = stamp + '\n' + auditNote(checkin.audited) + '\n' + briefLines(checkin) + String(checkin.summary || '').trim() + '\n';
     box.value = box.value.trim() ? (box.value.replace(/\s+$/, '') + '\n\n' + block) : block;
     safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
     if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
@@ -6826,8 +7020,13 @@
          the words now (auditNote), and this hand-built copy was the one place it was
          dropped - so a REJECTED summary filed from the Visit card, the surface the
          doctor actually uses, would have been stamped "no verdict recorded". */
-      var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null, audited: activeHit.audited || null };
-      var needSummary = !detail.summary || activeHit.truncated === true;
+      /* THE FLAG, THE HEADLINE AND THE BULLETS MUST BE ON THIS OBJECT TOO. briefLines
+         reads them, and this hand-built copy is what the Visit card's two file buttons
+         hand it - so a check-in the server flagged would have been filed from the one
+         surface the doctor actually uses with the ⚠ dropped by construction. */
+      var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null, audited: activeHit.audited || null,
+        headline: activeHit.headline || null, bullets: Array.isArray(activeHit.bullets) ? activeHit.bullets : [], flags: Array.isArray(activeHit.flags) ? activeHit.flags : [] };
+      var needSummary = !detail.summary || activeHit.truncated === true || activeHit.bulletsTruncated === true;
       function withSummary(run, button) {
         if (!needSummary) { run(); return; }
         button.disabled = true; var was = button.textContent; button.textContent = 'Loading…';
@@ -6847,6 +7046,13 @@
             /* the refetch is the FRESHER verdict - an audit that finished after the
                cache row was built arrives here and must not be thrown away */
             detail.audited = found.audited || detail.audited || null;
+            /* and the fresher brief: the whole reason this refetch can be demanded by
+               bulletsTruncated is to replace the three-bullet display sample with all
+               six, so taking the summary and leaving the bullets behind would have
+               made the refetch pointless for exactly the rows that needed it */
+            detail.headline = found.headline || detail.headline || null;
+            if (Array.isArray(found.bullets)) detail.bullets = found.bullets;
+            if (Array.isArray(found.flags)) detail.flags = found.flags;
             needSummary = false; run();
           } else toast('Could not load the full summary — open All check-ins and use it from there.');
         }, function () { button.disabled = false; button.textContent = was; toast('Could not load the full summary — try again.'); });
