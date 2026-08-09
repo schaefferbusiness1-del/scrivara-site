@@ -2895,7 +2895,7 @@
     }
     var refreshedCoverage=responsiveOrganization?null:safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
-    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||"") };
+    return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||""), axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0), axRrRecovered: (r.receipt&&r.receipt.axRrRecovered)===true, axEntry: String((r.receipt&&r.receipt.axEntry)||""), fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true, hydStreak: Number((r.receipt&&r.receipt.hydStreak)||0) };
   }
   async function runHistoryBatch(rows, unresolved, onStatus, sweepOpts) {
     /* b744 #36: true only when the per-patient loop ran to completion; the
@@ -2918,10 +2918,10 @@
        patient-row-loss shield reads state.running and finally gets its
        signal on modern pulls too. */
     function ppState(){ try{ var g=window.__mlsDayHistoryPull=window.__mlsDayHistoryPull||{}; if(!g.state||g.state.__si!==1){ if(g.state&&g.state.running===true) return null; g.state={__si:1,running:false,total:0,done:0,ok:0,failed:0,current:'',rows:[]}; } return g.state; }catch(e){ return null; } }
-    function ppTally(s){ try{ s.ok=s.rows.filter(function(r){return r.ok===true;}).length; s.failed=s.rows.filter(function(r){return r.ok!==true&&r.pending!==true;}).length; }catch(e){} }
+    function ppTally(s){ try{ /* ppt-2.0 (owner 2026-08-09, watching day 9: "2 saved · 19 skipped"): the tally counted settle EVENTS, so a chart that failed three re-check passes then cleared counted 3 into "skipped" and 1 into "saved" forever. CHART-LEVEL truth: latest state per chart key wins; done = distinct charts seen (monotonic - the bar never moves backward, si-1.9.4). */ var latest={}; for(var ti=0;ti<s.rows.length;ti++){ var tr=s.rows[ti]; latest[tr.k||tr.name]=tr; } var tks=Object.keys(latest); var tok=0,tfail=0; for(var tj=0;tj<tks.length;tj++){ var tl=latest[tks[tj]]; if(tl.ok===true) tok++; else if(tl.pending!==true) tfail++; } s.ok=tok; s.failed=tfail; s.done=tks.length; if((s.total||0)<tks.length) s.total=tks.length; }catch(e){} }
     function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
-    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); } s.rows.push(r); s.done=(s.done||0)+1; if(s.total&&s.done>s.total) s.total=s.done; ppTally(s); return r; }
+    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
     function ppResolve(rowRef,ok,reason){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); ppTally(s); }
     function ppEnd(){ var s=ppState(); if(s){ s.running=false; s.current=''; } }
     var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
@@ -3202,9 +3202,9 @@
           for (var bi = i; bi < rows.length; bi++) receipt.retry.push(frozenRetryEntry(rows[bi], null, "deferred-after-batch-deadline"));
           break;
         }
-        var row = rows[i] || {}, target = exactHistoryTarget(row), carryProof = null, one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
+        var row = rows[i] || {}, target = exactHistoryTarget(row), carryProof = null, one = { patientId: String(row._mlsTargetPatientId || row.patient_external_id || ""), name: String(row.name || ""), identityVerified: false, organized: false, organizationComplete: false, visitsComplete: false, complete: false };
         if (!target) {
-          one.reason = "identity-target-unresolved"; ppSettle(row.name, false, one.reason); receipt.patients.push(one); receipt.retry.push(frozenRetryEntry(row, null, one.reason)); receipt.processed++; continue;
+          one.reason = "identity-target-unresolved"; ppSettle(row.name, false, one.reason, false, { pid: one.patientId }); receipt.patients.push(one); receipt.retry.push(frozenRetryEntry(row, null, one.reason)); receipt.processed++; continue;
         }
         one.patientId = String(target.patientId || one.patientId);
         one.identityVerified = true;
@@ -3217,6 +3217,10 @@
         one.requestId = patientRequestId; one.deadlineAt = patientDeadlineAt;
         if (onStatus) onStatus("Reading verified history " + (sweepProgressBase + i + 1) + " of " + (sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length) + (sweepDepth ? " (automatic re-check)" : "") + "...", "");
         ppCurrent(row.name || (target && target.name) || "");
+        /* ppt-2.0: a chart entering a re-check pass reads as calm "re-checking",
+           never as a final warning - IN-PROGRESS is not FAILED (owner, 2026-07-29,
+           and again 2026-08-09 watching five orange rows mid-cycle). */
+        if (sweepDepth) ppSettle(row.name, false, "re-checking…", true, { pid: one.patientId });
         /* An explicit pull always performs a fresh chart read. A legacy
            "Pulled from Athena" marker is not a coverage receipt and may be
            stale or partial, so it can never short-circuit this batch. */
@@ -3415,8 +3419,17 @@
                       expected: Number(vr.receipt.expected || 0), parsed: Number(vr.receipt.parsed || 0),
                       attempted: Number(vr.receipt.attempted || 0), elapsedMs: Number(vr.receipt.elapsedMs || 0),
                       timeBudgetMs: Number(vr.receipt.timeBudgetMs || 0), retryCount: Number(vr.receipt.retryCount || 0),
-                      minimalBodies: Number(vr.receipt.minimalBodies || 0)
+                      minimalBodies: Number(vr.receipt.minimalBodies || 0),
+                      axRrWaitMs: Number(vr.receipt.axRrWaitMs || 0), axRrRecovered: vr.receipt.axRrRecovered === true,
+                      fatigueRefresh: vr.receipt.fatigueRefresh === true, hydStreak: Number(vr.receipt.hydStreak || 0)
                     };
+                    /* axd-1.0 (2026-08-09): the extension now emits the per-row
+                       failure records themselves (noRowDiag's liTotal/eidHit -
+                       list-vanished vs row-left vs group-resolution-failed),
+                       and this boundary was dropping them, leaving only the
+                       reason histogram. In-app record only: NOT copied into
+                       frozenRetryEntry's diag, which feeds the emailed report. */
+                    if (Array.isArray(vr.receipt.failureDetails) && vr.receipt.failureDetails.length) one.visitsFailureDetails = vr.receipt.failureDetails.slice(0, 12);
                   }
                   if (vr.enumDiag && typeof vr.enumDiag === "object") {
                     one.visitsEnumDiag = {
@@ -3470,7 +3483,7 @@
               savedVisits.clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(savedVisits.profileCoverage&&savedVisits.profileCoverage.cards&&savedVisits.profileCoverage.cards[k]&&savedVisits.profileCoverage.cards[k].populated?1:0);},0);
             }
             stageMs.visitSave = Date.now() - __visitSaveT0;
-            one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||"");
+            one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||""); one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0); one.axRrRecovered=savedVisits.axRrRecovered===true; one.axEntry=String(savedVisits.axEntry||""); one.fatigueRefresh=savedVisits.fatigueRefresh===true; one.hydStreak=Number(savedVisits.hydStreak||0);
             /* si-2.0.0: a COMPLETED body pass earns the carry stamp. */
             if (savedVisits.visitsCoverageComplete === true) stampVisitsProof(target.patientId, savedVisits);
             if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true&&savedVisits.profileCoverage.exactIdentityVerified===true){
@@ -3507,7 +3520,7 @@
             receipt.retry.push(frozenRetryEntry(row, target, one.reason, one));
           }
         }
-        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true, { surfaceResets: one.surfaceResets, chartSurface: one.chartSurface });
+        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true, { surfaceResets: one.surfaceResets, chartSurface: one.chartSurface, pid: one.patientId, axe: one.axEntry });
         receipt.patients.push(one); receipt.processed++;
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
@@ -3703,7 +3716,7 @@
           if (sp.complete === true) { sp.sweepRecovered = sweepPass; recoveredIds[pid] = true; }
           var replaced = false;
           for (var ri = 0; ri < receipt.patients.length; ri++) {
-            if (String(receipt.patients[ri] && receipt.patients[ri].patientId || "") === pid) { receipt.patients[ri] = sp; replaced = true; break; }
+            if (String(receipt.patients[ri] && receipt.patients[ri].patientId || "") === pid) { if (!sp.name && receipt.patients[ri].name) sp.name = receipt.patients[ri].name; receipt.patients[ri] = sp; replaced = true; break; }
           }
           /* deferred-after-timeout patients never entered receipt.patients in
              the main loop; adopting their swept entry must also count them
@@ -4445,13 +4458,20 @@
                Threshold 2, matching multiTabSuspected: one refusal can be a
                transient tab race, two in a row is the session. */
             res.athenaSignedOutSuspected = __noTab >= 2;
-            if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
+            /* rr-1.1 + owner 2026-08-09 ("only 1 redo maybe"): a chart saved by
+               the in-chart redo is a success WITH a redo, never a first-attempt
+               success - the count rides the day line so it can never launder
+               the first-attempt metric (supervisor rule). */
+            var __redoN = 0;
+            try { __redoN = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete === true && p.axEntry === "body-depth"; }).length; } catch (eRedo) {}
+            var __redoNote = __redoN ? " " + __redoN + " chart" + (__redoN === 1 ? " was" : "s were") + " saved on an automatic in-chart redo (counted separately, not first-attempt)." : "";
+            if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + "." + __redoNote + " It is safe to retry; MLS did not mark this pull complete." +
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
-              (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return String(p.name || "").split(/\s+/)[0] + " (" + String(p.reason || "unread").split(/[\[{]/)[0].slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + contentNotice(historyReceipt), "err");
+              (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + String(p.reason || "unread").split(/[\[{]/)[0].slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + contentNotice(historyReceipt), "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
-            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode) + contentNotice(historyReceipt), "ok");
+            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + __redoNote + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode) + contentNotice(historyReceipt), "ok");
             return res;
           });
           });
@@ -4634,11 +4654,13 @@
           result.days.push({ date: date, ok: false, complete: false, reason: "stopped-by-user" });
           result.stoppedByUser = true;
           result.retry.dates.push(date);
+          onStatus(date + ": Not pulled — stop was requested. The day is queued for retry.", "warn");
           return;
         }
         if (breaker.tripped) {
           result.days.push({ date: date, ok: false, complete: false, reason: "not-attempted-after-systemic-failure" });
           result.totals.failures++; result.retry.dates.push(date);
+          onStatus(date + ": Not attempted — three days in a row failed the same way (" + breaker.reason + "), so MLS stopped rather than repeat the failure. The day is queued for retry.", "err");
           return;
         }
         onStatus("Month pull " + (index + 1) + "/" + dates.length + ": " + date, "");
@@ -4672,8 +4694,13 @@
             } else { breaker.reason = ""; breaker.streak = 0; }
           }
         }, function (err) {
+          /* A day must never close silently: this rejection path previously
+             recorded the exception into result.days and emitted NOTHING, so a
+             live observer only noticed when the date sequence jumped (day 6,
+             2026-08-09). Same day-end shape as every other exit. */
           result.days.push({ date: date, ok: false, complete: false, reason: "exception", error: String(err && err.message || err || "") });
           result.totals.failures++; result.retry.dates.push(date);
+          onStatus(date + ": Day failed with an unexpected error before finishing — nothing was marked complete and the day is queued for retry. (" + String(err && err.message || err || "unknown").slice(0, 160) + ")", "err");
         });
       });
     });

@@ -41,13 +41,21 @@ axAssert(SRC).forEach(function (v, i) { ok(v, 'live pin #' + (i + 1)); });
 /* arm 2: safety ordering - the ax route must sit AFTER the srr re-expand and
    BEFORE the no-chart-frame-candidate refusal return, and must never touch the
    identity-mismatch refusal (the Safety stop return stays byte-identical). */
+/* rr-1.1 moved the route body into a single closure (axRouteRun) so the
+   body-depth entry can reuse it without duplication - the body pins therefore
+   anchor to the closure, and the order chain gains its position. Moved
+   deliberately with rr-1.1 (2026-08-09). */
 const reExpandAt = SRC.indexOf('__srrReExpanded[String(ecCand.frameId)] = 1;');
+const closureAt = SRC.indexOf('var axRouteRun = async function (rrFromPartial) {');
 const axHookAt = SRC.indexOf("if (!gate.ok && /^no-chart-frame-candidate/.test(String(gate.reason || '')) && Date.now() + 15000 < readDeadline) {");
 const refusalAt = SRC.indexOf('Safety stop: the live patient identity in the encounter-list frame did not match');
-ok(reExpandAt > 0 && axHookAt > reExpandAt && refusalAt > axHookAt, 'route order: re-expand -> ax hook -> refusal return');
+ok(reExpandAt > 0 && closureAt > reExpandAt && axHookAt > closureAt && refusalAt > axHookAt,
+  'route order: re-expand -> route closure -> starved hook -> refusal return');
+ok(SRC.split('var axRouteRun = async function').length - 1 === 1,
+  'the route body exists ONCE (wrap-once: both entries share one closure)');
 ok(/error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient \(name plus DOB\/MRN\)\. No encounter body was read\.'/.test(SRC),
   'the identity-mismatch refusal is byte-identical (fail-closed untouched)');
-const hookBlock = SRC.slice(axHookAt, refusalAt);
+const hookBlock = SRC.slice(closureAt, axHookAt);
 ok(/if \(axIdent && \(axIdent\.name \|\| axIdent\.dob\)\) axRefused\+\+;/.test(hookBlock),
   'a SEEN-and-mismatched identity is a hard refusal, never a shape-unknown');
 ok(/await sleep\(1800\);[\s\S]{0,80}touchVisitLease\(\);/.test(hookBlock), 'settle + lease touch after every navigation');
@@ -96,8 +104,8 @@ ok(rd.out && rd.out.ok === true && rd.out.headerDate === '01/02/2026' && rd.out.
 
 /* arm 5: CONTROL - the pre-fix source shape must fail the pin set */
 let reverted = SRC.slice(0, opStart) + SRC.slice(opEnd);
-const hookEnd = reverted.indexOf('      if (!gate.ok) {\n        return {', reverted.indexOf('axr-1.0: when the classic walk STARVED') > 0 ? reverted.indexOf('axr-1.0: when the classic walk STARVED') : 0);
-const hookStart = reverted.indexOf('      /* axr-1.0: when the classic walk STARVED');
+const hookEnd = reverted.indexOf('      if (!gate.ok) {\n        return {', reverted.indexOf('axr-1.0 / rr-1.1: the ax-native route') > 0 ? reverted.indexOf('axr-1.0 / rr-1.1: the ax-native route') : 0);
+const hookStart = reverted.indexOf('      /* axr-1.0 / rr-1.1: the ax-native route');
 if (hookStart > 0 && hookEnd > hookStart) reverted = reverted.slice(0, hookStart) + reverted.slice(hookEnd);
 const ctl = axAssert(reverted);
 ok(ctl.some(function (v) { return v === false; }), 'CONTROL: pre-fix source fails the pin set');
@@ -119,5 +127,73 @@ ok(!/Date\.now\(\) \+ 7000 < readDeadline/.test(SRC) && !/Date\.now\(\) \+ 7000 
   'axc: no classic-phase 7s margin against readDeadline survives (CONTROL: the pre-fix shape fails this)');
 ok(/Date\.now\(\) \+ 15000 < readDeadline/.test(SRC) && /Date\.now\(\) \+ 6000 < readDeadline/.test(SRC),
   'axc: the ax hook 15s and re-expand 6s checks are unchanged - they fit inside the reserve');
+
+/* ---- rr-1.0 (3.0.55): the in-chart re-roll. A starved walk with an EMPTY
+ * harvest is usually a surface mid-recycle; the arm waits out one recycle
+ * window (bounded 34s, only with 42s of chart runway) and re-harvests.
+ * Acceptance on this arm is the per-encounter identity gate - NOT the srr
+ * epoch triple; a starved walk has no bound frame whose epoch could be
+ * measured. Observed class this converts: re-check-cleared rows that failed
+ * no-surface-tag then landed clincmp-ax on the automatic re-check (day 8:
+ * 4 of 13 rows). The wait buys a SURFACE, never trust. ---- */
+ok(SRC.includes('if (!axBest && Date.now() + 42000 < readDeadline) {'),
+  'rr: the wait-arm fires only on an EMPTY harvest with 42s of runway');
+ok(SRC.includes('rrStop = Math.min(readDeadline - 8000, rrT0 + 34000)'),
+  'rr: the wait is bounded by one recycle window and the chart deadline');
+ok(SRC.includes('axRrWaitMs: rrWait, axRrRecovered: rrRecovered,'),
+  'rr: the success receipt carries the wait telemetry');
+ok(SRC.includes("axRrWaitMs: (typeof rrWait === 'number' ? rrWait : 0)"),
+  'rr: the refusal receipt carries the telemetry typeof-guarded (that return also serves identity-mismatch refusals where the hook never ran)');
+ok(SRC.includes('if (axBest) { rrRecovered = true; break; }'),
+  'rr: recovery exits the wait immediately and records itself');
+{
+  /* rr-1.1 re-anchored: the wait-arm lives INSIDE the shared closure, before
+     the route body, and the closure is reachable ONLY through its two gated
+     entries (starved condition / body-depth partial) - an identity-mismatch
+     refusal reaches neither. Moved deliberately with rr-1.1 (2026-08-09). */
+  const rrClosAt = SRC.indexOf('var axRouteRun = async function (rrFromPartial) {');
+  const rrArmAt = SRC.indexOf('if (!axBest && Date.now() + 42000 < readDeadline) {');
+  const rrUseAt = SRC.indexOf('if (axBest && Number.isFinite(axBestFrame)) {');
+  ok(rrClosAt > 0 && rrClosAt < rrArmAt && rrArmAt < rrUseAt,
+    'rr: the wait-arm sits inside the shared closure, before the route body');
+  ok(SRC.split('await axRouteRun(').length - 1 === 2,
+    'rr: exactly two call sites reach the closure (starved + body-depth), both gated');
+}
+/* rr-1.1: the body-depth entry - the rc-class lookup was unanimous (7/7 rows
+ * failed classic at body depth, cleared as clincmp-ax) and the starved hook
+ * cannot reach them. Both arms: the partial return tries a COMPLETE-only ax
+ * re-roll; anything less keeps the classic partial (never worse than today);
+ * the shape-unknown gate mutation fires ONLY on the starved entry. */
+ok(SRC.includes('var axPartialRes = await axRouteRun(true);'),
+  'rr-1.1: the classic partial return calls the shared closure (body-depth entry)');
+ok(SRC.includes('if (axPartialRes && axPartialRes.receipt && axPartialRes.receipt.complete === true) {'),
+  'rr-1.1: only a COMPLETE ax result may supersede the classic partial');
+ok(SRC.includes('classicPartialSuperseded = { expected: clinicalTotal, parsed: visits.length, failures: failures.length }'),
+  'rr-1.1: a superseding result records what the classic partial had (auditable supersede)');
+ok(SRC.includes("reason: 'visit-bodies-incomplete'"),
+  'rr-1.1: the classic partial return itself survives (the fallback is intact)');
+ok(SRC.includes('receipt.axRrWaitMs = rrWait; receipt.axRrRecovered = rrRecovered;'),
+  'rr-1.1: a failed re-roll stamps its wait onto the surviving classic receipt');
+ok(SRC.includes('if (!rrFromPartial && (axShapeUnknown || axRefused)) {'),
+  'rr-1.1: the ax-identity-shape-unknown gate mutation fires only on the starved entry - a body-depth partial keeps its own reason');
+ok(SRC.includes("axEntry: rrFromPartial ? 'body-depth' : 'starved-walk',"),
+  'rr-1.1: the success receipt names which entry produced it (n-read acceptance needs the split)');
+ok(SRC.includes('var axStarvedRes = await axRouteRun(false);'),
+  'rr-1.1: the starved hook rides the same closure');
+
+/* si absorbs - without these the telemetry dies at the boundary (the
+ * failureDetails lesson from the same night: a field the emitter ships is
+ * not a field until every boundary passes it). */
+{
+  const SI = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'utf8');
+  ok(SI.includes('axRrWaitMs: Number((r.receipt&&r.receipt.axRrWaitMs)||0)'),
+    'rr: si absorbs the telemetry on the success path (saveVerifiedVisits return)');
+  ok(SI.includes('one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0)'),
+    'rr: si threads the success-path telemetry onto the per-patient record');
+  ok(SI.includes('axRrWaitMs: Number(vr.receipt.axRrWaitMs || 0), axRrRecovered: vr.receipt.axRrRecovered === true'),
+    'rr: si absorbs the telemetry on the failure path (visitsReadReceipt subset)');
+  ok(SI.includes('axEntry: String((r.receipt&&r.receipt.axEntry)||"")') && SI.includes('one.axEntry=String(savedVisits.axEntry||"")'),
+    'rr-1.1: si absorbs axEntry on the success path - acceptance counts by entry, and a field is not a field until every boundary passes it');
+}
 
 console.log('ax-native-reader: PASS (' + checks + ' checks)');

@@ -1,0 +1,68 @@
+/* fb-1.0 (3.0.55) - the renderer-fatigue breaker.
+ *
+ * Day 9 (2026-08-09): 2/22 from the first chart, session ALIVE (92,314-byte
+ * authenticated dashboard, no Re-Login). Two-run position curve (July4
+ * 1/5/8/6; July5 0/1/0/2/20) = the driven tab degrades under continuous
+ * driving. Cure: cool-down-then-converge - four consecutive hydration-class
+ * refusals reload the engine's OWN work tab once, bounded.
+ */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+let checks = 0;
+function ok(cond, label) {
+  checks++;
+  if (!cond) { console.error('FAIL fatigue-breaker: ' + label); process.exit(1); }
+}
+
+const SRC = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'latin1');
+
+/* ---- structural pins ---- */
+ok(SRC.includes('var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false };'),
+  'module state exists with all five fields');
+ok(SRC.includes("if (__mlsHydFatigue.streak >= 4 && Date.now() - __mlsHydFatigue.lastRefreshAt > 900000 && __mlsHydFatigue.refreshes < 2) {"),
+  'the breaker needs 4 consecutive refusals, >=15min spacing, and <2 per rolling hour');
+ok(SRC.includes("await exec(emrId, [0], ['surfaceRefresh', cfg]);"),
+  'the refresh targets frame 0 (top) of the engine\'s own resolved work tab');
+ok(SRC.includes('await sleep(12000);'), 'a 12s cool-down follows the reload');
+ok(SRC.includes("if (op === 'surfaceRefresh') {") && SRC.includes('top.location.reload(); return { ok: true };'),
+  'the page-side op reloads only - it never navigates anywhere');
+ok(SRC.includes('__mlsHydNote(res.ok === true, String(res.reason || \'\'));'),
+  'classification sits at the single normalize hop every outcome crosses');
+ok(SRC.includes('res.receipt.hydStreak = __mlsHydFatigue.streak;'),
+  'every chart receipt carries the live streak');
+ok(SRC.includes("if (__mlsHydFatigue.pendingStamp) { res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }"),
+  'a refresh stamps the NEXT receipt exactly once');
+
+/* ---- functional arm: run the real classifier ---- */
+const clStart = SRC.indexOf('function __mlsHydNote(ok, reason) {');
+ok(clStart > 0, 'classifier extractable');
+const clEnd = SRC.indexOf('  function runAllVisits(', clStart);
+const ctx = {};
+vm.createContext(ctx);
+vm.runInContext('var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false };\n' +
+  SRC.slice(clStart, clEnd), ctx);
+vm.runInContext("__mlsHydNote(false, 'no-chart-frame-candidate[stm.esp noise-surface]');", ctx);
+vm.runInContext("__mlsHydNote(false, 'visit-bodies-incomplete');", ctx);
+vm.runInContext("__mlsHydNote(false, 'visits-source-key-unproven');", ctx);
+ok(vm.runInContext('__mlsHydFatigue.streak', ctx) === 3, 'vm: hydration-class refusals increment the streak');
+vm.runInContext("__mlsHydNote(false, 'identity-mismatch: live chart shows another patient');", ctx);
+ok(vm.runInContext('__mlsHydFatigue.streak', ctx) === 3,
+  'vm: an identity refusal NEVER feeds the breaker - it is the product working, not the surface degrading');
+vm.runInContext("__mlsHydNote(false, 'no-athena-tab');", ctx);
+ok(vm.runInContext('__mlsHydFatigue.streak', ctx) === 3, 'vm: a missing-tab refusal does not feed the breaker (no tab to cure)');
+vm.runInContext("__mlsHydNote(false, 'visit-bodies-incomplete {no-group\\u00d72}');", ctx);
+ok(vm.runInContext('__mlsHydFatigue.streak', ctx) === 4, 'vm: the day-9 signature reaches the threshold');
+vm.runInContext('__mlsHydNote(true, "");', ctx);
+ok(vm.runInContext('__mlsHydFatigue.streak', ctx) === 0, 'vm: one proven chart resets the streak');
+
+/* ---- boundary: si absorbs the telemetry (a field is not a field until every
+   boundary passes it) ---- */
+const SI = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'utf8');
+ok(SI.includes('fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true') && SI.includes('one.fatigueRefresh=savedVisits.fatigueRefresh===true'),
+  'si absorbs the refresh stamp on the success path (a refreshed-then-proven chart is the breaker working)');
+ok(SI.includes('fatigueRefresh: vr.receipt.fatigueRefresh === true, hydStreak: Number(vr.receipt.hydStreak || 0)'),
+  'si absorbs streak + stamp on the failure path (the ledger sees the breaker)');
+
+console.log('fatigue-breaker: PASS (' + checks + ' checks)');

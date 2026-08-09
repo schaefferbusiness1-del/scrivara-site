@@ -563,6 +563,42 @@ async function main() {
     assert(connectSource.includes("getElementById('mlsPullProgStop')") && connectSource.includes('stopPull'), 'the button must be wired to the cooperative stopPull()');
   }
 
+  // sde-1.0 (day 6, 2026-08-09): a day must never close silently. The month
+  // loop's rejection path recorded reason 'exception' into result.days and
+  // emitted NO status line, so a live observer only noticed the date sequence
+  // jump 5->7; the schedule phase had already said "saved 24/24". Both arms:
+  // a day that dies mid-pull must still emit a date-prefixed day-end line and
+  // stay retryable; a clean run must record no exception day. The poison is a
+  // one-shot throwing onStatus - the same seam as a real mid-phase exception
+  // (si's status callbacks are normalized bare, never try/catch-wrapped).
+  {
+    h.rt.__mlsPullStopRequested = false;
+    let armed = true;
+    const lines = [];
+    const poisoned = await api.pullMonth({
+      month: '2026-05', provider: h.providerAlpha, includeHistory: false,
+      onStatus: (m) => {
+        const s = String(m);
+        if (armed && s.startsWith('2026-05-06: ')) { armed = false; throw new Error('sde-test-day-death'); }
+        lines.push(s);
+      }
+    });
+    const excDay = poisoned.days.find(d => d.date === '2026-05-06');
+    assert(excDay && excDay.reason === 'exception', 'the poisoned day must record reason exception, got ' + (excDay ? excDay.reason : 'no-day-entry'));
+    assert(String(excDay.error).includes('sde-test-day-death'), 'the recorded error must carry the real exception, got ' + excDay.error);
+    const emitted = lines.filter(l => l.startsWith('2026-05-06: ') && /unexpected error/.test(l) && /queued for retry/.test(l));
+    assert.strictEqual(emitted.length, 1, 'the dead day must emit exactly one day-end line into the stream, got ' + emitted.length);
+    assert(emitted[0].includes('sde-test-day-death'), 'the day-end line must name the exception, got ' + emitted[0]);
+    assert(poisoned.retry.dates.includes('2026-05-06'), 'the dead day must stay retryable');
+    assert(poisoned.days.some(d => d.date === '2026-05-07' && d.reason !== 'exception'), 'the day AFTER the death must still run - one dead day must not kill the month');
+    const cleanAfter = await api.pullMonth({ month: '2026-05', provider: h.providerAlpha, includeHistory: false });
+    assert(!cleanAfter.days.some(d => d.reason === 'exception'), 'control: a clean run must record no exception day');
+    // The other two silent exits gained the same day-end shape; pin the emits
+    // next to their reasons so a refactor cannot quietly re-silence them.
+    assert(/reason: "stopped-by-user" \}\);[\s\S]{0,220}?onStatus\(date \+ ": Not pulled — stop was requested/.test(siSource), 'the stopped-by-user exit must emit its day-end line');
+    assert(/reason: "not-attempted-after-systemic-failure" \}\);[\s\S]{0,220}?onStatus\(date \+ ": Not attempted — three days in a row failed the same way/.test(siSource), 'the breaker exit must emit its day-end line');
+  }
+
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');
 }
 

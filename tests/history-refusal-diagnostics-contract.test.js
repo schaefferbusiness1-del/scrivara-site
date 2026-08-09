@@ -28,6 +28,12 @@ assert(!capRegion.includes('vr.ecSeen') && !capRegion.includes('enumDiag.frames'
   'the capture must never copy ecSeen/frames - they carry a patient-name field (comment mentions are fine; code references are not)');
 assert(capRegion.includes('enumDiag.answered') && capRegion.includes('.slice(0, 8)'),
   'answered frame entries must be bounded');
+/* axd-1.0 (2026-08-09): the extension emits the per-row failure records
+   (noRowDiag liTotal/eidHit) on the receipt; si must absorb them bounded or
+   the field dies at this boundary - found live on day 8 (Liliana/John,
+   visit-bodies-incomplete) with the emitted receipts already dropped. */
+assert(capRegion.includes('one.visitsFailureDetails = vr.receipt.failureDetails.slice(0, 12)'),
+  'the per-row failure records must be absorbed, bounded to 12');
 
 /* ---- 2. the evidence is threaded to retry entries, panel row, ledger ------ */
 assert(si.includes('receipt.retry.push(frozenRetryEntry(row, target, one.reason, one))'),
@@ -67,6 +73,9 @@ assert.deepStrictEqual(Object.keys(plain).sort(), ['frozenDob', 'frozenMrn', 'pa
 const rich = helpers.frozenRetryEntry({ name: 'X' }, { patientId: 'p1' }, 'visit-bodies-incomplete', {
   visitsFailedHistogram: { 'encounter-section-loading': 6 },
   visitsReadReceipt: { expected: 12, parsed: 6 },
+  /* axd-1.0: the in-app-only per-row records must NOT ride into the emailed
+     diag even when present - the keys assertion below is the boundary. */
+  visitsFailureDetails: [{ reason: 'no-group', liTotal: 3, eidHit: 0 }],
   name: 'LEAKY PATIENT NAME', chartText: 'LEAKY CHART'
 });
 assert(rich.diag, 'evidence present -> diag carried');

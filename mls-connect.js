@@ -4628,18 +4628,45 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      never turning into done. The pull was fine; the panel called it 18
      warnings. IN-PROGRESS is not FAILED, so it gets its own calm state, no
      glyph, and flips to saved the moment the row completes. */
-  var PP_PENDING = /^(finishing|reading|pending|queued|in[- ]?progress|working|started|starting|opening|waiting)/i;
+  var PP_PENDING = /^(finishing|reading|re-checking|pending|queued|in[- ]?progress|working|started|starting|opening|waiting)/i;
+  /* ppt-2.0 (owner 2026-08-09, watching day 9): the rows list rendered every
+     settle EVENT, so one chart cycling re-check passes painted a fresh warning
+     row per pass, and internal tallies ("{no-group×2, stable-source-keys…}")
+     were shown raw. Now: ONE row per chart (latest state wins), a human verdict
+     per row (the technical reason survives in the receipt/ledger, and in the
+     row's hover title), and a cycling chart reads as calm "re-checking". */
+  function ppHumanWhy(raw) {
+    var head = String(raw || '').replace(/\s*[\{\[].*$/, '').trim();
+    if (/^identity-mismatch/.test(head)) return 'chart identity could not be verified';
+    if (/^open-failed$/.test(head)) return 'not on the athenaOne schedule';
+    if (/^read-failed$/.test(head)) return 'chart read timed out';
+    if (/^visit-bodies-incomplete/.test(head)) return 'some visit notes could not be read';
+    if (/^no-chart-frame-candidate/.test(head)) return 'the chart never finished loading';
+    if (/^visits-time-budget-exceeded/.test(head)) return 'ran out of time reading visits';
+    if (/^visits-source-key-unproven|^visits-total-not-readable|^visits-list-still-rendering/.test(head)) return 'could not confirm the visit list';
+    if (/^identity-target-unresolved/.test(head)) return 'could not match this patient safely';
+    if (/^no-athena-tab/.test(head) || /signed-in athenaOne/i.test(head)) return 'no signed-in athenaOne tab';
+    return head || 'could not read';
+  }
   function rowsHtml(S) {
-    return (S.rows || []).slice(-40).reverse().map(function (r) {
+    var latest = {}, order = [];
+    (S.rows || []).forEach(function (r) {
+      var k = r.k || r.name;
+      if (!(k in latest)) order.push(k);
+      latest[k] = r;
+    });
+    return order.slice(-40).reverse().map(function (k) {
+      var r = latest[k];
       var good = !!r.ok;
       var raw = String(r.reason == null ? '' : r.reason);
       var pending = !good && (r.pending === true || r.done === false || PP_PENDING.test(raw));
-      var why = good ? 'saved'
-        : pending ? 'reading…'
-        : (raw || 'could not read').replace(/^identity-mismatch:.*/, 'chart identity could not be verified').replace(/^open-failed$/, 'not on the athenaOne schedule').replace(/^read-failed$/, 'chart read timed out');
+      var why = good ? (r.axe === 'body-depth' ? 'saved (1 redo)' : 'saved')
+        : pending ? (/^re-checking/.test(raw) ? 're-checking…' : 'reading…')
+        : ppHumanWhy(raw);
       var cls = good ? 'pp-ok' : (pending ? 'pp-wait' : 'pp-bad');
       var glyph = good ? '✓ ' : (pending ? '' : '⚠ ');
-      return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '">' + glyph + esc(why) + '</span></div>';
+      var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 160)) + '"' : '';
+      return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span></div>';
     }).join('');
   }
   function buildPanel() {
@@ -4703,7 +4730,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var fill = p.querySelector('.pp-fill');
     if (fill) { var w = pct + '%'; if (fill.style.width !== w) fill.style.width = w; }
     setText(p, 'pct', pct + '% complete');
-    setText(p, 'tally', '\u2713 ' + ok + ' saved \u00B7 \u26A0 ' + failed + ' skipped');
+    /* ppt-2.0: "skipped" was the FAILED counter's label - failures called
+       skips, counted per settle event. Chart-level truth, no euphemism. */
+    var reChecking = Math.max(0, done - ok - failed);
+    setText(p, 'tally', '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
     setText(p, 'current', String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
@@ -43981,7 +44011,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260808chk3054';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260808chk3055';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */

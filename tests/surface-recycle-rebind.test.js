@@ -134,7 +134,10 @@ ok(/s\.runId='r'\+Date\.now\(\)\.toString\(36\);/.test(SI), '1.2 si: ppStart sta
 ok(/runId:String\(s\.runId\|\|''\)/.test(SI), '1.2 si: settled rows carry runId');
 ok(/r\.sr=Number\(extra\.surfaceResets\|\|0\); r\.surface=String\(extra\.chartSurface\|\|''\);/.test(SI), '1.2 si: rows carry sr+surface');
 ok(/Charts needing retry: /.test(SI), '1.2 si: day-end names the failing set');
-ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface \}/.test(SI), '1.2 si: settle call passes extras');
+/* ppt-2.0 (2026-08-09) extended the settle extras with pid (same-name patients
+   stay distinct in the chart-level tally) and axe (a redo is never laundered
+   into first-attempt). Pin moved deliberately with that change. */
+ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface, pid: one\.patientId, axe: one\.axEntry \}/.test(SI), '1.2 si: settle call passes extras (incl. pid + redo entry)');
 
 /* ---- axd-1.0 (3.0.54): the dissection payload persists. noRowDiag's
  * liTotal/eidHit (list-vanished vs row-left vs group-resolution-failed)

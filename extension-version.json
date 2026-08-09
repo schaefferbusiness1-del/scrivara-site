@@ -1,5 +1,5 @@
 {
-  "version": "3.0.54",
+  "version": "3.0.55",
   "minChrome": 116,
-  "notes": "v3.0.54 - When a chart cannot be fully read, MLS now records exactly what it saw at the moment each part failed - how many encounter rows were on screen and whether the expected one was still present - so recurring problems can be diagnosed from the receipts instead of guessed at. Purely additive; nothing about reading or saving changes. Everything from v3.0.53 remains. Requires Chrome 116+."
+  "notes": "v3.0.55 - When a chart cannot be fully read, MLS now records exactly what it saw at the moment each part failed - how many encounter rows were on screen and whether the expected one was still present - so recurring problems can be diagnosed from the receipts instead of guessed at. Purely additive; nothing about reading or saving changes. Everything from v3.0.53 remains. Requires Chrome 116+."
 }

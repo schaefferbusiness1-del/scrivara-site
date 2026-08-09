@@ -9479,6 +9479,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var axDm = axRaw.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/);
       return { ok: axRaw.length > 0, raw: axRaw, headerDate: axDm ? axDm[1] : '', len: axRaw.length };
     }
+    if (op === 'surfaceRefresh') {
+      /* fb-1.0: engine-owned reload of the engine's OWN work tab. Injected
+         into frame 0 (top). Never navigates anywhere - a reload only. */
+      try { top.location.reload(); return { ok: true }; } catch (eSRf) { return { ok: false, reason: 'refresh-blocked' }; }
+    }
+    if (op === 'deptGet') {
+      /* mp-1.0: read the session department scope from THIS frame. Department
+         names are practice metadata, not PHI. options ride only when the
+         caller asks (cfg.deptList) - the census is one config-time read. */
+      var dgSel = document.getElementById('DEPARTMENTID');
+      if (!dgSel || String(dgSel.tagName) !== 'SELECT') return { ok: true, present: false };
+      var dgOut = { ok: true, present: true, value: String(dgSel.value || ''), selectedText: String((dgSel.options[dgSel.selectedIndex] || {}).text || '').slice(0, 60), count: dgSel.options.length };
+      if (cfg && cfg.deptList === true) {
+        var dgL = [];
+        for (var dgI = 0; dgI < dgSel.options.length && dgI < 300; dgI++) dgL.push({ v: String(dgSel.options[dgI].value || ''), t: String(dgSel.options[dgI].text || '').slice(0, 48) });
+        dgOut.options = dgL;
+      }
+      return dgOut;
+    }
+    if (op === 'deptSet') {
+      /* mp-1.0: set the session department scope in THIS frame. The target
+         value rides the driver's third positional (idx). Fails CLOSED unless
+         the value exists among the select's own options; returns prev so the
+         si orchestration can restore on EVERY exit path. Fires input+change
+         only - whatever navigation athena wires to that select is athena's,
+         and the caller must treat the switch as a DAY-FLIP (re-bind all). */
+      var dsSel = document.getElementById('DEPARTMENTID');
+      if (!dsSel || String(dsSel.tagName) !== 'SELECT') return { ok: false, reason: 'dept-select-not-in-frame' };
+      var dsTarget = String(idx || '');
+      if (!dsTarget) return { ok: false, reason: 'dept-target-missing' };
+      var dsFound = false;
+      for (var dsI = 0; dsI < dsSel.options.length; dsI++) { if (String(dsSel.options[dsI].value || '') === dsTarget) { dsFound = true; break; } }
+      if (!dsFound) return { ok: false, reason: 'dept-target-not-an-option' };
+      var dsPrev = String(dsSel.value || '');
+      if (dsPrev === dsTarget) return { ok: true, prev: dsPrev, now: dsPrev, changed: false };
+      try {
+        dsSel.value = dsTarget;
+        try { dsSel.dispatchEvent(new Event('input', { bubbles: true })); } catch (eDsI) {}
+        dsSel.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (eDs) { return { ok: false, reason: 'dept-set-failed', prev: dsPrev }; }
+      return { ok: true, prev: dsPrev, now: String(dsSel.value || ''), changed: true };
+    }
     if (op === 'diagnose') { return diagnose(); }
     if (op === 'enumerate') {
       var g = bestGroup();
@@ -10369,6 +10411,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   /* v2.9.22 r4: exact-patient, exact-encounter, full-body reader. This
      implementation fails closed unless the complete index and all
      encounter-scoped clinical bodies are proven. */
+  /* fb-1.0: hydration-fatigue tracker. streak counts CONSECUTIVE charts whose
+     read refused with a hydration-shaped reason; any proven chart resets it.
+     The reasons are surface-starvation shapes, NOT identity refusals - an
+     identity mismatch is the product working and never feeds the breaker. */
+  var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false };
+  function __mlsHydNote(ok, reason) {
+    try {
+      if (ok === true) { __mlsHydFatigue.streak = 0; return; }
+      if (/^(no-chart-frame-candidate|visit-bodies-incomplete|visits-source-key-unproven|visits-list-still-rendering|visits-total-not-readable|encounter-surface-not-open|stale-encounter-surface-open)/.test(String(reason || ''))) __mlsHydFatigue.streak++;
+    } catch (eHyd) {}
+  }
   function runAllVisits(appTabId, hint, cfg, requestId, callerDeadlineAt) {
     var identity = {}, listFrame = 0, enumRes = null, diag = null;
     var qpOwnedByThisRead = false, readTabId = null, frozenHint = freezeVisitHint(hint);
@@ -10432,6 +10485,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var emrId = emr.id;
       readTabId = Number(emrId);
       try { __visitGuardByTab.set(Number(emrId), readGuard); } catch (eGuardTab) {}
+      /* fb-1.0: the breaker fires BEFORE this chart's read, so the refreshed
+         surface serves it. Reloading our own driven work tab is the cure for
+         the day-9 class (11x no-chart-frame with the session alive); the read
+         flow re-establishes everything per chart from the dashboard anyway. */
+      if (Date.now() - __mlsHydFatigue.hourAt > 3600000) { __mlsHydFatigue.hourAt = Date.now(); __mlsHydFatigue.refreshes = 0; }
+      if (__mlsHydFatigue.streak >= 4 && Date.now() - __mlsHydFatigue.lastRefreshAt > 900000 && __mlsHydFatigue.refreshes < 2) {
+        __mlsHydFatigue.lastRefreshAt = Date.now(); __mlsHydFatigue.refreshes++;
+        __mlsHydFatigue.streak = 0; __mlsHydFatigue.pendingStamp = true;
+        try { emit(appTabId, frozenRequestId, 'athenaOne is responding poorly - refreshing its tab and cooling down before this chart...', 0, 0); } catch (eFbE) {}
+        try { await exec(emrId, [0], ['surfaceRefresh', cfg]); } catch (eFbR) {}
+        await sleep(12000);
+      }
       /* Quiet-pull visibility lease: make Athena render without focusing it or
          changing the clinician's selected tab. No reload, URL navigation,
          session-screen click, or write action is performed by this reader. */
@@ -10716,21 +10781,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         };
       }
 
-      /* axr-1.0: when the classic walk STARVED (no usable frame candidate) - and
-         ONLY then; an identity-mismatch refusal is the product working and never
-         triggers an alternate route - try the ax-native path: harvest encounter
-         ids from hrefs, navigate the harvest frame per encounter, verify the
-         SAME visitIdentityGate on each loaded summary, read, fail closed per
-         encounter. Unknown identity shapes refuse as 'ax-identity-shape-unknown'
-         WITH the observed signature (the reader is its own census; a refusal
-         teaches the next probe shape - a guess could read the wrong patient). */
-      if (!gate.ok && /^no-chart-frame-candidate/.test(String(gate.reason || '')) && Date.now() + 15000 < readDeadline) {
+      /* axr-1.0 / rr-1.1: the ax-native route, wrapped ONCE with two entries.
+         STARVED-WALK entry (original): the classic walk found no usable frame
+         candidate - an identity-mismatch refusal never triggers it; acceptance
+         is any ax visits (better than the refusal, receipt stays honest).
+         BODY-DEPTH entry (rr-1.1): the classic read finished PARTIAL - the
+         rc-class lookup was unanimous (7/7) that these charts rotate to
+         clincmp-ax during the classic grind; acceptance is ONLY a COMPLETE ax
+         result, else the classic partial returns unchanged. Identity
+         discipline identical on both: every encounter passes the same
+         visitIdentityGate; unknown shapes refuse as ax-identity-shape-unknown
+         WITH captured signatures (the reader is its own census). */
+      var rrWait = 0, rrRecovered = false;
+      var axRouteRun = async function (rrFromPartial) {
         var axHR = await exec(emrId, null, ['axHarvest', cfg]);
         var axBest = null, axBestFrame = -1;
         ((axHR || [])).forEach(function (hr) {
           var r0 = hr && hr.result;
           if (r0 && r0.ok && r0.encounters && r0.encounters.length && (!axBest || r0.encounters.length > axBest.encounters.length)) { axBest = r0; axBestFrame = hr.frameId; }
         });
+        if (!axBest && Date.now() + 42000 < readDeadline) {
+          /* rr-1.0: a starved walk or unrotated partial with an EMPTY harvest
+             is usually a surface MID-RECYCLE (the exam-prep context replaces
+             the visits document every ~25-30s by itself). Wait out one recycle
+             window - bounded, runway-gated - and re-harvest. The wait buys a
+             SURFACE, never trust. The refusal/partial receipts carry
+             axRrWaitMs so a wasted wait is visible. */
+          var rrT0 = Date.now(), rrStop = Math.min(readDeadline - 8000, rrT0 + 34000);
+          while (Date.now() < rrStop) {
+            await sleep(1400);
+            touchVisitLease();
+            var rrHR = await exec(emrId, null, ['axHarvest', cfg]);
+            ((rrHR || [])).forEach(function (hr) {
+              var r1 = hr && hr.result;
+              if (r1 && r1.ok && r1.encounters && r1.encounters.length && (!axBest || r1.encounters.length > axBest.encounters.length)) { axBest = r1; axBestFrame = hr.frameId; }
+            });
+            if (axBest) { rrRecovered = true; break; }
+          }
+          rrWait = Date.now() - rrT0;
+        }
         if (axBest && Number.isFinite(axBestFrame)) {
           var axVisits = [], axRefused = 0, axShapeUnknown = 0, axSigs = [axBest.surfaceSig], axT0 = Date.now();
           var axCap = Math.min(axBest.encounters.length, Number(cfg.maxVisits) || 40);
@@ -10768,21 +10857,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             var axKept = axVisits.length, axTotalE = axBest.encounters.length;
             return {
               ok: true, reason: '', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
-              receipt: { complete: axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0, indexComplete: true, bodyComplete: axKept === axTotalE, fullDetail: axKept === axTotalE, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
+              receipt: { complete: axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0, indexComplete: true, bodyComplete: axKept === axTotalE, fullDetail: axKept === axTotalE, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
               error: axKept === axTotalE ? '' : ('The ax route read ' + axKept + ' of ' + axTotalE + ' encounters; ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.')
             };
           }
-          if (axShapeUnknown || axRefused) {
+          if (!rrFromPartial && (axShapeUnknown || axRefused)) {
             gate = { ok: false, reason: 'ax-identity-shape-unknown[' + axShapeUnknown + ' unknown, ' + axRefused + ' refused of ' + axBest.encounters.length + ']' };
             try { diag = diag || {}; diag.axSigs = axSigs.slice(0, 6); } catch (eAxD) {}
           }
         }
+        return null;
+      };
+      if (!gate.ok && /^no-chart-frame-candidate/.test(String(gate.reason || '')) && Date.now() + 15000 < readDeadline) {
+        var axStarvedRes = await axRouteRun(false);
+        if (axStarvedRes) return axStarvedRes;
       }
       if (!gate.ok) {
         return {
           ok: false, reason: gate.reason, identity: identity, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, indexRows: total, selector: (enumRes && enumRes.selector) || '' },
-          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, identityVerified: false },
+          receipt: { complete: false, indexComplete: true, bodyComplete: false, fullDetail: false, expected: total, parsed: 0, attempted: 0, cap: cfg.maxVisits, identityVerified: false, axRrWaitMs: (typeof rrWait === 'number' ? rrWait : 0), axRrRecovered: (typeof rrRecovered === 'boolean' ? rrRecovered : false) },
           error: 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient (name plus DOB/MRN). No encounter body was read.'
         };
       }
@@ -11148,6 +11242,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         qpVisibility: (function () { try { var q = self.__mlsQpLastVerdict; return q && (Date.now() - q.at) < 300000 ? q.v : ''; } catch (eQpRead) { return ''; } })()
       };
       if (!bodyComplete) {
+        /* rr-1.1: the classic read ended partial. If the surface has rotated
+           to clincmp-ax (usual: the grind outlasts a recycle period), a
+           COMPLETE ax re-roll supersedes the partial; anything less keeps the
+           classic partial - never worse than today. Time-budget-exceeded rows
+           never reach here with runway and stay with the si re-check. */
+        if (Date.now() + 15000 < readDeadline) {
+          var axPartialRes = await axRouteRun(true);
+          if (axPartialRes && axPartialRes.receipt && axPartialRes.receipt.complete === true) {
+            axPartialRes.receipt.classicPartialSuperseded = { expected: clinicalTotal, parsed: visits.length, failures: failures.length };
+            return axPartialRes;
+          }
+          receipt.axRrWaitMs = rrWait; receipt.axRrRecovered = rrRecovered;
+        }
         return {
           ok: false, reason: 'visit-bodies-incomplete', identity: identity, visits: [], diag: diag,
           strategy: 'bound-click', found: total, receipt: receipt, failedIndexes: failures,
@@ -11161,6 +11268,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }).then(function (res) {
       res = res || {};
       res.readerVersion = '2.9.22-visits-r4-two-stage';
+      /* fb-1.0: every outcome crosses this hop - the one honest place to
+         classify. The receipt carries the live streak (and the refresh stamp
+         when one just fired) so the day ledger can see the breaker work. */
+      __mlsHydNote(res.ok === true, String(res.reason || ''));
+      if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
+      res.receipt.hydStreak = __mlsHydFatigue.streak;
+      if (__mlsHydFatigue.pendingStamp) { res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
       var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0);
       res.receipt.complete = proven;
