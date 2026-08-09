@@ -496,6 +496,7 @@ const tests = [
      record it has observed; stale bulk saves are per-row protected. */
   'stale-lineage-save-shield.test.js',
   'surface-recycle-rebind.test.js',
+  'ax-native-reader.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
      the unverifiable default instead of wearing it. */

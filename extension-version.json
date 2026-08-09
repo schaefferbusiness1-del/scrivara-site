@@ -1,5 +1,5 @@
 {
-  "version": "3.0.51",
+  "version": "3.0.52",
   "minChrome": 116,
-  "notes": "v3.0.51 - Three sharpenings from live July runs: charts whose visit list renders in athena's variant frame but arrives EMPTY are now re-expanded in place and read (five July-1 charts failed exactly there); after athena replaces the chart surface mid-read, the reader now waits for the reborn page to paint its patient banner before judging identity (one false refusal fixed - the safety refusal itself is unchanged); and each day's closing summary now NAMES the charts needing retry, while every chart's receipt records which athena UI answered. Everything from v3.0.50 remains. Requires Chrome 116+."
+  "notes": "v3.0.52 - Charts on athena's new-style (rollout) UI can now be read natively: encounter links are harvested directly (no clicking), each encounter page is identity-verified against the expected patient before a single word is read, and anything the reader does not recognize is refused with its shape recorded rather than guessed at - those refusals are expected to shrink build over build as shapes are learned. This route runs ONLY when the classic reader finds no usable chart frame. Everything from v3.0.51 remains. Requires Chrome 116+."
 }
