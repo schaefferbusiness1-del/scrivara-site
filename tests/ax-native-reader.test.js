@@ -103,4 +103,21 @@ const ctl = axAssert(reverted);
 ok(ctl.some(function (v) { return v === false; }), 'CONTROL: pre-fix source fails the pin set');
 ok(ctl.filter(function (v) { return !v; }).length >= 8, 'CONTROL: at least 8 pins fail on pre-fix source');
 
+/* ---- axc-1.0 (3.0.53): the runway carve-out. July-1 measured the classic
+ * 47-pass index grind consuming the ENTIRE chart budget, so the ax route's
+ * 15s-runway check never passed on the five charts that most needed it -
+ * the CLINCMP cure went untested against its target population. The fix is a
+ * deterministic reserve: every classic-phase continuation margin against
+ * readDeadline is 24s (re-expand <=6s + ax hook 15s + margin), so grinding
+ * charts HAND OVER with runway while classic-healthy charts finish early and
+ * never notice. ---- */
+ok(/ehPass < 47 && Date\.now\(\) \+ 24000 < readDeadline && Date\.now\(\) \+ 7000 < indexPhaseDeadline/.test(SRC),
+  'axc: the eh-loop retry margin reserves 24s of chart budget (index-phase margin untouched)');
+ok((SRC.match(/Date\.now\(\) \+ 24000 >= readDeadline\) break; \/\* axc-1\.0 reserve \*\//g) || []).length === 2,
+  'axc: both stable-index break margins reserve 24s');
+ok(!/Date\.now\(\) \+ 7000 < readDeadline/.test(SRC) && !/Date\.now\(\) \+ 7000 >= readDeadline/.test(SRC),
+  'axc: no classic-phase 7s margin against readDeadline survives (CONTROL: the pre-fix shape fails this)');
+ok(/Date\.now\(\) \+ 15000 < readDeadline/.test(SRC) && /Date\.now\(\) \+ 6000 < readDeadline/.test(SRC),
+  'axc: the ax hook 15s and re-expand 6s checks are unchanged - they fit inside the reserve');
+
 console.log('ax-native-reader: PASS (' + checks + ' checks)');

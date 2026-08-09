@@ -734,3 +734,32 @@ grandchild specifically, relaunch once, never in a loop. Attribution law both
 directions: a process is not yours until shown yours (pid 41624 was Codex's
 runtime; three young runners were the peer lane's live gates - neither was
 mine to kill).
+
+
+## JULY DAY 1 ON 3.0.52 + the carve-out finding (2026-08-09)
+
+**13 of 19 first-attempt; 18 of 19 after automatic re-checks** (owner's bar bans
+second attempts, so 13 leads). Progression across builds: 10 -> 13 -> 14 -> 18.
+The rotating stm.esp class is ABSENT from a day verdict for the first time.
+One survivor: visit-bodies-incomplete {no-group x2 + stable-source-keys} - now
+the deepest remaining per-row class.
+
+THE CARVE-OUT FINDING (taxonomy-measured, jumps the queue for 3.0.53): the five
+budget-exceeded charts show the classic walk consuming the ENTIRE chart budget
+before the ax route's 15s runway check - **the ax reader never fired on the
+charts that most needed it**; their re-check clears came through the classic
+path on fresh budgets. So the CLINCMP cure is still UNTESTED against its target
+population. Fix: a deterministic reserved runway (classic phases must abandon
+by readDeadline - ~22s), not a starvation heuristic - a guaranteed floor cannot
+be wrong on exactly the rotating charts the way a smell test can.
+
+THE srr THREE-STATEMENT SEPARATION (keep apart, never merge):
+1. PROVEN: the recycle mechanism exists and the detector fires (measured frame
+   replacement; one live firing that failed closed correctly).
+2. UNPROVEN: that the recovery (re-bind) SUCCEEDS - no live success yet.
+3. REFUTED for this day: that recycling drove July-1's failures -
+   surfaceResets = 0 across every row of an 18/19 day.
+
+chartSurface: 7 rows on one roster tagged clincmp-ax (climbing past the earlier
+22%) - the rollout is becoming the majority path while currently getting only
+leftover budget, which is the whole case for the carve-out.

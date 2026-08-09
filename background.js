@@ -10571,7 +10571,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var ehKey = enrSeen.join(',').replace(/;?n=[0-9]+/g, '').replace(/;?sameFor=[0-9]+s/g, '').replace(/;?outerN=[0-9]+/g, '').replace(/;?outerMs=[0-9]+/g, '');
         if (ehKey && ehKey === ehStuckKey) ehStuckPasses++; else { ehStuckKey = ehKey; ehStuckPasses = 1; ehStuckFirstAt = Date.now(); }
         var ehStuck = ehStuckPasses >= EH_STUCK_LIMIT;
-        if (!ehStuck && ehPass < 47 && Date.now() + 7000 < readDeadline && Date.now() + 7000 < indexPhaseDeadline) { await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
+        if (!ehStuck && ehPass < 47 && Date.now() + 24000 < readDeadline && Date.now() + 7000 < indexPhaseDeadline) { /* axc-1.0 (3.0.53): the classic index grind must abandon with the ax route's runway INTACT - July-1 measured the 47-pass loop consuming the whole chart budget so the ax reader never fired on the five charts that most needed it. 24s reserve = re-expand (<=6s) + ax hook (15s) + margin. Deterministic floor, not a starvation heuristic. */ await exec(emrId, null, ['openVisits', cfg]); await sleep(3500); touchVisitLease(); continue; }
         return {
           ok: false, reason: 'encounter-index-incomplete' + (enNoiseDropped || !enChart.length ? '[' + (enNoiseDropped ? 'noise-frames-excluded:' + enNoiseDropped : '') + (!enChart.length ? ((enNoiseDropped ? ';' : '') + 'no-chart-frame-answered') : '') + ']' : '') + (ehStuck ? '[unchanged-for-' + ehStuckPasses + '-passes;gave-up-early]' : '') + (function (er) { try { if (!er) return ''; var erR = String(er.reason || ''); var gate = erR.indexOf('visits-panel-not-open') >= 0 ? 'panel' : erR.indexOf('visits-total-not-readable') >= 0 ? 'total' : erR.indexOf('visits-list-still-rendering') >= 0 ? 'lstill' : erR.indexOf('no-encounter-group') >= 0 ? 'nogroup' : (er.ok ? 'ok' : 'other'); return '[idx:' + gate + ';' + (Number(er.renderedListItems) || 0) + '/' + (Number(er.declaredEvents) || 0) + ';r' + (Number(er.parsedRows) || 0) + ';eN' + (Number(er.effStabN) || 0) + ';eMs' + (Number(er.effStabMs) || 0) + ';p' + (ehPass + 1) + ']'; } catch (eIdxTag) { return ''; } })(enumRes), identity: {}, visits: [], diag: diag,
           enumDiag: { frames: ecSeen, answered: enrSeen, noiseDropped: enNoiseDropped, noiseTails: enNoiseTails, okShape: enOkShape, indexRows: (enumRes && enumRes.count) || 0, selector: (enumRes && enumRes.selector) || '', passes: ehPass + 1, identicalPasses: ehStuckPasses, gaveUpEarly: !!ehStuck },
@@ -10697,12 +10697,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
            consecutive passes (the progressive panel grows between polls). */
         if (ehStableCount === enumRes.count) break;
         ehStableCount = enumRes.count;
-        if (Date.now() + 7000 >= readDeadline) break;
+        if (Date.now() + 24000 >= readDeadline) break; /* axc-1.0 reserve */
         await sleep(2500);
         touchVisitLease();
         continue;
       }
-      if (ehPass >= 47 || Date.now() + 7000 >= readDeadline) break;
+      if (ehPass >= 47 || Date.now() + 24000 >= readDeadline) break; /* axc-1.0 reserve */
       await exec(emrId, null, ['openVisits', cfg]);
       await sleep(3500);
       touchVisitLease();
