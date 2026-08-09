@@ -23,3 +23,4 @@ tests/live-copilot-avatar-artifacts/
 
 # receipt written by scripts/bump-build.js so a ship path commits the subject it actually wrote (2026-08-06)
 scripts/.last-bump-subject
+face-gallery-FALSIFICATION.png
