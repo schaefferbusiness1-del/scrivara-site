@@ -599,6 +599,28 @@ async function main() {
     assert(/reason: "not-attempted-after-systemic-failure" \}\);[\s\S]{0,220}?onStatus\(date \+ ": Not attempted — three days in a row failed the same way/.test(siSource), 'the breaker exit must emit its day-end line');
   }
 
+  // vb-1.0 (owner 2026-08-09, verbatim: "we do pull the upcoming visit even
+  // with visit history turned off so that it can do a better job with that
+  // visit and op notes and stuff"): verified in source and pinned
+  // BEHAVIORALLY. With pullVisitBodies:false the chart is still READ and
+  // parsed+persisted for every scheduled patient (the op-note context); only
+  // the encounter-bodies stage is skipped, recorded honestly as
+  // visitsSkipped with the row still complete. A refactor that treats
+  // bodies-off as nothing-to-read kills the chart read and fails this.
+  {
+    const realRead = h.rt._assistReadChart;
+    let bodiesOffReads = 0;
+    h.rt._assistReadChart = function () { bodiesOffReads++; return realRead.apply(null, arguments); };
+    const bodiesOff = await api.pull({ date: '2026-02-03', provider: h.providerAlpha, includeHistory: true, pullVisitBodies: false });
+    h.rt._assistReadChart = realRead;
+    assert(bodiesOffReads >= 1, 'bodies-off must still READ the chart (op-note context), got ' + bodiesOffReads + ' reads');
+    const boPats = (bodiesOff.historyReceipt && bodiesOff.historyReceipt.patients) || [];
+    assert(boPats.length >= 1, 'bodies-off must still process the scheduled patient');
+    const bo = boPats[0];
+    assert(bo.complete === true, 'a bodies-off chart read is a SUCCESS, not a skip-failure, got ' + (bo.reason || 'complete=' + bo.complete));
+    assert(bo.visitsSkipped === true, 'the skipped bodies stage is recorded honestly on the receipt');
+  }
+
   console.log('PASS exact provider/day/month routing, canonical roster gates, late refresh, frozen identity/date, receipts, idempotency, and passive startup');
 }
 

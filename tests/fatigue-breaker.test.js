@@ -19,10 +19,40 @@ function ok(cond, label) {
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'latin1');
 
 /* ---- structural pins ---- */
-ok(SRC.includes('var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false };'),
-  'module state exists with all five fields');
-ok(SRC.includes("if (__mlsHydFatigue.streak >= 4 && Date.now() - __mlsHydFatigue.lastRefreshAt > 900000 && __mlsHydFatigue.refreshes < 2) {"),
-  'the breaker needs 4 consecutive refusals, >=15min spacing, and <2 per rolling hour');
+ok(SRC.includes("var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false, dead: '', chartsSinceRefresh: 0, lifetimeRefreshes: 0 };"),
+  'module state exists with the dead latch (fb-1.1) and the chart counter (fb-1.2)');
+ok(SRC.includes("var fbReactive = __mlsHydFatigue.streak >= 4 && Date.now() - __mlsHydFatigue.lastRefreshAt > 900000 && __mlsHydFatigue.refreshes < 2 && (__mlsHydFatigue.lifetimeRefreshes || 0) < 3;"),
+  'the reactive breaker needs 4 consecutive refusals, >=15min spacing, <2/rolling hour, AND <3 per service-worker lifetime');
+/* fb-1.2: the PROACTIVE recycle. Cadence DERIVED, not defaulted: earliest
+   observed degradation onset across two runs was ~19 charts of prior driving
+   (July4 position-2, 5 failures); the window keeps accumulation strictly
+   below it - every 15 charts (19 minus a 4-chart margin). Prevention beats
+   recovery: the owner never sees the 2-of-22 day. */
+ok(SRC.includes("var fbProactive = !fbReactive && (__mlsHydFatigue.chartsSinceRefresh || 0) >= 15 && Date.now() - __mlsHydFatigue.lastRefreshAt > 300000;"),
+  'fb-1.2: the proactive recycle fires every 15 charts (derived from the ~19-chart earliest onset), 5-min spaced, between charts');
+ok(SRC.includes('if (fbReactive) { __mlsHydFatigue.refreshes++; __mlsHydFatigue.lifetimeRefreshes = (__mlsHydFatigue.lifetimeRefreshes || 0) + 1; }'),
+  'fb-1.2: proactive fires do NOT burn the reactive caps (a month run recycles ~15-20 times by design)');
+ok(SRC.includes('__mlsHydFatigue.chartsSinceRefresh = 0;') && SRC.includes("__mlsHydFatigue.chartsSinceRefresh = (__mlsHydFatigue.chartsSinceRefresh || 0) + 1;"),
+  'fb-1.2: the chart counter increments at the classify hop and resets on every reload');
+ok(SRC.includes("res.receipt.proactiveRefresh = true;") && SRC.includes("__mlsHydFatigue.pendingStamp = fbReactive ? 'fatigue' : 'proactive';"),
+  'fb-1.2: receipts distinguish a proactive recycle from a fatigue recovery (acceptance counts them separately)');
+ok(SRC.includes('if (fbReactive || fbProactive) {'),
+  'fb-1.2: both arms share ONE hardened path - probe, reload, assert, dead latch (wrap once)');
+/* fb-1.1 hardening (supervisor 2026-08-09, non-negotiable: a reload during
+   interstitial weather killed a healthy frameset on 2026-08-08 and the
+   sign-in was the only recovery - unattended, that ends the night). */
+ok(SRC.includes("if (op === 'surfaceProbe') {") && SRC.includes("interstitial: /unable to complete the requested action/i.test(spTxt)"),
+  'fb-1.1: a read-only probe op recognises the 2026-08-08 interstitial');
+ok(SRC.includes('if (fbPreR && fbPreR.interstitial) {'),
+  'fb-1.1: the breaker probes BEFORE reloading and skips the reload under interstitial weather');
+ok(SRC.includes("if (!fbPostR || fbPostR.interstitial || fbPostR.signIn || Number(fbPostR.frames || 0) < 2) {"),
+  'fb-1.1: after a reload the breaker asserts a real frameset came back (no probe answer / interstitial / sign-in / no frames all fail)');
+ok(SRC.includes("'sign-in-form-after-reload'") && SRC.includes("if (__mlsHydFatigue.dead) {"),
+  'fb-1.1: a bad landing latches dead and every later chart refuses fast - no retry, no root-bounce');
+{
+  const deadCount = (SRC.match(/reason: 'no-athena-tab', identity: \{\}, visits: \[\], receipt: \{ complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, fatigueDead: __mlsHydFatigue\.dead \}/g) || []).length;
+  ok(deadCount === 2, 'fb-1.1: both dead-latch refusals (latched + fresh) carry the fatigueDead receipt and the no-athena-tab reason that routes into sign-in guidance, got ' + deadCount);
+}
 ok(SRC.includes("await exec(emrId, [0], ['surfaceRefresh', cfg]);"),
   'the refresh targets frame 0 (top) of the engine\'s own resolved work tab');
 ok(SRC.includes('await sleep(12000);'), 'a 12s cool-down follows the reload');
@@ -32,8 +62,8 @@ ok(SRC.includes('__mlsHydNote(res.ok === true, String(res.reason || \'\'));'),
   'classification sits at the single normalize hop every outcome crosses');
 ok(SRC.includes('res.receipt.hydStreak = __mlsHydFatigue.streak;'),
   'every chart receipt carries the live streak');
-ok(SRC.includes("if (__mlsHydFatigue.pendingStamp) { res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }"),
-  'a refresh stamps the NEXT receipt exactly once');
+ok(SRC.includes("if (__mlsHydFatigue.pendingStamp) { if (__mlsHydFatigue.pendingStamp === 'proactive') res.receipt.proactiveRefresh = true; else res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }"),
+  'a refresh stamps the NEXT receipt exactly once, kind-aware (fb-1.2)');
 
 /* ---- functional arm: run the real classifier ---- */
 const clStart = SRC.indexOf('function __mlsHydNote(ok, reason) {');

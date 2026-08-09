@@ -9479,6 +9479,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var axDm = axRaw.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/);
       return { ok: axRaw.length > 0, raw: axRaw, headerDate: axDm ? axDm[1] : '', len: axRaw.length };
     }
+    if (op === 'surfaceProbe') {
+      /* fb-1.1: read-only surface triage from the TOP frame. The 2026-08-08
+         interstitial is a tiny no-frames page saying "unable to complete the
+         requested action"; the sign-in form carries a USERNAME input. */
+      var spTxt = '';
+      try { spTxt = String((document.body && document.body.innerText) || '').slice(0, 4000); } catch (eSpT) {}
+      var spSign = false;
+      try { spSign = !!document.querySelector('input#USERNAME, input[name="USERNAME"], form[action*="login"] input[type="password"]'); } catch (eSpS) {}
+      return { ok: true, frames: (function () { try { return window.frames.length; } catch (eSpF) { return 0; } })(), bytes: spTxt.length, interstitial: /unable to complete the requested action/i.test(spTxt), signIn: spSign };
+    }
     if (op === 'surfaceRefresh') {
       /* fb-1.0: engine-owned reload of the engine's OWN work tab. Injected
          into frame 0 (top). Never navigates anywhere - a reload only. */
@@ -10415,7 +10425,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      read refused with a hydration-shaped reason; any proven chart resets it.
      The reasons are surface-starvation shapes, NOT identity refusals - an
      identity mismatch is the product working and never feeds the breaker. */
-  var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false };
+  var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false, dead: '', chartsSinceRefresh: 0, lifetimeRefreshes: 0 };
   function __mlsHydNote(ok, reason) {
     try {
       if (ok === true) { __mlsHydFatigue.streak = 0; return; }
@@ -10489,13 +10499,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          surface serves it. Reloading our own driven work tab is the cure for
          the day-9 class (11x no-chart-frame with the session alive); the read
          flow re-establishes everything per chart from the dashboard anyway. */
+      if (__mlsHydFatigue.dead) {
+        /* fb-1.1: a refresh already came back wrong once. Refuse fast and
+           loudly - no further reloads, no root-bounce, no grinding. The
+           no-athena-tab reason routes into the day line's sign-in guidance. */
+        return { ok: false, reason: 'no-athena-tab', identity: {}, visits: [], receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, fatigueDead: __mlsHydFatigue.dead }, error: 'MLS refreshed its athenaOne tab to recover from repeated read failures, and the tab did not come back as a signed-in athenaOne (' + __mlsHydFatigue.dead + '). Nothing further was attempted. Sign in to athenaOne, then pull again.' };
+      }
       if (Date.now() - __mlsHydFatigue.hourAt > 3600000) { __mlsHydFatigue.hourAt = Date.now(); __mlsHydFatigue.refreshes = 0; }
-      if (__mlsHydFatigue.streak >= 4 && Date.now() - __mlsHydFatigue.lastRefreshAt > 900000 && __mlsHydFatigue.refreshes < 2) {
-        __mlsHydFatigue.lastRefreshAt = Date.now(); __mlsHydFatigue.refreshes++;
-        __mlsHydFatigue.streak = 0; __mlsHydFatigue.pendingStamp = true;
-        try { emit(appTabId, frozenRequestId, 'athenaOne is responding poorly - refreshing its tab and cooling down before this chart...', 0, 0); } catch (eFbE) {}
-        try { await exec(emrId, [0], ['surfaceRefresh', cfg]); } catch (eFbR) {}
-        await sleep(12000);
+      var fbReactive = __mlsHydFatigue.streak >= 4 && Date.now() - __mlsHydFatigue.lastRefreshAt > 900000 && __mlsHydFatigue.refreshes < 2 && (__mlsHydFatigue.lifetimeRefreshes || 0) < 3;
+      /* fb-1.2: the proactive recycle - every 15 charts (earliest observed
+         degradation onset was ~19 charts of prior driving; 4-chart margin).
+         Prevention, between charts, same landing discipline. */
+      var fbProactive = !fbReactive && (__mlsHydFatigue.chartsSinceRefresh || 0) >= 15 && Date.now() - __mlsHydFatigue.lastRefreshAt > 300000;
+      if (fbReactive || fbProactive) {
+        __mlsHydFatigue.lastRefreshAt = Date.now();
+        var fbPreR = null;
+        try { var fbPre = await exec(emrId, [0], ['surfaceProbe', cfg]); fbPreR = bestResult(fbPre, function (r) { return r ? 1 : 0; }).result || null; } catch (eFbP) {}
+        if (fbPreR && fbPreR.interstitial) {
+          /* interstitial weather: reloading NOW is the 2026-08-08 mistake.
+             Cool down without reloading; the spacing gate prevents a refire
+             storm. streak stays - if the weather clears, the next window can
+             still cure the tab. */
+          try { emit(appTabId, frozenRequestId, 'athenaOne is showing its temporary-error page - waiting it out rather than reloading (a reload now can end the signed-in session)...', 0, 0); } catch (eFbW) {}
+          await sleep(12000);
+        } else {
+          if (fbReactive) { __mlsHydFatigue.refreshes++; __mlsHydFatigue.lifetimeRefreshes = (__mlsHydFatigue.lifetimeRefreshes || 0) + 1; }
+          __mlsHydFatigue.streak = 0; __mlsHydFatigue.chartsSinceRefresh = 0; __mlsHydFatigue.pendingStamp = fbReactive ? 'fatigue' : 'proactive';
+          try { emit(appTabId, frozenRequestId, fbReactive ? 'athenaOne is responding poorly - refreshing its tab and cooling down before this chart...' : 'Routine athenaOne tab refresh to keep long pulls reliable (15 charts since the last one)...', 0, 0); } catch (eFbE) {}
+          try { await exec(emrId, [0], ['surfaceRefresh', cfg]); } catch (eFbR) {}
+          await sleep(12000);
+          var fbPostR = null;
+          try { var fbPost = await exec(emrId, [0], ['surfaceProbe', cfg]); fbPostR = bestResult(fbPost, function (r) { return r ? 1 : 0; }).result || null; } catch (eFbQ) {}
+          if (!fbPostR || fbPostR.interstitial || fbPostR.signIn || Number(fbPostR.frames || 0) < 2) {
+            __mlsHydFatigue.dead = !fbPostR ? 'no-probe-answer' : (fbPostR.interstitial ? 'interstitial-after-reload' : (fbPostR.signIn ? 'sign-in-form-after-reload' : 'frameset-gone-after-reload'));
+            try { emit(appTabId, frozenRequestId, 'After the refresh, athenaOne did not come back signed in (' + __mlsHydFatigue.dead + '). MLS stopped rather than retry - sign in to athenaOne, then pull again.', 0, 0); } catch (eFbD) {}
+            return { ok: false, reason: 'no-athena-tab', identity: {}, visits: [], receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, fatigueDead: __mlsHydFatigue.dead }, error: 'MLS refreshed its athenaOne tab to recover from repeated read failures, and the tab did not come back as a signed-in athenaOne (' + __mlsHydFatigue.dead + '). Nothing further was attempted. Sign in to athenaOne, then pull again.' };
+          }
+        }
       }
       /* Quiet-pull visibility lease: make Athena render without focusing it or
          changing the clinician's selected tab. No reload, URL navigation,
@@ -11272,9 +11312,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          classify. The receipt carries the live streak (and the refresh stamp
          when one just fired) so the day ledger can see the breaker work. */
       __mlsHydNote(res.ok === true, String(res.reason || ''));
+      __mlsHydFatigue.chartsSinceRefresh = (__mlsHydFatigue.chartsSinceRefresh || 0) + 1;
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
       res.receipt.hydStreak = __mlsHydFatigue.streak;
-      if (__mlsHydFatigue.pendingStamp) { res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }
+      if (__mlsHydFatigue.pendingStamp) { if (__mlsHydFatigue.pendingStamp === 'proactive') res.receipt.proactiveRefresh = true; else res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
       var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0);
       res.receipt.complete = proven;

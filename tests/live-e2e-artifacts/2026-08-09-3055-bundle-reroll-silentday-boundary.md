@@ -260,6 +260,44 @@ settle as calm "re-checking…" (pending, never final-⚠); a redo renders
 launder the first-attempt metric. New acceptance dimension per the owner:
 **every patient positively resolved, every pull, panel telling the truth.**
 
+## 8. The block, the cure attended, and prevention over recovery (added ~22:00)
+
+- **Main is red — deterministically.** The full gate fails in
+  `avatar-listens-while-speaking.test.js` ("barge-in must require two words").
+  My avatar files are byte-identical to origin/main AND the test fails 5/5 in
+  ISOLATION on a quiet box — b991 shipped an internally red combination. The
+  3.0.55 train holds; the avatar lane was pinged directly with a 30-minute
+  window, after which the supervisor puts ship-over-documented-red-or-hold to
+  the owner. Never weaken another lane's test; never stall silently either.
+- **The bodies-off verification (owner's note)**: with pullVisitBodies false,
+  si still runs full chart read+parse+persist per scheduled patient; only the
+  encounter-bodies stage is skipped, recorded as visitsSkipped with the row
+  complete. Pinned behaviorally (call-counted through the real pull in the
+  month-routing harness).
+- **The attended cure worked in sequence**: the re-fired day-9 pull on the
+  degraded tab couldn't even flip the calendar day ("Athena is still
+  switching days" ×3 over 143s → nav-failed) — the degradation had sunk BELOW
+  chart reads to basic navigation, session still alive. Performed fb-1.1's
+  exact sequence by hand: pre-probe (no interstitial, no sign-in, frames ok) →
+  browser-level navigate of the engine's own tab → landing asserted (5 frames,
+  DEPARTMENTID reachable, fresh CSRF minted) → day-9 re-fired and it sailed
+  through the day flip + schedule phase into chart reads. The reload cures
+  navigation instantly; the discriminator's chart-level verdict pending.
+- **fb-1.2 — prevention over recovery** (supervisor): a PROACTIVE tab recycle
+  every 15 charts — derived from the earliest observed degradation onset
+  (~19 charts of prior driving, July4 position-2; 4-chart margin), NOT a
+  round-number default. 5-min spacing, between charts only, same
+  probe→reload→assert→dead-latch discipline, does NOT burn the reactive caps,
+  receipts distinguish proactiveRefresh from fatigueRefresh. The reactive
+  breaker stays as the safety net for the unpredictable case. 26 checks.
+- **fa-1.0**: cleared rows keep firstAttempt {reason, read receipt, histogram,
+  entry, streak} through the sweep replace AND into the day ledger
+  (perPatientDiag fa/redo/cleared) — first-attempt convergence evidence is
+  durable, not capture-dependent.
+- **ppt-2.1**: finalizeVerdict settles every receipt patient terminally
+  (idempotent under the chart-level tally) — no "re-checking" survives a
+  pull's end.
+
 ## Open at write time
 
 - Day 9 (22 charts, biggest of the month) mid-flight; splits at close.

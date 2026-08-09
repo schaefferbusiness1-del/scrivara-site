@@ -1215,7 +1215,19 @@
       (receipt.patients || []).forEach(function (p) {
         if (!p) return;
         var pid = String(p.patientId || "");
-        if (p.complete === true) { storedOk++; if (pid) perPatient[pid] = "ok"; return; }
+        if (p.complete === true) {
+          storedOk++;
+          if (pid) perPatient[pid] = "ok";
+          /* fa-1.0: a row that cleared on re-check or redo keeps its
+             first-attempt evidence IN THE LEDGER - first-attempt convergence
+             is the bar, and until now the cure overwrote its own evidence
+             (the split was capture-dependent and captures died three ways in
+             one night). Bounded: reason head + the compact read receipt. */
+          if (pid && (p.firstAttempt || p.axEntry === "body-depth")) {
+            perPatientDiag[pid] = { fa: p.firstAttempt ? { reason: String(p.firstAttempt.reason || "").slice(0, 80), receipt: p.firstAttempt.visitsReadReceipt || null, hist: p.firstAttempt.hist || null } : null, redo: p.axEntry === "body-depth", cleared: true };
+          }
+          return;
+        }
         var why = String(p.reason || "incomplete").slice(0, 120);
         if (pid) perPatient[pid] = why;
         reasons[why] = (reasons[why] || 0) + 1;
@@ -3585,6 +3597,17 @@
       if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);
     }
     function finalizeVerdict() {
+      /* ppt-2.1 (supervisor 2026-08-09): every row must be TERMINAL when the
+         pull ends - a row still reading "re-checking" at close is unresolved
+         and fails the owner's every-patient-saved bar. One final settle per
+         receipt patient; the chart-level tally dedups, so this is idempotent
+         (finalizeVerdict may run twice by design). */
+      try {
+        (receipt.patients || []).forEach(function (fp) {
+          if (!fp) return;
+          ppSettle(fp.name || "", fp.complete === true, fp.complete === true ? "" : ((fp.reason || "incomplete") + historyDiagSuffix(fp)), false, { surfaceResets: fp.surfaceResets, chartSurface: fp.chartSurface, pid: fp.patientId, axe: fp.axEntry });
+        });
+      } catch (eTerm) {}
       receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
       /* An empty verified provider day has no patient history targets and is
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
@@ -3716,7 +3739,7 @@
           if (sp.complete === true) { sp.sweepRecovered = sweepPass; recoveredIds[pid] = true; }
           var replaced = false;
           for (var ri = 0; ri < receipt.patients.length; ri++) {
-            if (String(receipt.patients[ri] && receipt.patients[ri].patientId || "") === pid) { if (!sp.name && receipt.patients[ri].name) sp.name = receipt.patients[ri].name; receipt.patients[ri] = sp; replaced = true; break; }
+            if (String(receipt.patients[ri] && receipt.patients[ri].patientId || "") === pid) { if (!sp.name && receipt.patients[ri].name) sp.name = receipt.patients[ri].name; /* fa-1.0 (supervisor 2026-08-09): the re-check that resolves a row must not destroy the evidence of its first attempt - first-attempt convergence is the bar and its receipts were being overwritten by the cure. Bounded compact copy. */ if (!sp.firstAttempt && receipt.patients[ri].complete !== true) { var faP = receipt.patients[ri]; sp.firstAttempt = { reason: String(faP.reason || "").slice(0, 120), visitsReadReceipt: faP.visitsReadReceipt || null, hist: faP.visitsFailedHistogram || null, axEntry: String(faP.axEntry || ""), hydStreak: Number(faP.hydStreak || 0) }; } receipt.patients[ri] = sp; replaced = true; break; }
           }
           /* deferred-after-timeout patients never entered receipt.patients in
              the main loop; adopting their swept entry must also count them
