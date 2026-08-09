@@ -419,6 +419,7 @@ const tests = [
   'patient-store-batch-runtime.test.js',
   'managed-pull-persistence-performance-runtime.test.js',
   'maintenance-persistence-queue-runtime.test.js',
+  'chart-structure-idle-scan-runtime.test.js',
   'clean-sections-boot-maintenance-performance-runtime.test.js',
   'visitfix-boot-maintenance-performance-runtime.test.js',
   'patient-save-wrapper-ownership-runtime.test.js',

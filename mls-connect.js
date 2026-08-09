@@ -8419,9 +8419,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ------------------------------------------------------------------------- */
 (function () {
   'use strict';
-  try { if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.1.0') return; } catch (e) { return; }
+  try {
+    if (window.__mlsChartStructure && window.__mlsChartStructure.version === '1.2.0') return;
+    /* A same-document hot upgrade must stop the retired v1.1 three-second
+       closure before installing the event-owned scan. Full reloads also take
+       this harmless path with no prior owner. */
+    if (window.__mlsChartStructure && isFn(window.__mlsChartStructure_revert)) window.__mlsChartStructure_revert();
+  } catch (e) {}
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   /* ---------- tiny helpers ---------- */
   function S(x) { return (x == null ? '' : String(x)); }
@@ -8698,10 +8704,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!M || !isFn(M.addVisit)) return 0;
     var n = 0;
     visits.forEach(function (v) {
-      try { M.addVisit(p.id, { date: v.date, type: v.type || 'Office visit', raw: v.raw }, { source: 'athena-copy', persist: false }); n++; } catch (e) {}
+      try {
+        M.addVisit(p.id, { date: v.date, type: v.type || 'Office visit', raw: v.raw },
+          { source: 'athena-copy', persist: false, _patientRef: p });
+        n++;
+      } catch (e) {}
     });
-    /* b121 clobber fix: the live honest addVisit drops our persist:false and writes each visit to localStorage via its own re-fetched clone; the caller's p is a SEPARATE stale clone whose later upsert(p) would wipe them. Re-adopt the freshly-persisted .visits onto p. */
-    if (n) { try { var _ps = getPatients(); for (var _i = 0; _i < _ps.length; _i++) { if (_ps[_i] && _ps[_i].id === p.id) { if (Array.isArray(_ps[_i].visits)) p.visits = _ps[_i].visits; break; } } } catch (e) {} }
+    /* b979: persist:false work belongs to this exact COW candidate. Passing
+       _patientRef prevents a second roster lookup/clone per repaired patient
+       and guarantees the one yielded maintenance row owns every new visit. */
     return n;
   }
 
@@ -8804,7 +8815,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* =========================================================================
-   * Interception 2 - path-agnostic heartbeat.
+   * Interception 2 - path-agnostic background repair.
    * Catches: the day-pull's DIRECT summary write (p.summary = ...+cleanText),
    * its giant {type:'Chart summary', raw:<all>} visit, and any record polluted
    * before this shipped. Idempotent via _mlsStructuredV1 + field-emptiness.
@@ -8861,70 +8872,161 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
     return true;
   }
-  function sweep() {
+  var autoSweepRunning = false, autoSweepRequested = false, autoSweepStopped = false;
+  var autoSweepSource = null, autoSweepListeners = [], bootSweepTimer = null, autoRetryTimer = null;
+  function sweepGeneration() {
+    var sweepCache = window.__mlsStoreCache, vNow = null;
+    var sweepSanitizer = window.__mlsSummarySanitize || null;
+    var sweepStrip = (sweepSanitizer && isFn(sweepSanitizer.strip)) ? sweepSanitizer.strip : null;
+    var sweepSummaryMode = (typeof API === 'object' && API) ? API.summaryMode : null;
+    var sweepGetPatients = isFn(window.getPatients) ? window.getPatients : null;
+    if (sweepCache && typeof sweepCache.verFor === 'function' && typeof window.uns === 'function') {
+      try { vNow = sweepCache.verFor(window.uns('patients')); } catch (eScoped) { vNow = null; }
+    }
+    if (vNow === null || vNow === undefined) {
+      vNow = (sweepCache && typeof sweepCache.ver === 'function') ? sweepCache.ver() : -1;
+    }
+    return { ver: vNow, sanitizer: sweepSanitizer, strip: sweepStrip, summaryMode: sweepSummaryMode, getPatients: sweepGetPatients };
+  }
+  function sameSweepGeneration(a, b) {
+    return !!(a && b && a.ver === b.ver && a.sanitizer === b.sanitizer && a.strip === b.strip &&
+      a.summaryMode === b.summaryMode && a.getPatients === b.getPatients);
+  }
+  function sameSweepDependencies(a, b) {
+    return !!(a && b && a.sanitizer === b.sanitizer && a.strip === b.strip &&
+      a.summaryMode === b.summaryMode && a.getPatients === b.getPatients);
+  }
+  function stampSweepGeneration(generation) {
+    generation = generation || sweepGeneration();
+    STATS.lastSweepVer = generation.ver;
+    STATS.lastSweepSanitizer = generation.sanitizer;
+    STATS.lastSweepStrip = generation.strip;
+    STATS.lastSweepSummaryMode = generation.summaryMode;
+    STATS.lastSweepGetPatients = generation.getPatients;
+  }
+  function lastSweepGeneration() {
+    return {
+      ver: STATS.lastSweepVer, sanitizer: STATS.lastSweepSanitizer, strip: STATS.lastSweepStrip,
+      summaryMode: STATS.lastSweepSummaryMode, getPatients: STATS.lastSweepGetPatients
+    };
+  }
+  function pullOwnsRoster() {
     try {
-      /* 2026-07-28 freeze fix: this 3s loop regex-scanned the WHOLE roster
-         forever. Gate on the store version counter - only a write can make
-         new work - and never burn CPU in a hidden tab. */
-      if (document.hidden || sweepPersistPending) return;
-      /* 2026-07-29: wait for pull ownership to clear before stamping a version. */
-      try {
-        var busyAt = Number(window.__mlsPullBusyAt || 0);
-        var pulling = (busyAt && (Date.now() - busyAt) < 10000) ||
-          !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running);
-        if (pulling) return;
-      } catch (eBusy) {}
-      try {
-        var sweepCache = window.__mlsStoreCache, vNow = null;
-        var sweepSanitizer = window.__mlsSummarySanitize || null;
-        var sweepStrip = (sweepSanitizer && isFn(sweepSanitizer.strip)) ? sweepSanitizer.strip : null;
-        var sweepSummaryMode = (typeof API === 'object' && API) ? API.summaryMode : null;
-        var sweepGetPatients = isFn(window.getPatients) ? window.getPatients : null;
-        if (sweepCache && typeof sweepCache.verFor === 'function' && typeof window.uns === 'function') {
-          try { vNow = sweepCache.verFor(window.uns('patients')); } catch (eScoped) { vNow = null; }
-        }
-        if (vNow === null || vNow === undefined) {
-          vNow = (sweepCache && typeof sweepCache.ver === 'function') ? sweepCache.ver() : -1;
-        }
-        if (vNow === STATS.lastSweepVer && sweepSanitizer === STATS.lastSweepSanitizer &&
-            sweepStrip === STATS.lastSweepStrip && sweepSummaryMode === STATS.lastSweepSummaryMode &&
-            sweepGetPatients === STATS.lastSweepGetPatients &&
-            STATS.sweepPasses > 0) return;
-        STATS.lastSweepVer = vNow;
-        STATS.lastSweepSanitizer = sweepSanitizer;
-        STATS.lastSweepStrip = sweepStrip;
-        STATS.lastSweepSummaryMode = sweepSummaryMode;
-        STATS.lastSweepGetPatients = sweepGetPatients;
-      } catch (eV) {}
-      var persistScope = window.__mlsMaintenancePersist && isFn(window.__mlsMaintenancePersist.capture) ? window.__mlsMaintenancePersist.capture() : null;
-      var ps = getPatients(); if (!ps.length) return;
-      var touched = 0, dirty = [];
-      for (var i = 0; i < ps.length; i++) {
-        if (needsWork(ps[i])) {
-          var candidate = copyPatientForSweep(ps[i]);
-          if (sweepPatient(candidate, true)) { ps[i] = candidate; touched++; dirty.push(candidate); }
-        }
-      }
-      STATS.sweepPasses++;
-      if (touched) {
-        persistSweep(ps, dirty, persistScope, function () {
-          try { console.log('[MLS chart-structure] structured ' + touched + ' patient record' + (touched === 1 ? '' : 's')); } catch (e) {}
-          try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e) {}
-          try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e) {}
-        });
-      }
+      var busyAt = Number(window.__mlsPullBusyAt || 0);
+      return !!((busyAt && (Date.now() - busyAt) < 10000) ||
+        (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running));
+    } catch (e) { return false; }
+  }
+  function armAutomaticRetry() {
+    if (autoSweepStopped || autoRetryTimer) return;
+    try {
+      autoRetryTimer = setTimeout(function () {
+        autoRetryTimer = null;
+        if (!autoSweepStopped) sweep();
+      }, 1500);
     } catch (e) {}
   }
+  function finishAutomaticSweep(result) {
+    autoSweepRunning = false; sweepPersistPending = false;
+    var completed = !!(result && !result.stale && !result.error);
+    var finalGeneration = sweepGeneration();
+    var dependencyChanged = !!(completed && autoSweepSource && !sameSweepDependencies(autoSweepSource, finalGeneration));
+    if (completed) {
+      STATS.sweepPasses++;
+      if (!dependencyChanged) stampSweepGeneration(finalGeneration);
+      else STATS.lastSweepVer = null;
+    } else {
+      STATS.lastSweepVer = null;
+    }
+    var requested = autoSweepRequested || dependencyChanged;
+    autoSweepRequested = false;
+    autoSweepSource = null;
+    /* Failures stay retryable, but never spin a failed account/session in a
+       microtask loop. The next exact patient/session/visibility signal owns
+       the retry; a newer generation observed while this run was active may
+       start immediately. */
+    if (!autoSweepStopped && requested) {
+      try { if (!document.hidden) sweep(); } catch (e) {}
+    }
+  }
+  function sweep() {
+    try {
+      /* b979: the retired 3-second owner synchronously regex-scanned every
+         patient and produced repeat 650ms+ long tasks on a large roster. The
+         timer is gone. Canonical signals now admit one exact-generation scan
+         through the shared session-ready/input-aware maintenance owner. At
+         most eight patients are prepared per yielded turn, keeping each slice
+         short while allowing a large account to finish in useful time. */
+      if (autoSweepStopped) return;
+      if (document.hidden) { autoSweepRequested = true; return; }
+      if (pullOwnsRoster()) { autoSweepRequested = true; armAutomaticRetry(); return; }
+      var generation = sweepGeneration();
+      if (STATS.sweepPasses > 0 && sameSweepGeneration(generation, lastSweepGeneration())) return;
+      if (autoSweepRunning) {
+        if (!sameSweepGeneration(generation, autoSweepSource)) autoSweepRequested = true;
+        return;
+      }
+      var queue = window.__mlsMaintenancePersist;
+      if (!queue || !isFn(queue.scan)) { autoSweepRequested = true; return; }
+      autoSweepRunning = true; autoSweepRequested = false; sweepPersistPending = true; autoSweepSource = generation;
+      var touched = 0;
+      var receipt = queue.scan({
+        chunkSize: 8,
+        fields: ['summary', 'problems', 'meds', 'allergies', 'insurance', 'visits', '_mlsStructuredV1', 'updated'],
+        prepare: function (patient) {
+          if (autoSweepStopped || !patient || !needsWork(patient)) return null;
+          var candidate = copyPatientForSweep(patient);
+          if (!sweepPatient(candidate, true)) return null;
+          candidate.updated = Date.now(); touched++;
+          return candidate;
+        },
+        onSaved: function () {
+          if (!touched) return;
+          try { console.log('[MLS chart-structure] structured ' + touched + ' patient record' + (touched === 1 ? '' : 's')); } catch (e) {}
+          try { if (isFn(window.renderProfile)) window.renderProfile(); } catch (e2) {}
+          try { if (window.__mlsVisitUI && isFn(window.__mlsVisitUI.render)) window.__mlsVisitUI.render(true); } catch (e3) {}
+        }
+      });
+      if (!receipt || !isFn(receipt.then)) { finishAutomaticSweep({ error: new Error('Chart maintenance scan did not return a receipt.') }); return; }
+      Promise.resolve(receipt).then(finishAutomaticSweep, function (error) { finishAutomaticSweep({ error: error }); });
+    } catch (e) { finishAutomaticSweep({ error: e }); }
+  }
+  function exactPatientStorage(ev) {
+    try {
+      if (!ev || ev.storageArea && ev.storageArea !== localStorage) return false;
+      if (ev.key == null) return true;
+      return isFn(window.uns) && String(ev.key) === String(window.uns('patients'));
+    } catch (e) { return false; }
+  }
+  function bindAutoSweep(target, name, fn, capture) {
+    try { target.addEventListener(name, fn, !!capture); autoSweepListeners.push([target, name, fn, !!capture]); } catch (e) {}
+  }
+  function onPatientSignal() { sweep(); }
+  function onPatientStorage(ev) { if (exactPatientStorage(ev)) sweep(); }
+  function onHydrationProgress(ev) {
+    try {
+      var detail = ev && ev.detail;
+      if (!detail || detail.key !== 'patients:hydrate') return;
+      if (/^(?:completed|partial|failed|canceled|timed_out)$/.test(String(detail.status || ''))) sweep();
+    } catch (e) {}
+  }
+  function onVisibilitySweep() { try { if (!document.hidden) sweep(); } catch (e) {} }
 
   /* ---------- install (lazy: sinks/models appear after this prepended module) ---------- */
-  var installTimer = null, sweepTimer = null, installed = false;
+  var installTimer = null, installed = false;
   function tryInstall() {
     if (!installed && wrapSave()) { installed = true; if (installTimer) { clearInterval(installTimer); installTimer = null; } }
   }
   try { installTimer = setInterval(tryInstall, 800); } catch (e) {}
   tryInstall();
-  try { sweepTimer = setInterval(sweep, 3000); } catch (e) {}
-  setTimeout(sweep, 1500);
+  bindAutoSweep(window, 'storage', onPatientStorage, false);
+  bindAutoSweep(window, 'pageshow', onPatientSignal, false);
+  bindAutoSweep(document, 'visibilitychange', onVisibilitySweep, false);
+  bindAutoSweep(window, 'mls:patient-record-updated', onPatientSignal, false);
+  bindAutoSweep(window, 'mls:ui-ready', onPatientSignal, false);
+  bindAutoSweep(window, 'mls:job-progress', onHydrationProgress, false);
+  bindAutoSweep(window, 'mls:session-boundary', onPatientSignal, false);
+  try { bootSweepTimer = setTimeout(sweep, 1500); } catch (e) {}
 
   /* ---------- public API ---------- */
   var API = {
@@ -8956,8 +9058,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsChartStructure = API;
 
   window.__mlsChartStructure_revert = function () {
+    autoSweepStopped = true; autoSweepRequested = false;
     try { if (installTimer) clearInterval(installTimer); } catch (e) {}
-    try { if (sweepTimer) clearInterval(sweepTimer); } catch (e) {}
+    try { if (bootSweepTimer) clearTimeout(bootSweepTimer); } catch (e) {}
+    try { if (autoRetryTimer) clearTimeout(autoRetryTimer); } catch (eRetry) {}
+    for (var li = 0; li < autoSweepListeners.length; li++) {
+      try { autoSweepListeners[li][0].removeEventListener(autoSweepListeners[li][1], autoSweepListeners[li][2], autoSweepListeners[li][3]); } catch (eListener) {}
+    }
+    autoSweepListeners = [];
     try { if (window._savePatientChart && window._savePatientChart.__orig) window._savePatientChart = window._savePatientChart.__orig; } catch (e) {}
     try { delete window.__mlsChartStructure; } catch (e) { window.__mlsChartStructure = undefined; }
     return 'reverted (fields already written stay; nothing is unwritten)';
