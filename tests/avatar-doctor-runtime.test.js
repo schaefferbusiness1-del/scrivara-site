@@ -487,7 +487,17 @@ assert(source.includes("'friendly', 'Warm & friendly (default)'"), 'the tone set
    exit path INCLUDING panel close; the portrait is size-capped client-side;
    the Visit card mounts at the bottom of #visitView, never near the banner. */
 assert(/function close\(\) \{[\s\S]{0,120}stopCamera/.test(source), 'panel close no longer stops the camera');
-assert(source.includes('dataUrl.length > 150000'), 'the client-side portrait size cap was removed');
+/* av-6.0.7: the cap moved 150000 -> 600000 WITH the stylized portrait going 256px -> 512px
+   (owner: "the photo needs to be higher res like not try to image to avatar off a small low
+   quaility image it saves"). It is a CROSS-REPO constant: src/routes/patientAvatar.js drops any
+   faceImage over its own cap, and that branch has no else, so a client cap above the server's
+   means the doctor saves a photo and silently gets no portrait at all. The two must move
+   together — the backend suite carries the mirror of this pin. */
+assert(source.includes('dataUrl.length > 600000'), 'the client-side portrait size cap was removed or changed');
+assert(/size = 512;\s*\/\* was 256/.test(source) || source.includes('var size = 512'),
+  'the saved portrait dropped back to a low-resolution canvas');
+assert(/faceImageRefused/.test(source),
+  'the client no longer reads the server\'s portrait refusal — a dropped photo would be silent again');
 assert(source.includes("gid('visitView')"), 'the Visit-page card lost its anchor');
 /* 2026-08-05 round 5, owner order: the bottom placement was invisible below
    the fold — the card now leads the visit view. (The app's top patient banner
