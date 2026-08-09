@@ -86,6 +86,14 @@ assert(/var by0 = Math\.max\(faceT, \(fringeBottom === null \? faceT : fringeBot
 assert(source.includes('if (!look.glasses) {'),
   'the brow measure no longer stands down for glasses — a frame lies across that band and reads as the thickest brows on every bespectacled face');
 assert(source.includes('faceLook: lookNow'), 'Setup no longer saves the chosen appearance');
+/* av-6.0.4: the vision route can claim eyebrow colour, but the selector has
+   only '' and the sentinel 'set' as option values. Assigning the claimed hex
+   directly clears the visible selection and lets the control contradict the
+   drawing. Pin parity with the already-correct on-device matcher. */
+assert(!source.includes("browColPick.value = lookNow.browCol || ''"),
+  'the AI face-match path assigns a hex value to a selector that only accepts the set sentinel');
+assert(/if \(lookNow\.browCol\) \{[\s\S]{0,420}vbo\.value = 'set'[\s\S]{0,260}browColPick\.value = 'set';[\s\S]{0,180}browColWell\.value = lookNow\.browCol/.test(source),
+  'the AI face-match path must expose a claimed brow colour in both the selector and colour well');
 assert(source.includes('kiosk.pinSet === false'), 'the exit gate must compare === false — unknown means LOCKED');
 assert(source.includes('kiosk.pinSet = null'), 'openKiosk must seed the PIN state as UNKNOWN, never as unlocked');
 assert(source.includes('if (!r.ok || j.ok === false)'), 'a non-2xx turn is being walked as a successful turn again');
