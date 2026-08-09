@@ -8,8 +8,8 @@
  * PHONE app UI from scratch."
  *
  * ph2-1.1.0 (owner, 2026-08-08): "the UI looks great but get rid of the
- * Scrivara stuff and make all the buttons and settings actually work and add
- * any quality of life features it needs also the top right 3 lined button
+ * [old-brand] stuff and make all the buttons and settings actually work and
+ * add any quality of life features it needs also the top right 3 lined button
  * doesn't work."
  *
  * THE THREE-LINED BUTTON. It drew the universal sign for "there is a menu
@@ -32,15 +32,17 @@
  * to phone-setup.html, which is that app's install guide -- so the two routes
  * out of MLS on a phone both left MLS. Both are gone.
  *
- * It was called "Scrivara" until 2026-08-08, when the owner read "Put Scrivara
- * on your iPhone" on his own phone and said: "this should save mlsscribe
- * everywhere, fix everywhere what it says the wrong thing to." It is "MLS
- * Scribe" now, in every string a person can read -- not bare "MLS", because
- * this workspace already installs under that name and two icons reading "MLS"
- * on one Home Screen are indistinguishable. The backend host
- * (scrivara-backend.onrender.com) and the bundle id (com.mlsscribe.app) are
- * NOT renamed: one is a live address and the other is permanent once a store
- * build is uploaded under it.
+ * The product carried a different brand name until 2026-08-08, when the owner
+ * read it on his own phone above an MLS logo and the mlsscribe.com address bar
+ * and said: "this should save mlsscribe everywhere, fix everywhere what it says
+ * the wrong thing to." Everything a person can read is "MLS Scribe" now -- not
+ * bare "MLS", because this workspace already installs under that name and two
+ * icons reading "MLS" on one Home Screen are indistinguishable. ONE string was
+ * left behind and it is an address, not a brand: the live API host. Renaming it
+ * in the client does not rename the server, it points the product at a 404.
+ * RENAME_THE_API_HOST.md is the runbook, and tests/one-product-name.test.js
+ * asserts that host is still PRESENT so a later sweep cannot finish the job
+ * into an outage.
  *
  * WHAT WAS THERE BEFORE, AND WHY REPLACING IT WAS THE ONLY HONEST FIX
  * ------------------------------------------------------------------
