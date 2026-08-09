@@ -428,6 +428,41 @@ assert(source.includes('card.contains(document.activeElement)'), 'the focus guar
    2. faceReadPortrait must not hand back a bare null. Three different give-ups shared one, so
       Setup printed one generic sentence for causes wanting opposite actions (move closer vs
       change the light vs change the background). */
+/* ---- av-6.0.6: THE MEDIAN OPT-IN IS TAKEN BY EXACTLY ONE CALL SITE -------------------
+   patchMedian has NINE call sites and its 4th parameter is an OPT-IN to a true per-patch
+   median. The first attempt made it an opt-OUT and eight sites changed silently, costing the
+   glasses read. Then, renaming the parameter from asMean to trueMedian silently flipped a
+   SECOND site (skinCut, which exists to BE the mean for every dark-mass threshold) because it
+   still passed a 4th argument from the earlier attempt. Neither was visible in a diff; both
+   were found by COUNTING ARGUMENTS at every site. So the count is the pin. */
+{
+  const sites = [];
+  let at = 0;
+  while ((at = source.indexOf('patchMedian(', at + 1)) > 0) {
+    if (source.slice(at - 9, at).indexOf('function') >= 0) continue;
+    let depth = 0, j = source.indexOf('(', at);
+    const start = j;
+    for (; j < source.length; j++) {
+      if (source[j] === '(') depth++;
+      else if (source[j] === ')') { depth--; if (!depth) break; }
+    }
+    let d2 = 0, args = 1;
+    for (const ch of source.slice(start + 1, j)) {
+      if ('([{'.includes(ch)) d2++;
+      else if (')]}'.includes(ch)) d2--;
+      else if (ch === ',' && d2 === 0) args++;
+    }
+    sites.push(args);
+  }
+  assert(sites.length >= 8, 'patchMedian call sites vanished — this pin counts them: ' + sites.length);
+  const optedIn = sites.filter((a) => a >= 4).length;
+  assert.strictEqual(optedIn, 1,
+    'exactly ONE patchMedian call site may opt in to the true median (the skin sample). Found ' +
+    optedIn + ' of ' + sites.length + '. Every other sample — chin, cheek row, brow row, forehead, ' +
+    'bridge, top colour and skinCut — is calibrated against the MEAN, and skinCut in particular ' +
+    'exists to BE the mean for every dark-mass threshold.');
+}
+
 assert(source.indexOf('faceMaskAttempt(false)') > 0,
   'the unbalanced first attempt was removed - white balance must never run unconditionally');
 assert(/if \(!attempt\.head && wbOn\)[\s\S]{0,200}faceMaskAttempt\(true\)/.test(source),

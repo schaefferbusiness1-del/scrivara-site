@@ -2563,9 +2563,25 @@
     }
     function atX(fr) { return Math.round(faceRun.L + faceW * fr); }
     function atY(fr) { return Math.round(faceT + faceH * fr); }
-    function patchMedian(spots, r, skinOnly) {
+    /* `trueMedian` is OPT-IN and every existing call site omits it (av-6.0.6).
+       ⛔ THIS IS THE SECOND ATTEMPT, AND THE FIRST ONE IS THE REASON FOR THE OPT-IN.
+       The name says median and the vote ACROSS the five patches is one, but WITHIN a patch
+       this sums and divides — and a mean cannot reject an outlier, it only dilutes itself
+       with one. That is the owner's complaint restated exactly: "it needs to see the skin
+       color of my face not my background + my face." The mask+component test excludes the
+       wall, but it cannot exclude what is genuinely inside the face component and genuinely
+       not skin — a spectacle rim, a nostril shadow, stubble, the dark line of a lid.
+       The first attempt added an opt-OUT flag and set it at the skin call. patchMedian has
+       TEN call sites, so that silently switched the other EIGHT — chin, cheek row, brow row,
+       forehead, bridge, top colour — and the glasses read depends on the brow and bridge
+       samples: avatar-photo-match-proof went 39 -> 38, and three fixes aimed at the skin
+       path did nothing because the skin path was never what broke. Opt-IN inverts that: a
+       call site that says nothing keeps the statistic it was calibrated on, so only the ONE
+       sample I am deliberately changing can move. See the memory note this cost:
+       a-flag-on-a-shared-helper-must-default-to-shipped. */
+    function patchMedian(spots, r, skinOnly, trueMedian) {
       var cols = spots.map(function (sp) {
-        var acc = [0, 0, 0], n = 0;
+        var acc = [0, 0, 0], n = 0, pool = trueMedian ? [] : null;
         for (var py = sp[1] - r; py <= sp[1] + r; py++) {
           for (var pxx = sp[0] - r; pxx <= sp[0] + r; pxx++) {
             if (pxx < 0 || py < 0 || pxx >= M || py >= M) continue;
@@ -2588,10 +2604,20 @@
               if (!mask[si]) continue;
               if (label[si] !== best.id) continue;
             }
-            var q = px(pxx, py); acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
+            var q = px(pxx, py);
+            if (pool) pool.push(q);
+            acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
           }
         }
-        return n ? [acc[0] / n, acc[1] / n, acc[2] / n] : null;
+        if (!n) return null;
+        if (!pool) return [acc[0] / n, acc[1] / n, acc[2] / n];
+        /* ranked by LUMINANCE and the whole pixel returned, so the three channels stay from
+           the same pixel. Averaging channels independently can synthesise a hue that appears
+           nowhere in the photograph, which is the same class of error one level down — and
+           `lum` is the same weighting medianCol uses for the vote across patches, so the two
+           stages agree about what "middle" means. */
+        pool.sort(function (a2, b2) { return lum(a2) - lum(b2); });
+        return pool[Math.floor((pool.length - 1) / 2)];
       }).filter(Boolean);
       return medianCol(cols);
     }
@@ -2602,27 +2628,37 @@
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
                             [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skinRef;
-    /* ⛔ REVERTED, HONESTLY, AND LEFT WIRED FOR THE NEXT ATTEMPT. The per-patch statistic
-       here is still the MEAN (asMean=true), i.e. exactly what shipped. Switching this one
-       call to the true median — which is the right statistic and is what the owner is asking
-       for when he says "it needs to see the skin color of my face not my background + my
-       face" — reproducibly costs the glasses detection on fixture C of
-       avatar-photo-match-proof (39 -> 38). I re-based skinL and both chDist thresholds on the
-       mean to insulate them and it STILL failed, so the coupling is somewhere I have not yet
-       measured, and three guesses is where guessing stops. The median path is implemented and
-       one argument away; it does not ship until the glasses regression is explained, because a
-       matcher that trades a correct spectacle read for a better swatch is not an improvement.
-       NEXT: instrument fixture C and print browMed / rimThin / frameLike under both statistics
-       before touching anything. */
+    /* THE 4th ARGUMENT IS THE OPT-IN, AND THIS IS THE ONLY CALL SITE THAT TAKES IT (av-6.0.6).
+       The per-patch statistic here is now a TRUE MEDIAN. The first attempt at this made the
+       flag an opt-OUT and cost the glasses read, because patchMedian has TEN call sites and
+       eight of them silently changed with it; inverting the flag confines the change to this
+       one sample, which is all I ever wanted to move. Both photo suites are green (39/39,
+       40/40), and the refactor was proven inert before the opt-in was added.
+       ⛔ AND IT DID NOT FIX WHAT IT WAS AIMED AT — measured on both real photographs, so this
+       is recorded rather than claimed. The median moves the sampled value a few units
+       (p1 #9d6c64 -> #a16765, p2 #af6228 -> #ab602b) and `derived` is IDENTICAL either way:
+       the skin is REFUSED by the hue gate in both, so nothing the doctor sees changes. The
+       statistic was never the blocker. The sampled colour is a muddy rose around hue 30-34°
+       on a fair-skinned man, which means the SAMPLE IS NOT LANDING ON HIS CHEEK — the next
+       lever is WHERE the five patches sit and what the mask admits, not how they are averaged.
+       The median stays because it is the right statistic, it is free, and it cannot dilute
+       itself with a spectacle rim; it is just not the cure. */
     /* the SAME five patches read as a mean, used ONLY to place the dark-mass cuts below.
        Every one of those thresholds is an offset from this number and was tuned against it;
        re-basing them on the median moved them all at once and cost a glasses detection that
        had been passing. The claim the doctor sees is `skin`, the median — an actual pixel
        colour from his face rather than an average of his cheek and whatever shared the patch. */
+    /* ⛔ THREE ARGUMENTS, DELIBERATELY — skinCut EXISTS to be the MEAN. Every dark-mass cut
+       below is an offset from it and was calibrated against the mean, so this is the one
+       sample that must NOT follow the opt-in above. When the 4th parameter was renamed from
+       asMean to trueMedian, this call still read `, 2, true, true)` from the earlier attempt
+       and silently became a median too — which would have moved every threshold at once, the
+       exact failure the opt-in was introduced to prevent, one rename later. Caught by counting
+       arguments at all ten call sites rather than by reading the diff. */
     var skinCut = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
-                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skin;
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true) || skin;
     var skinL = lum(skinCut);
     /* the BAND THE DOCTOR IS TOLD must describe the colour he is SHOWN, so it reads the
        median like the swatch does — not the threshold statistic. */
