@@ -314,7 +314,11 @@ assert(/if \(cp\.area > M \* M \* 0\.\d+\) continue;/.test(source),
   'the too-large guard was removed — a wall the colour of skin would be measured as a head');
 assert(source.includes('function rowRun'),
   'the row-width profile was removed — the chin can only be found where the width collapses toward the neck');
-assert(/if \(!best\) return null;/.test(source),
+/* av-6.0.5 replaced the bare `return null` with a shaped refusal that carries the REASON, so
+   this pin stopped naming the refusal and started naming one spelling of it. The claim is
+   unchanged and is what is asserted: the !best path must return WITHOUT a look, i.e. refuse
+   rather than fall through and describe the background. */
+assert(/if \(!best\) \{[\s\S]{0,400}return \{ look: null/.test(source),
   'the matcher must REFUSE when it cannot find a face rather than describe the background');
 assert(/patchMedian\(\[\[atX\(0\.20\), maxWY\]/.test(source) && /\], 2, true\)/.test(source),
   'skin must be sampled inside the MASK (skinOnly) on the box-relative cheekbone row — sampling by frame fraction is what read the doctor\'s shirt as skin');
@@ -412,6 +416,28 @@ assert(source.includes("view.querySelector('#mlsStages')"),
 assert(/rail[\s\S]{0,120}nextElementSibling[\s\S]{0,120}view\.firstElementChild/.test(source),
   'with no rail present the card must still take the very top — the fallback is half the claim');
 assert(source.includes('card.contains(document.activeElement)'), 'the focus guard on the re-assert was removed');
+
+/* ---- av-6.0.5: WHITE BALANCE IS A RETRY, AND A REFUSAL NAMES ITS REASON --------------
+   Two properties that a later simplification would destroy silently.
+   1. The white-balanced mask must run ONLY after an unbalanced attempt found no head. Gating
+      on the SIZE of the colour cast instead was measured and rejected: realfaces/p1.jpg, an
+      ordinary sunny street, has a 29% channel spread, so an 8% threshold fired on a photo that
+      already worked and made it claim SPECTACLES the man is not wearing. A retry cannot reach a
+      photo that succeeds. If someone later hoists wbPx into the first pass to tidy it up, this
+      fails.
+   2. faceReadPortrait must not hand back a bare null. Three different give-ups shared one, so
+      Setup printed one generic sentence for causes wanting opposite actions (move closer vs
+      change the light vs change the background). */
+assert(source.indexOf('faceMaskAttempt(false)') > 0,
+  'the unbalanced first attempt was removed - white balance must never run unconditionally');
+assert(/if \(!attempt\.head && wbOn\)[\s\S]{0,200}faceMaskAttempt\(true\)/.test(source),
+  'the white-balanced pass must be a RETRY, reached only when the first attempt found no head');
+assert(source.indexOf('reads as skin-coloured, so I cannot tell your face') > 0,
+  'the refusal must name the cause and its measured coverage, not return a bare null');
+assert(/wbUsed[\s\S]{0,400}found\.push/.test(source),
+  'a reading taken off a colour-corrected copy must DISCLOSE that it was corrected');
+assert(source.indexOf('return { look: null') > 0,
+  'faceReadPortrait must return a shaped refusal so the reason can travel to the doctor');
 assert(source.includes("gid('ez3flTranscript')"), 'the transcript insert lost its anchor');
 assert(source.includes('Pre-visit check-in #'), 'the transcript idempotency stamp was removed');
 assert(/function addToTranscript[\s\S]{0,1500}dispatchEvent\(new Event\('input'/.test(source), 'the transcript insert must fire an input event so the app mirror sees it');

@@ -279,7 +279,14 @@ function checks(out) {
   for (const k of Object.keys(CASES)) {
     const r = now.out[k];
     console.log(k.padEnd(4) + CASES[k].label.padEnd(42) +
-      (r ? JSON.stringify({ skin: r.look.skin, hair: r.look.hair, style: r.look.hairStyle, beard: r.look.beard, glasses: r.look.glasses, shirt: r.look.shirt }) : 'REFUSED (null)'));
+      /* av-6.0.5: a refusal is no longer a bare null — faceReadPortrait now returns
+         { look: null, found: [why] } so the doctor is told WHICH failure it was (92% of the
+         frame reading as skin wants a different action from a face that is too small). This
+         printer dereferenced r.look unconditionally and threw on the new shape, so it guards
+         on the look and prints the reason, which is more use than the word "null" was. */
+      (r && r.look
+        ? JSON.stringify({ skin: r.look.skin, hair: r.look.hair, style: r.look.hairStyle, beard: r.look.beard, glasses: r.look.glasses, shirt: r.look.shirt })
+        : ('REFUSED: ' + (((r && r.found) || []).join(' ') || '(no reason given)'))));
   }
   console.log('pageerrors:', now.errs.length ? now.errs.slice(0, 2) : 'none');
 
