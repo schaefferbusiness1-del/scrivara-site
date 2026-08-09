@@ -114,4 +114,26 @@ ok(runKeyMatch([mk('enc:1')], [mk('enc:1'), mk('enc:2')], 1) === false,
 ok(runKeyMatch([{ binding: null }], [mk('enc:1')], 1) === false,
   'functional: missing old binding -> refused, never guessed');
 
+/* ---- srr-1.2 (3.0.51) pins: chartSurface, identity re-poll, empty-frame re-expand,
+ *      and the si-side persistence (sr/surface/runId on state rows + day-end naming) ---- */
+ok(/var chartSurface = '';/.test(SRC) && /clincmp-ax/.test(SRC), '1.2: chartSurface derived');
+ok(/surfaceResetOps\.slice\(0, 6\), chartSurface: chartSurface,/.test(SRC), '1.2: receipt carries chartSurface');
+ok(/srrIdDeadline = Math\.min\(readDeadline, Date\.now\(\) \+ 5200\)/.test(SRC), '1.2: identity re-poll bounded 5.2s');
+ok(/srrGate\.ok\) break;[\s\S]{0,120}sleepWithinReadDeadline\(800\)/.test(SRC), '1.2: re-poll loops on 800ms, exits on gate.ok');
+ok(/identity-changed-after-surface-recycle/.test(SRC), '1.2: fail-closed verdict retained after patience');
+ok(/__srrReExpanded = \{\};/.test(SRC), '1.2: re-expand seen-set declared');
+const rxAt = SRC.indexOf('__srrReExpanded[String(ecCand.frameId)] = 1;');
+const dropAt = SRC.indexOf("if (ecNoise && !(ecGate && ecGate.ok)) ecDrop = 'noise-surface';");
+ok(rxAt > 0 && dropAt > rxAt, '1.2: re-expand runs BEFORE the noise drop');
+ok(/ecCand\.result\.ok === true && Number\(ecCand\.result\.count \|\| 0\) === 0/.test(SRC), '1.2: re-expand gated to OK-but-EMPTY frames only');
+ok(/rxIdentity\) \{ ecIdCache\[ecCand\.frameId\] = rxIds; ecIdentity = rxIdentity; ecGate = visitIdentityGate\(frozenHint, rxIdentity\); \}/.test(SRC), '1.2: re-expand re-gates through the SAME identity gate');
+const SI = fs.readFileSync(path.join(__dirname, '..', 'feat_mls_schedimport_exact.js'), 'latin1');
+ok(/surfaceResets: Number\(\(r\.receipt&&r\.receipt\.surfaceResets\)\|\|0\), chartSurface: String\(\(r\.receipt&&r\.receipt\.chartSurface\)\|\|""\)/.test(SI), '1.2 si: saveVerifiedVisits carries both');
+ok(/one\.surfaceResets=Number\(savedVisits\.surfaceResets\|\|0\); one\.chartSurface=String\(savedVisits\.chartSurface\|\|""\);/.test(SI), '1.2 si: one absorbs both');
+ok(/s\.runId='r'\+Date\.now\(\)\.toString\(36\);/.test(SI), '1.2 si: ppStart stamps runId');
+ok(/runId:String\(s\.runId\|\|''\)/.test(SI), '1.2 si: settled rows carry runId');
+ok(/r\.sr=Number\(extra\.surfaceResets\|\|0\); r\.surface=String\(extra\.chartSurface\|\|''\);/.test(SI), '1.2 si: rows carry sr+surface');
+ok(/Charts needing retry: /.test(SI), '1.2 si: day-end names the failing set');
+ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface \}/.test(SI), '1.2 si: settle call passes extras');
+
 console.log('surface-recycle-rebind: PASS (' + checks + ' checks)');

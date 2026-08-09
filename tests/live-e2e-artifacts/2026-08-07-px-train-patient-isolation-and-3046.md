@@ -638,3 +638,50 @@ missing-binding-refuse), and the control arm: pre-fix source fails >=8 pins.
 Package: 3.0.50, zip sha 5e107b2c454e7320bb7344a0388ffe0871fa69342f3bfe0bd4a93f0b471732f3,
 core digest f517bd33...c6c15, 15-file pin sweep, .bin mirror, 3.0.49 retired from tree.
 Rides with stp-1.0.0 (Stop pull button). Live James re-read is the acceptance test.
+
+
+## MONDAY 2026-08-10 RE-RUN ON 3.0.50 - the verdict (2026-08-08 ~02:30)
+
+Ship chain (b971 / ext 3.0.50, commit 16a71e6e): survived FIVE distinct gate
+refusals, each a real guard (ui-control manifest wanting the Stop button
+inventoried; core-digest catching my own srr splice racing my own gate; the
+cache-token guard wanting chk3050 seeded WITH the change; stale-tree twice as
+the avatar lane pushed mid-gate; the follow suite's three current-release pins).
+Deploy proven: b970->b971 poll transition, zip GET x2 both sha
+5e107b2c...32f3, extract over the audited folder, byte-audit 20/20, devReload,
+pong 3.0.50+core-sha256:f517bd33...c6c15.
+
+THE RUN (dayPull {date:'2026-08-10'}, statuses hooked, Stop button live):
+- Roster: authoritativeRowsForDay('2026-08-10') owns EXACTLY 20 rows; the run
+  read all 20. (The remembered 34 was the earlier schedule state - it changed.)
+- RESULT: schedule 20/20, history 20/20 attempted, **19/20 charts SAVED
+  content-verified**, 1 failed. Closing line honest: 'Incomplete... failures 3.
+  It is safe to retry; MLS did not mark this pull complete.'
+- JAMES SAVED CLEAN (2 visits, 13,679 raw chars, fresh stamp) - the x4
+  no-bound-clinical-detail class did NOT recur. SMM (8 visits, 76,097 raw) and
+  CT (21 visits, 38,807 raw) also fresh-saved; their fail rows in
+  __mlsDayHistoryPull.state were STALE entries from the killed first attempt
+  (state.rows accumulates across runs - 22 rows for a 20-chart day).
+- THE ONE FAILURE: CB - the original accordion-not-open persister - flagged
+  IN-USE during the automatic re-check tail (2 bounded passes), reasons across
+  attempts: accordion-not-open x1, stable-source-keys, chart-swap-never-settled.
+  My own diagnostic tab held JAMES's briefing through the run (released after);
+  CB's hold is elsewhere - plausibly the owner's signed-in tab. retryFailedHistory
+  fired bare returns retry-receipt-invalid (the lane wants the run's own retry
+  receipt context - the popup Retry button carries it). CB rides receipt.retry.
+- PACE: 16.8 min wall for 20 charts (~50s/chart INCLUDING 90s warm-up and the
+  ~2-min in-use tail). Mainline per-chart deltas 8-30s, typical ~21-25s - down
+  from ~52s on the 3.0.46-era run. No presence assist measured separately.
+- surfaceResets: NOT RECOVERABLE for this run - the read receipt reaches the si
+  response but is never persisted per-patient, so whether srr-1.0's rebind fired
+  invisibly or the surfaces simply did not recycle is INDISTINGUISHABLE. 3.0.51
+  must persist surfaceResets + chartSurface into the si state rows (splice draft
+  parked at scripts/srr-1.1-chartsurface-splice.js - DO NOT run mid-train).
+- Patricia: OFF the Monday roster (appointment moved/cancelled since the
+  original pull). Three stale empty store records (33-45 days old, one carrying
+  unverified NKDA) - the never-read class; her card now says 'not pulled yet'
+  honestly (b967). Duplicate-record dedup for her trio is store-hygiene work.
+- CLINCMP datum for the reader decision: every chart in THIS day batch read on
+  the classic surface (no exam-prep deaths in the batch); the ax routing was
+  only observed tonight on the single-read path (James, twice). The rollout
+  fraction per day becomes measurable once chartSurface ships.

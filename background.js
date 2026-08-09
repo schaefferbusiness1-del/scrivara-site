@@ -10548,7 +10548,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          read properties of null". A chart with no usable frame must REPORT
          that, not crash the patient's read. */
       var gate = { ok: false, reason: 'no-chart-frame-candidate' };
-      var ecSeen = [], ecPicked = false, ecRelaxed = false, ecIdCache = {};
+      var ecSeen = [], ecPicked = false, ecRelaxed = false, ecIdCache = {}; var __srrReExpanded = {};
       for (var ecPass = 0; ecPass < 2; ecPass++) {
         ecRelaxed = (ecPass === 1);
         if (ecRelaxed && (ecPicked || (gate && gate.ok) || Date.now() >= readDeadline)) break;
@@ -10589,6 +10589,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var ecGate = null;
         if (!ecDrop) {
           ecGate = visitIdentityGate(frozenHint, ecIdentity);
+          /* srr-1.2 (3.0.51): July-1 live - FIVE charts died at this drop with
+             the stm.esp candidate answering enumerate OK-but-EMPTY (0 rows, no
+             identity rendered), so the 3.0.49 acceptance had nothing to prove.
+             An empty variant frame is often just UNEXPANDED. Before dropping,
+             drive openVisits INTO THIS FRAME once, settle, and re-read identity
+             + enumerate. The gate itself is unchanged - identity still decides;
+             this only gives the frame one chance to paint. Bounded once per
+             frame per read. */
+          if (ecNoise && !(ecGate && ecGate.ok) && ecCand && Number.isFinite(ecCand.frameId) &&
+              ecCand.result && ecCand.result.ok === true && Number(ecCand.result.count || 0) === 0 &&
+              !__srrReExpanded[String(ecCand.frameId)] && Date.now() + 6000 < readDeadline) {
+            __srrReExpanded[String(ecCand.frameId)] = 1;
+            await exec(emrId, [ecCand.frameId], ['openVisits', cfg]);
+            await sleep(2500);
+            touchVisitLease();
+            var rxIds = await exec(emrId, [ecCand.frameId], ['identity', cfg]);
+            var rxIdentity = bestResult(rxIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || null;
+            var rxEnR = await exec(emrId, [ecCand.frameId], ['enumerate', enumCfg]);
+            var rxEn = bestResult(rxEnR, function (r) { return (r && r.ok) ? ((r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0)) : 0; }).result || null;
+            if (rxIdentity) { ecIdCache[ecCand.frameId] = rxIds; ecIdentity = rxIdentity; ecGate = visitIdentityGate(frozenHint, rxIdentity); }
+            if (rxEn && rxEn.ok && Number(rxEn.count || 0) > 0) ecCand.result = rxEn;
+          }
           if (ecNoise && !(ecGate && ecGate.ok)) ecDrop = 'noise-surface';
         }
         if (!ecRelaxed) ecSeen.push({ url: ecUrl.slice(0, 110), score: ecScoreN, nm: String((ecIdentity && ecIdentity.name) || '').slice(0, 34), drop: ecDrop || (ecNoise ? 'noise-identity-verified' : 'kept') });
@@ -10652,6 +10674,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       /* srr-1.0: freeze the list document epoch the moment the verified index
          is accepted. Recycle detection during row reads compares against THIS. */
+      /* srr-1.2: name the surface this chart was read on. The CLINCMP/ax
+         rollout only moves one way; the receipt carries which UI answered so
+         the trend is a number, not a mystery that reads as regression. */
+      var chartSurface = '';
+      try { chartSurface = /\/ax\/|briefing/i.test(String((identity && identity.url) || '')) ? 'clincmp-ax' : 'classic'; } catch (eSurf) { chartSurface = ''; }
       var listDocId = await visitsListFrameDocId(emrId, listFrame);
       var surfaceResets = 0, surfaceResetOps = [];
       var detailWaitMs = Math.max(300, Math.min(2500, Number(cfg.waitMs || 1400)));
@@ -10902,9 +10929,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               emit(appTabId, frozenRequestId, 'Athena refreshed the chart surface - rebinding encounter ' + (i + 1) + ' of ' + total + '\u2026', i, total);
               await exec(emrId, null, ['openVisits', cfg]);
               await sleepWithinReadDeadline(1500);
-              var srrIds = await exec(emrId, [listFrame], ['identity', cfg]);
-              var srrIdentity = bestResult(srrIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
-              var srrGate = visitIdentityGate(frozenHint, srrIdentity);
+              var srrIdentity = {}, srrGate = { ok: false, reason: 'identity-not-read' };
+              /* srr-1.2: July-1 live (chart BS) - a reborn document needs longer
+                 than one settle to paint its banner, and a single-shot identity
+                 read right after openVisits refused a legitimate replacement.
+                 Re-poll briefly BEFORE the fail-closed verdict; the gate itself
+                 is unchanged and still decides. */
+              var srrIdDeadline = Math.min(readDeadline, Date.now() + 5200);
+              do {
+                var srrIds = await exec(emrId, [listFrame], ['identity', cfg]);
+                srrIdentity = bestResult(srrIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || {};
+                srrGate = visitIdentityGate(frozenHint, srrIdentity);
+                if (srrGate.ok) break;
+                if (!(await sleepWithinReadDeadline(800))) break;
+              } while (Date.now() < srrIdDeadline);
               if (!srrGate.ok) { attempt = { failure: { reason: 'identity-changed-after-surface-recycle' } }; break; }
               var srrEnR = await exec(emrId, [listFrame], ['enumerate', enumCfg]);
               var srrEn = bestResult(srrEnR, function (r) { return (r && r.ok && r.indexComplete === true) ? ((r.selector === 'li.encounter-list-item' ? 100000 : 0) + (r.score || 0)) : 0; }).result || null;
@@ -10987,7 +11025,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
         fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', indexTotal: total,
-        attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount, surfaceResets: surfaceResets, surfaceResetOps: surfaceResetOps.slice(0, 6),
+        attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount, surfaceResets: surfaceResets, surfaceResetOps: surfaceResetOps.slice(0, 6), chartSurface: chartSurface,
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,
         authoritativeEmpty: total === 0 && authoritativeEmptyIndex,

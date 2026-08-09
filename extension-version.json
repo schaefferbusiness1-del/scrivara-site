@@ -1,5 +1,5 @@
 {
-  "version": "3.0.50",
+  "version": "3.0.51",
   "minChrome": 116,
-  "notes": "v3.0.50 - Two live failure shapes fixed: when athenaOne's scheduling view replaces the chart surface mid-read (it does this on its own every ~25-30 seconds), the reader now detects the swap, re-proves the patient identity, and re-binds the same encounter row instead of failing it; and the new-style athena chart (athena's gradual rollout) no longer stalls at the exam-prep screen - the reader now finds athena's navigation even where it is hidden in shadow DOM. Everything from v3.0.49 remains. Requires Chrome 116+."
+  "notes": "v3.0.51 - Three sharpenings from live July runs: charts whose visit list renders in athena's variant frame but arrives EMPTY are now re-expanded in place and read (five July-1 charts failed exactly there); after athena replaces the chart surface mid-read, the reader now waits for the reborn page to paint its patient banner before judging identity (one false refusal fixed - the safety refusal itself is unchanged); and each day's closing summary now NAMES the charts needing retry, while every chart's receipt records which athena UI answered. Everything from v3.0.50 remains. Requires Chrome 116+."
 }
