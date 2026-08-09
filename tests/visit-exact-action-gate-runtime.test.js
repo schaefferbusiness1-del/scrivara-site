@@ -101,7 +101,7 @@ for (const day of ['2026-07-19', '2026-07-22']) {
     assert.strictEqual(h.calls.record, 1, `${day}: unproven binding must demote and record, not silently refuse`);
     assert.strictEqual(h.calls.generate, 1, `${day}: unproven binding must demote and generate`);
     assert.strictEqual(h.calls.set, 2, `${day}: the demotion must clear the binding (set(null) after the failed install)`);
-    assert(/UNSCHEDULED/.test(h.context.S.lastWarn), `${day}: the demotion must announce itself in the warning`);
+    assert(/Athena appointment not linked/.test(h.context.S.lastWarn) && /work normally/.test(h.context.S.lastWarn), `${day}: the demotion must calmly explain that local work continues`);
     assert.strictEqual(h.context.currentVisitAthenaBinding, null, `${day}: no binding may survive the demotion`);
   }
   {

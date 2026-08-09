@@ -34,8 +34,8 @@ assert(/if \(!suppliedAppointment\) \{[\s\S]{0,900}?athenaAppointmentIdFromImpor
   'a supplied date+provider context still resolves its appointment id from the day ledger (exactly-one or empty)');
 
 /* ---- 3. walk-ins DEMOTE to unscheduled, never refuse generation ---- */
-assert(connect.includes('is proceeding as an UNSCHEDULED visit - no schedule row is locked'),
-  'the !S.appt lane demotes with a visible warning (the owner\'s standing ruling)');
+assert(/Unscheduled visit [^']*' \+ label \+ ' works normally/.test(connect),
+  'the !S.appt lane demotes with a calm visible notice (the owner\'s standing ruling)');
 assert(!connect.includes('MLS blocked \' + label + \' because no scheduled visit is locked'),
   'the hard generation refusal for unscheduled patients is gone');
 

@@ -9,7 +9,9 @@
  *   - stop/restart inside the same encounter does NOT re-prompt
  *   - audit record carries the exact patient/encounter/provider/type/time/
  *     user/text-version/audio-retention fields; no audio is stored
- *   - a failed audit write refuses to start an untracked recording
+ *   - quota retries evict only allowlisted caches, then a verified per-account
+ *     IndexedDB fallback allows capture without weakening fail-closed consent
+ *   - a failed audit write in BOTH stores refuses an untracked recording
  *   - the reconfirm action forces one re-ask
  *   - no native confirm()/prompt() anywhere in the consent path
  */
@@ -45,12 +47,87 @@ assert(consentSrc.includes('audioRetentionDisabled'), 'audit record lost the aud
 assert(!/MediaRecorder|getUserMedia|new Audio|SpeechRecognition/.test(consentSrc), 'the consent module itself must never touch audio APIs');
 
 /* ---------- 2. runtime behavior ---------- */
+function fakeIndexedDb() {
+  const dbs = new Map();
+  const state = { failOpen: false, failPut: false, mismatchRead: false, hold: false, pending: [], puts: 0, opens: [], deleted: [] };
+  function defer(fn) { if (state.hold) state.pending.push(fn); else Promise.resolve().then(fn); }
+  function database(name) {
+    let meta = dbs.get(name);
+    if (!meta) { meta = { created: false, rows: new Map() }; dbs.set(name, meta); }
+    const db = {
+      objectStoreNames: { contains() { return meta.created; } },
+      createObjectStore() { meta.created = true; return {}; },
+      transaction(_store, mode) {
+        const tx = { mode, oncomplete: null, onerror: null, onabort: null };
+        tx.objectStore = function () {
+          return {
+            put(row) {
+              const req = {};
+              state.puts += 1;
+              defer(() => {
+                if (state.failPut) { if (req.onerror) req.onerror(); if (tx.onerror) tx.onerror(); return; }
+                meta.rows.set(String(row.auditId), JSON.parse(JSON.stringify(row)));
+                if (req.onsuccess) req.onsuccess();
+                if (tx.oncomplete) tx.oncomplete();
+              });
+              return req;
+            },
+            get(id) {
+              const req = {};
+              defer(() => {
+                const row = meta.rows.get(String(id));
+                req.result = row ? JSON.parse(JSON.stringify(row)) : undefined;
+                if (req.result && state.mismatchRead) req.result.patientId = 'mismatched-readback';
+                if (req.onsuccess) req.onsuccess();
+              });
+              return req;
+            }
+          };
+        };
+        return tx;
+      },
+      close() {}
+    };
+    return db;
+  }
+  const api = {
+    open(name) {
+      state.opens.push(String(name));
+      const request = {};
+      defer(() => {
+        if (state.failOpen) { if (request.onerror) request.onerror(); return; }
+        const db = database(String(name)); request.result = db;
+        const meta = dbs.get(String(name));
+        if (!meta.created && request.onupgradeneeded) request.onupgradeneeded();
+        if (request.onsuccess) request.onsuccess();
+      });
+      return request;
+    },
+    deleteDatabase(name) {
+      const request = {};
+      defer(() => { state.deleted.push(String(name)); dbs.delete(String(name)); if (request.onsuccess) request.onsuccess(); });
+      return request;
+    }
+  };
+  state.release = function () {
+    state.hold = false;
+    const jobs = state.pending.splice(0);
+    jobs.forEach(fn => Promise.resolve().then(fn));
+  };
+  state.rows = function (name) { const db = dbs.get(String(name)); return db ? [...db.rows.values()] : []; };
+  state.has = function (name) { return dbs.has(String(name)); };
+  return { api, state };
+}
+
 function harness() {
   const toasts = [];
   const store = {};
-  let failWrites = false;
+  let writeMode = 'ok';
+  let account = 'doctor@example.test';
+  const idb = fakeIndexedDb();
   const ctx = {
     console, Promise, Object, Array, String, JSON, Date, Math,
+    setTimeout, clearTimeout,
     window: {},
     document: {
       body: { appendChild() {}, children: [] },
@@ -64,26 +141,39 @@ function harness() {
       addEventListener() {}, removeEventListener() {}, activeElement: null
     },
     localStorage: {
+      get length() { return Object.keys(store).length; },
+      key(i) { return Object.keys(store)[i] == null ? null : Object.keys(store)[i]; },
       getItem(k) { return store[k] == null ? null : store[k]; },
-      setItem(k, v) { if (failWrites) throw new Error('quota'); store[k] = String(v); }
+      setItem(k, v) {
+        if (writeMode === 'always' || (writeMode === 'until-cache-evicted' && store['test::calApptsCacheV2'] != null)) {
+          const error = new Error('QuotaExceededError'); error.name = 'QuotaExceededError'; throw error;
+        }
+        store[k] = String(v);
+      },
+      removeItem(k) { delete store[k]; }
     },
+    indexedDB: idb.api,
     uns: s => 'test::' + s,
     esc: s => String(s == null ? '' : s),
     toast(m, t) { toasts.push({ m: String(m), t }); },
     getName() { return 'Matthew Schaeffer, MD'; },
-    getSessionEmail() { return 'doctor@example.test'; },
+    getSessionEmail() { return account; },
     _acctTodayKey() { return '2026-07-22'; },
     activePatient() { return ctx.__pt; },
     __pt: { id: 'pt1', name: 'Alice Alpha', dob: '01/02/1970' },
-    currentVisitAthenaBinding: { visitContext: { appointmentId: 'appt-1', visitDate: '2026-07-22' } }
+    currentVisitAthenaBinding: { visitContext: { appointmentId: 'appt-1', visitDate: '2026-07-22' } },
+    addEventListener() {}, removeEventListener() {}
   };
   ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(consentSrc + '\nthis.__setFailWrites=v=>{};', ctx, { filename: 'consent-module.js' });
   // expose write-failure toggle via closure emulation: re-wire localStorage
-  ctx.__failWrites = v => { failWrites = v; };
+  ctx.__failWrites = v => { writeMode = v ? 'always' : 'ok'; };
+  ctx.__writeMode = v => { writeMode = v; };
+  ctx.__setAccount = v => { account = String(v); };
   ctx.__toasts = toasts;
   ctx.__store = store;
+  ctx.__idb = idb.state;
   return ctx;
 }
 
@@ -95,6 +185,8 @@ function drive(ctx, choice, opts) {
   let controls = null;
   ctx._mlsDialogBase = function (build) {
     return new Promise(resolve => {
+      let open = true;
+      function finish(value) { if (!open) return; open = false; resolve(value); }
       const stubEl = id => ({ id, value: '', style: {}, onclick: null, addEventListener() {}, textContent: '' });
       const els = {};
       const card = {
@@ -108,9 +200,11 @@ function drive(ctx, choice, opts) {
         querySelectorAll() { return []; },
         setAttribute() {}
       };
-      const api = build(card, resolve);
-      controls = { card, api, els };
-      if (opts.escape) { resolve(api.cancelValue); return; }
+      const api = build(card, finish, () => open);
+      controls = { card, api, els, close: finish, isOpen: () => open };
+      ctx.__dialogControls = controls;
+      if (opts.deferDecision) return;
+      if (opts.escape) { finish(api.cancelValue); return; }
       if (opts.cancel) { els._mlsAskNo.onclick(); return; }
       els._mlsAskYes.onclick();
     });
@@ -133,6 +227,7 @@ function drive(ctx, choice, opts) {
   assert.strictEqual(rec.provider, 'Matthew Schaeffer, MD');
   assert.strictEqual(rec.consentType, 'patient-verbal');
   assert.strictEqual(rec.confirmedBy, 'doctor@example.test');
+  assert(/^consent-/.test(rec.auditId), 'unique consent audit id missing');
   const declaredVersion = (consentSrc.match(/MLS_CONSENT_TEXT_VERSION='([^']+)'/) || [])[1];
   assert(declaredVersion, 'consent-text version constant missing');
   assert.strictEqual(rec.textVersion, declaredVersion);
@@ -183,13 +278,133 @@ function drive(ctx, choice, opts) {
   ctx.currentVisitAthenaBinding = { visitContext: { appointmentId: 'appt-2', visitDate: '2026-07-22' } };
   assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'a different encounter reused the prior consent');
 
-  /* failed audit logging refuses to start an untracked recording */
+  /* Quota recovery evicts ONLY the allowlisted current-account calendar cache,
+     then keeps the established local audit format. */
   ctx = harness();
+  ctx.__store['test::calApptsCacheV2'] = 'regenerable schedule snapshot';
+  ctx.__store['test::patients'] = 'protected patient bytes';
+  ctx.__store['test::notes'] = 'protected note bytes';
+  ctx.__store['test::preference'] = 'protected setting';
+  ctx.__store.mls_studygroups_v1 = 'protected user-created study cohorts';
+  ctx.__writeMode('until-cache-evicted');
   drive(ctx, 'patient-verbal');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), true, 'safe cache eviction did not recover the local consent audit');
+  assert(!ctx.__store['test::calApptsCacheV2'], 'regenerable calendar cache was not evicted after quota');
+  assert.strictEqual(ctx.__store['test::patients'], 'protected patient bytes', 'quota recovery deleted patient records');
+  assert.strictEqual(ctx.__store['test::notes'], 'protected note bytes', 'quota recovery deleted notes');
+  assert.strictEqual(ctx.__store['test::preference'], 'protected setting', 'quota recovery deleted settings');
+  assert.strictEqual(ctx.__store.mls_studygroups_v1, 'protected user-created study cohorts', 'quota recovery deleted user-created study cohorts');
+  assert.strictEqual(ctx.__idb.puts, 0, 'IndexedDB ran even though the safe local retry succeeded');
+
+  /* A full localStorage bucket falls back to a separate per-account database.
+     The write transaction and a separate readonly readback both have to agree. */
+  ctx = harness();
   ctx.__failWrites(true);
-  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), false, 'a failed consent write still allowed capture');
+  drive(ctx, 'patient-verbal');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), true, 'verified IndexedDB fallback did not allow capture');
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), true, 'verified fallback consent was not remembered');
+  assert.strictEqual(ctx.__idb.puts, 1, 'fallback wrote more than one consent record');
+  const fallbackDb = ctx.__idb.opens[0];
+  const fallbackRows = ctx.__idb.rows(fallbackDb);
+  assert.strictEqual(fallbackRows.length, 1, 'fallback audit record was not durable');
+  assert.strictEqual(fallbackRows[0].patientId, 'pt1');
+  assert.strictEqual(fallbackRows[0].accountId, 'doctor@example.test');
+
+  /* A malformed historical audit is preserved for recovery; it is neither
+     overwritten nor used as an excuse to evict unrelated caches. */
+  ctx = harness();
+  ctx.__store['test::consentLog'] = '{malformed historical audit';
+  ctx.__store['test::calApptsCacheV2'] = 'still-valid schedule cache';
+  drive(ctx, 'patient-verbal');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), true, 'malformed local audit did not use verified fallback');
+  assert.strictEqual(ctx.__store['test::consentLog'], '{malformed historical audit', 'malformed prior consent evidence was overwritten');
+  assert.strictEqual(ctx.__store['test::calApptsCacheV2'], 'still-valid schedule cache', 'non-quota failure evicted a schedule cache');
+  assert.strictEqual(ctx.__idb.puts, 1, 'malformed local audit did not write exactly one verified fallback record');
+
+  /* A mismatching readback is not durability and must stay fail closed. */
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.mismatchRead = true;
+  drive(ctx, 'patient-verbal');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), false, 'mismatching IndexedDB readback still allowed capture');
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'mismatched audit record was remembered');
+
+  /* Both durable stores failing still refuses an untracked recording. */
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.failOpen = true;
+  drive(ctx, 'patient-verbal');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), false, 'failure in both consent stores still allowed capture');
   assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'unlogged consent was remembered');
-  assert(ctx.__toasts.some(t => t.t === 'err' && /could not be logged/i.test(t.m)), 'failed logging was silent');
+  assert(ctx.__toasts.some(t => t.t === 'err' && /could not be saved/i.test(t.m)), 'failed logging was silent');
+
+  /* The async fallback is single-flight: repeated click/Enter attempts create
+     one audit write, and closing the dialog or changing identity before its
+     readback can never arm the microphone consent state. */
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.hold = true;
+  drive(ctx, 'patient-verbal', { deferDecision: true });
+  let pending = ctx._mlsRequestEncounterConsent('recording');
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  ctx.__idb.release();
+  assert.strictEqual(await pending, true, 'held verified fallback did not settle true');
+  assert.strictEqual(ctx.__idb.puts, 1, 'double consent action created duplicate audit writes');
+
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.hold = true;
+  drive(ctx, 'patient-verbal', { deferDecision: true });
+  pending = ctx._mlsRequestEncounterConsent('recording');
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  ctx.__dialogControls.close(false); /* Escape/backdrop/replacement */
+  ctx.__idb.release();
+  assert.strictEqual(await pending, false, 'closed dialog later armed consent');
+  await Promise.resolve(); await Promise.resolve();
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'late durable write from a closed dialog was remembered');
+
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.hold = true;
+  drive(ctx, 'patient-verbal', { deferDecision: true });
+  pending = ctx._mlsRequestEncounterConsent('recording');
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  ctx.mlsReconfirmConsent(); /* same identity, but a new consent/session epoch */
+  ctx.__idb.release();
+  assert.strictEqual(await pending, false, 'invalidated held consent left its dialog promise unsettled');
+  assert.strictEqual(ctx.__dialogControls.isOpen(), false, 'invalidated held consent left disabled controls open');
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'invalidated held consent was remembered');
+
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.hold = true;
+  drive(ctx, 'patient-verbal', { deferDecision: true });
+  pending = ctx._mlsRequestEncounterConsent('recording');
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  ctx.__pt = { id: 'pt2', name: 'Bob Beta' };
+  ctx.__idb.release();
+  assert.strictEqual(await pending, false, 'patient switch during consent persistence allowed capture');
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'old-patient consent armed the new patient');
+
+  ctx = harness();
+  ctx.__failWrites(true); ctx.__idb.hold = true;
+  drive(ctx, 'patient-verbal', { deferDecision: true });
+  pending = ctx._mlsRequestEncounterConsent('recording');
+  ctx.__dialogControls.els._mlsAskYes.onclick();
+  ctx.__setAccount('other-doctor@example.test');
+  ctx.__idb.release();
+  assert.strictEqual(await pending, false, 'account switch during consent persistence allowed capture');
+  assert.strictEqual(ctx._mlsHasEncounterConsent(), false, 'old-account consent armed the new account');
+
+  /* Fallback databases are account-scoped; purging A leaves B intact. */
+  ctx = harness();
+  ctx.__failWrites(true);
+  drive(ctx, 'patient-verbal');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), true);
+  ctx.mlsReconfirmConsent();
+  ctx.__setAccount('other-doctor@example.test');
+  drive(ctx, 'representative');
+  assert.strictEqual(await ctx._mlsRequestEncounterConsent('recording'), true);
+  const accountDbs = [...new Set(ctx.__idb.opens)];
+  assert.strictEqual(accountDbs.length, 2, 'different accounts shared one consent database');
+  assert.strictEqual(await ctx._mlsPurgeConsentAuditDb('doctor@example.test'), true, 'account-A consent purge failed');
+  assert.strictEqual(ctx.__idb.has(accountDbs[0]), false, 'account-A consent database survived purge');
+  assert.strictEqual(ctx.__idb.has(accountDbs[1]), true, 'account-A purge erased account-B consent records');
 
   /* no active patient: refused with guidance */
   ctx = harness();
@@ -204,6 +419,12 @@ function drive(ctx, choice, opts) {
   const nvAt = app.indexOf('function newVisit(opts){');
   assert(nvAt >= 0, 'newVisit missing');
   assert(app.slice(nvAt, nvAt + 1200).includes('_mlsConsentCurrent=null'), 'newVisit no longer clears encounter consent (same-day walk-in reuse bug)');
+  assert(app.slice(nvAt, nvAt + 1200).includes('_mlsConsentEpoch++'), 'newVisit does not invalidate an in-flight consent write');
+  const logoutAt = app.indexOf('async function logout(force)');
+  const logoutBody = app.slice(logoutAt, app.indexOf('/* =========================================================', logoutAt));
+  assert(logoutBody.includes('_mlsPurgeConsentAuditDb(_logoutEmail)'), 'logout does not purge the exact account consent database');
+  const clearAt = app.indexOf('async function clearDeviceData(){');
+  assert(app.slice(clearAt, clearAt + 1200).includes('await _mlsPurgeConsentAuditDb(consentAccount)'), 'Clear saved data leaves the consent database behind');
   /* the request entry is exported for the satellite dictation gates */
   assert(app.includes('window._mlsRequestEncounterConsent=_mlsRequestEncounterConsent;'), 'consent request is not exported for satellites');
   assert(!app.includes('window._mlsRequestEncounterConsent=function'), 'self-referential export wrapper is back (infinite recursion)');
@@ -218,5 +439,5 @@ function drive(ctx, choice, opts) {
   assert(daGate >= 0 && daGate < da.indexOf("h.claim('dictate')"), 'dictate-anywhere reaches the mic without the consent gate on visit fields');
   assert(da.includes('isVisitField(target) && typeof window._mlsHasEncounterConsent'), 'dictate-anywhere gate must scope to visit fields');
 
-  console.log('PASS recording consent gate: capture blocked before consent on both mic paths, verbal/representative allow, declined/cancel/Escape refuse, per-encounter memory with patient+encounter invalidation and reconfirm, exact audit record, fail-closed logging, no audio stored');
+  console.log('PASS recording consent gate: both mic paths stay gated; verbal/representative consent survives local quota through safe eviction or verified per-account IndexedDB, async identity races fail closed, account purge is exact, and no audio is stored');
 })().catch(e => { console.error(e); process.exit(1); });

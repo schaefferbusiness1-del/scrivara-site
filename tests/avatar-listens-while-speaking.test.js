@@ -122,8 +122,8 @@ assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmW
 assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear down the recogniser');
 assert(/pvStopSpeechOnly\(\);\s*\n\s*var iv/.test(source) || />= 2\) pvStopSpeechOnly\(\);/.test(source),
   'barge-in must fire from the interim path');
-assert(/filter\(Boolean\)\.length >= 2\) pvStopSpeechOnly\(\)/.test(source),
-  'barge-in must require two words — a cough or an "mhm" must not cut the question off');
+assert(/var otherVoice = pvSaying[\s\S]{0,180}\? \(novel >= 2\)[\s\S]{0,500}if \(pvSaying && otherVoice\) pvStopSpeechOnly\(\);/.test(source),
+  'barge-in must require two novel words — a cough, "mhm", or misheard self-echo must not cut the question off');
 assert(!/pvStopSpeechOnly[\s\S]{0,400}pvRec = null/.test(source.slice(source.indexOf('function pvStopSpeechOnly'), source.indexOf('function pvStopVoice'))),
   'pvStopSpeechOnly must leave the recogniser alive');
 

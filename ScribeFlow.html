@@ -7332,7 +7332,9 @@ async function logout(force){
   }
   try{
     const _purge=window.__mlsClinicalStatePurge&&window.__mlsClinicalStatePurge.purge(_logoutEmail);
-    window.__mlsLogoutPurge=_purge&&_purge.databases?_purge.databases:Promise.resolve([]);
+    const _clinicalPurge=_purge&&_purge.databases?_purge.databases:Promise.resolve([]);
+    const _consentPurge=typeof _mlsPurgeConsentAuditDb==='function'?_mlsPurgeConsentAuditDb(_logoutEmail):Promise.resolve(false);
+    window.__mlsLogoutPurge=Promise.all([_clinicalPurge,_consentPurge]);
   }catch(e){ window.__mlsLogoutPurge=Promise.resolve([]); }
   session=null;
   // Clear THIS TAB's session (sessionStorage) AND the localStorage seed. Other
@@ -8771,6 +8773,7 @@ function closeSettings(){
    server data — it only removes localStorage keys under this prefix, then reloads. */
 async function clearDeviceData(){
   const prefix=uns('');  // 'sf_u::<email>::'
+  const consentAccount=typeof _mlsConsentAccountId==='function'?_mlsConsentAccountId():'';
   if(!await mlsConfirm('Clear all MLS data saved for this account in this browser?\n\nThis removes your settings, preferences, patients and notes stored on THIS device only. It cannot be undone and does NOT delete anything on a server.')) return;
   try{
     const keys=[];
@@ -8780,6 +8783,7 @@ async function clearDeviceData(){
     }
     keys.forEach(k=>localStorage.removeItem(k));
   }catch(e){}
+  try{ if(typeof _mlsPurgeConsentAuditDb==='function') await _mlsPurgeConsentAuditDb(consentAccount); }catch(e){}
   try{ toast('Cleared saved data on this device. Reloading…','ok'); }catch(e){}
   setTimeout(()=>{ try{ location.reload(); }catch(e){ location.href=location.href; } },400);
 }
@@ -9343,7 +9347,7 @@ function _mlsDialogBase(build){
         try{ if(prevFocus&&prevFocus.focus) prevFocus.focus(); }catch(e){}
         resolve(val);
       }
-      var api=build(card,finish);
+      var api=build(card,finish,function(){return !done;});
       _mlsAskActive={ finish:finish, cancelValue:api.cancelValue };
       function onKey(e){
         if(e.key==='Escape'){ e.stopPropagation(); finish(api.cancelValue); }
@@ -9409,6 +9413,7 @@ const MLS_CONSENT_TEXT_VERSION='mls-consent-v1-2026-07-22';
 const MLS_CONSENT_TEXT='MLS Scribe will use the microphone to create clinical documentation for this visit. Audio is processed temporarily and automatically deleted after processing. The generated text may be reviewed and added to the medical record. The patient may decline or ask to stop at any time.';
 var _mlsConsentCurrent=null;   /* {key, ptId, type, at} — this tab's active-encounter consent */
 var _mlsConsentAsk=null;       /* single in-flight dialog promise (double-start guard) */
+var _mlsConsentEpoch=0;        /* account/new-visit/reconfirm invalidates async writes */
 function _mlsConsentEncounterId(){
   try{
     var b=(typeof currentVisitAthenaBinding!=='undefined')&&currentVisitAthenaBinding;
@@ -9418,10 +9423,14 @@ function _mlsConsentEncounterId(){
   }catch(e){}
   try{ return 'day:'+_acctTodayKey(); }catch(e2){ return 'day:unknown'; }
 }
+function _mlsConsentAccountId(){
+  var email='';try{email=typeof getSessionEmail==='function'?(getSessionEmail()||''):'';}catch(e){}
+  return String(email||'local-device').trim().toLowerCase();
+}
 function _mlsConsentKey(){
   try{
     var p=activePatient(); if(!p||!p.id) return '';
-    return String(p.id)+'|'+_mlsConsentEncounterId();
+    return _mlsConsentAccountId()+'|'+String(p.id)+'|'+_mlsConsentEncounterId();
   }catch(e){ return ''; }
 }
 function _mlsHasEncounterConsent(){
@@ -9430,25 +9439,129 @@ function _mlsHasEncounterConsent(){
 }
 /* Optional "someone new joined the room" action — next capture start re-asks. */
 function mlsReconfirmConsent(){
-  _mlsConsentCurrent=null;
+  _mlsConsentCurrent=null; _mlsConsentEpoch++;
   try{ toast('Consent will be re-confirmed before the next recording starts.',''); }catch(e){}
 }
 window.mlsReconfirmConsent=mlsReconfirmConsent;
 window._mlsHasEncounterConsent=_mlsHasEncounterConsent;
 window._mlsRequestEncounterConsent=_mlsRequestEncounterConsent;
-/* Append-only audit log in the account namespace. Returns false when the
-   record could not be durably written — the caller must then REFUSE to start
-   an untracked recording. */
-function _mlsWriteConsentRecord(rec){
+try{window.addEventListener('mls:session-boundary',function(){_mlsConsentCurrent=null;_mlsConsentEpoch++;},true);}catch(e){}
+const MLS_CONSENT_DB_PREFIX='mls_consent_audit_';
+const MLS_CONSENT_DB_STORE='records';
+var _mlsConsentPendingByDb=Object.create(null);
+function _mlsConsentDbName(accountId){
+  var s=String(accountId||'local-device').trim().toLowerCase(),hex='';
+  for(var i=0;i<s.length;i++)hex+=('0000'+s.charCodeAt(i).toString(16)).slice(-4);
+  return MLS_CONSENT_DB_PREFIX+hex;
+}
+function _mlsConsentRecordMatches(a,b){
+  return !!(a&&b&&a.auditId===b.auditId&&a.patientId===b.patientId&&
+    a.encounterId===b.encounterId&&a.consentType===b.consentType&&
+    a.at===b.at&&a.confirmedBy===b.confirmedBy&&a.textVersion===b.textVersion);
+}
+function _mlsTryWriteConsentLocal(rec,storageKey){
+  if(!storageKey)return {ok:false,quota:false};
   try{
-    var key=uns('consentLog');
-    var log=[]; try{ log=JSON.parse(localStorage.getItem(key)||'[]')||[]; }catch(e0){ log=[]; }
+    var raw=localStorage.getItem(storageKey),log=[];
+    if(raw){try{log=JSON.parse(raw);}catch(e0){return {ok:false,quota:false};}}
+    if(!Array.isArray(log))return {ok:false,quota:false};
     log.push(rec);
     if(log.length>500) log=log.slice(-500);
-    localStorage.setItem(key,JSON.stringify(log));
-    var back=JSON.parse(localStorage.getItem(key)||'[]');
-    return !!(back.length&&back[back.length-1]&&back[back.length-1].at===rec.at);
-  }catch(e){ return false; }
+    localStorage.setItem(storageKey,JSON.stringify(log));
+    var back=JSON.parse(localStorage.getItem(storageKey)||'[]');
+    return {ok:!!(back.length&&_mlsConsentRecordMatches(back[back.length-1],rec)),quota:false};
+  }catch(e){
+    return {ok:false,quota:!!(e&&(e.name==='QuotaExceededError'||e.name==='NS_ERROR_DOM_QUOTA_REACHED'||e.code===22||e.code===1014))};
+  }
+}
+/* Reclaim only caches the patient-store writer already classifies as
+   regenerable. Patient records, notes, drafts, settings and prior consent
+   records are never removed to make room. */
+function _mlsFreeConsentCacheSpace(){
+  try{
+    var calendarCache='';try{calendarCache=uns('calApptsCacheV2');}catch(e0){}
+    for(var i=localStorage.length-1;i>=0;i--){
+      var k=localStorage.key(i);
+      if(k===calendarCache||/(?:^|_)mlsRFScrapeCache2$|ScrapeCache/.test(String(k||''))){try{localStorage.removeItem(k);}catch(e){}}
+    }
+  }catch(e){}
+}
+/* localStorage has a small independent ceiling and the multi-megabyte patient
+   roster can fill it. IndexedDB is the durable clinical fallback: its write
+   transaction must commit AND the exact record must read back before capture
+   is allowed. No browser-storage path means no recording (fail closed). */
+function _mlsWriteConsentIndexed(rec,accountId,accountKey){
+  var dbName=_mlsConsentDbName(accountId);
+  var work=new Promise(function(resolve){
+    var db=null,settled=false,timer=null;
+    function done(ok){
+      if(settled)return; settled=true;
+      if(timer)clearTimeout(timer);
+      try{if(db)db.close();}catch(e){}
+      resolve(!!ok);
+    }
+    try{
+      var idb=window.indexedDB;
+      if(!idb||typeof idb.open!=='function'){done(false);return;}
+      var request=idb.open(dbName,1);
+      timer=setTimeout(function(){done(false);},2000);
+      request.onblocked=function(){done(false);};
+      request.onerror=function(){done(false);};
+      request.onupgradeneeded=function(){
+        try{var d=request.result;if(!d.objectStoreNames.contains(MLS_CONSENT_DB_STORE))d.createObjectStore(MLS_CONSENT_DB_STORE,{keyPath:'auditId'});}catch(e){done(false);}
+      };
+      request.onsuccess=function(){
+        if(settled){try{request.result.close();}catch(e){}return;}
+        db=request.result;
+        try{
+          var row={}; Object.keys(rec).forEach(function(k){row[k]=rec[k];}); row.accountId=accountId; row.accountKey=accountKey;
+          var tx=db.transaction(MLS_CONSENT_DB_STORE,'readwrite');
+          tx.onabort=function(){done(false);}; tx.onerror=function(){done(false);};
+          var put=tx.objectStore(MLS_CONSENT_DB_STORE).put(row);
+          put.onerror=function(){done(false);};
+          tx.oncomplete=function(){
+            if(settled)return;
+            try{
+              var check=db.transaction(MLS_CONSENT_DB_STORE,'readonly').objectStore(MLS_CONSENT_DB_STORE).get(rec.auditId);
+              check.onerror=function(){done(false);};
+              check.onsuccess=function(){done(_mlsConsentRecordMatches(check.result,rec)&&check.result.accountId===accountId&&check.result.accountKey===accountKey);};
+            }catch(e){done(false);}
+          };
+        }catch(e){done(false);}
+      };
+    }catch(e){done(false);}
+  });
+  _mlsConsentPendingByDb[dbName]=work;
+  return work.then(function(value){if(_mlsConsentPendingByDb[dbName]===work)delete _mlsConsentPendingByDb[dbName];return value;},function(){if(_mlsConsentPendingByDb[dbName]===work)delete _mlsConsentPendingByDb[dbName];return false;});
+}
+function _mlsPurgeConsentAuditDb(accountId){
+  var dbName=_mlsConsentDbName(accountId||_mlsConsentAccountId());
+  var pending=_mlsConsentPendingByDb[dbName];
+  return Promise.resolve(pending).catch(function(){return false;}).then(function(){
+    return new Promise(function(resolve){
+      var settled=false,timer=null;
+      function done(ok){if(settled)return;settled=true;if(timer)clearTimeout(timer);resolve(!!ok);}
+      try{
+        var idb=window.indexedDB;
+        if(!idb||typeof idb.deleteDatabase!=='function'){done(false);return;}
+        var request=idb.deleteDatabase(dbName);
+        timer=setTimeout(function(){done(false);},1500);
+        request.onsuccess=function(){done(true);}; request.onerror=function(){done(false);}; request.onblocked=function(){done(false);};
+      }catch(e){done(false);}
+    });
+  });
+}
+/* Append-only account audit. Prefer the established local log, retry after
+   safe cache eviction, then use verified IndexedDB durability. */
+function _mlsWriteConsentRecord(rec,accountId,storageKey){
+  var first=_mlsTryWriteConsentLocal(rec,storageKey);
+  if(first.ok)return Promise.resolve(true);
+  if(first.quota){
+    _mlsFreeConsentCacheSpace();
+    var retry=_mlsTryWriteConsentLocal(rec,storageKey);
+    if(retry.ok)return Promise.resolve(true);
+  }
+  return _mlsWriteConsentIndexed(rec,accountId,storageKey);
 }
 /* Show the consent step. Resolves true ONLY after a consenting option is
    confirmed AND its audit record is durably written. */
@@ -9456,10 +9569,11 @@ function _mlsRequestEncounterConsent(actionLabel){
   if(_mlsConsentAsk) return _mlsConsentAsk;
   var p=null; try{ p=activePatient(); }catch(e){}
   if(!p||!p.id){ try{ toast('Choose a patient before recording.','err'); }catch(e){} return Promise.resolve(false); }
-  var key=_mlsConsentKey(), encId=_mlsConsentEncounterId();
+  var key=_mlsConsentKey(), encId=_mlsConsentEncounterId(), accountId=_mlsConsentAccountId(), consentEpoch=++_mlsConsentEpoch;
+  var consentStorageKey='';try{consentStorageKey=uns('consentLog');}catch(e){}
   var ptId=String(p.id), ptLabel=String(p.name||'this patient')+(p.dob?(' · DOB '+p.dob):'');
   var encLabel=encId.indexOf('appt:')===0?('Appointment '+encId.slice(5)):(encId.indexOf('visit:')===0?('Visit '+encId.slice(6)):'Today’s visit');
-  _mlsConsentAsk=_mlsDialogBase(function(card,finish){
+  _mlsConsentAsk=_mlsDialogBase(function(card,finish,isOpen){
     card.innerHTML=
       '<div id="_mlsAskMsg" style="padding:16px 18px 4px">'+
       '<div style="font-weight:700;font-size:15.5px;margin-bottom:2px">Patient consent required</div>'+
@@ -9478,7 +9592,9 @@ function _mlsRequestEncounterConsent(actionLabel){
     function picked(){ var r=card.querySelector('input[name="_mlsConsentOpt"]:checked'); return r?r.value:'patient-verbal'; }
     function syncLabel(){ yes.textContent=picked()==='declined'?'Close — do not record':'Confirm consent and start capture'; }
     try{ Array.prototype.forEach.call(card.querySelectorAll('input[name="_mlsConsentOpt"]'),function(r){ r.addEventListener('change',syncLabel); }); }catch(e){}
+    var writing=false;
     function decide(){
+      if(writing)return;
       var type=picked();
       /* the patient/encounter can change while this dialog is open — never
          write a consent record for an encounter that will not record */
@@ -9493,6 +9609,7 @@ function _mlsRequestEncounterConsent(actionLabel){
       /* Never start an untracked recording: the audit record is written and
          read back BEFORE capture is allowed. */
       var rec={
+        auditId:'consent-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9),
         patientId:ptId,
         encounterId:encId,
         provider:(typeof getName==='function'?(getName()||''):''),
@@ -9502,14 +9619,32 @@ function _mlsRequestEncounterConsent(actionLabel){
         textVersion:MLS_CONSENT_TEXT_VERSION,
         audioRetentionDisabled:!(window.__mlsRecBackup&&window.__mlsRecBackup.installed)
       };
-      if(!_mlsWriteConsentRecord(rec)){
-        try{ toast('Consent could not be logged on this device, so the recording was not started. Free some storage and try again.','err'); }catch(e){}
-        finish(false); return;
-      }
-      _mlsConsentCurrent={ key:key, ptId:ptId, type:type, at:rec.at };
-      finish(true);
+      writing=true; yes.disabled=true; yes.textContent='Saving consent…';
+      var no=card.querySelector('#_mlsAskNo'); if(no)no.disabled=true;
+      try{Array.prototype.forEach.call(card.querySelectorAll('input[name="_mlsConsentOpt"]'),function(r){r.disabled=true;});}catch(e){}
+      Promise.resolve(_mlsWriteConsentRecord(rec,accountId,consentStorageKey)).then(function(saved){
+        if(!isOpen())return;
+        if(consentEpoch!==_mlsConsentEpoch){ finish(false); return; }
+        if(!saved){
+          try{ toast('Consent could not be saved on this device, so recording stayed off. Reload the page or free browser storage and try again.','err'); }catch(e){}
+          finish(false); return;
+        }
+        /* IndexedDB is asynchronous; repeat every identity fence after its
+           committed write/readback, before remembering consent or capturing. */
+        if(_mlsConsentAccountId()!==accountId||_mlsConsentKey()!==key){
+          try{ toast('The selected patient changed while consent was being saved, so recording stayed off. Reopen the patient and start again.','err'); }catch(e){}
+          finish(false); return;
+        }
+        _mlsConsentCurrent={ key:key, ptId:ptId, type:type, at:rec.at };
+        finish(true);
+      },function(){
+        if(!isOpen())return;
+        if(consentEpoch!==_mlsConsentEpoch){ finish(false); return; }
+        try{ toast('Consent could not be saved on this device, so recording stayed off. Reload the page or free browser storage and try again.','err'); }catch(e){}
+        finish(false);
+      });
     }
-    card.querySelector('#_mlsAskNo').onclick=function(){ finish(false); };
+    card.querySelector('#_mlsAskNo').onclick=function(){ if(writing)return; _mlsConsentEpoch++; finish(false); };
     yes.onclick=decide;
     return { cancelValue:false, focusEl:yes, onEnter:decide };
   });
@@ -19604,7 +19739,7 @@ function newVisit(opts){
   /* a NEW encounter always requires fresh recording consent — without this,
      an unbound walk-in's day-keyed consent silently spanned every same-day
      "New Visit" for that patient */
-  try{ _mlsConsentCurrent=null; }catch(eConsent){}
+  try{ _mlsConsentCurrent=null; _mlsConsentEpoch++; }catch(eConsent){}
   if(capturing) stopCapture();
   try{ if(typeof phoneMicCode!=='undefined'&&phoneMicCode&&typeof stopPhoneMic==='function') stopPhoneMic(); }catch(e0){}
   try{ if(typeof _resetAiVisitOutputs==='function') _resetAiVisitOutputs(); }catch(eAi){}
@@ -33909,7 +34044,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b991';
+  window.__MLS_AV='b992';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

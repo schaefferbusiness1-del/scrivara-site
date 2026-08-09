@@ -189,7 +189,7 @@ assert(owner.includes('exactActionReady: function (actionLabel)'), 'canonical AP
    ruling in requireExactScheduledBinding. The visibility requirement and the
    scheduled-path gate are unchanged. */
 assert(owner.includes("if (!S.appt) {"), 'engine decision lost its explicit no-locked-visit branch');
-assert(owner.includes("is proceeding as an UNSCHEDULED visit - no schedule row is locked"), 'the unscheduled demotion lost its visible warning');
+assert(owner.includes("Unscheduled visit — ' + label + ' works normally"), 'the unscheduled demotion lost its calm visible notice');
 assert(/if \(!S\.appt\) \{[\s\S]{0,900}?S\.lastWarn[\s\S]{0,300}?toast\(S\.lastWarn\)[\s\S]{0,200}?return true;/.test(owner), 'the no-locked-visit branch must WARN visibly and demote, never refuse silently');
 assert(!owner.includes("S.lastWarn = 'MLS blocked ' + label + ' because no scheduled visit is locked"), 'the old hard generation refusal must stay gone');
 assert(owner.includes('return requireExactScheduledBinding(S.appt, label);'), 'engine decision can pass without the selected scheduled appointment gate');
