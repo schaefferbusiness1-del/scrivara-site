@@ -126,7 +126,7 @@ const b121DobWrap = between(b121, 'function wrapLoad() {', 'function wrapSave()'
 const prfWrap = between(connect, 'if (isFn(window.loadCalendar) && !window.loadCalendar.__prf)', 'if (isFn(window._calDateOf)', 'PRF loadCalendar wrapper');
 assertMarkerPropagation(b18Wrap, 'b18 loadCalendar wrapper', 'window.loadCalendar.__mlsWrapped');
 assertMarkerPropagation(b121DkfWrap, 'b121 date-key loadCalendar wrapper', 'window.loadCalendar.__dkf');
-assertMarkerPropagation(b121DobWrap, 'b121 DOB loadCalendar wrapper', 'f.__mlsDobWrap');
+assertMarkerPropagation(b121DobWrap, 'b121 DOB loadCalendar wrapper', "chainHasDob(f,'__mlsDobWrap')");
 assertMarkerPropagation(prfWrap, 'PRF loadCalendar wrapper', 'window.loadCalendar.__prf');
 
 /* T6 may still coalesce harmless provider/status polling, but appointment reads

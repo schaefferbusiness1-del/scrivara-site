@@ -1,5 +1,5 @@
 /* =============================================================================
- * feat_mls_visitfix.js  ->  window.__mlsVisitFix  (vfx-1.2.0)
+ * feat_mls_visitfix.js  ->  window.__mlsVisitFix  (vfx-1.3.0)
  * -----------------------------------------------------------------------------
  * §2.2 VISIT-TIMELINE QUALITY (certification item): the patient visit timeline
  * must hold ONLY REAL visits. Live junk shapes it removes and blocks forever:
@@ -45,9 +45,14 @@
   'use strict';
   if (window.__mlsVisitFix && window.__mlsVisitFix.installed) return;
 
-  var VERSION = 'vfx-1.2.9';
+  var VERSION = 'vfx-1.3.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
+  function chainHasOwner(fn,marker){
+    var stack=[fn],seen=[],steps=0,keys=['__mlsOrig','__mlsWipeGuardOrig','__vfxOrig','__mlsCleanSecSaveOrig','__mlsCleanSecOrig','__mlsDobOrig','__orig','__t3Orig','__mlsUnrOrig','__mlsUpNowOrig'];
+    while(stack.length&&steps++<64){var cur=stack.pop();if(!isFn(cur)||seen.indexOf(cur)>=0)continue;seen.push(cur);if(cur[marker])return true;for(var i=0;i<keys.length;i++)if(isFn(cur[keys[i]]))stack.push(cur[keys[i]]);}
+    return false;
+  }
   function M() { return window.__mlsVisitModel; }
 
   /* ------------------------------ junk test ------------------------------ */
@@ -203,11 +208,14 @@
      server-won fields (date/type/detail/source) still win. */
   function keyDT(v) { return normD(v && v.date) + '|' + S(v && v.type).replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 44); }
   function skeletalV(v) { return !!(v && (v.date || v.type) && !S(v.raw).trim() && !S(v.aiSummary).trim() && !S(v.id).trim()); }
-  var _hydCache = { map: null, at: 0 }; /* v1.2.3: burst saves (the summary pump
+  var _hydCache = { key: '', raw: null, map: null, at: 0 }; /* v1.3.1: key/raw
+     scope prevents a same-id patient from another signed-in account reusing
+     rich visit content from the prior account. Burst saves (the summary pump
      persists per visit) re-parsed the 5MB store on every save and saturated the
      main thread - a rich row from <=10s ago is still rich, so cache the parse. */
-  function hydrateFromPersisted(list) {
-    var restored = 0, prevMap = null;
+  function hydrateFromPersisted(list, noDecode, suppliedMap) {
+    var restored = 0, prevMap = suppliedMap || null,cacheKey='',cacheRaw=null;
+    if(!suppliedMap)try{cacheKey=isFn(window.uns)?S(window.uns('patients')):'';cacheRaw=cacheKey?localStorage.getItem(cacheKey):null;}catch(eScope){}
     try {
       for (var i = 0; i < list.length; i++) {
         var p = list[i];
@@ -216,16 +224,23 @@
         for (var j = 0; j < p.visits.length; j++) { if (skeletalV(p.visits[j])) { needs = true; break; } }
         if (!needs) continue;
         if (!prevMap) { /* parse the persisted store ONCE, only when a skeleton exists */
-          if (_hydCache.map && (Date.now() - _hydCache.at) < 10000) prevMap = _hydCache.map;
+          if (_hydCache.map && _hydCache.key===cacheKey && _hydCache.raw===cacheRaw && (Date.now() - _hydCache.at) < 10000) prevMap = _hydCache.map;
           else {
             prevMap = {};
             try {
-              var rawLs = (typeof window.uns === 'function') ? localStorage.getItem(window.uns('patients')) : null;
-              if (rawLs && typeof window.__mlsPtsDecode === 'function') rawLs = window.__mlsPtsDecode(rawLs);
-              var prev = rawLs ? JSON.parse(rawLs) : [];
-              for (var k = 0; k < prev.length; k++) { if (prev[k] && prev[k].id) prevMap[prev[k].id] = prev[k]; }
+              /* The in-memory patient memo is already the exact decoded local
+                 roster. Prefer it so a cooperative save never LZ-decodes the
+                 same multi-megabyte key on the renderer before its Worker. */
+              var prev=isFn(window.getPatients)?(window.getPatients()||[]):[];
+              for(var k=0;k<prev.length;k++){if(prev[k]&&prev[k].id)prevMap[prev[k].id]=prev[k];}
+              if(!prev.length&&!noDecode){
+                var rawLs=(typeof window.uns==='function')?localStorage.getItem(window.uns('patients')):null;
+                if(rawLs&&typeof window.__mlsPtsDecode==='function')rawLs=window.__mlsPtsDecode(rawLs);
+                prev=rawLs?JSON.parse(rawLs):[];
+                for(k=0;k<prev.length;k++){if(prev[k]&&prev[k].id)prevMap[prev[k].id]=prev[k];}
+              }
             } catch (eL) { prevMap = {}; }
-            _hydCache.map = prevMap; _hydCache.at = Date.now();
+            _hydCache.key=cacheKey;_hydCache.raw=cacheRaw;_hydCache.map = prevMap; _hydCache.at = Date.now();
           }
         }
         var pp = prevMap[p.id];
@@ -258,7 +273,7 @@
 
   function wrapAddVisit() {
     var m = M();
-    if (!m || !isFn(m.addVisit) || m.addVisit.__vfxWrapped) return;
+    if (!m || !isFn(m.addVisit) || chainHasOwner(m.addVisit,'__vfxWrapped')) return;
     var orig = m.addVisit;
     var w = function (patientId, raw, opts) {
       try {
@@ -271,21 +286,21 @@
       try { if (v) scheduleUiFix(); } catch (e) {} /* v1.2.0: never leave a fresh filing rendered twice */
       return v;
     };
-    w.__vfxWrapped = true; w.__vfxOrig = orig;
+    w.__vfxWrapped = true; w.__vfxOrig = orig; w.__mlsOrig = orig;
     /* keep the visits_honest heartbeat from double-wrapping over us */
     try { if (orig.__honestWrapped) w.__honestWrapped = true; } catch (e) {}
     m.addVisit = w; wrapped.addVisit = { host: m, key: 'addVisit', orig: orig };
   }
   function wrapDerive() {
     var m = M();
-    if (!m || !isFn(m.deriveFromLegacy) || m.deriveFromLegacy.__vfxWrapped) return;
+    if (!m || !isFn(m.deriveFromLegacy) || chainHasOwner(m.deriveFromLegacy,'__vfxWrapped')) return;
     var orig = m.deriveFromLegacy;
     var w = function () { return []; };                 /* no blob re-derivation, ever */
-    w.__vfxWrapped = true; w.__vfxOrig = orig;
+    w.__vfxWrapped = true; w.__vfxOrig = orig; w.__mlsOrig = orig;
     m.deriveFromLegacy = w; wrapped.derive = { host: m, key: 'deriveFromLegacy', orig: orig };
   }
   function wrapUpsert() {
-    if (!isFn(window.upsertPatient) || window.upsertPatient.__vfxWrapped) return;
+    if (!isFn(window.upsertPatient) || chainHasOwner(window.upsertPatient,'__vfxWrapped')) return;
     var orig = window.upsertPatient;
     var w = function (p) {
       try { var n = scrubPatient(p); if (n) STATE.scrubbedOnWrite += n; } catch (e) {}
@@ -295,15 +310,77 @@
       try { scheduleUiFix(); } catch (e) {}
       return r;
     };
-    w.__vfxWrapped = true; w.__vfxOrig = orig;
+    w.__vfxWrapped = true; w.__vfxOrig = orig; w.__mlsOrig = orig;
     try { for (var _k in orig) { if (/Wrapped$/.test(_k)) w[_k] = orig[_k]; } } catch (e) {} /* b171: carry other modules' upsert-wrap markers so their guards don't re-wrap */
     window.upsertPatient = w; wrapped.upsert = { host: window, key: 'upsertPatient', orig: orig };
   }
   var _lastBulkScrub = 0; /* v1.2.6 throttle */
+  function visitFixInputPending(){try{var n=window.navigator&&window.navigator.scheduling;return !!(n&&isFn(n.isInputPending)&&n.isInputPending({includeContinuous:true}));}catch(e){return false;}}
+  function visitFixYield(){
+    function one(){try{if(isFn(window.__mlsBgSleep))return Promise.resolve(window.__mlsBgSleep(0));}catch(e){}return new Promise(function(resolve){setTimeout(resolve,0);});}
+    return one().then(function waitInput(){return visitFixInputPending()?one().then(waitInput):true;});
+  }
+  function cooperativeSave(orig,args,list){
+    var input=list.slice(),prepared=list.slice(),index=0,opts=args[2]||{},key=S(args[1]||'');
+    if(!key)try{if(isFn(window.uns))key=S(window.uns('patients'));}catch(eKey){}
+    var rawBefore=null;try{rawBefore=localStorage.getItem(key);}catch(eRaw){}
+    var scrubDue=Date.now()-_lastBulkScrub>5000,scrubbed=0,persistedMap=null;
+    function current(){
+      try{
+        if(isFn(opts.isCurrent)&&!opts.isCurrent())return false;
+        if(key&&localStorage.getItem(key)!==rawBefore)return false;
+        return true;
+      }catch(e){return false;}
+    }
+    function preparePersistedMap(){
+      if(_hydCache.map&&_hydCache.key===key&&_hydCache.raw===rawBefore&&(Date.now()-_hydCache.at)<10000){persistedMap=_hydCache.map;return Promise.resolve(true);}
+      var previous=[];try{previous=isFn(window.getPatients)?(window.getPatients()||[]):[];}catch(ePrev){previous=[];}
+      persistedMap={};var pi=0;
+      function mapChunk(){
+        if(!current())return {stale:true};
+        var end=Math.min(pi+24,previous.length);
+        while(pi<end){var row=previous[pi++];if(row&&row.id)persistedMap[row.id]=row;}
+        if(pi<previous.length)return visitFixYield().then(mapChunk);
+        _hydCache.key=key;_hydCache.raw=rawBefore;_hydCache.map=persistedMap;_hydCache.at=Date.now();return true;
+      }
+      return visitFixYield().then(mapChunk);
+    }
+    function step(){
+      if(!current())return {stale:true};
+      var end=Math.min(index+20,input.length),chunk=[];
+      while(index<end){
+        var row=input[index],next=row;
+        if(row&&typeof row==='object'){next=Object.assign({},row);if(Array.isArray(row.visits))next.visits=row.visits.slice();if(Array.isArray(row._junkVisits))next._junkVisits=row._junkVisits.slice();}
+        prepared[index]=next;chunk.push(next);index++;
+      }
+      hydrateFromPersisted(chunk,true,persistedMap);
+      for(var ci=0;ci<chunk.length;ci++){
+        var p=chunk[ci];if(!p)continue;
+        guardDob(p);dedupeSameId(p);if(scrubDue){var n=scrubPatient(p);if(n)scrubbed+=n;}
+      }
+      if(index<input.length)return visitFixYield().then(step);
+      if(!current())return {stale:true};
+      var nextOpts=Object.assign({},opts,{cooperative:true,isCurrent:current});
+      var nextArgs=Array.prototype.slice.call(args);nextArgs[0]=prepared;nextArgs[1]=key;nextArgs[2]=nextOpts;
+      var result=orig.apply(window,nextArgs);
+      if(!result||!isFn(result.then))return Promise.reject(new Error('visitfix-cooperative-save-unavailable'));
+      return Promise.resolve(result).then(function(receipt){
+        if(receipt&&!receipt.stale){if(scrubDue)_lastBulkScrub=Date.now();if(scrubbed)STATE.scrubbedOnWrite+=scrubbed;scheduleUiFix();}
+        return receipt;
+      });
+    }
+    var ready=null;try{ready=window.__mlsSessionReady;}catch(eReady){}
+    var admitted=ready&&isFn(ready.then)?Promise.resolve(ready).then(function(){return true;},function(){return true;}):Promise.resolve(true);
+    return admitted.then(visitFixYield).then(preparePersistedMap).then(function(mapReady){return mapReady&&mapReady.stale?mapReady:step();});
+  }
   function wrapSave() {
-    if (!isFn(window.savePatients) || window.savePatients.__vfxWrapped) return;
+    if (!isFn(window.savePatients) || chainHasOwner(window.savePatients,'__vfxWrapped')) return;
     var orig = window.savePatients;
     var w = function (list) {
+      if(Array.isArray(list)&&arguments[2]&&arguments[2].cooperative===true){
+        if(_autoMaint&&_autoMaint.running)return orig.apply(window,arguments);
+        return cooperativeSave(orig,arguments,list);
+      }
       try {
         if (Array.isArray(list)) {
           /* v1.2.6: hydrate ALWAYS (cheap + correctness-critical: it restores
@@ -327,24 +404,44 @@
       try { scheduleUiFix(); } catch (e) {}
       return r;
     };
-    w.__vfxWrapped = true; w.__vfxOrig = orig;
+    w.__vfxWrapped = true; w.__vfxOrig = orig; w.__mlsOrig = orig;
     window.savePatients = w; wrapped.save = { host: window, key: 'savePatients', orig: orig };
   }
   function ensureWrapped() { wrapAddVisit(); wrapDerive(); wrapUpsert(); wrapSave(); }
 
   /* ---------------------------- migration -------------------------------- */
+  function migratePatients(ps, copyOnWrite) {
+    var out = { patients: 0, removed: 0 }, touched = [];
+    for (var i = 0; i < ps.length; i++) {
+      /* Automatic maintenance must not mutate getPatients()' memo-backed row
+         objects before its cooperative write is confirmed. If the worker save
+         fails, a later retry must still be able to rediscover every repair. */
+      var p = copyOnWrite && ps[i] ? Object.assign({}, ps[i]) : ps[i];
+      /* The save wrapper also repairs/dedupes visit arrays and DOB fields. Give
+         every row its own shell (and every visits list its own slots), not just
+         rows this migration touches, so those guards cannot alter the memo
+         before the cooperative write earns its receipt. */
+      if (copyOnWrite && p) {
+        if (Array.isArray(p.visits)) p.visits = p.visits.slice();
+        ps[i] = p;
+      }
+      var n = scrubPatient(p);
+      if (n) {
+        out.patients++; out.removed += n; touched.push(p);
+      }
+    }
+    return { out: out, touched: touched };
+  }
   function migrateNow() {
     var out = { patients: 0, removed: 0 };
     try {
       var ps = isFn(window.getPatients) ? (window.getPatients() || []) : [];
-      var touched = [];
-      for (var i = 0; i < ps.length; i++) {
-        var n = scrubPatient(ps[i]);
-        if (n) { out.patients++; out.removed += n; touched.push(ps[i]); }
-      }
-      if (touched.length) {
+      var run = migratePatients(ps, false); out = run.out;
+      if (run.touched.length) {
+        /* Public/manual repair remains immediate and durable. Only the
+           automatic boot lane below is delayed and worker-cooperative. */
         if (isFn(window.savePatients)) window.savePatients(ps);
-        else if (isFn(window.upsertPatient)) for (var j = 0; j < touched.length; j++) window.upsertPatient(touched[j]);
+        else if (isFn(window.upsertPatient)) for (var j = 0; j < run.touched.length; j++) window.upsertPatient(run.touched[j]);
       }
     } catch (e) { out.error = S(e && e.message || e).slice(0, 120); }
     STATE.lastMigrate = out;
@@ -358,34 +455,192 @@
      rows that already carry a real source. */
   var RE_PANE_PROV = /^Provider: [^\n]+\n/;
   var RE_PANE_HEAD = /\| [01]?\d-[0-3]?\d-\d{4},/;
+  function retagPatients(ps, copyOnWrite) {
+    var out = { retagged: 0, patients: 0 }, touched = [];
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i]; if (!p || !Array.isArray(p.visits)) continue;
+      var hit = 0, copiedPatient = false;
+      for (var j = 0; j < p.visits.length; j++) {
+        var v = p.visits[j]; if (!v) continue;
+        var src = S(v.source);
+        if (src && src !== 'import') continue;
+        var raw = S(v.raw), fin = S(v.findings);
+        if (RE_PANE_PROV.test(raw) || RE_PANE_HEAD.test(raw) || RE_PANE_HEAD.test(fin)) {
+          if (copyOnWrite) {
+            if (!copiedPatient) {
+              p = Object.assign({}, p);
+              p.visits = p.visits.slice();
+              ps[i] = p; copiedPatient = true;
+            }
+            v = Object.assign({}, v); p.visits[j] = v;
+          }
+          v._srcPrev = src || '';
+          v.source = 'athena-visits';
+          hit++;
+        }
+      }
+      if (hit) { out.retagged += hit; out.patients++; touched.push(p); }
+    }
+    return { out: out, touched: touched };
+  }
   function retagSources() {
     var out = { retagged: 0, patients: 0 };
     try {
       var ps = isFn(window.getPatients) ? (window.getPatients() || []) : [];
-      var touched = [];
-      for (var i = 0; i < ps.length; i++) {
-        var p = ps[i]; if (!p || !Array.isArray(p.visits)) continue;
-        var hit = 0;
-        for (var j = 0; j < p.visits.length; j++) {
-          var v = p.visits[j]; if (!v) continue;
-          var src = S(v.source);
-          if (src && src !== 'import') continue;
-          var raw = S(v.raw), fin = S(v.findings);
-          if (RE_PANE_PROV.test(raw) || RE_PANE_HEAD.test(raw) || RE_PANE_HEAD.test(fin)) {
-            v._srcPrev = src || '';
-            v.source = 'athena-visits';
-            hit++;
-          }
-        }
-        if (hit) { out.retagged += hit; out.patients++; touched.push(p); }
-      }
-      if (touched.length) {
+      var run = retagPatients(ps, false); out = run.out;
+      if (run.touched.length) {
         if (isFn(window.savePatients)) window.savePatients(ps);
-        else if (isFn(window.upsertPatient)) for (var k = 0; k < touched.length; k++) window.upsertPatient(touched[k]);
+        else if (isFn(window.upsertPatient)) for (var k = 0; k < run.touched.length; k++) window.upsertPatient(run.touched[k]);
       }
     } catch (e) { out.error = S(e && e.message || e).slice(0, 120); }
     STATE.lastRetag = out;
     return out;
+  }
+
+  /* v1.3.0 BOOT MAINTENANCE PERSISTENCE -------------------------------------
+     migrateNow()/retagSources() are also public repair commands, so their
+     immediate semantics above stay intact. Boot is different: two dirty scans
+     used to call ordinary savePatients twice and synchronously compress the
+     clinic's multi-megabyte roster while the first click was waiting.
+
+     The automatic lane below coalesces both repairs onto one copy-on-write
+     roster, waits for an input-quiet idle turn, and only uses the explicitly
+     cooperative patient codec. Every attempt is bound to the exact patient
+     key, account and bearer token it read. A worker/CSP/storage race fails
+     closed and retries from a fresh roster; it never falls back to a sync save. */
+  var AUTO_MIGRATE = 1, AUTO_RETAG = 2;
+  var _autoMaint = { wanted: 0, timer: 0, idle: 0, running: false, scope: null, failures: 0, coalesced: 0, saves: 0, lastError: '' };
+  function maintenanceScope() {
+    var key = '', token = '', account = '';
+    try { if (isFn(window.uns)) key = S(window.uns('patients')); } catch (e) {}
+    try { if (isFn(window.bkToken)) token = S(window.bkToken()); } catch (e) {}
+    try { if (isFn(window.getSessionEmail)) account = S(window.getSessionEmail()).trim().toLowerCase(); } catch (e) {}
+    /* The namespaced patient key embeds the account and remains the authority
+       in local mode where there is intentionally no bearer/account string. */
+    if (!account) account = key;
+    return { key: key, token: token, account: account };
+  }
+  function maintenanceCurrent(scope) {
+    if (!scope) return false;
+    var now = maintenanceScope();
+    return !!scope.key && now.key === scope.key && now.token === scope.token && now.account === scope.account;
+  }
+  function inputIsPending() {
+    try {
+      var scheduling = window.navigator && window.navigator.scheduling;
+      return !!(scheduling && isFn(scheduling.isInputPending) && scheduling.isInputPending({ includeContinuous: true }));
+    } catch (e) { return false; }
+  }
+  function cooperativeStoreReady() {
+    try {
+      var api = window.__mlsPatientStoreBatch;
+      return !!(api && /^pts-batch-(?:1\.(?:[1-9]\d*)|[2-9]\d*)\./.test(S(api.version)) && isFn(window.savePatients));
+    } catch (e) { return false; }
+  }
+  function autoRetryDelay() { return Math.min(60000, 1500 * Math.pow(2, Math.min(5, _autoMaint.failures))); }
+  function armAutomaticMaintenance() { /* retired: shared scan owner schedules every automatic pass */ }
+  function retryAutomaticMaintenance(message, staleScope) {
+    _autoMaint.running = false;
+    _autoMaint.lastError = S(message || 'patient-maintenance-retry').slice(0, 160);
+    _autoMaint.failures++;
+    if(_autoMaint.failures>3)return;
+    var retry=function(){queueAutomaticMaintenance(0);};
+    try{if(isFn(window.__mlsDeferAsset)){window.__mlsDeferAsset(retry,{timeout:5000,priority:4});return;}}catch(e){}
+    Promise.resolve().then(retry);
+  }
+  function queueAutomaticMaintenance(kind) {
+    var wasWanted = _autoMaint.wanted;
+    _autoMaint.wanted |= kind;
+    if (wasWanted || _autoMaint.running) _autoMaint.coalesced++;
+    if(_autoMaint.running||!_autoMaint.wanted)return;
+    var owner=window.__mlsMaintenancePersist;
+    if(!owner||!isFn(owner.scan)){retryAutomaticMaintenance('shared-patient-maintenance-unavailable',false);return;}
+    _autoMaint.running=true;
+    var wanted=_autoMaint.wanted;
+    var migrateOut={patients:0,removed:0},retagOut={retagged:0,patients:0};
+    var request=owner.scan({chunkSize:20,mirror:true,fields:['visits','_junkVisits','updated'],
+      prepare:function(p){
+        if(!p)return null;
+        var one=[p],changed=false;
+        recordDobRepair(p); /* the old boot-wide seed now rides this bounded scan */
+        if(wanted&AUTO_MIGRATE){var mr=migratePatients(one,true);migrateOut.patients+=mr.out.patients;migrateOut.removed+=mr.out.removed;if(mr.touched.length)changed=true;}
+        if(wanted&AUTO_RETAG){var rr=retagPatients(one,true);retagOut.retagged+=rr.out.retagged;retagOut.patients+=rr.out.patients;if(rr.touched.length)changed=true;}
+        if(!changed)return null;
+        one[0].updated=Date.now();return one[0];
+      },
+      onEmpty:function(){
+        if(wanted&AUTO_MIGRATE)STATE.lastMigrate=migrateOut;
+        if(wanted&AUTO_RETAG)STATE.lastRetag=retagOut;
+        _autoMaint.wanted&=~wanted;_autoMaint.running=false;_autoMaint.failures=0;_autoMaint.lastError='';
+        if(_autoMaint.wanted)queueAutomaticMaintenance(0);
+      },
+      onSaved:function(){
+        if(wanted&AUTO_MIGRATE){STATE.lastMigrate=migrateOut;if(migrateOut.removed||migrateOut.patients)console.log('[MLS visitfix] removed '+migrateOut.removed+' junk visit row(s) across '+migrateOut.patients+' patient(s) (stashed on _junkVisits).');}
+        if(wanted&AUTO_RETAG){STATE.lastRetag=retagOut;if(retagOut.retagged)console.log('[MLS visitfix] retagged '+retagOut.retagged+' visits-pane row(s) across '+retagOut.patients+' patient(s) as From Athena (old value on _srcPrev).');}
+        _autoMaint.wanted&=~wanted;_autoMaint.running=false;_autoMaint.failures=0;_autoMaint.lastError='';_autoMaint.saves++;
+        if(_autoMaint.wanted)queueAutomaticMaintenance(0);
+      },
+      onFailed:function(error){retryAutomaticMaintenance(error&&error.message||error,false);}
+    });
+    if(!request||!isFn(request.then))retryAutomaticMaintenance('shared-patient-maintenance-no-receipt',false);
+  }
+  function _retiredRunAutomaticMaintenance() {
+    if (_autoMaint.running || !_autoMaint.wanted) return;
+    if (inputIsPending()) { armAutomaticMaintenance(180); return; }
+    var scope = _autoMaint.scope;
+    if (!maintenanceCurrent(scope)) { retryAutomaticMaintenance('patient-maintenance-account-changed', true); return; }
+    /* Do not probe support by invoking savePatients: an older implementation
+       would ignore the options and synchronously compress before returning. */
+    if (!cooperativeStoreReady() || !isFn(window.getPatients)) { retryAutomaticMaintenance('patient-cooperative-store-unavailable', false); return; }
+
+    _autoMaint.running = true;
+    var wanted = _autoMaint.wanted, ps, migrateRun = null, retagRun = null;
+    try {
+      ps = window.getPatients() || [];
+      if (!Array.isArray(ps)) ps = [];
+      if (!maintenanceCurrent(scope)) { retryAutomaticMaintenance('patient-maintenance-account-changed', true); return; }
+      if (wanted & AUTO_MIGRATE) {
+        migrateRun = migratePatients(ps, true);
+        /* wrapSave's periodic safety sweep would otherwise scan the same full
+           roster again immediately. This pass just completed that exact work. */
+        _lastBulkScrub = Date.now();
+      }
+      if (wanted & AUTO_RETAG) retagRun = retagPatients(ps, true);
+    } catch (e) { retryAutomaticMaintenance(e && e.message || e, false); return; }
+
+    var dirty = !!((migrateRun && migrateRun.touched.length) || (retagRun && retagRun.touched.length));
+    if (!dirty) {
+      if (migrateRun) STATE.lastMigrate = migrateRun.out;
+      if (retagRun) STATE.lastRetag = retagRun.out;
+      _autoMaint.wanted &= ~wanted; _autoMaint.running = false; _autoMaint.failures = 0; _autoMaint.lastError = '';
+      return;
+    }
+
+    var saveResult;
+    try {
+      saveResult = window.savePatients(ps, scope.key, { cooperative: true, isCurrent: function () {
+        return _autoMaint.running && maintenanceCurrent(scope);
+      } });
+    } catch (e) { retryAutomaticMaintenance(e && e.message || e, false); return; }
+    if (!saveResult || !isFn(saveResult.then)) {
+      retryAutomaticMaintenance('patient-cooperative-save-did-not-return-a-promise', false);
+      return;
+    }
+    saveResult.then(function (receipt) {
+      if (!receipt || receipt.stale || !maintenanceCurrent(scope)) {
+        retryAutomaticMaintenance('patient-maintenance-save-stale', true); return;
+      }
+      if (migrateRun) {
+        STATE.lastMigrate = migrateRun.out;
+        if (migrateRun.out.removed || migrateRun.out.patients) console.log('[MLS visitfix] removed ' + migrateRun.out.removed + ' junk visit row(s) across ' + migrateRun.out.patients + ' patient(s) (stashed on _junkVisits).');
+      }
+      if (retagRun) {
+        STATE.lastRetag = retagRun.out;
+        if (retagRun.out.retagged) console.log('[MLS visitfix] retagged ' + retagRun.out.retagged + ' visits-pane row(s) across ' + retagRun.out.patients + ' patient(s) as From Athena (old value on _srcPrev).');
+      }
+      _autoMaint.wanted &= ~wanted; _autoMaint.running = false; _autoMaint.failures = 0; _autoMaint.lastError = ''; _autoMaint.saves++;
+      if (_autoMaint.wanted) { _autoMaint.scope = maintenanceScope(); armAutomaticMaintenance(300); }
+    }, function (e) { retryAutomaticMaintenance(e && e.message || e, false); });
   }
   function restore(which) {
     var out = { patients: 0, restored: 0 };
@@ -579,6 +834,9 @@
       wrapped[k] = null;
     });
     try { clearInterval(ensureIv); } catch (e) {}
+    try { if (_autoMaint.timer) clearTimeout(_autoMaint.timer); } catch (e) {}
+    try { if (_autoMaint.idle && isFn(window.cancelIdleCallback)) window.cancelIdleCallback(_autoMaint.idle); } catch (e) {}
+    _autoMaint.timer = 0; _autoMaint.idle = 0; _autoMaint.wanted = 0; _autoMaint.running = false;
     try { if (_wk) _wk.terminate(); } catch (e) {}
     try { if (_wkUrl) URL.revokeObjectURL(_wkUrl); } catch (e) {}
     _wk = null; _wkUrl = null;
@@ -593,7 +851,7 @@
     migrateNow: migrateNow, retagSources: retagSources, restore: restore,
     enqueue: enqueue, queue: function () { return Q.slice(); },
     uiFix: uiFix, _hydrate: hydrateFromPersisted, sweepBacklog: sweepBacklog,
-    summarizeOneNow: function () { return pumpOnce(true); },
+    summarizeOneNow: function () { return pumpOnce(true); }, maintenance: _autoMaint,
     revert: revert
   };
 
@@ -604,9 +862,10 @@
   ensureWrapped();
   function boot() {
     ensureWrapped();
-    try { seedDobRepairs(); } catch (e) {} /* v1.2.7: learn banner-verified repairs before any merge can echo them away */
-    try { var r = migrateNow(); if (r && (r.removed || r.patients)) console.log('[MLS visitfix] removed ' + r.removed + ' junk visit row(s) across ' + r.patients + ' patient(s) (stashed on _junkVisits).'); } catch (e) {}
-    try { var rt = retagSources(); if (rt && rt.retagged) console.log('[MLS visitfix] retagged ' + rt.retagged + ' visits-pane row(s) across ' + rt.patients + ' patient(s) as From Athena (old value on _srcPrev).'); } catch (e) {}
+    /* Both whole-roster repairs share one delayed cooperative write. This keeps
+       startup input responsive and prevents either pass from overwriting the
+       other's not-yet-persisted result. */
+    queueAutomaticMaintenance(AUTO_MIGRATE|AUTO_RETAG);
     /* With automatic summaries disabled there is no reason to create the
        persistent Worker ticker (or its setTimeout fallback) at all. */
     if (CFG.autoSummaries) startWorkerTicker();

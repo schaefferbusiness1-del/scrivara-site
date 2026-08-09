@@ -43,7 +43,7 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.20";
+  var VERSION = "si-1.7.22";
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -217,11 +217,11 @@
   }
   function beginPatientBatch(label) {
     var api = patientBatchApi();
-    /* b744 #36: 4/5000 flushed a ~1.4s full-store LZ compress every 4 upserts
-       during a pull - the owner's once-a-second freezes. 12/15000 is the
-       clamp ceiling (ScribeFlow.html batch API); the forced checkpoint before
-       chart navigation and withPatientBatch's terminal flush keep durability. */
-    return api ? api.begin({ label: String(label || "managed-pull"), maxChanges: 12, maxDelayMs: 15000 }) : null;
+    /* One logical chart can enrich the same patient through several guarded
+       layers. Count unique patients, retain the 15s durability timer, and let
+       the base store encode the one required roster checkpoint in its worker.
+       The forced pre-history and terminal barriers are still awaited. */
+    return api ? api.begin({ label: String(label || "managed-pull"), cooperative: true, maxChanges: 64, maxDelayMs: 15000 }) : null;
   }
   function checkpointPatientBatch(token, reason, force) {
     if (!token) return null;
@@ -236,13 +236,18 @@
   function withPatientBatch(label, task) {
     var token = beginPatientBatch(label);
     return Promise.resolve().then(function () { return task(token); }).then(function (value) {
-      var receipt = endPatientBatch(token, "receipt");
-      if (value && typeof value === "object") value.patientPersistenceReceipt = receipt;
-      return value;
+      return Promise.resolve(endPatientBatch(token, "receipt")).then(function (receipt) {
+        if (value && typeof value === "object") value.patientPersistenceReceipt = receipt;
+        return value;
+      });
     }, function (error) {
-      try { endPatientBatch(token, "error"); }
+      var ended;
+      try { ended = endPatientBatch(token, "error"); }
       catch (flushError) { try { flushError.originalError = String(error && error.message || error || "").slice(0, 180); } catch (_) {} throw flushError; }
-      throw error;
+      return Promise.resolve(ended).then(function () { throw error; }, function (flushError) {
+        try { flushError.originalError = String(error && error.message || error || "").slice(0, 180); } catch (_) {}
+        throw flushError;
+      });
     });
   }
 
@@ -2783,13 +2788,18 @@
     if (target.dob && observed.chartDob && isFn(cv._saveVisits)) {
       savedCount = Number(cv._saveVisits(p, { name: observed.chartName || target.name, dob: observed.chartDob }, visits, function () {}, r.receipt));
     } else {
-      if (!target.mrn || !observed.chartMrn || normMrn(target.mrn) !== normMrn(observed.chartMrn)) throw new Error("visits-dob-mrn-proof-missing");
+      var frozenMrn = normMrn(target.mrn), observedMrn = normMrn(observed.chartMrn), currentMrn = rowMrn(p);
+      /* The patient can change while Athena is reading. The frozen target,
+         returned chart, and freshly re-resolved store row must still name the
+         same MRN immediately before the one atomic bulk write. */
+      if (!frozenMrn || !observedMrn || frozenMrn !== observedMrn || currentMrn !== frozenMrn) throw new Error("visits-dob-mrn-proof-missing");
       for (var i = 0; i < visits.length; i++) {
         if (isFn(cv._visitIdentityAgrees) && !cv._visitIdentityAgrees(p, visits[i], true)) throw new Error("visit-row-identity-mismatch");
       }
-      visits.forEach(function (raw) {
-        if (vm.addVisit(p.id, raw, { source: "athena-schedule-history", identityVerified: true, identityBinding: String(p.id), bodyComplete: true })) savedCount++;
-      });
+      if (!isFn(vm.saveVerifiedVisitBatch)) throw new Error("visits-bulk-writer-unavailable");
+      var batchSave = vm.saveVerifiedVisitBatch(p.id, visits, { source: "athena-schedule-history", bodyComplete: true, reconcile: true });
+      savedCount = Number(batchSave && batchSave.saved || 0);
+      reconcileReceipt = batchSave && batchSave.reconcile || null;
     }
     /* Saving without proving the exact stable encounter set can produce a
        dangerous false green: an inner wrapper may reject a row, or stored
@@ -2798,8 +2808,10 @@
        represented by exactly one body-complete row bound to this patient, with
        no extra verified Athena rows left behind. Manual/unverified rows are
        intentionally outside this check and are never deleted. */
-    if (!isFn(vm.reconcileVerifiedAthenaVisits)) throw new Error("visits-reconcile-unavailable");
-    reconcileReceipt = vm.reconcileVerifiedAthenaVisits(p.id, visits);
+    if (!reconcileReceipt) {
+      if (!isFn(vm.reconcileVerifiedAthenaVisits)) throw new Error("visits-reconcile-unavailable");
+      reconcileReceipt = vm.reconcileVerifiedAthenaVisits(p.id, visits);
+    }
     if (!reconcileReceipt || reconcileReceipt.complete !== true) throw new Error("visits-reconcile-unproven");
     var fresh = patientById(target.patientId) || p;
     var storedVisits = safe(function () { return vm.getVisits(fresh); }, []) || [];
@@ -2852,19 +2864,24 @@
     var administrativeSaved=0;
     safe(function(){
       var adminRows=Array.isArray(r.administrativeVisits)?r.administrativeVisits:[];
-      if(!adminRows.length||!isFn(vm.addVisit)) return;
-      var existing=safe(function(){return vm.getVisits(patientById(target.patientId))||[];},[]);
+      if(!adminRows.length||!isFn(vm.addVisit)||!isFn(window.upsertPatient)) return;
+      var adminCurrent=patientById(target.patientId);if(!adminCurrent)return;
+      var adminStaged=JSON.parse(JSON.stringify(adminCurrent));
+      var existing=safe(function(){return vm.getVisits(adminStaged)||[];},[]);
       function adminKey(v){var eid=String(v&&(v.encounterId||v.encounterID)||"").trim().toLowerCase();var body=String(v&&(v.raw||v.text||v.note||v.detail)||"").replace(/\s+/g," ").trim().toLowerCase();return (String(v&&v.date||"")+"|"+(eid||body)).slice(0,400);}
       var seenKeys={};
       existing.forEach(function(v){seenKeys[adminKey(v)]=1;});
+      var stagedAdministrative=0;
       adminRows.forEach(function(row){
         if(!row||!String(row.raw||"").trim()) return;
         var key=adminKey(row); if(!key||seenKeys[key]) return; seenKeys[key]=1;
-        if(vm.addVisit(target.patientId,row,{source:"athena-order-group-index",indexOnly:true,administrative:true,bodyComplete:false})) administrativeSaved++;
+        if(vm.addVisit(target.patientId,row,{source:"athena-order-group-index",indexOnly:true,administrative:true,bodyComplete:false,persist:false,_patientRef:adminStaged})) stagedAdministrative++;
       });
+      if(stagedAdministrative){var adminCommit=window.upsertPatient(adminStaged);if(adminCommit===false||(adminCommit&&adminCommit.ok===false))throw new Error("administrative-visit-commit-refused");administrativeSaved=stagedAdministrative;}
     });
-    var organization=safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
-    if(!organization||organization.ok!==true){
+    var responsiveOrganization=!!(r&&r.__mlsResponsiveOrganization===true&&isFn(vm.organizePatientHistoryResponsive));
+    var organization=responsiveOrganization?{ok:true,deferred:true}:safe(function(){return isFn(vm.organizePatientHistory)?vm.organizePatientHistory(target.patientId):null;},null);
+    if(!responsiveOrganization&&(!organization||organization.ok!==true)){
       /* px-6.1 (Elizabeth, 2026-08-08): a gate that discards the evidence of
          its own refusal makes every downstream failure unexplainable - the
          row said only "history-organization-unproven" while organize knew
@@ -2876,7 +2893,7 @@
       safe(function(){orgMissed=(organization&&organization.semanticCoverage&&organization.semanticCoverage.missedSections)||[];return null;});
       throw new Error("history-organization-unproven: "+orgReason+(orgMissed.length?(" - sections detected but not captured: "+orgMissed.join(", ")):""));
     }
-    var refreshedCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
+    var refreshedCoverage=responsiveOrganization?null:safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
     var clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(refreshedCoverage&&refreshedCoverage.cards&&refreshedCoverage.cards[k]&&refreshedCoverage.cards[k].populated?1:0);},0);
     return { visitCount: safe(function () { return vm.getVisits(fresh).length; }, visits.length), persistedVisits: persisted.length, savedCount: savedCount, administrativeSaved: administrativeSaved, parsedVisits: parsed, expectedVisits: expected, visitsCoverageComplete: true, bodyComplete: true, fullDetail: true, readerVersion: readerVersion, authoritativeEmpty: expected===0&&r.receipt.authoritativeEmpty===true, reconcileReceipt: reconcileReceipt, organization:organization, profileCoverage:refreshedCoverage, clinicalFieldCount:clinicalFieldCount, surfaceResets: Number((r.receipt&&r.receipt.surfaceResets)||0), chartSurface: String((r.receipt&&r.receipt.chartSurface)||"") };
   }
@@ -3438,7 +3455,20 @@
             }
             await collectOverlapParse(overlapParse, one, stageMs, patientDeadlineAt); overlapParse = null;
             var __visitSaveT0 = Date.now();
-            var savedVisits = saveVerifiedVisits(target, vr);
+            var saveInput=Object.assign({},vr,{__mlsResponsiveOrganization:true});
+            var savedVisits = saveVerifiedVisits(target, saveInput);
+            if(savedVisits.organization&&savedVisits.organization.deferred===true){
+              var responsiveReceipt=await window.__mlsVisitModel.organizePatientHistoryResponsive(target.patientId);
+              if(!responsiveReceipt||responsiveReceipt.ok!==true){
+                var responsiveReason=String((responsiveReceipt&&responsiveReceipt.reason)||"organize-returned-no-result");
+                var responsiveMissed=[];
+                safe(function(){responsiveMissed=(responsiveReceipt&&responsiveReceipt.semanticCoverage&&responsiveReceipt.semanticCoverage.missedSections)||[];return null;});
+                throw new Error("history-organization-unproven: "+responsiveReason+(responsiveMissed.length?(" - sections detected but not captured: "+responsiveMissed.join(", ")):""));
+              }
+              savedVisits.organization=responsiveReceipt;
+              savedVisits.profileCoverage=safe(function(){return isFn(window._patientHistoryCardCoverage)?window._patientHistoryCardCoverage(target.patientId):null;},null);
+              savedVisits.clinicalFieldCount=['problems','meds','allergies','vitals','history'].reduce(function(n,k){return n+(savedVisits.profileCoverage&&savedVisits.profileCoverage.cards&&savedVisits.profileCoverage.cards[k]&&savedVisits.profileCoverage.cards[k].populated?1:0);},0);
+            }
             stageMs.visitSave = Date.now() - __visitSaveT0;
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||"");
             /* si-2.0.0: a COMPLETED body pass earns the carry stamp. */
@@ -4248,7 +4278,7 @@
             /* Crash-safe phase boundary: appointments and any materialized or
                enriched patient identities are durable before chart navigation
                starts. Later history saves remain coalesced in bounded groups. */
-            checkpointPatientBatch(opts.__patientStoreBatch, "schedule-import", true);
+            await Promise.resolve(checkpointPatientBatch(opts.__patientStoreBatch, "schedule-import", true));
             res.identityBootstrapReceipt = identityBootstrap && identityBootstrap.receipt || null;
             var selectedProvider = providerRequest(providerTarget);
             if (!res.providerReceipt || res.providerReceipt.complete !== true) {

@@ -32,8 +32,20 @@
     try { if (isFn(window.findPatient)) return window.findPatient(id); } catch (e) {}
     return null;
   }
+  function _stagePatient(p) {
+    try { return JSON.parse(JSON.stringify(p)); }
+    catch (e) { throw new Error('Could not stage the patient visit batch safely. Nothing from this batch was saved.'); }
+  }
   function _upsert(p) {
-    try { if (isFn(window.upsertPatient)) { window.upsertPatient(p); return true; } } catch (e) {}
+    if (isFn(window.upsertPatient)) {
+      try {
+        var result = window.upsertPatient(p);
+        /* Save Shield deliberately returns an explicit refusal instead of
+           throwing. A bulk writer may never report success or mutate the
+           canonical alias when that final commit was rejected. */
+        return !(result === false || (result && result.ok === false));
+      } catch (e) { return false; }
+    }
     try {
       if (isFn(window.getPatients) && isFn(window.savePatients)) {
         var arr = window.getPatients(); var i = arr.findIndex(function (x) { return x.id === p.id; });
@@ -361,7 +373,11 @@
 
   function addVisit(patientId, raw, opts) {
     opts = opts || {};
-    var p = _findPatient(patientId); if (!p) return null;
+    /* Bulk chart readers pass the one canonical, current patient object through
+       every wrapped addVisit call. This keeps all safety/source wrappers in the
+       chain while avoiding a fresh roster lookup and a full patient upsert for
+       every row. Public one-row callers retain the historical lookup path. */
+    var p = opts._patientRef && String(opts._patientRef.id || '') === String(patientId || '') ? opts._patientRef : _findPatient(patientId); if (!p) return null;
     if (!Array.isArray(p.visits)) p.visits = [];
     var v = _normVisit(raw, opts.source, opts);
     var key = _visitKey(v);
@@ -472,8 +488,9 @@
     return v;
   }
 
-  function reconcileVerifiedAthenaVisits(patientId, batchRows) {
-    var p = _findPatient(patientId); if (!p) return { removed: 0, kept: 0 };
+  function reconcileVerifiedAthenaVisits(patientId, batchRows, opts) {
+    opts = opts || {};
+    var p = opts._patientRef && String(opts._patientRef.id || '') === String(patientId || '') ? opts._patientRef : _findPatient(patientId); if (!p) return { removed: 0, kept: 0 };
     if (!Array.isArray(p.visits)) p.visits = [];
     var rows = Array.isArray(batchRows) ? batchRows : [], accepted = {}, canonical = [];
     for (var r = 0; r < rows.length; r++) {
@@ -539,28 +556,72 @@
     });
     _compactHydratedPlaceholders(p);
     var removed = before - p.visits.length;
-    if (removed) _upsert(p);
+    if (removed && opts.persist !== false) _upsert(p);
     return { removed: removed, kept: p.visits.length, complete: true };
+  }
+
+  function saveVerifiedVisitBatch(patientId, rows, opts) {
+    opts = opts || {};
+    var current = _findPatient(patientId);
+    if (!current) throw new Error('Verified visit patient is no longer current. Nothing from this batch was saved.');
+    var staged = _stagePatient(current), added = [], list = Array.isArray(rows) ? rows : [];
+    if (opts.reconcile === true) {
+      var receiptAliases = Object.create(null);
+      for (var ri = 0; ri < list.length; ri++) {
+        var aliases = _stableVisitKeys(list[ri]);
+        if (!aliases.length) throw new Error('Verified visit identities were incomplete. Nothing from this batch was saved.');
+        for (var rai = 0; rai < aliases.length; rai++) {
+          if (receiptAliases[aliases[rai]]) throw new Error('Verified visit receipt repeated an encounter identity. Nothing from this batch was saved.');
+          receiptAliases[aliases[rai]] = 1;
+        }
+      }
+    }
+    var addOne = window.__mlsVisitModel && isFn(window.__mlsVisitModel.addVisit) ? window.__mlsVisitModel.addVisit : addVisit;
+    for (var i = 0; i < list.length; i++) {
+      var stored = addOne(staged.id, list[i], {
+        source: opts.source || 'athena-copy', identityVerified: true,
+        identityBinding: String(staged.id), bodyComplete: opts.bodyComplete === true,
+        persist: false, _patientRef: staged
+      });
+      if (stored) { added.push(stored); if (isFn(opts.onStored)) opts.onStored(stored, i, list.length); }
+    }
+    /* Every row in an authoritative receipt must survive the full wrapper
+       chain. A safety/source wrapper returning null makes the set incomplete;
+       reconciling that subset could delete previously verified encounters. */
+    if (added.length !== list.length) throw new Error('Verified visit batch was filtered before persistence. Nothing from this batch was saved.');
+    var reconciled = null;
+    if (opts.reconcile === true) {
+      reconciled = reconcileVerifiedAthenaVisits(staged.id, list, { persist: false, _patientRef: staged });
+      if (!reconciled || reconciled.complete !== true) throw new Error('Verified visit identities conflicted. Nothing from this batch was saved.');
+    }
+    if ((added.length || (reconciled && reconciled.removed)) && !_upsert(staged)) {
+      throw new Error('Verified visit batch could not be committed. Nothing from this batch was saved.');
+    }
+    return { saved: added.length, reconcile: reconciled };
   }
 
   function ingestChart(patient, chart, source, opts) {
     if (!patient || !chart) return [];
-    var p = (typeof patient === 'string') ? _findPatient(patient) : patient;
-    if (!p) return [];
+    var patientId = (typeof patient === 'string') ? patient : (patient && patient.id);
+    /* Always stage the post-await canonical row. An object caller may have
+       captured its patient minutes before Athena returned. */
+    var current = patientId ? _findPatient(patientId) : null;
+    if (!current) return [];
+    var p = _stagePatient(current);
     if (!Array.isArray(p.visits)) p.visits = [];
     var added = [];
     var src = source || 'athena-copy';
     var list = [];
+    var addOne = window.__mlsVisitModel && isFn(window.__mlsVisitModel.addVisit) ? window.__mlsVisitModel.addVisit : addVisit;
     if (Array.isArray(chart.visits)) list = list.concat(chart.visits);
     if (Array.isArray(chart.history) && (!chart.visits || !chart.visits.length)) list = list.concat(chart.history);
     list.forEach(function (item) {
-      var v = addVisit(p.id, item, {
+      var v = addOne(p.id, item, {
         source: src,
-        /* Persist each normalized row through the canonical patient lookup.
-           Production getPatients/findPatient may return JSON clones; mutating a
-           persist:false clone and then upserting the stale caller object loses
-           every visit even though reference-based tests appear to pass. */
-        persist: true,
+        /* Keep every addVisit safety/source wrapper, but mutate this one current
+           patient object and persist once after the complete chart batch. */
+        persist: false,
+        _patientRef: p,
         identityVerified: !!(opts && opts.identityVerified),
         identityBinding: opts && opts.identityBinding,
         /* Parser-produced strings are encounter-index metadata, never a proven
@@ -570,9 +631,10 @@
       if (v) added.push(v);
     });
     if (!added.length && trim(chart.summary)) {
-      var v2 = addVisit(p.id, { type: 'Chart summary', date: '', raw: chart.summary }, {
+      var v2 = addOne(p.id, { type: 'Chart summary', date: '', raw: chart.summary }, {
         source: src,
-        persist: true,
+        persist: false,
+        _patientRef: p,
         identityVerified: !!(opts && opts.identityVerified),
         identityBinding: opts && opts.identityBinding
       });
@@ -584,10 +646,12 @@
        redundant twins. b485: run even when THIS batch added nothing — a
        fully-merged re-pull is exactly when pairs stranded by an earlier
        session get their only chance to heal. */
-    try {
-      var freshP = _findPatient(typeof patient === 'string' ? patient : p.id);
-      if (freshP && _collapseExactIndexDuplicates(freshP)) _upsert(freshP);
-    } catch (eDup) {}
+    var healed = false;
+    try { healed = !!_collapseExactIndexDuplicates(p); } catch (eDup) {}
+    if (added.length || healed) {
+      if (!_upsert(p)) return [];
+      current.visits = p.visits;
+    }
     return added;
   }
 
@@ -1283,13 +1347,7 @@
     return 'idfp-' + (h >>> 0).toString(36);
   }
 
-  function organizePatientHistory(patientId) {
-    var p = _findPatient(patientId);
-    if (!p) return { ok: false, reason: 'no-patient' };
-    var all = getVisits(p), visits = _usableVisits(p);
-    var excluded = all.length - visits.length;
-    if (!visits.length && excluded) return { ok: false, reason: all.some(function (v) { return v && v.indexOnly === true; }) ? 'full-detail-unavailable' : 'identity-unverified', excluded: excluded };
-
+  function _newHistoryFacts(p) {
     var facts = {
       problems: [], meds: [], allergies: [],
       history: { pmh: [], psh: [], social: [], family: [], smoking: [], immunizations: [], lmp: [], codeStatus: [], pcp: [], pharmacy: [] },
@@ -1297,8 +1355,7 @@
     };
     var semanticTracker = { sections: {} };
     /* The structured chart snapshot is trusted only with the exact-patient
-       six-card receipt created by the identity-gated chart sink. This captures
-       profile-only facts that do not appear inside any encounter body. */
+       six-card receipt created by the identity-gated chart sink. */
     var profileReceipt=p.athenaProfileCoverage, snap=p.athenaChartSnapshot;
     if(snap&&profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
       facts.problems=facts.problems.concat(_structuredValues(snap.problems));
@@ -1308,31 +1365,75 @@
       Object.keys(facts.history).forEach(function(k){facts.history[k]=facts.history[k].concat(_structuredValues(sh[k]));});
       facts.vitals=_canonicalVitals(snap.vitals);
     }
-    visits.slice(0, 80).forEach(function (v) {
-      var text = [v.raw, v.aiSummary, v.findings, v.plan].join('\n').slice(0, 24000);
-      (v.icd10 || []).forEach(function (c) { facts.problems.push('ICD-10 ' + c); });
-      facts.meds = facts.meds.concat(_structuredValues(v.meds || []));
-      _sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment', 'assessment and plan', 'assessment/plan'], semanticTracker, 'problems').forEach(function (pRun) {
-        facts.problems = facts.problems.concat(_expandOnsetRun(pRun));
-      });
-      _sectionValues(text, ['medications', 'medication list', 'current medications', 'meds'], semanticTracker, 'meds').forEach(function (mRun) {
-        facts.meds = facts.meds.concat(_expandMedTableRun(mRun));
-      });
-      _sectionValues(text, ['allergies', 'allergy'], semanticTracker, 'allergies').forEach(function (avRun) {
-        facts.allergies = facts.allergies.concat(_expandAllergyRun(avRun));
-      });
-      facts.history.pmh = facts.history.pmh.concat(_sectionValues(text, ['past medical history', 'medical history', 'pmh'], semanticTracker, 'history.pmh'));
-      facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh', 'surgical & procedure history', 'surgical and procedure history', 'procedure history'], semanticTracker, 'history.psh'));
-      facts.history.social = facts.history.social.concat(_sectionValues(text, ['social history', 'social'], semanticTracker, 'history.social'));
-      facts.history.family = facts.history.family.concat(_sectionValues(text, ['family history', 'family'], semanticTracker, 'history.family'));
-      facts.history.smoking = facts.history.smoking.concat(_sectionValues(text, ['smoking status', 'tobacco use', 'smoking'], semanticTracker, 'history.smoking'));
-      facts.history.immunizations = facts.history.immunizations.concat(_sectionValues(text, ['immunizations', 'immunization history', 'vaccines'], semanticTracker, 'history.immunizations'));
-      facts.history.lmp = facts.history.lmp.concat(_sectionValues(text, ['lmp', 'last menstrual period', 'pregnancy status'], semanticTracker, 'history.lmp'));
-      facts.history.codeStatus = facts.history.codeStatus.concat(_sectionValues(text, ['code status'], semanticTracker, 'history.codeStatus'));
-      facts.history.pcp = facts.history.pcp.concat(_sectionValues(text, ['primary care provider', 'pcp', 'referring provider'], semanticTracker, 'history.pcp'));
-      facts.history.pharmacy = facts.history.pharmacy.concat(_sectionValues(text, ['preferred pharmacy', 'pharmacy'], semanticTracker, 'history.pharmacy'));
-      var vv=_vitalsFromText(text,v.date); Object.keys(facts.vitals).forEach(function(k){if(!facts.vitals[k]&&vv[k])facts.vitals[k]=vv[k];});
+    return {facts:facts,semanticTracker:semanticTracker,profileReceipt:profileReceipt,snap:snap};
+  }
+
+  function _consumeHistoryVisit(state, v) {
+    var facts=state.facts,semanticTracker=state.semanticTracker;
+    var text = [v.raw, v.aiSummary, v.findings, v.plan].join('\n').slice(0, 24000);
+    (v.icd10 || []).forEach(function (c) { facts.problems.push('ICD-10 ' + c); });
+    facts.meds = facts.meds.concat(_structuredValues(v.meds || []));
+    _sectionValues(text, ['problem list', 'problems', 'diagnoses', 'diagnosis', 'assessment', 'assessment and plan', 'assessment/plan'], semanticTracker, 'problems').forEach(function (pRun) {
+      facts.problems = facts.problems.concat(_expandOnsetRun(pRun));
     });
+    _sectionValues(text, ['medications', 'medication list', 'current medications', 'meds'], semanticTracker, 'meds').forEach(function (mRun) {
+      facts.meds = facts.meds.concat(_expandMedTableRun(mRun));
+    });
+    _sectionValues(text, ['allergies', 'allergy'], semanticTracker, 'allergies').forEach(function (avRun) {
+      facts.allergies = facts.allergies.concat(_expandAllergyRun(avRun));
+    });
+    facts.history.pmh = facts.history.pmh.concat(_sectionValues(text, ['past medical history', 'medical history', 'pmh'], semanticTracker, 'history.pmh'));
+    facts.history.psh = facts.history.psh.concat(_sectionValues(text, ['past surgical history', 'surgical history', 'psh', 'surgical & procedure history', 'surgical and procedure history', 'procedure history'], semanticTracker, 'history.psh'));
+    facts.history.social = facts.history.social.concat(_sectionValues(text, ['social history', 'social'], semanticTracker, 'history.social'));
+    facts.history.family = facts.history.family.concat(_sectionValues(text, ['family history', 'family'], semanticTracker, 'history.family'));
+    facts.history.smoking = facts.history.smoking.concat(_sectionValues(text, ['smoking status', 'tobacco use', 'smoking'], semanticTracker, 'history.smoking'));
+    facts.history.immunizations = facts.history.immunizations.concat(_sectionValues(text, ['immunizations', 'immunization history', 'vaccines'], semanticTracker, 'history.immunizations'));
+    facts.history.lmp = facts.history.lmp.concat(_sectionValues(text, ['lmp', 'last menstrual period', 'pregnancy status'], semanticTracker, 'history.lmp'));
+    facts.history.codeStatus = facts.history.codeStatus.concat(_sectionValues(text, ['code status'], semanticTracker, 'history.codeStatus'));
+    facts.history.pcp = facts.history.pcp.concat(_sectionValues(text, ['primary care provider', 'pcp', 'referring provider'], semanticTracker, 'history.pcp'));
+    facts.history.pharmacy = facts.history.pharmacy.concat(_sectionValues(text, ['preferred pharmacy', 'pharmacy'], semanticTracker, 'history.pharmacy'));
+    var vv=_vitalsFromText(text,v.date); Object.keys(facts.vitals).forEach(function(k){if(!facts.vitals[k]&&vv[k])facts.vitals[k]=vv[k];});
+  }
+
+  function _historySourceStamp(p) {
+    try {
+      /* Exact source bytes are compared only at the start and commit boundary,
+         never between chunks. A mid-flight chart/profile edit therefore makes
+         the responsive pass stale instead of letting old facts overwrite it.
+         Fingerprint the exact ELIGIBLE work set, not the first raw visit rows:
+         newer index-only shells can otherwise occupy all 80 raw slots while
+         the clinical bodies being parsed sit outside the fence. Counts keep
+         eligibility/exclusion changes honest even when the first 80 usable
+         bodies themselves stay byte-identical. */
+      var all=getVisits(p),usable=_usableVisits(p);
+      return JSON.stringify({
+        id:p&&p.id,updated:p&&p.updated,
+        usableCount:usable.length,excludedCount:all.length-usable.length,totalCount:all.length,
+        visits:usable.slice(0,80),
+        profile:p&&p.athenaProfileCoverage,snapshot:p&&p.athenaChartSnapshot
+      });
+    } catch (e) { return ''; }
+  }
+
+  function _historyYield() {
+    try { if (isFn(window.__mlsBgSleep)) return Promise.resolve(window.__mlsBgSleep(0)); } catch (e) {}
+    return new Promise(function(resolve){ setTimeout(resolve,0); });
+  }
+
+  function organizePatientHistory(patientId, prepared) {
+    var canonical = _findPatient(patientId);
+    if (!canonical) return { ok: false, reason: 'no-patient' };
+    /* The responsive importer has already spent multiple tasks deriving this
+       state. Stage its final mutations on a detached row so an explicit Save
+       Shield refusal cannot leak an unpersisted "success" into the live memo. */
+    var p = prepared && prepared.__mlsPreparedHistory === true ? _stagePatient(canonical) : canonical;
+    var all = getVisits(p), visits = _usableVisits(p);
+    var excluded = all.length - visits.length;
+    if (!visits.length && excluded) return { ok: false, reason: all.some(function (v) { return v && v.indexOnly === true; }) ? 'full-detail-unavailable' : 'identity-unverified', excluded: excluded };
+
+    var state = prepared && prepared.__mlsPreparedHistory === true ? prepared : _newHistoryFacts(p);
+    var facts=state.facts,semanticTracker=state.semanticTracker,profileReceipt=state.profileReceipt,snap=state.snap;
+    if (!(prepared && prepared.__mlsPreparedHistory === true)) visits.slice(0, 80).forEach(function (v) { _consumeHistoryVisit(state,v); });
     facts.problems = _uniq(facts.problems);
     facts.meds = _uniq(facts.meds);
     facts.allergies = _uniq(facts.allergies);
@@ -1356,7 +1457,11 @@
       if(profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
         p.athenaProfileCoverage=Object.assign({},profileReceipt,{semanticComplete:false,semanticCoverage:semanticCoverage});
       }
-      _upsert(p);
+      if (!_upsert(p)) return {
+        ok: false, reason: 'commit-refused', complete: false,
+        verifiedVisits: visits.length, excludedUnverified: excluded,
+        semanticCoverage: semanticCoverage
+      };
       return {
         ok: false, reason: 'semantic-coverage-incomplete', complete: false,
         verifiedVisits: visits.length, excludedUnverified: excluded,
@@ -1437,7 +1542,11 @@
       patientId: trim(p.id),
       identityFingerprint: _identityFingerprint(p)
     };
-    _upsert(p);
+    if (!_upsert(p)) return {
+      ok: false, reason: 'commit-refused', complete: false,
+      verifiedVisits: visits.length, excludedUnverified: excluded,
+      semanticCoverage: semanticCoverage
+    };
     return {
       ok: true, complete: true,
       verifiedVisits: visits.length,
@@ -1451,12 +1560,50 @@
     };
   }
 
+  /* px-6.2: provider-day pulls may carry 80 verified visit bodies of up to
+     24KB each. The synchronous API above remains available for established
+     callers, but the pull lane consumes two visits per task and re-proves the
+     exact account and source snapshot before the one existing commit. */
+  function organizePatientHistoryResponsive(patientId) {
+    var p=_findPatient(patientId);
+    if(!p)return Promise.resolve({ok:false,reason:'no-patient'});
+    var all=getVisits(p),visits=_usableVisits(p),excluded=all.length-visits.length;
+    if(!visits.length&&excluded)return Promise.resolve({ok:false,reason:all.some(function(v){return v&&v.indexOnly===true;})?'full-detail-unavailable':'identity-unverified',excluded:excluded});
+    var state=_newHistoryFacts(p),work=visits.slice(0,80),index=0;
+    var accountKey='';try{accountKey=isFn(window.uns)?String(window.uns('patients')||''):'';}catch(e){}
+    var token='';try{token=isFn(window.bkToken)?String(window.bkToken()||''):'';}catch(e){}
+    var sourceStamp=_historySourceStamp(p);
+    function accountCurrent(){
+      try{
+        if(accountKey&&(!isFn(window.uns)||String(window.uns('patients')||'')!==accountKey))return false;
+        if(token&&(!isFn(window.bkToken)||String(window.bkToken()||'')!==token))return false;
+      }catch(e){return false;}
+      return true;
+    }
+    function stale(){return {ok:false,complete:false,stale:true,reason:'patient-changed-during-organization'};}
+    function step(){
+      if(!accountCurrent())return stale();
+      var end=Math.min(index+2,work.length);
+      while(index<end)_consumeHistoryVisit(state,work[index++]);
+      if(index<work.length)return _historyYield().then(step);
+      return _historyYield().then(function(){
+        if(!accountCurrent())return stale();
+        var current=_findPatient(patientId);
+        if(!current||!sourceStamp||_historySourceStamp(current)!==sourceStamp)return stale();
+        state.__mlsPreparedHistory=true;
+        return organizePatientHistory(patientId,state);
+      });
+    }
+    return _historyYield().then(step);
+  }
+
   function summarizeAll(patientId, onProgress) {
     return ensureSummaries(patientId, onProgress).then(function (summarized) {
       if (isFn(onProgress)) onProgress('Organizing verified history into the patient profile…');
-      var receipt = organizePatientHistory(patientId);
-      receipt.summarized = summarized;
-      return receipt;
+      return organizePatientHistoryResponsive(patientId).then(function(receipt){
+        receipt.summarized = summarized;
+        return receipt;
+      });
     });
   }
 
@@ -1471,7 +1618,7 @@
          suspect marker. Fields are never blanked - a wrong-but-visible value
          is safer than a confident empty ("no allergies recorded" from a wipe
          would be a false clinical claim). Repair is a re-pull, not a wipe. */
-  function _storeHygieneOnce() {
+  function _storeHygieneLegacyUnused() {
     try {
       if (!isFn(window.getPatients) || !isFn(window.upsertPatient)) return;
       var flagKey = (typeof window.uns === 'function') ? window.uns('mlsPxHygiene1') : 'mlsPxHygiene1';
@@ -1497,28 +1644,81 @@
         var d = trim(S(p.dob)); if (d) dobCounts[d] = (dobCounts[d] || 0) + 1;
       });
       var touched = 0;
-      pts.forEach(function (p) {
+      /* getPatients() may be a shallow slice of the exact memo-backed roster.
+         Build changed shells copy-on-write; a rejected Worker save must leave
+         the source objects dirty so the next pass can discover and retry them. */
+      pts = pts.slice();
+      pts.forEach(function (p, patientIndex) {
         if (!p) return;
-        var dirty = false;
-        if (typeof p.athenaHistorySummary === 'string' && HDR_ONLY.test(trim(p.athenaHistorySummary))) { p.athenaHistorySummary = ''; dirty = true; }
-        if (typeof p.summary === 'string' && HDR_ONLY.test(trim(p.summary))) { p.summary = ''; dirty = true; }
-        (Array.isArray(p.visits) ? p.visits : []).forEach(function (v) {
-          if (v && typeof v.aiSummary === 'string' && !v.aiSummary.trim()) { delete v.aiSummary; dirty = true; }
+        var dirty = false, next = p;
+        function writable(){ if(next===p)next=Object.assign({},p); return next; }
+        if (typeof p.athenaHistorySummary === 'string' && HDR_ONLY.test(trim(p.athenaHistorySummary))) { writable().athenaHistorySummary = ''; dirty = true; }
+        if (typeof p.summary === 'string' && HDR_ONLY.test(trim(p.summary))) { writable().summary = ''; dirty = true; }
+        var sourceVisits=Array.isArray(p.visits)?p.visits:[],nextVisits=null;
+        sourceVisits.forEach(function (v, visitIndex) {
+          if (v && typeof v.aiSummary === 'string' && !v.aiSummary.trim()) {
+            if(!nextVisits)nextVisits=sourceVisits.slice();
+            var nextVisit=Object.assign({},v);delete nextVisit.aiSummary;nextVisits[visitIndex]=nextVisit;dirty=true;
+          }
         });
+        if(nextVisits)writable().visits=nextVisits;
         if (p.created >= winStart && p.created < winEnd && trim(S(p.dob)) && dobCounts[trim(S(p.dob))] >= 5 && !p.athenaImportSuspect) {
-          p.athenaImportSuspect = { window: '2026-06-24..2026-06-29', reason: 'shared-dob-cluster', markedAt: new Date().toISOString() };
+          writable().athenaImportSuspect = { window: '2026-06-24..2026-06-29', reason: 'shared-dob-cluster', markedAt: new Date().toISOString() };
           dirty = true;
         }
         /* px-2.5.2: bump `updated` on every cleaned record so a
            timestamp-based server-mirror merge PREFERS the cleaned copy and
            pushes it back, instead of restoring the dirty one. */
-        if (dirty) { touched++; try { p.updated = Date.now(); } catch (eUp) {} }
+        if (dirty) { touched++; try { writable().updated = Date.now(); } catch (eUp) {} pts[patientIndex]=next; }
       });
       if (touched) {
-        /* one bulk write, not N upserts - the store is MLSZ1-compressed and
-           re-serializing 1,500+ records per record would stall the page */
-        if (typeof window.savePatients === 'function') window.savePatients(pts);
-        else pts.forEach(function (p) { try { window.upsertPatient(p); } catch (eU) {} });
+        /* One bulk write, not N upserts. The multi-megabyte MLSZ1 codec must
+           also stay off the renderer: this automatic boot repair used to land
+           directly in the first-click window. Fail closed when the verified
+           worker path is unavailable and leave the run-once flag unset. */
+        if (typeof window.savePatients !== 'function') return;
+        var patientKey='';try{patientKey=isFn(window.uns)?String(window.uns('patients')||''):'';}catch(eK){}
+        var sessionToken='';try{sessionToken=isFn(window.bkToken)?String(window.bkToken()||''):'';}catch(eT){}
+        var saveResult;
+        try{
+          saveResult=window.savePatients(pts,patientKey,{cooperative:true,isCurrent:function(){
+            try{
+              if(patientKey&&(!isFn(window.uns)||String(window.uns('patients')||'')!==patientKey))return false;
+              if(sessionToken&&(!isFn(window.bkToken)||String(window.bkToken()||'')!==sessionToken))return false;
+              return true;
+            }catch(e){return false;}
+          }});
+        }catch(eSave){return;}
+        /* A legacy/synchronously wrapped save is precisely the first-click
+           freeze this lane must never reintroduce. Require the cooperative
+           completion capability and a verified base-store receipt. */
+        if(!saveResult||!isFn(saveResult.then))return;
+        Promise.resolve(saveResult).then(function(saved){
+          if(!saved||saved.stale||(saved.saved!==true&&saved.identical!==true))return;
+          console.log('[MLS visits] store hygiene: cleaned ' + touched + ' record(s) (header-only summaries / empty aiSummary keys / import-window suspect markers)');
+          _storeHygieneOnce._verifyRounds = (_storeHygieneOnce._verifyRounds || 0) + 1;
+          if (_storeHygieneOnce._verifyRounds > 3) {
+            try { console.log('[MLS visits] store hygiene: roster kept reverting after 3 rounds - will retry on the next load'); } catch (eL3) {}
+            return;
+          }
+          try { setTimeout(function () {
+            try {
+              var again = (window.getPatients && window.getPatients()) || [];
+              var stillDirty = again.some(function (q) {
+                if (!q) return false;
+                if (typeof q.athenaHistorySummary === 'string' && HDR_ONLY.test(trim(q.athenaHistorySummary))) return true;
+                if (typeof q.summary === 'string' && HDR_ONLY.test(trim(q.summary))) return true;
+                if ((Array.isArray(q.visits) ? q.visits : []).some(function (v) { return v && typeof v.aiSummary === 'string' && !v.aiSummary.trim(); })) return true;
+                if (q.created >= winStart && q.created < winEnd && trim(S(q.dob)) && dobCounts[trim(S(q.dob))] >= 5 && !q.athenaImportSuspect) return true;
+                return false;
+              });
+              if (stillDirty) { _storeHygieneOnce(); return; }
+              try { localStorage.setItem(flagKey, '1'); } catch (eW1) {}
+              try { console.log('[MLS visits] store hygiene: verified clean after hydration - done'); } catch (eL2) {}
+            } catch (eV) {}
+          }, 25000); } catch (eArm) {}
+        },function(){/* leave the flag unset; the next load retries safely */});
+        return;
       }
       /* px-2.5.2 (measured live on b949's first load): the 4.5s pass raced the
          ASYNC server-mirror hydration - the console said "cleaned 434" while
@@ -1532,38 +1732,83 @@
         try { localStorage.setItem(flagKey, '1'); } catch (eW0) {}
         return;
       }
-      console.log('[MLS visits] store hygiene: cleaned ' + touched + ' record(s) (header-only summaries / empty aiSummary keys / import-window suspect markers)');
-      _storeHygieneOnce._verifyRounds = (_storeHygieneOnce._verifyRounds || 0) + 1;
-      if (_storeHygieneOnce._verifyRounds > 3) {
-        /* three clean-then-dirty rounds means something keeps rewriting the
-           roster; give up THIS load without consuming the flag - the next
-           page load starts fresh rather than recording a false done. */
-        try { console.log('[MLS visits] store hygiene: roster kept reverting after 3 rounds - will retry on the next load'); } catch (eL3) {}
+    } catch (e) {}
+  }
+  /* px-6.3: the old one-shot implementation above is retained only as
+     rollback-readable source. Automatic execution uses the shared scan owner:
+     session-ready admission, 24-row input-aware chunks, and an exact raw-store
+     fence captured BEFORE any row is inspected. */
+  function _storeHygieneOnce() {
+    try {
+      var queue=window.__mlsMaintenancePersist;
+      if(!queue||!isFn(queue.scan)||!isFn(queue.capture)){
+        _storeHygieneOnce._tries=(_storeHygieneOnce._tries||0)+1;
+        if(_storeHygieneOnce._tries<=5)try{setTimeout(_storeHygieneOnce,20000);}catch(eRetry){}
         return;
       }
-      try { setTimeout(function () {
-        try {
-          var again = (window.getPatients && window.getPatients()) || [];
-          var stillDirty = again.some(function (q) {
-            if (!q) return false;
-            if (typeof q.athenaHistorySummary === 'string' && HDR_ONLY.test(trim(q.athenaHistorySummary))) return true;
-            if (typeof q.summary === 'string' && HDR_ONLY.test(trim(q.summary))) return true;
-            if ((Array.isArray(q.visits) ? q.visits : []).some(function (v) { return v && typeof v.aiSummary === 'string' && !v.aiSummary.trim(); })) return true;
-            if (q.created >= winStart && q.created < winEnd && trim(S(q.dob)) && dobCounts[trim(S(q.dob))] >= 5 && !q.athenaImportSuspect) return true;
-            return false;
-          });
-          if (stillDirty) { _storeHygieneOnce(); return; }
-          try { localStorage.setItem(flagKey, '1'); } catch (eW1) {}
-          try { console.log('[MLS visits] store hygiene: verified clean after hydration - done'); } catch (eL2) {}
-        } catch (eV) {}
-      }, 25000); } catch (eArm) {}
-    } catch (e) {}
+      var flagKey=isFn(window.uns)?window.uns('mlsPxHygiene1'):'mlsPxHygiene1';
+      try{if(localStorage.getItem(flagKey)==='1')return;}catch(eRead){return;}
+      var HDR_ONLY=/^[\s\u2014\u2013-]*(?:Pulled from Athena|Longitudinal summary refreshed)\s+[\d\/.\-]+\s*(?:\u2014|\u2013|-)?\s*$/;
+      var winStart=Date.parse('2026-06-24T00:00:00'),winEnd=Date.parse('2026-06-30T00:00:00');
+      var dobCounts={},scope=queue.capture();
+      if(!scope){_storeHygieneOnce._tries=(_storeHygieneOnce._tries||0)+1;if(_storeHygieneOnce._tries<=5)try{setTimeout(_storeHygieneOnce,20000);}catch(eScope){}return;}
+      function retryLater(){_storeHygieneOnce._tries=(_storeHygieneOnce._tries||0)+1;if(_storeHygieneOnce._tries<=5)try{setTimeout(_storeHygieneOnce,20000);}catch(eRetry2){}}
+      function cleanWithCensus(){
+        var touched=0;
+        queue.scan({scope:scope,chunkSize:24,mirror:true,
+          fields:['summary','athenaHistorySummary','visits','athenaImportSuspect','updated'],
+          prepare:function(p,index,source,yieldWork){
+            if(!p)return null;
+            var dirty=false,next=p,sourceVisits=Array.isArray(p.visits)?p.visits:[],nextVisits=null,vi=0;
+            function writable(){if(next===p)next=Object.assign({},p);return next;}
+            if(typeof p.athenaHistorySummary==='string'&&HDR_ONLY.test(trim(p.athenaHistorySummary))){writable().athenaHistorySummary='';dirty=true;}
+            if(typeof p.summary==='string'&&HDR_ONLY.test(trim(p.summary))){writable().summary='';dirty=true;}
+            function finishPatient(){
+              if(nextVisits)writable().visits=nextVisits;
+              var dob=trim(S(p.dob));
+              if(p.created>=winStart&&p.created<winEnd&&dob&&dobCounts[dob]>=5&&!p.athenaImportSuspect){writable().athenaImportSuspect={window:'2026-06-24..2026-06-29',reason:'shared-dob-cluster',markedAt:new Date().toISOString()};dirty=true;}
+              if(!dirty)return null;
+              writable().updated=Date.now();touched++;return next;
+            }
+            function visitChunk(){
+              var end=Math.min(vi+64,sourceVisits.length);
+              while(vi<end){var at=vi++,v=sourceVisits[at];if(v&&typeof v.aiSummary==='string'&&!v.aiSummary.trim()){if(!nextVisits)nextVisits=sourceVisits.slice();var nv=Object.assign({},v);delete nv.aiSummary;nextVisits[at]=nv;dirty=true;}}
+              if(vi<sourceVisits.length&&isFn(yieldWork))return Promise.resolve(yieldWork()).then(visitChunk);
+              return finishPatient();
+            }
+            return visitChunk();
+          },
+          onEmpty:function(value,rows){
+            if(!rows||!rows.length){retryLater();return;}
+            try{localStorage.setItem(flagKey,'1');}catch(eW0){}
+            try{console.log('[MLS visits] store hygiene: verified clean after hydration - done');}catch(eLog){}
+          },
+          onSaved:function(){
+            try{console.log('[MLS visits] store hygiene: cleaned '+touched+' record(s) (header-only summaries / empty aiSummary keys / import-window suspect markers)');}catch(eLog2){}
+            _storeHygieneOnce._verifyRounds=(_storeHygieneOnce._verifyRounds||0)+1;
+            if(_storeHygieneOnce._verifyRounds>3){try{console.log('[MLS visits] store hygiene: roster kept reverting after 3 rounds - will retry on the next load');}catch(eL3){}return;}
+            try{setTimeout(_storeHygieneOnce,25000);}catch(eArm){}
+          },
+          onFailed:retryLater
+        });
+      }
+      /* Build the historical DOB-cluster census through the same bounded scan
+         instead of hiding an O(roster) loop inside the first row callback.
+         Both phases share one exact raw/account/token scope, so an other-tab
+         write between them fails closed before any repair can persist. */
+      queue.scan({scope:scope,chunkSize:24,mirror:false,
+        prepare:function(p){if(p&&p.created>=winStart&&p.created<winEnd){var dob=trim(S(p.dob));if(dob)dobCounts[dob]=(dobCounts[dob]||0)+1;}return null;},
+        onEmpty:function(value,rows){if(!rows||!rows.length){retryLater();return;}cleanWithCensus();},
+        onFailed:retryLater
+      });
+    }catch(e){}
   }
   try { setTimeout(_storeHygieneOnce, 4500); } catch (eHyg) {}
 
   window.__mlsVisitModel = {
     getVisits: getVisits,
     addVisit: addVisit,
+    saveVerifiedVisitBatch: saveVerifiedVisitBatch,
     reconcileVerifiedAthenaVisits: reconcileVerifiedAthenaVisits,
     ingestChart: ingestChart,
     deriveFromLegacy: deriveFromLegacy,
@@ -1571,6 +1816,7 @@
     ensureSummaries: ensureSummaries,
     summarizeAll: summarizeAll,
     organizePatientHistory: organizePatientHistory,
+    organizePatientHistoryResponsive: organizePatientHistoryResponsive,
     usableVisits: _usableVisits,
     _collapseExactIndexDuplicates: _collapseExactIndexDuplicates,
     _normVisit: _normVisit,
@@ -1983,25 +2229,33 @@
     var arr = Array.isArray(visits) ? visits : [];
     var fullBatch = !!(batchReceipt && batchReceipt.complete === true && batchReceipt.indexComplete === true && batchReceipt.bodyComplete === true && batchReceipt.fullDetail === true && Number(batchReceipt.parsed) === Number(batchReceipt.expected));
     var scopedRead = !!(batchReceipt && batchReceipt.onlyDate);
+    /* Some safety wrappers intentionally remove non-visit rows before this
+       function. A receipt for N rows may never authorize reconciliation after
+       that filtering unless all N rows still reached this exact boundary. */
+    if (fullBatch && (arr.length !== Number(batchReceipt.parsed) || arr.length !== Number(batchReceipt.expected))) {
+      throw new Error('Safety stop — the complete visit receipt no longer matches the rows to save. Nothing from this batch was saved.');
+    }
     if (arr.some(function (raw) { return !visitIdentityAgrees(p, raw, fullBatch); })) {
       throw new Error('Safety stop — at least one returned visit identifies a different patient. Nothing from this batch was saved. Re-open the correct chart and pull again.');
     }
-    var saved = 0;
-    arr.forEach(function (raw, i) {
-      var stored = M().addVisit(p.id, raw, {
-        source: 'athena-copy',
-        identityVerified: true,
-        identityBinding: S(p.id),
-        bodyComplete: fullBatch
-      });
-      if (stored) { saved++; if (onStatus) try { onStatus('Saved visit ' + (stored.date || (i + 1)) + ' (' + (i + 1) + ' of ' + arr.length + ')…'); } catch (e) {} }
-    });
+    var target = null;
+    try {
+      var currentPatients = isFn(window.getPatients) ? (window.getPatients() || []) : [];
+      target = currentPatients.find(function (row) { return String(row && row.id || '') === String(p.id || ''); }) || null;
+      if (!target) throw new Error('patient-no-longer-current');
+      var currentIdentity = verifyIdentity(target, identity || {});
+      if (!currentIdentity.ok) throw new Error('patient-identity-changed');
+    } catch (eCurrent) { throw new Error('Could not stage the verified visit batch safely. Nothing from this batch was saved.'); }
     /* 2026-07-28 invariant fix: a DAY-SCOPED read (runOpts.onlyDate) returns
        a complete receipt for ONE day - reconciling it as the verified FULL
        set would let a one-day slice speak for the whole history. Scoped
        saves stay additive; only a genuine every-visit batch reconciles. */
-    if (fullBatch && !scopedRead && isFn(M().reconcileVerifiedAthenaVisits)) M().reconcileVerifiedAthenaVisits(p.id, arr);
-    return saved;
+    if (!isFn(M().saveVerifiedVisitBatch)) throw new Error('Safety stop — the verified visit batch writer is unavailable. Nothing from this batch was saved.');
+    var result = M().saveVerifiedVisitBatch(target.id, arr, {
+      source: 'athena-copy', bodyComplete: fullBatch, reconcile: fullBatch && !scopedRead,
+      onStored: function (stored, i, total) { if (onStatus) try { onStatus('Saved visit ' + (stored.date || (i + 1)) + ' (' + (i + 1) + ' of ' + total + ')…'); } catch (e) {} }
+    });
+    return Number(result && result.saved || 0);
   }
 
   // ---- main flow -------------------------------------------------------------
@@ -2290,6 +2544,7 @@
       return r;
     };
     wrapped.__mlsWrapped = true;
+    wrapped.__mlsVisitWireOwner = true;
     try { wrapped.__mlsOrig = orig; } catch (e) {}
     window._savePatientChart = wrapped;
     return true;

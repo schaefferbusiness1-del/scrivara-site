@@ -26,8 +26,9 @@ const endMarker = 'window.__mlsWipeGuard = G;\n})();';
 const end = connect.indexOf(endMarker, open);
 assert(open > start && end > open, 'wipe-guard module boundaries missing');
 const source = connect.slice(open, end + endMarker.length);
-assert(source.includes("version: '1.1.0'"), 'wipe guard must be v1.1.0');
+assert(source.includes("version: '1.2.0'"), 'wipe guard must be v1.2.0');
 assert(source.includes('_allowDepth'), 'wipe guard must carry the stacked-layer allow depth');
+assert(source.includes('chainHasWipeGuard'), 'wipe guard must detect an existing owner below another wrapper');
 
 function makeEnv() {
   const stored = new Map();
@@ -71,12 +72,12 @@ vm.runInContext(source, env.context, { filename: 'wipe-guard.js' });
 assert(env.window.savePatients.__mlsWipeGuarded, 'guard did not install');
 
 const guardedOnce = env.window.savePatients;
-const laterWrapper = function (arr) { return guardedOnce.apply(this, arguments); }; // no marker forwarded
+const laterWrapper = function (arr) { return guardedOnce.apply(this, arguments); }; // shared origin link, distinct owner marker
+laterWrapper.__mlsOrig = guardedOnce;
 env.window.savePatients = laterWrapper;
 assert(env.timers.length === 1, 'guard heal interval missing');
-env.timers[0](); // heal tick: wraps again on top -> TWO stacked guard layers
-assert(env.window.savePatients.__mlsWipeGuarded, 'heal did not re-install');
-assert(env.window.savePatients.__mlsWipeGuardOrig === laterWrapper, 'heal did not stack over the later wrapper');
+env.timers[0]();
+assert.strictEqual(env.window.savePatients, laterWrapper, 'heal duplicated a guard already present in the wrapper chain');
 
 const G = env.window.__mlsWipeGuard;
 const writesBefore = env.baseWrites();
@@ -101,4 +102,4 @@ env.window.savePatients([]);
 assert.strictEqual(G.blocked, 2, 'hatch was not consumed — a second wipe went unblocked');
 assert.strictEqual(JSON.parse(env.localStorage.getItem('acct:patients')).length, 10, 'second wipe emptied storage');
 
-console.log('PASS wipe-guard hatch: stacked guard layers block unauthorized wipes, allowOnce() authorizes exactly one full-chain wipe, and the hatch re-arms closed');
+console.log('PASS wipe-guard hatch: chain ownership prevents duplicate guards, allowOnce() authorizes exactly one wipe, and the hatch re-arms closed');

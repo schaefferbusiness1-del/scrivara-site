@@ -7084,6 +7084,11 @@ function sfResetSessionBoundary(nextEmail,opts){
     : (sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||''));
   const next=sfNormalizeSessionAccount(nextEmail);
   if(!opts.force&&previous===next) return sfSessionUiEpoch;
+  /* A managed pull owns an explicit account key. Its newest in-memory rows
+     must reach that key before any logout/account reset can purge or retarget
+     storage. A quota failure therefore stops the boundary instead of being
+     swallowed and falsely acknowledging durability. */
+  if(window.__mlsPatientStoreBatch&&typeof window.__mlsPatientStoreBatch._prepareBoundary==='function')window.__mlsPatientStoreBatch._prepareBoundary(opts.reason||'session-boundary');
   sfSessionUiEpoch++;
   sfCancelSessionPrompts(true);
   try{ if(window.__mlsStatusCenter&&typeof window.__mlsStatusCenter.resetSession==='function') window.__mlsStatusCenter.resetSession(next,{reason:opts.reason||'account-change',epoch:sfSessionUiEpoch}); }catch(e){}
@@ -7116,6 +7121,11 @@ function startSession(email){
      their first account-local Today/preferences read can come from the prior
      session namespace. Nothing is revealed until the synchronous reset ends. */
   const _previousSessionAccount=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
+  /* Flush the still-current account before adopting the new namespace. If
+     storage is full, keep the prior session intact instead of stranding its
+     open batch behind a newly assigned account key. sfResetSessionBoundary
+     repeats this as a no-op safety check before dispatching listeners. */
+  if(globalThis.__mlsPatientStoreBatch&&typeof globalThis.__mlsPatientStoreBatch._prepareBoundary==='function')globalThis.__mlsPatientStoreBatch._prepareBoundary('session-start');
   session={email};
   setSessionEmail(email);
   try{ slideSession(); }catch(e){} /* b940: fire-and-forget; never blocks the gate */
@@ -7273,11 +7283,21 @@ async function logout(force){
      cannot prompt, which is exactly why those notes now carry a visible
      "⏳ Syncing" / "📱 Device only" chip while the session is alive. */
   if(force!==true && backendMode()){
-    var _unsynced=0;
-    try{ _unsynced=(_pendingBackupGet()||[]).length+(_svrDeclinedGet()||[]).length; }catch(e){}
-    if(_unsynced>0){
+    var _unsynced=0,_unsyncedPatients=0;
+    try{
+      _unsynced=(_pendingBackupGet()||[]).length+(_svrDeclinedGet()||[]).length;
+      var _patientPending=Object.create(null);
+      (_pendingSyncGet()||[]).forEach(function(id){if(id!=null)_patientPending[String(id)]=1;});
+      var _livePatientBatch=__mlsPtsBatchByKey&&__mlsPtsBatchByKey[uns('patients')];
+      if(_livePatientBatch&&_livePatientBatch.syncIds)Object.keys(_livePatientBatch.syncIds).forEach(function(id){if(id)_patientPending[id]=1;});
+      _unsyncedPatients=Object.keys(_patientPending).length;
+    }catch(e){}
+    if(_unsynced>0||_unsyncedPatients>0){
       var _okUnsynced=false;
-      try{ _okUnsynced=await mlsConfirm(_unsynced+' note'+(_unsynced===1?'':'s')+' on this device '+(_unsynced===1?'has':'have')+' NOT been backed up to your account. Signing out clears local data and '+(_unsynced===1?'that copy':'those copies')+' cannot be recovered. Sign out anyway?'); }catch(e){ _okUnsynced=false; }
+      var _pendingParts=[];
+      if(_unsynced)_pendingParts.push(_unsynced+' note'+(_unsynced===1?'':'s'));
+      if(_unsyncedPatients)_pendingParts.push(_unsyncedPatients+' patient record'+(_unsyncedPatients===1?'':'s'));
+      try{ _okUnsynced=await mlsConfirm(_pendingParts.join(' and ')+' on this device '+((_unsynced+_unsyncedPatients)===1?'has':'have')+' NOT been backed up to your account. Signing out clears local data and '+((_unsynced+_unsyncedPatients)===1?'that copy':'those copies')+' cannot be recovered. Sign out anyway?'); }catch(e){ _okUnsynced=false; }
       if(!_okUnsynced) return;
     }
   }
@@ -9734,6 +9754,70 @@ var __mlsLZ=(function(){
       if(enlargeIn==0){enlargeIn=Math.pow(2,numBits);numBits++;}
     }
   }
+  /* pts-codec-worker-1.1.0: managed chart pulls can grow the roster into a
+     multi-megabyte clinical blob. Running this deterministic LZ codec on the
+     renderer thread made one 15-visit chart result block input for seconds.
+     The worker now owns JSON serialization as well as the exact codec for
+     cooperative saves, so the renderer does not stringify a 4-6MB roster
+     before it can even start the worker. Normal one-off saves keep the
+     synchronous path; only the account-bound cooperative lane opts in. */
+  var _codecWorker=null,_codecWorkerUrl='',_codecSeq=0,_codecPending={};
+  function _codecFailAll(message){
+    var pending=_codecPending;_codecPending={};
+    Object.keys(pending).forEach(function(id){try{var er=new Error(message||'patient-codec-worker-failed');if(pending[id].ack)pending[id].ack.reject(er);pending[id].reject(er);}catch(e){}});
+  }
+  function _codecEnsure(){
+    if(_codecWorker!==null)return _codecWorker;
+    try{
+      var src="'use strict';var f=String.fromCharCode,jobs={};\n"+_compress.toString()+"\n"+_decompress.toString()+"\n"+
+        "function packed(input){var body=_compress(input,15,function(a){return f(a+32);})+' ',out=input;if(body.length<input.length&&_decompress(body.length,16384,function(i){return body.charCodeAt(i)-32;})===input)out='MLSZ1|'+body;return out;}\n"+
+        "onmessage=function(e){var d=e.data||{},input='',parts,i,s;try{if(d.kind==='rows-start'){jobs[d.id]=[];postMessage({id:d.id,ack:d.seq});return;}if(d.kind==='rows-cancel'){delete jobs[d.id];return;}if(d.kind==='rows-chunk'){parts=jobs[d.id];if(!parts)throw new Error('codec-row-job-missing');for(i=0;i<d.rows.length;i++){s=JSON.stringify(d.rows[i]);parts.push(s===undefined?'null':s);}postMessage({id:d.id,ack:d.seq});return;}if(d.kind==='rows-finish'){parts=jobs[d.id];if(!parts)throw new Error('codec-row-job-missing');delete jobs[d.id];input='['+parts.join(',')+']';postMessage({id:d.id,packed:packed(input),json:input});return;}input=String(d.input==null?'':d.input);postMessage({id:d.id,packed:packed(input)});}catch(err){delete jobs[d.id];postMessage({id:d.id,error:String(err&&err.message||err||'codec-failed')});}};";
+      _codecWorkerUrl=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
+      _codecWorker=new Worker(_codecWorkerUrl);
+      _codecWorker.onmessage=function(e){var d=e.data||{},p=_codecPending[d.id];if(!p)return;if(d.ack!==undefined){var a=p.ack;if(a&&a.seq===d.ack){p.ack=null;a.resolve(true);}return;}delete _codecPending[d.id];if(d.error){var er=new Error(d.error);if(p.ack)p.ack.reject(er);p.reject(er);}else if(p.rows)p.resolve({packed:String(d.packed==null?'':d.packed),json:String(d.json==null?'':d.json)});else p.resolve(String(d.packed==null?'':d.packed));};
+      _codecWorker.onerror=function(){try{_codecWorker.terminate();}catch(e){}_codecWorker=false;_codecFailAll('patient-codec-worker-failed');};
+    }catch(e){_codecWorker=false;}
+    return _codecWorker;
+  }
+  function compressVerifiedAsync(input){
+    input=String(input==null?'':input);
+    return new Promise(function(resolve,reject){
+      var w=_codecEnsure();if(!w){reject(new Error('patient-codec-worker-unavailable'));return;}
+      var id=++_codecSeq;_codecPending[id]={resolve:resolve,reject:reject};
+      try{w.postMessage({id:id,input:input});}catch(e){delete _codecPending[id];reject(e);}
+    });
+  }
+  function codecInputPending(){try{var n=window.navigator&&window.navigator.scheduling;return !!(n&&typeof n.isInputPending==='function'&&n.isInputPending({includeContinuous:true}));}catch(e){return false;}}
+  function codecYield(){
+    function one(){try{if(typeof window.__mlsBgSleep==='function')return Promise.resolve(window.__mlsBgSleep(0));}catch(e){}return new Promise(function(resolve){setTimeout(resolve,0);});}
+    return one().then(function wait(){return codecInputPending()?one().then(wait):true;});
+  }
+  function compressRowsVerifiedAsync(rows,options){
+    options=options||{};rows=Array.isArray(rows)?rows:[];
+    return new Promise(function(resolve,reject){
+      var w=_codecEnsure();if(!w){reject(new Error('patient-codec-worker-unavailable'));return;}
+      var id=++_codecSeq,p={resolve:resolve,reject:reject,rows:true,ack:null},index=0,seq=0;_codecPending[id]=p;
+      function current(){try{return typeof options.isCurrent!=='function'||options.isCurrent();}catch(e){return false;}}
+      function cancel(){try{w.postMessage({id:id,kind:'rows-cancel'});}catch(e){}delete _codecPending[id];var er=new Error('patient-codec-worker-stale');er.code='MLS_PATIENT_CODEC_STALE';reject(er);}
+      function ack(kind,payload){
+        return new Promise(function(ok,bad){
+          if(!current()){cancel();bad(new Error('patient-codec-worker-stale'));return;}
+          var n=++seq;p.ack={seq:n,resolve:ok,reject:bad};payload=payload||{};payload.id=id;payload.kind=kind;payload.seq=n;
+          try{w.postMessage(payload);}catch(e){p.ack=null;delete _codecPending[id];bad(e);reject(e);}
+        });
+      }
+      function next(){
+        if(!current()){cancel();return;}
+        if(index>=rows.length){try{w.postMessage({id:id,kind:'rows-finish'});}catch(e){delete _codecPending[id];reject(e);}return;}
+        codecYield().then(function(){
+          if(!current()){cancel();return;}
+          var end=Math.min(index+8,rows.length),chunk=rows.slice(index,end);index=end;
+          return ack('rows-chunk',{rows:chunk}).then(next);
+        },reject);
+      }
+      ack('rows-start',{}).then(next,function(error){if(_codecPending[id]){delete _codecPending[id];reject(error);}});
+    });
+  }
   return {
     compressToUTF16:function(input){
       if(input==null)return "";
@@ -9743,7 +9827,9 @@ var __mlsLZ=(function(){
       if(compressed==null)return "";
       if(compressed=="")return null;
       return _decompress(compressed.length,16384,function(index){return compressed.charCodeAt(index)-32;});
-    }
+    },
+    compressVerifiedAsync:compressVerifiedAsync,
+    compressRowsVerifiedAsync:compressRowsVerifiedAsync
   };
 })();
 function _mlsPtsDecode(raw){
@@ -9767,6 +9853,21 @@ function _mlsPtsEncode(json){
   }catch(e){}
   return json;
 }
+function _mlsPtsEncodeAsync(json){
+  if(typeof json!=='string'||json.length<200000)return Promise.resolve(json);
+  if(!__mlsLZ||typeof __mlsLZ.compressVerifiedAsync!=='function')return Promise.reject(new Error('patient-codec-worker-unavailable'));
+  return __mlsLZ.compressVerifiedAsync(json).then(function(packed){
+    window.__mlsLZVerN=(window.__mlsLZVerN||0)+1;
+    return packed;
+  });
+}
+function _mlsPtsEncodeRowsAsync(rows,isCurrent){
+  if(!__mlsLZ||typeof __mlsLZ.compressRowsVerifiedAsync!=='function')return Promise.reject(new Error('patient-codec-worker-unavailable'));
+  return __mlsLZ.compressRowsVerifiedAsync(rows,{isCurrent:isCurrent}).then(function(result){
+    window.__mlsLZVerN=(window.__mlsLZVerN||0)+1;
+    return result;
+  });
+}
 window.__mlsPtsDecode=_mlsPtsDecode;
 window.__mlsPtsEncode=_mlsPtsEncode;
 /* b377 perf: memoize the base read on RAW string identity. The multi-MB LZ
@@ -9774,7 +9875,7 @@ window.__mlsPtsEncode=_mlsPtsEncode;
    this matters most at boot, before the bundle's store-cache wrap installs.
    Returns a fresh top-level array (same aliasing depth as the wrap). */
 var __mlsPtsMemo=null;
-var __mlsPtsBatchByKey=Object.create(null),__mlsPtsBatchSeq=0;
+var __mlsPtsBatchByKey=Object.create(null),__mlsPtsBatchSeq=0,__mlsPtsPendingMirrorMemoryByKey=Object.create(null);
 function __mlsPtsStorageKey(override){
   var current=uns('patients');
   /* The override is used only by an already-open, account-bound batch when a
@@ -9867,11 +9968,12 @@ function __mlsAthenaCarryAttested(dst,src){
   }
 }
 function __mlsAthenaProofAt(c){ if(!c||!c.capturedAt)return 0; var n=Number(c.capturedAt); if(isFinite(n)&&n>0)return n; return Date.parse(String(c.capturedAt))||0; }
-function __mlsAthenaProofGuard(key,arr){
+function __mlsAthenaProofGuard(key,arr,start,end){
   if(!Array.isArray(arr))return;
   var idx=__mlsAthenaProofByKey[key];
   if(!idx)idx=__mlsAthenaProofByKey[key]={};
-  for(var i=0;i<arr.length;i++){
+  start=Math.max(0,Number(start)||0);end=end==null?arr.length:Math.min(arr.length,Math.max(start,Number(end)||0));
+  for(var i=start;i<end;i++){
     var row=arr[i]; if(!row||!row.id)continue;
     var at=__mlsAthenaProofAt(row.athenaProfileCoverage);
     var kept=idx[row.id];
@@ -9977,6 +10079,83 @@ function __mlsPtsRowGuard(key,arr,opts){
   }catch(e){}
   return carried.concat(arr);
 }
+function __mlsPtsInputPending(){
+  try{var n=window.navigator&&window.navigator.scheduling;return !!(n&&typeof n.isInputPending==='function'&&n.isInputPending({includeContinuous:true}));}catch(e){return false;}
+}
+function __mlsPtsCooperativeTurn(){
+  function one(){try{if(typeof window.__mlsBgSleep==='function')return Promise.resolve(window.__mlsBgSleep(0));}catch(e){}return new Promise(function(resolve){setTimeout(resolve,0);});}
+  return one().then(function wait(){return __mlsPtsInputPending()?one().then(wait):true;});
+}
+function __mlsPtsCooperativeCurrent(key,raw,opts){
+  try{
+    if(opts&&typeof opts.isCurrent==='function'&&!opts.isCurrent())return false;
+    return localStorage.getItem(key)===raw;
+  }catch(e){return false;}
+}
+/* pts-cooperative-guard-1.0.0: preserve the exact row-loss and Athena proof
+   rules without putting their whole-roster scans back on the input task. The
+   cooperative lane snapshots row shells in bounded slices, fences every turn
+   to the exact stored bytes/account owner, and only then streams those rows to
+   the codec Worker. Ordinary/manual saves retain the synchronous path. */
+async function __mlsPtsPrepareCooperative(key,input,opts,rawBefore){
+  opts=opts||{};
+  var source=Array.isArray(input)?input:[],callerGen=(typeof source.__mlsReadGen==='number')?source.__mlsReadGen:-1;
+  var rows=new Array(source.length),have=Object.create(null),i=0,CHUNK=24;
+  function current(){return __mlsPtsCooperativeCurrent(key,rawBefore,opts);}
+  async function turn(){await __mlsPtsCooperativeTurn();return current();}
+  while(i<source.length){
+    if(!await turn())return {stale:true,external:true};
+    var end=Math.min(i+CHUNK,source.length);
+    for(;i<end;i++){
+      var row=source[i],copy=(row&&typeof row==='object')?Object.assign({},row):row;
+      rows[i]=copy;if(copy&&copy.id!=null)have[String(copy.id)]=1;
+    }
+  }
+  if(!current())return {stale:true,external:true};
+  if(opts.allowRemovals!==true){
+    var cur=null;
+    try{
+      if(uns('patients')===key){
+        var active=__mlsPtsBatchByKey[key];
+        if(active&&active.depth>0&&Array.isArray(active.arr))cur=active.arr;
+        else if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===rawBefore)cur=__mlsPtsMemo.arr;
+        else cur=getPatients();
+      }
+    }catch(e){cur=null;}
+    if(!current())return {stale:true,external:true};
+    if(Array.isArray(cur)&&cur.length){
+      var gens=__mlsPtsRowGenByKey[key],pull=__mlsPtsPullActive(),now=Date.now(),carried=[];
+      for(i=0;i<cur.length;){
+        if(!await turn())return {stale:true,external:true};
+        var ce=Math.min(i+CHUNK,cur.length);
+        for(;i<ce;i++){
+          var r=cur[i];if(!r||r.id==null||have[String(r.id)])continue;
+          var keep,g=gens?gens[String(r.id)]:undefined;
+          if(pull)keep=true;
+          else if(typeof g==='number'&&callerGen>=0)keep=callerGen<g;
+          else{var at=Number(r.updated||r.created||0);keep=(at>0)&&(now-at)<=__MLS_PTS_ROWGUARD_MS;}
+          if(keep)carried.push(Object.assign({},r));
+        }
+      }
+      if(carried.length){
+        try{
+          var log=window.__mlsPtsRowGuardLog=window.__mlsPtsRowGuardLog||[];
+          log.push({at:now,kept:carried.length,pull:pull,callerGen:callerGen,ids:carried.map(function(x){return String(x.id).slice(0,24);}).slice(0,8)});
+          if(log.length>60)log.splice(0,log.length-60);
+        }catch(e){}
+        rows=carried.concat(rows);
+      }
+    }
+  }
+  if(callerGen>=0)try{Object.defineProperty(rows,'__mlsReadGen',{value:callerGen,configurable:true});}catch(e){}
+  for(i=0;i<rows.length;){
+    if(!await turn())return {stale:true,external:true};
+    var pe=Math.min(i+CHUNK,rows.length);
+    try{__mlsAthenaProofGuard(key,rows,i,pe);}catch(e){}
+    i=pe;
+  }
+  return current()?{rows:rows}:{stale:true,external:true};
+}
 function savePatients(arr,__storageKey,__opts){
   var __key=__mlsPtsStorageKey(__storageKey);
   /* While an old account's managed pull is draining, an unbound write from a
@@ -9988,6 +10167,47 @@ function savePatients(arr,__storageKey,__opts){
     __accountErr.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';
     throw __accountErr;
   }
+  var __cooperative=!!(__opts&&__opts.cooperative===true),__rawBefore='';
+  if(__cooperative){
+    try{
+      var __actualRaw=localStorage.getItem(__key);
+      if(Object.prototype.hasOwnProperty.call(__opts,'expectedRaw')&&__opts.expectedRaw!==__actualRaw)return Promise.resolve({stale:true,external:true});
+      __rawBefore=Object.prototype.hasOwnProperty.call(__opts,'expectedRaw')?__opts.expectedRaw:__actualRaw;
+    }catch(e){return Promise.resolve({stale:true,external:true});}
+  }
+  if(__cooperative){
+    return __mlsPtsPrepareCooperative(__key,arr,__opts,__rawBefore).then(function(prepared){
+      if(prepared&&prepared.stale)return prepared;
+      arr=prepared&&Array.isArray(prepared.rows)?prepared.rows:[];
+      return _mlsPtsEncodeRowsAsync(arr,function(){return __mlsPtsCooperativeCurrent(__key,__rawBefore,__opts);});
+    }).then(function(encoded){
+      if(encoded&&encoded.stale)return encoded;
+      var __json=encoded&&typeof encoded.json==='string'?encoded.json:'';
+      var packed=encoded&&typeof encoded.packed==='string'?encoded.packed:'';
+      if(typeof __opts.isCurrent==='function'&&!__opts.isCurrent())return {stale:true};
+      try{if(localStorage.getItem(__key)!==__rawBefore)return {stale:true,external:true};}catch(e){return {stale:true,external:true};}
+      if(__mlsPtsLastSavedKey===__key&&__mlsPtsLastSaved!==null&&__mlsPtsLastSaved===__json&&__mlsPtsLastPacked===__rawBefore){
+        return {saved:false,identical:true,rows:arr};
+      }
+      if(__mlsPtsMemo&&__mlsPtsMemo.key===__key)__mlsPtsMemo=null;
+      try{localStorage.setItem(__key,packed);}
+      catch(eq){
+        try{
+          for(var qi=localStorage.length-1;qi>=0;qi--){var qk=localStorage.key(qi);if(/(?:^|_)(?:studygroups_v1|mlsRFScrapeCache2)$|ScrapeCache/.test(String(qk||''))){try{localStorage.removeItem(qk);}catch(_){}}}
+          localStorage.setItem(__key,packed);
+        }catch(e2){try{toast('Local storage is full - patient changes could NOT be saved. Tell MLS support.','');}catch(_){}throw e2;}
+      }
+      __mlsPtsLastSavedKey=__key;__mlsPtsLastSaved=__json;__mlsPtsLastPacked=packed;__mlsPtsGen++;
+      if(Array.isArray(arr))__mlsPtsMemo={key:__key,raw:packed,arr:Array.from(arr)};
+      try{
+        var __gens=__mlsPtsRowGenByKey[__key]||(__mlsPtsRowGenByKey[__key]=Object.create(null));
+        var __present=Object.create(null),__gi,__gr,__gid;
+        for(__gi=0;__gi<arr.length;__gi++){__gr=arr[__gi];if(__gr&&__gr.id!=null){__gid=String(__gr.id);__present[__gid]=1;if(__gens[__gid]===undefined)__gens[__gid]=__mlsPtsGen;}}
+        for(__gid in __gens){if(!__present[__gid])delete __gens[__gid];}
+      }catch(e){}
+      return {saved:true,packedBytes:String(packed||'').length,rows:arr};
+    },function(error){if(error&&error.code==='MLS_PATIENT_CODEC_STALE')return {stale:true,external:true};throw error;});
+  }
   arr=__mlsPtsRowGuard(__key,arr,__opts);
   try{ __mlsAthenaProofGuard(__key,arr); }catch(e){}
   var __json=JSON.stringify(arr);
@@ -9996,7 +10216,37 @@ function savePatients(arr,__storageKey,__opts){
      rosters more often than they change them. The getItem identity check
      keeps external writers (other tabs, imports) honest. */
   if(__mlsPtsLastSavedKey===__key&&__mlsPtsLastSaved!==null&&__mlsPtsLastSaved===__json){
-    try{ if(localStorage.getItem(__key)===__mlsPtsLastPacked)return; }catch(e){}
+    try{ if(localStorage.getItem(__key)===__mlsPtsLastPacked)return __opts&&__opts.cooperative===true?Promise.resolve({saved:false,identical:true,rows:arr}):undefined; }catch(e){}
+  }
+  /* Retired byte-for-byte rollback lane. Cooperative calls already returned
+     through _mlsPtsEncodeRowsAsync above, before renderer JSON.stringify. */
+  if(false&&__opts&&__opts.cooperative===true){
+    var __rawBefore='';try{__rawBefore=localStorage.getItem(__key);}catch(e){}
+    return _mlsPtsEncodeAsync(__json).then(function(packed){
+      if(typeof __opts.isCurrent==='function'&&!__opts.isCurrent())return {stale:true};
+      try{if(localStorage.getItem(__key)!==__rawBefore)return {stale:true,external:true};}catch(e){return {stale:true,external:true};}
+      if(__mlsPtsMemo&&__mlsPtsMemo.key===__key)__mlsPtsMemo=null;
+      try{localStorage.setItem(__key,packed);}
+      catch(eq){
+        try{
+          for(var qi=localStorage.length-1;qi>=0;qi--){var qk=localStorage.key(qi);if(/(?:^|_)(?:studygroups_v1|mlsRFScrapeCache2)$|ScrapeCache/.test(String(qk||''))){try{localStorage.removeItem(qk);}catch(_){}}}
+          localStorage.setItem(__key,packed);
+        }catch(e2){try{toast('âš  Local storage is full â€” patient changes could NOT be saved. Tell MLS support.','');}catch(_){}throw e2;}
+      }
+      __mlsPtsLastSavedKey=__key;__mlsPtsLastSaved=__json;__mlsPtsLastPacked=packed;__mlsPtsGen++;
+      /* The exact rows that produced `packed` are already in memory. Seed the
+         raw-identity memo now so the first post-save render/sync does not
+         immediately LZ-decompress the same multi-megabyte roster back on the
+         input thread. A later external write changes `raw` and misses safely. */
+      if(Array.isArray(arr))__mlsPtsMemo={key:__key,raw:packed,arr:Array.from(arr)};
+      try{
+        var __gens=__mlsPtsRowGenByKey[__key]||(__mlsPtsRowGenByKey[__key]=Object.create(null));
+        var __present=Object.create(null),__gi,__gr,__gid;
+        for(__gi=0;__gi<arr.length;__gi++){__gr=arr[__gi];if(__gr&&__gr.id!=null){__gid=String(__gr.id);__present[__gid]=1;if(__gens[__gid]===undefined)__gens[__gid]=__mlsPtsGen;}}
+        for(__gid in __gens){if(!__present[__gid])delete __gens[__gid];}
+      }catch(e){}
+      return {saved:true,packedBytes:String(packed||'').length,rows:arr};
+    });
   }
   if(__mlsPtsMemo&&__mlsPtsMemo.key===__key)__mlsPtsMemo=null; /* never serve a pre-write parse after a write */
   var packed=_mlsPtsEncode(__json);
@@ -10021,6 +10271,9 @@ function savePatients(arr,__storageKey,__opts){
      (either path above). Bump the generation, record the add-generation of
      every id new to this write, forget ids that authorized removals dropped
      (a re-add later earns a fresh generation). */
+  /* Same guarantee for ordinary single-write callers: a successful atomic
+     write must never force its very next reader to decode bytes we just made. */
+  if(Array.isArray(arr))__mlsPtsMemo={key:__key,raw:packed,arr:Array.from(arr)};
   __mlsPtsGen++;
   try{
     var __gens=__mlsPtsRowGenByKey[__key]||(__mlsPtsRowGenByKey[__key]=Object.create(null));
@@ -10031,7 +10284,8 @@ function savePatients(arr,__storageKey,__opts){
   var __batch=__mlsPtsBatchByKey[__key];
   if(__batch&&__batch.depth>0&&!__batch.flushing){
     __batch.arr=Array.isArray(arr)?arr.slice():[];
-    __batch.dirty=false; __batch.changesSinceFlush=0; __batch.dirtySince=0;
+    __batch.dirty=false; __batch.changesSinceFlush=0; __batch.uniqueSinceFlush=0; __batch.dirtySince=0; __batch.dirtyIds=Object.create(null);
+    try{__batch.lastRaw=localStorage.getItem(__key);}catch(e){}
     __batch.externalWrites++;
   }
 }
@@ -10041,17 +10295,77 @@ function savePatients(arr,__storageKey,__opts){
    hydrate the captured old array from the new account. Normal same-account
    checkpoints still use the complete public wrapper chain. */
 var __mlsPtsBaseSavePatients=savePatients;
+function __mlsPtsCancelBatchTimer(st){
+  if(!st)return;
+  var timer=st.timer;st.timer=0;st.armSeq=(Number(st.armSeq)||0)+1;
+  if(timer&&!(timer&&timer.worker===true)){try{clearTimeout(timer);}catch(e){}}
+}
 function __mlsPtsArmBatch(st){
   if(!st||!st.dirty||st.timer||st.flushing||st.invalidated)return;
-  st.timer=setTimeout(function(){
+  var wake=function(marker){
+    if(st.invalidated||!st.timer)return;
+    if(marker&&(!st.timer||st.timer.worker!==true||st.timer.marker!==marker))return;
     st.timer=0;
-    try{ __mlsPtsFlushBatch(st,'max-delay'); }catch(e){}
-  },st.maxDelayMs);
+    try{Promise.resolve(__mlsPtsFlushBatch(st,'max-delay')).catch(function(e){st.lastError=String(e&&e.message||e||'patient-batch-flush-failed').slice(0,180);});}catch(e){}
+  };
+  /* Athena owns the foreground tab during a managed pull and Chrome can stop
+     this page's timers entirely. Use the existing worker-backed sleeper so a
+     15s durability checkpoint stays real even while MLS is hidden. */
+  if(st.cooperative&&typeof __mlsBgSleep==='function'){
+    var marker=(Number(st.armSeq)||0)+1;st.armSeq=marker;st.timer={worker:true,marker:marker};
+    Promise.resolve(__mlsBgSleep(st.maxDelayMs)).then(function(){wake(marker);},function(){wake(marker);});
+  }else st.timer=setTimeout(function(){wake(0);},st.maxDelayMs);
 }
-function __mlsPtsFlushBatch(st,reason){
+function __mlsPtsMirrorItemKey(base,id){return String(base||'')+'::id::'+encodeURIComponent(String(id||''));}
+function __mlsPtsRememberMirrors(st,runNow,clear){
+  if(!st||!st.syncIds)return true;
+  var ids=Object.keys(st.syncIds);
+  if(!ids.length){
+    if(runNow&&uns('patients')===st.key){try{_armPendingSyncFlush();}catch(e){}try{setTimeout(function(){try{_flushPendingSync();}catch(e){}},0);}catch(e){}}
+    return true;
+  }
+  var failed=Object.create(null),ok=true;
+  try{
+    ids.forEach(function(id){
+      try{var itemKey=__mlsPtsMirrorItemKey(st.pendingSyncKey,id);localStorage.setItem(itemKey,'1');if(localStorage.getItem(itemKey)!=='1')throw new Error('patient-mirror-queue-unverified');}
+      catch(e){failed[id]=1;ok=false;}
+    });
+    /* Successfully persisted ids no longer need to be rewritten at every
+       later 64-patient checkpoint. Failures stay owned in memory for retry. */
+    st.syncIds=failed;
+    if(!ok){var mem=__mlsPtsPendingMirrorMemoryByKey[st.pendingSyncKey]||(__mlsPtsPendingMirrorMemoryByKey[st.pendingSyncKey]=Object.create(null));Object.keys(failed).forEach(function(id){mem[id]=1;});}
+    if(runNow&&uns('patients')===st.key){
+      try{_armPendingSyncFlush();}catch(e){}
+      try{setTimeout(function(){try{_flushPendingSync();}catch(e){}},0);}catch(e){}
+    }
+    return ok;
+  }catch(e){st.lastError=String(e&&e.message||e||'patient-mirror-queue-failed').slice(0,180);return false;}
+}
+function __mlsPtsIdSet(rows){var out=Object.create(null);(Array.isArray(rows)?rows:[]).forEach(function(p){if(p&&p.id!=null)out[String(p.id)]=1;});return out;}
+function __mlsPtsMergeExternalBatch(st){
+  var raw=null;try{raw=localStorage.getItem(st.key);}catch(e){return false;}
+  var external=[];try{external=JSON.parse(_mlsPtsDecode(raw)||'[]');}catch(e){return false;}
+  if(!Array.isArray(external))return false;
+  var out=external.slice(),index=Object.create(null),dirty=st.dirtyIds||Object.create(null),i,p,id,prior;
+  for(i=0;i<out.length;i++){p=out[i];if(p&&p.id!=null)index[String(p.id)]=i;}
+  for(i=0;i<st.arr.length;i++){
+    p=st.arr[i];if(!p||p.id==null)continue;id=String(p.id);prior=index[id];
+    /* A deliberate delete/purge in another tab is authoritative too, even if
+       this pull happened to enrich that previously committed patient. Only a
+       genuinely NEW local row (never present in a committed snapshot) may be
+       carried across an external omission. */
+    if(prior===undefined){if(dirty[id]&&!(st.committedIds&&st.committedIds[id])){index[id]=out.length;out.push(p);}continue;}
+    /* A cross-tab row is authoritative unless this exact patient was changed
+       by the owning pull. Timestamps cannot prove which unrelated projection
+       is complete, especially when either side lacks one. */
+    if(dirty[id])out[prior]=p;
+  }
+  st.arr=out;st.lastRaw=raw;st.externalWrites++;st.totalChanges++;st.changesSinceFlush++;st.flushEpoch++;
+  return true;
+}
+function __mlsPtsFlushBatchSync(st,reason){
   if(!st||!st.dirty)return true;
-  if(st.flushing)return false;
-  if(st.timer){try{clearTimeout(st.timer);}catch(e){}st.timer=0;}
+  if(st.timer)__mlsPtsCancelBatchTimer(st);
   st.flushing=true;
   try{
     /* Same-account checkpoints call the CURRENT public wrapper chain, so
@@ -10059,30 +10373,81 @@ function __mlsPtsFlushBatch(st,reason){
        account-boundary exception uses the immutable base writer (see above). */
     if(uns('patients')===st.key)window.savePatients(st.arr.slice(),st.key);
     else{st.boundaryDirectWrites++;__mlsPtsBaseSavePatients(st.arr.slice(),st.key);}
-    st.dirty=false; st.changesSinceFlush=0; st.dirtySince=0;
+    st.dirty=false; st.changesSinceFlush=0; st.uniqueSinceFlush=0; st.dirtySince=0; st.dirtyIds=Object.create(null);
+    try{st.lastRaw=localStorage.getItem(st.key);}catch(e){}
+    st.committedIds=__mlsPtsIdSet(st.arr);
     st.flushes++; st.lastFlushAt=Date.now(); st.lastReason=String(reason||'checkpoint');
+    if(!__mlsPtsRememberMirrors(st,false,false))throw new Error('Patient changes were saved locally, but their server retry queue could not be persisted.');
     return true;
   }catch(e){
     st.lastError=String(e&&e.message||e||'patient-batch-flush-failed').slice(0,180);
     throw e;
   }finally{st.flushing=false;if(st.dirty&&!st.timer&&!st.invalidated)__mlsPtsArmBatch(st);}
 }
+function __mlsPtsFlushBatchCooperative(st,reason){
+  if(!st||!st.dirty)return Promise.resolve(true);
+  if(st.flushPromise)return st.flushPromise;
+  if(st.timer)__mlsPtsCancelBatchTimer(st);
+  st.flushing=true;
+  var attempt=0;
+  function run(){
+    if(!st.dirty)return true;
+    if(st.invalidated){var ie=new Error('Patient persistence stopped before the account boundary was durable.');ie.code='MLS_PATIENT_BATCH_BOUNDARY_DURABILITY_FAILED';throw ie;}
+    if(uns('patients')!==st.key){var ae=new Error('Patient persistence stopped because the signed-in account changed.');ae.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw ae;}
+    var rawNow=null;try{rawNow=localStorage.getItem(st.key);}catch(e){}
+    if(rawNow!==st.lastRaw&&!__mlsPtsMergeExternalBatch(st))throw new Error('Patient persistence paused because another tab changed the roster.');
+    var epoch=++st.flushEpoch,seq=st.totalChanges,snapshot=st.arr.slice();
+    return Promise.resolve(window.savePatients(snapshot,st.key,{cooperative:true,expectedRaw:st.lastRaw,isCurrent:function(){return !st.invalidated&&st.flushEpoch===epoch&&st.totalChanges===seq&&uns('patients')===st.key;}})).then(function(result){
+      if(result&&result.stale){
+        if(result.external&&!__mlsPtsMergeExternalBatch(st))throw new Error('Patient persistence paused because another tab changed the roster.');
+        if(++attempt>64)throw new Error('Patient persistence could not settle concurrent roster changes.');
+        return Promise.resolve().then(run);
+      }
+      if(st.flushEpoch!==epoch||st.totalChanges!==seq){
+        if(++attempt>64)throw new Error('Patient persistence could not settle new chart changes.');
+        return Promise.resolve().then(run);
+      }
+      if(result&&Array.isArray(result.rows))st.arr=result.rows.slice();
+      try{st.lastRaw=localStorage.getItem(st.key);}catch(e){}
+      st.committedIds=__mlsPtsIdSet(st.arr);
+      st.dirty=false;st.changesSinceFlush=0;st.uniqueSinceFlush=0;st.dirtySince=0;st.dirtyIds=Object.create(null);
+      st.flushes++;st.lastFlushAt=Date.now();st.lastReason=String(reason||'checkpoint');
+      __mlsPtsRememberMirrors(st,false,false);
+      return true;
+    });
+  }
+  st.flushPromise=Promise.resolve().then(run).catch(function(e){st.lastError=String(e&&e.message||e||'patient-batch-flush-failed').slice(0,180);throw e;}).finally(function(){
+    st.flushPromise=null;st.flushing=false;
+    if(st.dirty&&!st.timer&&!st.invalidated)__mlsPtsArmBatch(st);
+  });
+  return st.flushPromise;
+}
+function __mlsPtsFlushBatch(st,reason,immediate){
+  if(!st||!st.dirty)return st&&st.cooperative&&!immediate?Promise.resolve(true):true;
+  if(immediate===true){st.flushEpoch++;return __mlsPtsFlushBatchSync(st,reason);}
+  if(st.flushing)return st.flushPromise||false;
+  return st.cooperative?__mlsPtsFlushBatchCooperative(st,reason):__mlsPtsFlushBatchSync(st,reason);
+}
 function __mlsPtsBatchReceipt(st){
-  return {batched:true,changes:Number(st&&st.totalChanges||0),flushes:Number(st&&st.flushes||0),externalWrites:Number(st&&st.externalWrites||0),boundaryDirectWrites:Number(st&&st.boundaryDirectWrites||0),maxChanges:Number(st&&st.maxChanges||0),maxDelayMs:Number(st&&st.maxDelayMs||0),accountChanged:!!(st&&st.invalidated),lastReason:String(st&&st.lastReason||''),error:String(st&&st.lastError||'')};
+  return {batched:true,cooperative:!!(st&&st.cooperative),changes:Number(st&&st.totalChanges||0),flushes:Number(st&&st.flushes||0),externalWrites:Number(st&&st.externalWrites||0),boundaryDirectWrites:Number(st&&st.boundaryDirectWrites||0),maxChanges:Number(st&&st.maxChanges||0),maxDelayMs:Number(st&&st.maxDelayMs||0),accountChanged:!!(st&&st.invalidated),lastReason:String(st&&st.lastReason||''),error:String(st&&st.lastError||'')};
 }
 window.__mlsPatientStoreBatch={
-  version:'pts-batch-1.0.0',
+  version:'pts-batch-1.2.0',
   begin:function(opts){
     opts=opts||{};
     var key=uns('patients'),foreign=__mlsPtsForeignBatch(key);
     if(foreign){var e=new Error('Another account still owns the patient persistence batch.');e.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw e;}
     var st=__mlsPtsBatchByKey[key];
     if(!st){
-      st={key:key,arr:getPatients(),depth:0,tokens:Object.create(null),dirty:false,dirtySince:0,changesSinceFlush:0,totalChanges:0,flushes:0,externalWrites:0,boundaryDirectWrites:0,timer:0,flushing:false,invalidated:false,lastFlushAt:Date.now(),lastReason:'',lastError:'',maxChanges:Math.max(2,Math.min(12,Number(opts.maxChanges||4))),maxDelayMs:Math.max(1000,Math.min(15000,Number(opts.maxDelayMs||5000)))};
+      var cooperative=opts.cooperative===true,maxCeiling=cooperative?64:12;
+      var initialRaw=null;try{initialRaw=localStorage.getItem(key);}catch(e){}
+      var initialRows=getPatients();
+      st={key:key,pendingSyncKey:uns('pendingPtSync'),lastRaw:initialRaw,arr:initialRows,committedIds:__mlsPtsIdSet(initialRows),depth:0,tokens:Object.create(null),dirty:false,dirtySince:0,dirtyIds:Object.create(null),uniqueSinceFlush:0,changesSinceFlush:0,totalChanges:0,flushes:0,externalWrites:0,boundaryDirectWrites:0,timer:0,armSeq:0,flushing:false,flushPromise:null,flushEpoch:0,syncIds:Object.create(null),cooperative:cooperative,invalidated:false,lastFlushAt:Date.now(),lastReason:'',lastError:'',maxChanges:Math.max(2,Math.min(maxCeiling,Number(opts.maxChanges||4))),maxDelayMs:Math.max(1000,Math.min(60000,Number(opts.maxDelayMs||5000)))};
       __mlsPtsBatchByKey[key]=st;
     }else{
-      st.maxChanges=Math.min(st.maxChanges,Math.max(2,Number(opts.maxChanges||st.maxChanges)));
-      st.maxDelayMs=Math.min(st.maxDelayMs,Math.max(1000,Number(opts.maxDelayMs||st.maxDelayMs)));
+      st.cooperative=st.cooperative||opts.cooperative===true;
+      st.maxChanges=Math.min(st.maxChanges,Math.max(2,Math.min(st.cooperative?64:12,Number(opts.maxChanges||st.maxChanges))));
+      st.maxDelayMs=Math.min(st.maxDelayMs,Math.max(1000,Math.min(60000,Number(opts.maxDelayMs||st.maxDelayMs))));
     }
     var id='pts-batch-'+(++__mlsPtsBatchSeq)+'-'+Date.now().toString(36);
     var token={id:id,key:key,active:true};st.tokens[id]=1;st.depth++;
@@ -10092,8 +10457,10 @@ window.__mlsPatientStoreBatch={
     var st=token&&token.active&&__mlsPtsBatchByKey[token.key];
     if(!st||!st.tokens[token.id])return null;
     if(st.invalidated||uns('patients')!==st.key){st.invalidated=true;var e=new Error('Patient persistence stopped because the signed-in account changed.');e.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw e;}
-    if(force===true||(st.dirty&&st.changesSinceFlush>=st.maxChanges))__mlsPtsFlushBatch(st,reason||'checkpoint');
+    var pending=null;
+    if(force===true||(st.dirty&&st.uniqueSinceFlush>=st.maxChanges))pending=__mlsPtsFlushBatch(st,reason||'checkpoint');
     else __mlsPtsArmBatch(st);
+    if(pending&&typeof pending.then==='function')return pending.then(function(){return __mlsPtsBatchReceipt(st);});
     return __mlsPtsBatchReceipt(st);
   },
   flush:function(token,reason){return this.checkpoint(token,reason||'explicit-flush',true);},
@@ -10102,20 +10469,100 @@ window.__mlsPatientStoreBatch={
     if(!st||!st.tokens[token.id])return null;
     /* A session-boundary listener already flushed the captured key. Do not
        reject cleanup merely because the current account is now different. */
-    if(st.dirty)__mlsPtsFlushBatch(st,reason||'end');
-    delete st.tokens[token.id];st.depth=Math.max(0,st.depth-1);token.active=false;
-    var receipt=__mlsPtsBatchReceipt(st);
-    if(st.depth===0){if(st.timer){try{clearTimeout(st.timer);}catch(e){}st.timer=0;}delete __mlsPtsBatchByKey[st.key];}
-    return receipt;
+    var pending=st.dirty?__mlsPtsFlushBatch(st,reason||'end'):st.flushPromise;
+    var finish=function(priorError){
+      var finalError=priorError||null;
+      var nextDepth=Math.max(0,st.depth-1);
+      var mirrorQueued=true;
+      if(!finalError&&nextDepth===0&&!st.invalidated){
+        try{mirrorQueued=__mlsPtsRememberMirrors(st,uns('patients')===st.key,true);}catch(e){mirrorQueued=false;finalError=e;}
+      }
+      delete st.tokens[token.id];st.depth=nextDepth;token.active=false;
+      var receipt=__mlsPtsBatchReceipt(st);
+      if(st.depth===0){
+        if(st.timer)__mlsPtsCancelBatchTimer(st);
+        delete __mlsPtsBatchByKey[st.key];
+      }
+      if(!mirrorQueued&&!finalError)finalError=new Error('Patient changes were saved locally, but their server retry queue could not be persisted.');
+      if(finalError)throw finalError;
+      return receipt;
+    };
+    return pending&&typeof pending.then==='function'?pending.then(function(){return finish(null);},function(e){return finish(e);}):finish(null);
   },
   state:function(token){var st=token&&__mlsPtsBatchByKey[token.key];return st?__mlsPtsBatchReceipt(st):null;},
   _flushAll:function(reason){
-    Object.keys(__mlsPtsBatchByKey).forEach(function(key){var st=__mlsPtsBatchByKey[key];if(st&&st.dirty)__mlsPtsFlushBatch(st,reason||'lifecycle');});
+    Object.keys(__mlsPtsBatchByKey).forEach(function(key){var st=__mlsPtsBatchByKey[key];if(st&&st.dirty)__mlsPtsFlushBatch(st,reason||'lifecycle',true);});
+  },
+  _prepareBoundary:function(reason){
+    Object.keys(__mlsPtsBatchByKey).forEach(function(key){
+      var st=__mlsPtsBatchByKey[key];if(!st)return;
+      if(st.dirty)__mlsPtsFlushBatch(st,reason||'session-boundary',true);
+      else if(!__mlsPtsRememberMirrors(st,false,false))throw new Error('Patient changes were saved locally, but their server retry queue could not be persisted.');
+    });
+    return true;
   }
 };
+/* Large-roster interactive edits use the same exact-key, generation-fenced
+   cooperative writer as managed pulls. The row is visible from the live batch
+   immediately, while JSON serialization + LZ compression happen in the codec
+   worker. Small rosters keep the long-standing synchronous acknowledgement.
+   pagehide and session boundaries still force the captured key synchronously. */
+function __mlsPtsInteractiveEligible(rows,key){
+  if(!Array.isArray(rows))return false;
+  var large=rows.length>=128;
+  if(!large&&__mlsPtsLastSavedKey===key&&typeof __mlsPtsLastSaved==='string')large=__mlsPtsLastSaved.length>=200000;
+  if(!large){try{var raw=localStorage.getItem(key);large=typeof raw==='string'&&raw.length>=131072;}catch(e){}}
+  if(!large)return false;
+  try{
+    var urlApi=window.URL||window.webkitURL;
+    return typeof window.Worker==='function'&&typeof window.Blob==='function'&&!!(urlApi&&typeof urlApi.createObjectURL==='function');
+  }catch(e2){return false;}
+}
+function __mlsPtsInteractiveWait(ms){
+  try{if(typeof __mlsBgSleep==='function')return Promise.resolve(__mlsBgSleep(Math.max(0,Number(ms)||0)));}catch(e){}
+  return new Promise(function(resolve){setTimeout(resolve,Math.max(0,Number(ms)||0));});
+}
+function __mlsPtsScheduleInteractiveBatch(st,delay){
+  if(!st||!st.interactiveToken||!st.interactiveToken.active)return;
+  if(st.interactiveScheduled){st.interactiveReschedule=true;return;}
+  st.interactiveScheduled=true;st.interactiveReschedule=false;
+  __mlsPtsInteractiveWait(delay||0).then(function(){
+    st.interactiveScheduled=false;
+    var token=st.interactiveToken,api=window.__mlsPatientStoreBatch;
+    if(!token||!token.active||!api||__mlsPtsBatchByKey[st.key]!==st)return;
+    if(st.invalidated){
+      try{var cleanup=api.end(token,'interactive-boundary');if(cleanup&&typeof cleanup.catch==='function')cleanup.catch(function(){});}catch(e){}
+      return;
+    }
+    var seq=Number(st.totalChanges||0),pending;
+    try{pending=api.flush(token,'interactive-upsert');}
+    catch(e2){st.lastError=String(e2&&e2.message||e2||'interactive-patient-save-failed').slice(0,180);__mlsPtsScheduleInteractiveBatch(st,1500);return;}
+    Promise.resolve(pending).then(function(){
+      if(!token.active||__mlsPtsBatchByKey[st.key]!==st)return;
+      if(st.invalidated||st.dirty||Number(st.totalChanges||0)!==seq||st.interactiveReschedule){__mlsPtsScheduleInteractiveBatch(st,0);return;}
+      try{
+        var ended=api.end(token,'interactive-upsert-complete');
+        if(ended&&typeof ended.catch==='function')ended.catch(function(e3){st.lastError=String(e3&&e3.message||e3||'interactive-patient-save-finalize-failed').slice(0,180);});
+      }catch(e4){st.lastError=String(e4&&e4.message||e4||'interactive-patient-save-finalize-failed').slice(0,180);}
+    },function(e5){
+      st.lastError=String(e5&&e5.message||e5||'interactive-patient-save-failed').slice(0,180);
+      if(st.invalidated){try{api.end(token,'interactive-boundary');}catch(e6){}return;}
+      __mlsPtsScheduleInteractiveBatch(st,1500);
+    });
+  },function(){st.interactiveScheduled=false;__mlsPtsScheduleInteractiveBatch(st,1500);});
+}
+function __mlsPtsReleaseInteractiveBoundary(st){
+  var token=st&&st.interactiveToken;
+  if(!token||!token.active||st.dirty)return false;
+  try{if(st.tokens)delete st.tokens[token.id];}catch(e){}
+  token.active=false;st.interactiveToken=null;st.interactiveScheduled=false;st.interactiveReschedule=false;
+  st.depth=Math.max(0,Number(st.depth||0)-1);
+  if(st.depth===0){if(st.timer)__mlsPtsCancelBatchTimer(st);if(__mlsPtsBatchByKey[st.key]===st)delete __mlsPtsBatchByKey[st.key];}
+  return true;
+}
 try{
   window.addEventListener('mls:session-boundary',function(){
-    Object.keys(__mlsPtsBatchByKey).forEach(function(key){var st=__mlsPtsBatchByKey[key];if(!st)return;try{if(st.dirty)__mlsPtsFlushBatch(st,'session-boundary');}catch(e){}st.invalidated=true;});
+    Object.keys(__mlsPtsBatchByKey).forEach(function(key){var st=__mlsPtsBatchByKey[key];if(!st)return;try{if(st.dirty)__mlsPtsFlushBatch(st,'session-boundary',true);else __mlsPtsRememberMirrors(st,false,false);}catch(e){st.lastError=String(e&&e.message||e||'patient-boundary-flush-failed').slice(0,180);}st.invalidated=true;st.flushEpoch++;__mlsPtsReleaseInteractiveBoundary(st);});
   });
   window.addEventListener('pagehide',function(){try{window.__mlsPatientStoreBatch._flushAll('pagehide');}catch(e){}});
 }catch(e){}
@@ -10175,9 +10622,17 @@ function _mlsPatientStillActive(patientId,epoch){
   }catch(e){ return false; }
 }
 function upsertPatient(p){
-  const __key=uns('patients'),__batch=__mlsPtsBatchByKey[__key],__foreign=__mlsPtsForeignBatch(__key);
+  const __key=uns('patients'),__foreign=__mlsPtsForeignBatch(__key);
   if(__foreign){const e=new Error('Patient persistence stopped because the signed-in account changed.');e.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw e;}
-  const arr=getPatients(); const i=arr.findIndex(x=>x.id===p.id);
+  let __batch=__mlsPtsBatchByKey[__key],arr=getPatients();
+  if(!__batch&&typeof __mlsPtsInteractiveEligible==='function'&&__mlsPtsInteractiveEligible(arr,__key)){
+    try{
+      const __interactiveToken=window.__mlsPatientStoreBatch.begin({cooperative:true,maxChanges:64,maxDelayMs:15000});
+      __batch=__mlsPtsBatchByKey[__key];
+      if(__batch){__batch.interactiveToken=__interactiveToken;__batch.interactive=true;arr=getPatients();}
+    }catch(__interactiveError){__batch=null;}
+  }
+  const i=arr.findIndex(x=>x.id===p.id);
   p.updated=Date.now();
   if(i>=0){
     /* Athena-owned proof fields survive a stale-reference upsert: a caller that
@@ -10235,11 +10690,17 @@ function upsertPatient(p){
      newest one if this caller was staler than the index. */
   try{ __mlsAthenaProofGuard(__key,[p]); }catch(e){}
   if(__batch&&__batch.depth>0){
-    __batch.arr=arr;__batch.dirty=true;__batch.totalChanges++;__batch.changesSinceFlush++;
+    var __batchId=String(p&&p.id||'');
+    __batch.dirtyIds=__batch.dirtyIds||Object.create(null);__batch.syncIds=__batch.syncIds||Object.create(null);
+    __batch.uniqueSinceFlush=Number(__batch.uniqueSinceFlush)||0;__batch.flushEpoch=Number(__batch.flushEpoch)||0;
+    __batch.arr=arr;__batch.dirty=true;__batch.totalChanges++;__batch.changesSinceFlush++;__batch.flushEpoch++;
+    if(__batchId&&!__batch.dirtyIds[__batchId]){__batch.dirtyIds[__batchId]=1;__batch.uniqueSinceFlush++;}
+    if(__batch.cooperative&&__batchId)__batch.syncIds[__batchId]=1;
     if(!__batch.dirtySince)__batch.dirtySince=Date.now();
-    if(__batch.changesSinceFlush>=__batch.maxChanges)__mlsPtsFlushBatch(__batch,'max-changes');
+    if(__batch.uniqueSinceFlush>=__batch.maxChanges){try{Promise.resolve(__mlsPtsFlushBatch(__batch,'max-changes')).catch(function(){});}catch(e){}}
     else __mlsPtsArmBatch(__batch);
   }else savePatients(arr);
+  if(__batch&&__batch.interactive)__mlsPtsScheduleInteractiveBatch(__batch,0);
   /* Same-ID edits do not emit mls:active-patient-changed. Tell only the
      exact-record observers after the logical upsert has been accepted (or
      its required persistence completed), so Visit identity can reconcile on
@@ -10248,7 +10709,7 @@ function upsertPatient(p){
   try{ window.dispatchEvent(new CustomEvent('mls:patient-record-updated',{detail:{patientId:String(p.id||''),patientStoreKey:String(__key||'')}})); }
   catch(e6){ try{ var __puEv=new Event('mls:patient-record-updated');__puEv.detail={patientId:String(p.id||''),patientStoreKey:String(__key||'')};window.dispatchEvent(__puEv); }catch(e7){} }
   // hosted mode: mirror to the server (best-effort, non-blocking)
-  if(backendMode() && bkToken()){ try{ syncPatientToServer(p); }catch(e){} }
+  if(backendMode() && bkToken()&&(!__batch||!__batch.cooperative)){ try{ syncPatientToServer(p); }catch(e){} }
 }
 /* Remove every patient MLS imported from Athena (source:'athena-schedule') — their
    record, their imported chart-history notes, and today's pulled appointments — from
@@ -10694,10 +11155,39 @@ function ptServerLabel(p){
    mirrors now persist in a per-account pending set and re-push while the
    session is alive (60s cadence + the browser's 'online' signal); the server
    confirming the write is what removes the entry. */
-function _pendingSyncGet(){ try{ const raw=localStorage.getItem(uns('pendingPtSync')); const a=raw?JSON.parse(raw):[]; return Array.isArray(a)?a:[]; }catch(e){ return []; } }
-function _pendingSyncSet(list){ try{ localStorage.setItem(uns('pendingPtSync'), JSON.stringify(Array.from(new Set(list)).slice(0,500))); }catch(e){} }
-function _pendingSyncAdd(id){ if(!id) return; const l=_pendingSyncGet(); if(l.indexOf(String(id))<0){ l.push(String(id)); _pendingSyncSet(l); } _armPendingSyncFlush(); }
-function _pendingSyncRemove(id){ const l=_pendingSyncGet(); const i=l.indexOf(String(id)); if(i>=0){ l.splice(i,1); _pendingSyncSet(l); } }
+function _pendingSyncGet(key){
+  key=key||uns('pendingPtSync');const seen=Object.create(null),out=[];
+  function add(id){id=String(id||'');if(id&&!seen[id]){seen[id]=1;out.push(id);}}
+  /* Read the old aggregate queue for rolling-upgrade compatibility. Current
+     writers use one atomic key per patient so two tabs cannot clobber each
+     other's read-modify-write of a shared JSON array. */
+  try{const raw=localStorage.getItem(key),a=raw?JSON.parse(raw):[];(Array.isArray(a)?a:[]).forEach(add);}catch(e){}
+  try{
+    const prefix=key+'::id::';
+    for(let i=0;i<localStorage.length;i++){const k=String(localStorage.key(i)||'');if(k.indexOf(prefix)===0){try{add(decodeURIComponent(k.slice(prefix.length)));}catch(e){}}}
+  }catch(e){}
+  try{const mem=__mlsPtsPendingMirrorMemoryByKey[key];if(mem)Object.keys(mem).forEach(add);}catch(e){}
+  return out;
+}
+function _pendingSyncSet(list,key){
+  key=key||uns('pendingPtSync');let ok=true;
+  (Array.isArray(list)?list:[]).forEach(function(id){try{localStorage.setItem(__mlsPtsMirrorItemKey(key,id),'1');}catch(e){ok=false;var mem=__mlsPtsPendingMirrorMemoryByKey[key]||(__mlsPtsPendingMirrorMemoryByKey[key]=Object.create(null));mem[String(id)]=1;}});
+  return ok;
+}
+function _pendingSyncAdd(id,key,arm){
+  if(!id)return false;key=key||uns('pendingPtSync');id=String(id);let ok=true;
+  try{localStorage.setItem(__mlsPtsMirrorItemKey(key,id),'1');}catch(e){ok=false;var mem=__mlsPtsPendingMirrorMemoryByKey[key]||(__mlsPtsPendingMirrorMemoryByKey[key]=Object.create(null));mem[id]=1;}
+  if(arm!==false){try{if(key===uns('pendingPtSync'))_armPendingSyncFlush();}catch(e){}}
+  return ok;
+}
+function _pendingSyncRemove(id,key){
+  key=key||uns('pendingPtSync');id=String(id||'');if(!id)return;
+  try{localStorage.removeItem(__mlsPtsMirrorItemKey(key,id));}catch(e){}
+  try{var mem=__mlsPtsPendingMirrorMemoryByKey[key];if(mem)delete mem[id];}catch(e){}
+  /* Remove a legacy aggregate entry if one exists. New writers never append
+     to this shared value, so the cross-tab lost-update race is retired. */
+  try{const raw=localStorage.getItem(key),a=raw?JSON.parse(raw):[];if(Array.isArray(a)&&a.indexOf(id)>=0)localStorage.setItem(key,JSON.stringify(a.filter(function(x){return String(x)!==id;})));}catch(e){}
+}
 let _pendingSyncTimer=0, _pendingSyncBusy=false;
 function _armPendingSyncFlush(){
   if(_pendingSyncTimer) return;
@@ -10706,36 +11196,61 @@ function _armPendingSyncFlush(){
 }
 async function _flushPendingSync(){
   if(_pendingSyncBusy||!backendMode()||!bkToken()) return;
-  const ids=_pendingSyncGet();
+  /* A managed pull may checkpoint locally more than once, but the newest
+     patient body is authoritative only at its terminal receipt. Do not let an
+     older in-flight mirror clear the same pending id before that receipt. */
+  try{var activeBatch=__mlsPtsBatchByKey[uns('patients')];if(activeBatch&&activeBatch.cooperative&&activeBatch.depth>0)return;}catch(e){}
+  const pendingKey=uns('pendingPtSync'),patientKey=uns('patients'),token=bkToken(),base=bkBase();
+  const scope={pendingKey:pendingKey,patientKey:patientKey,token:token,base:base,isCurrent:function(){try{return uns('pendingPtSync')===pendingKey&&uns('patients')===patientKey&&bkToken()===token&&bkBase()===base;}catch(e){return false;}}};
+  const ids=_pendingSyncGet(pendingKey);
   if(!ids.length){ if(_pendingSyncTimer){ clearInterval(_pendingSyncTimer); _pendingSyncTimer=0; } return; }
   _pendingSyncBusy=true;
+  let progressed=false;
   try{
     const pts=getPatients()||[];
     for(let i=0;i<ids.length&&i<25;i++){
+      if(!scope.isCurrent())break;
       const p=pts.find(x=>x&&String(x.id)===ids[i]);
-      if(!p){ _pendingSyncRemove(ids[i]); continue; }
-      await syncPatientToServer(p); /* success self-removes; failure re-queues */
+      if(!p){ _pendingSyncRemove(ids[i],pendingKey);progressed=true;continue; }
+      const sent=await syncPatientToServer(p,scope); /* exact-account success self-removes */
+      if(!scope.isCurrent())break;
+      if(sent&&sent.ok)progressed=true;
     }
-  }catch(e){} finally{ _pendingSyncBusy=false; }
+  }catch(e){} finally{
+    _pendingSyncBusy=false;
+    if(scope.isCurrent()&&progressed&&_pendingSyncGet(pendingKey).length){try{setTimeout(function(){_flushPendingSync();},0);}catch(e){}}
+  }
 }
 try{ setTimeout(function(){ try{ if(_pendingSyncGet().length) _armPendingSyncFlush(); }catch(e){} },5000); }catch(e){}
-async function syncPatientToServer(patient){
-  if(!backendMode()||!bkToken()||!patient||!patient.id) return;
+async function syncPatientToServer(patient,scope){
+  if(!backendMode()||!patient||!patient.id) return {ok:false};
+  scope=scope||null;
+  const token=scope?scope.token:bkToken(),base=scope?scope.base:bkBase(),pendingKey=scope?scope.pendingKey:uns('pendingPtSync');
+  const stillCurrent=function(){return !scope||scope.isCurrent();};
+  if(!token||!stillCurrent())return {ok:false,stale:true};
   try{
-    const r=await fetch(bkBase()+'/api/patients',{
+    const patientJson=JSON.stringify(patient);
+    const body='{"external_id":'+JSON.stringify(patient.id)+',"label":'+JSON.stringify(ptServerLabel(patient))+',"data":'+patientJson+'}';
+    const r=await fetch(base+'/api/patients',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-      body:JSON.stringify({ external_id:patient.id, label:ptServerLabel(patient), data:patient })
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body:body
     });
-    if(r.status===401){ handle401(); return; }
+    if(!stillCurrent())return {ok:false,stale:true};
+    if(r.status===401){ handle401(); return {ok:false}; }
     if(r.ok){
       let d={}; try{ d=await r.json(); }catch(e){}
+      if(!stillCurrent())return {ok:false,stale:true};
       if(d&&d.id) _serverPtIds[patient.id]=d.id;
-      _pendingSyncRemove(patient.id);
+      let latest=null;try{latest=(getPatients()||[]).find(x=>x&&String(x.id)===String(patient.id))||null;}catch(e){}
+      if(latest&&JSON.stringify(latest)!==patientJson){_pendingSyncAdd(patient.id,pendingKey,false);return {ok:false,stale:true};}
+      _pendingSyncRemove(patient.id,pendingKey);
+      return {ok:true};
     }else{
-      _pendingSyncAdd(patient.id);
+      _pendingSyncAdd(patient.id,pendingKey,stillCurrent());
+      return {ok:false};
     }
-  }catch(e){ _pendingSyncAdd(patient.id); /* offline — re-pushed while the session lives */ }
+  }catch(e){if(stillCurrent())_pendingSyncAdd(patient.id,pendingKey,true);return {ok:false}; /* offline — re-pushed while the session lives */ }
 }
 async function deletePatientOnServer(externalId){
   if(!backendMode()||!bkToken()||!externalId) return;
@@ -10790,6 +11305,8 @@ async function loadPatientsFromServer(opts){
     const rows=pageResult.rows;
     if(opts.startupId&&!await sfAwaitStartupHydrationQuiet(opts)){ _hyEnd(true,''); return false; }
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
+    const _hyStoreKey=uns('patients'),_hyToken=bkToken();
+    let _hyRawBefore=null;try{_hyRawBefore=localStorage.getItem(_hyStoreKey);}catch(e){_hyEnd(true,'');return false;}
     let changed=false;
     const local=getPatients();
     const localIndex=new Map();
@@ -10845,7 +11362,15 @@ async function loadPatientsFromServer(opts){
     }
     if(changed){
       if(!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
-      savePatients(additions.length?additions.concat(local):local);
+      /* A large account is a multi-megabyte roster. Encoding it synchronously
+         here after reveal made the first click wait behind the full LZ pass.
+         Keep the exact atomic key/codec, but use the verified Worker and fence
+      completion to this startup, account namespace, and credential. */
+      const _hyRows=additions.length?additions.concat(local):local;
+      const _hySaved=await savePatients(_hyRows,_hyStoreKey,{cooperative:true,expectedRaw:_hyRawBefore,isCurrent:function(){
+        try{return sfStartupValid(opts)&&uns('patients')===_hyStoreKey&&bkToken()===_hyToken&&localStorage.getItem(_hyStoreKey)===_hyRawBefore;}catch(e){return false;}
+      }});
+      if(_hySaved&&_hySaved.stale){ _hyEnd(true,''); return false; }
       if(!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
       if(!opts.deferRender){
         if(currentView==='patients'){ renderPatients(); renderProfile(); }
@@ -33302,7 +33827,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b971';
+  window.__MLS_AV='b974';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

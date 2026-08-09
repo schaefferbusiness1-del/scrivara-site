@@ -54,9 +54,24 @@ assert(authStop >= 0 && retryWait >= 0 && authStop < retryWait,
    re-pushes while the session lives; only a server-confirmed write removes it.
    (Without this, mirror-failure + the sign-out clinical purge = data loss.) */
 assert(app.includes("uns('pendingPtSync')"), 'patient pending-sync store missing');
-assert(app.includes('_pendingSyncAdd(patient.id)') && app.includes('_pendingSyncRemove(patient.id)'),
-  'patient mirror no longer queues failures / clears on confirmed writes');
-assert(app.includes('_flushPendingSync'), 'pending-sync flush loop missing');
+const mirrorQueue = app.slice(
+  app.indexOf('function _pendingSyncGet(key)'),
+  app.indexOf('async function deletePatientOnServer(', app.indexOf('function _pendingSyncGet(key)'))
+);
+assert(mirrorQueue.includes('function _pendingSyncSet(list,key)') &&
+  mirrorQueue.includes('function _pendingSyncAdd(id,key,arm)') &&
+  mirrorQueue.includes('function _pendingSyncRemove(id,key)'),
+  'patient mirror queue lost its explicit per-account key signatures');
+assert(mirrorQueue.includes("const pendingKey=uns('pendingPtSync'),patientKey=uns('patients'),token=bkToken(),base=bkBase();") &&
+  mirrorQueue.includes('const scope={pendingKey:pendingKey,patientKey:patientKey,token:token,base:base,isCurrent:function()') &&
+  mirrorQueue.includes('const sent=await syncPatientToServer(p,scope)'),
+  'pending patient retries are no longer fenced to the captured account and session');
+assert(mirrorQueue.includes('_pendingSyncAdd(patient.id,pendingKey') &&
+  mirrorQueue.includes('_pendingSyncRemove(patient.id,pendingKey)') &&
+  mirrorQueue.includes('if(!stillCurrent())return {ok:false,stale:true};'),
+  'patient mirror no longer queues failures / clears confirmed writes in the captured account');
+assert(mirrorQueue.includes("latest&&JSON.stringify(latest)!==patientJson"),
+  'an older in-flight mirror can clear a newer patient update');
 
 /* 5. The notes backup queue that inspired the pattern must itself remain. */
 assert(app.includes('_pendingBackupAdd(rec.id)') && app.includes('_retryPendingBackups(false)'),

@@ -41,7 +41,7 @@ vm.createContext(sandbox);
 vm.runInContext(src.slice(modStart, modEnd), sandbox, { filename: 'feat_mls_b121_pack.js:module7' });
 const api = sandbox.window.__mlsCleanSections;
 assert(api, 'module 7 did not install');
-assert.strictEqual(api.version, '1.3.0', 'expected clean-sections v1.3.0');
+assert.strictEqual(api.version, '1.3.1', 'expected input-safe clean-sections v1.3.1');
 
 /* The module's own selfTest is the broadest control — it must pass. */
 const st = api.selfTest();

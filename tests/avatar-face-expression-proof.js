@@ -783,6 +783,91 @@ async function boot(browser, opts) {
   }
 
   /* ================================================================ 10 */
+  /* ================================================================ 9c */
+  head('9c. THE DRAWING FITS THE ROUND HOLE IT IS SHOWN IN (av-6.0.1)');
+  {
+    /* ⛔ THE DEFECT THIS EXISTS FOR. Every check above, and every gallery a human judged,
+       mounts the face in a SQUARE div — because that is what faceDemo takes. Both shipped
+       surfaces are circles with overflow:hidden: #mlsAvKioskFace at ~302px and the
+       Setup/Settings preview at 72px. A square-framed portrait therefore arrived cropped on
+       the diagonal, and on the real kiosk .fShirt spanned y 250-380 inside a 302-tall box —
+       the shoulders, collar and V-neck were outside the mask entirely, while the crown
+       crowded the top arc. The owner's verdict on the shipped build was "does not work
+       correctly or look good". Nothing here could fail, because nothing here had ever
+       looked at a circle. */
+    const { page, errs } = await boot(browser);
+    const r = await page.evaluate(async () => {
+      const wait = (m) => new Promise((r2) => setTimeout(r2, m));
+      const out = {};
+      for (const size of [302, 72]) {
+        const box = document.createElement('div');
+        box.style.cssText = 'width:' + size + 'px;height:' + size + 'px;border-radius:999px;overflow:hidden';
+        document.getElementById('stage').appendChild(box);
+        window.__mlsAvatar.faceDemo(box, { stethoscope: true });
+        await wait(120);
+        const bb = box.getBoundingClientRect();
+        const cx = bb.x + bb.width / 2, cy = bb.y + bb.height / 2, rad = bb.width / 2;
+        /* how far the FURTHEST corner of a part is from the centre, as a fraction of the
+           radius: > 1 means that corner is outside the circle and is being cropped */
+        const reach = (sel) => {
+          const n = box.querySelector(sel); if (!n) return null;
+          const b = n.getBoundingClientRect();
+          const pts = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]];
+          let m = 0;
+          pts.forEach((p) => { const d = Math.hypot(p[0] - cx, p[1] - cy) / rad; if (d > m) m = d; });
+          return Math.round(m * 100) / 100;
+        };
+        /* and how much of the garment survives the mask, in px of visible height */
+        const shirt = box.querySelector('.fShirt');
+        const sb = shirt ? shirt.getBoundingClientRect() : null;
+        /* ⛔ THE CLIPPING NUMBERS ABOVE DO NOT DISCRIMINATE — MEASURED. With the old square
+           framing restored, every reach() was still <= 1.0 (head 0.89, ears 0.66), because a
+           head whose BOUNDING BOX corners sit inside r=100 is not clipped by the mask. The
+           first version of this section therefore passed against the very build the owner
+           rejected: 117/117 both arms. Nothing was being cropped; the COMPOSITION was wrong.
+           So the discriminating half is below, and it is three fractions of the container:
+             crown gap   0.236 fixed vs 0.140 broken  (how far down the hair starts)
+             head height 0.554 fixed vs 0.660 broken  (2/3 of a circle is a close-up, not a portrait)
+             garment     0.177 fixed vs 0.161 broken  (how much shoulder survives the mask)
+           All three were read off both builds before the thresholds were chosen, and all three
+           fail on the broken one. */
+        const fb2 = box.querySelector('.fFace').getBoundingClientRect();
+        const hv = box.querySelector('.fHair') ? box.querySelector('.fHair').getBoundingClientRect() : null;
+        out[size] = {
+          head: reach('.fFace'), earL: reach('.fEarL'), earR: reach('.fEarR'), hair: reach('.fHair'),
+          headFrac: +(fb2.height / bb.height).toFixed(3),
+          crownFrac: hv ? +((hv.y - bb.y) / bb.height).toFixed(3) : null,
+          shirtVisFrac: sb ? +((Math.min(bb.bottom, sb.bottom) - Math.max(bb.y, sb.y)) / bb.height).toFixed(3) : null,
+          shirtVisible: sb ? Math.round(Math.min(bb.y + bb.height, sb.y + sb.height) - Math.max(bb.y, sb.y)) : null,
+          boxH: Math.round(bb.height),
+        };
+      }
+      return out;
+    });
+    [302, 72].forEach((size) => {
+      const m = r[size];
+      ok(m.head !== null && m.head <= 1.0,
+        size + 'px circle: the whole HEAD is inside the mask (furthest corner ' + m.head + ' of the radius)', m);
+      ok(m.earL !== null && m.earL <= 1.0 && m.earR <= 1.0,
+        size + 'px circle: BOTH ears are inside the mask, not clipped by the sides', { l: m.earL, r: m.earR });
+      ok(m.hair !== null && m.hair <= 1.0,
+        size + 'px circle: the hair/crown is inside the mask, not crowding the top arc', m.hair);
+      /* ---- the DISCRIMINATING trio: composition, not clipping ---- */
+      ok(m.crownFrac !== null && m.crownFrac >= 0.19,
+        size + 'px circle: the crown starts far enough down that it does not crowd the top arc (' +
+        m.crownFrac + ' of the height, needs 0.19+; the rejected build measured 0.14)', m.crownFrac);
+      ok(m.headFrac <= 0.60 && m.headFrac >= 0.42,
+        size + 'px circle: the head is framed as a PORTRAIT, not a close-up (' + m.headFrac +
+        ' of the height, needs 0.42-0.60; the rejected build measured 0.66)', m.headFrac);
+      ok(m.shirtVisFrac !== null && m.shirtVisFrac >= 0.17,
+        size + 'px circle: a real shoulder line survives the mask (' + m.shirtVisFrac +
+        ' of the height = ' + m.shirtVisible + 'px of ' + m.boxH + ', needs 0.17+; the rejected build measured 0.161)', m);
+    });
+    ok(errs.length === 0, 'no page errors', errs.slice(0, 2));
+    await page.close();
+  }
+
+  /* ================================================================= 10 */
   head('10. the gallery a human judges');
   {
     const { page, errs } = await boot(browser, { viewport: { width: 1320, height: 1500 } });

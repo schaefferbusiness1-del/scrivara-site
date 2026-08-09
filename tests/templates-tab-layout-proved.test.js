@@ -310,11 +310,12 @@ async function runBrowser(exe) {
        land after a blind sleep has already read the buffer. Settle = two
        consecutive polls with no new animationstart. */
     await evalJs(cdp, `(()=>{ window.__otSettle=-1; return 1; })()`);
-    for (let i = 0, still = 0; i < 40 && still < 2; i++) {
+    for (let i = 0, still = 0, seen = false; i < 40 && (!seen || still < 2); i++) {
       await sleep(150);
       const n = await evalJs(cdp, `(window.__otAnim||[]).length`);
       const prev = await evalJs(cdp, `window.__otSettle`);
-      still = (n === prev) ? still + 1 : 0;
+      seen = seen || n > 0;
+      still = (seen && n === prev) ? still + 1 : 0;
       await evalJs(cdp, `(()=>{ window.__otSettle=${Number(n) || 0}; return 1; })()`);
     }
     const entrance = await evalJs(cdp, `(window.__otAnim||[]).slice(0,40)`);

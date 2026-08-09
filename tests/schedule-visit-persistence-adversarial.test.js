@@ -36,6 +36,7 @@ function verifiedStored(patient, raw, overrides) {
 }
 
 function createHarness(patientOverrides) {
+  const bulkCalls = [];
   const patient = Object.assign({
     id: 'patient-exact-1',
     name: 'Exact Patient',
@@ -61,6 +62,9 @@ function createHarness(patientOverrides) {
     },
     normMrn(value) {
       return String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+    },
+    rowMrn(value) {
+      return context.normMrn(value && (value.mrn || value.athenaId || value.athena_id));
     },
     patientById(id) {
       return String(id || '') === patient.id ? patient : null;
@@ -101,6 +105,19 @@ function createHarness(patientOverrides) {
   const model = {
     addVisit,
     getVisits: () => patient.visits,
+    saveVerifiedVisitBatch(id, rows, options) {
+      bulkCalls.push({ id, rows: rows.slice(), options: Object.assign({}, options) });
+      rows.forEach(raw => addVisit(id, raw, {
+        source: options && options.source,
+        identityVerified: true,
+        identityBinding: id,
+        bodyComplete: options && options.bodyComplete
+      }));
+      const reconcile = options && options.reconcile
+        ? this.reconcileVerifiedAthenaVisits(id, rows)
+        : null;
+      return { saved: rows.length, reconcile };
+    },
     reconcileVerifiedAthenaVisits(_id, accepted) {
       const acceptedAliases = (accepted || []).map(aliases);
       patient.visits = patient.visits.filter(visit => {
@@ -127,7 +144,7 @@ function createHarness(patientOverrides) {
   const saveVerifiedVisits = vm.runInNewContext(`(${saveVerifiedVisitsSource})`, context, {
     filename: 'saveVerifiedVisits.extracted.js', timeout: 1000
   });
-  return { context, patient, model, saveVerifiedVisits };
+  return { context, patient, model, bulkCalls, saveVerifiedVisits };
 }
 
 function visit(id, raw, sourceKey) {
@@ -239,9 +256,16 @@ function targetFor(patient) {
 
   {
     const h = createHarness({ dob: '', mrn: 'MRN-ONLY-42' });
-    const result = h.saveVerifiedVisits(targetFor(h.patient), responseFor(h.patient, [visit('enc-mrn-only', 'MRN-only exact visit body.')]));
-    assert.strictEqual(result.persistedVisits, 1, 'MRN-only exact identity did not persist');
-    assert.strictEqual(h.patient.visits[0].identityBinding, h.patient.id);
+    const mrnRows = [
+      visit('enc-mrn-only-a', 'First MRN-only exact visit body.'),
+      visit('enc-mrn-only-b', 'Second MRN-only exact visit body.')
+    ];
+    const result = h.saveVerifiedVisits(targetFor(h.patient), responseFor(h.patient, mrnRows));
+    assert.strictEqual(result.persistedVisits, 2, 'MRN-only exact identity did not persist every visit');
+    assert.strictEqual(h.bulkCalls.length, 1, 'one verified MRN result used more than one bulk persistence call');
+    assert.strictEqual(h.bulkCalls[0].rows.length, 2, 'bulk persistence did not receive the complete MRN visit set');
+    assert.strictEqual(h.bulkCalls[0].options.reconcile, true, 'MRN bulk persistence lost authoritative reconciliation');
+    assert(h.patient.visits.every(row => row.identityBinding === h.patient.id));
   }
 
   {
