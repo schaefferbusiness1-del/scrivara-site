@@ -74,9 +74,22 @@ const NATIVE = [
   'mobile/scripts/build-www.mjs'
 ].filter((p) => fs.existsSync(path.join(root, p)));
 
-/* Comments explain WHY the name changed and necessarily contain it. Strip them
-   the same way the repo's other prose-aware suites do, and grade the rest. */
+/* WHY THIS EXEMPTION IS A SHORT NAMED LIST AND NOT A BLANKET RULE.
+   The first version of this suite stripped comments from EVERY file before
+   grading, so that the files explaining the rename would not trip the ban they
+   describe. That hole SHIPPED: 24 comment occurrences survived across the three
+   ScribeFlow copies -- "Teach Scrivara", "Scrivara can run in TWO modes",
+   "TEACH SCRIVARA", scrivara-api.example.com -- and this suite reported PASS on
+   every one of them, because it had stopped looking at exactly the place they
+   lived. Passing and checking-nothing are indistinguishable from outside.
+   So comments are stripped ONLY in the two files whose job is to record why the
+   name changed. Everywhere else, a comment counts. */
+const EXPLAINS_THE_RENAME = new Set([
+  'feat_mls_phone_ui.js',       /* the module header quotes the owner's words */
+  'mobile/app.config.json'      /* the _comment block records the decision */
+]);
 function codeOnly(src, file) {
+  if (!EXPLAINS_THE_RENAME.has(file)) return src;   /* comments count */
   let s = src;
   if (/\.(html)$/.test(file)) s = s.replace(/<!--[\s\S]*?-->/g, ' ');
   if (/\.(plist|xml)$/.test(file)) s = s.replace(/<!--[\s\S]*?-->/g, ' ');
