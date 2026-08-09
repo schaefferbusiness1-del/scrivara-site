@@ -2067,6 +2067,12 @@
         val = '<span class="v none" title="No Athena chart has been pulled for this patient yet - these fields are unread, not empty.">not pulled yet</span>';
       } else if (empty) {
         val = '<span class="v none" title="Not captured. This does not mean the chart is empty - re-pull to check.">—</span>';
+      } else if (neverRead && /^\s*(?:nkda|nka|no known (?:drug )?allerg(?:y|ies))\b/i.test(f.value)) {
+        /* Owner 2026-08-09 ("every person is allergic to NKDA"): a FILLED default
+           on a never-read record slipped the three-state (which fires on EMPTY)
+           and presented as a chart fact. b967 annotated the profile surface;
+           this is the same honesty on the prep card. A default is not an answer. */
+        val = '<span class="v" title="This value was never read from an Athena chart - it is a stored default, not a verified chart fact. Pull the chart to verify.">' + f.value.replace(/[<>&]/g, '') + ' — unverified (no Athena chart pulled yet)</span>';
       } else {
         val = '<span class="v" title="' + String(f.full || f.value).replace(/[<>&"]/g, '').slice(0, 600) +
           '">' + f.value.replace(/[<>&]/g, '') + '</span>';

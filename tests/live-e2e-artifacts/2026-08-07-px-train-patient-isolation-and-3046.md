@@ -685,3 +685,33 @@ THE RUN (dayPull {date:'2026-08-10'}, statuses hooked, Stop button live):
   the classic surface (no exam-prep deaths in the batch); the ax routing was
   only observed tonight on the single-read path (James, twice). The rollout
   fraction per day becomes measurable once chartSurface ships.
+
+
+## 3.0.51 (srr-1.2) SHIPPED + JULY-1 ACCEPTANCE - 2026-08-08 ~06:30
+
+Train: b976 156830ba, two full gates (542/545 suites), zip 6523fa1c…29f8 GET x2
+sha-exact, 20/20 byte-audit, pong 3.0.51+core-sha256:139c3f2d…a937.
+
+NEW INSTALL-PROTOCOL TRAP: after devReload, resident content scripts die in
+existing athena tabs and re-inject ONLY on navigation; the already-warm day
+path skips navigation, so the presence probe read dead tabs as SIGNED OUT
+(8 charts refused) while the session was provably alive (92,314-byte
+dashboard, no Re-Login). Cure: reload MY work tab after every devReload.
+
+JULY-1 ACCEPTANCE LEDGER (attempt 2, clean): 14 ok / 18 charts (pre-fix 13).
+The five named stm.esp charts: RC, LF, HBM CURED; EG advanced past the frame
+gate (now no-group x2 - a later, shallower stage); BS rotated INTO the class.
+stm.esp OK-but-EMPTY persists ~3-4/day with ROTATING membership (CS, NBK, BS
++ one SL row) - one re-expand per frame is not enough, or the empty frame is
+the wrong frame entirely that session. SL also hit
+identity-changed-after-surface-recycle once WITH the 5.2s patience window.
+
+chartSurface first distribution: 4/18 charts read successfully on clincmp-ax
+(>=22% of one roster) - the ax route reads CLEAN where the classic variant
+starves. sr=0 all rows (no mid-read recycles; recycling is exam-prep-bound).
+CONCLUSION SHARPENED: the CLINCMP first-class reader (encounter ids in
+/ax/encounter/<id>/summary hrefs, no clicking) is the CURE for the residual
+class, not just the pace play - it bypasses the variant-frame lottery.
+
+Month resume fired on 3.0.51 with named per-day failures (srr-1.2's day-end
+exposure) - stop-on-sight now satisfied by construction.

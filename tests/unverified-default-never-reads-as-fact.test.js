@@ -49,4 +49,34 @@ assert(/No Athena history pulled for this patient yet\./.test(app), 'the b940 ho
   assert(/these fields are unread, not empty/.test(block), 'the tooltip must state the unread-vs-empty distinction');
 }
 
-console.log('unverified-default-never-reads-as-fact: PASS (11 checks)');
+/* Owner 2026-08-09 ("every person is allergic to NKDA"): the three-state fired
+   only on EMPTY fields, so a FILLED default (the stored NKDA on a never-read
+   record) still rendered as a plain chart fact on the prep card. Fourth state:
+   never-read + NKDA-class value renders the value PLUS the unverified label,
+   exactly as b967 does on the profile surface. Both directions pinned: the
+   label must appear for never-read NKDA, and a LANDED chart's NKDA must stay
+   unannotated (a verified negative is a real chart fact). */
+{
+  /* utf8 read: the unverified label carries a real em-dash (matching b967's
+     profile phrasing); a latin1 read splits it into three bytes and the pin
+     misses (the ascii-apostrophes-poison-the-block-scanner class). */
+  const shell = fs.readFileSync(path.join(ROOT, 'feat_mls_calm_shell.js'), 'utf8');
+  const start = shell.indexOf('var neverRead = false;');
+  const block = shell.slice(start, shell.indexOf(".join('');", start));
+  assert(/\} else if \(neverRead && \/\^\\s\*\(\?:nkda\|nka\|no known \(\?:drug \)\?allerg\(\?:y\|ies\)\)\\b\/i\.test\(f\.value\)\) \{/.test(block),
+    'the filled-default fourth state must gate on never-read AND the NKDA-class value');
+  assert(/ — unverified \(no Athena chart pulled yet\)<\/span>/.test(block),
+    'a never-read NKDA must carry the unverified label on the prep card');
+  assert(/a stored default, not a verified chart fact/.test(block),
+    'the tooltip must name the value as a stored default');
+  const fourthAt = block.indexOf('} else if (neverRead &&');
+  const dashAt = block.indexOf('} else if (empty) {');
+  const contentAt = block.indexOf('} else {');
+  assert(dashAt >= 0 && fourthAt > dashAt && contentAt > fourthAt,
+    'state order must be: empty+neverRead, empty, filled-default, content - so a LANDED NKDA still renders plain (a verified negative is a chart fact)');
+  const reverted = block.replace(/\} else if \(neverRead && [\s\S]*?\} else \{/, '} else {');
+  assert(!/ — unverified \(no Athena chart pulled yet\)<\/span>/.test(reverted),
+    'CONTROL: the pre-fix shape (no fourth state) must fail the label pin');
+}
+
+console.log('unverified-default-never-reads-as-fact: PASS (16 checks)');
