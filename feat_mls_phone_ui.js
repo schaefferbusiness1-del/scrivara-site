@@ -180,6 +180,63 @@
   }
 
   /* ---------------------------------------------------------------------------
+   * THE CHART RECORD BEHIND THE APPOINTMENT
+   * snapshot.active is an APPOINTMENT -- a name, a time, a DOB. The chart is a
+   * different object, and the quick history is built from that one.
+   * -------------------------------------------------------------------------*/
+  function activeChart() {
+    var f = hostFn('activePatient');
+    return f ? safe(function () { return f() || null; }, null) : null;
+  }
+  function chartNotes(id) {
+    var f = hostFn('patientNotes');
+    if (!f || !id) return [];
+    var out = safe(function () { return f(id); }, null);
+    return (out && out.length != null) ? out : [];
+  }
+  /* Has athenaOne's chart ever landed for this patient? The app's own answer,
+     because "no allergies recorded" and "we have never read this chart" look
+     identical on screen and mean opposite things -- and one of them is a
+     sentence somebody could act on in a room. */
+  function chartLanded(p) {
+    var f = hostFn('_athenaChartLanded');
+    if (f) return !!safe(function () { return f(p); }, false);
+    return !!safe(function () { return String((p && p.athenaChartImportedAt) || '').trim(); }, false);
+  }
+  /* Chart fields arrive as newline/semicolon text OR as an array, depending on
+     which importer wrote them. Splitting String(array) on newlines yields ONE
+     line reading "a,b,c" and an item count of 1, so a four-drug list would have
+     printed with no "+N more" and looked complete. Both shapes, one reader. */
+  function chartLines(v) {
+    var raw = [];
+    if (v && typeof v === 'object' && v.length != null) {
+      for (var i = 0; i < v.length; i++) raw.push(String(v[i] == null ? '' : v[i]));
+    } else {
+      raw = String(v == null ? '' : v).split(/\r?\n|;/);
+    }
+    var out = [];
+    for (var k = 0; k < raw.length; k++) { var t = String(raw[k]).trim(); if (t) out.push(t); }
+    return out;
+  }
+  function usDate(key) {
+    var k = String(key || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return String(key || '');
+    var p = k.split('-');
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return months[Number(p[1]) - 1] + ' ' + Number(p[2]) + ', ' + p[0];
+  }
+  function ageFrom(dob) {
+    var k = String(dob || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return '';
+    var b = new Date(k + 'T12:00:00'), now = new Date();
+    if (isNaN(b.getTime())) return '';
+    var a = now.getFullYear() - b.getFullYear();
+    var m = now.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
+    return (a >= 0 && a < 130) ? (a + 'y') : '';
+  }
+
+  /* ---------------------------------------------------------------------------
    * Copy, which must not claim more than it did.
    * navigator.clipboard.writeText returns a PROMISE. The old code toasted
    * "Note copied." on the same tick and swallowed the rejection, so a browser
@@ -424,6 +481,40 @@
     '#mlsPh2Sheet .ph2-item small{display:block;font:500 12px/1.35 inherit;color:var(--ph2-dim);margin-top:2px}',
     '#mlsPh2Sheet .ph2-item.ph2-danger{color:var(--ph2-red)}',
     '#mlsPh2Sheet .ph2-sep{height:1px;background:var(--ph2-line);margin:6px 10px}',
+
+    /* quick history — a reading, not a chart. Rows, never a wall of text. */
+    '#mlsPh2 .ph2-qh{margin:10px 0 0;padding-top:10px;border-top:1px solid var(--ph2-line)}',
+    '#mlsPh2 .ph2-qh dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;margin:0;font:500 13px/1.5 inherit}',
+    '#mlsPh2 .ph2-qh dt{color:var(--ph2-dim);font-weight:700;white-space:nowrap}',
+    '#mlsPh2 .ph2-qh dd{margin:0;color:var(--ph2-ink);word-break:break-word}',
+    '#mlsPh2 .ph2-qh dd.ph2-unknown{color:var(--ph2-amber)}',
+    '#mlsPh2 .ph2-vrow{display:flex;gap:10px;font:500 12.5px/1.6 inherit;color:var(--ph2-dim);',
+    'padding:5px 0;border-top:1px solid var(--ph2-line)}',
+    '#mlsPh2 .ph2-vrow b{flex:none;width:88px;color:var(--ph2-ink);font-weight:700}',
+    '#mlsPh2 .ph2-foot{font:500 11.5px/1.5 inherit;color:var(--ph2-dim);margin:10px 0 0}',
+
+    /* the avatar check-in: a banner, a badge and a brief */
+    '#mlsPh2 .ph2-ping{display:flex;gap:10px;align-items:flex-start;border-radius:14px;padding:13px 14px;',
+    'margin:0 0 12px;font:600 13.5px/1.45 inherit;background:#E8F2EC;color:var(--ph2-green);',
+    'border:1px solid #C9E2D4}',
+    '#mlsPh2 .ph2-ping.ph2-flagged{background:#FCF3E2;color:var(--ph2-amber);border-color:#EBD9B4}',
+    '#mlsPh2 .ph2-ck{border:1px solid var(--ph2-line);border-radius:14px;background:var(--ph2-card);',
+    'margin:0 0 9px;overflow:hidden}',
+    '#mlsPh2 .ph2-ck.ph2-flagged{border-color:#E0C48A;box-shadow:0 0 0 1px #E0C48A inset}',
+    '#mlsPh2 .ph2-ckhead{display:flex;align-items:center;gap:11px;width:100%;text-align:left;min-height:64px;',
+    'border:0;background:transparent;color:inherit;font:inherit;padding:12px 14px;cursor:pointer}',
+    '#mlsPh2 .ph2-ckhead .ph2-ckt{flex:1;min-width:0;font:700 14.5px/1.35 inherit}',
+    '#mlsPh2 .ph2-ckhead .ph2-ckm{display:block;font:500 12px/1.4 inherit;color:var(--ph2-dim);margin-top:3px}',
+    '#mlsPh2 .ph2-ckwarn{display:block;font:700 12px/1.45 inherit;color:var(--ph2-red);margin-top:4px}',
+    '#mlsPh2 .ph2-ckbody{padding:2px 14px 14px;border-top:1px solid var(--ph2-line)}',
+    '#mlsPh2 .ph2-bul{font:500 13.5px/1.55 inherit;color:var(--ph2-ink);margin:9px 0 0;padding-left:2px}',
+    '#mlsPh2 .ph2-bul.ph2-flag{color:var(--ph2-red);font-weight:700}',
+    '#mlsPh2 .ph2-ckpre{white-space:pre-wrap;word-break:break-word;font:500 13px/1.6 inherit;',
+    'color:var(--ph2-ink);background:var(--ph2-bg);border-radius:11px;padding:11px 12px;margin:11px 0 0}',
+    '#mlsPh2 .ph2-ckask{font:600 12.5px/1.5 inherit;color:var(--ph2-amber);margin:7px 0 0}',
+    '#mlsPh2Tabs button .ph2-badge{position:absolute;top:8px;margin-left:24px;min-width:18px;height:18px;',
+    'border-radius:999px;background:var(--ph2-red);color:#fff;font:800 10.5px/18px inherit;text-align:center;padding:0 5px}',
+    '#mlsPh2Tabs button{position:relative}',
     '@media (prefers-reduced-motion: no-preference){',
     '  #mlsPh2Sheet .ph2-panel{animation:ph2Rise .18s ease-out}',
     '  @keyframes ph2Rise{from{transform:translateY(14px)}to{transform:none}}',
@@ -442,7 +533,13 @@
     installEvt: null,
     q: '',            /* the patient filter, kept in state so a repaint restores it */
     menu: false,
-    pullAt: 0         /* the last accepted pull press, for the double-tap guard */
+    pullAt: 0,        /* the last accepted pull press, for the double-tap guard */
+    qh: {},           /* which quick histories are expanded, by patient id */
+    ck: null,         /* avatar check-ins, or null = never loaded (NOT "none") */
+    ckSeen: {},       /* announced already: id|state, in memory only */
+    ckOpen: 0,        /* the brief being read */
+    ckPing: null,     /* news, cleared once shown */
+    ckErr: ''
   };
   api.state = function () { return { tab: S.tab, mounted: S.mounted, menu: S.menu }; };
 
@@ -676,6 +773,368 @@
   }
 
   /* ===========================================================================
+   * THE AVATAR PRE-VISIT CHECK-IN
+   * ---------------------------------------------------------------------------
+   * Owner, 2026-08-08: "the patient enters the room, the avatar starts recording
+   * them and asking them questions, then their convo ends and the doctor should
+   * get a notification that the patient intake convo is done and then give the
+   * doctor the important summary on the phone app we have here."
+   *
+   * THE INTERVIEW ALREADY EXISTS and already publishes its result: the avatar
+   * lane writes /api/avatar/checkins, and app.html has consumed it since
+   * av-5.7.3. What did not exist was any of it reaching THIS app -- the one he
+   * is holding, and the only one of the two that can then record the visit. So
+   * this is a second reader of one endpoint, not a second pipeline: no new
+   * interview, no new summary, no clinical rule stated twice.
+   *
+   * WHAT "NOTIFICATION" HONESTLY MEANS HERE. There is no APNs/FCM credential
+   * and no server holding device tokens, so nothing can reach a phone that is
+   * asleep in a pocket. This checks WHILE THE APP IS OPEN, vibrates once, badges
+   * the tab and puts the brief at the top of Today. It must never say "we will
+   * notify you", because a doctor who believes that will stop looking.
+   *
+   * KEYED BY id AND STATE. The endpoint deliberately returns a FLAGGED interview
+   * that is still running alongside the finished ones, so a red flag reaches the
+   * doctor before the patient has stopped answering. Keyed by id alone, that
+   * first announcement burns the id and the FINISH -- a different event about the
+   * same check-in, and the one carrying the summary -- never announces. app.html
+   * shipped that bug and fixed it in review round three; it is not repeated here.
+   *
+   * Nothing from this endpoint is written to disk. S.ck and S.ckSeen live in
+   * memory and are dropped on the session boundary with everything else.
+   * =========================================================================*/
+  var CK_POLL_MS = 45000;
+  var ckTimer = null;
+
+  function ckRows() { return (S.ck && S.ck.length != null) ? S.ck : []; }
+  function ckReadyCount() {
+    var r = ckRows(), n = 0;
+    for (var i = 0; i < r.length; i++) if (!r[i].inProgress) n++;
+    return n;
+  }
+  function ckFlagged(c) {
+    return !!(c && ((c.flags && c.flags.length) || /^⚠/.test(String(c.headline || ''))));
+  }
+  /* Whose brief is this? The row carries a portal id and no name. Today's
+     schedule holds the names, so resolve against it -- and when it is not there,
+     SAY that rather than invent an attribution. */
+  function ckName(extId) {
+    var id = String(extId || '').trim();
+    if (!id) return '';
+    var list = safe(function () { return window._calAppts || []; }, []);
+    for (var i = 0; i < list.length; i++) {
+      if (String((list[i] && list[i].patient_external_id) || '').trim() === id) return String(list[i].name || '');
+    }
+    return 'not on this day’s list';
+  }
+  /* When it arrived, as an interval. A UTC timestamp sliced to ten characters
+     and printed as a local date throws the time away and shifts the day: a brief
+     from sixty seconds ago and one from three weeks ago read the same. */
+  function ckWhen(iso) {
+    if (!iso) return '';
+    var s = String(iso);
+    var norm = (s.indexOf('Z') >= 0 || /[+-]\d\d:?\d\d$/.test(s)) ? s : (s.replace(' ', 'T') + 'Z');
+    var t = Date.parse(norm);
+    if (!t || isNaN(t)) return '';
+    var mins = Math.round((Date.now() - t) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    if (mins < 60 * 20) { var h = Math.round(mins / 60); return h + (h === 1 ? ' hour ago' : ' hours ago'); }
+    return usDate(norm.slice(0, 10));
+  }
+  function buzz() { safe(function () { if (navigator.vibrate) navigator.vibrate([90, 60, 90]); }); }
+
+  /* The check-in belonging to the patient whose visit is open. Matched on the
+     PORTAL ID via the schedule row, never on the name: two patients sharing a
+     name is ordinary, and attaching one person's intake answers to another is
+     the worst thing this feature could do. No id on either side => no match. */
+  function ckForActive(sn) {
+    var activeId = String((sn && sn.active && sn.active.id) || '');
+    if (!activeId) return null;
+    var ext = '';
+    var list = safe(function () { return window._calAppts || []; }, []);
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (a && String(a.id || a.appointmentId || a.appointment_id || '') === activeId) {
+        ext = String(a.patient_external_id || '').trim();
+        break;
+      }
+    }
+    if (!ext) return null;
+    var rows = ckRows();
+    for (var k = 0; k < rows.length; k++) {
+      if (String((rows[k] && rows[k].patient_external_id) || '').trim() === ext) return rows[k];
+    }
+    return null;
+  }
+
+  function refreshCheckins(announce) {
+    if (!authed()) return;
+    safe(function () {
+      fetch(window.bkBase() + '/api/avatar/checkins?status=ready', {
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.bkToken() }
+      })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (j) {
+          var rows = (j && j.checkins) || [];
+          S.ckErr = '';
+          var fresh = [];
+          for (var i = 0; i < rows.length; i++) {
+            var key = String(rows[i].id) + '|' + (rows[i].inProgress ? 'live' : 'done');
+            if (!S.ckSeen[key]) { S.ckSeen[key] = 1; fresh.push(rows[i]); }
+          }
+          S.ck = rows;
+          /* The FIRST load after sign-in marks what is already there WITHOUT
+             announcing it. A doctor opening the app at 9am must not be buzzed
+             for yesterday's unread check-ins. */
+          if (announce && fresh.length) {
+            var done = 0;
+            for (var k = 0; k < fresh.length; k++) if (!fresh[k].inProgress) done++;
+            var prev = S.ckPing || { n: 0, live: 0 };
+            /* ACCUMULATE. Overwriting under-reports two arrivals in one window.
+               And a flagged interview still running is NOT a finished check-in:
+               saying it is sends the doctor looking for a summary that does not
+               exist yet. */
+            S.ckPing = { n: prev.n + done, live: prev.live + (fresh.length - done) };
+            buzz();
+            if (fresh.length === 1) S.ckOpen = fresh[0].id;
+          }
+          S.lastSig = ''; render();
+        })
+        .catch(function (e) {
+          /* A list that could not be FETCHED must say so. "No check-ins" and
+             "we could not ask" render identically and mean opposite things --
+             and the rows already in memory stay on screen, because a failed
+             refresh is not a reason to withdraw what we already have. */
+          S.ckErr = 'Could not check for patient check-ins just now.' + (e && e.message ? ' (' + e.message + ')' : '');
+          S.lastSig = ''; render();
+        });
+    });
+  }
+  /* `!== null`, not a truthiness test. A timer id of 0 is falsy, so `if (t)`
+     silently skips the clear and the old timer survives the "stop" -- two
+     watches, both polling, both re-arming, forever. Browsers rarely hand out 0,
+     which is exactly why this class of bug ships. */
+  function stopCheckinWatch() { if (ckTimer !== null) { clearTimeout(ckTimer); ckTimer = null; } }
+  /* VISIBILITY-GATED AT THE SCHEDULING END, not inside the callback. A hidden
+     tab's timers are FROZEN, not merely throttled, so a watch that armed anyway
+     would sit there holding a timer that cannot fire and then release a burst of
+     stale checks on resume. There is nothing to gain: onVisible() re-checks with
+     announce:true the moment the app comes back, which is the same information
+     sooner. So a pocketed phone holds ZERO timers -- the promise this module was
+     written to keep -- and the watch exists only while somebody is looking. */
+  function armCheckinWatch() {
+    stopCheckinWatch();
+    if (!S.mounted || !authed()) return;
+    if (safe(function () { return document.visibilityState === 'hidden'; }, false)) return;
+    ckTimer = setTimeout(function () {
+      ckTimer = null;
+      if (!S.mounted) return;
+      if (document.visibilityState === 'hidden') return;   /* onVisible re-arms */
+      refreshCheckins(true);
+      armCheckinWatch();
+    }, CK_POLL_MS);
+  }
+  api._ckPoll = CK_POLL_MS;
+
+  function ckCard(c, compact) {
+    var flagged = ckFlagged(c);
+    var meta = [];
+    var who = ckName(c.patient_external_id);
+    if (who && !compact) meta.push(who);
+    var when = ckWhen(c.ready_at);
+    if (when) meta.push(when);
+    if (c.turns) meta.push(c.turns + ' turns');
+    if (c.inProgress) meta.push('STILL IN PROGRESS');
+    if (c.audited === 'corrected') meta.push('summary corrected by the audit');
+    else if (c.audited === 'passed') meta.push('summary audited');
+    else if (c.audited !== 'rejected') meta.push('audit verdict not recorded');
+
+    var open = String(S.ckOpen) === String(c.id);
+    var h = '<div class="ph2-ck' + (flagged ? ' ph2-flagged' : '') + '">' +
+      '<button type="button" class="ph2-ckhead" data-act="ck-open" data-ck="' + esc(String(c.id)) + '" ' +
+      'aria-expanded="' + (open ? 'true' : 'false') + '">' +
+      '<span class="ph2-ckt">' + esc(String(c.headline || (c.inProgress
+        ? 'Check-in still in progress — flagged. Tap to read what there is.'
+        : 'Check-in complete — tap to read it.'))) +
+      '<span class="ph2-ckm">' + esc(meta.join(' · ')) + '</span>' +
+      /* NOT inside the meta line: it is nowrap+ellipsis there and a rejected
+         audit is the one sentence that must never be clipped. */
+      (c.audited === 'rejected'
+        ? '<span class="ph2-ckwarn">⚠ The audit REJECTED this summary — it could not be reconciled with what the patient answered. Read the check-in itself.</span>'
+        : '') +
+      '</span>' +
+      '<span class="ph2-go" aria-hidden="true">' + (open ? '⌄' : '›') + '</span>' +
+      '</button>';
+
+    if (open) {
+      h += '<div class="ph2-ckbody">';
+      var bul = (c.bullets && c.bullets.length) ? c.bullets : [];
+      for (var i = 0; i < bul.length; i++) {
+        var b = String(bul[i]);
+        h += '<p class="ph2-bul' + (/^⚠/.test(b) ? ' ph2-flag' : '') + '">• ' + esc(b) + '</p>';
+      }
+      if (c.summary) h += '<div class="ph2-ckpre">' + esc(String(c.summary)) + '</div>';
+      var ask = (c.askAbout && c.askAbout.length) ? c.askAbout : [];
+      if (ask.length) {
+        h += '<p class="ph2-ckask">Worth asking — this check-in did not settle:</p>';
+        for (var j = 0; j < ask.length; j++) h += '<p class="ph2-bul">• ' + esc(String(ask[j])) + '</p>';
+      }
+      if (!bul.length && !c.summary && !ask.length) {
+        h += '<p class="ph2-p">This check-in has no summary yet.</p>';
+      }
+      h += '<p class="ph2-foot">Tap the row again to close. Importing this into the chart happens in MLS on the office computer.</p>';
+      h += '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  /* The banner. It is NEWS -- shown once, then cleared -- and it describes the
+     two states separately, because a flagged interview still running has no
+     summary to go and read. */
+  function ckPingHtml() {
+    if (!S.ckPing) return '';
+    var p = S.ckPing;
+    var parts = [];
+    if (p.n === 1) parts.push('A patient check-in just finished.');
+    else if (p.n > 1) parts.push(p.n + ' patient check-ins just finished.');
+    if (p.live === 1) parts.push('A check-in still in progress raised a flag.');
+    else if (p.live > 1) parts.push(p.live + ' check-ins still in progress raised flags.');
+    S.ckPing = null;
+    if (!parts.length) return '';
+    return '<div class="ph2-ping' + (p.live ? ' ph2-flagged' : '') + '">' +
+      '<span aria-hidden="true">' + (p.live ? '⚠' : '✓') + '</span>' +
+      '<span>' + esc(parts.join(' ')) + ' The summary is below.</span></div>';
+  }
+
+  function ckSection() {
+    var h = ckPingHtml();
+    if (S.ckErr) {
+      h += '<div class="ph2-ping ph2-flagged"><span aria-hidden="true">⚠</span><span>' +
+        esc(S.ckErr) + '</span></div>';
+      /* deliberately no early return: the rows already in memory stay */
+    }
+    var rows = ckRows();
+    if (!rows.length) return h;
+    var ready = ckReadyCount(), live = rows.length - ready;
+    var head = ready === 1 ? 'Check-in ready' : (ready + ' check-ins ready');
+    if (ready === 0) head = live === 1 ? 'A check-in in progress raised a flag' : live + ' check-ins in progress raised flags';
+    else if (live) head += ' · ' + live + ' in progress, flagged';
+    h += '<p class="ph2-count">' + esc(head) + '</p>';
+    var shown = rows.slice(0, 8);
+    for (var i = 0; i < shown.length; i++) h += ckCard(shown[i], false);
+    if (rows.length > shown.length) {
+      h += '<p class="ph2-foot">' + (rows.length - shown.length) + ' more are waiting in MLS on the office computer.</p>';
+    }
+    return h;
+  }
+
+  /* ===========================================================================
+   * QUICK HISTORY
+   * ---------------------------------------------------------------------------
+   * Owner, 2026-08-08: "the patient quick history should be available on the
+   * phone up under each patient in the patient view if you click on a patient.
+   * Save the big stuff for the desktop but quick history should definitely be
+   * there."
+   *
+   * So: a READING, under the patient, on the screen you land on after tapping a
+   * name. Six facts and the last three visits -- not the chart. The full record
+   * (problem list, every note, the profile editor, the op-note room) stays on
+   * the desktop, which is what he asked for and also what a 375px screen can
+   * honestly carry between rooms.
+   *
+   * THE LOAD-BEARING PART IS THE ABSENCES. "No known allergies" and "we have
+   * never read this chart" render identically as an empty field, and one of them
+   * is a sentence a doctor could act on in a room. Every box here says which one
+   * it is, in words -- the rule b967 put on the desktop, arriving on the phone.
+   * =========================================================================*/
+  function quickHistoryHtml() {
+    var p = activeChart();
+    if (!p) {
+      return '<div class="ph2-card"><p class="ph2-h">Quick history</p>' +
+        '<p class="ph2-p">This visit is not bound to a chart record on this ' + esc(deviceNoun()) +
+        ', so there is no history to read here. Pull the day again, or open the patient on the office computer.</p></div>';
+    }
+    var notes = chartNotes(p.id);
+    var landed = chartLanded(p);
+    var dates = [];
+    for (var i = 0; i < notes.length; i++) {
+      var d = String((notes[i] && (notes[i].date || notes[i].note_date || notes[i].created_at)) || '').slice(0, 10);
+      if (d) dates.push(d);
+    }
+    dates.sort();
+    var last = dates.length ? dates[dates.length - 1] : '';
+
+    var pains = [];
+    for (var n = 0; n < notes.length; n++) {
+      var o = notes[n] || {};
+      var v = (o.outcome && o.outcome.pain != null) ? o.outcome.pain : (o.pain != null ? o.pain : null);
+      if (v != null && v !== '' && !isNaN(Number(v))) pains.push(Number(v));
+    }
+
+    var facts = [ageFrom(p.dob), p.sex ? String(p.sex) : '', p.dob ? 'DOB ' + String(p.dob).slice(0, 10) : '',
+      p.mrn ? 'MRN ' + String(p.mrn) : ''];
+    var factLine = [];
+    for (var f = 0; f < facts.length; f++) if (facts[f]) factLine.push(facts[f]);
+
+    /* An UNVERIFIED "no known allergies" is the sharpest case in this card: it
+       is the field most likely to be acted on and the one a never-read chart is
+       most likely to be silently empty in. */
+    function field(label, raw, emptyWord) {
+      var all = chartLines(raw);
+      if (all.length) {
+        var lines = all.slice(0, 3);
+        var extra = all.length - lines.length;
+        /* Slice BEFORE escaping: cutting escaped HTML can bisect an entity and
+           print "&am" into a clinical field. */
+        var body = esc(lines.join(', ').slice(0, 150)) +
+          (extra > 0 ? ' <span style="color:var(--ph2-dim)">+' + extra + ' more</span>' : '');
+        return '<dt>' + esc(label) + '</dt><dd>' + body + '</dd>';
+      }
+      return '<dt>' + esc(label) + '</dt><dd class="ph2-unknown">' +
+        esc(landed ? emptyWord : 'never read from athenaOne') + '</dd>';
+    }
+
+    var open = !!S.qh[String(p.id)];
+    var h = '<div class="ph2-card">' +
+      '<p class="ph2-h">Quick history</p>' +
+      (factLine.length ? '<p class="ph2-p">' + esc(factLine.join(' · ')) + '</p>' : '') +
+      '<div class="ph2-qh"><dl>' +
+      '<dt>Visits</dt><dd>' + notes.length + (last ? ' · last seen ' + esc(usDate(last)) : '') + '</dd>' +
+      (pains.length ? '<dt>Last pain</dt><dd>' + pains[pains.length - 1] + '/10</dd>' : '') +
+      field('Allergies', p.allergies, 'none recorded') +
+      field('Medications', p.meds || p.medications, 'none recorded') +
+      field('Problems', p.problems, 'none recorded') +
+      '</dl></div>';
+
+    if (notes.length) {
+      h += '<button type="button" class="ph2-secondary" data-act="qh-toggle" data-pid="' + esc(String(p.id)) + '" ' +
+        'aria-expanded="' + (open ? 'true' : 'false') + '">' +
+        (open ? 'Hide the last visits' : 'Show the last visits') + '</button>';
+      if (open) {
+        var recent = notes.slice().sort(function (a, b) {
+          return String((b && (b.date || b.note_date || b.created_at)) || '')
+            .localeCompare(String((a && (a.date || a.note_date || a.created_at)) || ''));
+        }).slice(0, 3);
+        h += '<div style="margin-top:10px">';
+        for (var r = 0; r < recent.length; r++) {
+          var v = recent[r] || {};
+          var when = String(v.date || v.note_date || v.created_at || '').slice(0, 10);
+          h += '<div class="ph2-vrow"><b>' + esc(when ? usDate(when) : '—') + '</b>' +
+            '<span>' + esc(String(v.type || v.visitType || 'Visit')) + '</span></div>';
+        }
+        h += '</div>';
+      }
+    }
+    h += '<p class="ph2-foot">' +
+      (landed ? 'The full chart — every note, the profile and the op-note room — is on the office computer.'
+              : '⚠ athenaOne’s chart has never been read for this patient, so the blanks above are unknown, not empty.') +
+      '</p></div>';
+    return h;
+  }
+
+  /* ===========================================================================
    * SCREEN: TODAY  -- the day, the pull, the patients. Nothing else.
    * =========================================================================*/
   function pullCard() {
@@ -806,6 +1265,9 @@
       (offToday ? '<button type="button" class="ph2-todaybtn" data-act="today-jump"' + (busy ? ' disabled' : '') + '>Today</button>' : '') +
       '<button type="button" data-act="day-next" aria-label="Next day"' + (busy ? ' disabled' : '') + '>›</button>' +
       '</div>';
+    /* The check-in comes FIRST. A finished intake is the newest thing that has
+       happened to this day, and it is the reason the doctor picked the phone up. */
+    h += ckSection();
     h += pullCard();
 
     /* Five is where a one-handed scroll between rooms starts costing more than
@@ -874,6 +1336,19 @@
        hide list had removed — a refusal with no visible reason. */
     if (sn.warn) h += '<p class="ph2-detail ph2-warn">' + esc(String(sn.warn)) + '</p>';
     h += '</div>';
+
+    /* THIS PATIENT'S CHECK-IN, if the avatar interviewed them. It belongs above
+       the history: it is minutes old and about the visit that is starting, while
+       the history is background. Matched on the portal id, never on the name --
+       two patients share a name far more often than an id. */
+    var mine = ckForActive(sn);
+    if (mine) {
+      h += '<p class="ph2-count">Their check-in with the avatar</p>' + ckCard(mine, true);
+    }
+
+    /* Quick history, under the patient, on the screen you land on after tapping
+       a name -- which is what "under each patient in the patient view" is. */
+    h += quickHistoryHtml();
 
     /* The transcript. It is EDITABLE here, always. Its absence on the phone was
        audit defect B2, and a read-only copy would only be defect B3 again. */
@@ -1064,6 +1539,7 @@
     if (act === 'refresh') {
       closeMenu();
       refreshPresence(true);
+      refreshCheckins(false);   /* a manual refresh is not news; do not buzz for it */
       var did = 0;
       var cal = hostFn('loadCalendar');
       if (cal) { safe(function () { cal({ fresh: true }); }); did++; }
@@ -1078,6 +1554,16 @@
       var ds0 = daySwitch(), tk0 = todayKey();
       if (!ds0 || typeof ds0.setDay !== 'function' || !tk0) { toast('The day selector has not finished loading yet.', 'err'); return; }
       safe(function () { ds0.setDay(tk0); });
+      S.lastSig = ''; render(true); return;
+    }
+    if (act === 'ck-open') {
+      var ckid = el.getAttribute('data-ck') || '';
+      S.ckOpen = (String(S.ckOpen) === String(ckid)) ? 0 : ckid;
+      S.lastSig = ''; render(true); return;
+    }
+    if (act === 'qh-toggle') {
+      var pid = el.getAttribute('data-pid') || '';
+      S.qh[pid] = !S.qh[pid];
       S.lastSig = ''; render(true); return;
     }
     if (act === 'find-clear') {
@@ -1266,7 +1752,15 @@
       sn ? sn.phase : '-', sn && sn.active ? sn.active.id : '-', sn ? sn.recSecs : 0,
       transcriptText().length, noteText().length,
       p ? [p.online, p.ext, p.officeName, p.officeAth].join('|') : '-',
-      S.installEvt ? 1 : 0
+      S.installEvt ? 1 : 0,
+      /* the check-in list, its open brief, its error and the pending banner —
+         without these a finished intake would arrive and repaint nothing */
+      ckRows().length, ckReadyCount(), S.ckOpen, S.ckErr, S.ckPing ? 1 : 0,
+      /* and the expanded quick histories, by VALUE — a key list never shrinks,
+         so collapsing one would have left the signature unchanged */
+      safe(function () {
+        return Object.keys(S.qh).map(function (k) { return k + ':' + (S.qh[k] ? 1 : 0); }).join(',');
+      }, '')
     ].join('');
   }
 
@@ -1287,6 +1781,30 @@
     for (var i = 0; i < btns.length; i++) {
       if (btns[i].getAttribute('data-tab') === S.tab) btns[i].setAttribute('aria-current', 'page');
       else btns[i].removeAttribute('aria-current');
+      /* The Today badge. The buzz happens once and is gone; a doctor who had the
+         phone in a pocket, or who was on the Visit tab, needs the count to still
+         be there when they look. It counts READY check-ins only — a flagged
+         interview still running has no summary to go and read. */
+      if (btns[i].getAttribute('data-tab') === 'today') {
+        var badge = safe(function () { return btns[i].querySelector('.ph2-badge'); }, null);
+        var n = ckReadyCount();
+        if (n > 0) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'ph2-badge';
+            badge.setAttribute('aria-hidden', 'true');
+            btns[i].appendChild(badge);
+          }
+          badge.textContent = String(n);
+          /* The glyph is decorative; the COUNT is not. A screen reader that
+             announces "Today" while a red 3 sits on it is reporting a different
+             screen from the one on display. */
+          btns[i].setAttribute('aria-label', 'Today — ' + n + ' patient check-in' + (n === 1 ? '' : 's') + ' ready');
+        } else {
+          if (badge && badge.parentNode) badge.parentNode.removeChild(badge);
+          btns[i].removeAttribute('aria-label');
+        }
+      }
     }
 
     bodyEl.innerHTML = S.tab === 'visit' ? visitScreen() : S.tab === 'setup' ? setupScreen() : todayScreen();
@@ -1329,8 +1847,14 @@
     render();
     if (live()) tickTimer = setTimeout(tick, 1000);
   }
-  function startTicking() { if (!tickTimer && S.mounted) tickTimer = setTimeout(tick, 250); }
-  function stopTicking() { if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; } }
+  /* `=== null`, the other half of the same rule: with a truthiness test, a
+     ticker whose id is 0 reads as "not running" and a SECOND one is started
+     beside it on every call. */
+  function startTicking() { if (tickTimer === null && S.mounted) tickTimer = setTimeout(tick, 250); }
+  /* Same `!== null` rule as stopCheckinWatch, and for the same reason: a timer
+     id of 0 is falsy, and a "stopped" ticker that kept running would repaint
+     this screen once a second in a pocket. */
+  function stopTicking() { if (tickTimer !== null) { clearTimeout(tickTimer); tickTimer = null; } }
 
   /* Engine repaints are the other source of truth. Scoped to the visit body, so
      it never sees the rest of the document's churn. */
@@ -1352,7 +1876,7 @@
   var settleTries = 0, settleTimer = null;
   function ensure() {
     if (!owns() || !authed()) {
-      if (S.mounted) { unmount(); stopTicking(); }
+      if (S.mounted) { unmount(); stopTicking(); stopCheckinWatch(); }
       /* Not a phone (or not signed in yet): try again for a bounded while, then
          stop. Sign-in fires its own event below. */
       if (settleTries++ < 60 && !settleTimer) settleTimer = setTimeout(function () { settleTimer = null; ensure(); }, 1000);
@@ -1364,8 +1888,19 @@
       frame.addEventListener('click', onAct);
       frame.addEventListener('input', onEdit);
       refreshPresence(true);
+      /* announce:false on the FIRST load. A doctor opening the app at 9am must
+         not be buzzed for check-ins that finished yesterday; only arrivals while
+         he is looking are news. */
+      refreshCheckins(false);
+      armCheckinWatch();
     }
     watchEngine();
+    /* Idempotent, and it must run on EVERY ensure() rather than only at mount:
+       the session boundary stops the watch and calls ensure() without
+       unmounting (a same-tab account change keeps the frame), so arming only at
+       mount left the next account with a dead poll until the app next changed
+       visibility. */
+    armCheckinWatch();
     render();
     startTicking();
     /* The legacy subtractive layer has nothing left to do while this owns the
@@ -1382,6 +1917,10 @@
   function onVisible() {
     if (document.visibilityState !== 'visible') { stopTicking(); return; }
     refreshPresence(true);
+    /* announce:true here on purpose. Coming BACK to the app is exactly when a
+       check-in that finished while it was in a pocket should be reported --
+       the poll was asleep, so this is its first sight of it. */
+    if (S.mounted) { refreshCheckins(true); armCheckinWatch(); }
     S.lastSig = ''; render(true); startTicking();
   }
 
@@ -1429,10 +1968,23 @@
   /* The engine announces both of these; they are the moments this UI is wrong. */
   safe(function () { window.addEventListener('mls:easy-mode-changed', function () { S.lastSig = ''; ensure(); }); });
   safe(function () { window.addEventListener('mls:easy-visit-day-changed', function () { S.lastSig = ''; render(); }); });
-  safe(function () { window.addEventListener('mls:session-boundary', function () { S.lastSig = ''; api._presence = null; ensure(); }); });
+  /* THE SESSION BOUNDARY TAKES THE CHECK-INS WITH IT. They are another
+     account's patients answering another account's questions, and the record of
+     which ones were already announced is just as account-owned: leaving ckSeen
+     behind would silence the NEXT doctor's first arrivals. */
+  safe(function () {
+    window.addEventListener('mls:session-boundary', function () {
+      S.lastSig = ''; api._presence = null;
+      S.ck = null; S.ckSeen = {}; S.ckOpen = 0; S.ckPing = null; S.ckErr = '';
+      S.qh = {}; S.q = '';
+      stopCheckinWatch();
+      ensure();
+    });
+  });
 
   api.revert = function () {
     stopTicking();
+    stopCheckinWatch();
     try { if (settleTimer) clearTimeout(settleTimer); } catch (e) {}
     try { if (mo) mo.disconnect(); } catch (e) {}
     try { document.removeEventListener('visibilitychange', onVisible); } catch (e) {}

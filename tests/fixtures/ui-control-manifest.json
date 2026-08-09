@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 277,
  "totals": {
-  "controls": 1380,
+  "controls": 1381,
   "gated": 100,
-  "active": 1280,
+  "active": 1281,
   "byKind": {
-   "button": 1324,
+   "button": 1325,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 995
+  "dynamic": 996
  },
  "controls": [
   {
@@ -11257,12 +11257,12 @@
    "domId": "mlsPh2Help",
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 451,
+   "line": 557,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-455-today",
+   "id": "feat-mls-phone-ui-js-561-today",
    "label": "Today",
    "accessibleName": "Today",
    "title": "",
@@ -11271,12 +11271,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 455,
+   "line": 561,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-456-visit",
+   "id": "feat-mls-phone-ui-js-562-visit",
    "label": "Visit",
    "accessibleName": "Visit",
    "title": "",
@@ -11285,12 +11285,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 456,
+   "line": 562,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-457-setup",
+   "id": "feat-mls-phone-ui-js-563-setup",
    "label": "Setup",
    "accessibleName": "Setup",
    "title": "",
@@ -11299,12 +11299,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 457,
+   "line": 563,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-492-esc-label-sub",
+   "id": "feat-mls-phone-ui-js-598-esc-label-sub",
    "label": "' + ' ' + ' ' + esc(label) + (sub ? ' ' : '') + ' ' + '",
    "accessibleName": "' + ' ' + ' ' + esc(label) + (sub ? ' ' : '') + ' ' + '",
    "title": "",
@@ -11313,12 +11313,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 492,
+   "line": 598,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-501-close-the-menu",
+   "id": "feat-mls-phone-ui-js-607-close-the-menu",
    "label": "Close the menu",
    "accessibleName": "Close the menu",
    "title": "",
@@ -11327,12 +11327,26 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 501,
+   "line": 607,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-706-what-to-do",
+   "id": "' + esc(String(p.id)) + '",
+   "label": "' + esc(String(p.id)) + '",
+   "accessibleName": "' + esc(String(p.id)) + '",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "' + esc(String(p.id)) + '",
+   "view": "dynamic",
+   "file": "feat_mls_phone_ui.js",
+   "line": 1112,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "feat-mls-phone-ui-js-1174-what-to-do",
    "label": "What to do",
    "accessibleName": "What to do",
    "title": "",
@@ -11341,12 +11355,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 706,
+   "line": 1174,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-795-button",
+   "id": "feat-mls-phone-ui-js-1263-button",
    "label": "‹",
    "accessibleName": "Previous day",
    "title": "",
@@ -11355,12 +11369,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 795,
+   "line": 1263,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-797-today",
+   "id": "feat-mls-phone-ui-js-1265-today",
    "label": "Today",
    "accessibleName": "Today",
    "title": "",
@@ -11369,12 +11383,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 797,
+   "line": 1265,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-798-button",
+   "id": "feat-mls-phone-ui-js-1266-button",
    "label": "›",
    "accessibleName": "Next day",
    "title": "",
@@ -11383,12 +11397,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 798,
+   "line": 1266,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-810-clear-the-search",
+   "id": "feat-mls-phone-ui-js-1281-clear-the-search",
    "label": "Clear the search",
    "accessibleName": "Clear the search",
    "title": "",
@@ -11397,12 +11411,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 810,
+   "line": 1281,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-832-go-to-today",
+   "id": "feat-mls-phone-ui-js-1303-go-to-today",
    "label": "Go to Today",
    "accessibleName": "Go to Today",
    "title": "",
@@ -11411,12 +11425,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 832,
+   "line": 1303,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-848-stop-recording",
+   "id": "feat-mls-phone-ui-js-1319-stop-recording",
    "label": "Stop recording",
    "accessibleName": "Stop recording",
    "title": "",
@@ -11425,12 +11439,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 848,
+   "line": 1319,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-850-writing-the-note",
+   "id": "feat-mls-phone-ui-js-1321-writing-the-note",
    "label": "Writing the note…",
    "accessibleName": "Writing the note…",
    "title": "",
@@ -11439,12 +11453,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 850,
+   "line": 1321,
    "gated": true,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-853-send-for-review",
+   "id": "feat-mls-phone-ui-js-1324-send-for-review",
    "label": "Send for review",
    "accessibleName": "Send for review",
    "title": "",
@@ -11453,12 +11467,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 853,
+   "line": 1324,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-854-copy-the-note",
+   "id": "feat-mls-phone-ui-js-1325-copy-the-note",
    "label": "Copy the note",
    "accessibleName": "Copy the note",
    "title": "",
@@ -11467,12 +11481,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 854,
+   "line": 1325,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-855-record-more",
+   "id": "feat-mls-phone-ui-js-1326-record-more",
    "label": "Record more",
    "accessibleName": "Record more",
    "title": "",
@@ -11481,12 +11495,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 855,
+   "line": 1326,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-857-write-the-note",
+   "id": "feat-mls-phone-ui-js-1328-write-the-note",
    "label": "Write the note",
    "accessibleName": "Write the note",
    "title": "",
@@ -11495,12 +11509,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 857,
+   "line": 1328,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-858-keep-recording",
+   "id": "feat-mls-phone-ui-js-1329-keep-recording",
    "label": "Keep recording",
    "accessibleName": "Keep recording",
    "title": "",
@@ -11509,12 +11523,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 858,
+   "line": 1329,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-860-start-recording",
+   "id": "feat-mls-phone-ui-js-1331-start-recording",
    "label": "Start recording",
    "accessibleName": "Start recording",
    "title": "",
@@ -11523,12 +11537,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 860,
+   "line": 1331,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-913-change-what-this-is-and-see-your-other-devices",
+   "id": "feat-mls-phone-ui-js-1397-change-what-this-is-and-see-your-other-devices",
    "label": "Change what this is, and see your other devices",
    "accessibleName": "Change what this is, and see your other devices",
    "title": "",
@@ -11537,12 +11551,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 913,
+   "line": 1397,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-969-add-mls-to-my-home-screen",
+   "id": "feat-mls-phone-ui-js-1453-add-mls-to-my-home-screen",
    "label": "Add MLS to my Home Screen",
    "accessibleName": "Add MLS to my Home Screen",
    "title": "",
@@ -11551,12 +11565,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 969,
+   "line": 1453,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-998-open-settings",
+   "id": "feat-mls-phone-ui-js-1482-open-settings",
    "label": "Open Settings",
    "accessibleName": "Open Settings",
    "title": "",
@@ -11565,12 +11579,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 998,
+   "line": 1482,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-999-sign-out-of-this",
+   "id": "feat-mls-phone-ui-js-1483-sign-out-of-this",
    "label": "Sign out of this",
    "accessibleName": "Sign out of this",
    "title": "",
@@ -11579,12 +11593,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 999,
+   "line": 1483,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1006-show-the-full-app-on-this",
+   "id": "feat-mls-phone-ui-js-1490-show-the-full-app-on-this",
    "label": "Show the full app on this",
    "accessibleName": "Show the full app on this",
    "title": "",
@@ -11593,7 +11607,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1006,
+   "line": 1490,
    "gated": false,
    "handler": null
   },
