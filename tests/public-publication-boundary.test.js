@@ -256,6 +256,53 @@ assert.deepStrictEqual(
   'pages-publication-inventory.json AND the include allowlist, or delete it — an unreviewed one ' +
   'makes the CI publication audit refuse the deploy and the site silently keeps serving the old build'
 );
+/* ⛔ AND THE SAME HOLE AGAIN, ONE DOT WIDER (2026-08-09).
+   The guard above tests `!name.includes('.')`. b986 shipped a 0-byte root file named
+   `M*M*0.72` — the asterisks arriving as private-use glyphs — created when bash read the
+   backticks in a `node -e` payload as command substitution and wrote a file named after the
+   fragment. It HAS a dot, so it was extension-ful by that test's reckoning, it matched none of
+   the extension classifications either, `git add -A` committed it, this suite went green, and
+   GitHub Pages refused the build: b986 was pushed and the site kept serving b985 for 8+
+   minutes with nothing locally able to say why. Removing the file made b986 appear in ~90s.
+   TWO decidable guards, because the last fix was one dot too narrow:
+     1. THE NAME. A file a shell wrote by accident does not look like a file a person named.
+        Anything outside [A-Za-z0-9_.@~-] is a shell accident or a paste artifact — measured:
+        all 535 root files today are inside it, so this costs nothing and would have caught
+        the glyphs directly.
+     2. THE EXTENSION. A root file whose extension nobody has reviewed is a publication
+        decision by default, exactly like an extension-less one. `.72` was on no list.
+   Both fail loudly and name the file, so the next one is a 5-second fix instead of a
+   10-minute mystery about why the site did not move. */
+const ROOT_NAME_SAFE = /^[A-Za-z0-9_.@~-]+$/;
+const ROOT_EXT_REVIEWED = [
+  'bin', 'css', 'html', 'jpg', 'js', 'json', 'lock', 'md', 'mp4', 'pdf',
+  'png', 'txt', 'webmanifest', 'xml', 'yml', 'zip'
+];
+{
+  const rootFiles = fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile()).map((entry) => entry.name);
+  const oddNames = rootFiles.filter((name) => !ROOT_NAME_SAFE.test(name));
+  assert.deepStrictEqual(oddNames, [],
+    'a root file has a name no person would type: ' + JSON.stringify(oddNames) + '. That is a shell ' +
+    'accident (backticks or an unquoted glob in a node -e payload write a file named after the ' +
+    'fragment), git add -A commits it, and GitHub Pages then REFUSES the build while the site keeps ' +
+    'serving the previous one. Delete it.');
+  /* a LEADING dot is part of the name, not an extension — `.gitignore` is a whole name, and
+     in a worktree `.git` is a FILE. Taking the last dot blindly reported "gitignore" as an
+     unreviewed extension, which is the guard being wrong rather than the tree. Only a dot
+     with something before it separates a name from an extension. */
+  const extOf = (name) => {
+    const i = name.lastIndexOf('.');
+    return i > 0 ? name.slice(i + 1).toLowerCase() : '';
+  };
+  const oddExts = rootFiles
+    .map(extOf)
+    .filter((ext) => ext && ROOT_EXT_REVIEWED.indexOf(ext) < 0);
+  assert.deepStrictEqual(sorted(Array.from(new Set(oddExts))), [],
+    'a root file has an unreviewed extension: ' + JSON.stringify(Array.from(new Set(oddExts))) + '. ' +
+    'Every classification in this suite keys on the extension, so an unknown one is checked by ' +
+    'nothing and Jekyll decides for us. Add it to ROOT_EXT_REVIEWED on purpose, or delete the file.');
+}
 assert(inventorySet.has('CNAME'), 'CNAME must stay in the publication inventory');
 for (const name of EXTENSIONLESS_ROOT) {
   if (name === 'CNAME') continue;

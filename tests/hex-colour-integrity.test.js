@@ -48,6 +48,16 @@ const PREEXISTING = {
                   //          the moment the build number caught up to it on
                   //          2026-08-05. The boundary-anchored bumper cannot
                   //          touch it ("b886" is followed by "0b").
+  '#2fb986': 2,   // "b986" — a green in ScribeFlow-staging.html and
+                  //          ScribeFlow_test.html, present since the commit that
+                  //          ADDED staging (7a986898), long before the build number
+                  //          approached it. The build number caught up on
+                  //          2026-08-09 and this invariant fired; git-verified
+                  //          untouched by the b986 bump (identical at HEAD~1, ~2
+                  //          and ~3), so it is a collision, not a corruption.
+                  //          The bumper cannot reach it either: bump-build.js:88
+                  //          replaces /\bb\d{3,5}\b/ and the "f" before "b986"
+                  //          is a word character, so there is no \b to match on.
   '#2bb673': 1,   // "b673" — calendar-polish green, present since before b600;
                   //          collided with the live build number on 2026-07-26
                   //          (git-verified untouched by the b673 bump)

@@ -2099,14 +2099,66 @@
     }
     function median(a) { if (!a.length) return null; a.sort(function (p, q) { return p - q; }); return a[Math.floor(a.length / 2)]; }
 
+    /* ---- 0. WHITE BALANCE, FOR DETECTION ONLY (av-6.0.5) ------------------------------
+       faceIsSkinRgb is an ABSOLUTE YCbCr window (cr 134-178, cb 76-128). That is fine under
+       daylight and useless under a tungsten bulb, because the cast moves every pixel in the
+       frame the same way. MEASURED on realfaces/p2.jpg, a man photographed in warm amber
+       indoor light: 15,096 of 16,384 grid pixels — 92% of the picture, walls, wood panelling
+       and a tan shirt included — pass the skin test, they merge into ONE component filling
+       the frame, and the face becomes unfindable. Most photographs taken indoors in the
+       evening look like that.
+       Grey-world: the average of a whole scene is close to neutral, so the per-channel means
+       give the cast, and dividing it out puts the picture back where the skin window expects
+       it. Two deliberate limits:
+         1. IT IS A NO-OP UNLESS THERE IS A REAL CAST. Below an 8% spread between the strongest
+            and weakest channel nothing is touched at all, so every neutral photo — and every
+            fixture in the two photo suites — goes down exactly the path it went down before.
+            A change that quietly re-tints the ordinary case to fix the unusual one is the
+            wider-than-the-defect cure this project keeps getting burned by.
+         2. GAINS ARE CLAMPED to 0.65-1.55. An intentionally monochrome or single-colour
+            photograph has a huge "cast" that is the subject, not the light, and an unclamped
+            correction would invent colour that was never there.
+       ⛔ AND IT IS USED FOR THE MASK ONLY. Every colour this function REPORTS still comes from
+       the untouched pixels through px(): white-balancing the reported skin tone would be a
+       different (arguable) change, and mixing it in here would make it impossible to tell
+       which half moved a verdict. Detection is where the failure was. */
+    var wbR = 1, wbG = 1, wbB = 1, wbOn = false;
+    (function () {
+      var sr = 0, sg = 0, sb = 0, sn = M * M, wq;
+      for (wq = 0; wq < sn; wq++) { sr += d[wq * 4]; sg += d[wq * 4 + 1]; sb += d[wq * 4 + 2]; }
+      var mr = sr / sn, mg = sg / sn, mb = sb / sn;
+      var lo = Math.min(mr, mg, mb), hi = Math.max(mr, mg, mb);
+      if (lo < 8 || hi <= 0) return;                 /* a near-black frame has no cast to read */
+      if (hi / lo < 1.08) return;                    /* neutral enough: touch nothing */
+      var grey = (mr + mg + mb) / 3;
+      function gain(m) { var g = grey / m; return g < 0.65 ? 0.65 : g > 1.55 ? 1.55 : g; }
+      wbR = gain(mr); wbG = gain(mg); wbB = gain(mb); wbOn = true;
+    })();
+    function wbPx(xx0, yy0) {
+      var q = px(xx0, yy0);
+      if (!wbOn) return q;
+      var r0 = q[0] * wbR, g0 = q[1] * wbG, b0 = q[2] * wbB;
+      return [r0 > 255 ? 255 : r0, g0 > 255 ? 255 : g0, b0 > 255 ? 255 : b0];
+    }
     /* ---- 1. the skin mask, and the components in it -------------------- */
-    var chroma = new Uint8Array(M * M);
     var yy, xx, p;
-    for (yy = 0; yy < M; yy++) {
-      for (xx = 0; xx < M; xx++) {
-        p = px(xx, yy);
-        if (faceIsSkinRgb(p[0], p[1], p[2])) chroma[yy * M + xx] = 1;
+    /* the mask is built as a RETRYABLE ATTEMPT — see wbPx. Attempt one is the untouched
+       pixels, exactly as every build before this one; the white-balanced attempt happens ONLY
+       if that finds no head at all. Gating on the size of the cast instead was measured and
+       rejected: realfaces/p1.jpg, an ordinary sunny street, has a 29% channel spread, so an
+       8% threshold fired on a photo that was already working and made it claim SPECTACLES the
+       man is not wearing. A retry cannot do that to any photo that currently succeeds, because
+       a photo that currently succeeds never reaches it. */
+    function faceMaskAttempt(useWb) {
+      var ch = new Uint8Array(M * M);
+      for (var ay = 0; ay < M; ay++) {
+        for (var ax = 0; ax < M; ax++) {
+          var q = useWb ? wbPx(ax, ay) : px(ax, ay);
+          if (faceIsSkinRgb(q[0], q[1], q[2])) ch[ay * M + ax] = 1;
+        }
       }
+      var lab = labelComponents(ch);
+      return { chroma: ch, pass1: lab, head: pickFace(lab.comps) };
     }
     var stack = new Int32Array(M * M);
     function labelComponents(mask) {
@@ -2156,12 +2208,41 @@
       }
       return best;
     }
-    var pass1 = labelComponents(chroma);
-    var head = pickFace(pass1.comps);
+    var attempt = faceMaskAttempt(false);
+    var wbUsed = false;
+    if (!attempt.head && wbOn) {
+      var retry = faceMaskAttempt(true);
+      if (retry.head) { attempt = retry; wbUsed = true; }
+    }
+    var chroma = attempt.chroma, pass1 = attempt.pass1, head = attempt.head;
     /* NO HEAD, NO VERDICT. Everything downstream is relative to this box, so a
        guess here would not be one wrong knob - it would be a confident,
        complete description of the wall behind the doctor. */
-    if (!head) return null;
+    if (!head) {
+      /* ⛔ THREE DIFFERENT GIVE-UPS USED TO RETURN THE SAME BARE null (av-6.0.5), so Setup
+         printed one generic "I could not find a face" for causes that need opposite actions.
+         MEASURED on a real photograph (realfaces/p2.jpg, a man in warm amber indoor light):
+         15,096 of 16,384 grid pixels — 92% of the frame — pass the skin-chroma test, they form
+         ONE component filling the whole picture, and pickFace correctly rejects it on its
+         own "area > M*M*0.72 -> that is a wall the colour of skin" rule. THE GUARD IS RIGHT:
+         describing the curtains as his face would be far worse. What was wrong is that the
+         refusal said nothing, so the number that explains it — and the one thing that would
+         fix the photo — never reached him. The coverage is measured here and named. */
+      var onN = 0;
+      for (var hq = 0; hq < M * M; hq++) if (chroma[hq]) onN++;
+      var frac = onN / (M * M);
+      return { look: null, derived: [], found: [frac > 0.60
+        ? (Math.round(frac * 100) + "% of this picture reads as skin-coloured, so I cannot tell your face " +
+           "from the room behind it — warm indoor light makes walls, wood and a tan shirt measure the same as " +
+           "skin. Retake it facing a window, or in cooler and more even light, or against a plainer wall.")
+        : frac < 0.02
+          ? ("I could not find any skin-coloured area at all (" + Math.round(frac * 100) + "% of the picture). " +
+             "That is usually a very dark or very bright photo, or a face too small in the frame — move closer " +
+             "and face the light.")
+          : ("I found skin-coloured areas but none of them was shaped like a face (" + Math.round(frac * 100) +
+             "% of the picture reads as skin). Usually the head is small in the frame or turned away — take it " +
+             "square-on with your face filling more of the picture.")] };
+    }
 
     /* ---- 2. the second pass: separate SKIN from HAIR inside that head ---
        Dark brown and black hair fall inside the skin-chroma cluster, so pass 1
@@ -2179,7 +2260,13 @@
     var headMedL = median(inHead.map(lum)) || 0;
     var bright = inHead.filter(function (q) { return lum(q) >= headMedL; });
     var skinRef = medianCol(bright.length ? bright : inHead);
-    if (!skinRef) return null;
+    if (!skinRef) {
+      /* the head was found but no usable skin reference came out of it — see the !head branch
+         above for why a silent null is not good enough */
+      return { look: null, derived: [], found: ["I found your head but could not get a clean skin " +
+        "reading from it — usually hard side light, a strong colour cast, or a filter. Retake it in even " +
+        "light with no filter."] };
+    }
     var refL = lum(skinRef);
     var mask = new Uint8Array(M * M);
     for (var s2 = 0; s2 < M * M; s2++) {
@@ -2216,7 +2303,11 @@
        "skin tone" reached the doctor: pass 1 deliberately contains the hair. If
        the refined pass cannot find a face, the honest answer is that this photo
        could not be read. */
-    if (!best) return null;
+    if (!best) {
+      return { look: null, derived: [], found: ["I found your head but could not separate your skin from " +
+        "your hair inside it — usually very dark hair in low light, where the two measure the same. Retake it " +
+        "with more light on your face."] };
+    }
     var label = pass2.label;
 
     /* the background, sampled from the frame border EXCLUDING the face mass */
@@ -2472,9 +2563,25 @@
     }
     function atX(fr) { return Math.round(faceRun.L + faceW * fr); }
     function atY(fr) { return Math.round(faceT + faceH * fr); }
-    function patchMedian(spots, r, skinOnly) {
+    /* `trueMedian` is OPT-IN and every existing call site omits it (av-6.0.6).
+       ⛔ THIS IS THE SECOND ATTEMPT, AND THE FIRST ONE IS THE REASON FOR THE OPT-IN.
+       The name says median and the vote ACROSS the five patches is one, but WITHIN a patch
+       this sums and divides — and a mean cannot reject an outlier, it only dilutes itself
+       with one. That is the owner's complaint restated exactly: "it needs to see the skin
+       color of my face not my background + my face." The mask+component test excludes the
+       wall, but it cannot exclude what is genuinely inside the face component and genuinely
+       not skin — a spectacle rim, a nostril shadow, stubble, the dark line of a lid.
+       The first attempt added an opt-OUT flag and set it at the skin call. patchMedian has
+       TEN call sites, so that silently switched the other EIGHT — chin, cheek row, brow row,
+       forehead, bridge, top colour — and the glasses read depends on the brow and bridge
+       samples: avatar-photo-match-proof went 39 -> 38, and three fixes aimed at the skin
+       path did nothing because the skin path was never what broke. Opt-IN inverts that: a
+       call site that says nothing keeps the statistic it was calibrated on, so only the ONE
+       sample I am deliberately changing can move. See the memory note this cost:
+       a-flag-on-a-shared-helper-must-default-to-shipped. */
+    function patchMedian(spots, r, skinOnly, trueMedian) {
       var cols = spots.map(function (sp) {
-        var acc = [0, 0, 0], n = 0;
+        var acc = [0, 0, 0], n = 0, pool = trueMedian ? [] : null;
         for (var py = sp[1] - r; py <= sp[1] + r; py++) {
           for (var pxx = sp[0] - r; pxx <= sp[0] + r; pxx++) {
             if (pxx < 0 || py < 0 || pxx >= M || py >= M) continue;
@@ -2497,10 +2604,20 @@
               if (!mask[si]) continue;
               if (label[si] !== best.id) continue;
             }
-            var q = px(pxx, py); acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
+            var q = px(pxx, py);
+            if (pool) pool.push(q);
+            acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
           }
         }
-        return n ? [acc[0] / n, acc[1] / n, acc[2] / n] : null;
+        if (!n) return null;
+        if (!pool) return [acc[0] / n, acc[1] / n, acc[2] / n];
+        /* ranked by LUMINANCE and the whole pixel returned, so the three channels stay from
+           the same pixel. Averaging channels independently can synthesise a hue that appears
+           nowhere in the photograph, which is the same class of error one level down — and
+           `lum` is the same weighting medianCol uses for the vote across patches, so the two
+           stages agree about what "middle" means. */
+        pool.sort(function (a2, b2) { return lum(a2) - lum(b2); });
+        return pool[Math.floor((pool.length - 1) / 2)];
       }).filter(Boolean);
       return medianCol(cols);
     }
@@ -2511,27 +2628,37 @@
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
                             [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skinRef;
-    /* ⛔ REVERTED, HONESTLY, AND LEFT WIRED FOR THE NEXT ATTEMPT. The per-patch statistic
-       here is still the MEAN (asMean=true), i.e. exactly what shipped. Switching this one
-       call to the true median — which is the right statistic and is what the owner is asking
-       for when he says "it needs to see the skin color of my face not my background + my
-       face" — reproducibly costs the glasses detection on fixture C of
-       avatar-photo-match-proof (39 -> 38). I re-based skinL and both chDist thresholds on the
-       mean to insulate them and it STILL failed, so the coupling is somewhere I have not yet
-       measured, and three guesses is where guessing stops. The median path is implemented and
-       one argument away; it does not ship until the glasses regression is explained, because a
-       matcher that trades a correct spectacle read for a better swatch is not an improvement.
-       NEXT: instrument fixture C and print browMed / rimThin / frameLike under both statistics
-       before touching anything. */
+    /* THE 4th ARGUMENT IS THE OPT-IN, AND THIS IS THE ONLY CALL SITE THAT TAKES IT (av-6.0.6).
+       The per-patch statistic here is now a TRUE MEDIAN. The first attempt at this made the
+       flag an opt-OUT and cost the glasses read, because patchMedian has TEN call sites and
+       eight of them silently changed with it; inverting the flag confines the change to this
+       one sample, which is all I ever wanted to move. Both photo suites are green (39/39,
+       40/40), and the refactor was proven inert before the opt-in was added.
+       ⛔ AND IT DID NOT FIX WHAT IT WAS AIMED AT — measured on both real photographs, so this
+       is recorded rather than claimed. The median moves the sampled value a few units
+       (p1 #9d6c64 -> #a16765, p2 #af6228 -> #ab602b) and `derived` is IDENTICAL either way:
+       the skin is REFUSED by the hue gate in both, so nothing the doctor sees changes. The
+       statistic was never the blocker. The sampled colour is a muddy rose around hue 30-34°
+       on a fair-skinned man, which means the SAMPLE IS NOT LANDING ON HIS CHEEK — the next
+       lever is WHERE the five patches sit and what the mask admits, not how they are averaged.
+       The median stays because it is the right statistic, it is free, and it cannot dilute
+       itself with a spectacle rim; it is just not the cure. */
     /* the SAME five patches read as a mean, used ONLY to place the dark-mass cuts below.
        Every one of those thresholds is an offset from this number and was tuned against it;
        re-basing them on the median moved them all at once and cost a glasses detection that
        had been passing. The claim the doctor sees is `skin`, the median — an actual pixel
        colour from his face rather than an average of his cheek and whatever shared the patch. */
+    /* ⛔ THREE ARGUMENTS, DELIBERATELY — skinCut EXISTS to be the MEAN. Every dark-mass cut
+       below is an offset from it and was calibrated against the mean, so this is the one
+       sample that must NOT follow the opt-in above. When the 4th parameter was renamed from
+       asMean to trueMedian, this call still read `, 2, true, true)` from the earlier attempt
+       and silently became a median too — which would have moved every threshold at once, the
+       exact failure the opt-in was introduced to prevent, one rename later. Caught by counting
+       arguments at all ten call sites rather than by reading the diff. */
     var skinCut = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
-                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skin;
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true) || skin;
     var skinL = lum(skinCut);
     /* the BAND THE DOCTOR IS TOLD must describe the colour he is SHOWN, so it reads the
        median like the swatch does — not the threshold statistic. */
@@ -2559,6 +2686,15 @@
     function belowEye(fr) { return Math.round(eyeY + lowerH * fr); }
 
     var found = [];
+    /* SAY IT WHEN THE READING CAME OFF A CORRECTED COPY. The first attempt found no face at all
+       and the second one only worked after dividing out a strong colour cast, so the doctor is
+       entitled to know that before he trusts a swatch — a reading is not the same fact when the
+       light had to be corrected to get it. It is disclosed, not hidden behind a green result. */
+    if (wbUsed) {
+      found.push("the light in this photo is strongly coloured, so I corrected the cast before I could " +
+        "find your face at all — the shapes are reliable, but check the colours it chose, and a photo in " +
+        "even daylight will read better.");
+    }
     var look = { skin: hex(skin), hair: FACE_LOOK.hair, shirt: FACE_LOOK.shirt,
                  lip: FACE_LOOK.lip, eyes: FACE_LOOK.eyes,
                  hairStyle: 'short', glasses: false, beard: 'none' };
@@ -4014,8 +4150,18 @@
              pickers when the real problem was that the head filled a third of
              the frame and the matcher had measured the wall. */
           if (!look) {
-            lookNote.textContent = 'I could not find a face in that photo. Retake it with your face filling more of the frame, ' +
-              'looking straight at the camera, and with a background that is not the same colour as your skin - or set the colours by hand.';
+            /* SAY WHICH FAILURE IT WAS (av-6.0.5). The reader now names the cause and the number
+               behind it — see the !head branch in faceReadPortrait — and those three causes want
+               opposite actions from the doctor: move closer, or change the LIGHT, or change the
+               BACKGROUND. The generic sentence below advised all three at once, which is the same
+               as advising none, and it was printed even when the reader knew exactly which one it
+               was. The specific reason wins when there is one; the general advice stays as the
+               fallback for a reader that returned nothing at all. */
+            var whyNoFace = (res && Array.isArray(res.found) && res.found.length)
+              ? res.found.join(' ')
+              : ('I could not find a face in that photo. Retake it with your face filling more of the frame, ' +
+                 'looking straight at the camera, and with a background that is not the same colour as your skin - or set the colours by hand.');
+            lookNote.textContent = whyNoFace;
             return;
           }
 
