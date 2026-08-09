@@ -191,7 +191,12 @@
      the active patient. Keep the safety refresh, but admit its one cold lookup
      only in genuine browser idle time instead of the next animation frame. */
   function scheduleStorageRender() {
-    if (stopped || storagePending !== null) return;
+    if (stopped) return;
+    /* A same-tab signal may already own a next-frame render. Once a cold
+       cross-tab/lifecycle signal arrives that frame is no longer safe: cancel
+       it so roster reconciliation can only begin after genuine idle. */
+    cancelPending();
+    if (storagePending !== null) return;
     var run = function () {
       storagePending = null;
       storagePendingIsIdle = false;
@@ -259,18 +264,39 @@
     return /(^|::)patients$/.test(String(ev.key));
   }
 
+  function hideStaleStrip() {
+    var strip = document.getElementById(STRIP_ID);
+    if (strip) strip.style.display = 'none';
+    lastKey = '';
+    lastActiveId = String(activeId() || '');
+  }
+
+  function onViewChanged(ev) {
+    var view = ev && ev.detail && ev.detail.view;
+    if (view && view !== 'visit') { scheduleRender(); return; }
+    /* Entering Visit can follow a cross-tab roster invalidation. Admit the
+       first record lookup at genuine idle instead of the navigation frame. */
+    scheduleStorageRender();
+  }
+
+  function onSessionBoundary() {
+    cancelPending();
+    hideStaleStrip();
+    scheduleStorageRender();
+  }
+
   function start() {
     if (started || stopped) return;
     started = true;
     css();
-    listen(window, 'mls:view-changed', scheduleRender);
+    listen(window, 'mls:view-changed', onViewChanged);
     listen(window, 'mls:active-patient-changed', scheduleRender);
     listen(window, 'mls:patient-record-updated', function (ev) {
       if (samePatientRecord(ev)) scheduleRender();
     });
-    listen(window, 'mls:session-boundary', scheduleRender);
-    listen(window, 'mls:ui-ready', scheduleRender);
-    listen(window, 'pageshow', scheduleRender);
+    listen(window, 'mls:session-boundary', onSessionBoundary);
+    listen(window, 'mls:ui-ready', scheduleStorageRender);
+    listen(window, 'pageshow', scheduleStorageRender);
     listen(window, 'storage', function (ev) {
       var activeKey = activeStoreKey();
       if (ev && activeKey && String(ev.key || '') === activeKey) {
@@ -278,10 +304,7 @@
            patient's allergies synchronously; the new record waits for idle. */
         var nextId = activeId();
         if (nextId == null || String(nextId) !== lastActiveId) {
-          var strip = document.getElementById(STRIP_ID);
-          if (strip) strip.style.display = 'none';
-          lastKey = '';
-          lastActiveId = String(nextId || '');
+          hideStaleStrip();
         }
         scheduleStorageRender();
         return;
@@ -292,7 +315,10 @@
       try { if (document.hidden) return; } catch (e) {}
       scheduleStorageRender();
     });
-    render();
+    /* This satellite can evaluate after the app is already clickable. Never
+       cold-decode the roster in module evaluation/startup; the same unchanged
+       strip mounts during the next genuine idle window. */
+    scheduleStorageRender();
   }
 
   function stop() {

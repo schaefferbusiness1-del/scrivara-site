@@ -7173,6 +7173,11 @@ function startSession(email){
   renderDots();
   newVisit({preserveRecovery:true});
   showView('visit');   // land ready to record the first patient — not the busy Patients list
+  /* Counts are data-owned, not route-owned. Refresh them after sign-in only
+     when the browser is genuinely idle so an existing large roster cannot
+     block the first Visit click, while local/offline accounts never remain at
+     the markup's temporary zero badges. */
+  scheduleNavCounts();
   applyBackendModeUI();
   if(!_gateMode) applyAccessUI();
   renderDocPrefs();
@@ -13768,26 +13773,56 @@ function _renderPatientFace(){
   wrap.style.display='block';
   var av=document.getElementById('_pfAvatar'); if(av){ av.textContent=_patientInitials(p.name); av.setAttribute('data-tip',(p.name||'Patient')+' — click to open chart'); }
 }
+function updateHistoryNavCount(activeId){
+  const hc=document.getElementById('navHistCount');
+  if(!hc) return;
+  const id=String(activeId||'');
+  const counts=__mlsNoteCounts(id||null);
+  hc.textContent=id?(counts.patientCount+counts.orphanCount):counts.total;
+}
 function updateNavCounts(patientSnapshot){
   const patients=Array.isArray(patientSnapshot)?patientSnapshot:getPatients();
   const pc=document.getElementById('navPtCount'); if(pc) pc.textContent=patients.length;
   // History badge reflects the ACTIVE patient's real saved-visit count (per-patient,
   // matching what the History view shows). With no active patient it shows the total.
-  const hc=document.getElementById('navHistCount');
-  if(hc){
-    const activeId=getActivePtId();
-    let ap=null;
-    for(let i=0;i<patients.length;i++){ if(patients[i]&&patients[i].id===activeId){ ap=patients[i]; break; } }
-    const counts=__mlsNoteCounts(ap?ap.id:null);
-    if(ap){
-      // patient's own visits + any unassigned visits that are still surfaced in History
-      hc.textContent = counts.patientCount + counts.orphanCount;
-    } else {
-      hc.textContent = counts.total;
-    }
-  }
+  const activeId=getActivePtId();
+  let ap=null;
+  for(let i=0;i<patients.length;i++){ if(patients[i]&&patients[i].id===activeId){ ap=patients[i]; break; } }
+  updateHistoryNavCount(ap?ap.id:'');
   const oc=document.getElementById('navOrdCount');
   if(oc) oc.textContent = currentOrders.length;
+}
+let __mlsNavCountTask=null, __mlsNavCountTaskIdle=false, __mlsNavCountPendingSnapshot=null, __mlsNavCountEpoch=0;
+function __mlsNavCountInputPending(){
+  try{ const s=window.navigator&&window.navigator.scheduling; return !!(s&&typeof s.isInputPending==='function'&&s.isInputPending({includeContinuous:true})); }catch(e){ return false; }
+}
+function scheduleNavCounts(patientSnapshot){
+  const currentEpoch=typeof sfSessionUiEpoch==='number'?sfSessionUiEpoch:0;
+  if(Array.isArray(patientSnapshot)) __mlsNavCountPendingSnapshot=patientSnapshot;
+  if(__mlsNavCountTask!==null){
+    if(__mlsNavCountEpoch===currentEpoch) return;
+    try{
+      if(__mlsNavCountTaskIdle&&typeof window.cancelIdleCallback==='function') window.cancelIdleCallback(__mlsNavCountTask);
+      else clearTimeout(__mlsNavCountTask);
+    }catch(e){}
+    __mlsNavCountTask=null; __mlsNavCountTaskIdle=false; __mlsNavCountPendingSnapshot=null;
+  }
+  __mlsNavCountEpoch=currentEpoch;
+  const run=function(){
+    __mlsNavCountTask=null; __mlsNavCountTaskIdle=false;
+    if(__mlsNavCountEpoch!==(typeof sfSessionUiEpoch==='number'?sfSessionUiEpoch:0)) return;
+    if(__mlsNavCountInputPending()){ scheduleNavCounts(); return; }
+    const snapshot=__mlsNavCountPendingSnapshot; __mlsNavCountPendingSnapshot=null;
+    try{ updateNavCounts(snapshot); }catch(e){}
+  };
+  try{
+    if(typeof window.requestIdleCallback==='function'){
+      __mlsNavCountTaskIdle=true;
+      __mlsNavCountTask=window.requestIdleCallback(run);
+      return;
+    }
+  }catch(e){}
+  __mlsNavCountTask=setTimeout(run,900);
 }
 
 /* ---------- PATIENTS LIST ---------- */
@@ -20065,6 +20100,9 @@ async function deleteNote(id){
   try{ deleteNoteOnServer(id); }catch(e){} // hosted: hide it server-side too (soft delete)
   if(currentNoteId===id){ currentNoteId=null; }
   renderHistory();
+  /* The notes array is already hot after saveNotes, so repair the History
+     badge immediately without touching the multi-megabyte patient roster. */
+  try{ updateHistoryNavCount(getActivePtId()); }catch(e){ scheduleNavCounts(); }
   toast('Visit deleted.','');
 }
 

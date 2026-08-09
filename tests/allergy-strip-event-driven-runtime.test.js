@@ -121,7 +121,13 @@ vm.runInContext(source, context, { filename: 'feat_mls_allergy_strip.js', timeou
 const api = window.__mlsAllergyStrip;
 assert(api && api.version === 'allergy-strip-1.1.0', 'event-driven allergy strip did not install');
 assert.strictEqual(intervalCreates, 0, 'allergy strip installed an idle polling interval');
-assert.strictEqual(activeReads, 1, 'allergy strip did more than its one visible boot read');
+assert.strictEqual(activeReads, 0, 'allergy strip cold-read the roster while its late asset installed');
+assert.strictEqual(idle.count, 1, 'allergy strip did not admit its initial record lookup at genuine idle');
+idle.run();
+assert.strictEqual(activeReads, 0, 'allergy strip read the roster before its idle frame');
+assert.strictEqual(frames.count, 1, 'allergy startup idle admission did not hand off one render');
+frames.run();
+assert.strictEqual(activeReads, 1, 'allergy strip did more than its one visible idle boot read');
 let strip = elements.mlsAllergyStrip;
 assert(strip && /Penicillin/.test(strip.innerHTML), 'initial allergy UI/text contract changed');
 assert.strictEqual(strip.className, 'mlsalg-has', 'documented allergy styling changed');
@@ -155,6 +161,17 @@ frames.run();
 assert.strictEqual(activeReads, 3, 'active record update caused duplicate reads');
 assert(/Latex/.test(strip.innerHTML) && strip.className === 'mlsalg-has', 'same-patient allergy update changed the UI contract');
 
+active.allergies = 'Queued then invalidated';
+const readsBeforeQueuedRace = activeReads;
+window.emit('mls:active-patient-changed', { detail: { patientId: 'p-2' } });
+assert.strictEqual(frames.count, 1, 'same-tab active signal did not queue its normal render');
+window.emit('storage', { key: window.uns('patients'), storageArea: localStorage });
+assert.strictEqual(frames.count, 0, 'cross-tab invalidation left an unsafe pre-idle frame queued');
+assert.strictEqual(activeReads, readsBeforeQueuedRace, 'cross-tab invalidation decoded the roster before idle');
+assert.strictEqual(idle.count, 1, 'cross-tab invalidation did not replace the frame with idle work');
+idle.run(); frames.run();
+assert.strictEqual(activeReads, readsBeforeQueuedRace + 1, 'cross-tab race repair did not perform exactly one idle read');
+
 active = { id: 'p-3', name: 'Synthetic Three', allergies: 'Shellfish' };
 const readsBeforeRemotePatient = activeReads;
 window.emit('storage', { key: window.uns('activePt'), storageArea: localStorage });
@@ -177,6 +194,10 @@ assert.strictEqual(activeReads, readsBeforeLeavingVisit, 'hidden Visit patient e
 
 window.__mlsCurrentView = 'visit';
 window.emit('mls:view-changed', { detail: { previousView: 'patients', view: 'visit' } });
+assert.strictEqual(frames.count, 0, 'opening Visit re-entered the first navigation frame');
+assert.strictEqual(idle.count, 1, 'opening Visit did not wait for genuine idle');
+idle.run();
+assert.strictEqual(frames.count, 1, 'Visit idle admission did not hand off one render');
 frames.run();
 assert.strictEqual(activeReads, readsBeforeLeavingVisit + 1, 'opening Visit did not perform its one required active-patient read');
 assert.strictEqual(strip.style.display, '', 'returning to Visit did not restore the strip');
@@ -204,6 +225,17 @@ assert.strictEqual(activeReads, readsBeforeVisibleIdle, 'visible-tab idle admiss
 assert.strictEqual(frames.count, 1, 'visible-tab idle admission did not hand off one render');
 frames.run();
 assert.strictEqual(activeReads, readsBeforeVisibleIdle + 1, 'visible-tab resume did not perform one fresh active-patient read');
+
+active = { id: 'p-4', name: 'Synthetic Four', allergies: 'Iodine' };
+const readsBeforeBoundary = activeReads;
+window.emit('mls:session-boundary', { detail: { nextAccount: 'doctor-b@example.test' } });
+assert.strictEqual(strip.style.display, 'none', 'account boundary left the previous account allergy visible');
+assert.strictEqual(activeReads, readsBeforeBoundary, 'account boundary decoded the roster in the post-login task');
+assert.strictEqual(frames.count, 0, 'account boundary queued an immediate allergy frame');
+assert.strictEqual(idle.count, 1, 'account boundary did not defer allergy lookup to genuine idle');
+idle.run(); frames.run();
+assert.strictEqual(activeReads, readsBeforeBoundary + 1, 'account boundary idle repair did not read exactly once');
+assert(/Iodine/.test(strip.innerHTML), 'account boundary idle repair did not adopt the new patient allergy');
 
 api.revert();
 assert.strictEqual(frames.count, 0, 'revert left allergy work scheduled');

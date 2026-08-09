@@ -32,6 +32,7 @@ function eventTarget() {
       listeners.set(type, list.filter(item => item !== fn));
     },
     emit(type, detail) { (listeners.get(type) || []).slice().forEach(fn => fn({ type, detail: detail || {} })); },
+    emitRaw(type, event) { (listeners.get(type) || []).slice().forEach(fn => fn(event || { type })); },
     count(type) { return (listeners.get(type) || []).length; }
   };
 }
@@ -165,10 +166,41 @@ assert(widgetReads > 0, 'visible Visit activation did not read the widget list')
 assert.strictEqual(layoutReads, 0, 'visible Visit activation read offsetParent/forced layout');
 
 const readsBeforeRemotePatient = widgetReads;
-winEvents.emit('storage', { key: 'acct::activePt' });
-assert.strictEqual(frames.length, 1, 'cross-tab active patient did not schedule widget ownership repair');
+winEvents.emitRaw('storage', { key: 'acct::activePt', storageArea: context.localStorage });
+assert.strictEqual(frames.length, 1, 'cross-tab active patient did not schedule a safe deck rebuild');
+assert.strictEqual(widgetReads, readsBeforeRemotePatient, 'cross-tab active patient read widget data before canonical cleanup');
+assert.strictEqual(document.getElementById('mlsWdDeck'), null,
+  'cross-tab active patient left the previous patient widget deck visible');
+assert(body.classList.contains('mls-widget-deck-owner'),
+  'cross-tab active patient exposed the stale base widget host');
 frames.shift()();
-assert(widgetReads > readsBeforeRemotePatient, 'cross-tab active patient left the previous patient widget deck rendered');
+assert(document.getElementById('mlsWdDeck'),
+  'storage-only active patient change made the widget deck disappear indefinitely');
+
+/* Patient-stamped output from A must never be mirrored under B, even though a
+   storage-only switch does not run ScribeFlow's same-tab widget cleanup. */
+const mirrorStart = source.indexOf('function mirrorBodies(');
+const mirrorEnd = source.indexOf('function visitViewVisible()', mirrorStart);
+assert(mirrorStart >= 0 && mirrorEnd > mirrorStart, 'widget body mirror helper is missing');
+const staleSource = { innerHTML: 'PATIENT A GENERATED CONTENT' };
+const mirroredBody = { innerHTML: 'old', __mirror: 'old' };
+const mirrorContext = {
+  String, window: null,
+  isFn(fn) { return typeof fn === 'function'; },
+  safe(fn, fallback) { try { return fn(); } catch (_) { return fallback; } },
+  $(id) { return id === 'cwBody_w1' ? staleSource : null; },
+  getActivePtId() { return 'patient-b'; },
+  _cwLatestPt: { w1: 'patient-a' }
+};
+mirrorContext.window = mirrorContext;
+vm.createContext(mirrorContext);
+vm.runInContext(source.slice(mirrorStart, mirrorEnd) + '\nthis.mirrorBodies=mirrorBodies;', mirrorContext);
+mirrorContext.mirrorBodies({ querySelector() { return mirroredBody; } }, [{ id: 'w1' }]);
+assert.strictEqual(mirroredBody.innerHTML, '', 'patient A widget output appeared in patient B deck');
+mirrorContext._cwLatestPt.w1 = 'patient-b';
+mirrorContext.mirrorBodies({ querySelector() { return mirroredBody; } }, [{ id: 'w1' }]);
+assert.strictEqual(mirroredBody.innerHTML, staleSource.innerHTML,
+  'current-patient widget output did not return after a valid render');
 
 const readsBeforeSet = widgetReads;
 context.setCustomWidgets([]);

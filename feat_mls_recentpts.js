@@ -44,6 +44,7 @@
   function pushRecent(id){if(!id)return;var ids=loadIds().filter(function(x){return String(x)!==String(id);});ids.unshift(String(id));saveIds(ids);}
   function pageVisible(){try{if(typeof document.hidden==='boolean')return !document.hidden;if(document.visibilityState)return document.visibilityState!=='hidden';}catch(e){}return true;}
   function activeStorageKey(){try{return typeof window.uns==='function'?String(window.uns('activePt')||''):'';}catch(e){return '';}}
+  function patientStorageKey(){try{return typeof window.uns==='function'?String(window.uns('patients')||''):'';}catch(e){return '';}}
 
   function ensureWrapStyle(){if(document.getElementById(WRAP_STYLE_ID))return;try{var s=document.createElement('style');s.id=WRAP_STYLE_ID;s.textContent='#mlsCtxBar{flex-wrap:wrap;row-gap:6px;}';document.head.appendChild(s);}catch(e){}}
 
@@ -240,8 +241,12 @@
       var key=ev.key==null?'':String(ev.key);
       if(key&&key===activeStorageKey()){onPatientChanged({detail:{patientId:activeId()}},true);return;}
       if(key&&key===String(lsKey())){scheduleRender(false);scheduleIdleRefresh();}
-      /* Deliberately ignore broad patients-key writes. The visible tab receives
-         exact row events; a background tab reconciles once on visibility. */
+      if(key&&key===patientStorageKey()){
+        /* Cross-tab rename/delete has no row event in this tab. Mark cached
+           metadata dirty, but reconcile only at genuine idle so the storage
+           callback and first-click lane never decode the roster. */
+        scheduleIdleRefresh();
+      }
     }catch(e){}
   }
   function bind(){

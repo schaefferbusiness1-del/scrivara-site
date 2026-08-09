@@ -78,8 +78,13 @@
   function setField(id, name) {
     var el = document.getElementById(id);
     if (!el) { delete pendingFields[id]; return true; }
-    if (document.activeElement === el) { pendingFields[id] = true; return false; }
+    if (document.activeElement === el) {
+      pendingFields[id] = true;
+      try { el.setAttribute('data-mls-patient-sync-pending', '1'); } catch (e) {}
+      return false;
+    }
     delete pendingFields[id];
+    try { el.removeAttribute('data-mls-patient-sync-pending'); } catch (e) {}
     if (el.value === name) return true;
     el.value = name;
     try { el.dispatchEvent(new Event('input',  { bubbles: true })); } catch (e) {}
@@ -93,6 +98,7 @@
        descends into activePatient() when the binding changed or an owned field
        actually needs repair, keeping stable tabs off the multi-MB codec. */
     if (!id) {
+      for (var emptyIndex = 0; emptyIndex < FIELDS.length; emptyIndex++) setField(FIELDS[emptyIndex], '');
       lastName = null;
       lastActiveId = '';
       lastRecordMissing = false;
@@ -119,7 +125,18 @@
 
   function tick() {
     if (stopped) return;
-    try { sync(); } catch (e) {}
+    try {
+      var id = activeId();
+      if (!id) { sync(false); return; } /* O(1) clear; no roster lookup */
+      if (id === lastActiveId &&
+          (fieldsAreSettled() || (!lastName && lastRecordMissing))) return;
+      /* A focused field is explicitly owned by focusout. Repeated backstops
+         must not keep retrying a full patient lookup behind active typing. */
+      for (var i = 0; i < FIELDS.length; i++) if (pendingFields[FIELDS[i]]) return;
+      /* Structural compatibility repair remains, but only through the same
+         genuine-idle/input-aware admission as cross-tab reconciliation. */
+      queueStorageSync();
+    } catch (e) {}
   }
 
   function activeStorageKey() {
@@ -138,6 +155,12 @@
     }, 0);
   }
 
+  function cancelPendingSync() {
+    if (!pendingTimer) return;
+    try { clearTimeout(pendingTimer); } catch (e) {}
+    pendingTimer = null;
+  }
+
   function cancelStorageSync() {
     if (storageTask === null) return;
     var task = storageTask, wasIdle = storageTaskIsIdle;
@@ -149,26 +172,36 @@
     } catch (e) {}
   }
 
+  function inputPending() {
+    try {
+      var scheduling = window.navigator && window.navigator.scheduling;
+      return !!(scheduling && typeof scheduling.isInputPending === 'function' &&
+        scheduling.isInputPending({ includeContinuous: true }));
+    } catch (e) { return false; }
+  }
+
   function queueStorageSync() {
     if (stopped || pendingTimer || storageTask !== null) return;
     var run = function () {
       storageTask = null;
       storageTaskIsIdle = false;
-      if (!stopped) sync(true);
+      if (stopped) return;
+      if (inputPending()) { queueStorageSync(); return; }
+      sync(true);
     };
     try {
       if (typeof window.requestIdleCallback === 'function') {
         storageTaskIsIdle = true;
         storageTask = window.requestIdleCallback(run);
       } else {
-        storageTask = setTimeout(run, 250);
+        storageTask = setTimeout(run, 1000);
       }
     } catch (e) { storageTask = null; storageTaskIsIdle = false; }
   }
 
-  function invalidateStorageIdentity() {
+  function invalidateStorageIdentity(force) {
     var id = activeId();
-    if (id === lastActiveId) return;
+    if (!force && id === lastActiveId) return;
     /* localStorage adopts the new id before this event runs. Never leave the
        old patient's label beside that new binding while the roster lookup is
        waiting for idle; an empty label fails closed. */
@@ -179,6 +212,13 @@
       var el = document.getElementById(FIELDS[i]);
       if (!el) continue;
       pendingFields[FIELDS[i]] = true;
+      /* Preserve a clinician's in-progress text. The paired nonfocused field
+         still clears synchronously, and this field is marked pending
+         until focusout admits the exact new-patient repair. */
+      if (document.activeElement === el) {
+        try { el.setAttribute('data-mls-patient-sync-pending', '1'); } catch (e) {}
+        continue;
+      }
       if (el.value === '') continue;
       el.value = '';
       try { el.dispatchEvent(new Event('input',  { bubbles: true })); } catch (e) {}
@@ -204,14 +244,19 @@
       var key = activeStorageKey();
       if (!key || ev.key !== key) return;
       try { if (ev.storageArea && ev.storageArea !== window.localStorage) return; } catch (e) {}
+      cancelPendingSync();
       invalidateStorageIdentity();
       queueStorageSync();
     };
-    boundaryListener = queueSync;
+    boundaryListener = function () {
+      cancelPendingSync();
+      invalidateStorageIdentity(true);
+      queueStorageSync();
+    };
     focusoutListener = function (ev) {
       var id = ev && ev.target && ev.target.id;
       if (!id || !pendingFields[id]) return;
-      queueSync();
+      queueStorageSync();
     };
     try { window.addEventListener('mls:active-patient-changed', activeListener); } catch (e) {}
     try { window.addEventListener('mls:patient-record-updated', recordListener); } catch (e) {}

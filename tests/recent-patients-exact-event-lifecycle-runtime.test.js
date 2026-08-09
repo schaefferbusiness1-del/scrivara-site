@@ -119,6 +119,8 @@ assert(document.getElementById('mlsRecentPts').innerHTML.includes('Recent (1)'),
 for (let i = 0; i < 1000; i++) fire(windowHandlers, 'storage', { key: 'patients', storageArea: localStorage });
 flushTimers();
 assert.strictEqual(patientReads, 0, 'broad cross-tab patient writes cold-scanned the roster');
+assert.strictEqual(idleJobs.filter(job => job.live).length, 1,
+  'broad cross-tab patient writes did not coalesce one idle rename/delete reconciliation');
 
 /* A remote patient write invalidates the app's decoded roster cache before its
  * activePt write arrives. The exact binding must repaint from cached metadata,

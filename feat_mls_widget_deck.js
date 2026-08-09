@@ -189,11 +189,19 @@
     });
   }
   function mirrorBodies(deck, list) {
+    var activeId = safe(function () { return isFn(window.getActivePtId) ? String(window.getActivePtId() || '') : ''; }, '');
+    var patientStamps = safe(function () { return window._cwLatestPt || {}; }, {});
     for (var i = 0; i < list.length; i++) {
       var src = $('cwBody_' + list[i].id);
       var dst = deck.querySelector('[data-body="' + list[i].id + '"]');
       if (!dst) continue;
       var html = src ? src.innerHTML : '';
+      /* Base widget output is patient-stamped. A storage-only active-patient
+         switch does not run setActivePtId()'s cleanup in this tab, so never
+         mirror a generated body stamped for patient A into patient B's deck.
+         Unstamped content is the base owner's empty/manual placeholder. */
+      var stamp = patientStamps[list[i].id];
+      if (stamp !== undefined && String(stamp) !== activeId) html = '';
       if (dst.__mirror === html) continue;
       if (dst.innerHTML !== html) dst.innerHTML = html;
       dst.__mirror = html;
@@ -359,10 +367,24 @@
   function onPatientChanged() { lastKey = ''; if (visitViewVisible()) repair(); }
   function onSessionBoundary() { widgetsChanged(); if (visitViewVisible()) repair(); }
   function onVisibilityChanged() { try { if (!document.hidden && visitViewVisible()) repair(); } catch (e) {} }
+  function hideForRemotePatient() {
+    /* A storage event changes the canonical id but does not run the base
+       setActivePtId() cleanup for per-patient widget replies. Keep the base
+       host hidden and remove the mirrored deck synchronously. Rebuild on the
+       next frame; mirrorBodies filters patient-stamped output so the new deck
+       returns without ever exposing the previous patient's generated text. */
+    lifecycleGeneration++;
+    syncScheduled = false;
+    lastKey = '';
+    var deck = $(DECK_ID);
+    if (deck && deck.parentNode) deck.parentNode.removeChild(deck);
+    scheduleSync();
+  }
   function onStorage(ev) {
+    try { if (ev && ev.storageArea && window.localStorage && ev.storageArea !== window.localStorage) return; } catch (e) {}
     var expected = safe(function () { return isFn(window.uns) ? window.uns('customWidgets') : ''; }, '');
     var activeKey = safe(function () { return isFn(window.uns) ? window.uns('activePt') : ''; }, '');
-    if (ev && ev.key && activeKey && ev.key === activeKey) { onPatientChanged(); return; }
+    if (ev && ev.key && activeKey && ev.key === activeKey) { hideForRemotePatient(); return; }
     if (!ev || !ev.key || !expected || ev.key === expected) widgetsChanged();
   }
 
