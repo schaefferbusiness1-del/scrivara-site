@@ -38,7 +38,7 @@ that the old name is absent — a ban-only test would go green if a later sweep
 | name | why it must not move |
 |---|---|
 | `scrivara-backend.onrender.com` | the LIVE API host. An address, not a brand. Renaming it in the client points the whole product at a hostname that does not resolve. |
-| `com.scrivara.app` | the bundle id / applicationId. **PERMANENT** once a store build is uploaded — a different id is a different app, a different listing, and no upgrade path for anyone already installed. Decide before the first upload. |
+| `com.mlsscribe.app` | the bundle id / applicationId. **PERMANENT** once a store build is uploaded — a different id is a different app, a different listing, and no upgrade path for anyone already installed. Decide before the first upload. |
 | `scrivara.session.v1`, `scrivara.lastEmail.v1` | the store app's own localStorage keys. Renaming them signs every installed phone out, silently, on one deploy. |
 
 Remaining occurrences anywhere are source **comments** (`ScribeFlow.html`'s

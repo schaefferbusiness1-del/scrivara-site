@@ -351,9 +351,46 @@ button.row:active{background:var(--surface-2)}
    that can disagree about what a pull did.
    ========================================================================= */
 
+/* THE API HOST IS AN ADDRESS, NOT A BRAND. The owner asked for the old product
+   name to be gone everywhere; this one string cannot follow until the Render
+   service itself is renamed (or a custom domain is attached), because the
+   client pointing somewhere the server does not answer is a total outage, not
+   a rename. mlsscribe-backend.onrender.com currently returns 404 — the name is
+   free, and nothing is deployed there. See mobile/store/RUNBOOK.md. */
 var API = 'https://scrivara-backend.onrender.com';
-var TOK_KEY = 'scrivara.session.v1';
-var EMAIL_KEY = 'scrivara.lastEmail.v1';
+
+/* Storage keys, renamed WITH a migration. Renaming them bare would sign every
+   installed phone out on the next deploy — silently, with no message
+   explaining why, on an app whose whole job is to be already signed in when
+   the doctor picks it up between rooms. The old keys are read once, copied,
+   and removed; a phone that has never seen the old keys does nothing. */
+var TOK_KEY = 'mlsscribe.session.v1';
+var EMAIL_KEY = 'mlsscribe.lastEmail.v1';
+/* Written out LONGHAND, twice, on purpose. A loop over a [[from,to],...] table
+   is shorter and reads better — and it defeats the guard in
+   tests/phone-app-boundaries.test.js, which proves this app persists nothing
+   but these two keys by matching the IDENTIFIER at every setItem call site. A
+   computed key is unprovable, and "no PHI at rest" is a claim this app has to
+   be able to demonstrate, not merely intend. The duplication is the proof. */
+(function migrateStorageKeys(){
+  try {
+    var oldTok = localStorage.getItem('scrivara.session.v1');
+    if (oldTok !== null){
+      /* Only ever ADOPT into an empty slot: if the new key already holds a
+         token, the old one is a leftover and must not overwrite a live
+         session. Then clear it, or this migrates on every launch forever. */
+      if (localStorage.getItem(TOK_KEY) === null) localStorage.setItem(TOK_KEY, oldTok);
+      localStorage.removeItem('scrivara.session.v1');
+    }
+  } catch(e){}
+  try {
+    var oldEmail = localStorage.getItem('scrivara.lastEmail.v1');
+    if (oldEmail !== null){
+      if (localStorage.getItem(EMAIL_KEY) === null) localStorage.setItem(EMAIL_KEY, oldEmail);
+      localStorage.removeItem('scrivara.lastEmail.v1');
+    }
+  } catch(e){}
+})();
 var IDLE_MS = 15 * 60 * 1000;
 
 /* PHI lives HERE and nowhere else. Nothing below `S` is ever written to

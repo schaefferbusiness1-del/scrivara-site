@@ -1,5 +1,5 @@
 {
-  "name": "scrivara-mobile",
+  "name": "mlsscribe-mobile",
   "version": "1.0.0",
   "private": true,
   "description": "Capacitor wrapper that ships ../app.html as a native iOS and Android app.",

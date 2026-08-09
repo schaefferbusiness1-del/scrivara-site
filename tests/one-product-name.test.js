@@ -17,22 +17,36 @@
  * PUBLICATION INVENTORY — the list of what actually ships — plus the native
  * build inputs, and refuses the name anywhere a person can read it.
  *
- * AND WHY IT IS NOT A BLIND STRING BAN. Three lowercase forms are load-bearing
- * infrastructure and renaming any of them is an outage or a permanent fork:
+ * SECOND PASS, same day: "fix what u have to get ride of the schribva anywhre
+ * it sohudl always saya mlsscribe." The first pass changed only what a person
+ * READS. This one takes the identifiers too — the bundle id, the Android Java
+ * package, the storage keys, the npm package, the CI artifact names, the
+ * signing profile, the gradle marker, and every remaining source comment.
  *
- *   scrivara-backend.onrender.com  the LIVE API host. Renaming it in the client
- *                                  points the whole product at nothing.
- *   com.scrivara.app               the bundle identifier / applicationId.
- *                                  Permanent once a store build is uploaded:
- *                                  a different id is a different app, with no
- *                                  upgrade path for anyone who installed the
- *                                  first one.
- *   scrivara.session.v1            the store app's own localStorage keys.
- *                                  Renaming them signs every installed phone
- *                                  out, silently, on one deploy.
+ * EXACTLY ONE FORM SURVIVES, AND IT IS AN ADDRESS, NOT A BRAND:
  *
- * Those are asserted PRESENT below, as positive controls. A suite that only
- * banned a string would go green if somebody "fixed" the backend host too.
+ *   scrivara-backend.onrender.com   the LIVE API host — it answered HTTP 200
+ *                                   while this was written. Renaming it in the
+ *                                   client does not rename the server; it
+ *                                   points the product at a hostname that
+ *                                   returns 404, which is a total outage for
+ *                                   every login, every pull and every note.
+ *                                   The Render service must be renamed (or a
+ *                                   custom domain attached) FIRST — then this
+ *                                   string follows and this exemption is
+ *                                   deleted. mlsscribe-backend.onrender.com
+ *                                   404s today, so the name is free.
+ *
+ * It is asserted PRESENT below, as a positive control. A suite that only banned
+ * a string would go green the day somebody "finished the job" and took the
+ * product down doing it.
+ *
+ * TWO RENAMES NEEDED MORE THAN A REPLACE, and both are pinned here:
+ *   - the store app's localStorage keys carry a MIGRATION, or every installed
+ *     phone is signed out silently on the next deploy;
+ *   - the gradle release-config MARKER and the script that greps for it are one
+ *     contract. Renaming either alone makes configure-native.mjs re-inject the
+ *     release block on every run, because it can never find the marker it wrote.
  */
 
 const assert = require('assert');
@@ -122,31 +136,76 @@ for (const [rel, what] of MUST_SAY) {
     'both are still the same product and must both read as MLS');
 }
 
-/* ---- 3. the three infrastructure names are UNTOUCHED --------------------- */
-/* Positive controls. Without these, "fix everywhere it says the wrong thing"
-   reads as a licence to rename the live API host, and the suite would applaud. */
+/* ---- 3. the identifiers moved TOO, and each one that needed care got it --- */
 {
-  const connect = read('mls-connect.js');
-  assert(connect.indexOf('scrivara-backend.onrender.com') >= 0,
-    'THE OUTAGE ONE: the live API host was renamed. It is an address, not a brand — the client would ' +
-    'point at a hostname that does not resolve.');
-
+  /* The bundle id, in all five places that must agree. It was still free: the
+     runbook describes the store upload as a future step, and an id is permanent
+     from the first upload onward — this was the last moment it could move. */
   const gradle = read('mobile/android/app/build.gradle');
-  assert(/applicationId "com\.scrivara\.app"/.test(gradle),
-    'the Android applicationId was renamed. It is PERMANENT once a build is uploaded: a different id is ' +
-    'a different app, a different listing, and no upgrade path for anyone already installed.');
+  assert(/applicationId "com\.mlsscribe\.app"/.test(gradle), 'the Android applicationId must carry the new id');
+  assert(/namespace = "com\.mlsscribe\.app"/.test(gradle), 'and so must the namespace');
+  assert.strictEqual(JSON.parse(read('mobile/capacitor.config.json')).appId, 'com.mlsscribe.app',
+    'the Capacitor bundle id must match the Android one');
+  assert.strictEqual(JSON.parse(read('mobile/app.config.json')).appId, 'com.mlsscribe.app',
+    'and so must the one place the native identity is defined');
+  assert(fs.existsSync(path.join(root, 'mobile/android/app/src/main/java/com/mlsscribe/app/MainActivity.java')),
+    'the Java package DIRECTORY must move with the id — a package declaration that does not match its ' +
+    'path does not compile');
+  assert(!fs.existsSync(path.join(root, 'mobile/android/app/src/main/java/com/scrivara')),
+    'the old Java package directory is still on disk');
+  assert(/package com\.mlsscribe\.app;/.test(read('mobile/android/app/src/main/java/com/mlsscribe/app/MainActivity.java')),
+    'and the package declaration inside it');
 
-  const cap = JSON.parse(read('mobile/capacitor.config.json'));
-  assert.strictEqual(cap.appId, 'com.scrivara.app', 'the Capacitor bundle id must match the Android one');
-
+  /* THE STORAGE KEYS CARRY A MIGRATION. Renaming them bare signs every
+     installed phone out on the next deploy — silently, with no message, on an
+     app whose whole job is to be already signed in when it is picked up. */
   const app = read('app.html');
+  assert(/var TOK_KEY = 'mlsscribe\.session\.v1'/.test(app) && /var EMAIL_KEY = 'mlsscribe\.lastEmail\.v1'/.test(app),
+    'the storage keys must carry the new name');
   assert(/scrivara\.session\.v1/.test(app) && /scrivara\.lastEmail\.v1/.test(app),
-    'the store app\'s localStorage keys were renamed — every installed phone would be signed out ' +
-    'silently on the next deploy, with no message explaining why');
+    'THE SIGN-OUT ONE: the OLD key names must still appear — in the migration that reads them. Renaming ' +
+    'the keys without carrying the old values across logs every installed phone out.');
+  const mig = app.slice(app.indexOf('function migrateStorageKeys'), app.indexOf('var IDLE_MS'));
+  assert(/getItem\(TOK_KEY\) === null/.test(mig) && /getItem\(EMAIL_KEY\) === null/.test(mig),
+    'the migration must only ADOPT into an EMPTY key — a leftover old value overwriting a live session ' +
+    'is worse than not migrating at all');
+  assert(/removeItem\('scrivara\.session\.v1'\)/.test(mig) && /removeItem\('scrivara\.lastEmail\.v1'\)/.test(mig),
+    'and must clear the old keys, or it migrates on every launch forever');
+  /* Longhand on purpose: phone-app-boundaries proves this app persists nothing
+     but these two keys by matching the IDENTIFIER at each setItem call site, so
+     a table-driven loop with a computed key is unprovable there. */
+  assert(/localStorage\.setItem\(TOK_KEY, oldTok\)/.test(mig) && /localStorage\.setItem\(EMAIL_KEY, oldEmail\)/.test(mig),
+    'the migration must write through the NAMED key constants — a computed key defeats the no-PHI-at-rest ' +
+    'guard, which can only prove what it can see');
+
+  /* THE GRADLE MARKER AND ITS READER ARE ONE CONTRACT. */
+  const marker = '// mlsscribe: release config';
+  assert(read('mobile/android/app/build.gradle').indexOf(marker) >= 0, 'the gradle marker must be renamed');
+  assert(read('mobile/scripts/configure-native.mjs').indexOf(marker) >= 0,
+    'and the script that greps for it must be renamed IN THE SAME COMMIT — otherwise it never finds the ' +
+    'marker it wrote and re-injects the whole release block on every run');
+  assert(!/scrivara: release config/.test(read('mobile/scripts/configure-native.mjs')),
+    'no half-renamed marker may remain in the script');
+}
+
+/* ---- 4. the ONE address that must NOT move ------------------------------- */
+/* A positive control. Without it, "get rid of it anywhere" reads as a licence
+   to rename the live API host, and this suite would applaud the outage. */
+{
+  const HOST = 'scrivara-backend.onrender.com';
+  assert(read('mls-connect.js').indexOf(HOST) >= 0,
+    'THE OUTAGE ONE: the live API host was renamed in the client. Renaming it here does not rename the ' +
+    'server — it points every login, pull and note at a hostname that returns 404. Rename the Render ' +
+    'service (or attach a custom domain) FIRST, confirm it answers, and only then change this string.');
+  assert(read('app.html').indexOf(HOST) >= 0, 'the store app points at the same live host');
+  assert(read('mobile/app.config.json').indexOf(HOST) >= 0, 'and so does the native build config');
 }
 
 console.log('PASS one product name: swept ' + (shipped.length + NATIVE.length) + ' shipped + native surfaces ' +
   'from the reviewed publication inventory (not a hand-list) — the old name is readable on none of them; ' +
   'the guide headline, both Home Screen labels and the native identity carry "MLS Scribe"; the two apps ' +
-  'still install under DIFFERENT labels; and the live API host, the permanent bundle id and the session ' +
-  'storage keys are asserted intact, so a broader rename cannot pass this as a fix.');
+  'still install under DIFFERENT labels; the bundle id moved in all five places that must agree AND its ' +
+  'Java package directory moved with it; the storage keys moved WITH a migration that only adopts into ' +
+  'an empty key and clears the old one; the gradle marker moved together with the script that greps for ' +
+  'it; and the ONE surviving form — the live API host, which answers 200 and cannot be renamed from the ' +
+  'client — is asserted PRESENT, so "finish the job" cannot pass this suite as a fix.');

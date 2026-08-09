@@ -387,8 +387,22 @@ assert(source.includes('view.insertBefore(card, view.firstChild)'), 'the Visit c
 /* av-2.0.1: the Easy-lane host reclaims first-child on remount — the card must
    re-assert its place on OUR events (never an interval), skipping only when
    focus is inside the card itself. */
-assert(/view\.firstElementChild !== card[\s\S]{0,400}insertBefore\(card, view\.firstElementChild\)/.test(source),
-  'the first-position re-assert was removed — a host remount sinks the card below the fold');
+/* av-6.0.2 — THE POSITION IS NOW "TOP, OR DIRECTLY UNDER THE STAGE RAIL", and this pin had to
+   stop naming one implementation of it. feat_mls_calm_shell.js:2437 re-asserts the
+   Prep/Record/Review/Sign/Send rail as `visit.firstElementChild` on every pass — it is there
+   because the owner complained the rail was in the wrong spot — so two modules were re-asserting
+   the SAME slot and whoever ran last won. The owner then lost the card: "where did that start
+   avatar thing in the top go I loved that."
+   The CLAIM this pin exists for is unchanged and is what is asserted below: the card re-asserts
+   its position every pass (never an interval), so a host remount cannot sink it below the fold,
+   and it skips only when focus is inside the card. It now resolves the rail by its real id
+   (#mlsStages, read from calm_shell:2422) and inserts after it, so the two stop competing. */
+assert(/wantAfter[\s\S]{0,300}insertBefore\(card, wantAfter\)/.test(source),
+  'the re-assert was removed — a host remount sinks the card below the fold');
+assert(source.includes("view.querySelector('#mlsStages')"),
+  'the card must resolve the stage rail by its REAL id — a selector that matches nothing silently reverts this to the old first-child fight');
+assert(/rail[\s\S]{0,120}nextElementSibling[\s\S]{0,120}view\.firstElementChild/.test(source),
+  'with no rail present the card must still take the very top — the fallback is half the claim');
 assert(source.includes('card.contains(document.activeElement)'), 'the focus guard on the re-assert was removed');
 assert(source.includes("gid('ez3flTranscript')"), 'the transcript insert lost its anchor');
 assert(source.includes('Pre-visit check-in #'), 'the transcript idempotency stamp was removed');

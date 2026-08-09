@@ -87,7 +87,7 @@ first party, not a third party. There is no other recipient.
 
 ## Health-app declarations
 
-**Apple** asks, in the app's metadata, whether it uses HealthKit — **No**. Scrivara does not
+**Apple** asks, in the app's metadata, whether it uses HealthKit — **No**. MLS Scribe does not
 touch HealthKit, Apple Health, or any device sensor. It reads a practice's own record system.
 
 **Play** requires a **Health apps declaration** for anything in the Medical category.

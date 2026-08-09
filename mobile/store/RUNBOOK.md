@@ -120,7 +120,7 @@ Locally, on a Mac: `cd mobile && npx cap open ios`, then Product → Archive.
 
 ### Submit
 
-1. App Store Connect → Apps → **+** → New App, bundle id `com.scrivara.app`.
+1. App Store Connect → Apps → **+** → New App, bundle id `com.mlsscribe.app`.
 2. Wait for the TestFlight build to finish processing (10–30 minutes).
 3. Install it on your own iPhone through TestFlight and actually pull a day. Do this before
    submitting, every time.

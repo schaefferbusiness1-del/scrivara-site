@@ -38,7 +38,7 @@
  * Scribe" now, in every string a person can read -- not bare "MLS", because
  * this workspace already installs under that name and two icons reading "MLS"
  * on one Home Screen are indistinguishable. The backend host
- * (scrivara-backend.onrender.com) and the bundle id (com.scrivara.app) are
+ * (scrivara-backend.onrender.com) and the bundle id (com.mlsscribe.app) are
  * NOT renamed: one is a live address and the other is permanent once a store
  * build is uploaded under it.
  *

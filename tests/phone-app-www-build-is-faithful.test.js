@@ -53,7 +53,7 @@ const cfg = JSON.parse(fs.readFileSync(path.join(MOBILE, 'app.config.json'), 'ut
 }
 
 /* ---------- 1. run the real build and diff it against app.html ----------- */
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'scrivara-www-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mlsscribe-www-'));
 let built;
 try {
   /* Build in place (the script owns mobile/www) then read the result. The

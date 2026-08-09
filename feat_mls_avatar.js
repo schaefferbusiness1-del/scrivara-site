@@ -3484,7 +3484,18 @@
      needs every absolute pixel floor in faceReadPortrait re-derived first - they were
      calibrated in 128-space - so that is a separate change, deliberately not smuggled
      in here. */
-  var MEASURE_MAX = 512;
+  /* av-6.0.2 — 1024, because THE MODEL READS THIS IMAGE TOO. Owner: "take a higher rtes
+     photo". The paragraph above is still right about the PIXEL grid: it stays 128 and every
+     absolute floor in faceReadPortrait is calibrated in 128-space, so raising the grid remains
+     a separate change and is deliberately still not smuggled in here (task #23).
+     But since av-5.8.0 this same frame is what /api/avatar/office/facelook sends to the vision
+     model, and that path does NOT downsample to 128 — it reads the photograph. At 512 the model
+     was being handed a quarter of the detail the camera gave us, on the one question the pixel
+     matcher keeps getting wrong (is that a moustache, are those spectacles, which of these tones
+     is skin). 1024 quadruples what the model sees and changes NOTHING about the pixel analysis,
+     which still box-averages down to 128. It stays inside the route's 900 000-character cap: a
+     1024 square at JPEG 0.95 is roughly 250-400KB, i.e. 340-540KB of base64. */
+  var MEASURE_MAX = 1024;
   function captureSquare(video, out) {
     var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
     if (!vw || !vh) return null;
@@ -3625,6 +3636,15 @@
       introInput.placeholder = 'e.g. A few quick questions before your visit with Dr. Schaeffer.';
       /* ---- face section ---- */
       var pendingFace; /* undefined = keep current; '' = remove; data URL = new */
+      /* THE FULL-QUALITY FRAME, HELD IN MEMORY FOR THIS SESSION (av-6.0.2).
+         Owner: "take a higher rtes photo acatlly save the photo." faceHiSave writes the
+         ~0.95-quality JPEG into localStorage, which is 5-10MB SHARED with the whole app —
+         and when it refuses, Match fell back to measuring the STYLIZED portrait, which is
+         posterized to six levels per channel. So the best copy of his face could be thrown
+         away between taking it and measuring it, and the only symptom was one clause in a
+         status line. Storage is now a CACHE for later sessions, not the only path: the frame
+         we just captured stays right here, and Match prefers it. */
+      var pendingHiUrl = '';
       var faceLabel = make('label', '', 'Avatar face — patients see this portrait during the check-in');
       var faceRow = make('div', '');
       faceRow.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
@@ -3708,6 +3728,7 @@
                  it (quota), Match falls back to the stylized portrait AND says so - it
                  must never silently go back to measuring the posterized copy. */
               var hiOk = hiUrl ? faceHiSave(hiUrl) : false;
+              pendingHiUrl = hiUrl || '';   /* survives a quota refusal — see pendingHiUrl */
               var fresh = facePreviewNode(dataUrl);
               faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
               status.textContent = 'Portrait captured from a ' + (bestCanvas.width) + '×' + (bestCanvas.height) +
@@ -3716,6 +3737,19 @@
                 (hiOk ? '. Match my photo will measure the full-quality copy, not the stylized one.'
                       : '. This device would not store the full-quality copy, so Match will measure the stylized one and say so.') +
                 ' Save to publish the portrait to your patients.';
+              /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
+                 click match my photo when I take the picutre it sohuld auto match my photo."
+                 Right: taking a photo of your face IS the request to be drawn from it. The
+                 button stays, because a doctor who has hand-tuned a knob and then retakes the
+                 photo needs a way to ask again — but nobody should have to find it.
+                 Deferred one tick so the preview and the status line paint first, and routed
+                 through the button's own handler rather than a copy of it: a second
+                 implementation of the match would be a second thing to keep in step, and the
+                 whole reason the AI read was ever missing from a surface is that it had two.
+                 matchBtn is declared later in this same function scope, so it is assigned by
+                 the time this runs; guarded anyway, because a build that removes the button
+                 must degrade to 'no auto-match', never to a thrown error inside a capture. */
+              later(function () { safe(function () { if (matchBtn && !matchBtn.disabled) matchBtn.click(); }); }, 60);
             });
           });
         }, function () {
@@ -3894,7 +3928,7 @@
            captured before av-5.7.2, or a device that refused to store it) the stylized
            copy is still measured, because a refusal would be worse - but the note says
            which one was read, so a wrong swatch can be explained rather than puzzled over. */
-        var hi = faceHiRead();
+        var hi = pendingHiUrl || faceHiRead();   /* this session's frame first — see pendingHiUrl */
         var src = hi || shown;
         var usedHi = !!hi;
         if (!src) { lookNote.textContent = 'Capture your photo above first, then Match my photo.'; return; }
@@ -6836,9 +6870,26 @@
        touches the host subtree, so the doctor's caret in the transcript is
        untouched — the one thing we skip is moving the card out from under a
        focused element of its own. */
-    if (view.firstElementChild !== card) {
-      var focusInCard = safe(function () { return card.contains(document.activeElement); }, false);
-      if (!focusInCard) safe(function () { view.insertBefore(card, view.firstElementChild); });
+    /* ⛔ TWO MODULES WERE CLAIMING visitView.firstElementChild (av-6.0.2).
+       Owner, on a screenshot of the Visit page: "where did that start avatar thing in the top
+       go I loved that."
+       feat_mls_calm_shell.js:2437 re-asserts the Prep/Record/Review/Sign/Send rail as
+       `visit.firstElementChild` "every pass, because ez3 re-inserts itself on its own
+       schedule and winning the race once is not the same as staying first" — and it is there
+       because the owner ALSO complained that the rail was in the wrong spot. So both of his
+       requirements are real and they were competing for one slot, which no amount of
+       re-asserting can settle: whoever runs last wins and the other one moves.
+       The slot is not the point. The rail goes first, this card goes DIRECTLY BELOW IT, and
+       neither has to win a race. `wantAfter` resolves the rail by id if it is present and
+       falls back to the very top when it is not, so this is correct on a build without the
+       rail too. */
+    var focusInCard = safe(function () { return card.contains(document.activeElement); }, false);
+    if (!focusInCard) {
+      var rail = safe(function () { return view.querySelector('#mlsStages'); }, null);
+      var wantAfter = (rail && rail.parentNode === view) ? rail.nextElementSibling : view.firstElementChild;
+      if (card !== wantAfter && card.previousElementSibling !== rail) {
+        safe(function () { view.insertBefore(card, wantAfter); });
+      }
     }
     var cache = safe(function () { return window.__mlsAvatar.lastReady; }, null);
     var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;

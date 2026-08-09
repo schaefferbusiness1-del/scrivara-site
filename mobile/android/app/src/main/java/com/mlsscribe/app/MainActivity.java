@@ -1,4 +1,4 @@
-package com.scrivara.app;
+package com.mlsscribe.app;
 
 import com.getcapacitor.BridgeActivity;
 

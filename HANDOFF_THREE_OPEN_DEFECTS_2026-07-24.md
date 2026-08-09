@@ -145,7 +145,7 @@ b.textContent = p.as || textOf(p.el);   // textContent, not innerHTML
 
 ## Landed and safe (don't undo)
 
-- **`tests/hex-colour-integrity.test.js`** (063f10d) — a build bump replaced `b551` with `b557` inside `#6b5518` and shipped a corrupted colour LIVE. One invariant: *no hex literal may contain the current build token*, since a plain replace always leaves the new token inside the hex. Nine forward-dated colours (`#4B564F` b564, `#d8b574` b574, `#b58105` b581, `#5b7186` b718, `#6b7280` b728, `#6B756E` b756, `#B07636` b763, `#6b7684` b768, `#b9770a` b977) are pinned by occurrence count so they stay protected on the one build where the invariant must stay quiet. Both arms negative-tested. **If it goes red, restore the colour — never update a pin to make it green.**
+- **`tests/hex-colour-integrity.test.js`** (063f10d) — a build bump replaced `b551` with `b557` inside `#6b5518` and shipped a corrupted colour LIVE. One invariant: *no hex literal may contain the current build token*, since a plain replace always leaves the new token inside the hex. Nine forward-dated colours (`#4B564F` b564, `#d8b574` b574, `#b58105` b581, `#5b7186` b718, `#6b7280` b728, `#6B756E` b756, `#B07636` b763, `#6b7684` b768, `#b9770a` b978) are pinned by occurrence count so they stay protected on the one build where the invariant must stay quiet. Both arms negative-tested. **If it goes red, restore the colour — never update a pin to make it green.**
 - **pts-rowguard + sv-1.1.0** — the save row-loss fix. Proven against the four named patients.
 
 ## Byte-safety traps
