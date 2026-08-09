@@ -813,3 +813,29 @@ both '1,340/1,567 never-read' and '1,437/1,571 never-read' as stated - the
 canonical frame is the three-way decomposition above. LAW: never compare
 counts across predicates; a bucket figure carries its predicate or it carries
 nothing.
+
+
+## RETRACTION + THE NONDETERMINISM HEADLINE (2026-08-09)
+
+RETRACTED: 'the runway rescued 4 of 5.' The same day (July-2), read three times
+in one session, returned 5 fails -> 1 fail -> 2 fails with DIFFERENT membership
+each time. On a phenomenon that stochastic, a one-sample-per-build A/B supports
+DIRECTION ONLY: 5 versus {1,2} is a real difference, and BG clearing through
+the ax route is the fix's own mechanism observed firing - but the EFFECT SIZE
+IS NOT MEASURED. Any future acceptance claim on a rotating population needs
+n reads per build or per-chart attribution by mechanism.
+
+THE HEADLINE THAT OUTRANKS THE WIN: the owner's bar is 'perfect 100% of the
+time'. A fixed input returning +-2-chart variance per run cannot meet that bar
+at ANY average. The remaining work is NONDETERMINISM (the rollout-migration
+rotation), not a defect count. The cleanest evidence now free to collect: if
+the rotation is rollout migration, the clincmp-ax share should trend UP across
+days 7-31 - the day-close captures count it, provided they survive run-object
+changes (sixth instrument lesson: a wrap on an instance dies with the
+instance; wrap at run-creation).
+
+THE SPLIT'S HOME: three day-2 reads, three capture failures, three different
+causes - the first-attempt split has no durable home in flight. It derives
+from PERSISTED receipts only (the month result's per-day receipt at
+pullMonth:4652, and the si's own per-day ledger) from here on; live captures
+are convenience.

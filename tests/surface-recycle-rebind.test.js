@@ -136,4 +136,16 @@ ok(/r\.sr=Number\(extra\.surfaceResets\|\|0\); r\.surface=String\(extra\.chartSu
 ok(/Charts needing retry: /.test(SI), '1.2 si: day-end names the failing set');
 ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface \}/.test(SI), '1.2 si: settle call passes extras');
 
+/* ---- axd-1.0 (3.0.54): the dissection payload persists. noRowDiag's
+ * liTotal/eidHit (list-vanished vs row-left vs group-resolution-failed)
+ * previously DIED inside background.js - the receipt carried failures as a
+ * COUNT. One additive line, riding the receipt whose transport surfaceResets/
+ * chartSurface already proved end-to-end. Bounded slice(0,12). ---- */
+ok(/chartSurface: chartSurface, failureDetails: failures\.slice\(0, 12\),/.test(SRC),
+  'axd: failureDetails rides the proven receipt, bounded to 12');
+ok(/failures: failures\.length,/.test(SRC),
+  'axd: the count field survives unchanged (additive, not a replacement)');
+ok((function () { const r = SRC.replace('failureDetails: failures.slice(0, 12),', ''); return !/failureDetails/.test(r.slice(SRC.indexOf('retryCount: retryCount') - 200, SRC.indexOf('retryCount: retryCount') + 600)); })(),
+  'axd CONTROL: stripping the line removes the field from the receipt region');
+
 console.log('surface-recycle-rebind: PASS (' + checks + ' checks)');

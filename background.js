@@ -11141,7 +11141,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       var receipt = {
         complete: bodyComplete, indexComplete: true, bodyComplete: bodyComplete,
         fullDetail: bodyComplete, expected: clinicalTotal, parsed: visits.length, administrativeRows: administrativeRows.length, dateSkippedRows: dateSkippedRows.length, onlyDate: (frozenHint && frozenHint.onlyDate) || '', indexTotal: total,
-        attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount, surfaceResets: surfaceResets, surfaceResetOps: surfaceResetOps.slice(0, 6), chartSurface: chartSurface,
+        attempted: attemptedCount, failures: failures.length, cap: cfg.maxVisits, retryCount: retryCount, surfaceResets: surfaceResets, surfaceResetOps: surfaceResetOps.slice(0, 6), chartSurface: chartSurface, failureDetails: failures.slice(0, 12),
         timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt), coldRetryReserveMs: coldRetryReserveMs,
         identityVerified: gate.ok && finalGate.ok, stableKeysComplete: stableKeysComplete, minimalBodies: minimalBodies,
         authoritativeEmpty: total === 0 && authoritativeEmptyIndex,
