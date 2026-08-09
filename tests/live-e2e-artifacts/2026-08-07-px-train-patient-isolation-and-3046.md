@@ -715,3 +715,22 @@ class, not just the pace play - it bypasses the variant-frame lottery.
 
 Month resume fired on 3.0.51 with named per-day failures (srr-1.2's day-end
 exposure) - stop-on-sight now satisfied by construction.
+
+
+## GATE-TIMING CAVEAT + the orphan-runner class (2026-08-09 morning)
+
+Three orphaned run-all gate runners (spawned 01:01/01:02/01:16 by timeout-killed
+chains - 'a shell timeout kills the wrapper, not the tree') burned cores ~8h
+before a process sweep found them. CONSEQUENCE FOR NUMBERS: every suite
+DURATION from tonight ran under unknown contention and is NOT a clean pace
+figure - do not quote gate timings from 2026-08-08/09 as baselines. PASS/FAIL
+verdicts stand (deterministic suites): b976, b979, and the 3.0.52 gate are
+valid-if-green, contended-for-timing. Chart-read pace numbers (21-31s/chart)
+are engine-side wall measurements, not gate timings - unaffected.
+
+Protocol from here: gates launch DETACHED (Start-Process + log polling - no
+shell wall), pre-launch stale-runner sweep, and on any wrapper death: sweep MY
+grandchild specifically, relaunch once, never in a loop. Attribution law both
+directions: a process is not yours until shown yours (pid 41624 was Codex's
+runtime; three young runners were the peer lane's live gates - neither was
+mine to kill).
