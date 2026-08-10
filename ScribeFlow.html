@@ -9673,7 +9673,18 @@ function _mlsRequestEncounterConsent(actionLabel){
 }
 (function(){
   try{
-    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); try{if(typeof _athenaMarkBoundEdit==='function')_athenaMarkBoundEdit(id);}catch(_){} } }, true);
+    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); try{if(typeof _athenaMarkBoundEdit==='function')_athenaMarkBoundEdit(id);}catch(_){}
+      /* KEEP THE RECOGNIZER'S BUFFER IN SYNC WITH WHAT THE HUMAN JUST TYPED.
+         onresult writes `#transcript.value = (finalText + interim).trim()`, so
+         every correction made DURING a recording was overwritten by the next
+         final result — the doctor fixes "right" to "RIGHT", the recognizer
+         speaks again, and the fix is gone with no error and no undo. Three
+         other places in this file already re-seed finalText for exactly this
+         reason, each with this comment; the edit path was the one that did not.
+         Assigning `.value` directly (which is what onresult does) fires no
+         input event, so this can never feed back on itself. 2026-08-09. */
+      try{ if(id==='transcript' && typeof finalText!=='undefined' && typeof capturing!=='undefined' && capturing){ finalText=(e.target.value||'')+' '; } }catch(_){}
+    } }, true);
     window.addEventListener('beforeunload', function(e){ if(_visitDirty || (typeof capturing!=='undefined' && capturing)){ e.preventDefault(); e.returnValue=''; return ''; } });
   }catch(e){}
 })();
@@ -34063,7 +34074,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b996';
+  window.__MLS_AV='b997';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
