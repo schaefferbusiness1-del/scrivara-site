@@ -348,7 +348,19 @@ assert(/var compact = eL && eR && eL\.round > 0\.70 && eR\.round > 0\.70;/.test(
 }
 assert(!/mlsAvKioskFace"><\/div>[\s\S]{0,400}appendChild\(img\)/.test(source), 'sanity: nothing re-installs a photo INSTEAD of the drawn face in the kiosk');
 assert(source.includes('requestFullscreen'), 'true fullscreen on Start was removed');
-assert(/function kioskClose[\s\S]{0,600}exitFullscreen/.test(source), 'closing the kiosk must leave fullscreen');
+/* scoped to the FUNCTION, not to a byte window. The 600-character form failed the moment
+   av-6.1.0 added three lines to kioskClose, which says nothing about whether the kiosk still
+   leaves fullscreen — a pin that measures how the code is WRITTEN rather than what it DOES
+   costs a real investigation every time it cries wolf. */
+{
+  const at = source.indexOf('function kioskClose(');
+  assert(at > 0, 'kioskClose is gone');
+  const end = source.indexOf('\n  function ', at + 20);
+  const body = source.slice(at, end > at ? end : at + 3000);
+  assert(/exitFullscreen/.test(body), 'closing the kiosk must leave fullscreen');
+  assert(/pvVoiceGateStop\(\)/.test(body),
+    'closing the kiosk must release the voice gate microphone (av-6.1.0)');
+}
 assert(source.includes('createMediaElementSource'), 'amplitude lip-sync was removed');
 /* Owner: "label voices male or female". Every option must carry a spoken-
    gender designation in its VISIBLE text, and the male/female split must

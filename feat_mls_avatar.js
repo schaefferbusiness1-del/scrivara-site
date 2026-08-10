@@ -770,6 +770,148 @@
     }
     return novel;
   }
+  /* ── THE VOICE GATE: echo cancellation + a local voice detector (av-6.1.0) ────────────
+     Owner's choice, asked and answered: keep the ability to interrupt, and add REAL echo
+     cancellation rather than closing the microphone while the avatar talks.
+     The insight that makes this small instead of a rewrite: **the two jobs are different.**
+       - Deciding "is somebody else talking right now?" needs no words at all. It is an
+         ENERGY question, and on an echo-cancelled stream the avatar's own voice is gone —
+         so any residual speech energy IS another person. Instant, local, no network.
+       - Turning what they said into TEXT still needs the recogniser.
+     So the recogniser keeps doing words, and this does presence. Barge-in and self-echo
+     both stop being string problems, which is what made them unfixable: "in the morning"
+     the echo and "in the morning" the answer are the same string, but they are not the
+     same SOUND — one arrives with the room silent.
+     Why AEC can work here at all: the good voice plays through `new Audio(url)` and the
+     AudioContext (see pvSpeak), i.e. the browser renders it, so Chrome's canceller has the
+     reference signal. A system speechSynthesis fallback would NOT be in that mix.
+     ⚠️ POSITIVE ASSERTION, not an assumption: we ask for echoCancellation and then read
+     `track.getSettings()` back to confirm the browser actually applied it. If it did not,
+     `vgReady` stays false and every decision below falls back to the string gate exactly as
+     it behaves today. A device without AEC must never be made worse by this. */
+  var vgStream = null, vgCtx = null, vgNode = null, vgData = null, vgRaf = 0;
+  var vgReady = false, vgWhy = 'not started', vgLevel = 0, vgFloor = 0;
+  var vgFloorSamples = [], vgLoudFrames = 0, vgQuietFrames = 0, vgSettings = null;
+  var VG_FRAME_MS = 40;          /* ~25 reads a second: fast enough to feel instant */
+  var VG_ONSET_FRAMES = 4;       /* ~160ms of sustained energy - a cough or a click cannot pass */
+  var VG_MARGIN = 2.6;           /* how far above the measured room floor counts as speech */
+  function vgRms() {
+    if (!vgNode || !vgData) return 0;
+    safe(function () { vgNode.getByteTimeDomainData(vgData); });
+    var sum = 0;
+    for (var i = 0; i < vgData.length; i++) { var v = (vgData[i] - 128) / 128; sum += v * v; }
+    return Math.sqrt(sum / vgData.length);
+  }
+  /* ADOPT a stream somebody else already obtained. This is the path the kiosk uses: the mic
+     preflight asks once, on the staff tap, with exactly these constraints — so the gate must
+     never make a request of its own there. Returns true only if the gate is genuinely live. */
+  function pvVoiceGateAdopt(stream) {
+    if (vgReady) return true;
+    if (!stream) { vgWhy = 'no stream to adopt'; return false; }
+    var ok = safe(function () {
+      var track = stream.getAudioTracks()[0];
+      vgSettings = (track && track.getSettings) ? track.getSettings() : null;
+      /* THE CONFIRMATION. A browser may hand back a track with the constraint ignored;
+         believing the request rather than the applied setting is how a guard becomes
+         decoration. Without this the whole design would rest on an assumption. */
+      if (!vgSettings || vgSettings.echoCancellation !== true) {
+        vgWhy = 'the browser did not apply echo cancellation' +
+          (vgSettings ? ' (echoCancellation=' + String(vgSettings.echoCancellation) + ')' : '');
+        return false;
+      }
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) { vgWhy = 'no AudioContext'; return false; }
+      vgStream = stream;
+      vgCtx = new C();
+      var srcNode = vgCtx.createMediaStreamSource(stream);
+      vgNode = vgCtx.createAnalyser();
+      vgNode.fftSize = 1024;
+      vgNode.smoothingTimeConstant = 0.2;
+      srcNode.connect(vgNode);       /* analyser only - never connected to destination */
+      vgData = new Uint8Array(vgNode.fftSize);
+      vgFloorSamples = []; vgLoudFrames = 0; vgQuietFrames = 0;
+      vgReady = true; vgWhy = 'echo cancellation active';
+      /* ⛔ NOT a timer. This module forbids permanent polling and the contract suite enforces
+         it module-wide; my first version used a repeating interval and was caught. An
+         animation-frame loop is the right instrument anyway: it is throttled to the display,
+         it costs nothing while the kiosk is not being painted, and a hidden tab freezes it —
+         which is correct here, because a kiosk nobody is looking at has no turn to take. */
+      var vgLast = 0;
+      function vgFrame(ts) {
+        if (!vgReady) return;
+        vgRaf = safe(function () { return requestAnimationFrame(vgFrame); }, 0);
+        if (ts && vgLast && (ts - vgLast) < VG_FRAME_MS) return;
+        vgLast = ts || 0;
+        safe(function () {
+          vgLevel = vgRms();
+          /* The room floor is learned only while NOTHING is playing and nobody has been
+             judged to be speaking, so the avatar's own residual can never raise the bar it
+             is being measured against — that would quietly deafen the gate. */
+          if (!pvSaying && vgLoudFrames === 0) {
+            vgFloorSamples.push(vgLevel);
+            if (vgFloorSamples.length > 50) vgFloorSamples.shift();
+            var sorted = vgFloorSamples.slice().sort(function (a, b) { return a - b; });
+            /* a MEDIAN floor, so one door slam during calibration cannot raise it */
+            vgFloor = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+          }
+          var bar = Math.max(0.012, vgFloor * VG_MARGIN);
+          if (vgLevel > bar) { vgLoudFrames++; vgQuietFrames = 0; }
+          else { vgQuietFrames++; if (vgQuietFrames > 3) vgLoudFrames = 0; }
+        });
+      }
+      vgRaf = safe(function () { return requestAnimationFrame(vgFrame); }, 0);
+      return true;
+    }, false);
+    if (!ok) { vgStream = null; vgCtx = null; vgNode = null; vgData = null; vgReady = false; }
+    return ok;
+  }
+  /* DIAGNOSTICS ONLY — this one makes its own request, so it must never be called from the
+     kiosk path: the mic is requested exactly once, on the staff tap (see kioskMicPreflight).
+     It exists so the gate can be proven in a harness without driving a whole interview. */
+  function pvVoiceGateStart(done) {
+    if (vgReady || vgStream) { if (done) safe(done); return; }
+    var md = safe(function () { return navigator.mediaDevices; }, null);
+    if (!md || !md.getUserMedia) { vgWhy = 'this browser has no getUserMedia'; if (done) safe(done); return; }
+    safe(function () {
+      md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+        .then(function (stream) {
+          if (!pvVoiceGateAdopt(stream)) safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+          if (done) safe(done);
+        }, function (err) {
+          vgWhy = 'microphone refused for the voice gate (' + String(err && err.name || err) + ')';
+          if (done) safe(done);
+        });
+    });
+  }
+  function pvVoiceGateStop() {
+    if (vgRaf) { safe(function () { cancelAnimationFrame(vgRaf); }); vgRaf = 0; }
+    if (vgStream) safe(function () { vgStream.getTracks().forEach(function (t) { t.stop(); }); });
+    if (vgCtx) safe(function () { vgCtx.close(); });
+    vgStream = null; vgCtx = null; vgNode = null; vgData = null; vgReady = false;
+    vgLevel = 0; vgFloor = 0; vgFloorSamples = []; vgLoudFrames = 0; vgQuietFrames = 0;
+  }
+  /* true only with sustained energy ABOVE the learned room floor on the echo-cancelled
+     stream. While the avatar is speaking, its own voice has already been removed, so this
+     answers the only question barge-in ever needed to ask. */
+  function pvOtherVoiceNow() { return !!(vgReady && vgLoudFrames >= VG_ONSET_FRAMES); }
+  /* ⛔ A COUGH IS NOT AN INTERRUPTION, and energy alone cannot tell them apart.
+     avatar-listens-while-speaking.test.js has pinned since av-1.x that "a cough or an 'mhm'
+     must not cut the question off", and the two-word rule enforced it for free: a cough
+     produces no words. My first av-6.1.0 barge-in used pvOtherVoiceNow() alone, which is a
+     ~160ms energy test — and a cough is 200-400ms of loud, sustained energy, so it would have
+     cut the question off. The pin was right and the extension lane's red main is how I found
+     out, because my own b991 gate died at the freshness guard before it ever reached this file.
+     So audio presence is necessary but NOT sufficient. Speech distinguishes itself two ways:
+     it produces WORDS, or it KEEPS GOING far longer than a throat-clear. Either will do. */
+  var VG_SPEECH_FRAMES = 18;   /* ~720ms of continuous energy: past any cough or 'mhm' */
+  function pvOtherVoiceSustained() { return !!(vgReady && vgLoudFrames >= VG_SPEECH_FRAMES); }
+  function pvVoiceGateReady() { return !!vgReady; }
+  function pvVoiceGateReport() {
+    return { ready: !!vgReady, why: vgWhy, level: Math.round(vgLevel * 1000) / 1000,
+      floor: Math.round(vgFloor * 1000) / 1000, loudFrames: vgLoudFrames,
+      echoCancellation: vgSettings ? vgSettings.echoCancellation : null,
+      noiseSuppression: vgSettings ? vgSettings.noiseSuppression : null };
+  }
   function pvEchoMatch(tpl, h, words, minRun, minOverlapWords) {
     if (!tpl) return false;
     if (words.length >= minRun && pvHasRun(tpl, h)) return true;   /* a slice of our own sentence */
@@ -4813,6 +4955,10 @@
   }
   function kioskClose(reason) {
     pvStopVoice();
+    /* release the echo-cancelled companion stream with the overlay, or the microphone light
+       stays on after the kiosk is gone — a patient-facing screen must never leave the mic
+       open once it has closed (av-6.1.0) */
+    safe(function () { pvVoiceGateStop(); });
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
     kiosk.open = false; kiosk.busy = false;
@@ -5098,6 +5244,11 @@
       return;
     }
     if (!keepMood) kioskMood('listening', kiosk.lastSay);
+    /* ⛔ NO getUserMedia HERE. My first attempt started the gate from this line,
+       which made the kiosk request the microphone a SECOND time — and
+       avatar-consent-and-turn-taking-proof.js caught it ("the microphone was requested ONCE,
+       on the staff tap [calls = 2]"). The gate now ADOPTS the stream the preflight already
+       obtained with the same constraints, so the count stays at one. */
     kiosk.heard = false;
     /* THE SILENCE CLOCK IS NOT ARMED HERE ON THE DUPLEX PATH. keepMood means the
        microphone is opening WITH a question that is about to play, and the arm at
@@ -5116,6 +5267,34 @@
     var started = pvListen(function (finalText) {
       if (!kiosk.open) return;
       if (pvIsSelfEcho(finalText)) return;      /* never file our own voice */
+      /* THE HALF STRING MATCHING COULD NOT DO (av-6.1.0). "in the morning" the echo and "in
+         the morning" the answer are the same string, so no classifier can separate them —
+         which is why a mis-heard echo could still be FILED as the patient's answer. They are
+         not the same SOUND: the echo arrives while the room is silent, because on the
+         echo-cancelled stream the avatar's own voice has been removed.
+         Deliberately conditional on pvVoiceGateReady(): this refusal only ever fires when
+         there is hard audio evidence. Without confirmed AEC the behaviour is byte-for-byte
+         what it is today, so the measured real-answer harm (9 of 12, 22 of 22 in an earlier
+         round) cannot come back on a device that cannot support the gate. */
+      /* ⛔ AND IT NEEDS TWO INDEPENDENT REASONS, NOT ONE. An adversarial sweep raised this
+         path: the room floor is learned from whatever is in the room, and the bar is
+         floor x 2.6. In a NOISY room - a busy waiting area, a fan, a bystander talking while
+         the gate adopts the stream - the bar rises, a soft-spoken patient never clears it,
+         pvOtherVoiceNow() stays false, and this branch would then delete EVERY answer they
+         give while the avatar is still speaking. One verifier called that refuted; three
+         never ran (weekly agent limit), so I am not treating it as settled - and deleting a
+         patient's answers is the worst outcome in this file.
+         So the audio evidence is necessary but NOT sufficient: the transcript must ALSO look
+         like our own sentence, i.e. carry zero words we are not saying. A mis-transcribed
+         echo scores zero by construction (homophones and merges resolve back to our words -
+         see pvNovelWordCount). A real answer almost always carries a novel word, and now
+         survives even when the microphone never registered the person who spoke it.
+         Fail-safe by construction beats a threshold I would have to keep re-tuning. */
+      if (pvSaying && pvVoiceGateReady() && !pvOtherVoiceNow() &&
+          pvNovelWordCount(pvSaying, finalText) === 0) {
+        kiosk.echoRefused = (kiosk.echoRefused || 0) + 1;
+        return;
+      }
       if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
       var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
       kiosk.lastTry = { answer: finalText, nonce: reuse };
@@ -5131,9 +5310,25 @@
          every miss silencing the avatar's own question. While nothing is playing there is
          no question to protect, so the old two-word floor stands unchanged. */
       var novel = pvSaying ? pvNovelWordCount(pvSaying, interim) : 0;
-      var otherVoice = pvSaying
-        ? (novel >= 2)
-        : (interim.trim().split(/\s+/).filter(Boolean).length >= 2);
+      /* av-6.1.0: when echo cancellation is CONFIRMED active, presence is an audio fact and
+         the words are irrelevant to it — the avatar's own voice is not in the signal, so
+         sustained energy is another person. The novel-word rule remains the fallback for any
+         device where the browser did not apply AEC; see pvVoiceGateStart. */
+      var otherVoice;
+      if (!pvSaying) {
+        /* nothing is playing, so there is no question to protect — the historical two-word
+           floor stands, unchanged, and this is the line the contract suite reads */
+        otherVoice = interim.trim().split(/\s+/).filter(Boolean).length >= 2;
+      } else if (pvVoiceGateReady()) {
+        /* somebody is audibly there AND it behaves like speech rather than a throat-clear:
+           it produced a word the avatar is not saying, or it has run on well past any cough.
+           Presence alone is not enough — see pvOtherVoiceSustained. */
+        otherVoice = pvOtherVoiceNow() && (novel >= 1 || pvOtherVoiceSustained());
+      } else {
+        /* no confirmed echo cancellation: fall back to the measured string gate exactly as
+           av-6.0.9 shipped it, which a cough also cannot pass (it yields no novel words) */
+        otherVoice = novel >= 2;
+      }
       if (pvSaying && !otherVoice) return;   /* our own voice coming back: do not stop, do not paint */
       if (interim.trim()) kiosk.heard = true;
       if (pvSaying && otherVoice) pvStopSpeechOnly();
@@ -5295,7 +5490,17 @@
     }, null);
     if (!media) { kiosk.mic = false; then(); return; }
     media.then(function (stream) {
-      safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+      /* av-6.1.0: KEEP this stream instead of throwing it away. The comment above already
+         said echo cancellation is the prerequisite for an open mic during playback — but the
+         stream carrying it was stopped one line later, and the recogniser then opened its own
+         microphone with no constraints at all. So the reasoning was right and nothing used it.
+         The voice gate adopts this stream, which means the mic is still requested exactly ONCE
+         on the staff tap (the contract avatar-consent-and-turn-taking-proof.js pins) and never
+         again in front of a patient. My first attempt started a second getUserMedia from
+         kioskListen, and that suite caught it. If adoption fails for any reason the stream is
+         released exactly as before, so the old behaviour is the floor. */
+      var adopted = pvVoiceGateAdopt(stream);
+      if (!adopted) safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
       kiosk.mic = true; then();
     }, function () {
       kiosk.mic = false;
@@ -7574,6 +7779,19 @@
     /* diagnostics: derive a look from a portrait without touching Setup, so
        the matcher can be proven against real pixels. */
     deriveLookFromPhoto: function (dataUrl, then) { return faceTintFromPortrait(dataUrl, then); },
+    /* av-6.1.0 RECEIPT for the voice gate. "Echo cancellation is on" is a claim; this is the
+       evidence, read back from the live track rather than from the constraint we asked for.
+       ready:false with a `why` is the honest state on a device that cannot do it - and in that
+       state every turn-taking decision falls back to the string gate. Also reports how many
+       finals were refused as echo, so a filed-echo problem can be counted instead of argued. */
+    voiceGate: function () {
+      var r = pvVoiceGateReport();
+      r.echoFinalsRefused = (kiosk && kiosk.echoRefused) || 0;
+      return r;
+    },
+    voiceGateStart: function (then) { return pvVoiceGateStart(then); },
+    voiceGateStop: function () { return pvVoiceGateStop(); },
+    otherVoiceNow: function () { return pvOtherVoiceNow(); },
     /* diagnostics only: whether a room capture is running and how much it
        holds. READ-ONLY on purpose - starting a recording is a staff action
        behind the exit PIN and has no programmatic door. */

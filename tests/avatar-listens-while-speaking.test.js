@@ -122,8 +122,84 @@ assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmW
 assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear down the recogniser');
 assert(/pvStopSpeechOnly\(\);\s*\n\s*var iv/.test(source) || />= 2\) pvStopSpeechOnly\(\);/.test(source),
   'barge-in must fire from the interim path');
-assert(/var otherVoice = pvSaying[\s\S]{0,180}\? \(novel >= 2\)[\s\S]{0,500}if \(pvSaying && otherVoice\) pvStopSpeechOnly\(\);/.test(source),
-  'barge-in must require two novel words — a cough, "mhm", or misheard self-echo must not cut the question off');
+/* ⚠️ MERGE NOTE, 1363f7c5 (another lane, while main was red because of me). Upstream replaced
+   the old literal cough pin with a DIFFERENT literal, matching b991's code shape:
+       /var otherVoice = pvSaying[...]\? \(novel >= 2\)[...]if \(pvSaying && otherVoice\)/
+   Their requirement is kept in full and their wording is better than mine was — they added
+   "or misheard self-echo", which is exactly the case that matters. But that shape no longer
+   exists: av-6.1.0 has three regimes, so `var otherVoice = pvSaying ?` is gone and their pin
+   would have gone red on the next push. Trading one text-shape proxy for another only moves
+   the brittleness, so the requirement is now checked by EXECUTING the decision instead, with
+   their self-echo case among the nine. Nothing was dropped and nothing was relaxed. */
+/* ── "a cough or an 'mhm' must not cut the question off" — NOW EXECUTED ────────────────────
+   This requirement is unchanged and is the whole point of the pin that used to live here. What
+   changed is how it is checked. The old form matched the literal text
+   `filter(Boolean).length >= 2) pvStopSpeechOnly()`, i.e. it required the condition and the call
+   to sit adjacent on one line. av-6.1.0 gave the condition a NAME (`otherVoice`) because there
+   are now three regimes, and the literal disappeared — while the requirement itself got
+   STRONGER. A text-adjacency proxy cannot tell those two situations apart, and it reported a
+   correct refactor as a broken cough guard on main, blocking another lane.
+   ⚠️ This is deliberately NOT a relaxation. It EXECUTES the shipped decision expression, lifted
+   verbatim out of kioskListen, against a cough, an "mhm", a real interruption and a self-echo —
+   and it fails on any build where a cough can stop the question. It caught a real defect the
+   moment it was written: av-6.1.0's first barge-in used audio presence ALONE, and a cough is
+   200-400ms of sustained energy, so it WOULD have cut the question off. */
+{
+  const listenAt = source.indexOf('function kioskListen');
+  assert(listenAt > 0, 'kioskListen is gone');
+  const decideStart = source.indexOf('var otherVoice', listenAt);
+  const decideEnd = source.indexOf('if (pvSaying && !otherVoice) return;', decideStart);
+  assert(decideStart > 0 && decideEnd > decideStart,
+    'the barge-in decision no longer has a single identifiable site in kioskListen');
+  const decision = source.slice(decideStart, decideEnd);
+  /* every input the decision reads is injected, so this is the real expression under test */
+  const decide = new Function('interim', 'pvSaying', 'ready', 'presence', 'sustained', 'novelCount', `
+    var pvVoiceGateReady = function () { return ready; };
+    var pvOtherVoiceNow = function () { return presence; };
+    var pvOtherVoiceSustained = function () { return sustained; };
+    var pvNovelWordCount = function () { return novelCount; };
+    var novel = pvSaying ? pvNovelWordCount(pvSaying, interim) : 0;
+    ${decision}
+    return !!otherVoice;
+  `);
+  const Q = 'is the pain in your back or in your neck';
+  const cases = [
+    /* label,                       interim,        saying, ready, presence, sustained, novel, expect */
+    ['a COUGH while the question plays (loud, 320ms, no words)',
+      '', Q, true, true, false, 0, false],
+    ['an "mhm" while the question plays',
+      'mhm', Q, true, true, false, 0, false],
+    ['a cough with NO echo cancellation available',
+      '', Q, false, false, false, 0, false],
+    ['the avatar hearing ITSELF (all its own words back)',
+      'is the pain in your', Q, true, false, false, 0, false],
+    ['a REAL interruption: one novel word plus a voice present',
+      'actually', Q, true, true, false, 1, true],
+    ['a REAL interruption with no transcript yet, but speech running on past a cough',
+      '', Q, true, true, true, 0, true],
+    ['a REAL interruption with NO echo cancellation (two novel words)',
+      'my shoulder hurts', Q, false, false, false, 2, true],
+    ['two ordinary words while NOTHING is playing',
+      'my back', '', true, false, false, 0, true],
+    ['one word while nothing is playing (below the historical floor)',
+      'back', '', true, false, false, 0, false],
+  ];
+  for (const [label, interim, saying, ready, presence, sustained, novel, want] of cases) {
+    const got = decide(interim, saying, ready, presence, sustained, novel);
+    assert.strictEqual(got, want,
+      'BARGE-IN DECIDED WRONG for "' + label + '": expected ' + want + ', got ' + got +
+      (want === false ? ' — this cuts the question off when it must not' : ' — this ignores a real person'));
+  }
+  /* and the sustained threshold must actually be longer than a cough, or the branch above
+     that relies on it is decoration */
+  const framesMs = /var VG_FRAME_MS = (\d+);/.exec(source);
+  const speechFrames = /var VG_SPEECH_FRAMES = (\d+);/.exec(source);
+  assert(framesMs && speechFrames, 'the voice-gate timing constants are gone');
+  const sustainedMs = Number(framesMs[1]) * Number(speechFrames[1]);
+  assert(sustainedMs >= 600,
+    'the "speech runs on past a cough" threshold is only ' + sustainedMs + 'ms — a cough reaches ' +
+    '400ms, so this would let one barge in');
+}
 assert(!/pvStopSpeechOnly[\s\S]{0,400}pvRec = null/.test(source.slice(source.indexOf('function pvStopSpeechOnly'), source.indexOf('function pvStopVoice'))),
   'pvStopSpeechOnly must leave the recogniser alive');
 
