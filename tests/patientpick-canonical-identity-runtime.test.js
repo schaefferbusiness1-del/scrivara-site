@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_patientpick.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 assert(source.includes('var VERSION = "pick-1.6.2"'), 'patient picker performance/identity version was not advanced');
-assert(connect.includes('feat_mls_patientpick.js?v=20260808pick162perf1'), 'patient picker performance/identity fix is not cache-busted');
+assert(connect.includes('feat_mls_patientpick.js?v=20260810pick162perf1'), 'patient picker performance/identity fix is not cache-busted');
 
 const start = source.indexOf('/* __MLSPK_IDENTITY_START__ */');
 const end = source.indexOf('/* __MLSPK_IDENTITY_END__ */', start);
