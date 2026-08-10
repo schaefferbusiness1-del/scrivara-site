@@ -331,6 +331,28 @@ sat QUEUED ~1h on a GitHub runner backlog; live serves b990 throughout. The
 ship sequence therefore ends with the deploy RUN CONCLUSION via the REST API
 plus a served-file grep — never a push receipt.
 
+## 10. ⚠️ THE STORAGE CORRECTION — every count tonight measured READING (added late)
+
+localStorage hit its ~5MB ceiling MID-MORNING-RUN (QuotaExceeded at 5,120KB;
+446KB was this lane's own __px instrument debris, deleted; patients = 3,064KB,
+doubled in a day; ~18KB/stored chart-read; post-cleanup headroom ≈ ONE day).
+Writes on the save chain fail SWALLOWED — green rows rode over dead persists.
+Storage audit (stamp ≥ morning start AND real content, per authoritative
+roster): **Jul 1 = 19/19 HOLDS · Jul 2 = 18/20 · Jul 7 = 9/15 (the "15/15
+failures 0" landmark was 9 stored + 6 unstored-under-green) · Jul 8 = 6/13 ·
+Jul 9 on 3.0.55 = ~1/15 checkable (the whole run executed on the full store).**
+The evening had TWO overlapping failures: tab-fatigue (proven, read-layer,
+cured by reload) AND dying writes (invisible until checked). Day-9's
+16-first-attempt split was a READ result achieved with ZERO recycles — the
+15-chart cadence is untested (MV3 suspension resets the module-var counter;
+fix = chrome.storage.session). **3.0.56: LOUD quota failure on the patient
+path FIRST (a failed persist fails the row — "every ✓ must be earned" made
+enforceable), counter persistence second. Month STOPPED until capacity lands
+(cap per-patient raw text now; IndexedDB as the real fix). Days 7/8/9 need
+re-pulls — forced by a storage defect on proven reads, NOT the banned class.**
+fa-1.0's ledger evidence died on first outing to the same quota it was built
+against; instruments never live in the product's store again.
+
 ## Open at write time
 
 - Day 9 (22 charts, biggest of the month) mid-flight; splits at close.

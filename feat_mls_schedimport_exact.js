@@ -3496,6 +3496,21 @@
             }
             stageMs.visitSave = Date.now() - __visitSaveT0;
             one.visitsComplete = true; one.visitCount = savedVisits.visitCount; one.persistedVisits=savedVisits.persistedVisits; one.parsedVisits = savedVisits.parsedVisits; one.expectedVisits = savedVisits.expectedVisits; one.visitsCoverageComplete = savedVisits.visitsCoverageComplete; one.visitsReaderVersion = savedVisits.readerVersion; one.authoritativeEmpty=savedVisits.authoritativeEmpty===true; one.reconcileReceipt=savedVisits.reconcileReceipt; one.organizationComplete=!!(savedVisits.organization&&savedVisits.organization.ok===true); one.organizationReceipt=savedVisits.organization; one.surfaceResets=Number(savedVisits.surfaceResets||0); one.chartSurface=String(savedVisits.chartSurface||""); one.axRrWaitMs=Number(savedVisits.axRrWaitMs||0); one.axRrRecovered=savedVisits.axRrRecovered===true; one.axEntry=String(savedVisits.axEntry||""); one.fatigueRefresh=savedVisits.fatigueRefresh===true; one.hydStreak=Number(savedVisits.hydStreak||0);
+            /* qv-1.0 (2026-08-09): a chart is only COMPLETE when its bytes are
+               provably in storage. The quota guard (mls-connect) judges every
+               savePatients by its stored echo and stamps a timestamped failure
+               on window.__mlsStoreWriteFailed; a failure fresher than this
+               chart's read means THIS chart's persist died - the row FAILS
+               loudly instead of wearing an unearned green. Days 7/8/9 wore
+               exactly that green over dead writes tonight. */
+            var __qvFail = null;
+            try { __qvFail = window.__mlsStoreWriteFailed || null; } catch (eQv) {}
+            if (__qvFail && Number(__qvFail.at || 0) >= patientReadStartedAt) {
+              one.complete = false;
+              one.visitsComplete = false;
+              one.reason = "storage-full-not-saved";
+              one.storageFailure = { at: Number(__qvFail.at || 0), kind: String(__qvFail.reason || "").slice(0, 40) };
+            }
             /* si-2.0.0: a COMPLETED body pass earns the carry stamp. */
             if (savedVisits.visitsCoverageComplete === true) stampVisitsProof(target.patientId, savedVisits);
             if(savedVisits.profileCoverage&&savedVisits.profileCoverage.complete===true&&savedVisits.profileCoverage.exactIdentityVerified===true){
@@ -4452,11 +4467,12 @@
                These reasons are intentionally NOT in SWEEPABLE_REASON — the
                refusal is deterministic, so an automatic re-sweep would burn
                batch budget re-failing rather than recover anything. */
-            var __mismatch = 0, __noIndex = 0, __noTab = 0;
+            var __mismatch = 0, __noIndex = 0, __noTab = 0, __noStore = 0;
             try {
               (historyReceipt.patients || []).forEach(function (p) {
                 var why = String((p && (p.visitsReason || p.chartReason || p.reason)) || "");
                 if (/same-frame-name-mismatch/.test(why)) __mismatch++;
+                else if (/storage-full-not-saved/.test(why)) __noStore++;
                 else if (/no-chart-frame-candidate|encounter-index-incomplete/.test(why)) __noIndex++;
                 else if (/no-athena-tab/.test(why)) __noTab++;
               });
@@ -4492,6 +4508,7 @@
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read: MLS could not confirm a complete visit list for " + (__noIndex === 1 ? "it" : "them") + ", so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
+              (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly but could NOT be saved because this browser's MLS storage is full. Existing records are intact - nothing was lost or overwritten. Free storage space, then pull again." : "") +
               (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + String(p.reason || "unread").split(/[\[{]/)[0].slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + contentNotice(historyReceipt) + __redoNote, "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
             else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode) + contentNotice(historyReceipt) + __redoNote, "ok");

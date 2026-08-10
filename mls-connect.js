@@ -45417,6 +45417,100 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsWipeGuard = G;
 })();
 
+/* ==========================================================================
+ * qv-1.0 (2026-08-09) — WRITE VERIFICATION: every ✓ must be earned.
+ *
+ * The store hit its ~5MB ceiling tonight and setItem's QuotaExceededError was
+ * swallowed up-stack: rows showed "saved" while nothing persisted (July 7/8/9
+ * read better than they stored; day 9 stored ~1 of 15 checkable). This layer
+ * judges the STORED ECHO, not the request:
+ *   - a THROW from the underlying save records a loud, timestamped failure on
+ *     window.__mlsStoreWriteFailed, toasts (rate-limited), and RETHROWS;
+ *   - after a "successful" save it reads the key back: if the write wanted to
+ *     change the store materially (>64 bytes) but the stored bytes did not
+ *     move at all, the persist silently failed (the quota no-op shape) and it
+ *     records the same loud failure. Cleaner wrappers that legitimately trim
+ *     the payload still CHANGE the stored bytes, so they never false-alarm.
+ *   - a verified write CLEARS the flag, so staleness cannot accuse a later
+ *     healthy save.
+ * si's save chain reads the flag and FAILS the row (storage-full-not-saved) —
+ * a chart is only ✓ when its bytes are provably in storage.
+ * ======================================================================= */
+(function () {
+  var QG = window.__mlsQuotaGuard = window.__mlsQuotaGuard || { failures: 0, lastFail: null, lastToastAt: 0, installed: false };
+  function qvKey() {
+    try { return typeof window.uns === 'function' ? String(window.uns('patients') || '') : ''; } catch (e) { return ''; }
+  }
+  function qvFail(reason, expected, got) {
+    QG.failures++;
+    QG.lastFail = { at: Date.now(), reason: String(reason).slice(0, 60), expected: expected, got: got };
+    window.__mlsStoreWriteFailed = QG.lastFail;
+    try {
+      if (Date.now() - QG.lastToastAt > 60000) {
+        QG.lastToastAt = Date.now();
+        if (typeof window.toast === 'function') window.toast('MLS storage is FULL — this save did NOT happen. Existing records are intact. Free space, then pull again.');
+      }
+    } catch (eT) {}
+    try { console.error('[mlsQuotaGuard] persist FAILED (' + reason + ') expected~' + expected + ' stored=' + got); } catch (eC) {}
+  }
+  function qvWrap(orig) {
+    function qv(arr) {
+      var key = qvKey();
+      var prevLen = -1, expect = -1;
+      try { prevLen = key ? String(localStorage.getItem(key) || '').length : -1; } catch (eP) {}
+      try { expect = JSON.stringify(arr).length; } catch (eX) {}
+      var out;
+      try { out = orig.apply(this, arguments); }
+      catch (e) { qvFail(String(e && e.name || e), expect, prevLen); throw e; }
+      try {
+        var got = key ? String(localStorage.getItem(key) || '').length : -1;
+        if (key && prevLen >= 0 && got === prevLen && expect >= 0 && Math.abs(expect - prevLen) > 64) {
+          qvFail('silent-no-op', expect, got);
+        } else {
+          window.__mlsStoreWriteFailed = null;
+        }
+      } catch (eR) {}
+      return out;
+    }
+    qv.__mlsQvGuarded = true;
+    qv.__mlsQvOrig = orig;
+    qv.__mlsOrig = orig; /* interoperable wrapper-chain ownership */
+    return qv;
+  }
+  function chainHasQv(fn) {
+    var stack = [fn], seen = [], steps = 0, keys = ['__mlsOrig', '__mlsWipeGuardOrig', '__mlsQvOrig', '__vfxOrig', '__mlsCleanSecSaveOrig', '__mlsCleanSecOrig', '__mlsDobOrig', '__orig', '__t3Orig', '__mlsUnrOrig', '__mlsUpNowOrig'];
+    while (stack.length && steps++ < 64) {
+      var cur = stack.pop();
+      if (typeof cur !== 'function' || seen.indexOf(cur) >= 0) continue;
+      seen.push(cur);
+      if (cur.__mlsQvGuarded) return true;
+      for (var i = 0; i < keys.length; i++) if (typeof cur[keys[i]] === 'function') stack.push(cur[keys[i]]);
+    }
+    return false;
+  }
+  function qvInstall() {
+    try {
+      var cur = window.savePatients;
+      if (typeof cur !== 'function') return false;
+      if (chainHasQv(cur)) return true;
+      window.savePatients = qvWrap(cur);
+      QG.installed = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  qvInstall();
+  QG._heal = setInterval(function () {
+    try { if (typeof window.savePatients === 'function' && !chainHasQv(window.savePatients)) qvInstall(); } catch (e) {}
+  }, 4000);
+  QG.revert = function () {
+    try { clearInterval(QG._heal); } catch (e) {}
+    try { if (window.savePatients && window.savePatients.__mlsQvGuarded && window.savePatients.__mlsQvOrig) window.savePatients = window.savePatients.__mlsQvOrig; } catch (e) {}
+    QG.installed = false;
+    return 'reverted';
+  };
+  window.__mlsQuotaGuard_revert = QG.revert;
+})();
+
 ;(function(){try{if(window.__mlsStoreCache||document.querySelector('script[data-mls-asset="feat_mls_store_cache.js"]'))return;var s=document.createElement('script');s.src='feat_mls_store_cache.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_store_cache.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* sc-1.4.0 exact-key generation fallback; normal builds install the cache at byte zero before boot work */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_context_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_context_safety.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_patient_context_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* pcs-1.2.1: synchronous ownership swap, idle-coalesced identity lookup, frame-coalesced conversation mirrors; no roster poll (additive, reversible) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_request_safety.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_request_safety.js?v=20260802crs121';s.setAttribute('data-mls-asset','feat_mls_copilot_request_safety.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* immutable Copilot request ownership: delayed answers cannot cross patients or visits */

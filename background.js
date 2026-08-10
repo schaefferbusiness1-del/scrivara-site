@@ -10426,6 +10426,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      The reasons are surface-starvation shapes, NOT identity refusals - an
      identity mismatch is the product working and never feeds the breaker. */
   var __mlsHydFatigue = { streak: 0, lastRefreshAt: 0, hourAt: 0, refreshes: 0, pendingStamp: false, dead: '', chartsSinceRefresh: 0, lifetimeRefreshes: 0 };
+  /* fb-1.3: MV3 suspension resets module state - hydrate from session storage
+     (async; until it lands the zeroed defaults are simply conservative) and
+     persist after every mutation cluster. session scope = survives suspension,
+     dies with the browser. */
+  try {
+    chrome.storage.session.get('hydFatigue', function (got) {
+      try { if (got && got.hydFatigue) { var hf = got.hydFatigue; for (var hk in hf) { if (Object.prototype.hasOwnProperty.call(hf, hk)) __mlsHydFatigue[hk] = hf[hk]; } } } catch (eHyG) {}
+    });
+  } catch (eHyS) {}
+  function __mlsHydPersist() {
+    try { chrome.storage.session.set({ hydFatigue: __mlsHydFatigue }); } catch (eHyP) {}
+  }
   function __mlsHydNote(ok, reason) {
     try {
       if (ok === true) { __mlsHydFatigue.streak = 0; return; }
@@ -10524,7 +10536,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await sleep(12000);
         } else {
           if (fbReactive) { __mlsHydFatigue.refreshes++; __mlsHydFatigue.lifetimeRefreshes = (__mlsHydFatigue.lifetimeRefreshes || 0) + 1; }
-          __mlsHydFatigue.streak = 0; __mlsHydFatigue.chartsSinceRefresh = 0; __mlsHydFatigue.pendingStamp = fbReactive ? 'fatigue' : 'proactive';
+          __mlsHydFatigue.streak = 0; __mlsHydFatigue.chartsSinceRefresh = 0; __mlsHydFatigue.pendingStamp = fbReactive ? 'fatigue' : 'proactive'; __mlsHydPersist();
           try { emit(appTabId, frozenRequestId, fbReactive ? 'athenaOne is responding poorly - refreshing its tab and cooling down before this chart...' : 'Routine athenaOne tab refresh to keep long pulls reliable (15 charts since the last one)...', 0, 0); } catch (eFbE) {}
           try { await exec(emrId, [0], ['surfaceRefresh', cfg]); } catch (eFbR) {}
           await sleep(12000);
@@ -10532,6 +10544,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           try { var fbPost = await exec(emrId, [0], ['surfaceProbe', cfg]); fbPostR = bestResult(fbPost, function (r) { return r ? 1 : 0; }).result || null; } catch (eFbQ) {}
           if (!fbPostR || fbPostR.interstitial || fbPostR.signIn || Number(fbPostR.frames || 0) < 2) {
             __mlsHydFatigue.dead = !fbPostR ? 'no-probe-answer' : (fbPostR.interstitial ? 'interstitial-after-reload' : (fbPostR.signIn ? 'sign-in-form-after-reload' : 'frameset-gone-after-reload'));
+            __mlsHydPersist();
             try { emit(appTabId, frozenRequestId, 'After the refresh, athenaOne did not come back signed in (' + __mlsHydFatigue.dead + '). MLS stopped rather than retry - sign in to athenaOne, then pull again.', 0, 0); } catch (eFbD) {}
             return { ok: false, reason: 'no-athena-tab', identity: {}, visits: [], receipt: { complete: false, indexComplete: false, bodyComplete: false, fullDetail: false, fatigueDead: __mlsHydFatigue.dead }, error: 'MLS refreshed its athenaOne tab to recover from repeated read failures, and the tab did not come back as a signed-in athenaOne (' + __mlsHydFatigue.dead + '). Nothing further was attempted. Sign in to athenaOne, then pull again.' };
           }
@@ -11313,6 +11326,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
          when one just fired) so the day ledger can see the breaker work. */
       __mlsHydNote(res.ok === true, String(res.reason || ''));
       __mlsHydFatigue.chartsSinceRefresh = (__mlsHydFatigue.chartsSinceRefresh || 0) + 1;
+      __mlsHydPersist();
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
       res.receipt.hydStreak = __mlsHydFatigue.streak;
       if (__mlsHydFatigue.pendingStamp) { if (__mlsHydFatigue.pendingStamp === 'proactive') res.receipt.proactiveRefresh = true; else res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }

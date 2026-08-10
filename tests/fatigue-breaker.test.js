@@ -95,4 +95,20 @@ ok(SI.includes('fatigueRefresh: (r.receipt&&r.receipt.fatigueRefresh)===true') &
 ok(SI.includes('fatigueRefresh: vr.receipt.fatigueRefresh === true, hydStreak: Number(vr.receipt.hydStreak || 0)'),
   'si absorbs streak + stamp on the failure path (the ledger sees the breaker)');
 
+/* fb-1.3 (3.0.56): MV3 suspends idle service workers and resets module state -
+   day 9 on 3.0.55 fired ZERO recycles on a 22-chart day that should have
+   recycled at chart 16. State now hydrates from chrome.storage.session at SW
+   start and persists after every mutation cluster (classify hop, reload
+   cluster, dead latch). Session scope: survives suspension, dies with the
+   browser. */
+ok(SRC.includes("chrome.storage.session.get('hydFatigue'"),
+  'fb-1.3: state hydrates from session storage at SW start');
+ok(SRC.includes('function __mlsHydPersist()') && SRC.includes('chrome.storage.session.set({ hydFatigue: __mlsHydFatigue })'),
+  'fb-1.3: one persist helper writes the whole state');
+{
+  const persistCalls = (SRC.match(/__mlsHydPersist\(\);/g) || []).length;
+  ok(persistCalls === 3,
+    'fb-1.3: persists at exactly the three mutation clusters (classify, reload, dead latch), got ' + persistCalls);
+}
+
 console.log('fatigue-breaker: PASS (' + checks + ' checks)');
