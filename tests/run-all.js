@@ -581,6 +581,8 @@ const tests = [
      fixture against the shipped call site's field list, and its controls include the earlier broken
      guard — which it fails. Real http origin: localStorage throws on setContent's opaque origin. */
   'an-empty-record-cannot-erase-a-consultation.test.js',
+  /* the floating-card rule: a real browser, because the defect is geometry */
+  'a-floating-card-never-covers-a-control.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',

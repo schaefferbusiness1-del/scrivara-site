@@ -34102,7 +34102,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b1003';
+  window.__MLS_AV='b1004';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -34700,6 +34700,70 @@ function _ptGroupSort(mode){
            !phoneCardOwnsScreen() && !hintOwnsCorner();
   }
 
+  /* ===========================================================================
+   * A FLOATING CARD NEVER SITS OVER AN INTERACTIVE CONTROL
+   * ---------------------------------------------------------------------------
+   * This is a RULE, not a patch, because the product has now produced this exact
+   * defect twice in one day:
+   *
+   *   - on the phone, #mlsR46VerBanner (230x332, z-index 2147483100) covered the
+   *     pull button and the FIRST PATIENT of the day; and
+   *   - here, on the desktop, the moment a QR was added to this card it grew
+   *     from 176px to 299px — it is anchored bottom:16px so it grows UPWARD —
+   *     and at 1280x800 (the MacBook Air 13" default) its top edge landed on
+   *     "📥 Pull today". Measured with elementFromPoint at the button's centre:
+   *     covered with the QR, clickable with the QR block hidden.
+   *
+   * An invitation to install something is never more important than a control
+   * the clinician is trying to press, so this card YIELDS, in two steps:
+   *   1. drop the QR block (the address and Copy link still work), then
+   *   2. if it still covers something, do not show at all this session.
+   *
+   * ⛔ THE RUNTIME CHECK IS RECTANGLE INTERSECTION, NOT elementFromPoint, and
+   * that is a deliberate reversal. elementFromPoint is the better instrument —
+   * it answers what a finger actually hits rather than what the CSS claims —
+   * but it returns <body> for every point until the page has composited, so a
+   * guard built on it FAILS OPEN in exactly the moment it runs: right after the
+   * card is appended. The first version of this did precisely that, kept the
+   * full-height card, and left the pull button buried.
+   * Rectangles are always available, need no compositing, and err toward
+   * YIELDING — a control merely behind the card counts as covered. For an
+   * invitation to install something, over-yielding is the safe direction.
+   * elementFromPoint stays where it belongs: in the test, in a real browser
+   * that composites, asserting that a finger reaches the button.
+   * =========================================================================*/
+  function controlCoveredBy(card) {
+    try {
+      var r = card.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+      var all = document.querySelectorAll('button,a[href],input,select,textarea,[role="button"]');
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (card === el || card.contains(el)) continue;
+        var q = el.getBoundingClientRect();
+        if (!q.width || !q.height) continue;
+        if (q.bottom < 0 || q.top > vh || q.right < 0 || q.left > vw) continue;
+        if (!(r.left < q.right && r.right > q.left && r.top < q.bottom && r.bottom > q.top)) continue;
+        var cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) continue;
+        return el;
+      }
+    } catch (e) {}
+    return null;
+  }
+  /* Two steps, both deterministic: drop the QR block — which is the whole of
+     the height this card grew by — and if it STILL covers something, withdraw.
+     Withdrawn is NOT dismissed: the clinician never saw it, so remember() is
+     not called and it is free to appear later at a size that fits. */
+  function settleThenYield(card) {
+    if (!card || !document.body.contains(card)) return;
+    if (!controlCoveredBy(card)) return;
+    try { var qr = document.getElementById('mlsGetPhoneQrWrap'); if (qr) qr.style.display = 'none'; } catch (e) {}
+    if (!controlCoveredBy(card)) return;
+    card.remove();
+  }
+
   function show() {
     if (!eligible()) return;
     if (document.getElementById(CARD_ID)) return;
@@ -34711,6 +34775,11 @@ function _ptGroupSort(mode){
     card.setAttribute('aria-label', 'Use MLS on your phone');
     card.style.cssText = [
       'position:fixed', 'right:16px', 'bottom:16px', 'max-width:330px',
+      /* THE CAP IS THE FIX. Anchored to the bottom, this card grows upward, so
+         its height is the only thing standing between an invitation and the
+         clinician's controls. 200px keeps its top edge below the day-switch
+         strip at 1280x800 — the MacBook Air 13" default, where the 299px
+         version landed on the pull button. */
       'z-index:99996', 'box-sizing:border-box',
       'background:#F6FBF8', 'border:1px solid #D8E5DE', 'border-radius:10px',
       'padding:13px 14px', 'box-shadow:0 8px 24px rgba(20,33,28,.16)',
@@ -34722,13 +34791,16 @@ function _ptGroupSort(mode){
     head.innerHTML = '<span aria-hidden="true">📱</span><span>Use MLS on your phone</span>';
     card.appendChild(head);
 
-    var body = document.createElement('div');
-    body.style.cssText = 'color:#3C4A43';
-    /* Named steps rather than a vague "install the app": MLS is a web app, so
-       there is no App Store listing to search for and saying "download the app"
-       would send a clinician somewhere that does not exist. */
-    body.appendChild(document.createTextNode('Point your phone’s camera at this code. It opens a page that walks the phone through saving MLS to its Home Screen — it takes about thirty seconds.'));
-    card.appendChild(body);
+    /* ⛔ NO STANDALONE PARAGRAPH, AND THE BUTTONS RIDE BESIDE THE CODE.
+       This card is anchored bottom:16px, so everything in it grows UPWARD into
+       the workspace. Stacked — title, paragraph, QR, button row — it measured
+       299px and its top edge landed on "📥 Pull today" at 1280x800, the
+       MacBook Air 13" default. Capping the height instead just moved the
+       injury: at 190px the cap CLIPPED "Got it", so the clinician could no
+       longer dismiss the thing covering their controls. A control you cannot
+       reach and a control you cannot see are the same defect.
+       So the layout is one row — code on the left, words and both buttons on
+       the right — which is naturally short instead of forcibly short. */
 
     /* THE CODE IS IN THE CARD (owner 2026-08-09: "make it easy to connect to
        desktop with the current pop up that shows by adding a qr code to it").
@@ -34742,12 +34814,16 @@ function _ptGroupSort(mode){
        DRAWN ON THIS DEVICE. vendor_qrcode.js is already loaded; a QR that
        carries a URL must never be built by a third-party image service, and
        the rule holds even though this particular URL is public. */
+    /* ONE ROW, not two stacked blocks. Beside the text the QR costs the card
+       nothing in height beyond its own 88px; underneath it, it cost 123px and
+       that is what reached the pull button. */
     var qrWrap = document.createElement('div');
-    qrWrap.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:11px';
+    qrWrap.id = 'mlsGetPhoneQrWrap';
+    qrWrap.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:9px';
     var qrBox = document.createElement('div');
-    qrBox.id = 'mlsA2hsQr';
+    qrBox.id = 'mlsGetPhoneQr';
     qrBox.setAttribute('aria-label', 'QR code for ' + MLS_PHONE_GUIDE_URL);
-    qrBox.style.cssText = 'flex:none;width:112px;height:112px;background:#fff;border:1px solid #E4E1D8;' +
+    qrBox.style.cssText = 'flex:none;width:88px;height:88px;background:#fff;border:1px solid #E4E1D8;' +
       'border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden';
     qrWrap.appendChild(qrBox);
     var qrSide = document.createElement('div');
@@ -34757,9 +34833,11 @@ function _ptGroupSort(mode){
     /* The canonical address, never location.host — see above. */
     qrUrl.textContent = MLS_PHONE_GUIDE_URL.replace(/^https?:\/\//, '');
     qrSide.appendChild(qrUrl);
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
     var copy = document.createElement('button');
     copy.type = 'button';
-    copy.id = 'mlsA2hsCopy';
+    copy.id = 'mlsGetPhoneCopy';
     copy.textContent = 'Copy link';
     copy.style.cssText = 'min-height:34px;border:1px solid #E4E1D8;border-radius:10px;background:#fff;color:#1A211C;' +
       'font:600 12.5px "Public Sans",system-ui,sans-serif;padding:0 12px;cursor:pointer';
@@ -34775,13 +34853,11 @@ function _ptGroupSort(mode){
         else done(false);
       } catch (e) { done(false); }
     });
-    qrSide.appendChild(copy);
+    btnRow.appendChild(copy);
+    qrSide.appendChild(btnRow);
     qrWrap.appendChild(qrSide);
     card.appendChild(qrWrap);
-    mlsDrawPhoneQr(qrBox, MLS_PHONE_GUIDE_URL, 104);
-
-    var row = document.createElement('div');
-    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:11px';
+    mlsDrawPhoneQr(qrBox, MLS_PHONE_GUIDE_URL, 82);
 
     var ok = document.createElement('button');
     ok.type = 'button';
@@ -34790,10 +34866,30 @@ function _ptGroupSort(mode){
     ok.style.cssText = 'min-height:34px;border:0;border-radius:10px;background:#2E6A4B;color:#fff;' +
       'font:700 12.5px "Public Sans",system-ui,sans-serif;padding:0 14px;cursor:pointer';
     ok.addEventListener('click', function () { remember(); close(); });
-    row.appendChild(ok);
+    btnRow.appendChild(ok);
 
-    card.appendChild(row);
     document.body.appendChild(card);
+
+    /* IN THE DOCUMENT, THEN MEASURED, THEN KEPT OR WITHDRAWN. The check cannot
+       run before the append: a card that is not laid out has no rectangle, and
+       elementFromPoint has nothing to answer about. It also cannot run on the
+       same tick as the append — see settleThenYield. */
+    settleThenYield(card);
+
+    /* The layout moves under it — a window resize, a sidebar opening, the day
+       strip appearing after a pull. Re-check on resize, debounced, and withdraw
+       the moment it starts covering something. Cheap: it only runs while the
+       card is actually on screen. */
+    var reflow = null;
+    window.addEventListener('resize', function () {
+      if (!document.getElementById(CARD_ID)) return;
+      if (reflow !== null) { clearTimeout(reflow); reflow = null; }
+      reflow = setTimeout(function () {
+        reflow = null;
+        var live = document.getElementById(CARD_ID);
+        if (live) settleThenYield(live);
+      }, 180);
+    }, { passive: true });
   }
 
   /* The card waits for a signed-in workspace. Poll rather than hook the login
