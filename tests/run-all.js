@@ -561,6 +561,11 @@ const tests = [
      avatar's own voice (measured 18% overall, 52% on merged words). Barge-in now needs
      positive evidence of another voice; the filing path is deliberately unchanged. */
   'avatar-finishes-its-sentences.test.js',
+  /* 2026-08-09 av-6.2.0: ONE OWNER for #mlsAvKioskInterim. Owner: "having text constantly
+     overlapping and being such a paIUN IN THE ASS" — measured as FOURTEEN writers on one
+     text node with no priority, clobbering each other mid-sentence. Executes the ranked
+     arbitrator over adversarial orderings; the control fails on the pre-arbitrator file. */
+  'avatar-one-owner-for-the-patient-line.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',

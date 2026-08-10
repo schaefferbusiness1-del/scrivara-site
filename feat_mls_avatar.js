@@ -4931,6 +4931,52 @@
        minutes, while the screen was silent and waiting. */
     resting: 'Waiting for the doctor'
   };
+  /* ── ONE OWNER FOR THE PATIENT-FACING LINE (av-6.2.0) ─────────────────────────────────
+     Owner: "having text constantly overlapping and being such a paIUN IN THE ASS".
+     It was never a layout defect. #mlsAvKioskInterim had FOURTEEN writers - the live
+     transcript, two microphone hints, three staff-recovery notices, the rest screen, the
+     ambient status, the finish line - all assigning textContent directly, with no ownership
+     and no priority. They clobbered each other mid-sentence: a notice the patient needed was
+     wiped by a transient transcript fragment a moment later, and back again.
+     The evidence that this was already hurting: one call site had grown a hand-rolled
+     `if (!ivOff.textContent)` guard - somebody noticed the clobbering and patched the victim
+     rather than the cause. Same shape as two-modules-fight-over-one-attribute.
+     Now every write goes through here and carries a KIND, ranked:
+       alert      (staff must act: no server, no mic, no consent, wrong patient)
+       status     (the kiosk is doing something: resting, finishing, filed)
+       hint       (advice: the mic is off, type below)
+       transcript (what is being heard right now - transient, never holds the line)
+     A lower-ranked write cannot replace a higher-ranked message while its hold is live. The
+     transcript holds for zero milliseconds, so it can never lock the line, but it also can
+     never wipe an alert. kioskLineReset() is called at the start of each turn - without it an
+     alert from the previous turn would blank the next question's transcript for its whole hold.
+     ⚠️ ALL call sites are routed. Half-routing would be worse than not doing it: the arbitrator
+     would believe it owns a line that another writer is still overwriting behind its back. */
+  var KL_RANK = { transcript: 0, hint: 1, status: 2, alert: 3 };
+  var KL_HOLD = { transcript: 0, hint: 6000, status: 9000, alert: 20000 };
+  var klKind = '', klUntil = 0;
+  function kioskLine(kind, text) {
+    var iv = gid('mlsAvKioskInterim');
+    if (!iv) return false;
+    var rank = KL_RANK[kind]; if (rank === undefined) rank = 0;
+    var now = Date.now();
+    var heldRank = (klKind && klUntil > now) ? KL_RANK[klKind] : -1;
+    if (heldRank === undefined) heldRank = -1;
+    if (rank < heldRank) return false;          /* a more important message is still standing */
+    iv.textContent = (text === null || text === undefined) ? '' : String(text);
+    klKind = kind;
+    klUntil = now + (KL_HOLD[kind] || 0);
+    return true;
+  }
+  /* a new turn is a new context: drop any hold, or a stale alert silences the next question */
+  function kioskLineReset() {
+    klKind = ''; klUntil = 0;
+    var iv = gid('mlsAvKioskInterim');
+    if (iv) iv.textContent = '';
+    return true;
+  }
+  /* what is on the line right now, for tests and for the receipt */
+  function kioskLineState() { return { kind: klKind, holdMs: Math.max(0, klUntil - Date.now()) }; }
   function kioskState(name) {
     var el = gid('mlsAvKioskState');
     if (!el) return;
@@ -5042,7 +5088,7 @@
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     pvStopVoice();
     kioskMood('thinking', '', answer);
-    var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = '';
+    kioskLineReset();
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
     /* the interview is stateless server-side, so the chart block rides with
        every turn - resolved once, at the first turn, and reused */
@@ -5090,7 +5136,10 @@
          and the patient's own answers are the check-in half. Recorded only
          on a SUCCESSFUL turn - a refused turn is re-asked and re-answered,
          and would otherwise appear twice. */
-      if (j.avatar) kioskSetIdentity(j.avatar);
+      /* av-6.2.0: called UNCONDITIONALLY. Gating on j.avatar meant a turn response without an
+         identity payload never resolved the name slot at all, leaving its "One moment…"
+         placeholder on screen. kioskSetIdentity is null-safe throughout and now falls back. */
+      kioskSetIdentity(j.avatar || null);
       /* AFTER kioskSetIdentity, never before: the avatar's name arrives on
          the first turn, so recording the label first filed question one as
          "Avatar" and every later one as the real name - one speaker under
@@ -5198,7 +5247,7 @@
     kioskMood('speaking', 'thank you');
     kioskSetSay('Thanks — we\'ll stop here. Please hand the screen back to the team.');
     var iv = gid('mlsAvKioskInterim');
-    if (iv) iv.textContent = 'Staff: the check-in could not reach the server — end the interview and check the connection.';
+    kioskLine('alert', 'Staff: the check-in could not reach the server — end the interview and check the connection.');
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
     var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
     /* the visit still deserves a transcript even when the check-in could not
@@ -5240,7 +5289,7 @@
          survived exactly until the first question - after which a patient faced a
          typing box with no explanation. This runs on every turn, so it holds. */
       var ivOff = gid('mlsAvKioskInterim');
-      if (ivOff && !ivOff.textContent) ivOff.textContent = 'The microphone is off on this screen — type your answer below.';
+      if (ivOff && !ivOff.textContent) kioskLine('hint', 'The microphone is off on this screen — type your answer below.');
       return;
     }
     if (!keepMood) kioskMood('listening', kiosk.lastSay);
@@ -5332,7 +5381,7 @@
       if (pvSaying && !otherVoice) return;   /* our own voice coming back: do not stop, do not paint */
       if (interim.trim()) kiosk.heard = true;
       if (pvSaying && otherVoice) pvStopSpeechOnly();
-      var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = interim;
+      kioskLine('transcript', interim);
     }, function () {
       /* the recogniser died on its own with nothing to submit — re-open the
          mic. The small delay keeps Chrome's routine `no-speech` error from
@@ -5346,7 +5395,7 @@
     if (!started) {
       kiosk.mic = false;
       var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
-      var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'The microphone is not available here — typing works below.';
+      kioskLine('alert', 'The microphone is not available here — typing works below.');
       kioskArmWatchdog(20000);   /* a failed mic start must still self-end */
       return;
     }
@@ -5372,7 +5421,7 @@
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
     var iv = gid('mlsAvKioskInterim');
-    if (iv) iv.textContent = 'Please hand the screen back to the team. Staff: the button below starts listening to the visit; “End interview” leaves.';
+    kioskLine('status', 'Please hand the screen back to the team. Staff: the button below starts listening to the visit; “End interview” leaves.');
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
     var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
     kioskRestShow();
@@ -5504,7 +5553,7 @@
       kiosk.mic = true; then();
     }, function () {
       kiosk.mic = false;
-      var iv = gid('mlsAvKioskInterim'); if (iv) iv.textContent = 'Microphone is off — the interview will use typing.';
+      kioskLine('hint', 'Microphone is off — the interview will use typing.');
       var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
       then();
     });
@@ -5516,8 +5565,16 @@
   var PV_FEMALE_VOICES = { coral: 1, nova: 1, shimmer: 1, sage: 1 };
   function kioskSetIdentity(av) {
     var name = gid('mlsAvKioskName');
-    if (name && av && av.name) name.textContent = av.name;
-    if (av && clean(av.name)) kiosk.avName = clean(av.name);   /* speaker label in the filed transcript */
+    /* av-6.2.0 — "One moment…" IS THE NAME SLOT'S PLACEHOLDER, and this was the only thing
+       that ever replaced it, only when a name actually arrived. A turn response without
+       avatar.name therefore left "One moment…" standing where the assistant's NAME belongs,
+       in front of the patient, for the entire interview. Measured in a real kiosk render:
+       #mlsAvKioskName read "One moment…" through every state.
+       Resolve it either way now — the delivered name, else the one we already learned, else a
+       neutral label. A waiting-message must never be left where a name goes. */
+    var gotName = clean(av && av.name);
+    if (name) name.textContent = gotName || kiosk.avName || 'Your check-in assistant';
+    if (gotName) kiosk.avName = gotName;   /* speaker label in the filed transcript */
     /* THE CONFIGURED VOICE WAS DELIVERED AND THROWN AWAY. The turn response has
        carried `avatar.voice` for several releases specifically so the client can
        see which voice is speaking, and this function - the one place that reads
@@ -6412,12 +6469,10 @@
     safe(function () { ordersDetectSoon(v); });
   }
   function kioskAmbientPaint(interim) {
-    var iv = gid('mlsAvKioskInterim');
-    if (iv) {
-      var tail = clean(interim);
-      if (!tail) { var parts = kiosk.ambParts || []; tail = parts.length ? parts[parts.length - 1] : ''; }
-      iv.textContent = tail.length > 160 ? ('...' + tail.slice(tail.length - 160)) : tail;
-    }
+    /* the room transcript is a TRANSCRIPT: it must never outrank a staff alert (av-6.2.0) */
+    var tail = clean(interim);
+    if (!tail) { var parts = kiosk.ambParts || []; tail = parts.length ? parts[parts.length - 1] : ''; }
+    kioskLine('transcript', tail.length > 160 ? ('...' + tail.slice(tail.length - 160)) : tail);
     kioskAmbientClock();
   }
   function kioskAmbientNoMic() {
@@ -6708,7 +6763,7 @@
     if (!kiosk.consentAt) {
       kioskSetSay('I cannot record this visit — recording consent was not confirmed.');
       var ivC = gid('mlsAvKioskInterim');
-      if (ivC) ivC.textContent = 'Staff: start the check-in again and confirm consent. Nothing is being recorded.';
+      kioskLine('alert', 'Staff: start the check-in again and confirm consent. Nothing is being recorded.');
       return false;
     }
     /* AND NOT WITHOUT A MICROPHONE. The preflight already knows the answer, and
@@ -6721,7 +6776,7 @@
     if (kiosk.mic === false) {
       kioskSetSay('I cannot record this visit — the microphone is not available on this screen.');
       var ivM = gid('mlsAvKioskInterim');
-      if (ivM) ivM.textContent = 'Staff: nothing is being recorded. Allow the microphone for this site, then start the check-in again.';
+      kioskLine('alert', 'Staff: nothing is being recorded. Allow the microphone for this site, then start the check-in again.');
       return false;
     }
     var bound = clean(kiosk.ext);
@@ -6730,7 +6785,7 @@
          only ever end in a refusal to write, so it must not be taken */
       kioskSetSay('I cannot record this visit - the screen is not bound to a chart.');
       var iv0 = gid('mlsAvKioskInterim');
-      if (iv0) iv0.textContent = 'Staff: open the patient, then start the check-in again. Nothing is being recorded.';
+      kioskLine('alert', 'Staff: open the patient, then start the check-in again. Nothing is being recorded.');
       return false;
     }
     /* Close the INTERVIEW row server-side first. The summary pipeline runs on
@@ -6874,7 +6929,7 @@
     kioskState('saving');
     kioskSetSay('Saving the visit…');
     var iv = gid('mlsAvKioskInterim');
-    if (iv) iv.textContent = 'Finishing the recording and writing it to the transcript…';
+    kioskLine('status', 'Finishing the recording and writing it to the transcript…');
     kioskAmbientFlush(function () {
       kioskAmbientSave(true);              /* the tail reaches the backup before the file attempt */
       var res = kioskAmbientStop('end-visit');
@@ -7042,12 +7097,11 @@
         (res.ok ? 'The visit is in the doctor\'s transcript.' : 'Nothing was written.');
     }
     kioskSetSay(head);
-    var iv = gid('mlsAvKioskInterim');
-    if (iv) {
-      iv.textContent = res.ok
-        ? ('Staff: ' + res.chars + ' characters filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
-        : ('Staff: ' + (res.why || 'the capture could not be filed.'));
-    }
+    /* the filing OUTCOME is a status the staff must be able to read: it outranks the
+       transcript, so a late recogniser result cannot wipe it a moment later (av-6.2.0) */
+    kioskLine('status', res.ok
+      ? ('Staff: ' + res.chars + ' characters filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
+      : ('Staff: ' + (res.why || 'the capture could not be filed.')));
     /* NOW the hand-off comes back, after the mood/say/interim writes above rather
        than before them. It is also the LAST thing that touches the chip, so
        "Waiting for the doctor" is what actually stays on screen. */
@@ -7059,15 +7113,16 @@
        explained itself passes its line in, and it wins. */
     if (kiosk.ambSayOverride) {
       kioskSetSay(kiosk.ambSayOverride);
-      var ivO = gid('mlsAvKioskInterim');
-      if (ivO && kiosk.ambInterimOverride) {
+      if (kiosk.ambInterimOverride) {
         /* the caller explains the CAUSE; the OUTCOME is this function's to state, and
            it must be the measured one. Replacing the interim line wholesale erased a
-           refusal and left a reassuring constant in its place. */
-        ivO.textContent = kiosk.ambInterimOverride + ' ' + (res.ok
+           refusal and left a reassuring constant in its place.
+           av-6.2.0: routed through the arbitrator as a STATUS, so a late transcript
+           fragment cannot wipe a filing refusal the staff still need to read. */
+        kioskLine('status', kiosk.ambInterimOverride + ' ' + (res.ok
           ? (res.chars + ' characters were filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
           : ('NOTHING was filed — ' + (res.why || 'the capture could not be filed.') +
-             ' The words are still held in this browser and can be recovered from the chart.'));
+             ' The words are still held in this browser and can be recovered from the chart.')));
       }
       kiosk.ambSayOverride = ''; kiosk.ambInterimOverride = '';
     }

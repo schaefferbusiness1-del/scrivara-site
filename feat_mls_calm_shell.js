@@ -1066,8 +1066,17 @@
          fold the chips as duplicates, which would have stranded all three. */
       { id: 'mlsDaDock', as: 'Dictate' },
       { id: 'mlsAsstFab', as: 'MLS Assistant' },
-      /* Relocated off the patient header — see PT_MOVED. */
-      { label: /^draft op note$/i, within: '#profileCard' },
+      /* "Draft op note" is deliberately NOT a row here (owner, 2026-08-09:
+         "get rid of draft op note and keep prep op notes"). It sat directly
+         beside "Prep op notes" and the two read as the same thing, because for
+         a bound patient they DO the same thing: #opPrepSmartBtn's openOpPrepSmart
+         preps the selected patient, and only falls back to the whole scheduled
+         day when no patient is bound (ScribeFlow.html openOpPrepSmart). So the
+         capability is NOT stranded by dropping the row -- the row below is the
+         single owner of op-note prep, per-patient and per-day.
+         The #profileCard button itself stays hidden by PT_MOVED, which is still
+         accurate: this shell hides it. Do not re-add it here without also
+         deciding which of the two surfaces owns the action. */
       /* Only Snapshot is relocated off the context bar — see CTX_MOVED. After-visit
          summary and Patient portal stay on the bar, so they are deliberately NOT
          listed here; offering them in both places is the duplication this removes. */

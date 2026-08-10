@@ -1236,6 +1236,25 @@
   #patientBar .spacer{flex:1}
   /* ---- patients list ---- */
   .pt-list{display:flex;flex-direction:column;gap:10px;margin-top:6px;max-height:62vh;overflow-y:auto;padding-right:2px}
+  /* VERTICAL CONTAINMENT OF A PATIENT CARD -- THESE TWO RULES MUST STAY IN BASE CSS.
+     They also ship in feat_mls_ptcard_contain.js (ptc-2.0.0), but that asset is
+     loaded on an idle callback (mls-connect.js: requestIdleCallback + 2500ms
+     timeout + async), so between first paint and whenever idle arrives -- and
+     permanently if the asset never loads -- the list above is a column flexbox
+     whose .pt-item children shrink to the 84px min-height floor
+     (mls-connect.js __mlsUxPatientsStability) while a full card's content needs
+     96-115px. With the base align-items:center that overflow splits BOTH ways:
+     the name paints above the card, overlapping the card before it, and the
+     status chips paint below its bottom border. That is the reported bug.
+     MEASURED, headless Chrome 1440x900, 60 rows, 5 scroll positions:
+       deferred asset absent   24 deformed rows, worst spill 31px
+       these rules in base     0 deformed rows, worst spill 0px
+     content-visibility is NOT implicated -- once a row is on screen the shipped
+     build renders it correctly -- so the perf win in that asset is untouched.
+     Keep BOTH copies: this one makes the first paint correct, the asset keeps it
+     correct for any surface that rebuilds the list after boot. */
+  #patientsView .pt-list{display:block}
+  #patientsView .pt-list .pt-item{align-items:flex-start;height:auto;margin-bottom:10px}
   .pt-search{display:flex;align-items:center;gap:10px;margin:12px 0 6px}
   .pt-search input{flex:1;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--card);color:var(--ink)}
   .pt-search input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.12)}
@@ -9654,7 +9673,18 @@ function _mlsRequestEncounterConsent(actionLabel){
 }
 (function(){
   try{
-    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); try{if(typeof _athenaMarkBoundEdit==='function')_athenaMarkBoundEdit(id);}catch(_){} } }, true);
+    document.addEventListener('input', function(e){ var id=e&&e.target&&e.target.id; if(id==='transcript'||id==='noteBox'||id==='patientLabel'){ _markVisitDirty(); try{if(typeof _athenaMarkBoundEdit==='function')_athenaMarkBoundEdit(id);}catch(_){}
+      /* KEEP THE RECOGNIZER'S BUFFER IN SYNC WITH WHAT THE HUMAN JUST TYPED.
+         onresult writes `#transcript.value = (finalText + interim).trim()`, so
+         every correction made DURING a recording was overwritten by the next
+         final result — the doctor fixes "right" to "RIGHT", the recognizer
+         speaks again, and the fix is gone with no error and no undo. Three
+         other places in this file already re-seed finalText for exactly this
+         reason, each with this comment; the edit path was the one that did not.
+         Assigning `.value` directly (which is what onresult does) fires no
+         input event, so this can never feed back on itself. 2026-08-09. */
+      try{ if(id==='transcript' && typeof finalText!=='undefined' && typeof capturing!=='undefined' && capturing){ finalText=(e.target.value||'')+' '; } }catch(_){}
+    } }, true);
     window.addEventListener('beforeunload', function(e){ if(_visitDirty || (typeof capturing!=='undefined' && capturing)){ e.preventDefault(); e.returnValue=''; return ''; } });
   }catch(e){}
 })();
@@ -34044,7 +34074,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b994';
+  window.__MLS_AV='b997';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
