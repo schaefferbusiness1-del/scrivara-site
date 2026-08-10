@@ -20,7 +20,13 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'feat_mls_avatar.js'), 'utf8');
+/* ⛔ AVATAR_SRC_OVERRIDE, because without it THIS SUITE CANNOT BE CONTROLLED. Every sibling
+   avatar suite honours it; this one read the shipped file unconditionally, so any run of
+   `AVATAR_SRC_OVERRIDE=<broken copy> node tests/avatar-doctor-runtime.test.js` silently re-tested
+   the SHIPPED file and passed. I used exactly that to "verify" a pin caught a removed guard, and
+   the pass was meaningless — the second vacuous control in one change set. A suite that cannot be
+   pointed at deliberately-broken bytes cannot tell you whether its assertions can fail. */
+const source = fs.readFileSync(process.env.AVATAR_SRC_OVERRIDE || path.join(root, 'feat_mls_avatar.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 function tick(n) { return new Promise(r => setTimeout(r, n || 0)); }
@@ -180,8 +186,29 @@ assert(source.includes('function kioskConsentYes') && source.includes('function 
   const preflights = open.match(/kioskMicPreflight/g) || [];
   assert(preflights.length === 1,
     'openKiosk mentions kioskMicPreflight ' + preflights.length + ' times — the open path must not touch the microphone before the consent answer');
-  assert(/#mlsAvKioskRoomGo'\)\.addEventListener\('click', function \(\) \{[\s\S]{0,900}?kiosk\.mic === false\) \{ kioskMicPreflight\(/.test(open),
-    'the one preflight in openKiosk is no longer the room-button re-probe — something else in the open path is opening the microphone');
+/* The requirement is unchanged: the single preflight in openKiosk must be the ROOM-BUTTON
+   re-probe, so nothing in the open path can touch the microphone before the consent answer.
+   What changed is that the old form demanded the call sit on the SAME LINE as its guard
+   (`kiosk.mic === false) { kioskMicPreflight(`), which is formatting, not behaviour — it went
+   red when the callback grew a comment and moved to the next line. That is the seventh
+   text-shape false alarm in this change set, and the noise from those is what let a real red
+   through earlier tonight. So: assert the STRUCTURE — the call lives inside the room-button
+   handler, and it is guarded by the denied-mic check — with no opinion about line breaks. */
+{
+  /* ⚠️ ANCHOR ON THE LISTENER, NOT THE ID. `#mlsAvKioskRoomGo'` appears first in the kiosk HTML
+     TEMPLATE, so an indexOf on the id alone measured markup and this pair of assertions passed
+     VACUOUSLY — it passed against a control with the guard deliberately removed. A vacuous pin is
+     worse than a brittle one: brittle cries wolf, vacuous stays silent. Caught only because the
+     control was run and then verified to actually differ from the shipped file. */
+  const roomAt = open.indexOf("#mlsAvKioskRoomGo').addEventListener");
+  assert(roomAt > 0, 'the room-capture button listener is gone from openKiosk');
+  const handler = open.slice(roomAt, roomAt + 1400);
+  assert(/kioskMicPreflight\s*\(/.test(handler),
+    'the one preflight in openKiosk is no longer inside the room-button handler — something else in the open path is opening the microphone');
+  /* the guard must precede the call, with only the `if (`/`) {` between them */
+  assert(/if \(kiosk\.mic === false\)\s*\{\s*kioskMicPreflight\s*\(/.test(handler),
+    'the room-button re-probe is no longer guarded by the denied-microphone check, so it would re-prompt the patient on every tap');
+}
   assert(/\.preconsent #mlsAvKioskRest\b/.test(source),
     'the rest screen left the .preconsent hide list — the room button becomes reachable before consent, which is what makes its re-probe safe');
   assert(!/requestFullscreen/.test(open),

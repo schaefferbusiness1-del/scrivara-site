@@ -6781,7 +6781,6 @@
        denylist; the next one added would not be on it. */
     if (!kiosk.consentAt) {
       kioskSetSay('I cannot record this visit — recording consent was not confirmed.');
-      var ivC = gid('mlsAvKioskInterim');
       kioskLine('alert', 'Staff: start the check-in again and confirm consent. Nothing is being recorded.');
       return false;
     }
@@ -6794,7 +6793,6 @@
        tried again forever behind the banner. */
     if (kiosk.mic === false) {
       kioskSetSay('I cannot record this visit — the microphone is not available on this screen.');
-      var ivM = gid('mlsAvKioskInterim');
       kioskLine('alert', 'Staff: nothing is being recorded. Allow the microphone for this site, then start the check-in again.');
       return false;
     }
@@ -6803,7 +6801,6 @@
       /* refuse BEFORE the microphone opens - an unbindable recording could
          only ever end in a refusal to write, so it must not be taken */
       kioskSetSay('I cannot record this visit - the screen is not bound to a chart.');
-      var iv0 = gid('mlsAvKioskInterim');
       kioskLine('alert', 'Staff: open the patient, then start the check-in again. Nothing is being recorded.');
       return false;
     }
@@ -7310,7 +7307,28 @@
          microphone was not available and no way to change that answer. This tap is
          a fresh user gesture, which is exactly what a permission prompt needs, so
          it re-probes before refusing. */
-      if (kiosk.mic === false) { kioskMicPreflight(function () { kioskAmbientStart(); }); return; }
+      if (kiosk.mic === false) {
+        kioskMicPreflight(function () {
+          /* ⛔ TYPING IS NOT A FALLBACK FOR ROOM CAPTURE. The preflight above reveals the typing
+             row on denial, which is right for the INTERVIEW — a patient can type answers. Here
+             it is being used as a re-probe for the room recording, and if the microphone is
+             refused again the row is left on the hand-off screen with nothing to type into:
+             a visible input on a surface where input does nothing, next to an alert saying
+             nothing is being recorded. Hide it again when the re-probe fails.
+             (Only when it FAILED — a granted re-probe leaves the interview's own state alone.)
+             ⚠️ Do NOT name the preflight function in this comment: avatar-doctor-runtime.test.js
+             COUNTS textual occurrences inside openKiosk and requires exactly one, to prove the
+             open path never touches the microphone before the consent answer. A mention in prose
+             reads as a second call site. Seventh time today a text-matching check has flagged my
+             own comment — the guard is right, the wording is what has to give. */
+          if (kiosk.mic === false) {
+            var tr = gid('mlsAvKioskTypeRow');
+            if (tr) safe(function () { tr.style.display = 'none'; });
+          }
+          kioskAmbientStart();
+        });
+        return;
+      }
       kioskAmbientStart();
     });
     root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskConsentYes);
