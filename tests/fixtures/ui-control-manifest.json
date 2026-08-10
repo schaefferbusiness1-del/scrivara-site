@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 277,
  "totals": {
-  "controls": 1370,
+  "controls": 1371,
   "gated": 102,
-  "active": 1268,
+  "active": 1269,
   "byKind": {
-   "button": 1314,
+   "button": 1315,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 985
+  "dynamic": 986
  },
  "controls": [
   {
@@ -9115,7 +9115,7 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7192,
+   "line": 7473,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9129,7 @@
    "domId": "mlsAvKioskMute",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7208,
+   "line": 7489,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9143,21 @@
    "domId": "mlsAvKioskEndVisit",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7217,
+   "line": 7498,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsAvKioskSkip",
+   "label": "Skip ahead — I'm ready to answer",
+   "accessibleName": "Skip ahead — I'm ready to answer",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsAvKioskSkip",
+   "view": "dynamic",
+   "file": "feat_mls_avatar.js",
+   "line": 7510,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9171,7 @@
    "domId": "mlsAvKioskRoomGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7227,
+   "line": 7514,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9185,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7233,
+   "line": 7528,
    "gated": false,
    "handler": null
   },
@@ -9185,7 +9199,7 @@
    "domId": "mlsAvKioskPinGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7240,
+   "line": 7535,
    "gated": false,
    "handler": null
   },
@@ -9199,7 +9213,7 @@
    "domId": "mlsAvKioskPinAmb",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7241,
+   "line": 7536,
    "gated": false,
    "handler": null
   },
@@ -9213,7 +9227,7 @@
    "domId": "mlsAvKioskPinBack",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7242,
+   "line": 7537,
    "gated": false,
    "handler": null
   },
@@ -9227,7 +9241,7 @@
    "domId": "mlsAvKioskConsentYes",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7255,
+   "line": 7550,
    "gated": false,
    "handler": null
   },
@@ -9241,7 +9255,7 @@
    "domId": "mlsAvKioskConsentNo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7256,
+   "line": 7551,
    "gated": false,
    "handler": null
   },

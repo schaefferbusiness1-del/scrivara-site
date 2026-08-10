@@ -566,6 +566,25 @@ const tests = [
      text node with no priority, clobbering each other mid-sentence. Executes the ranked
      arbitrator over adversarial orderings; the control fails on the pre-arbitrator file. */
   'avatar-one-owner-for-the-patient-line.test.js',
+  /* 2026-08-10 av-6.3.0: the owner reported BOTH of the above defects again, in one sentence —
+     "it litterly never gets out everyhting it wants to say caosue it picks up its own talking and
+     then everyhting gets so fucked up fix it all to uin paralele and fix the overlaying text to".
+     Both earlier fixes were aimed at the wrong mechanism. Barge-in was not the truncation path
+     that fires (pvListen's first statement was pvStopVoice(), so simply re-opening the mic after
+     an ordinary Chrome no-speech error cut the audio mid-word AND stranded the completion
+     callback), and the overlap is between two DIFFERENT ELEMENTS, which a one-writer-per-node
+     arbitrator cannot fix. Owner's binding decision: finishing the sentence outranks instant
+     interruption, so the microphone is not open while the avatar speaks and the interrupt is a
+     visible button. Executes the shipped fence, handlers, watchdog, audio playback and
+     arbitrator; the layout is measured by rendering (see the two files below). */
+  'avatar-half-duplex-and-one-live-region.test.js',
+  /* 2026-08-10 av-6.3.0 review round: the overlap was measured by a RENDERED harness that
+     enumerated a hand-written list of fifteen element ids — and #mlsAvKioskOrders, an opaque white
+     card painted straight over the live transcript, was not one of them. So the harness could not
+     see the defect the owner was pointing at, and it only ran by hand. This one walks the whole
+     tree, asks elementFromPoint what is painted at the words' own coordinates in 48 rendered
+     states, and RUNS IN THE GATE. */
+  'avatar-kiosk-text-is-never-covered.test.js',
   /* 2026-08-09 round-three finding: kioskAmbientBlock suppressed the whole header on a RESUMED
      "keep listening" capture to avoid pasting the intake twice — and dropped the recording
      consent attestation with it. intakeFiled is a claim about a PREVIOUS write, not proof the

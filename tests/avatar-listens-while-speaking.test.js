@@ -86,13 +86,51 @@ assert(/pvSaying = pvNorm\(t\);/.test(source), 'the spoken sentence must be reco
 
 /* ---- 2b. av-5.7.0 — the filter runs at the SOURCE, and an all-echo result
    does not cost the microphone ---- */
-assert(/if \(piece && pvIsSelfEcho\(piece\)\) continue;/.test(source),
-  'the echo filter must run INSIDE pvListen, per result — filtering only in the caller means the avatar\'s words enter finalText and the whole answer is rejected with them');
+/* ⚠️ av-6.3.0 — SAME REQUIREMENT, DIFFERENT VERB, AND THE VERB IS THE FIX. This used to pin
+   `if (piece && pvIsSelfEcho(piece)) continue;` — the echo piece was skipped and the pieces around
+   it were CONCATENATED, which is an EDIT of a transcript that may be the patient's. That is the
+   critical finding of the review round: an utterance must be accepted whole or refused whole, and
+   a spliced one is neither. The filter still runs at the source, per segment, and an all-echo
+   result still costs nothing; what changed is that the segment it recognises goes to the REFUSED
+   bucket (which is counted and reported to the caller) instead of being deleted from the middle of
+   a string that is then filed as complete. */
+/* ⚠️ av-6.3.1 — SAME REQUIREMENT, ONE BOUNDARY COARSER, AND THAT IS THE FIX. This pinned
+   `pvIsSelfEcho(piece)) heldText +=` — the echo segment went to a REFUSED bucket and the other
+   segments were still filed. Two buckets is a splice with a nicer name: a held leading segment
+   refused and the clean remainder filed as a complete answer is the identical inversion the
+   `continue` version had ("no pain in my" + "left leg" files as "left leg"). There is one
+   accumulation now, and an echo POISONS THE WHOLE TURN instead of being separated out of it. */
+assert(/pvIsSelfEcho\(piece\)\) turnHeld = true;/.test(source),
+  'the echo filter must run INSIDE pvListen, per segment, and mark the whole TURN — filtering only ' +
+  'in the caller means the avatar\'s words enter the answer and the whole answer is rejected with ' +
+  'them, and diverting the segment into a second bucket files the remainder as a complete answer');
+assert(!/pvIsSelfEcho\(piece\)\) continue;/.test(source),
+  'A SEGMENT IS BEING SKIPPED IN THE MIDDLE OF AN ACCUMULATION AGAIN. Dropping one piece and ' +
+  'concatenating the rest edits the patient\'s transcript and then files the edit as a complete ' +
+  'answer — the exact class of defect that turns "no pain in my left leg" into "pain in my left leg".');
 {
   const at = source.indexOf('function pvListen');
-  const listen = source.slice(at, source.indexOf('/* ======', at));
-  assert(/function submit\(\)[\s\S]{0,1200}if \(!v\) return;[\s\S]{0,200}rec\.stop\(\)/.test(listen),
-    'submit() must refuse BEFORE stopping the recogniser when nothing survived the filter — otherwise one echo leaves the kiosk deaf until the 9s watchdog');
+  /* ⚠️ COMMENTS BLANKED FIRST, LINE FOR LINE. The comment that explains the old half-teardown
+     QUOTES it (`if (pvRec === rec) { rec.stop(); pvRec = null; }`), so the first version of the
+     scan below reported the module's own documentation as the defect — the eighth time in this lane
+     a text grep has failed to tell code from prose. */
+  const listen = source.slice(at, source.indexOf('/* ======', at))
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  /* ⛔ STRONGER THAN IT WAS. This used to require submit() to refuse BEFORE `rec.stop()`, i.e. it
+     accepted a submit() that tore the microphone down on the way past. It must not tear it down at
+     ALL: closing the recogniser between turns forces the next turn to build a new one, and a
+     recogniser that starts listening at a moment nobody chose cannot know whether the first thing
+     it hears is the middle of the patient's sentence. The only complete microphone teardown in the
+     file is pvStopMicOnly, and submit() is not one of its callers. */
+  assert(!/function submit\(\)[\s\S]{0,2600}rec\.stop\(\)/.test(listen),
+    'submit() TEARS THE MICROPHONE DOWN. It must end the TURN and leave the recogniser live: a ' +
+    'rebuilt recogniser clips the front off the next answer, and the half-teardown it used to do ' +
+    '(stop + null pvRec, but no killQuiet, no handler nulling, no accumulation reset) also let a ' +
+    'trailing result re-enter submit() and file the same answer twice.');
+  assert(/function endTurn\(\)/.test(listen) && /endTurn\(\);/.test(listen),
+    'there is no single place that ends a turn any more, so the accumulation, the overlap latch and ' +
+    'the quiet timer are reset from wherever an author remembers — which is how `finalText` survived ' +
+    'a submit and was filed a second time');
 }
 /* the template must OUTLIVE the speech, boundedly. Both halves are asserted:
    it is handed to the tail, and it is still cleared. */
@@ -103,43 +141,137 @@ assert(/pvEchoHold\(pvSaying\);\s*\n\s*pvSaying = '';/.test(source.slice(source.
 assert(/var PV_ECHO_TAIL_MS = \d+;/.test(source), 'the echo tail must be bounded by a named constant');
 assert(/pvEchoDrop\(\);/.test(source), 'ambient room mode must DROP the tail — a room capture is verbatim');
 
-/* ---- 3. the mic opens WITH the question ---- */
+/* ═══════════════════════════════════════════════════════════════════════════════════════════
+ * ⛔ av-6.3.0 — SECTIONS 3 AND 4 USED TO ASSERT THE OPPOSITE OF WHAT THEY ASSERT NOW, AND THE
+ * OWNER IS THE ONE WHO REVERSED THEM.
+ *
+ * This file's founding requirement was "it should be able to listen while it is talking", and
+ * it pinned kioskListen(true) firing BEFORE the speak call. That shipped, and the owner came
+ * back twice: "it doesnt even say eve4ryhhting its going to say it hears its self its a MESS",
+ * then "it litterly never gets out everyhting it wants to say caosue it picks up its own
+ * talking and then everyhting gets so fucked up".
+ *
+ * An open microphone pointed at the loudspeaker playing the question transcribes the AVATAR.
+ * Two releases were spent trying to tell that transcript from a patient's, and neither could:
+ *   · a mis-transcribed echo arriving as a FINAL result is byte-identical to a real answer, and
+ *     a real answer legitimately reuses the question's words ("in the morning" answering "is it
+ *     worse in the morning, or the evening?" carries ZERO novel words) — 42 of 232 realistic
+ *     echo renderings reached kioskTurn;
+ *   · the audio gate was measured tripping on the avatar's own residual on EVERY question
+ *     (bar 0.0208 RMS, residual 0.020, true at frame 4, floor unable to learn out of it).
+ * Every miss did BOTH kinds of damage at once: it cut the question off mid-word AND posted a
+ * fabricated answer that advanced the interview.
+ *
+ * THE OWNER'S DECISION IS BINDING: finishing the sentence outranks instant interruption.
+ *
+ * ⛔ av-6.3.0's FIRST ATTEMPT AT THAT DECISION CLOSED THE MICROPHONE, AND THE ADVERSARIAL ROUND
+ * REVERSED IT — for a reason that outranks everything above. A microphone that opens when the
+ * question ENDS opens in the MIDDLE of the patient's sentence, because patients answer as soon as
+ * they understand (the very observation this file was created for). The recogniser's first result
+ * was then the TAIL of an utterance whose head was spoken into a closed microphone, and it was
+ * submitted and FILED as a complete answer. English puts negation and laterality at the FRONT:
+ * "no pain in my left leg" files as "pain in my left leg". A wrong-site finding written into a
+ * chart under a green receipt is a worse outcome than anything an open microphone can cause, and
+ * nothing downstream can detect it, because a fragment is byte-identical to a whole answer.
+ *
+ * So the microphone is open across the question again — and the owner's decision is kept in full
+ * by putting the fence on the two DECISIONS that were doing the damage rather than on the
+ * microphone itself:
+ *   · nothing the microphone hears can stop a sentence (the interim handler does nothing at all
+ *     while sound is playing; interruption is a visible BUTTON our loudspeaker cannot press);
+ *   · nothing heard while sound was playing can be FILED (pvListen tags every recognition
+ *     segment on first sighting with whether it overlapped playback, and refuses the overlapping
+ *     ones WHOLE — never spliced, never trimmed, and the patient is told).
+ * Both are decided by WHEN audio arrived, a fact this file owns, instead of by WHAT it sounded
+ * like — the two classifiers that were measured wrong in both directions above.
+ *
+ * The executed proof lives in avatar-half-duplex-and-one-live-region.test.js, with a control that
+ * fails by name (avatar-half-duplex-control.js). What is kept HERE is the part of this file that
+ * is still true and still load-bearing: the echo classifier, which still guards the FILING path,
+ * and the ordering of the turn.
+ * ═════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ---- 3. the mic opens WITH the question, and what it hears then cannot be filed ---- */
 assert(source.includes('kioskListen(true);'), 'the mic must open alongside the question, not after it');
 /* av-5.8.1 gave the speak call a delivery SHAPE, so the entry point is now pvSpeakShaped.
    The ordering guarantee is unchanged and is what this asserts; `pvSpeak[A-Za-z]*` admits the
    renamed entry without admitting anything that is not a speak call. */
 assert(/kioskListen\(true\);[\s\S]{0,200}pvSpeak[A-Za-z]*\(kiosk\.lastSay/.test(source),
-  'listening must start BEFORE/with the speak call, not in its completion callback');
+  'THE MICROPHONE IS BEING OPENED AFTER THE QUESTION AGAIN. It then opens in the middle of the ' +
+  'patient\'s sentence and files the tail as a complete answer, with the negation and the ' +
+  'laterality missing — the critical finding of the av-6.3.0 review round.');
 assert(source.includes('function kioskListen(keepMood)'), 'kioskListen must accept the keep-mood flag');
-assert(source.includes('if (keepMood && pvRec) return;'), 'opening the mic twice for one question must be a no-op');
-/* av-5.7.0: and the silence clock starts when the QUESTION ENDS. Armed from
-   kioskListen it started when the question began, so a six-second question left
-   three seconds before the kiosk talked over the patient's first words. */
-assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmWatchdog\(9000\);/.test(source),
-  'the silence watchdog must be re-armed when the question finishes playing, not when it starts');
-
-/* ---- 4. barge-in stops the VOICE only, and is guarded ---- */
-assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear down the recogniser');
-/* Assert the FIRING LINE, not the line that happens to follow it. Both old alternatives were
-   code-shape proxies and both went stale: `>= 2) pvStopSpeechOnly();` died with the cough fix,
-   and `pvStopSpeechOnly();\n var iv` died when av-6.2.0 routed the interim write through the
-   arbitrator, so the next line is no longer `var iv = gid(...)`. Behaviour never changed either
-   time. This is the FIFTH shape-pin in this change set to cry wolf, and one of them trained me
-   to dismiss a red that was real — so pin what barge-in DOES: it fires from inside kioskListen,
-   on the decided condition, and nowhere else in the file. */
+/* ⚠️ STRONGER THAN THE OLD `if (keepMood && pvRec) return;`. A live recogniser may not be rebuilt
+   by ANY caller, keepMood or not: pvListen tears the old one down, and a teardown mid-utterance
+   loses whatever it was holding and re-clips the patient mid-word. */
 {
-  const at = source.indexOf('function kioskListen');
-  assert(at > 0, 'kioskListen is gone');
-  const end = source.indexOf('\n  function ', at + 20);
-  const body = source.slice(at, end > at ? end : at + 6000);
-  assert(/if \(pvSaying && otherVoice\) pvStopSpeechOnly\(\);/.test(body),
-    'barge-in must fire from the interim path, on the decided condition');
-  /* and it must remain the ONLY caller: the whole diagnosis of "it does not say everything it
-     is going to say" rests on there being exactly one thing that can cut a question off */
+  const at = source.indexOf('function kioskListen(keepMood)');
+  const end = source.indexOf('\n  /* ── THE INTERRUPT', at);
+  const body = source.slice(at, end > at ? end : at + 12000);
+  assert(/if \(pvRec\) \{/.test(body),
+    'A LIVE RECOGNISER CAN BE TORN DOWN AND REBUILT AGAIN. Every mid-question caller — the ' +
+    'recogniser-died retry, resume, the PIN pad Back, the next question — would then restart ' +
+    'recognition in the middle of whatever the patient was saying and lose the first half of it.');
+  assert(!/pvStopSpeechOnly/.test(body),
+    'something in kioskListen can silence the avatar again — the one interrupt is a TAP now');
+  /* THE FENCE, where it now lives: the interim handler is inert while sound is playing, and it
+     asks the AUDIO, not the estimate. */
+  assert(/if \(pvAudioLive\(\)\) \{ kiosk\.heardWhileSpeaking/.test(body),
+    'THE HALF-DUPLEX FENCE IS GONE from the interim path. What the microphone hears while the ' +
+    'loudspeaker is playing must neither stop the sentence nor be painted on the patient-facing ' +
+    'line — and it must be asked of the AUDIO, because pvSaying is cleared by an estimate.');
+}
+/* and the silence clock starts when the QUESTION ENDS, not when it starts: armed from the speak
+   continuation, because armed at mic-open a six-second question spent its own patience.
+   ⚠️ SCOPED TO THE QUESTION BRANCH, NOT A BYTE WINDOW. The obvious form of this assertion —
+   /pvSpeak.*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,900}kioskArmWatchdog\(9000\)/ — matches the
+   FIRST pvSpeakShaped(kiosk.lastSay, ...) in the file, which is the CLOSING line's call in the
+   `j.done` branch, and then measures 900 characters of that branch's comments. It went red on a
+   file where the arming was present and correct. That is the eighth byte-window pin in this lane
+   to cry wolf, so this one names its subject: the branch that asks a question. */
+{
+  const qAt = source.indexOf("kioskMood('speaking', kiosk.lastSay, answer);");
+  assert(qAt > 0, 'the question branch of kioskTurn is gone');
+  const branch = source.slice(qAt, source.indexOf('\n    }, function () {', qAt));
+  assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]*kioskArmWatchdog\(9000\);/.test(branch),
+    'the silence watchdog must be re-armed when the question finishes playing, not when it starts');
+  assert(!/kioskListen\(\);\s*\n\s*\}\);/.test(branch) || /if \(!pvRec\) \{ kioskListen\(\); return; \}/.test(branch),
+    'the speak continuation re-opens the microphone unconditionally. pvListen tears the live ' +
+    'recogniser down, so this would discard whatever the patient said DURING the question — the ' +
+    'words this design exists to keep. It may only re-open when the recogniser actually died.');
+}
+assert(/if \(!keepMood\) kioskArmWatchdog\(9000\);/.test(source),
+  'the silence watchdog is no longer armed when the microphone opens on its own — a patient who ' +
+  'says nothing would never be nudged and the interview would never self-end');
+
+/* ---- 4. the one thing that can cut a sentence short is a TAP ---- */
+assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear down the recogniser');
+{
   const callers = (source.match(/pvStopSpeechOnly\(\);/g) || []).length;
   assert.strictEqual(callers, 1,
     'pvStopSpeechOnly now has ' + callers + ' call sites — with more than one, nothing can be ' +
     'concluded about what silenced a question');
+  const skipAt = source.indexOf('function kioskSkipSpeech()');
+  assert(skipAt > 0, 'kioskSkipSpeech is gone — there is no way for a patient to interrupt at all');
+  const skipEnd = source.indexOf('\n  /* Natural completion', skipAt);
+  assert(/pvStopSpeechOnly\(\);/.test(source.slice(skipAt, skipEnd)),
+    'the one call site left kioskSkipSpeech. It has to be a button: the avatar\'s own voice ' +
+    'defeated every audio and every text rule this lane wrote, and it cannot press a button.');
+  /* ⛔ AND THE MICROPHONE MUST NOT BE ABLE TO REACH IT. pvListen's onInterim is where both
+     previous mechanisms lived; it may not stop anything now. */
+  const ih = source.indexOf('}, function (interim) {');
+  assert(ih > 0, 'the interim handler is gone');
+  const handler = source.slice(ih, source.indexOf('}, function () {', ih));
+  assert(!/pvStopSpeechOnly|pvOtherVoice|pvNovelWordCount/.test(handler),
+    'A MICROPHONE RULE IS BACK ON THE PATH THAT SILENCES THE AVATAR. Neither a word count nor an ' +
+    'energy threshold can tell the avatar\'s own voice from a patient\'s — measured wrong in both ' +
+    'directions — and the owner has ranked finishing the sentence above interrupting it.');
+  assert(/kiosk\.heardWhileSpeaking/.test(handler),
+    'a recognition result arriving while the avatar is speaking is no longer COUNTED. It is not a ' +
+    'fault — the microphone stays open on purpose — but it is the only number that says how much ' +
+    'of the avatar\'s own voice the room is failing to cancel, and a gate with no counter is how ' +
+    'av-6.1.0 shipped a report reading "echo cancellation active" while it self-triggered on ' +
+    'every question.');
 }
 /* ⚠️ MERGE NOTE, 1363f7c5 (another lane, while main was red because of me). Upstream replaced
    the old literal cough pin with a DIFFERENT literal, matching b991's code shape:
@@ -163,61 +295,49 @@ assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear dow
    and it fails on any build where a cough can stop the question. It caught a real defect the
    moment it was written: av-6.1.0's first barge-in used audio presence ALONE, and a cough is
    200-400ms of sustained energy, so it WOULD have cut the question off. */
+/* ⛔ av-6.3.0 — THE EXECUTED "a cough must not cut the question off" DECISION IS GONE, BECAUSE
+   ITS SUBJECT IS GONE, and the requirement it protected is now satisfied structurally instead of
+   by a threshold. A cough cannot cut the question off because the microphone is not open while
+   the question plays; neither can an "mhm", nor a mis-transcription, nor the avatar's own
+   residual tripping the energy gate — which was the case this decision was measured getting
+   WRONG on every single question (bar 0.0208 RMS vs a 0.020 residual, true at frame 4).
+   The replacement lives in avatar-half-duplex-and-one-live-region.test.js group A3, which runs
+   SEVEN such inputs — perfect echo, merged-word and homophone mis-transcriptions, a cough, and
+   the residual case — through the SHIPPED interim handler and requires that none of them stops
+   the speech, plus group A5 which requires the button still does. Its control reverts each fix
+   one at a time and each one fails by name (19 of 19).
+   Nothing was relaxed by deleting this block: a threshold that has to be right in both
+   directions was replaced by a condition that cannot be wrong in either.
+   The voice gate's timing constants are deliberately NOT pinned here any more. VG_SPEECH_FRAMES
+   and pvOtherVoiceSustained were DELETED with the decision they served, rather than left in the
+   file for a suite to keep describing as load-bearing. */
 {
-  const listenAt = source.indexOf('function kioskListen');
-  assert(listenAt > 0, 'kioskListen is gone');
-  const decideStart = source.indexOf('var otherVoice', listenAt);
-  const decideEnd = source.indexOf('if (pvSaying && !otherVoice) return;', decideStart);
-  assert(decideStart > 0 && decideEnd > decideStart,
-    'the barge-in decision no longer has a single identifiable site in kioskListen');
-  const decision = source.slice(decideStart, decideEnd);
-  /* every input the decision reads is injected, so this is the real expression under test */
-  const decide = new Function('interim', 'pvSaying', 'ready', 'presence', 'sustained', 'novelCount', `
-    var pvVoiceGateReady = function () { return ready; };
-    var pvOtherVoiceNow = function () { return presence; };
-    var pvOtherVoiceSustained = function () { return sustained; };
-    var pvNovelWordCount = function () { return novelCount; };
-    var novel = pvSaying ? pvNovelWordCount(pvSaying, interim) : 0;
-    ${decision}
-    return !!otherVoice;
-  `);
-  const Q = 'is the pain in your back or in your neck';
-  const cases = [
-    /* label,                       interim,        saying, ready, presence, sustained, novel, expect */
-    ['a COUGH while the question plays (loud, 320ms, no words)',
-      '', Q, true, true, false, 0, false],
-    ['an "mhm" while the question plays',
-      'mhm', Q, true, true, false, 0, false],
-    ['a cough with NO echo cancellation available',
-      '', Q, false, false, false, 0, false],
-    ['the avatar hearing ITSELF (all its own words back)',
-      'is the pain in your', Q, true, false, false, 0, false],
-    ['a REAL interruption: one novel word plus a voice present',
-      'actually', Q, true, true, false, 1, true],
-    ['a REAL interruption with no transcript yet, but speech running on past a cough',
-      '', Q, true, true, true, 0, true],
-    ['a REAL interruption with NO echo cancellation (two novel words)',
-      'my shoulder hurts', Q, false, false, false, 2, true],
-    ['two ordinary words while NOTHING is playing',
-      'my back', '', true, false, false, 0, true],
-    ['one word while nothing is playing (below the historical floor)',
-      'back', '', true, false, false, 0, false],
-  ];
-  for (const [label, interim, saying, ready, presence, sustained, novel, want] of cases) {
-    const got = decide(interim, saying, ready, presence, sustained, novel);
-    assert.strictEqual(got, want,
-      'BARGE-IN DECIDED WRONG for "' + label + '": expected ' + want + ', got ' + got +
-      (want === false ? ' — this cuts the question off when it must not' : ' — this ignores a real person'));
+  /* ⚠️ COMMENTS STRIPPED FIRST. The first version of these two assertions matched the raw file
+     and went red on the module's own note explaining WHY the function was deleted — a text grep
+     cannot tell code from prose, which is a recurring cost in this lane (two sweeps have flagged
+     their own comments). */
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert(!/function pvOtherVoiceSustained/.test(code),
+    'pvOtherVoiceSustained is back with nothing calling it — a "longer than a cough" threshold ' +
+    'is only meaningful on a path that can silence the avatar, and there is no such path now');
+  /* THE GATE SURVIVES ON ONE DECISION PATH ONLY — the FILING refusal, where it is the
+     PERMISSIVE term: a false positive there makes us file an answer rather than delete one, and
+     deleting an answer is the one outcome this file must never risk. Checked by naming the
+     permitted sites rather than by counting, because a count goes red the day someone adds a
+     diagnostic and says nothing about where the value is actually used. */
+  const sites = code.split('\n').map((ln, i) => [i + 1, ln])
+    .filter(([, ln]) => /pvOtherVoiceNow\(\)/.test(ln));
+  for (const [n, ln] of sites) {
+    const ok = /function pvOtherVoiceNow\(\)/.test(ln)              /* the definition */
+      || /pvVoiceGateReady\(\) && !pvOtherVoiceNow\(\)/.test(ln)     /* the FILING refusal */
+      || /otherVoiceNow: function \(\)/.test(ln);                    /* the diagnostics report */
+    assert(ok, 'pvOtherVoiceNow is used somewhere new (line ' + n + '): ' + ln.trim() + '\n' +
+      'It must never be back on a path that decides whether to stop talking — measured wrong in ' +
+      'BOTH directions: it returned true on the avatar\'s own residual at frame 4 on every ' +
+      'question, and it was invisible to a patient speaking at 1.8x a noisy room\'s floor.');
   }
-  /* and the sustained threshold must actually be longer than a cough, or the branch above
-     that relies on it is decoration */
-  const framesMs = /var VG_FRAME_MS = (\d+);/.exec(source);
-  const speechFrames = /var VG_SPEECH_FRAMES = (\d+);/.exec(source);
-  assert(framesMs && speechFrames, 'the voice-gate timing constants are gone');
-  const sustainedMs = Number(framesMs[1]) * Number(speechFrames[1]);
-  assert(sustainedMs >= 600,
-    'the "speech runs on past a cough" threshold is only ' + sustainedMs + 'ms — a cough reaches ' +
-    '400ms, so this would let one barge in');
+  assert(sites.length >= 2, 'the voice gate lost its filing-path use as well — that refusal is ' +
+    'the only thing standing between a mis-transcribed echo and a fabricated answer');
 }
 assert(!/pvStopSpeechOnly[\s\S]{0,400}pvRec = null/.test(source.slice(source.indexOf('function pvStopSpeechOnly'), source.indexOf('function pvStopVoice'))),
   'pvStopSpeechOnly must leave the recogniser alive');
@@ -366,5 +486,8 @@ console.log('PASS avatar listens while speaking: echo cancellation requested, th
   'and NO ONE-WORD ANSWER IS EVER DELETED — a laterality, a refusal, a number, or the question\'s own noun ' +
   '(the rule that dropped those was reverted after it was measured deleting 9 of 12 ordinary A-or-B answers, ' +
   'and this group used to pin the damage) — ' +
-  'an all-echo result never costs the microphone, the mic opens with the question, the silence clock starts when it ends, ' +
-  'and barge-in stays guarded at two words');
+  'an all-echo result never costs the microphone, and (av-6.3.0) the microphone opens WITH the question ' +
+  'and is never torn down while it is live — because a mic that opens when the question ends opens ' +
+  'mid-utterance and files the tail as a whole answer — while the half-duplex guarantee sits on the ' +
+  'two decisions instead: nothing the microphone hears can stop the avatar (counted, not silent), ' +
+  'nothing heard while sound was playing can be filed, and the one interrupt left is a tap');

@@ -105,7 +105,13 @@ assert(source.includes('kiosk.pinSet = null'), 'openKiosk must seed the PIN stat
 assert(source.includes('if (!r.ok || j.ok === false)'), 'a non-2xx turn is being walked as a successful turn again');
 assert(source.includes('function kioskEndForStaff'), 'staff exits no longer close the interview server-side');
 assert(source.includes('function kioskWatchdog'), 'the re-arming silence watchdog was removed');
-assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source), 'pvListen no longer reports a dead recogniser');
+/* av-6.3.0 widened this signature rather than changing it: onOverlap is how a REFUSED utterance
+   (one that overlapped the avatar's own voice, and so may be the two interleaved in one string)
+   is reported to the caller so the patient can be told. The original claim is unchanged and still
+   pinned - pvListen must report a dead recogniser - because a kiosk that cannot tell "still
+   listening" from "the microphone died" freezes with the halo still animating. */
+assert(/pvListen\(onFinal, onInterim, onDead, onOverlap\)/.test(source),
+  'pvListen no longer reports a dead recogniser, or no longer reports a whole-utterance refusal');
 assert(source.includes('The exit PIN must be 4 to 8 digits'), 'Setup silently drops a malformed PIN again');
 assert(source.includes('if (found && found.summary)'), 'the summary refetch must be PROVEN before filing');
 assert(source.includes('if (kiosk.completed && !finish) return;'), 'a FINISHED interview must refuse further answers — the typed row survives the rest screen');
@@ -126,8 +132,25 @@ assert(source.includes("toast('Open the patient first"),
    a typed-mode interview never ended and never produced a summary; and the
    finish turn carries no answer, so an unhonoured/rejected finish re-fired
    every 9s forever. */
-assert(/kiosk\.mic === false[\s\S]{0,320}kioskArmWatchdog\(20000\)/.test(source), 'typed mode must arm the self-end watchdog — a mic-less interview would never end');
-assert(/if \(!started\)[\s\S]{0,320}kioskArmWatchdog\(20000\)/.test(source), 'a failed mic start must still arm the self-end watchdog');
+/* ⚠️ av-6.3.0 — BOTH OF THESE WERE 320-CHARACTER WINDOWS AND THE SECOND ONE WENT RED on a change
+   that did not touch the watchdog at all: a two-line comment plus a classList call added inside
+   the `if (!started)` branch pushed kioskArmWatchdog(20000) out of view while it sat there doing
+   its job. That is the SEVENTH byte-window pin in this lane to report a correct change as a
+   broken guard, and the noise is what trained me to dismiss a red that was real. Scoped to the
+   BRANCH now — the same requirement, measured where it actually lives. */
+{
+  const branch = (from) => {
+    const at = source.indexOf(from);
+    assert(at > 0, 'the ' + from + ' branch is gone from kioskListen');
+    /* to the end of the branch: the `return;` that closes it */
+    const end = source.indexOf('\n      return;', at);
+    return source.slice(at, end > at ? end : at + 2000);
+  };
+  assert(/kioskArmWatchdog\(20000\)/.test(branch('if (kiosk.mic === false) {')),
+    'typed mode must arm the self-end watchdog — a mic-less interview would never end');
+  assert(/kioskArmWatchdog\(20000\)/.test(branch('if (!started) {')),
+    'a failed mic start must still arm the self-end watchdog');
+}
 assert(source.includes('kiosk.finishTries > 2) { kioskStopBounded(); return; }'), 'the auto-finish lost its client-side bound — it could re-fire every 9s forever');
 assert(source.includes('function kioskStopBounded'), 'the bounded honest stop was removed');
 assert(source.includes("kiosk.heard = true; });"), 'typing must reset the self-end watchdog like speech does');
@@ -407,7 +430,24 @@ assert(source.includes('createMediaElementSource'), 'amplitude lip-sync was remo
    preflight before the patient holds the screen, one warm silence nudge per
    question, and a stall re-listen. */
 assert(source.includes('pvHeld.push(u); /* defeat the GC */'), 'the utterance GC-defeat was removed — the speak->listen chain can silently die again');
-assert(/pvWatchdog = setTimeout\(finish/.test(source), 'the speak completion watchdog was removed');
+/* ⚠️ av-6.3.0 — THE SAME REQUIREMENT, ONE INDIRECTION DEEPER, AND STRONGER FOR IT. This pinned
+   the literal `pvWatchdog = setTimeout(finish`. Both speech paths now arm that timer through
+   pvArmSpeechWatchdog, which does one extra thing the literal version could not: when the
+   ESTIMATED duration expires it asks the platform whether sound is still coming out, and waits
+   once more if it is. The old shape declared a sentence finished while it was still audible, and
+   every gate keyed to "is it still talking" then opened over the loudspeaker.
+   All three parts are pinned separately so the watchdog cannot quietly vanish from either path. */
+assert(/function pvArmSpeechWatchdog\(ms, done, mySeq, extended\)[\s\S]{0,700}pvWatchdog = setTimeout\(/.test(source),
+  'the speak completion watchdog was removed — Chrome GCs utterances mid-sentence and onend never ' +
+  'fires, which is the "it makes me type and hit Send" killer');
+assert(/if \(!extended && pvAudioPlaying\(\)\)/.test(source),
+  'the completion watchdog no longer defers to the audio: an ESTIMATED duration would again declare ' +
+  'a sentence over while the patient can still hear it');
+assert(/pvArmSpeechWatchdog\(expectMs, finish, mySeq\)/.test(source),
+  'the BROWSER-SPEECH path lost its completion watchdog, so a GC\'d utterance strands the chain');
+assert(/pvArmSpeechWatchdog\(Math\.min\(45000/.test(source),
+  'the good-voice (MP3) path lost its completion watchdog, so a clip whose `ended` never fires ' +
+  'hangs the interview');
 assert(source.includes('function kioskMicPreflight'), 'the mic preflight was removed — permission prompts would hit the PATIENT mid-interview');
 assert(source.includes("Take your time — whenever you\\'re ready"), 'the silence nudge was removed');
 assert(source.includes('kiosk.nudgedFor !== kiosk.lastSay'), 'the nudge must fire at most once per question');

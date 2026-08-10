@@ -175,10 +175,28 @@ function build() {
 /* ⚠️ NOT A DEFECT, recorded so nobody "fixes" it: #mlsAvKioskState showing
    "Speaking · listening" is DELIBERATE. The microphone is open while the question plays, and
    the chip is designed to say both rather than picking one and lying. I flagged it as broken
-   from a DOM dump before reading KIOSK_STATES; it is correct. */
+   from a DOM dump before reading KIOSK_STATES; it is correct.
+   ⚠️ av-6.3.0 REVISITED THIS TWICE AND ENDED WHERE IT STARTED, which is worth recording. The
+   first attempt at the owner's "it picks up its own talking" closed the microphone while the
+   avatar spoke, and this note was rewritten to say the duplex label could no longer happen. The
+   adversarial round then found what closing it costs: a microphone that opens when the question
+   ENDS opens in the middle of the patient's sentence, and the fragment was filed as a whole
+   answer with the negation and laterality missing. So the microphone is open during the question
+   again — the label is live and honest again — and the half-duplex GUARANTEE now sits on the two
+   decisions that were doing the harm: nothing the microphone hears may stop the sentence, and
+   nothing heard while sound is playing may be filed. Both are executed in
+   avatar-half-duplex-and-one-live-region.test.js (groups A2, A3, A4). */
 assert.ok(/duplex: 'Speaking · listening'/.test(src),
-  'the duplex state label changed — it says both on purpose, because the mic is open while the ' +
-  'question plays; picking one would be a lie');
+  'the duplex state label was removed — the microphone IS open while the question plays, so a ' +
+  'chip that has to pick one of the two would lie about what the kiosk is doing');
+{
+  const at = src.indexOf('function kioskListen(keepMood)');
+  const body = src.slice(at, src.indexOf('\n  /* ── THE INTERRUPT', at));
+  assert.ok(/kioskState\(stRoot && stRoot\.classList\.contains\('speaking'\) \? 'duplex' : 'listening'\)/.test(body),
+    'THE CHIP NO LONGER READS THE ROOT CLASS. It must derive "am I also speaking?" from what the ' +
+    'screen actually says rather than from a second copy of that fact, or the two can disagree — ' +
+    'and the whole point of the duplex label is that it cannot.');
+}
 
 console.log('PASS one owner for the patient line: 0 direct writers survive, ' +
   (src.match(/kioskLine\('/g) || []).length + ' routed call sites, ranking holds in all 16 ' +

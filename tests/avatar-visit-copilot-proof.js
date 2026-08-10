@@ -473,15 +473,34 @@ async function say(page, text) {
       let face = await vis('mlsAvKioskFace');
       ok('REQ4 the avatar itself is on screen', face.visible === true);
 
-      /* BARGE-IN: the patient talks over the question. Two words is the guard. */
+      /* ⛔ av-6.3.0 — BARGE-IN IS A TAP NOW, AND THIS BLOCK USED TO ASSERT THE OPPOSITE.
+         It emitted a two-word interim and required the speech to be cancelled. That was the
+         shipped behaviour and it was the owner's defect: the microphone hears the loudspeaker,
+         so "two words arrived" is not evidence of another person — measured, 42 of 232 realistic
+         renderings of the avatar's OWN voice barged in, each one cutting the question off AND
+         posting a fabricated answer. The owner's decision is binding: finishing the sentence
+         outranks instant interruption. So the requirement inverts here, and BOTH halves are
+         checked, because a screen a patient cannot interrupt at all is also a defect.
+         ⚠️ THE MICROPHONE IS STILL OPEN while this interim arrives — the emit below only works
+         because it is. Closing it was tried and reverted: it clipped the front off the patient's
+         answers. What is fenced is what the microphone may DO while sound is playing. */
       await page.evaluate(function () { window.__emit('actually my', false); });
+      await page.clock.runFor(200);
+      const cancelsFromMic = await page.evaluate(function () { return window.__cancels; });
+      ok('REQ4 the MICROPHONE can no longer cut the avatar off mid-sentence',
+        cancelsFromMic === 0, 'cancel calls from a two-word interim=' + cancelsFromMic);
+      /* ...and the visible button still can. It is the one mechanism our own audio cannot fire. */
+      const skipShown = await vis('mlsAvKioskSkip');
+      ok('REQ4 the interrupt button is on screen while the avatar is speaking', skipShown.visible === true,
+        skipShown.text);
+      await page.evaluate(function () { document.getElementById('mlsAvKioskSkip').click(); });
       await page.clock.runFor(200);
       const cancels = await page.evaluate(function () { return window.__cancels; });
       const recAlive = await page.evaluate(function () {
         const r = window.__recs[window.__recs.length - 1]; return !!(r && r.onresult);
       });
-      ok('REQ4 the patient can interrupt the avatar mid-sentence', cancels > 0, 'cancel calls=' + cancels);
-      ok('REQ4 barge-in stops the VOICE and leaves the microphone alive', recAlive === true);
+      ok('REQ4 the patient can interrupt the avatar with a TAP', cancels > 0, 'cancel calls=' + cancels);
+      ok('REQ4 the interrupt stops the VOICE and hands the microphone back', recAlive === true);
 
       /* into ambient, where the avatar MUST stay on screen */
       await page.evaluate(function () {
@@ -1218,10 +1237,17 @@ async function say(page, text) {
         await page.clock.runFor(1600);
         const listening = await chip();
         ok('I6 the screen names its state in ONE place', listening !== null, String(listening));
-        /* the mic opens WITH the question, so the honest answer here is BOTH.
-           The first version of this test expected "Listening" and caught the
-           chip under-reporting: it said "Speaking" while the microphone was
-           already open, which hides the one behaviour the brief leads with. */
+        /* ⛔ av-6.3.0 — THIS EXPECTATION FLIPPED THREE TIMES AND ENDED WHERE IT STARTED. v1
+           expected "Listening" and caught the chip under-reporting. v2 expected
+           "Speaking · listening", because the microphone is open WITH the question. v3 expected
+           "Speaking", for the half-duplex attempt that closed the microphone while the avatar
+           spoke — and the adversarial round threw that attempt out, because a microphone that
+           opens when the question ENDS opens in the middle of the patient's sentence and the
+           fragment was filed as a complete answer, negation and laterality missing.
+           So the microphone is open during the question again and the chip must say BOTH. What
+           changed instead is what the microphone is ALLOWED to do while sound is playing: it
+           cannot stop the sentence (checked at REQ4 above) and nothing it hears then can be filed
+           (pvListen refuses any recognition segment that overlapped playback, WHOLE). */
         ok('I6 …and says it is speaking AND listening at once (full duplex)',
           listening === 'Speaking · listening', String(listening));
         await toAmbientFrom(page);
