@@ -120,8 +120,27 @@ assert(/pvSpeak[A-Za-z]*\(kiosk\.lastSay, function \(\) \{[\s\S]{0,600}kioskArmW
 
 /* ---- 4. barge-in stops the VOICE only, and is guarded ---- */
 assert(source.includes('function pvStopSpeechOnly'), 'barge-in must not tear down the recogniser');
-assert(/pvStopSpeechOnly\(\);\s*\n\s*var iv/.test(source) || />= 2\) pvStopSpeechOnly\(\);/.test(source),
-  'barge-in must fire from the interim path');
+/* Assert the FIRING LINE, not the line that happens to follow it. Both old alternatives were
+   code-shape proxies and both went stale: `>= 2) pvStopSpeechOnly();` died with the cough fix,
+   and `pvStopSpeechOnly();\n var iv` died when av-6.2.0 routed the interim write through the
+   arbitrator, so the next line is no longer `var iv = gid(...)`. Behaviour never changed either
+   time. This is the FIFTH shape-pin in this change set to cry wolf, and one of them trained me
+   to dismiss a red that was real — so pin what barge-in DOES: it fires from inside kioskListen,
+   on the decided condition, and nowhere else in the file. */
+{
+  const at = source.indexOf('function kioskListen');
+  assert(at > 0, 'kioskListen is gone');
+  const end = source.indexOf('\n  function ', at + 20);
+  const body = source.slice(at, end > at ? end : at + 6000);
+  assert(/if \(pvSaying && otherVoice\) pvStopSpeechOnly\(\);/.test(body),
+    'barge-in must fire from the interim path, on the decided condition');
+  /* and it must remain the ONLY caller: the whole diagnosis of "it does not say everything it
+     is going to say" rests on there being exactly one thing that can cut a question off */
+  const callers = (source.match(/pvStopSpeechOnly\(\);/g) || []).length;
+  assert.strictEqual(callers, 1,
+    'pvStopSpeechOnly now has ' + callers + ' call sites — with more than one, nothing can be ' +
+    'concluded about what silenced a question');
+}
 /* ⚠️ MERGE NOTE, 1363f7c5 (another lane, while main was red because of me). Upstream replaced
    the old literal cough pin with a DIFFERENT literal, matching b991's code shape:
        /var otherVoice = pvSaying[...]\? \(novel >= 2\)[...]if \(pvSaying && otherVoice\)/
