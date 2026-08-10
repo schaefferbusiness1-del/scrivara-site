@@ -5798,6 +5798,38 @@
     var key = ambientStoreKeyFor(rec.bound);
     var parts = (rec.parts || []).slice();
     var trimmed = false;
+    /* ⛔ A NEW SESSION MUST NOT ERASE ANOTHER SESSION'S RECORDED WORDS.
+       The slot is keyed by the bound chart, and kioskAmbientStart writes a backup BEFORE the first
+       ROOM word is spoken. Starting a check-in on a chart that still held an UNFILED consultation
+       therefore landed a record with zero room words on top of the only copy of it, returned
+       ok:true, and the doctor's Visit-card offer vanished at the same moment (ambientRecoverInfo
+       yields nothing for a bodyless record).
+       ⚠️ "EMPTY" MEANS NO ROOM WORDS - IT MUST NOT COUNT intake. The sole writer
+       (kioskAmbientSaveNow) always forwards kiosk.intake, so after any interview the incoming
+       record carries the whole check-in; an intake-counting test can NEVER fire on the path that
+       does the damage. A previous version of this guard counted intake and was a measured no-op
+       for exactly that reason, with a green test over it that hard-coded the one shape the caller
+       never produces.
+       ⚠️ AND IT MOVES THE HELD CAPTURE ASIDE RATHER THAN REFUSING THE WRITE. Refusing sets
+       kiosk.ambSaveOk false, which paints the patient-facing recording disclosure as a backup
+       failure, and it would also drop this check-in's own backup. The aside key keeps the chart
+       prefix so ambientStoreList's enumeration still finds it, while the live capture keeps the
+       plain chart key that ambientStoreList's DIRECT LOOK can reconstruct without knowing a sid. */
+    if (!parts.length) {
+      var heldRaw = safe(function () { return localStorage.getItem(key); }, null);
+      var held = heldRaw ? ambientRecParse(heldRaw) : null;
+      /* only a held record with ROOM WORDS is worth keeping: a bodyless one can never be offered,
+         so preserving those would silt up the chart's slot with nothing. A record carrying THIS
+         session's sid is the same capture updating itself and must simply be overwritten. */
+      if (held && (held.parts || []).length && clean(held.sid) !== clean(rec.sid)) {
+        var aside = key + '#' + (clean(held.sid) || ('t' + (Number(held.savedAt) || 0)));
+        var moved = safe(function () { localStorage.setItem(aside, heldRaw); return true; }, false);
+        /* the store is too full to hold the copy. A recorded consultation is worth more than a
+           placeholder with no words in it, so keep it and report the storage failure honestly
+           instead of overwriting a real visit to make room for an empty one. */
+        if (!moved) return { ok: false, why: 'quota', trimmed: false, kept: true };
+      }
+    }
     for (var guard = 0; guard < 40; guard++) {
       var body = safe(function () {
         return JSON.stringify({

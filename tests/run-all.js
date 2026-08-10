@@ -571,6 +571,16 @@ const tests = [
      consent attestation with it. intakeFiled is a claim about a PREVIOUS write, not proof the
      line is in THIS transcript. Executes both branches; the control fails without the fix. */
   'consent-rides-with-every-block.test.js',
+  /* 2026-08-10: the held-capture slot is keyed by CHART, and kioskAmbientStart writes a backup
+     BEFORE the first ROOM word — so a record with no body. Starting a check-in on a chart that
+     still held an unfiled consultation destroyed the only copy of it, silently, reporting ok:true.
+     The held capture is now moved ASIDE to a chart-prefixed key instead.
+     ⛔ THIS SUITE EXISTS IN ITS PRESENT FORM BECAUSE ITS FIRST VERSION WAS GREEN OVER THE LIVE
+     DEFECT: it hand-wrote intake:[] while kioskAmbientSaveNow always forwards kiosk.intake, so both
+     the guard and the fixture tested a shape production never produces. It now asserts its own
+     fixture against the shipped call site's field list, and its controls include the earlier broken
+     guard — which it fails. Real http origin: localStorage throws on setContent's opaque origin. */
+  'an-empty-record-cannot-erase-a-consultation.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',
