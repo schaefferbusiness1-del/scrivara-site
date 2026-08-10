@@ -566,6 +566,11 @@ const tests = [
      text node with no priority, clobbering each other mid-sentence. Executes the ranked
      arbitrator over adversarial orderings; the control fails on the pre-arbitrator file. */
   'avatar-one-owner-for-the-patient-line.test.js',
+  /* 2026-08-09 round-three finding: kioskAmbientBlock suppressed the whole header on a RESUMED
+     "keep listening" capture to avoid pasting the intake twice — and dropped the recording
+     consent attestation with it. intakeFiled is a claim about a PREVIOUS write, not proof the
+     line is in THIS transcript. Executes both branches; the control fails without the fix. */
+  'consent-rides-with-every-block.test.js',
   'copilot-dock-fullheight.test.js',
   'ask-bar-copilot-failover-contract.test.js',
   'right-now-bar-never-duplicates-the-hero.test.js',

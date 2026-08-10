@@ -6584,6 +6584,25 @@
     if (kiosk.intakeFiled) {
       lines.push('--- visit, continued ---');
       lines.push('[Room capture resumed. The check-in and the earlier part of this visit are already above.]');
+      /* ⛔ THE CONSENT LINE MUST RIDE WITH EVERY BLOCK OF WORDS, INCLUDING THIS ONE.
+         This early return suppressed the whole header to avoid appending the patient's answers
+         a second time — correct for the INTAKE, wrong for the attestation, and they were being
+         dropped together.
+         `intakeFiled` is a claim about a PREVIOUS write, and the early return treated it as
+         proof that the consent line is already in THIS transcript. It is not: a day flip
+         re-binds the visit, recovery can resume into a fresh session (see the crash record,
+         which carries consentAt and intakeFiled separately for exactly this reason), and the
+         doctor can edit the box. In any of those cases these words were filed with NO consent
+         record anywhere — which is the thing the note below says must never happen: "a recording
+         whose consent lives only in someone's memory is a recording nobody can defend later".
+         The asymmetry decides it. Repeating one bracketed line costs a duplicated line in a
+         chart; omitting it costs an undefendable recording. So the intake stays suppressed and
+         the attestation always rides. */
+      if (kiosk.consentAt) {
+        lines.push('[Recording consent confirmed by practice staff at ' +
+          safe(function () { return new Date(kiosk.consentAt).toLocaleString(); }, String(kiosk.consentAt)) +
+          ', before any microphone was opened]');
+      }
       lines.push(body);
       var ordersMore = ordersBlock();
       if (ordersMore) { lines.push(''); lines.push(ordersMore); }
