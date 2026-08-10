@@ -130,13 +130,21 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
        Screen" saves the page you are LOOKING AT. Put the steps first and the
        doctor ends up with an icon that opens this instruction sheet forever.
        So: open the app, THEN save the app. -->
+  <!-- WHICH APP THE BIG BUTTON OPENS (owner 2026-08-09).
+       It used to open app.html — a deliberately tiny app that can pull a day and
+       read a patient and NOTHING ELSE: no microphone, no note, no signing. A
+       doctor who scanned the code, pressed the one green button and saved THAT
+       to the Home Screen ended up with an icon that cannot record a visit,
+       which is the whole reason to have MLS on a phone. The full phone app is
+       the default now; the small one is still here, named for what it is. -->
   <section class="card hide" id="openCard">
     <span class="eyebrow">Step 1 of 2 · on this phone</span>
     <h2>Open MLS Scribe</h2>
-    <p>Sign in with the same email and password you use on your office computer. MLS Scribe is the
-       small phone app: your day, your patients, and one button to pull them from Athena.</p>
-    <a class="cta" id="openApp" href="app.html">Open MLS Scribe →</a>
-    <a class="cta quiet" id="openFull" href="ScribeFlow.html?phone=1">I need to record a visit — open the full MLS workspace</a>
+    <p>Sign in with the same email and password you use on your office computer. This is the whole
+       thing: your day, each patient, record the visit, write the note, and pull the schedule from
+       athenaOne.</p>
+    <a class="cta" id="openApp" href="ScribeFlow.html?phone=1">Open MLS Scribe →</a>
+    <a class="cta quiet" id="openFull" href="app.html">Just the schedule — open the small read-only app</a>
   </section>
 
   <section class="card hide" id="installCard">

@@ -8741,7 +8741,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b998: persist:false work belongs to this exact COW candidate. Passing
+    /* b999: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -8982,7 +8982,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b998: the retired 3-second owner synchronously regex-scanned every
+      /* b999: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -35907,7 +35907,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b998';
+  window.__MLS_AV = window.__MLS_AV || 'b999';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36250,7 +36250,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b998';
+  var MLS_APP_BUILD='2026-07-25-b999';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -48507,6 +48507,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (btn) { btn.disabled = false; btn.textContent = 'email yourself the setup link'; }
     }
   }
+  /* ⚠ THIS STRIP DOES NOT PAINT IN THE SHIPPED APP, and that is not a bug here.
+     `body.mls-redesign #mlsPhPrompt{display:none!important}` (feat_mls_redesign.js,
+     the mlsRdStyle sheet) hides it, and mls-redesign is on the body in every
+     current session — measured 2026-08-09. The desktop surface that DOES show
+     is #mlsGetPhoneCard in ScribeFlow.html (__mlsGetPhone), and that is where
+     the QR the owner asked for lives. This is kept, and kept correct, because
+     legal-workspace-phone-setup.test.js pins #mlsPhEmail and its listener as a
+     byte contract, and because it is what a session without the redesign layer
+     falls back to. If you are debugging "the QR does not appear", you are
+     probably looking at this one. */
   function installPrompt() {
     try {
       if (wantPhone()) return;
@@ -48515,12 +48525,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var body = $('mlsEz3Body'); if (!body) return;
       var card = document.createElement('div');
       card.id = 'mlsPhPrompt';
-      card.style.cssText = 'display:flex;align-items:center;gap:11px;flex-wrap:wrap;background:#F6FBF8;border:1px solid #D8E5DE;border-radius:12px;padding:11px 14px;margin:0 0 10px;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;';
-      card.innerHTML = '<span>📱 Put MLS on your phone — scan the QR in Settings → Integrations (it walks the phone through saving MLS to its Home Screen), or</span>' +
+      card.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#F6FBF8;border:1px solid #D8E5DE;border-radius:12px;padding:12px 14px;margin:0 0 10px;font:600 13px "Public Sans",system-ui,sans-serif;color:#1A211C;line-height:1.45;';
+      /* THE CODE IS HERE, not behind a menu. This strip used to read "scan the
+         QR in Settings → Integrations" — an instruction, on the one control
+         whose entire job is getting MLS onto a phone, to go and find the thing
+         somewhere else. It is drawn on THIS device from vendor_qrcode.js, and
+         the address is printed beside it so a browser that cannot draw a canvas
+         still leaves a working route. (owner 2026-08-09) */
+      /* PHONE_GUIDE_URL2 is a constant literal in this file, not user or server
+         input, so there is nothing here to escape -- and this IIFE has no esc()
+         of its own. If that constant ever becomes dynamic, it needs one. */
+      card.innerHTML = '<span id="mlsPhQr" aria-label="QR code for ' + PHONE_GUIDE_URL2 + '" style="flex:none;width:84px;height:84px;background:#fff;border:1px solid #E4E1D8;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden"></span>' +
+        '<span style="min-width:0">📱 <b>Put MLS on your phone.</b> Point your phone’s camera at this code — it opens a page that saves MLS to the Home Screen in about thirty seconds.' +
+        '<br><span style="font:600 12px system-ui;color:#5A655E;word-break:break-all">' + PHONE_GUIDE_URL2.replace(/^https?:\/\//, '') + '</span></span>' +
         '<button type="button" id="mlsPhEmail" style="border:0;background:transparent;padding:0;color:#2E6A4B;font:700 13px Public Sans,system-ui,sans-serif;text-decoration:underline;text-underline-offset:2px;cursor:pointer">email yourself the setup link</button>' +
         '<button type="button" id="mlsPhCopy" style="border:1px solid #E4E1D8;background:#fff;color:#1A211C;font:600 12px system-ui;border-radius:8px;padding:6px 11px;cursor:pointer">Copy link</button>' +
         '<button type="button" id="mlsPhDismiss" title="Don’t show this again" style="margin-left:auto;border:0;background:transparent;color:#79837C;font-size:16px;cursor:pointer;line-height:1">×</button>';
       body.insertBefore(card, body.firstChild);
+      try {
+        var drawer = window.__mlsDrawPhoneQr;
+        if (typeof drawer === 'function') drawer($('mlsPhQr'), PHONE_GUIDE_URL2, 78);
+      } catch (eQr) {}
       $('mlsPhEmail').addEventListener('click', openSetupEmail);
       $('mlsPhCopy').addEventListener('click', function () { try { navigator.clipboard.writeText(PHONE_GUIDE_URL2); if (typeof window.toast === 'function') window.toast('Setup link copied - text or email it to your phone.', 'ok'); } catch (e) {} });
       $('mlsPhDismiss').addEventListener('click', function () { try { localStorage.setItem('mls_phone_prompt_done', '1'); } catch (e) {} card.remove(); });

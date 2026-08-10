@@ -6087,6 +6087,34 @@ if(!backendMode()){ (function(){
     return _origFetch(url,opts);
   };
 })(); }
+/* ONE ADDRESS FOR GETTING MLS ONTO A PHONE, and it is the CANONICAL one.
+   Never location.host: on a local, preview or forwarded origin that is an
+   address no phone can reach — the owner photographed this card telling him to
+   type "127.0.0.1:18776" into an iPhone. The guide it points at reads the
+   phone it is opened on and gives that phone's own Add-to-Home-Screen steps. */
+const MLS_PHONE_GUIDE_URL = 'https://mlsscribe.com/phone-setup.html';
+window.__MLS_PHONE_GUIDE_URL = MLS_PHONE_GUIDE_URL;
+/* Draw a QR into an element, on THIS device, and say so plainly when it cannot
+   be drawn — a card that silently shows an empty white square teaches the
+   doctor that the feature is broken. The address is always printed beside it,
+   so a failed code is an inconvenience and never a dead end. */
+function mlsDrawPhoneQr(host,text,size){
+  if(!host) return false;
+  try{
+    if(typeof QRCode!=='function') throw new Error('local QR library unavailable');
+    host.innerHTML='';
+    const px=Math.max(72,Math.min(320,Number(size)||112));
+    new QRCode(host,{text:String(text||''),width:px,height:px,correctLevel:QRCode.CorrectLevel.M});
+    host.setAttribute('data-qr','1');
+    return true;
+  }catch(e){
+    host.innerHTML='<span style="font:600 11px/1.35 system-ui;color:#79837C;padding:8px;text-align:center">Code unavailable — type the address shown here into your phone.</span>';
+    host.setAttribute('data-qr-error','1');
+    return false;
+  }
+}
+window.__mlsDrawPhoneQr = mlsDrawPhoneQr;
+
 /* Generate sensitive QR codes entirely on this device. 2FA secrets and phone
    pairing codes must never be placed in a third-party image-service URL. */
 function mlsSetLocalQrImage(imageId,text,size){
@@ -34074,7 +34102,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b998';
+  window.__MLS_AV='b999';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -34677,9 +34705,6 @@ function _ptGroupSort(mode){
     if (document.getElementById(CARD_ID)) return;
     if (!document.body) return;
 
-    var host = '';
-    try { host = location.host || ''; } catch (e) {}
-
     var card = document.createElement('div');
     card.id = CARD_ID;
     card.setAttribute('role', 'note');
@@ -34702,12 +34727,58 @@ function _ptGroupSort(mode){
     /* Named steps rather than a vague "install the app": MLS is a web app, so
        there is no App Store listing to search for and saying "download the app"
        would send a clinician somewhere that does not exist. */
-    body.appendChild(document.createTextNode('There is no app to download. On your phone, open '));
-    var b = document.createElement('b');
-    b.textContent = host || 'this site';
-    body.appendChild(b);
-    body.appendChild(document.createTextNode(' in Safari or Chrome, then tap Share and choose “Add to Home Screen”. It opens full screen, like an app.'));
+    body.appendChild(document.createTextNode('Point your phone’s camera at this code. It opens a page that walks the phone through saving MLS to its Home Screen — it takes about thirty seconds.'));
     card.appendChild(body);
+
+    /* THE CODE IS IN THE CARD (owner 2026-08-09: "make it easy to connect to
+       desktop with the current pop up that shows by adding a qr code to it").
+       Until now this card ASKED THE DOCTOR TO TYPE location.host into a phone
+       — which on a local or preview origin is an address no phone can ever
+       reach (his own screenshot read "127.0.0.1:18776"), and which on any
+       origin is a thing to retype correctly on a keyboard you are holding in
+       one hand. It also used to send people to Settings → Integrations to find
+       a code, which is the-instruction-points-nowhere aimed at the one card
+       whose whole job is to get MLS onto a phone.
+       DRAWN ON THIS DEVICE. vendor_qrcode.js is already loaded; a QR that
+       carries a URL must never be built by a third-party image service, and
+       the rule holds even though this particular URL is public. */
+    var qrWrap = document.createElement('div');
+    qrWrap.style.cssText = 'display:flex;align-items:center;gap:12px;margin-top:11px';
+    var qrBox = document.createElement('div');
+    qrBox.id = 'mlsA2hsQr';
+    qrBox.setAttribute('aria-label', 'QR code for ' + MLS_PHONE_GUIDE_URL);
+    qrBox.style.cssText = 'flex:none;width:112px;height:112px;background:#fff;border:1px solid #E4E1D8;' +
+      'border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden';
+    qrWrap.appendChild(qrBox);
+    var qrSide = document.createElement('div');
+    qrSide.style.cssText = 'min-width:0;color:#3C4A43;font-size:12.5px;line-height:1.45';
+    var qrUrl = document.createElement('div');
+    qrUrl.style.cssText = 'font-weight:700;color:#1A211C;word-break:break-all;margin-bottom:7px';
+    /* The canonical address, never location.host — see above. */
+    qrUrl.textContent = MLS_PHONE_GUIDE_URL.replace(/^https?:\/\//, '');
+    qrSide.appendChild(qrUrl);
+    var copy = document.createElement('button');
+    copy.type = 'button';
+    copy.id = 'mlsA2hsCopy';
+    copy.textContent = 'Copy link';
+    copy.style.cssText = 'min-height:34px;border:1px solid #E4E1D8;border-radius:10px;background:#fff;color:#1A211C;' +
+      'font:600 12.5px "Public Sans",system-ui,sans-serif;padding:0 12px;cursor:pointer';
+    /* writeText returns a PROMISE — a toast fired on the same tick reports a
+       refused copy as a success and the doctor pastes the previous clipboard. */
+    copy.addEventListener('click', function () {
+      var done = function (okc) {
+        try { if (typeof toast === 'function') toast(okc ? 'Setup link copied — text or email it to your phone.' : 'This browser refused to copy. The address is shown beside the code.', okc ? 'ok' : 'err'); } catch (e) {}
+      };
+      try {
+        var p = navigator.clipboard && navigator.clipboard.writeText(MLS_PHONE_GUIDE_URL);
+        if (p && p.then) p.then(function () { done(true); }, function () { done(false); });
+        else done(false);
+      } catch (e) { done(false); }
+    });
+    qrSide.appendChild(copy);
+    qrWrap.appendChild(qrSide);
+    card.appendChild(qrWrap);
+    mlsDrawPhoneQr(qrBox, MLS_PHONE_GUIDE_URL, 104);
 
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:11px';

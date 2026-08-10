@@ -144,8 +144,19 @@ function run(ua, extra) {
     'so instructing the save first produces an icon that opens this instruction sheet instead of the app');
   assert(/Do this on the MLS Scribe screen, not on this one/.test(html),
     'the guide must say WHERE the taps happen — the one sentence that stops a doctor bookmarking the instructions');
-  assert(/id="openApp" href="app\.html"/.test(html),
-    'the primary button must open the installable app (app.html), which is the page that should end up on the Home Screen');
+  /* WHICH APP THE BIG BUTTON OPENS. Until 2026-08-09 this asserted app.html —
+     a deliberately tiny app that pulls a day and reads a patient and has no
+     microphone, no note and no signing. A doctor who scanned the code, pressed
+     the one green button and saved THAT to the Home Screen got an icon that
+     cannot record a visit, which is the whole reason to put MLS on a phone.
+     The primary button is the full phone app; the small one keeps a place and
+     is named for what it actually is. */
+  assert(/id="openApp" href="ScribeFlow\.html\?phone=1"/.test(html),
+    'the primary button must open the FULL phone app — the one that can record a visit');
+  assert(/id="openFull" href="app\.html"/.test(html),
+    'the small read-only app keeps a route, as the secondary');
+  assert(/read-only/.test(html),
+    'the secondary must say what it is, or it reads as a second way into the same thing');
 }
 
 /* iPhone: Safari's Share sheet, and NOT Android's overflow menu. */
