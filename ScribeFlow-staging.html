@@ -735,6 +735,15 @@
   #patientBar .spacer{flex:1}
   /* ---- patients list ---- */
   .pt-list{display:flex;flex-direction:column;gap:10px;margin-top:6px;max-height:62vh;overflow-y:auto;padding-right:2px}
+  /* Parity with ScribeFlow.html -- see the long note there. The vertical
+     containment of a patient card must be in BASE css, because the asset that
+     also carries it (feat_mls_ptcard_contain.js) loads on an idle callback, and
+     until it lands every .pt-item is crushed to the 84px min-height floor while
+     its content needs 96-115px, so the name paints above the card and the status
+     chips below it. Measured headless 1440x900: 24 deformed rows / 31px spill
+     without these two rules, 0 with them. */
+  #patientsView .pt-list{display:block}
+  #patientsView .pt-list .pt-item{align-items:flex-start;height:auto;margin-bottom:10px}
   .pt-search{display:flex;align-items:center;gap:10px;margin:12px 0 6px}
   .pt-search input{flex:1;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:var(--card);color:var(--ink)}
   .pt-search input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(31,122,224,.12)}
@@ -23858,6 +23867,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b994';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b995';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
