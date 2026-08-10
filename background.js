@@ -40,12 +40,24 @@ function mlsIsAthenaTab(t) {
  * Reads may make Athena visible in the unfocused work strip, but they never
  * change the user's selection. Write paths intentionally do not call this. */
 async function mlsReadFocusWouldYank(targetTabId) {
+  /* qol-2.3: the old rule ("only when the target is ALREADY the active tab of
+     the focused window") was mutually exclusive with the only caller's
+     !t2.active gate - the make-visible branch was UNREACHABLE and every quiet
+     read ran occluded and ~9x throttled. The rail's intent stands: never
+     change a selection the doctor is looking at. Selecting the Athena tab
+     inside a DIFFERENT, unfocused window displaces nothing the doctor is
+     watching (qpRelease restores that window's previous tab at end-of-run).
+     Same-window activation still refuses unless it is a no-op. */
   try {
+    if (targetTabId == null) return true;
     var w = await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
+    if (!w || w.focused !== true) return true; /* Chrome does not own OS focus: touch nothing */
+    var t = await chrome.tabs.get(targetTabId);
+    if (!t || t.windowId == null) return true;
+    if (t.windowId !== w.id) return false; /* athena lives in an unfocused window - selecting it there yanks nothing */
     var tabs = (w && w.tabs) || [], cur = null;
     for (var i = 0; i < tabs.length; i++) { if (tabs[i] && tabs[i].active) { cur = tabs[i]; break; } }
-    if (!w || w.focused !== true || !cur) return true;
-    return !(targetTabId != null && cur.id === targetTabId);
+    return !(cur && cur.id === targetTabId);
   } catch (e) { return true; } /* fail closed: a read never guesses it may focus */
 }
 // MLS Assist — background worker. Only place that holds the API key + talks to MLS. (v1.7 robust executor)
@@ -126,8 +138,15 @@ const _mlsFrameMap = {};
     clearDebt();
     FG.endAt = Date.now(); /* v1.89: lets the FocusMlsTab handler tell a straggler re-tap from a stale one */
   };
+  var fgReadBusy = function () { try { return (Date.now() < Number(self.__mlsChartReadBusyUntil || 0)) || (self.__mlsQp && self.__mlsQp.active === true); } catch (eBz) { return false; } };
+  self.__mlsFgReadBusy = fgReadBusy;
   setInterval(function () {
     if (!FG.debt) return;
+    /* qol-2.3: the 90s-quiet backstop was the mid-pull yank to MLS - a long
+       chart read is legitimately bridge-silent. The site now sends the
+       designed end-of-op mlsAppFocusMlsTab; this stays the error/abort
+       backstop and defers while a read op is demonstrably running. */
+    if (fgReadBusy()) return;
     if (Date.now() - FG.at > 90000) fgFocusApp();
   }, 3000);
   try {
@@ -141,7 +160,7 @@ const _mlsFrameMap = {};
             FG.focusedTabId = d.focusedTabId == null ? null : d.focusedTabId;
             FG.focusedWindowId = d.focusedWindowId == null ? null : d.focusedWindowId;
           }
-          if (d && d.at && (Date.now() - d.at) > 90000) fgFocusApp();
+          if (d && d.at && (Date.now() - d.at) > 90000 && !fgReadBusy()) fgFocusApp();
           else if (d && d.at) { try { chrome.alarms.create('mlsFgWatch', { delayInMinutes: 1 }); } catch (e) {} }
         });
       } catch (e) {}
@@ -2236,7 +2255,7 @@ function mlsAthenaTeachWatcherFn(config) {
          lane - every focus guard in it applies (never fronts when Chrome is
          unfocused, respects the doctor-moved latch); failure is silent and the
          probe proceeds to its honest bounded timeout. Probe mode only. */
-      if (mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function') { try { await self.__mlsFrontAthenaForRead(sender && sender.tab && sender.tab.id); } catch (eFgProbe) {} }
+      if (mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function') { try { var __probeFg = await self.__mlsFrontAthenaForRead(sender && sender.tab && sender.tab.id); if (__probeFg) { if (typeof self.__mlsDeferRestoreAfterRead === 'function') self.__mlsDeferRestoreAfterRead(__probeFg); else if (typeof self.__mlsRestoreFocusAfterRead === 'function') setTimeout(function () { try { self.__mlsRestoreFocusAfterRead(__probeFg); } catch (ePrR) {} }, 8000); } } catch (eFgProbe) {} } /* qol-2.3: the probe used to DISCARD this state - the one-way yank that left the doctor on Athena */
       var actionToken = '', rec = null;
       if (mode === 'execute') {
         actionToken = clean(msg.actionToken); rec = tokens[actionToken];
@@ -7497,6 +7516,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
     let chartDeadlineAt = chartRequestStartedAt + 105000;
     if (Number.isFinite(chartCallerDeadline) && chartCallerDeadline > 0) chartDeadlineAt = Math.min(chartDeadlineAt, chartCallerDeadline);
     const chartRequestGuard = Object.freeze({ deadline: chartDeadlineAt, token: chartRequestId });
+    try { self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), chartDeadlineAt); } catch (eBzC) {} /* qol-2.3: deadline-bounded read-busy stamp for the focus backstop */
     let chartResponseSent = false;
     let chartDeadlineTimer = null;
     const chartRespond = (payload) => {
@@ -8297,6 +8317,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           return sendResponse({ ok: false, blocked: true, reason: 'structured-route-blocked', msg: 'Generic AI typing into diagnoses, billing, prescription or order fields is disabled. Use the typed preview workflow.' });
         }
         if (action.type === 'switchtab') {
+          try { if ((Date.now() < Number(self.__mlsChartReadBusyUntil || 0)) || (self.__mlsQp && self.__mlsQp.active === true)) return sendResponse({ ok: false, blocked: true, msg: 'Tab switching is paused while an Athena read is running - switching now would yank the pull mid-chart.' }); } catch (eSwG) {} /* qol-2.3 */
           const tabs = await chrome.tabs.query({});
           const t = String(action.target || '').toLowerCase().trim();
           const http = tabs.filter(x => /^https?:/.test(x.url || ''));
@@ -10876,14 +10897,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (axBest && Number.isFinite(axBestFrame)) {
           var axVisits = [], axRefused = 0, axShapeUnknown = 0, axSigs = [axBest.surfaceSig], axT0 = Date.now();
           var axCap = Math.min(axBest.encounters.length, Number(cfg.maxVisits) || 40);
+          /* qol-2.3 scoped-day on the ax route: this fallback used to read
+             EVERY encounter body regardless of frozenHint.onlyDate - a
+             fast-lane (bodies-off) pull that landed here silently widened to
+             the whole chart. The harvest anchors carry no dates, so the body
+             is read FIRST (passive) and an out-of-day encounter is dropped
+             BEFORE the 5.2s identity poll; only in-day bodies are ever kept.
+             An unparseable header date fails CLOSED (skipped, counted). */
+          var axOnlyDate = String((frozenHint && frozenHint.onlyDate) || "");
+          var axDateSkipped = 0, axScannedAll = true;
           for (var axI = 0; axI < axCap; axI++) {
-            if (Date.now() + 6000 >= readDeadline) break;
+            if (Date.now() + 6000 >= readDeadline) { axScannedAll = false; break; }
             var axE = axBest.encounters[axI];
             var axNav = await exec(emrId, [axBestFrame], ['axGo', cfg, axE.hrefPath]);
             var axNavOk = bestResult(axNav, function (r) { return r && r.ok === true ? 1 : 0; }).result;
             if (!axNavOk || axNavOk.ok !== true) { axRefused++; continue; }
             await sleep(1800);
             touchVisitLease();
+            var axBodyEarly = null;
+            if (axOnlyDate) {
+              var axRdE = await exec(emrId, [axBestFrame], ['axRead', cfg]);
+              axBodyEarly = bestResult(axRdE, function (r) { return (r && r.ok && r.raw) ? r.raw.length : 0; }).result;
+              if (!axBodyEarly || !axBodyEarly.ok) { axRefused++; continue; }
+              if (mlsVisitDateKeyForHint(axBodyEarly.headerDate) !== axOnlyDate) { axDateSkipped++; continue; }
+            }
             var axIdOk = false, axIdent = null;
             var axIdDeadline = Math.min(readDeadline, Date.now() + 5200);
             do {
@@ -10901,17 +10938,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               continue;
             }
-            var axRd = await exec(emrId, [axBestFrame], ['axRead', cfg]);
-            var axBody = bestResult(axRd, function (r) { return (r && r.ok && r.raw) ? r.raw.length : 0; }).result;
+            var axBody = axBodyEarly;
+            if (!axBody) {
+              var axRd = await exec(emrId, [axBestFrame], ['axRead', cfg]);
+              axBody = bestResult(axRd, function (r) { return (r && r.ok && r.raw) ? r.raw.length : 0; }).result;
+            }
             if (!axBody || !axBody.ok) { axRefused++; continue; }
             axVisits.push({ date: axBody.headerDate || '', type: 'ax encounter', raw: axBody.raw, cpt: [], icd10: [], source: 'athena-copy', patientName: (axIdent && axIdent.name) || '', patientDob: (axIdent && axIdent.dob) || '', patientMrn: (axIdent && axIdent.mrn) || '', binding: { rowKey: 'enc:' + axE.eid, encounterId: axE.eid, index: axI } });
           }
-          if (axVisits.length) {
+          if (axVisits.length || (axOnlyDate && axScannedAll && axRefused === 0 && axShapeUnknown === 0)) {
+            /* a scoped day with NO in-day encounters, scanned cleanly, is an
+               HONEST empty success - not a refusal (qol-2.3) */
             var axKept = axVisits.length, axTotalE = axBest.encounters.length;
             return {
               ok: true, reason: '', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
-              receipt: { complete: axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0, indexComplete: true, bodyComplete: axKept === axTotalE, fullDetail: axKept === axTotalE, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
-              error: axKept === axTotalE ? '' : ('The ax route read ' + axKept + ' of ' + axTotalE + ' encounters; ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.')
+              receipt: { complete: axOnlyDate ? (axScannedAll && axRefused === 0 && axShapeUnknown === 0) : (axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0), indexComplete: true, bodyComplete: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, fullDetail: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, onlyDate: axOnlyDate, axDateSkipped: axDateSkipped, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
+              error: axOnlyDate ? ((axScannedAll && axRefused === 0 && axShapeUnknown === 0) ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown' + (axScannedAll ? '' : ', scan cut by deadline') + ').')) : (axKept === axTotalE ? '' : ('The ax route read ' + axKept + ' of ' + axTotalE + ' encounters; ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
             };
           }
           if (!rrFromPartial && (axShapeUnknown || axRefused)) {
@@ -11366,6 +11408,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      when a new user-initiated batch announces itself. */
   var __mlsFgDoctorMoved = false;
   self.__mlsFrontAthenaForRead = __mlsFrontAthenaForRead; /* mdx-2.0.0: write-probe presence port (hoisted declaration) */
+  self.__mlsDeferRestoreAfterRead = __mlsDeferRestoreAfterRead; /* qol-2.3: the probe path restores through the same batch-scoped defer (hoisted) */
   async function __mlsFrontAthenaForRead(appTabId) {
     try {
       /* fg-1.1: a restore may still be in flight from the previous row -
@@ -11474,6 +11517,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           /* fg-1.0: front-for-read is bounded to THIS read and always undone in finish(). */
           var __fgState = null, __fgDidFront = false;
+          try { self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), Number(msg.deadlineAt || (Date.now() + 195000))); } catch (eBzV) {} /* qol-2.3 */
           var thisRead;
           if (msg.foregroundOk === true) {
             thisRead = __mlsFrontAthenaForRead(appTabId).then(function (fg) {

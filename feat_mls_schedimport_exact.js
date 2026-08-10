@@ -3993,8 +3993,8 @@
         __historyRetryForeground = true;
         __presenceBatchAnnounced = false;
         return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}).then(
-          function (v) { __historyRetryForeground = false; return v; },
-          function (e) { __historyRetryForeground = false; throw e; });
+          function (v) { __historyRetryForeground = false; __fgEndOfOp(); return v; },
+          function (e) { __historyRetryForeground = false; __fgEndOfOp(); throw e; });
       });
     }, retryBusy).then(function (receipt) {
       receipt.retryOf = String(history.requestId || "");
@@ -5015,20 +5015,32 @@
        doctor's first move away quiets the rest of the batch). Auto/relay
        pulls never pass through here and stay strictly quiet. The flag rides
        the same single-flight protections as the retry lane. */
-    __historyRetryForeground = true;
-    __presenceBatchAnnounced = false;
-    return Promise.resolve().then(function () { return __dayPullInner(opts); }).then(
-      function (v) { __historyRetryForeground = false; return v; },
-      function (e) { __historyRetryForeground = false; throw e; });
+    /* qol-2.3: armed INSIDE __dayPullInner, only after its advisory in-flight
+       check passes - a REFUSED dayPull used to flip presence assist onto a
+       batch already reading in this tab and then strip it mid-batch on its
+       own settle. Disarm and the end-of-op focus return fire only from the
+       call that armed. */
+    var __armedHere = false;
+    var __armPresence = function () { __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
+    return Promise.resolve().then(function () { return __dayPullInner(opts, __armPresence); }).then(
+      function (v) { if (__armedHere) { __historyRetryForeground = false; __fgEndOfOp(); } return v; },
+      function (e) { if (__armedHere) { __historyRetryForeground = false; __fgEndOfOp(); } throw e; });
   }
-  function __dayPullInner(opts) {
+  /* qol-2.3: the focus guardian's DESIGNED primary repayment trigger - the
+     app's explicit end-of-op mlsAppFocusMlsTab - was sent by NO site file,
+     so focus debt was repaid only by a 90s-quiet watchdog that could fire
+     MID-pull: the "keeps pulling me to mls" yank. The bridge verb exists and
+     is whitelisted (content.js); the guardian refuses unless the extension
+     still owns focus, so this can never fight the doctor. */
+  function __fgEndOfOp() { try { window.postMessage({ source: "mls-app", type: "mlsAppFocusMlsTab" }, location.origin); } catch (eFgEnd) {} }
+  function __dayPullInner(opts, __armPresence) {
     window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
     opts = opts || {};
     var say = isFn(opts.onStatus) ? opts.onStatus : function () {};
     var day = normDate(opts.date) || "";
     /* No date is not this lane to judge: hand it straight to the engine so its
         own refusal is the one the clinician reads. */
-    if (!day) return Promise.resolve(pull(opts));
+    if (!day) { if (isFn(__armPresence)) __armPresence(); return Promise.resolve(pull(opts)); }
     /* pace-1.0 (live 2026-08-03 17:11Z): a REFUSED pull must not navigate.
        The Monday click printed "Opening 2026-07-27..." and THEN hit the
        engine mutex, leaving a resumed Tuesday pass driving the wrong day
@@ -5038,6 +5050,7 @@
       return Promise.resolve({ ok: false, complete: false, reason: "pull-in-flight",
         error: "Another explicit pull is already running. No Athena navigation was started." });
     }
+    if (isFn(__armPresence)) __armPresence(); /* qol-2.3: presence assist belongs to the call that passed the advisory */
     var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");
     var scope0 = explicit ? opts.provider : accountProviderRequest();
     var gate0 = _resolveDayScope(scope0);

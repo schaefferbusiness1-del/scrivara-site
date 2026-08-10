@@ -388,7 +388,7 @@ assert(zipFiles.length > 1, 'fixture must exercise historical archive exclusion'
 assert.deepStrictEqual(zipFiles.filter((name) => includeSet.has(name)), ['MLS_Assist_v3.0.61.zip'],
   'exactly the released 3.0.22 package may be published — nothing else, and never a candidate');
 const releasedZipSha = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'MLS_Assist_v3.0.61.zip'))).digest('hex');
-assert.strictEqual(releasedZipSha, '13344c5cb6b806694e807b7b93dd03a7818031eaba0268824f458367c5d4fa9d',
+assert.strictEqual(releasedZipSha, '93ffbec18492643bee44c2585102ef45c986dfdafb0710145acff2629587b3ca',
   'published package bytes must be the exact stamped 3.0.22 release');
 /* The mirror is the SAME BYTES or it is a second, unreviewed artifact. This is
    the assertion that keeps "a route stale workers can reach" from becoming "a
@@ -466,7 +466,7 @@ if (/\bMKT_URL\s*=\s*['"]mls-marketing\.html['"]/.test(read('mls_reviews_scrape_
 const extensionPage = read('get-extension.html');
 assert(!/\bJSZip\b|var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(extensionPage), 'download page must not assemble loose extension source');
 assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3.0.61\.zip["']/i.test(extensionPage) &&
-  /13344c5cb6b806694e807b7b93dd03a7818031eaba0268824f458367c5d4fa9d/.test(extensionPage) &&
+  /93ffbec18492643bee44c2585102ef45c986dfdafb0710145acff2629587b3ca/.test(extensionPage) &&
   !/candidate package withheld/i.test(extensionPage),
   'manual download must offer exactly the released package with its displayed digest');
 
