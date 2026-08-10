@@ -80,6 +80,9 @@ const context = {
   }
 };
 context.window = context;
+/* qol-2.0: the engine resolves the bodies preference through the ONE
+   resolver — install the REAL shipped resolver over this harness's store. */
+context.__mlsVisitNotesPref = require('./lib-visit-notes-resolver.js').makeResolver(context.uns, context.localStorage);
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {

@@ -289,6 +289,10 @@ function createHarness(opts) {
     }
   };
   rt.window = rt;
+  /* qol-2.0: the engine resolves the bodies preference through the ONE
+     resolver — install the REAL shipped resolver over this harness's store,
+     so the recorded fast-lane choice above still governs. */
+  rt.__mlsVisitNotesPref = require('./lib-visit-notes-resolver.js').makeResolver(rt.uns, rt.localStorage);
   rt.addEventListener = (_t, fn) => listeners.add(fn);
   rt.removeEventListener = (_t, fn) => listeners.delete(fn);
   rt.postMessage = msg => {

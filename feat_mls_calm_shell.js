@@ -1154,7 +1154,7 @@
          longer targets #mlsDsVisitBodies - the checkbox beside Pull today,
          which this shell hides and which he explicitly does not want back
          there - but #setPullVisitBodies, the Settings copy of the same
-         stored preference (uns('pullVisitBodies'), ScribeFlow.html:4835).
+         preference, resolved by the ONE resolver (window.__mlsVisitNotesPref).
          `reveal` routes the row THROUGH Settings so he sees a real check
          mark with its state, instead of a hidden box being flipped. */
       { id: 'setPullVisitBodies', as: 'Full visit notes', reveal: 'integrations' },

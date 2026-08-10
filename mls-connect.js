@@ -11314,7 +11314,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            this legacy leg must not run a FULL every-visit read off the OTHER
            preference key - it scopes to the pulled day, same as the exact
            importer. */
-        var triOn = (function () { try { var set = localStorage.getItem(window.uns('pullVisitBodiesSet')) === '1'; var raw = localStorage.getItem(window.uns('pullVisitBodies')); return set ? raw !== '0' : true; } catch (e) { return true; } })();
+        var triOn = (function () { try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') return vnp.read().on === true; } catch (e) {} return true; })(); /* qol-2.0 ONE RESOLVER */
         if (vp && vp.enabled && pFull && (triOn ? vp.enabled() : false)) {
           row.fullVisits = await vp.runForPatient(pFull, function () {});
         } else if (vp && typeof vp.runForPatient === 'function' && pFull && !triOn) {
@@ -23618,8 +23618,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                     });
                     var fullLeg = Promise.resolve();
                     try {
+                      /* qol-2.0 ONE RESOLVER + the missing day-note guarantee:
+                         with Full-visit-notes OFF this site used to skip the
+                         full leg AND save no pulled-day note at all - the only
+                         lane where the day's own note never arrived (a run
+                         could end all-green with the one guaranteed body
+                         missing). OFF now runs the day-scoped read, same as
+                         the exact importer and the follow leg above. */
                       var vp2 = window.__mlsVisitSavePref;
-                      if (vp2 && vp2.enabled && vp2.enabled() && pSaved && (function () { try { var st2 = localStorage.getItem(window.uns('pullVisitBodiesSet')) === '1'; var rw2 = localStorage.getItem(window.uns('pullVisitBodies')); return st2 ? rw2 !== '0' : true; } catch (e) { return true; } })()) fullLeg = vp2.runForPatient(pSaved, function (m) { if (m) progressSay(m); });
+                      var on2 = (function () { try { var vnp2 = window.__mlsVisitNotesPref; if (vnp2 && typeof vnp2.read === 'function') return vnp2.read().on === true; } catch (e2) {} return true; })();
+                      if (vp2 && typeof vp2.runForPatient === 'function' && pSaved) {
+                        if (on2) { fullLeg = vp2.runForPatient(pSaved, function (m) { if (m) progressSay(m); }); }
+                        else {
+                          var dayA = String((a && (a.date || a.visit_date || a.day)) || '').slice(0, 10);
+                          if (/^\d{4}-\d{2}-\d{2}$/.test(dayA)) fullLeg = Promise.resolve(vp2.runForPatient(pSaved, function () {}, { onlyDate: dayA })).then(null, function () {});
+                        }
+                      }
                     } catch (eV) {}
                     return Promise.resolve(fullLeg).then(function () {
                       saved++;
@@ -46824,13 +46838,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          respected forever after; the legacy bare '0' without it is ignored. */
       (function () {
         var tgl = $('mlsDsVisitBodies'); if (!tgl) return;
-        var key = '', setKey = ''; try { if (typeof window.uns === 'function') { key = window.uns('pullVisitBodies'); setKey = window.uns('pullVisitBodiesSet'); } } catch (e) {}
-        var cur = null, chosen = false; try { cur = key ? localStorage.getItem(key) : null; chosen = setKey ? localStorage.getItem(setKey) === '1' : false; } catch (e) {}
-        tgl.checked = chosen ? cur !== '0' : true;
-        tgl.onchange = function () { try { if (key) { localStorage.setItem(key, tgl.checked ? '1' : '0'); if (setKey) localStorage.setItem(setKey, '1'); } } catch (e) {} };
-        /* qol-1.1d: a checkbox is a picture of a setting, not the setting -
-           repaint from the stored preference when another tab changes it. */
-        try { window.addEventListener('storage', function (ev) { try { if (ev && (ev.key === key || ev.key === setKey)) { var cur2 = key ? localStorage.getItem(key) : null; var chosen2 = setKey ? localStorage.getItem(setKey) === '1' : false; tgl.checked = chosen2 ? cur2 !== '0' : true; } } catch (e2) {} }); } catch (e3) {}
+        /* qol-2.0 ONE RESOLVER: the strip checkbox is a VIEW. It paints from
+           the resolved tri-state, writes THROUGH the resolver (read-back
+           confirmed - a refused write repaints instead of lying), and
+           repaints when any other tab changes the preference (qol-1.1d). */
+        var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
+        paint();
+        tgl.onchange = function () {
+          var ok = false;
+          try { var r = window.__mlsVisitNotesPref; if (r && typeof r.write === 'function') ok = r.write(tgl.checked === true) === true; } catch (e) {}
+          if (!ok) paint();
+        };
+        try { window.addEventListener('storage', function (ev) { try { var r = window.__mlsVisitNotesPref; if (ev && ev.key && r && typeof r.isPrefKey === 'function' && r.isPrefKey(ev.key)) paint(); } catch (e2) {} }); } catch (e3) {}
       })();
       $('mlsDsPrev').onclick = function () { shift(-1); };
       $('mlsDsNext').onclick = function () { shift(1); };
@@ -46894,13 +46913,70 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
+/* ===== __mlsVisitNotesPref RESOLVER BEGIN (qol-2.0, 2026-08-10) ==========
+ * THE ONE RESOLVER for the "Full visit notes" preference. Every decision
+ * site in the product calls this; no other module may touch the storage
+ * keys (tests/qol-one-resolver-guard enforces it). Tri-state:
+ * 'on' | 'off' | 'unset'. Canonical key: uns('visitNotesModeV2') holding
+ * 'on'/'off'. The legacy per-account pair (pullVisitBodies +
+ * pullVisitBodiesSet) and the legacy un-namespaced global
+ * mls_save_every_athena_visit are ADOPTED into the canonical key on first
+ * read, and the pair is kept coherent on every write because
+ * already-served bundles on other machines still read it. 'unset'
+ * resolves ON (owner bar 2026-07-28: first-pull completeness, no silent
+ * omissions); the default flips OFF only LAST, after a completed OFF run
+ * proves the lane (supervising-session order, 2026-08-10). write() is
+ * READ-BACK CONFIRMED: it returns true only when a fresh read returns the
+ * value just written - callers must treat false as "nothing changed". */
+(function () {
+  if (window.__mlsVisitNotesPref) return;
+  function nk(k) { try { return (typeof window.uns === 'function') ? window.uns(k) : ''; } catch (e) { return ''; } }
+  function read() {
+    try {
+      var kM = nk('visitNotesModeV2');
+      var v2 = kM ? localStorage.getItem(kM) : null;
+      if (v2 === 'on' || v2 === 'off') return { state: v2, on: v2 === 'on' };
+      var kV = nk('pullVisitBodies'), kS = nk('pullVisitBodiesSet');
+      if (kV && kS && localStorage.getItem(kS) === '1') {
+        var on1 = localStorage.getItem(kV) !== '0';
+        try { if (kM) localStorage.setItem(kM, on1 ? 'on' : 'off'); } catch (eM1) {}
+        return { state: on1 ? 'on' : 'off', on: on1 };
+      }
+      var legacy = null; try { legacy = localStorage.getItem('mls_save_every_athena_visit'); } catch (eL) {}
+      if (legacy === '0' || legacy === '1') {
+        var on2 = legacy === '1';
+        try {
+          if (kM) localStorage.setItem(kM, on2 ? 'on' : 'off');
+          if (kV && kS) { localStorage.setItem(kV, legacy); localStorage.setItem(kS, '1'); }
+          localStorage.removeItem('mls_save_every_athena_visit');
+        } catch (eM2) {}
+        return { state: on2 ? 'on' : 'off', on: on2 };
+      }
+      return { state: 'unset', on: true };
+    } catch (e) { return { state: 'unset', on: true }; }
+  }
+  function write(on) {
+    var want = on === true ? 'on' : 'off';
+    try {
+      var kM = nk('visitNotesModeV2');
+      if (!kM) return false;
+      localStorage.setItem(kM, want);
+      try { var kV = nk('pullVisitBodies'), kS = nk('pullVisitBodiesSet'); if (kV && kS) { localStorage.setItem(kV, on === true ? '1' : '0'); localStorage.setItem(kS, '1'); } } catch (eC) {}
+      var got = read();
+      return got.state === want && got.on === (on === true);
+    } catch (e) { return false; }
+  }
+  function isPrefKey(k) { try { var s = String(k || ''); if (!s) return false; return s === nk('visitNotesModeV2') || s === nk('pullVisitBodies') || s === nk('pullVisitBodiesSet') || s === 'mls_save_every_athena_visit'; } catch (e) { return false; } }
+  window.__mlsVisitNotesPref = { installed: true, version: '2.0.0', read: read, write: write, isPrefKey: isPrefKey };
+})();
+/* ===== __mlsVisitNotesPref RESOLVER END =================================== */
+
 /* ===== __mlsVisitSavePref v1.0.0 (2026-07-13)
  * The normal chart pull always saves the organized history. When this optional
  * Settings toggle is ON, MLS additionally saves every dated Athena visit with
  * its own summary through the existing strict identity gate. Athena read-only. */
 (function () {
   if (window.__mlsVisitSavePref) return;
-  var KEY = 'mls_save_every_athena_visit';
   var api = { installed: true, version: '1.0.0', running: false, current: null };
   window.__mlsVisitSavePref = api;
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -46909,8 +46985,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      account that never found this toggle (index-only stubs on 47 of 51 live
      snapshot patients). An explicit stored '0' — only ever written by a
      human clicking the toggle — still means OFF. */
-  function enabled() { /* qol-1.1b: ONE setting - the per-account Full-visit-notes tri-state governs this leg too. The legacy global key was un-namespaced (a cross-account leak) and fed a near-duplicate Settings row whose "off by default" copy was false; it migrates into the account namespace on first read and is retired. */ try { var k = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : ''; var sk = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : ''; if (k && sk) { if (localStorage.getItem(sk) === '1') return localStorage.getItem(k) !== '0'; var legacy = localStorage.getItem(KEY); if (legacy === '0' || legacy === '1') { try { localStorage.setItem(k, legacy); localStorage.setItem(sk, '1'); localStorage.removeItem(KEY); } catch (eM) {} return legacy === '1'; } return true; } var v = localStorage.getItem(KEY); return v == null ? true : v === '1'; } catch (e) { return true; } }
-  function setEnabled(v) { try { var k = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : ''; var sk = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : ''; if (k && sk) { localStorage.setItem(k, v ? '1' : '0'); localStorage.setItem(sk, '1'); try { localStorage.removeItem(KEY); } catch (eR) {} return; } localStorage.setItem(KEY, v ? '1' : '0'); } catch (e) {} }
+  function enabled() { /* qol-2.0 ONE RESOLVER: delegates. Legacy-key adoption (incl. the retired un-namespaced global, qol-1.1b) lives in the resolver now. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === 'function') return vnp.read().on === true; } catch (e) {} return true; }
+  function setEnabled(v) { /* qol-2.0: write-through the resolver with read-back; returns confirmed true/false - false means NOTHING CHANGED. */ try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.write === 'function') return vnp.write(v === true) === true; } catch (e) {} return false; }
   function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
   function activeP() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
   api.enabled = enabled;
@@ -48172,9 +48248,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            unreadable. */
         var _bv = null;
         try {
-          var _bk = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : '';
-          var _bs = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : '';
-          if (_bk && _bs && localStorage.getItem(_bs) === '1') _bv = localStorage.getItem(_bk) !== '0';
+          var _vr = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null;
+          if (_vr && _vr.state !== 'unset') _bv = _vr.on === true; /* qol-2.0 ONE RESOLVER */
         } catch (e0) {}
         if (_bv === null) { var _bt = document.getElementById('mlsDsVisitBodies'); if (_bt && typeof _bt.checked === 'boolean') _bv = !!_bt.checked; }
         if (typeof _bv === 'boolean') jobPayload.pullVisitBodies = _bv;
@@ -48194,9 +48269,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dedupeKey: 'pullDay|' + date + '|' + (provider && (provider.stableKey || provider.name) || 'all')
           + '|b' + (function () {
               try {
-                var dk = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : '';
-                var ds = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : '';
-                if (dk && ds && localStorage.getItem(ds) === '1') return localStorage.getItem(dk) !== '0' ? '1' : '0';
+                var vr3 = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null; /* qol-2.0 ONE RESOLVER */
+                if (vr3 && vr3.state !== 'unset') return vr3.on === true ? '1' : '0';
                 var t = document.getElementById('mlsDsVisitBodies'); return (t && t.checked) ? '1' : '0';
               }
               catch (e) { return '0'; }

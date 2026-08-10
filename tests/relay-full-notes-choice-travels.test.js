@@ -30,21 +30,28 @@ const importer = read('feat_mls_schedimport_exact.js');
    is a named object so the choice can be added without disturbing it. */
 const queueIdx = connect.indexOf('var jobPayload = { date: date, provider: provider, requestId: requestId }');
 assert(queueIdx > 0, 'the frozen pullDay payload could not be located');
-const queueBlock = connect.slice(queueIdx, queueIdx + 2400);
+const queueBlock = connect.slice(queueIdx, queueIdx + 3400);
 assert(/getElementById\('mlsDsVisitBodies'\)/.test(queueBlock),
-  'the queued job must read the phone\'s own "Full visit notes" control');
-assert(/jobPayload\.pullVisitBodies\s*=\s*!!_bt\.checked/.test(queueBlock),
-  'the control\'s value must be placed in the job payload');
+  'the queued job must still know the phone\'s own "Full visit notes" control (fallback for unchosen accounts)');
+/* qol-1.1a/qol-2.0: the stored choice (via the ONE resolver) outranks the DOM
+   view; the DOM is only the unchosen-account fallback. Executed with the real
+   resolver in qol-setting-reaches-the-pull. */
+assert(/__mlsVisitNotesPref/.test(queueBlock),
+  'the queued job must resolve the clinician\'s STORED choice through the resolver');
+assert(/_vr\.state !== 'unset'/.test(queueBlock),
+  'only a real recorded choice may outrank the visible control');
+assert(/jobPayload\.pullVisitBodies\s*=\s*_bv/.test(queueBlock),
+  'the resolved value must be placed in the job payload');
 assert(/if \(_bt && typeof _bt\.checked === 'boolean'\)/.test(queueBlock),
-  'when the control is absent the payload must stay SILENT, so the executing device keeps deciding');
+  'when nothing is chosen and the control is absent the payload must stay SILENT, so the executing device keeps deciding');
 assert(/payload: jobPayload/.test(queueBlock), 'the queued job must send the frozen payload object');
 
 /* ---- hop 1b: the choice is part of the request identity ----
  * Without this, asking for the same day with notes ON coalesces onto an earlier
  * OFF job and returns the smaller result as a success. */
-assert(/dedupeKey:[\s\S]{0,400}mlsDsVisitBodies/.test(queueBlock),
-  'the dedupe key must include the body-notes choice, or an ON request silently ' +
-  'reuses an earlier OFF result and reports success');
+assert(/dedupeKey:[\s\S]{0,700}mlsDsVisitBodies/.test(queueBlock) && /dedupeKey:[\s\S]{0,700}__mlsVisitNotesPref/.test(queueBlock),
+  'the dedupe key must include the body-notes choice (resolved, DOM fallback), or an ON ' +
+  'request silently reuses an earlier OFF result and reports success');
 
 /* ---- hop 2: the relay agent forwards it into the pull options ---- */
 const agentIdx = connect.indexOf('if (pl.includeHistory === false)');
@@ -83,20 +90,19 @@ const readIdx = importer.indexOf('var pullVisitBodies = safe(function () {');
 assert(readIdx > 0, 'the pullVisitBodies read could not be located');
 const readBlock = importer.slice(readIdx, readIdx + 1800);
 const overridePos = readBlock.indexOf('if (typeof _pullBodiesOverride === "boolean") return _pullBodiesOverride;');
-const storagePos = readBlock.indexOf('localStorage.getItem(k)');
+const resolverPos = readBlock.indexOf('__mlsVisitNotesPref');
 assert(overridePos > 0, 'the read must consult the per-pull override');
-assert(storagePos > 0, 'the device preference read vanished');
-assert(overridePos < storagePos,
-  'the override must be consulted BEFORE this device\'s stored preference, or it is dead code');
+assert(resolverPos > 0, 'the device preference resolution vanished');
+assert(overridePos < resolverPos,
+  'the override must be consulted BEFORE this device\'s resolved preference, or it is dead code');
 
-/* ---- with no override, the shared tri-state governs (2026-07-28: default
-   ON; a recorded human choice — the pullVisitBodiesSet marker — is respected;
-   the legacy code-authored '0' is ignored). The per-pull override above still
-   outranks everything, which is this suite's actual subject. ---- */
-assert(/return chosen \? v !== "0" : true;/.test(readBlock),
-  'with no override the shared tri-state preference must govern (default ON, human choice respected)');
-assert(/pullVisitBodiesSet/.test(readBlock),
-  'the no-override path must consult the human-choice marker');
+/* ---- with no override, the ONE resolver governs (2026-07-28: default ON;
+   a recorded human choice is respected; the legacy code-authored '0' is
+   ignored — all execution-proven on the shipped resolver in
+   pull-visit-bodies-default-on). The per-pull override above still outranks
+   everything, which is this suite's actual subject. ---- */
+assert(/return vnp\.read\(\)\.on === true/.test(readBlock),
+  'with no override the resolved tri-state must govern (default ON, human choice respected)');
 
 console.log('PASS relay full-notes choice travels: phone control -> payload -> agent -> pull() -> importer, ' +
   'override consulted before the device preference, scoped to one pull, cleared on success and failure, ' +

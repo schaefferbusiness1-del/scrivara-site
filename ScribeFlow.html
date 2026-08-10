@@ -5246,7 +5246,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
              option. The inline checkbox beside Pull today was hidden by the
              Calm Shell declutter, which silently took the control away — the
              owner asked for it back, deliberately NOT next to the pull button.
-             Same persisted preference (uns('pullVisitBodies')); the hidden
+             Same preference, resolved by the ONE resolver; the hidden
              inline checkbox is kept in sync because the phone-relay lane reads
              the DOM node, while the importer reads the stored key. -->
         <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
@@ -9038,25 +9038,16 @@ async function loadPrefsFromServer(opts){
   }catch(e){ /* offline — local values stand */ return false; }
 }
 
-/* b940: the restored "Pull full visit notes" Settings option. One stored
-   truth — uns('pullVisitBodies') — shared with the (calm-shell-hidden) inline
-   checkbox: the importer reads the KEY, the phone-relay job payload reads the
-   inline NODE, so both are written on every change.
-   2026-07-28: DEFAULT ON, and only an EXPLICIT human choice can turn it off.
-   Every visit on 47 of 51 snapshot patients in the live store was an
-   index-only stub — the encounter bodies were never read — because this
-   preference sat at its code-authored '0' while the toggle that could change
-   it never rendered (the b940 finding). A pull without encounter bodies is
-   not "complete available history" (owner bar 2026-07-28: first-pull
-   completeness, no silent omissions), so absence of a recorded HUMAN choice
-   now means ON. The uns('pullVisitBodiesSet') marker records that a human
-   touched the toggle; the legacy value without the marker is ignored. */
+/* b940 -> qol-2.0: the "Pull full visit notes" Settings option is a VIEW of
+   the ONE resolver (window.__mlsVisitNotesPref, installed by mls-connect.js).
+   This page no longer touches the storage keys: it renders the resolved
+   tri-state and writes THROUGH the resolver, which confirms every write by
+   reading it back. 2026-07-28 owner bar unchanged: unset resolves ON
+   (first-pull completeness); only an explicit human choice picks the fast
+   lane. The inline strip checkbox is kept in sync as a courtesy view. */
 function pullVisitBodiesPref(){
-  try{
-    const set=localStorage.getItem(uns('pullVisitBodiesSet'))==='1';
-    const raw=localStorage.getItem(uns('pullVisitBodies'));
-    return set ? raw!=='0' : true;
-  }catch(e){ return true; }
+  try{ var r=window.__mlsVisitNotesPref; if(r&&typeof r.read==='function') return r.read().on===true; }catch(e){}
+  return true;
 }
 function renderPullVisitBodiesSetting(){
   try{
@@ -9065,7 +9056,16 @@ function renderPullVisitBodiesSetting(){
     if(cb.dataset.wired==='1') return;
     cb.dataset.wired='1';
     cb.addEventListener('change',function(){
-      try{ localStorage.setItem(uns('pullVisitBodies'), cb.checked?'1':'0'); localStorage.setItem(uns('pullVisitBodiesSet'),'1'); }catch(e){}
+      /* qol-2.0: the checkbox is a VIEW. The write goes THROUGH the resolver,
+         which reads it back; the toast fires only on a CONFIRMED save, and a
+         refused write repaints the box from the store instead of lying. */
+      var saved=false;
+      try{ var r=window.__mlsVisitNotesPref; if(r&&typeof r.write==='function') saved=r.write(cb.checked===true)===true; }catch(e){}
+      if(!saved){
+        cb.checked=pullVisitBodiesPref();
+        try{ toast('That change did not save (the preference store refused the write) — nothing changed.','warn'); }catch(e){}
+        return;
+      }
       try{ const inline=document.getElementById('mlsDsVisitBodies'); if(inline) inline.checked=cb.checked; }catch(e){}
       try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls now run the fast lane — schedule and chart history cards only.','ok'); }catch(e){}
     });

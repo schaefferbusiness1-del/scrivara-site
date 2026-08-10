@@ -3107,16 +3107,12 @@
          always clears it, so behaviour is IDENTICAL unless a caller explicitly
          asked. */
       if (typeof _pullBodiesOverride === "boolean") return _pullBodiesOverride;
-      var k = typeof window.uns === "function" ? window.uns("pullVisitBodies") : "";
-      var sk = typeof window.uns === "function" ? window.uns("pullVisitBodiesSet") : "";
-      var v = k ? localStorage.getItem(k) : null;
-      var chosen = sk ? localStorage.getItem(sk) === "1" : false;
-      /* 2026-07-28: default ON — an index-only pull is not complete history
-         (owner bar: first-pull completeness). Only an explicit human choice
-         (the ...Set marker, written by the toggles from this build on) can
-         select the fast no-bodies lane; the code-authored legacy '0' that
-         accumulated while the toggle never rendered is ignored. */
-      return chosen ? v !== "0" : true;
+      /* qol-2.0 ONE RESOLVER: this module no longer touches the preference
+         keys. mls-connect.js installs window.__mlsVisitNotesPref before any
+         satellite loads; if it is somehow absent the unset default (ON)
+         stands rather than a guess at storage. */
+      try { var vnp = window.__mlsVisitNotesPref; if (vnp && typeof vnp.read === "function") return vnp.read().on === true; } catch (eVnp) {}
+      return true;
     }, true);
     /* si-1.7.4 SPEED (evidence-driven): the live b319 timing run measured the
        server parse+persist at 16.6s/patient vs 9.7s for the Athena chart

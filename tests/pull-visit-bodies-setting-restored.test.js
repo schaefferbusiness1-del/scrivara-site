@@ -33,13 +33,25 @@ assert(!/mlsDsStrip[\s\S]{0,600}setPullVisitBodies/.test(app),
    code-authored '0' ignored. Execution-proven in
    tests/pull-visit-bodies-default-on.test.js; source-pinned here. */
 const fn = app.slice(app.indexOf('function pullVisitBodiesPref()'), app.indexOf('TWO-FACTOR AUTH (enrollment'));
-assert(fn.includes("localStorage.getItem(uns('pullVisitBodies'))"), 'reads the same per-account key the importer reads');
-assert(fn.includes("localStorage.setItem(uns('pullVisitBodies'), cb.checked?'1':'0')"), 'writes the key the importer consults');
-assert(fn.includes("localStorage.setItem(uns('pullVisitBodiesSet'),'1')"), 'a human change must record the human-choice marker');
+/* qol-2.0: the page no longer touches storage keys — it reads and writes
+   THROUGH the ONE resolver, which owns the keys and the human-choice marker.
+   The default-ON law and the marker are execution-proven on the REAL shipped
+   resolver here and in pull-visit-bodies-default-on. */
+assert(fn.includes("r.read().on===true"), 'renders the resolved tri-state (same resolver the importer consults)');
+assert(fn.includes('r.write(cb.checked===true)'), 'writes THROUGH the resolver, never the raw keys');
 assert(fn.includes("getElementById('mlsDsVisitBodies')") && fn.includes('inline.checked=cb.checked'),
   'mirrors the inline node the phone-relay job payload reads');
 assert(fn.includes('cb.checked=pullVisitBodiesPref()'), 'the checkbox renders the shared tri-state truth');
-assert(fn.includes("return set ? raw!=='0' : true"), 'default is ON unless a recorded human choice says otherwise (2026-07-28 supersession of the 2026-07-21 fast-lane default)');
+{
+  const { makeResolver } = require('./lib-visit-notes-resolver.js');
+  const map = {};
+  const res = makeResolver(k => 'acct::' + k, { getItem: k => (k in map ? map[k] : null), setItem: (k, v) => { map[k] = String(v); }, removeItem: k => { delete map[k]; } });
+  assert.strictEqual(res.read().on, true, 'default is ON unless a recorded human choice says otherwise (2026-07-28 supersession, executed on the shipped resolver)');
+  assert.strictEqual(res.read().state, 'unset', 'no stored choice resolves as unset, not as a fake decision');
+  assert.strictEqual(res.write(false), true, 'a human change is read-back confirmed');
+  assert.strictEqual(map['acct::pullVisitBodiesSet'], '1', 'a human change records the human-choice marker');
+  assert.strictEqual(res.read().on, false, 'the recorded choice is respected');
+}
 assert(/renderTwofaSettings\(\);\s*\n\s*renderPullVisitBodiesSetting\(\);/.test(app),
   'the Settings open pipeline renders it');
 

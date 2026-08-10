@@ -131,8 +131,8 @@ assert(/scrollIntoView\(\{ block: 'center' \}\)/.test(shell),
 /* ------------------------------- one stored truth, both consumers still served */
 
 assert(/id="setPullVisitBodies"/.test(app), 'the Settings checkbox must still exist');
-assert(app.includes("localStorage.setItem(uns('pullVisitBodies'), cb.checked?'1':'0')"),
-  'Settings must keep writing the key the importer consults');
+assert(app.includes('r.write(cb.checked===true)'),
+  'Settings must keep writing THROUGH the ONE resolver the importer consults (qol-2.0)');
 assert(app.includes("getElementById('mlsDsVisitBodies')") && app.includes('inline.checked=cb.checked'),
   'Settings must keep mirroring the inline node');
 assert(connect.includes('id="mlsDsVisitBodies"'),
