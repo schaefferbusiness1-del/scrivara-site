@@ -703,7 +703,25 @@
     }
     w.style.display = "";
     var host = w.querySelector(".mlspk-cx-grid");
-    renderGrid(host, { scope: "today", limit: DEFAULT_LIMIT, onPick: function () { ensureCtxBar(); } });
+    /* ONE SUBTITLE, NOT TWO. This view already writes its own header line
+       ("in time order - tap one to open their chart") three elements above, and
+       renderGrid's default note then wrote a SECOND grey line saying nearly the
+       same thing in different words -- "N patients on today's schedule - in time
+       order - tap one to select." Two instructions stacked, and they disagreed
+       on the verb: one said OPEN THEIR CHART, the other said SELECT, for the
+       same tap. Owner, 2026-08-10, on seeing it: "why is this back in the main
+       app". The note is suppressed here and its only unique content -- the
+       count -- is folded into the header, so nothing is lost.
+       The modal caller is untouched: there the note is the only subtitle. */
+    var res = renderGrid(host, { scope: "today", limit: DEFAULT_LIMIT, showNote: false, onPick: function () { ensureCtxBar(); } });
+    try {
+      var sub = w.querySelector(".mlspk-cx-hd span");
+      if (sub) {
+        var n = (res && res.list && res.list.length != null) ? res.list.length : 0;
+        sub.textContent = (n ? (n + " patient" + (n === 1 ? "" : "s") + " · ") : "") +
+          "in time order · tap one to open their chart";
+      }
+    } catch (e) {}
   }
 
   /* ---- keep the compact top active-patient widget (#mlsCtxBar) visible + bound ----

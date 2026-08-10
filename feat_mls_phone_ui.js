@@ -1645,7 +1645,15 @@
       var block = relayBlock();
       sub = block ? (sentence ? block + ' — ' + sentence : block) : sentence;
       if (n > 0) {
-        row = btn('pull-start', '&#8635; Check athenaOne again', 'secondary');
+        /* Owner, 2026-08-10: "what does that check athena one again button do,
+           get rid of that unless it really works." It really works — it is the
+           SAME __mlsDaySwitch.pullDay() the primary button runs, verified live
+           (pressing it started a relay job and the bar showed the engine's own
+           "Asking <office computer> to pull <date>…"). What was wrong was the
+           NAME: "check again" sounds like a cheap lookup, when it is the full
+           athenaOne pull, done for you on the office computer. Named for what
+           it does now, and the sub-line above says where it runs. */
+        row = btn('pull-start', '&#8635; Pull ' + (d.isToday ? 'today' : esc(d.main)) + ' from athenaOne again', 'secondary');
       } else {
         row = btn('pull-start', '&#128229; Get ' + (d.isToday ? 'today&rsquo;s' : 'that day&rsquo;s') + ' patients', 'primary');
       }
@@ -1752,11 +1760,34 @@
       var cal = hostFn('loadCalendar');
       var pts = hostFn('loadPatientsFromServer');
       if (!cal && !pts) { refuse('MLS has not finished loading on this ' + deviceNoun() + ' yet.'); return; }
-      toast('Refreshing from MLS…', '');
-      if (cal) safe(function () { cal({ fresh: true }); });
-      if (pts) safe(function () { pts({}); });
+      /* ⛔ REFRESH USED TO FIRE AND FORGET. Owner, 2026-08-10: "make the refresh
+         work." Both of these are ASYNC and the old code neither awaited them nor
+         repainted afterwards, so the toast said "Refreshing…" and the screen sat
+         there showing the same list until something unrelated triggered a
+         render. The work was happening; the screen never admitted it. Now it
+         waits for both, repaints, and SAYS WHAT IT FOUND — including when it
+         found nothing, because "refreshed" over an unchanged list is the same
+         silence in a different colour. */
+      var before = rows().length;
+      say('Refreshing from MLS…', 'warn');
+      var jobs = [];
+      if (cal) jobs.push(safe(function () { return Promise.resolve(cal({ fresh: true })); }, null));
+      if (pts) jobs.push(safe(function () { return Promise.resolve(pts({})); }, null));
       refreshPresence(true);
       ckFetch();
+      safe(function () {
+        Promise.all(jobs.map(function (p) { return (p && p.then) ? p['catch'](function () { return null; }) : null; }))
+          .then(function () {
+            S.lastSig = '';
+            render(true);
+            var after = rows().length;
+            var d = fmtDayLabel(today());
+            var where = d.isToday ? 'today' : d.main;
+            if (after > before) say(after + ' patient' + (after === 1 ? '' : 's') + ' for ' + where + ' — ' + (after - before) + ' new since you last looked.', 'warn');
+            else if (after) say('Up to date — ' + after + ' patient' + (after === 1 ? '' : 's') + ' for ' + where + '.', 'warn');
+            else say('MLS has nobody for ' + where + '. If athenaOne has patients, use the button below to pull them.', 'warn');
+          });
+      });
       return;
     }
     if (act === 'settings' || act === 'device') {
