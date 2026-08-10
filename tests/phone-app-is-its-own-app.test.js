@@ -518,10 +518,10 @@ assert(!/data-tab/.test(source),
   const re2 = /act === '([a-z0-9-]+)'/g;
   while ((m = re2.exec(source))) acts.add(m[1]);
   assert.deepStrictEqual([...acts].sort(), [
-    'back', 'ck-open', 'copy-note', 'day-go', 'day-next', 'day-prev', 'day-today', 'device',
+    'back', 'checkins', 'ck-open', 'copy-note', 'day-go', 'day-next', 'day-prev', 'day-today', 'device',
     'find-clear', 'fullapp', 'generate', 'install', 'menu-close', 'note-x', 'open',
     'pull-start', 'pull-stop', 'record', 'refresh', 'send', 'settings', 'signout', 'stop'
-  ], 'the phone app offers exactly these 23 actions; every one is handled by the ONE delegated handler');
+  ], 'the phone app offers exactly these 24 actions; every one is handled by the ONE delegated handler');
 }
 
 /* ===========================================================================

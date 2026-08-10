@@ -23,5 +23,8 @@
     "preflight:public": "node scripts/public-release-preflight.js",
     "build:extension": "node scripts/build-extension-zip.js",
     "test": "node tests/run-all.js"
+  },
+  "dependencies": {
+    "playwright": "^1.62.1"
   }
 }

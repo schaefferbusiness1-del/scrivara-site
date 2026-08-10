@@ -1035,25 +1035,38 @@ async function checkinPillChecks() {
     assert.strictEqual(pill.hidden, false, 'an unread check-in must raise the header pill');
     assert(/1 check-in/.test(pill._html), 'and say how many are unread: ' + pill._html);
 
-    /* Pressed from another day it goes where the briefs actually are. A pill
-       that lands on a screen showing no check-ins is a control that appears to
-       do nothing. */
+    /* ROUTE TWO OF TWO (owner 2026-08-10: "the check ins before the room needs
+       to be a completly spreate tab that u can aget to both throgyuth thetop
+       left 3 lines or throguht ththe notifications"). The notification IS a way
+       in: a pill that announces "1 check-in" and lands you on a different
+       screen is a control whose press does not do what it says. It does NOT
+       move the day any more — the briefs have their own screen and are not
+       scoped to a date. */
     h.alert();
-    assert.deepStrictEqual(h.calls.setDay, ['2026-08-07'], 'pressing it must take the doctor to today, where the check-ins are');
-    assert.strictEqual(h.api().state().screen, 'day', 'and land on the day screen');
+    assert.strictEqual(h.api().state().screen, 'checkins', 'the pill must open the check-ins screen');
+    assert.deepStrictEqual(h.calls.setDay, [], 'and must not silently move the doctor to another day to do it');
+    assert(/data-act="ck-open"/.test(h.screen()), 'and the briefs must be on it');
   }
   {
+    /* ROUTE ONE OF TWO: the ☰ menu, which is the only route once everything has
+       been read and the pill is gone. */
     const h = makeHarness({ checkins: [CHECKIN], snapshot: { day: '2026-08-07', today: patients }, todayKey: '2026-08-07' });
     await h.pollCheckins();
-    assert(/data-act="ck-open"/.test(h.screen()), 'on today the brief itself must be on the day screen');
+    assert(!/data-act="ck-open"/.test(h.screen()),
+      'the briefs must NOT be stacked on the day screen — they push the patient list below the fold');
+    h.api().menu(true);
+    assert(/data-act="checkins"/.test(h.menuHtml()), 'the menu must carry a route to the check-ins screen');
+    h.tap('checkins');
+    assert.strictEqual(h.api().state().screen, 'checkins', 'and pressing it must go there');
+    assert(/data-act="ck-open"/.test(h.screen()), 'the brief itself lives on that screen');
     assert(!/Patient reports right knee pain/.test(h.screen()),
       'and NOT auto-expanded — ph2 opened an arriving brief under whatever the doctor was already reading');
-    assert.strictEqual(h.alertNode().hidden, false, 'precondition: one unread');
+    assert.strictEqual(h.alertNode().hidden, true,
+      'ARRIVING at the screen is reading the list: a pill left lit over the very briefs it counts is the ' +
+      'badge-that-never-clears defect in a new place');
 
     h.tap('ck-open', { 'data-id': 'c1' });
-    assert(/Patient reports right knee pain/.test(h.screen()), 'opening it must show the summary');
-    assert.strictEqual(h.alertNode().hidden, true,
-      'and READING it must clear the badge. ph2 counted every ready row forever, so the number stopped meaning anything.');
+    assert(/Patient reports right knee pain/.test(h.screen()), 'opening one must show the summary');
   }
 }
 
@@ -1170,7 +1183,7 @@ source.replace(/act === '([a-z0-9-]+)'/g, function (_m, a) { if (HANDLED.indexOf
 
 /* The contract as written down, so a rename is a failure and not a silent
    re-wiring of a control the rest of the product points at. */
-const CONTRACT = ['menu-close', 'note-x', 'back', 'find-clear', 'refresh', 'settings', 'device',
+const CONTRACT = ['menu-close', 'note-x', 'back', 'checkins', 'find-clear', 'refresh', 'settings', 'device',
   'install', 'fullapp', 'signout', 'day-prev', 'day-next', 'day-today', 'day-go', 'pull-start', 'pull-stop',
   'open', 'ck-open', 'record', 'stop', 'generate', 'send', 'copy-note'];
 assert.deepStrictEqual(HANDLED.slice().sort(), CONTRACT.slice().sort(),
@@ -1189,6 +1202,11 @@ const SWEEP = {
   'back': {
     make: () => { const h = makeHarness({ snapshot: { today: patients, active: ACTIVE } }); h.api().go('visit'); return h; },
     reached: (h) => assert.strictEqual(h.api().state().screen, 'day', 'Back must return to the day')
+  },
+  'checkins': {
+    make: () => makeHarness({ snapshot: { today: patients } }),
+    reached: (h) => assert.strictEqual(h.api().state().screen, 'checkins',
+      'the menu route must open the check-ins screen')
   },
   'find-clear': {
     make: () => { const h = makeHarness({ snapshot: { today: patients } }); h.type('mlsPh3Find', 'zzz'); return h; },
@@ -1256,7 +1274,10 @@ const SWEEP = {
   },
   'ck-open': {
     attrs: { 'data-id': 'c1' },
-    make: async () => { const h = makeHarness({ checkins: [CHECKIN], snapshot: { today: patients } }); await h.pollCheckins(); return h; },
+    /* The briefs live on their own screen now, so the sweep has to BE there
+       before it presses one — pressing ck-open from the day screen would
+       press a control that is not on it. */
+    make: async () => { const h = makeHarness({ checkins: [CHECKIN], snapshot: { today: patients } }); await h.pollCheckins(); h.api().go('checkins'); return h; },
     reached: (h) => assert(/Patient reports right knee pain/.test(h.screen()), 'a check-in must open')
   },
   'record': {

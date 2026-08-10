@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 277,
  "totals": {
-  "controls": 1370,
+  "controls": 1371,
   "gated": 102,
-  "active": 1268,
+  "active": 1269,
   "byKind": {
-   "button": 1314,
+   "button": 1315,
    "handler": 43,
    "navtab": 13
   }
@@ -30,7 +30,7 @@
   "analysisView": 19,
   "legalReqView": 2,
   "studioView": 12,
-  "dynamic": 985
+  "dynamic": 986
  },
  "controls": [
   {
@@ -9115,7 +9115,7 @@
    "domId": "mlsAvKioskEnd",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7192,
+   "line": 7240,
    "gated": false,
    "handler": null
   },
@@ -9129,7 +9129,7 @@
    "domId": "mlsAvKioskMute",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7208,
+   "line": 7256,
    "gated": false,
    "handler": null
   },
@@ -9143,7 +9143,7 @@
    "domId": "mlsAvKioskEndVisit",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7217,
+   "line": 7265,
    "gated": false,
    "handler": null
   },
@@ -9157,7 +9157,7 @@
    "domId": "mlsAvKioskRoomGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7227,
+   "line": 7275,
    "gated": false,
    "handler": null
   },
@@ -9171,7 +9171,7 @@
    "domId": "mlsAvKioskSend",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7233,
+   "line": 7281,
    "gated": false,
    "handler": null
   },
@@ -9185,7 +9185,7 @@
    "domId": "mlsAvKioskPinGo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7240,
+   "line": 7288,
    "gated": false,
    "handler": null
   },
@@ -9199,7 +9199,7 @@
    "domId": "mlsAvKioskPinAmb",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7241,
+   "line": 7289,
    "gated": false,
    "handler": null
   },
@@ -9213,7 +9213,7 @@
    "domId": "mlsAvKioskPinBack",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7242,
+   "line": 7290,
    "gated": false,
    "handler": null
   },
@@ -9227,7 +9227,7 @@
    "domId": "mlsAvKioskConsentYes",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7255,
+   "line": 7303,
    "gated": false,
    "handler": null
   },
@@ -9241,7 +9241,7 @@
    "domId": "mlsAvKioskConsentNo",
    "view": "dynamic",
    "file": "feat_mls_avatar.js",
-   "line": 7256,
+   "line": 7304,
    "gated": false,
    "handler": null
   },
@@ -11290,7 +11290,7 @@
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-749-sub",
+   "id": "feat-mls-phone-ui-js-744-sub",
    "label": "' + ' ' + ' ' + (sub ? ' ' : '') + '",
    "accessibleName": "' + ' ' + ' ' + (sub ? ' ' : '') + '",
    "title": "",
@@ -11299,12 +11299,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 749,
+   "line": 744,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1218-8249",
+   "id": "feat-mls-phone-ui-js-1277-8249",
    "label": "&#8249;",
    "accessibleName": "Previous day",
    "title": "",
@@ -11313,12 +11313,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1218,
+   "line": 1277,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1220-today",
+   "id": "feat-mls-phone-ui-js-1279-today",
    "label": "Today",
    "accessibleName": "Today",
    "title": "",
@@ -11327,12 +11327,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1220,
+   "line": 1279,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1221-8250",
+   "id": "feat-mls-phone-ui-js-1280-8250",
    "label": "&#8250;",
    "accessibleName": "Next day",
    "title": "",
@@ -11341,7 +11341,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1221,
+   "line": 1280,
    "gated": false,
    "handler": null
   },
@@ -11355,7 +11355,7 @@
    "domId": "' + esc(id) + '",
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1265,
+   "line": 1324,
    "gated": false,
    "handler": null
   },
@@ -11369,12 +11369,12 @@
    "domId": "' + esc(k) + '",
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1308,
+   "line": 1367,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1340-clear-the-search",
+   "id": "feat-mls-phone-ui-js-1399-clear-the-search",
    "label": "Clear the search",
    "accessibleName": "Clear the search",
    "title": "",
@@ -11383,12 +11383,12 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1340,
+   "line": 1399,
    "gated": false,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1520-copy-the-note",
+   "id": "feat-mls-phone-ui-js-1579-copy-the-note",
    "label": "Copy the note",
    "accessibleName": "Copy the note",
    "title": "",
@@ -11397,7 +11397,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1520,
+   "line": 1579,
    "gated": false,
    "handler": null
   },
@@ -11411,7 +11411,21 @@
    "domId": "mlsPh3Go",
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1539,
+   "line": 1598,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mlsPh3Go",
+   "label": "Open ’s visit",
+   "accessibleName": "Open ’s visit",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsPh3Go",
+   "view": "dynamic",
+   "file": "feat_mls_phone_ui.js",
+   "line": 1623,
    "gated": false,
    "handler": null
   },
@@ -11425,12 +11439,12 @@
    "domId": "mlsPh3Go",
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1557,
+   "line": 1637,
    "gated": true,
    "handler": null
   },
   {
-   "id": "feat-mls-phone-ui-js-1558-stop",
+   "id": "feat-mls-phone-ui-js-1638-stop",
    "label": "Stop",
    "accessibleName": "Stop",
    "title": "",
@@ -11439,7 +11453,7 @@
    "domId": null,
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1558,
+   "line": 1638,
    "gated": false,
    "handler": null
   },
@@ -11453,7 +11467,7 @@
    "domId": "mlsPh3Go",
    "view": "dynamic",
    "file": "feat_mls_phone_ui.js",
-   "line": 1591,
+   "line": 1671,
    "gated": true,
    "handler": null
   },

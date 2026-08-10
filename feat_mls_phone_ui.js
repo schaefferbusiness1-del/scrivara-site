@@ -598,15 +598,10 @@
     frameEl.addEventListener('click', onClick);
     frameEl.addEventListener('input', onInput);
     $('mlsPh3Nav').addEventListener('click', onNav);
-    /* The unread pill goes where the briefs actually are: the day list, on
-       TODAY. Pressing it from next Monday and landing on a screen that shows
-       no check-ins would be a control that appears to do nothing. */
-    $('mlsPh3Alert').addEventListener('click', function () {
-      var ds = daySwitch(), tk = todayKey();
-      if (ds && typeof ds.setDay === 'function' && tk && tk !== today() && !pulling()) safe(function () { ds.setDay(tk); });
-      goDay();
-      scrollTop();
-    });
+    /* ROUTE TWO OF TWO to the check-ins screen: the notification itself is the
+       way in. A pill that announces "3 check-ins" and then drops you on a
+       different screen is a control whose press does not do what it says. */
+    $('mlsPh3Alert').addEventListener('click', function () { goCheckins(); });
 
     S.mounted = true;
     S.lastSig = '';
@@ -758,6 +753,15 @@
     var h = '<div class="ph3-scrim" data-act="menu-close"></div><div class="ph3-panel" role="dialog" aria-label="Menu">' +
       '<div class="ph3-grab"></div>' +
       (who ? '<div class="ph3-who2">Signed in as ' + esc(who) + '</div>' : '');
+    /* ROUTE ONE OF TWO to the check-ins screen, and the one that is ALWAYS
+       here. The unread pill is route two and it only exists while something is
+       unread — so without this item a brief the doctor has already read would
+       have no way back, which is how a "notification" becomes a thing you can
+       only ever see once. Counted, and first, because on a clinic morning it is
+       the reason the phone came out of the pocket. */
+    var ckN = ckRows().length, ckU = ckUnread();
+    h += menuItem('checkins', '&#128172;', 'Check-ins before the room' + (ckU ? '  (' + ckU + ' unread)' : ''),
+      ckN ? (ckN + ' patient' + (ckN === 1 ? '' : 's') + ' have talked to the avatar') : 'What patients told the avatar in the waiting room');
     h += menuItem('refresh', '&#8635;', 'Refresh', 'Re-read the schedule and your charts from MLS');
     h += menuItem('settings', '&#9881;', 'Settings', 'Every setting for this account');
     h += menuItem('device', '&#128241;', 'This ' + dev, 'Name it, and choose what it is: Settings → Integrations → This device');
@@ -804,7 +808,7 @@
   /* The left header control is the ONE navigational control and it changes
      meaning by screen. On a visit it is Back; on the day it is the menu. */
   function onNav() {
-    if (S.screen === 'visit') { goDay(); return; }
+    if (S.screen === 'visit' || S.screen === 'checkins') { goDay(); return; }
     toggleMenu();
   }
 
@@ -1128,23 +1132,78 @@
     return h;
   }
 
-  /* On the day screen: every check-in, unread first. ph2 sliced to 8 and told
-     the doctor the rest were "waiting in MLS on the office computer" -- they
-     were not, they were already downloaded onto the phone he was holding. */
-  function ckSection() {
-    var r = ckRows();
-    if (!r.length) {
-      if (S.ckErr) return '<p class="ph3-sect">Check-ins</p><div class="ph3-card"><p class="ph3-p">' + esc(S.ckErr) + '</p></div>';
-      return '';
-    }
-    var sorted = r.slice().sort(function (a, b) {
+  /* ===========================================================================
+   * SCREEN: CHECK-INS -- its own place, reached two ways.
+   * ---------------------------------------------------------------------------
+   * Owner, 2026-08-10: "the check ins before the room needs to be a completly
+   * spreate tab that u can aget to both throgyuth thetop left 3 lines or
+   * throguht ththe notifications".
+   *
+   * It used to be a section stacked on top of the day list, which is wrong two
+   * ways: on a busy morning several open briefs push the patient list -- the
+   * thing the day screen is FOR -- below the fold, and a brief the doctor has
+   * already read has no home to go back to once it stops being new. So it is a
+   * screen, pushed like a visit, with Back in the header, and there are exactly
+   * two routes to it: the ☰ menu (always) and the unread pill (when there is
+   * something unread). Nothing else changes about the briefs themselves.
+   *
+   * Every brief, unread first. ph2 sliced to 8 and told the doctor the rest were
+   * "waiting in MLS on the office computer" -- they were not, they were already
+   * downloaded onto the phone he was holding.
+   * =========================================================================*/
+  function ckSorted() {
+    return ckRows().slice().sort(function (a, b) {
       var ua = S.ckRead[String(a.id)] ? 1 : 0, ub = S.ckRead[String(b.id)] ? 1 : 0;
       if (ua !== ub) return ua - ub;
       return (Date.parse(b && b.ready_at) || 0) - (Date.parse(a && a.ready_at) || 0);
     });
-    var h = '<p class="ph3-sect">Check-ins before the room</p>';
-    for (var i = 0; i < sorted.length; i++) h += ckCard(sorted[i]);
+  }
+  function checkinsScreen() {
+    var r = ckSorted();
+    var h = '';
+    if (S.ckErr) {
+      h += '<div class="ph3-card" style="border-color:#E9CFCF;background:#FDF1F1"><p class="ph3-p" style="color:#5B1A18">' + esc(S.ckErr) + '</p></div>';
+    }
+    if (!r.length) {
+      /* "Nobody has checked in" and "we could not ask" are OPPOSITE claims, and
+         one of them means a patient is sitting in a room having finished. When
+         the read failed, the failure is the only thing this screen knows — so
+         the empty state is not printed underneath it. */
+      if (S.ckErr) return h;
+      h += '<div class="ph3-card"><p class="ph3-h">Nobody has checked in yet</p>' +
+        '<p class="ph3-p">When a patient talks to the avatar in the waiting room, the summary of what they said appears here — before you walk in.</p>' +
+        '<p class="ph3-p" style="margin-top:9px">This ' + esc(deviceNoun()) + ' checks every ' + Math.round(CK_POLL_MS / 1000) +
+        ' seconds while the app is open. It cannot reach you when the screen is off.</p></div>';
+      return h;
+    }
+    var unread = ckUnread();
+    h += '<p class="ph3-sect">' + r.length + ' check-in' + (r.length === 1 ? '' : 's') +
+      (unread ? ' &middot; ' + unread + ' unread' : '') + '</p>';
+    for (var i = 0; i < r.length; i++) h += ckCard(r[i]);
     return h;
+  }
+  /* The schedule row a brief belongs to, matched on the PORTAL ID through the
+     day's own rows -- never on the name. Returns null when this day does not
+     hold that patient, which is the ordinary case for yesterday's leftovers. */
+  function ckRowFor(c) {
+    var ext = String((c && c.patient_external_id) || '').trim();
+    if (!ext) return null;
+    var list = rows();
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (a && String(a.patient_external_id || '') === ext) return a;
+      /* snapshot.today rows carry only id/name/dob/time, so fall back to the
+         raw appointment that shares the id. */
+      var raw = rawApptById(rowId(a));
+      if (raw && String(raw.patient_external_id || '') === ext) return a;
+    }
+    return null;
+  }
+  function rawApptById(id) {
+    if (!id) return null;
+    var ap = safe(function () { return window._calAppts || []; }, []) || [];
+    for (var i = 0; i < ap.length; i++) if (ap[i] && String(rowId(ap[i])) === String(id)) return ap[i];
+    return null;
   }
   /* On a visit: only THIS patient's check-in, above their history. */
   function ckForPatient(ext) {
@@ -1316,9 +1375,9 @@
 
   function dayScreen() {
     var h = dayStrip();
-    /* Check-ins are people sitting in the waiting room NOW. Printing them over
-       next Monday's empty schedule states a relationship that does not exist. */
-    if (fmtDayLabel(today()).isToday) h += ckSection();
+    /* The briefs are NOT here any more -- they are their own screen, reached
+       from the ☰ menu and the unread pill. The day screen is the patient list;
+       on a busy morning several open briefs pushed that list below the fold. */
     var r = patientRows();
     var d = fmtDayLabel(today());
 
@@ -1541,7 +1600,28 @@
   }
   function actionBar() {
     if (S.screen === 'visit') return visitAction();
+    if (S.screen === 'checkins') return checkinsAction();
     return dayAction();
+  }
+  /* The check-ins screen has ONE action worth a bar, and only sometimes: the
+     open brief belongs to somebody on this day's schedule, and the next thing
+     the doctor does is walk in and record them. When no brief is open, or the
+     patient is not on this day, there is no action -- and the bar is not drawn
+     at all rather than drawn empty or disabled. */
+  function checkinsAction() {
+    if (!S.ckOpen) return '';
+    var r = ckRows(), open = null;
+    for (var i = 0; i < r.length; i++) if (String(r[i].id) === S.ckOpen) { open = r[i]; break; }
+    if (!open || open.inProgress) return '';
+    var row = ckRowFor(open);
+    if (!row) return '';
+    var name = rowName(row);
+    var first = name.split(/\s+/)[0] || name;
+    /* Built inline rather than through btn(), because this one carries the
+       appointment id the delegated 'open' handler binds the visit to. */
+    return '<p class="ph3-sub">' + esc(name) + ' is on today’s list.</p>' +
+      '<div class="ph3-row"><button type="button" class="ph3-primary" id="mlsPh3Go" data-act="open" data-id="' +
+      esc(rowId(row)) + '">Open ' + esc(first) + '’s visit</button></div>';
   }
   function dayAction() {
     var busy = pulling();
@@ -1623,7 +1703,26 @@
     render(true);
     scrollTop();
   }
-  api.go = function (where) { if (where === 'visit') goVisit(); else goDay(); };
+  function goCheckins() {
+    S.screen = 'checkins';
+    clearConfirm();
+    closeMenu();
+    S.lastSig = '';
+    render(true);
+    scrollTop();
+    /* Arriving IS reading the list. The pill counts unread briefs, and leaving
+       it lit over a screen that is showing them is the badge-that-never-clears
+       defect in a new place. The individual cards still open one at a time. */
+    var r = ckRows();
+    for (var i = 0; i < r.length; i++) if (r[i] && !r[i].inProgress) S.ckRead[String(r[i].id)] = 1;
+    S.ckPing = 0;
+    paintHeader();
+  }
+  api.go = function (where) {
+    if (where === 'visit') goVisit();
+    else if (where === 'checkins') goCheckins();
+    else goDay();
+  };
 
   /* ===========================================================================
    * ONE DELEGATED CLICK HANDLER
@@ -1644,6 +1743,7 @@
     if (act === 'menu-close') { closeMenu(); return; }
     if (act === 'note-x') { clearSay(); return; }
     if (act === 'back') { goDay(); return; }
+    if (act === 'checkins') { goCheckins(); return; }
     if (act === 'find-clear') { S.q = ''; S.lastSig = ''; render(true); return; }
 
     /* ---- the menu ------------------------------------------------------- */
@@ -1983,10 +2083,16 @@
   function paintHeader() {
     var t = $('mlsPh3Title'), s = $('mlsPh3Sub'), nav = $('mlsPh3Nav'), alert = $('mlsPh3Alert');
     var sn = snap();
-    if (S.screen === 'visit') {
-      var nm = safe(function () { return String(sn && sn.active && sn.active.name || ''); }, '');
-      if (t) t.textContent = nm || 'Visit';
-      if (s) s.textContent = safe(function () { return String(sn && sn.active && sn.active.time || ''); }, '') || 'One patient at a time';
+    if (S.screen === 'visit' || S.screen === 'checkins') {
+      if (S.screen === 'checkins') {
+        var cn = ckRows().length;
+        if (t) t.textContent = 'Check-ins';
+        if (s) s.textContent = cn ? (cn + ' before the room') : 'Before the room';
+      } else {
+        var nm = safe(function () { return String(sn && sn.active && sn.active.name || ''); }, '');
+        if (t) t.textContent = nm || 'Visit';
+        if (s) s.textContent = safe(function () { return String(sn && sn.active && sn.active.time || ''); }, '') || 'One patient at a time';
+      }
       if (nav) {
         nav.innerHTML = '<span class="ph3-gl">&#8249;</span><span>Day</span>';
         nav.setAttribute('aria-label', 'Back to the day');
@@ -2079,8 +2185,17 @@
       /* Preserve the reading position. A repaint the doctor did not ask for
          must not move the page under their eyes. */
       var top = bodyEl.scrollTop;
-      bodyEl.innerHTML = S.screen === 'visit' ? visitScreen() : dayScreen();
-      if (actEl) actEl.innerHTML = actionBar();
+      bodyEl.innerHTML = S.screen === 'visit' ? visitScreen()
+        : S.screen === 'checkins' ? checkinsScreen()
+        : dayScreen();
+      if (actEl) {
+        var bar = actionBar();
+        actEl.innerHTML = bar;
+        /* A screen with no action gets no bar — not an empty one. An empty
+           strip with a border and a shadow reads as a control that failed to
+           load, and it costs 60px of an 812px screen for nothing. */
+        actEl.hidden = !bar;
+      }
       safe(function () { bodyEl.scrollTop = top; });
       syncTranscript();
       paintTick();

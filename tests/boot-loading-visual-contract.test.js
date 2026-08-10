@@ -53,7 +53,7 @@ assert(app.includes("window.__mlsLoaderReadyAt=Date.now(); window.dispatchEvent(
 assert(!app.slice(app.indexOf('function sfWaitForStableFirstFrame('), app.indexOf('function sfShowGateLoading')).includes('priorityQueued'),
   'noncritical queued presentation work can still hold the secure loader after the critical bundle is ready');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b1002'"), 'ScribeFlow loader was not cache-busted to b1002');
+assert(app.includes("window.__MLS_AV='b1003'"), 'ScribeFlow loader was not cache-busted to b1003');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));
@@ -128,7 +128,7 @@ assert(bootDriver.includes("owner:'ScribeFlow'"), 'compatibility layer does not 
 assert(!bootDriver.includes('setInterval('), 'a second progress interval can fight the secure loader again');
 assert(!bootDriver.includes('MutationObserver'), 'a second loader style observer can reset or duplicate the reveal again');
 assert(!bootDriver.includes("wrap('sfShowGateLoading'"), 'mls-connect still replaces the secure loader owner');
-assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b1002'"), 'shared asset version was not bumped to b1002');
-assert(connect.includes("var MLS_APP_BUILD='2026-07-25-b1002'"), 'app build was not bumped to b1002');
+assert(connect.includes("window.__MLS_AV = window.__MLS_AV || 'b1003'"), 'shared asset version was not bumped to b1003');
+assert(connect.includes("var MLS_APP_BUILD='2026-07-25-b1003'"), 'app build was not bumped to b1003');
 
 console.log('PASS branded boot loader: one centered green MLS logo surface, one progress tree, and readiness ownership preserved');

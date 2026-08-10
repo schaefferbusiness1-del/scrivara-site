@@ -189,6 +189,13 @@ function makeHarness(opts) {
        header pill #mlsPh3Alert -- there is no tab bar to hang a badge on. */
     frame: () => body.children.filter(c => c.id === 'mlsPh3')[0] || null,
     screen: () => (byId.get('mlsPh3Body') || { _html: '' })._html,
+    /* ph3 at b1003 moved the briefs OFF the day screen and onto their own, so
+       every assertion about brief CONTENT has to go where the briefs are.
+       (owner: "the check ins before the room needs to be a completly spreate
+       tab that u can aget to both throgyuth thetop left 3 lines or throguht
+       ththe notifications".) The day screen is the patient list; several open
+       briefs used to push it below the fold. */
+    briefs() { this.api().go('checkins'); return (byId.get('mlsPh3Body') || { _html: '' })._html; },
     bar: () => (byId.get('mlsPh3Act') || { _html: '' })._html,
     sheet: () => (byId.get('mlsPh3Sheet') || { _html: '' })._html,
     pill: () => byId.get('mlsPh3Alert') || null,
@@ -269,13 +276,19 @@ async function main() {
     'the phone must read the SAME endpoint the avatar lane already publishes — a second pipeline would ' +
     'be a second summary of the same conversation');
 
-  const s = h.screen();
-  assert(/Left knee giving way on stairs/.test(s), 'the headline must reach the day screen');
+  const s = h.briefs();
+  assert(/Left knee giving way on stairs/.test(s), 'the headline must reach the check-ins screen');
   assert(/Marcus Bell/.test(s),
     'the brief must say WHOSE it is — the row carries a portal id and no name, and three anonymous ' +
     'briefs is three rooms the doctor cannot tell apart');
-  assert(/Check-ins before the room/.test(s),
-    'and the section must name what it is: these are people sitting in the waiting room NOW');
+  /* The screen names itself in its HEADER now, not in a section label above a
+     stack on the day list, so the phrase is asserted where a doctor reads it. */
+  h.api().menu(true);
+  assert(/data-act="checkins"/.test(h.sheet()),
+    'the ☰ menu must carry the always-available route to the briefs — the pill only exists while ' +
+    'something is unread, so without this a brief already read has no way back');
+  assert(/Check-ins before the room/.test(h.sheet()),
+    'the menu route must name what it is: these are people sitting in the waiting room NOW');
 
   assert.strictEqual(h.calls.vibrate.length, 0,
     'THE FIRST LOAD MUST NOT BUZZ: opening the app at 9am would otherwise vibrate for every check-in ' +
@@ -320,7 +333,7 @@ async function main() {
      whatever the doctor was already reading, which moved the page AND left the
      badge counting something plainly on screen. Arrival is announced; opening
      is a decision. */
-  const s = h.screen();
+  const s = h.briefs();
   assert(!/Patient reports 3 weeks/.test(s),
     'an arriving check-in must NOT expand itself — it lands under the doctor\'s thumb and moves the page');
   assert(/data-act="ck-open" data-id="77" aria-expanded="false"/.test(s),
@@ -343,7 +356,7 @@ async function main() {
   h.fireWatch();
   await h.settle();
   assert.strictEqual(h.calls.vibrate.length, 1, 'a flag raised mid-interview must reach the doctor early');
-  assert(/STILL ANSWERING/.test(h.screen()),
+  assert(/STILL ANSWERING/.test(h.briefs()),
     'and must NOT be announced as finished — there is no summary to go and read yet');
   assert.strictEqual(h.pill().hidden, true,
     'and the unread count must not include it: a badge that sends the doctor to read something that ' +
@@ -358,7 +371,7 @@ async function main() {
     'check-in. Keyed by id alone it is not "fresh", so the one class of check-in most likely to matter ' +
     'is the one that never announces.');
   assert.strictEqual(h.pill().hidden, false, 'and the finish is what the badge counts');
-  assert(!/STILL ANSWERING/.test(h.screen()), 'and the finish is rendered as a finish');
+  assert(!/STILL ANSWERING/.test(h.briefs()), 'and the finish is rendered as a finish');
 }
 
 /* ===========================================================================
@@ -397,7 +410,7 @@ async function main() {
   assert.strictEqual(h.pill().hidden, true, 'and reading the last one clears the pill entirely');
 
   /* Clearing the COUNT must not delete the BRIEFS. */
-  const s = h.screen();
+  const s = h.briefs();
   assert(/Left knee giving way/.test(s) && /Right shoulder stiff/.test(s) && /Chest pressure while walking/.test(s),
     'all three briefs must still be on the day screen — the badge is a count of what is unread, not a ' +
     'queue that empties');
@@ -414,8 +427,12 @@ async function main() {
 {
   const h = makeHarness({ checkins: [READY], appts: APPTS });
   await h.settle();
+  /* Order matters: going to the check-ins screen CLOSES the menu (a sheet left
+     open over a screen the doctor just navigated to is a sheet in the way), so
+     the briefs are captured first and the sheet is opened after. */
+  const briefsHtml = h.briefs();
   h.api().menu(true);
-  const everything = h.screen() + h.bar() + h.sheet() + h.frame()._html + String(h.pill().innerHTML);
+  const everything = briefsHtml + h.bar() + h.sheet() + h.frame()._html + String(h.pill().innerHTML);
   for (const lie of [
     'we will notify you', "we'll notify you", 'you will be notified', 'notify you when',
     'push notification', 'even when the app is closed', 'in the background'
@@ -434,7 +451,7 @@ async function main() {
 {
   const h = makeHarness({ checkins: [READY], appts: APPTS });
   await h.settle();
-  assert(/Left knee giving way/.test(h.screen()), 'precondition: a brief is on screen');
+  assert(/Left knee giving way/.test(h.briefs()), 'precondition: a brief is on screen');
 
   h.win.fetch = function (url) {
     if (/checkins/.test(String(url))) return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve(null) });
@@ -442,7 +459,7 @@ async function main() {
   };
   h.fireWatch();
   await h.settle();
-  assert(/Left knee giving way/.test(h.screen()),
+  assert(/Left knee giving way/.test(h.briefs()),
     'THE BRIEF HE WAS READING MUST SURVIVE: a failure to REFRESH is not a reason to withdraw what is ' +
     'already in hand');
 }
@@ -452,7 +469,7 @@ async function main() {
      things — one of them means a patient is sitting in a room, finished. */
   const h = makeHarness({ checkins: [], ckFails: true, appts: APPTS });
   await h.settle();
-  const s = h.screen();
+  const s = h.briefs();
   assert(/could not read the check-ins/i.test(s),
     'a check-in list that could not be FETCHED must say so, in words, on the screen');
   assert(!/no check-ins/i.test(s) && !/nobody has checked in/i.test(s),
@@ -465,9 +482,9 @@ async function main() {
 {
   const h = makeHarness({ checkins: [READY], appts: APPTS });
   await h.settle();
-  assert(!/Patient reports 3 weeks/.test(h.screen()), 'the summary starts collapsed');
+  assert(!/Patient reports 3 weeks/.test(h.briefs()), 'the summary starts collapsed');
   h.tap('ck-open', { 'data-id': '77' });
-  const open = h.screen();
+  const open = h.briefs();
   assert(/Pain 6\/10, worse descending stairs/.test(open), 'the bullets must be there');
   assert(/Patient reports 3 weeks of left knee instability/.test(open), 'and the summary itself');
   assert(/Worth asking/.test(open) && /ever locked/.test(open),
@@ -484,7 +501,7 @@ async function main() {
      assertion is made against the stylesheet rather than the string. */
   const h = makeHarness({ checkins: [Object.assign({}, READY, { audited: 'rejected' })], appts: APPTS });
   await h.settle();
-  const s = h.screen();
+  const s = h.briefs();
   assert(/AUDIT REJECTED THIS SUMMARY/.test(s),
     'a rejected audit must be stated — the doctor is about to walk into the room on this summary');
   const rule = (h.css().match(/\.ph3-ckmeta\{([^}]*)\}/) || [])[1] || '';
@@ -496,7 +513,7 @@ async function main() {
   /* Never graded is a third state and must not read like "passed". */
   const h = makeHarness({ checkins: [Object.assign({}, READY, { audited: null })], appts: APPTS });
   await h.settle();
-  assert(/not audit-checked/.test(h.screen()),
+  assert(/not audit-checked/.test(h.briefs()),
     'a summary nothing has checked against the transcript must say so');
 }
 
@@ -734,7 +751,7 @@ const MARCUS_CHART = {
 {
   const h = makeHarness({ checkins: [READY], appts: APPTS });
   await h.settle();
-  assert(/Left knee giving way/.test(h.screen()), 'precondition: a brief is on screen');
+  assert(/Left knee giving way/.test(h.briefs()), 'precondition: a brief is on screen');
   h.tap('ck-open', { 'data-id': '77' });
   assert.strictEqual(h.pill().hidden, true, 'precondition: he has read it, so nothing is unread');
 
