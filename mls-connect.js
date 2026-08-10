@@ -4545,7 +4545,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (wkUrl) { try { var w = new Worker(wkUrl); w.onmessage = function () { try { w.terminate(); } catch (e) {} cb(); }; w.postMessage(ms); return; } catch (e) {} }
     setTimeout(cb, ms);
   }
-  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } /* qol-2.2 D1: output lands in title="..." - a quote in a patient name broke out of the attribute */
   function state() { try { return (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state) || null; } catch (e) { return null; } }
   function mmss(ms) { var s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + 'm ' + ('0' + (s % 60)).slice(-2) + 's'; }
 
@@ -4647,6 +4647,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/^visits-source-key-unproven|^visits-total-not-readable|^visits-list-still-rendering/.test(head)) return 'could not confirm the visit list';
     if (/^identity-target-unresolved/.test(head)) return 'could not match this patient safely';
     if (/^no-athena-tab/.test(head) || /signed-in athenaOne/i.test(head)) return 'no signed-in athenaOne tab';
+    if (/^encounter-index-incomplete/.test(head)) return 'the visit list could not be fully confirmed';
+    if (/^same-frame-name-mismatch|^same-frame-name-missing/.test(head)) return 'a different athenaOne tab was in front';
+    if (/^storage-full-not-saved/.test(head)) return 'read but not saved \u2014 MLS storage is full';
+    if (/^chart-swap-never-settled/.test(head)) return 'the chart switched before it could be read';
+    if (/^six-card-profile-freshness-unproven/.test(head)) return 'could not confirm the chart was fresh';
+    if (/^history-partial/.test(head)) return 'part of the history could not be read';
+    if (/^athena-session-expired/.test(head)) return 'athenaOne signed out during the read';
+    if (/^pulled-day-unknown/.test(head)) return 'could not tell which day to read the note for';
+    if (head.length > 160) head = head.slice(0, 160).replace(/\s+\S*$/, '') + '\u2026'; /* qol-2.2 D2: never print a mid-word stump as the verdict */
     return head || 'could not read';
   }
   function rowsHtml(S) {
@@ -4663,10 +4672,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var pending = !good && (r.pending === true || r.done === false || PP_PENDING.test(raw));
       var why = good ? (r.axe === 'body-depth' ? 'saved (1 redo)' : 'saved')
         : pending ? (/^re-checking/.test(raw) ? 're-checking…' : 'reading…')
-        : ppHumanWhy(raw);
+        : (r.cs === true ? 'chart saved \u2014 visit notes incomplete' : ppHumanWhy(raw));
       var cls = good ? 'pp-ok' : (pending ? 'pp-wait' : 'pp-bad');
       var glyph = good ? '✓ ' : (pending ? '' : '⚠ ');
-      var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 160)) + '"' : '';
+      var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 200)) + '"' : '';
       return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span></div>';
     }).join('');
   }
@@ -4723,7 +4732,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     css();
     if (hidden) { ensureFab(true); paintFab(S); var ph = document.getElementById(PANEL); if (ph) ph.remove(); return; }
     ensureFab(false);
-    var total = S.total || 0, done = S.done || 0, ok = S.ok || 0, failed = S.failed || 0;
+    var total = S.total || 0, done = S.done || 0, ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0;
     var pct = total ? Math.round((done / total) * 100) : 0;
     var p = buildPanel();
     setText(p, 'done', String(done));
@@ -4734,7 +4743,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* ppt-2.0: "skipped" was the FAILED counter's label - failures called
        skips, counted per settle event. Chart-level truth, no euphemism. */
     var reChecking = Math.max(0, done - ok - failed);
-    setText(p, 'tally', '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
+    setText(p, 'tally', '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
     setText(p, 'current', String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
@@ -4750,6 +4759,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   (function loop() { tick(900, function () { try { render(); } catch (e) {} loop(); }); })();
 
+  api.humanWhy = ppHumanWhy; /* qol-2.2 D6: one wording per reason code, both surfaces */
   window.__mlsPullProgress = api;
   window.__mlsPullProgress_revert = function () { stopped = true; try { var p = document.getElementById(PANEL); if (p) p.remove(); } catch (e) {} try { ensureFab(false); } catch (e) {} try { delete window.__mlsPullProgress; } catch (e) {} };
 })();
@@ -11271,6 +11281,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try {
         var M = window.__mlsVisitModel;
         var vday = ((typeof dayHint === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dayHint)) ? dayHint : '') || apptDayFor(name) || todayKey();
+        /* qol-2.2: the scoped NOTE read may only use a KNOWN day - vday's
+           todayKey() fallback mis-scoped a past day's note to today. */
+        var vdayKnown = ((typeof dayHint === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dayHint)) ? dayHint : '') || apptDayFor(name) || '';
         if (M && typeof M.addVisit === 'function') {
           M.addVisit(p.id, { type: 'Chart summary', date: vday, raw: cleanText }, { source: 'athena-copy' });
         } else if (M && typeof M.ingestChart === 'function') {
@@ -11318,7 +11331,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (vp && vp.enabled && pFull && (triOn ? vp.enabled() : false)) {
           row.fullVisits = await vp.runForPatient(pFull, function () {});
         } else if (vp && typeof vp.runForPatient === 'function' && pFull && !triOn) {
-          try { row.todayNote = await vp.runForPatient(pFull, function () {}, { onlyDate: (typeof vday === 'string' ? vday : '') }); } catch (eTn) { row.todayNoteError = String((eTn && eTn.message) || eTn).slice(0, 80); }
+          try { if (vdayKnown) { row.todayNote = await vp.runForPatient(pFull, function () {}, { onlyDate: vdayKnown }); } else { row.todayNote = { ok: false, reason: 'pulled-day-unknown' }; } } catch (eTn) { row.todayNoteError = String((eTn && eTn.message) || eTn).slice(0, 80); }
         }
       } catch (eFull) { row.fullVisitsError = String((eFull && eFull.message) || eFull).slice(0, 100); }
       var pf = patientForTarget(target);
@@ -46218,7 +46231,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return cr;
         })(),
         identityBootstrap: ib ? { complete: ib.complete === true, attempted: ib.attempted, alreadyProven: ib.alreadyProven, requested: ib.requested, resolved: ib.resolved, failed: ib.failed, reasons: ib.reasons || {} } : null,
-        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), retryReasons: dsReasonHistogram(hr.retry),
+        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), retryReasons: dsReasonHistogram(hr.retry), todayNoteFailures: Number(hr.todayNoteFailures || 0), todayNoteReasons: (function () { var oTn = {}; try { Object.keys(hr.todayNoteReasons || {}).forEach(function (kTn) { oTn[String(kTn).slice(0, 80)] = Number(hr.todayNoteReasons[kTn] || 0); }); } catch (eTn) {} return oTn; })(),
           /* mdx-1.1.0: the sub-cause evidence behind bodies/index refusals -
              reason + histograms + counters only, never patient identifiers. */
           retryDiag: (function () { try { return (hr.retry || []).slice(0, 10).map(function (r) { return r && r.diag ? { reason: String(r.reason || '').slice(0, 80), hist: r.diag.hist || null, enumDiag: r.diag.enumDiag || null, receipt: r.diag.receipt || null } : null; }).filter(function (x0) { return !!x0; }); } catch (e) { return []; } })() } : null
@@ -46344,7 +46357,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var hist = ((hr.patients || []).filter(function (p) { return p && p.complete === true; })).length;
       var histGap = (rows > 0 && hist < rows) ? (rows - hist) : 0;
       var recon = pullReconLine(r);
-      return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (hr.requested != null ? (', history read for ' + hist + ' of ' + rows + ' as the reader counted it') : '') + '.' + (histGap ? (' ' + histGap + ' patient' + (histGap === 1 ? ' has' : 's have') + ' no chart yet - use Retry failed histories to finish them.') : '') + censusLine(hr) + (recon ? ' [' + recon + ']' : '') };
+      return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (hr.requested != null ? (', history read for ' + hist + ' of ' + rows + ' as the reader counted it') : '') + '.' + (histGap ? (' ' + histGap + ' patient' + (histGap === 1 ? ' has' : 's have') + ' no chart yet - use Retry failed histories to finish them.') : '') + censusLine(hr) + (function () { var tf = Number(hr.todayNoteFailures || 0); return tf ? (' ' + tf + ' pulled-day note' + (tf === 1 ? ' was' : 's were') + ' not read (fast lane); the charts themselves saved \u2014 see the pull panel rows.') : ''; })() + (recon ? ' [' + recon + ']' : '') };
     }
     var reason = r && r.reason || 'unverified-result';
     var sr2 = r && r.scheduleReceipt || {};
@@ -46961,13 +46974,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var kM = nk('visitNotesModeV2');
       if (!kM) return false;
       localStorage.setItem(kM, want);
-      try { var kV = nk('pullVisitBodies'), kS = nk('pullVisitBodiesSet'); if (kV && kS) { localStorage.setItem(kV, on === true ? '1' : '0'); localStorage.setItem(kS, '1'); } } catch (eC) {}
+      /* qol-2.0.1 CHOSEN SEMANTICS for a failed legacy-pair write: success is
+         claimed on the CANONICAL key alone (current code reads only it), the
+         operation is NOT failed, and the incoherence is NOT silent - it is
+         recorded on api.lastWrite.pairCoherent and console-warned, because an
+         older cached bundle on this machine reads the pair and would
+         otherwise see the opposite of what was just chosen. */
+      var pairCoherent = true;
+      try {
+        var kV = nk('pullVisitBodies'), kS = nk('pullVisitBodiesSet');
+        if (kV && kS) {
+          localStorage.setItem(kV, on === true ? '1' : '0');
+          localStorage.setItem(kS, '1');
+          pairCoherent = localStorage.getItem(kV) === (on === true ? '1' : '0') && localStorage.getItem(kS) === '1';
+        }
+      } catch (eC) { pairCoherent = false; }
       var got = read();
-      return got.state === want && got.on === (on === true);
+      var ok = got.state === want && got.on === (on === true);
+      api.lastWrite = { want: want, confirmed: ok, pairCoherent: pairCoherent };
+      if (ok && !pairCoherent) { try { console.warn('[mls] visit-notes preference: canonical key confirmed but the legacy-pair write failed; an older cached bundle could read a stale value until it updates.'); } catch (eW) {} }
+      return ok;
     } catch (e) { return false; }
   }
   function isPrefKey(k) { try { var s = String(k || ''); if (!s) return false; return s === nk('visitNotesModeV2') || s === nk('pullVisitBodies') || s === nk('pullVisitBodiesSet') || s === 'mls_save_every_athena_visit'; } catch (e) { return false; } }
-  window.__mlsVisitNotesPref = { installed: true, version: '2.0.0', read: read, write: write, isPrefKey: isPrefKey };
+  var api = { installed: true, version: '2.0.1', read: read, write: write, isPrefKey: isPrefKey, lastWrite: null };
+  window.__mlsVisitNotesPref = api;
 })();
 /* ===== __mlsVisitNotesPref RESOLVER END =================================== */
 
@@ -47003,7 +47034,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!cv || typeof cv.run !== 'function') return Promise.reject(new Error('The individual-visit reader is still loading. Reload MLS and try again.'));
     api.running = true;
     api.current = Promise.resolve(cv.run(function (m) { try { if (onStatus) onStatus(m); } catch (e) {} }, p, runOpts || undefined))
-      .then(function (n) { api.running = false; api.current = null; return { ok: true, visits: (typeof n === 'number' ? n : null) }; },
+      .then(function (n) { api.running = false; api.current = null; if (typeof n !== 'number') { return { ok: false, reason: 'visits-reader-returned-nothing', visits: null }; } return { ok: true, visits: n }; }, /* qol-2.2: cv.run resolves undefined when busy or no patient resolved - that used to become ok:true and a false-green todayNote */
             function (e) { api.running = false; api.current = null; throw e; });
     return api.current;
   };
@@ -48251,7 +48282,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var _vr = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null;
           if (_vr && _vr.state !== 'unset') _bv = _vr.on === true; /* qol-2.0 ONE RESOLVER */
         } catch (e0) {}
-        if (_bv === null) { var _bt = document.getElementById('mlsDsVisitBodies'); if (_bt && typeof _bt.checked === 'boolean') _bv = !!_bt.checked; }
+        if (_bv === null && _vr && _vr.state === 'unset') { var _bt = document.getElementById('mlsDsVisitBodies'); if (_bt && typeof _bt.checked === 'boolean') _bv = !!_bt.checked; }
         if (typeof _bv === 'boolean') jobPayload.pullVisitBodies = _bv;
       } catch (e) {}
       fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({
@@ -48271,6 +48302,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               try {
                 var vr3 = (window.__mlsVisitNotesPref && typeof window.__mlsVisitNotesPref.read === 'function') ? window.__mlsVisitNotesPref.read() : null; /* qol-2.0 ONE RESOLVER */
                 if (vr3 && vr3.state !== 'unset') return vr3.on === true ? '1' : '0';
+                if (vr3 === null) return '0';
                 var t = document.getElementById('mlsDsVisitBodies'); return (t && t.checked) ? '1' : '0';
               }
               catch (e) { return '0'; }

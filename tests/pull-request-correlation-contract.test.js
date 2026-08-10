@@ -189,10 +189,16 @@ assert(rl.includes("dedupeKey: 'pullDay|' + date + '|'"), 'duplicate commands ar
 assert(rl.includes('var jobPayload = { date: date, provider: provider, requestId: requestId }'),
   'job payload does not freeze date/provider/requestId');
 assert(rl.includes('payload: jobPayload'), 'the queued job does not send the frozen payload');
-assert(rl.includes('jobPayload.pullVisitBodies = !!_bt.checked'),
+/* qol-1.1a/qol-2.0: the choice travels RESOLVED (stored tri-state through the
+   ONE resolver outranks the hidden DOM node); the visible control is only the
+   unchosen-account fallback. Executed with the real resolver in
+   qol-setting-reaches-the-pull. */
+assert(rl.includes('jobPayload.pullVisitBodies = _bv'),
   'the requesting device\'s Full visit notes choice must travel with the job');
+assert(rl.includes('__mlsVisitNotesPref'),
+  'the travelling choice must come from the ONE resolver, not a DOM snapshot');
 assert(rl.includes("if (_bt && typeof _bt.checked === 'boolean')"),
-  'an absent control must send NOTHING, leaving the executing device in charge');
+  'with nothing chosen and no control mounted the payload must send NOTHING, leaving the executing device in charge');
 assert(rl.includes('pulled !== date'), 'phone does not verify the pulled-day echo before claiming success');
 assert(rl.includes('requestedDate: date'), 'agent result does not echo the requested date');
 /* honest disconnects + reload recovery + progress mirroring */

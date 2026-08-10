@@ -517,6 +517,8 @@ const tests = [
   'qol-off-lane-never-crashes.test.js',
   'qol-one-resolver-guard.test.js',
   'qol-resolver-four-sites.test.js',
+  'qol-off-path-fails-loudly.test.js',
+  'qol-panel-honesty.test.js',
   'quota-verified-writes.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
@@ -913,10 +915,26 @@ if (duplicates.length || missing.length || stale.length) {
   throw new Error(`Automated test registry is incomplete:\n- ${details.join('\n- ')}`);
 }
 
+/* 2026-08-10 DENOMINATOR LAW, applied to the gate itself: an exit code is
+   only sound alongside a completeness assertion. A crashed partial run once
+   produced an honest-looking file-read GATE_EXIT=0 over a fraction of the
+   suite. The run now prints its own expected total up front and a
+   GATE_COMPLETE line only after every registered suite executed — a wrapper
+   must require BOTH the exit code and the matching GATE_COMPLETE line. */
+console.log(`GATE_PLAN total=${tests.length}`);
+let executed = 0;
 for (const test of tests) {
   const file = path.join(__dirname, test);
   const r = spawnSync(process.execPath, [file], { stdio: 'inherit' });
-  if (r.status !== 0) process.exit(r.status || 1);
+  if (r.status !== 0) {
+    console.log(`GATE_INCOMPLETE executed=${executed} of=${tests.length} failedAt=${test}`);
+    process.exit(r.status || 1);
+  }
+  executed++;
 }
-
+if (executed !== tests.length) {
+  console.log(`GATE_INCOMPLETE executed=${executed} of=${tests.length}`);
+  process.exit(1);
+}
+console.log(`GATE_COMPLETE executed=${executed} of=${tests.length}`);
 console.log(`PASS all ${tests.length} local regression suites`);
