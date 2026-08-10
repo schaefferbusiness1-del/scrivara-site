@@ -298,6 +298,39 @@ launder the first-attempt metric. New acceptance dimension per the owner:
   (idempotent under the chart-level tally) — no "re-checking" survives a
   pull's end.
 
+## 9. The discriminator's verdict + the fence re-decision (added ~23:15)
+
+**TAB-FATIGUE CONFIRMED.** The attended-reload arc on 3.0.54, same charts, same
+session: degraded tab → cannot flip a calendar day (143s nav-failed) → reload
+(pre-probed, landing asserted, fresh CSRF) → the same pull sails through day
+flip + schedule, reads charts 3-16 at 22-30s (fastest of the night), slows
+after chart ~17 (**the degradation curve reproducing intra-run at the exact
+15-chart mark fb-1.2 was derived for**), main pass 9-final/13-sweepable,
+re-checks ACTIVELY clearing (pass 1: 4 of 13) — versus the collapse where
+re-checks cleared nothing. The run was killed one chart from its day line
+(the owner closed the session tabs; store safe, day retryable) so the exact
+close count is unrecorded; the first post-ship day 9 completes the numbers
+with the breaker + recycle running automated.
+
+**Avatar resolution:** the red was a REAL defect (presence-only barge-in — a
+cough would cut the question off); their fix + strengthened executed test on
+main; verified green in this tree post-merge. Attribution note: commit
+1363f7c5 (barge-in contract pin) is NOT this lane's — all lanes share the git
+identity. Codex's b992 consent train merged in the same window.
+
+**Fence re-decided in the open** (write-claims-need-a-receipt): the
+no-automatic-reloads pin tripped on the breaker and was re-decided per its own
+demand — pull-time reloads hold no unsaved work, mint fresh CSRF (attended
+proof), and are bounded by fb-1.1's probe/assert/dead-latch; the recovery path
+stays reload-free and its strings stay true. New pin: exactly ONE reload,
+located inside surfaceRefresh, count-asserted.
+
+**Deploy pipeline** (found mid-train): b991's Pages deploy FAILED on a 1.9MB
+debris PNG (the git-add-A class, 2nd occurrence); the removal commit's deploy
+sat QUEUED ~1h on a GitHub runner backlog; live serves b990 throughout. The
+ship sequence therefore ends with the deploy RUN CONCLUSION via the REST API
+plus a served-file grep — never a push receipt.
+
 ## Open at write time
 
 - Day 9 (22 charts, biggest of the month) mid-flight; splits at close.

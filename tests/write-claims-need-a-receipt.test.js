@@ -333,12 +333,34 @@ assert.strictEqual((mc.match(/'Opening the chart \(read-only\) for '/g) || []).l
  * 6. THE TWO STRINGS THAT NAME ACTIONS THAT DO NOT HAPPEN (B §5).
  * ================================================================== */
 
-/* There is no chrome.tabs.reload and no location.reload anywhere in
-   background.js -- deliberately: mlsRecoverAthenaTab's own header explains that
-   automatic reloads invalidated Athena's CSRF state and could discard unsaved
-   chart work. The RATIONALE is sound; the strings describing it were not. */
-assert(!/chrome\.tabs\.reload|location\.reload/.test(bg),
-  'automatic reloads must stay disabled -- if this ever becomes false the strings below need re-deciding, not silently re-enabling');
+/* RE-DECIDED 2026-08-09, as this pin demanded, rather than silently
+   re-enabled. The original rationale (automatic reloads invalidated Athena's
+   CSRF state and could discard unsaved chart work) is ANSWERED by fb-1.0..1.2,
+   not ignored:
+     - the fatigue breaker's reload fires only BETWEEN charts, and a pull never
+       holds unsaved athena-side work by design ("Nothing is ever written to a
+       chart during a pull");
+     - a frameset reload mints a FRESH CSRF token and every chart open
+       re-establishes its own context (proven attended 2026-08-09: the reload
+       took a tab that could not even flip the calendar day back to full-speed
+       chart reads);
+     - the 2026-08-08 interstitial/sign-in danger is bounded by fb-1.1's
+       pre-reload weather probe, post-reload frameset assertion, and the dead
+       latch that stops the run loudly instead of retrying.
+   The RECOVERY path (mlsRecoverAthenaTab) still performs NO reload — the
+   strings below remain true for the path they describe. Exactly ONE reload
+   exists, inside the engine-owned surfaceRefresh op. */
+{
+  const bgReloads = (bg.match(/location\.reload/g) || []).length;
+  assert.strictEqual(bgReloads, 1,
+    'exactly ONE reload exists in background.js: the fatigue breaker\'s surfaceRefresh op — got ' + bgReloads + ' (a second one needs this pin re-decided again)');
+  assert(!/chrome\.tabs\.reload/.test(bg),
+    'no chrome.tabs.reload — the one reload is page-side, engine-owned, probed and asserted');
+  const srAt = bg.indexOf("if (op === 'surfaceRefresh') {");
+  const srEnd = bg.indexOf("if (op === 'deptGet') {");
+  assert(srAt > 0 && srEnd > srAt && /location\.reload/.test(bg.slice(srAt, srEnd)),
+    'the one reload lives inside the surfaceRefresh op, nowhere else — the recovery path stays reload-free');
+}
 assert(!/freeze-guard reload/.test(bg),
   'the clinician must not be shown "(freeze-guard reload)" for a recovery that performs no reload: this repo has a documented defect class of instructions pointing at things that do not exist');
 assert(!/reloading it and retrying/.test(bg),
