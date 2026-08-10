@@ -3939,7 +3939,7 @@ async function mlsAthenaPrepProcTemplate(params, mode) {
   var tabName = String(params.tab || 'PE');
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   function vis(el) { try { var r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; var s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.opacity || '1') > 0.05; } catch (e) { return true; } }
-  function txt(el) { return ((el && (el.textContent || el.innerText)) || '').replace(/\s+/g, ' ').trim(); }
+  function txt(el) { /* cx-1.0: non-rendered nodes are not content - script/style text must never enter captured clinical fields */ if (!el) return ''; var s = ''; try { s = (el.querySelector && el.querySelector('script,style,noscript,template')) ? (function () { var c = el.cloneNode(true); var j = c.querySelectorAll('script,style,noscript,template'); for (var i = 0; i < j.length; i++) { try { j[i].parentNode.removeChild(j[i]); } catch (e0) {} } return c.textContent || ''; })() : ((el.textContent || el.innerText) || ''); } catch (e1) { s = (el && (el.textContent || el.innerText)) || ''; } return String(s).replace(/\s+/g, ' ').trim(); }
   function clickEl(el) {
     try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
     var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -4989,7 +4989,7 @@ var mlsProv = (function () {
     return out;
   }
 
-  function txt(el) { try { return clean(el.textContent); } catch (e) { return ''; } }
+  function txt(el) { /* cx-1.0: non-rendered nodes are not content */ try { if (el && el.querySelector && el.querySelector('script,style,noscript,template')) { var cxc = el.cloneNode(true); var cxj = cxc.querySelectorAll('script,style,noscript,template'); for (var cxi = 0; cxi < cxj.length; cxi++) { try { cxj[cxi].parentNode.removeChild(cxj[cxi]); } catch (e0) {} } return clean(cxc.textContent); } return clean(el.textContent); } catch (e) { return ''; } }
 
   /* Identity proof is row-scoped and label/attribute-gated. A bare date or
      number in row text is never a DOB/MRN. Conflicting explicit values clear
@@ -9062,7 +9062,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     for (var k in DEFAULT) { if (cfg[k] == null) cfg[k] = DEFAULT[k]; }
     var DATE_RE = /(?:^|[^\d])(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})(?!\d)/;
     var CPT_RE = /\b\d{5}\b/g, ICD_RE = /\b[A-TV-Z]\d[0-9A-Z](?:\.[0-9A-Z]{1,4})?\b/g;
-    function txt(el) { return (el && (el.innerText || el.textContent) || '').replace(/\s+/g, ' ').trim(); }
+    function txt(el) { /* cx-1.0: non-rendered nodes are not content - on a hidden tab innerText degrades to textContent, which includes script bodies */ if (!el) return ''; var s = ''; try { s = (el.querySelector && el.querySelector('script,style,noscript,template')) ? (function () { var c = el.cloneNode(true); var j = c.querySelectorAll('script,style,noscript,template'); for (var i = 0; i < j.length; i++) { try { j[i].parentNode.removeChild(j[i]); } catch (e0) {} } return c.textContent || ''; })() : ((el.innerText || el.textContent) || ''); } catch (e1) { s = (el && (el.innerText || el.textContent)) || ''; } return String(s).replace(/\s+/g, ' ').trim(); }
     function low(s) { return String(s || '').toLowerCase(); }
     function excluded(s) { s = low(s); for (var i = 0; i < cfg.excludeClickLabels.length; i++) { if (s.indexOf(cfg.excludeClickLabels[i]) >= 0) return true; } return false; }
     function hasType(s) { s = low(s); for (var i = 0; i < cfg.typeKeywords.length; i++) { if (s.indexOf(cfg.typeKeywords[i]) >= 0) return true; } return false; }
@@ -9473,7 +9473,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       (function axTxtWalk(root, depth) {
         if (depth > 20 || axSN > 40) return;
         var all = root.querySelectorAll('*');
-        for (var ti = 0; ti < all.length; ti++) { if (all[ti].shadowRoot) { axSN++; axParts.push(String(all[ti].shadowRoot.textContent || '').replace(/[ \t]+/g, ' ')); axTxtWalk(all[ti].shadowRoot, depth + 1); } }
+        for (var ti = 0; ti < all.length; ti++) { if (all[ti].shadowRoot) { axSN++; axParts.push((function (sr) { /* cx-1.0: strip non-rendered nodes from shadow text too */ try { var st = sr.querySelectorAll('script,style,noscript,template'); if (st.length) { var acc = '', kids = sr.childNodes; for (var ki = 0; ki < kids.length; ki++) { var kn = kids[ki]; if (kn.nodeType === 1 && /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(kn.tagName)) continue; if (kn.nodeType === 1 && kn.querySelector && kn.querySelector('script,style,noscript,template')) { var kc = kn.cloneNode(true); var kj = kc.querySelectorAll('script,style,noscript,template'); for (var kx = 0; kx < kj.length; kx++) { try { kj[kx].parentNode.removeChild(kj[kx]); } catch (e0) {} } acc += kc.textContent || ''; } else { acc += kn.textContent || ''; } } return String(acc).replace(/[ \t]+/g, ' '); } } catch (eSr) {} return String(sr.textContent || '').replace(/[ \t]+/g, ' '); })(all[ti].shadowRoot)); axTxtWalk(all[ti].shadowRoot, depth + 1); } }
       })(document, 0);
       var axRaw = axParts.join('\n').slice(0, 90000);
       var axDm = axRaw.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/);

@@ -327,6 +327,7 @@ const tests = [
   'schedule-scrape-deadline-searchopen-runtime.test.js',
   'background-all-visits-cleanup-serialization.test.js',
   'quiet-pull-pending-release-runtime.test.js',
+  'chart-capture-excludes-script-text.test.js',
   'chart-request-deadline-runtime.test.js',
   'patient-chart-parse-abort-runtime.test.js',
   'chart-refresh-merge-runtime.test.js',
