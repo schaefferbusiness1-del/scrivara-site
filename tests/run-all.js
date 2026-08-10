@@ -510,6 +510,10 @@ const tests = [
   'ax-native-reader.test.js',
   'fatigue-breaker.test.js',
   'department-scope-primitives.test.js',
+  'qol-setting-reaches-the-pull.test.js',
+  'qol-batch-scoped-focus-restore.test.js',
+  'qol-pulled-day-note-honesty.test.js',
+  'qol-follow-sees-cross-tab-pulls.test.js',
   'quota-verified-writes.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates

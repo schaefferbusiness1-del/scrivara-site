@@ -120,7 +120,7 @@ function isInternalDirectory(pathname) {
  * every test saw a healthy 200 on the origin.
  *
  * Measured live by the QA lane on 2026-08-06 (owner's Chrome, build b903):
- *   /MLS_Assist_v3.0.57.zip -> 410      (the current release, blocked)
+ *   /MLS_Assist_v3.0.61.zip -> 410      (the current release, blocked)
  *   /MLS_Assist_v3.0.44.zip -> 404      (passthrough — the stale worker's literal)
  *   getRegistration() -> active + waiting, and the worker did NOT roll across
  *   three successive production deploys.

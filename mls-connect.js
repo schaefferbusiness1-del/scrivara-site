@@ -4640,6 +4640,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/^identity-mismatch/.test(head)) return 'chart identity could not be verified';
     if (/^open-failed$/.test(head)) return 'not on the athenaOne schedule';
     if (/^read-failed$/.test(head)) return 'chart read timed out';
+    if (/^pulled-day-note-unread/.test(head)) return 'the note for the pulled day could not be read';
     if (/^visit-bodies-incomplete/.test(head)) return 'some visit notes could not be read';
     if (/^no-chart-frame-candidate/.test(head)) return 'the chart never finished loading';
     if (/^visits-time-budget-exceeded/.test(head)) return 'ran out of time reading visits';
@@ -44088,7 +44089,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260810chk3057';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v=20260810chk3061';s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
@@ -46827,6 +46828,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var cur = null, chosen = false; try { cur = key ? localStorage.getItem(key) : null; chosen = setKey ? localStorage.getItem(setKey) === '1' : false; } catch (e) {}
         tgl.checked = chosen ? cur !== '0' : true;
         tgl.onchange = function () { try { if (key) { localStorage.setItem(key, tgl.checked ? '1' : '0'); if (setKey) localStorage.setItem(setKey, '1'); } } catch (e) {} };
+        /* qol-1.1d: a checkbox is a picture of a setting, not the setting -
+           repaint from the stored preference when another tab changes it. */
+        try { window.addEventListener('storage', function (ev) { try { if (ev && (ev.key === key || ev.key === setKey)) { var cur2 = key ? localStorage.getItem(key) : null; var chosen2 = setKey ? localStorage.getItem(setKey) === '1' : false; tgl.checked = chosen2 ? cur2 !== '0' : true; } } catch (e2) {} }); } catch (e3) {}
       })();
       $('mlsDsPrev').onclick = function () { shift(-1); };
       $('mlsDsNext').onclick = function () { shift(1); };
@@ -46905,8 +46909,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      account that never found this toggle (index-only stubs on 47 of 51 live
      snapshot patients). An explicit stored '0' — only ever written by a
      human clicking the toggle — still means OFF. */
-  function enabled() { try { var v = localStorage.getItem(KEY); return v == null ? true : v === '1'; } catch (e) { return true; } }
-  function setEnabled(v) { try { localStorage.setItem(KEY, v ? '1' : '0'); } catch (e) {} }
+  function enabled() { /* qol-1.1b: ONE setting - the per-account Full-visit-notes tri-state governs this leg too. The legacy global key was un-namespaced (a cross-account leak) and fed a near-duplicate Settings row whose "off by default" copy was false; it migrates into the account namespace on first read and is retired. */ try { var k = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : ''; var sk = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : ''; if (k && sk) { if (localStorage.getItem(sk) === '1') return localStorage.getItem(k) !== '0'; var legacy = localStorage.getItem(KEY); if (legacy === '0' || legacy === '1') { try { localStorage.setItem(k, legacy); localStorage.setItem(sk, '1'); localStorage.removeItem(KEY); } catch (eM) {} return legacy === '1'; } return true; } var v = localStorage.getItem(KEY); return v == null ? true : v === '1'; } catch (e) { return true; } }
+  function setEnabled(v) { try { var k = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : ''; var sk = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : ''; if (k && sk) { localStorage.setItem(k, v ? '1' : '0'); localStorage.setItem(sk, '1'); try { localStorage.removeItem(KEY); } catch (eR) {} return; } localStorage.setItem(KEY, v ? '1' : '0'); } catch (e) {} }
   function toast(m, k) { try { if (typeof window.toast === 'function') window.toast(m, k || ''); } catch (e) {} }
   function activeP() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
   api.enabled = enabled;
@@ -46931,18 +46935,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var modal = $('settingsModal');
       if (!modal || getComputedStyle(modal).display === 'none') return;
-      var old = $('mlsSaveEveryVisitTgl');
-      if (old) { old.checked = enabled(); return; }
-      var heads = modal.querySelectorAll('.set-head'), host = null;
-      for (var i = 0; i < heads.length; i++) { if (/integrations/i.test(heads[i].textContent || '')) { host = heads[i].parentElement; break; } }
-      if (!host) return;
-      var row = document.createElement('div'); row.id = 'mlsSaveEveryVisitRow'; row.className = 'field';
-      row.innerHTML = '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600">' +
-        '<input type="checkbox" id="mlsSaveEveryVisitTgl" style="width:16px;height:16px;margin:0"> Save every individual Athena visit</label>' +
-        '<p class="set-desc" style="margin:4px 0 0">After the normal organized chart pull, also open and save every dated visit with its own AI summary. This is read-only in Athena and can add several minutes for long charts, so it is off by default.</p>';
-      host.appendChild(row);
-      var tg = $('mlsSaveEveryVisitTgl'); tg.checked = enabled();
-      tg.addEventListener('change', function () { setEnabled(tg.checked); toast(tg.checked ? 'Full individual-visit saving is ON for future chart pulls.' : 'Chart pulls will save the organized history only.', ''); });
+      /* qol-1.1c: this row duplicated the "Pull full visit notes" setting under
+         different words, wrote a DEAD un-namespaced key the day-pull never read,
+         and its "off by default" copy was false (absent key rendered CHECKED).
+         The owner flipped it and the pull ignored him (2026-08-10). ONE control
+         remains: #setPullVisitBodies. Long-lived tabs get the row deleted. */
+      var old = $('mlsSaveEveryVisitRow');
+      if (old && old.parentElement) { try { old.parentElement.removeChild(old); } catch (eRm) {} }
     } catch (e) {}
   }
   var wrapped = false, origSingle = null;
@@ -48165,8 +48164,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          NOTHING and the executing device keeps deciding — the previous
          behaviour, rather than a guess. */
       try {
-        var _bt = document.getElementById('mlsDsVisitBodies');
-        if (_bt && typeof _bt.checked === 'boolean') jobPayload.pullVisitBodies = !!_bt.checked;
+        /* qol-1.1a: THE VIEW OUTRANKED THE RECORD (2026-08-10). This used to
+           snapshot the #mlsDsVisitBodies DOM node - a checkbox the calm shell
+           HIDES and that can paint stale - and that value outranked the
+           clinician's stored preference on the runner. Resolve the per-account
+           tri-state instead; the DOM is only a fallback when storage is
+           unreadable. */
+        var _bv = null;
+        try {
+          var _bk = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : '';
+          var _bs = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : '';
+          if (_bk && _bs && localStorage.getItem(_bs) === '1') _bv = localStorage.getItem(_bk) !== '0';
+        } catch (e0) {}
+        if (_bv === null) { var _bt = document.getElementById('mlsDsVisitBodies'); if (_bt && typeof _bt.checked === 'boolean') _bv = !!_bt.checked; }
+        if (typeof _bv === 'boolean') jobPayload.pullVisitBodies = _bv;
       } catch (e) {}
       fetch(base() + '/api/relay/jobs', { method: 'POST', headers: H(), body: JSON.stringify({
         kind: 'pullDay',
@@ -48182,7 +48193,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            clinician asked for were never fetched. */
         dedupeKey: 'pullDay|' + date + '|' + (provider && (provider.stableKey || provider.name) || 'all')
           + '|b' + (function () {
-              try { var t = document.getElementById('mlsDsVisitBodies'); return (t && t.checked) ? '1' : '0'; }
+              try {
+                var dk = (typeof window.uns === 'function') ? window.uns('pullVisitBodies') : '';
+                var ds = (typeof window.uns === 'function') ? window.uns('pullVisitBodiesSet') : '';
+                if (dk && ds && localStorage.getItem(ds) === '1') return localStorage.getItem(dk) !== '0' ? '1' : '0';
+                var t = document.getElementById('mlsDsVisitBodies'); return (t && t.checked) ? '1' : '0';
+              }
               catch (e) { return '0'; }
             })()
       }) })

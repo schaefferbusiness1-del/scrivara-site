@@ -3698,7 +3698,7 @@
         var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
         var tnId = String(oneTn.patientId || "");
         var tnP = (tnDay && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
-        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnDay ? "reader-unavailable" : "no-day-on-row"; continue; }
+        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnDay ? "reader-unavailable" : "no-day-on-row"; if (tnDay && typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread reader-unavailable"); } catch (ePpA) {} } continue; }
         if (todayNoteExtOk === null) {
           /* 2026-07-28 invariant fix: an extension that predates the
              day-scoped reader ignores onlyDate and returns EVERY body -
@@ -3711,12 +3711,15 @@
             return (Number(m[1]) > 3) || (Number(m[1]) === 3 && (Number(m[2]) > 0 || Number(m[3]) >= 30));
           }, false);
         }
-        if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; continue; }
+        if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; if (typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread extension-predates-scoped-read"); } catch (ePpB) {} } continue; }
         try {
           var tnRes = await vpToday.runForPatient(tnP, function () {}, { onlyDate: tnDay });
           oneTn.todayNote = !!(tnRes && (tnRes.ok === true || typeof tnRes === "number" || tnRes.visits != null));
           if (!oneTn.todayNote) oneTn.todayNoteReason = String((tnRes && tnRes.reason) || "scoped-read-unverified").slice(0, 80);
         } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); }
+        /* qol-1.3: this failure used to be invisible - the row stayed "saved"
+           while the one note the owner says matters most was never read. */
+        if (oneTn.todayNote !== true && typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + String(oneTn.todayNoteReason || "").slice(0, 60)); } catch (ePpC) {} }
       }
     }
     finalizeVerdict();

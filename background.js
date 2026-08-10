@@ -11371,6 +11371,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       /* fg-1.1: a restore may still be in flight from the previous row -
          let it land first so this front captures the true previous state. */
       try { if (__mlsFgRestorePending) await __mlsFgRestorePending; } catch (eRp) {}
+      try { if (__mlsFgDeferredRestore) { var __dSlot = __mlsFgDeferredRestore; __mlsFgDeferredRestore = null; clearTimeout(__dSlot.timer); var __dSt = __dSlot.state; if (__dSt && __dSt.athTabId != null) { var __wNow = await new Promise(function (rsW) { try { chrome.windows.getLastFocused({ populate: true }, function (w) { void chrome.runtime.lastError; rsW(w || null); }); } catch (eW) { rsW(null); } }); var __stillFront = !!(__wNow && __wNow.focused === true && __wNow.id === __dSt.athWinId && (__wNow.tabs || []).some(function (t) { return t.active && t.id === __dSt.athTabId; })); if (__stillFront) return __dSt; } } } catch (eDI) {}
       /* fg-1.1: only steal focus Chrome already owns. If the doctor is
          outside Chrome entirely (focused:false), fronting would raise a
          window under their typing and retry keystrokes could land in the
@@ -11421,6 +11422,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         settle();
       });
     } catch (eGl) { settle(); }
+  }
+  var __mlsFgDeferredRestore = null;
+  function __mlsDeferRestoreAfterRead(state) {
+    /* qol-1.2: BATCH-SCOPED focus restore. Each presence-assisted read used to
+       front athena and then immediately yank focus back ("it keeps pulling me
+       to mls") - N yanks for an N-patient day pull. The restore is now
+       deferred; the next read of the same batch cancels the timer and inherits
+       the batch's ORIGINAL previous-tab, so the batch fronts once and restores
+       once, to where the doctor actually started. The newer-choice-wins check
+       still runs at fire time inside __mlsRestoreFocusAfterRead. */
+    if (!state) return;
+    try { if (__mlsFgDeferredRestore) { clearTimeout(__mlsFgDeferredRestore.timer); if (__mlsFgDeferredRestore.state && __mlsFgDeferredRestore.state.athTabId === state.athTabId) { state = __mlsFgDeferredRestore.state; } __mlsFgDeferredRestore = null; } } catch (eD0) {}
+    var slot = { state: state, timer: null };
+    slot.timer = setTimeout(function () { try { if (__mlsFgDeferredRestore === slot) __mlsFgDeferredRestore = null; __mlsRestoreFocusAfterRead(slot.state); } catch (eD1) {} }, 8000);
+    __mlsFgDeferredRestore = slot;
   }
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAllVisitsRequest') return; // not ours; let other listeners handle
@@ -11476,7 +11492,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                awaited by this completed read. */
             if (activeAllVisitsPromise === thisRead) activeAllVisitsPromise = null;
             if (msg.foregroundOk === true && value && typeof value === 'object') { try { value.fronted = __fgDidFront === true; } catch (eFr) {} } /* fg-1.2: the reply discloses whether the assist actually ran, so the app can tell the doctor when presence would have helped */
-            try { __mlsRestoreFocusAfterRead(__fgState); __fgState = null; } catch (eRf) {}
+            try { __mlsDeferRestoreAfterRead(__fgState); __fgState = null; } catch (eRf) {}
             if (value && value.ok !== true) {
               /* sx-1.1: bounded (2.5s) session probe rides history-read failures.
                  Only the response is deferred; the cleanup below runs now. */

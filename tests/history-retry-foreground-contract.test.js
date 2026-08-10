@@ -24,9 +24,13 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.join(__dirname, '..');
-const candDir = ['3.0.45', '3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v)).find(p => fs.existsSync(path.join(p, 'background.js')));
-const bg = fs.readFileSync(candDir ? path.join(candDir, 'background.js') : path.join(root, 'background.js'), 'utf8');
-const content = fs.readFileSync(candDir ? path.join(candDir, 'content.js') : path.join(root, 'content.js'), 'utf8');
+/* qol-1.2 (2026-08-10): EXISTING IS NOT RUNNING — this suite used to prefer an
+   extension-candidates/3.0.4x snapshot when one existed, so it stayed green all
+   day while auditing 3.0.45-era bytes instead of the shipped source. The repo
+   ROOT has been the extension's source of truth since the 3.0.4x trains ended;
+   the candidate preference is retired. */
+const bg = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
+const content = fs.readFileSync(path.join(root, 'content.js'), 'utf8');
 const feat = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
 
 let n = 0;
@@ -45,12 +49,24 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   const quietSlice = bg.slice(elseRun, bg.indexOf('activeAllVisitsPromise = thisRead;', elseRun));
   assert.ok(quietSlice.includes('runAllVisits(appTabId,') && !/chrome\.(tabs|windows)\.update/.test(quietSlice),
     'the quiet path never touches tab or window focus');
-  /* restore precedes the response at the single terminal */
-  const finishIdx = bg.indexOf('__mlsRestoreFocusAfterRead(__fgState); __fgState = null;');
-  const respIdx = bg.indexOf('sendResponse(value);', finishIdx - 400);
+  /* qol-1.2 (2026-08-10): the restore is BATCH-SCOPED. finish() used to call
+     __mlsRestoreFocusAfterRead per read, so an N-patient day pull fronted
+     athena and yanked focus back N times ("it keeps pulling me to mls").
+     finish() now schedules a DEFERRED restore; the next read of the same
+     batch cancels the timer and inherits the batch's ORIGINAL previous-tab,
+     so the batch fronts once and restores once — and the deferred timer
+     still lands on the same newer-choice-wins restore logic. */
+  const finishIdx = bg.indexOf('__mlsDeferRestoreAfterRead(__fgState); __fgState = null;');
   assert.ok(finishIdx > 0 && bg.indexOf('sendResponse(value);', finishIdx) > finishIdx,
-    'restore runs in finish() before the response goes out');
-  ok('background: front only under foregroundOk, quiet path focus-free, restore at the terminal');
+    'the deferred restore is scheduled in finish() before the response goes out');
+  assert.ok(!bg.includes('__mlsRestoreFocusAfterRead(__fgState)'),
+    'the per-read immediate restore is gone (it was the N-yanks defect)');
+  assert.ok(bg.indexOf('function __mlsDeferRestoreAfterRead(state)') > 0, 'the deferral helper exists');
+  assert.ok(bg.indexOf('__mlsRestoreFocusAfterRead(slot.state)') > 0,
+    'the deferred timer still lands on the same newer-choice-wins restore');
+  assert.ok(bg.indexOf('clearTimeout(__dSlot.timer)') > 0,
+    'the next front cancels a pending deferred restore and can inherit its state');
+  ok('background: front only under foregroundOk, quiet path focus-free, batch-scoped deferred restore at the terminal');
 }
 
 /* ---- 2. app: the flag exists only for USER-INITIATED lanes ----

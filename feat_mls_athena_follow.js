@@ -80,7 +80,16 @@
       var t = S(b.textContent).trim();
       return !!t && !/^📥?\s*Pull\b/i.test(t);
     }, false);
-    return stampFresh || btnBusy;
+    var xtabFresh = safe(function () {
+      /* qol-1.4: the per-tab checks are blind to a pull running in another
+         MLS tab; the managed pull stamps uns('mlsPullBusyXTabV1') with a
+         timestamp - honor it here so Follow can never search-open a chart
+         into a drive it cannot see. */
+      var k = (typeof window.uns === 'function') ? window.uns('mlsPullBusyXTabV1') : 'mlsPullBusyXTabV1';
+      var v = Number(localStorage.getItem(k) || 0);
+      return v > 0 && (Date.now() - v) < 120000;
+    }, false);
+    return stampFresh || btnBusy || xtabFresh;
   }
   function recording() {
     return safe(function () { var b = $('captureBtn'); return !!b && /stop/i.test(S(b.textContent)); }, false);
