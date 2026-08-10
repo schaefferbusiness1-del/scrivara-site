@@ -3688,6 +3688,14 @@
        bounds each read; failures land on todayNoteReason and never change
        the pull verdict. */
     if (pullVisitBodies !== true) {
+      /* qol-1.5: this block read the UNDECLARED todayNoteExtOk (and called an
+         undefined safeAsync) OUTSIDE any try/catch - the first visits-skipped
+         patient threw ReferenceError, the day verdict and sweep never ran, and
+         the progress panel span forever. Both are now declared, and the whole
+         pass is fenced so finalizeVerdict()/ppEnd are reachable on EVERY path. */
+      var todayNoteExtOk = null;
+      var safeAsync = async function (fn, fb) { try { return await fn(); } catch (eSa) { return fb; } };
+      try {
       var todayNoteDayById = {};
       try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) todayNoteDayById[pid] = normDate((r && (r.scheduleDate || r.date)) || "") || ""; }); } catch (eMap) {}
       var vpToday = safe(function () { return window.__mlsVisitSavePref; }, null);
@@ -3721,6 +3729,7 @@
            while the one note the owner says matters most was never read. */
         if (oneTn.todayNote !== true && typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + String(oneTn.todayNoteReason || "").slice(0, 60)); } catch (ePpC) {} }
       }
+      } catch (eTodayNotePass) { try { if (receipt) receipt.todayNotePassError = String((eTodayNotePass && eTodayNotePass.message) || eTodayNotePass).slice(0, 120); } catch (eR2) {} }
     }
     finalizeVerdict();
     /* si-1.9.0 (owner directive 2026-07-22): pulls must COMPLETE during
