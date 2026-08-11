@@ -1,17 +1,41 @@
 'use strict';
 
-/* Runtime proof for the release-safe patient store. Normal saves remain
-   synchronous and complete in the legacy ::patients key before returning.
-   Managed chart pulls may opt into off-main-thread compression, but they still
-   commit the same MLSZ1 bytes to that one key and never introduce a recovery
-   sidecar or journal protocol. */
+/* Runtime proof for the release-safe patient store, sj-2.0 EDITION -
+   DELIBERATE PIN MOVE No. 2 of exactly two. This file is the drafted
+   REPLACEMENT for tests/patient-store-sync-rollback-runtime.test.js and may
+   only replace it AT the phase-2 fence re-route commit.
+
+   THE MOVE, with the design's authorization quoted (tests/live-e2e-artifacts/
+   2026-08-11-sj2-patients-idb-design.md, "The architecture" - arrows rendered
+   ASCII):
+
+     "savePatients updates memory -> writes the small sync journal entry
+      (dirty patients only, bounded, NEW name ptsJournalV2) -> bumps the sync
+      generation key ... -> queues the async IDB blob write -> returns
+      undefined same-tick. Durable-before-return holds via the journal (sync,
+      small); cold reload = IDB blob + journal replay (the sync-rollback
+      CONTRACT holds; its MECHANISM pin moves deliberately)."
+
+   WHAT MOVES: only the cold-reload MECHANISM proof. The shipped pin proved
+   durability by watching the multi-MB blob's bytes move in localStorage;
+   post-migration the proof is: the sync JOURNAL accepted the delta before
+   savePatients returned, and a cold reload reproduces the saved rows from
+   the IndexedDB blob + journal replay - even when IndexedDB never confirmed
+   before the reload (the journal alone carries the unconfirmed edit).
+
+   WHAT DOES NOT MOVE: savePatients returns undefined; quota failure is loud;
+   the retired v1 journal names stay banned (ptsJournalV2 is the sanctioned
+   sj-2.0 name - the ban is on the NAMES '.pending-v1'/'.commit-v1', not on
+   the concept); cooperative worker routing stays managed-only; the ls-mode
+   (pre-migration) cases keep the shipped blob-byte proof verbatim, because
+   every user the owner-gated cutover has not reached still lives there. */
 
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const root = path.resolve(__dirname, '..');
+const root = process.env.MLS_REPO_ROOT || path.resolve(__dirname, '..');
 
 function patientStoreBlock(file) {
   const html = fs.readFileSync(file, 'utf8');
@@ -69,6 +93,10 @@ for (const file of ['mls-connect.js', 'feat_mls_store_cache.js', 'feat_mls_visit
   assert(!text.includes('__mlsReadPatientStore'), file + ' still reads through the retired journal');
 }
 
+/* sj-2.0: the primitive block is part of this window */
+assert(source.includes('/* ===== BEGIN mls-pts-store (sj-2.0) ===== */'),
+  'sj-2.0 primitive block present - this MOVED suite only replaces the shipped one post-splice');
+
 function makeStore(seed, fail) {
   const data = new Map(Object.entries(seed || {}));
   return {
@@ -120,6 +148,52 @@ function makeHarness(store, globals) {
   };
 }
 
+/* minimal fake IndexedDB for the sj-2.0 mechanism half (house style; the
+   stall switch models an IndexedDB that stops confirming mid-session) */
+function makeIDB(persist, opts) {
+  opts = opts || {};
+  const stores = persist || new Map();
+  function req() { return { onsuccess: null, onerror: null, result: undefined, error: null }; }
+  function makeDB() {
+    return {
+      close() {},
+      objectStoreNames: { contains: n => stores.has(n) },
+      transaction() {
+        const tx = { oncomplete: null, onabort: null, onerror: null, error: null, _aborted: false };
+        const stalled = !!(opts.stall && opts.stall.on);
+        tx.abort = function () { tx._aborted = true; setImmediate(() => { tx.onabort && tx.onabort(); }); };
+        tx.objectStore = function (n) {
+          const m = stores.get(n);
+          return {
+            get(k) { const r = req(); if (stalled) return r; setImmediate(() => { if (tx._aborted) return; r.result = m.has(k) ? JSON.parse(JSON.stringify(m.get(k))) : undefined; r.onsuccess && r.onsuccess(); }); return r; },
+            put(rec) { const r = req(); if (stalled) return r; setImmediate(() => { if (tx._aborted) return; m.set(rec.k, JSON.parse(JSON.stringify(rec))); r.onsuccess && r.onsuccess(); }); return r; },
+            delete(k) { const r = req(); if (stalled) return r; setImmediate(() => { if (tx._aborted) return; m.delete(k); r.onsuccess && r.onsuccess(); }); return r; },
+          };
+        };
+        if (!stalled) setImmediate(() => setImmediate(() => setImmediate(() => { if (!tx._aborted) { tx.oncomplete && tx.oncomplete(); } })));
+        return tx;
+      },
+    };
+  }
+  return {
+    _stores: stores,
+    open() {
+      const r = req(); r.onupgradeneeded = null; r.onblocked = null;
+      if (opts.stall && opts.stall.on) return r;
+      setImmediate(() => {
+        if (!stores.has('ptsBlobs')) {
+          r.result = { objectStoreNames: { contains: n => stores.has(n) }, createObjectStore: n => { stores.set(n, new Map()); return {}; } };
+          r.onupgradeneeded && r.onupgradeneeded();
+        }
+        r.result = makeDB(); r.onsuccess && r.onsuccess();
+      });
+      return r;
+    },
+  };
+}
+const tickIm = () => new Promise(r => setImmediate(r));
+async function settleIm(n) { for (let i = 0; i < (n || 80); i++) await tickIm(); }
+
 function bigPatients() {
   const rows = [];
   for (let i = 0; i < 260; i++) {
@@ -130,6 +204,8 @@ function bigPatients() {
 }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function pkey(account) { return 'sf_u::' + account + '::patients'; }
+function jkey(account) { return 'sf_u::' + account + '::ptsJournalV2'; }
+function gkey(account) { return 'sf_u::' + account + '::ptsGenV2'; }
 function pendingKey(account) { return pkey(account) + '.pending-v1'; }
 function commitKey(account) { return pkey(account) + '.commit-v1'; }
 function decoded(harness, store, account) {
@@ -149,6 +225,8 @@ function stageBatchRow(harness, token, row) {
   state.uniqueSinceFlush++;
   if (state.cooperative) state.syncIds[row.id] = 1;
 }
+
+// LS-MODE HALF (pre-migration; the shipped proofs, kept verbatim) -----------
 
 // Large normal saves are complete in the rollback-compatible key before return.
 {
@@ -269,5 +347,85 @@ function stageBatchRow(harness, token, row) {
   assert.strictEqual(firstReceipt.flushes, 1, 'missing patient key could not complete its first cooperative flush');
   assert.strictEqual(decoded(emptyHarness, emptyStore, 'alpha@example.test')[0].id, 'first-patient', 'first roster on a missing key was lost to null/empty raw normalization');
 
-  console.log('PASS patient-store persistence: normal saves remain synchronous, cooperative worker routing is managed-only, same-key crash reads work, sidecars stay inert, and quota failure is loud');
+  // IDB-MODE HALF: THE MOVED MECHANISM PIN (design-quoted in the header) ----
+
+  /* m1 - STORE-LEVEL, the sharp case: IndexedDB stops confirming BEFORE the
+     save, so the sync journal is the ONLY durable layer that accepted the
+     edit before save() returned. A cold reload must reproduce the rows from
+     IDB blob (the migration copy) + journal replay. The old proof (blob bytes
+     moved in localStorage) is EXPLICITLY retired here: the multi-MB blob must
+     NOT return to localStorage. */
+  {
+    const base2 = bigPatients();
+    const store2 = makeStore({ [pkey('alpha@example.test')]: JSON.stringify(base2) });
+    const idbStores = new Map();
+    const stall = { on: false };
+    const h1 = makeHarness(store2);
+    h1.context.__mlsPtsStore._t.setIdbFactory(makeIDB(idbStores, { stall }));
+    await h1.context.__mlsPtsStore.init();
+    const rep = await h1.context.__mlsPtsStore.migrate();
+    assert.strictEqual(rep.migrated, true, 'cutover fixture: ' + JSON.stringify(rep.steps || rep));
+    assert.strictEqual(store2.getItem(pkey('alpha@example.test')), null, 'the localStorage blob is gone at cutover');
+    await settleIm();
+
+    stall.on = true; /* IndexedDB stops confirming */
+    /* the app's aliasing, mirrored: callers hold the live roster's row refs
+       and replace ONLY the edited row - a caller that clones the whole
+       roster makes every ref "dirty" and honestly blows the 256KB sync
+       journal bound (validated; see NOTES.md integration requirement:
+       re-routed writers pass roster refs + dirtyIds, never clones) */
+    const next2 = h1.context.__mlsPtsStore.getRoster().slice();
+    next2[3] = Object.assign({}, next2[3], { summary: String(next2[3].summary || '') + ' journal-only durable edit' });
+    assert.strictEqual(h1.context.__mlsPtsStore.save(next2, { dirtyIds: [next2[3].id] }), undefined,
+      'store save returns undefined same-tick (contract unchanged)');
+    const j = JSON.parse(store2.getItem(jkey('alpha@example.test')));
+    assert(j.entries.length >= 1 && JSON.stringify(j.entries).indexOf('journal-only durable edit') >= 0,
+      'THE MOVED MECHANISM, half 1: the sync journal accepted the dirty delta BEFORE return (durable-before-return via the journal)');
+    assert.strictEqual(store2.getItem(pkey('alpha@example.test')), null,
+      'the multi-MB blob did NOT return to localStorage - the old byte-moved proof is retired on purpose');
+
+    stall.on = false; /* reload on a machine whose IndexedDB works again */
+    const h2 = makeHarness(store2);
+    h2.context.__mlsPtsStore._t.setIdbFactory(makeIDB(idbStores, { stall }));
+    await h2.context.__mlsPtsStore.init();
+    const rows2 = h2.context.__mlsPtsStore.getRoster();
+    assert(rows2.some(r => /journal-only durable edit/.test(String(r.summary || ''))),
+      'THE MOVED MECHANISM, half 2: cold reload = IDB blob + journal replay reproduces the acknowledged save, ' +
+      'even though IndexedDB never confirmed it before the reload');
+    assert.strictEqual(rows2.length, base2.length, 'no row lost in the replay');
+  }
+
+  /* m2 - ROUTED CONTRACT: the same guarantee through savePatients itself
+     (requires the phase-2 fence re-route; this suite replaces the shipped one
+     only at that commit) */
+  {
+    assert.ok(saveSource.indexOf('__psS.save(arr,__psSOpts);') >= 0,
+      'PHASE-2 FENCE RE-ROUTE ABSENT: savePatients does not route idb-mode saves through the store ' +
+      '(__psS.save(arr,__psSOpts); - the exact bytes patch-sj2-reroutes.js emits; re-anchored from the ' +
+      'draft guess __mlsPtsStore.save( per INTEGRATION-ORDER.md conflict C1 adjudication, Commit B step 1). ' +
+      'Keep the shipped patient-store-sync-rollback-runtime.test.js registered until the re-route commit.');
+    const base3 = bigPatients();
+    const store3 = makeStore({ [pkey('alpha@example.test')]: JSON.stringify(base3) });
+    const idbStores3 = new Map();
+    const h3 = makeHarness(store3);
+    h3.context.__mlsPtsStore._t.setIdbFactory(makeIDB(idbStores3, {}));
+    await h3.context.__mlsPtsStore.init();
+    assert.strictEqual((await h3.context.__mlsPtsStore.migrate()).migrated, true, 'cutover fixture');
+    await settleIm();
+    const next3 = h3.context.__mlsPtsStore.getRoster().slice(); /* live refs: the app's aliasing */
+    next3[9] = Object.assign({}, next3[9], { summary: String(next3[9].summary || '') + ' routed idb-mode save' });
+    assert.strictEqual(h3.context.savePatients(next3), undefined, 'savePatients still returns undefined in idb mode');
+    assert.strictEqual(store3.getItem(pkey('alpha@example.test')), null, 'no blob write-back on the routed path');
+    await settleIm();
+    const h4 = makeHarness(store3);
+    h4.context.__mlsPtsStore._t.setIdbFactory(makeIDB(idbStores3, {}));
+    await h4.context.__mlsPtsStore.init();
+    assert(h4.context.getPatients().some(r => /routed idb-mode save/.test(String(r.summary || ''))),
+      'cold reload reproduces the routed savePatients write through IDB + journal replay');
+  }
+
+  console.log('PASS patient-store persistence (sj2-moved): ls-mode saves keep the shipped synchronous blob proof, ' +
+    'cooperative worker routing stays managed-only, sidecars stay inert, quota failure is loud, and the MOVED ' +
+    'mechanism pin holds - durable-before-return via the ptsJournalV2 sync journal, cold reload from IDB blob + ' +
+    'journal replay with the localStorage blob provably gone');
 })().catch(error => { console.error(error); process.exit(1); });

@@ -11174,6 +11174,13 @@ var __mlsPtsMemo=null;
 /* ===== END mls-pts-store (sj-2.0) ===== */
 
 var __mlsPtsBatchByKey=Object.create(null),__mlsPtsBatchSeq=0,__mlsPtsPendingMirrorMemoryByKey=Object.create(null);
+/* sj-2.0 rr-1.0: one-shot dirty-id hint. upsertPatient's direct path sets it
+   immediately before its savePatients(arr) call (the qg 2.0 splice bytes stay
+   untouched - that call's literal shape is suite-pinned, and so is the qg
+   version token, which is why this comment spells it with a space); savePatients consumes
+   it read-and-clear at the top of the sync tail on EVERY route, so a hint can
+   never outlive the synchronous call it was set for. Nothing else may read it. */
+var __mlsPtsDirtyHint=null;
 function __mlsPtsStorageKey(override){
   var current=uns('patients');
   /* The override is used only by an already-open, account-bound batch when a
@@ -11193,6 +11200,15 @@ function getPatients(){
   try{
     var key=uns('patients'),batch=__mlsPtsBatchByKey[key];
     if(batch&&batch.depth>0&&Array.isArray(batch.arr))return __mlsPtsStampRead(batch.arr.slice());
+    /* sj-2.0 rr-1.0 (the ceiling fix and the speed fix): once the store is
+       migrated + hydrated, reads serve the in-memory authoritative roster -
+       same slice + generation stamp as the memo hit below. Any store refusal
+       (account changed mid-tick) falls through to the legacy localStorage
+       path, which post-migration holds no blob and parses to []. */
+    var __psR=window.__mlsPtsStore;
+    if(__psR&&__psR.isReady()){
+      try{return __mlsPtsStampRead(__psR.getRoster().slice());}catch(ePsR){}
+    }
     var raw=localStorage.getItem(key);
     if(__mlsPtsMemo&&__mlsPtsMemo.key===key&&__mlsPtsMemo.raw===raw)return __mlsPtsStampRead(__mlsPtsMemo.arr.slice());
     var arr=JSON.parse(_mlsPtsDecode(raw))||[];
@@ -11466,6 +11482,42 @@ function savePatients(arr,__storageKey,__opts){
     throw __accountErr;
   }
   var __cooperative=!!(__opts&&__opts.cooperative===true),__rawBefore='';
+  /* sj-2.0 rr-1.0 COOPERATIVE RE-ROUTE (one choke point): in idb mode the
+     store's confirm-awaiting async save replaces the raw-byte CAS + worker
+     encode + setItem lane below. expectedGen is the caller's fence (the
+     batch flush passes st.lastGen; the hydration pass passes its captured
+     gen twin); callers still on the expectedRaw idiom get a same-tick
+     genRead() CAS plus their own isCurrent() check, honored here BEFORE
+     memory commits. Resolution mirrors the cooperative contract:
+     {stale:true,external:true} on a lost CAS, {saved:false,identical:true}
+     on an empty delta, else {saved:true,rows} after the IndexedDB confirm.
+     A degraded store REJECTS (loud, batch stays dirty and re-arms). */
+  if(__cooperative){
+    var __psC=window.__mlsPtsStore;
+    if(__psC&&__psC.isReady()&&uns('patients')===__key){
+      try{
+        if(__opts&&typeof __opts.isCurrent==='function'&&!__opts.isCurrent())return Promise.resolve({stale:true});
+        arr=__mlsPtsRowGuard(__key,Array.isArray(arr)?arr:[],__opts);
+        try{ __mlsAthenaProofGuard(__key,arr); }catch(ePsCp){}
+        var __psCOpts={expectedGen:(__opts&&__opts.expectedGen!=null)?Number(__opts.expectedGen):__psC.genRead()};
+        if(__opts&&__opts.allowRemovals===true)__psCOpts.allowRemovals=true;
+        if(__opts&&Array.isArray(__opts.dirtyIds)&&__opts.dirtyIds.length)__psCOpts.dirtyIds=__opts.dirtyIds.slice();
+        var __psCArr=arr;
+        return __psC.saveAsync(__psCArr,__psCOpts).then(function(__psCRes){
+          if(__psCRes&&__psCRes.stale)return __psCRes;
+          if(__psCRes&&__psCRes.identical)return {saved:false,identical:true,rows:__psCArr};
+          __mlsPtsGen++;
+          try{
+            var __psCGens=__mlsPtsRowGenByKey[__key]||(__mlsPtsRowGenByKey[__key]=Object.create(null));
+            var __psCPresent=Object.create(null),__psCi,__psCr,__psCid;
+            for(__psCi=0;__psCi<__psCArr.length;__psCi++){__psCr=__psCArr[__psCi];if(__psCr&&__psCr.id!=null){__psCid=String(__psCr.id);__psCPresent[__psCid]=1;if(__psCGens[__psCid]===undefined)__psCGens[__psCid]=__mlsPtsGen;}}
+            for(__psCid in __psCGens){if(!__psCPresent[__psCid])delete __psCGens[__psCid];}
+          }catch(ePsCg){}
+          return {saved:true,packedBytes:0,rows:Array.isArray(__psCRes&&__psCRes.rows)?__psCRes.rows:__psCArr};
+        });
+      }catch(ePsCe){return Promise.reject(ePsCe);}
+    }
+  }
   if(__cooperative){
     try{
       var __actualRaw=localStorage.getItem(__key);
@@ -11508,6 +11560,38 @@ function savePatients(arr,__storageKey,__opts){
   }
   arr=__mlsPtsRowGuard(__key,arr,__opts);
   try{ __mlsAthenaProofGuard(__key,arr); }catch(e){}
+  /* sj-2.0 rr-1.0 SYNC RE-ROUTE: guards above ran unchanged. dirtyIds:
+     explicit opts win, then the upsert one-shot hint, else the store's
+     reference/updated heuristic (primitive NOTES, DEVIATIONS 6). The hint
+     is consumed on EVERY route so it cannot outlive this call. b392's
+     identical-skip retires here: an empty delta is the store's no-op. */
+  var __psHint=__mlsPtsDirtyHint;__mlsPtsDirtyHint=null;
+  var __psS=window.__mlsPtsStore;
+  if(__psS&&__psS.isReady()&&uns('patients')===__key){
+    var __psSOpts={};
+    if(__opts&&__opts.allowRemovals===true)__psSOpts.allowRemovals=true;
+    if(__opts&&Array.isArray(__opts.dirtyIds)&&__opts.dirtyIds.length)__psSOpts.dirtyIds=__opts.dirtyIds.slice();
+    else if(Array.isArray(__psHint)&&__psHint.length)__psSOpts.dirtyIds=__psHint;
+    if(__mlsPtsMemo&&__mlsPtsMemo.key===__key)__mlsPtsMemo=null;
+    __mlsPtsLastSavedKey='';__mlsPtsLastSaved=null;__mlsPtsLastPacked=null;
+    __psS.save(arr,__psSOpts);
+    __mlsPtsGen++;
+    try{
+      var __psGens=__mlsPtsRowGenByKey[__key]||(__mlsPtsRowGenByKey[__key]=Object.create(null));
+      var __psPresent=Object.create(null),__psGi,__psGr,__psGid;
+      for(__psGi=0;__psGi<arr.length;__psGi++){__psGr=arr[__psGi];if(__psGr&&__psGr.id!=null){__psGid=String(__psGr.id);__psPresent[__psGid]=1;if(__psGens[__psGid]===undefined)__psGens[__psGid]=__mlsPtsGen;}}
+      for(__psGid in __psGens){if(!__psPresent[__psGid])delete __psGens[__psGid];}
+    }catch(ePsG){}
+    var __psAb=__mlsPtsBatchByKey[__key];
+    if(__psAb&&__psAb.depth>0&&!__psAb.flushing){
+      __psAb.arr=Array.isArray(arr)?arr.slice():[];
+      __psAb.dirty=false;__psAb.changesSinceFlush=0;__psAb.uniqueSinceFlush=0;__psAb.dirtySince=0;__psAb.dirtyIds=Object.create(null);
+      try{__psAb.lastRaw=localStorage.getItem(__key);}catch(ePsA){}
+      try{__psAb.lastGen=__psS.genRead();}catch(ePsA2){}
+      __psAb.externalWrites++;
+    }
+    return;
+  }
   var __json=JSON.stringify(arr);
   /* b392 perf: identical content + untouched storage → skip the multi-MB LZ
      compress and the write outright. Render/sweep paths re-save unchanged
@@ -11641,8 +11725,16 @@ function __mlsPtsRememberMirrors(st,runNow,clear){
 }
 function __mlsPtsIdSet(rows){var out=Object.create(null);(Array.isArray(rows)?rows:[]).forEach(function(p){if(p&&p.id!=null)out[String(p.id)]=1;});return out;}
 function __mlsPtsMergeExternalBatch(st){
-  var raw=null;try{raw=localStorage.getItem(st.key);}catch(e){return false;}
-  var external=[];try{external=JSON.parse(_mlsPtsDecode(raw)||'[]');}catch(e){return false;}
+  /* sj-2.0 rr-1.0: in idb mode the external truth is the store's view
+     (catchUp folds foreign journal entries; a generation GAP schedules the
+     async blob refresh inside the store). ls mode keeps the byte decode. */
+  var raw=null,external=[],__psM=window.__mlsPtsStore,__psMGen=-1;
+  if(__psM&&__psM.isReady()&&uns('patients')===st.key){
+    try{__psM.catchUp();external=__psM.getRoster().slice();__psMGen=__psM.genRead();}catch(ePsM){return false;}
+  }else{
+    try{raw=localStorage.getItem(st.key);}catch(e){return false;}
+    try{external=JSON.parse(_mlsPtsDecode(raw)||'[]');}catch(e){return false;}
+  }
   if(!Array.isArray(external))return false;
   var out=external.slice(),index=Object.create(null),dirty=st.dirtyIds||Object.create(null),i,p,id,prior;
   for(i=0;i<out.length;i++){p=out[i];if(p&&p.id!=null)index[String(p.id)]=i;}
@@ -11658,7 +11750,7 @@ function __mlsPtsMergeExternalBatch(st){
        is complete, especially when either side lacks one. */
     if(dirty[id])out[prior]=p;
   }
-  st.arr=out;st.lastRaw=raw;st.externalWrites++;st.totalChanges++;st.changesSinceFlush++;st.flushEpoch++;
+  st.arr=out;st.lastRaw=raw;if(__psMGen>=0)st.lastGen=__psMGen;st.externalWrites++;st.totalChanges++;st.changesSinceFlush++;st.flushEpoch++;
   return true;
 }
 function __mlsPtsFlushBatchSync(st,reason){
@@ -11669,10 +11761,19 @@ function __mlsPtsFlushBatchSync(st,reason){
     /* Same-account checkpoints call the CURRENT public wrapper chain, so
        clinical scrub/DOB/wipe guards still run exactly once per flush. The
        account-boundary exception uses the immutable base writer (see above). */
-    if(uns('patients')===st.key)window.savePatients(st.arr.slice(),st.key);
-    else{st.boundaryDirectWrites++;__mlsPtsBaseSavePatients(st.arr.slice(),st.key);}
+    /* sj-2.0 rr-1.0: name the dirty rows for the store's delta journal.
+       NOTE the cross-account boundary write (else branch) deliberately
+       stays on the legacy path when uns() no longer matches: the store
+       binds ONE account, and a foreign-account write through it would be
+       the account-bleed class. That boundary write re-creates the old
+       account's blob; its next boot fails closed to ls and migrate()
+       reconciles (the both-copies anomaly branch exists for exactly this). */
+    var __psFd={dirtyIds:Object.keys(st.dirtyIds||{})};
+    if(uns('patients')===st.key)window.savePatients(st.arr.slice(),st.key,__psFd);
+    else{st.boundaryDirectWrites++;__mlsPtsBaseSavePatients(st.arr.slice(),st.key,__psFd);}
     st.dirty=false; st.changesSinceFlush=0; st.uniqueSinceFlush=0; st.dirtySince=0; st.dirtyIds=Object.create(null);
     try{st.lastRaw=localStorage.getItem(st.key);}catch(e){}
+    try{var __psFsG=window.__mlsPtsStore;if(__psFsG&&__psFsG.isReady()&&uns('patients')===st.key)st.lastGen=__psFsG.genRead();}catch(ePsFs){}
     st.committedIds=__mlsPtsIdSet(st.arr);
     st.flushes++; st.lastFlushAt=Date.now(); st.lastReason=String(reason||'checkpoint');
     if(!__mlsPtsRememberMirrors(st,false,false))throw new Error('Patient changes were saved locally, but their server retry queue could not be persisted.');
@@ -11692,10 +11793,14 @@ function __mlsPtsFlushBatchCooperative(st,reason){
     if(!st.dirty)return true;
     if(st.invalidated){var ie=new Error('Patient persistence stopped before the account boundary was durable.');ie.code='MLS_PATIENT_BATCH_BOUNDARY_DURABILITY_FAILED';throw ie;}
     if(uns('patients')!==st.key){var ae=new Error('Patient persistence stopped because the signed-in account changed.');ae.code='MLS_PATIENT_BATCH_ACCOUNT_CHANGED';throw ae;}
-    var rawNow=null;try{rawNow=localStorage.getItem(st.key);}catch(e){}
-    if(rawNow!==st.lastRaw&&!__mlsPtsMergeExternalBatch(st))throw new Error('Patient persistence paused because another tab changed the roster.');
+    /* sj-2.0 rr-1.0 FENCE RE-POINT: gen twin takes over in idb mode. */
+    var __psFc=window.__mlsPtsStore,__psFcLive=!!(__psFc&&__psFc.isReady());
+    var __psStale;
+    if(__psFcLive){try{__psFc.catchUp();}catch(ePsCu){}__psStale=__psFc.genRead()!==st.lastGen;}
+    else{var rawNow=null;try{rawNow=localStorage.getItem(st.key);}catch(e){}__psStale=rawNow!==st.lastRaw;}
+    if(__psStale&&!__mlsPtsMergeExternalBatch(st))throw new Error('Patient persistence paused because another tab changed the roster.');
     var epoch=++st.flushEpoch,seq=st.totalChanges,snapshot=st.arr.slice();
-    return Promise.resolve(window.savePatients(snapshot,st.key,{cooperative:true,expectedRaw:st.lastRaw,isCurrent:function(){return !st.invalidated&&st.flushEpoch===epoch&&st.totalChanges===seq&&uns('patients')===st.key;}})).then(function(result){
+    return Promise.resolve(window.savePatients(snapshot,st.key,{cooperative:true,expectedRaw:st.lastRaw,expectedGen:__psFcLive?st.lastGen:null,dirtyIds:Object.keys(st.dirtyIds||{}),isCurrent:function(){return !st.invalidated&&st.flushEpoch===epoch&&st.totalChanges===seq&&uns('patients')===st.key;}})).then(function(result){
       if(result&&result.stale){
         if(result.external&&!__mlsPtsMergeExternalBatch(st))throw new Error('Patient persistence paused because another tab changed the roster.');
         if(++attempt>64)throw new Error('Patient persistence could not settle concurrent roster changes.');
@@ -11707,6 +11812,7 @@ function __mlsPtsFlushBatchCooperative(st,reason){
       }
       if(result&&Array.isArray(result.rows))st.arr=result.rows.slice();
       try{st.lastRaw=localStorage.getItem(st.key);}catch(e){}
+      try{if(__psFcLive)st.lastGen=__psFc.genRead();}catch(ePsFcG){}
       st.committedIds=__mlsPtsIdSet(st.arr);
       st.dirty=false;st.changesSinceFlush=0;st.uniqueSinceFlush=0;st.dirtySince=0;st.dirtyIds=Object.create(null);
       st.flushes++;st.lastFlushAt=Date.now();st.lastReason=String(reason||'checkpoint');
@@ -11739,8 +11845,10 @@ window.__mlsPatientStoreBatch={
     if(!st){
       var cooperative=opts.cooperative===true,maxCeiling=cooperative?64:12;
       var initialRaw=null;try{initialRaw=localStorage.getItem(key);}catch(e){}
+      /* sj-2.0 rr-1.0: gen twin, captured before the roster read (conservative). */
+      var initialGen=-1;try{var __psBg=window.__mlsPtsStore;if(__psBg&&__psBg.isReady())initialGen=__psBg.genRead();}catch(ePsBg){}
       var initialRows=getPatients();
-      st={key:key,pendingSyncKey:uns('pendingPtSync'),lastRaw:initialRaw,arr:initialRows,committedIds:__mlsPtsIdSet(initialRows),depth:0,tokens:Object.create(null),dirty:false,dirtySince:0,dirtyIds:Object.create(null),uniqueSinceFlush:0,changesSinceFlush:0,totalChanges:0,flushes:0,externalWrites:0,boundaryDirectWrites:0,timer:0,armSeq:0,flushing:false,flushPromise:null,flushEpoch:0,syncIds:Object.create(null),cooperative:cooperative,invalidated:false,lastFlushAt:Date.now(),lastReason:'',lastError:'',maxChanges:Math.max(2,Math.min(maxCeiling,Number(opts.maxChanges||4))),maxDelayMs:Math.max(1000,Math.min(60000,Number(opts.maxDelayMs||5000)))};
+      st={key:key,pendingSyncKey:uns('pendingPtSync'),lastRaw:initialRaw,lastGen:initialGen,arr:initialRows,committedIds:__mlsPtsIdSet(initialRows),depth:0,tokens:Object.create(null),dirty:false,dirtySince:0,dirtyIds:Object.create(null),uniqueSinceFlush:0,changesSinceFlush:0,totalChanges:0,flushes:0,externalWrites:0,boundaryDirectWrites:0,timer:0,armSeq:0,flushing:false,flushPromise:null,flushEpoch:0,syncIds:Object.create(null),cooperative:cooperative,invalidated:false,lastFlushAt:Date.now(),lastReason:'',lastError:'',maxChanges:Math.max(2,Math.min(maxCeiling,Number(opts.maxChanges||4))),maxDelayMs:Math.max(1000,Math.min(60000,Number(opts.maxDelayMs||5000)))};
       __mlsPtsBatchByKey[key]=st;
     }else{
       st.cooperative=st.cooperative||opts.cooperative===true;
@@ -12014,6 +12122,7 @@ function upsertPatient(p){
        one. */
     if(backendMode() && bkToken() && p && p.id!=null){ _pendingSyncAdd(String(p.id)); }
     else { window.__mlsPtsEditAtRiskUnknown=true; }
+    __mlsPtsDirtyHint=(p&&p.id!=null)?[String(p.id)]:null; /* sj-2.0 rr-1.0: consumed by the sync tail on the next statement */
     savePatients(arr);
   }
   if(__batch&&__batch.interactive)__mlsPtsScheduleInteractiveBatch(__batch,0);
@@ -12623,6 +12732,8 @@ async function loadPatientsFromServer(opts){
     const myEmail=(bkUser&&bkUser.email)?String(bkUser.email).toLowerCase():(session?session.email:'');
     const _hyStoreKey=uns('patients'),_hyToken=bkToken();
     let _hyRawBefore=null;try{_hyRawBefore=localStorage.getItem(_hyStoreKey);}catch(e){_hyEnd(true,'');return false;}
+    /* sj-2.0 rr-1.0: gen twin of _hyRawBefore. null = store not live. */
+    let _hyGenBefore=null;try{const _hyPs=window.__mlsPtsStore;if(_hyPs&&_hyPs.isReady()&&uns('patients')===_hyStoreKey){_hyPs.catchUp();_hyGenBefore=_hyPs.genRead();}}catch(e){}
     let changed=false;
     const local=getPatients();
     const localIndex=new Map();
@@ -12683,8 +12794,10 @@ async function loadPatientsFromServer(opts){
          Keep the exact atomic key/codec, but use the verified Worker and fence
       completion to this startup, account namespace, and credential. */
       const _hyRows=additions.length?additions.concat(local):local;
-      const _hySaved=await savePatients(_hyRows,_hyStoreKey,{cooperative:true,expectedRaw:_hyRawBefore,isCurrent:function(){
-        try{return sfStartupValid(opts)&&uns('patients')===_hyStoreKey&&bkToken()===_hyToken&&localStorage.getItem(_hyStoreKey)===_hyRawBefore;}catch(e){return false;}
+      const _hySaved=await savePatients(_hyRows,_hyStoreKey,{cooperative:true,expectedRaw:_hyRawBefore,expectedGen:_hyGenBefore,isCurrent:function(){
+        try{if(!(sfStartupValid(opts)&&uns('patients')===_hyStoreKey&&bkToken()===_hyToken&&localStorage.getItem(_hyStoreKey)===_hyRawBefore))return false;}catch(e){return false;}
+        try{const _hyPs2=window.__mlsPtsStore;if(_hyGenBefore!=null&&_hyPs2&&_hyPs2.isReady()&&_hyPs2.genRead()!==_hyGenBefore)return false;}catch(e2){}
+        return true;
       }});
       if(_hySaved&&_hySaved.stale){ _hyEnd(true,''); return false; }
       if(!await sfHydrationBoundary(opts)){ _hyEnd(true,''); return false; }
