@@ -16,6 +16,15 @@ const storeStart = html.indexOf('var __mlsLZ=(function(){');
 const storeEnd = html.indexOf('/* Remove every patient MLS imported from Athena', storeStart);
 assert(storeStart >= 0 && storeEnd > storeStart, 'patient persistence block not found');
 const patientStoreSource = html.slice(storeStart, storeEnd);
+/* qg-2.0: the direct upsert path now enqueues its mirror intent BEFORE the
+   local write, calling _pendingSyncAdd — declared AFTER this slice's end
+   marker. Evaluate the REAL function (never a stub — a stub looser than the
+   real thing hides the call); its _armPendingSyncFlush call self-swallows in
+   its own try/catch when the flush machinery is absent. */
+const enqueueStart = html.indexOf('function _pendingSyncAdd(id,key,arm){');
+const enqueueEnd = html.indexOf('function _pendingSyncRemove', enqueueStart);
+assert(enqueueStart >= 0 && enqueueEnd > enqueueStart, 'real _pendingSyncAdd not found in ScribeFlow.html');
+const enqueueSource = html.slice(enqueueStart, enqueueEnd);
 
 assert(importer.includes('cooperative: true, maxChanges: 64, maxDelayMs: 15000'),
   'managed pulls must opt into unique-patient cooperative persistence');
@@ -241,6 +250,7 @@ function patientStoreHarness(options) {
   ctx.dispatchEvent = event => { for (const fn of listeners.get(event.type) || []) fn(event); };
   vm.createContext(ctx);
   vm.runInContext(patientStoreSource, ctx, { filename: 'ScribeFlow.patient-store-cooperative.js' });
+  vm.runInContext(enqueueSource, ctx, { filename: 'ScribeFlow.pending-sync-add.js' });
   return {
     ctx, data, writes, timers, held,
     account(value) { if (arguments.length) account = value; return account; },
@@ -377,6 +387,11 @@ function mirrorHarness() {
   assert.strictEqual(smallInteractive.writes.filter(w => w.key === smallInteractive.patientKey('alpha@example.test')).length, 1,
     'small ordinary upsert lost synchronous local durability');
   assert.strictEqual(smallInteractive.directMirrors(), 1, 'small ordinary upsert lost its direct best-effort mirror');
+  /* pin moved deliberately (qg-2.0): the direct path queues its mirror intent
+     BEFORE the local write, so a quota throw can no longer strand the edit in
+     no location — the durable queue entry is now expected, not incidental */
+  assert.deepStrictEqual(smallInteractive.pendingIds('alpha@example.test'), ['p-0'],
+    'qg-2.0: small direct upsert must enqueue its mirror intent BEFORE the local write');
   smallInteractive.cleanup();
 
   const rapidInteractive = patientStoreHarness({ holdWorker: true });
