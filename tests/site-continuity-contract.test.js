@@ -26,7 +26,11 @@ assert(app.includes('function _acctTodayKey()'), 'day-relative workflows need th
 assert(app.includes('function _acctNowMinutes()'), 'guided highlighting needs the practice clock');
 assert(app.includes("startIso=_acctWallToUtcIso(date,time)"), 'calendar creation must convert practice wall time to UTC');
 assert(app.includes("startIso=_acctWallToUtcIso(_boardDay(),time)"), 'front-desk creation must convert practice wall time to UTC');
-assert(app.includes("const t=a.start_at?_fmtApptTime(a.start_at):''"), 'front desk must display time in the practice timezone');
+/* td-1.0 (2026-08-11): the front-desk time line gained the timeless-honesty
+   branch — a start_at:null or time_unknown row prints "time not recorded"
+   instead of a blank. The practice-timezone guarantee is unchanged: every
+   timed row still renders through _fmtApptTime. */
+assert(app.includes("const t=(a.start_at&&!a.time_unknown)?_fmtApptTime(a.start_at):'time not recorded'"), 'front desk must display time in the practice timezone');
 assert(!app.includes("new Date(date+'T'+time).toISOString()"), 'calendar creation must not use the browser timezone');
 assert(!app.includes("new Date(_boardDay()+'T'+time).toISOString()"), 'front desk must not use the browser timezone');
 assert(patientPick.includes('window._acctTodayKey()') && patientPick.includes('window._acctNowMinutes()'), 'guided patient cards must use the practice clock');
