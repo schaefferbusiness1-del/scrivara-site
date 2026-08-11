@@ -2028,42 +2028,10 @@ html.mls-a2hs-open body{
   padding-bottom:calc(84px + 12px + env(safe-area-inset-bottom,0px) + var(--mls-a2hs-h,83px));
 }
 
-/* ===== ph-boot-top-1.0.0 — the readiness strip must not own the header ======
- * #mlsBootReadiness (mls-connect.js:47417, br-1.1.0) is the honest "Getting MLS
- * ready — N of 4 engines live" strip. It is appended straight to <body> with an
- * inline cssText of `position:fixed;top:0;left:50%;transform:translateX(-50%);
- * z-index:2147482800`, and it lives until the core engines report live OR 30s.
- *
- * MEASURED at 402x874 on a clean boot:
- *     #appHeader        402x67 at y=0   (sticky, z-index 6000)
- *     #mlsBootReadiness 201x38 at y=0   (fixed,  z-index 2147482800)
- *     overlap 201 x 38 — the entire top-centre of the bar
- *     elementFromPoint(201, 33.5) -> DIV#mlsBootReadiness, NOT the header
- * So for up to half a minute after sign-in the strip both HIDES the screen title
- * and EATS the taps aimed at it — the home link and "+ New" underneath it are
- * dead. On a phone that is the whole width of the title area.
- *
- * Two independent corrections, because either alone leaves half the defect:
- *   pointer-events:none — the strip is role="status" and has no click handler of
- *     its own, so it should never have been a hit-test target at any width.
- *   top:var(--mls-hdr-h,...) — drop it BELOW the header instead of over it.
- *     --mls-hdr-h is the header's measured height, published on install and on
- *     resize by feat_mls_redesign.js:925 and already consumed exactly this way at
- *     ScribeFlow.html:31503 (`top:var(--mls-hdr-h,74px)`), so this follows an
- *     established anchor rather than inventing a constant. It also tracks the
- *     header's new height automatically now that ph-safe-1.0.1 restores its top
- *     padding. Before the shell mounts the variable is unset and the fallback
- *     applies; at that point there is no header on screen to cover anyway.
- * `!important` is required and sufficient: an inline style outranks any normal
- * declaration, and the strip's own cssText carries no !important to compete.
- * Page-level, not phone-scoped: the strip is centred at top:0 on every width, so
- * it covers header content on desktop too — the phone is only where it covers
- * ALL of it. The border-radius:0 0 10px 10px reads the same hanging from the
- * header's lower edge as it did from the window's. */
-html body #mlsBootReadiness{
-  top:var(--mls-hdr-h,74px) !important;
-  pointer-events:none !important;
-}
+/* ph-boot-top REMOVED with br-1.2.0: it existed only so the readiness strip did not own
+ * the header. The strip is gone, so its accommodation goes with it — leaving compensation
+ * behind for an element that no longer exists is its own layout defect. */
+
 
 /* ===== ph-deadend-1.0.0 — N5: remove the Pull button that cannot work =======
  * ScribeFlow.html:1965 is a second button labelled "📥 Pull today's patients &

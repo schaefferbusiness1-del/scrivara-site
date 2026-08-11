@@ -49563,19 +49563,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    strip names that state honestly and removes itself the moment the core
    engines are live (or after 30s, whichever comes first - it never wedges). */
 ;(function(){try{
-  if(window.__mlsBootReadiness)return;window.__mlsBootReadiness={installed:true,version:'br-1.1.0'};
+  if(window.__mlsBootReadiness)return;window.__mlsBootReadiness={installed:true,version:'br-1.2.0'};
   var CORE=[['Athena pull engine',function(){return !!(window.__mlsSI&&window.__mlsSI.pull)}],
             ['Assistant',function(){return !!(window.__mlsAsstFix&&window.__mlsAsstFix.installed)}],
             ['Copilot Voice',function(){return !!(window.__mlsCopilotVoiceV2&&window.__mlsCopilotVoiceV2.installed)}],
             ['Patient safety locks',function(){return !!window.__mlsPatientLock}]];
   var el=null,t0=Date.now();
   function paint(n,total){
-    if(!el){el=document.createElement('div');el.id='mlsBootReadiness';el.setAttribute('role','status');
-      el.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2147482800;background:#1A211C;color:#EAF1EE;font:600 12px system-ui;border-radius:0 0 10px 10px;padding:5px 14px;opacity:.92;transition:opacity .4s';
-      (document.body||document.documentElement).appendChild(el);}
-    el.textContent='Getting MLS ready - '+n+' of '+total+' engines live';
+    /* br-1.2.0 - THE STRIP IS GONE. Owner: "get ride of this engine live thing."
+       It put our internals on a clinician's screen, and "N of 4 engines live" is a
+       number they cannot act on. Nothing is created, appended or painted here now.
+       The performance marks below are KEPT on purpose: they are invisible and they are
+       the only boot-timing instrument we have. See __mlsBootTimeline(). */
   }
-  function gone(){if(el){el.style.opacity='0';setTimeout(function(){try{el.remove()}catch(e){}},450);el=null;}}
+  function gone(){el=null;} /* br-1.2.0: nothing is painted, so nothing to fade */
   /* br-1.1.0 (owner 5s bar): the boot gets a CLOCK. Each engine's first
      live transition stamps a performance.mark, all-live stamps the summary,
      and __mlsBootTimeline() answers when the doctor could actually work. */
