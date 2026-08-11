@@ -10897,7 +10897,25 @@ function upsertPatient(p){
     if(!__batch.dirtySince)__batch.dirtySince=Date.now();
     if(__batch.uniqueSinceFlush>=__batch.maxChanges){try{Promise.resolve(__mlsPtsFlushBatch(__batch,'max-changes')).catch(function(){});}catch(e){}}
     else __mlsPtsArmBatch(__batch);
-  }else savePatients(arr);
+  }else{
+    /* qg-2.0 - quota-write-loses-the-edit-silently, REBUILT (the adf483ac fix
+       died with its lane; the recipe survives in memory). The enqueue runs
+       BEFORE the local write, so the quota throw below can no longer strand
+       the edit in NO location: _pendingSyncAdd survives quota by design (its
+       in-memory mirror fallback), the flush delivers it, and "empty queue"
+       genuinely means "nothing at risk" again. NO catch around the enqueue -
+       a swallowed enqueue failure would recreate the defect one layer out.
+       Reasoned deviation from the lost snippet's arm:false - after a quota
+       throw the mirror line below never runs and nothing else is guaranteed
+       to arm the flush, so the default arm stands (idempotent, one timer per
+       tab). When the enqueue CANNOT run (no backend/token/id) the unknown
+       latch records that an edit's server-side safety is UNKNOWN - any status
+       surface must route unknown to the LOUD branch, never the reassuring
+       one. */
+    if(backendMode() && bkToken() && p && p.id!=null){ _pendingSyncAdd(String(p.id)); }
+    else { window.__mlsPtsEditAtRiskUnknown=true; }
+    savePatients(arr);
+  }
   if(__batch&&__batch.interactive)__mlsPtsScheduleInteractiveBatch(__batch,0);
   /* Same-ID edits do not emit mls:active-patient-changed. Tell only the
      exact-record observers after the logical upsert has been accepted (or
