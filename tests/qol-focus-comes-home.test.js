@@ -101,5 +101,5 @@ function makeRail(focusedWin, tabsById) {
   assert.strictEqual(dk('2026-07-07'), '2026-07-07', 'ISO passes through');
   assert.strictEqual(dk('Discharge Summary'), '', 'junk maps to empty - never equal to a requested day, so the gate fails CLOSED');
 
-  console.log('qol-focus-comes-home: OK (rail executed + old shape refused the fixed case; backstop deferred; end-of-op verb sent x4; probe restores; switchtab guarded; dayPull owned-armed; ax route day-scoped, junk dates fail closed)');
+  console.log('qol-focus-comes-home: OK (rail executed + old shape refused the fixed case; backstop deferred; managed-release sender singular with zero settle-path duplicates; probe restores; switchtab guarded; dayPull owned-armed; ax route day-scoped, junk dates fail closed)');
 })().catch(e => { console.error(e); process.exit(1); });
