@@ -29,7 +29,31 @@ No 339KB face-image key exists in this store (the memory's face image is not pre
 - **A. calApptsCacheV2 → IndexedDB** (smallest surface, frees 16.6% durably): one writer/reader pair moves; risks = the sync-read boot path needs a memory warm layer over an async store; must inventory every direct reader of the key first (the fifth-reader lesson). Leaves patients growth unsolved (~4.2MB remains).
 - **B. patients → server-side Render** (the owner's twice-made ask: "HAVE IT SEND RECORDS TO RENDER"; largest win, 70%): backend exists and is fully enabled; a sync layer inherits the OPEN `quota-write-loses-the-edit-silently` defect, so **rebuilding that guard is a hard PRECONDITION**; identity/merge + offline semantics + the suites pinning synchronous saves make this a multi-train project.
 - **C. patients → IndexedDB locally** (solves quota permanently without a server dependency): changes crash-read/save semantics that registered suites pin ("normal saves remain synchronous"); multi-train.
-- **Recommended order**: durable prune (§2's named set ONLY) → Option A → Option B as the owner-aligned project with the silent-loss guard rebuilt first.
+- **Order as RULED (supervisor, 2026-08-11): prune → REBUILD THE QUOTA GUARD → A → B.** The prune reduces how often silent loss fires; the guard removes the SILENCE — only the guard protects an edit made tomorrow at ~197KB, which is oxygen, not safety. Guard recipe survives in quota-write-loses-the-edit-silently: enqueue BEFORE the local write, unknown-latch takes the LOUD branch, Array.isArray not duck-typed .length, paired 200-row/1-edit assertions.
+- **What the prune buys, plainly: 41KB → ~197KB ≈ four to five OFF-run days at +34KB each. A stay of execution, not a fix** — patients is 70% and grows every run.
+
+## 5. PRIVACY FINDING (supervisor escalation — separate from storage): a second real account's notes in his browser
+
+66,069 bytes of another account's `notes` sit in this browser's localStorage under that account's own
+`sf_u::` namespace. Reclassified from prune candidate to RETENTION finding — third instance of
+cross-account data reach after athena-retains-phi-after-logout and the un-namespaced
+mls_save_every_athena_visit key. Established tonight from SOURCE (read-only):
+- **Live read path: NONE.** All reads go through uns() (the signed-in namespace only); feat_mls_b121_pack
+  explicitly refuses cross-namespace scans ("multiple sf_u:: accounts exist on this" machine, by design);
+  the only key-iterating code is the logout purge's classifier, which is delete-side.
+- **Sign-out survival: YES for foreign namespaces, BY DESIGN** — clinical-state-purge.js:42-43 removes the
+  signing-out account's OWN prefix entirely and deliberately leaves other accounts' namespaces untouched.
+  Therefore the data's presence implies **the second account signed in on this browser and no clean
+  logout ever purged its namespace** (browser closed without logout, or the data predates the purge
+  boundary). Forced-inactivity logout uses the same purge path.
+- **Whose / when written: QUEUED** — the browser tab group closed before the store probe could run
+  (deliberately not reopened: a boot rewrites the 844KB calendar key at 41KB headroom). One read-only
+  probe next session: namespace identity (masked), note count, min/max note dates.
+
+## 6. Face-image note resolved
+The 339KB face image named in memory is **NOT in page localStorage** — proven by the full 239-key
+inventory (nothing ≥5,123B is unaccounted). If it exists it lives in chrome.storage (extension side) or
+the note is stale; one bridge probe next session settles which. The localStorage attribution is corrected.
 
 ## 4. Banked constraints for whenever the prune is written (supervisor, verbatim intent)
 Loss column per patient per field · NEVER touches a clinical field · targets = the named debris keys only, never patient records · fails CLOSED (a prune that cannot prove what it deletes, deletes nothing) · exercised against a copy or a write-blocking proxy before it ever runs live · lands gated under GATE_PLAN/GATE_COMPLETE.
