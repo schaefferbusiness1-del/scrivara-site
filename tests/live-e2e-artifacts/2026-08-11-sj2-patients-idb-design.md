@@ -114,6 +114,16 @@ survives quota via its in-memory fallback — the enqueue works AT quota; it sim
 exactly matches the phone lane's lost diagnosis, reached independently by a lane that never saw those
 notes. Two lanes, one conclusion, no shared evidence: the rebuild recipe's confidence rests on both.
 
+## Hold lifted (supervisor, 2026-08-11) + the folded residual
+Outcome-3 lift criterion met (identity-proven merge, content proven on the WEAKEST-metadata case).
+**Folded residual, a NAMED CHECK not a new block: content transfer is proven for 1 of the 8 merges
+(ltiqle→cmgnd4); the other 7 are MRN-matched only. sj-2.0's first-act baseline capture must include
+the 7 survivors' FIELD TOTALS by name and state whether any field shrank** (survivor tails: 86vxrg,
+0c6ey9, xfg64f, c6tbox, j3aybv, sdkd6o, 93rqxg). Six pre-registered criteria standing: the acceptance
+bar · logout wipe leaves ZERO patient bytes in IDB · verified persist() grant with defined
+denied-behaviour · the merge-receipt naming · labelled baselines · the two-layer durability verifier
+with content read-back before journal truncation.
+
 ## Honest scale call
 This is a staged train with its own acceptance gate — the fence re-route touches 20+ sites and 6+ pinned
 suites whose pins move deliberately. Not a single-evening ship. Order within the train: primitive +
