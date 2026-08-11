@@ -416,7 +416,7 @@ function main() {
   }
   if (applied.length > 0) {
     console.error('\nDRY-RUN: FAIL — PARTIAL APPLY: ' + applied.length + '/' + EDITS.length +
-      ' edits already present (' + applied.map(l => l.id).join(', ') + '). A half-applied repo needs the .dn10.bak restored before this patcher may run.');
+      ' edits already present (' + applied.map(l => l.id).join(', ') + '). A half-applied repo needs a git restore of the two target files before this patcher may run.');
     process.exit(1);
   }
   for (const l of result.log) console.log('anchor ok  [' + l.id + ']  ' + l.file + ' @' + l.at);
@@ -432,11 +432,17 @@ function main() {
     return;
   }
 
+  /* Backups go OUTSIDE the repo: a .bak in the repo root is publication debris
+   * (public-publication-boundary refuses unreviewed root extensions - it
+   * caught exactly this at gate suite 1). Git history is the durable rollback;
+   * these tmp copies only cover an interrupted write. */
+  const os = require('os');
+  const bakDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dn10-bak-'));
   for (const f of files) {
     const full = path.join(ROOT, f);
-    fs.writeFileSync(full + '.dn10.bak', sources[f], 'latin1');
+    fs.writeFileSync(path.join(bakDir, f + '.dn10.bak'), sources[f], 'latin1');
     fs.writeFileSync(full, result.sources[f], 'latin1');
-    console.log('APPLIED ' + f + ' (backup: ' + f + '.dn10.bak)');
+    console.log('APPLIED ' + f + ' (backup: ' + path.join(bakDir, f + '.dn10.bak') + ')');
   }
 }
 
