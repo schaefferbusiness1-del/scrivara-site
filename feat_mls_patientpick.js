@@ -292,7 +292,7 @@
     }
 
     /* sort by time, de-dupe by patient, resolve to a real record */
-    pool = pool.slice().sort(function (a, b) { return String(a.start_at || a.appt_date || "").localeCompare(String(b.start_at || b.appt_date || "")); });
+    pool = pool.slice().sort(function (a, b) { var au = (a.time_unknown || !a.start_at) ? 1 : 0, bu = (b.time_unknown || !b.start_at) ? 1 : 0; return (au - bu) || String(a.start_at || a.appt_date || "").localeCompare(String(b.start_at || b.appt_date || "")); });
     var seen = {}, out = [];
     for (var i = 0; i < pool.length; i++) {
       var a = pool[i];
@@ -301,7 +301,7 @@
       var key = pickIdKey(p.id);
       if (!key || seen[key]) continue; seen[key] = 1;
       out.push({ id: p.id, name: p.name || a.name || "(unnamed)", dob: p.dob || a.dob || "",
-        sex: p.sex || "", mrn: p.mrn || "", reason: a.reason || "", time: a.start_at || "",
+        sex: p.sex || "", mrn: p.mrn || "", reason: a.reason || "", time: a.start_at || "", time_unknown: a.time_unknown ? 1 : 0,
         mins: apptMins(a.start_at) });
     }
     return { list: out, dateLabel: dateLabel, fallback: fallback, scope: scope };
@@ -418,7 +418,7 @@
     var tStr = fmtTime(p.time);
     var upcoming = (p.mins != null && p.mins >= nowMins());
     var tag = isNow ? ('<small>' + (upcoming ? "NEXT" : "NOW") + '</small>') : (tStr ? '<small>appt</small>' : '');
-    var timePill = '<span class="mlspk-time">' + (tStr ? esc(tStr) : "&mdash;") + tag + '</span>';
+    var timePill = '<span class="mlspk-time">' + ((tStr && !p.time_unknown) ? esc(tStr) : "time not recorded") + tag + '</span>';
     return '<button type="button" class="mlspk-card' + (isActive ? " is-active" : "") + (isNow ? " is-now" : "") + '" data-id="' + esc(p.id) + '" data-mins="' + (p.mins == null ? "" : p.mins) + '">' +
       timePill +
       '<span class="mlspk-av">' + esc(initials(p.name)) + '</span>' +

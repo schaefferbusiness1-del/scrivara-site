@@ -106,7 +106,27 @@ function eq(a, b, msg) { assert.strictEqual(a, b, msg); pass++; }
    ═══════════════════════════════════════════════════════════════════════════ */
 const BUILDS = {
   live: {
-    /* origin/main at the time of this change — THE LIVE BUILD */
+    /* origin/main at the time of this change — THE LIVE BUILD.
+       ⛔ RE-PIN 2026-08-11 (fx-1.0 face-quarantine train) — A DELIBERATE, RECORDED
+       ACT per the A5 protocol below: the face train edits feat_mls_avatar.js, so
+       this tree's bytes stopped matching origin/main and the freshness check
+       demanded the re-pin it prints. `live` now names b1011 (64143c75), the
+       commit that last changed this file on main — the avatar composition that
+       SHIPPED on 2026-08-11 with gate 586/586. The composition was accepted as
+       byte-behaviour-identical to the previous live build across all 32 S1
+       scenarios, so every "identical to live" claim below keeps its meaning.
+       The PRE-FIX baseline the in-suite controls need (the build that still
+       cuts sentences and lacks pvStopMic) is now pinned SEPARATELY as `prefix`
+       — post-ship, "live" and "the pre-fix state" are different builds and a
+       single pin can no longer be both. */
+    commit: '64143c75244a6f6bf4c9b20e35cf861ba8edcf7e',
+    sha256: '14b5137b76f16f3c0a791d90f6789a9218a69b390f8f0ca955b2225db14acafd',
+  },
+  prefix: {
+    /* the PRE-FIX state (pre-composition main, the retired live pin): the build
+       whose walk names pvListen/kioskTurn/kioskFinish, whose bytes lack
+       pvStopMic, and whose watchdog cuts — the three controls that prove this
+       suite can CATCH the defect run against THIS build, never against `live`. */
     commit: '5cc3aab6c3aaad334314fd7a3cb27f5a20ebdf44',
     sha256: '560d6228a77338135c850f1b0471a244580c418002fef8d0a31c6e8a5bd64969',
   },
@@ -159,6 +179,10 @@ Object.keys(BUILDS).forEach(k => {
 ok(BUILDS.live.sha256 !== BUILDS.round9.sha256,
   'the live and round-9 baselines are byte-identical, so the control that proves this gate can ' +
   'CATCH a regression is vacuous');
+ok(BUILDS.live.sha256 !== BUILDS.prefix.sha256 && BUILDS.prefix.sha256 !== BUILDS.round9.sha256,
+  'the prefix baseline is byte-identical to live or to round-9 — the pre-fix controls would be ' +
+  'proving the walk against the wrong build (re-pin 2026-08-11: live moved to b1011, prefix ' +
+  'must stay the pre-composition build)');
 
 /* ── AND "LIVE" MUST STILL MEAN LIVE ──────────────────────────────────────────
    This suite's whole claim is "byte-identical to the LIVE build". A pin is
@@ -329,7 +353,7 @@ function tooling(src, label) {
   const liftOnInterim = () => liftHandler('interim', '(interim)');
   return { src, masked, label, liftFn, liftRegion, liftOnFinal, liftOnInterim };
 }
-const T = { work: tooling(SRC.work, 'work'), live: tooling(SRC.live, 'live'), round9: tooling(SRC.round9, 'round9') };
+const T = { work: tooling(SRC.work, 'work'), live: tooling(SRC.live, 'live'), prefix: tooling(SRC.prefix, 'prefix'), round9: tooling(SRC.round9, 'round9') };
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SECTION 1 — THE ACCEPTANCE GATE: 32 SCENARIOS, THREE BUILDS, ONE PROBE
@@ -1261,17 +1285,19 @@ const ALLOWED_SPEECH_ONLY_CALLERS = 1;
     'the visible pause control is no longer wired to a real click listener that stops the voice — ' +
     'with the microphone unable to end speech, this button is the interrupt the patient has left');
 
-  /* ── THE CONTROL: THE SAME WALK OVER THE LIVE BYTES MUST NAME THE THREE ──── */
-  const lw = walkOf(T.live);
+  /* ── THE CONTROL: THE SAME WALK OVER THE PRE-FIX BYTES MUST NAME THE THREE ─
+     (re-pin 2026-08-11: `live` is now the post-fix b1011, so the pre-fix state
+     these controls need is the separately pinned `prefix` baseline) */
+  const lw = walkOf(T.prefix);
   const lo = lw.offendersInto('pvStopVoice', ALLOWED);
   ['pvListen', 'kioskTurn', 'kioskFinish'].forEach(nm => {
     ok(lo.some(o => o.name === nm),
-      'CONTROL FAILED: the derived walk over the LIVE bytes does not name ' + nm + ' as a ' +
-      'mic-reachable caller of the full voice teardown. Live is the pre-fix state — if the walk ' +
+      'CONTROL FAILED: the derived walk over the PRE-FIX baseline bytes does not name ' + nm + ' as a ' +
+      'mic-reachable caller of the full voice teardown. The prefix pin is the pre-fix state — if the walk ' +
       'cannot see the defect there, its silence on this build means nothing. It named: ' +
       lo.map(o => o.name).join(', '));
   });
-  console.log('  [control] live bytes: ' + lo.length + ' mic-reachable stops -> ' +
+  console.log('  [control] prefix bytes: ' + lo.length + ' mic-reachable stops -> ' +
     lo.map(o => o.text).join(' | '));
 }
 
@@ -1378,17 +1404,17 @@ function driveOwnEcho(tl) {
     'next pvSpeakVoiced will overwrite it with nothing holding it, and this question\'s late tail ' +
     'becomes fileable as the patient\'s answer. That is round 9 exactly: 9 of 15 ordinary turns.');
 
-  /* ── THE CONTROL: THE SAME EXECUTION OVER THE LIVE BYTES MUST CUT ────────── */
-  const l = driveOwnEcho(T.live);
+  /* ── THE CONTROL: THE SAME EXECUTION OVER THE PRE-FIX BYTES MUST CUT ─────── */
+  const l = driveOwnEcho(T.prefix);
   ok(!l.h.stopMicPresent,
-    'CONTROL FAILED: the LIVE bytes already contain pvStopMic, so the pinned live commit is not ' +
+    'CONTROL FAILED: the PRE-FIX baseline bytes already contain pvStopMic, so the prefix pin is not ' +
     'the pre-fix state and nothing above is a demonstrated change');
   ok(l.r.cancels + l.r.pauses + l.r.faceStops > 0,
-    'CONTROL FAILED: driving the LIVE bytes with the avatar\'s own words and a routine `no-speech` ' +
+    'CONTROL FAILED: driving the PRE-FIX baseline bytes with the avatar\'s own words and a routine `no-speech` ' +
     'error produced no cut at all (cancels=' + l.r.cancels + ' pauses=' + l.r.pauses +
     ' faceStops=' + l.r.faceStops + '). The harness cannot observe the defect, so its silence on ' +
     'this build proves nothing.');
-  console.log('  [control] live bytes mid-sentence: cancels=' + l.r.cancels + ' pauses=' + l.r.pauses +
+  console.log('  [control] prefix bytes mid-sentence: cancels=' + l.r.cancels + ' pauses=' + l.r.pauses +
     ' faceStops=' + l.r.faceStops);
 }
 
@@ -1466,15 +1492,15 @@ function watchdogRun(tl, ticks) {
   console.log('  watchdog ' + TICKS + ' ticks: cuts=' + r.stops + ' bounded=' + r.bounded +
     ' nudges=' + r.spoke + ' turns=' + r.turns + ' rearms=' + r.rearms);
 
-  /* ── THE CONTROL: THE LIVE BYTES MUST CUT, AND MUST STOP RE-ARMING ──────── */
-  const l = watchdogRun(T.live, TICKS).report;
+  /* ── THE CONTROL: THE PRE-FIX BYTES MUST CUT, AND MUST STOP RE-ARMING ────── */
+  const l = watchdogRun(T.prefix, TICKS).report;
   ok(l.stops + l.bounded + l.spoke > 0,
-    'CONTROL FAILED: the LIVE watchdog took no action at all in ' + TICKS + ' ticks against a ' +
+    'CONTROL FAILED: the PRE-FIX watchdog took no action at all in ' + TICKS + ' ticks against a ' +
     'sentence in flight, so it was never capped and the condition added here changed nothing');
   ok(l.rearms < TICKS,
-    'CONTROL FAILED: the LIVE watchdog re-armed all ' + TICKS + ' times, so the "0 re-arms" ' +
+    'CONTROL FAILED: the PRE-FIX watchdog re-armed all ' + TICKS + ' times, so the "0 re-arms" ' +
     'measurement this change was made against cannot be reproduced');
-  console.log('  [control] live watchdog ' + TICKS + ' ticks: cuts=' + l.stops + ' bounded=' + l.bounded +
+  console.log('  [control] prefix watchdog ' + TICKS + ' ticks: cuts=' + l.stops + ' bounded=' + l.bounded +
     ' nudges=' + l.spoke + ' turns=' + l.turns + ' rearms=' + l.rearms);
 }
 
