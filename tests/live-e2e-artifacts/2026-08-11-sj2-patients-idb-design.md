@@ -60,6 +60,47 @@ IDB blob, with a localStorage GENERATION stamp as the shared fence.
   decode) captured on the live tab pre-flip; same AFTER; the commercial number (max panel size
   before/after) computed from the byte-per-patient distribution, not one division.
 
+## Supervisor's four questions, answered before code (2026-08-11)
+
+**Q1 — the journal's bounds (it lives in the store we are escaping).** Hard bound **256KB**, high-water
+flush trigger **64KB**, and the arithmetic stated: a heavy pull writes ~15KB/patient of delta, so a
+stalled IDB hits the bound after ~15–20 patients — and then it fails LOUD, not silent. Flush policy:
+an IDB blob write is queued on EVERY save (write-behind, coalescing latest-wins, one in-flight); the
+journal holds only unconfirmed entries and truncates ONLY on IDB confirm (transaction complete + echo
+read-back). Journal-full or journal-write-failure mid-run: savePatients THROWS (the pinned
+quota-throws-out contract, unchanged) — but unlike today, the edit survives: the pending-sync enqueue
+ALREADY ran (enqueue-before-write) and memory holds it; the unknown-latch takes the LOUD branch and si
+fails the row honestly. A persistent IDB failure (broken/evicted DB) latches a visible degraded state —
+never a silent drop. Pre-cutover the journal must fit the current slack (~197KB post-prune) — 64KB
+high-water respects that; post-cutover the 3.5MB blob is gone and slack is megabytes.
+
+**Q2 — the logout wipe, PRE-REGISTERED as a BLOCKING acceptance criterion, adopted verbatim before any
+numbers exist**: the sj-2.0 acceptance run MUST include a real sign-out followed by proof that ZERO
+patient bytes remain in IndexedDB — enumerated object stores, the journal key, and the generation key
+all empty — and the same proof for clearDeviceData. Shipping without it is a PHI retention regression
+larger than the one on record. This criterion blocks the cutover regardless of every other pass.
+
+**Q3 — the replacement durability verifier, named, and why it is NOT weaker than "the bytes moved."**
+Two layers, each read back from the store that persisted it: (a) SYNC, same-tick: the journal-entry
+echo — getItem of the just-written journal bytes, byte-compared — the identical mechanism qv-1.0 uses
+today, on the medium that is now the same-tick durable layer; plus the gen-stamp read-back. This is
+equal strength: today's check also proves only that the synchronous store accepted the write. (b) ASYNC,
+before journal truncation: an IDB READ-BACK of the stored blob (length + hash compared to what was
+written) — the truncation happens only after the persisted copy is verified by content. That is
+STRONGER than today, which never verifies blob content post-write at all, only that byte-length moved.
+qv-1.0 re-points to layer (a) for the same-tick verdict (unchanged semantics) with layer (b) feeding
+the degraded latch. A lost IDB write therefore cannot green a receipt: the journal survives (holding
+the edit) until the persisted copy has been read back.
+
+**Q4 — baseline labels**: every BEFORE number is labelled **"post-prune, b1007"** (boot-to-interactive,
+one savePatients wall-clock, main-thread decode block), and the AFTER carries its own build label. A
+delta against an unlabelled baseline is how 41s/chart happened; not again.
+
+**Independent confirmation, recorded**: the inventory's finding that `_pendingSyncAdd` (:11375) already
+survives quota via its in-memory fallback — the enqueue works AT quota; it simply never runs today —
+exactly matches the phone lane's lost diagnosis, reached independently by a lane that never saw those
+notes. Two lanes, one conclusion, no shared evidence: the rebuild recipe's confidence rests on both.
+
 ## Honest scale call
 This is a staged train with its own acceptance gate — the fence re-route touches 20+ sites and 6+ pinned
 suites whose pins move deliberately. Not a single-evening ship. Order within the train: primitive +
