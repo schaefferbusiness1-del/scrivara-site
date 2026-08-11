@@ -53,6 +53,10 @@ function buildContext(file, batchState) {
     syncPatientToServer: () => {},
     Date: Date
   });
+  /* qg-2.0: with backendMode false the direct path takes the unknown-latch
+     branch, which writes window.__mlsPtsEditAtRiskUnknown — give the minimal
+     context a window like the page has */
+  ctx.window = ctx;
   vm.runInContext(guardSrc + '\n' + upsertSrc + '\nthis.upsertPatient = upsertPatient; this.guard = __mlsAthenaProofGuard; this.proofIndex = __mlsAthenaProofByKey;', ctx, { filename: file + ':proof' });
   return { ctx, stored };
 }
