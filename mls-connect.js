@@ -46926,6 +46926,69 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
+/* ===== __mlsStorageJanitor JANITOR BEGIN (sj-1.0, 2026-08-11) =============
+ * Deletes ONLY named, aged debris from localStorage - one-shot backup blobs
+ * old sessions left behind, this account's expired day ledgers, and
+ * signed-out-namespace copilot history. ALLOWLIST-ONLY and fail-closed: a
+ * key that does not match an exact rule is untouched, a rule match that
+ * trips the clinical veto is refused and counted, and any error stops all
+ * further deletion. Every deletion is recorded (key + bytes) in a bounded
+ * receipt BEFORE it happens. This is scaffolding against the ~5MB ceiling,
+ * not the fix - the fix is moving patients off localStorage (sj-2.x). */
+(function () {
+  if (window.__mlsStorageJanitor) return;
+  var VETO = /patients|notes|templates|calAppts|mlsAutosaveDrafts|sf_session|sf_user|sf_bk_token/i; /* the preference keys need no veto entry - no allowlist rule can classify them, and naming them here would breach the one-resolver guard */
+  var BACKUP_MIN_AGE_DAYS = 14, LEDGER_MIN_AGE_DAYS = 30, MAX_DELETES_PER_RUN = 60;
+  function dayKeyToMs(y, m, d) { try { return new Date(Number(y), Number(m) - 1, Number(d)).getTime(); } catch (e) { return NaN; } }
+  function ageDays(ms) { return (Date.now() - ms) / 86400000; }
+  function classify(key, ownPrefix) {
+    /* returns a reason string when key is APPROVED debris, else null */
+    var m;
+    if ((m = key.match(/^mls_todays_backup_(\d{4})(\d{2})(\d{2})$/)) || (m = key.match(/^mlsRepairBackup_(\d{4})(\d{2})(\d{2})$/)) || (m = key.match(/^mls_b49_[a-z]+_backup_(\d{4})(\d{2})(\d{2})$/))) {
+      return ageDays(dayKeyToMs(m[1], m[2], m[3])) >= BACKUP_MIN_AGE_DAYS ? 'aged-backup-blob' : null;
+    }
+    if ((m = key.match(/^__mlsSweepBackup_(\d{4})-(\d{2})-(\d{2})$/)) || (m = key.match(/^__mlsFriPhantomBackup_(\d{4})-(\d{2})-(\d{2})$/))) {
+      return ageDays(dayKeyToMs(m[1], m[2], m[3])) >= BACKUP_MIN_AGE_DAYS ? 'aged-backup-blob' : null;
+    }
+    if (key === '__mlsCertBackup') return 'retired-cert-backup';
+    if (ownPrefix && key.indexOf(ownPrefix + 'schedImportIndexV1::') === 0) {
+      m = key.slice((ownPrefix + 'schedImportIndexV1::').length).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m && ageDays(dayKeyToMs(m[1], m[2], m[3])) >= LEDGER_MIN_AGE_DAYS) return 'expired-own-day-ledger';
+      return null;
+    }
+    if (key === 'sf_u::_::copilotHist' || key === 'sf_u::_::copilotHistByPt') return 'signed-out-copilot-history';
+    return null;
+  }
+  function run() {
+    var receipt = { at: Date.now(), v: 'sj-1.0', deleted: [], freedBytes: 0, vetoed: 0, errors: [] };
+    try {
+      var ownPrefix = '';
+      try { if (typeof window.uns === 'function') { var probe = window.uns('x'); if (/^sf_u::[^:]+::x$/.test(probe) && probe.indexOf('sf_u::_::') !== 0) ownPrefix = probe.slice(0, -1); } } catch (eP) {}
+      var doomed = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var key = String(localStorage.key(i) || '');
+        var why = classify(key, ownPrefix);
+        if (!why) continue;
+        if (VETO.test(key)) { receipt.vetoed++; continue; } /* belt over the allowlist's suspenders */
+        doomed.push({ k: key, why: why, b: key.length + String(localStorage.getItem(key) || '').length });
+        if (doomed.length >= MAX_DELETES_PER_RUN) break;
+      }
+      /* record BEFORE deleting - the receipt is the loss column's write half */
+      doomed.forEach(function (d) { receipt.deleted.push({ k: d.k.replace(/sf_u::[^:]+::/, 'ns::'), why: d.why, b: d.b }); receipt.freedBytes += d.b; });
+      try { if (typeof window.uns === 'function') localStorage.setItem(window.uns('storageJanitorReceiptV1'), JSON.stringify(receipt).slice(0, 8000)); } catch (eW) { receipt.errors.push('receipt-write-failed'); }
+      for (var j = 0; j < doomed.length; j++) {
+        try { localStorage.removeItem(doomed[j].k); }
+        catch (eD) { receipt.errors.push('delete-failed ' + doomed[j].k.slice(0, 40)); break; } /* fail closed: stop on first error */
+      }
+    } catch (eRun) { receipt.errors.push(String((eRun && eRun.message) || eRun).slice(0, 80)); }
+    return receipt;
+  }
+  window.__mlsStorageJanitor = { installed: true, version: 'sj-1.0', classify: classify, run: run };
+  /* post-boot, never blocking paint; idempotent, so no done-marker needed */
+  try { setTimeout(function () { try { run(); } catch (eBg) {} }, 12000); } catch (eT) {}
+})();
+/* ===== __mlsStorageJanitor JANITOR END ==================================== */
+
 /* ===== __mlsVisitNotesPref RESOLVER BEGIN (qol-2.0, 2026-08-10) ==========
  * THE ONE RESOLVER for the "Full visit notes" preference. Every decision
  * site in the product calls this; no other module may touch the storage
