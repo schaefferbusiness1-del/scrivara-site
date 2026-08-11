@@ -524,6 +524,7 @@ const tests = [
   'qol-arm-inside-the-mutex.test.js',
   'storage-janitor-allowlist.test.js',
   'quota-guard-edit-survives.test.js',
+  'qg-latch-has-no-reader-yet.test.js',
   'quota-verified-writes.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
