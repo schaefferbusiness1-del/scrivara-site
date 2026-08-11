@@ -1283,6 +1283,12 @@
         changeMeasured: delta.measured === true,
         athenaSourced: Number(census.athenaSourced || 0),
         neverAttempted: Number(census.neverAttempted || 0),
+        /* dn-1.0: persist the day-note lane's truth in the day ledger - count,
+           reason histogram, and per-patient refusals (pid -> reason head).
+           Bounded: <=40 patients/day by construction, reasons sliced. */
+        todayNoteFailures: Number(receipt.todayNoteFailures || 0),
+        todayNoteReasons: (function () { var oTn = {}; try { Object.keys(receipt.todayNoteReasons || {}).slice(0, 20).forEach(function (kTn) { oTn[String(kTn).slice(0, 80)] = Number(receipt.todayNoteReasons[kTn] || 0); }); } catch (eTn) {} return oTn; })(),
+        todayNoteRefused: (function () { var oTr = {}; try { (receipt.patients || []).forEach(function (pTr) { if (pTr && pTr.todayNote === false && pTr.patientId) oTr[String(pTr.patientId)] = String(pTr.todayNoteReason || "unknown").slice(0, 80); }); } catch (eTr) {} return oTr; })(),
         census: ledgerCensus
       };
       writeIndex(day, x);
@@ -2935,7 +2941,7 @@
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
     function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
     function ppResolve(rowRef,ok,reason){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); ppTally(s); }
-    function ppEnd(){ var s=ppState(); if(s){ s.running=false; s.current=''; } }
+    function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
     var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
     var sweepDeadlineCapAt = Number(sweepOpts && sweepOpts.deadlineCapAt || 0);
     /* si-1.9.4 (owner 2026-07-22): "when the bar resets it makes it seem like
@@ -3129,6 +3135,19 @@
        awaited before saveVerifiedVisits, whose history-organization proof
        reads what the parse persisted. */
     var pipelineParses = [];
+    /* dn-1.0 FOLD-IN state (owner 2026-08-11): shared by the inline day-note
+       capture in the main loop and the tail pass below. todayNoteExtOk is the
+       one-pong-per-batch scoped-read capability verdict (declared here instead
+       of inside the tail pass; semantics identical). inlineDayNoteFuse is a
+       ONE-WAY fuse: the first timeout-class inline failure stops every later
+       INLINE attempt, because an abandoned mid-batch scoped read keeps driving
+       the athena tab and wrestles the tab-of-record away from the next chart
+       open (measured live 2026-07-28: 10 ok, then 11 straight tab-unreachable).
+       Fused patients keep todayNote null and fall through to the tail pass,
+       which is byte-for-byte the old post-batch behavior. */
+    var todayNoteExtOk = null;
+    var safeAsync = async function (fn, fb) { try { return await fn(); } catch (eSa) { return fb; } };
+    var inlineDayNoteFuse = "";
     function launchPipelinedParse(entry, parseArgs) {
       entry.one.parsePipelined = true;
       var t0 = Date.now();
@@ -3545,6 +3564,62 @@
         }
         one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true, { surfaceResets: one.surfaceResets, chartSurface: one.chartSurface, pid: one.patientId, axe: one.axEntry, chartSaved: one.organized === true && one.dobVerified === true && !one.storageFailure && one.visitsReason !== "clinical-field-coverage-unproven" });
         receipt.patients.push(one); receipt.processed++;
+        /* dn-1.0 FOLD-IN (owner 2026-08-11: it "should save the days visit note
+           when its already on that person"): with visit bodies OFF the pulled
+           day's note is captured NOW, while THIS patient's verified chart is
+           still the tab-of-record. The old serial re-open pass cost ~38s/note
+           re-opening charts this loop had already opened (62.8s/chart combined,
+           criterion-1 FAIL: tests/live-e2e-artifacts/2026-08-11-3061-acceptance-
+           jul7.md). The read is sequential and FULLY AWAITED before the next
+           chart opens (2026-07-28 law), and it runs through the SAME
+           __mlsVisitSavePref.runForPatient chain as the tail pass - the chart
+           re-open+verify, every identity gate, the refusal reasons, and the
+           additive scoped save are byte-identical; only the MOMENT moved.
+           Because the tab is already parked on this patient, the reader's own
+           _assistReadChart re-verifies a chart it is already on - which is also
+           the answer to the ~25-30s athena surface recycle: the day-note leg
+           re-establishes a FRESH verified surface immediately before the scoped
+           read instead of trusting the history capture's aging one. A failed
+           chart read (rd null) leaves todayNote null for the tail pass and the
+           sweep, exactly as before. */
+        if (!stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {
+          var dnDay = normDate((row && (row.scheduleDate || row.date)) || "") || "";
+          var dnVp = safe(function () { return window.__mlsVisitSavePref; }, null);
+          var dnP = dnDay ? safe(function () { return findStorePatient(one.patientId); }, null) : null;
+          if (!(dnVp && typeof dnVp.runForPatient === "function" && dnP)) { one.todayNote = false; one.todayNoteReason = dnDay ? "reader-unavailable" : "no-day-on-row"; }
+          else {
+            if (todayNoteExtOk === null) {
+              /* one pong per batch decides scoped-read capability; the pong
+                 version is the only honest source (2026-07-28 invariant). */
+              todayNoteExtOk = await safeAsync(async function () {
+                var pg = await bridge("mlsPong", "mlsPing", 3500);
+                var m = String((pg && pg.version) || "").match(/^(\d+)\.(\d+)\.(\d+)/);
+                if (!m) return false;
+                return (Number(m[1]) > 3) || (Number(m[1]) === 3 && (Number(m[2]) > 0 || Number(m[3]) >= 30));
+              }, false);
+            }
+            if (!todayNoteExtOk) { one.todayNote = false; one.todayNoteReason = "extension-predates-scoped-read"; }
+            else {
+              try { ppCurrent(String(one.name || "").split(" ")[0] + " \u2014 saving the pulled day's note"); } catch (eDnCur) {}
+              safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
+              try {
+                var dnRes = await dnVp.runForPatient(dnP, function () {}, { onlyDate: dnDay });
+                one.todayNote = !!(dnRes && (dnRes.ok === true || typeof dnRes === "number" || dnRes.visits != null));
+                if (!one.todayNote) one.todayNoteReason = String((dnRes && dnRes.reason) || "scoped-read-unverified").slice(0, 80);
+              } catch (eDnRun) {
+                one.todayNote = false; one.todayNoteReason = String((eDnRun && eDnRun.message) || eDnRun).slice(0, 80);
+                /* timeout-class failures mean the runner may still be driving
+                   the tab: trip the fuse so no later INLINE attempt races the
+                   next chart open; the tail pass (post-batch) inherits them. */
+                if (/timeout|deadline|responding|unreachable|no-ext/i.test(one.todayNoteReason)) { inlineDayNoteFuse = one.todayNoteReason; receipt.todayNoteInlineFuse = inlineDayNoteFuse; }
+              }
+            }
+          }
+          /* qol-1.3 parity: an unread pulled-day note is VISIBLE on the row -
+             pushed after the row's own settle so the day-note verdict wins the
+             latest-state tally, exactly as the tail pass's emit did. */
+          if (one.todayNote !== true && typeof ppSettle === "function" && one.name) { try { ppSettle(one.name, false, "pulled-day-note-unread " + String(one.todayNoteReason || "").slice(0, 60), false, { pid: one.patientId }); } catch (eDnPp) {} }
+        }
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
           break;
@@ -3657,6 +3732,11 @@
          reached no aggregate, no day-end line, no error report. Verdict-neutral
          by design (L3677); recomputed idempotently on both finalize calls. */
       safe(function () { var tnF = 0, tnR = {}; (receipt.patients || []).forEach(function (p) { if (p && p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; } }); receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR; });
+      /* dn-1.0 TERMINAL TRUTH: the pull panel's DONE card (mls-connect
+         __mlsPullProgress) reads this stamp. Outer batch only - a sub-batch
+         stamping day-level truth is the b752 subset trap. finalizeVerdict may
+         run twice by design; the LAST call wins, which is the post-sweep truth. */
+      safe(function () { if (sweepDepth) return; var sDv = ppState(); if (!sDv) return; sDv.dayVerdict = { ok: Number(sDv.ok || 0), failed: Number(sDv.failed || 0), chartOnly: Number(sDv.chartOnly || 0), total: Number(sDv.total || 0), complete: receipt.complete === true, tnFailed: Number(receipt.todayNoteFailures || 0), tnReasons: receipt.todayNoteReasons || {}, at: Date.now() }; });
       /* b751: persist it. finalizeVerdict runs at every exit and may run twice
          (before and after the end-of-batch re-sweep); the write is keyed by day
          so the LAST call wins, which is the post-sweep truth we want. */
@@ -3693,8 +3773,12 @@
          patient threw ReferenceError, the day verdict and sweep never ran, and
          the progress panel span forever. Both are now declared, and the whole
          pass is fenced so finalizeVerdict()/ppEnd are reachable on EVERY path. */
-      var todayNoteExtOk = null;
-      var safeAsync = async function (fn, fb) { try { return await fn(); } catch (eSa) { return fb; } };
+      /* dn-1.0: todayNoteExtOk + safeAsync now live at batch scope (shared
+         with the inline fold-in in the main loop). This pass is the TAIL: it
+         attempts ONLY patients the inline capture never reached (chart-read
+         failures, fuse trips) - an inline verdict, success OR refusal, is
+         attempt-once and is never re-run here, so a day where every inline
+         capture succeeded performs ZERO second-pass re-opens. */
       try {
       var todayNoteDayById = {};
       try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) todayNoteDayById[pid] = normDate((r && (r.scheduleDate || r.date)) || "") || ""; }); } catch (eMap) {}
@@ -3702,10 +3786,10 @@
       /* qol-2.2 D3: rows settle before this pass, so the card read 100% and
          sat there grinding. ppCurrent is never number-parsed (safe from the
          si-1.9.4 bar regex), so narrate the pass live. */
-      var tnTotal = 0; try { for (var tnc = 0; tnc < receipt.patients.length; tnc++) { if (receipt.patients[tnc] && receipt.patients[tnc].visitsSkipped === true) tnTotal++; } } catch (eTnc) {} var tnIdx = 0;
+      var tnTotal = 0; try { for (var tnc = 0; tnc < receipt.patients.length; tnc++) { if (receipt.patients[tnc] && receipt.patients[tnc].visitsSkipped === true && receipt.patients[tnc].todayNote == null) tnTotal++; } } catch (eTnc) {} var tnIdx = 0;
       for (var tn = 0; tn < receipt.patients.length; tn++) {
         var oneTn = receipt.patients[tn];
-        if (!oneTn || oneTn.visitsSkipped !== true) continue;
+        if (!oneTn || oneTn.visitsSkipped !== true || oneTn.todayNote != null) continue; /* dn-1.0: attempt-once - an inline verdict (success OR refusal, incl. identity-mismatch) is final; only never-attempted patients reach this tail */
         tnIdx++; try { ppCurrent("all charts read \u2014 saving the pulled day's note (" + tnIdx + " of " + tnTotal + ") \u2014 " + String(oneTn.name || "").split(" ")[0]); } catch (ePpCur) {}
         safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
         var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
@@ -4525,15 +4609,23 @@
             var __redoN = 0;
             try { __redoN = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete === true && p.axEntry === "body-depth"; }).length; } catch (eRedo) {}
             var __redoNote = __redoN ? " " + __redoN + " chart" + (__redoN === 1 ? " was" : "s were") + " saved on an automatic in-chart redo (counted separately, not first-attempt)." : "";
+            /* dn-1.0 (queue item): NAME the refused day-notes on the day line.
+               First names + the reason head, bounded to 6; rides BOTH verdict
+               lines because the day-note lane is verdict-neutral by design. */
+            var __tnNote = "";
+            try {
+              var __tnList = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.todayNote === false; });
+              if (__tnList.length) __tnNote = " The pulled day's note could not be read for " + __tnList.slice(0, 6).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + String(p.todayNoteReason || "unread").split(/[\[{]/)[0].trim().slice(0, 48) + ")"; }).join("; ") + (__tnList.length > 6 ? "; +" + (__tnList.length - 6) + " more" : "") + " \u2014 the charts themselves saved; the reasons are in the day ledger.";
+            } catch (eTnNote) {}
             var __chartOnly = 0; try { __chartOnly = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true && p.organized === true && p.dobVerified === true && !p.storageFailure; }).length; } catch (eCo) {}
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read (" + __ppWhy("no-chart-frame-candidate") + "), so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
               (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly but could NOT be saved because this browser's MLS storage is full. Existing records are intact - nothing was lost or overwritten. Free storage space, then pull again." : "") +
-              (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + __ppWhy(String(p.reason || "unread")).slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + (__chartOnly ? " " + __chartOnly + " of the incomplete chart" + (__chartOnly === 1 ? "" : "s") + " DID save the six-card chart summary \u2014 only the visit notes are incomplete; Retry re-reads just those." : "") + contentNotice(historyReceipt) + __redoNote, "err");
+              (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + __ppWhy(String(p.reason || "unread")).slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + (__chartOnly ? " " + __chartOnly + " of the incomplete chart" + (__chartOnly === 1 ? "" : "s") + " DID save the six-card chart summary \u2014 only the visit notes are incomplete; Retry re-reads just those." : "") + contentNotice(historyReceipt) + __redoNote + __tnNote, "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; history was not requested." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
-            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode) + contentNotice(historyReceipt) + __redoNote, "ok");
+            else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode) + contentNotice(historyReceipt) + __redoNote + __tnNote, "ok");
             return res;
           });
           });

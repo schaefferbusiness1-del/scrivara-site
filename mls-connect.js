@@ -4537,6 +4537,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      pill; the full panel is one click away. hidden survives the whole pull
      (sweep boundaries included) and resets only when the pull truly ends. */
   var startedAt = 0, hidden = true, stopped = false;
+  var doneDismissed = false; /* dn-1.0: set only by the DONE card's Done button; re-armed when a new run starts */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -4717,11 +4718,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var S = state();
     var running = !!(S && S.running);
     if (!running) {
+      /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
+         done"): the run THIS panel watched (startedAt>0) paints ONE honest
+         DONE card - saved / not saved / pulled-day-note refusals - and stays
+         until the doctor closes it. No further passes run behind it (the
+         engine has already released), and no "keep pulling" framing remains
+         on the card. A tab that never watched a run keeps the old clean
+         removal; the Done click resets to that same state. */
+      if (startedAt > 0 && S && (S.rows || []).length && !doneDismissed) { renderDone(S); return; }
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      doneDismissed = false;
       return;
     }
+    if (doneDismissed) doneDismissed = false; /* dn-1.0: a NEW run re-arms the DONE card */
+    (function () { var pStale = document.getElementById(PANEL); if (pStale && pStale.__ppDoneApplied) pStale.remove(); })(); /* dn-1.0: a fresh run never paints into last run's DONE card */
     if (!startedAt) { startedAt = Date.now(); api.opens++; }
     /* b940: the PILL needs the stylesheet too. b940 flipped the default to
        pill-first but left css() below the hidden early-return, so the FAB
@@ -4756,6 +4768,49 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (rowsEl.innerHTML !== html) rowsEl.innerHTML = html;
     }
   }
+
+  /* dn-1.0: the terminal DONE card. Idempotent paint (same guarded-write
+     discipline as render); once-only mutations are keyed on __ppDoneApplied,
+     so the terminal state FIRES EXACTLY ONCE per finished run (api.doneShown
+     counts it). Reads the engine's dayVerdict stamp for day-note truth. */
+  function renderDone(S) {
+    css();
+    var ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0, total = S.total || 0;
+    if (hidden) {
+      ensureFab(true);
+      var fD = document.getElementById(FAB);
+      if (fD) { var tD = 'Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'; if (fD.textContent !== tD) fD.textContent = tD; }
+      var phD = document.getElementById(PANEL); if (phD) phD.remove();
+      return;
+    }
+    ensureFab(false);
+    var p = buildPanel();
+    var dv = S.dayVerdict || null;
+    if (!p.__ppDoneApplied) {
+      p.__ppDoneApplied = 1;
+      api.doneShown = (api.doneShown || 0) + 1;
+      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
+      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
+      try { var curLbl = p.querySelector('.pp-cur b'); if (curLbl) curLbl.textContent = 'Result:'; } catch (eCur) {}
+      try { var noteD = p.querySelector('.pp-note'); if (noteD) noteD.textContent = failed ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" re-reads only those charts.' : 'Everything the day asked for was read and saved.'; } catch (eNote) {}
+      try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
+      try { var hbD = document.getElementById('mlsPullProgHide'); if (hbD) { hbD.textContent = 'Done'; hbD.onclick = function () { doneDismissed = true; render(); }; } } catch (eHb) {}
+    }
+    var doneLine = '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '');
+    if (dv && Number(dv.tnFailed || 0) > 0) doneLine += ' \u00B7 \u26A0 ' + dv.tnFailed + ' pulled-day note' + (Number(dv.tnFailed) === 1 ? '' : 's') + ' not read';
+    if (dv && dv.complete === true) doneLine += ' \u2014 everything verified';
+    setText(p, 'done', String(S.done || 0));
+    setText(p, 'total', String(total));
+    var fillD = p.querySelector('.pp-fill');
+    if (fillD) { var wD = (total ? Math.round(((S.done || 0) / total) * 100) : 100) + '%'; if (fillD.style.width !== wD) fillD.style.width = wD; }
+    setText(p, 'pct', 'Done');
+    setText(p, 'tally', doneLine);
+    setText(p, 'elapsed', mmss(Math.max(0, (S.finishedAt || Date.now()) - startedAt)) + ' total');
+    setText(p, 'current', doneLine);
+    var rowsElD = p.querySelector('[data-pp="rows"]');
+    if (rowsElD && !p.__ppDoneRows) { p.__ppDoneRows = 1; var htmlD = rowsHtml(S); rowsElD.style.display = htmlD ? '' : 'none'; rowsElD.innerHTML = htmlD; }
+  }
+  api._renderDone = renderDone; /* dn-1.0: contract-test seam; not used by the app */
 
   (function loop() { tick(900, function () { try { render(); } catch (e) {} loop(); }); })();
 
