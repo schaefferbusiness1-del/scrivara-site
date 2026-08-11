@@ -574,6 +574,21 @@ const tests = [
      avatar's own voice (measured 18% overall, 52% on merged words). Barge-in now needs
      positive evidence of another voice; the filing path is deliberately unchanged. */
   'avatar-finishes-its-sentences.test.js',
+  /* 2026-08-11: the same owner sentence, one layer down. "it litterly never gets out
+     everyhting it wants to say caosue it picks up its own talking" is a CALL GRAPH fact,
+     not a classifier fact: pvStopVoice did two jobs (end the sentence, tear down the
+     recogniser) and every caller reachable from a microphone event wanted only the second.
+     A routine Chrome `no-speech` error re-entered pvListen and cancelled the question the
+     avatar was mid-way through. This suite DERIVES the mic-reachable set by walking the
+     call graph of the shipped bytes — three defects in this lane were hand-written
+     populations that omitted what their author did not think of — and then proves the fix by
+     execution. It also carries the four negation controls as a REGRESSION DETECTOR for the
+     filing path: they pass on the pre-fix bytes and must keep passing, because eight rounds
+     broke this feature by rewriting the filing path that was never wrong.
+     Control: with AVATAR_SRC_OVERRIDE on the pre-fix file it fails 12 assertions by name
+     (pvListen@1122, kioskTurn@5089, kioskFinish@5420; 2 synthesis cancels and 1 audio pause
+     from the avatar's own echo; 4 cuts and 46 bounded fall-throughs in 50 watchdog ticks). */
+  'mic-cannot-end-the-avatars-sentence.test.js',
   /* 2026-08-09 av-6.2.0: ONE OWNER for #mlsAvKioskInterim. Owner: "having text constantly
      overlapping and being such a paIUN IN THE ASS" — measured as FOURTEEN writers on one
      text node with no priority, clobbering each other mid-sentence. Executes the ranked

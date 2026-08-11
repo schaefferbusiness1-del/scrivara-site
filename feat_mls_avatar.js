@@ -654,6 +654,29 @@
     if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
     faceTalkStop();
     safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+    pvStopMic();
+  }
+  /* ── THE MICROPHONE HALF OF pvStopVoice, ON ITS OWN ────────────────────────
+     Owner: "it litterly never gets out everyhting it wants to say caosue it picks
+     up its own talking."
+     pvStopVoice did TWO jobs — end the sentence, and tear down the recogniser —
+     and a derived walk of this file (see the suite named below) found that every
+     caller reachable from a microphone event wanted only the second one. So a
+     routine Chrome `no-speech` error, or the avatar's own words arriving at
+     rec.onresult, re-entered pvListen and cancelled the sentence the avatar was
+     still in the middle of saying.
+     This is an EDGE REMOVAL, not a guard: the mic path no longer has a call that
+     could stop speech, so there is no flag for a later round to invert.
+     ⛔ THE SPEECH-SIDE BOOKKEEPING IS DELIBERATELY ABSENT, and its absence is
+     what keeps the FILING path byte-identical. pvSaying must stay set — it is
+     still what we are saying, so pvIsSelfEcho must keep matching it — and
+     pvSpeakVoiced's finish() still moves it to the bounded echo tail at exactly
+     the moment it always did. Clearing it here would drop a live question out of
+     the echo tail and let its own words be filed as the patient's answer.
+     Callers that genuinely end the interview (kioskClose, kioskPauseToggle,
+     kioskRequestEnd, the ambient stop) still call pvStopVoice: they are reached
+     from a visible control or the page lifecycle, never from the microphone. */
+  function pvStopMic() {
     if (pvRec) {
       /* KILL THE QUIET TIMER, not just the recogniser. It lives in pvListen's
          closure, so nulling the handlers and calling stop() left it armed: 1.3s
@@ -1119,7 +1142,13 @@
   function pvListen(onFinal, onInterim, onDead) {
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
     if (!C) return false;
-    pvStopVoice();
+    /* pvStopMic, NOT pvStopVoice. Re-opening the microphone is the single most
+       travelled path in the interview - the duplex open that rides with every
+       question, and Chrome's routine `no-speech`/`network` error, which arrives
+       through onerror -> onDead -> kioskListen -> here several times a minute.
+       While that call was pvStopVoice, the microphone ENDED THE SENTENCE THE
+       AVATAR WAS STILL SAYING every single time. */
+    pvStopMic();
     var rec; try { rec = new C(); } catch (e) { return false; }
     pvRec = rec;
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
@@ -5086,7 +5115,13 @@
     if (kiosk.ambient) return;   /* ambient records the room, it never interviews */
     kiosk.busy = true;
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
-    pvStopVoice();
+    /* pvStopMic, NOT pvStopVoice. This is the ordinary turn: the answer arrives
+       through rec.onresult while the question is still playing (the mic opens WITH
+       it), so cancelling here truncated the question on EVERY answer - and on every
+       echo the classifier missed, which is a question cut off by its own voice.
+       The next line still replaces this one: pvSpeakShaped bumps pvSpeakSeq when
+       the reply lands. What is gone is the silence in between. */
+    pvStopMic();
     kioskMood('thinking', '', answer);
     kioskLineReset();
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
@@ -5203,7 +5238,17 @@
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     var typed = (kiosk.mic === false);
     var wait = typed ? 20000 : 9000;   /* typing is slower than talking */
-    if (kiosk.heard) {
+    /* AND A SENTENCE STILL PLAYING COUNTS AS ACTIVITY — WITH NO CAP ON THE WAIT.
+       `pvSaying` is non-empty for exactly as long as the avatar is speaking. It was
+       not consulted here, so a question longer than one window burned its own
+       patience: silence was counted against the patient while nobody had been given
+       anything to answer yet, and at three windows this function fell straight
+       through to pvStopVoice - the avatar cut off mid-word by its own silence clock.
+       This joins the existing UNCAPPED re-arm rather than adding a second, capped
+       one: a sentence in flight is watched for as long as it takes. It cannot wedge,
+       because pvSaying is cleared by pvSpeakVoiced's finish(), which is itself
+       guaranteed by that function's own watchdog. */
+    if (kiosk.heard || pvSaying) {
       /* they are talking or typing (or the room is) — keep watching, and never
          give up the only timer that can revive this question. This guard used
          to RETURN, so one cough permanently disarmed the self-end. */
@@ -5417,7 +5462,13 @@
        and it also meant the hand-off the owner asked for could not exist,
        because the screen was gone before the doctor walked in. The exit is
        still one tap for a no-PIN office (End interview), so nobody is trapped. */
-    pvStopVoice();
+    /* pvStopMic, NOT pvStopVoice: THE CLOSING LINE IS THE ONE MOST OFTEN CUT.
+       kioskTurn arms a 12-second safety timer beside the done-path speak, and any
+       closing line longer than that reached this function while it was still
+       playing - a hard cap on the last thing the patient hears. The timer still
+       does its real job (a speak that never completes cannot strand the kiosk);
+       it just no longer amputates the sentence to do it. */
+    pvStopMic();
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
     var iv = gid('mlsAvKioskInterim');
