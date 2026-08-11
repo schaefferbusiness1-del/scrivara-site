@@ -13139,7 +13139,7 @@ function _calRenderDay(){
   var jmp=document.getElementById('calJump'); if(jmp) jmp.style.display='none';
   var ref=new Date(_calRefDate+'T12:00'); var key=ref.getFullYear()+'-'+_calPad(ref.getMonth()+1)+'-'+_calPad(ref.getDate());
   var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=ref.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key && _calRowMatchesProv(a,pfVal); }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+  var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key && _calRowMatchesProv(a,pfVal); }).sort(function(x,y){ var xu=(x.time_unknown||!x.start_at)?1:0, yu=(y.time_unknown||!y.start_at)?1:0; return (xu-yu)||String(x.start_at||'').localeCompare(String(y.start_at||'')); });
   var grid=document.getElementById('calGrid'); if(!grid) return;
   // Split timed vs untimed; build an hourly agenda grid with duration-sized blocks.
   var timed=[], untimed=[];
@@ -13173,7 +13173,7 @@ function _calRenderMonth(){
   for(var i=0;i<startDow;i++){ h+='<div></div>'; }
   for(var day=1;day<=daysIn;day++){
     var key=_calYear+'-'+_calPad(_calMonth+1)+'-'+_calPad(day);
-    var ap=(byDate[key]||[]).slice().sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+    var ap=(byDate[key]||[]).slice().sort(function(x,y){ var xu=(x.time_unknown||!x.start_at)?1:0, yu=(y.time_unknown||!y.start_at)?1:0; return (xu-yu)||String(x.start_at||'').localeCompare(String(y.start_at||'')); });
     var isToday=key===todayKey; var isSel=(key===window._calSelDay);
     var cellBorder=isSel?'2px solid #2E6A4B':(isToday?'1px solid #2E6A4B':'1px solid var(--line)');
     var cellBg=isSel?'#dbeafe':(isToday?'var(--soft)':'var(--card)');
@@ -13223,13 +13223,13 @@ function calOpenDay(key){
   var panel=document.getElementById('calDayPanel'); if(!panel) return;
   // Remember the clicked day so the month grid highlights it in blue.
   window._calSelDay=key; try{ if(_calMode==='month') _calRenderMonth(); }catch(e){}
-  var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key; }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+  var ap=(_calAppts||[]).filter(function(a){ return _calDateOf(a)===key; }).sort(function(x,y){ var xu=(x.time_unknown||!x.start_at)?1:0, yu=(y.time_unknown||!y.start_at)?1:0; return (xu-yu)||String(x.start_at||'').localeCompare(String(y.start_at||'')); });
   var dt=new Date(key+'T12:00'); var lbl=dt.toLocaleDateString([], {weekday:'long',month:'long',day:'numeric',year:'numeric'});
   var h='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:700">'+esc(lbl)+'</div><button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="document.getElementById(\'calDayPanel\').style.display=\'none\'">✕ Close</button></div>';
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
   else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at);
     h+='<div style="border:1px solid var(--line);border-radius:10px;margin-top:6px;background:var(--card)">';
-    h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+(tm||'—')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:10px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#2E6A4B;font-weight:600">Details ›</span></div>';
+    h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+((tm&&!a.time_unknown)?tm:'<span style="color:var(--muted);font-size:11px">time not recorded</span>')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:10px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#2E6A4B;font-weight:600">Details ›</span></div>';
     h+='<div id="calApptEdit_'+a.id+'"></div></div>';
   }); }
   // Add an appointment directly on this day.
@@ -13541,7 +13541,7 @@ async function _renderWaitingRoom(){
   } else {
     window.__mlsWaitingLastGood={day:today,appts:appts};
   }
-  var waiting=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).sort(function(x,y){ return String(x.start_at||'').localeCompare(String(y.start_at||'')); });
+  var waiting=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).sort(function(x,y){ var xu=(x.time_unknown||!x.start_at)?1:0, yu=(y.time_unknown||!y.start_at)?1:0; return (xu-yu)||String(x.start_at||'').localeCompare(String(y.start_at||'')); });
   if(!waiting.length){ bar.style.display='none'; bar.innerHTML=''; return; }
   try{ _calAppts=appts; }catch(e){}
   var rows=waiting.map(function(a){
@@ -14388,7 +14388,7 @@ function renderBoard(appts){
   const box=document.getElementById('boardBox'); if(!box) return;
   box.style.display='block';
   const order={checked_in:0,roomed:1,booked:2,completed:3,no_show:4,cancelled:5};
-  const sorted=(appts||[]).slice().sort(function(a,b){ return ((order[a.status]||9)-(order[b.status]||9)) || String(a.start_at||'').localeCompare(String(b.start_at||'')); });
+  const sorted=(appts||[]).slice().sort(function(a,b){ return ((order[a.status]||9)-(order[b.status]||9)) || (((a.time_unknown||!a.start_at)?1:0)-((b.time_unknown||!b.start_at)?1:0)) || String(a.start_at||'').localeCompare(String(b.start_at||'')); });
   const docOpts='<option value="">No provider</option>'+_boardDoctors.map(function(d){return '<option value="'+d.id+'">'+esc(d.name||('Provider #'+d.id))+'</option>';}).join('');
   var _bd=_boardDay(); var _isToday=(_bd===_todayStr());
   var _lbl=_isToday?'Today':new Date(_bd+'T12:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
@@ -14401,7 +14401,7 @@ function renderBoard(appts){
     +'<button class="btn-ghost" style="font-size:12px;padding:5px 10px;margin-left:auto" onclick="loadBoard(true)">↻ Refresh</button></div>';
   if(!sorted.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:10px">No appointments on this day. Add one below, or share your booking link.</div>'; }
   sorted.forEach(function(a){
-    const t=a.start_at?_fmtApptTime(a.start_at):'';
+    const t=(a.start_at&&!a.time_unknown)?_fmtApptTime(a.start_at):'time not recorded';
     const badge={booked:'#5f7186',checked_in:'#127a55',roomed:'#2E6A4B',completed:'#8a8a8a',cancelled:'#c0392b',no_show:'#c0392b'}[a.status]||'#5f7186';
     h+='<div style="border:1px solid #e2e9f1;border-radius:10px;padding:9px 11px;margin-bottom:7px;background:#fff">';
     h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
@@ -34138,7 +34138,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b1011';
+  window.__MLS_AV='b1013';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
