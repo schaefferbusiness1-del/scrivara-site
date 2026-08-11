@@ -7163,6 +7163,38 @@ function sfStartupValid(opts){
   return !opts.startupId||opts.startupId===sfSessionStartupId;
 }
 
+/* sj-2.0 C4 boot barrier (INTEGRATION-ORDER Commit A step 3). After session
+   identity resolves, boot calls __mlsPtsStore.init() and the FIRST
+   roster-dependent paint awaits ready() - a migrated account whose init()
+   never runs would serve an EMPTY roster forever (isReady never true ->
+   legacy path -> the blob was deleted at migration). Pre-migration the
+   barrier is inert-fast: the sync probe (gen stamp present AND blob absent
+   == migrated) keeps today's synchronous paint timing identical; init()
+   still fires so the store's storage listener installs and the boot
+   receipt exists. Fail-open by design: a refused init (namespace guard) or
+   a hung IndexedDB open must never brick boot - the paint runs anyway
+   after 4000ms and the re-routed readers fall through to the legacy path
+   (loud-empty, never stale PHI). */
+function __mlsPtsBootBarrier(paint){
+  var ranPaint=false;
+  var runPaint=function(why){
+    if(ranPaint)return; ranPaint=true;
+    if(why){ try{ console.warn('[pts-boot] roster paint released by '+why+' (store not hydrated - legacy path serves loud-empty until it is)'); }catch(_e){} }
+    try{ paint(); }catch(ePb){ try{ console.error('[pts-boot] roster paint failed',ePb); }catch(_e2){} }
+  };
+  var store=null; try{ store=window.__mlsPtsStore; }catch(ePs){}
+  if(!store||typeof store.init!=='function'){ runPaint(); return; }
+  var p=null;
+  try{ p=store.init(); }catch(ePi){ p=null; }
+  try{ window.__mlsPtsBootReady=p; }catch(ePw){}
+  if(!p||typeof p.then!=='function'){ runPaint(); return; }
+  p.then(null,function(ePr){ try{ console.warn('[pts-boot] store init refused: '+String((ePr&&ePr.message)||ePr)); }catch(_e){} return null; });
+  var migrated=false;
+  try{ migrated=(localStorage.getItem(uns('ptsGenV2'))!=null)&&(localStorage.getItem(uns('patients'))==null); }catch(ePm){}
+  if(!migrated){ runPaint(); return; }
+  p.then(function(){ runPaint(); },function(){ runPaint('init-refusal'); });
+  setTimeout(function(){ runPaint('4000ms fail-open timeout'); },4000);
+}
 function startSession(email){
   /* Adopt the authenticated account before reset listeners render. Otherwise
      their first account-local Today/preferences read can come from the prior
@@ -7217,6 +7249,12 @@ function startSession(email){
   if(typeof applyLegalUI==='function') applyLegalUI();       // optional ⚖️ Legal button (off by default)
   if(typeof applyFeatureToggles==='function') applyFeatureToggles(); // 🧩 Features show/hide (per-user)
   try{ if(typeof renderCustomWidgets==='function') renderCustomWidgets(); }catch(e){} // 🧩 doctor-built custom widget cards (per-user)
+  /* sj-2.0 C4: the first roster-dependent paint runs behind the patient-
+     store boot barrier. Pre-migration it paints synchronously right here
+     (call order identical to the un-wrapped block); post-migration it
+     awaits store hydration so the first paint never serves an empty
+     roster. */
+  __mlsPtsBootBarrier(function(){
   renderDots();
   newVisit({preserveRecovery:true});
   showView('visit');   // land ready to record the first patient — not the busy Patients list
@@ -7225,6 +7263,7 @@ function startSession(email){
      block the first Visit click, while local/offline accounts never remain at
      the markup's temporary zero badges. */
   scheduleNavCounts();
+  });
   applyBackendModeUI();
   if(!_gateMode) applyAccessUI();
   renderDocPrefs();
@@ -7468,6 +7507,11 @@ function refreshMe(opts){
         }catch(e){}
         if(em){
           try{ sfResetSessionBoundary(em,{reason:'identity-change',previousAccount:previousIdentity}); }catch(e){}
+          /* sj-2.0 C4: re-run the patient-store init for the token-
+             authenticated namespace (idempotent per account key). Without
+             this, a migrated account reached via identity drift stays on
+             the legacy loud-empty path until the next reload. */
+          try{ if(window.__mlsPtsStore&&typeof window.__mlsPtsStore.init==='function'){ window.__mlsPtsBootReady=window.__mlsPtsStore.init(); window.__mlsPtsBootReady.then(null,function(ePtsIc){ try{ console.warn('[pts-boot] identity-change init refused: '+String((ePtsIc&&ePtsIc.message)||ePtsIc)); }catch(_e){} }); } }catch(ePtsI){}
           const whoEl=document.getElementById('whoLabel');
           if(whoEl) whoEl.textContent='👤 '+em;
           const histEl=document.getElementById('histWho');
@@ -10073,6 +10117,1062 @@ window.__mlsPtsEncode=_mlsPtsEncode;
    this matters most at boot, before the bundle's store-cache wrap installs.
    Returns a fresh top-level array (same aliasing depth as the wrap). */
 var __mlsPtsMemo=null;
+/* ===== BEGIN mls-pts-store (sj-2.0) ===== */
+/* sj-2.0 __mlsPtsStore - patients off localStorage: the ceiling fix and the
+   speed fix. Authoritative design: tests/live-e2e-artifacts/
+   2026-08-11-sj2-patients-idb-design.md (read it before touching this block).
+
+   ARCHITECTURE (one primitive, everything re-routed through it in phase 2):
+     - in-memory authoritative roster (the b377 memo, PROMOTED: reads never
+       touch the multi-MB LZ blob again - the ~2s main-thread decode leaves
+       the hot path entirely);
+     - sync localStorage DELTA JOURNAL (key uns('ptsJournalV2'); dirty patients
+       only; 256KB hard bound / 64KB high water; truncated ONLY after the
+       IndexedDB copy is verified BY CONTENT read-back - design Q3 layer b);
+     - localStorage GENERATION STAMP (key uns('ptsGenV2'); tiny, so it still
+       fires cross-tab 'storage' events; this is the shared CAS fence the
+       phase-2 re-routes point expectedRaw/lastRaw comparisons at);
+     - async IndexedDB blob write-behind (coalescing latest-wins, ONE
+       in-flight, transaction-complete AND echo read-back before anything
+       is trusted - same fail-closed shape as _mlsWriteConsentIndexed);
+     - navigator.storage.persist() requested and VERIFIED via persisted()
+       (design Q5): a denied/unverified grant declares the store non-durable
+       LOUDLY, makes journal truncation conservative, and logs estimate()
+       at boot so quota/usage are observed, not inferred.
+
+   PINNED CONTRACTS (suites enforce; this block is written to keep them):
+     - savePatients returns undefined with the save DURABLE same-tick: the
+       sync journal write + byte echo is the same-tick durable layer
+       (design Q3 layer a - equal strength to today's localStorage accept);
+     - quota THROWS out of savePatients: journal-full / journal-write-failure
+       still throws (Q1) - but the edit now SURVIVES: the qg 2.0
+       enqueue-before-write already ran in upsertPatient, memory holds the
+       rows, and the write-behind still carries them to IndexedDB;
+     - getPatients stays sync read-after-write in the same tick: getRoster()
+       serves memory synchronously after every save;
+     - cooperative routing stays managed-only; this block adds NO cooperative
+       entry point (saveAsync is a store-level confirm-awaiting write for the
+       phase-2 batch flush, not a savePatients cooperative route);
+     - the two RETIRED v1 journal key names (the pending/commit pair) do not
+       appear anywhere in this block, comments included;
+     - the qg 2.0 at-risk unknown latch is NOT referenced anywhere in this
+       block (one writer, zero readers - a registered guard enforces it, and
+       even naming it here would trip a grep-based count).
+
+   NOT WIRED YET (phase 2 does the re-routes; this block only defines the
+   primitive and registers nothing but its own storage listener at init):
+   getPatients/savePatients/upsertPatient still run their localStorage path
+   until the fence re-route lands; migrate() is the explicit one-shot cutover.
+
+   DO NOT auto-init this block. uns() before the session email resolves mints
+   the 'sf_u::undefined::' namespace (the stranded-notes class, closed
+   2026-08-11); init() refuses that namespace and must be called by boot code
+   AFTER session identity is real. */
+(function(){
+  var VERSION='sj-2.0.0';
+  var DB_NAME='mlsPtsStoreV2',DB_STORE='ptsBlobs',DB_VERSION=1;
+  var JOURNAL_SUFFIX='ptsJournalV2',GEN_SUFFIX='ptsGenV2';
+  /* Bounds are measured in localStorage units (UTF-16 code units, i.e. the
+     string .length the quota inventory counted in), not encoded bytes. */
+  var JOURNAL_HARD_MAX=256*1024;
+  var JOURNAL_HIGH_WATER=64*1024;
+  var HASH_CHUNK=2*1024*1024;
+  var TAB=Math.random().toString(36).slice(2,10);
+  var WARNED=Object.create(null);
+  var __dbPromise=null,__listenerInstalled=false;
+
+  var S={
+    key:'',mode:'ls',hydrated:false,
+    rows:null,               /* the authoritative in-memory roster */
+    gen:0,                   /* this tab's content generation */
+    journal:null,            /* cache of the last parsed/stored journal */
+    lastSaveWall:0,          /* wall clock of the last save (dirty heuristic) */
+    foreignTouched:null,     /* id -> gen applied from another tab's entries */
+    initPromise:null,bootReceipt:null,
+    idbOverride:null,dbFailed:false,
+    refreshing:false,refreshTries:0,pendingIdbRefresh:false,
+    degraded:false,degradedWhy:'',lastError:'',
+    durable:{requested:false,persisted:null,why:'',verdictAt:0,estimate:null},
+    wb:{queued:false,inflight:false,lastConfirmedGen:0,failures:0,waiters:[]}
+  };
+
+  /* ---- keys (resolved call-time through uns(), never captured) ---------- */
+  function bKey(){return uns('patients');}
+  function jKey(){return uns(JOURNAL_SUFFIX);}
+  function gKey(){return uns(GEN_SUFFIX);}
+  function maskKey(k){
+    /* receipts are PHI-free: the account prefix is hashed, only the suffix
+       survives in the clear */
+    k=String(k||'');var i=k.lastIndexOf('::');
+    return hashHex(hashChunk(k,0,k.length,0))+ '::'+(i>=0?k.slice(i+2):k);
+  }
+  function storeErr(code,msg){var e=new Error(msg);e.code=code;return e;}
+  function warnOnce(flag,msg){
+    if(WARNED[flag])return;WARNED[flag]=true;
+    try{console.warn(msg);}catch(e){}
+  }
+  function fireEvent(name,detail){
+    try{window.dispatchEvent(new CustomEvent(name,{detail:detail||{}}));}
+    catch(e){try{var ev=new Event(name);ev.detail=detail||{};window.dispatchEvent(ev);}catch(e2){}}
+  }
+  function fireUpdated(){fireEvent('mls:pts-store-updated',{gen:S.gen,rows:S.rows?S.rows.length:0});}
+  function byGen(a,b){return (Number(a.gen)||0)-(Number(b.gen)||0);}
+
+  /* ---- sleep/yield: worker-backed when available. Hidden-tab setTimeout is
+     FROZEN, not throttled - Athena owns the foreground during managed pulls,
+     and a frozen retry would let the journal fill while the blob never
+     confirms. __mlsBgSleep is the proven sleeper; MessageChannel tasks are
+     the un-clamped fallback for the hash chunker. ------------------------- */
+  function sleep(ms){
+    ms=Math.max(0,Number(ms)||0);
+    try{if(typeof window.__mlsBgSleep==='function')return Promise.resolve(window.__mlsBgSleep(ms));}catch(e){}
+    return new Promise(function(r){setTimeout(r,ms);});
+  }
+  function ptsYield(){
+    try{if(typeof window.__mlsBgSleep==='function')return Promise.resolve(window.__mlsBgSleep(0));}catch(e){}
+    try{
+      if(typeof MessageChannel==='function'){
+        return new Promise(function(r){
+          var ch=new MessageChannel();
+          ch.port1.onmessage=function(){try{ch.port1.close();ch.port2.close();}catch(e){}r();};
+          ch.port2.postMessage(0);
+        });
+      }
+    }catch(e){}
+    return new Promise(function(r){setTimeout(r,0);});
+  }
+
+  /* ---- content hash: FNV-1a 32-bit over UTF-16 code units, chunk-carriable
+     so the multi-MB blob hash never blocks the input thread in one piece. -- */
+  function hashChunk(s,start,end,h){
+    h=(h>>>0)||0x811c9dc5;
+    for(var i=start;i<end;i++){
+      h^=s.charCodeAt(i);
+      h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0;
+    }
+    return h>>>0;
+  }
+  function hashHex(h){return ('0000000'+(h>>>0).toString(16)).slice(-8);}
+  function hashSync(s){return hashHex(hashChunk(s,0,s.length,0));}
+  function hashAsync(s){
+    s=String(s==null?'':s);
+    if(s.length<=HASH_CHUNK)return Promise.resolve(hashSync(s));
+    var h=0x811c9dc5,i=0;
+    return new Promise(function(resolve,reject){
+      function step(){
+        try{
+          var end=Math.min(i+HASH_CHUNK,s.length);
+          h=hashChunk(s,i,end,h);i=end;
+          if(i>=s.length){resolve(hashHex(h));return;}
+          ptsYield().then(step,reject);
+        }catch(e){reject(e);}
+      }
+      step();
+    });
+  }
+
+  /* ---- IndexedDB (fail-closed idiom per _mlsWriteConsentIndexed: commit
+     AND read back before anything is trusted) --------------------------- */
+  function idbFactory(){
+    if(S.idbOverride)return S.idbOverride;
+    try{return window.indexedDB||null;}catch(e){return null;}
+  }
+  function dbOpen(){
+    if(__dbPromise)return __dbPromise;
+    __dbPromise=new Promise(function(resolve,reject){
+      var f=idbFactory();
+      if(!f||typeof f.open!=='function'){reject(storeErr('MLS_PTS_IDB_UNAVAILABLE','IndexedDB is not available in this context.'));return;}
+      var req;
+      try{req=f.open(DB_NAME,DB_VERSION);}catch(e){reject(e);return;}
+      req.onupgradeneeded=function(){
+        try{var d=req.result;if(!d.objectStoreNames.contains(DB_STORE))d.createObjectStore(DB_STORE,{keyPath:'k'});}catch(e){}
+      };
+      req.onsuccess=function(){
+        var db=req.result;
+        try{db.onversionchange=function(){try{db.close();}catch(e){}__dbPromise=null;};}catch(e){}
+        resolve(db);
+      };
+      req.onerror=function(){reject(req.error||storeErr('MLS_PTS_IDB_OPEN_FAILED','IndexedDB open failed.'));};
+    });
+    __dbPromise.then(null,function(){__dbPromise=null;});
+    return __dbPromise;
+  }
+  function idbReadBlob(k){
+    return dbOpen().then(function(db){
+      return new Promise(function(resolve,reject){
+        var tx;try{tx=db.transaction(DB_STORE,'readonly');}catch(e){reject(e);return;}
+        var g=tx.objectStore(DB_STORE).get(k);
+        g.onsuccess=function(){resolve(g.result||null);};
+        g.onerror=function(){reject(g.error||storeErr('MLS_PTS_IDB_READ_FAILED','IndexedDB read failed.'));};
+      });
+    });
+  }
+  function idbWriteBlob(rec,force){
+    /* compare-and-put INSIDE one readwrite transaction: a tab holding older
+       state can never regress a newer tab's committed blob. Equal-gen
+       rewrites are allowed on purpose (silent-mutation insurance: a caller
+       that mutated a row in place without a detectable delta still gets its
+       content into the durable copy on the next pump). force===true is the
+       migration path only. */
+    return dbOpen().then(function(db){
+      return new Promise(function(resolve,reject){
+        var superseded=false,tx;
+        try{tx=db.transaction(DB_STORE,'readwrite');}catch(e){reject(e);return;}
+        tx.oncomplete=function(){resolve({written:!superseded,superseded:superseded});};
+        tx.onabort=function(){
+          if(superseded)resolve({written:false,superseded:true});
+          else reject(tx.error||storeErr('MLS_PTS_IDB_WRITE_ABORTED','IndexedDB write aborted.'));
+        };
+        tx.onerror=function(){};
+        var os=tx.objectStore(DB_STORE);
+        if(force===true){os.put(rec);return;}
+        var g=os.get(rec.k);
+        g.onsuccess=function(){
+          var cur=g.result;
+          if(cur&&Number(cur.gen)>Number(rec.gen)){superseded=true;try{tx.abort();}catch(e){}return;}
+          os.put(rec);
+        };
+        g.onerror=function(){try{tx.abort();}catch(e){}};
+      });
+    });
+  }
+  function idbDeleteRecord(k){
+    return dbOpen().then(function(db){
+      return new Promise(function(resolve,reject){
+        var tx;try{tx=db.transaction(DB_STORE,'readwrite');}catch(e){reject(e);return;}
+        tx.oncomplete=function(){resolve(true);};
+        tx.onabort=function(){reject(tx.error||storeErr('MLS_PTS_IDB_DELETE_FAILED','IndexedDB delete failed.'));};
+        tx.onerror=function(){};
+        tx.objectStore(DB_STORE).delete(k);
+      });
+    });
+  }
+
+  /* ---- journal + stamp ------------------------------------------------- */
+  function journalParse(raw){
+    if(raw==null)return null;
+    try{
+      var j=JSON.parse(raw);
+      if(j&&j.v===2&&Array.isArray(j.entries))return {v:2,baseGen:Number(j.baseGen)||0,entries:j.entries};
+    }catch(e){}
+    return {corrupt:true};
+  }
+  function journalSerialize(j){
+    return JSON.stringify({v:2,baseGen:Number(j.baseGen)||0,entries:j.entries});
+  }
+  function stampParse(v){
+    if(typeof v!=='string'||!v)return null;
+    var p=v.split('|'),g=Number(p[0]);
+    if(!isFinite(g)||g<0)return null;
+    return {gen:g,tab:String(p[1]||''),at:Number(p[2])||0};
+  }
+  function conservativeRetention(){
+    /* Q5: unverified/denied persist grant OR a degraded write-behind keeps
+       confirmed entries as recovery ballast instead of dropping them.
+       persisted===null (unsupported / verdict pending) is treated as denied:
+       the safe direction. */
+    return S.degraded||S.durable.persisted!==true;
+  }
+
+  function degradeLatch(why){
+    /* A LATCH, never cleared this session: a recovered write-behind resumes
+       moving data (failures reset, journal truncates) but the incident stays
+       visible in the receipt - never a silent drop (design Q1). */
+    if(S.degraded)return;
+    S.degraded=true;S.degradedWhy=String(why||'').slice(0,180);
+    try{toast('Patient storage entered a degraded safety mode - unconfirmed edits are held in the sync journal. Tell MLS support.','');}catch(_){}
+    warnOnce('degraded','[pts-store] DEGRADED: '+S.degradedWhy);
+    fireEvent('mls:pts-store-degraded',{why:S.degradedWhy});
+  }
+
+  /* ---- delta replay (shared by cross-tab catch-up and boot hydration) --- */
+  function replayEntry(rows,e,dirtyKeep){
+    var out=(Array.isArray(rows)?rows:[]).slice(),map=Object.create(null),i,r,id;
+    for(i=0;i<out.length;i++){r=out[i];if(r&&r.id!=null&&map[String(r.id)]===undefined)map[String(r.id)]=i;}
+    var fresh=[],puts=Array.isArray(e.p)?e.p:[];
+    for(i=0;i<puts.length;i++){
+      var p=puts[i];if(!p||p.id==null)continue;id=String(p.id);
+      if(dirtyKeep&&dirtyKeep[id])continue;      /* local dirty wins */
+      if(map[id]!==undefined)out[map[id]]=p;else fresh.push(p);
+    }
+    if(fresh.length)out=fresh.concat(out);        /* new rows front, upsert idiom */
+    var dels=Array.isArray(e.d)?e.d:[];
+    if(dels.length){
+      var drop=Object.create(null);
+      for(i=0;i<dels.length;i++){id=String(dels[i]);if(!(dirtyKeep&&dirtyKeep[id]))drop[id]=1;}
+      out=out.filter(function(r2){return !(r2&&r2.id!=null&&drop[String(r2.id)]);});
+    }
+    if(Array.isArray(e.o)&&e.o.length){
+      var pos=Object.create(null);
+      for(i=0;i<e.o.length;i++)pos[String(e.o[i])]=i+1;
+      var known=[],unknown=[];
+      for(i=0;i<out.length;i++){r=out[i];var kpos=(r&&r.id!=null)?pos[String(r.id)]:0;if(kpos)known.push([kpos,r]);else unknown.push(r);}
+      known.sort(function(a,b){return a[0]-b[0];});
+      out=unknown.concat(known.map(function(x){return x[1];}));
+    }
+    return out;
+  }
+  function markForeign(e){
+    var ft=S.foreignTouched||(S.foreignTouched=Object.create(null));
+    var i,g=Number(e.gen)||0,puts=Array.isArray(e.p)?e.p:[];
+    for(i=0;i<puts.length;i++){var p=puts[i];if(p&&p.id!=null)ft[String(p.id)]=g;}
+    var dels=Array.isArray(e.d)?e.d:[];
+    for(i=0;i<dels.length;i++)delete ft[String(dels[i])];
+    var ids=Object.keys(ft);
+    if(ids.length>512){
+      ids.sort(function(a,b){return ft[a]-ft[b];});
+      for(i=0;i<ids.length-512;i++)delete ft[ids[i]];
+    }
+  }
+  function markForeignIds(ids){
+    var ft=S.foreignTouched||(S.foreignTouched=Object.create(null));
+    for(var i=0;i<ids.length;i++)ft[String(ids[i])]=S.gen;
+  }
+
+  /* ---- cross-tab catch-up: the stamp is tiny and read on every roster
+     touch (microseconds - versus the multi-MB getItem identity probe this
+     replaces). Only a foreign bump does more work, and deltas are KBs. A GAP
+     in entry generations means an async bulk save that only the IndexedDB
+     blob carries - schedule the async refresh instead of guessing. -------- */
+  function syncCatchUp(dirtyKeep){
+    if(S.mode!=='idb'||!S.hydrated)return 0;
+    var st=null;
+    try{st=stampParse(localStorage.getItem(gKey()));}catch(e){return 0;}
+    if(!st||st.gen<=S.gen)return 0;
+    if(st.tab===TAB){S.gen=Math.max(S.gen,st.gen);return 0;}
+    var raw=null;try{raw=localStorage.getItem(jKey());}catch(e){}
+    var j=journalParse(raw);
+    if(!j||j.corrupt){S.pendingIdbRefresh=true;scheduleRefresh();return 0;}
+    var entries=j.entries.slice().sort(byGen),applied=0,i;
+    for(i=0;i<entries.length;i++){
+      var e=entries[i],g=Number(e.gen)||0;
+      if(g<=S.gen)continue;
+      if(g>S.gen+1){S.pendingIdbRefresh=true;scheduleRefresh();break;}
+      if(String(e.tab||'')!==TAB){
+        S.rows=replayEntry(S.rows||[],e,dirtyKeep);
+        markForeign(e);
+        applied++;
+      }
+      S.gen=g;
+    }
+    if(st.gen>S.gen&&!S.pendingIdbRefresh){S.pendingIdbRefresh=true;scheduleRefresh();}
+    S.journal=j;
+    return applied;
+  }
+  function scheduleRefresh(){
+    if(S.refreshing)return;
+    S.refreshing=true;
+    var target=0;
+    try{var st=stampParse(localStorage.getItem(gKey()));target=st?st.gen:0;}catch(e){}
+    idbReadBlob(S.key).then(function(rec){
+      S.refreshing=false;
+      if(rec&&Number(rec.gen)>=S.gen){
+        var rows=null;
+        try{rows=JSON.parse(String(rec.json==null?'':rec.json));}catch(e){rows=null;}
+        if(Array.isArray(rows)){
+          var before=Object.create(null),i,r;
+          for(i=0;i<(S.rows||[]).length;i++){r=S.rows[i];if(r&&r.id!=null)before[String(r.id)]=1;}
+          S.rows=rows;S.gen=Number(rec.gen)||0;
+          if(S.gen>S.wb.lastConfirmedGen)S.wb.lastConfirmedGen=S.gen;
+          var raw=null;try{raw=localStorage.getItem(jKey());}catch(e){}
+          var j=journalParse(raw);
+          if(j&&!j.corrupt){
+            var entries=j.entries.slice().sort(byGen);
+            for(i=0;i<entries.length;i++){
+              var e2=entries[i],ge=Number(e2.gen)||0;
+              if(ge<=S.gen)continue;
+              S.rows=replayEntry(S.rows,e2,null);
+              if(String(e2.tab||'')!==TAB)markForeign(e2);
+              S.gen=ge;
+            }
+          }
+          /* rows that arrived with the adopted blob are foreign content a
+             later stale caller array must not silently drop */
+          var arrived=[];
+          for(i=0;i<S.rows.length;i++){r=S.rows[i];if(r&&r.id!=null&&!before[String(r.id)])arrived.push(String(r.id));}
+          if(arrived.length)markForeignIds(arrived);
+          fireUpdated();
+        }
+      }
+      if(target>S.gen){
+        S.refreshTries++;
+        if(S.refreshTries>=2)degradeLatch('content-behind-stamp: gen '+S.gen+' < stamp '+target);
+        else sleep(2000).then(function(){S.pendingIdbRefresh=true;scheduleRefresh();});
+      }else{S.refreshTries=0;S.pendingIdbRefresh=false;}
+    },function(){S.refreshing=false;});
+  }
+
+  /* ---- delta computation ------------------------------------------------
+     Dirty = caller-declared (opts.dirtyIds - the phase-2 REQUIREMENT for
+     every re-routed writer), OR a new id, OR a replaced row reference, OR a
+     row whose `updated` stamp moved since the last save (upsertPatient
+     stamps p.updated=Date.now() before every save, so the common
+     mutate-in-place caller is caught). A caller that mutates a stored row
+     in place, keeps the reference, never bumps `updated`, and passes no
+     dirtyIds is invisible to the journal - the write-behind blob still
+     carries the content (equal-gen rewrite), and the acceptance loss column
+     is the instrument that would catch a residual. */
+  function computeDelta(prevRows,rows,opts){
+    prevRows=Array.isArray(prevRows)?prevRows:[];
+    var prevMap=Object.create(null),prevIds=[],i,r,id;
+    for(i=0;i<prevRows.length;i++){
+      r=prevRows[i];
+      if(r&&r.id!=null){id=String(r.id);if(prevMap[id]===undefined){prevMap[id]=r;prevIds.push(id);}}
+    }
+    var dirtySet=Object.create(null),dl=opts&&opts.dirtyIds;
+    if(Array.isArray(dl))for(i=0;i<dl.length;i++)dirtySet[String(dl[i])]=1;
+    var wall=Number(S.lastSaveWall)||0;
+    var put=[],del=[],newIds=[],have=Object.create(null),noId=0;
+    for(i=0;i<rows.length;i++){
+      r=rows[i];
+      if(!r||r.id==null){noId++;continue;}
+      id=String(r.id);
+      if(have[id])continue;                       /* first occurrence wins */
+      have[id]=1;newIds.push(id);
+      var prev=prevMap[id];
+      var dirty=!!dirtySet[id]||prev===undefined||prev!==r||(wall>0&&Number(r.updated||0)>=wall);
+      if(dirty){put.push(r);dirtySet[id]=1;}
+    }
+    for(i=0;i<prevIds.length;i++){if(!have[prevIds[i]])del.push(prevIds[i]);}
+    var order=null,prevCommon=[],newCommon=[];
+    for(i=0;i<prevIds.length;i++)if(have[prevIds[i]])prevCommon.push(prevIds[i]);
+    for(i=0;i<newIds.length;i++)if(prevMap[newIds[i]]!==undefined)newCommon.push(newIds[i]);
+    if(prevCommon.join('\u0001')!==newCommon.join('\u0001'))order=newIds;
+    if(noId>0)warnOnce('noId','[pts-store] '+noId+' roster row(s) without an id persist via the async blob only, never the sync journal.');
+    if(!put.length&&!del.length&&!order)return null;
+    return {put:put,del:del,order:order,dirtySet:dirtySet,noId:noId};
+  }
+  function carryForeign(rows,opts){
+    /* Supplements (does not replace) pts-rowguard: an id another tab wrote,
+       which this caller's materialized-before array has never seen, is
+       carried forward instead of silently journaled as a delete. purge and
+       deletePatient still pass {allowRemovals:true} - the only two
+       intentional removal paths - which also clears the carry set. */
+    if(opts&&opts.allowRemovals===true){S.foreignTouched=null;return rows;}
+    var ft=S.foreignTouched;
+    if(!ft)return rows;
+    var ids=Object.keys(ft);
+    if(!ids.length)return rows;
+    var have=Object.create(null),i,r;
+    for(i=0;i<rows.length;i++){r=rows[i];if(r&&r.id!=null)have[String(r.id)]=1;}
+    var cur=Object.create(null);
+    for(i=0;i<(S.rows||[]).length;i++){r=S.rows[i];if(r&&r.id!=null)cur[String(r.id)]=r;}
+    var carried=null;
+    for(i=0;i<ids.length;i++){
+      var id=ids[i];
+      if(have[id]){delete ft[id];continue;}       /* the caller has seen it */
+      if(cur[id])(carried||(carried=[])).push(cur[id]);
+      else delete ft[id];
+    }
+    if(!carried)return rows;
+    try{
+      var log=window.__mlsPtsStoreCarryLog=window.__mlsPtsStoreCarryLog||[];
+      log.push({at:Date.now(),kept:carried.length,ids:carried.map(function(x){return String(x.id).slice(0,24);}).slice(0,8)});
+      if(log.length>60)log.splice(0,log.length-60);
+    }catch(e){}
+    return carried.concat(rows);
+  }
+
+  /* ---- the sync commit: journal append + stamp bump, each write verified
+     by same-tick read-back (Q3 layer a - the identical mechanism qv-1.0
+     uses today, on the medium that is now the same-tick durable layer).
+     Retries fold in anything a concurrent tab landed between our read and
+     write; four failed CAS rounds throw LOUD rather than guess. ---------- */
+  function commitEntry(entry,dirtyKeep){
+    var attempts=0,err=null;
+    while(attempts++<4){
+      syncCatchUp(dirtyKeep);
+      var st=null;
+      try{st=stampParse(localStorage.getItem(gKey()));}catch(e){}
+      entry.gen=Math.max(S.gen,st?st.gen:0)+1;
+      var raw=null;try{raw=localStorage.getItem(jKey());}catch(e){}
+      var j=journalParse(raw);
+      if(!j||j.corrupt){
+        if(j&&j.corrupt)degradeLatch('journal-corrupt-at-commit');
+        j={v:2,baseGen:S.wb.lastConfirmedGen,entries:[]};
+      }
+      j.entries=j.entries.concat([entry]);
+      var serial=journalSerialize(j);
+      if(serial.length>JOURNAL_HARD_MAX){
+        /* confirmed ballast (conservative retention) yields to fresh
+           durability before anything is refused */
+        var live=[];
+        for(var i=0;i<j.entries.length;i++){if((Number(j.entries[i].gen)||0)>S.wb.lastConfirmedGen)live.push(j.entries[i]);}
+        j={v:2,baseGen:S.wb.lastConfirmedGen,entries:live};
+        serial=journalSerialize(j);
+      }
+      if(serial.length>JOURNAL_HARD_MAX){
+        var entryLen=0;try{entryLen=JSON.stringify(entry).length;}catch(e){}
+        throw storeErr('MLS_PTS_JOURNAL_FULL',entryLen>JOURNAL_HARD_MAX
+          ?'Patient save delta ('+entryLen+' units) exceeds the sync journal bound - bulk saves must use the confirm-awaiting async path.'
+          :'Patient sync journal is full ('+serial.length+' of '+JOURNAL_HARD_MAX+' units) - the IndexedDB write-behind has not confirmed.');
+      }
+      localStorage.setItem(jKey(),serial);        /* quota throw bubbles out */
+      var echo=null;try{echo=localStorage.getItem(jKey());}catch(e){}
+      if(echo!==serial){err=storeErr('MLS_PTS_STORE_CONTENTION','Another tab rewrote the patient journal mid-commit.');continue;}
+      var stampVal=String(entry.gen)+'|'+TAB+'|'+String(entry.at||Date.now());
+      localStorage.setItem(gKey(),stampVal);      /* quota throw bubbles out */
+      var echo2=null;try{echo2=localStorage.getItem(gKey());}catch(e){}
+      if(echo2!==stampVal){err=storeErr('MLS_PTS_STORE_CONTENTION','Another tab bumped the patient store generation mid-commit.');continue;}
+      S.gen=entry.gen;S.journal=j;
+      if(serial.length>=JOURNAL_HIGH_WATER)wbQueue();  /* high water: press the pump */
+      return true;
+    }
+    throw err||storeErr('MLS_PTS_STORE_CONTENTION','Patient journal commit could not settle cross-tab contention.');
+  }
+
+  /* ---- write-behind: coalescing latest-wins, ONE in-flight. Confirm =
+     transaction complete AND echo read-back verified by CONTENT (gen + length
+     + recomputed hash) - Q3 layer b, STRONGER than the byte-length-moved
+     check it replaces. Journal truncation happens only after that confirm. - */
+  function wbQueue(){S.wb.queued=true;Promise.resolve().then(wbPump);}
+  function wbPump(){
+    if(S.wb.inflight||!S.wb.queued)return;
+    if(S.mode!=='idb'||!S.hydrated){S.wb.queued=false;return;}
+    S.wb.queued=false;S.wb.inflight=true;
+    var gen=S.gen,key=S.key,json='';
+    try{json=JSON.stringify(S.rows||[]);}
+    catch(eJ){S.wb.inflight=false;wbFail('blob-serialize: '+String(eJ&&eJ.message||eJ).slice(0,120));return;}
+    var rec={k:key,gen:gen,len:json.length,at:Date.now(),tab:TAB,json:json,hash:''};
+    hashAsync(json).then(function(hx){
+      rec.hash=hx;
+      return idbWriteBlob(rec,false).then(function(w){
+        if(w.superseded){
+          /* a newer tab's blob is already committed: our content is covered
+             at a higher generation - read which one so truncation can move */
+          return idbReadBlob(key).then(function(cur){return {confirmedGen:cur?Number(cur.gen)||0:0};});
+        }
+        return idbReadBlob(key).then(function(cur){
+          if(!cur||Number(cur.gen)!==gen||Number(cur.len)!==json.length)
+            throw storeErr('MLS_PTS_IDB_ECHO_MISMATCH','IndexedDB read-back did not match the written patient blob.');
+          return hashAsync(String(cur.json==null?'':cur.json)).then(function(hx2){
+            if(hx2!==hx)throw storeErr('MLS_PTS_IDB_ECHO_MISMATCH','IndexedDB read-back hash mismatch.');
+            return {confirmedGen:gen};
+          });
+        });
+      });
+    }).then(function(c){
+      S.wb.failures=0;
+      if(c.confirmedGen>S.wb.lastConfirmedGen)S.wb.lastConfirmedGen=c.confirmedGen;
+      truncateJournal(S.wb.lastConfirmedGen);
+      stampAdvance(S.wb.lastConfirmedGen);
+      S.wb.inflight=false;
+      wbSettleWaiters(null);
+      if(S.gen>S.wb.lastConfirmedGen)S.wb.queued=true;
+      if(S.wb.queued)wbPump();
+    },function(e){
+      S.wb.inflight=false;
+      wbFail(String(e&&e.message||e).slice(0,160));
+    });
+  }
+  function wbFail(msg){
+    S.wb.failures++;S.lastError='write-behind: '+msg;
+    if(S.wb.failures>=3)degradeLatch('idb-write-behind: '+msg);
+    wbSettleWaiters(S.degraded?storeErr('MLS_PTS_IDB_DEGRADED','IndexedDB write-behind is failing; the journal retains every unconfirmed edit.'):null);
+    S.wb.queued=true;
+    sleep(Math.min(30000,1000*Math.pow(2,Math.min(5,S.wb.failures)))).then(wbPump);
+  }
+  function wbAwait(gen){
+    if(S.wb.lastConfirmedGen>=gen)return Promise.resolve({confirmedGen:S.wb.lastConfirmedGen});
+    return new Promise(function(res,rej){S.wb.waiters.push({gen:gen,res:res,rej:rej});});
+  }
+  function wbSettleWaiters(err){
+    var keep=[],i;
+    for(i=0;i<S.wb.waiters.length;i++){
+      var w=S.wb.waiters[i];
+      if(S.wb.lastConfirmedGen>=w.gen)w.res({confirmedGen:S.wb.lastConfirmedGen});
+      else if(err)w.rej(err);
+      else keep.push(w);
+    }
+    S.wb.waiters=keep;
+  }
+  function stampAdvance(gen){
+    /* async confirms advertise durably-readable state to other tabs; a stamp
+       is only ever advanced, never regressed */
+    try{
+      var st=stampParse(localStorage.getItem(gKey()));
+      if(st&&st.gen>=gen)return;
+      localStorage.setItem(gKey(),String(gen)+'|'+TAB+'|'+String(Date.now()));
+    }catch(e){}
+  }
+  function truncateJournal(confirmedGen){
+    try{
+      if(S.mode!=='idb')return;
+      var raw=null;
+      try{raw=localStorage.getItem(jKey());}catch(e){return;}
+      var j=journalParse(raw);
+      if(!j||j.corrupt)return;
+      var live=[],confirmed=[],i;
+      for(i=0;i<j.entries.length;i++){
+        if((Number(j.entries[i].gen)||0)>confirmedGen)live.push(j.entries[i]);
+        else confirmed.push(j.entries[i]);
+      }
+      var retained=[];
+      if(conservativeRetention()&&confirmed.length){
+        /* Q5 denied-grant behaviour: keep the newest confirmed entries as
+           recovery ballast up to the high-water mark (a full roster snapshot
+           only ever fits for small rosters; the delta tail is what a
+           post-eviction recovery can actually replay) */
+        var budget=JOURNAL_HIGH_WATER-journalSerialize({v:2,baseGen:confirmedGen,entries:live}).length;
+        for(i=confirmed.length-1;i>=0&&budget>0;i--){
+          var el=0;try{el=JSON.stringify(confirmed[i]).length+1;}catch(e){break;}
+          if(el>budget)break;
+          retained.unshift(confirmed[i]);budget-=el;
+        }
+      }
+      var out={v:2,baseGen:confirmedGen,entries:retained.concat(live)};
+      var serial=journalSerialize(out);
+      localStorage.setItem(jKey(),serial);
+      var echo=null;try{echo=localStorage.getItem(jKey());}catch(e){}
+      if(echo!==serial){S.lastError='journal-truncate-echo-mismatch';return;}
+      S.journal=out;
+    }catch(e){S.lastError='journal-truncate: '+String(e&&e.message||e).slice(0,120);}
+  }
+
+  /* ---- guards ----------------------------------------------------------- */
+  function assertWritable(rows){
+    if(S.mode!=='idb')throw storeErr('MLS_PTS_STORE_NOT_MIGRATED','The patient store has not been migrated to IndexedDB - the localStorage path is still authoritative.');
+    if(!S.hydrated)throw storeErr('MLS_PTS_STORE_NOT_READY','The patient store is not hydrated yet - await __mlsPtsStore.ready().');
+    if(bKey()!==S.key)throw storeErr('MLS_PTS_STORE_ACCOUNT_CHANGED','Patient persistence stopped because the signed-in account changed.');
+    if(!Array.isArray(rows))throw storeErr('MLS_PTS_STORE_BAD_ROWS','The patient store requires an array of patient rows.');
+  }
+
+  /* ---- the SYNC save: memory + journal + stamp, returns undefined -------
+     Q1 quota semantics: memory commits FIRST, so a journal-write failure
+     still THROWS out of the save path (the pinned loud contract) but the
+     edit is never again stranded in NO location - the qg 2.0
+     enqueue-before-write already ran in upsertPatient, memory serves the
+     post-edit rows, and the write-behind still carries them to IndexedDB.
+     (Deliberate pin move, per the design: the quota suite's
+     "store serves pre-edit bytes" assertion re-points to
+     "memory serves the edit + durable layer refused, loudly".) ----------- */
+  function saveSync(rows,opts){
+    opts=opts||{};
+    assertWritable(rows);
+    syncCatchUp();
+    if(opts.expectedGen!=null&&Number(opts.expectedGen)!==S.gen)
+      throw storeErr('MLS_PTS_STORE_STALE_GEN','The patient store advanced past this writer\'s expected generation.');
+    var rows2=carryForeign(rows,opts);
+    var delta=computeDelta(S.rows,rows2,opts);
+    S.rows=Array.from(rows2);
+    if(!delta){
+      S.lastSaveWall=Date.now();
+      if(S.wb.lastConfirmedGen<S.gen)wbQueue();
+      return undefined;
+    }
+    var entry={gen:0,tab:TAB,at:Date.now()};
+    if(delta.put.length)entry.p=delta.put;
+    if(delta.del.length)entry.d=delta.del;
+    if(delta.order)entry.o=delta.order;
+    try{
+      commitEntry(entry,delta.dirtySet);
+    }catch(e){
+      S.gen=Math.max(S.gen+1,Number(entry.gen)||0);  /* memory moved even though the shared stamp did not */
+      S.lastSaveWall=Date.now();
+      S.lastError='journal: '+String(e&&e.message||e).slice(0,160);
+      if(e&&e.code==='MLS_PTS_STORE_CONTENTION'){
+        try{toast('Patient save could not settle a cross-tab conflict - retry. Tell MLS support if this repeats.','');}catch(_){}
+      }else{
+        try{toast('Local storage is full - patient changes could NOT be saved. Tell MLS support.','');}catch(_){}
+      }
+      wbQueue();                                  /* the survival path */
+      throw e;
+    }
+    S.lastSaveWall=Date.now();
+    wbQueue();
+    return undefined;
+  }
+
+  /* ---- the ASYNC save: for bulk writers whose delta cannot honestly fit a
+     256KB sync journal (a 64-change cooperative flush at ~13KB/patient of
+     JSON is ~800KB of delta). Memory commits immediately (reads stay
+     read-after-write); durability is the awaited IndexedDB confirm, which is
+     what the cooperative flush lane already is - an async path with a
+     terminal receipt. No journal entry is written; the generation GAP tells
+     other tabs to catch up from the blob. NOT a savePatients cooperative
+     entry point - the managed-only contract stands. --------------------- */
+  function saveAsync(rows,opts){
+    opts=opts||{};
+    try{assertWritable(rows);}catch(e){return Promise.reject(e);}
+    if(S.degraded)return Promise.reject(storeErr('MLS_PTS_IDB_DEGRADED','IndexedDB write-behind is degraded; bulk saves cannot confirm.'));
+    syncCatchUp();
+    if(opts.expectedGen!=null&&Number(opts.expectedGen)!==S.gen)
+      return Promise.resolve({stale:true,external:true});
+    var rows2=carryForeign(rows,opts);
+    var delta=computeDelta(S.rows,rows2,opts);
+    S.rows=Array.from(rows2);
+    S.lastSaveWall=Date.now();
+    if(!delta&&S.wb.lastConfirmedGen>=S.gen)
+      return Promise.resolve({saved:false,identical:true,rows:S.rows});
+    if(delta)S.gen=S.gen+1;
+    var want=S.gen;
+    wbQueue();
+    return wbAwait(want).then(function(c){
+      return {saved:true,rows:S.rows,confirmedGen:c.confirmedGen};
+    });
+  }
+
+  /* ---- reads ------------------------------------------------------------ */
+  function getRoster(){
+    if(S.mode!=='idb')throw storeErr('MLS_PTS_STORE_NOT_MIGRATED','The patient store has not been migrated to IndexedDB - read localStorage instead.');
+    if(!S.hydrated)throw storeErr('MLS_PTS_STORE_NOT_READY','The patient store is not hydrated yet - await __mlsPtsStore.ready().');
+    if(bKey()!==S.key)throw storeErr('MLS_PTS_STORE_ACCOUNT_CHANGED','Patient roster read refused because the signed-in account changed.');
+    syncCatchUp();
+    /* returns the LIVE array: callers (getPatients) slice + stamp, exactly
+       as they do with the memo today */
+    return S.rows||[];
+  }
+
+  /* ---- durability probe (design Q5): request persist(), VERIFY with
+     persisted(), record the verdict, log estimate(). Denial is LOUD and
+     flips journal truncation conservative; it never blocks hydration. ---- */
+  function probeDurability(){
+    var st=null;
+    try{st=window.navigator&&window.navigator.storage;}catch(e){}
+    S.durable.requested=true;
+    var verdict;
+    if(st&&typeof st.persist==='function'&&typeof st.persisted==='function'){
+      verdict=Promise.resolve().then(function(){return st.persist();})
+        .then(null,function(){return false;})
+        .then(function(){return st.persisted();})   /* VERIFY, never trust the request */
+        .then(null,function(){return null;})
+        .then(function(v){
+          S.durable.persisted=(v===true)?true:((v===false)?false:null);
+          S.durable.verdictAt=Date.now();
+          if(S.durable.persisted!==true)declareNonDurable(v===false?'denied':'unverifiable');
+          fireEvent('mls:pts-store-durability',{persisted:S.durable.persisted,why:S.durable.why||''});
+        });
+    }else{
+      S.durable.persisted=null;S.durable.verdictAt=Date.now();
+      declareNonDurable('unsupported');
+      fireEvent('mls:pts-store-durability',{persisted:null,why:'unsupported'});
+      verdict=Promise.resolve();
+    }
+    var est=Promise.resolve();
+    if(st&&typeof st.estimate==='function'){
+      est=Promise.resolve().then(function(){return st.estimate();}).then(function(e){
+        S.durable.estimate={usage:Number(e&&e.usage)||0,quota:Number(e&&e.quota)||0,at:Date.now()};
+        try{console.info('[pts-store] storage.estimate usage='+S.durable.estimate.usage+' quota='+S.durable.estimate.quota);}catch(_){}
+      },function(){});
+    }
+    return Promise.all([verdict,est]);
+  }
+  function declareNonDurable(why){
+    S.durable.why=String(why||'');
+    if(WARNED.nonDurable)return;WARNED.nonDurable=true;
+    try{toast('This browser did not grant durable storage ('+S.durable.why+') - patient data can be evicted under storage pressure. Tell MLS support.','');}catch(_){}
+    try{console.warn('[pts-store] durable storage NOT verified ('+S.durable.why+'): journal retention is conservative and server sync priority rises.');}catch(_){}
+  }
+
+  /* ---- boot hydration behind the explicit ready-barrier ----------------- */
+  function resetState(key){
+    S.key=key;S.mode='ls';S.hydrated=false;S.rows=null;S.gen=0;
+    S.journal=null;S.lastSaveWall=0;S.foreignTouched=null;S.bootReceipt=null;
+    S.refreshing=false;S.refreshTries=0;S.pendingIdbRefresh=false;S.lastError='';
+    S.wb={queued:false,inflight:false,lastConfirmedGen:0,failures:0,waiters:[]};
+  }
+  function init(){
+    var key='';
+    try{key=bKey();}
+    catch(e){return Promise.reject(storeErr('MLS_PTS_STORE_NO_NAMESPACE','uns() is not available yet - init() must run after the session namespace resolves.'));}
+    if(key.indexOf('::undefined::')>=0||key.indexOf('::_::')>=0)
+      return Promise.reject(storeErr('MLS_PTS_STORE_NO_NAMESPACE','Refusing to bind the patient store to an unresolved account namespace ('+maskKey(key)+') - the sf_u::undefined class.'));
+    if(S.initPromise&&S.key===key)return S.initPromise;
+    resetState(key);
+    S.initPromise=hydrate(key);
+    return S.initPromise;
+  }
+  function hydrate(key){
+    var receipt={key:maskKey(key),at:Date.now()};
+    var legacyRaw=null,jraw=null,st=null;
+    try{legacyRaw=localStorage.getItem(key);}catch(e){}
+    try{jraw=localStorage.getItem(jKey());}catch(e){}
+    try{st=stampParse(localStorage.getItem(gKey()));}catch(e){}
+    probeDurability();                             /* async; never gates hydration */
+    return idbReadBlob(key).then(null,function(e){
+      S.dbFailed=true;
+      receipt.idbError=String(e&&e.message||e).slice(0,120);
+      return null;
+    }).then(function(rec){
+      if(rec&&legacyRaw!=null){
+        /* BOTH copies exist. Migration removes the blob LAST, so a present
+           blob can be NEWER than the IndexedDB copy (a rolled-back build
+           re-created it). FAIL CLOSED: localStorage stays authoritative;
+           migrate() reconciles by re-running the verified cutover. */
+        S.mode='ls';S.hydrated=false;
+        receipt.mode='ls';receipt.anomaly='both-blob-and-idb-present';
+        warnOnce('bothPresent','[pts-store] both the localStorage patients blob and an IndexedDB copy exist - staying on localStorage (fail-closed); re-run migrate() to reconcile.');
+        return finishReady(receipt);
+      }
+      if(!rec){
+        if(jraw!=null||st){
+          /* journal or stamp with NO blob: the post-migration blob is gone
+             (eviction, or a cleared origin). Serve what the journal can
+             prove, latch degraded LOUDLY, persist the reconstruction, and
+             lean on the server copy (loadPatientsFromServer) for the rest -
+             the Q5 window the persist() verdict exists to shrink. */
+          S.mode='idb';S.hydrated=true;S.rows=[];S.gen=0;
+          var j=journalParse(jraw),replayed=0;
+          if(j&&!j.corrupt){
+            var entries=j.entries.slice().sort(byGen);
+            for(var i=0;i<entries.length;i++){
+              S.rows=replayEntry(S.rows,entries[i],null);
+              S.gen=Math.max(S.gen,Number(entries[i].gen)||0);
+              replayed++;
+            }
+            S.journal=j;
+          }
+          if(st)S.gen=Math.max(S.gen,st.gen);
+          S.wb.lastConfirmedGen=0;
+          S.lastSaveWall=Date.now();
+          degradeLatch('blob-evicted: journal-only reconstruction ('+S.rows.length+' rows from '+replayed+' entries)');
+          receipt.mode='idb';receipt.evicted=true;receipt.rows=S.rows.length;receipt.replayed=replayed;
+          wbQueue();
+          return finishReady(receipt);
+        }
+        /* nothing anywhere: pre-migration boot or a fresh account */
+        S.mode='ls';S.hydrated=false;
+        receipt.mode='ls';receipt.migrated=false;
+        return finishReady(receipt);
+      }
+      /* the normal post-migration boot: blob verify + journal replay, all
+         behind this barrier - the LZ-decode-on-the-hot-path era ends here */
+      var json=String(rec.json==null?'':rec.json);
+      return hashAsync(json).then(function(hx){
+        var ok=(Number(rec.len)===json.length)&&(!rec.hash||rec.hash===hx);
+        receipt.blobVerify=ok?'ok':'FAILED';
+        if(!ok)degradeLatch('boot-blob-verify-failed');
+        var rows=null;
+        try{rows=JSON.parse(json);}catch(e){rows=null;}
+        if(!Array.isArray(rows)){
+          degradeLatch('boot-blob-unparseable');
+          receipt.blobParse='FAILED';
+          rows=[];
+        }
+        S.rows=rows;S.gen=Number(rec.gen)||0;S.wb.lastConfirmedGen=S.gen;
+        var j=journalParse(jraw),replayed=0;
+        if(j&&!j.corrupt){
+          var entries=j.entries.slice().sort(byGen);
+          for(var i=0;i<entries.length;i++){
+            var e=entries[i],g=Number(e.gen)||0;
+            if(g<=S.gen)continue;
+            S.rows=replayEntry(S.rows,e,null);
+            S.gen=g;replayed++;
+          }
+          S.journal=j;
+        }else if(j&&j.corrupt){
+          degradeLatch('boot-journal-corrupt');
+          receipt.journal='CORRUPT';
+        }
+        S.mode='idb';S.hydrated=true;S.lastSaveWall=Date.now();
+        if(st&&st.gen>S.gen){
+          /* stamp ahead of blob + journal: usually another tab's confirm
+             racing this boot - refresh resolves it; a real content loss is
+             latched inside scheduleRefresh after a bounded retry */
+          receipt.stampAhead=st.gen-S.gen;
+          S.pendingIdbRefresh=true;scheduleRefresh();
+        }
+        receipt.mode='idb';receipt.rows=S.rows.length;receipt.gen=S.gen;receipt.replayed=replayed;
+        if(replayed>0)wbQueue();                   /* fold journal edits into the blob promptly */
+        return finishReady(receipt);
+      });
+    });
+  }
+  function finishReady(receipt){
+    S.bootReceipt=receipt;
+    installListener();
+    return receipt;
+  }
+  function installListener(){
+    if(__listenerInstalled)return;__listenerInstalled=true;
+    try{
+      window.addEventListener('storage',function(ev){
+        try{
+          if(!ev||!ev.key)return;
+          if(S.mode!=='idb'||!S.hydrated)return;
+          if(ev.key!==gKey())return;
+          if(syncCatchUp()>0)fireUpdated();
+        }catch(e){}
+      });
+    }catch(e){}
+  }
+
+  /* ---- the one-shot FAIL-CLOSED migration (the cutover) ------------------
+     read blob -> decode -> parse -> write IndexedDB -> BYTE-IDENTICAL echo
+     read-back -> journal live (verified) -> gen stamp live (verified) ->
+     ONLY THEN remove the localStorage blob (so any missed fifth-reader fails
+     loudly instead of silently reading a dead copy). Anything short of a
+     verified echo keeps localStorage authoritative, cleans up its own
+     partial writes, and reports which step refused. Run it on ONE tab with
+     no other tab mid-write (the multi-tab law) - the acceptance run wraps
+     this call in the before/after per-patient loss-column instrument. ----- */
+  function migrate(){
+    var key='';
+    try{key=bKey();}
+    catch(e){return Promise.reject(storeErr('MLS_PTS_STORE_NO_NAMESPACE','uns() is not available - migrate() must run inside a session context.'));}
+    if(!S.initPromise||S.key!==key)
+      return Promise.reject(storeErr('MLS_PTS_STORE_NOT_READY','init() must settle for this account before migrate().'));
+    return S.initPromise.then(function(){
+      if(S.mode==='idb')return {migrated:true,already:true,key:maskKey(key)};
+      var rep={key:maskKey(key),at:Date.now(),migrated:false,steps:[]};
+      function step(name,ok,detail){
+        rep.steps.push({step:name,ok:!!ok,detail:detail===undefined?'':String(detail).slice(0,160)});
+        return !!ok;
+      }
+      var raw=null;
+      try{raw=localStorage.getItem(key);}
+      catch(eR){step('read-blob',false,eR&&eR.message);return rep;}
+      step('read-blob',true,raw==null?'absent (fresh account)':'len='+raw.length);
+      var json='';
+      if(raw==null)json='[]';
+      else{
+        try{json=(typeof _mlsPtsDecode==='function')?_mlsPtsDecode(raw):raw;}
+        catch(eD){step('decode',false,eD&&eD.message);return rep;}
+        if(typeof json!=='string'||!json){step('decode',false,'decode produced empty output');return rep;}
+      }
+      var rows=null;
+      try{rows=JSON.parse(json);}catch(e){rows=null;}
+      if(!Array.isArray(rows)){step('parse',false,'stored blob does not parse to an array - REFUSING to migrate');return rep;}
+      step('parse',true,'rows='+rows.length+' units='+json.length);
+      return hashAsync(json).then(function(hx){
+        var rec={k:key,gen:1,len:json.length,hash:hx,at:Date.now(),tab:TAB,json:json};
+        return idbWriteBlob(rec,true).then(function(){
+          step('idb-write',true);
+          return idbReadBlob(key);
+        }).then(function(cur){
+          var identical=!!cur&&Number(cur.gen)===1&&Number(cur.len)===json.length&&String(cur.json)===json;
+          if(!step('idb-echo-byte-identical',identical,cur?('len='+cur.len):'no record'))return failCleanup(rep,key);
+          var j={v:2,baseGen:1,entries:[]},serial=journalSerialize(j);
+          try{localStorage.setItem(jKey(),serial);}
+          catch(eJ){step('journal-live',false,eJ&&eJ.message);return failCleanup(rep,key);}
+          var echo=null;try{echo=localStorage.getItem(jKey());}catch(e){}
+          if(!step('journal-live',echo===serial))return failCleanup(rep,key);
+          var sv='1|'+TAB+'|'+String(Date.now());
+          try{localStorage.setItem(gKey(),sv);}
+          catch(eG){step('gen-stamp',false,eG&&eG.message);return failCleanup(rep,key);}
+          var echo2=null;try{echo2=localStorage.getItem(gKey());}catch(e){}
+          if(!step('gen-stamp',echo2===sv))return failCleanup(rep,key);
+          try{localStorage.removeItem(key);}
+          catch(eDel){step('remove-blob',false,eDel&&eDel.message);return failCleanup(rep,key);}
+          var gone=null;try{gone=localStorage.getItem(key);}catch(e){}
+          if(!step('remove-blob',gone===null))return failCleanup(rep,key);
+          S.mode='idb';S.hydrated=true;S.rows=rows;S.gen=1;S.journal=j;
+          S.wb.lastConfirmedGen=1;S.lastSaveWall=Date.now();
+          rep.migrated=true;rep.rows=rows.length;rep.units=json.length;
+          fireEvent('mls:pts-store-migrated',{rows:rows.length});
+          return rep;
+        });
+      }).then(null,function(e){
+        step('exception',false,e&&e.message);
+        return failCleanup(rep,key);
+      });
+    });
+  }
+  function failCleanup(rep,key){
+    /* fail-closed: the blob is NEVER touched on a failed run; our own
+       partial journal/stamp/IDB writes are removed so the next boot is a
+       clean pre-migration 'ls'. */
+    rep.migrated=false;
+    try{localStorage.removeItem(jKey());}catch(e){}
+    try{localStorage.removeItem(gKey());}catch(e){}
+    return idbDeleteRecord(key).then(null,function(){}).then(function(){return rep;});
+  }
+
+  /* ---- the wipe (design Q2, a BLOCKING acceptance criterion): sign-out and
+     clearDeviceData must leave ZERO patient bytes in IndexedDB, the journal
+     key, and the generation key - PROVEN by read-back, not assumed. Only the
+     CURRENT account's record is touched (own-prefix-only, foreign namespaces
+     untouched by design, exactly like clinical-state-purge). The caller must
+     check verifiedEmpty===true and escalate anything else. ---------------- */
+  function wipe(){
+    var key='';
+    try{key=bKey();}
+    catch(e){return Promise.reject(storeErr('MLS_PTS_STORE_NO_NAMESPACE','uns() is not available - wipe() must run inside a session context.'));}
+    var rec={key:maskKey(key),at:Date.now(),journalRemoved:false,genRemoved:false,idbDeleted:false,idbUnavailable:false,verifiedEmpty:false,error:''};
+    try{localStorage.removeItem(jKey());rec.journalRemoved=true;}
+    catch(e){rec.error='journal: '+String(e&&e.message||e).slice(0,80);}
+    try{localStorage.removeItem(gKey());rec.genRemoved=true;}
+    catch(e){rec.error+=(rec.error?' ':'')+'gen: '+String(e&&e.message||e).slice(0,80);}
+    if(S.key===key){
+      S.mode='ls';S.hydrated=false;S.rows=null;S.gen=0;S.journal=null;
+      S.foreignTouched=null;S.initPromise=null;
+      S.wb.lastConfirmedGen=0;S.wb.queued=false;S.wb.waiters=[];
+    }
+    return idbDeleteRecord(key).then(function(){
+      rec.idbDeleted=true;
+      return idbReadBlob(key).then(function(cur){
+        var jv=null,gv=null;
+        try{jv=localStorage.getItem(jKey());gv=localStorage.getItem(gKey());}catch(e){}
+        rec.verifiedEmpty=(cur===null&&jv===null&&gv===null);
+        return rec;
+      },function(e){
+        rec.error=(rec.error?rec.error+' ':'')+'verify: '+String(e&&e.message||e).slice(0,120);
+        return rec;                                /* verifiedEmpty stays false */
+      });
+    },function(e){
+      rec.idbUnavailable=true;
+      rec.error=(rec.error?rec.error+' ':'')+'idb: '+String(e&&e.message||e).slice(0,120);
+      return rec;                                  /* fail-closed: no proof, no green */
+    });
+  }
+
+  /* ---- receipts + settle ------------------------------------------------ */
+  function flushNow(){
+    if(S.mode!=='idb'||!S.hydrated)return Promise.resolve({confirmedGen:S.wb.lastConfirmedGen});
+    if(S.wb.lastConfirmedGen>=S.gen)return Promise.resolve({confirmedGen:S.wb.lastConfirmedGen});
+    wbQueue();
+    return wbAwait(S.gen);
+  }
+  function receipt(){
+    var jlen=0;
+    try{var r=localStorage.getItem(jKey());jlen=r?r.length:0;}catch(e){}
+    return {
+      version:VERSION,mode:S.mode,hydrated:S.hydrated,key:maskKey(S.key),tab:TAB,
+      gen:S.gen,confirmedGen:S.wb.lastConfirmedGen,
+      rows:S.rows?S.rows.length:null,
+      journalUnits:jlen,journalHardMax:JOURNAL_HARD_MAX,journalHighWater:JOURNAL_HIGH_WATER,
+      journalOverHighWater:jlen>=JOURNAL_HIGH_WATER,
+      wbInflight:S.wb.inflight,wbQueued:S.wb.queued,wbFailures:S.wb.failures,wbWaiters:S.wb.waiters.length,
+      durable:{requested:S.durable.requested,persisted:S.durable.persisted,why:S.durable.why||'',verdictAt:S.durable.verdictAt,estimate:S.durable.estimate},
+      degraded:S.degraded,degradedWhy:S.degradedWhy,lastError:S.lastError,
+      boot:S.bootReceipt||null
+    };
+  }
+
+  window.__mlsPtsStore={
+    version:VERSION,
+    init:init,
+    ready:function(){return S.initPromise;},
+    isReady:function(){return S.mode==='idb'&&S.hydrated;},
+    mode:function(){return S.mode;},
+    getRoster:getRoster,
+    save:saveSync,
+    saveAsync:saveAsync,
+    genRead:function(){
+      try{var st=stampParse(localStorage.getItem(gKey()));return st?Math.max(st.gen,S.gen):S.gen;}
+      catch(e){return S.gen;}
+    },
+    catchUp:function(){return syncCatchUp();},
+    flushNow:flushNow,
+    migrate:migrate,
+    wipe:wipe,
+    receipt:receipt,
+    /* test-only hooks: the registered suites run this real block in vm and
+       need injection points; nothing in the app may call these */
+    _t:{
+      state:function(){return S;},
+      computeDelta:computeDelta,
+      replayEntry:replayEntry,
+      journalParse:journalParse,
+      stampParse:stampParse,
+      hashSync:hashSync,
+      setIdbFactory:function(f){S.idbOverride=f;__dbPromise=null;},
+      keys:function(){return {blob:bKey(),journal:jKey(),gen:gKey()};}
+    }
+  };
+})();
+/* ===== END mls-pts-store (sj-2.0) ===== */
+
 var __mlsPtsBatchByKey=Object.create(null),__mlsPtsBatchSeq=0,__mlsPtsPendingMirrorMemoryByKey=Object.create(null);
 function __mlsPtsStorageKey(override){
   var current=uns('patients');

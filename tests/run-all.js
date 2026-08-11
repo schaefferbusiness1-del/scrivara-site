@@ -525,6 +525,13 @@ const tests = [
   'storage-janitor-allowlist.test.js',
   'quota-guard-edit-survives.test.js',
   'qg-latch-has-no-reader-yet.test.js',
+  /* sj-2.0 (2026-08-11, INTEGRATION-ORDER Commit A): the patients-off-
+     localStorage primitive - registered WITH the splice commit, never before
+     (they fail loudly pre-splice by design). Boot barrier = conflict C4. */
+  'sj2-pts-store-contract.test.js',
+  'sj2-migration-fail-closed.test.js',
+  'sj2-eviction-persist.test.js',
+  'sj2-boot-barrier.test.js',
   'quota-verified-writes.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
