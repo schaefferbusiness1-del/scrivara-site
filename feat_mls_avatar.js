@@ -631,7 +631,8 @@
     /* BARGE-IN STILL ECHOES. The words already out of the speaker are still
        travelling through the recogniser, so the template they came from has to
        survive being cut off mid-sentence. */
-    pvEchoHold(pvSaying);
+    pvEchoHold(pvEchoSaying);
+    pvEchoSaying = '';
     pvSaying = '';
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
     pvHeld.length = 0;
@@ -647,13 +648,44 @@
        PERMANENT echo template: every later answer built from that question's
        words was silently deleted, for the rest of the interview. It goes to the
        bounded tail like every other stop. */
-    pvEchoHold(pvSaying);
+    pvEchoHold(pvEchoSaying);
+    pvEchoSaying = '';
     pvSaying = '';
     if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
     pvHeld.length = 0;
     if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
     faceTalkStop();
     safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+    pvStopMic();
+  }
+  /* ── THE MICROPHONE HALF OF pvStopVoice, ON ITS OWN ────────────────────────
+     Owner: "it litterly never gets out everyhting it wants to say caosue it picks
+     up its own talking."
+     pvStopVoice did TWO jobs — end the sentence, and tear down the recogniser —
+     and a derived walk of this file (see the suite named below) found that every
+     caller reachable from a microphone event wanted only the second one. So a
+     routine Chrome `no-speech` error, or the avatar's own words arriving at
+     rec.onresult, re-entered pvListen and cancelled the sentence the avatar was
+     still in the middle of saying.
+     This is an EDGE REMOVAL, not a guard: the mic path no longer has a call that
+     could stop speech, so there is no flag for a later round to invert.
+     🔑 IT STILL EXPIRES THE ECHO TEMPLATE, AND THAT IS WHY FILING IS UNCHANGED.
+     Every one of the three mic-travelled call sites used to reach pvStopVoice,
+     which moved the sentence into the bounded echo tail; leaving pvEchoSaying set
+     instead is what made round 9 file the avatar's own question as the patient's
+     answer in 9 of 15 turns — the next pvSpeakVoiced overwrote the template
+     before anything held it, so the old question's late tail met an empty filter.
+     pvEchoSaying therefore clears HERE, at exactly the moment origin/main cleared
+     pvSaying, and only the LIVENESS value (pvSaying) survives the teardown.
+     Callers that genuinely end the interview (kioskClose, kioskPauseToggle,
+     kioskRequestEnd, the ambient stop) still call pvStopVoice: they are reached
+     from a visible control or the page lifecycle, never from the microphone. */
+  function pvStopMic() {
+    /* a no-op when pvStopVoice is the caller — it cleared pvEchoSaying two
+       statements ago and pvEchoHold('') returns immediately. Kept in BOTH places
+       so pvStopVoice's statement order is byte-for-byte what origin/main ran. */
+    pvEchoHold(pvEchoSaying);
+    pvEchoSaying = '';
     if (pvRec) {
       /* KILL THE QUIET TIMER, not just the recogniser. It lives in pvListen's
          closure, so nulling the handlers and calling stop() left it armed: 1.3s
@@ -674,9 +706,33 @@
      shape the delivery (see ttsFetchUrl). Separate from pvSpeak only so the
      four existing call sites keep their exact two-argument shape. */
   function pvSpeakShaped(text, then, shape) { pvSpeakVoiced(text, then, null, shape); }
-  /* the sentence currently leaving the speaker, normalised - any recognition
-     result that is merely a piece of THIS is the avatar hearing itself. */
+  /* the sentence currently leaving the speaker, normalised — LIVENESS ONLY.
+     "Is a sentence still playing?" Read by the barge-in decision, by the voice
+     gate's room-floor learning, and by the silence watchdog, and by nothing that
+     decides what is FILED. */
   var pvSaying = '';
+  /* ── AND THE SAME STRING AGAIN, FOR A DIFFERENT QUESTION ───────────────────
+     ONE TOKEN CANNOT ANSWER TWO QUESTIONS. Until now `pvSaying` answered both
+     "what are we saying right now?" (read to keep a sentence alive) and "what do
+     we compare against for echo?" (read by BOTH filing gates — pvIsSelfEcho and
+     the novel-word refusal in kioskListen). Those two have INCOMPATIBLE
+     LIFETIMES, and nine rounds died on it: the microphone must be able to tear
+     down the recogniser without ending the sentence, which requires the liveness
+     value to survive pvStopMic — and the moment it did, the filing gates were
+     reading a template that origin/main had already expired into the bounded
+     tail. Measured: the avatar filed its own question as the patient's answer in
+     9 of 15 ordinary turns, and 5 of 32 identical-input scenarios filed different
+     strings, every one a silent loss.
+     So the echo comparison gets its OWN binding with its OWN lifetime. It is set
+     and cleared at EXACTLY the statements where origin/main set and cleared
+     pvSaying — pvSpeakVoiced's assignment and its finish(), pvStopSpeechOnly,
+     pvStopVoice, pvStopMic (which is where the three mic-travelled callers used
+     to reach pvStopVoice) and kioskAmbientStart — so the filed output is
+     byte-identical for every input. The liveness value is then free to outlive it
+     without touching filing at all.
+     ⛔ DO NOT read this one to decide whether to keep talking, and do not read
+     pvSaying to decide what to file. That conflation IS the defect. */
+  var pvEchoSaying = '';
   /* av-5.7.0 - AND THE SENTENCES THAT JUST LEFT IT. Owner, 2026-08-07: "it
      records itself talking and doesnt listen for answers and is just a mess".
      THE MECHANISM: Chrome finalises a recognition result hundreds of
@@ -963,7 +1019,11 @@
        (The multi-word cases are untouched: they are what actually caught the
        owner's "it records itself talking".) */
     if (words.length < 2) return false;
-    if (pvSaying && pvEchoMatch(pvSaying, h, words, 2, 2)) return true;
+    /* THE ECHO TEMPLATE, not the liveness value — see `var pvEchoSaying`. This is
+       a FILING GATE: what it returns true for is deleted and never reaches the
+       chart, so it must compare against a string whose lifetime is the one this
+       classifier was calibrated against, not against "is audio still playing". */
+    if (pvEchoSaying && pvEchoMatch(pvEchoSaying, h, words, 2, 2)) return true;
     var now = Date.now();
     for (var i = 0; i < pvEchoTail.length; i++) {
       /* THE TAIL IS CONTIGUITY ONLY. The overlap branch (>80% of the heard words
@@ -993,7 +1053,8 @@
          recogniser is still delivering these words. Clearing it OUTRIGHT is
          what made the avatar file its own questions as answers; keeping it
          forever would silence a patient who answers in the question's words. */
-      pvEchoHold(pvSaying);
+      pvEchoHold(pvEchoSaying);
+      pvEchoSaying = '';
       pvSaying = '';
       if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
       pvHeld.length = 0;
@@ -1002,6 +1063,9 @@
     }
     var t = String(text == null ? '' : text);
     pvSaying = pvNorm(t);
+    /* the two bindings are born together and identical; only their DEATHS differ
+       (see `var pvEchoSaying`), so this is the one place either is ever set */
+    pvEchoSaying = pvSaying;
     /* nothing to say: hand straight off. Speaking '' used to POST an empty
        body to the TTS proxy, take its 400, and trip the 2-minute circuit
        breaker — one blank turn downgraded the voice for the whole visit. */
@@ -1119,7 +1183,14 @@
   function pvListen(onFinal, onInterim, onDead) {
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
     if (!C) return false;
-    pvStopVoice();
+    /* pvStopMic, NOT pvStopVoice. Re-opening the microphone is the single most
+       travelled path in the interview — the duplex open that rides with every
+       question, and Chrome's routine `no-speech`/`network` error, which arrives
+       through onerror -> onDead -> kioskListen -> here several times a minute.
+       While that call was pvStopVoice, the microphone ENDED THE SENTENCE THE
+       AVATAR WAS STILL SAYING every single time. The echo template still expires
+       here, inside pvStopMic, exactly as it did inside pvStopVoice. */
+    pvStopMic();
     var rec; try { rec = new C(); } catch (e) { return false; }
     pvRec = rec;
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
@@ -4740,7 +4811,15 @@
     if (gid('mlsAvKioskStyle')) return;
     var st = document.createElement('style'); st.id = 'mlsAvKioskStyle';
     st.textContent =
-      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center}' +
+      /* ⚠️ --mlsav-panel IS DECLARED ONCE AND USED TWICE, and that is the whole point of it: the
+         proposed-actions panel's WIDTH and the gutter the text column must leave for it are the
+         SAME NUMBER. Two hand-written copies would drift, and the day they drifted the opaque card
+         would be back on top of the patient's words. See #mlsAvKioskOrders and .hasorders below.
+         ⚠️ AND IT IS DECLARED LAST, not first: avatar-doctor-runtime.test.js has pinned since
+         av-3.0.0 that this rule OPENS `position:fixed;inset:0;z-index:N;background:linear-gradient`
+         (full-screen and OPAQUE, so a patient never sees the app behind the kiosk). Custom
+         properties do not care about order and that pin does, so the pin keeps its subject. */
+      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center;--mlsav-panel:min(370px,92vw)}' +
       '#mlsAvKioskEnd{position:absolute;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75}' +
       '#mlsAvKiosk.speaking{background:linear-gradient(165deg,#F5F7EE,#E4F0E6 55%,#D6E8DC)}' +
       '#mlsAvKiosk.listening{background:linear-gradient(165deg,#F0F4F8,#E2EBF4 55%,#D6E2F0)}' +
@@ -4861,7 +4940,21 @@
       '#mlsAvKioskEndVisit:hover{background:#2E6A4B}' +
       /* the orders widget: compact, corner-mounted, never over the face, and
          absent entirely when there is nothing to confirm */
-      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:min(370px,92vw);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      /* ══ THE OPAQUE CARD, AND THE AREA THE TEXT COLUMN RESERVES FOR IT ═════════════════════════
+         Owner, twice: "having text constantly overlapping and being such a paIUN IN THE ASS", then
+         "fix the overlaying text to".
+         ⛔ THIS ELEMENT IS THE DEFECT, AND TWO EARLIER ROUNDS COULD NOT HAVE FIXED IT. One
+         serialised fourteen writers onto the patient-facing text NODE; the other capped the boxes
+         so the flex column could not compress them. Both were real. Neither could help, because
+         #mlsAvKioskOrders is a DIFFERENT ELEMENT painted on top of that node: opaque white,
+         position:absolute, right:16px bottom:16px, up to 52vh tall, z-index 6 — i.e. straight over
+         the live transcript and the progress line. An arbitrator owns one node; it cannot own the
+         things drawn above it.
+         So the column RESERVES the panel's area, from the same custom property the panel is sized
+         from, and `.hasorders` is toggled by ordersReserve — the only writer — from both branches
+         of ordersRender, the only function that shows or hides this panel. */
+      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:var(--mlsav-panel);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      '#mlsAvKiosk.hasorders{padding-right:calc(var(--mlsav-panel) + 32px)}' +
       '#mlsAvKioskOrders .mlsAvOrdHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}' +
       '#mlsAvKioskOrders .mlsAvOrdTitle{font:800 13px \'Public Sans\',system-ui;color:#204034}' +
       '#mlsAvKioskOrders .mlsAvOrdCount{font:700 11.5px system-ui;color:#55605A}' +
@@ -4904,7 +4997,25 @@
       '#mlsAvKioskReview .mlsAvRevRow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}' +
       '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
       '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
-      '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}}' +
+      /* ⛔ ON A NARROW SCREEN THE PANEL IS A FULL-WIDTH BOTTOM SHEET, so a right-hand gutter
+         reserves the WRONG AXIS ENTIRELY and the card sits on the transcript regardless. The column
+         reserves HEIGHT here, and it reserves the sheet's MAX height (44vh) rather than its current
+         height, because a card that grows as the doctor talks must never grow into the words.
+         The two numbers are ONE FACT: 44vh appears as the sheet's max-height and as the
+         reservation, and a registered fence derives both from this stylesheet and asserts them
+         equal — because the day they drift is the day the card is back on the patient's words.
+         av-6.4.1 (composed tree): the reservation must also BIND THE OVERFLOW DIRECTION.
+         The root is a CENTERED flex column; when the stack is taller than the content box
+         (320x568 measured: progress-line bottom 313.2px vs content-box bottom 302.1px),
+         center alignment spills the overflow BOTH ways, and the last text node (the
+         progress line) sinks 11px into the reserved zone under the sheet (sheet top
+         310.1px; covered at 5 of 25 sampled points). justify-content:flex-end pins the
+         column END at the content-box bottom, so the reservation holds under overflow and
+         the spill goes UP, away from the sheet. (A sibling branch never saw this only
+         because its extra bottom flex child, a 51px button row, shifted the centered stack
+         up and itself took the covered zone, invisible to a fence that samples text nodes.) */
+      '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}' +
+      '#mlsAvKiosk.hasorders{padding-right:5vw;padding-bottom:calc(44vh + 16px);justify-content:flex-end}}' +
       '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
       '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
       '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
@@ -5086,7 +5197,13 @@
     if (kiosk.ambient) return;   /* ambient records the room, it never interviews */
     kiosk.busy = true;
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
-    pvStopVoice();
+    /* pvStopMic, NOT pvStopVoice. This is the ordinary turn: the answer arrives
+       through rec.onresult while the question is still playing (the mic opens WITH
+       it), so cancelling here truncated the question on EVERY answer — and on every
+       echo the classifier missed, which is a question cut off by its own voice.
+       The next line still replaces this one: pvSpeakShaped bumps pvSpeakSeq when
+       the reply lands. What is gone is the silence in between. */
+    pvStopMic();
     kioskMood('thinking', '', answer);
     kioskLineReset();
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
@@ -5203,7 +5320,54 @@
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
     var typed = (kiosk.mic === false);
     var wait = typed ? 20000 : 9000;   /* typing is slower than talking */
-    if (kiosk.heard) {
+    /* AND A SENTENCE STILL PLAYING COUNTS AS ACTIVITY — WITH NO CAP ON THE WAIT.
+       This reads `pvSaying`, the LIVENESS value, and it must: it is asking "is the
+       avatar still talking?", not "what do we compare against for echo?". It was
+       not consulted here at all, so a question longer than one window burned its
+       own patience — silence counted against the patient while nobody had been
+       given anything to answer yet — and at three windows this function fell
+       straight through to pvStopVoice, the avatar cut off mid-word by its own
+       silence clock. Routing the stops to pvStopMic instead would not have helped:
+       the nudge branch speaks NUDGE_LINE over the question, and pvSpeakShaped bumps
+       pvSpeakSeq, which kills it anyway. So the fix is this CONDITION.
+       It joins the existing UNCAPPED re-arm rather than adding a second, capped
+       one: a sentence in flight is watched for as long as it takes. It cannot
+       wedge, because pvSaying is cleared by pvSpeakVoiced's finish(), which is
+       itself guaranteed by that function's own watchdog (pinned by the suite). */
+    /* av-6.4.1 (A4): AN ABSOLUTE OUTER CEILING ON THE SPEECH WAIT - wall-clock,
+       never microphone-derived. The condition below trusts finish() to clear
+       pvSaying, and finish() is watchdog-guaranteed for a hung TTS fetch (5s ->
+       synth fallback) and for playback that reported its duration (the 45s cap
+       armed at onloadedmetadata). The uncovered corner: playback starts,
+       loadedmetadata never fires AND the play() promise never settles - then
+       pvSaying stays set for ever, every tick below re-arms, and the nudge, the
+       self-end and the summary are all suspended indefinitely. Live self-healed
+       that state by cutting the sentence; the condition must not trade that for
+       wedged-until-tap. So: ONE sentence continuously observed in flight for
+       longer than any sentence can actually play - 120s, nearly three times the
+       45s playback cap, so no real sentence can reach it - is declared dead
+       right here. pvStopVoice ends the phantom (clearing pvSaying, so the
+       activity check below falls through to the silence accounting THIS tick)
+       and the interview moves on to the nudge and the self-end it was owed.
+       Keyed to the sentence VALUE: a new sentence restarts the clock, so only a
+       single unchanging pvSaying can ever accumulate the 120s. No recogniser
+       event feeds this path - the clock is Date.now() at watchdog ticks, so a
+       dead microphone, a silent room and a wedged audio element all look the
+       same to it, which is the point. */
+    if (pvSaying) {
+      if (kiosk.sayingFor !== pvSaying) {
+        kiosk.sayingFor = pvSaying;
+        kiosk.sayingSince = Date.now();
+      } else if (!kiosk.heard && Date.now() - kiosk.sayingSince > 120000) {
+        kiosk.sayingFor = null;
+        kiosk.sayingSince = 0;
+        pvStopVoice();
+      }
+    } else if (kiosk.sayingFor) {
+      kiosk.sayingFor = null;
+      kiosk.sayingSince = 0;
+    }
+    if (kiosk.heard || pvSaying) {
       /* they are talking or typing (or the room is) — keep watching, and never
          give up the only timer that can revive this question. This guard used
          to RETURN, so one cough permanently disarmed the self-end. */
@@ -5339,8 +5503,11 @@
          see pvNovelWordCount). A real answer almost always carries a novel word, and now
          survives even when the microphone never registered the person who spoke it.
          Fail-safe by construction beats a threshold I would have to keep re-tuning. */
-      if (pvSaying && pvVoiceGateReady() && !pvOtherVoiceNow() &&
-          pvNovelWordCount(pvSaying, finalText) === 0) {
+      /* THE ECHO TEMPLATE, not the liveness value — see `var pvEchoSaying`. The
+         second filing gate: everything it refuses is deleted, so it reads the
+         string whose lifetime origin/main gave it. */
+      if (pvEchoSaying && pvVoiceGateReady() && !pvOtherVoiceNow() &&
+          pvNovelWordCount(pvEchoSaying, finalText) === 0) {
         kiosk.echoRefused = (kiosk.echoRefused || 0) + 1;
         return;
       }
@@ -5417,7 +5584,13 @@
        and it also meant the hand-off the owner asked for could not exist,
        because the screen was gone before the doctor walked in. The exit is
        still one tap for a no-PIN office (End interview), so nobody is trapped. */
-    pvStopVoice();
+    /* pvStopMic, NOT pvStopVoice: THE CLOSING LINE IS THE ONE MOST OFTEN CUT.
+       kioskTurn arms a 12-second safety timer beside the done-path speak, and any
+       closing line longer than that reached this function while it was still
+       playing — a hard cap on the last thing the patient hears. The timer still
+       does its real job (a speak that never completes cannot strand the kiosk);
+       it just no longer amputates the sentence to do it. */
+    pvStopMic();
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
     var iv = gid('mlsAvKioskInterim');
@@ -6412,6 +6585,20 @@
     card.appendChild(row);
     return card;
   }
+  /* ── THE PANEL'S AREA IS RESERVED BY ITS ONE WRITER, NOT AT A CALL SITE ──────────────────────
+     A class set at a call site goes stale the first time a caller is added, and this class is what
+     stops an OPAQUE card being painted over the patient's words. ordersRender is the only function
+     that shows or hides the panel, so it is the only thing allowed to say so — and it must say so on
+     BOTH branches: the panel appearing without the reservation is the defect itself, and the
+     reservation surviving the panel closing is a phantom gutter that pushes the question
+     off-centre for the rest of the visit. */
+  function ordersReserve(on) {
+    safe(function () {
+      var kroot = gid('mlsAvKiosk');
+      if (!kroot) return;
+      if (on) kroot.classList.add('hasorders'); else kroot.classList.remove('hasorders');
+    });
+  }
   function ordersRender() {
     var host = gid('mlsAvKioskOrders');
     if (!host) return;
@@ -6421,8 +6608,16 @@
        panel competing with the patient for the doctor's attention - it
        appears when there is something to confirm and leaves when there is
        not. */
-    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    /* ⚠️ ordersReserve AFTER the display change, not before, and the reason is a red I caused:
+       avatar-visit-copilot.test.js pins the literal `if (!list.length) { host.style.display = 'none'`
+       ("an empty proposal list must hide the widget entirely"), and inserting a statement in front
+       of it broke that pin while changing nothing about the behaviour. Both orders are identical to
+       the browser — the class and the inline display land in the same frame — so the shipped code
+       keeps the shape its existing fence reads. A pin whose subject moves for no behavioural reason
+       is a pin that cries wolf, and this lane has already paid for five of those. */
+    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; ordersReserve(false); return; }
     host.style.display = 'block';
+    ordersReserve(true);
     host.innerHTML = '';
     var head = make('div', 'mlsAvOrdHead');
     head.appendChild(make('span', 'mlsAvOrdTitle', 'Proposed actions'));
@@ -6884,6 +7079,7 @@
        who repeats the avatar's last question back to the patient must appear in
        the transcript. */
     pvSaying = '';
+    pvEchoSaying = '';
     pvEchoDrop();
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
