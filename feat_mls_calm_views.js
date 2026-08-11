@@ -128,10 +128,16 @@
           return !!(qs('#mlsT3Empty .t3e-pull') || typeof W.pullScheduleViaAssist === 'function');
         },
         act: function () {
-          /* Prefer the app's own button so any handler it grows comes with it.
-             It only exists in the calendar's empty state, so a loaded calendar
-             falls back to the SAME call that button makes:
-             feat_task3_frontsync.js:477  pb.onclick = window.pullScheduleViaAssist() */
+          /* lr-1.0 (label/dispatch honesty, diagnosis 2026-08-11): this hero's
+             label NAMES the selected day (calRefDate above) but both dispatch
+             branches sent TODAY - proven live, Pull Tuesday Jul 7 pulled
+             2026-08-11. A valid selected day now goes through
+             pullScheduleViaAssist's explicit-date door (lr-1.0, ScribeFlow).
+             The #mlsT3Empty .t3e-pull click and the bare call both dispatch
+             TODAY (frontsync:507), so they serve only the no-label case, where
+             the hero reads Pull this day\u2019s schedule and today is the truth. */
+          var selDay = safe(function () { var r = String(W._calRefDate || ''); return /^\d{4}-\d{2}-\d{2}$/.test(r) ? r : ''; }, '');
+          if (selDay && typeof W.pullScheduleViaAssist === 'function') { W.pullScheduleViaAssist(null, { date: selDay }); return true; }
           var btn = qs('#mlsT3Empty .t3e-pull');
           if (btn && visible(btn)) { btn.click(); return true; }
           if (typeof W.pullScheduleViaAssist === 'function') { W.pullScheduleViaAssist(); return true; }

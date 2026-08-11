@@ -45528,13 +45528,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     QG.failures++;
     QG.lastFail = { at: Date.now(), reason: String(reason).slice(0, 60), expected: expected, got: got };
     window.__mlsStoreWriteFailed = QG.lastFail;
+    try { qvChip(); } catch (eQc) {} /* qv-1.1: the persistent chip appears the moment the condition does */
     try {
       if (Date.now() - QG.lastToastAt > 60000) {
         QG.lastToastAt = Date.now();
         if (typeof window.toast === 'function') window.toast('MLS storage is FULL — this save did NOT happen. Existing records are intact. Free space, then pull again.');
       }
     } catch (eT) {}
-    try { console.error('[mlsQuotaGuard] persist FAILED (' + reason + ') expected~' + expected + ' stored=' + got); } catch (eC) {}
+    try { console.error('[mlsQuotaGuard] persist FAILED (' + reason + ') key=' + qvKey() + ' expected~' + expected + ' stored=' + got); } catch (eC) {} /* qv-1.1: the line names the store KEY */
   }
   function qvWrap(orig) {
     function qv(arr) {
@@ -45550,7 +45551,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (key && prevLen >= 0 && got === prevLen && expect >= 0 && Math.abs(expect - prevLen) > 64) {
           qvFail('silent-no-op', expect, got);
         } else {
-          window.__mlsStoreWriteFailed = null;
+          window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQc2) {} /* qv-1.1: the chip clears with the flag */
         }
       } catch (eR) {}
       return out;
@@ -45582,12 +45583,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) { return false; }
   }
   qvInstall();
+  /* qv-1.1 (lr-1.0 train, diagnosis 2026-08-11 defect B): a PERSISTENT surface
+     for a persistent condition. The 60s rate-limited toast fired ~90s before
+     anyone looked (quotaUIVisible: [] in the validation sweep). This chip is
+     owned HERE and nowhere else, is bound to window.__mlsStoreWriteFailed,
+     and disappears only when the flag clears - which the guard already does
+     on the next verified write. No new state: flag + count already exist. */
+  function qvChip() {
+    try {
+      var f = window.__mlsStoreWriteFailed;
+      var el = document.getElementById('mlsQuotaChip');
+      if (!f) { if (el) el.remove(); return; }
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'mlsQuotaChip';
+        el.setAttribute('role', 'alert');
+        el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:2147483000;background:#7a1f1f;color:#fff;border:1px solid #d9534f;border-radius:10px;padding:8px 14px;font:600 13px/1.4 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none;max-width:92vw;text-align:center;';
+        (document.body || document.documentElement).appendChild(el);
+      }
+      var n = Number((window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures) || 0);
+      var age = Math.max(0, Math.round((Date.now() - Number(f.at || Date.now())) / 60000));
+      var txt = 'Local storage full \u2014 changes safe in memory+sync, storage fix in progress (' + n + ' failed save' + (n === 1 ? '' : 's') + (age ? ', last ' + age + ' min ago' : ', just now') + ')';
+      if (el.textContent !== txt) el.textContent = txt;
+    } catch (eChip) {}
+  }
+  QG._chip = qvChip;
   QG._heal = setInterval(function () {
     try { if (typeof window.savePatients === 'function' && !chainHasQv(window.savePatients)) qvInstall(); } catch (e) {}
+    try { qvChip(); } catch (eQh) {} /* qv-1.1: re-assert the persistent surface every heal tick */
   }, 4000);
   QG.revert = function () {
     try { clearInterval(QG._heal); } catch (e) {}
     try { if (window.savePatients && window.savePatients.__mlsQvGuarded && window.savePatients.__mlsQvOrig) window.savePatients = window.savePatients.__mlsQvOrig; } catch (e) {}
+    try { var elQr = document.getElementById('mlsQuotaChip'); if (elQr) elQr.remove(); } catch (eQr) {} /* qv-1.1: the chip dies with the guard */
     QG.installed = false;
     return 'reverted';
   };
