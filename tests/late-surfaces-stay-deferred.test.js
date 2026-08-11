@@ -74,7 +74,6 @@ const TRANCHE = [
   'feat_mls_whosnext.js',
   'feat_mls_find_doctors.js',
   'feat_mls_nextup_controls.js',
-  'feat_mls_pick_smartscope.js',
   'feat_mls_visit_useactivept.js',
   'feat_mls_hero_glance.js',
   'feat_mls_whosnext_cleanfix.js',
@@ -148,5 +147,12 @@ assert.strictEqual((connect.match(/mls-procedure-report\.js\?v=20260807lib7/g) |
  * no whole-document observer or detached-row retention can return. */
 assert(!connect.includes('data-mls-asset="feat_mls_lastseen_rows.js"'),
   'retired last-seen row observer returned to the production loader');
+
+/* pick-1.7.0 removed the duplicate "Today's patients" inline block by retiring
+ * its render; smartscope (the clone that hid-and-replaced it) is stood down in
+ * production the same way. Neither loader locator form may return. */
+assert(!connect.includes('data-mls-asset="feat_mls_pick_smartscope.js"') &&
+  !connect.includes('var A="feat_mls_pick_smartscope.js"'),
+  'retired duplicate inline picker (smartscope) loader returned to production');
 
 console.log('PASS late surfaces stay deferred: ' + TRANCHE.length + ' tranche modules load idle+async and the retired row observer remains absent');
