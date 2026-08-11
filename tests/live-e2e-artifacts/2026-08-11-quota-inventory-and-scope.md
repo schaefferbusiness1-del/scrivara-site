@@ -29,6 +29,24 @@ No 339KB face-image key exists in this store (the memory's face image is not pre
 - **A. calApptsCacheV2 → IndexedDB** (smallest surface, frees 16.6% durably): one writer/reader pair moves; risks = the sync-read boot path needs a memory warm layer over an async store; must inventory every direct reader of the key first (the fifth-reader lesson). Leaves patients growth unsolved (~4.2MB remains).
 - **B. patients → server-side Render** (the owner's twice-made ask: "HAVE IT SEND RECORDS TO RENDER"; largest win, 70%): backend exists and is fully enabled; a sync layer inherits the OPEN `quota-write-loses-the-edit-silently` defect, so **rebuilding that guard is a hard PRECONDITION**; identity/merge + offline semantics + the suites pinning synchronous saves make this a multi-train project.
 - **C. patients → IndexedDB locally** (solves quota permanently without a server dependency): changes crash-read/save semantics that registered suites pin ("normal saves remain synchronous"); multi-train.
+### 3a. OWNER APPROVED BOTH (2026-08-11 morning) + ARCHITECTURE RULING
+Owner, verbatim: "yes do that and yes move it all to render I have a huge amount of storage there and
+also it should help make the browser run faster right so do that." Supervisor's architecture ruling:
+**IndexedDB is the WORKING STORE; Render is the SYSTEM OF RECORD and sync destination — NOT the primary
+read path** (network-first reads would make the app slower and break offline; IDB-first is a
+PRECONDITION of doing Render well, not an alternative). **The speed truth, to be stated to him
+precisely: the win is removing a ~3.5MB SYNCHRONOUS main-thread LZ decode/re-encode on every
+read/write of the single patients blob** (compression confirmed by ratio: 3.56MB stored vs ~21MB of
+visit content ≈ 6:1) — **IDB buys the speed, Render buys the ceiling and the backup; Render alone adds
+latency.** 📊 MEASURE, don't promise: BEFORE numbers (boot-to-interactive, one savePatients cost,
+main-thread block duration of the decode) captured pre-change on a live tab, same AFTER — a delta, not
+a hope. ⚠️ BAA: patients ALREADY sync to Render via syncPatientToServer, so system-of-record status
+PROMOTES an existing copy, not new exposure — but the BAA document gates the CUTOVER (not the build);
+supervisor is asking the owner directly.
+Revised plan with approval folded in: (1) prune [scaffolding — SHIPPED as sj-1.0] → (2) patients→IDB
+with the write guard rebuilt inside → (3) calApptsCacheV2→IDB → (4) Render as system-of-record with
+identity/merge/offline semantics, BAA confirmed before cutover.
+
 - **Order as RULED (supervisor, 2026-08-11): prune → REBUILD THE QUOTA GUARD → A → B.** The prune reduces how often silent loss fires; the guard removes the SILENCE — only the guard protects an edit made tomorrow at ~197KB, which is oxygen, not safety. Guard recipe survives in quota-write-loses-the-edit-silently: enqueue BEFORE the local write, unknown-latch takes the LOUD branch, Array.isArray not duck-typed .length, paired 200-row/1-edit assertions.
 - **What the prune buys, plainly: 41KB → ~197KB ≈ four to five OFF-run days at +34KB each. A stay of execution, not a fix** — patients is 70% and grows every run.
 
