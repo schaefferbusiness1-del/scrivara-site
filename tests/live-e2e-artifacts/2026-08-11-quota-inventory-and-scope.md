@@ -50,10 +50,20 @@ mls_save_every_athena_visit key. Established tonight from SOURCE (read-only):
   (deliberately not reopened: a boot rewrites the 844KB calendar key at 41KB headroom). One read-only
   probe next session: namespace identity (masked), note count, min/max note dates.
 
-## 6. Face-image note resolved
-The 339KB face image named in memory is **NOT in page localStorage** — proven by the full 239-key
-inventory (nothing ≥5,123B is unaccounted). If it exists it lives in chrome.storage (extension side) or
-the note is stale; one bridge probe next session settles which. The localStorage attribution is corrected.
+## 6. Face-image note RESOLVED (supervisor supplied the history; probe cancelled)
+Absent **by deliberate deletion, not by moving**: `mlsAvFaceMeasureV1` (346,619 chars) was exported
+bit-perfect with owner approval on 2026-08-10 to `Downloads\mls_face_measure_backup_20260810.txt`
+(346,619 B, sha256 `17fccbe91291073e246ff95d65c1325f0dbc92940bc6137c6895d302babe386c`, verified against
+the in-page hash) and then REMOVED. Tonight's inventory confirms the removal held. The queued probe is
+NARROWED to one question, next live tab: **has the avatar lane RE-ENROLLED a face since 2026-08-10?**
+(A 339KB image returning to a 5MB system-of-record store would be its own finding.)
+
+## 7. Privacy finding, refined classification (supervisor concurrence)
+RESIDUE, not a leak: the isolation held — nothing ever read the foreign namespace (unlike
+mls_save_every_athena_visit, where one account's setting actually APPLIED to another). The two-layer
+framing stands: a POLICY question (shared-workstation retention of a departed account's clinical notes)
+on an OPERATIONAL one (that account's purge never ran). Both the owner's to answer; neither urgent
+while nothing can read it.
 
 ## 4. Banked constraints for whenever the prune is written (supervisor, verbatim intent)
 Loss column per patient per field · NEVER touches a clinical field · targets = the named debris keys only, never patient records · fails CLOSED (a prune that cannot prove what it deletes, deletes nothing) · exercised against a copy or a write-blocking proxy before it ever runs live · lands gated under GATE_PLAN/GATE_COMPLETE.
