@@ -169,6 +169,25 @@ ok(BUILDS.live.sha256 !== BUILDS.round9.sha256,
    touched this file. Verified, not assumed. If a later lane changes
    feat_mls_avatar.js on main, this fails and names the one-line fix, rather than
    quietly grading a new build against a retired baseline. */
+/* av-6.4.1 RE-PIN PROTOCOL — verdict condition A5, quoted: "the live-pin
+   freshness check must hard-fail or demand an explicit stale acknowledgment when
+   `git fetch` fails — today a retired pin would certify stale bytes behind a
+   console-only [UNVERIFIED] pass. Relatedly, if origin/main's feat_mls_avatar.js
+   ever stops hashing to 560d6228..., fixture regeneration and re-pin must be a
+   deliberate, recorded act." Two consequences, both implemented here:
+   (1) THE POST-SHIP WORLD IS DEFINED, NOT PERMANENTLY RED. The moment this
+       composition ships, origin/main serves THIS TREE'S OWN composed
+       feat_mls_avatar.js by construction — that is not drift, origin/main IS
+       this file. So the check accepts origin/main hashing to EITHER the pinned
+       live fixture (the pre-ship world) OR the tree's own on-disk
+       feat_mls_avatar.js (the post-ship world). The on-disk file is compared —
+       never SRC.work — so a cross-examination run under AVATAR_SRC_OVERRIDE
+       still fails at the pins it exists to fail at, not here. Any THIRD sha is
+       a foreign lane's real drift and hard-fails with the re-pin instruction:
+       re-pinning stays a deliberate, recorded act.
+   (2) OFFLINE IS A FAILURE, NOT A PASS. A fetch failure hard-fails unless
+       MLS_AVATAR_PIN_STALE_ACK is set to a reason, which is printed into the
+       gate log — a recorded stale acknowledgment, never a silent one. */
 {
   let served = null, why = '';
   try {
@@ -177,19 +196,45 @@ ok(BUILDS.live.sha256 !== BUILDS.round9.sha256,
       { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   } catch (e) { why = String(e && e.message || e); }
   if (served === null) {
-    /* NOT a skip of the gate — the pinned-digest assertions above still ran and
-       the whole comparison below still runs. Only the freshness cross-check is
-       unavailable, and it says so out loud rather than passing silently. */
-    console.log('  [UNVERIFIED] could not reach origin/main to confirm the pinned live baseline is ' +
-      'still the served one (' + why.split('\n')[0] + '). The acceptance diff below is against ' +
-      'commit ' + BUILDS.live.commit.slice(0, 8) + ', digest-verified, but whether that is still ' +
-      'what main serves was NOT checked in this run.');
+    const ackn = process.env.MLS_AVATAR_PIN_STALE_ACK;
+    ok(!!ackn,
+      'COULD NOT REACH origin/main TO CONFIRM THE PINNED LIVE BASELINE IS STILL THE SERVED ONE (' +
+      why.split('\n')[0] + '). A retired pin would certify stale bytes, so an unreachable origin ' +
+      'is a FAILURE, not a console line (verdict condition A5 closed the [UNVERIFIED] silent-pass ' +
+      'hole). If the staleness risk is understood and accepted for this run, set ' +
+      'MLS_AVATAR_PIN_STALE_ACK to a reason; the reason is printed into the gate log as a ' +
+      'recorded acknowledgment.');
+    console.log('  [UNVERIFIED, ACKNOWLEDGED] could not reach origin/main (' + why.split('\n')[0] +
+      '). Proceeding on the pinned digest ONLY because MLS_AVATAR_PIN_STALE_ACK is set: "' + ackn +
+      '". Whether the pin is still what main serves was NOT checked in this run.');
+  } else if ((() => {
+    /* checkout EOL translation is not drift: a Windows clone with autocrlf=true
+       materialises the LF blob as CRLF on disk (measured: same blob, two disk
+       hashes). "origin/main IS this tree's file" is a CONTENT identity, so the
+       raw compare is tried first and a CRLF->LF-normalised compare second.
+       The pin branch above stays blob-side only and is untouched by this. */
+    const own = fs.readFileSync(path.join(root, 'feat_mls_avatar.js'), 'utf8');
+    if (sha(served) === sha(own)) return true;
+    const lf = t => t.replace(/\r\n/g, '\n');
+    return sha(lf(served)) === sha(lf(own));
+  })()) {
+    /* the post-ship world: origin/main IS this tree's own composed file. The
+       pinned fixture remains the PRE-SHIP live baseline the acceptance diff
+       measures against — that is its whole point. */
+    ok(true, 'freshness: origin/main serves this tree\'s own feat_mls_avatar.js bytes');
+    if (sha(served) !== BUILDS.live.sha256) {
+      console.log('  [FRESH, POST-SHIP] origin/main feat_mls_avatar.js == this tree\'s own bytes (' +
+        sha(served).slice(0, 8) + '...). The composition has shipped; the pinned fixture (' +
+        BUILDS.live.sha256.slice(0, 8) + '...) remains the pre-ship LIVE baseline for the ' +
+        'acceptance diff.');
+    }
   } else {
     eq(sha(served), BUILDS.live.sha256,
-      'THE PINNED "LIVE" BASELINE IS NO LONGER WHAT origin/main SERVES. feat_mls_avatar.js on ' +
-      'origin/main now hashes to ' + sha(served) + '; this suite is pinned to ' +
-      BUILDS.live.commit.slice(0, 8) + ' at ' + BUILDS.live.sha256 + '. Every "byte-identical to ' +
-      'live" claim below is therefore about a retired build.\n' +
+      'THE PINNED "LIVE" BASELINE IS NO LONGER WHAT origin/main SERVES, AND NEITHER IS THIS ' +
+      'TREE\'S OWN FILE. feat_mls_avatar.js on origin/main now hashes to ' + sha(served) +
+      '; this suite is pinned to ' + BUILDS.live.commit.slice(0, 8) + ' at ' + BUILDS.live.sha256 +
+      ' and this tree\'s own copy is a third set of bytes — a foreign lane has changed the file ' +
+      'on main. Every "byte-identical to live" claim below is therefore about a retired build.\n' +
       'FIX: re-pin BUILDS.live to the commit that last changed feat_mls_avatar.js, regenerate ' +
       'tests/fixtures/feat_mls_avatar.<short>.js.gz from it, update the sha256, and re-read the ' +
       'diff — a genuine change to the filing path on main is a decision this gate must not hide.');
