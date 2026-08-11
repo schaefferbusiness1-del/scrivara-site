@@ -92,6 +92,19 @@ qv-1.0 re-points to layer (a) for the same-tick verdict (unchanged semantics) wi
 the degraded latch. A lost IDB write therefore cannot green a receipt: the journal survives (holding
 the edit) until the persisted copy has been read back.
 
+**Q5 (supervisor-added hazard) — INDEXEDDB IS EVICTABLE, and the chain has a window.** After journal
+truncation the browser can discard the verified IDB blob under storage pressure, silently — both copies
+gone. Requirements, adopted verbatim and PRE-REGISTERED as an acceptance item alongside the logout wipe:
+call `navigator.storage.persist()`; **VERIFY the grant with `navigator.storage.persisted()`** rather
+than trusting the request; record the verdict in the store's receipt; **define denied-grant behaviour**
+— on denial the store declares itself non-durable LOUDLY (banner + receipt flag), journal truncation
+becomes conservative (retain a rolling last-full-roster journal snapshot within the 256KB bound where
+it fits, or the smallest delta chain that reconstructs), and the Render sync priority rises; and log
+`navigator.storage.estimate()` at boot so quota/usage are observed, not inferred. Sequencing note (the
+supervisor's, recorded because it argues FOR the approved order): eviction is survivable once Render is
+system of record — the IDB-only window between cutover and Render is where a denied grant is
+unrecoverable, so the grant verdict gates how long that window may stay open.
+
 **Q4 — baseline labels**: every BEFORE number is labelled **"post-prune, b1007"** (boot-to-interactive,
 one savePatients wall-clock, main-thread decode block), and the AFTER carries its own build label. A
 delta against an unlabelled baseline is how 41s/chart happened; not again.
