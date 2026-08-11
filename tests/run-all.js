@@ -592,6 +592,17 @@ const tests = [
      and none here; the live watchdog cuts 4 / falls through 46 / re-arms 0 in 50 ticks and this one
      0/0/50. */
   'one-token-cannot-answer-two-questions.test.js',
+  /* 2026-08-11 fx-1.0 — A REFUSAL NEVER LEAVES A STALE LOOK SILENTLY RENDERING. Owner (screenshot):
+     the sampler refused his retaken photo and the panel kept rendering the stale poisoned saved
+     look with a refusal line pale enough to miss. Root causes measured in the face-rework
+     diagnosis: res.look carried REFUSED values and the kiosk applied them wholesale (the #333333
+     gray-hair day-one path), one border-median background turned a white door into claimed long
+     white hair, and a bad look once saved was trusted forever. This suite EXECUTES the real
+     extracted sampler on T1/T8/posterized/no-face fixtures on BOTH this tree and the pre-fix
+     bytes (in-suite controls must reproduce each defect), and pins the consumer contract
+     (claimed-only look + shared applier + counted refusals), the duplicate-surface veto, the
+     quarantine/reset/loud-note UI truth, and the vision claim gates. */
+  'face-refusal-quarantines-the-stale-look.test.js',
   /* 2026-08-09 av-6.2.0: ONE OWNER for #mlsAvKioskInterim. Owner: "having text constantly
      overlapping and being such a paIUN IN THE ASS" — measured as FOURTEEN writers on one
      text node with no priority, clobbering each other mid-sentence. Executes the ranked
