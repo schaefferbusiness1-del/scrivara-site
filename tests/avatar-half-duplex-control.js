@@ -35,17 +35,39 @@ const VARIANTS = [
      crash on an undeclared variable instead of reproducing the defect — a crash is not a control.
      ⚠️ pvListen has no 'use strict', so a partial revert would create a GLOBAL rather than throw
      in some engines; naming all five edits is the only version of this that is honest. */
-  { id: 'A1b the utterance is SPLICED again — round 5 restored (five edits: the whole two-bucket design)',
+  { id: 'A1b the utterance is SPLICED again — round 5 restored (seven edits: the whole two-bucket design)',
     edits: [
-      { from: "    var turnText = '', turnHeld = false, segTag = {}, segSeen = -1, turnFrom = 0;",
-        to: "    var turnText = '', heldText = '', turnHeld = false, segTag = {}, segSeen = -1, turnFrom = 0;" },
+      /* ⚠️ THE LAST TWO EDITS ARE WHY THIS IS SEVEN AND NOT FIVE. With only the accumulation
+         reverted, a turn that was ENTIRELY held left turnText empty, so neither the quiet timer nor
+         onend ever called submit() and the refusal was never reported at all — the control then
+         failed on "the overlapping utterance was DROPPED SILENTLY" instead of on the splice it
+         exists to demonstrate. Round 5 armed both on `finalText.trim() || heldText.trim()`, and a
+         control has to be the whole of what it claims to restore. */
+      { from: "    var turnText = '', turnHeld = false, segTag = {}, absorbed = {};",
+        to: "    var turnText = '', heldText = '', turnHeld = false, segTag = {}, absorbed = {};" },
       { from: "        if (segTag[i] === 'held') turnHeld = true;\n", to: '' },
       { from: "            if (pvIsSelfEcho(piece)) turnHeld = true;\n            turnText += (turnText ? ' ' : '') + piece;",
         to: "            if (segTag[i] === 'held' || pvIsSelfEcho(piece)) heldText += (heldText ? ' ' : '') + piece;\n            else turnText += (turnText ? ' ' : '') + piece;" },
-      { from: '      var whole = turnText.trim(), held = turnHeld;',
-        to: "      var whole = turnText.trim(), held = heldText.trim(); heldText = '';" },
-      { from: '      if (!whole) return;\n      if (held) {',
-        to: '      if (held && onOverlap) safe(function () { onOverlap(held); });\n      if (!whole) return;\n      if (false) {' },
+      { from: '      var whole = turnText.trim(), held = turnHeld, began = turnBeganAt;',
+        to: "      var whole = turnText.trim(), held = heldText.trim(), began = turnBeganAt; heldText = '';" },
+      { from: '      if (!whole) return;',
+        to: '      if (held && onOverlap) safe(function () { onOverlap(held); });\n      if (!whole) return;' },
+      /* ⚠️ AND THE av-6.3.2 REFUSAL BRANCH GOES DEAD WITH IT, which is the point: with the branch
+         unreachable the restart gate never arms either, so this control restores round 5 AND round 6
+         in one - two buckets, the remainder filed, and no boundary on what may be filed next. */
+      { from: '      if (why) {\n        /* ⛔ THE GATE ARMS IN THE REFUSAL ITSELF',
+        to: '      if (false) {\n        /* ⛔ THE GATE ARMS IN THE REFUSAL ITSELF' },
+      { from: 'quiet = setTimeout(function () { if (turnText.trim()) submit(); }, 1300);',
+        to: 'quiet = setTimeout(function () { if (turnText.trim() || heldText.trim()) submit(); }, 1300);' },
+      { from: '      if (turnText.trim()) submit();',
+        to: '      if (turnText.trim() || heldText.trim()) submit();' },
+      /* and round 5's paint guard, which was per-segment too. Without this edit the control fires
+         the PAINTING assertion first (held text drawn on the line the patient is reading the
+         question from) — also a real consequence of the revert, but not the splice. */
+      { from: '        } else if (!turnHeld) interim += String(r[0].transcript || \'\');',
+        to: '        } else if (segTag[i] !== \'held\') interim += String(r[0].transcript || \'\');' },
+      { from: '      if (onInterim) onInterim(turnHeld ? \'\' : (turnText + \' \' + interim).trim());',
+        to: '      if (onInterim) onInterim((turnText + \' \' + interim).trim());' },
     ],
     expect: 'A REMAINDER WAS FILED AS A COMPLETE ANSWER' },
   /* the same revert, checked by the suite that owns the four permanent negation controls */
@@ -54,32 +76,79 @@ const VARIANTS = [
     copyEditsFrom: 'A1b',
     suite: 'avatar-turn-is-whole-or-refused.test.js',
     expect: 'WAS FILED WITHOUT ITS LEADING WORDS' },
-  /* ⚠️ RECORDED HONESTLY: re-tagging a growing segment shows up FIRST as the critical defect
-     itself — the straddling utterance is re-judged 'clean' the moment the question ends and is
-     filed as a complete answer. So this control fails on the whole-turn assertion rather than on
-     the re-tagging one written beside it. That is a stronger observation, not a weaker one, and
-     naming the message it actually produces is the only honest way to record it. */
+  /* ⚠️ AND THE DIRECTION THIS ONE ACTUALLY GUARDS. With a whole-turn latch, re-tagging clean -> held
+     is harmless (the latch is already set), so the interesting case is the OTHER way: the patient
+     answers into a silent room and the avatar starts talking mid-answer (the 9-second nudge, an
+     apology). Re-tagging then judges their perfectly good answer 'held' and REFUSES it — a dropped
+     answer, which is the one outcome this file must never risk. That is the assertion this control
+     fires, and it is the reason the first-sighting rule is load-bearing rather than decorative. */
   { id: 'A1c the segment is re-tagged as the patient keeps talking',
-    from: "        if (segTag[i] === undefined) segTag[i] = pvAudioLive() ? 'held' : 'clean';",
+    from: "        if (segTag[i] === undefined || already !== undefined) segTag[i] = pvAudioLive() ? 'held' : 'clean';",
     to: "        segTag[i] = pvAudioLive() ? 'held' : 'clean';",
     suite: 'avatar-turn-is-whole-or-refused.test.js',
-    expect: 'WAS FILED WITHOUT ITS LEADING WORDS' },
+    expect: 'A PATIENT\'S ANSWER WAS REFUSED BECAUSE THE AVATAR INTERRUPTED THEM' },
   /* ── AND THE TURN BOUNDARY ITSELF ─────────────────────────────────────────────────────────── */
-  { id: 'T3 a segment already filed is read into the next turn (the turn boundary is gone)',
-    from: '      turnText = \'\'; turnHeld = false; turnFrom = segSeen + 1;',
-    to: '      turnText = \'\'; turnHeld = false;',
+  { id: 'T3 a cumulative results list is counted twice inside one turn',
+    from: '        if (already !== undefined && already === piece) continue;',
+    to: '',
     suite: 'avatar-turn-is-whole-or-refused.test.js',
-    expect: 'THE SAME ANSWER WAS FILED TWICE' },
-  { id: 'T4 submit() tears the microphone down again (the half-teardown)',
-    from: '      endTurn();\n',
-    to: '      endTurn();\n      if (pvRec === rec) { safe(function () { rec.stop(); }); pvRec = null; }\n',
+    expect: 'THE SAME WORDS WERE COUNTED TWICE INSIDE ONE TURN' },
+  /* my own first version of the same guard: keyed on the INDEX rather than the WORDS, so a reused
+     index carrying a new utterance swallowed it and inherited the old segment's audio verdict */
+  { id: 'T3c the absorbed guard is keyed on the index instead of the words (two edits)',
+    edits: [
+      { from: '        if (already !== undefined && already === piece) continue;',
+        to: '        if (already !== undefined) continue;' },
+      { from: '        if (segTag[i] === undefined || already !== undefined) segTag[i] = pvAudioLive() ? \'held\' : \'clean\';',
+        to: '        if (segTag[i] === undefined) segTag[i] = pvAudioLive() ? \'held\' : \'clean\';' },
+    ],
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    /* ⚠️ it fires the FIRST half of the pair: with the new words swallowed, the earlier clean
+       utterance is filed on its own. Same defect, and this is the message it really produces. */
+    expect: 'WORDS SPOKEN OVER A QUESTION WERE FILED UNDER A STALE' },
+  /* ⛔ MY OWN FIRST TURN BOUNDARY, RESTORED. It identified the turn by "the highest result index
+     seen + 1", which assumes indices keep rising. A rendered proof caught the cost: on a recogniser
+     that reuses index 0 for every utterance the loop iterated zero times after the first turn and
+     the kiosk went permanently DEAF with the microphone light still on — a worse hang than either
+     of the two this round was sent to fix, introduced by the fix for them. */
+  /* ⚠️ SIX EDITS, because `absorbed` has to go with it. A five-edit version left `var already =
+     absorbed[i];` behind and the control CRASHED with a ReferenceError — and a crash is not a
+     control: it proves the file is broken, not that the assertion can see the defect. */
+  { id: 'T3b the turn boundary assumes result indices keep rising (six edits)',
+    edits: [
+      { from: "    var turnText = '', turnHeld = false, segTag = {}, absorbed = {};",
+        to: "    var turnText = '', turnHeld = false, segTag = {}, segSeen = -1, turnFrom = 0;" },
+      { from: "      turnText = ''; turnHeld = false; segTag = {}; absorbed = {};",
+        to: "      turnText = ''; turnHeld = false; turnFrom = segSeen + 1;" },
+      /* ⚠️ THE LOOP HEADER APPEARS TWICE IN THE FILE — the interview recogniser and the ambient
+         one — AND SO DO THE TWO LINES AROUND IT. The ambient handler differs by one line
+         (`if (!kiosk.ambient || kiosk.ambRec !== rec) return;` between the handler and `var interim`),
+         so the anchor reaches back to `rec.onresult` with `var interim` immediately after it. That
+         shape belongs to pvListen alone. A revert that matched both would be patching a function
+         this control says nothing about — and the harness's own count check is what caught it. */
+      { from: 'rec.onresult = function (ev) {\n      var interim = \'\';\n      for (var i = ev.resultIndex; i < ev.results.length; i++) {',
+        to: 'rec.onresult = function (ev) {\n      var interim = \'\';\n      for (var i = (ev.resultIndex > turnFrom ? ev.resultIndex : turnFrom); i < ev.results.length; i++) {\n        if (i > segSeen) segSeen = i;' },
+      { from: '        var already = absorbed[i];\n        if (already !== undefined && already === piece) continue;\n', to: '' },
+      { from: "        if (segTag[i] === undefined || already !== undefined) segTag[i] = pvAudioLive() ? 'held' : 'clean';",
+        to: "        if (segTag[i] === undefined) segTag[i] = pvAudioLive() ? 'held' : 'clean';" },
+      { from: '          absorbed[i] = piece;     /* the WORDS taken into this turn; see the note on `absorbed` */\n', to: '' },
+    ],
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    expect: 'THE KIOSK IS DEAF AFTER ITS FIRST ANSWER' },
+  /* ⚠️ THE TEARDOWN GOES BACK EXACTLY WHERE ROUND 5 HAD IT — after the refusal returns, so an
+     all-echo turn still keeps the microphone. Inserting it one line earlier (right after endTurn)
+     also broke the echo case, so the control fired the echo group's assertion instead of the one it
+     was written for: a control has to reproduce the defect, not a superset of it. */
+  { id: 'T4 submit() tears the microphone down again (the half-teardown, round-5 placement)',
+    from: '      if (onFinal) onFinal(whole);',
+    to: '      if (pvRec === rec) { safe(function () { rec.stop(); }); pvRec = null; }\n      if (onFinal) onFinal(whole);',
     suite: 'avatar-turn-is-whole-or-refused.test.js',
     expect: 'submit() STOPPED THE RECOGNISER' },
   { id: 'T5 kioskTurn closes the microphone on every turn again',
     from: "    pvAbandonSpeech();\n    kioskMood('thinking', '', answer);",
     to: "    pvStopVoice();\n    kioskMood('thinking', '', answer);",
     suite: 'avatar-turn-is-whole-or-refused.test.js',
-    expect: 'A FUNCTION INSIDE THE INTERVIEW LOOP CLOSES THE MICROPHONE' },
+    expect: 'A FUNCTION THAT IS NOT A LIFECYCLE BOUNDARY CLOSES THE MICROPHONE' },
   { id: 'T6 pvAudioLive believes a positive signal outside any trust window (the deafness hang)',
     from: '    if (!pvAudioStartAt) return false;\n    if ((Date.now() - pvAudioStartAt) > PV_AUDIO_TRUST_MS) return false;',
     to: '    if (pvAudioStartAt && (Date.now() - pvAudioStartAt) > PV_AUDIO_TRUST_MS) return false;',
@@ -152,23 +221,34 @@ const VARIANTS = [
     to: '    /* ── AND THEN THE SENTENCE *ENDS*',
     expect: 'the tap did not actually silence the synthesiser' },
   { id: 'A7 the silence watchdog fires over a live sentence again',
-    from: '    if (pvAudioLive()) {\n      if ((kiosk.audioWaits || 0) < 3) {',
-    to: '    if (false) {\n      if ((kiosk.audioWaits || 0) < 3) {',
+    from: '    if (pvAudioLive()) {\n      kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;',
+    to: '    if (false) {\n      kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;',
     expect: 'THE WATCHDOG STILL FIRES OVER A LIVE SENTENCE' },
   { id: 'A7b the watchdog fence reads the ESTIMATE instead of the audio',
-    from: '    if (pvAudioLive()) {\n      if ((kiosk.audioWaits || 0) < 3) {',
-    to: '    if (pvSaying) {\n      if ((kiosk.audioWaits || 0) < 3) {',
+    from: '    if (pvAudioLive()) {\n      kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;',
+    to: '    if (pvSaying) {\n      kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;',
     expect: 'THE WATCHDOG FIRES WHILE THE LOUDSPEAKER IS STILL PLAYING' },
   /* ⛔ ROUND 5's OWN LINE: the watchdog returns and walks away from the only timer that can revive
      a stalled question. Silent, and invisible to a suite that only asserted "nothing happened". */
   { id: 'A7c the watchdog returns without re-arming (round 5 restored)',
-    from: '    if (pvAudioLive()) {\n      if ((kiosk.audioWaits || 0) < 3) {\n        kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;\n        kioskArmWatchdog(pvAudioRemainingMs() + 750);\n        return;\n      }\n    }',
+    from: '    if (pvAudioLive()) {\n      kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;\n      kioskArmWatchdog(pvAudioRemainingMs() + 750);\n      return;\n    }',
     to: '    if (pvAudioLive()) return;',
     expect: 'THE WATCHDOG STILL FIRES OVER A LIVE SENTENCE' },
+  /* ── av-6.3.2: THIS ROUND'S OWN REGRESSION, PUT BACK AS A CONTROL ───────────────────────────
+     ⛔ These are the av-6.3.1 BYTES, verbatim, not a synthetic mutant: a cap that FALLS THROUGH onto
+     a live sentence after three waits, so the next statement reached is pvAbandonSpeech() and the
+     question is cut mid-word to say "take your time" over it. The pre-fix bytes had no such breach,
+     and av-6.3.1's own registered suite asserted the breach as REQUIRED ("a stuck signal must
+     degrade to a nudge"). The control for a corrected assertion is therefore a control that restores
+     the regression the assertion used to demand — and it must fail by name. */
+  { id: 'A7d the watchdog cap falls through onto a live sentence again (av-6.3.1 restored)',
+    from: '    if (pvAudioLive()) {\n      kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;\n      kioskArmWatchdog(pvAudioRemainingMs() + 750);\n      return;\n    }',
+    to: '    if (pvAudioLive()) {\n      if ((kiosk.audioWaits || 0) < 3) {\n        kiosk.audioWaits = (kiosk.audioWaits || 0) + 1;\n        kioskArmWatchdog(pvAudioRemainingMs() + 750);\n        return;\n      }\n    }',
+    expect: 'THE WATCHDOG CUT A LIVE SENTENCE' },
   { id: 'A8 the 12-second net can cut the closing line again',
     from: '      if (pvAudioLive() && n < DONE_NET_MAX) { kioskArmDoneNet(pvAudioRemainingMs() + 750, n + 1); return; }',
     to: '',
-    expect: 'THE CLOSING LINE IS STILL BEING CUT OFF' },
+    expect: 'did not wait for the loudspeaker at all' },
   /* ⛔ AND ROUND 5's ACTUAL BYTES: the guard was a ONE-SHOT, so when audio was still live at
      t=12000 the net evaporated and nothing could ever end the interview. A permanent hang the
      pre-fix code did not have — its net was unconditional. */
@@ -176,10 +256,15 @@ const VARIANTS = [
     from: '      if (pvAudioLive() && n < DONE_NET_MAX) { kioskArmDoneNet(pvAudioRemainingMs() + 750, n + 1); return; }',
     to: '      if (pvAudioLive()) return;',
     expect: 'THE CHECK-IN HANGS FOR EVER' },
+  /* ⚠️ RECORDED HONESTLY: an unbounded extension fires the HANG assertion, not the bound one. That
+     is not the control missing its target — it is the measurement saying something worth writing
+     down: with the audio signal never going quiet, "extend for ever" and "never finish" are the
+     same behaviour (50 timers fired, kioskFinish reached 0 times). The bound assertion exists to
+     describe WHY, and this variant proves the pair of them cannot both be satisfied by a poll. */
   { id: 'A8e the closing net extends without a bound (a poll, and a hang wearing a hat)',
     from: '      if (pvAudioLive() && n < DONE_NET_MAX) {',
     to: '      if (pvAudioLive()) {',
-    expect: 'waited an unbounded number of times' },
+    expect: 'THE CHECK-IN HANGS FOR EVER' },
   /* ── DEFECT 2: the ESTIMATE was the authority for "is it still talking" ────────────────────── */
   { id: 'A8b the speech watchdog ends a sentence that is still audible',
     from: '      if (!extended && pvAudioPlaying()) {',
@@ -191,13 +276,21 @@ const VARIANTS = [
     expect: 'THE FENCE LIFTS WHILE THE LOUDSPEAKER IS STILL PLAYING' },
   /* ── DEFECT 1's other half: a refusal that says nothing ────────────────────────────────────── */
   { id: 'A11 a refused utterance is dropped silently',
-    from: "      kioskLine('hint', 'Sorry — I was still talking, so I missed that. Could you say it again?');",
+    from: "      kioskReAsk(why === 'continuation' ? 'continuation' : 'overlap');",
     to: '      return;',
     expect: 'A PATIENT WAS NOT TOLD THAT THEIR ANSWER WAS DROPPED' },
   { id: 'A11b the kiosk apologises for its own echo',
-    from: '      if (pvIsSelfEcho(refused) || pvNovelWordCount(tpl, refused) < 1) {',
+    from: "      if (why !== 'continuation' && (pvIsSelfEcho(refused) || pvNovelWordCount(tpl, refused) < 1)) {",
     to: '      if (false) {',
     expect: 'THE KIOSK APOLOGISED FOR ITS OWN ECHO' },
+  /* ⚠️ AND THE OTHER DIRECTION OF THE SAME EXEMPTION (av-6.3.2): a CONTINUATION must never be
+     silenced by the echo test. It only exists because a real answer was already refused, so there is
+     a patient waiting to be asked; going quiet leaves them answering a question nobody hears. */
+  { id: 'A11c the echo exemption swallows a continuation too',
+    from: "      if (why !== 'continuation' && (pvIsSelfEcho(refused) || pvNovelWordCount(tpl, refused) < 1)) {",
+    to: '      if (pvIsSelfEcho(refused) || pvNovelWordCount(tpl, refused) < 1) {',
+    suite: 'avatar-half-duplex-and-one-live-region.test.js',
+    expect: 'A CONTINUATION WAS REFUSED IN SILENCE' },
   { id: 'A9 ttsPlayUrl loses its exactly-once guard',
     from: '      if (fired || mySeq !== pvSpeakSeq) return;\n      fired = true;',
     to: '      if (mySeq !== pvSpeakSeq) return;',
@@ -290,11 +383,15 @@ const VARIANTS = [
     ],
     suite: 'avatar-kiosk-text-is-never-covered.test.js',
     expect: 'COVERED' },
+  /* ⚠️ IT FIRES THE MINIMUM-SIZE ASSERTION, and that is the interesting result: with the face still
+     laid out, flex squeezes it to 34x34 at 320x568 rather than covering anything. A 34px circle
+     satisfies "width equals height" perfectly, which is exactly why the circularity check alone was
+     not enough and the floor was added beside it this round. */
   { id: 'B8c the face keeps its desktop size on a phone with the panel open',
     from: "      '#mlsAvKiosk.hasorders #mlsAvKioskFaceWrap{display:none}' +",
     to: '',
     suite: 'avatar-kiosk-text-is-never-covered.test.js',
-    expect: 'COVERED' },
+    expect: 'a patient cannot read a face that small' },
   { id: 'B8d the recording banner is capped with a SCROLLER, hiding the clock inside it',
     from: "      '#mlsAvKiosk.hasorders #mlsAvKioskRec{font:800 1.7vh system-ui;padding:.6vh 1.4vh;gap:8px}' +",
     to: "      '#mlsAvKiosk.hasorders #mlsAvKioskRec{max-height:5.4em;overflow-y:auto;font-size:1.8vh}' +",
@@ -319,6 +416,122 @@ const VARIANTS = [
     to: "    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; return; }",
     suite: 'avatar-kiosk-text-is-never-covered.test.js',
     expect: 'does not set the class that makes the column' },
+  /* ══ av-6.3.2 — THE RESTART GATE. ROUND 7's FIXES, ONE REVERT EACH ═══════════════════════════
+     ⛔ T7 IS THE CONTROL THAT MATTERS: it restores the ROUND-6 BYTES for the continuation term. Round
+     6 refused a held turn and then filed the very next clean turn — and because a "turn" is ended by
+     a 1.3-second silence timer, the next clean turn is routinely the SECOND HALF of the same
+     sentence. A lens ran the same probe against round 5 and round 6 and got the same strings. */
+  { id: 'T7 a continuation is filed as a complete answer again (round 6 restored: the whole defect)',
+    from: '      var why = \'\';\n      if (held) why = \'overlap\';\n      else if (pvReAsk && (!pvReAskFrom || began < pvReAskFrom)) why = \'continuation\';',
+    to: '      var why = \'\';\n      if (held) why = \'overlap\';',
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    expect: 'A CONTINUATION WAS FILED AS A COMPLETE ANSWER' },
+  /* the gate exists but the refusal stops arming it, so it can only ever be armed by a caller that
+     remembers to — three refusal paths, and the first one that forgets files the fragment */
+  { id: 'T7b the refusal no longer arms the gate, only the caller does',
+    from: '        pvReAsk = true; pvReAskFrom = 0;\n',
+    to: '',
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    /* ⚠️ IT FIRES THE BEHAVIOURAL ASSERTION, NOT THE STRUCTURAL ONE, and that is the honest result:
+       T7's continuation fixture runs long before T7(f)'s code reading, and with the refusal no longer
+       arming the gate the fragment is filed again. Recorded as what it actually produces. */
+    expect: 'A CONTINUATION WAS FILED AS A COMPLETE ANSWER' },
+  /* the boundary is stamped at a CALL SITE instead of where a sentence ends. It still works for the
+     path somebody remembered; the deferred re-ask (audio still live) never gets a boundary at all. */
+  { id: 'T7c the restart boundary leaves finish() for a call site',
+    from: '      pvOpenReAsk();\n      if (then) safe(then);',
+    to: '      if (then) safe(then);',
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    expect: 'THE RESTART BOUNDARY IS NO LONGER STAMPED WHERE A SENTENCE ENDS' },
+  /* round 6's actual patient-facing behaviour: print a hint, say nothing. A patient mid-sentence
+     neither reads it nor stops, which is how the remainder arrived as a fresh "complete" turn. */
+  { id: 'T7d the re-ask is printed and never spoken (round 6 restored)',
+    edits: [
+      { from: '    if (pvAudioLive()) {\n      /* still mid-sentence: it finishes, and kioskTurn\'s continuation says this line - see the\n         note above. pvAudioLive(), not pvSaying: an estimated-duration watchdog clears pvSaying\n         while the loudspeaker is still going, and cutting the question is the one thing forbidden. */\n      kiosk.reAskPending = line;\n      return;\n    }\n    kioskReAskSpeak(line);',
+        to: '    return;' },
+    ],
+    suite: 'avatar-half-duplex-and-one-live-region.test.js',
+    expect: 'THE RE-ASK IS NOT SPOKEN' },
+  /* and the version of this fix that would re-create the owner's original complaint: apologise by
+     cutting the question off. Two harms for the price of one. */
+  { id: 'T7e the re-ask abandons the sentence it is apologising for',
+    from: '    if (pvAudioLive()) {\n      /* still mid-sentence: it finishes, and kioskTurn\'s continuation says this line - see the\n         note above. pvAudioLive(), not pvSaying: an estimated-duration watchdog clears pvSaying\n         while the loudspeaker is still going, and cutting the question is the one thing forbidden. */\n      kiosk.reAskPending = line;\n      return;\n    }\n    kioskReAskSpeak(line);',
+    to: '    pvAbandonSpeech();\n    kioskReAskSpeak(line);',
+    suite: 'avatar-half-duplex-and-one-live-region.test.js',
+    /* ⚠️ IT FIRES THE A10 CENSUS FIRST, which is the better red: the census walks every call site of
+       pvStopVoice/pvAbandonSpeech in the whole file and reports any that is neither a human action nor
+       fenced against a live sentence. It named kioskReAsk by name and line. Recorded as produced. */
+    expect: 'A NEW WAY TO CUT THE AVATAR OFF MID-SENTENCE' },
+  /* the discard: without it, the refused fragment is welded to the front of the next answer */
+  /* ⛔ MY OWN FIRST VERSION OF THIS FIX, KEPT AS A CONTROL. It armed the gate on the ECHO path too,
+     on the reasoning that a wrong audio boundary is a wrong audio boundary. It is not: every word of
+     an echo turn is a word we were saying, so the patient contributed nothing — and a room with
+     imperfect echo cancellation produces one on nearly every question. Left armed, it DROPPED the
+     patient's next real answer (0 of 1 filed, measured with the rendered consent proof). */
+  { id: 'T7h the gate arms itself on the avatar\'s own echo and eats the next real answer',
+    from: '        pvReAskStandDown();',
+    to: '        pvArmReAsk();',
+    suite: 'avatar-half-duplex-and-one-live-region.test.js',
+    expect: 'THE RESTART GATE STAYED ARMED ON AN ALL-ECHO REFUSAL' },
+  { id: 'T7f a refusal no longer discards what the recogniser is holding',
+    from: '    safe(function () { if (pvRec && isFn(pvRec.__endTurn)) pvRec.__endTurn(); });',
+    to: '',
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    expect: 'THE REFUSED WORDS SURVIVED INTO THE NEXT ANSWER' },
+  /* and the gate must stand down when an answer is filed whole, or the interview stalls for ever */
+  { id: 'T7g the gate never stands down after a whole answer is filed',
+    from: '      pvClearReAsk();\n      if (onFinal) onFinal(whole);',
+    to: '      if (onFinal) onFinal(whole);',
+    suite: 'avatar-turn-is-whole-or-refused.test.js',
+    /* ⚠️ the behavioural assertion again, and it is the stronger one: the gate is still armed after a
+       whole answer was filed, so every later turn is measured against a stale boundary. */
+    expect: 'the gate did not stand down when an answer was filed WHOLE' },
+  /* ══ av-6.3.2 — DEFECT 3: THE STATE POPULATION AND THE ROWS THE STYLESHEET CANNOT SEE ═════════ */
+  { id: 'B10 the hand-off row stops telling the layout it is there',
+    from: '      if (on) root.classList.add(\'resting\'); else root.classList.remove(\'resting\');',
+    to: '      if (on) root.classList.add(\'resting\');',
+    suite: 'avatar-kiosk-text-is-never-covered.test.js',
+    expect: 'kioskRestReserve no longer toggles the `resting` reservation class both ways' },
+  /* ⚠️ AND THE CALL, WHICH THE RENDERED SWEEP CANNOT SEE. The harness sets the root class from its
+     own state list, so a kioskRestShow that stopped setting it would render exactly the same page.
+     Only a code-reading assertion catches that, which is why one exists beside the layout ones. */
+  { id: 'B10f kioskRestShow stops reserving the sheet\'s area',
+    from: '    host.style.display = \'flex\';\n    kioskRestReserve(true);',
+    to: '    host.style.display = \'flex\';',
+    suite: 'avatar-kiosk-text-is-never-covered.test.js',
+    expect: 'kioskRestShow shows the hand-off row without telling the layout' },
+  { id: 'B10b the phone reserves a row for controls that cannot appear',
+    edits: [
+      { from: '      \'#mlsAvKiosk.resting #mlsAvKioskSkip{display:none}\' +\n', to: '' },
+      { from: '      \'#mlsAvKiosk.hasorders #mlsAvKioskWave{display:none}\' +\n', to: '' },
+    ],
+    suite: 'avatar-kiosk-text-is-never-covered.test.js',
+    expect: 'COVERED' },
+  /* ⚠️ THE OVERRIDE IS REVERTED TO THE BASE NUMBER RATHER THAN DELETED, so both rules still exist and
+     the drift guard (B10d) cannot fire first. What is left is the layout question on its own: with the
+     sheet back at its full 44vh the column has 14-19px less room than it needs and the surplus lands
+     on the card. Deleting the rules instead fires the guard-on-the-guard ("fewer than two pairs"),
+     which is a real red but not the one this control is for. */
+  { id: 'B10c the sheet stops yielding height to the hand-off row',
+    edits: [
+      { from: '\'#mlsAvKiosk.resting.hasorders #mlsAvKioskOrders{max-height:36vh}\'',
+        to: '\'#mlsAvKiosk.resting.hasorders #mlsAvKioskOrders{max-height:44vh}\'' },
+      { from: '\'#mlsAvKiosk.resting.hasorders{padding-right:5vw;padding-bottom:calc(36vh + 16px)}\'',
+        to: '\'#mlsAvKiosk.resting.hasorders{padding-right:5vw;padding-bottom:calc(44vh + 16px)}\'' },
+    ],
+    suite: 'avatar-kiosk-text-is-never-covered.test.js',
+    expect: 'COVERED' },
+  /* the drift guard on the pair, checked by breaking exactly the pairing and nothing else */
+  { id: 'B10d the sheet height and the height reserved for it drift apart',
+    from: '\'#mlsAvKiosk.resting.hasorders{padding-right:5vw;padding-bottom:calc(36vh + 16px)}\'',
+    to: '\'#mlsAvKiosk.resting.hasorders{padding-right:5vw;padding-bottom:calc(30vh + 16px)}\'',
+    suite: 'avatar-kiosk-text-is-never-covered.test.js',
+    expect: 'THE COLUMN RESERVES' },
+  { id: 'B10e the typed row takes a hard width again and ignores the reserved gutter',
+    from: '\'#mlsAvKioskTypeRow{display:none;gap:10px;width:min(720px,90vw);max-width:100%}\'',
+    to: '\'#mlsAvKioskTypeRow{display:none;gap:10px;width:min(720px,90vw)}\'',
+    suite: 'avatar-kiosk-text-is-never-covered.test.js',
+    expect: 'COVERED' },
   { id: 'B6 a direct writer to the patient line comes back',
     from: "  function kioskSetSay(text) {",
     to: "  function kioskBypass(t) { var line = gid('mlsAvKioskInterim'); if (line) line.textContent = t; }\n" +
@@ -399,10 +612,20 @@ for (const v of VARIANTS) {
     console.log('ok   ' + v.id + '  -> failed by name: "' + v.expect + '"');
     ok++;
   } else {
-    const first = (out.match(/AssertionError[^\n]*\n?[^\n]*/) || ['(no assertion text)'])[0].replace(/\s+/g, ' ').slice(0, 150);
+    /* ⚠️ THE WHOLE OUTPUT, not a regex guess at where the message is. The extractor below used to
+       be the only view of a MISS, and it reported "(no assertion text)" whenever the suite failed
+       inside an async IIFE (whose catch prints the message with no AssertionError prefix) — so the
+       one thing this harness exists to tell me was unreadable exactly when I needed it.
+       MLS_CONTROL_SHOW=<id prefix> prints it in full. */
+    const first = (out.match(/AssertionError[^\n]*\n?[^\n]*/) ||
+      out.split('\n').filter((l) => l.trim()).slice(-1) || ['(no assertion text)'])[0]
+      .replace(/\s+/g, ' ').slice(0, 200);
     console.log('MISS ' + v.id + ' — it failed, but on a DIFFERENT assertion than the one written ' +
       'for it: ' + first);
     weak.push(v.id + ' (failed on the wrong assertion)');
+  }
+  if (process.env.MLS_CONTROL_SHOW && v.id.indexOf(process.env.MLS_CONTROL_SHOW) === 0) {
+    console.log('---- full output for ' + v.id + ' ----\n' + out + '\n----');
   }
 }
 console.log('\n' + ok + ' of ' + VARIANTS.length + ' fixes are proven load-bearing by a control that fails BY NAME.');

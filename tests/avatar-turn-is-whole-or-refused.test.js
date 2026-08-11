@@ -28,11 +28,19 @@
  * 22, ordinary "A or B" answers. The refusal gate and the filing gate must never be merged, and
  * keeping both controls here is what makes merging them fail loudly.
  *
- * CONTROL — the PRE-FIX BYTES, i.e. the round-5 module, failing each group BY NAME:
- *   AVATAR_SRC_OVERRIDE=<round-5 copy> node tests/avatar-turn-is-whole-or-refused.test.js
- * Result recorded in the report at the bottom of this comment block when the suite is run with
- * MLS_CONTROL_NOTE=1. Groups that pass against the pre-fix bytes are stated as such rather than
- * left to look load-bearing.
+ * CONTROL — THE PRE-FIX BYTES, AND THE RESULT, RECORDED.
+ * Run against the whole round-5 module, T1 fires first and by name:
+ *   `"no pain in my left leg" WAS FILED WITHOUT ITS LEADING WORDS ("no pain in my") ... Filed:
+ *    ["left leg"]`
+ * — the round-5 defect, demonstrated. But a single red proves only that the FIRST group can fail
+ * (assert throws; nothing after it is evaluated), so every group has its own one-fix-at-a-time
+ * control in tests/avatar-half-duplex-control.js, each reverting the round-5 bytes for exactly that
+ * fix. Run it: `node tests/avatar-half-duplex-control.js`. All of this file's groups are covered
+ * there by id — T1, T3, T3b, T4, T5, T6, T6b, A1c, A8d — and each fails by name.
+ * ⚠️ T3b is my OWN first attempt at this fix, kept as a control: it identified the turn by "the
+ * highest result index seen + 1", which assumes result indices keep rising, and on a recogniser that
+ * reuses index 0 the kiosk went permanently deaf after one answer. A rendered proof caught it, not
+ * this file — which is why the index-reuse case is now a fixture in group T4.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -54,6 +62,21 @@ function lift(startNeedle, endNeedle, what) {
 function codeOnly(s) { return s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')); }
 
 const pvListenSrc = lift('function pvListen(onFinal, onInterim, onDead, onOverlap)', '\n  /* =====', 'pvListen');
+/* ⛔ AND ITS ABSENCE IS AN ASSERTION, NOT A LIFT ERROR. Run against the pre-fix bytes, a bare
+   lift() dies with "start marker is gone", which tells a reader that the TEST is broken rather than
+   that the PRODUCT has no restart gate. A control that cannot be read is not a control. */
+assert.ok(src.indexOf('  var pvReAsk = false;') > 0,
+  '🚨🚨 THERE IS NO RESTART GATE IN THIS FILE. A refused turn is therefore followed by whatever the ' +
+  'recogniser delivers next — and because a "turn" is ended by a 1.3-second silence timer, what it ' +
+  'delivers next is routinely the SECOND HALF of the sentence that was just refused, filed as a ' +
+  'complete answer with its negation or its laterality missing. That is rounds 4, 5 and 6 of this ' +
+  'defect, and no choice of boundary fixes it: the mechanism has to be refuse -> RE-ASK -> accept ' +
+  'only speech that BEGAN after the asking (pvArmReAsk / pvOpenReAsk / pvReAskState).');
+/* THE RESTART GATE, LIFTED RATHER THAN STUBBED (av-6.3.2). A stub of pvArmReAsk/pvOpenReAsk would be
+   a re-implementation of the thing under test, and this lane has already shipped a stub looser than
+   the real thing that hid the call it was written to catch. These are the module's own bytes. */
+const reAskSrc = lift('  var pvReAsk = false;',
+  '  /* ── WHY THERE IS NO LONGER A DEFERRED LISTEN', 'the restart gate');
 
 /* ── THE MICROPHONE HARNESS: the SHIPPED pvListen, executed ────────────────────────────────────
    Nothing here re-implements the module. The recogniser is fake so the result stream is under the
@@ -69,6 +92,12 @@ function mic(opts) {
     var safe = function (f, d) { try { return f(); } catch (e) { return d; } };
     var pvAudioLive = function () { return audioLive; };
     var pvIsSelfEcho = function (t) { return (cfg.echo || []).indexOf(String(t)) >= 0; };
+    /* ⚠️ A CONTROLLED CLOCK, because the whole of group T7 is about WHEN things happened and this
+       harness runs a whole interview inside one millisecond of wall clock. With the real Date.now()
+       an answer that began before the re-prompt and one that began after it are the same number, so
+       the test would pass or fail on the machine's timer resolution rather than on the code. */
+    var clock = 1600000000000;
+    var Date = { now: function () { return clock; } };
     var timers = [], nextId = 1;
     var setTimeout = function (fn, ms) { timers.push({ id: nextId, fn: fn, ms: ms }); return nextId++; };
     var clearTimeout = function (id) { for (var i = 0; i < timers.length; i++) if (timers[i].id === id) { timers.splice(i, 1); return; } };
@@ -85,13 +114,14 @@ function mic(opts) {
       safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); });
       pvRec = null;
     }
+    ${reAskSrc}
     ${pvListenSrc}
-    var got = { filed: [], refused: [], painted: [], dead: 0 };
+    var got = { filed: [], refused: [], why: [], painted: [], dead: 0 };
     var started = pvListen(
       function (v) { got.filed.push(v); },
       function (v) { got.painted.push(v); },
       function () { got.dead++; },
-      function (v) { got.refused.push(v); });
+      function (v, why) { got.refused.push(v); got.why.push(why || ''); });
     /* ONE RESULT EVENT, shaped exactly like Chrome's: \`results\` is CUMULATIVE and resultIndex says
        where it changed. Sending only the new segment would leave the shipped loop with nothing to
        iterate — a mistake that made an earlier fixture report a splice the module never performed. */
@@ -107,7 +137,16 @@ function mic(opts) {
       quiet: function () { var t = timers.slice(); timers.length = 0; t.forEach(function (x) { x.fn(); }); },
       pending: function () { return timers.length; },
       end: function () { rec.onend(); },
-      rec: function () { return pvRec; }
+      rec: function () { return pvRec; },
+      /* the restart gate, driven exactly the way the module drives it: kioskReAsk calls pvArmReAsk
+         (and the refusal itself arms it), and pvSpeakVoiced's finish() calls pvOpenReAsk when the
+         asking has finished being spoken. Nothing here re-implements either. */
+      arm: function () { pvArmReAsk(); },
+      /* the caller's own decision when every word of a refused turn was a word we were saying */
+      standDown: function () { pvReAskStandDown(); },
+      reprompted: function () { pvOpenReAsk(); },
+      gate: function () { return pvReAskState(); },
+      tick: function (ms) { clock += (ms === undefined ? 500 : ms); return clock; }
     };
   `);
   return { inst: api(log, o), log };
@@ -247,6 +286,27 @@ const NEGATIONS = [
         JSON.stringify(h.inst.got.refused));
     }
   }
+  /* ── AND THE TAG IS WRITTEN ONCE, ON FIRST SIGHTING — WHICH ONLY MATTERS IN THIS DIRECTION ────
+     The whole-turn latch already makes re-tagging harmless when a segment goes clean -> held. The
+     case it does NOT cover is the other way round, and it costs a patient their answer: the patient
+     answers into a silent room (clean), and while they are still speaking the avatar starts saying
+     something — the 9-second nudge, a refusal apology. A re-tagging rule would then judge the
+     growing segment 'held' and REFUSE an answer that began with the room to itself.
+     ⛔ That is a DROPPED ANSWER, the one outcome this file must never risk, so it is a control and
+     not a footnote. */
+  const nudged = mic({ audioLive: false, saying: '' });
+  nudged.inst.emit([{ text: 'its my lower', final: false }]);
+  nudged.inst.live(true);                          /* the silence nudge starts talking over them */
+  nudged.inst.emit([{ text: 'its my lower back on the right side', final: true }]);
+  nudged.inst.live(false);
+  nudged.inst.quiet();
+  assert.deepEqual(nudged.inst.got.filed, ['its my lower back on the right side'],
+    '🚨 A PATIENT\'S ANSWER WAS REFUSED BECAUSE THE AVATAR INTERRUPTED THEM. The utterance began ' +
+    'with the room to itself, so it is theirs and it is whole; the avatar only started speaking ' +
+    '(the nudge, an apology) while they were mid-sentence. A segment must be tagged ONCE, on first ' +
+    'sighting — re-judging it later moves the boundary as the patient talks, and here it moves it ' +
+    'onto a perfectly good answer. Filed: ' + JSON.stringify(nudged.inst.got.filed));
+
   /* AND THE GRANULARITY IS WRITTEN DOWN WHERE THE NEXT ROUND WILL READ IT. A comment is not a
      fence, but this one is the difference between a fix and a fix that gets quietly refined back
      into the defect — round 5 was exactly that, and its own suite blessed it. */
@@ -284,19 +344,52 @@ const NEGATIONS = [
   assert.strictEqual(h.inst.pending(), 0,
     'submit() left the 1.3-second quiet timer armed. It fires again with the accumulation still ' +
     'populated, and the second entry files the SAME answer a second time as a separate turn.');
-  /* a trailing result after the filing — Chrome does deliver these — must not re-file it */
-  h.inst.emit([{ text: 'its my lower back', final: true }]);
-  h.inst.quiet();
-  assert.deepEqual(h.inst.got.filed, ['its my lower back'],
-    '🚨 THE SAME ANSWER WAS FILED TWICE. A segment already accounted for was read into the next ' +
-    'turn, so the patient\'s answer was posted again as a new turn: ' + JSON.stringify(h.inst.got.filed));
-  /* and the SECOND, genuinely new turn still files — the microphone really is still live */
-  h.inst.emit([{ text: 'its my lower back', final: true }, { text: 'about a seven', final: true }], 1);
+  /* ⛔ AND THE MICROPHONE MUST STILL WORK ON A PLATFORM THAT REUSES RESULT INDEX 0. This is the
+     regression that my own first turn boundary introduced and that a rendered proof caught: it
+     identified the turn by "the highest index seen + 1", so on a recogniser that delivers every
+     utterance as `resultIndex:0, results:[one]` — a non-continuous session, a polyfill, several real
+     platforms — every index after the first turn was below the floor, the loop iterated zero times,
+     and THE KIOSK WENT PERMANENTLY DEAF AFTER ONE ANSWER with the microphone light still on. */
+  h.inst.emit([{ text: 'about a seven', final: true }]);
   h.inst.quiet();
   assert.deepEqual(h.inst.got.filed, ['its my lower back', 'about a seven'],
-    'the microphone did not survive the first turn: the second answer never arrived, which is the ' +
-    '"it doesn\'t listen for answers" half of the owner\'s report. Filed: ' +
-    JSON.stringify(h.inst.got.filed));
+    '🚨 THE KIOSK IS DEAF AFTER ITS FIRST ANSWER. The second utterance arrived at the same result ' +
+    'index as the first — which is what a non-continuous session and several platforms actually do ' +
+    '— and nothing was filed. A turn may be identified by what it has ABSORBED, never by an ' +
+    'assumption that result indices keep rising. Filed: ' + JSON.stringify(h.inst.got.filed));
+  /* and a CUMULATIVE list re-delivered from index 0 mid-turn must not count the same words twice */
+  const dup = mic({ audioLive: false });
+  dup.inst.emit([{ text: 'the left one', final: true }]);
+  dup.inst.emit([{ text: 'the left one', final: true }]);   /* same event again, resultIndex 0 */
+  dup.inst.quiet();
+  assert.deepEqual(dup.inst.got.filed, ['the left one'],
+    '🚨 THE SAME WORDS WERE COUNTED TWICE INSIDE ONE TURN. `results` is cumulative, so a platform ' +
+    'that re-delivers it from index 0 would have the answer doubled ("the left one the left one") ' +
+    'and its audio boundary re-judged on every event. Filed: ' + JSON.stringify(dup.inst.got.filed));
+
+  /* ⛔ AND DIFFERENT WORDS AT A REUSED INDEX ARE NEW AUDIO, NOT A RE-DELIVERY. This is the silent
+     loss my first `absorbed` guard had: keyed on the index alone, a platform that reused index 0 for
+     a genuinely new utterance inside one turn had that utterance DROPPED without a word. Worse, the
+     old segment's tag would have been reused, so words spoken over the next question could have been
+     filed under a stale 'clean' verdict — the unsafe direction. Both halves are checked here: the
+     new words must be taken in, and their own audio boundary must decide the turn. */
+  const reuse = mic({ audioLive: false, saying: '' });
+  reuse.inst.emit([{ text: 'and also my knee', final: true }]);   /* clean, during the round trip */
+  reuse.inst.say('does the pain wake you at night');
+  reuse.inst.live(true);                                          /* the NEXT question starts */
+  reuse.inst.emit([{ text: 'and also my knee hurts when i kneel', final: true }]);
+  reuse.inst.live(false);
+  reuse.inst.quiet();
+  assert.deepEqual(reuse.inst.got.filed, [],
+    '🚨 WORDS SPOKEN OVER A QUESTION WERE FILED UNDER A STALE "CLEAN" VERDICT, or dropped in ' +
+    'silence. A reused result index carrying DIFFERENT final words is a new utterance: it must be ' +
+    'absorbed (never swallowed) and re-tagged against the audio that was playing when IT arrived, ' +
+    'not inherited from the segment that used to live at that index. Filed: ' +
+    JSON.stringify(reuse.inst.got.filed));
+  assert.ok(reuse.inst.got.refused.length === 1 &&
+    reuse.inst.got.refused[0].indexOf('hurts when i kneel') >= 0,
+    'the new words at the reused index were SWALLOWED — neither filed nor reported, so the patient ' +
+    'is never told and nobody can count it. Refused: ' + JSON.stringify(reuse.inst.got.refused));
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -341,14 +434,26 @@ const NEGATIONS = [
   assert.ok(closers.length >= 8,
     'only ' + closers.length + ' microphone-closing call sites found, so this walk is not seeing ' +
     'them and is guarding nothing');
-  const IN_THE_LOOP = ['kioskTurn', 'kioskWatchdog', 'pvListen'];
-  assert.deepEqual(closers.filter((c) => IN_THE_LOOP.indexOf(c.fn) >= 0).map((c) => c.fn + ':' + c.line),
+  /* ⛔ AN ALLOWLIST, NOT A DENYLIST, AND THAT DISTINCTION IS THE WHOLE POINT OF THIS ROUND. My first
+     version of this check listed the functions that must NOT close the microphone
+     (['kioskTurn', 'kioskWatchdog', 'pvListen']) — which is a list I wrote from memory, so a NEW
+     function added inside the interview loop would not have been on it and would have passed
+     silently. That is the same defect as the fifteen-id element list and the five-landscape viewport
+     list: a population chosen by its author cannot contain what its author forgot.
+     Turned round, every mic-closing site must NAME ITSELF as a lifecycle boundary or a human
+     action, and anything new is red by default. Each entry below is a place where listening is
+     genuinely over — the screen closing, staff exiting, the pause toggle, the hand-off into room
+     capture, a finished interview, or the Setup voice preview, which has no kiosk at all. */
+  const MIC_MAY_CLOSE = ['setupForm', 'kioskClose', 'kioskRequestEnd', 'kioskPauseToggle', 'openKiosk',
+    'kioskAmbientStart', 'kioskAmbientStop', 'kioskStopBounded', 'kioskFinish'];
+  assert.deepEqual(closers.filter((c) => MIC_MAY_CLOSE.indexOf(c.fn) < 0).map((c) => c.fn + ':' + c.line),
     [],
-    '🚨 A FUNCTION INSIDE THE INTERVIEW LOOP CLOSES THE MICROPHONE (pvStopVoice). kioskTurn runs on ' +
-    'every answer and kioskWatchdog re-opens the mic on the next line, so this is a tear-down and ' +
-    'rebuild once per turn: the replacement recogniser starts listening at a moment nobody chose, ' +
-    'and a fragment is byte-identical to a whole answer. Use pvAbandonSpeech, which silences the ' +
-    'sentence and leaves the microphone alone.');
+    '🚨 A FUNCTION THAT IS NOT A LIFECYCLE BOUNDARY CLOSES THE MICROPHONE (pvStopVoice). If it runs ' +
+    'while an interview is in progress — kioskTurn runs on every answer, kioskWatchdog re-opens the ' +
+    'mic on the next line — it is a tear-down and rebuild once per turn: the replacement recogniser ' +
+    'starts listening at a moment nobody chose, and a fragment is byte-identical to a whole answer. ' +
+    'Use pvAbandonSpeech, which silences the sentence and leaves the microphone alone. If listening ' +
+    'really is over, add the function to MIC_MAY_CLOSE and say why.');
   /* (4) and the two halves really are separate functions, so a caller has to choose */
   assert.ok(/function pvAbandonSpeech\(\)/.test(src) && /function pvStopMicOnly\(\)/.test(src),
     'the speech stop and the microphone teardown are one function again, so no caller can silence ' +
@@ -408,6 +513,39 @@ const liveSrc = lift('  var pvAudioStartAt = 0;', '\n  /* the continuation of th
     'pvAudioRemainingMs invents a wait when no sentence is in flight, so every caller that re-arms ' +
     'against it would postpone itself for nothing');
 
+  /* ── AND THE WHOLE TRUTH TABLE, NOT FIVE CASES I CHOSE ────────────────────────────────────────
+     The four named cases above exist for their failure messages. The property they are examples of
+     is checked here over the COMPLETE product of the predicate's inputs (element playing, synth
+     speaking, a sentence in flight, a start time, an age inside or past the ceiling — 2^4 x 2 = 32
+     states), because a fence is only as good as the state it was never shown. The invariant:
+        pvAudioLive() can answer YES only inside a trust window that a sentence opened.
+     Everything else is a hang waiting for a platform to misbehave. */
+  {
+    const rows = [];
+    for (const el of [null, { paused: false, ended: false }, { paused: true, ended: true }]) {
+      for (const synth of [false, true]) {
+        for (const saying of ['', 'a sentence']) {
+          for (const noStart of [false, true]) {
+            for (const age of [10, ceiling + 1000]) {
+              const r = ask({ el, synth, saying, noStart, age });
+              const inWindow = !noStart && age <= ceiling;
+              if (r.live && !inWindow) {
+                rows.push(JSON.stringify({ el: el && (el.paused ? 'done' : 'playing'), synth, saying: !!saying,
+                  startAt: !noStart, age, live: r.live }));
+              }
+            }
+          }
+        }
+      }
+    }
+    assert.deepEqual(rows, [],
+      '🚨 pvAudioLive() ANSWERED YES OUTSIDE ANY TRUST WINDOW, in ' + rows.length + ' of 24 states. ' +
+      'Every one of them is a permanent hang: the predicate gates the silence watchdog, the closing ' +
+      'net, the patient-facing transcript and the held/clean tag on every recognition segment, so a ' +
+      'YES it cannot take back deafens the kiosk for the rest of the visit with no fault showing. ' +
+      'States: ' + rows.join(' | '));
+  }
+
   /* (2) finish() RELEASES THE ELEMENT, so the state above cannot even be reached. */
   const speakSrc = lift('function pvSpeakVoiced(text, then, voiceOverride, shape)',
     '\n    var t = String(text == null', 'pvSpeakVoiced head');
@@ -423,6 +561,11 @@ const liveSrc = lift('  var pvAudioStartAt = 0;', '\n  /* the continuation of th
     var pvNorm = function (t) { return String(t).toLowerCase(); };
     var clearTimeout = function () {};
     var setTimeout = function () { return 1; };
+    /* the restart gate is lifted, not stubbed: finish() stamps the boundary through it, and group
+       T7 relies on that being the SHIPPED call rather than a test double */
+    var pvRec = null;
+    var isFn = function (f) { return typeof f === 'function'; };
+    ${reAskSrc}
     ${liveSrc}
     ${speakSrc}
       pvSaying = pvNorm(text);
@@ -491,6 +634,243 @@ const liveSrc = lift('  var pvAudioStartAt = 0;', '\n  /* the continuation of th
     ' expiries, so an ordinary close is delayed by up to a minute');
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   T7. THE CONTINUATION. THIS IS THE GROUP ROUND 6 DID NOT HAVE, AND ITS ABSENCE IS WHY MOVING THE
+   BOUNDARY FROM SEGMENT TO TURN CHANGED NOTHING AT ALL.
+   ⛔ A "turn" is ended by a 1.3-second silence timer. A patient who pauses mid-sentence for longer
+   than that has ONE answer split into TWO turns: turn 1 (held) is refused, turn 2 is clean and files
+   AS A COMPLETE ANSWER. It IS a complete turn by the system's definition and it is NOT one by the
+   patient's — so round 6 filed "in my left leg" exactly as round 5 filed it, and a lens running the
+   same probe against both files got the same strings.
+   🔑 The fix is not a finer boundary. It is that a continuation is UNFILEABLE: refuse -> RE-ASK ->
+   accept only speech that BEGAN AFTER the re-prompt finished. Every case below is that law.
+   ⚠️ THE GATE IS DRIVEN BY THE MODULE'S OWN FUNCTIONS: `arm()` is pvArmReAsk (what kioskReAsk calls)
+   and `reprompted()` is pvOpenReAsk (what pvSpeakVoiced's finish() calls when the asking ends).
+   Nothing here re-implements either, and the refusal itself arms the gate inside submit().
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+{
+  for (const [label, whole, head] of NEGATIONS) {
+    const tail = whole.slice(head.length).trim();
+
+    /* (a) THE ROUND-6 DEFECT, EXACTLY. The head arrives over the question and is refused. The
+       patient pauses longer than 1.3s — so the quiet timer FIRES between the two halves — and then
+       finishes their sentence into a silent room. The remainder must NOT be filed. */
+    const split = mic({ audioLive: true, saying: 'is the pain in your left leg' });
+    split.inst.emit([{ text: head, final: true }]);
+    split.inst.live(false);
+    split.inst.quiet();                              /* >1.3s of silence: turn 1 ends and is refused */
+    assert.deepEqual(split.inst.got.filed, [], 'the held head of the sentence was filed');
+    assert.deepEqual(split.inst.got.refused, [head], 'the held head was not refused whole');
+    assert.strictEqual(split.inst.got.why[0], 'overlap',
+      'the first refusal was reported as "' + split.inst.got.why[0] + '" rather than an overlap');
+    /* the patient carries on, in a silent room, with no re-prompt spoken yet */
+    split.inst.emit([{ text: tail, final: true }]);
+    split.inst.quiet();
+    assert.deepEqual(split.inst.got.filed, [],
+      '🚨🚨 A CONTINUATION WAS FILED AS A COMPLETE ANSWER: ' + JSON.stringify(split.inst.got.filed) +
+      '. "' + whole + '" was split by a pause longer than the 1.3-second quiet timer, so its head ' +
+      'became one turn (refused, correctly) and its tail became another — and the tail is a whole ' +
+      'turn by this system\'s definition and a FRAGMENT by the patient\'s. This is round 5 and round ' +
+      '6 verbatim: "' + tail + '" reads as fluent, plausible and INVERTED, with nothing to mark that ' +
+      'the negation was removed. A finer boundary cannot fix this. The answer must be refused until ' +
+      'the patient has been RE-ASKED and has STARTED AGAIN.');
+    assert.deepEqual(split.inst.got.refused, [head, tail],
+      'the continuation was neither filed nor reported. A patient who is talking must be told we are ' +
+      'not taking it, or they answer a question nobody is listening to. Refused: ' +
+      JSON.stringify(split.inst.got.refused));
+    assert.strictEqual(split.inst.got.why[1], 'continuation',
+      'the continuation was refused for reason "' + split.inst.got.why[1] + '". The caller needs to ' +
+      'know which refusal this is: an overlap may be our own echo and needs no apology, while a ' +
+      'continuation always has a patient waiting to be asked again.');
+
+    /* (b) AND AFTER THE RE-PROMPT, THE WHOLE ANSWER IS FILED BYTE-EXACT. The gate must not become a
+       kiosk that cannot take an answer — that is the other failure this file exists to prevent. */
+    split.inst.arm();                                /* kioskReAsk: discard, close the gate */
+    assert.deepEqual(split.inst.gate(), { armed: true, from: 0 },
+      'after a refusal the gate is not armed with an UNKNOWN boundary. from:0 is what refuses ' +
+      'everything until the asking has actually finished; a non-zero boundary set before the ' +
+      'sentence has been said would accept speech the patient began before hearing it.');
+    split.inst.reprompted();                         /* finish(): the asking has been said */
+    const at = split.inst.gate().from;
+    assert.ok(at > 0, 'the boundary was never stamped, so nothing can ever be filed again');
+    split.inst.emit([{ text: whole, final: true }]);
+    split.inst.quiet();
+    assert.deepEqual(split.inst.got.filed, [whole],
+      '🚨 THE PATIENT SAID THE WHOLE ANSWER AGAIN AFTER BEING ASKED, AND IT WAS NOT FILED (' + label +
+      '). A gate that refuses for ever is a kiosk that cannot take an answer — the 9-of-12 and ' +
+      '22-of-22 regression in a different costume. Filed: ' + JSON.stringify(split.inst.got.filed));
+    assert.deepEqual(split.inst.gate(), { armed: false, from: 0 },
+      'the gate did not stand down when an answer was filed WHOLE. It must, or every later turn in ' +
+      'the interview is measured against a stale boundary.');
+  }
+
+  /* (c) THE BOUNDARY IS A *START* TIME, NOT THE ABSENCE OF AN OVERLAP — and this is the case where
+     the start-time term is the ONLY thing doing the work. The patient talks THROUGH the re-ask: their
+     continuation is already accumulating when the asking finishes, and no audio is live by the time
+     the quiet timer submits it. Held/clean says "clean". The answer must still be refused, because
+     the system knows it began before the patient could have heard the asking. */
+  {
+    const h = mic({ audioLive: true, saying: 'and how long has that been going on?' });
+    h.inst.emit([{ text: 'about three', final: true }]);
+    h.inst.live(false);
+    h.inst.tick(1400);
+    h.inst.quiet();                                  /* turn 1 refused; the gate arms, boundary unknown */
+    assert.strictEqual(h.inst.got.why[0], 'overlap', 'the first turn was not refused as an overlap');
+    h.inst.tick(300);
+    h.inst.emit([{ text: 'weeks maybe a month', final: true }]);  /* the continuation STARTS here */
+    h.inst.tick(600);
+    h.inst.reprompted();                             /* the asking only finishes NOW */
+    h.inst.tick(1400);
+    h.inst.quiet();
+    assert.deepEqual(h.inst.got.filed, [],
+      '🚨 AN ANSWER THAT BEGAN BEFORE THE RE-PROMPT FINISHED WAS FILED. Nothing was playing while its ' +
+      'words arrived, so the held/clean test says "clean" — and that is exactly why held/clean cannot ' +
+      'be the only term. The system has to know where the answer BEGAN, not merely that no sound ' +
+      'overlapped it. Filed: ' + JSON.stringify(h.inst.got.filed));
+    assert.strictEqual(h.inst.got.why[1], 'continuation',
+      'refused for "' + h.inst.got.why[1] + '" rather than as a continuation');
+    /* ⚠️ AND EVERY REFUSAL DEMANDS A FRESH ASKING. The boundary went back to "unknown" when this turn
+       was refused, so the previous asking cannot license the next answer either — otherwise one
+       re-prompt would authorise an unlimited series of fragments. */
+    assert.deepEqual(h.inst.gate(), { armed: true, from: 0 },
+      'the boundary survived a second refusal, so ONE asking now licenses every later fragment');
+    /* and the same words, begun AFTER a fresh asking, are filed: the term is a time, not a blacklist */
+    h.inst.tick(400);
+    h.inst.reprompted();
+    h.inst.tick(400);
+    h.inst.emit([{ text: 'weeks maybe a month', final: true }]);
+    h.inst.tick(1400);
+    h.inst.quiet();
+    assert.deepEqual(h.inst.got.filed, ['weeks maybe a month'],
+      'the identical words, begun after the asking finished, were still refused — so the gate is not ' +
+      'a start-time test at all and the interview cannot move on. Filed: ' +
+      JSON.stringify(h.inst.got.filed));
+  }
+
+  /* (d) AND AN ORDINARY INTERVIEW IS UNTOUCHED: with no refusal anywhere, the gate is inert. If it
+     were not, it would be refusing answers on every turn and nobody would notice until a chart was
+     empty. */
+  {
+    const h = mic({ audioLive: false, saying: 'is it worse in the morning, or the evening?' });
+    assert.deepEqual(h.inst.gate(), { armed: false, from: 0 },
+      'the restart gate is armed before anything has been refused, so it is gating ordinary turns');
+    for (const said of ['in the morning', 'the left one', 'yes']) {
+      const g = mic({ audioLive: false, saying: 'is it worse in the morning, or the evening?' });
+      g.inst.emit([{ text: said, final: true }]);
+      g.inst.quiet();
+      assert.deepEqual(g.inst.got.filed, [said],
+        '🚨 A PATIENT\'S ANSWER WAS DROPPED BY THE RESTART GATE: "' + said + '". Nothing had been ' +
+        'refused, so there is no continuation to protect against and nothing to gate.');
+    }
+  }
+
+  /* ══ (d2) 🚨 AND AN ECHO REFUSAL MUST NOT GATE THE NEXT REAL ANSWER ═══════════════════════════
+     ⛔ THIS IS THE ONE MY OWN FIX GOT WRONG FIRST, AND IT COST A REAL ANSWER. submit() arms the gate
+     on EVERY refusal so no caller can forget to — but a turn whose every word is a word we were
+     saying is our own loudspeaker, not a patient, and a room with imperfect echo cancellation
+     produces one on nearly every question. Left armed there it DROPPED the patient's next answer:
+     measured with the rendered consent/turn-taking proof, "My right knee is swollen and it gave out
+     yesterday" filed 0 of 1 with the gate armed on echo, 1 of 1 with the stand-down.
+     So the caller runs the calibrated echo test and stands the gate down when nothing of theirs was
+     ever in flight (pvReAskStandDown), and this fixture is the control for that decision. */
+  {
+    const h = mic({ audioLive: true, saying: 'what brings you in today',
+      echo: ['what brings you in today'] });
+    h.inst.emit([{ text: 'what brings you in today', final: true }]);   /* our own voice, refused */
+    h.inst.live(false);
+    h.inst.tick(1400);
+    h.inst.quiet();
+    assert.deepEqual(h.inst.got.refused, ['what brings you in today'], 'the echo was not refused');
+    /* the caller's decision, executed: every word was ours, so the gate stands down */
+    h.inst.standDown();
+    assert.deepEqual(h.inst.gate(), { armed: false, from: 0 },
+      'the gate is still armed after an ALL-ECHO refusal. Nothing of the patient\'s was ever in ' +
+      'flight, so there is no continuation to protect against — and a room with imperfect echo ' +
+      'cancellation produces one of these on nearly every question.');
+    h.inst.tick(600);
+    h.inst.emit([{ text: 'my right knee is swollen and it gave out yesterday', final: true }]);
+    h.inst.tick(1400);
+    h.inst.quiet();
+    assert.deepEqual(h.inst.got.filed, ['my right knee is swollen and it gave out yesterday'],
+      '🚨 A REAL ANSWER WAS DROPPED AFTER AN ECHO REFUSAL. The gate armed itself on our own ' +
+      'loudspeaker coming back through the microphone, and then refused the patient. That is the ' +
+      'harm class this file exists to keep out — 9 of 12 and then 22 of 22 answers deleted in an ' +
+      'earlier round. Filed: ' + JSON.stringify(h.inst.got.filed));
+  }
+
+  /* (e) THE DISCARD IS REAL: material already accumulated when the refusal happens can never
+     re-appear inside the next answer. Round 5's remainder came back through exactly this door. */
+  {
+    const h = mic({ audioLive: true, saying: 'is the pain in your left leg' });
+    h.inst.emit([{ text: 'no pain in my', final: true }]);
+    h.inst.live(false);
+    h.inst.arm();                                    /* refused elsewhere; everything in flight goes */
+    h.inst.reprompted();
+    h.inst.emit([{ text: 'no pain in my left leg', final: true }]);
+    h.inst.quiet();
+    assert.deepEqual(h.inst.got.filed, ['no pain in my left leg'],
+      '🚨 THE REFUSED WORDS SURVIVED INTO THE NEXT ANSWER: ' + JSON.stringify(h.inst.got.filed) +
+      '. pvArmReAsk must DISCARD the live recogniser\'s accumulation (rec.__endTurn), or the answer ' +
+      'the patient gives after being asked again is their new words with the old fragment welded to ' +
+      'the front — a sentence nobody said.');
+  }
+
+  /* (f) AND THE MECHANISM IS WHERE THE NEXT ROUND WILL LOOK FOR IT. Three structural facts, because
+     each of them is a way a later round could quietly reintroduce a boundary. */
+  {
+    const code = codeOnly(src);
+    /* the boundary is stamped in ONE place, and it is the end of a sentence */
+    const finishBody = /function finish\(\)\s*\{([\s\S]*?)\n    \}/.exec(codeOnly(
+      src.slice(src.indexOf('function pvSpeakVoiced'))));
+    assert.ok(finishBody && /pvOpenReAsk\(\)/.test(finishBody[1]),
+      'THE RESTART BOUNDARY IS NO LONGER STAMPED WHERE A SENTENCE ENDS. pvSpeakVoiced\'s finish() is ' +
+      'the single place in this file where speech finishes, so it is the only place that can say when ' +
+      'the last thing we said to the patient ended. Moved to a call site, the next call site added ' +
+      'does not stamp it — and an unstamped boundary refuses every answer for the rest of the visit.');
+    const stamps = (code.match(/pvOpenReAsk\(\)/g) || []).length;
+    assert.strictEqual(stamps, 2,
+      'pvOpenReAsk is called from ' + stamps + ' place(s) (expected 2: its own definition and ' +
+      'finish()). More than one stamping site means more than one opinion about where an answer may ' +
+      'begin, which is a boundary by another name.');
+    /* the refusal itself arms the gate, so no caller can forget to */
+    const submitBody = /function submit\(\)\s*\{([\s\S]*?)\n    \}/.exec(codeOnly(
+      src.slice(src.indexOf('function pvListen(onFinal'))));
+    assert.ok(submitBody && /pvReAsk = true/.test(submitBody[1]),
+      'THE GATE IS NO LONGER ARMED BY THE REFUSAL ITSELF. If arming lives only in the caller, then a ' +
+      'refusal path that forgets to call it files the next fragment — and there are three refusal ' +
+      'paths (overlap, echo, continuation). Arming in submit() is what makes a continuation ' +
+      'structurally unfileable rather than unfileable by convention.');
+    assert.ok(/pvClearReAsk\(\)/.test(submitBody[1]),
+      'the gate never stands down inside submit(), so it must be cleared somewhere a turn merely ' +
+      'ARRIVED — which re-opens the hole it exists to close');
+    /* and the patient is asked again, out loud, in plain words */
+    assert.ok(/REASK_OVERLAP_LINE|REASK_CONT_LINE/.test(code) &&
+      /pvSpeakShaped\(line,/.test(code),
+      'THE RE-ASK IS NOT SPOKEN. Round 6 printed a hint on the transcript line and nothing else — a ' +
+      'patient who is mid-sentence neither reads it nor stops, which is how the rest of their ' +
+      'sentence arrived as a fresh "complete" turn. Refuse -> RE-PROMPT -> accept only what starts ' +
+      'after it; the middle step has to be audible.');
+    assert.ok(/kioskLine\('hint', line\)/.test(code),
+      'the re-ask is spoken but never shown, so a patient with the sound down is told nothing');
+    /* it may not cut the sentence it is apologising for */
+    const reask = lift('  function kioskReAsk(why)', '\n  /* the asking itself', 'kioskReAsk');
+    assert.ok(/if \(pvAudioLive\(\)\)/.test(reask) && !/pvAbandonSpeech\(\)/.test(reask),
+      'kioskReAsk CUTS THE SENTENCE IT IS APOLOGISING FOR. A refusal usually arrives because the ' +
+      'patient talked over a question, so that question is very often still playing — and abandoning ' +
+      'it to say sorry is the owner\'s original complaint ("it never gets out everything it wants to ' +
+      'say") caused by the fix for a different one. It must WAIT: the sentence finishes, its own ' +
+      'ending stamps the boundary, and the asking happens then.');
+    assert.ok(/kiosk\.reAsks > REASK_MAX/.test(code),
+      'the asking is unbounded, so a patient who keeps talking over the avatar is apologised to for ' +
+      'ever');
+    assert.ok(!/pvClearReAsk\(\)/.test(reask),
+      'kioskReAsk RELEASES THE GATE to break a stall. That puts round 6 back for exactly one turn, ' +
+      'which is all it takes: the bound belongs on the APOLOGY, never on the filing rule. Every ' +
+      'sentence the kiosk speaks — including the 9-second nudge — stamps a fresh boundary, so a ' +
+      'patient can always get an answer in without the gate being opened by hand.');
+  }
+}
+
 console.log('PASS a turn is filed whole or refused whole, and nothing hangs:');
 console.log('  T1 the four permanent controls — "no pain in my left leg", "not the right one", ' +
   '"never on the left side", "denies chest pain" — each survive BYTE-EXACT when the room is theirs ' +
@@ -510,3 +890,12 @@ console.log('  T5 pvListen has exactly one caller, that caller refuses to rebuil
 console.log('  T6 the audio fence cannot be stuck true outside a sentence or past its ceiling, ' +
   'finish() pauses and releases the element it declared finished, and the closing net reaches ' +
   'kioskFinish through a bounded set of extensions even when the audio never reports itself done.');
+console.log('  T7 THE CONTINUATION — the case round 6 did not have, which is why moving the ' +
+  'boundary from segment to turn changed nothing. For each of the four permanent controls, an ' +
+  'answer split by a pause LONGER than the 1.3s quiet timer is refused in both halves and no ' +
+  'fragment is filed; after the re-prompt the whole sentence is filed byte-exact; an answer that ' +
+  'BEGAN before the asking finished is refused even though nothing was playing; every refusal ' +
+  'demands a fresh asking; the refused words can never re-appear inside the next answer; an ' +
+  'interview with no refusal is untouched; and the mechanism is structural — the boundary is ' +
+  'stamped only where a sentence ends, the gate is armed by the refusal itself, the re-ask is ' +
+  'both spoken and shown, and it never cuts the sentence it is apologising for.');

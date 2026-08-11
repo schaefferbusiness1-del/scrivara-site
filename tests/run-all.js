@@ -578,6 +578,20 @@ const tests = [
      visible button. Executes the shipped fence, handlers, watchdog, audio playback and
      arbitrator; the layout is measured by rendering (see the two files below). */
   'avatar-half-duplex-and-one-live-region.test.js',
+  /* 2026-08-10 av-6.3.1, THE THIRD ROUND OF ONE DEFECT AT A FINER BOUNDARY. Round 4 closed the
+     microphone while the avatar spoke, so a patient who answered before the question ended had the
+     head of their sentence swallowed and the TAIL filed as a complete answer ("no pain in my left
+     leg" -> "pain in my left leg"). Round 5 opened the microphone and tagged each recognition
+     SEGMENT held/clean — but an answer spans several segments, so the held leading segment was
+     refused and the CLEAN REMAINDER was filed as a complete answer: the identical inversion, one
+     boundary finer, and its own suite pinned that as correct behaviour.
+     The unit is the TURN now, and this file is where that is enforced: the four permanent controls
+     ("no pain in my left leg", "not the right one", "never on the left side", "denies chest pain")
+     must each survive byte-exact or be refused entire, with real-answer controls beside them so the
+     refusal gate and the filing gate can never be merged again. It also holds the two HANGS the
+     audio-authority work introduced — a fence that could stick true for the rest of a visit, and a
+     one-shot closing net that evaporated — as bounded waits that assert PROGRESS. */
+  'avatar-turn-is-whole-or-refused.test.js',
   /* 2026-08-10 av-6.3.0 review round: the overlap was measured by a RENDERED harness that
      enumerated a hand-written list of fifteen element ids — and #mlsAvKioskOrders, an opaque white
      card painted straight over the live transcript, was not one of them. So the harness could not

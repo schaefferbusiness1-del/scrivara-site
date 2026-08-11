@@ -132,6 +132,23 @@ function lift(startNeedle, endNeedle, what) {
 }
 
 const pvListenSrc = lift('function pvListen(onFinal, onInterim, onDead, onOverlap)', '\n  /* =====', 'pvListen');
+/* THE RESTART GATE, LIFTED RATHER THAN STUBBED (av-6.3.2). Every harness below that executes
+   pvListen or pvSpeakVoiced's finish() needs it, and a stub would be a re-implementation of the very
+   thing under test — this lane has already shipped a stub looser than the real thing that hid the
+   call it was written to catch.
+   ⚠️ AND IT MUST BE DECLARED INSIDE EACH HARNESS. pvReAsk is ASSIGNED in submit() and pvListen has
+   no 'use strict', so an undeclared one becomes a GLOBAL and the armed gate leaks from one fixture
+   into the next — measured: the straddle fixture armed it and the clean control's answer was then
+   refused as a continuation. */
+/* ⛔ AND ITS ABSENCE IS AN ASSERTION, NOT A LIFT ERROR: against the pre-fix bytes a bare lift() dies
+   with "start marker is gone", which reads as a broken TEST rather than a missing MECHANISM. */
+assert.ok(src.indexOf('  var pvReAsk = false;') > 0,
+  '🚨🚨 THERE IS NO RESTART GATE IN THIS FILE. A refusal then tells the patient nothing and gates ' +
+  'nothing: the next thing the recogniser delivers is filed, and because a "turn" ends on a ' +
+  '1.3-second silence timer that is routinely the SECOND HALF of the sentence just refused. The ' +
+  'mechanism has to be refuse -> RE-ASK -> accept only speech that BEGAN after the asking.');
+const reAskSrc = lift('  var pvReAsk = false;',
+  '  /* ── WHY THERE IS NO LONGER A DEFERRED LISTEN', 'the restart gate');
 /* THE SHIPPED pvListen, EXECUTED against a fake recogniser whose result stream we control, with
    `audioLive` under the test's thumb so a segment can be made to start during playback or after
    it. Nothing here is a re-implementation: the recogniser's handlers are the shipped ones. */
@@ -162,6 +179,7 @@ function mic(opts) {
       safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); });
       pvRec = null;
     }
+    ${reAskSrc}
     ${pvListenSrc}
     var got = { filed: [], refused: [], painted: [], dead: 0 };
     var started = pvListen(
@@ -383,6 +401,16 @@ function harness(opts) {
     var kioskLineState = function () { return { kind: cfg.heldKind || '', holdMs: 0 }; };
     var kioskNonce = function () { return 'an-test'; };
     var kioskTurn = function (answer, nonce) { log.push('TURN:' + answer); };
+    /* THE RE-ASK IS EXECUTED, NOT STUBBED (av-6.3.2): kioskReAsk and kioskReAskSpeak are inside the
+       lifted kioskListen block, so what the patient HEARS and SEES on a refusal is the shipped code.
+       pvSpeakShaped is the only stub, and it does what pvSpeakVoiced's finish() does in the order it
+       does it: stamp the restart boundary, THEN run the continuation. */
+    var pvSpeakShaped = function (t, then, shape) {
+      log.push('speak:' + String(t).slice(0, 48));
+      pvOpenReAsk();
+      if (then) safe(then);
+    };
+    ${reAskSrc}
     var kioskListenCalls = 0;
     ${kioskListenSrc}
     ${kioskSkipSrc}
@@ -392,7 +420,14 @@ function harness(opts) {
       interim: function (t) { return handlers.interim && handlers.interim(t); },
       final: function (t) { return handlers.final && handlers.final(t); },
       dead: function () { return handlers.dead && handlers.dead(); },
-      overlap: function (t) { return handlers.overlap && handlers.overlap(t); },
+      /* the refusal REASON is forwarded: pvListen tells the caller which refusal this is ('overlap' or
+         'continuation'), and the two are handled differently — an overlap may be our own echo and
+         needs no apology, a continuation always has a patient waiting to be asked again. */
+      overlap: function (t, why) { return handlers.overlap && handlers.overlap(t, why); },
+      /* the restart gate, as submit() leaves it: EVERY refusal arms it, and it is this handler's job
+         to decide whether the refusal was our own loudspeaker (stand down) or the patient (re-ask) */
+      armGate: function () { pvArmReAsk(); },
+      gate: function () { return pvReAskState(); },
       say: function (v) { pvSaying = v; },
       live: function (v) { audioLive = v; },
       saying: function () { return pvSaying; },
@@ -631,6 +666,9 @@ function harness(opts) {
       var pvEchoHold = function (t) { log.push('echoHold:' + t); };
       var pvNorm = function (t) { return String(t).toLowerCase(); };
       var clearTimeout = function () {};
+      var pvRec = null;
+      var isFn = function (f) { return typeof f === 'function'; };
+      ${reAskSrc}
       ${liveSrc}
       ${stopSrc}
       /* pvSpeakVoiced's real head, cut off just before it starts fetching audio: everything this
@@ -732,11 +770,88 @@ function harness(opts) {
     'the ESTIMATED-duration speech watchdog clears early — so "take your time" is spoken over the ' +
     'second half of the question, and the question is cut off to say it. The fence must ask ' +
     'pvAudioLive(), which reads the audio element and the synthesiser.');
-  /* AND THE WAIT IS BOUNDED: a sentence that keeps reporting itself live cannot postpone the
-     watchdog for ever, or a stuck audio signal becomes a silent kiosk by another route. */
-  assert.deepEqual(mk('', { audioWaits: 3 }, true).filter((l) => l.indexOf('arm:') !== 0).length > 0, true,
-    'THE WATCHDOG CAN BE POSTPONED FOR EVER by an audio signal that stays live. After a bounded ' +
-    'number of waits it must proceed — a stuck signal must degrade to a nudge, never to silence.');
+  /* ══ THE ASSERTION THAT USED TO LIVE HERE PINNED THIS ROUND'S OWN REGRESSION AS A REQUIREMENT ══
+     ⛔ av-6.3.1 wrote the fence as `if (pvAudioLive()) { if (audioWaits < 3) { wait; return; } }` and
+     asserted, here, that with audioWaits already at 3 the watchdog must "proceed" — which means reach
+     pvAbandonSpeech() and cut a live sentence mid-word to say "take your time" over it. The pre-fix
+     bytes had no such breach. The assertion read:
+         mk('', { audioWaits: 3 }, true) must log something other than an arm
+         "THE WATCHDOG CAN BE POSTPONED FOR EVER by an audio signal that stays live. After a bounded
+          number of waits it must proceed — a stuck signal must degrade to a nudge, never to silence."
+     The REQUIREMENT in that sentence is right; the behaviour it demanded is the exact harm this
+     lane exists to remove, and a suite that pins a regression as intended converts a defect into a
+     requirement. CORRECTED av-6.3.2, and the reason recorded here rather than in a commit message.
+     WHERE THE REQUIREMENT IS ACTUALLY MET: pvAudioLive() is FALSE outside the trust window that
+     begins when a sentence starts (group A0, and T6 in the turn suite, both of which EXECUTE it), so
+     a stuck signal cannot hold this fence shut. The re-arm is computed from pvAudioRemainingMs(), so
+     it lands AFTER that window closes — the wait terminates by construction, and the only way the
+     next tick still finds audio live is that a NEW sentence started, which is a kiosk that is
+     working rather than one that has stalled. So: it waits, however many times it has already
+     waited, and it never cuts. */
+  assert.deepEqual(mk('', { audioWaits: 3 }, true), ['arm:5750'],
+    '🚨 THE WATCHDOG CUT A LIVE SENTENCE. It fell through its own audio fence after a fixed number ' +
+    'of waits and reached pvAbandonSpeech(), which stops the audio mid-word, and then spoke a nudge ' +
+    'over the question it was supposed to be waiting for. That is the owner\'s report ("it never ' +
+    'gets out everything it wants to say") re-created by the guard written to prevent it. The wait ' +
+    'is already bounded where it belongs — pvAudioLive() is false outside the trust window — so no ' +
+    'cap here is needed and none may cut a sentence. Log: ' +
+    JSON.stringify(mk('', { audioWaits: 3 }, true)));
+  assert.deepEqual(mk('', { audioWaits: 99 }, true), ['arm:5750'],
+    'the watchdog cuts a live sentence once it has waited enough times. There is no number of ' +
+    'previous waits that makes cutting the patient\'s question off correct.');
+  /* AND THE WAIT REALLY DOES TERMINATE, asserted positively rather than bought with a breach: the
+     re-arm is the AUDIO WINDOW's own remainder, never a fixed interval, so the next tick lands past
+     the point at which pvAudioLive() must answer no. A fixed re-arm would be a polling timer. */
+  assert.deepEqual(mk('', {}, true), ['arm:5750'],
+    'the watchdog re-arms on a fixed interval rather than from pvAudioRemainingMs(). A fixed ' +
+    'interval is a poll (forbidden in this module) and it never lands past the audio trust window, ' +
+    'so it can spin for as long as a signal stays stuck instead of terminating by construction.');
+  /* ── AND THE COMPOSITION, EXECUTED: A STUCK SIGNAL DEGRADES TO A NUDGE BECAUSE THE FENCE CLOSES ─
+     This is the requirement the deleted assertion was reaching for, met without a breach. The REAL
+     pvAudioLive is lifted and handed an Audio element that is stuck reporting itself playing, with the
+     sentence's start time older than the trust ceiling. The watchdog must nudge — and it must nudge
+     because the fence answered no, not because it gave up and cut. */
+  {
+    const liveSrc = lift('  var pvAudioStartAt = 0;', '\n  /* the continuation of the sentence', 'pvAudioLive');
+    const stuckLog = [];
+    const out = new Function('log', `
+      var safe = function (f, d) { try { return f(); } catch (e) { return d; } };
+      var NUDGE_LINE = 'take your time';
+      var pvSaying = 'a sentence that never reports itself done';
+      var ttsAudioNow = { paused: false, ended: false };            /* stuck true, for ever */
+      var window = { speechSynthesis: { speaking: true } };          /* and so is the synthesiser */
+      var pvSpeakSeq = 1, pvWatchdog = null;
+      ${liveSrc}
+      /* the sentence started longer ago than any sentence this file can produce */
+      pvAudioStartAt = Date.now() - (PV_AUDIO_TRUST_MS + 5000);
+      var kiosk = { open: true, busy: false, completed: false, ambient: false, heard: false,
+        silent: 0, lastSay: 'q', nudgedFor: null, audioWaits: 0 };
+      var pvAbandonSpeech = function () { log.push('pvAbandonSpeech'); };
+      var pvSpeakShaped = function (t) { log.push('speak:' + t); };
+      var kioskListen = function () { log.push('kioskListen'); };
+      var kioskArmWatchdog = function (ms) { log.push('arm:' + ms); };
+      var kioskMood = function () {};
+      var kioskTurn = function () { log.push('finishTurn'); };
+      var kioskStopBounded = function () { log.push('stopBounded'); };
+      ${wd}
+      var playing = pvAudioPlaying(), fence = pvAudioLive();
+      kioskWatchdog();
+      return { stuckSignalSaysPlaying: playing, fenceSays: fence };
+    `)(stuckLog);
+    assert.strictEqual(out.stuckSignalSaysPlaying, true,
+      'this proof is not set up: the element is not reporting itself as playing, so nothing is stuck ' +
+      'and the case being proved does not exist');
+    assert.strictEqual(out.fenceSays, false,
+      'A SIGNAL STUCK TRUE HOLDS THE AUDIO FENCE SHUT FOR EVER. That is the hazard the deleted ' +
+      'audioWaits cap was aimed at, and the trust CEILING in pvAudioLive is where it is answered — ' +
+      'if the ceiling stops working, the watchdog waits for ever and the only remedy on offer is ' +
+      'cutting live sentences.');
+    assert.ok(stuckLog.some((l) => l.indexOf('speak:') === 0),
+      'A STUCK AUDIO SIGNAL SILENCED THE KIOSK. With the trust ceiling passed the fence must answer ' +
+      'no and the watchdog must nudge; it logged ' + JSON.stringify(stuckLog) + ' instead. This is ' +
+      'the "never to silence" half of the requirement, met by the fence closing rather than by the ' +
+      'watchdog cutting a sentence.');
+  }
   const nudged = mk('', {}, false);
   assert.ok(nudged.indexOf('pvAbandonSpeech') >= 0 && nudged.some((l) => l.indexOf('speak:') === 0),
     'the watchdog no longer nudges a silent patient at all — the interview would sit forever');
@@ -1017,9 +1132,10 @@ function harness(opts) {
   ];
   for (const [label, refused, novel, shouldTell] of CASES) {
     const h = harness({ pvSaying: 'is the pain in your back or in your neck', novel,
-      selfEcho: novel === 0 ? [refused] : [] });
+      selfEcho: novel === 0 ? [refused] : [], audioLive: false });
     h.inst.listen();
     const before = h.log.length;
+    h.inst.armGate();               /* submit() arms the gate on every refusal, before this handler runs */
     h.inst.overlap(refused);
     const said = h.log.slice(before).filter((l) => l.indexOf('line:hint') === 0);
     if (shouldTell) {
@@ -1044,6 +1160,95 @@ function harness(opts) {
     assert.ok(!h.log.slice(before).some((l) => l.indexOf('TURN:') === 0),
       'A REFUSED UTTERANCE WAS FILED ANYWAY (' + label + ') — the refusal path must never reach ' +
       'the server, or the whole distinction is decoration');
+    /* ══ 🚨 AND WHAT THIS HANDLER DOES WITH THE GATE IS THE DECISION MY OWN FIX GOT WRONG FIRST ════
+       ⛔ It armed the restart gate on the ECHO path too, reasoning that a wrong audio boundary is a
+       wrong audio boundary. It is not: every word of an echo turn is a word we were saying, so the
+       patient contributed NOTHING and there is no half-answer of theirs to protect — and a room with
+       imperfect echo cancellation produces one of these on nearly every question. Left armed, the
+       rendered consent proof measured it DROP the patient's next real answer ("My right knee is
+       swollen and it gave out yesterday": 0 of 1 filed armed, 1 of 1 with the stand-down). That is
+       the 9-of-12 / 22-of-22 harm class, re-entered through the fix for a different defect.
+       ⚠️ ASSERTED AFTER the apology assertions above, deliberately: A11b's control (the echo test
+       disabled) must land on "THE KIOSK APOLOGISED FOR ITS OWN ECHO", which is its own name. Put
+       first, this assertion stole that control's red and left A11b looking unproven. */
+    assert.strictEqual(h.inst.gate().armed, !!shouldTell,
+      shouldTell
+        ? 'a refusal that really was the PATIENT stood the restart gate DOWN, so the next thing they ' +
+          'say — the rest of the sentence they already started — is filable again (' + label + ')'
+        : '🚨 THE RESTART GATE STAYED ARMED ON AN ALL-ECHO REFUSAL (' + label + '). Nothing of the ' +
+          'patient\'s was ever in flight, so there is nothing to protect against — and the next ' +
+          'thing they say gets REFUSED. Measured cost: their real answer, dropped. Rooms with ' +
+          'imperfect echo cancellation produce one of these on nearly every question.');
+  }
+  /* ══ A11b. AND "TOLD" MEANS ASKED AGAIN, OUT LOUD (av-6.3.2) ═════════════════════════════════
+     ⛔ ROUND 6 PRINTED A HINT AND NOTHING ELSE, and that is the whole reason the defect survived: a
+     patient who is mid-sentence does not read a hint and does not stop, so the rest of their
+     sentence arrived as a fresh "complete" turn and was filed with its negation missing. A refusal
+     has to RE-PROMPT — and the answer that follows has to be one that began after the prompting. */
+  {
+    const h = harness({ pvSaying: 'is the pain in your left leg', novel: 3, audioLive: false });
+    h.inst.listen();
+    const before = h.log.length;
+    h.inst.overlap('no pain in my', 'overlap');
+    const after = h.log.slice(before);
+    assert.ok(after.some((l) => l.indexOf('speak:') === 0),
+      'THE RE-ASK IS NOT SPOKEN. The patient hears nothing at all when their answer is refused, so ' +
+      'they carry on talking — and the remainder of their sentence is then a whole turn by this ' +
+      'system\'s definition and a fragment by theirs. ' + JSON.stringify(after));
+    assert.ok(after.some((l) => l.indexOf('line:hint') === 0),
+      'the re-ask is spoken but never shown, so a patient with the sound down is told nothing');
+    /* and the WORDS are plain and ask for the whole answer again — read from the module's own
+       constants rather than from the truncated log line */
+    for (const name of ['REASK_OVERLAP_LINE', 'REASK_CONT_LINE']) {
+      const line = new RegExp('var ' + name + ' = ([\\s\\S]*?);\\n').exec(src);
+      assert.ok(line, name + ' is gone, so there is no plain-words re-ask for the patient to hear');
+      const words = line[1].replace(/'\s*\+\s*\n\s*'/g, '').replace(/^'|'$/g, '');
+      assert.ok(/again|start/i.test(words),
+        name + ' does not ask the patient to say it AGAIN or to START again. It has to be plain ' +
+        'words that tell them to give the whole answer over, or the next thing they say is a ' +
+        'continuation of the sentence we already refused: "' + words + '"');
+      assert.ok(!/error|overlap|segment|transcript|audio|buffer/i.test(words),
+        name + ' explains our plumbing to a patient: "' + words + '"');
+    }
+    assert.ok(after.some((l) => l.indexOf('pvListen') === 0 || l.indexOf('state:listening') === 0),
+      'nothing re-opened the interview after the asking, so the patient is asked to speak again and ' +
+      'nothing is listening: ' + JSON.stringify(after));
+  }
+  /* ⛔ AND IT MAY NOT CUT THE SENTENCE IT IS APOLOGISING FOR. A refusal usually arrives BECAUSE the
+     patient talked over a question, so that question is very often still playing. Speaking over it
+     (or abandoning it) is the owner's original complaint, produced by the fix for another one. */
+  {
+    const h = harness({ pvSaying: 'is the pain in your left leg', novel: 3, audioLive: true });
+    h.inst.listen();
+    const before = h.log.length;
+    h.inst.overlap('no pain in my', 'overlap');
+    const after = h.log.slice(before);
+    assert.ok(!after.some((l) => l.indexOf('speak:') === 0),
+      '🚨 THE RE-ASK TALKED OVER THE QUESTION IT WAS APOLOGISING FOR. Audio was still live: the ' +
+      'sentence must FINISH, and its own ending is what stamps the restart boundary (finish() -> ' +
+      'pvOpenReAsk). The asking is deferred to the turn\'s continuation. ' + JSON.stringify(after));
+    assert.ok(after.some((l) => l.indexOf('line:hint') === 0),
+      'the patient was told nothing at all while the question finished — the screen must still say ' +
+      'we missed it, even when the voice has to wait');
+    assert.strictEqual(typeof h.kiosk.reAskPending, 'string',
+      'the deferred asking was not recorded, so the turn continuation has nothing to say and the ' +
+      'patient is never asked again');
+  }
+  /* ⛔ AND A CONTINUATION IS ALWAYS SAID OUT LOUD, even when it reads like our own words. The echo
+     exemption exists so we do not apologise to a patient who never spoke; a continuation only
+     happens because a real answer was already refused, so there IS somebody waiting. */
+  {
+    const h = harness({ pvSaying: 'is the pain in your back or in your neck', novel: 0,
+      selfEcho: ['in your neck'], audioLive: false });
+    h.inst.listen();
+    const before = h.log.length;
+    h.inst.overlap('in your neck', 'continuation');
+    const after = h.log.slice(before);
+    assert.ok(after.some((l) => l.indexOf('speak:') === 0),
+      'A CONTINUATION WAS REFUSED IN SILENCE because it scored zero novel words. The echo exemption ' +
+      'is about not apologising to a patient who never spoke; a continuation exists only because a ' +
+      'real answer was already refused, so going quiet leaves that patient answering a question ' +
+      'nobody is listening to. ' + JSON.stringify(after));
   }
   /* and a finished/closed kiosk says nothing at all: the rest screen must not be overwritten */
   for (const state of [{ completed: true }, { open: false }]) {
@@ -1312,7 +1517,13 @@ console.log('PASS avatar half-duplex + one live region:\n' +
   'now cut nothing and every one is counted; 24 real-answer filings still reach the server; the ' +
   'one interrupt is a wired, class-revealed, pre-consent-hidden BUTTON that works while the ' +
   'loudspeaker is audible.\n' +
-  '  A6-A11 an interrupted sentence ENDS rather than orphaning its continuation (the closing-line ' +
+  '  A6-A11 (av-6.3.2) the silence watchdog NEVER cuts a live sentence — the cap that used to fall ' +
+  'through onto one after three waits is gone and the assertion that pinned that as correct is ' +
+  'corrected in place, with the requirement it was reaching for now met where it belongs (a stuck ' +
+  'signal is answered by the trust ceiling, executed: the fence closes and the watchdog nudges); a ' +
+  'refusal RE-ASKS the patient out loud and on screen, in plain words, without cutting the sentence ' +
+  'it is apologising for; and ' +
+  'an interrupted sentence ENDS rather than orphaning its continuation (the closing-line ' +
   'hang), exactly once, and after the sound is stopped; the watchdog cannot nudge over a live ' +
   'sentence; the closing line cannot be cut at 12s; one sentence plays exactly once through three ' +
   'racing callbacks; and a refused utterance is said out loud to the patient — unless it was our ' +
