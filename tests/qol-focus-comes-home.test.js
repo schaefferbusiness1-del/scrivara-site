@@ -55,9 +55,15 @@ function makeRail(focusedWin, tabsById) {
   assert.ok(/> 90000 && !fgReadBusy\(\)\) fgFocusApp\(\);/.test(bg), 'F1: the alarm backstop defers too');
   assert.ok(bg.indexOf('self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), chartDeadlineAt)') > 0, 'F1: the chart lane stamps its deadline-bounded busy window');
   assert.ok(/__mlsChartReadBusyUntil[^\n]*msg\.deadlineAt/.test(bg), 'F1: the visits lane stamps too');
-  const emits = (si.match(/window\.postMessage\(\{ source: "mls-app", type: "mlsAppFocusMlsTab" \}/g) || []).length;
-  assert.strictEqual(emits, 1, 'F1: the site defines the end-of-op sender once');
-  assert.strictEqual((si.match(/__fgEndOfOp\(\);/g) || []).length, 4, 'F1: both user-initiated lanes send it on BOTH settle paths (2 dayPull owned + 2 retry)');
+  /* qol-2.3c: the end-of-op sender ALREADY EXISTS - runManagedAthenaOperation's
+     release path sends the verb once per ACQUIRED op (from:"mls-managed-pull"),
+     and schedule-history-pipeline pins that a refused caller never fires it.
+     A briefly-added duplicate settle-path sender doubled the signal and is
+     GONE; this pins both facts so neither regresses. */
+  assert.strictEqual((si.match(/type: "mlsAppFocusMlsTab", from: "mls-managed-pull"/g) || []).length, 1,
+    'F1: the managed-release end-of-op sender exists exactly once');
+  assert.strictEqual((si.match(/__fgEndOfOp/g) || []).length, 0,
+    'F1: no duplicate settle-path sender - release belongs to the lock owner');
   assert.ok(/'mlsAppFocusMlsTab'/.test(content) || /"mlsAppFocusMlsTab"/.test(content), 'F1: the bridge verb is whitelisted in content.js');
 
   /* ---- F3: the probe restores what it fronted ---- */
@@ -75,7 +81,7 @@ function makeRail(focusedWin, tabsById) {
   const advisoryIdx = si.indexOf('if (pullRunning || foreignPullLease()) {', dpIdx);
   const armIdx = si.indexOf('if (isFn(__armPresence)) __armPresence(); /* qol-2.3', dpIdx);
   assert.ok(advisoryIdx > 0 && armIdx > advisoryIdx, 'F5: presence arms only AFTER the advisory in-flight check passes');
-  assert.ok(/if \(__armedHere\) \{ __historyRetryForeground = false; __fgEndOfOp\(\); \}/.test(si), 'F5: disarm is owned - a refused call cannot strip a running batch');
+  assert.ok(/if \(__armedHere\) __historyRetryForeground = false;/.test(si), 'F5: disarm is owned - a refused call cannot strip a running batch');
 
   /* ---- F6: the ax route is day-scoped ---- */
   const axIdx = bg.indexOf('var axOnlyDate = String((frozenHint && frozenHint.onlyDate) || "");');

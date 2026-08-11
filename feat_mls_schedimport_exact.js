@@ -3993,8 +3993,8 @@
         __historyRetryForeground = true;
         __presenceBatchAnnounced = false;
         return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}).then(
-          function (v) { __historyRetryForeground = false; __fgEndOfOp(); return v; },
-          function (e) { __historyRetryForeground = false; __fgEndOfOp(); throw e; });
+          function (v) { __historyRetryForeground = false; return v; },
+          function (e) { __historyRetryForeground = false; throw e; });
       });
     }, retryBusy).then(function (receipt) {
       receipt.retryOf = String(history.requestId || "");
@@ -5023,16 +5023,18 @@
     var __armedHere = false;
     var __armPresence = function () { __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
     return Promise.resolve().then(function () { return __dayPullInner(opts, __armPresence); }).then(
-      function (v) { if (__armedHere) { __historyRetryForeground = false; __fgEndOfOp(); } return v; },
-      function (e) { if (__armedHere) { __historyRetryForeground = false; __fgEndOfOp(); } throw e; });
+      function (v) { if (__armedHere) __historyRetryForeground = false; return v; },
+      function (e) { if (__armedHere) __historyRetryForeground = false; throw e; });
   }
-  /* qol-2.3: the focus guardian's DESIGNED primary repayment trigger - the
-     app's explicit end-of-op mlsAppFocusMlsTab - was sent by NO site file,
-     so focus debt was repaid only by a 90s-quiet watchdog that could fire
-     MID-pull: the "keeps pulling me to mls" yank. The bridge verb exists and
-     is whitelisted (content.js); the guardian refuses unless the extension
-     still owns focus, so this can never fight the doctor. */
-  function __fgEndOfOp() { try { window.postMessage({ source: "mls-app", type: "mlsAppFocusMlsTab" }, location.origin); } catch (eFgEnd) {} }
+  /* qol-2.3c CORRECTION: the audit's "the end-of-op verb is sent by NO site
+     file" was WRONG - runManagedAthenaOperation's release path (:3818,
+     from:"mls-managed-pull") has sent mlsAppFocusMlsTab once per ACQUIRED op
+     all along, and schedule-history-pipeline pins that it never fires for a
+     refused caller. A duplicate settle-path sender added here briefly DOUBLED
+     the signal and fired without lock ownership - the arm-outside-the-guard
+     anti-pattern - and the old suite caught it. The mid-pull yank's real
+     mechanism was the bg watchdog firing during bridge-silent reads; that
+     deferral (qol-2.3, background.js) is the fix and stands. */
   function __dayPullInner(opts, __armPresence) {
     window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
     opts = opts || {};
