@@ -575,6 +575,21 @@ const tests = [
      avatar's own voice (measured 18% overall, 52% on merged words). Barge-in now needs
      positive evidence of another voice; the filing path is deliberately unchanged. */
   'avatar-finishes-its-sentences.test.js',
+  /* 2026-08-11 ROUND 10 — ONE TOKEN CANNOT ANSWER TWO QUESTIONS. Nine rounds failed at the same
+     defect: `pvSaying` carried BOTH "what are we saying right now" (read to keep a sentence alive)
+     and "what do we compare against for echo" (read by BOTH filing gates), so making the microphone
+     unable to end a sentence — which requires the liveness value to survive the recogniser teardown
+     — was inseparably a FILING change. Round 9 did exactly that and the avatar filed its own
+     question as the patient's answer in 9 of 15 ordinary turns. The cure is a SPLIT, not a gate:
+     pvEchoSaying is set and cleared at exactly the live build's pvSaying statements (plus pvStopMic,
+     which is pvStopVoice's extracted half), both filing gates read it, and only liveness outlives
+     the teardown. THE ACCEPTANCE GATE IS A DIFF: 32 derived scenarios are run through the shipped
+     bytes of THREE builds — this tree, the pinned live commit, and the pinned round-9 commit — and
+     this tree must be byte-identical to live while round 9 must not be. Every control runs in-suite:
+     the derived call-graph walk names pvListen/kioskTurn/kioskFinish as mic-reachable stops on live
+     and none here; the live watchdog cuts 4 / falls through 46 / re-arms 0 in 50 ticks and this one
+     0/0/50. */
+  'one-token-cannot-answer-two-questions.test.js',
   /* 2026-08-09 av-6.2.0: ONE OWNER for #mlsAvKioskInterim. Owner: "having text constantly
      overlapping and being such a paIUN IN THE ASS" — measured as FOURTEEN writers on one
      text node with no priority, clobbering each other mid-sentence. Executes the ranked
