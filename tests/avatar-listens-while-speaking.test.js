@@ -95,11 +95,26 @@ assert(/if \(piece && pvIsSelfEcho\(piece\)\) continue;/.test(source),
     'submit() must refuse BEFORE stopping the recogniser when nothing survived the filter — otherwise one echo leaves the kiosk deaf until the 9s watchdog');
 }
 /* the template must OUTLIVE the speech, boundedly. Both halves are asserted:
-   it is handed to the tail, and it is still cleared. */
-assert(/finished = true;[\s\S]{0,400}pvEchoHold\(pvSaying\);\s*\n\s*pvSaying = '';/.test(source),
-  'when speech finishes the spoken sentence must move to the BOUNDED echo tail and pvSaying must clear — clearing it outright is what filed the avatar\'s own questions as answers');
-assert(/pvEchoHold\(pvSaying\);\s*\n\s*pvSaying = '';/.test(source.slice(source.indexOf('function pvStopSpeechOnly'), source.indexOf('function pvStopVoice'))),
-  'barge-in must hold the tail too — the words already out of the speaker are still travelling through the recogniser');
+   it is handed to the tail, and it is still cleared.
+   2026-08-11 ROUND 10 — the template was SPLIT (see
+   one-token-cannot-answer-two-questions.test.js): pvEchoSaying is the echo
+   comparison both filing gates read, pvSaying is liveness. The back-reference
+   below is name-agnostic AND stronger than the literal it replaces: whichever
+   binding is handed to the tail must be the one that is then cleared, so a build
+   that holds one template and clears a different one fails here. The LIVENESS
+   clear is asserted separately, because it was the other half of the original
+   pin and losing it would wedge the uncapped silence wait for ever. */
+assert(/finished = true;[\s\S]{0,400}pvEchoHold\((pvEchoSaying|pvSaying)\);\s*\n\s*\1 = '';/.test(source),
+  'when speech finishes the spoken sentence must move to the BOUNDED echo tail and the template it was held from must clear — clearing it outright is what filed the avatar\'s own questions as answers, and holding one binding while clearing another is round 9\'s regression');
+assert(/finished = true;[\s\S]{0,400}\n\s*pvSaying = '';/.test(source),
+  'finish() no longer clears pvSaying, the LIVENESS value — the silence watchdog waits on it with no cap, so a template left set wedges the interview for ever: no nudge, no self-end, no summary');
+{
+  const so = source.slice(source.indexOf('function pvStopSpeechOnly'), source.indexOf('function pvStopVoice'));
+  assert(/pvEchoHold\((pvEchoSaying|pvSaying)\);\s*\n\s*\1 = '';/.test(so),
+    'barge-in must hold the tail too — the words already out of the speaker are still travelling through the recogniser');
+  assert(/\n\s*pvSaying = '';/.test(so),
+    'barge-in no longer clears pvSaying, the LIVENESS value — the sentence it just cut off would still look like it is playing');
+}
 assert(/var PV_ECHO_TAIL_MS = \d+;/.test(source), 'the echo tail must be bounded by a named constant');
 assert(/pvEchoDrop\(\);/.test(source), 'ambient room mode must DROP the tail — a room capture is verbatim');
 
@@ -229,8 +244,12 @@ vm.createContext(sandbox);
    the classifier cannot be executed without them */
 const cut = source.indexOf('var PV_ECHO_TAIL_MS') >= 0 ? source.indexOf('var PV_ECHO_TAIL_MS') : source.indexOf('function pvNorm');
 const normSrc = source.slice(cut, source.indexOf('function pvSpeakVoiced'));
-vm.runInContext("var pvSaying='';" + normSrc +
-  "\nthis.pvNorm=pvNorm; this.pvIsSelfEcho=pvIsSelfEcho; this.setSaying=function(v){pvSaying=v;};" +
+/* 2026-08-11 ROUND 10: both halves of the split template are declared and set
+   together, which is what the shipped pvSpeakVoiced does at the one place either
+   is set — so this sandbox drives the same state on the split build and on any
+   pre-split bytes an override points at. Nothing below is relaxed. */
+vm.runInContext("var pvSaying='', pvEchoSaying='';" + normSrc +
+  "\nthis.pvNorm=pvNorm; this.pvIsSelfEcho=pvIsSelfEcho; this.setSaying=function(v){pvSaying=v;pvEchoSaying=v;};" +
   "\nthis.hold=(typeof pvEchoHold==='function')?function(v){pvEchoHold(v);}:function(){};" +
   "\nthis.expire=function(){try{for(var i=0;i<pvEchoTail.length;i++)pvEchoTail[i].until=Date.now()-1;}catch(e){}};" +
   "\nthis.dropTail=(typeof pvEchoDrop==='function')?function(){pvEchoDrop();}:function(){};", sandbox);

@@ -33,11 +33,20 @@ const src = fs.readFileSync(process.env.AVATAR_SRC_OVERRIDE || path.join(root, '
 const from = src.indexOf('function pvNorm(t)');
 const to = src.indexOf('function pvSpeakVoiced(');
 assert.ok(from > 0 && to > from, 'could not extract the echo classifier');
+/* 2026-08-11 ROUND 10: the sentence template was SPLIT into two bindings with
+   different lifetimes — pvSaying is liveness ("is a sentence still playing", read
+   by barge-in, the room-floor learning and the silence watchdog) and pvEchoSaying
+   is the echo comparison (read by BOTH filing gates). See
+   one-token-cannot-answer-two-questions.test.js. This harness sets BOTH to the
+   same string, which is what the shipped pvSpeakVoiced does at the one place
+   either is set — so it drives the same state on the split build and on any
+   pre-split bytes an override might point at, and nothing below is relaxed. */
 const cls = new Function(`
   var pvEchoTail = [];
   var pvSaying = '';
+  var pvEchoSaying = '';
   ${src.slice(from, to)}
-  return { set: function (s) { pvSaying = s; }, isSelfEcho: pvIsSelfEcho,
+  return { set: function (s) { pvSaying = s; pvEchoSaying = s; }, isSelfEcho: pvIsSelfEcho,
            norm: pvNorm, novel: pvNovelWordCount };
 `)();
 
@@ -128,15 +137,27 @@ assert.ok(/function pvNovelWordCount\(/.test(src),
     assert.ok(/pvVoiceGateReady\(\)/.test(win),
       'the echo refusal on the FILING path lost its pvVoiceGateReady() condition — without ' +
       'confirmed AEC this would start deleting real answers again (9 of 12, 22 of 22 measured)');
-    assert.ok(/pvNovelWordCount\(pvSaying, finalText\) === 0/.test(win),
-      'THE FILING REFUSAL IS AUDIO-ONLY AGAIN. In a noisy room the learned floor rises until a ' +
-      'quiet patient never clears the bar, and this branch then deletes every answer they give ' +
-      'while the avatar is still speaking. It must also require zero novel words.');
+    /* 2026-08-11 ROUND 10 — NAME-AGNOSTIC AND STRICTLY STRONGER. The template was
+       split into a liveness binding and an echo binding, and this gate is on the
+       FILING side so it now reads pvEchoSaying. The back-reference pins what the
+       old literal pinned (the novel-word condition is present) PLUS something it
+       did not: the identifier the guard tests and the identifier the novel-word
+       count compares against must be THE SAME ONE. A refusal guarded on one
+       template and measured against another is exactly how round 9 filed the
+       avatar's own question as the patient's answer. */
+    const REFUSAL = /if \((pvEchoSaying|pvSaying) && pvVoiceGateReady\(\) && !pvOtherVoiceNow\(\) &&\s*\n\s*pvNovelWordCount\(\1, finalText\) === 0\)/;
+    const rm = REFUSAL.exec(win);
+    assert.ok(rm,
+      'THE FILING REFUSAL IS AUDIO-ONLY AGAIN, or it is guarded on one template and measured ' +
+      'against another. In a noisy room the learned floor rises until a quiet patient never clears ' +
+      'the bar, and this branch then deletes every answer they give while the avatar is still ' +
+      'speaking. It must require zero novel words, against the same template it tested.');
+    const TPL = rm[1];
     /* executed: a real answer must survive even when the mic never registered the speaker */
-    const rStart = src.indexOf('if (pvSaying && pvVoiceGateReady()', at);
+    const rStart = src.indexOf('if (' + TPL + ' && pvVoiceGateReady()', at);
     const rEnd = src.indexOf('}', src.indexOf('kiosk.echoRefused', rStart));
     assert.ok(rStart > 0 && rEnd > rStart, 'the filing refusal has no identifiable site');
-    const refuse = new Function('finalText', 'pvSaying', 'ready', 'presence', 'novelCount', `
+    const refuse = new Function('finalText', TPL, 'ready', 'presence', 'novelCount', `
       var kiosk = { echoRefused: 0 };
       var pvVoiceGateReady = function () { return ready; };
       var pvOtherVoiceNow = function () { return presence; };
