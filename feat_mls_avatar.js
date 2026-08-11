@@ -1365,6 +1365,97 @@
     l.browCol = hex(src.browCol, '');
     return l;
   }
+  /* ===== fx-1.0 (2026-08-11) THE CONSUMER CONTRACT =======================
+     DIAGNOSIS (handoff-2026-08-11/face-rework): res.look carried REFUSED
+     values and two of its three consumers ignored `derived` - the kiosk
+     painted the posterized copy's #333333 gray hair wholesale on day one.
+     From here down there is ONE rule: `derived` is the only licence to
+     apply a value, and every consumer goes through faceApplyDerived. */
+  function faceApplyDerived(base, res) {
+    var src = faceLookSafe(base);
+    var got = (res && res.derived) || [];
+    var look = (res && res.look) || {};
+    var out = {};
+    Object.keys(FACE_LOOK).forEach(function (k) {
+      out[k] = (got.indexOf(k) >= 0 && look[k] !== undefined) ? look[k] : src[k];
+    });
+    return faceLookSafe(out);
+  }
+  /* day one in the kiosk with no saved appearance: the only copy the server
+     holds is the POSTERIZED illustration, and measuring it is how a
+     dark-haired doctor greeted his patients as a gray-haired stranger
+     (Mechanism B, measured end to end). An illustration-only read applies
+     NOTHING - the default character, never an illustration-derived one. */
+  function faceKioskDayOneLook(res) {
+    if (res && res.receipt && res.receipt.fromIllustration) return faceLookSafe(FACE_LOOK);
+    return faceApplyDerived(FACE_LOOK, res);
+  }
+  /* the colours the 6-level posterize manufactures out of ordinary faces
+     (measured: the whole ordinary fair-skin gamut collapses to #ffcc99 and
+     #ffcccc; every dark hair collapses to #333333). A saved or
+     model-claimed colour equal to one of these is an artifact of the broken
+     pipeline, not a measurement of a person. */
+  var FACE_POSTER_ARTIFACTS = ['#ffcccc', '#ffcc99', '#333333'];
+  function faceHexIsPosterArtifact(hexv) {
+    return FACE_POSTER_ARTIFACTS.indexOf(String(hexv || '').toLowerCase()) >= 0;
+  }
+  /* the SAME CIELAB gate the pixel path applies to its own skin sample
+     (h_ab >= 45, C* < 32 - see the av-5.7.6 numbers in faceReadPortrait),
+     applicable to any hex arriving from a save or from the vision model.
+     A swatch value nobody measured must never render as if measured. */
+  function faceHexSkinGate(hexv) {
+    var p = faceRgb(hexv);
+    if (!p) return false;
+    var lb = faceLab(p);
+    return faceHueAb(lb) >= 45 && faceChroma(lb) < 32;
+  }
+  /* QUARANTINE GATE for a SAVED look (fx-1.0; DIAGNOSIS root cause 4: a bad
+     look, once saved, was trusted forever - the owner's standing white
+     swatch). Returns [{knob, why}...]; empty means clean. Nothing here
+     rewrites data - the caller only marks the UI and asks the doctor. */
+  function faceLookQuarantine(look) {
+    var bad = [];
+    var l = look || {};
+    ['skin', 'hair', 'shirt', 'lip', 'eyes', 'browCol'].forEach(function (k) {
+      if (l[k] && faceHexIsPosterArtifact(l[k])) bad.push({ knob: k, why: String(l[k]) + ' is a posterize artifact from an older broken match' });
+    });
+    if (l.skin && /^#[0-9a-fA-F]{6}$/.test(String(l.skin)) && !faceHexIsPosterArtifact(l.skin) && !faceHexSkinGate(l.skin)) {
+      bad.push({ knob: 'skin', why: String(l.skin) + ' is outside the range real skin occupies' });
+    }
+    return bad;
+  }
+  /* the one-click reset: Remove-face semantics for the DERIVED knobs. Every
+     knob a photo or the model could have decided returns to the default
+     character; knobs the doctor touched by hand this session (manual), plus
+     cap, stethoscope and age (never derivable - age by deliberate rule),
+     are preserved. Pure, so the suite can execute it. */
+  function faceClearDerived(current, manual) {
+    var cur = faceLookSafe(current);
+    var man = manual || {};
+    var out = {};
+    Object.keys(FACE_LOOK).forEach(function (k) {
+      var keep = (k === 'cap' || k === 'stethoscope' || k === 'age') || man[k] === true;
+      out[k] = keep ? cur[k] : FACE_LOOK[k];
+    });
+    return faceLookSafe(out);
+  }
+  /* every claim the vision model may apply passes through this gate; ''
+     means apply, anything else is the refusal reason (counted and named in
+     the note, never silent). `age` is refused unconditionally: guessing a
+     doctor looks old is the one wrong answer this feature must never
+     volunteer - the pixel path's own rule, extended to the AI. */
+  function faceVisionClaimGate(knob, value) {
+    if (knob === 'age') return 'a face-lines guess is never applied without your own click';
+    var colourKnob = knob === 'skin' || knob === 'hair' || knob === 'shirt' ||
+      knob === 'lip' || knob === 'eyes' || knob === 'browCol';
+    if (colourKnob && faceHexIsPosterArtifact(value)) {
+      return String(value) + ' is a posterize artifact of the stylized copy, not a colour of a person';
+    }
+    if (knob === 'skin' && !faceHexSkinGate(value)) {
+      return String(value) + ' is outside the range real skin occupies';
+    }
+    return '';
+  }
   var FACE_MOUTHS = {
     /* av-5.2.0: a genuinely warm resting smile - the owner asked for smilier */
     smile:   'M76 130 Q100 149 124 130 Q100 141 76 130',
@@ -3689,13 +3780,71 @@
        six steps per channel, so hair, eyes, lips and the top are as unrecoverable as the
        skin was. Stripped here, at the single exit, rather than at each of the four
        pushes: a fifth colour knob added later would otherwise quietly escape. */
+    var refusedOut = [];
     if (fromIllustration) {
       derived = derived.filter(function (k) {
         return k !== 'skin' && k !== 'hair' && k !== 'eyes' && k !== 'lip' &&
                k !== 'shirt' && k !== 'browCol';
       });
+      /* fx-1.0: the T2 self-contradiction measured in the diagnosis - 'no
+         colour was taken from it' followed two entries later by 'dark hair' -
+         was this exit stripping the CLAIM but not the DESCRIPTION. A refused
+         colour keeps no description. */
+      found = found.filter(function (s) {
+        return s !== 'dark hair' && s !== 'light hair' && s !== 'mid-tone hair' &&
+               s !== 'top colour' && s !== 'brows a different colour from the hair';
+      });
     }
-    return { look: look, found: found, derived: derived,
+    /* fx-1.0 DUPLICATE-SURFACE VETO (DIAGNOSIS Mechanism A, measured on T8):
+       a white door behind the head is not-background to the single
+       border-median reference, so it was CLAIMED as hair AND as the top -
+       long white hair on a dark buzz-cut man, the owner's screenshot
+       verbatim. Two disjoint zones answering one colour is the signature of
+       a backdrop, so both claims - and the style verdicts counted over the
+       same suspect pixels - refuse together, with the cure named. The full
+       multi-reference background rework is the next train; this veto kills
+       the measured killer today. */
+    var vetoBackdrop = false;
+    if (derived.indexOf('hair') >= 0 && derived.indexOf('shirt') >= 0 && hair && topCol &&
+        chDist(hair, topCol) <= 24 && chDist(hair, skinCut) > 24 && chDist(topCol, skinCut) > 24) {
+      vetoBackdrop = true;
+      derived = derived.filter(function (k) { return k !== 'hair' && k !== 'shirt' && k !== 'hairStyle'; });
+      found = found.filter(function (s) {
+        return s !== 'dark hair' && s !== 'light hair' && s !== 'mid-tone hair' &&
+               s !== 'very short hair' && s !== 'long hair' && s !== 'short hair' && s !== 'top colour';
+      });
+      found.push('the same colour came back for your hair and for your top - that is the background ' +
+        'behind you being read as both, not a person. Retake against a plainer background, or set them by hand.');
+    }
+    /* fx-1.0 REFUSE AND COUNT. Every knob this reader examines is either
+       CLAIMED in `derived` or REFUSED with a reason and the control to set
+       by hand - no third state, so 'it did nothing' and 'it refused 9 of 14
+       and told you' are different, visible facts. */
+    var EXAMINABLE = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
+      'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
+    EXAMINABLE.forEach(function (k) {
+      if (derived.indexOf(k) >= 0) return;
+      var why = 'not measurable on this photo';
+      var colourKnob = (k === 'skin' || k === 'hair' || k === 'eyes' || k === 'shirt' || k === 'browCol');
+      if (vetoBackdrop && (k === 'hair' || k === 'shirt' || k === 'hairStyle')) why = 'the background behind you was being read as both your hair and your top';
+      else if (fromIllustration && colourKnob) why = 'only the stylized copy was readable - its colours are manufactured, so none was taken';
+      else if (k === 'skin' && !skinIsSkinColoured) why = 'the sample was not a colour real skin has';
+      else if ((k === 'hair' || k === 'hairStyle') && hairUnreadable) why = crownN === 0 ? 'the top of the head is outside the photo' : 'the background is too close to the hair in colour';
+      else if (k === 'faceShape') why = 'this photo cannot support a shape verdict';
+      refusedOut.push({ knob: k, reason: why, action: 'mlsAvLook_' + k });
+    });
+    /* fx-1.0 THE CONSUMER CONTRACT (DIAGNOSIS Mechanism B, measured): `look`
+       carries ONLY claimed knobs. The old shape kept refused values riding
+       the result - look.hair = #333333 with the claim stripped from
+       `derived` - and the kiosk applied them wholesale. With no refused
+       value left in the result, that consumer bug is structurally
+       impossible for every present and future caller. */
+    var claimedOut = {};
+    derived.forEach(function (k) { if (look[k] !== undefined) claimedOut[k] = look[k]; });
+    var receiptOut = { claimed: derived.length, refused: refusedOut.length,
+      examined: derived.length + refusedOut.length, faceW: faceW, grid: M,
+      fromIllustration: fromIllustration, srcKind: fromIllustration ? 'illustration' : 'photo' };
+    return { look: claimedOut, found: found, derived: derived, refused: refusedOut, receipt: receiptOut,
              box: { L: faceRun.L, R: faceRun.R, T: faceT, B: lowerChin, eyeY: eyeY,
                     w: faceW, h: faceH, crownR: Math.round(crownR * 100) / 100,
                     sideR: Math.round(sideR * 100) / 100, beardDepth: Math.round(beardDepth * 100) / 100,
@@ -4218,6 +4367,9 @@
          from the portrait the doctor captured; every part is then editable by
          hand, with the real animated face previewing every change live. */
       var lookNow = faceLookSafe(cfg.faceLook || null);
+      /* fx-1.0: gate the SAVED look before it renders - a bad colour saved
+         once used to render forever (the owner's standing white swatch). */
+      var lookQuarantine = faceLookQuarantine(lookNow);
       var lookLabel = make('label', '', 'Appearance — build the face patients meet');
       var lookWrap = make('div', '');
       lookWrap.style.cssText = 'display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;border:1px solid #E7E5DD;border-radius:14px;padding:12px;background:#FAF9F5';
@@ -4252,10 +4404,18 @@
         lookGrid.appendChild(row);
         return row;
       }
+      /* fx-1.0 SESSION PROVENANCE. manualNow: knobs the doctor touched by
+         hand this session - a manual pick is never reset and never marked
+         stale. lookMarks: knob -> amber badge text for a rendered value no
+         current measurement stands behind (refused this Match, or carried
+         from an older photo or a quarantined save). lastGot/lastAi: what
+         the badges last painted, so a manual touch repaints alone. */
+      var manualNow = {}, lookMarks = {}, lastGot = [], lastAi = [];
       /* filled only AFTER a Match: before one, every value is trivially the doctor's
          own and labelling it would be noise. */
       function setLookBadges(measured, aiRead) {
         var got = measured || [], ai = aiRead || [];
+        lastGot = got.slice(); lastAi = ai.slice();
         Object.keys(lookBadges).forEach(function (k) {
           var b = lookBadges[k]; if (!b) return;
           /* THREE STATES, NOT TWO (av-5.8.0). "read by AI" is a different fact from
@@ -4263,19 +4423,37 @@
              arithmetic over pixels. The doctor is entitled to know which one moved his
              setting, because the two fail in different ways and he will trust them
              differently once he has seen each be wrong. */
+          /* AND FOUR, NOT THREE (fx-1.0). The fourth is the AMBER mark - a
+             value still rendering that no current measurement stands behind.
+             The owner's report was exactly this hole: a refused read left
+             every stale value painted with nothing marking it. Claims and AI
+             reads outrank the mark; a hand edit clears it (lookManualTouch). */
           var byAi = ai.indexOf(k) >= 0;
           var on = byAi || got.indexOf(k) >= 0;
+          if (!on && lookMarks[k]) {
+            b.textContent = lookMarks[k];
+            b.style.color = '#7a4d12';
+            b.style.background = '#fdf1dc';
+            return;
+          }
           b.textContent = byAi ? 'read by AI' : (on ? 'from your photo' : 'your setting');
           b.style.color = byAi ? '#4a2d7a' : (on ? '#1f5c41' : '#8a938d');
           b.style.background = byAi ? '#efe8fb' : (on ? '#e6f7ef' : '#f2f1ec');
         });
+      }
+      function lookManualTouch(key) {
+        manualNow[key] = true;
+        delete lookMarks[key];
+        var ig = lastGot.indexOf(key); if (ig >= 0) lastGot.splice(ig, 1);
+        var ia = lastAi.indexOf(key); if (ia >= 0) lastAi.splice(ia, 1);
+        setLookBadges(lastGot, lastAi);
       }
       function colourControl(key, labelText) {
         var input = document.createElement('input');
         input.type = 'color'; input.value = lookNow[key];
         input.id = 'mlsAvLook_' + key;
         input.style.cssText = 'width:100%;height:32px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer';
-        input.addEventListener('input', function () { lookNow[key] = input.value; lookApply(); });
+        input.addEventListener('input', function () { lookNow[key] = input.value; lookManualTouch(key); lookApply(); });
         lookRow(labelText, input, key);
         return input;
       }
@@ -4288,7 +4466,7 @@
           if (lookNow[key] === opt[0]) o.selected = true;
           sel.appendChild(o);
         });
-        sel.addEventListener('change', function () { lookNow[key] = sel.value; lookApply(); });
+        sel.addEventListener('change', function () { lookNow[key] = sel.value; lookManualTouch(key); lookApply(); });
         lookRow(labelText, sel, key);
         return sel;
       }
@@ -4329,6 +4507,7 @@
         well.style.cssText = 'width:100%;height:28px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer;margin-top:4px';
         well.addEventListener('input', function () {
           lookNow.browCol = well.value;
+          lookManualTouch('browCol');
           if (browColPick.options.length < 2) {
             var o = document.createElement('option'); o.value = 'set'; o.textContent = 'Its own colour';
             browColPick.appendChild(o);
@@ -4338,6 +4517,7 @@
         });
         browColPick.addEventListener('change', function () {
           lookNow.browCol = browColPick.value === 'set' ? well.value : '';
+          lookManualTouch('browCol');
           lookApply();
         });
         browColPick.parentNode.appendChild(well);
@@ -4350,7 +4530,7 @@
         wrap.style.cssText = 'display:flex;align-items:center;gap:7px;font:600 12.5px system-ui;color:#204034;margin-top:16px';
         var box = document.createElement('input');
         box.type = 'checkbox'; box.id = 'mlsAvLook_' + key; box.checked = lookNow[key] === true;
-        box.addEventListener('change', function () { lookNow[key] = box.checked; lookApply(); });
+        box.addEventListener('change', function () { lookNow[key] = box.checked; lookManualTouch(key); lookApply(); });
         wrap.appendChild(box); wrap.appendChild(document.createTextNode(labelText));
         lookGrid.appendChild(wrap);
         return box;
@@ -4363,6 +4543,76 @@
       var matchBtn = make('button', 'mlsAvAction', '🪄 Match my photo');
       matchBtn.type = 'button';
       var lookNote = make('div', 'mlsAvMeta', '');
+      lookNote.id = 'mlsAvLookNote';
+      /* fx-1.0 THE REFUSAL IS LOUD (owner 2026-08-11: he barely saw the pale
+         refusal line while a stale look kept rendering). Level 0 = the quiet
+         meta styling; 1 = amber attention; 2 = a refusal he must not miss. */
+      function lookNoteSay(text, level) {
+        lookNote.textContent = text || '';
+        var lv = level === true ? 2 : (level || 0);
+        lookNote.style.cssText = lv >= 2
+          ? 'font:700 13.5px system-ui;color:#7a1f1f;background:#fdecec;border:1px solid #f1b8b8;border-radius:10px;padding:10px 12px;margin-top:6px'
+          : (lv === 1
+            ? 'font:600 12.5px system-ui;color:#7a4d12;background:#fdf6e7;border:1px solid #ecd9ab;border-radius:10px;padding:8px 10px;margin-top:6px'
+            : '');
+      }
+      function lookNoteCalm() { lookNote.style.cssText = ''; }
+      /* fx-1.0 ONE-CLICK RECOVERY from a poisoned or stale derived look. */
+      var clearLookBtn = make('button', 'mlsAvAction', 'Clear the derived look');
+      clearLookBtn.type = 'button';
+      clearLookBtn.id = 'mlsAvClearDerived';
+      clearLookBtn.addEventListener('click', function () {
+        lookNow = faceClearDerived(lookNow, manualNow);
+        Object.keys(lookMarks).forEach(function (mk) { delete lookMarks[mk]; });
+        quarantineHide();
+        skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
+        lipPick.value = lookNow.lip; shirtPick.value = lookNow.shirt;
+        stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
+        browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
+        shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
+        hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
+        if (lookNow.browCol) { if (browColWell) browColWell.value = lookNow.browCol; } else { browColPick.value = ''; }
+        glassesBox.checked = lookNow.glasses === true;
+        capBox.checked = lookNow.cap === true;
+        stethBox.checked = lookNow.stethoscope === true;
+        setLookBadges([], []);
+        lookApply();
+        lookNoteSay('Cleared - the character is back to its defaults' +
+          (Object.keys(manualNow).length ? ', keeping the settings you picked by hand this session' : '') +
+          '. Cap, stethoscope and face lines are never derived, so they were kept. Save to make it permanent.', 0);
+      });
+      /* fx-1.0 QUARANTINE BANNER for a saved look that fails the claim gates. */
+      var quarantineBox = null;
+      function quarantineHide() {
+        if (quarantineBox && quarantineBox.parentNode) safe(function () { quarantineBox.parentNode.removeChild(quarantineBox); });
+        quarantineBox = null;
+      }
+      function quarantineShow(bad) {
+        quarantineHide();
+        var box = make('div', '', '');
+        box.id = 'mlsAvLookQuarantine';
+        box.style.cssText = 'font:600 12.5px system-ui;color:#7a4d12;background:#fdf6e7;border:1px solid #ecd9ab;border-radius:12px;padding:10px 12px;margin:6px 0;display:flex;flex-direction:column;gap:8px';
+        var msg = make('div', '', 'Your saved look carries colours from an older broken match: ' +
+          bad.map(function (q) { return q.knob + ' \u2014 ' + q.why; }).join('; ') +
+          '. The preview shows the default character until you decide.');
+        var row = make('div', 'mlsAvActions');
+        var reBtn = make('button', 'mlsAvAction primary', 'Rematch from my photo');
+        reBtn.type = 'button';
+        reBtn.addEventListener('click', function () { quarantineHide(); safe(function () { matchBtn.click(); }); });
+        var keepBtn = make('button', 'mlsAvAction', 'Keep the saved colours');
+        keepBtn.type = 'button';
+        keepBtn.addEventListener('click', function () {
+          quarantineHide();
+          Object.keys(lookMarks).forEach(function (mk) { delete lookMarks[mk]; });
+          setLookBadges([], []);
+          lookApply();
+          lookNoteSay('Kept - the saved colours render again, as your own setting. Rematch, adjust, or clear the derived look any time.', 0);
+        });
+        row.appendChild(reBtn); row.appendChild(keepBtn);
+        box.appendChild(msg); box.appendChild(row);
+        if (lookWrap.parentNode) lookWrap.parentNode.insertBefore(box, lookWrap);
+        quarantineBox = box;
+      }
       matchBtn.addEventListener('click', function () {
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         /* MEASURE THE PHOTOGRAPH, NOT THE ILLUSTRATION. The stylized portrait is
@@ -4376,7 +4626,8 @@
         var hi = pendingHiUrl || faceHiRead();   /* this session's frame first — see pendingHiUrl */
         var src = hi || shown;
         var usedHi = !!hi;
-        if (!src) { lookNote.textContent = 'Capture your photo above first, then Match my photo.'; return; }
+        if (!src) { lookNoteSay('Capture your photo above first, then Match my photo.', 0); return; }
+        lookNoteCalm();
         lookNote.textContent = usedHi
           ? 'Reading the full-quality copy of your photo…'
           : 'Reading your photo… (only the stylized copy is on this device — retake it for a full-quality reading)';
@@ -4394,7 +4645,7 @@
            already applied by the time this resolves, so a failure costs the doctor
            nothing except the extra precision. */
         var visionSrc = src;
-        function applyVision(base, note) {
+        function applyVision(base, note, noteLoud) {
           safe(function () {
             /* api(path, options) takes FETCH options, not a body object - passing
                { image: ... } here would have issued a GET with no payload and the route
@@ -4404,18 +4655,33 @@
               body: JSON.stringify({ image: visionSrc })
             }).then(function (vr) {
               if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) {
-                lookNote.textContent = note + ' (the AI reading was unavailable, so this is the on-device measurement only)';
+                lookNoteSay(note + ' (the AI reading was unavailable, so this is the on-device measurement only)', noteLoud);
                 return;
               }
               var vl = vr.json.look || {}, vClaimed = vr.json.claimed || [], vUnsure = vr.json.unsure || [];
               if (!vClaimed.length) {
-                lookNote.textContent = note + ' The AI looked too and was not confident about anything, so nothing of its was applied.';
+                lookNoteSay(note + ' The AI looked too and was not confident about anything, so nothing of its was applied.', noteLoud);
                 return;
               }
+              /* fx-1.0 OUTPUT GATES (DIAGNOSIS Mechanism C): the model's claims
+                 used to be applied with no colour gates at all - a model
+                 honestly describing the posterized illustration reports gray
+                 hair and pale pink skin, and it outranked everyone. Every
+                 claim now passes the same gates the pixels apply to
+                 themselves, and a refusal is COUNTED and NAMED, never silent
+                 (a failed sample must not leave a value under a green flow). */
+              var vRefused = [];
               vClaimed.forEach(function (k) {
                 if (vl[k] === undefined) return;
+                var vWhy = faceVisionClaimGate(k, vl[k]);
+                if (vWhy) {
+                  vRefused.push(k + ': ' + vWhy);
+                  if (!manualNow[k] && lastGot.indexOf(k) < 0 && !lookMarks[k]) lookMarks[k] = 'not measured \u2014 pick manually';
+                  return;
+                }
                 lookNow[k] = vl[k];
                 if (aiKnobs.indexOf(k) < 0) aiKnobs.push(k);
+                delete lookMarks[k];
               });
               lookNow = faceLookSafe(lookNow);
               skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
@@ -4443,10 +4709,13 @@
               } else { browColPick.value = ''; }
               setLookBadges(base, aiKnobs);
               lookApply();
-              lookNote.textContent = note + ' The AI also read it and was confident about ' +
-                vClaimed.join(', ') + (vUnsure.length ? ('; unsure about ' + vUnsure.join(', ') + ', so those were left as they were.') : '.');
+              lookNoteSay(note + ' The AI also read it' +
+                (aiKnobs.length ? (' and was confident about ' + aiKnobs.join(', ')) : '') +
+                (vRefused.length ? ('; ' + vRefused.length + ' of its claims were REFUSED \u2014 ' + vRefused.join('; ')) : '') +
+                (vUnsure.length ? ('; unsure about ' + vUnsure.join(', ') + ', so those were left as they were.') : '.'),
+                vRefused.length ? Math.max(1, noteLoud || 0) : noteLoud);
             }, function () {
-              lookNote.textContent = note + ' (the AI reading could not be reached, so this is the on-device measurement only)';
+              lookNoteSay(note + ' (the AI reading could not be reached, so this is the on-device measurement only)', noteLoud);
             });
           });
         }
@@ -4470,7 +4739,21 @@
               ? res.found.join(' ')
               : ('I could not find a face in that photo. Retake it with your face filling more of the frame, ' +
                  'looking straight at the camera, and with a background that is not the same colour as your skin - or set the colours by hand.');
-            lookNote.textContent = whyNoFace;
+            /* fx-1.0: A REFUSAL MUST NEVER LEAVE A STALE LOOK SILENTLY
+               RENDERING (owner 2026-08-11, screenshot): the read refused and
+               the panel kept showing the look derived from his LAST photo as
+               if nothing had happened, with the refusal line pale enough to
+               miss. The refusal is now LOUD, every derivable control still
+               carrying an older value is marked, and one click clears the
+               derived look (manual picks preserved). */
+            Object.keys(FACE_LOOK).forEach(function (sk) {
+              if (sk === 'cap' || sk === 'stethoscope' || sk === 'age') return;
+              if (manualNow[sk]) return;
+              lookMarks[sk] = 'from your last photo \u2014 retake or adjust';
+            });
+            setLookBadges([], []);
+            lookNoteSay(whyNoFace + ' Until a photo reads cleanly, the face below still wears the look from your LAST photo and save \u2014 the marked controls are the stale ones. Retake, adjust them by hand, or press "Clear the derived look".', 2);
+            safe(function () { if (window.__mlsAvatar) window.__mlsAvatar.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: whyNoFace, claimed: [], refused: [], receipt: (res && res.receipt) || null }; });
             return;
           }
 
@@ -4485,11 +4768,16 @@
              photo was. A cap and a stethoscope are still never touched -
              they are not in `derived` because no portrait can decide them. */
           var got = (res && res.derived) || [];
-          var merged = {};
-          Object.keys(FACE_LOOK).forEach(function (k) {
-            merged[k] = (got.indexOf(k) >= 0 && look[k] !== undefined) ? look[k] : lookNow[k];
+          var refusedNow = (res && res.refused) || [];
+          /* fx-1.0: THE SHARED APPLIER - the same door the kiosk uses, so the
+             two consumers can never drift apart again. */
+          lookNow = faceApplyDerived(lookNow, res);
+          got.forEach(function (k) { delete manualNow[k]; delete lookMarks[k]; });
+          refusedNow.forEach(function (r) {
+            if (!r || !r.knob) return;
+            if (manualNow[r.knob]) return;
+            if (!lookMarks[r.knob]) lookMarks[r.knob] = 'not measured \u2014 pick manually';
           });
-          lookNow = faceLookSafe(merged);
           skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
           lipPick.value = lookNow.lip; shirtPick.value = lookNow.shirt;
           stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
@@ -4511,17 +4799,27 @@
              what to overwrite, so "your setting" and "not measured" cannot drift apart */
           setLookBadges(got);
           lookApply();
-          /* say what it actually saw - a silent generic face is exactly what
-             "it straight up does not work" looks like from the doctor's side */
           var found = (res && res.found && res.found.length) ? res.found.join(', ') : '';
-          var pixNote = found
-            ? ('Matched from your photo - detected ' + found + '. Adjust anything above to fine-tune.')
-            : 'Matched from your photo - adjust anything above to fine-tune.';
-          lookNote.textContent = pixNote;
-          /* the model reads the same photo and refines what pixels get wrong. Started
-             AFTER the on-device answer is already applied, so a slow or missing backend
-             costs precision and never the feature. */
-          applyVision(got, pixNote);
+          var rct = res && res.receipt;
+          /* fx-1.0: the note CARRIES THE COUNT, so 'it did nothing' and 'it
+             refused 9 of 14 and told you' are different, visible facts. */
+          var counts = rct ? (' Matched ' + rct.claimed + ' of ' + rct.examined + ', refused ' + rct.refused + ' \u2014 refused controls are marked; set them by hand or retake.') : '';
+          var pixNote = (found ? ('Matched from your photo - detected ' + found + '.') : 'Matched from your photo.') + counts;
+          var pixLoud = refusedNow.length > 0 ? 1 : 0;
+          safe(function () { if (window.__mlsAvatar) window.__mlsAvatar.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: false, claimed: got.slice(), refused: refusedNow.slice(), receipt: rct || null }; });
+          if (rct && rct.fromIllustration) {
+            /* fx-1.0 (Mechanism C, input side): the model must never be shown
+               the illustration either - it reads #333333 hair and #ffcccc skin
+               off it honestly, and its claims outrank everyone. No call is
+               made; the doctor is told what to do instead. */
+            lookNoteSay(pixNote + ' The AI was NOT asked to read this: only the stylized copy is on this device and its colours are manufactured. Retake your photo for a full-quality reading.', 2);
+          } else {
+            /* the model reads the same photo and refines what pixels get wrong. Started
+               AFTER the on-device answer is already applied, so a slow or missing backend
+               costs precision and never the feature. */
+            lookNoteSay(pixNote, pixLoud);
+            applyVision(got, pixNote, pixLoud);
+          }
         });
       });
       var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
@@ -4535,7 +4833,7 @@
           ['caring', 'When it hurts - the brows knit and the head shakes'],
           ['idle', 'Resting - breathing']], i = 0;
         (function step() {
-          if (i >= reel.length) { lookCtl.mood('idle', false, false); lookNote.textContent = ''; return; }
+          if (i >= reel.length) { lookCtl.mood('idle', false, false); lookNoteSay('', 0); return; }
           var m = reel[i++];
           if (m[0] === 'curious') {
             lookCtl.mood('listening', false, false);
@@ -4543,11 +4841,11 @@
           } else {
             lookCtl.mood(m[0] === 'happy' || m[0] === 'caring' ? 'speaking' : m[0], m[0] === 'caring', m[0] === 'happy');
           }
-          lookNote.textContent = m[1];
+          lookNoteSay(m[1], 0);
           setTimeout(step, 1700);
         })();
       });
-      lookActions.appendChild(matchBtn); lookActions.appendChild(moodBtn);
+      lookActions.appendChild(matchBtn); lookActions.appendChild(clearLookBtn); lookActions.appendChild(moodBtn);
       lookWrap.appendChild(lookStage); lookWrap.appendChild(lookGrid);
 
       /* av-5.1.0: the kiosk exit PIN — End interview asks for it, so a
@@ -4715,8 +5013,20 @@
       host.appendChild(form);
       /* mount the living preview only once the form is in the document, so the
          face measures and animates from its first frame */
-      lookCtl = makeFace(lookStage, lookNow);
+      /* fx-1.0 QUARANTINE: a saved look that fails the claim gates does not
+         silently render (DIAGNOSIS root cause 4). Default preview + banner +
+         marked controls; the saved values stay in the controls and on the
+         server until the doctor himself decides. */
+      lookCtl = makeFace(lookStage, lookQuarantine.length ? faceLookSafe(FACE_LOOK) : lookNow);
       if (lookCtl) lookCtl.mood('idle', false, true);
+      if (lookQuarantine.length) {
+        lookQuarantine.forEach(function (q) {
+          if (!manualNow[q.knob]) lookMarks[q.knob] = 'from your last photo \u2014 retake or adjust';
+        });
+        setLookBadges([], []);
+        quarantineShow(lookQuarantine);
+        lookNoteSay('Your saved look needs a decision - see the notice above the appearance grid.', 1);
+      }
     }, function () {
       notice.textContent = 'Setup is temporarily unavailable — try again in a moment.';
     });
@@ -5786,11 +6096,20 @@
       if (kiosk.face) safe(function () { kiosk.face.retint(kiosk.look); });
     } else if (hasPhoto && !kiosk.tinted) {
       /* no saved appearance yet: derive one from the portrait so the face
-         still resembles the doctor on day one */
+         still resembles the doctor on day one.
+         fx-1.0 (DIAGNOSIS Mechanism B, measured end to end): this branch
+         used to apply res.look WHOLESALE - and av.faceImage is ALWAYS the
+         posterized copy, so the first patient a dark-haired doctor ever
+         greeted met a #333333 gray-haired stranger. It now goes through the
+         same claimed-knobs-only door as Setup: an illustration-only read
+         applies NOTHING (the default character), and a claimed knob rides
+         over the default only when `derived` licenses it. */
       kiosk.tinted = true;
       faceTintFromPortrait(av.faceImage, function (res) {
-        var look = res && res.look;
-        if (look && kiosk.face) { kiosk.look = look; kiosk.face.retint(look); }
+        if (!kiosk.face) return;
+        var applied = faceKioskDayOneLook(res);
+        kiosk.look = applied;
+        safe(function () { kiosk.face.retint(applied); });
       });
     }
   }
