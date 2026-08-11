@@ -262,7 +262,7 @@ pullCheckOn.window.__mlsPullCheck.revert();
   /* Patients exact now stays inert until Patients is the active view. */
   'feat_mls_patients_exact.js?v=20260727px130',
   'feat_mls_studio_exact.js?v=20260728sx241',
-  'feat_mls_patientpick.js?v=20260811pick170'
+  'feat_mls_patientpick.js?v=20260811pick171'
 ].forEach(token => assert(connect.includes(token), `fresh lifecycle asset cache key is missing: ${token}`));
 assert(connect.includes("var A='feat_mls_simple_exact.js'") &&
   connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),

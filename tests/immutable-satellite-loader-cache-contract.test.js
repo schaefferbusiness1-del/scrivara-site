@@ -49,7 +49,7 @@ const assets = [
      file changed three times after '20260728rd328' while the token stood still,
      so a returning browser kept the cached copy. Caught by
      tests/cache-token-cannot-go-stale.test.js. */
-  ['feat_mls_patientpick.js', '20260811pick170', '20260810pick162perf1'],
+  ['feat_mls_patientpick.js', '20260811pick171', '20260811pick170'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
   ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
   ['feat_mls_wb_console.js', '20260802wbc132', '20260630wbc1c1-B177'],
@@ -254,7 +254,7 @@ assert(staging.includes('feat_mls_assistant_exact.js?v=20260808asst220perf1') &&
   !staging.includes('20260725asst217'),
   'staging must use the current assistant asset URL and retire the prior one');
 for (const assetUrl of [
-  'feat_mls_patientpick.js?v=20260811pick170',
+  'feat_mls_patientpick.js?v=20260811pick171',
   'feat_mls_upnow_sync.js?v=20260808uns6perf2'
 ]) {
   assert(staging.includes(assetUrl), 'staging must use the current performance asset URL: ' + assetUrl);
