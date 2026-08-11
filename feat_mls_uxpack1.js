@@ -137,7 +137,7 @@ try{
         var d = a.appt_date || (a.start_at ? new Date(a.start_at).toISOString().slice(0, 10) : "");
         if (d === key && a.name) out.push(a);
       }
-      out.sort(function (x, y) { return String(x.start_at || "").localeCompare(String(y.start_at || "")); });
+      out.sort(function (x, y) { var xu = (x.time_unknown || !x.start_at) ? 1 : 0, yu = (y.time_unknown || !y.start_at) ? 1 : 0; return (xu - yu) || String(x.start_at || "").localeCompare(String(y.start_at || "")); });
       return out;
     }, []);
   }

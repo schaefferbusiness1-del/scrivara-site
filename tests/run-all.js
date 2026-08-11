@@ -758,6 +758,13 @@ const tests = [
   'day-navigation-observes-the-header.test.js',
   'day-pull-lane-convergence.test.js',
   'day-note-foldin-contract.test.js',
+  /* 420 backend rows carry start_at NULL (timeless-scan 2026-08-11, 0
+     absorbable) and every list surface sorted nulls FIRST - Jul-7 opened as a
+     screenful of bare dashes with all real times below the fold (DEFECT C).
+     Drives the REAL calOpenDay old-vs-new: timed rows first, unknown rows
+     LAST with a plain "time not recorded" chip, on today's nulls and the
+     repair lane's time_unknown=1 alike; proves the OLD bytes fail. */
+  'time-unknown-display-contract.test.js',
   'b749-incomplete-fixes-finished.test.js',
   'record-verb-names-the-patient-once.test.js',
   'history-outcome-is-recorded-and-reported-honestly.test.js',

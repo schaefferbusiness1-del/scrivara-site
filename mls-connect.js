@@ -36250,7 +36250,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var host=document.getElementById('heroToday'); if(!host) return;
       var date=selDate(); if(!date) return;
       var appts=(window._calAppts||[]).filter(function(a){return (a.appt_date||'').slice(0,10)===date;});
-      appts.sort(function(a,b){return String(a.start_at||'').localeCompare(String(b.start_at||''));});
+      appts.sort(function(a,b){var au=(a.time_unknown||!a.start_at)?1:0, bu=(b.time_unknown||!b.start_at)?1:0; return (au-bu)||String(a.start_at||'').localeCompare(String(b.start_at||''));});
       var panel=document.getElementById('mlsQpAll');
       if(!appts.length){ if(panel) panel.remove(); return; }
       hideNativeEmpty();
@@ -36260,7 +36260,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       panel.setAttribute('data-sig',sig); ensureCss();
       var rows=appts.map(function(a){
         var prov=a.provider?esc(String(a.provider).replace(/Close$/,'').replace(/_/g,' ')):'Unassigned';
-        return '<div class="qpa-row"><span class="qpa-t">'+esc(fmtTime(a.start_at))+'</span><span class="qpa-n">'+esc(a.name||'(no name)')+'</span><span class="qpa-p">'+prov+'</span><span class="qpa-badge">'+esc(a.status||'')+'</span></div>';
+        return '<div class="qpa-row"><span class="qpa-t">'+esc((a.start_at&&!a.time_unknown)?fmtTime(a.start_at):'time not recorded')+'</span><span class="qpa-n">'+esc(a.name||'(no name)')+'</span><span class="qpa-p">'+prov+'</span><span class="qpa-badge">'+esc(a.status||'')+'</span></div>';
       }).join('');
       panel.innerHTML='<div class="qpa-hd"><span>📋 All appointments this day · '+appts.length+'</span><button class="qpa-open" type="button">Open in Calendar →</button></div><div class="qpa-sub">Every patient booked this day across all providers — including ones not assigned to your name.</div><div class="qpa-list">'+rows+'</div>';
       panel.querySelector('.qpa-open').onclick=goCal;
@@ -38113,7 +38113,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function todaysAppts(){
     var date=viewDate(), prov=providerName();
     var a=(window._calAppts||[]).filter(function(x){ return x&&x.appt_date===date && (!prov||(x.provider||'')===prov); });
-    a.sort(function(p,q){ return String(p.start_at||'').localeCompare(String(q.start_at||'')); });
+    a.sort(function(p,q){ var pu=(p.time_unknown||!p.start_at)?1:0, qu=(q.time_unknown||!q.start_at)?1:0; return (pu-qu)||String(p.start_at||'').localeCompare(String(q.start_at||'')); });
     return {date:date, prov:prov, list:a};
   }
   function sig(o){ return o.date+'|'+o.prov+'|'+o.list.length+'|'+o.list.map(function(x){return x.patient_external_id||x.name;}).join(','); }
@@ -38141,7 +38141,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       } else {
         o.list.forEach(function(x){
           var c=document.createElement('div'); c.className='ptf-chip'; c.style.cursor='pointer';
-          c.innerHTML='<div class="ptf-nm" style="font-weight:700">'+esc(x.name||'Patient')+'</div><div class="ptf-sub" style="font-size:12px;opacity:.8">'+esc(fmtTime(x.start_at))+' / DOB '+esc(fmtDob(x.dob))+'</div>';
+          c.innerHTML='<div class="ptf-nm" style="font-weight:700">'+esc(x.name||'Patient')+'</div><div class="ptf-sub" style="font-size:12px;opacity:.8">'+esc((x.start_at&&!x.time_unknown)?fmtTime(x.start_at):'time not recorded')+' / DOB '+esc(fmtDob(x.dob))+'</div>';
           c.addEventListener('click',function(){ pick(x); });
           grid.appendChild(c);
         });
