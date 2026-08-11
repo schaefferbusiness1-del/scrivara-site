@@ -2645,11 +2645,15 @@ function mlsAthenaTeachWatcherFn(config) {
   self.__mlsQpRelease = qpRelease;
 
   /* end-of-run detection: quiet watchdog + alarm backstop (worker restarts) */
-  setInterval(function () { if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS) { qpRelease('quiet'); } }, 5000);
+    /* qol-2.3d: same deferral the F1 focus watchdog got - the chart lane is
+     bridge-silent for minutes and never touches lastUse, so without this the
+     120s quiet sweeper restored his tab MID-read (silence is not idleness). */
+  var qpChartBusy = function () { try { return Date.now() < Number(self.__mlsChartReadBusyUntil || 0); } catch (eQb) { return false; } };
+  setInterval(function () { if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS && !qpChartBusy()) { qpRelease('quiet'); } }, 5000);
   try {
     chrome.alarms.onAlarm.addListener(function (a) {
       if (!a || a.name !== 'mlsQpWatch') return;
-      if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS) qpRelease('alarm');
+      if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS && !qpChartBusy()) qpRelease('alarm');
       else if (QP.active) { try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {} }
     });
   } catch (e) {}

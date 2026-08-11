@@ -55,6 +55,16 @@ function makeRail(focusedWin, tabsById) {
   assert.ok(/> 90000 && !fgReadBusy\(\)\) fgFocusApp\(\);/.test(bg), 'F1: the alarm backstop defers too');
   assert.ok(bg.indexOf('self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), chartDeadlineAt)') > 0, 'F1: the chart lane stamps its deadline-bounded busy window');
   assert.ok(/__mlsChartReadBusyUntil[^\n]*msg\.deadlineAt/.test(bg), 'F1: the visits lane stamps too');
+  /* qol-2.3d (supervisor Q2 follow-up): the 120s qp quiet sweeper is the same
+     silence-detector shape as the F1 watchdog, and the CHART lane never
+     advances QP.lastUse - so both sweeper sites must honour the same
+     deadline-bounded busy stamp, or a >120s bridge-silent chart read gets its
+     tab restored MID-run. The visits/ax lanes advance lastUse every loop
+     iteration (touchVisitLease), so they were never exposed. */
+  assert.ok(/var qpChartBusy = function/.test(bg), 'Q2: the sweeper has the busy probe');
+  assert.ok(/QP_QUIET_MS && !qpChartBusy\(\)\) \{ qpRelease\('quiet'\); \}/.test(bg), 'Q2: the interval sweeper defers while a chart read runs');
+  assert.ok(/QP_QUIET_MS && !qpChartBusy\(\)\) qpRelease\('alarm'\);/.test(bg), 'Q2: the alarm sweeper defers too');
+  assert.ok(/touchVisitLease\(\)/.test(bg.slice(bg.indexOf('var axRouteRun'), bg.indexOf('var axRouteRun') + 4000)), 'Q2: the ax loop advances the lease (lastUse) per encounter');
   /* qol-2.3c: the end-of-op sender ALREADY EXISTS - runManagedAthenaOperation's
      release path sends the verb once per ACQUIRED op (from:"mls-managed-pull"),
      and schedule-history-pipeline pins that a refused caller never fires it.
