@@ -136,8 +136,11 @@ ok(/r\.sr=Number\(extra\.surfaceResets\|\|0\); r\.surface=String\(extra\.chartSu
 ok(/Charts needing retry: /.test(SI), '1.2 si: day-end names the failing set');
 /* ppt-2.0 (2026-08-09) extended the settle extras with pid (same-name patients
    stay distinct in the chart-level tally) and axe (a redo is never laundered
-   into first-attempt). Pin moved deliberately with that change. */
-ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface, pid: one\.patientId, axe: one\.axEntry \}/.test(SI), '1.2 si: settle call passes extras (incl. pid + redo entry)');
+   into first-attempt). Pin moved deliberately with that change — and again
+   with qol-2.2 (2026-08-10), which added chartSaved (a persisted chart whose
+   visits half failed is named "chart saved — visit notes incomplete" instead
+   of plain not-saved; derived from read-back-proven one.organized). */
+ok(/\{ surfaceResets: one\.surfaceResets, chartSurface: one\.chartSurface, pid: one\.patientId, axe: one\.axEntry, chartSaved: /.test(SI), '1.2 si: settle call passes extras (incl. pid + redo entry + chartSaved truth chip)');
 
 /* ---- axd-1.0 (3.0.54): the dissection payload persists. noRowDiag's
  * liTotal/eidHit (list-vanished vs row-left vs group-resolution-failed)
