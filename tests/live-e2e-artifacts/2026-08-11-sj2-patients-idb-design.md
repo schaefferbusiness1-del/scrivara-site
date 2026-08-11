@@ -114,6 +114,16 @@ survives quota via its in-memory fallback — the enqueue works AT quota; it sim
 exactly matches the phone lane's lost diagnosis, reached independently by a lane that never saw those
 notes. Two lanes, one conclusion, no shared evidence: the rebuild recipe's confidence rests on both.
 
+## qg-2.0 latch discipline (pre-registered for phase 2, 2026-08-11)
+`__mlsPtsEditAtRiskUnknown` is deliberately SET-ONLY and READ-BY-NOBODY today: one writer (the qg-2.0
+splice), zero readers, zero clears anywhere in the tree — monotonic for the page's lifetime, so the
+global-latch/per-edit race (another patient's success erasing an at-risk state before its surface
+renders) is structurally impossible until a reader exists. Today's loud behavior is the UNCHANGED
+same-stack toast+throw inside savePatients (the original lane's call-stack trace still applies — the
+qg splice moved the enqueue, not the toast). **PRE-REGISTERED: the first surface that READS this latch
+must carry the at-risk state PER-OPERATION (edit-scoped, not global), and must never add a clear to
+the global flag** — a monotonic sticky latch may only be consumed by per-op machinery.
+
 ## Hold lifted (supervisor, 2026-08-11) + the folded residual
 Outcome-3 lift criterion met (identity-proven merge, content proven on the WEAKEST-metadata case).
 **Folded residual, a NAMED CHECK not a new block: content transfer is proven for 1 of the 8 merges
