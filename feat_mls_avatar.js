@@ -5003,9 +5003,19 @@
          height, because a card that grows as the doctor talks must never grow into the words.
          The two numbers are ONE FACT: 44vh appears as the sheet's max-height and as the
          reservation, and a registered fence derives both from this stylesheet and asserts them
-         equal — because the day they drift is the day the card is back on the patient's words. */
+         equal — because the day they drift is the day the card is back on the patient's words.
+         av-6.4.1 (composed tree): the reservation must also BIND THE OVERFLOW DIRECTION.
+         The root is a CENTERED flex column; when the stack is taller than the content box
+         (320x568 measured: progress-line bottom 313.2px vs content-box bottom 302.1px),
+         center alignment spills the overflow BOTH ways, and the last text node (the
+         progress line) sinks 11px into the reserved zone under the sheet (sheet top
+         310.1px; covered at 5 of 25 sampled points). justify-content:flex-end pins the
+         column END at the content-box bottom, so the reservation holds under overflow and
+         the spill goes UP, away from the sheet. (A sibling branch never saw this only
+         because its extra bottom flex child, a 51px button row, shifted the centered stack
+         up and itself took the covered zone, invisible to a fence that samples text nodes.) */
       '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}' +
-      '#mlsAvKiosk.hasorders{padding-right:5vw;padding-bottom:calc(44vh + 16px)}}' +
+      '#mlsAvKiosk.hasorders{padding-right:5vw;padding-bottom:calc(44vh + 16px);justify-content:flex-end}}' +
       '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
       '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
       '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
@@ -5324,6 +5334,39 @@
        one: a sentence in flight is watched for as long as it takes. It cannot
        wedge, because pvSaying is cleared by pvSpeakVoiced's finish(), which is
        itself guaranteed by that function's own watchdog (pinned by the suite). */
+    /* av-6.4.1 (A4): AN ABSOLUTE OUTER CEILING ON THE SPEECH WAIT - wall-clock,
+       never microphone-derived. The condition below trusts finish() to clear
+       pvSaying, and finish() is watchdog-guaranteed for a hung TTS fetch (5s ->
+       synth fallback) and for playback that reported its duration (the 45s cap
+       armed at onloadedmetadata). The uncovered corner: playback starts,
+       loadedmetadata never fires AND the play() promise never settles - then
+       pvSaying stays set for ever, every tick below re-arms, and the nudge, the
+       self-end and the summary are all suspended indefinitely. Live self-healed
+       that state by cutting the sentence; the condition must not trade that for
+       wedged-until-tap. So: ONE sentence continuously observed in flight for
+       longer than any sentence can actually play - 120s, nearly three times the
+       45s playback cap, so no real sentence can reach it - is declared dead
+       right here. pvStopVoice ends the phantom (clearing pvSaying, so the
+       activity check below falls through to the silence accounting THIS tick)
+       and the interview moves on to the nudge and the self-end it was owed.
+       Keyed to the sentence VALUE: a new sentence restarts the clock, so only a
+       single unchanging pvSaying can ever accumulate the 120s. No recogniser
+       event feeds this path - the clock is Date.now() at watchdog ticks, so a
+       dead microphone, a silent room and a wedged audio element all look the
+       same to it, which is the point. */
+    if (pvSaying) {
+      if (kiosk.sayingFor !== pvSaying) {
+        kiosk.sayingFor = pvSaying;
+        kiosk.sayingSince = Date.now();
+      } else if (!kiosk.heard && Date.now() - kiosk.sayingSince > 120000) {
+        kiosk.sayingFor = null;
+        kiosk.sayingSince = 0;
+        pvStopVoice();
+      }
+    } else if (kiosk.sayingFor) {
+      kiosk.sayingFor = null;
+      kiosk.sayingSince = 0;
+    }
     if (kiosk.heard || pvSaying) {
       /* they are talking or typing (or the room is) — keep watching, and never
          give up the only timer that can revive this question. This guard used
