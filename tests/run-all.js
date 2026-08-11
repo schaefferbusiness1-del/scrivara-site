@@ -746,6 +746,7 @@ const tests = [
   'athena-follow-bidirectional-contract.test.js',
   'day-navigation-observes-the-header.test.js',
   'day-pull-lane-convergence.test.js',
+  'day-note-foldin-contract.test.js',
   'b749-incomplete-fixes-finished.test.js',
   'record-verb-names-the-patient-once.test.js',
   'history-outcome-is-recorded-and-reported-honestly.test.js',

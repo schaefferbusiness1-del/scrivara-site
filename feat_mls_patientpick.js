@@ -35,7 +35,7 @@
    *   - renders an INLINE selectable grid in Complex visit mode too (not only the modal)
    *   - keeps the top active-patient context bar (#mlsCtxBar) bound + visible
    */
-  var VERSION = "pick-1.6.2";   /* scoped lifecycle + fail-closed canonical chart identity + hidden-route fast path */
+  var VERSION = "pick-1.7.0";   /* inline Complex "Today's patients" duplicate RETIRED (owner order 2026-08-11); modal + ctx-bar unchanged */
   try { if (window.__mlsPick && window.__mlsPick.installed) return; } catch (e) { return; }
 
   function gateOn() {
@@ -686,42 +686,28 @@
     if (w && w.style.display !== "none") w.style.display = "none";
   }
   function renderComplexInline() {
+    /* RETIRED (owner order, 2026-08-11): this inline Complex-view white list
+       ("Today's patients" cards under the hero) duplicated the blue NEXT UP
+       hero selector (#heroToday, ScribeFlow.html _renderTodayPatients) and
+       the shared picker modal - the same patients, twice, on one screen.
+       The block is no longer rendered ANYWHERE; this function now only
+       removes a node an earlier build may have left, so stale DOM cannot
+       linger across the satellite upgrade. Everything else in this module
+       stays live: openModal, renderGrid (Simple view #simPickGrid + modal
+       body), select(), wireComplex()'s hero-button modal hook, and the
+       #mlsCtxBar repair. Known anchors on the retired node, inventoried
+       2026-08-11 and ALL null-guarded: feat_mls_assistant_exact.js:1198 and
+       feat_mls_datalink_exact.js:171 (both check the host before use);
+       hide-CSS in nextup_controls / whosnext / whosnext_cleanfix /
+       pick_smartscope now hides nothing; smartscope's mutation matcher
+       never matches. Do NOT re-add a renderer here: hiding this block with
+       yet another deferred CSS module is the exact failure that kept it
+       flashing back every boot (eager render, deferred hiders). */
     var w = $(CX_WRAP);
-    if (!onVisitComplex()) { hideComplexInline(); return; }
-    var v = $("visitView"); if (!v) return;
-    if (!w || w.parentElement !== v) {
-      if (w) { try { w.parentElement.removeChild(w); } catch (e) {} }
-      w = mk("div"); w.id = CX_WRAP; w.setAttribute("data-mls-asset", "feat_mls_patientpick.js");
-      w.innerHTML =
-        '<div class="mlspk-cx-hd"><h4>Today&#39;s patients</h4><span>in time order &middot; tap one to open their chart</span></div>' +
-        '<div class="mlspk-cx-grid"></div>';
-      /* place it just under the dark hero, above the capture/note grid */
-      var hero = $("visitHero");
-      if (hero && hero.parentElement === v && hero.nextSibling) v.insertBefore(w, hero.nextSibling);
-      else if (hero && hero.parentElement === v) v.appendChild(w);
-      else v.insertBefore(w, v.firstChild);
+    if (w) {
+      try { if (w.parentElement) w.parentElement.removeChild(w); else w.style.display = "none"; }
+      catch (e) { try { hideComplexInline(); } catch (e2) {} }
     }
-    w.style.display = "";
-    var host = w.querySelector(".mlspk-cx-grid");
-    /* ONE SUBTITLE, NOT TWO. This view already writes its own header line
-       ("in time order - tap one to open their chart") three elements above, and
-       renderGrid's default note then wrote a SECOND grey line saying nearly the
-       same thing in different words -- "N patients on today's schedule - in time
-       order - tap one to select." Two instructions stacked, and they disagreed
-       on the verb: one said OPEN THEIR CHART, the other said SELECT, for the
-       same tap. Owner, 2026-08-10, on seeing it: "why is this back in the main
-       app". The note is suppressed here and its only unique content -- the
-       count -- is folded into the header, so nothing is lost.
-       The modal caller is untouched: there the note is the only subtitle. */
-    var res = renderGrid(host, { scope: "today", limit: DEFAULT_LIMIT, showNote: false, onPick: function () { ensureCtxBar(); } });
-    try {
-      var sub = w.querySelector(".mlspk-cx-hd span");
-      if (sub) {
-        var n = (res && res.list && res.list.length != null) ? res.list.length : 0;
-        sub.textContent = (n ? (n + " patient" + (n === 1 ? "" : "s") + " · ") : "") +
-          "in time order · tap one to open their chart";
-      }
-    } catch (e) {}
   }
 
   /* ---- keep the compact top active-patient widget (#mlsCtxBar) visible + bound ----

@@ -45,7 +45,7 @@ assert(!/setInterval\s*\(/.test(studio), 'AI Studio late-mount recovery must be 
 assert(studio.includes('window.addEventListener("mls:view-changed", onViewChanged)') && studio.includes('clearBootTimers();'), 'AI Studio event/timer cleanup is incomplete');
 
 assert(picker.includes('_obs.observe(visit, { childList: true, subtree: true })'), 'Patient picker must observe only the Visit root');
-assert(picker.includes('var VERSION = "pick-1.6.2"'), 'Patient picker scoped lifecycle + identity/performance release version was not advanced');
+assert(picker.includes('var VERSION = "pick-1.7.0"'), 'Patient picker scoped lifecycle + identity/performance release version was not advanced');
 assert(picker.includes('_ctxObs.observe(wrap, { childList: true })'), 'Patient picker context-bar recovery must observe only its direct stable parent');
 assert(!picker.includes('_obs.observe(document.documentElement'), 'Patient picker still observes every DOM mutation in the app');
 assert(picker.includes('window.addEventListener("mls:view-changed", onViewChanged)') && picker.includes('window.addEventListener("mls:active-patient-changed", onPatientChanged)'), 'Patient picker must use canonical lifecycle events');
@@ -262,7 +262,7 @@ pullCheckOn.window.__mlsPullCheck.revert();
   /* Patients exact now stays inert until Patients is the active view. */
   'feat_mls_patients_exact.js?v=20260727px130',
   'feat_mls_studio_exact.js?v=20260728sx241',
-  'feat_mls_patientpick.js?v=20260810pick162perf1'
+  'feat_mls_patientpick.js?v=20260811pick170'
 ].forEach(token => assert(connect.includes(token), `fresh lifecycle asset cache key is missing: ${token}`));
 assert(connect.includes("var A='feat_mls_simple_exact.js'") &&
   connect.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now())"),

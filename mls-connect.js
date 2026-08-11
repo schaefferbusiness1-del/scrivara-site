@@ -4537,6 +4537,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      pill; the full panel is one click away. hidden survives the whole pull
      (sweep boundaries included) and resets only when the pull truly ends. */
   var startedAt = 0, hidden = true, stopped = false;
+  var doneDismissed = false; /* dn-1.0: set only by the DONE card's Done button; re-armed when a new run starts */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -4717,11 +4718,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var S = state();
     var running = !!(S && S.running);
     if (!running) {
+      /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
+         done"): the run THIS panel watched (startedAt>0) paints ONE honest
+         DONE card - saved / not saved / pulled-day-note refusals - and stays
+         until the doctor closes it. No further passes run behind it (the
+         engine has already released), and no "keep pulling" framing remains
+         on the card. A tab that never watched a run keeps the old clean
+         removal; the Done click resets to that same state. */
+      if (startedAt > 0 && S && (S.rows || []).length && !doneDismissed) { renderDone(S); return; }
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      doneDismissed = false;
       return;
     }
+    if (doneDismissed) doneDismissed = false; /* dn-1.0: a NEW run re-arms the DONE card */
+    (function () { var pStale = document.getElementById(PANEL); if (pStale && pStale.__ppDoneApplied) pStale.remove(); })(); /* dn-1.0: a fresh run never paints into last run's DONE card */
     if (!startedAt) { startedAt = Date.now(); api.opens++; }
     /* b940: the PILL needs the stylesheet too. b940 flipped the default to
        pill-first but left css() below the hidden early-return, so the FAB
@@ -4756,6 +4768,49 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (rowsEl.innerHTML !== html) rowsEl.innerHTML = html;
     }
   }
+
+  /* dn-1.0: the terminal DONE card. Idempotent paint (same guarded-write
+     discipline as render); once-only mutations are keyed on __ppDoneApplied,
+     so the terminal state FIRES EXACTLY ONCE per finished run (api.doneShown
+     counts it). Reads the engine's dayVerdict stamp for day-note truth. */
+  function renderDone(S) {
+    css();
+    var ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0, total = S.total || 0;
+    if (hidden) {
+      ensureFab(true);
+      var fD = document.getElementById(FAB);
+      if (fD) { var tD = 'Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'; if (fD.textContent !== tD) fD.textContent = tD; }
+      var phD = document.getElementById(PANEL); if (phD) phD.remove();
+      return;
+    }
+    ensureFab(false);
+    var p = buildPanel();
+    var dv = S.dayVerdict || null;
+    if (!p.__ppDoneApplied) {
+      p.__ppDoneApplied = 1;
+      api.doneShown = (api.doneShown || 0) + 1;
+      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
+      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
+      try { var curLbl = p.querySelector('.pp-cur b'); if (curLbl) curLbl.textContent = 'Result:'; } catch (eCur) {}
+      try { var noteD = p.querySelector('.pp-note'); if (noteD) noteD.textContent = failed ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" re-reads only those charts.' : 'Everything the day asked for was read and saved.'; } catch (eNote) {}
+      try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
+      try { var hbD = document.getElementById('mlsPullProgHide'); if (hbD) { hbD.textContent = 'Done'; hbD.onclick = function () { doneDismissed = true; render(); }; } } catch (eHb) {}
+    }
+    var doneLine = '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '');
+    if (dv && Number(dv.tnFailed || 0) > 0) doneLine += ' \u00B7 \u26A0 ' + dv.tnFailed + ' pulled-day note' + (Number(dv.tnFailed) === 1 ? '' : 's') + ' not read';
+    if (dv && dv.complete === true) doneLine += ' \u2014 everything verified';
+    setText(p, 'done', String(S.done || 0));
+    setText(p, 'total', String(total));
+    var fillD = p.querySelector('.pp-fill');
+    if (fillD) { var wD = (total ? Math.round(((S.done || 0) / total) * 100) : 100) + '%'; if (fillD.style.width !== wD) fillD.style.width = wD; }
+    setText(p, 'pct', 'Done');
+    setText(p, 'tally', doneLine);
+    setText(p, 'elapsed', mmss(Math.max(0, (S.finishedAt || Date.now()) - startedAt)) + ' total');
+    setText(p, 'current', doneLine);
+    var rowsElD = p.querySelector('[data-pp="rows"]');
+    if (rowsElD && !p.__ppDoneRows) { p.__ppDoneRows = 1; var htmlD = rowsHtml(S); rowsElD.style.display = htmlD ? '' : 'none'; rowsElD.innerHTML = htmlD; }
+  }
+  api._renderDone = renderDone; /* dn-1.0: contract-test seam; not used by the app */
 
   (function loop() { tick(900, function () { try { render(); } catch (e) {} loop(); }); })();
 
@@ -8752,7 +8807,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1007: persist:false work belongs to this exact COW candidate. Passing
+    /* b1010: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -8993,7 +9048,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1007: the retired 3-second owner synchronously regex-scanned every
+      /* b1010: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -35935,7 +35990,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1007';
+  window.__MLS_AV = window.__MLS_AV || 'b1010';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36278,7 +36333,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1007';
+  var MLS_APP_BUILD='2026-07-25-b1010';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -43994,7 +44049,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_login_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_login_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_login_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_login_exact.js (STAGING ONLY) — additive, reversible */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patientpick.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patientpick.js?v=20260810pick162perf1';s.setAttribute('data-mls-asset','feat_mls_patientpick.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patientpick.js (shared pull-and-select) — additive, reversible */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patientpick.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patientpick.js?v=20260811pick170';s.setAttribute('data-mls-asset','feat_mls_patientpick.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_patientpick.js (shared pull-and-select) — additive, reversible */
 ;(function(){try{var A='feat_mls_simple_exact.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* simx-1.4.2: Simple Visit uses active-id input fast paths (STAGING ONLY), additive and reversible */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_notetools_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_notetools_exact.js?v=20260624nt1c1';s.setAttribute('data-mls-asset','feat_mls_notetools_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_notetools_exact.js (PROD) - note+tools legibility, additive, reversible */
@@ -44177,7 +44232,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var A="feat_mls_ctx_appt.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260727ca3";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* restore loader: context-bar appointment (window.__mlsCtxAppt) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_hero_search.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hs1c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* restore loader: hero search (window.__mlsHeroSearch) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_hero_glance.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630hg1c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* restore loader: hero glance (window.__mlsHeroGlance) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_pick_smartscope.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260716pss1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* restore loader: picker smart scope (window.__mlsPickSmartScope) */
+/* 2026-08-11 owner order: the pick smartscope loader stood down - its only product was #mlsPickSmartWrap, a second inline "Today patients" white grid under the Visit hero, i.e. a clone of the duplicate selector retired in patientpick pick-1.7.0. The "picker vanished after pull" defect it patched belonged to that retired inline grid, so nothing is lost. The satellite file remains on disk (contract suites read it) and the staging connect still loads it for staging experiments. NOTE: no feat-dot-js literal may appear in this comment - boot-script-budget classifies every such mention by lookbehind and would count a retired name as a new eager script. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_keyboard_layer.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260801kl1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: unified keyboard layer (window.__mlsKbd) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802dk1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
 ;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* allergy-strip-1.1.0: event-driven allergy safety strip (window.__mlsAllergyStrip) */
