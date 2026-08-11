@@ -4811,7 +4811,15 @@
     if (gid('mlsAvKioskStyle')) return;
     var st = document.createElement('style'); st.id = 'mlsAvKioskStyle';
     st.textContent =
-      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center}' +
+      /* ⚠️ --mlsav-panel IS DECLARED ONCE AND USED TWICE, and that is the whole point of it: the
+         proposed-actions panel's WIDTH and the gutter the text column must leave for it are the
+         SAME NUMBER. Two hand-written copies would drift, and the day they drifted the opaque card
+         would be back on top of the patient's words. See #mlsAvKioskOrders and .hasorders below.
+         ⚠️ AND IT IS DECLARED LAST, not first: avatar-doctor-runtime.test.js has pinned since
+         av-3.0.0 that this rule OPENS `position:fixed;inset:0;z-index:N;background:linear-gradient`
+         (full-screen and OPAQUE, so a patient never sees the app behind the kiosk). Custom
+         properties do not care about order and that pin does, so the pin keeps its subject. */
+      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center;--mlsav-panel:min(370px,92vw)}' +
       '#mlsAvKioskEnd{position:absolute;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75}' +
       '#mlsAvKiosk.speaking{background:linear-gradient(165deg,#F5F7EE,#E4F0E6 55%,#D6E8DC)}' +
       '#mlsAvKiosk.listening{background:linear-gradient(165deg,#F0F4F8,#E2EBF4 55%,#D6E2F0)}' +
@@ -4932,7 +4940,21 @@
       '#mlsAvKioskEndVisit:hover{background:#2E6A4B}' +
       /* the orders widget: compact, corner-mounted, never over the face, and
          absent entirely when there is nothing to confirm */
-      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:min(370px,92vw);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      /* ══ THE OPAQUE CARD, AND THE AREA THE TEXT COLUMN RESERVES FOR IT ═════════════════════════
+         Owner, twice: "having text constantly overlapping and being such a paIUN IN THE ASS", then
+         "fix the overlaying text to".
+         ⛔ THIS ELEMENT IS THE DEFECT, AND TWO EARLIER ROUNDS COULD NOT HAVE FIXED IT. One
+         serialised fourteen writers onto the patient-facing text NODE; the other capped the boxes
+         so the flex column could not compress them. Both were real. Neither could help, because
+         #mlsAvKioskOrders is a DIFFERENT ELEMENT painted on top of that node: opaque white,
+         position:absolute, right:16px bottom:16px, up to 52vh tall, z-index 6 — i.e. straight over
+         the live transcript and the progress line. An arbitrator owns one node; it cannot own the
+         things drawn above it.
+         So the column RESERVES the panel's area, from the same custom property the panel is sized
+         from, and `.hasorders` is toggled by ordersReserve — the only writer — from both branches
+         of ordersRender, the only function that shows or hides this panel. */
+      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:var(--mlsav-panel);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      '#mlsAvKiosk.hasorders{padding-right:calc(var(--mlsav-panel) + 32px)}' +
       '#mlsAvKioskOrders .mlsAvOrdHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}' +
       '#mlsAvKioskOrders .mlsAvOrdTitle{font:800 13px \'Public Sans\',system-ui;color:#204034}' +
       '#mlsAvKioskOrders .mlsAvOrdCount{font:700 11.5px system-ui;color:#55605A}' +
@@ -4975,7 +4997,15 @@
       '#mlsAvKioskReview .mlsAvRevRow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}' +
       '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
       '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
-      '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}}' +
+      /* ⛔ ON A NARROW SCREEN THE PANEL IS A FULL-WIDTH BOTTOM SHEET, so a right-hand gutter
+         reserves the WRONG AXIS ENTIRELY and the card sits on the transcript regardless. The column
+         reserves HEIGHT here, and it reserves the sheet's MAX height (44vh) rather than its current
+         height, because a card that grows as the doctor talks must never grow into the words.
+         The two numbers are ONE FACT: 44vh appears as the sheet's max-height and as the
+         reservation, and a registered fence derives both from this stylesheet and asserts them
+         equal — because the day they drift is the day the card is back on the patient's words. */
+      '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}' +
+      '#mlsAvKiosk.hasorders{padding-right:5vw;padding-bottom:calc(44vh + 16px)}}' +
       '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
       '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
       '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
@@ -6512,6 +6542,20 @@
     card.appendChild(row);
     return card;
   }
+  /* ── THE PANEL'S AREA IS RESERVED BY ITS ONE WRITER, NOT AT A CALL SITE ──────────────────────
+     A class set at a call site goes stale the first time a caller is added, and this class is what
+     stops an OPAQUE card being painted over the patient's words. ordersRender is the only function
+     that shows or hides the panel, so it is the only thing allowed to say so — and it must say so on
+     BOTH branches: the panel appearing without the reservation is the defect itself, and the
+     reservation surviving the panel closing is a phantom gutter that pushes the question
+     off-centre for the rest of the visit. */
+  function ordersReserve(on) {
+    safe(function () {
+      var kroot = gid('mlsAvKiosk');
+      if (!kroot) return;
+      if (on) kroot.classList.add('hasorders'); else kroot.classList.remove('hasorders');
+    });
+  }
   function ordersRender() {
     var host = gid('mlsAvKioskOrders');
     if (!host) return;
@@ -6521,8 +6565,16 @@
        panel competing with the patient for the doctor's attention - it
        appears when there is something to confirm and leaves when there is
        not. */
-    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    /* ⚠️ ordersReserve AFTER the display change, not before, and the reason is a red I caused:
+       avatar-visit-copilot.test.js pins the literal `if (!list.length) { host.style.display = 'none'`
+       ("an empty proposal list must hide the widget entirely"), and inserting a statement in front
+       of it broke that pin while changing nothing about the behaviour. Both orders are identical to
+       the browser — the class and the inline display land in the same frame — so the shipped code
+       keeps the shape its existing fence reads. A pin whose subject moves for no behavioural reason
+       is a pin that cries wolf, and this lane has already paid for five of those. */
+    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; ordersReserve(false); return; }
     host.style.display = 'block';
+    ordersReserve(true);
     host.innerHTML = '';
     var head = make('div', 'mlsAvOrdHead');
     head.appendChild(make('span', 'mlsAvOrdTitle', 'Proposed actions'));

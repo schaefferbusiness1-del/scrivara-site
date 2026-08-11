@@ -917,7 +917,15 @@ const tests = [
      matching layer from ever being weaker than the deterministic ranker, and
      that the gate composes with mls-connect's richer draftAll rather than
      replacing it (the b943 owner truce). */
-  'opnote-day-brain-drafts-only-real-procedures.test.js'
+  'opnote-day-brain-drafts-only-real-procedures.test.js',
+  /* av-6.4.0 — the OTHER half of the same report: "fix the overlaying text to". #mlsAvKioskOrders
+     is an OPAQUE white card at z-index 6 painted over the live transcript and the progress line, and
+     two earlier "fix the overlapping text" rounds could not have caught it: one owned the text NODE
+     (an arbitrator cannot own what is drawn above it) and every code-reading suite asked what was
+     WRITTEN to the line, never what was DRAWN over it. This one derives the occluders from the
+     stylesheet, renders the shipped stylesheet and markup in real Chrome, and asks
+     elementFromPoint at the words' own coordinates. */
+  'avatar-kiosk-panel-never-covers-the-text.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
