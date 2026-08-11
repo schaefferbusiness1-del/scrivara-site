@@ -52,11 +52,51 @@ assert.ok(/function pvNovelWordCount\(/.test(src),
   assert.ok(at > 0, 'kioskListen is gone');
   const end = src.indexOf('\n  function ', at + 20);
   const body = src.slice(at, end > at ? end : at + 6000);
-  assert.ok(/pvStopSpeechOnly\(\);/.test(body), 'the barge-in call site left kioskListen');
-  assert.ok(/pvNovelWordCount\(pvSaying, interim\)/.test(body),
-    'barge-in no longer consults the novel-word count — the interim handler can silence the avatar again');
-  assert.ok(/if \(pvSaying && !otherVoice\) return;/.test(body),
-    'our own voice is no longer dropped before it can stop the speech or paint the interim line');
+  /* ══ av-6.4.0: THREE ASSERTIONS MOVED. ORIGINALS, VERBATIM ═════════════════════════════════
+         assert.ok(/pvStopSpeechOnly\(\);/.test(body), 'the barge-in call site left kioskListen');
+         assert.ok(/pvNovelWordCount\(pvSaying, interim\)/.test(body),
+           'barge-in no longer consults the novel-word count — the interim handler can silence the
+            avatar again');
+         assert.ok(/if \(pvSaying && !otherVoice\) return;/.test(body),
+           'our own voice is no longer dropped before it can stop the speech or paint the interim
+            line');
+     WHY THEY MOVED — all three for one reason, and it is the reason this file exists.
+     Each one asked "is the interim handler consulting a GOOD ENOUGH classifier before it silences
+     the avatar?". The answer the owner gave, twice, is that no classifier is good enough: the
+     microphone is pointed at the loudspeaker playing the question, and this file's own measurement
+     says 42 of 232 mis-transcribed echoes read as an interruption. So the interim handler no longer
+     silences the avatar AT ALL — which satisfies the requirement all three carried, absolutely
+     rather than probabilistically.
+     NOTHING WAS DROPPED:
+       · "the barge-in call site left kioskListen" — barge-in moved to #mlsAvKioskSkip and
+         pvStopSpeechOnly still has EXACTLY ONE call site, asserted below and in
+         avatar-listens-while-speaking.test.js. That handler refuses any event that is not
+         isTrusted, so our own audio cannot forge it; both directions are EXECUTED in
+         tests/avatar-answer-is-an-object.test.js.
+       · "barge-in no longer consults the novel-word count" — pvNovelWordCount is untouched and is
+         still required on the FILING path, where its calibration was actually measured (9 of 12 and
+         22 of 22 real answers deleted when it was tightened there). That assertion is unchanged and
+         still green, further down this file.
+       · "our own voice is no longer dropped before it can stop the speech or paint the interim
+         line" — BOTH halves are kept by a fence that a classifier cannot defeat, and the term is
+         corrected from pvSaying to pvAudioLive(): pvSaying is cleared by an ESTIMATED-duration
+         watchdog, so the old fence lifted MID-SENTENCE and let the loudspeaker's own words back
+         onto the patient-facing line. */
+  assert.ok(!/pvStopSpeechOnly\(\)/.test(body),
+    'A MICROPHONE-DERIVED HANDLER CAN SILENCE THE AVATAR AGAIN. The owner reported this twice; no ' +
+    'classifier on that line has ever survived contact with the avatar\'s own voice.');
+  assert.ok(/if \(pvAudioLive\(\)\) \{ kiosk\.heardWhileSpeaking = /.test(body),
+    'the interim handler no longer stands down while sound is coming out of the loudspeaker — it ' +
+    'can silence the question or paint over it, which are the two halves of the owner\'s report. ' +
+    'pvAudioLive(), NOT pvSaying: an estimated-duration watchdog clears pvSaying mid-sentence.');
+  assert.ok(/function kioskSkipSpeech\(ev\) \{/.test(src) &&
+    /if \(!ev \|\| ev\.isTrusted !== true\) return false;/.test(src),
+    'the interrupt was REMOVED rather than moved — a patient must still be able to cut a question ' +
+    'short, through an act our own loudspeaker cannot perform');
+  assert.strictEqual((src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .match(/pvStopSpeechOnly\(\);/g) || []).length, 1,
+    'pvStopSpeechOnly no longer has exactly one call site — with more than one, nothing can be ' +
+    'concluded about what silenced a question');
   /* av-6.1.0: and the kiosk must NOT request the microphone here. It is requested once, on the
      staff tap, and the gate adopts that stream; my first attempt asked again from this
      function and avatar-consent-and-turn-taking-proof.js caught it at "calls = 2". */
@@ -88,32 +128,71 @@ assert.ok(/function pvNovelWordCount\(/.test(src),
      mine in one change set to fail on how the code is written rather than what it does; each one
      costs a full investigation to clear, and one of them let a real regression reach main because
      the noise trained me to expect false alarms. So: execute it. */
-  const dStart = src.indexOf('var otherVoice', src.indexOf('function kioskListen'));
-  const dEnd = src.indexOf('if (pvSaying && !otherVoice) return;', dStart);
-  assert.ok(dStart > 0 && dEnd > dStart, 'the barge-in decision has no single identifiable site');
-  const decide = new Function('interim', 'pvSaying', 'ready', 'presence', 'sustained', 'novelCount', `
+  /* ══ av-6.4.0: THIS EXECUTED GROUP MOVED. ORIGINAL SETUP AND CASES, VERBATIM ═══════════════
+         const dStart = src.indexOf('var otherVoice', src.indexOf('function kioskListen'));
+         const dEnd = src.indexOf('if (pvSaying && !otherVoice) return;', dStart);
+         assert.ok(dStart > 0 && dEnd > dStart, 'the barge-in decision has no single identifiable site');
+         ...
+         decide('my shoulder hurts', Q, false, false, false, 2) === true
+           'without echo cancellation a real interruption (2 novel words) no longer barges in — the
+            device lost its protection entirely'
+         decide('the pain', Q, false, false, false, 1) === false
+           'without echo cancellation a single novel word now cuts the question off — that is the
+            self-echo regression av-6.0.9 measured at 42 of 232'
+         decide('', Q, false, false, false, 0) === false
+           'without echo cancellation a wordless noise cuts the question off'
+         decide('', Q, true, true, false, 0) === false
+           'with echo cancellation live, bare audio presence cuts the question off — a cough is
+            200-400ms of energy and would silence the avatar'
+     WHY IT MOVED: there is no barge-in decision left to execute. The requirement all four rows
+     carried — "a device without confirmed echo cancellation must not be made worse, and nothing
+     short of a real person may cut the question off" — is now satisfied WITHOUT a decision at all:
+     no transcript, on any device, in any AEC regime, can reach a speech-stopping call. The three
+     must-NOT rows become unconditional; the one MUST row (a real interruption) moved to a trusted
+     tap on #mlsAvKioskSkip, which is executed both ways in
+     tests/avatar-answer-is-an-object.test.js and which a loudspeaker cannot forge.
+     THE FALLBACK CONCERN ITSELF IS STILL CHECKED, and it is now checked where it still matters —
+     the FILING path, immediately below, whose refusal is EXECUTED against a device with no echo
+     cancellation and must not delete a real answer there. That group is UNCHANGED. */
+  const bare = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  const iFrom = bare.indexOf('}, function (interim) {', bare.indexOf('function kioskListen'));
+  const iTo = bare.indexOf('}, function () {', iFrom);
+  assert.ok(iFrom > 0 && iTo > iFrom,
+    'the interim handler has no single identifiable site in kioskListen');
+  const interimHandler = bare.slice(iFrom + 3, iTo) + '}';
+  const noStop = new Function('interim', 'audioLive', 'ready', 'presence', 'novelCount', `
+    var stopped = 0, painted = null;
+    var kiosk = { heard: false, heardWhileSpeaking: 0 };
+    var pvSaying = 'is the pain in your back or in your neck';
+    var pvIsSelfEcho = function () { return false; };
+    var pvAudioLive = function () { return audioLive; };
     var pvVoiceGateReady = function () { return ready; };
     var pvOtherVoiceNow = function () { return presence; };
-    var pvOtherVoiceSustained = function () { return sustained; };
+    var pvOtherVoiceSustained = function () { return false; };
     var pvNovelWordCount = function () { return novelCount; };
-    var novel = pvSaying ? pvNovelWordCount(pvSaying, interim) : 0;
-    ${src.slice(dStart, dEnd)}
-    return !!otherVoice;
+    var pvStopSpeechOnly = function () { stopped++; };
+    var pvAbandonSpeech = function () { stopped++; };
+    var pvStopVoice = function () { stopped++; };
+    var kioskLine = function (k, t) { painted = k + ':' + t; };
+    var handler = ${interimHandler};
+    handler(interim);
+    return { stopped: stopped, painted: painted };
   `);
-  const Q = 'is the pain in your back or in your neck';
-  /* no echo cancellation available — the av-6.0.9 novel-word rule must still be in force */
-  assert.strictEqual(decide('my shoulder hurts', Q, false, false, false, 2), true,
-    'without echo cancellation a real interruption (2 novel words) no longer barges in — the ' +
-    'device lost its protection entirely');
-  assert.strictEqual(decide('the pain', Q, false, false, false, 1), false,
-    'without echo cancellation a single novel word now cuts the question off — that is the ' +
-    'self-echo regression av-6.0.9 measured at 42 of 232');
-  assert.strictEqual(decide('', Q, false, false, false, 0), false,
-    'without echo cancellation a wordless noise cuts the question off');
-  /* and with the gate live, presence alone must NOT be enough (the cough case) */
-  assert.strictEqual(decide('', Q, true, true, false, 0), false,
-    'with echo cancellation live, bare audio presence cuts the question off — a cough is ' +
-    '200-400ms of energy and would silence the avatar');
+  /* the four original rows, every one of them, now asserted as "cannot stop, cannot paint" */
+  for (const [label, interim, ready, presence, novel] of [
+    ['a real interruption with NO echo cancellation (2 novel words)', 'my shoulder hurts', false, false, 2],
+    ['a single novel word with no echo cancellation', 'the pain', false, false, 1],
+    ['a wordless noise with no echo cancellation', '', false, false, 0],
+    ['bare audio presence with echo cancellation live (the cough)', '', true, true, 0],
+  ]) {
+    const r = noStop(interim, true, ready, presence, novel);
+    assert.strictEqual(r.stopped, 0,
+      'THE MICROPHONE CUT THE QUESTION OFF for "' + label + '". Whatever the AEC regime and ' +
+      'whatever the words, a transcript may not end a sentence — a real person interrupts by ' +
+      'tapping #mlsAvKioskSkip, which our loudspeaker cannot press.');
+    assert.strictEqual(r.painted, null,
+      'the live transcript painted over the question the patient is still reading for "' + label + '"');
+  }
   /* THE FILING REFUSAL NEEDS TWO INDEPENDENT REASONS. Audio alone is not enough: the bar is
      floor x 2.6 and the floor is learned from the room, so a noisy waiting area raises it until
      a soft-spoken patient never registers — and then an audio-only refusal deletes every answer

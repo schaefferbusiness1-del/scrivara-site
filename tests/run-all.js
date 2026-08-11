@@ -899,7 +899,25 @@ const tests = [
      matching layer from ever being weaker than the deterministic ranker, and
      that the gate composes with mls-connect's richer draftAll rather than
      replacing it (the b943 owner truce). */
-  'opnote-day-brain-drafts-only-real-procedures.test.js'
+  'opnote-day-brain-drafts-only-real-procedures.test.js',
+  /* av-6.4.0 — THE ANSWER IS AN OBJECT. Seven patch rounds failed to stop the kiosk filing
+     fragments of a patient's answer as if they were whole answers; four of them moved a BOUNDARY,
+     and because English puts negation and laterality at the leading edge, every cut turned a
+     denial into an assertion ("no pain in my left leg" -> "pain in my left leg") with nothing to
+     show anything had been removed. This suite holds the four permanent negation/laterality
+     controls (byte-exact or refused entire), the continuation and joining cases, the real-answer
+     controls that catch an over-refusing round, the four grafted fences, and the trusted-tap
+     interrupt — in ONE file, so a later round cannot merge the barge-in gate with the filing gate.
+     Set MLS_AVATAR_MAIN / MLS_AVATAR_R7 to run the pre-fix bytes as named controls. */
+  'avatar-answer-is-an-object.test.js',
+  /* av-6.4.0 — the OTHER half of the same report: "fix the overlaying text to". #mlsAvKioskOrders
+     is an OPAQUE white card at z-index 6 painted over the live transcript and the progress line, and
+     two earlier "fix the overlapping text" rounds could not have caught it: one owned the text NODE
+     (an arbitrator cannot own what is drawn above it) and every code-reading suite asked what was
+     WRITTEN to the line, never what was DRAWN over it. This one derives the occluders from the
+     stylesheet, renders the shipped stylesheet and markup in real Chrome, and asks
+     elementFromPoint at the words' own coordinates. */
+  'avatar-kiosk-panel-never-covers-the-text.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -105,7 +105,18 @@ assert(source.includes('kiosk.pinSet = null'), 'openKiosk must seed the PIN stat
 assert(source.includes('if (!r.ok || j.ok === false)'), 'a non-2xx turn is being walked as a successful turn again');
 assert(source.includes('function kioskEndForStaff'), 'staff exits no longer close the interview server-side');
 assert(source.includes('function kioskWatchdog'), 'the re-arming silence watchdog was removed');
-assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source), 'pvListen no longer reports a dead recogniser');
+/* av-6.4.0 — WIDENED, NOT WEAKENED. The original read:
+       assert(/pvListen\(onFinal, onInterim, onDead\)/.test(source),
+         'pvListen no longer reports a dead recogniser');
+   Its requirement is that a dead-recogniser callback EXISTS, and that is unchanged and still
+   asserted below. What changed is the arity: pvListen gained a fourth callback, onRefused, which is
+   how a whole answer that cannot be filed reaches the patient instead of being dropped. Pinning the
+   exact parameter list would have made adding that callback look like removing this one. */
+assert(/pvListen\(onFinal, onInterim, onDead(, onRefused)?\)/.test(source),
+  'pvListen no longer reports a dead recogniser');
+assert(/if \(onDead\) safe\(onDead\)/.test(source),
+  'the dead-recogniser callback is declared and never invoked, so a kiosk cannot tell "still ' +
+  'listening" from "microphone is dead" and freezes with the halo still animating');
 assert(source.includes('The exit PIN must be 4 to 8 digits'), 'Setup silently drops a malformed PIN again');
 assert(source.includes('if (found && found.summary)'), 'the summary refetch must be PROVEN before filing');
 assert(source.includes('if (kiosk.completed && !finish) return;'), 'a FINISHED interview must refuse further answers — the typed row survives the rest screen');
@@ -137,7 +148,20 @@ assert(!/var heardAnything/.test(source), 'the per-call activity latch is back �
    the interview politely THROUGH the server (summary still generates), and a
    PIN-verified unlock of a completed interview opens the Ready inbox so the
    doctor reads the summary immediately — never on the no-PIN path. */
-assert(source.includes('}, 1300); }'), 'the snappy quiet threshold was removed');
+/* av-6.4.0 — WIDENED, NOT WEAKENED. The original read:
+       assert(source.includes('}, 1300); }'), 'the snappy quiet threshold was removed');
+   i.e. it required the timer and its closing brace to sit on ONE line. The threshold itself is
+   unchanged at 1300ms and is still asserted; what changed is that armQuiet's body is now several
+   statements (it nulls its own handle and reads the live Answer), so the one-line shape is gone
+   while the requirement is untouched. Scoped to armQuiet so it cannot be satisfied by a 1300
+   anywhere else in the file. */
+{
+  const qAt = source.indexOf('function armQuiet(');
+  assert(qAt > 0, 'armQuiet is gone — nothing ends a turn on silence');
+  const qEnd = source.indexOf('function answerNow(', qAt) > qAt
+    ? source.indexOf('function answerNow(', qAt) : qAt + 600;
+  assert(/\}, 1300\);/.test(source.slice(qAt, qEnd)), 'the snappy quiet threshold was removed');
+}
 assert(source.includes('kiosk.silent >= 3'), 'the silence auto-finish was removed — an abandoned interview would run forever');
 assert(source.includes('kioskTurn(null, null, true)'), 'the auto-finish must close THROUGH the server so the summary still generates');
 assert(source.includes('if (finish) body.finish = true;'), 'the finish flag no longer reaches the server');
