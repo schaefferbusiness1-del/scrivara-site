@@ -76,6 +76,22 @@ the in-page hash) and then REMOVED. Tonight's inventory confirms the removal hel
 NARROWED to one question, next live tab: **has the avatar lane RE-ENROLLED a face since 2026-08-10?**
 (A 339KB image returning to a 5MB system-of-record store would be its own finding.)
 
+## 8. BOTH OPEN INVESTIGATIONS CLOSED BY IDENTITY (2026-08-11, post-b1007)
+
+**The −8 (patients 1,602→1,594): EXPLAINED — outcome 3, provable merge, zero loss.** Render's
+independent copy (1,602 rows, /api/patients via the app's own pager) named all 8 missing-local ids:
+schedule-derived stub rows (p_sched_*/pmr*), each with a metadata-provable LOCAL SURVIVOR — 7 by MRN
+match, 1 (ltiqle) by name+dob → cmgnd4. Content absorption verified: cmgnd4 went 15→18 visits and now
+carries ltiqle's exact 'epnp10' Jul-7 stub visits. The dupe-collapse self-heal did what it claims —
+and reported nothing; it was provable only because the server held an independent record. **The
+pre-registered sj-2.0 requirement stands: the self-heal must NAME what it merges (a receipt), the
+todayNoteReason lesson applied to clinical rows.** The sj-2.0 hold lifts per the ruling's own criteria.
+
+**The 28 stranded notes (`sf_u::undefined::notes`): 28/28 BYTE-IDENTICAL duplicates** of notes in his
+real namespace (whole-object hash equal; 0 unique, 0 newer-on-the-stranded-side, 0 content reads
+needed — closed on metadata + hashes). Possible-data-loss → NO LOSS. Deletable (66KB) via a future
+gated change; nothing deleted yet per the ruling.
+
 ## 7. Privacy finding, refined classification (supervisor concurrence)
 RESIDUE, not a leak: the isolation held — nothing ever read the foreign namespace (unlike
 mls_save_every_athena_visit, where one account's setting actually APPLIED to another). The two-layer
