@@ -278,6 +278,16 @@ function createHarness(options) {
     };
   }
 
+  const easyApi = {
+    state() { return { mode: 'doctor', screen: 'home' }; },
+    remote: { setVisitDay() { return true; } }
+  };
+  if (options.providerTargetThrows) {
+    easyApi.providerTarget = function () { throw new Error('synthetic providerTarget failure'); };
+  } else if (Object.prototype.hasOwnProperty.call(options, 'providerTarget')) {
+    easyApi.providerTarget = function () { return options.providerTarget; };
+  }
+
   const context = {
     console, Date, Math, JSON, Object, String, Number, Array, RegExp, Promise, Error,
     Boolean, Intl, encodeURIComponent, decodeURIComponent,
@@ -305,10 +315,7 @@ function createHarness(options) {
     _acctTodayKey() { return DAY; },
     _calAppts: [],
     toast() {},
-    __mlsEasyV32: {
-      state() { return { mode: 'doctor', screen: 'home' }; },
-      remote: { setVisitDay() { return true; } }
-    },
+    __mlsEasyV32: easyApi,
     __mlsVisitNotesPref: {
       read() { return { state: 'on', on: true, settled: true }; },
       write() { return true; },
@@ -406,6 +413,67 @@ async function startAndSettleFirst(h) {
   h.api.pullDay();
   await h.flush();
   assert.strictEqual(h.pulls.length, 1, 'the manual pull did not reach the real DaySwitch pull path');
+}
+
+async function testVisibleProviderTargetIsForwarded() {
+  /* Live r2 showed "All providers" in the Easy UI, but DaySwitch omitted the
+     provider option. dayPull then resolved the signed-in account instead and
+     withheld the private all-Day census capability. The visible selection is
+     already the user's frozen scope and must cross this wrapper unchanged. */
+  const all = createHarness({ providerTarget: 'all' });
+  await startAndSettleFirst(all);
+  assert.strictEqual(all.pulls[0].provider, 'all',
+    'the visible All providers target was omitted before si.dayPull');
+
+  const selectedObject = {
+    id: 'provider-101', stableKey: 'athena:provider-101',
+    name: 'Header One, MD', rosterVerified: true
+  };
+  const selected = createHarness({ providerTarget: selectedObject });
+  await startAndSettleFirst(selected);
+  assert.strictEqual(selected.pulls[0].provider, selectedObject,
+    'the selected provider object was not passed exactly as the Easy UI returned it');
+
+  const selectedName = createHarness({ providerTarget: 'Header One, MD' });
+  await startAndSettleFirst(selectedName);
+  assert.strictEqual(selectedName.pulls[0].provider, 'Header One, MD',
+    'the selected provider name was not passed exactly as the Easy UI returned it');
+
+  /* Older/dormant Easy modules do not expose providerTarget. A failed accessor
+     likewise cannot invent a scope: retain the established omission so the
+     guarded importer performs its account fallback. */
+  const missing = createHarness();
+  await startAndSettleFirst(missing);
+  assert.strictEqual(missing.pulls[0].provider, undefined,
+    'a missing providerTarget stopped using the guarded account fallback');
+
+  const throwing = createHarness({ providerTargetThrows: true });
+  await startAndSettleFirst(throwing);
+  assert.strictEqual(throwing.pulls[0].provider, undefined,
+    'a throwing providerTarget escaped or replaced the guarded account fallback');
+
+  for (const malformedTarget of [{}, [], '   ', 0, false]) {
+    const malformed = createHarness({ providerTarget: malformedTarget });
+    await startAndSettleFirst(malformed);
+    assert.strictEqual(malformed.pulls[0].provider, undefined,
+      `a malformed provider target (${JSON.stringify(malformedTarget)}) was allowed to widen into all-provider census authority`);
+  }
+
+  /* Attempt 3 is deliberately broader than the visible selected target. This
+     pre-existing escalation remains authoritative and must still force all. */
+  const escalated = createHarness({
+    providerTarget: selectedObject,
+    results: [scheduleIncompleteRefusal(), scheduleIncompleteRefusal(), verifiedResult()]
+  });
+  await reachAttemptThreeTimer(escalated);
+  assert.strictEqual(escalated.pulls[0].provider, selectedObject,
+    'attempt 1 lost the visible selected provider');
+  assert.strictEqual(escalated.pulls[1].provider, selectedObject,
+    'attempt 2 lost the frozen visible selected provider');
+  escalated.runNextTimer();
+  await escalated.flush();
+  assert.strictEqual(escalated.pulls[2].provider, 'all',
+    'attempt-3 whole-grid escalation did not override the visible selected provider');
 }
 
 async function testFullyRowUnattributedIsTerminalAndPhiFree() {
@@ -870,6 +938,7 @@ async function testCanceledAttemptThreeClearsEscalation() {
 }
 
 async function main() {
+  await testVisibleProviderTargetIsForwarded();
   await testFullyRowUnattributedIsTerminalAndPhiFree();
   await testRowUnattributedTerminalClassifierIsExact();
   await testExactWarmAndBound();
@@ -880,7 +949,7 @@ async function main() {
   await testCrossEngineAndSessionCancellation();
   await testExactClassifierAndOrdinaryRetries();
   await testCanceledAttemptThreeClearsEscalation();
-  console.log('PASS p1 provider-roster settle retry: complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards; cancellation clears attempt-3 escalation');
+  console.log('PASS p1 provider-roster settle retry: the visible Easy provider target reaches dayPull exactly while missing/throwing targets retain fallback and attempt 3 still forces all; complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards; cancellation clears attempt-3 escalation');
 }
 
 const watchdog = setTimeout(() => {

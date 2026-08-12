@@ -36181,7 +36181,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'p1-20260812-r2';
+  window.__MLS_AV = window.__MLS_AV || 'p1-20260812-r3';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36524,7 +36524,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='p1-20260812-r2';
+  var MLS_APP_BUILD='p1-20260812-r3';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -47271,6 +47271,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the previous single call, made synchronously on the click. */
       var escalateAll = DS.__escalateAll === true; DS.__escalateAll = false;
       var dpOpts = { date: day, includeHistory: true, onStatus: dsOnStatus };
+      /* p1-provider-owner-1.0.0: the Visit provider selector is the visible
+         owner of this Day pull. Leaving provider absent made dayPull fall
+         back to the signed-in account provider even while the UI explicitly
+         showed All providers. On a legacy multi-column grid that account
+         target could not resolve, so the engine eventually read all rows but
+         correctly withheld the Day-only provider-unknown census grant because
+         the ORIGINAL request had been selected-provider. Freeze the visible
+         selector now; selected providers remain selected and explicit All is
+         the only scope that can enter the 1p census lane. */
+      try {
+        var easyProviderOwner = window.__mlsEasyV32;
+        if (easyProviderOwner && typeof easyProviderOwner.providerTarget === 'function') {
+          var visibleProviderTarget = easyProviderOwner.providerTarget();
+          var visibleProviderTargetValid = (typeof visibleProviderTarget === 'string')
+            ? !!visibleProviderTarget.trim()
+            : !!(visibleProviderTarget && typeof visibleProviderTarget === 'object' && !Array.isArray(visibleProviderTarget) &&
+              String(visibleProviderTarget.name || visibleProviderTarget.displayName || visibleProviderTarget.provider || '').trim());
+          if (visibleProviderTargetValid) dpOpts.provider = visibleProviderTarget;
+        }
+      } catch (eProviderOwner) {}
       if (escalateAll) dpOpts.provider = 'all'; /* 2026-07-29: last-attempt whole-grid escalation */
       var p = (si && typeof si.dayPull === 'function')
         ? si.dayPull(dpOpts)
