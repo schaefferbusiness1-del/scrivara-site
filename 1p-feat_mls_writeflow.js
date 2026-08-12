@@ -1810,6 +1810,116 @@
       }
     }, 0);
   }
+
+  /* ========================================================================
+     p1-autobind-1.0.0 (1p PREVIEW ONLY) -- STOP ASKING THE DOCTOR TO TEACH THE APP
+     SOMETHING IT CAN SEE.
+
+     Owner: "well this is unacceptable it should be able to figure it out".
+
+     THE CHICKEN AND EGG. A row is only executable when the visit is BOUND:
+       visitReady = visitDate && provider && (appointmentId || (encounterId && encounterUrl))
+     Those fields come from a day pull. Without one, every row reads CANNOT SEND and
+     the review tells him to go run a pull. But the app ALREADY reads the exact open
+     encounter, read-only, on this very screen -- validatedUnifiedProbe() returns a
+     lockedContext carrying encounterId, encounterUrl, visitDate and provider, and
+     REFUSES unless all four are present. The only reason that never helped is that
+     probeUnifiedRow() opens with
+       if (!row || row.capability !== 'ready' || !row.action) { ...refuse...; return; }
+     so it will not probe until the row is ready, and the row cannot be ready until the
+     probe has told it what the encounter is. The app locks itself out of the one read
+     that answers its own question.
+
+     WHAT THIS DOES. On open, if the visit is unbound but the patient identity is
+     complete, run the SAME read-only probe and, if it comes back verified, adopt the
+     four context fields and REBUILD the manifest. The rows then evaluate ready on
+     their own existing predicate.
+
+     NO GUARD IS WEAKENED. Three-factor identity (name + DOB + MRN) is checked inside
+     validatedUnifiedProbe against the real open chart BEFORE any context is returned;
+     a mismatch errors and nothing binds. The extension enforces the same predicate at
+     execute time and accepts encounterId + encounterUrl without an appointment ID, so
+     this satisfies both sides rather than papering over one.
+
+     REBUILD, NEVER MUTATE. The manifest is deep-frozen and its previewHash/manifestHash
+     are pinned by other contracts, so the enriched visit goes through
+     buildUnifiedManifest() again to get a fresh, correctly-hashed freeze. Mutating a
+     frozen hashed manifest would give a green row whose hash no longer matches its
+     payload -- a worse bug than the one being fixed.
+
+     FAILS CLOSED, ALWAYS. Probe absent, timed out, not ok, identity mismatch, missing
+     any of the four fields, state closed, user already acting -- every one of those
+     paths does nothing at all and the existing refusal stands untouched.
+
+     � UNVERIFIED AGAINST THE LIVE EXTENSION: whether the driver answers a probe whose
+     expectedContext is null has NOT been exercised against the real 3.0.61 build (doing
+     so drives the owner's real EMR). If it refuses, auto-bind simply never fires and
+     the review behaves exactly as it does today. Confirm on the owner's next live pass.
+
+     Reversible: window.__mlsP1AutoBind.revert().
+     ======================================================================== */
+  var p1AutoBindOff = false, p1AutoBindLast = null;
+  function p1VisitBound(v) {
+    v = v || {};
+    return !!(S(v.appointmentId).trim() || (S(v.encounterId).trim() && S(v.encounterUrl).trim()));
+  }
+  function p1AutoBindEncounter(state) {
+    if (p1AutoBindOff || !state || state.closed || state.running || state.halted) return false;
+    var m = state.manifest; if (!m || !m.rows) return false;
+    if (p1VisitBound(m.visit)) return false;                       /* already bound */
+    var p = m.patient || {};
+    /* never bind against a chart we cannot positively identify */
+    if (!S(p.name).trim() || !S(p.dob).trim() || !S(p.mrn).trim()) return false;
+    var row = null;
+    for (var i = 0; i < m.rows.length; i++) {
+      var r = m.rows[i];
+      if (r && r.payload && (r.action === 'write_note' || r.id === 'write-note')) { row = r; break; }
+    }
+    if (!row) return false;
+    var gen = state.probeGeneration, bp = bridgePatient(m.patient), payload = row.payload || {};
+    unifiedStatus(state, 'Reading the open Athena encounter read-only to bind this visit \u2014 nothing is sent.', '');
+    try {
+      bridge('mlsAppAthenaActionV2', {
+        mode: 'probe', action: 'write_note', patient: bp,
+        expectedPatient: bp, expectedContext: null,
+        previewHash: m.previewHash, payload: payload,
+        noteText: payload.noteText || '', sections: payload.sections || [],
+        notePolicy: 'empty_only', noteWriteProof: '',
+        billing: null, order: null, rowHash: '', clientOrderId: ''
+      }, 'mlsAppAthenaActionV2Result', 25000).then(function (probe) {
+        try {
+          if (p1AutoBindOff || !state || state.closed || state.probeGeneration !== gen) return;
+          if (p1VisitBound(state.manifest && state.manifest.visit)) return;
+          var lock = validatedUnifiedProbe(state.manifest.patient, probe || {});
+          if (!lock || !lock.ok || !lock.context) return;          /* fails closed */
+          var c = lock.context;
+          if (!S(c.encounterId).trim() || !S(c.encounterUrl).trim()) return;
+          var v0 = state.manifest.visit || {}, v1 = {}, k;
+          for (k in v0) if (Object.prototype.hasOwnProperty.call(v0, k)) v1[k] = v0[k];
+          v1.encounterId = S(c.encounterId).trim();
+          v1.encounterUrl = S(c.encounterUrl).trim();
+          if (!S(v1.visitDate).trim()) v1.visitDate = S(c.visitDate).trim();
+          if (!S(v1.provider).trim()) v1.provider = S(c.provider).trim();
+          var o0 = state.sourceOpts || {}, o1 = {};
+          for (k in o0) if (Object.prototype.hasOwnProperty.call(o0, k)) o1[k] = o0[k];
+          o1.visit = v1;
+          var rebuilt = buildUnifiedManifest(o1);                  /* fresh freeze, correct hashes */
+          if (!rebuilt) return;
+          state.manifest = rebuilt; state.sourceOpts = o1;
+          state.reopenOpts = reopenOptions(o1, rebuilt);
+          p1AutoBindLast = { encounterId: v1.encounterId, at: Date.now() };
+          if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
+          unifiedStatus(state, 'This visit was bound from the Athena encounter that is open now \u2014 verified read-only against this patient\u2019s name, DOB and MRN. Nothing was sent.', 'ok');
+        } catch (e1) {}
+      }, function () {});
+    } catch (e2) { return false; }
+    return true;
+  }
+  try {
+    window.__mlsP1AutoBind = { v: 'p1-autobind-1.0.0',
+      state: function () { return { off: p1AutoBindOff, last: p1AutoBindLast }; },
+      revert: function () { p1AutoBindOff = true; return true; } };
+  } catch (eAB) {}
   function openUnifiedConfirmation(opts) {
     opts = opts || {};
     if (athenaActionRunning) { actionSay(opts, 'Another Athena action is already awaiting confirmation. Finish or cancel it before opening the unified review.', ''); return null; }
@@ -1824,6 +1934,9 @@
     state.reopenOpts = reopenOptions(opts, manifest);
     unifiedAthenaState = state;
     if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
+    /* p1-autobind-1.0.0: if the visit is unbound, read the open encounter instead of
+       telling him to go run a day pull. Fails closed; see the block above. */
+    try { p1AutoBindEncounter(state); } catch (eP1AB) {}
     actionSay(opts, manifest.rows.some(function (row) { return row.capability === 'ready' && row.action; })
       ? (athenaFinalActionsReady()
         ? 'Athena review ready. Select one ready action — note write, Save Draft, billing staging, or Sign & Save — and confirm it; MLS runs exactly that one action.'
