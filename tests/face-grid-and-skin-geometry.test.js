@@ -264,8 +264,15 @@ const FACE_L = 44, FACE_R = 84;
   r128.derived.forEach(function (k) {
     ok(r256.derived.indexOf(k) >= 0, 'G8: claim "' + k + '" was lost when the grid doubled - a resolution increase must never cost a verdict');
   });
-  ok(r256.derived.indexOf('brows') >= 0 && r256.derived.indexOf('eyeSet') >= 0,
-    'G8: brows and eyeSet were the measured resolution wins on this geometry (browMed clears its 3-row blend floor at 256) - if neither appears, the budget increase is not reaching the resolution-limited estimators');
+  /* eyeSet is deliberately NOT asserted here: this painter's brow bars sit
+     inside the eye band, so the compactness gate refuses eye spacing at BOTH
+     grids (correctly - a bar is not an iris). Eye spacing at 256 is proven by
+     the playwright photo proof's close/wide-set cases, which draw irises with
+     no bars. */
+  ok(r128.derived.indexOf('brows') < 0,
+    'G8-control: brows were expected UNREADABLE at 128 on this geometry (browMed 2 < the 3-row blend floor) - if they read at 128, the win below proves nothing');
+  ok(r256.derived.indexOf('brows') >= 0,
+    'G8: brows were the measured resolution win on this geometry (browMed 2 -> 4, clearing the 3-row blend floor at 256) - if absent, the budget increase is not reaching the resolution-limited estimators');
 }
 
 /* ═══ G9 — the nose saturation refusal names light, not the camera ═══ */

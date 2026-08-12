@@ -2537,6 +2537,57 @@
        8% threshold fired on a photo that was already working and made it claim SPECTACLES the
        man is not wearing. A retry cannot do that to any photo that currently succeeds, because
        a photo that currently succeeds never reaches it. */
+    /* gx-1.0 ONE-PIXEL OPENING, AT THE FINE GRID ONLY. MEASURED on the photo
+       suite's long-blond-hair fixture: the 1-2px antialiased/JPEG blend RING
+       around the hair mixes hair with the wall into a colour that passes the
+       YCbCr skin window (#e5d39e: cr 143, cb 98), and at 256 that ring
+       survives as a connected filament that merges the hair's OUTLINE into the
+       face component - faceT jumped 32-in-128-terms -> 9, the crown band
+       above the face became empty wall, and a full head of hair read as none.
+       At 128 the 2:1 box-average dilutes the ring below the window: the
+       coarse grid was acting as an accidental low-pass filter. The opening
+       (erode then dilate, 4-neighbourhood, frame edge erodes) removes exactly
+       the structures the coarse grid could never see, and is a NO-OP at
+       PR=1, so every 128-calibrated behaviour is byte-identical.
+       RADIUS PR, NOT 1: JPEG 4:2:0 halves chroma resolution, so at 256 a
+       chroma-blend filament is 2-4px thick - measured, the 1px opening left
+       the hair outline attached and a full head of hair still read as short.
+       PR iterations remove up-to-(2*PR)px filaments; legitimate thin features
+       (the owner's forehead slivers are 6-14px at 256) survive, and anything
+       attached to the face mass regrows toward it on the dilate side. */
+    function maskErode(src) {
+      var er = new Uint8Array(M * M), i, ox, oy;
+      for (oy = 0; oy < M; oy++) {
+        for (ox = 0; ox < M; ox++) {
+          i = oy * M + ox;
+          if (!src[i]) continue;
+          if (ox <= 0 || !src[i - 1]) continue;
+          if (ox >= M - 1 || !src[i + 1]) continue;
+          if (oy <= 0 || !src[i - M]) continue;
+          if (oy >= M - 1 || !src[i + M]) continue;
+          er[i] = 1;
+        }
+      }
+      return er;
+    }
+    function maskDilate(src) {
+      var out = new Uint8Array(M * M), i, ox, oy;
+      for (oy = 0; oy < M; oy++) {
+        for (ox = 0; ox < M; ox++) {
+          i = oy * M + ox;
+          if (src[i] ||
+              (ox > 0 && src[i - 1]) || (ox < M - 1 && src[i + 1]) ||
+              (oy > 0 && src[i - M]) || (oy < M - 1 && src[i + M])) out[i] = 1;
+        }
+      }
+      return out;
+    }
+    function maskOpen(src) {
+      var m2 = src, k;
+      for (k = 0; k < PR; k++) m2 = maskErode(m2);
+      for (k = 0; k < PR; k++) m2 = maskDilate(m2);
+      return m2;
+    }
     function faceMaskAttempt(useWb) {
       var ch = new Uint8Array(M * M);
       for (var ay = 0; ay < M; ay++) {
@@ -2545,6 +2596,7 @@
           if (faceIsSkinRgb(q[0], q[1], q[2])) ch[ay * M + ax] = 1;
         }
       }
+      if (PR > 1) ch = maskOpen(ch);
       var lab = labelComponents(ch);
       return { chroma: ch, pass1: lab, head: pickFace(lab.comps) };
     }
@@ -2785,17 +2837,20 @@
            the test was skipped, and the scan ran on down the neck. One face, one
            shadow growing monotonically, moved the chin 103 -> 91 and flipped
            faceShape round -> square with faceShape asserted as measured. */
-        /* gx-1.0: +PR, not +1 - this is a ROW-TO-ROW JITTER TOLERANCE in grid
-           pixels. The mask's edge noise doubles in pixel terms when the grid
-           doubles, so a fixed 1px tolerance at 256 is twice as strict as the
-           one this scan was calibrated with and fires 'widening' on noise. */
-        if (rw.w > prevW + PR) { chinY = dy - 1; chinStop = 'widening'; break; }
+        /* gx-1.0: these two tolerances DO NOT SCALE WITH PR, and that is a
+           measured fact, not an oversight. They compare WIDTH CHANGE PER ROW,
+           and per-row slope is grid-invariant: the same jaw spans 2x the width
+           over 2x the rows, so its Δw/row is the same number on either grid.
+           Scaling the flat tolerance to ±2 at 256 made a mid-ellipse slope of
+           1.4px/row count as "flat" - the chin fired 17 grid-px early on the
+           framed shoulders fixture and the top-colour band sampled the wall. */
+        if (rw.w > prevW + 1) { chinY = dy - 1; chinStop = 'widening'; break; }
         /* the FLAT test is the one that needs a width bound - a plateau is only a
            neck if it is neck-width. 0.75, not 0.62: a broad neck is ordinary. */
-        if (Math.abs(rw.w - prevW) <= PR && rw.w <= maxW * 0.75) {
+        if (Math.abs(rw.w - prevW) <= 1 && rw.w <= maxW * 0.75) {
           flat++;
           if (flat >= flatCap) { chinY = dy - flat; chinStop = 'neck'; break; }
-        } else if (Math.abs(rw.w - prevW) > PR) flat = 0;
+        } else if (Math.abs(rw.w - prevW) > 1) flat = 0;
       }
       prevW = rw.w;
       chinY = dy;
@@ -3432,7 +3487,16 @@
       if (darkness > frameDark) { frameDark = darkness; frameY = gy; }
     }
     var browRow = frameY >= 0 ? patchMedian([[atX(0.26), frameY], [atX(0.74), frameY]], PR, false) : null;
-    var foreRow = patchMedian([[cxMid, Math.round((faceT + eyeY) / 2)]], PR, false);
+    /* gx-1.0: skinOnly - foreRow means "the forehead SKIN". Measured at 256:
+       the mask opening rounds the dome top by ~2 rows, (faceT+eyeY)/2 landed
+       INSIDE a spectacle frame drawn high on the face, and the "brow darker
+       than forehead" test compared the bar against itself - glasses vanished
+       on the exact fixture that proves them. Sampling only mask+component
+       pixels makes the sample mean what its name says at any grid; on a
+       forehead with no dark feature in the window it is byte-identical.
+       r=2*PR (the skin-patch footprint, not the probe footprint): a probe-size
+       window can sit entirely inside a high frame bar and admit nothing. */
+    var foreRow = patchMedian([[cxMid, Math.round((faceT + eyeY) / 2)]], 2 * PR, true);
     var bridge = frameY >= 0 ? patchMedian([[cxMid, frameY]], PR, false) : null;
     if (browRow && cheekRow && foreRow && bridge) {
       if (lum(bridge) < lum(cheekRow) - 20 &&
@@ -3754,6 +3818,29 @@
         if (sy < 0 || sy >= M) continue;
         tops.push(px(sx, sy));
       }
+    }
+    /* gx-1.0 (PR>1 ONLY, like maskOpen): at 128 the 2:1+ downsample
+       manufactures boundary BLEND pixels that carry the top's colour into the
+       whole-band median - measured, the framed shoulders fixture claimed
+       #5e959a for a #1f6f78 top, a blend artifact that happened to pass. At
+       256 the boundary is sharp, the median flips to the majority class
+       (background), and a top that is plainly in shot was refused as "too
+       close to the wall". The estimand is THE COLOUR VISIBLY WORN BELOW THE
+       CHIN, so at the fine grid pixels that measure as background are
+       excluded - with a floor of one face-width of remaining evidence, and a
+       fallback to the whole band so an all-background band still refuses with
+       the same message it does today. PR=1 is byte-identical.
+       AND HAIR IS NOT A TOP: hanging hair crosses this band beside the neck,
+       and the first version of this filter promoted it to "the top" - the
+       duplicate-surface veto then correctly killed hair, style AND top on the
+       long-haired small-face fixture (measured). Hair-coloured pixels are
+       excluded with the same distance the side-hair scan uses to ADMIT them;
+       a top genuinely the colour of the hair falls back to the whole band. */
+    if (PR > 1) {
+      var topsFg = tops.filter(function (tp) {
+        return !isBg(tp) && (!hair || chDist(tp, hair) >= 52);
+      });
+      if (topsFg.length >= faceW) tops = topsFg;
     }
     var topCol = medianCol(tops);
     if (topCol && chDist(topCol, skinCut) > 34 && (!bg || chDist(topCol, bg) > 26)) {
