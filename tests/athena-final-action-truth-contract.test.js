@@ -89,16 +89,10 @@ const manifest = window.__mlsWriteFlow.buildUnifiedManifest({
 const stageBilling = manifest.rows.find(row => row.id === 'stage-billing');
 const signEncounter = manifest.rows.find(row => row.id === 'sign-encounter');
 const reviewedOrder = manifest.rows.find(row => row.payload && row.payload.category === 'order' && row.payload.order && row.payload.order.clientOrderId === 'order-truth-1');
-assert(stageBilling && signEncounter && reviewedOrder, 'a final-action review payload disappeared from the immutable Athena manifest');
-
-/* Owner directive 2026-08-12, shipped behind athenaFinalActionsV1: WITHOUT
-   the extension capability the manifest must stay byte-identical to b1018 —
-   manual rows, no typed action, Complete-in-Athena copy — because the
-   installed transport still refuses final-action execute. */
 const finalRows = [stageBilling, signEncounter, reviewedOrder];
 for (const row of finalRows) {
   assert(row, 'a final-action review payload disappeared from the immutable Athena manifest');
-  assert.strictEqual(row.capability, 'manual', `${row.id} must be review/manual-only while execute is transport-blocked`);
+  assert.strictEqual(row.capability, 'manual', `${row.id} must be review/manual-only while execute is policy-blocked`);
   assert.strictEqual(row.action, '', `${row.id} still exposes an executable Athena action`);
   const truthCopy = [row.label, row.reason, row.consequence, row.reviewStatus].join(' ');
   assert(/complete in Athena/i.test(truthCopy), `${row.id} is not visibly labeled “Complete in Athena”`);
@@ -111,28 +105,10 @@ const readyActions = Array.from(manifest.rows)
   .filter(row => row.capability === 'ready' && row.action)
   .map(row => row.action)
   .sort();
-assert.deepStrictEqual(readyActions, ['save_draft', 'write_note'], 'a final action advertised ready while the installed extension refuses it');
-assert(!manifest.rows.some(row => ['stage_billing', 'sign_encounter', 'place_order'].includes(row.action)), 'a final action leaked into an executable manifest row without transport capability');
-
-/* With a capable extension the same manifest goes fully executable — all four
-   actions ready, still one explicit confirm per action. */
-window.__mlsExtensionCapabilities.athenaFinalActionsV1 = true;
-const capableManifest = window.__mlsWriteFlow.buildUnifiedManifest({
-  patient: { patientId: 'patient-truth-1', name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
-  expectedContext: { visitDate: '07/18/2026', provider: 'Example Doctor, MD', appointmentId: 'appt-truth-1' },
-  receiptSessionId: 'truth-review-fixed',
-  previewHash: 'truth-preview-fixed',
-  plan: [
-    { kind: 'note', body: 'NOTE TEXT:\nReviewed current-visit note.' },
-    { kind: 'billing', body: 'BILLING:\nE/M level: 99214\nCPT: 20610', billing: { emCode: '99214', cptCodes: ['20610'] } }
-  ]
-});
-window.__mlsExtensionCapabilities.athenaFinalActionsV1 = false;
-const capableReady = Array.from(capableManifest.rows)
-  .filter(row => row.capability === 'ready' && row.action)
-  .map(row => row.action)
-  .sort();
-assert.deepStrictEqual(capableReady, ['save_draft', 'sign_encounter', 'stage_billing', 'write_note'], 'a capable extension must unlock billing staging and Sign & Save as confirmable rows');
+assert.deepStrictEqual(readyActions, ['save_draft', 'write_note'], 'only write_note and save_draft may remain separately confirmable');
+for (const forbiddenAction of ['stage_billing', 'sign_encounter', 'place_order']) {
+  assert(!manifest.rows.some(row => row.action === forbiddenAction), `${forbiddenAction} leaked into an executable manifest row`);
+}
 
 // The visible advanced panel must not recreate a bypass around the manual rows.
 const enhancePanel = functionBlock(flowSource, 'enhancePanel');
@@ -152,10 +128,10 @@ const appClinicalUi = [
 const consoleSignFlow = functionBlock(wbConsoleSource, 'signSaveFlow');
 const consoleLaunchers = functionBlock(wbConsoleSource, 'injectLaunchers');
 const visibleClinicalCopy = [flowSource, appSource, connectSource, popupSource, consoleSignFlow].join('\n');
-/* 2026-08-12: "Sign & Save unlocks after a verified note write" is now the
-   TRUE sequencing contract, so the unlock-claim patterns moved out of the
-   forbidden list. Order-execution and legacy billing CTAs stay forbidden. */
 const forbiddenClaims = [
+  [/Sign\s*(?:&|&amp;|and)\s*Save[^.\n]{0,180}\bunlock/i, 'Sign unlock claim'],
+  [/\bSign unlocks\b/i, 'Sign unlock claim'],
+  [/locked until (?:this receipt )?(?:verifies|write)/i, 'locked-until-write Sign claim'],
   [/Review Sign\s*(?:&|&amp;|and)\s*Save separately/i, 'executable Sign review offer'],
   [/Confirm\s*(?:&amp;|&)?\s*place one (?:reviewed )?order/i, 'executable order confirmation'],
   [/Review\s*&amp;\s*place in Athena/i, 'executable order CTA'],
@@ -183,4 +159,4 @@ for (const source of [contentSource, backgroundSource]) {
   }
 }
 
-console.log('PASS Athena final-action truth: billing/sign rows advertise exactly what the installed extension accepts (blocked + named gate today, ready under athenaFinalActionsV1); orders stay manual');
+console.log('PASS Athena final-action truth: billing, signing, and orders stay visible as exact manual payloads labeled Complete in Athena; only note write/save can confirm');

@@ -35,12 +35,7 @@ assert(/mlsAppAthenaActionV2\s*:\s*1/.test(content), 'the typed Athena action mu
 
 const appActions = between(writeflow, '/* ---------------- explicit Athena actions', '/* ---- identity helpers');
 for (const action of ['write_note', 'save_draft', 'stage_billing', 'sign_encounter', 'place_order']) assert(appActions.includes(action), `app policy metadata must name ${action}`);
-/* Owner directive 2026-08-12: billing staging and Sign & Save are confirmable
-   app actions. place_order stays out of the app allowlist (extension
-   supervised-order contract required), and sign stays sequenced behind a
-   verified note write at probe time. */
-assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*,\s*stage_billing\s*:\s*true\s*,\s*sign_encounter\s*:\s*true\s*\}/.test(appActions), 'app executable allowlist must be exactly note write/save/billing/sign');
-assert(!/ATHENA_EXECUTABLE_ACTIONS\s*=[^}]*place_order/.test(appActions), 'place_order must not enter the app executable allowlist without the supervised-order contract');
+assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(appActions), 'app executable allowlist must contain only note write/save');
 const appProbeStart = appActions.indexOf('function startAthenaAction(action, opts)');
 assert(appProbeStart >= 0);
 const appProbe = appActions.slice(appProbeStart);

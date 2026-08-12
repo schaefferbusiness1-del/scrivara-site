@@ -111,21 +111,11 @@
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function activePt() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
   function supervisedOrderPlacementReady() { try { return !!(window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.supervisedOrderPlacementV2 === true); } catch (e) { return false; } }
-  /* Owner directive 2026-08-12: billing staging and Sign & Save are MLS
-     actions. The installed extension is the transport authority: until it
-     advertises athenaFinalActionsV1, its write-safety layers refuse these
-     executes, so the rows say that instead of promising a send that the
-     bridge would reject. The moment a capable extension is installed these
-     rows go ready with zero further site change. */
-  function athenaFinalActionsReady() { try { return !!(window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.athenaFinalActionsV1 === true); } catch (e) { return false; } }
-  var FINAL_ACTION_EXT_BLOCK = 'Your installed MLS Assist still enforces the previous write-safety policy and will refuse this action. Update MLS Assist to enable it.';
 
   /* ---------------- explicit Athena actions ------------------------------ */
-  /* Owner directive 2026-08-12: reviewed note write, Save Draft, billing
-     staging, and Sign & Save are all confirmable MLS actions. Every action
-     still runs one-at-a-time behind the same read-only probe, identity lock,
-     one-use token, and explicit per-action clinician confirm. Orders and
-     prescriptions stay review-only pending the supervised-order contract. */
+  /* Only reviewed note write and Save Draft cross the extension write bridge.
+     Billing, orders, prescriptions, and electronic signature stay visible in
+     the review manifest so the clinician can complete them directly in Athena. */
   var ATHENA_ACTIONS = {
     write_note: {
       label: 'Write reviewed note',
@@ -148,20 +138,7 @@
       consequence: 'Review this frozen proposed order here, then select and place the exact catalog item directly in Athena. MLS does not place, prescribe, or submit orders.'
     }
   };
-  var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true };
-  /* Capable-mode row text: rendered ONLY when the installed extension adverts
-     athenaFinalActionsV1. Until then every rendered surface stays byte-for-byte
-     what b1018 rendered (a flag on a shared surface defaults to SHIPPED). */
-  var ATHENA_FINAL_READY = {
-    stage_billing: {
-      label: 'Stage billing in Athena',
-      consequence: 'After your one-click confirm, writes the exact reviewed E/M and CPT/HCPCS codes into the verified encounter\'s billing slate. It does not submit a claim, place an order, or prescribe; review the slate before claim submission in Athena.'
-    },
-    sign_encounter: {
-      label: 'Sign & Save in Athena',
-      consequence: 'After MLS verifies this exact reviewed note was written to this exact encounter, your one-click confirm clicks that encounter\'s verified Sign & Save control. Nothing is signed without your explicit confirmation, and no billing or order runs with it.'
-    }
-  };
+  var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };
   var athenaActionRunning = false;
   var unifiedAthenaState = null;
 
@@ -727,12 +704,8 @@
     opts = opts || {};
     if (!ATHENA_ACTIONS[action]) { actionSay(opts, 'Unsupported Athena action. Nothing was changed.', 'err'); return Promise.resolve({ ok: false, error: 'unsupported-action' }); }
     if (!ATHENA_EXECUTABLE_ACTIONS[action]) {
-      actionSay(opts, 'This payload is review-only here. Complete it directly in Athena; MLS keeps the exact payload visible for you.', '');
+      actionSay(opts, 'Complete this final action directly in Athena. MLS keeps the reviewed payload visible but never stages billing, places orders, prescribes, signs, attests, or submits claims.', '');
       return Promise.resolve({ ok: false, error: 'manual-only-final-action' });
-    }
-    if ((action === 'stage_billing' || action === 'sign_encounter') && !athenaFinalActionsReady()) {
-      actionSay(opts, FINAL_ACTION_EXT_BLOCK + ' Nothing was changed.', 'err');
-      return Promise.resolve({ ok: false, error: 'final-action-capability-required' });
     }
     if (unifiedAthenaState && unifiedAthenaState.closed !== true) { actionSay(opts, 'The unified Athena review is already open. Finish or close that review before starting another Athena action.', ''); return Promise.resolve({ ok: false, error: 'unified-review-open' }); }
     if (athenaActionRunning) { actionSay(opts, 'Another Athena action is awaiting confirmation or still running. Finish or cancel it first.', ''); return Promise.resolve({ ok: false, error: 'busy' }); }
@@ -760,7 +733,7 @@
     }
     var priorWriteReceipt = action === 'sign_encounter' ? findAnyVerifiedWrite(patient, previewHash, opts, payload) : null;
     if (action === 'sign_encounter' && (!S(opts.receiptSessionId) || !priorWriteReceipt || !priorWriteReceipt.noteWriteProof)) {
-      actionSay(opts, 'Write the reviewed note to this encounter first — Sign & Save unlocks after MLS verifies the note write. Nothing was changed.', 'err');
+      actionSay(opts, 'Complete Sign & Save directly in Athena. MLS never finalizes an encounter; nothing was changed.', 'err');
       return Promise.resolve({ ok: false, error: 'verified-note-write-required' });
     }
     athenaActionRunning = true;
@@ -822,9 +795,7 @@
   var UNIFIED_ALIASES = { diagnoses: 'dx', diagnosis: 'dx', icd: 'dx', icd10: 'dx', prescription: 'rx', prescriptions: 'rx', referral: 'referrals', document: 'documents', letter: 'documents', letters: 'documents', avs: 'documents', prior_auth: 'documents', ime: 'documents', mips: 'documents' };
   var UNIFIED_ARIA = {
     write_note: 'Confirm write reviewed note',
-    save_draft: 'Confirm save draft in Athena',
-    stage_billing: 'Confirm stage billing in Athena',
-    sign_encounter: 'Confirm Sign and Save in Athena'
+    save_draft: 'Confirm save draft in Athena'
   };
 
   function deepFreeze(value) {
@@ -1079,22 +1050,9 @@
     var billingReview = S(billingPlan && billingPlan.body || opts.billingText).trim();
     if (hasBilling(billing) || (billing.invalid && billing.invalid.length) || billingReview) {
       var billingDetail = (billing.invalid && billing.invalid.length) ? (' Resolve invalid or conflicting item(s): ' + billing.invalid.join(', ') + '.') : (!hasBilling(billing) ? ' No exact E/M or five-character CPT/HCPCS code is available yet.' : '');
-      if (athenaFinalActionsReady()) {
-        /* Owner directive 2026-08-12 (capable extension only): billing staging
-           is a confirmable MLS action; the row blocks only for real
-           correctness gaps — unbound identity/encounter, invalid codes, or no
-           exact code at all. */
-        var billingBlock = commonBlock
-          || ((billing.invalid && billing.invalid.length) ? 'Resolve invalid or conflicting item(s): ' + billing.invalid.join(', ') + '. Exact five-character CPT/HCPCS codes are required before staging.' : '')
-          || (!hasBilling(billing) ? 'No exact E/M or five-character CPT/HCPCS code is available yet. Nothing can be staged.' : '');
-        addRow({ id: 'stage-billing', action: 'stage_billing', kind: 'billing', label: ATHENA_FINAL_READY.stage_billing.label, destination: 'Athena encounter > Billing / Charges slate',
-          capability: billingBlock ? 'blocked' : 'ready', reason: billingBlock, consequence: ATHENA_FINAL_READY.stage_billing.consequence,
-          payload: { billing: billing, reviewText: billingReview }, order: UNIFIED_ORDER.stage_billing });
-      } else {
-        addRow({ id: 'stage-billing', action: '', kind: 'billing', label: ATHENA_ACTIONS.stage_billing.label, destination: 'Athena encounter > Billing / Charges slate',
-          capability: 'manual', reason: 'Complete in Athena. MLS does not stage billing or submit claims.' + billingDetail, consequence: ATHENA_ACTIONS.stage_billing.consequence,
-          payload: { billing: billing, reviewText: billingReview }, order: UNIFIED_ORDER.stage_billing });
-      }
+      addRow({ id: 'stage-billing', action: '', kind: 'billing', label: ATHENA_ACTIONS.stage_billing.label, destination: 'Athena encounter > Billing / Charges slate',
+        capability: 'manual', reason: 'Complete in Athena. MLS does not stage billing or submit claims.' + billingDetail, consequence: ATHENA_ACTIONS.stage_billing.consequence,
+        payload: { billing: billing, reviewText: billingReview }, order: UNIFIED_ORDER.stage_billing });
     }
     var planHasDx = plan.some(function (entry) { return planKind(entry && entry.kind) === 'dx'; });
     if (!planHasDx && billing.diagnoses && billing.diagnoses.length) {
@@ -1117,20 +1075,10 @@
     if (noteText) {
       addRow({ id: 'save-draft', action: 'save_draft', kind: 'save', label: ATHENA_ACTIONS.save_draft.label, destination: 'Athena encounter > Save / Save Draft control',
         capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: ATHENA_ACTIONS.save_draft.consequence, payload: notePayload, order: UNIFIED_ORDER.save_draft });
-      if (athenaFinalActionsReady()) {
-        /* Owner directive 2026-08-12 (capable extension only): Sign & Save is
-           a confirmable MLS action. Sequencing stays hard: the probe and the
-           extension both require a verified note write for this exact
-           encounter before sign can run. */
-        addRow({ id: 'sign-encounter', action: 'sign_encounter', kind: 'sign', label: ATHENA_FINAL_READY.sign_encounter.label, destination: 'Athena encounter > Sign & Save control',
-          capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock,
-          consequence: ATHENA_FINAL_READY.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
-      } else {
-        addRow({ id: 'sign-encounter', action: '', kind: 'sign', label: ATHENA_ACTIONS.sign_encounter.label, destination: 'Athena encounter > Sign & Save control',
-          capability: 'manual',
-          reason: 'Complete in Athena. Electronic signature and encounter finalization always stay in the clinician\'s hands; this row never becomes an MLS action.',
-          consequence: ATHENA_ACTIONS.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
-      }
+      addRow({ id: 'sign-encounter', action: '', kind: 'sign', label: ATHENA_ACTIONS.sign_encounter.label, destination: 'Athena encounter > Sign & Save control',
+        capability: 'manual',
+        reason: 'Complete in Athena. Electronic signature and encounter finalization always stay in the clinician\'s hands; this row never becomes an MLS action.',
+        consequence: ATHENA_ACTIONS.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
     }
     rows.sort(function (a, b) { return a.order - b.order || a.id.localeCompare(b.id); });
     var manifestHash = hashPreview({ patient: patient, visit: visit, previewHash: previewHash, receiptSessionId: receiptSessionId, rows: rows.map(function (r) { return r.rowHash; }) });
@@ -1367,7 +1315,7 @@
     unifiedStatus(state, 'Checking the exact Athena patient, encounter, destination, and control read-only for ' + row.label + '...', '');
     var proofOpts = { receiptSessionId: state.manifest.receiptSessionId };
     var priorWrite = row.action === 'sign_encounter' ? findAnyVerifiedWrite(state.manifest.patient, state.manifest.previewHash, proofOpts, row.payload) : null;
-    if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Write the reviewed note to this encounter first — Sign & Save unlocks after MLS verifies the note write in this review.', 'err'); unifiedRecheckButton(state, row.id); return; }
+    if (row.action === 'sign_encounter' && (!priorWrite || !priorWrite.noteWriteProof)) { unifiedStatus(state, 'Complete Sign & Save directly in Athena. MLS never finalizes an encounter.', 'err'); unifiedRecheckButton(state, row.id); return; }
     var bridgeProbePatient = bridgePatient(state.manifest.patient);
     var taughtDestination = taughtDestinationFor(state.manifest, row);
     /* 2026-07-28: a first read-only check that has not answered in 25s is a
@@ -1756,12 +1704,12 @@
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'mlsAthenaUnifiedTitle'); ov.setAttribute('aria-describedby', 'mlsAthenaUnifiedSafety');
     var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
     card.innerHTML =
-      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; one click writes exactly what you see below. ' + (athenaFinalActionsReady() ? 'Reviewed note write, Save Draft, billing staging, and Sign &amp; Save each run only after your explicit one-click confirm; orders and prescriptions stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.') + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; one click writes exactly what you see below. Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
       unifiedNoteHeroHtml(manifest) +
       rowsHtml +
       '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> being verified read-only now.</div>' +
       '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Checking the exact chart read-only &mdash; nothing is sent yet.</div>' +
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; orders, prescriptions, and claim submission stay yours in Athena.' : 'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.') + '</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.</div>' +
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
       '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
@@ -1825,9 +1773,7 @@
     unifiedAthenaState = state;
     if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
     actionSay(opts, manifest.rows.some(function (row) { return row.capability === 'ready' && row.action; })
-      ? (athenaFinalActionsReady()
-        ? 'Athena review ready. Select one ready action — note write, Save Draft, billing staging, or Sign & Save — and confirm it; MLS runs exactly that one action.'
-        : 'Athena review ready. Only reviewed note write or Save Draft can be selected and confirmed; complete final actions in Athena.')
+      ? 'Athena review ready. Only reviewed note write or Save Draft can be selected and confirmed; complete final actions in Athena.'
       : 'Athena review ready. This payload is review-only; complete it directly in Athena.', '', { toast: false });
     return manifest;
   }
@@ -1956,7 +1902,7 @@
       }
     }
     if (okN > 0 && draftN === 0 && warnN === 0) {
-      logTo(logEl, '&#10003; <b>Done &mdash; ' + okN + ' section(s) durably verified on ' + esc(cName) + '.</b> ' + (athenaFinalActionsReady() ? 'Review in Athena, then Save/Sign there or via the Send-to-Athena review\'s confirmed actions.' : 'Review and sign in Athena; MLS never clicks Save/Sign.'));
+      logTo(logEl, '&#10003; <b>Done &mdash; ' + okN + ' section(s) durably verified on ' + esc(cName) + '.</b> Review and sign in Athena; MLS never clicks Save/Sign.');
     } else if (okN > 0) {
       logTo(logEl, '&#9888; <b>' + okN + ' section(s) durably verified.</b> ' + (draftN + warnN) + ' section(s) remain draft-only or blocked and need manual review.');
     } else if (execTotal > 0) {

@@ -69,16 +69,13 @@ assert(byAction.write_note.payloadHash && byAction.write_note.rowHash && manifes
 const billingRow = manifest.rows.find(row => row.id === 'stage-billing');
 const signRow = manifest.rows.find(row => row.id === 'sign-encounter');
 assert(billingRow && signRow, 'billing and signing review payloads must remain visible');
-/* Owner directive 2026-08-12, shipped behind athenaFinalActionsV1: without
-   that extension capability the rendered manifest must stay byte-identical to
-   b1018 — manual billing/sign rows, no typed action, Complete-in-Athena copy. */
 for (const row of [billingRow, signRow]) {
-  assert.strictEqual(row.capability, 'manual', `${row.id} must remain manual without the extension capability`);
-  assert.strictEqual(row.action, '', `${row.id} must not expose an executable action without the extension capability`);
+  assert.strictEqual(row.capability, 'manual', `${row.id} must remain manual`);
+  assert.strictEqual(row.action, '', `${row.id} must never expose an executable action`);
   assert(/complete in Athena/i.test(row.reason), `${row.id} must explicitly say Complete in Athena`);
 }
 assert.deepStrictEqual(Array.from(billingRow.payload.billing.cptCodes), ['20610']);
-assert(!manifest.rows.some(row => ['stage_billing', 'sign_encounter', 'place_order'].includes(row.action)), 'a final clinical/financial action leaked into an executable row without transport capability');
+assert(!manifest.rows.some(row => ['stage_billing', 'sign_encounter', 'place_order'].includes(row.action)), 'a final clinical/financial action leaked into an executable row');
 
 const dx = manifest.rows.find(row => row.kind === 'dx');
 const orders = manifest.rows.find(row => row.kind === 'orders');
