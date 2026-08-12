@@ -83,6 +83,73 @@
       try { if (key in root) root[key] = ''; } catch (_) {}
     });
   }
+  function purgePatientStore(email) {
+    /* sj-2.0 wipes (design Q2, BLOCKING): the sj-2.0 patient store keeps this
+       account's roster as one IndexedDB record (db mlsPtsStoreV2 / store
+       ptsBlobs, key sf_u::<email>::patients) plus two small localStorage keys
+       (ptsJournalV2 / ptsGenV2). Logout must remove all three and PROVE the
+       removal: __mlsPtsStore.wipe() deletes ONLY the current account's record
+       and answers with a read-back-verified receipt - verifiedEmpty===true is
+       the ONLY green. Own-prefix-only by design: other accounts' records and
+       foreign namespaces stay untouched, exactly like the localStorage rules
+       above (this module never deletes the shared database).
+       Fail-closed: a missing store, an unresolved (::undefined::/::_::)
+       namespace, a namespace that does not match the email being purged, or
+       an unproven wipe all resolve {verifiedEmpty:false} and ESCALATE - the
+       caller may not treat this sign-out as clean (no proof, no green). */
+    var prefix = accountPrefix(email);
+    var rec = { site: 'clinical-state-purge', at: Date.now(), attempted: false, verifiedEmpty: false, escalated: false, error: '' };
+    function settle() {
+      if (rec.verifiedEmpty !== true) {
+        rec.escalated = true;
+        /* LOUD wherever it matters: any real page (document present) and any
+           context where a wipe actually ran and failed. Bare vm harnesses
+           without a document stay quiet - the receipt still refuses green. */
+        if (rec.attempted || root.document != null) {
+          try { if (root.console && root.console.error) root.console.error('[clinical-state-purge] PATIENT-STORE WIPE UNPROVEN - IndexedDB patient bytes may remain on this device', rec); } catch (_) {}
+          try { if (typeof root.toast === 'function') root.toast('Sign-out could not PROVE patient data was removed from this device. Tell MLS support before anyone else uses this computer.', 'err'); } catch (_) {}
+        }
+      }
+      try { root.__mlsPtsWipeLast = rec; } catch (_) {}
+      return rec;
+    }
+    if (!email) { rec.error = 'no-account-email'; return Promise.resolve(settle()); }
+    if (prefix.indexOf('::undefined::') >= 0 || prefix.indexOf('::_::') >= 0) { rec.error = 'unresolved-account-namespace'; return Promise.resolve(settle()); }
+    if (!root.__mlsPtsStore || typeof root.__mlsPtsStore.wipe !== 'function') { rec.error = 'pts-store-missing'; return Promise.resolve(settle()); }
+    if (typeof root.uns === 'function') {
+      /* the store wipes uns()'s CURRENT namespace; purge() is told an email.
+         If they disagree the wipe would hit the wrong account - refuse and
+         escalate instead of accepting a green for the wrong namespace. */
+      var liveKey = null;
+      try { liveKey = root.uns('patients'); } catch (_) {}
+      if (liveKey !== prefix + 'patients') { rec.error = 'namespace-mismatch: the live session namespace is not the account being purged'; return Promise.resolve(settle()); }
+    }
+    rec.attempted = true;
+    var wiped;
+    try { wiped = Promise.resolve(root.__mlsPtsStore.wipe()); }
+    catch (e) { rec.error = 'wipe-call: ' + String((e && e.message) || e).slice(0, 160); return Promise.resolve(settle()); }
+    return wiped.then(function (w) {
+      rec.store = (w && typeof w === 'object') ? w : null;
+      var ok = !!(w && w.verifiedEmpty === true);
+      if (ok) {
+        /* INDEPENDENT read-back keyed on the EMAIL prefix, not on uns():
+           the logout flow tears the session down right after purge() is
+           called, so a verify routed through uns() could re-resolve to the
+           ::_:: namespace and pass vacuously. These three reads cannot. */
+        var left = [];
+        ['patients', 'ptsJournalV2', 'ptsGenV2'].forEach(function (s) {
+          try { if (root.localStorage.getItem(prefix + s) !== null) left.push(s); }
+          catch (_) { left.push(s + '?'); }
+        });
+        if (left.length) { ok = false; rec.error = 'localStorage-keys-remain: ' + left.join(','); }
+      } else if (!rec.error) rec.error = (w && w.error) ? String(w.error).slice(0, 160) : 'store-wipe-unverified';
+      rec.verifiedEmpty = ok;
+      return settle();
+    }, function (e) {
+      rec.error = 'wipe-rejected: ' + String((e && e.message) || e).slice(0, 160);
+      return settle();
+    });
+  }
   function purge(email) {
     var removedLocal = [];
     var local = root.localStorage;
@@ -96,7 +163,8 @@
     try { if (root.sessionStorage) root.sessionStorage.clear(); } catch (_) {}
     clearVolatileClinicalGlobals();
     var databases = purgeAudioDatabases();
-    return { removedLocal: removedLocal, sessionCleared: true, databases: databases };
+    var ptsStore = purgePatientStore(email); /* sj-2.0 Q2: resolves the wipe receipt; never rejects */
+    return { removedLocal: removedLocal, sessionCleared: true, databases: databases, ptsStore: ptsStore };
   }
 
   root.__mlsClinicalStatePurge = Object.freeze({

@@ -162,7 +162,7 @@ assert(!connect.includes('phoneMicPage'), 'retired phone-recorder overlay repair
 const shellAt = sw.indexOf('const SHELL = [');
 const shellBlock = sw.slice(shellAt, sw.indexOf('];', shellAt) + 2);
 assert(shellBlock.includes('/ScribeFlow.html'), 'reviewed token-free clinical shell lost offline resilience');
-assert(shellBlock.includes('/clinical-state-purge.js?v=20260718csp1'), 'offline clinical shell lacks its logout purge boundary');
+assert(shellBlock.includes('/clinical-state-purge.js?v=20260811sj2w1'), 'offline clinical shell lacks its logout purge boundary');
 const networkAt = sw.indexOf('const NETWORK_ONLY_HTML_PATHS');
 const networkBlock = sw.slice(networkAt, sw.indexOf(']);', networkAt) + 3);
 assert(!networkBlock.includes('/scribeflow.html'), 'token-free ScribeFlow shell was incorrectly made network-only');

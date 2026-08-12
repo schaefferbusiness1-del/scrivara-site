@@ -275,7 +275,7 @@
   }catch(e){}
 })();
 </script>
-<script src="clinical-state-purge.js?v=20260718csp1"></script>
+<script src="clinical-state-purge.js?v=20260811sj2w1"></script>
 <!-- PWA: installable phone + desktop app -->
 <meta name="theme-color" content="#2E6A4B">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -7420,7 +7420,13 @@ async function logout(force){
     const _purge=window.__mlsClinicalStatePurge&&window.__mlsClinicalStatePurge.purge(_logoutEmail);
     const _clinicalPurge=_purge&&_purge.databases?_purge.databases:Promise.resolve([]);
     const _consentPurge=typeof _mlsPurgeConsentAuditDb==='function'?_mlsPurgeConsentAuditDb(_logoutEmail):Promise.resolve(false);
-    window.__mlsLogoutPurge=Promise.all([_clinicalPurge,_consentPurge]);
+    /* sj-2.0 wipes (design Q2, BLOCKING): the patient-store wipe receipt rides
+       the logout barrier, so anything awaiting __mlsLogoutPurge also waits for
+       the IndexedDB proof. verifiedEmpty:false escalates inside
+       clinical-state-purge (the module owns the verdict; every caller
+       inherits it). Resolves null when the purge module predates sj-2.0. */
+    const _ptsWipe=_purge&&_purge.ptsStore?_purge.ptsStore:Promise.resolve(null);
+    window.__mlsLogoutPurge=Promise.all([_clinicalPurge,_consentPurge,_ptsWipe]);
   }catch(e){ window.__mlsLogoutPurge=Promise.resolve([]); }
   session=null;
   // Clear THIS TAB's session (sessionStorage) AND the localStorage seed. Other
@@ -8875,8 +8881,38 @@ async function clearDeviceData(){
     keys.forEach(k=>localStorage.removeItem(k));
   }catch(e){}
   try{ if(typeof _mlsPurgeConsentAuditDb==='function') await _mlsPurgeConsentAuditDb(consentAccount); }catch(e){}
-  try{ toast('Cleared saved data on this device. Reloading…','ok'); }catch(e){}
-  setTimeout(()=>{ try{ location.reload(); }catch(e){ location.href=location.href; } },400);
+  /* sj-2.0 wipes (design Q2, BLOCKING): the patient store's IndexedDB copy is
+     part of "saved data on this device". Wipe it through __mlsPtsStore.wipe()
+     and REQUIRE the proof: verifiedEmpty===true (own record read back null,
+     journal + generation keys read back null) is the ONLY green - anything
+     less keeps the success toast OFF, escalates loudly, and slows the reload
+     so the escalation is seen. Own-prefix-only: only this account's record is
+     deleted. The ::undefined::/::_:: namespace class is refused here exactly
+     as the store's own init() refuses it - a wipe aimed at an unresolved
+     namespace greens the WRONG namespace while the real bytes survive. */
+  let _pwRec=null,_pwOk=false;
+  try{
+    if(!(window.__mlsPtsStore&&typeof window.__mlsPtsStore.wipe==='function')) _pwRec={verifiedEmpty:false,error:'pts-store-missing'};
+    else if(prefix.indexOf('::undefined::')>=0||prefix.indexOf('::_::')>=0) _pwRec={verifiedEmpty:false,error:'unresolved-account-namespace'};
+    else _pwRec=await window.__mlsPtsStore.wipe();
+  }catch(e){ _pwRec={verifiedEmpty:false,error:'wipe-rejected: '+String((e&&e.message)||e).slice(0,160)}; }
+  try{
+    if(!_pwRec||typeof _pwRec!=='object') _pwRec={verifiedEmpty:false,error:'no-receipt'};
+    _pwOk=_pwRec.verifiedEmpty===true;
+    if(_pwOk){
+      /* independent read-back on the ENTRY-TIME prefix - immune to any uns()
+         drift across the awaits above */
+      const _pwLeft=[prefix+'patients',prefix+'ptsJournalV2',prefix+'ptsGenV2'].filter(k=>{ try{ return localStorage.getItem(k)!==null; }catch(e){ return true; } });
+      if(_pwLeft.length){ _pwOk=false; _pwRec.verifiedEmpty=false; _pwRec.error='localStorage-keys-remain: '+_pwLeft.join(','); }
+    }
+    _pwRec.site='clearDeviceData'; _pwRec.at=Date.now(); window.__mlsPtsWipeLast=_pwRec;
+  }catch(e){ _pwOk=false; }
+  if(_pwOk){ try{ toast('Cleared saved data on this device. Reloading…','ok'); }catch(e){} }
+  else{
+    try{ console.error('[clearDeviceData] PATIENT-STORE WIPE UNPROVEN (design Q2: no proof, no green)',_pwRec); }catch(e){}
+    try{ toast('Saved data was cleared, but patient-data removal from this device could NOT be proven complete. Tell MLS support before anyone else uses this computer.','err'); }catch(e){}
+  }
+  setTimeout(()=>{ try{ location.reload(); }catch(e){ location.href=location.href; } },_pwOk?400:4200);
 }
 function saveSettings(){
   const k=document.getElementById('apiKey').value.trim();

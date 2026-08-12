@@ -532,6 +532,10 @@ const tests = [
   'sj2-migration-fail-closed.test.js',
   'sj2-eviction-persist.test.js',
   'sj2-boot-barrier.test.js',
+  /* sj-2.0 Commit C (design Q2 machinery): logout + clearDeviceData carry the
+     HARD verifiedEmpty gate; the LIVE zero-idb-bytes check is the owner-gated
+     BLOCKING criterion at the cutover, not this vm suite. */
+  'wipes-contract.test.js',
   'quota-verified-writes.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
