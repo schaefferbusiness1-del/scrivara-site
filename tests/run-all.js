@@ -620,6 +620,18 @@ const tests = [
      (claimed-only look + shared applier + counted refusals), the duplicate-surface veto, the
      quarantine/reset/loud-note UI truth, and the vision claim gates. */
   'face-refusal-quarantines-the-stale-look.test.js',
+  /* 2026-08-12 gx-1.0: THE GRID FOLLOWS THE SOURCE. The 128 analysis grid was
+     invariant to camera resolution (a 1024 capture box-averaged to 128 before any
+     estimator saw a pixel), the five skin patches could legitimately sample a
+     skin-coloured WALL through the component test (the owner's #836668), the
+     lopsided clamp left atX() mixing an un-clamped edge with the clamped width,
+     and the chip-calibrated C*<32 bound refused photographed skin while quoting a
+     hue that had passed. Executes the real extracted reader on both trees: the
+     wall-to-wall whole-read kill, the re-derived CIELAB bounds, the moved
+     patches, the clamp-following box, the adaptive 128/256 grid, and THE
+     SAMPLED-FACE-SIZE gate (none existed before this train). Pre-fix controls
+     must reproduce each defect or the pin is called decoration. */
+  'face-grid-and-skin-geometry.test.js',
   /* 2026-08-09 av-6.2.0: ONE OWNER for #mlsAvKioskInterim. Owner: "having text constantly
      overlapping and being such a paIUN IN THE ASS" — measured as FOURTEEN writers on one
      text node with no priority, clobbering each other mid-sentence. Executes the ranked

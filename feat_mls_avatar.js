@@ -2444,14 +2444,35 @@
   function faceChroma(lab) { return Math.sqrt(lab.a * lab.a + lab.b * lab.b); }
 
   function faceReadPortrait(img) {
-    var M = 128;
+    /* THE GRID FOLLOWS THE SOURCE (gx-1.0). 128 was INVARIANT to camera
+       resolution: captureSquare hands this function a 1024px frame and it was
+       averaged down to 128x128 before any estimator looked at a pixel - 64x of
+       what the camera delivered discarded before measurement, so no camera
+       could ever move a verdict. The grid is 256 whenever the source can fill
+       it and 128 otherwise; NEVER upscaled - a small source read at 256 would
+       invent pixels, which is the opposite of measuring.
+       256 and not 512: the full 14-control pass measured 2.58ms at 128 and
+       scales with M^2, so 256 costs ~10ms (fits the live view's 125ms cadence
+       inside one paint) where 512's ~40ms would jank every tick.
+       ⛔ EVERY absolute pixel floor below was audited for this change: floors
+       that are fractions of M / maxW / faceW / faceH scale themselves; floors
+       in GRID PIXELS that describe physical extent scale by PR = M/128; floors
+       that are EVIDENCE MINIMUMS (sample counts) deliberately do NOT scale,
+       because a finer grid supplying more evidence for the same feature is the
+       entire point of this change. Each kept floor says which kind it is. */
+    var iw = img.naturalWidth || img.width || 128, ih = img.naturalHeight || img.height || 128;
+    var M = Math.min(iw, ih) >= 256 ? 256 : 128;
+    var PR = M / 128;
     var c = document.createElement('canvas'); c.width = M; c.height = M;
     var x = c.getContext('2d');
+    /* the browser's default downscale filter is the cheapest one; this frame is
+       measured, so ask for the good filter (a no-op where unsupported) */
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
     /* COVER, never stretch. A webcam frame is 4:3 or 16:9, and squeezing one
        into a square turns a round head oval - a shape verdict invented by the
        scaler. stylizePortrait already centre-crops what it captures; a photo
        arriving from anywhere else gets the same treatment here. */
-    var iw = img.naturalWidth || img.width || M, ih = img.naturalHeight || img.height || M;
     var side = Math.min(iw, ih) || M;
     x.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, M, M);
     var d = x.getImageData(0, 0, M, M).data;
@@ -2764,13 +2785,17 @@
            the test was skipped, and the scan ran on down the neck. One face, one
            shadow growing monotonically, moved the chin 103 -> 91 and flipped
            faceShape round -> square with faceShape asserted as measured. */
-        if (rw.w > prevW + 1) { chinY = dy - 1; chinStop = 'widening'; break; }
+        /* gx-1.0: +PR, not +1 - this is a ROW-TO-ROW JITTER TOLERANCE in grid
+           pixels. The mask's edge noise doubles in pixel terms when the grid
+           doubles, so a fixed 1px tolerance at 256 is twice as strict as the
+           one this scan was calibrated with and fires 'widening' on noise. */
+        if (rw.w > prevW + PR) { chinY = dy - 1; chinStop = 'widening'; break; }
         /* the FLAT test is the one that needs a width bound - a plateau is only a
            neck if it is neck-width. 0.75, not 0.62: a broad neck is ordinary. */
-        if (Math.abs(rw.w - prevW) <= 1 && rw.w <= maxW * 0.75) {
+        if (Math.abs(rw.w - prevW) <= PR && rw.w <= maxW * 0.75) {
           flat++;
           if (flat >= flatCap) { chinY = dy - flat; chinStop = 'neck'; break; }
-        } else if (Math.abs(rw.w - prevW) > 1) flat = 0;
+        } else if (Math.abs(rw.w - prevW) > PR) flat = 0;
       }
       prevW = rw.w;
       chinY = dy;
@@ -2866,10 +2891,40 @@
       if (clamped >= Math.max(6, maxW * 0.45)) {
         faceW = clamped;
         cxMid = trueMid;
+        /* 🚨 gx-1.0 THE BOX FOLLOWS THE CLAMP. faceW and cxMid were replaced
+           here but faceRun.L was NOT, and atX() below computes
+           faceRun.L + faceW * fr - the UN-clamped left edge with the clamped
+           width. MEASURED (adjudication C2, hand-on-cheek fixture): asym 1.89,
+           faceW 56 -> 38, and shipped atX(0.20) landed at x=36 on a face whose
+           own 0.20 line is x=53 - every atX-based window (both lower skin
+           patches, cheek, brow, eye, jaw, top) sat 17px into the hand while
+           the nose and beard scans used the corrected cxMid: TWO DIFFERENT
+           CENTRE LINES IN ONE READ. The run is re-centred on trueMid so every
+           consumer of faceRun measures the same face the clamp decided on. */
+        faceRun = { L: Math.round(trueMid - clamped / 2),
+                    R: Math.round(trueMid + clamped / 2), w: clamped };
       } else {
         geomOdd = true;
         lopsided = false;
       }
+    }
+    /* 🚨 gx-1.0 A BOX THAT RUNS WALL-TO-WALL IS NOT A FACE OUTLINE
+       (adjudication fixture A, measured on the shipped bytes): a taupe wall
+       inside the YCbCr skin window merges with the head into one component
+       that pickFace ACCEPTS (63% of frame, under the 72% cap), the widest row
+       then spans the entire frame, and all five skin patches sample the wall
+       through the mask+component test LEGITIMATELY - 25/25 wall pixels per
+       patch, the wall's own hex returned verbatim. That is the owner's
+       #836668. No colour bound can catch it: the greige control (#837568,
+       hue 71, C* 9.7) sailed through the skin gate and was CLAIMED, with
+       'nose' and 'lips' verdicts measured off the wall behind it. The refusal
+       is geometric, and it must kill the WHOLE read - every window below is
+       placed from this outline. */
+    if (faceRun.L <= 0 && faceRun.R >= M - 1) {
+      return { look: null, derived: [], found: ["your face outline runs from one edge of the picture " +
+        "to the other, which means a background close to skin colour is merging with your face - nothing " +
+        "measured from that outline would really be you. Retake against a plainer or cooler-coloured " +
+        "background, or with more light on your face than on the wall."] };
     }
 
     /* ---- 4. facial hair as GEOMETRY, before anything below the eyes is
@@ -2919,7 +2974,10 @@
         }
       }
       if (!n) return null;
-      var keep = Object.keys(cols).map(Number).filter(function (k) { return cols[k] >= 2; })
+      /* gx-1.0: >= 2*PR, not >= 2 - this floor exists to reject JPEG-ringing
+         strays, and a stray that was one pixel at 128 is ~two at 256. An iris
+         column is far taller than either, so nothing real is lost. */
+      var keep = Object.keys(cols).map(Number).filter(function (k) { return cols[k] >= 2 * PR; })
         .sort(function (a, b) { return a - b; });
       if (!keep.length) return null;
       var heights = keep.map(function (k) { return cols[k]; });
@@ -2991,10 +3049,30 @@
     /* SKIN IS SAMPLED WHERE THE MASK SAYS SKIN **AND THE FACE COMPONENT SAYS FACE**.
        Either alone is not enough: the mask spans the whole frame, and the component
        alone would include hair and spectacle frames that the mask excludes. */
-    var skin = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
-                            [atX(0.24), maxWY + Math.round(faceH * 0.12)],
-                            [atX(0.76), maxWY + Math.round(faceH * 0.12)],
-                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true, true) || skinRef;
+    /* 🚨 gx-1.0 THE REPORTED SKIN MOVES OFF THE EYE LINE. Two of the five
+       patches sat at atX(0.20)/atX(0.80) ON maxWY - the outer canthus and
+       temple, exactly where a spectacle rim, its temple arm, and the eye-socket
+       shadow run. Socket shadow stays INSIDE the mask (it is within the
+       luminance and chroma tolerance of skin), so the b988 median cannot
+       reject it when it fills a patch - measured: three of five patches
+       poisoned flips the across-patch median to a muddy rose around hue 30-34,
+       which is byte-for-byte the p1 #9d6c64 signature the owner hit. The pair
+       now sits on the LOWER CHEEK (clear of rims below, nostril wings inboard,
+       jaw and beard further down), which is skin on every face geometry.
+       ⛔ skinCut BELOW KEEPS THE OLD FIVE SPOTS DELIBERATELY: every dark-mass
+       threshold in this function is an offset from skinCut and was calibrated
+       against samples taken AT those positions. Moving the reported swatch
+       must not silently re-base ten detectors - that is the same trap as the
+       patchMedian opt-in one page up, and it is avoided the same way: the one
+       thing meant to move is the only thing that moves. */
+    var skinSpots = [[atX(0.28), Math.min(maxWY + Math.round(faceH * 0.22), lowerChin - 2 * PR)],
+                     [atX(0.72), Math.min(maxWY + Math.round(faceH * 0.22), lowerChin - 2 * PR)],
+                     [atX(0.24), maxWY + Math.round(faceH * 0.12)],
+                     [atX(0.76), maxWY + Math.round(faceH * 0.12)],
+                     [cxMid, Math.round((faceT + maxWY) / 2)]];
+    /* gx-1.0: r scales by PR - the patch is a PHYSICAL footprint (a patch of
+       cheek), so it keeps its physical size when the grid doubles. */
+    var skin = patchMedian(skinSpots, 2 * PR, true, true) || skinRef;
     /* THE 4th ARGUMENT IS THE OPT-IN, AND THIS IS THE ONLY CALL SITE THAT TAKES IT (av-6.0.6).
        The per-patch statistic here is now a TRUE MEDIAN. The first attempt at this made the
        flag an opt-OUT and cost the glasses read, because patchMedian has TEN call sites and
@@ -3025,7 +3103,7 @@
     var skinCut = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
                             [atX(0.24), maxWY + Math.round(faceH * 0.12)],
                             [atX(0.76), maxWY + Math.round(faceH * 0.12)],
-                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2, true) || skin;
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2 * PR, true) || skin;
     var skinL = lum(skinCut);
     /* the BAND THE DOCTOR IS TOLD must describe the colour he is SHOWN, so it reads the
        median like the swatch does — not the threshold statistic. */
@@ -3111,14 +3189,37 @@
     var fromIllustration = posterFrac > 0.5;
     var skinLab = faceLab(skin);
     var skinHue = faceHueAb(skinLab), skinChroma = faceChroma(skinLab);
-    var skinIsSkinColoured = skinHue >= 45 && skinChroma < 32;
+    /* 🚨 gx-1.0 THE CHROMA BOUND IS RE-DERIVED AGAINST PHOTOGRAPHED SKIN.
+       C* < 32 was calibrated on the matte MST reference CHIPS (their maximum
+       is 27.9) - but a photographed face is lit, not matte. Measured through
+       faceLab on photographed-skin samples: #af6228 C* 52.1, #ab602b 49.7,
+       #c68642 49.0, #e0ac69 43.0, #8d5524 41.8, #f1c27d 41.8 - every one
+       refused by the chip bound, and the refusal message then quoted a HUE
+       that had passed. Upper bound now 60 (52.1 max measured + headroom).
+       AND THE GATE GAINS THE TWO BOUNDS IT NEVER HAD: hue had no ceiling and
+       chroma no floor, so a blue-grey wall (#b9c0c4, hue 240.1, C* 3.3) and a
+       warm grey (#8a8880, hue 99.6, C* 4.6) both PASSED. Hue caps at 95
+       (MST maximum 89.1 + headroom), chroma floors at 5 (measured walls and
+       whites are 3.2-4.6; the palest MST chip is 5.6). The floor is thin at
+       the pale end by nature - near-neutrals are what it rejects - and the
+       wall-to-wall veto above is the primary defence; this gate is the
+       backstop for a sample that goes wrong some other way. */
+    var skinIsSkinColoured = skinHue >= 45 && skinHue <= 95 && skinChroma >= 5 && skinChroma < 60;
     var derived = [];
     if (fromIllustration) {
       found.push('this is the stylized copy of your photo, not the photograph — its colours are ' +
         'reduced to six steps per channel, so no colour was taken from it. Retake your photo and Match again.');
     } else if (!skinIsSkinColoured) {
+      /* gx-1.0 THE MESSAGE NAMES THE TERM THAT ACTUALLY FAILED. The old line
+         printed only the hue, so a doctor refused on CHROMA was shown a hue
+         that had passed - a message that argues with its own verdict sends him
+         to buy a camera. Every failed bound is named with its number. */
+      var skinWhy = [];
+      if (skinHue < 45 || skinHue > 95) skinWhy.push('hue ' + Math.round(skinHue) + '°, real skin is 45°-95°');
+      if (skinChroma < 5) skinWhy.push('colour saturation ' + Math.round(skinChroma) + ', real skin is 5-60 — that is a grey or white surface, not skin');
+      else if (skinChroma >= 60) skinWhy.push('colour saturation ' + Math.round(skinChroma) + ', real skin is 5-60');
       found.push('the skin sample came back ' + hex(skin) + ', which is outside the range real skin ' +
-        'occupies (hue ' + Math.round(skinHue) + '°, needs 45°+) — usually the wall behind you ' +
+        'occupies (' + skinWhy.join('; ') + ') — usually the wall behind you ' +
         'bleeding into the sample, so your own skin colour was left alone');
     } else {
       derived.push('skin');
@@ -3262,9 +3363,11 @@
          drop 1 in every case. Real stubble stays inside the mask - it darkens
          skin without leaving the skin-chroma cluster - so nothing that should be
          detected is lost by demanding the mask. */
-      var jawY = Math.min(belowEye(0.88), lowerChin - 3);
-      var chinY2 = Math.min(belowEye(1.0), lowerChin - 3);
-      var chin = patchMedian([[atX(0.30), jawY], [atX(0.70), jawY], [cxMid, chinY2]], 2, true);
+      /* gx-1.0: the -(2*PR+1) clamp keeps the scaled r window inside the chin,
+         which is what the old literal -3 did for r=2 */
+      var jawY = Math.min(belowEye(0.88), lowerChin - (2 * PR + 1));
+      var chinY2 = Math.min(belowEye(1.0), lowerChin - (2 * PR + 1));
+      var chin = patchMedian([[atX(0.30), jawY], [atX(0.70), jawY], [cxMid, chinY2]], 2 * PR, true);
       if (chin) {
         var drop = skinL - lum(chin);
         if (drop > 46) { look.beard = 'beard'; derived.push('beard'); found.push('beard'); }
@@ -3282,7 +3385,7 @@
        then had its bar measured as the thickest eyebrows in the practice. The
        darkest BRIDGE in the band is the candidate, because the bridge is what
        makes a frame a frame: eyebrows have a gap there and a frame crosses it. */
-    var cheekRow = patchMedian([[atX(0.20), belowEye(0.30)], [atX(0.80), belowEye(0.30)]], 1, false);
+    var cheekRow = patchMedian([[atX(0.20), belowEye(0.30)], [atX(0.80), belowEye(0.30)]], PR, false);
     /* -1e9, not -1: darkness is a NEGATIVE luminance, so seeding the comparator
        at -1 meant no row was ever darker than the seed and the scan silently
        found nothing. A frame detector that always declines looks exactly like a
@@ -3317,18 +3420,20 @@
         fcols.push((fstart >= 0 && fstart < faceT) ? flow : faceT);
       }
       var fmed = median(fcols);
-      if (fmed !== null) fringeStop = Math.max(faceT, fmed + 2);
+      /* gx-1.0: +2*PR - the margin clears the hair's antialiased edge, which
+         is a physical border that doubles in pixel terms with the grid */
+      if (fmed !== null) fringeStop = Math.max(faceT, fmed + 2 * PR);
     }
     var frameY = -1, frameDark = -1e9;
     for (var gy = Math.max(fringeStop, eyeY - Math.round(faceH * 0.22)); gy <= Math.min(lowerChin, eyeY + Math.round(faceH * 0.06)); gy++) {
-      var brg = patchMedian([[cxMid, gy]], 1, false);
+      var brg = patchMedian([[cxMid, gy]], PR, false);
       if (!brg) continue;
       var darkness = -lum(brg);
       if (darkness > frameDark) { frameDark = darkness; frameY = gy; }
     }
-    var browRow = frameY >= 0 ? patchMedian([[atX(0.26), frameY], [atX(0.74), frameY]], 1, false) : null;
-    var foreRow = patchMedian([[cxMid, Math.round((faceT + eyeY) / 2)]], 1, false);
-    var bridge = frameY >= 0 ? patchMedian([[cxMid, frameY]], 1, false) : null;
+    var browRow = frameY >= 0 ? patchMedian([[atX(0.26), frameY], [atX(0.74), frameY]], PR, false) : null;
+    var foreRow = patchMedian([[cxMid, Math.round((faceT + eyeY) / 2)]], PR, false);
+    var bridge = frameY >= 0 ? patchMedian([[cxMid, frameY]], PR, false) : null;
     if (browRow && cheekRow && foreRow && bridge) {
       if (lum(bridge) < lum(cheekRow) - 20 &&
           lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(foreRow) - 20) {
@@ -3337,8 +3442,11 @@
     }
     /* ---- 9. EYE COLOUR: just inside each eye centre; refuse near-black,
        which is pupil or lash rather than iris. */
-    var eye = patchMedian([[atX(0.30), eyeY], [atX(0.70), eyeY]], 1, false);
-    if (eye && lum(eye) > 40 && lum(eye) < skinL - 20) { look.eyes = hex(eye); derived.push('eyes'); }
+    var eye = patchMedian([[atX(0.30), eyeY], [atX(0.70), eyeY]], PR, false);
+    /* gx-1.0 THE SILENT FIFTH MATCH: this branch pushed to `derived` but never
+       to `found`, so the receipt counted a claim the announcement never named -
+       the owner was told 4 things and credited 5. One claim, one line. */
+    if (eye && lum(eye) > 40 && lum(eye) < skinL - 20) { look.eyes = hex(eye); derived.push('eyes'); found.push('eye colour'); }
 
     /* ---- 10. BROWS, in the band between the top of the face and the eyes,
        clear of both. Skipped outright when glasses were detected: a frame lies
@@ -3375,7 +3483,8 @@
         fringe.push(low);
       }
       var fringeBottom = median(fringe);
-      var by0 = Math.max(faceT, (fringeBottom === null ? faceT : fringeBottom) + 2);
+      /* gx-1.0: +2*PR, same antialiased-edge margin as fringeStop above */
+      var by0 = Math.max(faceT, (fringeBottom === null ? faceT : fringeBottom) + 2 * PR);
       var gap = Math.max(3, eyeY - by0);
       var by1 = Math.max(by0 + 1, Math.round(eyeY - Math.max(1, gap * 0.10)));
       var browCols = [], browPix = [], bridgeCols = [];
@@ -3455,7 +3564,10 @@
            A spectacle rim at this grid is 1-3 rows on any real framing; the owner's own
            thin-rim fixture measures 3. A brow-and-shadow band is 6-10. Thinness is the
            property that separates them, and it is already measured. */
-        var rimThin = browMed <= 4;
+        /* gx-1.0: <= 4*PR - rim thickness is PHYSICAL rows on the grid. A rim
+           that is 1-3 rows at 128 is 2-6 at 256, and a brow-plus-shadow band
+           (6-10 at 128) is 12-20; the separation survives, the unit scales. */
+        var rimThin = browMed <= 4 * PR;
         if (frameLike && rimThin && look.glasses !== true) {
           look.glasses = true;
           derived.push('glasses');
@@ -3568,7 +3680,9 @@
       var s = [], sat = 0;
       for (var nyy = belowEye(0.22); nyy < belowEye(0.42); nyy++) {
         var half = 0;
-        for (var off = 2; off < faceW * 0.30; off++) {
+        /* gx-1.0: off starts at 2*PR - the exclusion is the nose's own lit
+           ridge, a physical extent, not a fixed two grid pixels */
+        for (var off = 2 * PR; off < faceW * 0.30; off++) {
           var lx = cxMid - off, rx3 = cxMid + off;
           if (lx < 0 || rx3 >= M || nyy < 0 || nyy >= M) break;
           if (lum(px(lx, nyy)) < skinL - cut || lum(px(rx3, nyy)) < skinL - cut) half = off;
@@ -3617,7 +3731,14 @@
             ? 'the nose measured ' + nVal + ' or ' + noseB.val + ' depending on how much shadow is counted, so your own nose setting was left alone'
             : (noseNearCut
               ? 'the nose measured right on the line between two shapes, so your own nose setting was left alone'
-              : 'the shading at the base of the nose runs past what this photo can measure, so your own nose setting was left alone')));
+              /* gx-1.0: this else fires when noseSat*2 > spans.length - the
+                 shaded span hit the scan's own bound on most rows, which is
+                 strong side-light or shadow, NOT a camera or photo limit. The
+                 old line blamed what the photo "can measure" and sent the
+                 owner shopping for a camera that could not have changed one
+                 pixel of this verdict - both terms of the failing ratio scale
+                 with faceW, so the refusal is resolution-INDEPENDENT. */
+              : 'the shadow at the base of the nose spreads wider than the nose itself on most rows — that is strong or uneven light, not a camera limit, so your own nose setting was left alone. Try more even light on your face.')));
       }
     }
 
@@ -3792,7 +3913,8 @@
          colour keeps no description. */
       found = found.filter(function (s) {
         return s !== 'dark hair' && s !== 'light hair' && s !== 'mid-tone hair' &&
-               s !== 'top colour' && s !== 'brows a different colour from the hair';
+               s !== 'top colour' && s !== 'brows a different colour from the hair' &&
+               s !== 'eye colour'; /* gx-1.0: the eyes claim now announces itself, so the illustration exit must strip its description too */
       });
     }
     /* fx-1.0 DUPLICATE-SURFACE VETO (DIAGNOSIS Mechanism A, measured on T8):
@@ -3845,7 +3967,12 @@
       examined: derived.length + refusedOut.length, faceW: faceW, grid: M,
       fromIllustration: fromIllustration, srcKind: fromIllustration ? 'illustration' : 'photo' };
     return { look: claimedOut, found: found, derived: derived, refused: refusedOut, receipt: receiptOut,
+             /* gx-1.0: grid, skinSpots and patchR ride the box so the live
+                capture view can draw the EXACT windows this read used - an
+                overlay that recomputes its own geometry is an overlay that can
+                lie about what was measured. */
              box: { L: faceRun.L, R: faceRun.R, T: faceT, B: lowerChin, eyeY: eyeY,
+                    grid: M, skinSpots: skinSpots, patchR: 2 * PR, cx: cxMid,
                     w: faceW, h: faceH, crownR: Math.round(crownR * 100) / 100,
                     sideR: Math.round(sideR * 100) / 100, beardDepth: Math.round(beardDepth * 100) / 100,
                     skinL: Math.round(skinL), bgL: Math.round(bgL),
@@ -4044,7 +4171,11 @@
      colour) without carrying a megapixel data URL around. Raising the grid itself
      needs every absolute pixel floor in faceReadPortrait re-derived first - they were
      calibrated in 128-space - so that is a separate change, deliberately not smuggled
-     in here. */
+     in here.
+     gx-1.0 DID that separate change: the grid is now adaptive (256 when the source
+     can fill it, 128 otherwise) and every absolute floor in faceReadPortrait was
+     enumerated and either left M-relative, scaled by PR = M/128, or kept as an
+     evidence minimum - each with its reason at its own line. */
   /* av-6.0.2 — 1024, because THE MODEL READS THIS IMAGE TOO. Owner: "take a higher rtes
      photo". The paragraph above is still right about the PIXEL grid: it stays 128 and every
      absolute floor in faceReadPortrait is calibrated in 128-space, so raising the grid remains

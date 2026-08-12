@@ -261,8 +261,18 @@ assert(/if \(!kiosk\.consentAt\) \{/.test(source.slice(source.indexOf('function 
      over comment-stripped source so writing ABOUT them cannot satisfy them. */
   assert(/posterFrac > 0\.5/.test(code) && /% 51\)/.test(code),
     'the posterize detector is gone — the matcher would go back to measuring the stylized copy, whose quantiser collapses the whole fair-skin gamut into #ffcc99 and #ffcccc (pale pink)');
-  assert(/skinHue >= 45 && skinChroma < 32/.test(code),
-    'the CIELAB skin gate is gone — pink samples would be claimed again. h_ab>=45 spans every Monk Skin Tone shade (48.8-89.1) while #ffcccc is 21.0');
+  /* ⛔ RE-PINNED DELIBERATELY (gx-1.0, 2026-08-12). The old pin held
+     `skinHue >= 45 && skinChroma < 32`; the chroma bound was calibrated on the
+     matte MST reference CHIPS (max C* 27.9) and MEASURED refusing photographed
+     skin (#af6228 C* 52.1, #c68642 49.0, #8d5524 41.8) while the refusal
+     message quoted a hue that had PASSED. The gate is re-derived against
+     photographed skin in feat_mls_avatar.js (hue 45-95, C* 5-60, each bound
+     justified at the gate) and face-grid-and-skin-geometry.test.js executes
+     both the claim side (#e0ac69 claimed) and the refusal side (pink still
+     refused, message names the failing term). This pin keeps guarding the
+     gate's EXISTENCE and its pink-refusing floor. */
+  assert(/skinHue >= 45 && skinHue <= 95 && skinChroma >= 5 && skinChroma < 60/.test(code),
+    'the CIELAB skin gate is gone or its re-derived bounds moved — pink samples would be claimed again (h_ab>=45 excludes #ffcccc at 21.0), and the photographed-skin bounds (hue<=95, C* 5-60, gx-1.0) have their derivation table in face-grid-and-skin-geometry.test.js');
   assert(/function faceLab\(rgb\)/.test(code) && /Math\.atan2\(lab\.b, lab\.a\)/.test(code),
     'the CIELAB conversion was removed — the hue gate has no axis to measure on');
   assert(/if \(fromIllustration\) \{[\s\S]{0,400}derived\.filter/.test(code),
