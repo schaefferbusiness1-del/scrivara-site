@@ -36181,7 +36181,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1022';
+  window.__MLS_AV = window.__MLS_AV || 'p1-20260812-r1';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36524,11 +36524,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1022';
+  var MLS_APP_BUILD='p1-20260812-r1';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
-  function canCheck(){ try{ return !(typeof window.backendMode==='function' && !window.backendMode()); }catch(_){ return false; } }
+  /* Production app-version.json names the production shell, not this isolated
+     preview. Comparing the two created a permanent Refresh banner that could
+     never converge. Extension-version checks remain active elsewhere. */
+  function canCheck(){ try{ if(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true)return false; return !(typeof window.backendMode==='function' && !window.backendMode()); }catch(_){ return false; } }
   function showBanner(newv){
     if(banner&&banner.parentNode) return;
     banner=document.createElement('div'); banner.id='mlsVerBanner';
@@ -44305,7 +44308,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    the placeholder instead of leaving a card that can never work, and it stands down the moment
    the module's script tag exists so the two can never fight over position (see av-6.0.2). */
 ;(function(){try{
-  var ASSET='feat_mls_avatar.js', ID='mlsAvVisitCard';
+  /* Keep the canonical data-mls-asset identity so the adopter and deferred
+     loader dedupe one module, but fetch the preview implementation. The prior
+     eager path fetched production bytes first and permanently suppressed the
+     queued 1p avatar. */
+  var ASSET='feat_mls_avatar.js', SRC='1p-feat_mls_avatar.js', ID='mlsAvVisitCard';
   var BOX='margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
   var timers=[], bound=[], stopped=false, hurried=false, drawnAt=0;
   function tag(){ try{ return document.querySelector('script[data-mls-asset="'+ASSET+'"]'); }catch(e){ return null; } }
@@ -44316,7 +44323,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function hurry(){ if(hurried) return; hurried=true;
     try{ if(tag()) return;
       var s=document.createElement('script');
-      s.src=ASSET+'?v='+(window.__MLS_AV||Date.now());
+      s.src=SRC+'?v='+(window.__MLS_AV||Date.now());
       s.setAttribute('data-mls-asset',ASSET); s.async=true;
       /* a placeholder for a module that will never arrive is a lie on screen: take it away */
       s.addEventListener('error',function(){ try{ var c=document.getElementById(ID);
@@ -46277,7 +46284,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
-  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0 };
+  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
+    autoRePull: 0, providerRosterRetryReceipt: null };
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -46540,8 +46548,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         reason: String(res.reason || ''), target: String(res.target || ''),
         error: String(res.error || '').slice(0, 300),
         extUpdateHint: String(res.extUpdateHint || '').slice(0, 300),
+        retry: dsPick(res.retry, ['schedule', 'providerRoster']),
         scheduleReceipt: dsPick(res.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason', 'schedDate']),
-        providerRosterReceipt: dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'providerMode', 'targetDate']),
+        providerRosterReceipt: dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'expectedCount', 'observedCount', 'providerMode', 'targetDate']),
+        preflightReceipt: dsPick(res.preflightReceipt, ['ran', 'warmed', 'navOk', 'readOk', 'rosterComplete', 'observedDay', 'reason', 'providerMode', 'providerResolved', 'scopeSource']),
+        providerRosterRetryReceipt: dsPick(DS.providerRosterRetryReceipt, ['attempt', 'targetDate', 'warmed', 'navOk', 'readOk', 'rosterComplete', 'observedDay', 'reason']),
         /* mdx-1.0.0: the report that reached us for a provider-incomplete
            refusal (Mac, 2026-08-05) carried no provider receipt at all, so the
            failing rows could not be named remotely. Clinician names and
@@ -46903,6 +46914,117 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     sleepW(1000).then(again);
   }
 
+  /* p1-prs-1.0.0: the exact refusal seen live on an otherwise-complete
+     all-provider Day grid. This is intentionally narrower than the engine's
+     generic retry flag: selected-provider, wrong-day, incomplete-schedule and
+     contaminated/unbound receipts do not enter the extra roster warm-up. */
+  function dsRosterPaintRefusal(result, day) {
+    var sr = result && result.scheduleReceipt;
+    var pr = result && result.providerRosterReceipt;
+    return !!(result && result.ok !== true &&
+      String(result.reason || '') === 'provider-roster-incomplete' &&
+      sr && sr.complete === true &&
+      pr && pr.complete !== true && pr.partial === true &&
+      String(pr.reason || '') === 'legacy-unverified' &&
+      String(pr.providerMode || '') === 'all' &&
+      String(pr.targetDate || '') === String(day || ''));
+  }
+  function dsRosterRetryBlocked(day, serial) {
+    if (DS.pulling || DS.retrying || serial !== DS.sessionSerial || DS.day !== day) return true;
+    try { if (window.__mlsPullShieldForeign && window.__mlsPullShieldForeign()) return true; } catch (e0) {}
+    try {
+      var lease = window.__mlsSchedulePullLease;
+      if (lease && Date.now() - Number(lease.at || 0) < 180000) return true;
+    } catch (e1) {}
+    return false;
+  }
+
+  /* The exported warm-up is advisory and intentionally sits outside the
+     shared importer's managed-operation wrapper. The p1 retry therefore owns
+     the SAME page lease + Web Lock while that warm-up is navigating/reading
+     Athena. Without this guard, a Staff/month pull can begin during the
+     60s+30s bridge window and both reads can move the one Athena tab. */
+  function dsClaimRosterWarmLease(leaseId) {
+    try {
+      var lease = window.__mlsSchedulePullLease;
+      if (lease && Date.now() - Number(lease.at || 0) < 180000) return false;
+      var now = Date.now();
+      window.__mlsSchedulePullLease = { id: leaseId, kind: 'p1-roster-warm', at: now };
+      window.__mlsPullBusyAt = now;
+      try { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(60000); } catch (eTick) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  function dsTouchRosterWarmLease(leaseId) {
+    try {
+      var lease = window.__mlsSchedulePullLease;
+      if (lease && lease.id === leaseId) {
+        lease.at = Date.now(); window.__mlsPullBusyAt = lease.at;
+        try { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(60000); } catch (eTick) {}
+      }
+    } catch (e) {}
+  }
+  function dsReleaseRosterWarmLease(leaseId) {
+    try {
+      var lease = window.__mlsSchedulePullLease;
+      if (lease && lease.id === leaseId) {
+        delete window.__mlsSchedulePullLease;
+        window.__mlsPullBusyAt = 0;
+      }
+    } catch (e) {}
+  }
+  function dsRunRosterWarmGuard(task) {
+    var leaseId = 'p1-roster-warm-' + Math.random().toString(36).slice(2, 10);
+    var leaseTouch = null, claimed = false;
+    function finish(value) {
+      if (leaseTouch != null) { try { clearInterval(leaseTouch); } catch (e0) {} leaseTouch = null; }
+      if (claimed) dsReleaseRosterWarmLease(leaseId);
+      return value;
+    }
+    function busy(reason) { return { started: false, reason: String(reason || 'pull-in-flight') }; }
+    function start() {
+      try { if (window.__mlsPullShieldForeign && window.__mlsPullShieldForeign()) return Promise.resolve(busy('other-tab')); } catch (eForeign) {}
+      if (!dsClaimRosterWarmLease(leaseId)) return Promise.resolve(busy('same-tab'));
+      claimed = true;
+      leaseTouch = setInterval(function () { dsTouchRosterWarmLease(leaseId); }, 25000);
+      var taskResult;
+      try { taskResult = task(); } catch (taskError) { taskResult = Promise.reject(taskError); }
+      var warmTimeout = null;
+      var settled = Promise.resolve(taskResult).then(
+        function (value) { return { started: true, value: value }; },
+        function (error) { return { started: true, error: error }; }
+      );
+      /* _warmUpDay has a 60s navigation bridge followed by a 30s read bridge.
+         Give both their full contract, then own an outer ceiling so an exotic
+         never-settling bridge cannot strand DS.pulling or this lease forever. */
+      var ceiling = new Promise(function (resolve) {
+        warmTimeout = setTimeout(function () {
+          warmTimeout = null;
+          resolve({ started: true, value: {
+            warmed: false, navOk: false, readOk: false, rosterComplete: false,
+            observedDay: '', reason: 'warmup-timeout'
+          } });
+        }, 95000);
+      });
+      return Promise.race([settled, ceiling]).then(function (value) {
+        if (warmTimeout != null) { try { clearTimeout(warmTimeout); } catch (eTimeout) {} warmTimeout = null; }
+        return value;
+      });
+    }
+    var operation;
+    try {
+      if (navigator && navigator.locks && typeof navigator.locks.request === 'function') {
+        operation = navigator.locks.request('mls-managed-athena-pull', { mode: 'exclusive', ifAvailable: true }, function (lock) {
+          return lock ? start() : busy('other-tab');
+        });
+      } else operation = start();
+    } catch (lockError) { operation = Promise.resolve(busy('lock-error')); }
+    return Promise.resolve(operation).then(finish, function (error) {
+      finish(null);
+      return { started: claimed, error: error };
+    });
+  }
+
   function startPull() {
     /* 2026-07-29 (measured live): this guard used to return SILENTLY, so a
        press while an earlier pull or its automatic history re-check was still
@@ -46931,7 +47053,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var sessionSerial = DS.sessionSerial;
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
-    if (!DS.__autoRetrying) DS.autoRePull = 0;
+    if (!DS.__autoRetrying) {
+      DS.autoRePull = 0;
+      DS.providerRosterRetryReceipt = null;
+      DS.__escalateAll = false;
+    }
     DS.__autoRetrying = false;
     /* b257: NO extension here (a phone) -> route the SAME button through the
        relay: the office computer runs the pull, this device shows live status
@@ -47084,6 +47210,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
+            var retryDay = day;
+            var retryAttempt = DS.autoRePull;
+            var warmRoster = dsRosterPaintRefusal(result, retryDay);
             /* 2026-07-29 (live Friday repro, receipt-proven): a SELECTED-provider
                read can refuse a day forever when one declared row in that
                provider's column never verifies (7 candidates, 6 parsed, five
@@ -47093,12 +47222,78 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                fail-closed gate still applies to it. */
             DS.__escalateAll = (DS.autoRePull === 2 && String(result.reason || '') === 'schedule-incomplete');
             var stA = $('mlsDsStatus');
-            if (stA) { stA.style.display = 'block'; stA.textContent = DS.__escalateAll
+            var retryMessage = DS.__escalateAll
               ? 'Your provider column would not fully verify - re-reading the whole day grid (all providers) to bind every row (attempt 3 of 3)...'
-              : 'The Athena grid was still settling - re-reading automatically (attempt ' + (DS.autoRePull + 1) + ' of 3)...'; }
+              : 'The Athena grid was still settling - re-reading automatically (attempt ' + (DS.autoRePull + 1) + ' of 3)...';
+            if (stA) { stA.style.display = 'block'; stA.textContent = retryMessage; }
+            dsStatusLog(retryMessage);
             DS.pulling = false;
             DS.__autoRetrying = true;
-            setTimeout(function () { try { if (!DS.pulling && !DS.retrying && sessionSerial === DS.sessionSerial) startPull(); } catch (eAR) {} }, waitMs);
+            setTimeout(function () {
+              function cancelRetry(message) {
+                if (sessionSerial !== DS.sessionSerial) return;
+                DS.pulling = false;
+                DS.__autoRetrying = false;
+                DS.__escalateAll = false;
+                var liveBtn = $('mlsDsPullBtn');
+                if (liveBtn) { liveBtn.disabled = false; liveBtn.innerHTML = 'ðŸ“¥ ' + esc(dsPullVerb()); }
+                if (message) {
+                  var liveStatus = $('mlsDsStatus');
+                  if (liveStatus) { liveStatus.style.display = 'block'; liveStatus.textContent = message; }
+                  dsStatusLog(message);
+                  dsSyncDiagBtn(true);
+                }
+              }
+              function blockedMessage() {
+                if (DS.day !== retryDay) return 'The automatic retry for ' + fmtDay(retryDay) + ' was canceled because the selected day changed.';
+                return 'The automatic retry paused because another Athena pull started. Select Pull when that work is finished.';
+              }
+              function restart() {
+                if (dsRosterRetryBlocked(retryDay, sessionSerial)) { cancelRetry(blockedMessage()); return; }
+                startPull();
+              }
+              function warmDone(warm, threw) {
+                if (sessionSerial !== DS.sessionSerial) return;
+                DS.pulling = false;
+                warm = warm && typeof warm === 'object' ? warm : {};
+                DS.providerRosterRetryReceipt = {
+                  attempt: retryAttempt,
+                  targetDate: retryDay,
+                  warmed: warm.warmed === true,
+                  navOk: warm.navOk === true,
+                  readOk: warm.readOk === true,
+                  rosterComplete: warm.rosterComplete === true,
+                  observedDay: String(warm.observedDay || ''),
+                  reason: String(warm.reason || (threw ? 'warmup-threw' : ''))
+                };
+                dsStatusLog('Provider roster settle check finished for retry attempt ' + (retryAttempt + 1) + ' of 3.');
+                restart();
+              }
+              try {
+                if (dsRosterRetryBlocked(retryDay, sessionSerial)) { cancelRetry(blockedMessage()); return; }
+                if (!warmRoster || !si || typeof si._warmUpDay !== 'function') { restart(); return; }
+                DS.pulling = true; /* reserve the day while advisory navigation/read runs */
+                var warmMessage = 'Rechecking the complete Athena Day grid before retry attempt ' + (retryAttempt + 1) + ' of 3...';
+                var warmStatus = $('mlsDsStatus');
+                if (warmStatus) { warmStatus.style.display = 'block'; warmStatus.textContent = warmMessage; }
+                dsStatusLog(warmMessage);
+                dsRunRosterWarmGuard(function () {
+                  if (sessionSerial !== DS.sessionSerial || DS.day !== retryDay || DS.retrying) return Promise.reject(new Error('retry-canceled'));
+                  try { if (window.__mlsPullShieldForeign && window.__mlsPullShieldForeign()) return Promise.reject(new Error('foreign-pull')); } catch (eF) {}
+                  return si._warmUpDay(retryDay, dsOnStatus);
+                }).then(function (guarded) {
+                  if (sessionSerial !== DS.sessionSerial) return;
+                  if (!guarded || guarded.started !== true) { DS.pulling = false; cancelRetry(blockedMessage()); return; }
+                  warmDone(guarded.value, !!guarded.error);
+                }, function () {
+                  if (sessionSerial !== DS.sessionSerial) return;
+                  DS.pulling = false;
+                  cancelRetry('The automatic retry could not prepare Athena. Select Pull to try again.');
+                });
+              } catch (eAR) {
+                cancelRetry('The automatic retry could not prepare Athena. Select Pull to try again.');
+              }
+            }, waitMs);
             return;
           }
           if (result && result.ok === true) DS.autoRePull = 0;
@@ -47249,7 +47444,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.statusLog = [];
+    DS.lastResult = null; DS.statusLog = []; DS.autoRePull = 0; DS.__autoRetrying = false;
+    DS.providerRosterRetryReceipt = null; DS.__escalateAll = false;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
       var easy = window.__mlsEasyV32;
@@ -50505,7 +50701,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1400);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_daybrain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_daybrain.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_daybrain.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* opdb-1.0.0: op-note DAY BRAIN — AI-assisted template matching layered over the deterministic ranker (oni still decides; the model only orders oni's own compatible candidates), plus procedure-aware day triage so "Draft all op notes" writes notes only for patients who actually had a procedure and still need one. Loaded LAST so its wrappers sit outermost over oni/opnp/the room. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
 
 /* ============================================================================
-   p1-ondemand-1.0.0  (1p PREVIEW ONLY)  -- Templates and the op-note room stop
+   p1-ondemand-1.1.0  (1p PREVIEW ONLY)  -- Templates and the op-note room stop
    waiting 27 seconds for a timer.
 
    MEASURED CAUSE. mls-connect queues 125 optional modules through
@@ -50521,10 +50717,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    the very module the user is waiting for.
 
    THE FIX IS THE TRIGGER, NOT THE BUDGET. These modules are only ever needed
-   when their surface is opened, so a 99-deep timer is the wrong trigger. On
-   pointerover/pointerdown of a template or op-note entry point we inject the
-   script immediately, jumping the queue. Same precedent as the avatar's
-   av-6.0.2 hurry() path.
+   when their surface is opened, so a 99-deep timer is the wrong trigger. A
+   hover begins the fetch; a cold pointer, keyboard, direct click or command
+   waits at one shared readiness barrier, then continues exactly once. This
+   prevents the base surface from flashing before the upgrade arrives.
 
    WHY THIS CANNOT DOUBLE-LOAD. Every queued registration in this file guards on
    document.querySelector('script[data-mls-asset="NAME"]') and returns if it is
@@ -50541,9 +50737,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   try {
     if (window.__mlsP1OnDemand) return;
 
-    /* Exactly the names the queued registrations use. Order is the order we
-       inject: the library backs the Templates modal, the UI rebuilds it, the
-       room backs the op-note surface. */
+    /* Exactly the names the queued registrations use: the library backs the
+       Templates modal, the UI rebuilds it, and the room backs op notes. */
     var ASSETS = [
       'feat_mls_template_library.js',
       'feat_mls_opnote_templates_ui.js',
@@ -50553,18 +50748,92 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* Entry points that open one of those surfaces. Ids first because they are
        exact; the label match is deliberately narrow (a button/tab whose own
        text is essentially "Templates") so we cannot fire on unrelated prose. */
-    var IDS = ['templatesBtn', 'oprTabTpls', 'mlsUplTplBtn'];
-    var LABEL = /^[^A-Za-z0-9]{0,3}(templates|prep op notes|draft all op notes)\b/i;
+    var IDS = ['templatesBtn', 'oprTabTpls', 'mlsUplTplBtn', 'opPrepSmartBtn'];
+    var LABEL = /^[^A-Za-z0-9]{0,3}(templates|prep op notes?|draft all op notes)\b/i;
 
-    var hurried = {}, fired = 0, bound = [], stopped = false;
+    var hurried = {}, loads = {}, ready = {}, fired = 0, bound = [], gates = [], stopped = false;
 
-    function present(name) {
-      try { return !!document.querySelector('script[data-mls-asset="' + name + '"]'); }
-      catch (e) { return false; }
+    function tagFor(name) {
+      try { return document.querySelector('script[data-mls-asset="' + name + '"]'); }
+      catch (e) { return null; }
+    }
+
+    function present(name) { return !!tagFor(name); }
+
+    /* A script tag means only that a fetch was requested. These exact modules
+       each publish an installed owner, so a cold click is released only after
+       the new surface really exists -- never while an async tag is still in
+       flight. This also lets us safely join a tag created by the normal queue. */
+    function moduleReady(name) {
+      try {
+        if (name === ASSETS[0]) return !!(window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed);
+        if (name === ASSETS[1]) return !!(window.__mlsOpNoteTemplatesUi && window.__mlsOpNoteTemplatesUi.installed);
+        if (name === ASSETS[2]) return !!(window.__mlsOpNoteRoom && window.__mlsOpNoteRoom.installed);
+      } catch (e) {}
+      return false;
+    }
+
+    function isReady(name) {
+      if (ready[name] || moduleReady(name)) { ready[name] = true; return true; }
+      return false;
+    }
+
+    function allReady() {
+      for (var i = 0; i < ASSETS.length; i++) if (!isReady(ASSETS[i])) return false;
+      return true;
+    }
+
+    function watch(name, s, ours) {
+      return new Promise(function (resolve, reject) {
+        var settled = false, timer = 0;
+        function tidy() {
+          try { s.removeEventListener('load', onLoad); s.removeEventListener('error', onError); } catch (e0) {}
+          try { if (timer) clearTimeout(timer); } catch (e1) {}
+          delete loads[name];
+        }
+        function succeed() {
+          if (settled) return; settled = true; ready[name] = true;
+          try { s.setAttribute('data-p1-ondemand-loaded', '1'); } catch (e0) {}
+          tidy(); resolve(true);
+        }
+        function fail(reason) {
+          if (settled) return; settled = true; hurried[name] = false; ready[name] = false;
+          tidy();
+          /* The deferred queue is one-shot. Remove a failed tag regardless of
+             which path made it so the bounded retry can issue a real fetch. */
+          try { s.parentNode && s.parentNode.removeChild(s); } catch (e0) {}
+          reject(new Error(reason || 'p1-on-demand-load-failed'));
+        }
+        /* A classic external script's load event is issued after evaluation,
+           but a caught module exception can still produce `load`. Require the
+           installed owner so we never open a surface that failed to exist. */
+        function onLoad() {
+          if (moduleReady(name)) succeed();
+          else fail('p1-on-demand-owner-missing');
+        }
+        function onError() { fail('p1-on-demand-network-error'); }
+        if (isReady(name)) { succeed(); return; }
+        try { s.addEventListener('load', onLoad); s.addEventListener('error', onError); }
+        catch (e2) { fail('p1-on-demand-listener-failed'); return; }
+        /* A queue-created tag can finish before this late watcher attaches.
+           Bound that otherwise eventless join; owner success still wins, and
+           owner absence removes the stale claim for the next real retry. */
+        timer = setTimeout(function () {
+          if (moduleReady(name)) succeed();
+          else fail(ours ? 'p1-on-demand-timeout' : 'p1-deferred-join-timeout');
+        }, 20000);
+      });
     }
 
     function hurry(name) {
-      if (stopped || hurried[name] || present(name)) return false;
+      if (stopped) return Promise.reject(new Error('p1-on-demand-stopped'));
+      if (isReady(name)) return Promise.resolve(true);
+      if (loads[name]) return loads[name];
+      var existing = tagFor(name);
+      if (existing) {
+        loads[name] = watch(name, existing, existing.getAttribute('data-p1-ondemand') === '1');
+        return loads[name];
+      }
       hurried[name] = true;
       try {
         var s = document.createElement('script');
@@ -50573,32 +50842,108 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         s.setAttribute('data-mls-asset', name);
         s.setAttribute('data-p1-ondemand', '1');
         s.async = true;
-        s.addEventListener('error', function () {
-          /* let the deferred queue have its normal turn rather than leaving the
-             surface permanently un-upgraded because our early attempt failed */
-          try { hurried[name] = false; s.parentNode && s.parentNode.removeChild(s); } catch (e2) {}
-        });
+        loads[name] = watch(name, s, true);
         (document.body || document.head || document.documentElement).appendChild(s);
         fired++;
-        return true;
-      } catch (e) { hurried[name] = false; return false; }
+        return loads[name];
+      } catch (e) {
+        hurried[name] = false; delete loads[name];
+        return Promise.reject(e);
+      }
     }
 
-    function hurryAll() { for (var i = 0; i < ASSETS.length; i++) hurry(ASSETS[i]); }
+    /* Start all three fetches in this call so even a direct programmatic click
+       gets the same fast path; Promise.all is the shared readiness barrier. */
+    function hurryAll() {
+      var waits = [];
+      for (var i = 0; i < ASSETS.length; i++) waits.push(hurry(ASSETS[i]));
+      return Promise.all(waits);
+    }
 
-    function isEntry(node) {
+    function entryFor(node) {
       try {
-        if (!node || node.nodeType !== 1) return false;
+        if (!node || node.nodeType !== 1) return null;
         var el = node.closest ? node.closest('button,a,[role="button"],[role="tab"],.opr-tab,.mlsTbItem') : null;
-        if (!el) return false;
-        if (el.id && IDS.indexOf(el.id) > -1) return true;
+        if (!el) return null;
+        if (el.id && IDS.indexOf(el.id) > -1) return el;
         var t = (el.textContent || '').trim();
-        return t.length < 40 && LABEL.test(t);
-      } catch (e) { return false; }
+        return t.length < 40 && LABEL.test(t) ? el : null;
+      } catch (e) { return null; }
     }
 
-    function onPoint(ev) {
-      try { if (isEntry(ev.target)) hurryAll(); } catch (e) {}
+    function halt(ev) {
+      try { ev.preventDefault(); } catch (e0) {}
+      try { ev.stopImmediatePropagation(); } catch (e1) {}
+      try { ev.stopPropagation(); } catch (e2) {}
+    }
+
+    function tellFailure() {
+      try { if (typeof window.toast === 'function') window.toast('Preview tools could not finish loading. Click once more to retry.', 'err'); } catch (e) {}
+    }
+
+    function openWhenReady(el) {
+      if (!el || el.__mlsP1OnDemandPending) return;
+      el.__mlsP1OnDemandPending = true;
+      function clearPending() { try { el.__mlsP1OnDemandPending = false; } catch (e) {} }
+      function replay() {
+        if (stopped || !allReady()) { clearPending(); return; }
+        /* Keep the native click generated by the pointer/key gesture from
+           racing the replay if the last script settles between those events. */
+        el.__mlsP1OnDemandSuppressUntil = Date.now() + 750;
+        el.__mlsP1OnDemandReplay = true;
+        try { if (typeof el.focus === 'function') el.focus(); } catch (e0) {}
+        try { if (typeof el.click === 'function') el.click(); } catch (e1) {}
+        el.__mlsP1OnDemandReplay = false;
+        setTimeout(clearPending, 750);
+      }
+      hurryAll().then(replay, function () {
+        if (stopped) { clearPending(); return; }
+        clearPending(); tellFailure();
+        /* The failed tag was removed, so the very next activation performs a
+           fresh explicit retry instead of trusting a consumed queue callback. */
+      });
+    }
+
+    /* Voice, command-palette and tour actions call these globals directly and
+       never create a DOM click. Gate those calls too. Modules loaded above may
+       wrap the gate; replay deliberately enters the latest outer wrapper once,
+       and the replay flag lets its call back through to the captured opener. */
+    function gateFunction(name) {
+      try {
+        var original = window[name];
+        if (typeof original !== 'function' || original.__mlsP1OnDemandGate) return;
+        var replaying = false;
+        function gate() {
+          if (stopped || replaying || allReady()) return original.apply(this, arguments);
+          var self = this, args = arguments;
+          hurryAll().then(function () {
+            if (stopped) return;
+            replaying = true;
+            try {
+              var latest = window[name];
+              if (typeof latest === 'function' && latest !== gate) latest.apply(self, args);
+              else original.apply(self, args);
+            } finally { replaying = false; }
+          }, tellFailure);
+        }
+        gate.__mlsP1OnDemandGate = true;
+        gate.__mlsP1OnDemandOriginal = original;
+        window[name] = gate;
+        gates.push({ name: name, gate: gate, original: original });
+      } catch (e) {}
+    }
+
+    function onHover(ev) {
+      try { if (entryFor(ev.target)) hurryAll().catch(function () {}); } catch (e) {}
+    }
+
+    function onActivate(ev, fallback) {
+      try {
+        var el = entryFor((ev && ev.target) || fallback);
+        if (!el || el.__mlsP1OnDemandReplay) return;
+        if (!el.__mlsP1OnDemandPending && Date.now() >= Number(el.__mlsP1OnDemandSuppressUntil || 0) && allReady()) return;
+        halt(ev); openWhenReady(el);
+      } catch (e) {}
     }
 
     function listen(target, type, fn, opts) {
@@ -50607,19 +50952,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
     /* pointerover gives the load a head start on the way to the click; capture
        phase so we run before the handler that opens the surface. */
-    listen(document, 'pointerover', onPoint, true);
-    listen(document, 'pointerdown', onPoint, true);
-    listen(document, 'click', onPoint, true);
+    listen(document, 'pointerover', onHover, true);
+    listen(document, 'pointerdown', onActivate, true);
+    listen(document, 'click', onActivate, true);
     listen(document, 'keydown', function (ev) {
-      try { if ((ev.key === 'Enter' || ev.key === ' ') && isEntry(document.activeElement)) hurryAll(); } catch (e) {}
+      try { if (ev.key === 'Enter' || ev.key === ' ') onActivate(ev, document.activeElement); } catch (e) {}
     }, true);
+    gateFunction('openTemplates');
+    gateFunction('openOpPrepSmart');
 
     window.__mlsP1OnDemand = {
-      v: 'p1-ondemand-1.0.0',
+      v: 'p1-ondemand-1.1.0',
       assets: ASSETS.slice(),
       state: function () {
         var out = {};
-        for (var i = 0; i < ASSETS.length; i++) out[ASSETS[i]] = present(ASSETS[i]) ? 'loaded' : 'pending';
+        for (var i = 0; i < ASSETS.length; i++) out[ASSETS[i]] = isReady(ASSETS[i]) ? 'loaded' : (present(ASSETS[i]) ? 'loading' : 'pending');
         return { fired: fired, stopped: stopped, modules: out };
       },
       hurryAll: hurryAll,
@@ -50628,7 +50975,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         for (var i = 0; i < bound.length; i++) {
           try { bound[i][0].removeEventListener(bound[i][1], bound[i][2], bound[i][3]); } catch (e) {}
         }
+        for (var j = 0; j < gates.length; j++) {
+          try { if (window[gates[j].name] === gates[j].gate) window[gates[j].name] = gates[j].original; } catch (e2) {}
+        }
         bound = [];
+        gates = [];
         return true;
       }
     };

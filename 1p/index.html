@@ -17,7 +17,7 @@
 <!-- The app still has legacy inline modules/handlers, so `unsafe-inline` is
      temporarily required. Worker code is limited to same-origin files and
      same-document blob URLs; remote/eval-based execution remains unavailable. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://scrivara-backend.onrender.com https://api.openai.com; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' https://scrivara-backend.onrender.com https://api.openai.com; frame-src 'self'; worker-src 'self' blob:; form-action 'self'; object-src 'none'; base-uri 'self'">
 <meta name="copyright" content="© 2026 MLS Scribe LLC. All rights reserved. Proprietary and confidential.">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow,noarchive">
@@ -73,6 +73,20 @@
   window.__mlsAuthHandoff = captured;
 })();
 </script>
+<!-- p1-live-1.0.0: GitHub Pages serves this preview at /1p/. Normalize the
+     document to the file-like /1p URL, then use that exact URL as the base.
+     Relative app assets consequently resolve at the site root, while CSS/SVG
+     fragment paints still resolve back to this same document (/1p#id). -->
+<script>
+(function () {
+  try {
+    if (location.pathname !== '/1p') {
+      history.replaceState(null, document.title, '/1p' + (location.search || '') + (location.hash || ''));
+    }
+  } catch (_) {}
+})();
+</script>
+<base href="/1p">
 <!-- The public sample-workspace boundary must run before compatibility code,
      clinical-state cleanup, service-worker setup, auth, or feature bundles.
      In ordinary hosted/local use it is an exact no-op. -->
@@ -35399,7 +35413,7 @@ function _ptGroupSort(mode){
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='p1-20260812-r1';
-  window.__MLS_P1_PREVIEW=Object.freeze({enabled:true,route:'/1pScribeFlow.html',build:P1_BUILD});
+  window.__MLS_P1_PREVIEW=Object.freeze({enabled:true,route:'/1p/',build:P1_BUILD});
   window.__MLS_AV=P1_BUILD;
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',

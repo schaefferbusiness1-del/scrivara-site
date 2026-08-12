@@ -48,6 +48,24 @@ const PUBLIC_ASSETS = [
   'public-preview-runtime.js'
 ];
 
+/* The owner-only 1p lane is intentionally published, but it is not a
+   production navigation target or production runtime. Keep this classification
+   separate so adding the preview cannot silently widen PUBLIC_HTML/ASSETS (and
+   therefore the production service-worker allowlist) on its behalf. */
+const P1_PREVIEW_HTML = [
+  '1pScribeFlow.html'
+];
+
+const P1_LIVE_HTML = [
+  '1p/index.html'
+];
+
+const P1_PREVIEW_ASSETS = [
+  '1p-mls-connect.js',
+  '1p-feat_mls_avatar.js',
+  '1p-feat_mls_writeflow.js'
+];
+
 const PUBLIC_VENDOR_ASSETS = [
   'vendor/chart.umd-4.5.1.js',
   'vendor/xlsx.full-0.20.3.min.js',
@@ -215,13 +233,13 @@ const RELEASED_PACKAGE = 'MLS_Assist_v3.0.61.zip';
    across three production deploys. Its bytes are digest-asserted EQUAL to the
    zip below, so this widens the published surface by zero new content. */
 const RELEASED_PACKAGE_MIRROR = 'MLS_Assist_v3.0.61.bin';
-const expectedIncludes = [...PUBLIC_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, RELEASED_PACKAGE_MIRROR, 'CNAME'];
+const expectedIncludes = [...PUBLIC_HTML, ...P1_PREVIEW_HTML, ...PUBLIC_ASSETS, ...vendorTraversalIncludes, RELEASED_PACKAGE, RELEASED_PACKAGE_MIRROR, 'CNAME'];
 assert.deepStrictEqual(sorted(includes), sorted(expectedIncludes), 'Jekyll include allowlist must exactly match reviewed public HTML/assets, the digest-pinned released package, and CNAME');
 
 const diskHtml = fs.readdirSync(root).filter((name) => /\.html$/i.test(name));
 assert.deepStrictEqual(
   sorted(diskHtml),
-  sorted([...PUBLIC_HTML, ...RETIRED_HTML]),
+  sorted([...PUBLIC_HTML, ...P1_PREVIEW_HTML, ...RETIRED_HTML]),
   'every root HTML file must be explicitly classified; review any new page before publishing'
 );
 
@@ -316,6 +334,24 @@ for (const asset of PUBLIC_ASSETS) {
   assert(fs.existsSync(path.join(root, asset)), `public runtime asset is missing: ${asset}`);
   assert(includeSet.has(asset), `public runtime asset is not allowlisted: ${asset}`);
   assert(!excludeSet.has(asset), `public runtime asset remains explicitly excluded: ${asset}`);
+}
+for (const page of P1_PREVIEW_HTML) {
+  assert(!PUBLIC_HTML.includes(page), `1p preview page leaked into the production navigation allowlist: ${page}`);
+  assert(fs.existsSync(path.join(root, page)), `1p preview page is missing: ${page}`);
+  assert(includeSet.has(page), `1p preview page is not explicitly allowlisted for publication: ${page}`);
+  assert(inventorySet.has(page), `1p preview page is absent from the generated-site publication inventory: ${page}`);
+}
+for (const page of P1_LIVE_HTML) {
+  assert(!PUBLIC_HTML.includes(page), `1p live page leaked into the production navigation allowlist: ${page}`);
+  assert(fs.existsSync(path.join(root, page)), `1p live page is missing: ${page}`);
+  assert(includeSet.has(path.posix.basename(page)), `1p live page basename is not explicitly allowlisted for publication: ${page}`);
+  assert(inventorySet.has(page), `1p live page is absent from the generated-site publication inventory: ${page}`);
+}
+for (const asset of P1_PREVIEW_ASSETS) {
+  assert(!PUBLIC_ASSETS.includes(asset), `1p preview asset leaked into the production runtime allowlist: ${asset}`);
+  assert(fs.existsSync(path.join(root, asset)), `1p preview runtime asset is missing: ${asset}`);
+  assert(inventorySet.has(asset), `1p preview runtime asset is absent from the generated-site publication inventory: ${asset}`);
+  assert(!excludeSet.has(asset), `1p preview runtime asset remains explicitly excluded: ${asset}`);
 }
 
 /* GitHub Pages uses Jekyll 3.10, whose EntryFilter checks an exact include
@@ -596,6 +632,17 @@ async function verifyServiceWorkerRuntime() {
 
   const unknown = await runFetch(`${origin}/future-internal-tool.html`, { mode: 'navigate', accept: 'text/html' });
   assert.strictEqual(unknown.status, 410, 'unknown HTML navigation must fail closed');
+  /* Deliberate current boundary: 1p is published at the origin but remains
+     outside the production worker's navigation allowlist. A controlled browser
+     receives the same fail-closed response as any other non-production HTML. */
+  const callsBeforeP1Preview = fetchCalls.length;
+  const p1Preview = await runFetch(`${origin}/1pScribeFlow.html`, { mode: 'navigate', accept: 'text/html' });
+  assert.strictEqual(p1Preview.status, 410, '1p preview must not widen the production service-worker HTML allowlist');
+  assert.strictEqual(fetchCalls.length, callsBeforeP1Preview, 'blocked 1p preview navigation must not reach the network');
+  const callsBeforeP1Live = fetchCalls.length;
+  const p1Live = await runFetch(`${origin}/1p/`, { mode: 'navigate', accept: 'text/html' });
+  assert.strictEqual(p1Live.status, 200, 'the dedicated extensionless /1p/ route must open through an already-active service worker');
+  assert.strictEqual(fetchCalls.length, callsBeforeP1Live + 1, 'the /1p/ live preview navigation must reach the network');
   const encodedRetired = await runFetch(`${origin}/%41uthPilot.HTML`, { mode: 'navigate', accept: 'text/html' });
   assert.strictEqual(encodedRetired.status, 410, 'case or percent encoding must not bypass the retired HTML boundary');
   const packageNavigation = await runFetch(`${origin}/popup.html`, { mode: 'navigate', accept: 'text/html' });
@@ -676,6 +723,8 @@ async function verifyServiceWorkerRuntime() {
   });
   assert.deepStrictEqual(unsafeQueryKeys, [], 'Cache Storage may contain only exact single-parameter versioned static URLs');
   assert(!cachedKeys.includes(`${origin}/privacy.html`), 'generic public pages must not be cached');
+  assert(!cachedKeys.includes(`${origin}/1pScribeFlow.html`), 'the owner-only 1p preview HTML must remain network-only');
+  assert(!cachedKeys.includes(`${origin}/1p/`), 'the /1p/ live preview HTML must remain network-only');
   assert(!cachedKeys.includes(`${origin}/phone.html`), 'phone recorder HTML must remain network-only');
   assert(!cachedKeys.includes(`${origin}/phone-manifest.json`), 'phone manifest must remain network-only');
   assert(cachedKeys.includes(`${origin}/feat_mls_force_full_phone.js?v=20260719ffp200`), 'exact reviewed phone UI asset should be cacheable by version');
@@ -772,7 +821,7 @@ verifyServiceWorkerRuntime().then(() => {
   sourceViolations.push(...forbiddenLinks.map((entry) => `public link: ${entry}`));
   sourceViolations.push(...runtimeRetiredRefs.map((entry) => `runtime reference: ${entry}`));
   assert.deepStrictEqual(sourceViolations, [], `publication source still reaches retired/unsafe paths:\n${sourceViolations.join('\n')}`);
-  console.log(`PASS public publication boundary: ${PUBLIC_HTML.length} public pages, ${RETIRED_HTML.length} retired pages, candidate source excluded, exactly the digest-pinned released ZIP`);
+  console.log(`PASS public publication boundary: ${PUBLIC_HTML.length} production pages, ${P1_PREVIEW_HTML.length} legacy 1p source page, ${P1_LIVE_HTML.length} dedicated /1p/ live page, ${RETIRED_HTML.length} retired pages, candidate source excluded, exactly the digest-pinned released ZIP`);
 }).catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);

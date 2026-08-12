@@ -73,6 +73,12 @@ const missingAssets = [];
 const seenAssetChecks = new Set();
 for (const file of htmlFiles) {
   const html = fs.readFileSync(file, 'utf8');
+  /* The dedicated live preview is physically nested for GitHub Pages, but its
+     reviewed file-like <base href="/1p"> makes relative app assets resolve at
+     the site root. Model that exact one-page contract rather than reporting
+     valid root assets as missing from 1p/. */
+  const relHtml = path.relative(root, file).split(path.sep).join('/');
+  const p1RootAssetBase = relHtml === '1p/index.html' && /<base\s+href=["']\/1p["']\s*>/i.test(html);
   const re = /\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
   let m;
   while ((m = re.exec(html))) {
@@ -82,7 +88,7 @@ for (const file of htmlFiles) {
     if (!/\.(?:js|css|html?|png|jpe?g|gif|svg|ico|json|webmanifest)$/i.test(clean)) continue;
     const target = raw.startsWith('/')
       ? path.resolve(root, clean.replace(/^\/+/, ''))
-      : path.resolve(path.dirname(file), clean);
+      : path.resolve(p1RootAssetBase ? root : path.dirname(file), clean);
     const key = `${file}\0${target}`;
     if (seenAssetChecks.has(key)) continue;
     seenAssetChecks.add(key);
