@@ -687,10 +687,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 })();
 
 /* =============================================================================
- * feat_mls_onboarding_tour.module.js  ->  window.__mlsOnboardingTour  (obt-2.1.0)
+ * feat_mls_onboarding_tour.module.js  ->  window.__mlsOnboardingTour  (obt-2.2.0)
  * -----------------------------------------------------------------------------
  * The first-sign-in GUIDED TOUR, rebuilt for the Editorial Calm shell (b324+
  * rail/top-bar/Menu). Replaces obt-1.0.0 in place. What changed and why:
+ *
+ * obt-2.2.0 (2026-08-12, owner-ordered "top notch guide around the whole app"):
+ *   a. SEVEN NEW STEPS so the tour names almost every surface: the bottom dock
+ *      (#mlsDock — the real navigation today), the day strip (#mlsDsStrip),
+ *      the widget deck (#mlsWdDeck), the check-in Avatar card (degrades to a
+ *      centered card when no check-in is ready), Orders (drafts only), AI
+ *      Studio, and a closing "Any questions?" step.
+ *   b. THE FINALE OPENS MLS COPILOT. Finishing the last step calls
+ *      window.openCopilotDock() (looked up at click time — never cached, so
+ *      the __mlsStableDock wrapper from feat_mls_copilot_dock_fix.js stays in
+ *      charge). Skip/Close never opens it; only completing the tour does.
+ *   c. LAUNCH GATES + STAND-DOWN, same predicates fr-2.0.0 proved: the tour
+ *      REFUSES to open, loudly and by name (#mlsObtNotice), while a pull is
+ *      running (__mlsAthenaFollow._guards.pullBusy first, then the stamp /
+ *      lease / pack fallbacks) or a recording is live (#captureBtn). If a pull
+ *      starts while the tour is open, the tour stands down and restores the
+ *      view the doctor was on. The stand-down check rides the EXISTING 1.5s
+ *      menu-row tick — zero new timers.
  *
  *   1. SCENE-DRIVEN STEPS. obt-1.0.0 spotlighted whatever happened to be on
  *      screen; most of its targets predate the redesign, so on a fresh account
@@ -742,7 +760,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   'use strict';
   if (window.__mlsOnboardingTour && window.__mlsOnboardingTour.installed) return;
 
-  var VERSION = 'obt-2.1.0';
+  var VERSION = 'obt-2.2.0';
   var Z = 2147483600;                 // above the app's own modals
   var DONE_PREFIX = 'mls_onboard_tour_done::';   // unchanged: old finishers stay done
   var SESSION_SHOWN = 'mls_obt_shown';
@@ -989,8 +1007,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       key: 'welcome', badge: '👋 Welcome', title: 'Welcome to MLS',
       body: textBody([
         'MLS is your AI scribe and practice copilot: it pulls your day from the EMR, listens to the visit, writes the note, and files it back — while you stay the final word on everything.',
-        'This tour walks the whole product (about 3 minutes). Use Next / → to advance, ← to go back, Esc to leave. While it is open, clicks on the page are disabled so nothing can be triggered by accident.',
-        'You can reopen it anytime: Menu → 🎓 Guided tour / How-to.'
+        'This tour walks the whole product, screen by screen — what every piece is and where it lives (about 4 minutes). Use Next / → to advance, ← to go back, Esc to leave. While it is open, clicks on the page are disabled so nothing can be triggered by accident.',
+        'At the end, if you have any questions, MLS Copilot opens ready to answer them. You can reopen this tour anytime: Menu → 🎓 Guided tour / How-to.'
       ])
     },
     {
@@ -1000,6 +1018,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     {
       key: 'extension', badge: 'Setup 2 of 2 · MLS Assist', title: 'Install the MLS Assist extension',
       body: buildExtensionBody
+    },
+    {
+      key: 'dock', badge: 'Navigation', title: 'The dock — six places, one tap',
+      target: ['#mlsDock', '.mainnav'],
+      body: textBody([
+        'The dock at the bottom is how you move around MLS. Six destinations cover the whole day:'
+      ], [
+        '📅 Day — your pulled schedule, laid out by time.',
+        '👤 Patient — every chart in one place.',
+        '🩺 Visit — home base: record, generate, sign.',
+        '🧾 Review — every note you have generated.',
+        '✨ Studio — the AI Studio and Copilot.',
+        '🧰 Tools — everything else, including the Classic layout switch if you ever want the old look.'
+      ])
     },
     {
       key: 'find', badge: 'Top bar', title: 'Find anything — just press /',
@@ -1019,7 +1051,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       key: 'visit', badge: 'Your day', title: 'The Visit tab is home base',
       view: 'visit', target: ['#nav_visit', '[data-view="visit"]'],
       body: textBody([
-        'You will live on this tab. It shows your day, the big pull button, the record button, and every quick tool for the patient in front of you.'
+        'You will live on this tab. It shows your day, the big pull button, the record button, and every quick tool for the patient in front of you.',
+        'The “Right now” strip near the top offers the next sensible action for wherever you are — it only ever shows a button that really exists on the screen.'
+      ])
+    },
+    {
+      key: 'daystrip', badge: 'Your day', title: 'The day strip — move through your days',
+      view: 'visit', target: ['#mlsDsStrip'],
+      body: textBody([
+        'This strip owns the date. ‹ › moves a day at a time, Today snaps back, and the label always names the day you are looking at.'
+      ], [
+        'Pull status and per-patient progress appear right here while a pull runs.',
+        '“Full visit notes” controls whether MLS also opens and saves every encounter note (on by default; a little slower).',
+        'If a pull ever fails, Retry and a copyable error report appear here too.'
       ])
     },
     {
@@ -1085,6 +1129,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ])
     },
     {
+      key: 'widgets', badge: 'The visit', title: 'Your widget deck',
+      view: 'visit', target: ['#mlsWdDeck', '#customWidgetsHost'],
+      body: textBody([
+        'Below the note lives your widget deck — small cards that fill themselves from the visit (trends, scores, checklists) every time you Generate.'
+      ], [
+        'Widgets are display-only: they never change your note or your EMR on their own.',
+        '“➕ Add to note” copies a widget’s text into the note only when YOU tap it.',
+        'Build your own in plain English from Menu → ＋ Custom widget.'
+      ])
+    },
+    {
+      key: 'avatar', badge: 'Check-in', title: 'The check-in Avatar',
+      view: 'visit', target: ['#mlsAvVisitCard'],
+      body: textBody([
+        'MLS can interview patients at check-in with a friendly on-screen avatar you program once. When a patient finishes, a ready card appears here on the Visit view with their answers as bullets.'
+      ], [
+        'One tap imports the patient-reported summary into the right chart — identity-matched, never guessed.',
+        'The card only appears when a finished check-in is waiting, so don’t worry if you don’t see it right now.'
+      ])
+    },
+    {
       key: 'payreport', badge: 'Money', title: 'Pay Report — know your month',
       view: 'calendar', target: ['#calendarView .uc1-pay', '#calendarView .mls-b34-pay', '#mlsPayReportMenuItem'],
       body: textBody([
@@ -1096,6 +1161,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       view: 'patients', target: ['#nav_patients', '[data-view="patients"]'],
       body: textBody([
         'Every pulled or created patient lives here: problem list, meds, allergies, prior visits, and every note. Search by name or DOB, open a chart, or add someone new.'
+      ], [
+        'When a patient is active, the banner up top pins their identity on the Visit and History screens — “Switch patient” lives there too.',
+        '＋ New patient adds a walk-in in seconds.'
       ])
     },
     {
@@ -1110,6 +1178,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       view: 'history', target: ['#nav_history'],
       body: textBody([
         'Every note, summary, and report you have ever generated is here — reopen, edit, copy, or export any of them. Nothing you make in MLS is ever lost.'
+      ])
+    },
+    {
+      key: 'orders', badge: 'Orders', title: 'Orders — drafts only, always',
+      view: 'orders', target: ['#nav_orders', '[data-view="orders"]'],
+      body: textBody([
+        'The Orders screen drafts labs, imaging, meds, and prior-auth paperwork from the visit — for your review.'
+      ], [
+        'MLS NEVER places or sends an order. You place every order yourself, in your EMR.',
+        'Drafts wait here until you use or discard them.'
+      ])
+    },
+    {
+      key: 'studio', badge: 'AI Studio', title: 'AI Studio — ask for anything',
+      view: 'studio', target: ['#nav_studio', '[data-view="studio"]'],
+      body: textBody([
+        'AI Studio is the open workbench: the Copilot conversation lives here, your saved creations are kept here, and practice analysis runs here.'
+      ], [
+        'Ask for any document, letter, summary, or analysis in plain English.',
+        'Saved results stay in the Studio so you can reuse them anytime.'
       ])
     },
     {
@@ -1175,7 +1263,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         'And the promise behind all of it: MLS drafts, you decide. Nothing is signed, sent, or ordered without you.'
       ], [
         'Setup status is live in Settings → Integrations — it shows whether the MLS Assist extension is actually detected in this browser right now.',
-        'Reopen this tour anytime from Menu → 🎓 Guided tour / How-to. Welcome aboard!'
+        'Reopen this tour anytime from Menu → 🎓 Guided tour / How-to.'
+      ])
+    },
+    {
+      /* THE CLOSER. Finishing from here opens MLS Copilot (finishAndAsk) so a
+         question asked in the same breath as the tour lands somewhere that can
+         actually answer it. Skip/Close and Esc never open the dock. */
+      key: 'questions', badge: '💬 Any questions?', title: 'Any questions? Ask MLS Copilot',
+      body: textBody([
+        'That’s the whole app. If anything was unclear — or you want MLS to do something you just saw — ask the Copilot in plain English. It knows your practice and can open the right screen for you.',
+        'Press ✦ Ask Copilot below and the chat opens, ready for your first question. For example:'
+      ], [
+        '“How do I pull tomorrow’s schedule?”',
+        '“Start a visit for my next patient.”',
+        '“What does the Pay Report include?”'
       ])
     }
   ];
@@ -1266,11 +1368,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var back = el('button'); back.className = 'mlsObtBtn mlsObtBack'; back.textContent = '← Back';
       on(back, 'click', function () { go(-1); }); btns.appendChild(back);
     }
+    var last = (state.i >= STEPS.length - 1);
     var next = el('button'); next.className = 'mlsObtBtn mlsObtNext';
-    next.textContent = (state.i >= STEPS.length - 1) ? '✓ Finish' : 'Next →';
-    on(next, 'click', function () { (state.i >= STEPS.length - 1) ? finish(true) : go(1); });
+    next.textContent = last ? '✦ Ask Copilot' : 'Next →';
+    on(next, 'click', function () { last ? finishAndAsk() : go(1); });
     btns.appendChild(next);
-    var skip = el('button'); skip.className = 'mlsObtBtn mlsObtSkip'; skip.textContent = 'Skip tour';
+    var skip = el('button'); skip.className = 'mlsObtBtn mlsObtSkip'; skip.textContent = last ? 'Close' : 'Skip tour';
     on(skip, 'click', function () { finish(true); });
     btns.appendChild(skip);
     card.appendChild(btns);
@@ -1288,7 +1391,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function go(delta) {
     var n = state.i + delta;
     if (n < 0) n = 0;
-    if (n > STEPS.length - 1) { finish(true); return; }
+    /* advancing past the last ('questions') step counts as finishing it, so
+       Enter / ArrowRight on the closer also opens the Copilot */
+    if (n > STEPS.length - 1) { finishAndAsk(); return; }
     state.i = n; renderStep();
   }
 
@@ -1305,6 +1410,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function openTour() {
     if (state.open) return;
+    var blocked = launchBlocked();
+    if (blocked) { notice('🎓 ' + blocked); return; }
     ensureCss();
     clearOverlay();
     state.returnView = currentView();
@@ -1354,6 +1461,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (setDone) markDone();
     closeTour();
   }
+  /* The 'questions' finale: close the tour, then open MLS Copilot so the
+   * doctor's question lands somewhere that can answer it. openCopilotDock is
+   * looked up AT CALL TIME (never cached) so the __mlsStableDock wrapper from
+   * feat_mls_copilot_dock_fix.js stays in charge; fallback is the app's own
+   * header Ask button. */
+  function finishAndAsk() {
+    markDone();
+    closeTour();
+    setTimeout(function () {
+      try {
+        if (typeof window.openCopilotDock === 'function') { window.openCopilotDock(); return; }
+      } catch (e) {}
+      try { var b = byId('askCopilotHdrBtn'); if (b) b.click(); } catch (e2) {}
+    }, 180);
+  }
 
   /* ------------------------------------------------ first sign-in auto-launch */
   function signedIn() {
@@ -1370,6 +1492,57 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = byId('setupModal');
     return !!(m && /(^|\s)show(\s|$)/.test(m.className || ''));
   }
+
+  /* ---------------------- launch gates (obt-2.2.0) ------------------------
+   * Same predicates fr-2.0.0 proved: authoritative guard first, then the
+   * inline stamp/lease/pack fallbacks. The tour drives the app (view switches,
+   * menu toggles), so it must never launch over a running pull or a live
+   * recording, and must stand down if a pull starts under it. */
+  function pullBusy() {
+    try {
+      var g = window.__mlsAthenaFollow && window.__mlsAthenaFollow._guards;
+      if (g && typeof g.pullBusy === 'function') return !!g.pullBusy();
+    } catch (e) {}
+    try { if ((Date.now() - (window.__mlsPullBusyAt || 0)) < 120000) return true; } catch (e2) {}
+    try { if (window.__mlsSchedulePullLease) return true; } catch (e3) {}
+    try {
+      var p = window.__mlsB121Pack;
+      if (p && typeof p._pullRunning === 'function' && p._pullRunning()) return true;
+    } catch (e4) {}
+    return false;
+  }
+  function recordingLive() {
+    var b = byId('captureBtn');
+    if (!b) return false;
+    try { if (b.classList && b.classList.contains('recording')) return true; } catch (e) {}
+    try { return /stop/i.test(String(b.textContent || '')); } catch (e2) { return false; }
+  }
+  function launchBlocked() {
+    if (pullBusy()) return 'A chart pull is running — the tour will not move the app around mid-pull. Try again when it finishes.';
+    if (recordingLive()) return 'A recording is live — stop it first, then open the tour.';
+    return null;
+  }
+  /* Loud, transient, self-removing refusal banner. */
+  function notice(msg) {
+    try {
+      var old = byId('mlsObtNotice');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      var n = el('div', 'position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:' + (Z + 4) +
+        ';background:#204034;color:#fff;font:600 13px/1.45 system-ui;padding:12px 16px;border-radius:12px;' +
+        'box-shadow:0 10px 30px rgba(10,20,50,.45);max-width:520px;width:calc(100vw - 32px);box-sizing:border-box;text-align:center;', msg);
+      n.id = 'mlsObtNotice';
+      document.body.appendChild(n);
+      setTimeout(function () { try { if (n.parentNode) n.parentNode.removeChild(n); } catch (e) {} }, 6000);
+    } catch (e2) {}
+  }
+  /* If a pull starts while the tour is open: close (restores the entry view)
+   * and say so. Rides the existing 1.5s menu tick — no new timer. */
+  function standDownIfBusy() {
+    if (!state.open) return;
+    if (!pullBusy()) return;
+    closeTour();
+    notice('🎓 Tour paused — a chart pull just started. Reopen it from Menu → 🎓 Guided tour when the pull finishes.');
+  }
   var _autoTries = 0, _autoTimer = null;
   function maybeAutoLaunch() {
     if (window.__mlsManualToursOnly) return;
@@ -1378,7 +1551,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (sessionStorage.getItem(SESSION_SHOWN) === '1') return; } catch (e) {}
     if (!signedIn()) { scheduleAuto(); return; }
     if (setupOpen()) { scheduleAuto(); return; }
-    setTimeout(function () { if (!state.open && signedIn() && !setupOpen() && !isDone()) openTour(); }, 700);
+    if (launchBlocked()) { scheduleAuto(); return; }
+    setTimeout(function () { if (!state.open && signedIn() && !setupOpen() && !isDone() && !launchBlocked()) openTour(); }, 700);
   }
   function scheduleAuto() {
     if (window.__mlsManualToursOnly) return;
@@ -1411,7 +1585,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function boot() {
     ensureCss();
     ensureMenuRow();
-    _menuTimer = setInterval(ensureMenuRow, 1500);
+    /* one tick, two jobs: keep the Menu row alive AND stand the tour down if a
+       pull starts under it (obt-2.2.0) — deliberately NOT a second interval */
+    _menuTimer = setInterval(function () { ensureMenuRow(); standDownIfBusy(); }, 1500);
     scheduleAuto();
   }
 
@@ -1419,7 +1595,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (_menuTimer) clearInterval(_menuTimer); } catch (e) {}
     try { if (_autoTimer) clearTimeout(_autoTimer); } catch (e) {}
     closeTour();
-    ['mlsObtCss'].forEach(function (id) { var n = byId(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
+    ['mlsObtCss', 'mlsObtNotice'].forEach(function (id) { var n = byId(id); if (n && n.parentNode) n.parentNode.removeChild(n); });
     var row = byId('mlsObtMenuRow'); if (row && row.parentNode) row.parentNode.removeChild(row);
     window.__mlsOnboardingTour.installed = false;
   }
@@ -1442,6 +1618,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       resolveTarget: resolveTarget,
       isVisible: isVisible,
       menuRowFinder: menuRowFinder,
+      pullBusy: pullBusy,
+      recordingLive: recordingLive,
+      launchBlocked: launchBlocked,
+      standDownIfBusy: standDownIfBusy,
       doneKeyFor: function (email) { return DONE_PREFIX + String(email || 'anon').toLowerCase(); },
       steps: function () {
         return STEPS.map(function (s) {
@@ -8807,7 +8987,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1019: persist:false work belongs to this exact COW candidate. Passing
+    /* b1022: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9048,7 +9228,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1019: the retired 3-second owner synchronously regex-scanned every
+      /* b1022: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -36001,7 +36181,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1019';
+  window.__MLS_AV = window.__MLS_AV || 'b1022';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36344,7 +36524,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1019';
+  var MLS_APP_BUILD='2026-07-25-b1022';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -47008,7 +47188,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
-        /* sbp-1.0 boot-paint settle (live b1016/b1019, final-live-proofs
+        /* sbp-1.0 boot-paint settle (live b1016/b1022, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
            exists - the resolver reads the placeholder slot, answers 'unset'
            (= on), and the box paints CHECKED while the settled preference is
@@ -47192,7 +47372,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
          the wrong slot, so its 'unset' (= default on) is provisional and
-         views must re-read after the session settles (live b1016/b1019:
+         views must re-read after the session settles (live b1016/b1022:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
       var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
