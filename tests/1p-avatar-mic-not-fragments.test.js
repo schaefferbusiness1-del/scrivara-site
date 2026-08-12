@@ -73,15 +73,40 @@ ok(/#mlsAvP1Mic\.on\{opacity:1\}/.test(src),
 ok(/#mlsAvKiosk\.listening #mlsAvP1Mic/.test(src) && /#mlsAvKiosk\.ambient #mlsAvP1Mic/.test(src),
   'the indicator must be visible for the WHOLE time the mic is open (both listening and ambient), not only just after a word');
 
-/* ---- 5. THE LIVE-WORD CONTRACT, pinned in BOTH directions ---- */
-ok(/return n \+ \(kiosk\.ambLiveWords \| 0\);/.test(src),
-  'the ambient clock must include the in-flight utterance, or a healthy recogniser reads as dead');
+/* ---- 5. THE RECEIPT / CLOCK SEPARATION -- the highest-value pin in this file ----
+ * p1-livewords-1.0.0 added the in-flight utterance to kioskAmbientWords(), which is
+ * ALSO read by the filing receipt ("N words - M characters written to the transcript").
+ * That made the receipt claim words that were never filed. Proven path: a mid-utterance
+ * Pause makes pvStopMic NULL pvRec.onresult BEFORE stop(), so the final never arrives,
+ * ambParts never gains those words, and the receipt over-reported them as written.
+ * A receipt that overstates what reached the chart is a clinical-honesty defect and is
+ * strictly worse than a clock that reads zero. These pins keep the two apart forever. */
+ok(/function kioskAmbientWords\(\)[^]{0,220}return n;\s*\n\s*\}/.test(src),
+  'kioskAmbientWords() must be FILED-ONLY - it feeds the receipt');
+ok(!/function kioskAmbientWords\(\)[^]{0,220}ambLiveWords/.test(src),
+  'kioskAmbientWords() must NEVER include in-flight words - that is what made the receipt lie');
+/* the separator is a UTF-8 middot read here as latin1, so match around it, not through it */
+ok(/min captured[^]{0,12}\+ kioskAmbientWords\(\) \+/.test(src),
+  'the FILING RECEIPT must call kioskAmbientWords() (filed-only), never the clock helper');
+ok(!/min captured[^]{0,12}\+ kioskAmbientClockWords\(\)/.test(src),
+  'the FILING RECEIPT must never use the live-inclusive clock helper');
+ok(/kioskAmbientElapsed\(\) \+ '  \|  ' \+ kioskAmbientClockWords\(\) \+ ' words'/.test(src),
+  'the CLOCK must call kioskAmbientClockWords() so it moves while he is still speaking');
+ok(/function kioskAmbientClockWords\(\) \{ return kioskAmbientWords\(\) \+ kioskAmbientLiveWords\(\); \}/.test(src),
+  'the clock helper must be filed + live, and nothing else');
+
+/* the live tally must SELF-EXPIRE rather than trusting every discard path (pause,
+ * Chrome self-restart, flush timeout, stop) to remember to clear it */
+ok(/var LIVE_TTL_MS = \d+;/.test(src), 'the in-flight tally must have a TTL');
+ok(/if \(!at \|\| \(Date\.now\(\) - at\) > LIVE_TTL_MS\) return 0;/.test(src),
+  'a stale in-flight tally must read 0 - the recogniser is not delivering');
+ok(/kiosk\.ambLiveAt = Date\.now\(\)/.test(src), 'the in-flight tally must be timestamped when recorded');
 ok(/kiosk\.ambLiveWords = clean\(interim\)/.test(src),
   'kioskAmbientPaint must record the in-flight word count');
-ok(/kiosk\.ambLiveWords = 0;\s*\n\s*if \(!v\) return;/.test(src),
-  'finalising must clear the live tally BEFORE the empty-guard, so words are never double-counted');
-ok(/ambParts = \[\][^\n]*ambLiveWords = 0;/.test(src),
-  'a new ambient session must reset the live tally');
+ok(/kiosk\.ambLiveWords = 0; kiosk\.ambLiveAt = 0;\s*\n\s*if \(!v\) return;/.test(src),
+  'finalising must clear tally AND stamp before the empty-guard, so words are never double-counted');
+ok(/ambParts = \[\][^\n]*ambLiveWords = 0; kiosk\.ambLiveAt = 0;/.test(src),
+  'a new ambient session must reset tally and stamp');
 
 /* ---- 6. the pulse still exists and still stands down ---- */
 ok(/@keyframes mlsAvP1Wave/.test(src), 'the pulse keyframes must ship');

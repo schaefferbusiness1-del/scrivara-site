@@ -5970,7 +5970,7 @@ function kioskLine(kind, text) {
        it - they can never cross into the next patient's session */
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
-    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = []; kiosk.ambLiveWords = 0;
+    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
     kiosk.paused = false;
     /* the consent dies with the screen it was given on - nothing reached from a
@@ -7525,11 +7525,30 @@ function kioskLine(kind, text) {
   function kioskAmbientWords() {
     var parts = kiosk.ambParts || [], n = 0;
     for (var i = 0; i < parts.length; i++) n += parts[i].split(/\s+/).filter(Boolean).length;
-    return n + (kiosk.ambLiveWords | 0);
+    return n;
   }
+  /* p1-livewords-1.1.0 -- SPLIT: the RECEIPT and the CLOCK are different questions.
+     1.0.0 added the in-flight utterance to kioskAmbientWords(), which is ALSO read by
+     the filing receipt ("N words - M characters written to the transcript"). That made
+     the receipt claim words that were never filed. Proven path: mid-utterance Pause ->
+     pvStopMic NULLs pvRec.onresult BEFORE stop(), so the final never arrives and
+     ambParts never gains those words -> the receipt over-reported them as written.
+     A receipt that overstates what reached the chart is worse than a clock that reads
+     zero, so kioskAmbientWords() is filed-only again and ONLY the clock adds live words.
+     The live number also SELF-EXPIRES rather than relying on every discard path
+     (pause, Chrome self-restart, flush timeout, stop) remembering to clear it - if no
+     interim has arrived for LIVE_TTL_MS the recogniser is not currently delivering, so
+     the in-flight tally is worth nothing and reads 0. */
+  var LIVE_TTL_MS = 2500;
+  function kioskAmbientLiveWords() {
+    var at = kiosk.ambLiveAt | 0;
+    if (!at || (Date.now() - at) > LIVE_TTL_MS) return 0;
+    return kiosk.ambLiveWords | 0;
+  }
+  function kioskAmbientClockWords() { return kioskAmbientWords() + kioskAmbientLiveWords(); }
   function kioskAmbientClock() {
     var el = gid('mlsAvKioskRecClock');
-    if (el) el.textContent = kioskAmbientElapsed() + '  |  ' + kioskAmbientWords() + ' words';
+    if (el) el.textContent = kioskAmbientElapsed() + '  |  ' + kioskAmbientClockWords() + ' words';
   }
   /* the clock is the LIVENESS proof: during a silent exam there are no
      recogniser events at all, so a label that only moved on speech would look
@@ -7546,7 +7565,7 @@ function kioskLine(kind, text) {
        be counted from ambParts. Drop the in-flight tally first or they are counted
        twice. Cleared before the empty-guard so a finalise that yields nothing still
        resets the live number instead of stranding it. */
-    kiosk.ambLiveWords = 0;
+    kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
     if (!v) return;
     /* Chrome re-delivers the tail of the previous result after a restart. An
        EXACT repeat of the chunk just accepted is dropped; anything else is
@@ -7568,6 +7587,7 @@ function kioskLine(kind, text) {
        redelivers the whole current utterance each time; kioskAmbientAppend zeroes it
        when the utterance finalises so the words are never counted twice. */
     kiosk.ambLiveWords = clean(interim).split(/\s+/).filter(Boolean).length;
+    kiosk.ambLiveAt = Date.now(); /* p1-livewords-1.1.0: stamped so it self-expires */
     /* the room transcript is a TRANSCRIPT: it must never outrank a staff alert (av-6.2.0) */
     var tail = clean(interim);
     if (!tail) { var parts = kiosk.ambParts || []; tail = parts.length ? parts[parts.length - 1] : ''; }
