@@ -118,9 +118,20 @@ const BUILDS = {
        The PRE-FIX baseline the in-suite controls need (the build that still
        cuts sentences and lacks pvStopMic) is now pinned SEPARATELY as `prefix`
        — post-ship, "live" and "the pre-fix state" are different builds and a
-       single pin can no longer be both. */
-    commit: '64143c75244a6f6bf4c9b20e35cf861ba8edcf7e',
-    sha256: '14b5137b76f16f3c0a791d90f6789a9218a69b390f8f0ca955b2225db14acafd',
+       single pin can no longer be both.
+       ⛔ RE-PIN 2026-08-12 (gx/lv face-grid train) — A DELIBERATE, RECORDED ACT
+       per the A5 protocol, demanded by this suite's own freshness check the
+       first time a lane CHANGED the file after fx-1.0 shipped: the previous
+       pin (64143c75, b1011) went stale the day fx-1.0 landed on main, but the
+       post-ship branch (tree == main) passed silently until this train's own
+       edits made the tree a third set of bytes. `live` now names 80a491dd —
+       fx-1.0 1/3, the commit that last changed feat_mls_avatar.js on main,
+       byte-identical to what origin/main serves at b1019 (verified in-run by
+       the freshness check below). The gx/lv train touches ONLY the face
+       measurement and the camera surface; the S1/S1b acceptance diff against
+       this baseline is what proves the filing/echo path did not move. */
+    commit: '80a491dd6a17eb3f483167896dd87976eb20df8b',
+    sha256: '00e5f7b433c672a7ff4d98dd02a385dfb6ca2546782878ea4ccbc6139a56fa56',
   },
   prefix: {
     /* the PRE-FIX state (pre-composition main, the retired live pin): the build
