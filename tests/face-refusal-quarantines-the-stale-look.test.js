@@ -221,7 +221,15 @@ const CLAIM_SENTENCES = {
   eq(receipt.claimed + receipt.refused, receipt.examined,
     name + ': claimed + refused != examined - a knob fell into the third state the contract bans');
   ok(receipt.examined >= 14, name + ': the examinable set shrank to ' + receipt.examined);
-  eq(receipt.grid, 128, name + ': the receipt does not carry the analysis grid');
+  /* ⛔ RE-EXAMINED DELIBERATELY, NOT DELETED (gx-1.0, 2026-08-12, A5 protocol).
+     This pin used to mean "the analysis grid is 128, full stop". The grid is
+     now ADAPTIVE - 256 when the source can fill it, 128 otherwise, never
+     upscaled - and every fixture in THIS suite is a 128x128 image, so 128
+     remains the TRUE grid for them and the pin stands with a narrower meaning:
+     a 128 source is never upscale-read. The 256 side is pinned where 256
+     sources exist: face-grid-and-skin-geometry.test.js G6 asserts a 256
+     fixture reads grid=256 with the sampled face size ~2x its 128 reading. */
+  eq(receipt.grid, 128, name + ': a 128-source fixture must stay on the 128 grid (adaptive grid never upscales; see face-grid-and-skin-geometry G6 for the 256 pin)');
   /* P10 - no claim sentence may coexist with a refusal of the same knob */
   Object.keys(CLAIM_SENTENCES).forEach(function (k) {
     if (refused.some(function (rr) { return rr.knob === k; })) {
