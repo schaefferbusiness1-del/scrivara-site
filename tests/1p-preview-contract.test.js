@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260812-r1';
+const EXPECTED_BUILD = 'p1-20260812-r2';
 const BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 
 const P1_FILES = [
@@ -25,6 +25,7 @@ const P1_FILES = [
   '1p/index.html',
   '1p-mls-connect.js',
   '1p-feat_mls_avatar.js',
+  '1p-feat_mls_schedimport_exact.js',
   '1p-feat_mls_writeflow.js'
 ];
 
@@ -97,6 +98,13 @@ assert(connect.includes("s.src=SRC+'?v='+(window.__MLS_AV||Date.now())"),
   '1p eager avatar loader must fetch the preview source');
 assert(!connect.includes("s.src='feat_mls_avatar.js?v='"),
   '1p bundle still has a direct production avatar fetch');
+
+assert.strictEqual((connect.match(/s\.src='1p-feat_mls_schedimport_exact\.js\?v='/g) || []).length, 1,
+  '1p bundle must load the isolated preview importer exactly once');
+assert(connect.includes("s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js')"),
+  '1p importer loader must retain the canonical dedupe identity');
+assert(!connect.includes("s.src='feat_mls_schedimport_exact.js?v='"),
+  '1p bundle still loads the shared production importer');
 
 /* app-version.json describes production. It may remain the endpoint used by
    the shared code, but its refresh banner is disabled only when the explicit

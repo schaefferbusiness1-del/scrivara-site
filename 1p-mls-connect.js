@@ -36181,7 +36181,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'p1-20260812-r1';
+  window.__MLS_AV = window.__MLS_AV || 'p1-20260812-r2';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36524,7 +36524,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='p1-20260812-r1';
+  var MLS_APP_BUILD='p1-20260812-r2';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44252,7 +44252,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260808asst220perf1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.2.0 - stale-lineage protection stays exact while cooperative bulk checks run in input-aware slices; refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.22 (responsive chunked history organization + cooperative managed-pull persistence; mdx-2.0.1 display-echo + mdx-2.0.2 credential delimiter + mdx-1.1.0 history refusal diagnostics retained) - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + b346 engine-lease mutual exclusion */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='1p-feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 1p preview importer: canonical dedupe identity, isolated source; production/shared importer untouched. */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -46285,7 +46285,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
   var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
-    autoRePull: 0, providerRosterRetryReceipt: null };
+    autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null };
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -46488,6 +46488,68 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     for (i = 0; i < keys.length; i++) { k = keys[i]; if (obj[k] !== undefined) out[k] = obj[k]; }
     return out;
   }
+  /* p1-pac-1.0.0: the extension's raw roster receipt contains the decisive
+     explanation for one otherwise-complete Day read. Retain only five
+     aggregate fields: no patient/provider names, appointment ids, times,
+     row details or schedule text can cross into the copyable report. */
+  function dsSafeAttributionCoverage(raw) {
+    if (!raw || typeof raw !== 'object' || String(raw.verdict || '') !== 'row-unattributed') return null;
+    function count(value) {
+      var n = Number(value);
+      return isFinite(n) && n >= 0 && Math.floor(n) === n ? n : null;
+    }
+    var rows = count(raw.rows), headers = count(raw.headerCount);
+    var unattributed = count(raw.unattributedRows), foreign = count(raw.foreignRows);
+    if (rows == null || headers == null || unattributed == null || foreign == null) return null;
+    return {
+      verdict: 'row-unattributed', rows: rows, headerCount: headers,
+      unattributedRows: unattributed, foreignRows: foreign
+    };
+  }
+  function dsSameNonempty(a, b) {
+    a = String(a || ''); b = String(b || '');
+    return !!a && a === b;
+  }
+  /* Bind raw attribution evidence to this exact engine result before using it
+     to suppress a retry. The direct-result branch supports a future importer
+     that preserves the same closed aggregate; today's live path uses
+     _lastResp() and requires request/date/count equality across both receipts. */
+  function dsBoundAttributionCoverage(si, result, day) {
+    var sr = result && result.scheduleReceipt, pr = result && result.providerRosterReceipt;
+    if (!(result && result.ok !== true && String(result.reason || '') === 'provider-roster-incomplete' &&
+      sr && sr.complete === true && pr && pr.complete !== true && pr.partial === true &&
+      String(pr.reason || '') === 'legacy-unverified' && String(pr.providerMode || '') === 'all' &&
+      String(pr.targetDate || '') === String(day || ''))) return null;
+    var direct = dsSafeAttributionCoverage(pr.attributionCoverage);
+    if (direct) return direct;
+    var raw = null;
+    try { raw = si && typeof si._lastResp === 'function' ? si._lastResp() : null; } catch (e0) {}
+    var rr = raw && raw.receipt, rpr = raw && raw.providerRosterReceipt;
+    var rawId = raw && (raw.requestId || raw.id), resultId = sr && sr.requestId;
+    if (!(raw && raw.ok === true && rr && rr.complete === true && rpr &&
+      dsSameNonempty(rawId, rr.requestId) && dsSameNonempty(rawId, rpr.requestId) &&
+      dsSameNonempty(resultId, rawId) && dsSameNonempty(pr.requestId, rawId) &&
+      String(raw.schedDate || '') === String(day || '') &&
+      String(rpr.targetDate || '') === String(day || '') &&
+      Array.isArray(raw.appts))) return null;
+    var ac = dsSafeAttributionCoverage(rpr.attributionCoverage);
+    if (!ac || raw.appts.length !== ac.rows) return null;
+    var expected = Number(rr.expectedCount), parsed = Number(rr.parsedCount), candidate = Number(rr.candidateCount);
+    if (!(expected === ac.rows && parsed === ac.rows && candidate === ac.rows)) return null;
+    return ac;
+  }
+  function dsFullyRowUnattributed(result, coverage) {
+    var sr = result && result.scheduleReceipt, pr = result && result.providerRosterReceipt;
+    if (!coverage || coverage.verdict !== 'row-unattributed' || coverage.rows <= 0 ||
+      coverage.headerCount <= 0 || coverage.unattributedRows !== coverage.rows || coverage.foreignRows !== 0) return false;
+    var expected = Number(sr && sr.expectedCount), parsed = Number(sr && sr.parsedCount);
+    var candidate = Number(sr && sr.candidateCount), observed = Number(pr && pr.observedCount);
+    return !!(result && result.ok !== true && String(result.reason || '') === 'provider-roster-incomplete' &&
+      sr && sr.complete === true && sr.authoritativeEmpty !== true &&
+      expected === coverage.rows && parsed === coverage.rows && candidate === coverage.rows &&
+      pr && pr.complete !== true && pr.partial === true && String(pr.reason || '') === 'legacy-unverified' &&
+      String(pr.providerMode || '') === 'all' && observed === coverage.headerCount);
+  }
   function dsReasonHistogram(list) {
     var h = {}, i;
     if (!Array.isArray(list)) return h;
@@ -46550,9 +46612,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         extUpdateHint: String(res.extUpdateHint || '').slice(0, 300),
         retry: dsPick(res.retry, ['schedule', 'providerRoster']),
         scheduleReceipt: dsPick(res.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason', 'schedDate']),
-        providerRosterReceipt: dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'expectedCount', 'observedCount', 'providerMode', 'targetDate']),
+        providerRosterReceipt: (function () {
+          var receipt = dsPick(res.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed', 'expectedCount', 'observedCount', 'providerMode', 'targetDate']);
+          var coverage = dsSafeAttributionCoverage((res.providerRosterReceipt && res.providerRosterReceipt.attributionCoverage) || DS.providerAttributionCoverage);
+          if (receipt && coverage) receipt.attributionCoverage = coverage;
+          return receipt;
+        })(),
         preflightReceipt: dsPick(res.preflightReceipt, ['ran', 'warmed', 'navOk', 'readOk', 'rosterComplete', 'observedDay', 'reason', 'providerMode', 'providerResolved', 'scopeSource']),
         providerRosterRetryReceipt: dsPick(DS.providerRosterRetryReceipt, ['attempt', 'targetDate', 'warmed', 'navOk', 'readOk', 'rosterComplete', 'observedDay', 'reason']),
+        appointmentCensusReceipt: dsPick(res.appointmentCensusReceipt, ['kind', 'complete', 'reason', 'scope', 'targetDate', 'expectedCount', 'parsedCount', 'candidateCount', 'rowCount', 'uniqueAppointmentIds', 'providerHeaderCount', 'unattributedRows', 'foreignRows', 'providerAttributionComplete', 'providerFieldsBlank', 'noProviderGuess', 'providerSnapshotAllowed']),
         /* mdx-1.0.0: the report that reached us for a provider-incomplete
            refusal (Mac, 2026-08-05) carried no provider receipt at all, so the
            failing rows could not be named remotely. Clinician names and
@@ -46687,6 +46755,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var r = result && typeof result === 'object' ? result : null;
     if (r && r.ok === true && r.complete === true) {
       var sr = r.scheduleReceipt || {}, hr = r.historyReceipt || {};
+      var census = r.appointmentCensusReceipt || null;
+      if (r.appointmentCensusOnly === true && census && census.complete === true && census.noProviderGuess === true) {
+        var censusRows = Number(census.rowCount != null ? census.rowCount : sr.parsedCount || 0);
+        return { ok: true, keepStatus: true, message: fmtDay(day) + ' is ready — all ' + censusRows + ' exact appointments were reconciled. Athena did not provide a row-to-provider link, so provider is intentionally blank and provider grouping is unavailable; MLS did not guess between the ' + Number(census.providerHeaderCount || 0) + ' visible provider headers.' + (r.historySkippedReason === 'provider-attribution-unavailable' ? ' Chart-history reading was skipped for this provider-unknown census; the schedule itself is complete.' : '') };
+      }
       if (r.reason === 'empty-day' || sr.authoritativeEmpty === true) {
         return { ok: true, message: fmtDay(day) + ' was verified in Athena and has no appointments.' };
       }
@@ -46700,6 +46773,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var histGap = (rows > 0 && hist < rows) ? (rows - hist) : 0;
       var recon = pullReconLine(r);
       return { ok: true, message: fmtDay(day) + ' is ready — ' + rows + ' appointment' + (rows === 1 ? '' : 's') + ' reconciled' + (hr.requested != null ? (', history read for ' + hist + ' of ' + rows + ' as the reader counted it') : '') + '.' + (histGap ? (' ' + histGap + ' patient' + (histGap === 1 ? ' has' : 's have') + ' no chart yet - use Retry failed histories to finish them.') : '') + censusLine(hr) + (function () { var tf = Number(hr.todayNoteFailures || 0); return tf ? (' ' + tf + ' pulled-day note' + (tf === 1 ? ' was' : 's were') + ' not read (fast lane); the charts themselves saved \u2014 see the pull panel rows.') : ''; })() + (recon ? ' [' + recon + ']' : '') };
+    }
+    var terminalCoverage = r && r.providerRosterReceipt && dsSafeAttributionCoverage(r.providerRosterReceipt.attributionCoverage);
+    if (dsFullyRowUnattributed(r, terminalCoverage)) {
+      return { ok: false, message: 'Athena finished reading all ' + terminalCoverage.rows + ' appointments for ' + fmtDay(day) + ', but ' + terminalCoverage.unattributedRows + ' of ' + terminalCoverage.rows + ' appointment rows carried no provider identity even though ' + terminalCoverage.headerCount + ' provider header' + (terminalCoverage.headerCount === 1 ? ' was' : 's were') + ' visible. MLS did not guess a doctor, so nothing was imported. Re-reading this settled grid cannot create the missing row-to-provider links.' };
     }
     var reason = r && r.reason || 'unverified-result';
     var sr2 = r && r.scheduleReceipt || {};
@@ -47056,6 +47133,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!DS.__autoRetrying) {
       DS.autoRePull = 0;
       DS.providerRosterRetryReceipt = null;
+      DS.providerAttributionCoverage = null;
       DS.__escalateAll = false;
     }
     DS.__autoRetrying = false;
@@ -47199,6 +47277,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : si.pull({ date: day, onStatus: dsOnStatus });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
+          var attributionCoverage = dsBoundAttributionCoverage(si, result, day);
+          DS.providerAttributionCoverage = attributionCoverage;
+          if (attributionCoverage && result && result.providerRosterReceipt) {
+            var enrichedRosterReceipt = {}, rosterKey;
+            for (rosterKey in result.providerRosterReceipt) {
+              if (Object.prototype.hasOwnProperty.call(result.providerRosterReceipt, rosterKey)) enrichedRosterReceipt[rosterKey] = result.providerRosterReceipt[rosterKey];
+            }
+            enrichedRosterReceipt.attributionCoverage = attributionCoverage;
+            result.providerRosterReceipt = enrichedRosterReceipt;
+          }
+          var terminalAttribution = dsFullyRowUnattributed(result, attributionCoverage);
           var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
           /* 2026-07-28 owner order: transient grid refusals must not end at a
              'retry after the grid finishes loading' banner. When the engine
@@ -47206,7 +47295,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              yet corroborated, nav race), re-run the SAME full fail-closed
              pull automatically - twice, with settle time - before surfacing
              the refusal. No gate is weakened; only the clicking is ours. */
-          var transientRefusal = !!(result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
+          var transientRefusal = !!(!terminalAttribution && result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
           if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
@@ -47296,8 +47385,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             }, waitMs);
             return;
           }
-          if (result && result.ok === true) DS.autoRePull = 0;
-          done(outcome.ok, outcome.message, retryCount > 0, outcome.signinRequired === true);
+          if (terminalAttribution) {
+            DS.autoRePull = 0;
+            DS.__escalateAll = false;
+            DS.providerRosterRetryReceipt = null;
+          } else if (result && result.ok === true) DS.autoRePull = 0;
+          done(outcome.ok, outcome.message, retryCount > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
           /* first-attempt completeness (cv-1.1): every retryable straggler converges
              automatically; identity/schedule refusals surface untouched */
           if (retryCount > 0) dsAutoConvergeBodies(sessionSerial);
@@ -47445,7 +47538,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     DS.sessionSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
     DS.lastResult = null; DS.statusLog = []; DS.autoRePull = 0; DS.__autoRetrying = false;
-    DS.providerRosterRetryReceipt = null; DS.__escalateAll = false;
+    DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.__escalateAll = false;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
       var easy = window.__mlsEasyV32;

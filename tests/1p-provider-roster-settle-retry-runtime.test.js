@@ -2,15 +2,18 @@
 
 /* The p1 Visit-day pull owns a deliberately narrow recovery for one live
  * refusal: Athena returned a complete 24/24 Day schedule, but the all-provider
- * roster receipt was legacy-unverified. The existing retry budget stays at
- * two automatic retries (three pulls total); the only addition is a guarded
- * _warmUpDay immediately before each of those retries.
+ * roster receipt was legacy-unverified. Incomplete/transient evidence keeps
+ * the existing budget of two automatic retries (three pulls total), with a
+ * guarded _warmUpDay immediately before each retry.
  *
  * This suite executes the real __mlsDaySwitch slice from 1p-mls-connect.js.
  * It proves the exact receipt gate, ordering, frozen-day/session/cross-engine
  * cancellation, exclusive lock/lease ownership for every special warm-up,
  * canceled attempt-3 escalation cleanup, and that ordinary transient retries
- * do not acquire the new warm-up behavior. */
+ * do not acquire the new warm-up behavior. A complete schedule whose extension
+ * receipt proves every row is provider-unattributed is different: repainting
+ * cannot create identity that Athena did not expose, so it must terminate once
+ * with exact counts and a PHI-free diagnostic instead of warming/retrying. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -57,6 +60,33 @@ function rosterRefusal(overrides) {
       result[key] = Object.assign({}, result[key], overrides[key]);
     } else {
       result[key] = overrides[key];
+    }
+  });
+  return result;
+}
+
+function rowUnattributedRefusal() {
+  const result = rosterRefusal({
+    scheduleReceipt: {
+      complete: true,
+      parsedCount: 24,
+      expectedCount: 24,
+      candidateCount: 24
+    },
+    providerRosterReceipt: {
+      complete: false,
+      partial: true,
+      reason: 'legacy-unverified',
+      providerMode: 'all',
+      targetDate: DAY,
+      observedCount: 3,
+      attributionCoverage: {
+        verdict: 'row-unattributed',
+        rows: 24,
+        headerCount: 3,
+        unattributedRows: 24,
+        foreignRows: 0
+      }
     }
   });
   return result;
@@ -376,6 +406,103 @@ async function startAndSettleFirst(h) {
   h.api.pullDay();
   await h.flush();
   assert.strictEqual(h.pulls.length, 1, 'the manual pull did not reach the real DaySwitch pull path');
+}
+
+async function testFullyRowUnattributedIsTerminalAndPhiFree() {
+  const refusal = rowUnattributedRefusal();
+  /* These deliberately PHI-capable fields model future/raw extension detail.
+     The report may expose only the closed aggregate vocabulary asserted below. */
+  refusal.providerRosterReceipt.attributionCoverage.patientName = 'Synthetic Patient Secret';
+  refusal.providerRosterReceipt.attributionCoverage.appointmentIds = ['appt-secret-123'];
+  refusal.providerRosterReceipt.attributionCoverage.rowDetails = [{
+    patient: 'Synthetic Patient Secret',
+    appointmentId: 'appt-secret-123',
+    time: '8:20 AM'
+  }];
+  refusal.providerRosterReceipt.attributionCoverage.rawText = 'Synthetic Patient Secret at 8:20 AM';
+  refusal.providerRosterReceipt.providerNames = ['Synthetic Clinician Secret, MD'];
+
+  const h = createHarness({ results: [refusal, verifiedResult()] });
+  await startAndSettleFirst(h);
+
+  assert.strictEqual(h.pulls.length, 1,
+    'a receipt proving every returned row has no provider identity was pulled again');
+  assert.strictEqual(h.warms.length, 0,
+    'a receipt proving every returned row has no provider identity ran the roster warm-up');
+  assert.strictEqual(h.pendingTimers().length, 0,
+    'a deterministic row-unattributed refusal scheduled an automatic retry');
+
+  const status = h.context.document.getElementById('mlsDsStatus');
+  assert.ok(status, 'the terminal row-unattributed outcome has no visible status');
+  assert.match(status.textContent, /24\s+of\s+24/i,
+    'the terminal outcome did not state the exact provider-unattributed row count');
+  assert.match(status.textContent, /no provider identity/i,
+    'the terminal outcome did not say what evidence is missing');
+  assert.doesNotMatch(status.textContent, /settling|still loading|finishes? loading/i,
+    'the deterministic missing-provider-identity outcome was mislabeled as a paint/settling problem');
+
+  const pullButton = h.context.document.getElementById('mlsDsPullBtn');
+  assert.ok(pullButton && pullButton.disabled === false,
+    'the terminal row-unattributed refusal left the manual pull control blocked');
+  const diagButton = h.context.document.getElementById('mlsDsDiagBtn');
+  assert.ok(diagButton && diagButton.style.display === 'inline-block' && typeof diagButton.onclick === 'function',
+    'the terminal row-unattributed refusal did not expose its PHI-free report control');
+
+  diagButton.onclick();
+  await h.flush();
+  assert.ok(h.clipboardWrites.length > 0,
+    'the row-unattributed diagnostic report was not copyable');
+  const reportText = h.clipboardWrites[h.clipboardWrites.length - 1];
+  const report = JSON.parse(reportText);
+  const aggregate = report && report.result && report.result.providerRosterReceipt &&
+    report.result.providerRosterReceipt.attributionCoverage;
+  assert.deepStrictEqual(aggregate, {
+    verdict: 'row-unattributed',
+    rows: 24,
+    headerCount: 3,
+    unattributedRows: 24,
+    foreignRows: 0
+  }, 'the report did not retain the closed PHI-free attributionCoverage aggregate');
+  assert.strictEqual(report.result.providerRosterRetryReceipt, null,
+    'a terminal row-unattributed result published a retry/warm receipt');
+  for (const secret of [
+    'Synthetic Patient Secret', 'appt-secret-123', '8:20 AM', 'Synthetic Clinician Secret'
+  ]) {
+    assert.strictEqual(reportText.includes(secret), false,
+      'the PHI-free report leaked raw attribution detail: ' + secret);
+  }
+}
+
+async function testRowUnattributedTerminalClassifierIsExact() {
+  const controls = [
+    ['different attribution verdict', result => {
+      result.providerRosterReceipt.attributionCoverage.verdict = 'no-headers';
+    }],
+    ['zero observed rows', result => {
+      result.providerRosterReceipt.attributionCoverage.rows = 0;
+      result.providerRosterReceipt.attributionCoverage.unattributedRows = 0;
+    }],
+    ['only some rows unattributed', result => {
+      result.providerRosterReceipt.attributionCoverage.unattributedRows = 23;
+    }]
+  ];
+
+  for (const [label, mutate] of controls) {
+    const first = rowUnattributedRefusal();
+    mutate(first);
+    const h = createHarness({ results: [first, verifiedResult()] });
+    await startAndSettleFirst(h);
+    assert.deepStrictEqual(h.pendingTimers().map(timer => timer.ms), [4000],
+      label + ': the existing transient retry was suppressed by an inexact attribution receipt');
+    h.runNextTimer();
+    await h.flush();
+    assert.strictEqual(h.pulls.length, 2,
+      label + ': the existing transient retry did not run');
+    assert.strictEqual(h.warms.length, 1,
+      label + ': the existing exact legacy-unverified roster warm-up did not run');
+    assert.deepStrictEqual(h.order, ['pull:1', 'warm:' + DAY, 'pull:2'],
+      label + ': transient retry ordering changed');
+  }
 }
 
 async function testExactWarmAndBound() {
@@ -743,6 +870,8 @@ async function testCanceledAttemptThreeClearsEscalation() {
 }
 
 async function main() {
+  await testFullyRowUnattributedIsTerminalAndPhiFree();
+  await testRowUnattributedTerminalClassifierIsExact();
   await testExactWarmAndBound();
   await testWarmLeaseLifetimeAndNavigatorLock();
   await testNeverSettlingWarmTimesOutAndRetries();
@@ -751,7 +880,7 @@ async function main() {
   await testCrossEngineAndSessionCancellation();
   await testExactClassifierAndOrdinaryRetries();
   await testCanceledAttemptThreeClearsEscalation();
-  console.log('PASS p1 provider-roster settle retry: exact 24/24 legacy-unverified all-provider receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms time out PHI-free and release both guards; cancellation clears attempt-3 escalation; all other retry classes keep their original no-special-warm path');
+  console.log('PASS p1 provider-roster settle retry: complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards; cancellation clears attempt-3 escalation');
 }
 
 const watchdog = setTimeout(() => {

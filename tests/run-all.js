@@ -9,6 +9,7 @@ const tests = [
   '1p-preview-contract.test.js',
   '1p-ondemand-templates.test.js',
   '1p-avatar-mic-not-fragments.test.js',
+  '1p-provider-unknown-census-runtime.test.js',
   /* an unmapped Settings heading is INVISIBLE with no error - measured, 1 of 12
      sections was reachable from no tab at all */
   'settings-every-section-reachable.test.js',
