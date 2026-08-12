@@ -143,11 +143,19 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
     plan: [{ kind: 'note', body: 'NOTE TEXT:\nExact reviewed note.' }]
   };
 
+  /* Owner directive 2026-08-12: billing/sign are executable actions but fail
+     closed without the extension's athenaFinalActionsV1 capability; orders
+     stay manual-only. None of these may cross the bridge here. */
+  const expectedRefusal = {
+    stage_billing: 'final-action-capability-required',
+    sign_encounter: 'final-action-capability-required',
+    place_order: 'manual-only-final-action'
+  };
   for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
     const refused = await window.__mlsWriteFlow.startAthenaAction(action, opts);
-    assert.strictEqual(refused.error, 'manual-only-final-action', `${action} was not refused at the UI controller`);
+    assert.strictEqual(refused.error, expectedRefusal[action], `${action} was not refused at the UI controller`);
   }
-  assert.deepStrictEqual(sent, [], 'a manual final action crossed the bridge');
+  assert.deepStrictEqual(sent, [], 'a refused final action crossed the bridge');
 
   await window.__mlsWriteFlow.startAthenaAction('write_note', opts);
   await tick();

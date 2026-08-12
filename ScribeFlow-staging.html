@@ -16487,12 +16487,18 @@ function _athenaOrderPlacementCapabilityReady(){
          at most once, so re-render only on a real change. */
       var _hsVer=String(d.version||'');
       var _hsCap=!!(d.capabilities&&d.capabilities.supervisedOrderPlacementV2===true);
-      var _hsSig=_hsVer+'|'+_hsCap;
+      /* 2026-08-12 owner directive: mirror production — carry the extension's
+         athenaFinalActionsV1 advert through the change-only handshake. */
+      var _hsFinal=!!(d.capabilities&&d.capabilities.athenaFinalActionsV1===true);
+      var _hsSig=_hsVer+'|'+_hsCap+'|'+_hsFinal;
       if(window.__mlsExtensionHandshakeSig===_hsSig)return;
       window.__mlsExtensionHandshakeSig=_hsSig;
       window.__mlsExtensionHandshake=Object.freeze({seen:true,version:_hsVer});
-      if(_hsCap){
-        window.__mlsExtensionCapabilities=Object.freeze({supervisedOrderPlacementV2:true});
+      if(_hsCap||_hsFinal){
+        var _hsCaps={};
+        if(_hsCap)_hsCaps.supervisedOrderPlacementV2=true;
+        if(_hsFinal)_hsCaps.athenaFinalActionsV1=true;
+        window.__mlsExtensionCapabilities=Object.freeze(_hsCaps);
       }
       try{if(typeof renderVisitOrders==='function')renderVisitOrders();}catch(_e1){}
       try{if(typeof renderOrderList==='function')renderOrderList();}catch(_e2){}

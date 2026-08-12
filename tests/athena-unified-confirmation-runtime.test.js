@@ -189,6 +189,9 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert(!sent.some(message => message.action === 'sign_encounter'), 'Sign auto-chained from a newly written note');
   assert(/VERIFIED/.test(byId.mlsAthenaUnifiedReceipt.innerHTML), 'per-row verified receipt was not rendered');
   assert(!byId.mlsAthenaUnifiedReviewSign, 'verified note must not offer an executable Sign review');
+  /* Owner directive 2026-08-12, shipped behind athenaFinalActionsV1: without
+     that capability the sign row stays the b1018 manual row, and a verified
+     note write must not flip it. */
   const signRow = manifest.rows.find(row => row.id === 'sign-encounter');
   assert(signRow && signRow.capability === 'manual' && signRow.action === '', 'Sign did not remain an immutable manual row after note verification');
 

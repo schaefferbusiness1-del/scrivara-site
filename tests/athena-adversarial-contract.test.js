@@ -226,7 +226,11 @@ finding('Sign remains manual even after a verified write_note proof', function (
   assert(/writeReceiptDrafts/.test(receiptAction) && /openUnifiedConfirmation\(/.test(writeReceiptDrafts), 'the top receipt write button must reach canonical write_note through the unified manifest review');
   assert(!/athenaReceiptSign/.test(receiptUi), 'top receipt must not render a Sign action, disabled or otherwise');
   assert(/Complete in Athena:[^]{0,260}Sign &amp; Save/.test(receiptUi), 'top receipt must visibly route Sign & Save to Athena');
-  assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(explicitActions), 'app allowlist must exclude Sign');
+  /* Owner directive 2026-08-12: Sign is in the app allowlist, but it may
+     never run without a verified note-write proof — pinned below and at the
+     probe gate. place_order stays excluded. */
+  assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*,\s*stage_billing\s*:\s*true\s*,\s*sign_encounter\s*:\s*true\s*\}/.test(explicitActions), 'app allowlist must be exactly note write/save/billing/sign');
+  assert(/verified-note-write-required/.test(startAthenaAction), 'Sign must fail closed without a verified note-write receipt');
   const manualRefusal = startAthenaAction.indexOf('manual-only-final-action');
   const probeBridge = startAthenaAction.indexOf("mode: 'probe'");
   assert(manualRefusal >= 0 && probeBridge > manualRefusal, 'Sign must be refused before any bridge probe');

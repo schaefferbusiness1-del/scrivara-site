@@ -36,14 +36,19 @@ assert(/mode:\s*'probe'/.test(unified), 'selected action must be checked read-on
 assert(/mode:\s*'execute'/.test(unified), 'the single confirmation entrypoint must execute one typed action');
 assert(/setAttribute\('data-mls-athena-action',\s*row\.action\)/.test(unified));
 assert(/setAttribute\('data-mls-preview-hash',\s*state\.manifest\.previewHash\)/.test(unified));
-assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'UI must disclose the two allowed note lanes');
+/* Owner directive 2026-08-12, shipped behind athenaFinalActionsV1: WITHOUT
+   the capability the header/banner stay the b1018 disclosures; WITH it they
+   disclose all four confirmable lanes. Both branches must exist in source. */
+assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'UI must keep the b1018 two-lane disclosure for incapable extensions');
+assert(/Reviewed note write, Save Draft, billing staging, and Sign &amp; Save each run only after your explicit one-click confirm/i.test(unified), 'UI must disclose the four confirmable lanes for capable extensions');
+assert(/athenaFinalActionsReady\(\)\s*\?/.test(unified), 'the four-lane disclosure must be gated on the extension capability, not shipped unconditionally');
 /* wf3 (owner 2026-08-04, one-click rebuild): the READY row is PRE-selected and
    probed on open — "Select one" is no longer the doctor's job, so the
    one-action boundary is disclosed as what each click RUNS instead. */
-assert(/One READY note row is pre-selected/i.test(unified), 'UI must disclose the pre-selected single note row');
+assert(/One READY note row is pre-selected/i.test(unified), 'UI must disclose the pre-selected single note row (b1018 branch)');
 assert(/runs exactly that one action/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
 assert(/never retries or auto-chains|never auto-chain/i.test(unified), 'UI must disclose fail-closed no-chain behavior');
-assert(/Complete Sign & Save directly in Athena/.test(unified), 'Sign must be visibly manual');
+assert(/Sign & Save unlocks after MLS verifies the note write/.test(unified), 'Sign must be visibly sequenced behind a verified note write (capable branch)');
 assert(!/Review Sign & Save separately/.test(unified), 'verified note write must not recreate an executable Sign offer');
 assert(!/probeUnifiedRow\([^)]*sign[^)]*\)[^]{0,300}executeUnifiedSelection/.test(unified), 'Sign must not auto-chain after a new note write');
 
