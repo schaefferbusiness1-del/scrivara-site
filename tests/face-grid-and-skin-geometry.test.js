@@ -312,6 +312,106 @@ const FACE_L = 44, FACE_R = 84;
     'G10-control: the pre-fix code was expected to claim eyes silently; if it announces now, this pin is decoration');
 }
 
+/* ═══ G12 — THE EYES SIZE THE BOX (gx-1.2, the partial-merge hole) ═══
+   The gx-1.0 chroma widening (C* to 60, re-derived on photographed skin)
+   uncovered a case the wall-to-wall veto cannot reach: a warm wooden door
+   (#a97843, hue 69.8, C* 38.7 - inside the YCbCr window AND the widened
+   gate) merging into the component from one side. MEASURED on this train's
+   intermediate bytes: box L=44 R=110 on a 41px face, asym exactly 1.2 (a
+   hair under the clamp), and the door hex CLAIMED as skin. The pre-fix
+   baseline refused that door - on chroma, quoting a hue that passed, the
+   wrong reason - but it refused; the widening must not readmit it. The cure
+   is corroboration by the face's own eyes (separation 0.44-0.56 of a real
+   face's width; a box the eyes call too wide, or an eye window with no eye
+   in it, refuses the skin claim with the merge named).
+   THE FULL LEDGER, measured on all three builds so the trade is explicit:
+     one-sided door:  b1018 claimed the FACE colour - 2-of-5 patch-median
+                      LUCK (its eye-line pair put only two patches on the
+                      door); gx-1.0/1.1 claimed the DOOR hex (moved patches
+                      ride the inflated box, widened gate admits C* 38.7);
+                      gx-1.2 REFUSES, naming the merge. Cost vs b1018: one
+                      lucky claim traded for an honest refusal + a live-view
+                      nudge; the doctor is told to step aside, not lied to.
+     both-sided:      b1018 refused (chroma, wrong reason, quoting a hue
+                      that passed); gx-1.2 refuses naming the merge.
+   GLASSES (this owner wears them - monitor follow-up, measured): the gate
+   SURVIVES glasses at both grids, because a rim is a dark mass AT the eye
+   positions - clean bespectacled faces corroborate at separation ~0.46 and
+   never fire, glare on a lens does not defeat it (the rim ring supplies the
+   mass), and glasses+door still refuses. "Found" means n >= 6 on BOTH arms:
+   a 2px stray in the door-aimed window is a non-null mass and the first
+   version's !eR arm let it defeat both branches - the 128 door was claimed
+   again until the floor was applied symmetrically.
+   THE COUPLING, stated plainly: this corroboration rides the same dark-mass
+   detector as eyeSet, which is resolution-limited. On a source whose eye
+   masses are entirely undetectable (closed eyes, heavy blur, extreme
+   low-res) the gate cannot fire and the partial-merge residual stands -
+   protection is weakest on the worst inputs. The owner's own camera path
+   (1024 capture -> 256 grid) is where it is strongest. */
+{
+  const DOOR = hx('#a97843');
+  function withDoor(both) {
+    const p = painter(1);
+    p.rect(0, 0, 127, 127, WALL); head(p, SKIN); p.rect(40, 108, 88, 127, SHIRT);
+    if (both) { p.rect(20, 40, 45, 110, DOOR); p.rect(83, 40, 108, 110, DOOR); }
+    else p.rect(83, 40, 110, 110, DOOR);
+    return p.img;
+  }
+  const one = NEW.read(withDoor(false));
+  ok(one.derived.indexOf('skin') < 0 && one.look.skin === undefined,
+    'G12: the one-sided warm-door merge must NOT claim skin - the widened chroma gate would otherwise admit the door the old bound refused (for the wrong reason)');
+  ok((one.found || []).some(s => /wider than your eye spacing/.test(s)),
+    'G12: the one-sided merge refusal must name the outline/merge, not a colour bound');
+  const two = NEW.read(withDoor(true));
+  ok(two.derived.indexOf('skin') < 0,
+    'G12: the both-sided warm merge must NOT claim skin (eye separation 0.21 of the merged width vs 0.44+ on a real face)');
+  const oldOne = OLD.read(withDoor(false));
+  ok(oldOne.derived.indexOf('skin') >= 0 && oldOne.look.skin === '#c68e6f',
+    'G12-control: the pre-fix baseline was measured CLAIMING the face colour on the one-sided door (2-of-5 patch-median luck) - if that moved, the ledger above is stale and the trade must be re-sized');
+  const oldTwo = OLD.read(withDoor(true));
+  ok(oldTwo.derived.indexOf('skin') < 0,
+    'G12-control: the pre-fix baseline was measured REFUSING the both-sided merge (chroma, its wrong reason) - if it claims now, the ledger above is stale');
+  /* and the corroboration must not overtighten: the clean face has both eyes
+     at sane spacing and still claims */
+  const clean = painter(1);
+  clean.rect(0, 0, 127, 127, WALL); head(clean, SKIN); clean.rect(40, 108, 88, 127, SHIRT);
+  const rc = NEW.read(clean.img);
+  ok(rc.derived.indexOf('skin') >= 0,
+    'G12: the clean face must still claim skin - the eye-corroboration gate must not fire on sane geometry');
+  /* glasses: rims are dark masses AT the eye positions, so a bespectacled
+     face corroborates - the gate must neither false-fire clean nor go blind
+     with the door. Glare on one lens must not defeat either direction. */
+  const RIMC = hx('#2a2226'), GLARE = hx('#e8ecef');
+  function bespectacled(door, glare) {
+    const p = painter(1);
+    p.rect(0, 0, 127, 127, WALL); head(p, SKIN); p.rect(40, 108, 88, 127, SHIRT);
+    [[55, 62], [73, 62]].forEach(([ex, ey], i) => {
+      for (let t = 0; t < 360; t += 2) {
+        const a = t * Math.PI / 180;
+        p.put(Math.round(ex + 6.5 * Math.cos(a)), Math.round(ey + 5 * Math.sin(a)), RIMC);
+      }
+      if (glare && i === 0) p.ell(ex, ey, 4.5, 3.5, GLARE);
+    });
+    p.rect(61, 61, 67, 62, RIMC); p.rect(44, 61, 48, 62, RIMC); p.rect(80, 61, 84, 62, RIMC);
+    if (door) p.rect(83, 40, 110, 110, DOOR);
+    return p.img;
+  }
+  ok(NEW.read(bespectacled(false, false)).derived.indexOf('skin') >= 0,
+    'G12: a clean bespectacled face must still claim skin - the rims corroborate at sane separation, they must never fire the gate');
+  ok(NEW.read(bespectacled(false, true)).derived.indexOf('skin') >= 0,
+    'G12: glare on one lens must not fire the gate on a clean face - the rim ring still supplies the mass');
+  const bd = NEW.read(bespectacled(true, false));
+  ok(bd.derived.indexOf('skin') < 0 && (bd.found || []).some(s => /wider than your eye spacing/.test(s)),
+    'G12: glasses + door must STILL refuse with the merge named - this owner wears glasses, and a gate his glasses defeat protects everyone but him');
+  ok(NEW.read(bespectacled(true, true)).derived.indexOf('skin') < 0,
+    'G12: glare + glasses + door must still refuse - a washed lens must not blind the corroboration');
+  /* the n>=6 floor is symmetric: a sub-floor stray in the door-aimed window is
+     NOT an eye, and must not defeat the one-sided arm (it did - the 128 door
+     was claimed again until the floor was applied to both branches) */
+  ok((one.found || []).some(s => /wider than your eye spacing/.test(s)),
+    'G12: the 128-grid one-sided door must refuse via the one-sided arm - a 2px stray mass in the merged window must not count as a found eye');
+}
+
 /* ═══ G11 — the box carries what the live view needs to draw the truth ═══ */
 {
   const p = painter(1);

@@ -3185,6 +3185,52 @@
        masses still earn their keep: their CENTROIDS give eye spacing, gated on
        roundness so a bar can never supply it. */
     var compact = eL && eR && eL.round > 0.70 && eR.round > 0.70;
+    /* 🚨 gx-1.2 THE EYES SIZE THE BOX (measured, monitor probe 2026-08-12).
+       The gx-1.0 chroma widening (C* up to 60, re-derived on photographed
+       skin) uncovered a partial-merge hole the wall-to-wall veto does not
+       reach: a warm wooden door (#a97843, hue 69.8, C* 38.7 - passes the
+       YCbCr window) merging into the component on ONE side inflates the box
+       (L=44,R=110 on a 41px face), lands asym at exactly 1.2 - a hair under
+       the clamp - and the patches ride the inflated atX onto the door: the
+       door hex was CLAIMED as skin. The OLD chroma bound refused that door
+       for the wrong reason (C* 38.7 >= 32), but it refused.
+       The face's own eyes are the corroborating landmark a door cannot fake:
+       - BOTH eye masses found: their separation is anatomically 0.44-0.56 of
+         a real face's width (the eyeSet cuts' own numbers). Measured: the
+         both-sided door merge reads sep/width 0.21, the clean face 0.44-0.46,
+         so < 0.34 means the box is wider than the face the eyes belong to.
+       - EXACTLY ONE found: the eye window on the other side of the box found
+         no dark mass AT THE EYE LINE - that half of the box has no eye in it,
+         which is the one-sided merge's own signature (the window was aimed at
+         the door).
+       - NEITHER found (closed eyes, heavy blur): no corroboration either way;
+         behaviour unchanged.
+       This gates ONLY the skin CLAIM - a new, honest refusal that names the
+       merge - never any other knob, and it cannot fire on a face whose two
+       eye windows both see an eye at sane spacing. */
+    /* "FOUND" MEANS n >= 6 ON BOTH ARMS (measured): a 2-pixel stray in the
+       door-aimed window is a non-null mass, and the first version's `!eR`
+       one-sided arm let it defeat BOTH branches - the 128-grid door fixture
+       was claimed again. A mass below the same evidence floor eyeSet uses is
+       no eye; the asymmetry between a real eye mass and a stray IS the
+       one-sided signature.
+       GLASSES SURVIVE THIS GATE, measured at 256 with rims and with glare on
+       a lens: a rim is a dark mass AT the eye positions, so a bespectacled
+       face corroborates at sane separation (0.46) and never fires clean -
+       which matters because THIS owner wears glasses.
+       THE COUPLING, stated: this corroboration rides the same dark-mass
+       detector as eyeSet, which is resolution-limited - on a low-res source
+       read at 128 whose eye masses are entirely undetectable, the gate cannot
+       fire and the partial-merge residual stands. Protection is weakest on
+       the worst inputs; the owner's 1024 camera path reads at 256, where it
+       is strongest. */
+    var eyeBoxSane = true;
+    var eLfound = !!(eL && eL.n >= 6), eRfound = !!(eR && eR.n >= 6);
+    if (eLfound && eRfound) {
+      if (!(eR.cx > eL.cx) || (eR.cx - eL.cx) < faceW * 0.34) eyeBoxSane = false;
+    } else if (eLfound !== eRfound) {
+      eyeBoxSane = false;
+    }
     var lowerH = lowerChin - eyeY;
     if (lowerH < faceH * 0.20) lowerH = Math.round(faceH * 0.55);
     function belowEye(fr) { return Math.round(eyeY + lowerH * fr); }
@@ -3280,6 +3326,14 @@
       found.push('the skin sample came back ' + hex(skin) + ', which is outside the range real skin ' +
         'occupies (' + skinWhy.join('; ') + ') — usually the wall behind you ' +
         'bleeding into the sample, so your own skin colour was left alone');
+    } else if (!eyeBoxSane) {
+      /* gx-1.2 - see THE EYES SIZE THE BOX above: the outline is wider than
+         the face the eyes belong to, so what the patches measured is part
+         furniture. A colour from that sample must not be claimed however
+         skin-like it is - that is exactly how the warm door got in. */
+      found.push('the face outline I measured is wider than your eye spacing says your face is — ' +
+        'usually warm-toned furniture or a door beside you blending into it, so your own skin ' +
+        'colour was left alone. Try a plainer background or a step to the side.');
     } else {
       derived.push('skin');
     }
@@ -4042,6 +4096,7 @@
       if (vetoBackdrop && (k === 'hair' || k === 'shirt' || k === 'hairStyle')) why = 'the background behind you was being read as both your hair and your top';
       else if (fromIllustration && colourKnob) why = 'only the stylized copy was readable - its colours are manufactured, so none was taken';
       else if (k === 'skin' && !skinIsSkinColoured) why = 'the sample was not a colour real skin has';
+      else if (k === 'skin' && !eyeBoxSane) why = 'the face outline was wider than your eye spacing allows - something beside you blended into it';
       else if ((k === 'hair' || k === 'hairStyle') && hairUnreadable) why = crownN === 0 ? 'the top of the head is outside the photo' : 'the background is too close to the hair in colour';
       else if (k === 'faceShape') why = 'this photo cannot support a shape verdict';
       refusedOut.push({ knob: k, reason: why, action: 'mlsAvLook_' + k });
