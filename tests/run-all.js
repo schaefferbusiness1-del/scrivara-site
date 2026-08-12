@@ -632,6 +632,18 @@ const tests = [
      SAMPLED-FACE-SIZE gate (none existed before this train). Pre-fix controls
      must reproduce each defect or the pin is called decoration. */
   'face-grid-and-skin-geometry.test.js',
+  /* 2026-08-12 lv-1.0: THE LIVE CAPTURE VIEW. The camera was a 200px mirror with
+     no feedback - the doctor framed blind and met the refusal list after the
+     fact. An rAF loop (125ms, matching grabBestFrame's own step) runs THE SAME
+     captureSquare->faceReadPortrait measurement the snap runs and draws the
+     face box, the five skin patches where they actually land, the sampled face
+     width, the per-control claim/refusal list, and a good-to-snap shutter
+     state. Headline pin: PARITY - the live receipt/box/claims byte-equal the
+     snap path's on the same frame; an overlay that lies is worse than none.
+     Also pins the adopt-don't-request law, the mirrored-canvas geometry, the
+     relative-wrapper mount, and the tab-switch camera-LED leak fix (pre-fix
+     control must lack it). */
+  'avatar-live-capture-overlay.test.js',
   /* 2026-08-09 av-6.2.0: ONE OWNER for #mlsAvKioskInterim. Owner: "having text constantly
      overlapping and being such a paIUN IN THE ASS" — measured as FOURTEEN writers on one
      text node with no priority, clobbering each other mid-sentence. Executes the ranked

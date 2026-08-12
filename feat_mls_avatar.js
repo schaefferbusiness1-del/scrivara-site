@@ -102,6 +102,10 @@
       '.mlsAvSummary{margin-top:9px;font-size:13px;color:#3a453f;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:9px 11px;white-space:pre-wrap;max-height:180px;overflow:auto}' +
       '.mlsAvActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.mlsAvAction{border:1px solid #cbd8d0;background:#EAF1EE;color:#204034;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}.mlsAvAction.primary{border-color:#204034;background:#204034;color:#fff}.mlsAvAction[disabled]{opacity:.6;cursor:default}' +
       '.mlsAvForm{display:grid;gap:9px}.mlsAvForm label{font-size:12.5px;font-weight:700;color:#55605A}.mlsAvForm input,.mlsAvForm textarea{width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif}' +
+      /* lv-1.0 - the live capture view's words (the canvas carries geometry only) */
+      '.mlsAvLiveLine{font:600 12.5px \'Public Sans\',system-ui;color:#204034;margin-top:6px;max-width:420px}' +
+      '.mlsAvLiveList{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 10px;margin-top:4px;font-size:11.5px;color:#55605A;max-width:640px}' +
+      '.mlsAvLiveList .on{color:#2E6A4B;font-weight:700}' +
       '@media(max-width:600px){.mlsAvPanel{padding:17px}.mlsAvAction{min-height:44px}.mlsAvHead h2{font-size:19px}}';
     (document.head || document.documentElement).appendChild(node);
   }
@@ -4275,14 +4279,18 @@
      which still box-averages down to 128. It stays inside the route's 900 000-character cap: a
      1024 square at JPEG 0.95 is roughly 250-400KB, i.e. 340-540KB of base64. */
   var MEASURE_MAX = 1024;
-  function captureSquare(video, out) {
+  function captureSquare(video, out, into) {
     var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
     if (!vw || !vh) return null;
     var side = Math.min(vw, vh);
     /* NEVER UPSCALE. Inventing pixels would make a low-res camera look like a
        high-res one to every check below, which is the opposite of the point. */
     var px2 = Math.max(64, Math.min(out, side));
-    var canvas = document.createElement('canvas');
+    /* lv-1.0: `into` is OPT-IN canvas reuse for the live loop, which captures
+       8 times a second and would otherwise allocate a fresh megapixel canvas
+       every tick. A call site that says nothing gets what it always got - a
+       fresh canvas (the a-flag-on-a-shared-helper law: opt IN, never out). */
+    var canvas = into || document.createElement('canvas');
     canvas.width = px2; canvas.height = px2;
     var ctx = canvas.getContext('2d');
     ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, px2, px2);
@@ -4331,6 +4339,173 @@
     }
     step();
   }
+
+  /* ---- LIVE CAPTURE VIEW (lv-1.0) --------------------------------------------
+     Before this, the camera was a 200px mirror with no feedback: the doctor
+     framed blind, pressed Snap, and learned what the matcher thought minutes
+     later in a refusal list. This block runs THE SAME measurement the snap
+     runs - captureSquare at MEASURE_MAX into faceReadPortrait - at 8Hz while
+     the camera is open, and draws what the algorithm actually locked onto:
+     the face box, the five skin patches where they REALLY land (the
+     diagnostic instrument for the wall-sample defect - the doctor can watch a
+     patch sit on his glasses or the wall), the sampled face width, the live
+     per-control claim/refusal list, and a shutter state that turns good when
+     the frame would pass.
+     LAWS, each one a measured trap:
+       - NEVER a <video> into faceReadPortrait: it sizes from naturalWidth,
+         which a video does not have - it would read the top-left corner of
+         the frame while looking perfectly correct. captureSquare only.
+       - rAF, never setInterval - the contract suite bans timers module-wide.
+         8Hz (125ms) matches grabBestFrame's own 120ms step, so the doctor
+         watches at the rate the shot is averaged over; 60Hz would burn a
+         core re-measuring a face that has not moved.
+       - ADOPT cameraStream; never getUserMedia here - the consent proof
+         counts getUserMedia calls.
+       - NEVER a network call - the measurement copy is deliberately
+         device-local (see FACE_HI_KEY).
+       - READ-ONLY: never faceApplyDerived from this loop - repainting the
+         look 8x/sec would destroy the staleness signal fx-1.0 exists for.
+         Nothing here touches lookNow/manualNow/lookMarks.
+       - SELF-TERMINATING on !video.isConnected, and it stops the camera as
+         it dies: switching off the Setup tab destroys the video without
+         Cancel, and before this train that leaked the stream and kept the
+         camera LED lit (the tab handler now also calls stopCamera - this
+         guard covers every OTHER way the video can leave the DOM). */
+  var FACE_LIVE_ORDER = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
+    'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
+  var FACE_LIVE_LABELS = { skin: 'Skin', hair: 'Hair colour', hairStyle: 'Hair style',
+    beard: 'Facial hair', glasses: 'Glasses', eyes: 'Eye colour', brows: 'Brow weight',
+    browCol: 'Brow colour', lips: 'Lip shape', nose: 'Nose', eyeSet: 'Eye spacing',
+    hairline: 'Hairline', faceShape: 'Face shape', shirt: 'Top colour' };
+  var faceLiveCanvas = null;
+  function faceLiveMeasure(video) {
+    if (!faceLiveCanvas) faceLiveCanvas = document.createElement('canvas');
+    var canvas = captureSquare(video, MEASURE_MAX, faceLiveCanvas);
+    if (!canvas) return null;
+    var res = null;
+    try { res = faceReadPortrait(canvas); } catch (e) { res = null; }
+    if (!res) return null;
+    return { res: res, q: frameQuality(canvas) };
+  }
+  /* READY = this frame would come back with the skin claimed and the face big
+     enough for the resolution-limited estimators. 0.34 is 44/128: the brow
+     weight needs faceW >= 44 on the 128 grid (browMed >= 3 rows on a natural
+     brow), and the bound is grid-relative so it means the same face size on
+     either grid. The exposure/sharpness bounds are the capture guard's own. */
+  function faceLiveReady(res, q) {
+    if (!res || !res.look || !res.receipt) return false;
+    if (!q || q.exposure < 45 || q.exposure > 225 || q.sharp < 2.2) return false;
+    if ((res.derived || []).indexOf('skin') < 0) return false;
+    return res.receipt.faceW >= res.receipt.grid * 0.34;
+  }
+  function faceLiveNudge(res, q) {
+    if (q && q.exposure < 45) return 'Too dark — turn a light on, or face a window.';
+    if (q && q.exposure > 225) return 'Washed out — move the bright light behind you out of shot.';
+    if (!res || !res.look) {
+      return (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
+    }
+    var r = res.receipt || {};
+    if (r.faceW && r.grid && r.faceW < r.grid * 0.34) {
+      return 'Move closer — your face spans ' + r.faceW + ' of ' + r.grid +
+        ' measurement pixels; ' + Math.round(r.grid * 0.34) + '+ reads best.';
+    }
+    var skinRefused = false;
+    (res.refused || []).forEach(function (f) { if (f && f.knob === 'skin') skinRefused = true; });
+    if (skinRefused) return 'The skin sample is not reading clean — usually the wall or the light behind you; try a plainer background.';
+    if (q && q.sharp < 2.2) return 'Hold still — the picture is blurred.';
+    return '';
+  }
+  /* GEOMETRY ONLY on this canvas, and in UNMIRRORED image space: the canvas is
+     CSS-mirrored exactly like the <video> under it, so image-space coordinates
+     land on the feature the doctor sees. Text on a mirrored canvas renders
+     backwards - every word lives in the DOM below instead. */
+  function faceLiveOverlayPaint(overlay, res, ready) {
+    var ctx = overlay.getContext && overlay.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    var b = res && res.box;
+    if (!b || !b.grid) return;
+    var s = overlay.width / b.grid;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = ready ? '#2E6A4B' : '#b98a2e';
+    ctx.strokeRect(b.L * s, b.T * s, (b.R - b.L + 1) * s, (b.B - b.T + 1) * s);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(b.L * s, b.eyeY * s); ctx.lineTo((b.R + 1) * s, b.eyeY * s);
+    ctx.stroke();
+    var pr = b.patchR || 2;
+    ctx.strokeStyle = '#3b82c4';
+    (b.skinSpots || []).forEach(function (sp) {
+      ctx.strokeRect((sp[0] - pr) * s, (sp[1] - pr) * s, (2 * pr + 1) * s, (2 * pr + 1) * s);
+    });
+  }
+  function faceLiveStatusRender(ui, res, q, ready) {
+    var line;
+    if (res && res.receipt) {
+      line = 'Face width: ' + res.receipt.faceW + ' of ' + res.receipt.grid +
+        ' — matching ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' controls' +
+        (ready ? ' — looking good, snap when ready' : '');
+    } else {
+      line = 'Looking for your face…';
+    }
+    var nudge = faceLiveNudge(res, q);
+    if (nudge) line += ' · ' + nudge;
+    if (ui.status && ui.status.__mlsLast !== line) { ui.status.__mlsLast = line; ui.status.textContent = line; }
+    if (ui.snapBtn && !ui.snapBtn.disabled && ui.snapBtn.__mlsReady !== ready) {
+      ui.snapBtn.__mlsReady = ready;
+      ui.snapBtn.textContent = ready ? 'Snap photo — frame looks good' : 'Snap photo';
+    }
+    var listEl = ui.list;
+    if (!listEl) return;
+    if (!res || !res.receipt) {
+      if (listEl.__mlsRows) { listEl.__mlsRows = null; listEl.textContent = ''; }
+      return;
+    }
+    var rows = listEl.__mlsRows;
+    if (!rows) {
+      rows = {}; listEl.textContent = '';
+      FACE_LIVE_ORDER.forEach(function (k) {
+        var d = document.createElement('div');
+        rows[k] = d; listEl.appendChild(d);
+      });
+      listEl.__mlsRows = rows;
+    }
+    var refusedBy = {};
+    (res.refused || []).forEach(function (f) { if (f && f.knob) refusedBy[f.knob] = f.reason || 'not measurable'; });
+    FACE_LIVE_ORDER.forEach(function (k) {
+      var claimed = (res.derived || []).indexOf(k) >= 0;
+      var txt = (claimed ? '✓ ' : '· ') + FACE_LIVE_LABELS[k] +
+        (claimed ? '' : ' — ' + (refusedBy[k] || 'not measurable'));
+      var d = rows[k];
+      if (d.__mlsLast !== txt) { d.__mlsLast = txt; d.textContent = txt; d.className = claimed ? 'on' : ''; }
+    });
+  }
+  function faceLiveLoopStart(video, overlay, ui) {
+    /* -1e9, not 0: rAF hands the first frame a timestamp that can be 0, and a
+       `last` that starts falsy would disable the throttle forever after it */
+    var last = -1e9;
+    var LIVE_MS = 125;
+    function tick(ts) {
+      if (!video.isConnected) {
+        /* the Setup tab can be torn down without Cancel; whoever removed the
+           video, the loop dies AND the camera dies with it */
+        if (cameraStream) stopCamera();
+        return;
+      }
+      requestAnimationFrame(tick);
+      ts = ts || 0;
+      if (ts - last < LIVE_MS) return;
+      last = ts;
+      var m = faceLiveMeasure(video);
+      if (!m) return;
+      var ready = faceLiveReady(m.res, m.q);
+      faceLiveOverlayPaint(overlay, m.res, ready);
+      faceLiveStatusRender(ui, m.res, m.q, ready);
+    }
+    requestAnimationFrame(tick);
+  }
+  /* ---- end live capture view ---- */
+
   function stylizeCanvas(src) {
     /* 512, NOT 256 (av-6.0.7). Owner: "the photo needs to be higher res like not try to image
        to avatar off a small low quaility image it saves."
@@ -4482,7 +4657,26 @@
           var cancelBtn = make('button', 'mlsAvAction', 'Cancel'); cancelBtn.type = 'button';
           var row = make('div', 'mlsAvActions');
           row.appendChild(snapBtn); row.appendChild(cancelBtn);
-          camHost.appendChild(video); camHost.appendChild(row);
+          /* lv-1.0 THE LIVE VIEW. The wrapper is position:relative INSIDE
+             camHost, because .mlsAvPanel has overflow:auto but NO position -
+             an unwrapped absolute overlay would escape to .mlsAvBack
+             (position:fixed) and land on the viewport. Never fixed: the panel
+             is a scroller. */
+          var camWrap = make('div', '');
+          camWrap.style.cssText = 'position:relative;width:200px;height:200px;flex:0 0 auto';
+          var overlay = document.createElement('canvas');
+          overlay.width = 200; overlay.height = 200;
+          /* mirrored EXACTLY like the video under it, so geometry drawn in
+             unmirrored image space lands on the feature the doctor sees in the
+             mirror. Text never goes on this canvas - it would render
+             backwards; the words live in the DOM lines below. */
+          overlay.style.cssText = 'position:absolute;left:0;top:0;width:200px;height:200px;pointer-events:none;transform:scaleX(-1);border-radius:14px';
+          camWrap.appendChild(video); camWrap.appendChild(overlay);
+          var liveStatus = make('div', 'mlsAvLiveLine', 'Looking for your face…');
+          var liveList = make('div', 'mlsAvLiveList');
+          camHost.appendChild(camWrap); camHost.appendChild(row);
+          camHost.appendChild(liveStatus); camHost.appendChild(liveList);
+          faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn });
           cancelBtn.addEventListener('click', function () { stopCamera(); camHost.innerHTML = ''; });
           snapBtn.addEventListener('click', function () {
             snapBtn.disabled = true; snapBtn.textContent = 'Taking the best of a few…';
@@ -5296,6 +5490,11 @@
       var tab = make('button', 'mlsAvTab' + (index === 0 ? ' on' : ''), def[1]);
       tab.type = 'button';
       tab.addEventListener('click', function () {
+        /* lv-1.0: switching tabs rebuilds `body`, which destroys the camera
+           <video> WITHOUT Cancel - the stream and the camera LED stayed live.
+           The live loop also self-terminates on !video.isConnected, but the
+           camera should die the moment the surface that owns it does. */
+        stopCamera();
         Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
         tab.classList.add('on');
         if (def[0] === 'setup') setupForm(body); else inboxList(body, def[0]);
