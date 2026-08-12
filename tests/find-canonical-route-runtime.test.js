@@ -8,8 +8,12 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_fixpack_0701.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
-assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260804fp117'),
+assert(connect.includes('feat_mls_fixpack_0701.js') && connect.includes('?v=20260811fp118'),
   'canonical Find fix is not loaded through a fresh immutable asset URL');
+/* 2026-08-11 (sj2 train, riding through): b1015's follow-up de3b4edf bumped the
+   fixpack token fp117 -> 20260811fp118 in mls-connect.js but left this pin on
+   the old literal, so the suite went red on main AFTER b1015's gate had already
+   run. Pin moved to the current token - same maintenance as b858/b869. */
 assert(!connect.includes('?v=20260716fp110'), 'retired unsafe Find asset URL is still loadable');
 new Function(source);
 
