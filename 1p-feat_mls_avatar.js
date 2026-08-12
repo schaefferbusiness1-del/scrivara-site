@@ -5649,7 +5649,17 @@
       '#mlsAvKioskName{font:800 3vh \'Newsreader\',Georgia,serif;color:#204034;margin-top:-.6vh}' +
       '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh}' +
       '#mlsAvKioskInterim{font:500 2.4vh/1.4 system-ui;color:#55605A;max-width:820px;min-height:3.4vh}' +
-      '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' + /* p1-mic-1.0.0: the patient sees THAT it is hearing them, not a stream of half-words */ '#mlsAvP1Mic{display:none;align-items:flex-end;gap:.5vh;height:3.4vh;margin-top:.2vh}' + '#mlsAvP1Mic.on{display:inline-flex}' + '#mlsAvP1Mic b{display:inline-block;width:.7vh;min-width:5px;height:1.4vh;min-height:10px;border-radius:999px;background:#26417a;transform-origin:center bottom;animation:mlsAvP1Wave 1s ease-in-out infinite}' + '#mlsAvP1Mic b:nth-child(2){animation-delay:.14s}#mlsAvP1Mic b:nth-child(3){animation-delay:.28s}#mlsAvP1Mic b:nth-child(4){animation-delay:.42s}' + '#mlsAvP1Mic span{font:700 1.5vh system-ui;letter-spacing:.4px;text-transform:uppercase;color:#26417a;margin-left:.7vh;align-self:center}' + '@keyframes mlsAvP1Wave{0%,100%{transform:scaleY(.45);opacity:.55}50%{transform:scaleY(1.7);opacity:1}}' +
+      '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' + /* p1-mic-1.0.0: the patient sees THAT it is hearing them, not a stream of half-words */ /* p1-mic-1.1.0 -- RESERVE THE SPACE, NEVER TOGGLE display.
+   1.0.0 flipped display:none <-> inline-flex on every recognition event. This box
+   sits in a CENTRED FLEX COLUMN with gap, so each toggle re-flowed and re-centred the
+   entire full-screen kiosk -- measured as the "very laggy" report. The element now
+   always occupies its row and only its OPACITY changes, which composites and cannot
+   move anything. It is also no longer purely per-event: it stays lit for the whole
+   time the mic is open (the kiosk already carries .listening / .ambient on its root)
+   and merely brightens on speech, so it can never read as dark while recording. */
+'#mlsAvP1Mic{display:inline-flex;visibility:hidden;align-items:flex-end;gap:.5vh;height:3.4vh;margin-top:.2vh;opacity:.35;transition:opacity .18s linear}' +
+'#mlsAvKiosk.listening #mlsAvP1Mic,#mlsAvKiosk.ambient #mlsAvP1Mic{visibility:visible}' +
+'#mlsAvP1Mic.on{opacity:1}' + '#mlsAvP1Mic b{display:inline-block;width:.7vh;min-width:5px;height:1.4vh;min-height:10px;border-radius:999px;background:#26417a;transform-origin:center bottom;animation:mlsAvP1Wave 1s ease-in-out infinite}' + '#mlsAvP1Mic b:nth-child(2){animation-delay:.14s}#mlsAvP1Mic b:nth-child(3){animation-delay:.28s}#mlsAvP1Mic b:nth-child(4){animation-delay:.42s}' + '#mlsAvP1Mic span{font:700 1.5vh system-ui;letter-spacing:.4px;text-transform:uppercase;color:#26417a;margin-left:.7vh;align-self:center}' + '@keyframes mlsAvP1Wave{0%,100%{transform:scaleY(.45);opacity:.55}50%{transform:scaleY(1.7);opacity:1}}' +
       '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
       '#mlsAvKioskFace svg{animation:mlsAvKBreathe 4.5s ease-in-out infinite}' +
       '@keyframes mlsAvKBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(1.5px) scale(1.008)}}' +
@@ -5960,7 +5970,7 @@ function kioskLine(kind, text) {
        it - they can never cross into the next patient's session */
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
-    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = [];
+    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = []; kiosk.ambLiveWords = 0;
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
     kiosk.paused = false;
     /* the consent dies with the screen it was given on - nothing reached from a
@@ -7503,10 +7513,19 @@ function kioskLine(kind, text) {
     function p2(n) { return (n < 10 ? '0' : '') + n; }
     return hrs ? (hrs + ':' + p2(mins % 60) + ':' + p2(secs % 60)) : (mins + ':' + p2(secs % 60));
   }
+    /* p1-livewords-1.0.0 -- THE COUNTER MUST MOVE WHILE HE IS STILL TALKING.
+     kiosk.ambParts only gains a chunk when Chrome emits a FINAL result, which
+     during continuous speech can be many seconds. Before p1-mic the doctor still
+     had the interim line as proof it was hearing him; that line is deliberately
+     gone now, so a healthy mid-utterance recogniser rendered byte-identically to
+     a dead one -- "0:10 | 0 words" while he was speaking. The finalised total is
+     still the truth for the note; this only ADDS the words currently in flight so
+     the number moves the instant Chrome hears anything. Nothing downstream reads
+     this function -- kioskAmbientAppend still owns what gets saved. */
   function kioskAmbientWords() {
     var parts = kiosk.ambParts || [], n = 0;
     for (var i = 0; i < parts.length; i++) n += parts[i].split(/\s+/).filter(Boolean).length;
-    return n;
+    return n + (kiosk.ambLiveWords | 0);
   }
   function kioskAmbientClock() {
     var el = gid('mlsAvKioskRecClock');
@@ -7523,6 +7542,11 @@ function kioskLine(kind, text) {
   }
   function kioskAmbientAppend(text) {
     var v = clean(text);
+    /* p1-livewords-1.0.0: this utterance has FINALISED, so its words are about to
+       be counted from ambParts. Drop the in-flight tally first or they are counted
+       twice. Cleared before the empty-guard so a finalise that yields nothing still
+       resets the live number instead of stranding it. */
+    kiosk.ambLiveWords = 0;
     if (!v) return;
     /* Chrome re-delivers the tail of the previous result after a restart. An
        EXACT repeat of the chunk just accepted is dropped; anything else is
@@ -7539,6 +7563,11 @@ function kioskLine(kind, text) {
     safe(function () { ordersDetectSoon(v); });
   }
   function kioskAmbientPaint(interim) {
+    /* p1-livewords-1.0.0: the in-flight utterance is what makes the counter move
+       while he speaks. It is REPLACED (not accumulated) every event, because Chrome
+       redelivers the whole current utterance each time; kioskAmbientAppend zeroes it
+       when the utterance finalises so the words are never counted twice. */
+    kiosk.ambLiveWords = clean(interim).split(/\s+/).filter(Boolean).length;
     /* the room transcript is a TRANSCRIPT: it must never outrank a staff alert (av-6.2.0) */
     var tail = clean(interim);
     if (!tail) { var parts = kiosk.ambParts || []; tail = parts.length ? parts[parts.length - 1] : ''; }
