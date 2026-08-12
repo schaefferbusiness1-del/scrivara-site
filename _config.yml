@@ -153,6 +153,12 @@ include:
   - "privacy.html"
   - "review-finder.html"
   - "ScribeFlow.html"
+
+  # 2026-08-12 — the 1p PREVIEW page (owner-only). Same app as ScribeFlow.html but
+  # loading 1p-prefixed copies of the modules under test, so features can be tried
+  # on the real site without touching a single production byte. It registers NO
+  # service worker, so it can never cache anything or disturb the main app.
+  - "1pScribeFlow.html"
   - "terms.html"
 
   # Minimum reviewed phone-recorder runtime. The recorder HTML is above; these
