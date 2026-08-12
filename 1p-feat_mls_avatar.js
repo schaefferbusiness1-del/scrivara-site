@@ -5626,7 +5626,7 @@
       '#mlsAvKioskName{font:800 3vh \'Newsreader\',Georgia,serif;color:#204034;margin-top:-.6vh}' +
       '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh}' +
       '#mlsAvKioskInterim{font:500 2.4vh/1.4 system-ui;color:#55605A;max-width:820px;min-height:3.4vh}' +
-      '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' +
+      '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' + /* p1-mic-1.0.0: the patient sees THAT it is hearing them, not a stream of half-words */ '#mlsAvP1Mic{display:none;align-items:flex-end;gap:.5vh;height:3.4vh;margin-top:.2vh}' + '#mlsAvP1Mic.on{display:inline-flex}' + '#mlsAvP1Mic b{display:inline-block;width:.7vh;min-width:5px;height:1.4vh;min-height:10px;border-radius:999px;background:#26417a;transform-origin:center bottom;animation:mlsAvP1Wave 1s ease-in-out infinite}' + '#mlsAvP1Mic b:nth-child(2){animation-delay:.14s}#mlsAvP1Mic b:nth-child(3){animation-delay:.28s}#mlsAvP1Mic b:nth-child(4){animation-delay:.42s}' + '#mlsAvP1Mic span{font:700 1.5vh system-ui;letter-spacing:.4px;text-transform:uppercase;color:#26417a;margin-left:.7vh;align-self:center}' + '@keyframes mlsAvP1Wave{0%,100%{transform:scaleY(.45);opacity:.55}50%{transform:scaleY(1.7);opacity:1}}' +
       '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
       '#mlsAvKioskFace svg{animation:mlsAvKBreathe 4.5s ease-in-out infinite}' +
       '@keyframes mlsAvKBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(1.5px) scale(1.008)}}' +
@@ -5848,9 +5848,38 @@
   var KL_RANK = { transcript: 0, hint: 1, status: 2, alert: 3 };
   var KL_HOLD = { transcript: 0, hint: 6000, status: 9000, alert: 20000 };
   var klKind = '', klUntil = 0;
-  function kioskLine(kind, text) {
+  /* p1-mic-1.0.0 -- THE PATIENT-FACING LINE STOPS NARRATING HALF-HEARD WORDS.
+   Owner: "it listens in fragments and shows the text its listening to in fragments
+   so its like is it even listening". Interim speech results arrive as partial,
+   self-overwriting phrases; painting them made a screen wearing the doctor's face
+   look like it was mis-hearing every sentence. Recognition is UNCHANGED -- it still
+   listens to everything and every final transcript is still captured; only the
+   RENDERING of interim text is withheld, and the fact of hearing is shown as a
+   pulse instead. hint/status/alert still own this line exactly as before, so no
+   real message is suppressed. Reversible: window.__mlsAvP1Mic.revert(). */
+  var p1MicTimer = 0, p1MicOff = false;
+  function p1Hearing() {
+    if (p1MicOff) return false;
+    try {
+      var m = gid('mlsAvP1Mic'); if (!m) return false;
+      m.classList.add('on');
+      clearTimeout(p1MicTimer);
+      p1MicTimer = setTimeout(function () { try { m.classList.remove('on'); } catch (e) {} }, 1100);
+      return true;
+    } catch (e) { return false; }
+  }
+  try { window.__mlsAvP1Mic = { v: 'p1-mic-1.0.0',
+    state: function () { var m = gid('mlsAvP1Mic'); return { mounted: !!m, on: !!(m && m.classList.contains('on')), suppressed: p1MicOff }; },
+    revert: function () { p1MicOff = true; clearTimeout(p1MicTimer); var m = gid('mlsAvP1Mic'); if (m) m.classList.remove('on'); return true; } }; } catch (e) {}
+function kioskLine(kind, text) {
     var iv = gid('mlsAvKioskInterim');
     if (!iv) return false;
+    /* interim speech: show THAT we are hearing, never the half-words themselves */
+    if (kind === 'transcript' && !p1MicOff) {
+      p1Hearing();
+      if (!klKind || klKind === 'transcript') { iv.textContent = ''; klKind = ''; klUntil = 0; }
+      return true;
+    }
     var rank = KL_RANK[kind]; if (rank === undefined) rank = 0;
     var now = Date.now();
     var heldRank = (klKind && klUntil > now) ? KL_RANK[klKind] : -1;
@@ -8254,7 +8283,7 @@
          actually proposed - see ordersRender */
       '<div id="mlsAvKioskOrders" role="region" aria-label="Proposed actions"></div>' +
       '<div id="mlsAvKioskReview" role="dialog" aria-label="Visit review"></div>' +
-      '<div id="mlsAvKioskInterim"></div>' +
+      '<div id="mlsAvKioskInterim"></div>' + '<div id="mlsAvP1Mic" aria-hidden="true"><b></b><b></b><b></b><b></b><span>Listening</span></div>' +
       '<div id="mlsAvKioskProgress"></div>' +
       /* av-5.7.0 - the hand-off: ONE button, mounted with the kiosk and shown
          only once the check-in is finished. See kioskRestShow. */
