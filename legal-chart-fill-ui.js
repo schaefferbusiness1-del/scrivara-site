@@ -40,6 +40,15 @@
   function patients() {
     try {
       if (typeof window.getPatients === 'function') return window.getPatients() || [];
+      /* sj-2.0 ROGUE RE-ROUTE (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
+         post-migration the patients blob key is RETIRED, so the raw read below
+         returns null and this fallback silently serves ZERO patients. When the
+         primitive is live, serve its in-memory roster; the legacy raw
+         read+decode stays for contexts where the primitive never loads. */
+      var sjStore = window.__mlsPtsStore;
+      if (sjStore && typeof sjStore.isReady === 'function' && sjStore.isReady()) {
+        try { return (sjStore.getRoster() || []).slice(); } catch (eSj) { return []; }
+      }
       var raw = localStorage.getItem(uns('patients')) || '[]';
       if (typeof window.__mlsPtsDecode === 'function') raw = window.__mlsPtsDecode(raw);
       return JSON.parse(raw) || [];

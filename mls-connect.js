@@ -23223,9 +23223,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                     if (ps && String(cand.summary || '').indexOf(ps.slice(0, 80)) < 0) {
                       cand.summary = (String(cand.summary || '').trim() + '\n\n' + ps).trim();
                     }
-                    unionVisits(cand, p.visits);   /* F13e: never orphan pulled visits */
+                    var __mrAdded = unionVisits(cand, p.visits);   /* F13e: never orphan pulled visits */
+                    var __mrAbsorbed = String(p.id);
                     p.id = cand.id;
                     api.dedupStats.merged++;
+                    /* sj-2.0 merge receipt (pre-registered 2026-08-11; design
+                       criterion "the merge-receipt naming"): a dupe-collapse
+                       self-heal must NAME what it merged - the 8 silent stub
+                       merges were RIGHT but invisible. PHI-lean: ids + field
+                       flags only, newest 60 kept. */
+                    try {
+                      var __mrLog = window.__mlsPtsMergeReceipts = window.__mlsPtsMergeReceipts || [];
+                      __mrLog.push({ at: Date.now(), key: 'name+dob', survivorId: String(cand.id), absorbedId: __mrAbsorbed, visitsAdded: __mrAdded, offered: { problems: !!p.problems, meds: !!p.meds, allergies: !!p.allergies, dob: !!p.dob, reason: !!p.reason, summary: !!String(p.summary || '').trim() } });
+                      if (__mrLog.length > 60) __mrLog.splice(0, __mrLog.length - 60);
+                    } catch (eMr) {}
                     return orig.upsertPatient.call(this, cand);
                   }
                 }

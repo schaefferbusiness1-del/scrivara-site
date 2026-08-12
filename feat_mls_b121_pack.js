@@ -2060,6 +2060,20 @@
     /* FRESH snapshot before EACH merging run; two generations kept.
        ::1 = newest (this run's pre-merge state), ::2 = previous run's. */
     try {
+      var sjStoreSr = window.__mlsPtsStore;
+      if (sjStoreSr && typeof sjStoreSr.isReady === 'function' && sjStoreSr.isReady()) {
+        /* sj-2.0 REFUSE-AND-REPORT (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
+           post-migration the blob key is retired, so the read below returns null
+           and the merge lane refuses on 'no-snapshot' - correct, but its
+           "storage quota?" framing would misdiagnose. Say the true reason. And
+           minting a multi-MB JSON snapshot into localStorage here would re-create
+           the exact quota ceiling sj-2.0 removes, so pre-merge snapshots are NOT
+           minted in idb mode until the b121 snapshot lane moves to IndexedDB
+           (open question in the sj-2.0 rogues NOTES). Merges stay fail-closed:
+           no snapshot, no merge - unchanged semantics, honest message. */
+        log('sj-2.0: pre-merge snapshots are not minted post-migration (the patients blob left localStorage). Merges refuse fail-closed until the b121 snapshot lane moves to IndexedDB.');
+        return '';
+      }
       var raw = localStorage.getItem(key);
       if (raw == null) return '';
       var b1 = key + '::b121backup::1', b2 = key + '::b121backup::2';
@@ -2087,6 +2101,32 @@
       var key = patientsKey(); if (!key) return 'no-storage-key';
       var bk = JSON.parse(localStorage.getItem(key + '::b121backup::1') || 'null');
       if (!bk || typeof bk.raw !== 'string') return 'no-snapshot';
+      var sjStore = window.__mlsPtsStore;
+      if (sjStore && typeof sjStore.isReady === 'function' && sjStore.isReady()) {
+        /* sj-2.0 ROGUE RE-ROUTE (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
+           post-migration the patients blob key is RETIRED. A direct setItem here
+           would re-create a stale localStorage blob, trip the primitive's
+           both-blob-and-idb-present fail-closed boot, and silently diverge from
+           the IndexedDB copy. The rewind now routes through the primitive's bulk
+           confirm-awaiting path (a whole-roster delta can never honestly fit the
+           256KB sync journal) with allowRemovals - a human-confirmed whole-store
+           rewind IS an intentional removal path (it clears the foreign-carry set
+           by design, exactly like purge). Returns a PROMISE in this mode; this is
+           a console-only emergency API and log() reports the settled verdict. */
+        var sjRaw = bk.raw;
+        try { if (typeof window.__mlsPtsDecode === 'function') sjRaw = window.__mlsPtsDecode(sjRaw); } catch (eSjDec) {}
+        var sjRows = null;
+        try { sjRows = JSON.parse(sjRaw); } catch (eSjParse) { sjRows = null; }
+        if (!Array.isArray(sjRows)) return 'restore-refused: the snapshot does not decode to a patient array - nothing was written';
+        return sjStore.saveAsync(sjRows, { allowRemovals: true }).then(function (sjRes) {
+          refreshRenders();
+          log('restored snapshot from ' + bk.at + ' via __mlsPtsStore: ' + sjRows.length + ' row(s), IndexedDB-confirmed gen ' + ((sjRes && sjRes.confirmedGen) || '?') + '.');
+          return 'restored snapshot from ' + bk.at + ' (' + sjRows.length + ' rows, IndexedDB-confirmed)';
+        }, function (eSjSave) {
+          log('restore FAILED in __mlsPtsStore: ' + ((eSjSave && eSjSave.message) || eSjSave) + ' - the retired blob key was NOT rewritten. Check __mlsPtsStore.receipt(): a degraded write-behind may still hold the rewind in memory awaiting IndexedDB.');
+          return 'restore-failed: ' + ((eSjSave && eSjSave.message) || eSjSave);
+        });
+      }
       localStorage.setItem(key, bk.raw);
       refreshRenders();
       return 'restored snapshot from ' + bk.at;

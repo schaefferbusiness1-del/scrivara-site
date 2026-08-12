@@ -234,9 +234,21 @@
               var prev=isFn(window.getPatients)?(window.getPatients()||[]):[];
               for(var k=0;k<prev.length;k++){if(prev[k]&&prev[k].id)prevMap[prev[k].id]=prev[k];}
               if(!prev.length&&!noDecode){
-                var rawLs=(typeof window.uns==='function')?localStorage.getItem(window.uns('patients')):null;
-                if(rawLs&&typeof window.__mlsPtsDecode==='function')rawLs=window.__mlsPtsDecode(rawLs);
-                prev=rawLs?JSON.parse(rawLs):[];
+                /* sj-2.0 ROGUE RE-ROUTE (design: tests/live-e2e-artifacts/2026-08-11-sj2-patients-idb-design.md):
+                   post-migration the patients blob key is RETIRED from localStorage,
+                   so the raw read below returns null and this hydration source dies
+                   SILENTLY (stale-empty, not loud). When the primitive is live its
+                   in-memory roster IS the persisted state - serve the fallback from
+                   there (sync). The legacy raw read+decode stays byte-for-byte for
+                   pre-migration boots, where localStorage is still authoritative. */
+                var vfxSjStore=window.__mlsPtsStore;
+                if(vfxSjStore&&typeof vfxSjStore.isReady==='function'&&vfxSjStore.isReady()){
+                  try{prev=vfxSjStore.getRoster()||[];}catch(eSjRoster){prev=[];}
+                }else{
+                  var rawLs=(typeof window.uns==='function')?localStorage.getItem(window.uns('patients')):null;
+                  if(rawLs&&typeof window.__mlsPtsDecode==='function')rawLs=window.__mlsPtsDecode(rawLs);
+                  prev=rawLs?JSON.parse(rawLs):[];
+                }
                 for(k=0;k<prev.length;k++){if(prev[k]&&prev[k].id)prevMap[prev[k].id]=prev[k];}
               }
             } catch (eL) { prevMap = {}; }

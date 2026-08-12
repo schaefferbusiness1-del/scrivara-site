@@ -536,6 +536,12 @@ const tests = [
      HARD verifiedEmpty gate; the LIVE zero-idb-bytes check is the owner-gated
      BLOCKING criterion at the cutover, not this vm suite. */
   'wipes-contract.test.js',
+  /* sj-2.0 Commit D: the four direct blob readers/writers outside the managed
+     path (identity-proven against the shipped bytes), and the pre-registered
+     merge-receipt criterion - registered WITH the receipt edit, never before
+     (RED on unedited bytes at "SHIPPED CODE MERGED SILENTLY" by design). */
+  'sj2-rogues-contract.test.js',
+  'sj2-merge-receipt-required.test.js',
   'quota-verified-writes.test.js',
   /* Patricia Kirwin 2026-08-08: a never-read record's stored lone NKDA rendered
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
