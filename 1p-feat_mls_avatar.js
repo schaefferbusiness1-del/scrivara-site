@@ -5907,16 +5907,17 @@
 function kioskLine(kind, text) {
     var iv = gid('mlsAvKioskInterim');
     if (!iv) return false;
-    /* interim speech: show THAT we are hearing, never the half-words themselves */
-    if (kind === 'transcript' && !p1MicOff) {
-      p1Hearing();
-      if (!klKind || klKind === 'transcript') { iv.textContent = ''; klKind = ''; klUntil = 0; }
-      return true;
-    }
     var rank = KL_RANK[kind]; if (rank === undefined) rank = 0;
     var now = Date.now();
     var heldRank = (klKind && klUntil > now) ? KL_RANK[klKind] : -1;
     if (heldRank === undefined) heldRank = -1;
+    /* interim speech: show THAT we are hearing, never the half-words themselves */
+    if (kind === 'transcript' && !p1MicOff) {
+      p1Hearing();
+      if (rank < heldRank) return false;          /* a real message still owns the line */
+      iv.textContent = ''; klKind = ''; klUntil = 0;
+      return true;
+    }
     if (rank < heldRank) return false;          /* a more important message is still standing */
     iv.textContent = (text === null || text === undefined) ? '' : String(text);
     klKind = kind;
