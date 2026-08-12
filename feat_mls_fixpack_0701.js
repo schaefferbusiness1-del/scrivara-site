@@ -358,9 +358,20 @@
   try {
     /* Owner directive 2026-07-22: gpt-5 (full power) is NEVER offered or sent —
        too expensive — and the old 'gpt-5o' id was never real (the server
-       silently downgraded it, so 'Best' was not what it claimed). Best is the
-       real, allowed, affordable gpt-5-mini with the honest 4o cascade below. */
-    var MODELS = ['gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];
+       silently downgraded it, so 'Best' was not what it claimed).
+       RE-CONFIRMED AND AMENDED 2026-08-11 by the owner, verbatim: "a cheaper
+       better model for all note generation and for a bunch of things but dont
+       do it for anything that would break anything or anything where it would
+       cost me too much but ya change the model... for op notes too for sure."
+       That message authorizes the head swap to gpt-5.6-luna ($0.20/$1.20 per
+       1M in/out after the 2026-07-30 cut; cheaper than gpt-5-mini $0.25/$2.00
+       on BOTH meters). It does NOT lift the cost ban: gpt-5 stays out, and
+       gpt-5.6-terra ($2/$12) and gpt-5.6-sol ($5/$30) cost MORE than the
+       banned gpt-5 ($1.25/$10), so neither is offered or sent; the bare id
+       gpt-5.6 aliases to sol server-side and must never be sent either.
+       The default flip is claimed shipped ONLY after the qualification bars
+       pass on real drafts (handoff-2026-08-11/model-swap/QUALIFICATION.md). */
+    var MODELS = ['gpt-5.6-luna', 'gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];
     function modelKey() { try { return (typeof uns === 'function') ? uns('noteModel') : 'noteModel'; } catch (e) { return 'noteModel'; } }
     /* one-time migration: stored legacy 4-series defaults move to gpt-5o (Michael's ask);
        runs once, so a deliberate later choice in Settings is respected forever after. */
@@ -373,11 +384,22 @@
         localStorage.setItem(MIG, '1');
       }
     } catch (e) {}
+    /* one-time migration 3 (owner re-confirmation 2026-08-11): the stored
+       previous default moves to the cheaper gpt-5.6-luna; a deliberate stored
+       gpt-4o / gpt-4o-mini Settings choice is a choice and is kept. */
+    try {
+      var MIG3 = 'mlsFpModelMig3';
+      if (!localStorage.getItem(MIG3)) {
+        var curM3 = localStorage.getItem(modelKey());
+        if (!curM3 || curM3 === 'gpt-5-mini') localStorage.setItem(modelKey(), 'gpt-5.6-luna');
+        localStorage.setItem(MIG3, '1');
+      }
+    } catch (e) {}
     if (typeof window.getNoteModel === 'function' && !window.getNoteModel.__fpWrap) {
       FP._orig.getNoteModel = window.getNoteModel;
       var gnm = function () {
         try { var v = localStorage.getItem(modelKey()); if (MODELS.indexOf(v) >= 0) return v; } catch (e) {}
-        return 'gpt-5-mini';
+        return 'gpt-5.6-luna';
       };
       gnm.__fpWrap = true;
       window.getNoteModel = gnm;
@@ -392,7 +414,7 @@
       });
       var have = {};
       Array.prototype.forEach.call(sel.options, function (o) { have[o.value] = 1; });
-      [['gpt-5-mini', 'GPT-5 mini — newest, best quality (recommended)']].reverse().forEach(function (pair) {
+      [['gpt-5.6-luna', 'GPT-5.6 Luna — newest, best quality (recommended)'], ['gpt-5-mini', 'GPT-5 mini — previous default']].reverse().forEach(function (pair) {
         if (have[pair[0]]) return;
         var o = document.createElement('option'); o.value = pair[0]; o.textContent = pair[1];
         sel.insertBefore(o, sel.firstChild);

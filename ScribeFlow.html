@@ -8866,7 +8866,7 @@ function saveSettings(){
   const _facA=document.getElementById('facilityAddress'); if(_facA) localStorage.setItem(uns('facilityAddress'),(_facA.value||'').trim());
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) localStorage.setItem(uns('googleBusinessUrl'),(_gbu.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
-  const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(_nm.value==='gpt-4o-mini')?'gpt-4o-mini':'gpt-4o');
+  const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(['gpt-5.6-luna','gpt-5-mini','gpt-4o','gpt-4o-mini'].indexOf(_nm.value)>=0)?_nm.value:'gpt-5.6-luna'); /* 2026-08-11: honor every offered model; the old ternary coerced any non-4o pick (incl. the shipped gpt-5-mini default) back to gpt-4o on every Settings save */
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   // MLS additive — persist 📋 Patient intake custom questions
   const _iq=document.getElementById('intakeQuestions'); if(_iq) localStorage.setItem(uns('intakeQuestions'),_iq.value.trim());
