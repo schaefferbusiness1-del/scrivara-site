@@ -2600,9 +2600,26 @@
           if (faceIsSkinRgb(q[0], q[1], q[2])) ch[ay * M + ax] = 1;
         }
       }
-      if (PR > 1) ch = maskOpen(ch);
-      var lab = labelComponents(ch);
-      return { chroma: ch, pass1: lab, head: pickFace(lab.comps) };
+      /* p1-mask-1.0.0 -- THE OPENING MUST NOT BE ABLE TO DELETE THE FACE.
+         gx-1.1 added a PR-radius opening so JPEG 4:2:0 blend filaments could not
+         outline the hair and merge it into the face. At PR=2 that is erode-erode
+         then dilate-dilate, which annihilates any skin island thinner than ~2px --
+         and glasses, stubble and side shadow fragment a real face into exactly
+         those islands. Measured live on the owner: a well-lit, face-filling frame
+         reported no skin-coloured area at all, 1 percent of the picture, at the 256
+         grid, while the identical frame passed at 128 because 128 skips the opening
+         entirely. The opening is a REFINEMENT, so it only keeps its result when it
+         still leaves a face AND most of the skin. Otherwise the raw mask stands.
+         It can help; it can no longer harm. */
+      var rawMask = ch, lab, headTry;
+      if (PR > 1) {
+        var opened = maskOpen(ch), rawOn = 0, openOn = 0, mi;
+        for (mi = 0; mi < M * M; mi++) { if (rawMask[mi]) rawOn++; if (opened[mi]) openOn++; }
+        var openedLab = labelComponents(opened), openedHead = pickFace(openedLab.comps);
+        if (openedHead && openOn >= rawOn * 0.55) { ch = opened; lab = openedLab; headTry = openedHead; }
+        else { ch = rawMask; lab = labelComponents(rawMask); headTry = pickFace(lab.comps); }
+      } else { lab = labelComponents(ch); headTry = pickFace(lab.comps); }
+      return { chroma: ch, pass1: lab, head: headTry };
     }
     var stack = new Int32Array(M * M);
     function labelComponents(mask) {
@@ -4580,14 +4597,20 @@
        illustrated rendition of the doctor's face, not a raw photo. DISPLAY ONLY:
        nothing measures this copy any more. */
     var img = ctx.getImageData(0, 0, size, size), d = img.data;
-    var levels = 6, step2 = 255 / (levels - 1);
+    /* p1-hidef-1.0.0 -- Owner, twice: "make photos high def", then "still low quality".
+   av-6.0.7 already raised this canvas 256 -> 512, so RESOLUTION was not what was
+   left. The visible damage was TONE: six levels per channel is a 51-step ladder,
+   which banded every cheek and turned a photograph into a poster. 16 levels keeps
+   the illustrated feel -- still quantised, still warmed -- while the face reads as
+   the person again. Paired with 0.90 JPEG below, up from 0.82. */
+      var levels = 16, step2 = 255 / (levels - 1);
     for (var i = 0; i < d.length; i += 4) {
       d[i] = Math.round(Math.min(255, d[i] * 1.06) / step2) * step2;
       d[i + 1] = Math.round(d[i + 1] / step2) * step2;
       d[i + 2] = Math.round((d[i + 2] * 0.97) / step2) * step2;
     }
     ctx.putImageData(img, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.82);
+    return canvas.toDataURL('image/jpeg', 0.90);
   }
   function stylizePortrait(video) {
     var raw = captureSquare(video, MEASURE_MAX);
