@@ -8807,7 +8807,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1013: persist:false work belongs to this exact COW candidate. Passing
+    /* b1015: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9048,7 +9048,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1013: the retired 3-second owner synchronously regex-scanned every
+      /* b1015: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -35990,7 +35990,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1013';
+  window.__MLS_AV = window.__MLS_AV || 'b1015';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36333,7 +36333,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1013';
+  var MLS_APP_BUILD='2026-07-25-b1015';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44985,7 +44985,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
-;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260804fp117";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- exact ID/account-bound Find routing + pull progress panel + any-day pull clarity, op-prep procedure autodetect, note model with honest fallback cascade, agenda/calendar polish, formatted note preview, and fill-in-the-blanks restore. */
+;(function(){try{var A="feat_mls_fixpack_0701.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260811fp118";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item79: July-1 PROD fix-pack -- exact ID/account-bound Find routing + pull progress panel + any-day pull clarity, op-prep procedure autodetect, note model with honest fallback cascade, agenda/calendar polish, formatted note preview, and fill-in-the-blanks restore. */
 
 /* item80 (Templates suite + Simple-mode tunnel + MLS Agent dock) WAS injected
    here, and the injection was doing nothing but costing a 404.
@@ -45528,13 +45528,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     QG.failures++;
     QG.lastFail = { at: Date.now(), reason: String(reason).slice(0, 60), expected: expected, got: got };
     window.__mlsStoreWriteFailed = QG.lastFail;
+    try { qvChip(); } catch (eQc) {} /* qv-1.1: the persistent chip appears the moment the condition does */
     try {
       if (Date.now() - QG.lastToastAt > 60000) {
         QG.lastToastAt = Date.now();
         if (typeof window.toast === 'function') window.toast('MLS storage is FULL — this save did NOT happen. Existing records are intact. Free space, then pull again.');
       }
     } catch (eT) {}
-    try { console.error('[mlsQuotaGuard] persist FAILED (' + reason + ') expected~' + expected + ' stored=' + got); } catch (eC) {}
+    try { console.error('[mlsQuotaGuard] persist FAILED (' + reason + ') key=' + qvKey() + ' expected~' + expected + ' stored=' + got); } catch (eC) {} /* qv-1.1: the line names the store KEY */
   }
   function qvWrap(orig) {
     function qv(arr) {
@@ -45550,7 +45551,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (key && prevLen >= 0 && got === prevLen && expect >= 0 && Math.abs(expect - prevLen) > 64) {
           qvFail('silent-no-op', expect, got);
         } else {
-          window.__mlsStoreWriteFailed = null;
+          window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQc2) {} /* qv-1.1: the chip clears with the flag */
         }
       } catch (eR) {}
       return out;
@@ -45582,12 +45583,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) { return false; }
   }
   qvInstall();
+  /* qv-1.1 (lr-1.0 train, diagnosis 2026-08-11 defect B): a PERSISTENT surface
+     for a persistent condition. The 60s rate-limited toast fired ~90s before
+     anyone looked (quotaUIVisible: [] in the validation sweep). This chip is
+     owned HERE and nowhere else, is bound to window.__mlsStoreWriteFailed,
+     and disappears only when the flag clears - which the guard already does
+     on the next verified write. No new state: flag + count already exist. */
+  function qvChip() {
+    try {
+      var f = window.__mlsStoreWriteFailed;
+      var el = document.getElementById('mlsQuotaChip');
+      if (!f) { if (el) el.remove(); return; }
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'mlsQuotaChip';
+        el.setAttribute('role', 'alert');
+        el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:2147483000;background:#7a1f1f;color:#fff;border:1px solid #d9534f;border-radius:10px;padding:8px 14px;font:600 13px/1.4 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none;max-width:92vw;text-align:center;';
+        (document.body || document.documentElement).appendChild(el);
+      }
+      var n = Number((window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures) || 0);
+      var age = Math.max(0, Math.round((Date.now() - Number(f.at || Date.now())) / 60000));
+      var txt = 'Local storage full \u2014 changes safe in memory+sync, storage fix in progress (' + n + ' failed save' + (n === 1 ? '' : 's') + (age ? ', last ' + age + ' min ago' : ', just now') + ')';
+      if (el.textContent !== txt) el.textContent = txt;
+    } catch (eChip) {}
+  }
+  QG._chip = qvChip;
   QG._heal = setInterval(function () {
     try { if (typeof window.savePatients === 'function' && !chainHasQv(window.savePatients)) qvInstall(); } catch (e) {}
+    try { qvChip(); } catch (eQh) {} /* qv-1.1: re-assert the persistent surface every heal tick */
   }, 4000);
   QG.revert = function () {
     try { clearInterval(QG._heal); } catch (e) {}
     try { if (window.savePatients && window.savePatients.__mlsQvGuarded && window.savePatients.__mlsQvOrig) window.savePatients = window.savePatients.__mlsQvOrig; } catch (e) {}
+    try { var elQr = document.getElementById('mlsQuotaChip'); if (elQr) elQr.remove(); } catch (eQr) {} /* qv-1.1: the chip dies with the guard */
     QG.installed = false;
     return 'reverted';
   };

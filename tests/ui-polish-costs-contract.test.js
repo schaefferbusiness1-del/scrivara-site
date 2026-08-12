@@ -28,18 +28,22 @@ const tb = fs.readFileSync(path.join(root, 'feat_mls_topbar_unify.js'), 'utf8');
 const dd = fs.readFileSync(path.join(root, 'feat_athena_tooltip_dedupe.js'), 'utf8');
 
 /* ---- 1. model costs ---- */
-assert(fixpack.includes("var MODELS = ['gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];"), 'note-model list must be exactly the affordable trio');
+assert(fixpack.includes("var MODELS = ['gpt-5.6-luna', 'gpt-5-mini', 'gpt-4o', 'gpt-4o-mini'];"), 'note-model list must be exactly the affordable quartet (luna head, honest degrade chain)');
 /* gpt-5 may appear ONLY defensively (migrating a stored choice away, stripping
    a stale option) — never as an offered option or cascade member */
 assert(!fixpack.includes("['gpt-5',"), 'gpt-5 is offered as an option again');
 const gpt5Mentions = (fixpack.match(/['"]gpt-5['"]/g) || []).length;
 assert(gpt5Mentions === 2, 'unexpected gpt-5 references (want exactly the migration + option-strip pair): ' + gpt5Mentions);
 assert(!fixpack.includes("'gpt-5o', 'Best"), 'the fake gpt-5o Best option is back');
-assert(fixpack.includes("return 'gpt-5-mini';"), 'default note model must be gpt-5-mini');
+assert(fixpack.includes("return 'gpt-5.6-luna';"), 'default note model must be gpt-5.6-luna (owner re-confirmation 2026-08-11)');
+assert(fixpack.includes("var MIG3 = 'mlsFpModelMig3';"), 'stored gpt-5-mini default must migrate to luna (Mig3)');
+/* Terra ($2/$12) and Sol ($5/$30) cost MORE than the banned gpt-5 ($1.25/$10);
+   the bare gpt-5.6 id aliases to Sol server-side. None may be offered or sent. */
+assert(!fixpack.includes("'gpt-5.6-terra'") && !fixpack.includes("'gpt-5.6-sol'") && !/['"]gpt-5\.6['"]/.test(fixpack), 'an expensive 5.6 tier (terra/sol/bare alias) is offered');
 assert(fixpack.includes("var MIG = 'mlsFpModelMig2';"), 'stored-model migration missing');
 assert(/curM === 'gpt-5o' \|\| curM === 'gpt-5'/.test(fixpack), 'migration must retire both the fake and the expensive stored choices');
 assert(/o\.value === 'gpt-5' \|\| o\.value === 'gpt-5o'/.test(fixpack), 'hot-upgraded selects must strip retired options');
-assert(fixpack.includes("'GPT-5 mini — newest, best quality (recommended)'"), 'the honest model-name label is missing');
+assert(fixpack.includes("'GPT-5.6 Luna — newest, best quality (recommended)'") && fixpack.includes("'GPT-5 mini — previous default'"), 'the honest model-name labels are missing');
 assert(!fixpack.includes("'GPT-5 — full power'"), 'the full-power option label survives');
 
 /* ---- 2. sign-in prompt triggers ---- */
@@ -62,4 +66,7 @@ for (const sel of ['body.theme-dark #mlsAccountMenuBtn', 'body.theme-dark .mls-a
 }
 assert(!/body\.theme-dark [^{]*\{[^}]*#F4F2EC/.test(dd.split('dark-theme equalizer')[1] || ''), 'equalizer uses a light hex inside a dark rule');
 
+/* ---- 5. Settings save must not clobber the model choice (2026-08-11) ---- */
+const appHtml = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+assert(appHtml.includes("['gpt-5.6-luna','gpt-5-mini','gpt-4o','gpt-4o-mini'].indexOf(_nm.value)>=0"), 'Settings save no longer honors the offered model list (the old ternary coerced every non-4o pick to gpt-4o)');
 console.log('PASS ui polish + costs: affordable-only model picker with migration, live sign-in-prompt triggers, un-buried progress chip and provider chip, collapsing Menu pill, dark-theme equalizer');

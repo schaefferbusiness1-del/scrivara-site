@@ -8910,7 +8910,7 @@ function saveSettings(){
   const _facA=document.getElementById('facilityAddress'); if(_facA) localStorage.setItem(uns('facilityAddress'),(_facA.value||'').trim());
   const _gbu=document.getElementById('googleBusinessUrl'); if(_gbu) localStorage.setItem(uns('googleBusinessUrl'),(_gbu.value||'').trim());
   const _df=document.getElementById('defaultFormat'); if(_df) localStorage.setItem(uns('defaultFormat'),_df.value==='insurance'?'insurance':'soap');
-  const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(_nm.value==='gpt-4o-mini')?'gpt-4o-mini':'gpt-4o');
+  const _nm=document.getElementById('noteModelSel'); if(_nm) localStorage.setItem(uns('noteModel'),(['gpt-5.6-luna','gpt-5-mini','gpt-4o','gpt-4o-mini'].indexOf(_nm.value)>=0)?_nm.value:'gpt-5.6-luna'); /* 2026-08-11: honor every offered model; the old ternary coerced any non-4o pick (incl. the shipped gpt-5-mini default) back to gpt-4o on every Settings save */
   const _nst=document.getElementById('mlsNoteStyle'); if(_nst) localStorage.setItem(uns('noteStyle'),(_nst.value==='concise'||_nst.value==='detailed')?_nst.value:'balanced');
   // MLS additive — persist 📋 Patient intake custom questions
   const _iq=document.getElementById('intakeQuestions'); if(_iq) localStorage.setItem(uns('intakeQuestions'),_iq.value.trim());
@@ -21891,8 +21891,8 @@ function _showAssistInstallBanner(){
 /* ===== PULL TODAY'S SCHEDULE from the EMR (Athena) via MLS Assist — no Athena API needed.
    MLS Assist reads the open Athena schedule tab, MLS AI parses it into appointments, and
    they pre-load as today's patients so the doctor just taps one and records. ===== */
-function pullScheduleViaAssist(btn){
-  var setS=function(m,kind){ var el=document.getElementById('heroPullStatus'); if(el){ el.textContent=m; el.style.color=(kind==='err')?'#ffe0e0':(kind==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; } else { try{ toast(m, kind==='err'?'err':''); }catch(e){} } };
+function pullScheduleViaAssist(btn, opts){
+  var setS=function(m,kind){ var el=document.getElementById('heroPullStatus'); var _vis=false; if(el){ el.textContent=m; el.style.color=(kind==='err')?'#ffe0e0':(kind==='ok'?'#d8ffe8':'rgba(255,255,255,.95)'); el.style.display='block'; try{ var _vr=el.getBoundingClientRect(); _vis=!!(_vr&&_vr.width>0&&_vr.height>0); }catch(_ve){} } if(!_vis){ try{ toast(m, kind==='err'?'err':''); }catch(e){} } return _vis; }; /* lr-1.0: the retired hero's status line is 0x0 on the live layout - a message no one can see falls through to toast (VISIBILITY, not existence; diagnosis 2026-08-11 silencer 1) */
   /* cv-1.0.0 (lane convergence 2026-07-27): this legacy hero enumeration is
      RETIRED as a lane. When the guarded engine is installed the day is handed
      to its ONE entry point -- window.__mlsSI.dayPull -- which is the same
@@ -21905,10 +21905,28 @@ function pullScheduleViaAssist(btn){
      clicks or wraps window.pullScheduleViaAssist still works. */
   try{
     var _cvSI=window.__mlsSI;
-    var _cvDay=(typeof _acctTodayKey==='function')?String(_acctTodayKey()||''):'';
+    var _cvSel=(opts&&typeof opts==='object'&&/^\d{4}-\d{2}-\d{2}$/.test(String(opts.date||'')))?String(opts.date):''; /* lr-1.0: an entry whose LABEL names a day (the calendar hero) passes that day; every dateless caller keeps TODAY (copilot pull-today, centerpiece Today, legacy hero) so no label lies in either direction */
+    var _cvDay=_cvSel||((typeof _acctTodayKey==='function')?String(_acctTodayKey()||''):'');
     if(_cvSI && _cvSI.installed!==false && typeof _cvSI.dayPull==='function' && /^\d{4}-\d{2}-\d{2}$/.test(_cvDay)){
       if(btn){ btn.disabled=true; if(!btn.dataset._t) btn.dataset._t=btn.innerHTML; btn.innerHTML='\u2026 reading Athena'; }
-      var _cvDone=function(){ if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||btn.innerHTML; } };
+      var _cvDone=function(res){
+        if(btn){ btn.disabled=false; btn.innerHTML=btn.dataset._t||btn.innerHTML; }
+        /* lr-1.0 (silent-refusal diagnosis 2026-08-11, silencer 2): this settle
+           used to DISCARD the receipt - a 12.8s roster-gate refusal painted zero
+           visible pixels while its verbatim reason sat in a 0x0 retired element.
+           Every ok:false receipt and every rejection now surfaces where the
+           doctor looks: the status line when visible, and ALWAYS a toast naming
+           the gate verbatim (e.g. provider-roster-incomplete). One site - every
+           dayPull caller inherits it. The receipt is returned, never swallowed. */
+        try{
+          var _rr=(res&&typeof res==='object'&&!(res instanceof Error))?res:null;
+          if((_rr&&_rr.ok===false)||(res instanceof Error)){
+            var _rm=_rr?('Pull refused ('+String(_rr.reason||'unspecified')+'): '+String(_rr.error||'no detail was given.')):('Pull failed: '+String((res&&res.message)||res));
+            if(setS(_rm,'err')){ try{ toast(_rm,'err'); }catch(_te){} }
+          }
+        }catch(_ce){}
+        return res;
+      };
       return Promise.resolve(_cvSI.dayPull({date:_cvDay,includeHistory:true,onStatus:setS})).then(_cvDone,_cvDone);
     }
   }catch(_cv){}
@@ -35333,7 +35351,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b1013';
+  window.__MLS_AV='b1015';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

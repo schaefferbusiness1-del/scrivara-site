@@ -5141,8 +5141,41 @@
        grid (25 honest failures, ~15 min lost). Advisory check only - the
        engine's own single-flight stays the authoritative gate. */
     if (pullRunning || foreignPullLease()) {
-      return Promise.resolve({ ok: false, complete: false, reason: "pull-in-flight",
-        error: "Another explicit pull is already running. No Athena navigation was started." });
+      /* lr-1.0 (silent-refusal diagnosis 2026-08-11, click 2): this advisory
+         refusal used to return an inline object NOBODY stored - the only
+         zero-trace exit in the whole gate chain, un-adjudicable after the
+         fact. It now names its gate and holder, speaks through onStatus, and
+         stamps the same receipts every other refusal leaves. Advisory check
+         only - the engine's own single-flight stays the authoritative gate. */
+      var _lrLease = foreignPullLease();
+      var _lrHolder = pullRunning ? "this tab's pull engine" : (_lrLease ? (String(_lrLease.kind || _lrLease.id || "foreign-lease") + " lease, " + Math.max(0, Math.round((Date.now() - Number(_lrLease.at || 0)) / 1000)) + "s old") : "a pull lease");
+      var _lrRefusal = { ok: false, complete: false, reason: "pull-in-flight", gate: "advisory-in-flight",
+        holder: _lrHolder, at: Date.now(),
+        error: "Another explicit pull is already running (" + _lrHolder + "). No Athena navigation was started." };
+      say(_lrRefusal.error, "err");
+      lastPullResult = _lrRefusal;
+      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: _lrRefusal.error }; });
+      return Promise.resolve(_lrRefusal);
+    }
+    /* lr-1.0 QUOTA PREFLIGHT (diagnosis 2026-08-11 defect B): when the write
+       verification guard has recorded a persist failure
+       (window.__mlsStoreWriteFailed, qv-1.0 mls-connect) the durable store is
+       no longer absorbing growth - pulling more would read charts into a
+       store that silently drops them on reload. Refuse LOUDLY before any
+       Athena navigation, name the gate, and leave the same receipts every
+       other refusal leaves. The flag self-clears on the next verified write,
+       so a healthy store is never blocked. */
+    var _lrQuota = safe(function () { return window.__mlsStoreWriteFailed; }, null);
+    if (_lrQuota) {
+      var _lrQAge = Math.max(0, Math.round((Date.now() - Number(_lrQuota.at || Date.now())) / 60000));
+      var _lrQFails = Number(safe(function () { return window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures; }, 0) || 0);
+      var _lrQRefusal = { ok: false, complete: false, reason: "storage-full-writes-failing", gate: "quota-preflight",
+        failures: _lrQFails, lastFailAt: Number(_lrQuota.at || 0) || null, at: Date.now(),
+        error: "Local storage is FULL - a save failed to persist " + (_lrQAge ? _lrQAge + " min ago" : "just now") + ", so new pull data would not survive a reload. No Athena navigation was started. Free storage space (the storage fix is in progress), then pull again." };
+      say(_lrQRefusal.error, "err");
+      lastPullResult = _lrQRefusal;
+      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: _lrQRefusal.error }; });
+      return Promise.resolve(_lrQRefusal);
     }
     if (isFn(__armPresence)) __armPresence(); /* qol-2.3: presence assist belongs to the call that passed the advisory */
     var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");

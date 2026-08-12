@@ -951,7 +951,24 @@ const tests = [
      WRITTEN to the line, never what was DRAWN over it. This one derives the occluders from the
      stylesheet, renders the shipped stylesheet and markup in real Chrome, and asks
      elementFromPoint at the words' own coordinates. */
-  'avatar-kiosk-panel-never-covers-the-text.test.js'
+  'avatar-kiosk-panel-never-covers-the-text.test.js',
+  /* lr-1.0 (2026-08-11, silent-refusal-DIAGNOSIS.md) — a 12.8s roster-gate
+     refusal ran to completion and painted ZERO visible pixels: the receipt was
+     spoken into the 0x0 retired #heroPullStatus, discarded at the cv-handoff
+     settle, and the advisory in-flight gate left no receipt at all (the one
+     zero-trace exit in the chain — un-adjudicable after the fact, which is
+     itself the defect). These three run the REAL shipped functions and fail
+     on every old shape by name. */
+  'loud-refusal-pull-receipt.test.js',
+  /* the hero labeled "Pull Tuesday, Jul 7" dispatched _acctTodayKey() —
+     proven live with an instrumented click. The labeled day now rides an
+     explicit-date door; dateless callers (copilot pull-today, centerpiece
+     Today) keep TODAY so the lie cannot re-form in the opposite direction. */
+  'pull-label-dispatch-match.test.js',
+  /* qv-1.1: __mlsStoreWriteFailed was maintained but NO surface rendered it
+     (a 60s-rate-limited toast died ~90s before anyone looked), while dayPull
+     drove Athena to read charts into a store silently dropping growth. */
+  'quota-surface-chip-and-preflight.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
