@@ -47008,6 +47008,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
+        /* sbp-1.0 boot-paint settle (live b1016/b1017, final-live-proofs
+           Proof 3): the ONE paint above can run before the session namespace
+           exists - the resolver reads the placeholder slot, answers 'unset'
+           (= on), and the box paints CHECKED while the settled preference is
+           off. Nothing ever repainted it: same-tab writes fire no storage
+           event. The checkbox is a VIEW of the ONE resolver (qol-2.0), so
+           until the resolver says its answer is DEFINITIVE (read().settled,
+           2.1.0) it re-paints on a short cadence and stops the moment the
+           answer settles or this strip instance is torn down / rebuilt. */
+        var prefSettled = function () {
+          try {
+            var r = window.__mlsVisitNotesPref;
+            if (!r || typeof r.read !== 'function') return false;
+            var st = r.read();
+            return !!st && (st.state === 'on' || st.state === 'off' || st.settled === true);
+          } catch (e0) { return false; }
+        };
+        if (!prefSettled()) {
+          var settleIv = setInterval(function () {
+            try {
+              if (document.getElementById('mlsDsVisitBodies') !== tgl) { clearInterval(settleIv); return; }
+              paint();
+              if (prefSettled()) clearInterval(settleIv);
+            } catch (e1) { clearInterval(settleIv); }
+          }, 500);
+        }
         tgl.onchange = function () {
           var ok = false;
           try { var r = window.__mlsVisitNotesPref; if (r && typeof r.write === 'function') ok = r.write(tgl.checked === true) === true; } catch (e) {}
@@ -47161,13 +47187,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function read() {
     try {
       var kM = nk('visitNotesModeV2');
+      /* sbp-1.0: is this answer DEFINITIVE? An explicit on/off always is.
+         An 'unset' is definitive only when the canonical key was derived
+         from a REAL session namespace - during boot uns() builds a
+         placeholder ('sf_u::_::' / '::undefined::') and this read consults
+         the wrong slot, so its 'unset' (= default on) is provisional and
+         views must re-read after the session settles (live b1016/b1017:
+           the day-strip checkbox painted CHECKED while the settled
+           preference was off). */
+      var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
       var v2 = kM ? localStorage.getItem(kM) : null;
-      if (v2 === 'on' || v2 === 'off') return { state: v2, on: v2 === 'on' };
+      if (v2 === 'on' || v2 === 'off') return { state: v2, on: v2 === 'on', settled: true };
       var kV = nk('pullVisitBodies'), kS = nk('pullVisitBodiesSet');
       if (kV && kS && localStorage.getItem(kS) === '1') {
         var on1 = localStorage.getItem(kV) !== '0';
         try { if (kM) localStorage.setItem(kM, on1 ? 'on' : 'off'); } catch (eM1) {}
-        return { state: on1 ? 'on' : 'off', on: on1 };
+        return { state: on1 ? 'on' : 'off', on: on1, settled: settledNs };
       }
       var legacy = null; try { legacy = localStorage.getItem('mls_save_every_athena_visit'); } catch (eL) {}
       if (legacy === '0' || legacy === '1') {
@@ -47177,10 +47212,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (kV && kS) { localStorage.setItem(kV, legacy); localStorage.setItem(kS, '1'); }
           localStorage.removeItem('mls_save_every_athena_visit');
         } catch (eM2) {}
-        return { state: on2 ? 'on' : 'off', on: on2 };
+        return { state: on2 ? 'on' : 'off', on: on2, settled: true };
       }
-      return { state: 'unset', on: true };
-    } catch (e) { return { state: 'unset', on: true }; }
+      return { state: 'unset', on: true, settled: settledNs };
+    } catch (e) { return { state: 'unset', on: true, settled: false }; }
   }
   function write(on) {
     var want = on === true ? 'on' : 'off';
@@ -47211,7 +47246,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) { return false; }
   }
   function isPrefKey(k) { try { var s = String(k || ''); if (!s) return false; return s === nk('visitNotesModeV2') || s === nk('pullVisitBodies') || s === nk('pullVisitBodiesSet') || s === 'mls_save_every_athena_visit'; } catch (e) { return false; } }
-  var api = { installed: true, version: '2.0.1', read: read, write: write, isPrefKey: isPrefKey, lastWrite: null };
+  var api = { installed: true, version: '2.1.0', read: read, write: write, isPrefKey: isPrefKey, lastWrite: null };
   window.__mlsVisitNotesPref = api;
 })();
 /* ===== __mlsVisitNotesPref RESOLVER END =================================== */

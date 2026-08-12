@@ -3923,6 +3923,40 @@
   function releaseSiLease() {
     safe(function () { var l = window.__mlsSchedulePullLease; if (l && l.id === SI_LEASE_ID) delete window.__mlsSchedulePullLease; });
   }
+  /* hs-1.0 (live 2026-08-12, b1017 proof-1 caveat): "resolved" is NOT
+     "succeeded". The managed wrapper stamped __mlsPullLastOutcome ok:true on
+     ANY resolve, so the named terminal failure the owner watched live ("no
+     readable appointment rows ... Nothing was imported", roster
+     no-provider-headers, zero imports) was recorded ok:true on the machine
+     surface - a consumer reading only that surface calls the failure a
+     success (the progress stage read it back as "Pull finished."). The stamp
+     now carries the RUN'S OWN verdict - the same receipt lastPullResult
+     stores and the visible narration speaks. A settled value without a
+     verdict field (history-retry receipts) is judged by its own completeness
+     contract: complete AND zero failures. PHI-free by construction: verdict
+     booleans, reason/gate tokens, the narration string every visible surface
+     already shows, and numeric counts only. */
+  function honestPullOutcome(value) {
+    var out = { ok: true, at: Date.now() };
+    if (!value || typeof value !== "object") return out;
+    if (typeof value.ok === "boolean") out.ok = value.ok === true;
+    else if (typeof value.complete === "boolean") out.ok = value.complete === true && !(Number(value.failures || 0) > 0);
+    else return out;
+    if (typeof value.complete === "boolean") out.complete = value.complete === true;
+    if (value.reason !== undefined && value.reason !== null && String(value.reason) !== "") out.reason = String(value.reason).slice(0, 80);
+    if (!out.ok) {
+      if (value.gate) out.gate = String(value.gate).slice(0, 80);
+      var errText = value.error || value.narration || "";
+      if (errText) out.error = String(errText).slice(0, 200);
+      var counts = {}, names = ["created", "repaired", "skipped", "failed", "failures", "requested", "processed"], any = false;
+      for (var ci = 0; ci < names.length; ci++) {
+        var cv = value[names[ci]];
+        if (typeof cv === "number" && isFinite(cv)) { counts[names[ci]] = cv; any = true; }
+      }
+      if (any) out.counts = counts;
+    }
+    return out;
+  }
   function runManagedAthenaOperation(task, busyFactory) {
     function busy(scope) {
       return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
@@ -3965,7 +3999,9 @@
       /* the busy stamp is cleared identically on success and rejection, so the
          progress chip cannot tell them apart from its disappearance alone —
          record the real outcome BEFORE zeroing the stamp (finding #5) */
-      safe(function () { window.__mlsPullLastOutcome = { ok: true, at: Date.now() }; });
+      /* hs-1.0: stamp the settled value's OWN verdict - a resolved terminal
+         failure (ok:false receipt) must never be recorded as a success. */
+      safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(value); });
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();

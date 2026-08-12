@@ -986,7 +986,25 @@ const tests = [
      month lane bypassed the preflight entirely. The gate now judges CURRENT
      reality (the store's own confirm receipt) in both lanes, and a genuinely
      failing store still refuses loudly. */
-  'stale-quota-latch-contract.test.js'
+  'stale-quota-latch-contract.test.js',
+  /* hs-1.0 (live 2026-08-12, b1017 proof-1 criterion-6 caveat): the managed
+     wrapper stamped __mlsPullLastOutcome ok:true on ANY resolve, so the named
+     terminal failure the owner watched live ("no readable appointment rows
+     ... Nothing was imported") was recorded as a success on the machine
+     surface, and the progress stage read it back as "Pull finished." The
+     stamp now carries the settled receipt's OWN verdict; this suite drives
+     the REAL wrapper's settle path with the live failure shape and fails the
+     old bytes by name. */
+  'pull-outcome-honest-stamp.test.js',
+  /* sbp-1.0 (live b1016+b1017, Proof 3): the day-strip "Full visit notes"
+     checkbox painted ONCE at strip render - on a cold boot before the session
+     namespace exists the resolver reads the placeholder 'sf_u::_::' slot,
+     answers 'unset' (= on), and the box shows CHECKED forever while the
+     settled preference is off (same-tab writes fire no storage event). The
+     checkbox is a VIEW of the ONE resolver: it re-paints until the answer is
+     definitive, then the watcher stands down. Runs the REAL strip block
+     against the REAL resolver with a late-arriving session. */
+  'strip-checkbox-paints-resolver.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
