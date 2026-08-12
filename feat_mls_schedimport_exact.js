@@ -4721,6 +4721,28 @@
     });
   }
 
+  /* ql-1.0 (stale-quota-latch 2026-08-11): THE reality adjudicator for the
+     __mlsStoreWriteFailed latch, shared by the day and month quota
+     preflights. Returns true (and clears the latch + refreshes the qv chip)
+     ONLY when the sj-2.0 store's own receipt proves current confirmed
+     durable writes: idb mode, hydrated, gen==confirmedGen, wbFailures===0,
+     degraded false. Anything less - ls mode, store absent or not ready,
+     lagging or degraded write-behind - returns false and the loud refusal
+     stands untouched. Keep the predicate in lockstep with qvStoreHealthy
+     (mls-connect.js qv-1.2). */
+  function _quotaLatchStale() {
+    var r = safe(function () {
+      var ps = window.__mlsPtsStore;
+      if (!ps || typeof ps.isReady !== "function" || !ps.isReady() || typeof ps.receipt !== "function") return null;
+      return ps.receipt() || null;
+    }, null);
+    if (!(r && r.mode === "idb" && r.hydrated === true && r.degraded === false && Number(r.wbFailures) === 0 && Number(r.gen) === Number(r.confirmedGen))) return false;
+    safe(function () { console.warn("[mls-si] quota-preflight: stale write-failure latch CLEARED - the store receipt proves healthy confirmed IndexedDB writes (gen " + r.gen + " == confirmedGen, wbFailures 0, not degraded)."); });
+    safe(function () { window.__mlsStoreWriteFailed = null; });
+    safe(function () { var qg = window.__mlsQuotaGuard; if (qg && typeof qg._chip === "function") qg._chip(); });
+    return true;
+  }
+
   var monthPullRunning = false;
   function monthDateKeys(month) {
     var m = /^(\d{4})-(\d{2})$/.exec(String(month || ""));
@@ -4766,6 +4788,24 @@
     if (!dates || !dates.length) return Promise.resolve(failed("invalid-month", "Choose the current or a past month."));
     if (!gate.ok) { onStatus(gate.error || "The provider roster is incomplete.", "err"); return Promise.resolve(failed(gate.reason, gate.error)); }
     if (monthPullRunning) return Promise.resolve(failed("pull-in-flight", "Another exact month pull is already running."));
+    /* ql-1.0 (stale-quota-latch 2026-08-11, proof-2 disclosed gap): the MONTH
+       lane bypassed the b1014 quota preflight entirely. Same gate as the day
+       lane, same reality check first: a stale latch over a provably-healthy
+       idb store clears and the month proceeds; genuinely failing writes
+       refuse loudly BEFORE any Athena navigation, named gate, spoken
+       through onStatus, outcome-stamped. */
+    var _lrQuotaM = safe(function () { return window.__mlsStoreWriteFailed; }, null);
+    if (_lrQuotaM && typeof _quotaLatchStale === "function" && _quotaLatchStale()) _lrQuotaM = null;
+    if (_lrQuotaM) {
+      var _lrQMAge = Math.max(0, Math.round((Date.now() - Number(_lrQuotaM.at || Date.now())) / 60000));
+      var _lrQMRefusal = failed("storage-full-writes-failing", "Local storage is FULL - a save failed to persist " + (_lrQMAge ? _lrQMAge + " min ago" : "just now") + ", so new pull data would not survive a reload. No Athena navigation was started. Free storage space (the storage fix is in progress), then pull again.");
+      _lrQMRefusal.gate = "quota-preflight";
+      _lrQMRefusal.failures = Number(safe(function () { return window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures; }, 0) || 0);
+      _lrQMRefusal.lastFailAt = Number(_lrQuotaM.at || 0) || null;
+      onStatus(_lrQMRefusal.error, "err");
+      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: _lrQMRefusal.error }; });
+      return Promise.resolve(_lrQMRefusal);
+    }
     var frozenProvider = gate.provider === "all" ? "all" : {
       id: String(gate.provider.id || ""), stableKey: String(gate.provider.stableKey || ""), raw: String(gate.provider.raw || gate.provider.name || ""),
       name: String(gate.provider.name || ""), rosterVerified: true
@@ -5166,6 +5206,18 @@
        other refusal leaves. The flag self-clears on the next verified write,
        so a healthy store is never blocked. */
     var _lrQuota = safe(function () { return window.__mlsStoreWriteFailed; }, null);
+    /* ql-1.0 (stale-quota-latch 2026-08-11): judge CURRENT reality, not the
+       latch. Post-migration the qv guard's "next verified write" self-clear
+       could never fire (the localStorage key it verified was retired to
+       IndexedDB), so this gate refused every pull off a flag armed by a boot
+       flush that IndexedDB had CONFIRMED (live proof 1, 2026-08-11:
+       gate:"quota-preflight" while the store receipt read gen==confirmedGen,
+       wbFailures 0, 3.8MB free). When the store's own receipt proves healthy
+       confirmed idb writes the latch is stale by proof: clear it and let the
+       pull proceed. A store that is GENUINELY failing writes (ls mode,
+       degraded or lagging idb) never satisfies the adjudicator and still
+       refuses loudly below, unchanged. */
+    if (_lrQuota && typeof _quotaLatchStale === "function" && _quotaLatchStale()) _lrQuota = null;
     if (_lrQuota) {
       var _lrQAge = Math.max(0, Math.round((Date.now() - Number(_lrQuota.at || Date.now())) / 60000));
       var _lrQFails = Number(safe(function () { return window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures; }, 0) || 0);

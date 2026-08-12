@@ -45535,6 +45535,53 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function qvKey() {
     try { return typeof window.uns === 'function' ? String(window.uns('patients') || '') : ''; } catch (e) { return ''; }
   }
+  /* qv-1.2 (stale-quota-latch fix 2026-08-11): the sj-2.0 migration RETIRED
+     the localStorage patients key this guard reads back, so in idb mode the
+     old echo check condemned every healthy save as a silent-no-op (armed at
+     boot, never cleared - the latch that shut the pull gate on a store with
+     3.8MB of localStorage free while IndexedDB confirmed the very save it
+     called failed). These helpers make the verification MODE-AWARE: in idb
+     mode the verdict comes from the store's OWN confirm receipt, never from
+     the removed key. The healthy predicate is deliberately strict - idb
+     mode, hydrated, gen==confirmedGen, wbFailures===0, degraded false -
+     anything less (ls mode, store absent, lagging or degraded write-behind)
+     is NOT healthy and never clears the latch, so a store that is genuinely
+     failing writes still refuses loudly. Keep the predicate in lockstep
+     with _quotaLatchStale (feat_mls_schedimport_exact.js ql-1.0). */
+  function qvStoreReceipt() {
+    try {
+      var ps = window.__mlsPtsStore;
+      if (!ps || typeof ps.isReady !== 'function' || !ps.isReady() || typeof ps.receipt !== 'function') return null;
+      return ps.receipt() || null;
+    } catch (e) { return null; }
+  }
+  function qvIdbLive() {
+    var r = qvStoreReceipt();
+    return !!(r && r.mode === 'idb' && r.hydrated === true);
+  }
+  function qvStoreHealthy(r) {
+    return !!(r && r.mode === 'idb' && r.hydrated === true && r.degraded === false && Number(r.wbFailures) === 0 && Number(r.gen) === Number(r.confirmedGen));
+  }
+  function qvIdbVerify(expect) {
+    /* the idb-mode verified write: flushNow() resolves only after the
+       IndexedDB write-back is content-verified by the store itself (gen +
+       length + recomputed hash echo) and rejects once the store degrades -
+       the STORED ECHO judged at the store's own confirm point, strictly
+       stronger than the byte-length check it replaces in this mode. A
+       healthy confirm is the flag's second self-clear writer; a rejection
+       or an unhealthy post-confirm receipt arms the flag loudly. */
+    try {
+      var ps = window.__mlsPtsStore;
+      if (!ps || typeof ps.flushNow !== 'function') return;
+      ps.flushNow().then(function () {
+        var r = qvStoreReceipt();
+        if (qvStoreHealthy(r)) { window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQv1) {} }
+        else if (r && (r.degraded === true || Number(r.wbFailures) > 0)) qvFail('idb-unhealthy: ' + String(r.degradedWhy || r.lastError || 'write-behind failing').slice(0, 44), expect, -1);
+      }, function (eF) {
+        qvFail('idb-confirm: ' + String((eF && eF.message) || eF).slice(0, 44), expect, -1);
+      });
+    } catch (eS) {}
+  }
   function qvFail(reason, expected, got) {
     QG.failures++;
     QG.lastFail = { at: Date.now(), reason: String(reason).slice(0, 60), expected: expected, got: got };
@@ -45558,11 +45605,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { out = orig.apply(this, arguments); }
       catch (e) { qvFail(String(e && e.name || e), expect, prevLen); throw e; }
       try {
-        var got = key ? String(localStorage.getItem(key) || '').length : -1;
-        if (key && prevLen >= 0 && got === prevLen && expect >= 0 && Math.abs(expect - prevLen) > 64) {
-          qvFail('silent-no-op', expect, got);
+        if (qvIdbLive()) {
+          /* qv-1.2: the store runs on IndexedDB - the localStorage key the
+             branch below reads back no longer exists there, so the byte-echo
+             judgment would false-alarm on every material save (the stale-
+             latch bug, live-proven 2026-08-11). Verify through the store's
+             own confirm instead. */
+          qvIdbVerify(expect);
         } else {
-          window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQc2) {} /* qv-1.1: the chip clears with the flag */
+          var got = key ? String(localStorage.getItem(key) || '').length : -1;
+          if (key && prevLen >= 0 && got === prevLen && expect >= 0 && Math.abs(expect - prevLen) > 64) {
+            qvFail('silent-no-op', expect, got);
+          } else {
+            window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQc2) {} /* qv-1.1: the chip clears with the flag */
+          }
         }
       } catch (eR) {}
       return out;
@@ -45622,6 +45678,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   QG._heal = setInterval(function () {
     try { if (typeof window.savePatients === 'function' && !chainHasQv(window.savePatients)) qvInstall(); } catch (e) {}
     try { qvChip(); } catch (eQh) {} /* qv-1.1: re-assert the persistent surface every heal tick */
+    try { if (window.__mlsStoreWriteFailed && qvStoreHealthy(qvStoreReceipt())) { window.__mlsStoreWriteFailed = null; qvChip(); try { console.warn('[mlsQuotaGuard] stale write-failure latch CLEARED - the sj-2.0 store receipt proves healthy confirmed IndexedDB writes.'); } catch (eQw) {} } } catch (eQs) {} /* qv-1.2: the chip follows CURRENT reality, not a frozen latch */
   }, 4000);
   QG.revert = function () {
     try { clearInterval(QG._heal); } catch (e) {}

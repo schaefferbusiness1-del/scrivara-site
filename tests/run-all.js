@@ -978,7 +978,15 @@ const tests = [
   /* qv-1.1: __mlsStoreWriteFailed was maintained but NO surface rendered it
      (a 60s-rate-limited toast died ~90s before anyone looked), while dayPull
      drove Athena to read charts into a store silently dropping growth. */
-  'quota-surface-chip-and-preflight.test.js'
+  'quota-surface-chip-and-preflight.test.js',
+  /* ql-1.0: the sj-2.0 migration retired the localStorage key the qv guard
+     verified saves against, so the guard condemned every healthy idb save as
+     silent-no-op and the b1014 quota preflight refused every pull off a latch
+     frozen at boot (live proof 1, 2026-08-11); proof 2 disclosed that the
+     month lane bypassed the preflight entirely. The gate now judges CURRENT
+     reality (the store's own confirm receipt) in both lanes, and a genuinely
+     failing store still refuses loudly. */
+  'stale-quota-latch-contract.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
