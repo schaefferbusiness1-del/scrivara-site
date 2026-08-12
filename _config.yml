@@ -159,9 +159,6 @@ include:
   # on the real site without touching a single production byte. It registers NO
   # service worker, so it can never cache anything or disturb the main app.
   - "1pScribeFlow.html"
-  # p1-route-1.0.0: same preview, served from /p1/ so the service worker (which
-  # judges by basename) sees "index.html" and lets it through without any sw.js change.
-  - "p1/index.html"
   - "terms.html"
 
   # Minimum reviewed phone-recorder runtime. The recorder HTML is above; these
