@@ -50503,3 +50503,134 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 } catch (e) {} })();
 
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1400);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_daybrain.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_daybrain.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_daybrain.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* opdb-1.0.0: op-note DAY BRAIN — AI-assisted template matching layered over the deterministic ranker (oni still decides; the model only orders oni's own compatible candidates), plus procedure-aware day triage so "Draft all op notes" writes notes only for patients who actually had a procedure and still need one. Loaded LAST so its wrappers sit outermost over oni/opnp/the room. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
+
+/* ============================================================================
+   p1-ondemand-1.0.0  (1p PREVIEW ONLY)  -- Templates and the op-note room stop
+   waiting 27 seconds for a timer.
+
+   MEASURED CAUSE. mls-connect queues 125 optional modules through
+   __mlsDeferAsset, which admits ONE script per quiet slice: INITIAL_QUIET_MS
+   2500, then FIRST_USE_GAP 250ms each for the first 30s, and it PAUSES while a
+   route, patient or direct user interaction is in flight. In that queue
+   feat_mls_template_library.js sits at position 99 of 125 and
+   feat_mls_opnote_room.js at 107, so the best case with the user touching
+   nothing is 2500 + 99*250 = ~27s, and ~29s for the room. Until they arrive the
+   base markup in the shell renders, which is the "old form" of Templates and op
+   notes; when the module finally dequeues it upgrades the surface in place.
+   Worse, OPENING Templates is an interaction, so it pauses the queue and delays
+   the very module the user is waiting for.
+
+   THE FIX IS THE TRIGGER, NOT THE BUDGET. These modules are only ever needed
+   when their surface is opened, so a 99-deep timer is the wrong trigger. On
+   pointerover/pointerdown of a template or op-note entry point we inject the
+   script immediately, jumping the queue. Same precedent as the avatar's
+   av-6.0.2 hurry() path.
+
+   WHY THIS CANNOT DOUBLE-LOAD. Every queued registration in this file guards on
+   document.querySelector('script[data-mls-asset="NAME"]') and returns if it is
+   already present. We set the IDENTICAL data-mls-asset value and the IDENTICAL
+   NAME?v=__MLS_AV url, so (a) whichever fires first wins, (b) the other stands
+   down on its own guard, and (c) the URL is byte-identical so the browser cache
+   serves one fetch either way. We add no new asset and change no module.
+
+   Additive and reversible: window.__mlsP1OnDemand.revert().
+   1p PREVIEW ONLY - this block does not exist in the production bundle.
+   ============================================================================ */
+;(function () {
+  'use strict';
+  try {
+    if (window.__mlsP1OnDemand) return;
+
+    /* Exactly the names the queued registrations use. Order is the order we
+       inject: the library backs the Templates modal, the UI rebuilds it, the
+       room backs the op-note surface. */
+    var ASSETS = [
+      'feat_mls_template_library.js',
+      'feat_mls_opnote_templates_ui.js',
+      'feat_mls_opnote_room.js'
+    ];
+
+    /* Entry points that open one of those surfaces. Ids first because they are
+       exact; the label match is deliberately narrow (a button/tab whose own
+       text is essentially "Templates") so we cannot fire on unrelated prose. */
+    var IDS = ['templatesBtn', 'oprTabTpls', 'mlsUplTplBtn'];
+    var LABEL = /^[^A-Za-z0-9]{0,3}(templates|prep op notes|draft all op notes)\b/i;
+
+    var hurried = {}, fired = 0, bound = [], stopped = false;
+
+    function present(name) {
+      try { return !!document.querySelector('script[data-mls-asset="' + name + '"]'); }
+      catch (e) { return false; }
+    }
+
+    function hurry(name) {
+      if (stopped || hurried[name] || present(name)) return false;
+      hurried[name] = true;
+      try {
+        var s = document.createElement('script');
+        /* identical url to the queued path, so this is the same cache entry */
+        s.src = name + '?v=' + (window.__MLS_AV || Date.now());
+        s.setAttribute('data-mls-asset', name);
+        s.setAttribute('data-p1-ondemand', '1');
+        s.async = true;
+        s.addEventListener('error', function () {
+          /* let the deferred queue have its normal turn rather than leaving the
+             surface permanently un-upgraded because our early attempt failed */
+          try { hurried[name] = false; s.parentNode && s.parentNode.removeChild(s); } catch (e2) {}
+        });
+        (document.body || document.head || document.documentElement).appendChild(s);
+        fired++;
+        return true;
+      } catch (e) { hurried[name] = false; return false; }
+    }
+
+    function hurryAll() { for (var i = 0; i < ASSETS.length; i++) hurry(ASSETS[i]); }
+
+    function isEntry(node) {
+      try {
+        if (!node || node.nodeType !== 1) return false;
+        var el = node.closest ? node.closest('button,a,[role="button"],[role="tab"],.opr-tab,.mlsTbItem') : null;
+        if (!el) return false;
+        if (el.id && IDS.indexOf(el.id) > -1) return true;
+        var t = (el.textContent || '').trim();
+        return t.length < 40 && LABEL.test(t);
+      } catch (e) { return false; }
+    }
+
+    function onPoint(ev) {
+      try { if (isEntry(ev.target)) hurryAll(); } catch (e) {}
+    }
+
+    function listen(target, type, fn, opts) {
+      try { target.addEventListener(type, fn, opts); bound.push([target, type, fn, opts]); } catch (e) {}
+    }
+
+    /* pointerover gives the load a head start on the way to the click; capture
+       phase so we run before the handler that opens the surface. */
+    listen(document, 'pointerover', onPoint, true);
+    listen(document, 'pointerdown', onPoint, true);
+    listen(document, 'click', onPoint, true);
+    listen(document, 'keydown', function (ev) {
+      try { if ((ev.key === 'Enter' || ev.key === ' ') && isEntry(document.activeElement)) hurryAll(); } catch (e) {}
+    }, true);
+
+    window.__mlsP1OnDemand = {
+      v: 'p1-ondemand-1.0.0',
+      assets: ASSETS.slice(),
+      state: function () {
+        var out = {};
+        for (var i = 0; i < ASSETS.length; i++) out[ASSETS[i]] = present(ASSETS[i]) ? 'loaded' : 'pending';
+        return { fired: fired, stopped: stopped, modules: out };
+      },
+      hurryAll: hurryAll,
+      revert: function () {
+        stopped = true;
+        for (var i = 0; i < bound.length; i++) {
+          try { bound[i][0].removeEventListener(bound[i][1], bound[i][2], bound[i][3]); } catch (e) {}
+        }
+        bound = [];
+        return true;
+      }
+    };
+  } catch (e) { /* never let a preview convenience break boot */ }
+})();
