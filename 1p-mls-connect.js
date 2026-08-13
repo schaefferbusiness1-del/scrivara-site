@@ -46476,10 +46476,43 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      the last status lines (gate texts, never patient names), and the
      environment (build, extension version, user agent, timezone). It never
      serializes patient arrays, appointment rows, or resolved mappings. */
+  function dsSafeStatusEvent(m) {
+    m = String(m || '');
+    var x, day = '(\\d{4}-\\d{2}-\\d{2})';
+    function counts(code, match, names) {
+      var out = { code: code }, i, n;
+      for (i = 0; i < names.length; i++) { n = Number(match[i + 1]); if (!isFinite(n) || n < 0 || Math.floor(n) !== n) return null; out[names[i]] = n; }
+      return out;
+    }
+    if (/^Looking for MLS Assist\.\.\.$/.test(m)) return { code: 'extension-probe' };
+    if ((x = m.match(new RegExp('^Opening ' + day + ' in athenaOne before the pull\\.\\.\\.$')))) return { code: 'athena-open-preflight', day: x[1] };
+    if (/^Re-reading the athenaOne Day schedule\.\.\.$/.test(m)) return { code: 'schedule-reread' };
+    if (/^Pulling every provider painted on the athenaOne Day grid\.$/.test(m)) return { code: 'scope-all-day' };
+    if (/^Pulling \d{4}-\d{2}-\d{2} as .+\.$/.test(m)) return { code: 'scope-selected' };
+    if ((x = m.match(new RegExp('^Opening ' + day + ' in athenaOne\\.\\.\\.$')))) return { code: 'athena-open', day: x[1] };
+    if (/^Reading your athenaOne Day schedule\.\.\.$/.test(m)) return { code: 'schedule-read' };
+    if ((x = m.match(/^The Athena grid was still settling - re-reading automatically \(attempt (\d+) of (\d+)\)\.\.\.$/))) return counts('grid-settle', x, ['attempt', 'total']);
+    if ((x = m.match(/^Rechecking the complete Athena Day grid before retry attempt (\d+) of (\d+)\.\.\.$/))) return counts('roster-settle', x, ['attempt', 'total']);
+    if ((x = m.match(/^Provider roster settle check finished for retry attempt (\d+) of (\d+)\.$/))) return counts('roster-settle-finished', x, ['attempt', 'total']);
+    if ((x = m.match(/^Saving the schedule [—-] appointment (\d+) of (\d+)\.\.\.$/))) return counts('schedule-save', x, ['current', 'total']);
+    if ((x = m.match(/^Verifying patient identity (\d+) of (\d+)(?: in Athena)?\.\.\.$/))) return counts('history-read', x, ['current', 'total']);
+    if ((x = m.match(/^Reading verified history (\d+) of (\d+)(?: \(automatic re-check\))?\.\.\.$/))) return counts('history-read', x, ['current', 'total']);
+    if ((x = m.match(/^Schedule-only complete: (\d+)\/(\d+) appointments accounted for;/))) return counts('schedule-complete', x, ['accounted', 'attempted']);
+    if ((x = m.match(/^Verified complete: schedule (\d+)\/(\d+); history (\d+)\/(\d+); failures (\d+)\./))) return counts('pull-complete', x, ['scheduleAccounted', 'scheduleAttempted', 'historyStored', 'historyTargets', 'failures']);
+    if ((x = m.match(/^Incomplete: schedule (\d+)\/(\d+); history (\d+)\/(\d+); failures (\d+)\./))) return counts('pull-incomplete', x, ['scheduleAccounted', 'scheduleAttempted', 'historyStored', 'historyTargets', 'failures']);
+    if (/^Athena's full provider roster was not verified\./.test(m)) return { code: 'provider-roster-incomplete' };
+    if (/^Athena's provider roster receipt was not bound\./.test(m)) return { code: 'provider-roster-unbound' };
+    if (/^Athena's schedule was only partly readable\./.test(m)) return { code: 'schedule-incomplete' };
+    if (/^Athena's schedule receipt did not prove/.test(m)) return { code: 'schedule-request-unbound' };
+    if (/^(?:Athena could not be opened to the requested day\.|Couldn't open the requested athenaOne day\.)$/.test(m)) return { code: 'nav-failed' };
+    return null;
+  }
   function dsStatusLog(m) {
     if (!m) return;
+    var event = dsSafeStatusEvent(m);
+    if (!event) { DS.statusOmitted = Number(DS.statusOmitted || 0) + 1; return; }
     DS.statusLog = DS.statusLog || [];
-    DS.statusLog.push(String(m).slice(0, 160));
+    DS.statusLog.push(event);
     if (DS.statusLog.length > 8) DS.statusLog.shift();
   }
   function dsPick(obj, keys) {
@@ -46646,7 +46679,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              reason + histograms + counters only, never patient identifiers. */
           retryDiag: (function () { try { return (hr.retry || []).slice(0, 10).map(function (r) { return r && r.diag ? { reason: String(r.reason || '').slice(0, 80), hist: r.diag.hist || null, enumDiag: r.diag.enumDiag || null, receipt: r.diag.receipt || null } : null; }).filter(function (x0) { return !!x0; }); } catch (e) { return []; } })() } : null
       } : null,
-      lastStatuses: (DS.statusLog || []).slice()
+      statusEvents: (DS.statusLog || []).slice(),
+      statusEventsOmitted: Number(DS.statusOmitted || 0)
     };
     try { report.build = report.build(); } catch (e) { report.build = ''; }
     return JSON.stringify(report, null, 1);
@@ -47132,6 +47166,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
     if (!DS.__autoRetrying) {
       DS.autoRePull = 0;
+      DS.statusLog = [];
+      DS.statusOmitted = 0;
       DS.providerRosterRetryReceipt = null;
       DS.providerAttributionCoverage = null;
       DS.__escalateAll = false;
@@ -47557,7 +47593,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.statusLog = []; DS.autoRePull = 0; DS.__autoRetrying = false;
+    DS.lastResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
     DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.__escalateAll = false;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {

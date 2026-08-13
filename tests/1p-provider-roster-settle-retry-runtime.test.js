@@ -331,6 +331,14 @@ function createHarness(options) {
           lease: context.__mlsSchedulePullLease || null
         });
         order.push('pull:' + pulls.length);
+        const scriptedStatuses = typeof options.pullStatuses === 'function'
+          ? options.pullStatuses(pulls.length, opts)
+          : options.pullStatuses;
+        (Array.isArray(scriptedStatuses) ? scriptedStatuses : []).forEach(message => {
+          message = String(message || '');
+          statuses.push(message);
+          if (opts && typeof opts.onStatus === 'function') opts.onStatus(message);
+        });
         const next = results.length ? results.shift() : verifiedResult();
         lastEngineResult = clone(next);
         return Promise.resolve(clone(lastEngineResult));
@@ -539,6 +547,141 @@ async function testFullyRowUnattributedIsTerminalAndPhiFree() {
     assert.strictEqual(reportText.includes(secret), false,
       'the PHI-free report leaked raw attribution detail: ' + secret);
   }
+}
+
+async function testCopiedDiagnosticUsesOnlyClosedStatusEvents() {
+  const patientSecret = 'PATIENT-ALPHA-SECRET';
+  const arbitrarySecret = 'ZXQ-RAW-SECRET-918273';
+  const patientTime = '8:20 AM';
+  const terminalStatus =
+    `Incomplete: schedule 24/24; history 7/24; failures 17. Patient ${patientSecret} at ${patientTime}; ${arbitrarySecret}`;
+  const omittedStatus =
+    `Unclassified terminal detail: ${patientSecret} at ${patientTime}; ${arbitrarySecret}`;
+  const pullStatuses = [
+    'Looking for MLS Assist...',
+    `Opening ${DAY} in athenaOne before the pull...`,
+    'Re-reading the athenaOne Day schedule...',
+    'Pulling every provider painted on the athenaOne Day grid.',
+    `Opening ${DAY} in athenaOne...`,
+    'Reading your athenaOne Day schedule...',
+    'The Athena grid was still settling - re-reading automatically (attempt 2 of 3)...',
+    'Verifying patient identity 5 of 24 in Athena...',
+    'Reading verified history 7 of 24...',
+    terminalStatus,
+    omittedStatus
+  ];
+  const h = createHarness({ results: [rowUnattributedRefusal()], pullStatuses });
+  await startAndSettleFirst(h);
+
+  const diagButton = h.context.document.getElementById('mlsDsDiagBtn');
+  assert(diagButton && typeof diagButton.onclick === 'function',
+    'the failed pull did not expose its copyable diagnostic');
+  diagButton.onclick();
+  await h.flush();
+  assert.ok(h.clipboardWrites.length > 0,
+    'the failed pull diagnostic was not copied');
+
+  const reportText = h.clipboardWrites[h.clipboardWrites.length - 1];
+  const report = JSON.parse(reportText);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(report, 'lastStatuses'), false,
+    'the copied diagnostic restored the raw lastStatuses channel');
+  assert(Array.isArray(report.statusEvents) && report.statusEvents.length > 0,
+    'the copied diagnostic omitted all closed status events');
+  assert(report.statusEvents.length <= 8,
+    'the copied diagnostic exceeded the bounded structured-status history');
+  assert(Number.isInteger(report.statusEventsOmitted) && report.statusEventsOmitted > 0,
+    'unclassified status text was not counted as omitted');
+
+  const allowedCodes = new Set([
+    'extension-probe', 'athena-open-preflight', 'schedule-reread',
+    'scope-all-day', 'scope-selected', 'athena-open', 'schedule-read',
+    'grid-settle', 'schedule-save', 'history-read', 'schedule-complete',
+    'pull-complete', 'pull-incomplete', 'provider-roster-incomplete',
+    'provider-roster-unbound', 'schedule-incomplete',
+    'schedule-request-unbound', 'nav-failed'
+  ]);
+  const allowedKeys = new Set([
+    'code', 'day', 'attempt', 'total', 'current', 'accounted', 'attempted',
+    'scheduleAccounted', 'scheduleAttempted', 'historyStored',
+    'historyTargets', 'failures'
+  ]);
+  report.statusEvents.forEach(event => {
+    assert(event && typeof event === 'object' && !Array.isArray(event),
+      'a copied status event was not a closed object');
+    assert(allowedCodes.has(event.code),
+      'a copied status event used an unrecognized code: ' + String(event.code));
+    Object.keys(event).forEach(key => {
+      assert(allowedKeys.has(key),
+        'a copied status event exposed an unapproved field: ' + key);
+      if (key === 'code') return;
+      if (key === 'day') {
+        assert.strictEqual(event.day, DAY,
+          'a copied status event exposed an unbound day value');
+        return;
+      }
+      assert(Number.isInteger(event[key]) && event[key] >= 0,
+        'a copied status count was not a nonnegative integer: ' + key);
+    });
+  });
+
+  function hasEvent(code, expected) {
+    return report.statusEvents.some(event => event.code === code &&
+      Object.keys(expected || {}).every(key => event[key] === expected[key]));
+  }
+  assert(hasEvent('grid-settle', { attempt: 2, total: 3 }),
+    'safe grid-settle counts were not retained');
+  assert(hasEvent('history-read', { current: 5, total: 24 }),
+    'the real identity-verification progress phrase was not reduced to safe counts');
+  assert(hasEvent('history-read', { current: 7, total: 24 }),
+    'the real verified-history progress phrase was not reduced to safe counts');
+  assert(hasEvent('pull-incomplete', {
+    scheduleAccounted: 24,
+    scheduleAttempted: 24,
+    historyStored: 7,
+    historyTargets: 24,
+    failures: 17
+  }), 'the terminal status with a malicious suffix did not retain only its safe counts');
+
+  assert.strictEqual(report.result.reason, 'provider-roster-incomplete',
+    'status redaction changed the terminal result receipt');
+  assert.deepStrictEqual(report.result.scheduleReceipt, {
+    complete: true,
+    expectedCount: 24,
+    parsedCount: 24,
+    candidateCount: 24
+  }, 'status redaction changed the schedule receipt');
+  assert.deepStrictEqual(report.result.providerRosterReceipt.attributionCoverage, {
+    verdict: 'row-unattributed',
+    rows: 24,
+    headerCount: 3,
+    unattributedRows: 24,
+    foreignRows: 0
+  }, 'status redaction changed the closed attribution receipt');
+  for (const raw of [patientSecret, patientTime, arbitrarySecret, terminalStatus, omittedStatus]) {
+    assert.strictEqual(reportText.includes(raw), false,
+      'the copied diagnostic leaked raw status text: ' + raw);
+  }
+
+  const classifierStart = moduleSource.indexOf('function dsSafeStatusEvent');
+  const statusLogStart = moduleSource.indexOf('function dsStatusLog', classifierStart);
+  const statusLogEnd = moduleSource.indexOf('function dsPick', statusLogStart);
+  const diagStart = moduleSource.indexOf('function dsDiagReport', statusLogEnd);
+  const diagEnd = moduleSource.indexOf('function dsCopyDiag', diagStart);
+  assert(classifierStart >= 0 && statusLogStart > classifierStart &&
+    statusLogEnd > statusLogStart && diagStart > statusLogEnd && diagEnd > diagStart,
+  'the static diagnostic privacy seams could not be located');
+  const statusLogSource = moduleSource.slice(statusLogStart, statusLogEnd);
+  const diagSource = moduleSource.slice(diagStart, diagEnd);
+  assert.match(statusLogSource, /if \(!event\)\s*\{[^}]*statusOmitted[^}]*return;/,
+    'unclassified status text no longer fails closed');
+  assert.match(statusLogSource, /statusLog\.push\(event\)/,
+    'the status logger no longer stores only the classified event');
+  assert.doesNotMatch(statusLogSource, /statusLog\.push\((?:m|String\s*\()/,
+    'the status logger contains a raw-text fallback');
+  assert.match(diagSource, /statusEvents\s*:/,
+    'the diagnostic no longer publishes its closed structured status field');
+  assert.doesNotMatch(diagSource, /lastStatuses/,
+    'the diagnostic source contains a raw lastStatuses fallback');
 }
 
 async function testRowUnattributedTerminalClassifierIsExact() {
@@ -940,6 +1083,7 @@ async function testCanceledAttemptThreeClearsEscalation() {
 async function main() {
   await testVisibleProviderTargetIsForwarded();
   await testFullyRowUnattributedIsTerminalAndPhiFree();
+  await testCopiedDiagnosticUsesOnlyClosedStatusEvents();
   await testRowUnattributedTerminalClassifierIsExact();
   await testExactWarmAndBound();
   await testWarmLeaseLifetimeAndNavigatorLock();
