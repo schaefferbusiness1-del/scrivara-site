@@ -27,6 +27,7 @@ const P1_FILES = [
   '1p-mls-connect.js',
   '1p-feat_mls_athena_occurrence.js',
   '1p-feat_mls_avatar.js',
+  '1p-feat_mls_avatar_face.js',
   '1p-feat_fullhistory_pdf.js',
   '1p-feat_mls_legalpack.js',
   '1p-feat_nextup_connect.js',
@@ -105,6 +106,29 @@ assert(connect.includes("s.src=SRC+'?v='+(window.__MLS_AV||Date.now())"),
   '1p eager avatar loader must fetch the preview source');
 assert(!connect.includes("s.src='feat_mls_avatar.js?v='"),
   '1p bundle still has a direct production avatar fetch');
+
+const faceLoaderStart = connect.indexOf("A='feat_mls_avatar_face.js',SRC='1p-feat_mls_avatar_face.js',V='p1-face-studio-1.0.1',KEY='__mlsP1AvatarFaceLoader'");
+const faceLoaderEnd = connect.indexOf('/* 1p Avatar face studio:', faceLoaderStart);
+const faceLoader = faceLoaderStart >= 0 && faceLoaderEnd > faceLoaderStart ? connect.slice(faceLoaderStart, faceLoaderEnd) : '';
+assert.strictEqual((faceLoader.match(/node\.src=SRC\+'\?v='/g) || []).length, 1,
+  '1p bundle must have exactly one canonical Avatar face-studio source assignment');
+assert(faceLoader.includes("node.setAttribute('data-mls-asset',A)") &&
+  faceLoader.includes("node.setAttribute('data-mls-version',V)") &&
+  faceLoader.includes("node.setAttribute('data-mls-install-token',ctl.installToken)"),
+  '1p Avatar face loader lost canonical identity, exact version, or install token');
+assert(faceLoader.includes('maxAttempts:2') && faceLoader.includes("fail(node,'network-error')") &&
+  faceLoader.includes("fail(node,'owner-missing')") && faceLoader.includes("ctl.state='failed-bounded'"),
+  '1p Avatar face loader lacks bounded network/owner recovery');
+assert(faceLoader.includes('function validController(controller)') && faceLoader.includes('ensured=prior.ensure()===true') &&
+  faceLoader.includes('if(ensured&&window[KEY]===prior&&validController(prior))return;') &&
+  faceLoader.includes('if(window[KEY]!==prior)return;') && faceLoader.includes('var replacement=window[KEY];'),
+  '1p Avatar face loader does not validate or fence a same-version/reentrant controller takeover');
+assert(!/\.src=['"]feat_mls_avatar_face\.js/.test(faceLoader),
+  '1p bundle directly fetches a shared/production Avatar face implementation');
+const p1Face = read('1p-feat_mls_avatar_face.js');
+assert(p1Face.includes("var LOADER_KEY = '__mlsP1AvatarFaceLoader';") &&
+  p1Face.includes('loader.installToken === installToken') && p1Face.includes('window.__MLS_P1_PREVIEW.enabled === true'),
+  '1p Avatar face API is not bound to its exact preview controller/token');
 
 assert.strictEqual((connect.match(/SRC='1p-feat_mls_athena_occurrence\.js'/g) || []).length, 1,
   '1p bundle must load the exact Athena occurrence search exactly once');
@@ -263,6 +287,7 @@ assert(productionShell.includes("s.src='mls-connect.js?v='+window.__MLS_AV"), 'p
 assert(!productionShell.includes('__MLS_P1_PREVIEW') && !productionShell.includes('1p-mls-connect.js'),
   '1p preview marker/loader leaked into the production shell');
 assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnect.includes('1p-feat_mls_writeflow.js') &&
+  !productionConnect.includes('1p-feat_mls_avatar_face.js') &&
   !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
   !productionConnect.includes('1p-feat_mls_legalpack.js') && !productionConnect.includes('1p-feat_mls_athena_occurrence.js') &&
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),

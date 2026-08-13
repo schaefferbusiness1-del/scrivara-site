@@ -10,24 +10,56 @@
   'use strict';
 
   var VERSION = 'p1-face-studio-1.0.1';
+  var LOADER_KEY = '__mlsP1AvatarFaceLoader';
   var STYLE_ID = 'mlsP1FaceStudioStyle';
   var ROOT_CLASS = 'mlsP1FaceStudio';
+  var script = document.currentScript;
+  var installToken = script && script.getAttribute ? cleanToken(script.getAttribute('data-mls-install-token')) : '';
+  var liveLoader = window[LOADER_KEY];
+  if (!(window.__MLS_P1_PREVIEW && window.__MLS_P1_PREVIEW.enabled === true) ||
+      !installToken || !liveLoader || liveLoader.installed !== true ||
+      liveLoader.version !== VERSION || liveLoader.installToken !== installToken) return;
   var api = window.__mlsAvatarFaceStudio;
-  if (api && api.version === VERSION && api.installed === true) return;
-  if (api && typeof api.revert === 'function') {
-    try { api.revert(); } catch (e0) {}
+  if (api && api.version === VERSION && api.installToken === installToken && api.installed === true &&
+      typeof api.reconcile === 'function' && typeof api.revert === 'function') return;
+  if (api && api.installed === true) {
+    if (typeof api.revert !== 'function') return;
+    var retiring = api;
+    try { retiring.revert(); } catch (e0) { return; }
+    if (retiring.installed === true) return;
+    api = window.__mlsAvatarFaceStudio;
+    if (api && api.installed === true) {
+      /* A retiring owner may publish another installation synchronously. An
+         exact valid replacement already won; any other live replacement is a
+         collision and must fail closed. Neither may be overwritten here. */
+      if (api.version === VERSION && api.installToken === installToken &&
+          typeof api.reconcile === 'function' && typeof api.revert === 'function') return;
+      return;
+    }
   }
 
+  var owner = null;
   var observer = null;
   var eventRows = [];
   var enhanced = [];
   var timers = [];
 
   function clean(value) { return String(value == null ? '' : value).replace(/\s+/g, ' ').trim(); }
+  function cleanToken(value) { return clean(value).replace(/[^a-z0-9._:-]/gi, '').slice(0, 160); }
+  function owned() {
+    var loader = window[LOADER_KEY];
+    return !!(owner && owner.installed === true && window.__mlsAvatarFaceStudio === owner &&
+      loader && loader.installed === true && loader.version === VERSION &&
+      loader.installToken === installToken && owner.installToken === installToken);
+  }
+  function active() {
+    return !!(window.__MLS_P1_PREVIEW && window.__MLS_P1_PREVIEW.enabled === true && owned());
+  }
   function on(node, type, fn) {
     if (!node || !node.addEventListener) return;
-    node.addEventListener(type, fn, false);
-    eventRows.push([node, type, fn]);
+    var guarded = function () { if (active()) return fn.apply(this, arguments); };
+    node.addEventListener(type, guarded, false);
+    eventRows.push([node, type, guarded]);
   }
   function make(tag, className, text) {
     var node = document.createElement(tag);
@@ -35,10 +67,24 @@
     if (text != null) node.textContent = text;
     return node;
   }
+  function priorAttr(node, name) {
+    var value = node && node.getAttribute ? node.getAttribute(name) : null;
+    return { name: name, present: value != null, value: value };
+  }
+  function restoreAttrs(node, rows) {
+    if (!node || !rows) return;
+    for (var i = 0; i < rows.length; i++) {
+      try {
+        if (rows[i].present) node.setAttribute(rows[i].name, rows[i].value);
+        else node.removeAttribute(rows[i].name);
+      } catch (e0) {}
+    }
+  }
   function later(fn, delay) {
     var timer = setTimeout(function () {
       var at = timers.indexOf(timer);
       if (at >= 0) timers.splice(at, 1);
+      if (!active()) return;
       fn();
     }, delay);
     timers.push(timer);
@@ -196,6 +242,7 @@
     updateModeHelp(mode, help, sub, stage);
     on(mode, 'change', function () { updateModeHelp(mode, help, sub, stage); });
 
+    var noteAttrs = [priorAttr(note, 'role'), priorAttr(note, 'aria-live'), priorAttr(note, 'aria-atomic')];
     note.setAttribute('role', 'status');
     note.setAttribute('aria-live', 'polite');
     note.setAttribute('aria-atomic', 'true');
@@ -207,6 +254,7 @@
         if (/match my photo/i.test(clean(buttons[bi].textContent))) { matchButton = buttons[bi]; break; }
       }
     }
+    var matchAttrs = matchButton ? [priorAttr(matchButton, 'aria-controls')] : [];
     if (matchButton) {
       matchButton.setAttribute('aria-controls', 'mlsAvLookStage mlsAvLookNote');
       on(matchButton, 'click', function () {
@@ -233,11 +281,13 @@
     }
 
     enhanced.push({ stage: stage, wrap: wrap, grid: grid, preview: preview, sub: sub,
-      details: details, help: help, mode: mode });
+      details: details, help: help, mode: mode, note: note, noteAttrs: noteAttrs,
+      matchButton: matchButton, matchAttrs: matchAttrs });
     return true;
   }
 
   function reconcile() {
+    if (!active()) return false;
     pruneDetached();
     var stages = document.querySelectorAll ? document.querySelectorAll('#mlsAvLookStage') : [];
     for (var i = 0; i < stages.length; i++) enhance(stages[i]);
@@ -247,9 +297,14 @@
       var row = enhanced[j];
       if (row.stage && row.stage.parentNode) updateModeHelp(row.mode, row.help, row.sub, row.stage);
     }
+    return true;
   }
 
   function revert() {
+    /* Teardown is an ownership operation, not a preview activity. If the
+       preview marker is withdrawn while a bundle is live, its exact controller
+       must still be able to remove this installation cleanly. */
+    if (!owned()) return false;
     if (observer) { try { observer.disconnect(); } catch (e1) {} observer = null; }
     clearPollTimers();
     for (var i = 0; i < eventRows.length; i++) {
@@ -258,6 +313,8 @@
     eventRows = [];
     for (var j = 0; j < enhanced.length; j++) {
       var row = enhanced[j];
+      restoreAttrs(row.note, row.noteAttrs);
+      restoreAttrs(row.matchButton, row.matchAttrs);
       try {
         if (row.wrap && row.stage && row.preview && row.preview.parentNode === row.wrap) {
           row.wrap.insertBefore(row.stage, row.preview);
@@ -275,21 +332,38 @@
     var styleNode = document.getElementById(STYLE_ID);
     if (styleNode && styleNode.parentNode) styleNode.parentNode.removeChild(styleNode);
     try { window.removeEventListener('mls:settings-reconciled', reconcile, false); } catch (e4) {}
-    try { window.__mlsAvatarFaceStudio.installed = false; } catch (e5) {}
+    owner.installed = false;
+    if (window.__mlsAvatarFaceStudio === owner) {
+      try { delete window.__mlsAvatarFaceStudio; } catch (e5) { window.__mlsAvatarFaceStudio = null; }
+    }
+    return true;
   }
 
-  style();
-  reconcile();
-  if (typeof MutationObserver === 'function') {
-    observer = new MutationObserver(reconcile);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-  }
-  window.addEventListener('mls:settings-reconciled', reconcile, false);
-  window.__mlsAvatarFaceStudio = {
+  owner = {
     installed: true,
     version: VERSION,
+    installToken: installToken,
     reconcile: reconcile,
     summarizeReceipt: summarizeReceipt,
     revert: revert
   };
+  window.__mlsAvatarFaceStudio = owner;
+  try {
+    style();
+    reconcile();
+    if (typeof MutationObserver === 'function') {
+      observer = new MutationObserver(reconcile);
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+    window.addEventListener('mls:settings-reconciled', reconcile, false);
+  } catch (installError) {
+    /* Do not leave a half-installed API for the loader to receipt as ready.
+       Its onload check will see owner-missing and make one bounded retry. */
+    try { revert(); } catch (rollbackError) {
+      owner.installed = false;
+      if (window.__mlsAvatarFaceStudio === owner) {
+        try { delete window.__mlsAvatarFaceStudio; } catch (deleteError) { window.__mlsAvatarFaceStudio = null; }
+      }
+    }
+  }
 }());
