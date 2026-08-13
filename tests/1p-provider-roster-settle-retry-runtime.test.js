@@ -9,7 +9,7 @@
  * This suite executes the real __mlsDaySwitch slice from 1p-mls-connect.js.
  * It proves the exact receipt gate, ordering, frozen-day/session/cross-engine
  * cancellation, exclusive lock/lease ownership for every special warm-up,
- * canceled attempt-3 escalation cleanup, and that ordinary transient retries
+ * frozen provider-scope cleanup, and that ordinary transient retries
  * do not acquire the new warm-up behavior. A complete schedule whose extension
  * receipt proves every row is provider-unattributed is different: repainting
  * cannot create identity that Athena did not expose, so it must terminate once
@@ -470,6 +470,7 @@ function createHarness(options) {
     runNextTimer,
     flush,
     emit,
+    providerTargetReads() { return providerTargetRead; },
     setForeign(value) { foreign = !!value; }
   };
 }
@@ -552,6 +553,59 @@ async function testVisibleProviderTargetIsForwarded() {
     'attempt 3 changed the selected provider stable key');
   assert.strictEqual(escalated.pulls.some(pull => pull.provider === 'all'), false,
     'a selected-provider retry entered the all-provider/census route');
+  assert.strictEqual(escalated.providerTargetReads(), 1,
+    'the automatic retry chain re-read mutable provider UI');
+
+  /* Explicit all is a capability the clinician selected too. Freeze it just
+     like a selected provider: later UI changes cannot narrow or replace it. */
+  const allRetries = createHarness({
+    providerTargetSequence: ['all', selectedObject, differentProvider],
+    results: [scheduleIncompleteRefusal(), scheduleIncompleteRefusal(), verifiedResult()]
+  });
+  await reachAttemptThreeTimer(allRetries);
+  allRetries.runNextTimer();
+  await allRetries.flush();
+  assert.deepStrictEqual(allRetries.pulls.map(pull => pull.provider), ['all', 'all', 'all'],
+    'the explicit default all scope was not preserved through every retry');
+  assert.strictEqual(allRetries.providerTargetReads(), 1,
+    'the explicit all retry chain re-read mutable provider UI');
+
+  /* A completed chain releases its scope. The next manual click must capture
+     the provider visible then, not inherit the prior object. */
+  const nextManual = createHarness({
+    providerTargetSequence: [selectedObject, differentProvider],
+    results: [verifiedResult(), verifiedResult()]
+  });
+  await startAndSettleFirst(nextManual);
+  nextManual.api.pullDay();
+  await nextManual.flush();
+  assert.strictEqual(nextManual.pulls[1].provider, differentProvider,
+    'a new manual pull inherited the completed chain provider');
+  assert.strictEqual(nextManual.providerTargetReads(), 2,
+    'a new manual pull did not capture the current provider exactly once');
+
+  /* A manual click during the settle gap is a new chain. Its fresh scope must
+     win, and the old timer must become inert instead of clearing or replaying
+     over the new result. */
+  const manualDuringGap = createHarness({
+    providerTargetSequence: [selectedObject, differentProvider],
+    results: [scheduleIncompleteRefusal(), verifiedResult(), verifiedResult()]
+  });
+  await startAndSettleFirst(manualDuringGap);
+  assert.strictEqual(manualDuringGap.pendingTimers().length, 1,
+    'manual-during-gap control did not create the original retry timer');
+  manualDuringGap.api.pullDay();
+  await manualDuringGap.flush();
+  assert.strictEqual(manualDuringGap.pulls.length, 2,
+    'manual pull during retry gap did not start one fresh chain');
+  assert.strictEqual(manualDuringGap.pulls[1].provider, differentProvider,
+    'manual pull during retry gap inherited the old provider scope');
+  manualDuringGap.runNextTimer();
+  await manualDuringGap.flush();
+  assert.strictEqual(manualDuringGap.pulls.length, 2,
+    'superseded retry timer ran after a new manual pull');
+  assert.strictEqual(manualDuringGap.providerTargetReads(), 2,
+    'superseded retry timer re-read the provider selector');
 }
 
 async function testFullyRowUnattributedIsTerminalAndPhiFree() {
@@ -1018,6 +1072,7 @@ async function testFrozenDateCancellation() {
   await h.flush();
   assert.strictEqual(h.pulls.length, 1, 'a frozen-day retry ran after the selected day changed');
   assert.strictEqual(h.pendingTimers().length, 0, 'a canceled frozen-day retry scheduled more work');
+  assert.strictEqual(h.api.isBusy(), false, 'a frozen-day cancellation stranded DaySwitch busy ownership');
 }
 
 async function testCrossEngineAndSessionCancellation() {
@@ -1102,27 +1157,26 @@ async function reachAttemptThreeTimer(h) {
   await h.flush();
   assert.strictEqual(h.pulls.length, 2, 'schedule-incomplete automatic attempt 2 did not run');
   assert.deepStrictEqual(h.pendingTimers().map(timer => timer.ms), [9000],
-    'the second schedule-incomplete refusal did not schedule escalated attempt 3');
+    'the second schedule-incomplete refusal did not schedule attempt 3');
 }
 
-async function testCanceledAttemptThreeClearsEscalation() {
-  /* First prove the control: an uncanceled third attempt still uses the
-     long-standing whole-grid escalation. */
-  const control = createHarness({
-    results: [scheduleIncompleteRefusal(), scheduleIncompleteRefusal(), verifiedResult()]
-  });
-  await reachAttemptThreeTimer(control);
-  control.runNextTimer();
-  await control.flush();
-  assert.strictEqual(control.pulls.length, 3, 'the uncanceled third attempt did not run');
-  assert.strictEqual(control.pulls[2].provider, 'all',
-    'the uncanceled third attempt lost its deliberate whole-grid escalation');
-
+async function testCanceledRetryClearsFrozenScope() {
   async function assertManualDoesNotInherit(label, prepareCancellation, restoreAfterCancellation) {
+    const firstProvider = {
+      id: 'provider-canceled', stableKey: 'athena:provider-canceled',
+      name: 'Canceled Header, MD', rosterVerified: true
+    };
+    const nextProvider = {
+      id: 'provider-next', stableKey: 'athena:provider-next',
+      name: 'Next Header, MD', rosterVerified: true
+    };
     const h = createHarness({
+      providerTargetSequence: [firstProvider, nextProvider],
       results: [scheduleIncompleteRefusal(), scheduleIncompleteRefusal(), verifiedResult()]
     });
     await reachAttemptThreeTimer(h);
+    assert.strictEqual(h.pulls[0].provider, firstProvider, label + ': attempt 1 lost the frozen provider');
+    assert.strictEqual(h.pulls[1].provider, firstProvider, label + ': attempt 2 re-read the provider UI');
     prepareCancellation(h);
     h.runNextTimer();
     await h.flush();
@@ -1131,8 +1185,10 @@ async function testCanceledAttemptThreeClearsEscalation() {
     h.api.pullDay();
     await h.flush();
     assert.strictEqual(h.pulls.length, 3, label + ': the next manual pull did not run');
-    assert.notStrictEqual(h.pulls[2].provider, 'all',
-      label + ': the next manual pull inherited canceled attempt-3 provider escalation');
+    assert.strictEqual(h.pulls[2].provider, nextProvider,
+      label + ': the next manual pull inherited the canceled retry scope');
+    assert.strictEqual(h.providerTargetReads(), 2,
+      label + ': cancellation/new manual did not capture exactly one fresh provider');
   }
 
   await assertManualDoesNotInherit(
@@ -1162,8 +1218,8 @@ async function main() {
   await testFrozenDateCancellation();
   await testCrossEngineAndSessionCancellation();
   await testExactClassifierAndOrdinaryRetries();
-  await testCanceledAttemptThreeClearsEscalation();
-  console.log('PASS p1 provider-roster settle retry: the visible Easy provider target reaches dayPull exactly while missing/throwing targets retain fallback, and a selected provider stays identity-exact through every retry without entering the all-provider census route; complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards; cancellation clears attempt-3 escalation');
+  await testCanceledRetryClearsFrozenScope();
+  console.log('PASS p1 provider-roster settle retry: the visible Easy provider target reaches dayPull exactly while missing/throwing targets retain fallback; selected and explicit-all scopes stay identity-exact through every retry without capability widening or mutable-UI re-reads, while cancel/day/session/new-manual boundaries release them; complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards');
 }
 
 const watchdog = setTimeout(() => {

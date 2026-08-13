@@ -46573,8 +46573,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
+  var DS_AUTO_RETRY = {}; /* private identity; public pullDay(true) is still manual */
   var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
-    autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null };
+    pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null };
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -46747,6 +46748,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     DS.day = k; DS.followToday = (k === todayKey());
     try { accepted = easy.remote.setVisitDay(k) === true; } catch (e2) { accepted = false; }
     if (!accepted) { DS.day = previous; DS.followToday = previousFollow; syncStrip(); renderList(); return false; }
+    /* A provider capability is bound to one manual click on one day. A day
+       change invalidates that chain even before its bounded retry notices the
+       frozen-date mismatch. */
+    DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
     syncStrip(); renderList();
     try {
       window.dispatchEvent(new CustomEvent('mls:visit-day-changed', {
@@ -47425,7 +47430,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
 
-  function startPull() {
+  function startPull(autoRetry) {
+    var automaticRetry = autoRetry === DS_AUTO_RETRY;
     /* 2026-07-29 (measured live): this guard used to return SILENTLY, so a
        press while an earlier pull or its automatic history re-check was still
        running did nothing at all - no message, no spinner, no refusal. The
@@ -47439,6 +47445,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (typeof window.toast === "function") window.toast(msgB, ""); } catch (eB) {}
       return;
     }
+    /* A new clinician action never inherits the capability captured by an
+       older chain. Automatic retries are the only calls allowed to reuse it. */
+    if (!automaticRetry) { DS.pullSerial++; DS.pullProviderScope = null; }
     /* 2026-07-28 cross-tab refusal: two engines over one store is how "N
        saves not confirmed" happens. If another tab's pull owns the shared
        shield, say so instead of starting a second engine. */
@@ -47450,16 +47459,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return;
       }
     } catch (eF) {}
-    var sessionSerial = DS.sessionSerial;
+    var sessionSerial = DS.sessionSerial, pullSerial = DS.pullSerial;
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
-    if (!DS.__autoRetrying) {
+    if (!automaticRetry) {
       DS.autoRePull = 0;
       DS.statusLog = [];
       DS.statusOmitted = 0;
       DS.providerRosterRetryReceipt = null;
       DS.providerAttributionCoverage = null;
-      DS.__escalateAll = false;
     }
     DS.__autoRetrying = false;
     /* b257: NO extension here (a phone) -> route the SAME button through the
@@ -47529,6 +47537,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (sessionSerial !== DS.sessionSerial) return;
       if (closed) return; closed = true;
       DS.pulling = false;
+      DS.pullProviderScope = null;
       syncRetryControl(DS.lastResult);
       dsStatusLog(msg);
       dsSyncDiagBtn(!ok); /* a failed pull earns the copyable error report */
@@ -47594,7 +47603,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          Nothing below changes: dayPull returns exactly what pull returns, with
          every refusal and receipt intact. An engine that predates dayPull keeps
          the previous single call, made synchronously on the click. */
-      var escalateAll = DS.__escalateAll === true; DS.__escalateAll = false;
       var dpOpts = { date: day, includeHistory: true, onStatus: dsOnStatus };
       /* p1-provider-owner-1.0.0: the Visit provider selector is the visible
          owner of this Day pull. Leaving provider absent made dayPull fall
@@ -47605,18 +47613,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the ORIGINAL request had been selected-provider. Freeze the visible
          selector now; selected providers remain selected and explicit All is
          the only scope that can enter the 1p census lane. */
-      try {
-        var easyProviderOwner = window.__mlsEasyV32;
-        if (easyProviderOwner && typeof easyProviderOwner.providerTarget === 'function') {
-          var visibleProviderTarget = easyProviderOwner.providerTarget();
-          var visibleProviderTargetValid = (typeof visibleProviderTarget === 'string')
-            ? !!visibleProviderTarget.trim()
-            : !!(visibleProviderTarget && typeof visibleProviderTarget === 'object' && !Array.isArray(visibleProviderTarget) &&
-              String(visibleProviderTarget.name || visibleProviderTarget.displayName || visibleProviderTarget.provider || '').trim());
-          if (visibleProviderTargetValid) dpOpts.provider = visibleProviderTarget;
-        }
-      } catch (eProviderOwner) {}
-      if (escalateAll) dpOpts.provider = 'all'; /* 2026-07-29: last-attempt whole-grid escalation */
+      if (!automaticRetry) {
+        try {
+          var easyProviderOwner = window.__mlsEasyV32;
+          if (easyProviderOwner && typeof easyProviderOwner.providerTarget === 'function') {
+            var visibleProviderTarget = easyProviderOwner.providerTarget();
+            var visibleProviderTargetValid = (typeof visibleProviderTarget === 'string')
+              ? !!visibleProviderTarget.trim()
+              : !!(visibleProviderTarget && typeof visibleProviderTarget === 'object' && !Array.isArray(visibleProviderTarget) &&
+                String(visibleProviderTarget.name || visibleProviderTarget.displayName || visibleProviderTarget.provider || '').trim());
+            if (visibleProviderTargetValid) DS.pullProviderScope = visibleProviderTarget;
+          }
+        } catch (eProviderOwner) { DS.pullProviderScope = null; }
+      }
+      /* The exact reference captured by the manual click owns every retry.
+         `all` remains explicitly all; selected/missing scopes can never be
+         widened by rereading mutable UI or by a later-attempt override. */
+      if (DS.pullProviderScope !== null) dpOpts.provider = DS.pullProviderScope;
       var p = (si && typeof si.dayPull === 'function')
         ? si.dayPull(dpOpts)
         : si.pull({ date: day, onStatus: dsOnStatus });
@@ -47641,24 +47654,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              pull automatically - twice, with settle time - before surfacing
              the refusal. No gate is weakened; only the clicking is ours. */
           var transientRefusal = !!(!terminalAttribution && result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
-          if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial) {
+          if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial && pullSerial === DS.pullSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
             var retryDay = day;
             var retryAttempt = DS.autoRePull;
             var warmRoster = dsRosterPaintRefusal(result, retryDay);
-            /* 2026-07-29 (live Friday repro, receipt-proven): a SELECTED-provider
-               read can refuse a day forever when one declared row in that
-               provider's column never verifies (7 candidates, 6 parsed, five
-               reads in a row). The LAST automatic attempt therefore re-reads
-               the WHOLE day grid (provider 'all') - the all-mode read builds
-               its own roster and provider-attributes every row, and every
-               fail-closed gate still applies to it. */
-            DS.__escalateAll = (DS.autoRePull === 2 && String(result.reason || '') === 'schedule-incomplete');
             var stA = $('mlsDsStatus');
-            var retryMessage = DS.__escalateAll
-              ? 'Your provider column would not fully verify - re-reading the whole day grid (all providers) to bind every row (attempt 3 of 3)...'
-              : 'The Athena grid was still settling - re-reading automatically (attempt ' + (DS.autoRePull + 1) + ' of 3)...';
+            var retryMessage = 'The Athena grid was still settling - re-reading automatically (attempt ' + (DS.autoRePull + 1) + ' of 3)...';
             if (stA) { stA.style.display = 'block'; stA.textContent = retryMessage; }
             dsStatusLog(retryMessage);
             DS.pulling = false;
@@ -47666,9 +47669,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             setTimeout(function () {
               function cancelRetry(message) {
                 if (sessionSerial !== DS.sessionSerial) return;
+                if (pullSerial !== DS.pullSerial) { DS.__autoRetrying = false; return; }
                 DS.pulling = false;
                 DS.__autoRetrying = false;
-                DS.__escalateAll = false;
+                DS.pullProviderScope = null;
                 var liveBtn = $('mlsDsPullBtn');
                 if (liveBtn) { liveBtn.disabled = false; liveBtn.innerHTML = 'ðŸ“¥ ' + esc(dsPullVerb()); }
                 if (message) {
@@ -47683,11 +47687,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 return 'The automatic retry paused because another Athena pull started. Select Pull when that work is finished.';
               }
               function restart() {
+                if (pullSerial !== DS.pullSerial) return;
                 if (dsRosterRetryBlocked(retryDay, sessionSerial)) { cancelRetry(blockedMessage()); return; }
-                startPull();
+                startPull(DS_AUTO_RETRY);
               }
               function warmDone(warm, threw) {
                 if (sessionSerial !== DS.sessionSerial) return;
+                if (pullSerial !== DS.pullSerial) { DS.pulling = false; DS.__autoRetrying = false; return; }
                 DS.pulling = false;
                 warm = warm && typeof warm === 'object' ? warm : {};
                 DS.providerRosterRetryReceipt = {
@@ -47704,7 +47710,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 restart();
               }
               try {
-                if (dsRosterRetryBlocked(retryDay, sessionSerial)) { cancelRetry(blockedMessage()); return; }
+                if (pullSerial !== DS.pullSerial || dsRosterRetryBlocked(retryDay, sessionSerial)) { cancelRetry(blockedMessage()); return; }
                 if (!warmRoster || !si || typeof si._warmUpDay !== 'function') { restart(); return; }
                 DS.pulling = true; /* reserve the day while advisory navigation/read runs */
                 var warmMessage = 'Rechecking the complete Athena Day grid before retry attempt ' + (retryAttempt + 1) + ' of 3...';
@@ -47712,15 +47718,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                 if (warmStatus) { warmStatus.style.display = 'block'; warmStatus.textContent = warmMessage; }
                 dsStatusLog(warmMessage);
                 dsRunRosterWarmGuard(function () {
-                  if (sessionSerial !== DS.sessionSerial || DS.day !== retryDay || DS.retrying) return Promise.reject(new Error('retry-canceled'));
+                  if (sessionSerial !== DS.sessionSerial || pullSerial !== DS.pullSerial || DS.day !== retryDay || DS.retrying) return Promise.reject(new Error('retry-canceled'));
                   try { if (window.__mlsPullShieldForeign && window.__mlsPullShieldForeign()) return Promise.reject(new Error('foreign-pull')); } catch (eF) {}
                   return si._warmUpDay(retryDay, dsOnStatus);
                 }).then(function (guarded) {
                   if (sessionSerial !== DS.sessionSerial) return;
+                  if (pullSerial !== DS.pullSerial) { DS.pulling = false; DS.__autoRetrying = false; return; }
                   if (!guarded || guarded.started !== true) { DS.pulling = false; cancelRetry(blockedMessage()); return; }
                   warmDone(guarded.value, !!guarded.error);
                 }, function () {
                   if (sessionSerial !== DS.sessionSerial) return;
+                  if (pullSerial !== DS.pullSerial) { DS.pulling = false; DS.__autoRetrying = false; return; }
                   DS.pulling = false;
                   cancelRetry('The automatic retry could not prepare Athena. Select Pull to try again.');
                 });
@@ -47732,7 +47740,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           }
           if (terminalAttribution) {
             DS.autoRePull = 0;
-            DS.__escalateAll = false;
             DS.providerRosterRetryReceipt = null;
           } else if (result && result.ok === true) DS.autoRePull = 0;
           done(outcome.ok, outcome.message, retryCount > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
@@ -47868,6 +47875,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var k = String(ev && ev.detail && ev.detail.day || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k === DS.day) return;
+      DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
       DS.day = k; DS.followToday = (k === todayKey());
       syncStrip();
     } catch (e) {}
@@ -47880,10 +47888,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
   }
   function resetDaySwitchSession() {
-    DS.sessionSerial++;
+    DS.sessionSerial++; DS.pullSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
     DS.lastResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
-    DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.__escalateAll = false;
+    DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.pullProviderScope = null;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
       var easy = window.__mlsEasyV32;
