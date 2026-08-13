@@ -530,9 +530,9 @@
     return card;
   }
 
-  /* ---- the avatar's face: camera capture -> stylized portrait ----
+  /* ---- the avatar's face: camera capture -> natural patient portrait ----
      Local only: the camera runs in THIS panel on the doctor's click, the
-     snapshot is stylized on a canvas, and only the small final portrait is
+     square crop is prepared on a canvas, and only the 512px final portrait is
      saved (encrypted, in the avatar config). Tracks are stopped on every exit
      path including panel close. */
   /* av-2.1.0: the PREVIEW speaks and listens exactly like the patient side —
@@ -1802,6 +1802,10 @@
              — on a buzz cut it looked like a parting shaved into the crown. A radial
              fade has no edge to notice, and the clip keeps it off the forehead. */
           '<ellipse class="fHairShine" cx="76" cy="48" rx="30" ry="22" fill="url(#mlsAvShine' + faceUid + ')"/>' +
+          /* p1-render-likeness-1.0.0 — three low-contrast growth lines break
+             the helmet silhouette without turning dark hair into stripes. */
+          '<path class="fHairTexture" d="M58 69 Q64 43 84 33 M82 55 Q91 34 103 31 M111 53 Q126 38 139 55" ' +
+            'fill="none" stroke="' + faceShade(look.hair, 0.24) + '" stroke-width="1.6" stroke-linecap="round" opacity=".18"/>' +
         '</g>'
       : '';
     /* A RECEDING HAIRLINE is two bare temples, so that is exactly what it is
@@ -1850,11 +1854,11 @@
     }
     var glasses = look.glasses
       ? '<g class="fGlasses" fill="none" stroke="#3d4a44" stroke-width="3" opacity=".85">' +
-          '<rect x="' + n2(cxL - 16) + '" y="80" width="32" height="28" rx="10"/>' +
-          '<rect x="' + n2(cxR - 16) + '" y="80" width="32" height="28" rx="10"/>' +
-          '<path d="M' + n2(cxL + 16) + ' 92 Q100 88 ' + n2(cxR - 16) + ' 92"/>' +
-          '<path d="M' + n2(cxL - 16) + ' 90 L' + n2(100 - sh.rx) + ' 94"/>' +
-          '<path d="M' + n2(cxR + 16) + ' 90 L' + n2(100 + sh.rx) + ' 94"/>' +
+          '<rect x="' + n2(cxL - 15.5) + '" y="81.5" width="31" height="25" rx="8.5"/>' +
+          '<rect x="' + n2(cxR - 15.5) + '" y="81.5" width="31" height="25" rx="8.5"/>' +
+          '<path d="M' + n2(cxL + 15.5) + ' 92 Q100 89 ' + n2(cxR - 15.5) + ' 92"/>' +
+          '<path d="M' + n2(cxL - 15.5) + ' 90 L' + n2(100 - sh.rx) + ' 94"/>' +
+          '<path d="M' + n2(cxR + 15.5) + ' 90 L' + n2(100 + sh.rx) + ' 94"/>' +
         '</g>'
       : '';
     /* ACCESSORIES a doctor plausibly wears. Both default OFF; both are drawn
@@ -2454,6 +2458,90 @@
       destroy: destroy, node: root };
     return ctl;
   }
+  /* p1-photo-face-1.0.0 — THE CAMERA PORTRAIT IS A REAL FACE MODE, NOT A
+     THUMBNAIL BESIDE A DIFFERENT CARTOON.  Photo mode cannot honestly invent
+     mouth geometry that is not present in one still image, but it can stay
+     connected to the same speaking/listening lifecycle: a tiny, bounded
+     breath and voice pulse makes it feel present without pretending to be a
+     lip-synced reconstruction.  The controller deliberately implements the
+     makeFace surface so Setup voice samples and the kiosk do not fork. */
+  function faceValidPhoto(dataUrl) {
+    return !!(dataUrl && String(dataUrl).indexOf('data:image/') === 0);
+  }
+  function faceModeOnLoad(savedMode, savedImage) {
+    return savedMode === 'photo' || savedMode === 'drawn' ? savedMode : (faceValidPhoto(savedImage) ? 'photo' : 'drawn');
+  }
+  function faceModeAfterCapture(currentMode, wasTouched) {
+    return wasTouched ? (currentMode === 'photo' ? 'photo' : 'drawn') : 'photo';
+  }
+  function makePhotoFace(mount, dataUrl, altText) {
+    if (!mount || !faceValidPhoto(dataUrl)) return null;
+    mount.innerHTML = '';
+    var img = document.createElement('img');
+    img.alt = altText || '';
+    img.src = dataUrl;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;transform-origin:50% 58%;transition:transform .16s ease,filter .3s ease';
+    mount.appendChild(img);
+    var dead = false, cycling = false, timer = 0, gestureTimer = 0, moodNow = 'idle';
+    var reduced = safe(function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }, false);
+    function clearCycle() {
+      cycling = false;
+      if (timer) { safe(function () { clearTimeout(timer); }); timer = 0; }
+    }
+    function settle() {
+      if (dead || !img) return;
+      if (reduced) { img.style.transform = ''; return; }
+      var tx = moodNow === 'listening' ? 'translateY(1px) rotate(.35deg) scale(1.012)'
+        : moodNow === 'thinking' ? 'translateY(-1px) rotate(-.35deg) scale(1.01)'
+        : 'translateY(0) scale(1)';
+      img.style.transform = tx;
+    }
+    function mood(state) {
+      moodNow = state || 'idle';
+      if (mount.setAttribute) mount.setAttribute('data-photo-mood', moodNow);
+      settle();
+    }
+    function talk(level) {
+      if (dead || !img || reduced) return;
+      if (level < 0) { settle(); return; }
+      var pulse = Math.max(0, Math.min(1, Number(level) || 0));
+      img.style.transform = 'translateY(' + (-0.8 * pulse).toFixed(2) + 'px) scale(' +
+        (1.006 + pulse * 0.018).toFixed(3) + ')';
+    }
+    function talkCycle(on) {
+      clearCycle();
+      if (!on || dead || reduced) { settle(); return; }
+      cycling = true;
+      (function step() {
+        if (!cycling || dead) return;
+        talk(0.22 + Math.random() * 0.56);
+        timer = setTimeout(step, 125 + Math.random() * 55);
+      }());
+    }
+    function nod() {
+      if (dead || reduced) return;
+      img.style.transform = 'translateY(2px) scale(1.012)';
+      if (gestureTimer) safe(function () { clearTimeout(gestureTimer); });
+      gestureTimer = setTimeout(settle, 260);
+    }
+    function curious() {
+      if (dead || reduced) return;
+      img.style.transform = 'rotate(-.7deg) scale(1.012)';
+      if (gestureTimer) safe(function () { clearTimeout(gestureTimer); });
+      gestureTimer = setTimeout(settle, 360);
+    }
+    function destroy() {
+      dead = true;
+      clearCycle();
+      if (gestureTimer) { safe(function () { clearTimeout(gestureTimer); }); gestureTimer = 0; }
+      if (img) img.style.transition = 'none';
+    }
+    var ctl = { mood: mood, talk: talk, talkCycle: talkCycle,
+      retint: function () {}, nod: nod, shake: curious, curious: curious,
+      gaze: function () {}, destroy: destroy, node: img };
+    mood('idle');
+    return ctl;
+  }
   /* =========================================================================
      av-5.7.0 - THE FACE IS FOUND BEFORE IT IS MEASURED.
 
@@ -2853,6 +2941,94 @@
     }
     var pass2 = labelComponents(closed);
     var best = pickFace(pass2.comps);
+    /* p1-likeness-1.0.0 — RECOVER THE OWNER'S REAL CAMERA FAILURE WITHOUT
+       GUESSING. Dark hair and spectacle rims can split the refined skin mask;
+       a warm wall can also join it and leave a wall-to-wall "face". The old
+       path stopped here and left every stale setting on screen.
+
+       This retry gets its colour reference from the CENTER-LOWER part of the
+       already-detected head (cheeks/jaw, not crown), then keeps only pixels
+       closer to that reference than to the measured frame border. It closes
+       gaps for GEOMETRY only; every colour sample downstream still consults
+       adaptiveMask, so a filled spectacle hole can never become skin. The
+       retry is accepted only if the ordinary face picker independently finds
+       a plausible component. Otherwise the existing refusal remains. */
+    var adaptiveSegmentation = false;
+    if (!best || (best.minX <= 0 && best.maxX >= M - 1)) {
+      var headW0 = head.maxX - head.minX + 1, headH0 = head.maxY - head.minY + 1;
+      var seedPool = [];
+      var seedY0 = head.minY + Math.round(headH0 * 0.40);
+      var seedY1 = head.minY + Math.round(headH0 * 0.88);
+      var seedX0 = head.minX + Math.round(headW0 * 0.24);
+      var seedX1 = head.minX + Math.round(headW0 * 0.76);
+      for (var sy0 = seedY0; sy0 <= seedY1; sy0++) {
+        for (var sx0 = seedX0; sx0 <= seedX1; sx0++) {
+          var si0 = sy0 * M + sx0;
+          if (pass1.label[si0] === head.id && chroma[si0]) seedPool.push(px(sx0, sy0));
+        }
+      }
+      seedPool.sort(function (aa, bb) { return lum(aa) - lum(bb); });
+      if (seedPool.length >= Math.max(18, Math.round(head.area * 0.035))) {
+        /* Trim dark hair/rims from the bottom and glare from the top. The
+           returned reference remains an ACTUAL pixel via medianCol. */
+        var seedTrim = seedPool.slice(Math.floor(seedPool.length * 0.22),
+          Math.max(1, Math.ceil(seedPool.length * 0.90)));
+        var adaptiveRef = medianCol(seedTrim);
+        var adaptiveRefL = adaptiveRef ? lum(adaptiveRef) : 0;
+        var adaptiveBorder = [];
+        for (var abi = 0; abi < M; abi += Math.max(1, PR)) {
+          adaptiveBorder.push(px(abi, 0), px(abi, M - 1), px(0, abi), px(M - 1, abi));
+        }
+        var adaptiveBg = medianCol(adaptiveBorder);
+        var adaptiveSeparation = adaptiveBg && adaptiveRef ? chDist(adaptiveBg, adaptiveRef) : 0;
+        var adaptiveMask = new Uint8Array(M * M);
+        for (var ay0 = head.minY; ay0 <= head.maxY; ay0++) {
+          for (var ax0 = head.minX; ax0 <= head.maxX; ax0++) {
+            var ai0 = ay0 * M + ax0;
+            if (pass1.label[ai0] !== head.id || !chroma[ai0]) continue;
+            var ap0 = px(ax0, ay0);
+            var fromFace = chDist(ap0, adaptiveRef);
+            var fromBorder = adaptiveBg ? chDist(ap0, adaptiveBg) : 999;
+            if (lum(ap0) >= adaptiveRefL - 44 && fromFace <= 46 &&
+                (adaptiveSeparation < 9 || fromFace + 3 < fromBorder)) adaptiveMask[ai0] = 1;
+          }
+        }
+        var adaptiveClosed = new Uint8Array(M * M); adaptiveClosed.set(adaptiveMask);
+        /* Glasses can make a larger gap than the ordinary moustache/frame
+           closer. Fill in both axes, on geometry only, within this one head. */
+        var adaptiveGap = Math.max(GAP, Math.round(M * 0.13));
+        for (var acx = head.minX; acx <= head.maxX; acx++) {
+          var lastAY = -1;
+          for (var acy = head.minY; acy <= head.maxY; acy++) {
+            if (!adaptiveMask[acy * M + acx]) continue;
+            if (lastAY >= 0 && acy - lastAY <= adaptiveGap) {
+              for (var afy = lastAY + 1; afy < acy; afy++) adaptiveClosed[afy * M + acx] = 1;
+            }
+            lastAY = acy;
+          }
+        }
+        for (var ary = head.minY; ary <= head.maxY; ary++) {
+          var lastAX = -1;
+          for (var arx = head.minX; arx <= head.maxX; arx++) {
+            if (!adaptiveMask[ary * M + arx]) continue;
+            if (lastAX >= 0 && arx - lastAX <= adaptiveGap) {
+              for (var afx = lastAX + 1; afx < arx; afx++) adaptiveClosed[ary * M + afx] = 1;
+            }
+            lastAX = arx;
+          }
+        }
+        var adaptivePass = labelComponents(adaptiveClosed);
+        var adaptiveBest = pickFace(adaptivePass.comps);
+        if (adaptiveBest) {
+          mask = adaptiveMask;
+          pass2 = adaptivePass;
+          best = adaptiveBest;
+          skinRef = adaptiveRef;
+          refL = adaptiveRefL;
+          adaptiveSegmentation = true;
+        }
+      }
+    }
     /* NO FALLBACK TO THE UNREFINED HEAD. That fallback is how a hair-coloured
        "skin tone" reached the doctor: pass 1 deliberately contains the hair. If
        the refined pass cannot find a face, the honest answer is that this photo
@@ -3346,6 +3522,10 @@
     function belowEye(fr) { return Math.round(eyeY + lowerH * fr); }
 
     var found = [];
+    if (adaptiveSegmentation) {
+      found.push('a difficult hair, glasses, or warm-background boundary was separated from the ' +
+        'centred face region — check the matched colours before saving');
+    }
     /* SAY IT WHEN THE READING CAME OFF A CORRECTED COPY. The first attempt found no face at all
        and the second one only worked after dividing out a strong colour cast, so the doctor is
        entitled to know that before he trusts a swatch — a reading is not the same fact when the
@@ -4221,7 +4401,8 @@
     derived.forEach(function (k) { if (look[k] !== undefined) claimedOut[k] = look[k]; });
     var receiptOut = { claimed: derived.length, refused: refusedOut.length,
       examined: derived.length + refusedOut.length, faceW: faceW, grid: M,
-      fromIllustration: fromIllustration, srcKind: fromIllustration ? 'illustration' : 'photo' };
+      fromIllustration: fromIllustration, srcKind: fromIllustration ? 'illustration' : 'photo',
+      adaptiveSegmentation: adaptiveSegmentation };
     return { look: claimedOut, found: found, derived: derived, refused: refusedOut, receipt: receiptOut,
              /* gx-1.0: grid, skinSpots and patchR ride the box so the live
                 capture view can draw the EXACT windows this read used - an
@@ -4447,10 +4628,9 @@
           every tone had been snapped up to 51 units away from the truth;
        3. it was then downsampled again to the 128-px analysis grid.
      Now there are TWO images from one chosen frame: a measurement-grade square crop
-     at capture resolution with no posterizing, which is what Match reads, and the
-     stylized portrait, which is only ever what patients see. The illustrated look was
-     deliberate and it stays - it just no longer defines what the doctor's skin, hair
-     and eyes are measured from.
+     at capture resolution, which Match reads, and a natural 512px portrait, which is
+     what patients see. The old illustrated copy remains detectable so legacy portraits
+     are refused honestly rather than being mistaken for real colours.
      MEASURE_MAX stays 512: the analysis grid is 128, so 512 gives a clean 4:1 box
      average per analysis pixel (real averaging of real tones, which is what fixes the
      colour) without carrying a megapixel data URL around. Raising the grid itself
@@ -4518,6 +4698,35 @@
       return { sharp: n ? edge / n : 0, exposure: mean };
     }, { sharp: 0, exposure: 0 });
   }
+  /* A sharp wall is not a better portrait than a slightly softer face.  The
+     old best-of-six ranked only edge energy, so spectacle rims, hair and a
+     textured background could win while the frame that the face reader could
+     actually use was discarded.  One verdict now owns live readiness, frame
+     ranking and the final shutter gate. */
+  function faceCaptureVerdict(res, q) {
+    q = q || { sharp: 0, exposure: 0 };
+    var r = res && res.receipt || {};
+    var derived = res && res.derived || [];
+    var hasFace = !!(res && res.look && res.receipt);
+    var hasSkin = derived.indexOf('skin') >= 0;
+    var faceRatio = r.grid ? Math.max(0, Math.min(1, Number(r.faceW || 0) / Number(r.grid))) : 0;
+    var why = '';
+    if (q.exposure < 45) why = 'The picture is too dark — turn a light on, or face a window.';
+    else if (q.exposure > 225) why = 'The picture is washed out — move the bright light behind you out of shot.';
+    else if (!hasFace) why = (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
+    else if (faceRatio < 0.34) why = 'Move closer — your face spans ' + (r.faceW || 0) + ' of ' +
+      (r.grid || 0) + ' measurement pixels; ' + Math.round((r.grid || 0) * 0.34) + '+ reads best.';
+    else if (!hasSkin) why = 'The face boundary is not reading cleanly — face a soft light and use a plainer background.';
+    else if (q.sharp < 2.2) why = 'The picture is blurred — hold still, and give the camera a moment to focus.';
+    /* A ready face always outranks an unusable frame.  The lower terms only
+       choose among frames in the same evidence class. */
+    var ready = !why;
+    var score = (ready ? 100000 : 0) + (hasFace ? 20000 : 0) + (hasSkin ? 8000 : 0) +
+      Math.round(faceRatio * 4000) + Math.min(2000, Number(r.claimed || 0) * 100) +
+      Math.min(1000, Math.max(0, Number(q.sharp || 0)) * 40) -
+      Math.min(1000, Math.abs(Number(q.exposure || 0) - 135) * 5);
+    return { ready: ready, why: why, score: score };
+  }
   /* BEST OF SEVERAL FRAMES, not whichever frame the tap landed on. A single grab
      catches a blink, a turn, or the frame the autofocus was still working on. */
   function grabBestFrame(video, tries, then) {
@@ -4526,7 +4735,10 @@
       var canvas = captureSquare(video, MEASURE_MAX);
       if (canvas) {
         var q = frameQuality(canvas);
-        if (!bestQ || q.sharp > bestQ.sharp) { best = canvas; bestQ = q; }
+        var res = safe(function () { return faceReadPortrait(canvas); }, null);
+        q.faceResult = res;
+        q.faceVerdict = faceCaptureVerdict(res, q);
+        if (!bestQ || q.faceVerdict.score > bestQ.faceVerdict.score) { best = canvas; bestQ = q; }
       }
       if (--left <= 0) { then(best, bestQ); return; }
       safe(function () { setTimeout(step, 120); }, null);
@@ -4587,27 +4799,10 @@
      brow), and the bound is grid-relative so it means the same face size on
      either grid. The exposure/sharpness bounds are the capture guard's own. */
   function faceLiveReady(res, q) {
-    if (!res || !res.look || !res.receipt) return false;
-    if (!q || q.exposure < 45 || q.exposure > 225 || q.sharp < 2.2) return false;
-    if ((res.derived || []).indexOf('skin') < 0) return false;
-    return res.receipt.faceW >= res.receipt.grid * 0.34;
+    return faceCaptureVerdict(res, q).ready;
   }
   function faceLiveNudge(res, q) {
-    if (q && q.exposure < 45) return 'Too dark — turn a light on, or face a window.';
-    if (q && q.exposure > 225) return 'Washed out — move the bright light behind you out of shot.';
-    if (!res || !res.look) {
-      return (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
-    }
-    var r = res.receipt || {};
-    if (r.faceW && r.grid && r.faceW < r.grid * 0.34) {
-      return 'Move closer — your face spans ' + r.faceW + ' of ' + r.grid +
-        ' measurement pixels; ' + Math.round(r.grid * 0.34) + '+ reads best.';
-    }
-    var skinRefused = false;
-    (res.refused || []).forEach(function (f) { if (f && f.knob === 'skin') skinRefused = true; });
-    if (skinRefused) return 'The skin sample is not reading clean — usually the wall or the light behind you; try a plainer background.';
-    if (q && q.sharp < 2.2) return 'Hold still — the picture is blurred.';
-    return '';
+    return faceCaptureVerdict(res, q).why;
   }
   /* GEOMETRY ONLY on this canvas, and in UNMIRRORED image space: the canvas is
      CSS-mirrored exactly like the <video> under it, so image-space coordinates
@@ -4715,24 +4910,13 @@
     canvas.width = size; canvas.height = size;
     var ctx = canvas.getContext('2d');
     ctx.drawImage(src, 0, 0, size, size);
-    /* gentle stylization: posterized tones + a touch of warmth — a friendly
-       illustrated rendition of the doctor's face, not a raw photo. DISPLAY ONLY:
-       nothing measures this copy any more. */
-    var img = ctx.getImageData(0, 0, size, size), d = img.data;
-    /* p1-hidef-1.0.0 -- Owner, twice: "make photos high def", then "still low quality".
-   av-6.0.7 already raised this canvas 256 -> 512, so RESOLUTION was not what was
-   left. The visible damage was TONE: six levels per channel is a 51-step ladder,
-   which banded every cheek and turned a photograph into a poster. 16 levels keeps
-   the illustrated feel -- still quantised, still warmed -- while the face reads as
-   the person again. Paired with 0.90 JPEG below, up from 0.82. */
-      var levels = 16, step2 = 255 / (levels - 1);
-    for (var i = 0; i < d.length; i += 4) {
-      d[i] = Math.round(Math.min(255, d[i] * 1.06) / step2) * step2;
-      d[i + 1] = Math.round(d[i + 1] / step2) * step2;
-      d[i + 2] = Math.round((d[i + 2] * 0.97) / step2) * step2;
-    }
-    ctx.putImageData(img, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.90);
+    /* p1-photo-likeness-1.0.0 — preserve the person.  Quantising every colour
+       channel was not a harmless "style": it banded skin, recoloured dark hair
+       and made the patient-facing portrait look less like the capture.  The
+       optional animated character already supplies an illustrated mode; photo
+       mode now keeps the natural 512px crop and only performs a high-quality
+       JPEG encode. */
+    return canvas.toDataURL('image/jpeg', 0.92);
   }
   function stylizePortrait(video) {
     var raw = captureSquare(video, MEASURE_MAX);
@@ -4740,7 +4924,7 @@
   }
   /* the measurement copy lives on THIS DEVICE only. It is a real photograph of the
      doctor's face at capture resolution, so it is not shipped to the server with the
-     stylized portrait patients see - and it is namespaced per account like every
+     smaller patient portrait - and it is namespaced per account like every
      other local key here. */
   var FACE_HI_KEY = 'mlsAvFaceMeasureV1';
   function faceHiKey() {
@@ -4802,8 +4986,8 @@
       /* THE FULL-QUALITY FRAME, HELD IN MEMORY FOR THIS SESSION (av-6.0.2).
          Owner: "take a higher rtes photo acatlly save the photo." faceHiSave writes the
          ~0.95-quality JPEG into localStorage, which is 5-10MB SHARED with the whole app —
-         and when it refuses, Match fell back to measuring the STYLIZED portrait, which is
-         posterized to six levels per channel. So the best copy of his face could be thrown
+         and when it refuses, older builds fell back to their posterized patient portrait.
+         So the best copy of his face could be thrown
          away between taking it and measuring it, and the only symptom was one clause in a
          status line. Storage is now a CACHE for later sessions, not the only path: the frame
          we just captured stays right here, and Match prefers it. */
@@ -4821,6 +5005,7 @@
         pendingFace = '';
         var fresh = facePreviewNode(null);
         faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+        renderPatientPreview();
         status.textContent = 'Face removed — Save to make it permanent. Patients will see the standard assistant icon.';
       });
       camBtn.addEventListener('click', function () {
@@ -4887,49 +5072,44 @@
                 camHost.appendChild(make('div', 'mlsAvNotice', 'The camera did not deliver a frame — try again.'));
                 return;
               }
-              /* SAY WHAT IS WRONG WITH THE PICTURE, rather than storing a bad one and
-                 reporting invented colours from it. Both numbers are measured on the
-                 chosen frame (see frameQuality). */
-              var why = '';
-              if (q && q.exposure < 45) why = 'the picture is too dark — turn a light on, or face a window';
-              else if (q && q.exposure > 225) why = 'the picture is washed out — move the bright light behind you out of shot';
-              else if (q && q.sharp < 2.2) why = 'the picture is blurred — hold still, and give the camera a moment to focus';
-              if (why) {
+              /* The chosen frame has already gone through the SAME face-aware
+                 verdict as the live guide.  Do not save a sharp background or
+                 a frame whose ambiguous boundary would leave stale settings. */
+              var verdict = q && q.faceVerdict;
+              if (!verdict) verdict = faceCaptureVerdict(q && q.faceResult, q);
+              if (!verdict.ready) {
                 camHost.appendChild(make('div', 'mlsAvNotice',
-                  'Not captured: ' + why + '. Nothing was saved, so your current photo is untouched.'));
+                  'Not captured. ' + verdict.why + ' Nothing was saved, so your current photo is untouched.'));
                 return;
               }
               var dataUrl = safe(function () { return stylizeCanvas(bestCanvas); }, null);
               var hiUrl = safe(function () { return bestCanvas.toDataURL('image/jpeg', 0.95); }, '');
-              /* the guard rises WITH the portrait (av-6.0.7), as HEADROOM — not because 150000
-                 was observed to fail. MEASURED in Chrome through this exact pipeline over the
-                 real photographs in scratchpad/realfaces (probe: measure-portrait-size.js):
-                     440x586  -> 256: 35,471   512: 105,715
-                     960x1444 -> 256: 22,195   512:  73,191
-                 So a 512 stylized JPEG is far SMALLER than I first assumed — the 6-level
-                 posterize flattens the image and JPEG pays almost nothing for the extra pixels,
-                 and 0 of 2 would have tripped the old cap. What the old number left was thin
-                 margin: 105,715 is 70% of 150000, i.e. 1.4x, and a live webcam frame carries
-                 more sensor noise than a downloaded photograph. 600000 keeps the guard's real
-                 job — stopping a pathological encode — with 5.7x margin on the largest measured. */
+              /* 600KB remains a pathological-encode guard, not a quality
+                 target.  A 512px 0.92 JPEG normally leaves ample headroom even
+                 with webcam noise, while keeping the face natural. */
               if (!dataUrl || dataUrl.length > 600000) {
                 camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
                 return;
               }
               pendingFace = dataUrl;
               /* the measurement copy, kept on this device for Match. If storage refuses
-                 it (quota), Match falls back to the stylized portrait AND says so - it
-                 must never silently go back to measuring the posterized copy. */
+                 it (quota), Match falls back to the smaller natural portrait and says so.
+                 Legacy posterized portraits remain explicitly detected downstream. */
               var hiOk = hiUrl ? faceHiSave(hiUrl) : false;
               pendingHiUrl = hiUrl || '';   /* survives a quota refusal — see pendingHiUrl */
               var fresh = facePreviewNode(dataUrl);
               faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+              /* Taking a new face photo is an explicit request to use that
+                 likeness.  Default the new capture to the real portrait unless
+                 the doctor deliberately changed Face style in this session. */
+              if (faceModeSelect) faceModeSelect.value = faceModeAfterCapture(faceModeSelect.value, faceModeTouched);
+              renderPatientPreview();
               status.textContent = 'Portrait captured from a ' + (bestCanvas.width) + '×' + (bestCanvas.height) +
                 ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
                 ' — best of 6 frames, processed on this device' +
-                (hiOk ? '. Match my photo will measure the full-quality copy, not the stylized one.'
-                      : '. This device would not store the full-quality copy, so Match will measure the stylized one and say so.') +
-                ' Save to publish the portrait to your patients.';
+                (hiOk ? '. Match my photo will measure the full-quality copy.'
+                      : '. This device would not store the full-quality copy, so Match will measure the patient portrait and say so.') +
+                ' The patient-facing preview now shows this exact portrait. Save to publish it.';
               /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
                  click match my photo when I take the picutre it sohuld auto match my photo."
                  Right: taking a photo of your face IS the request to be drawn from it. The
@@ -4969,9 +5149,11 @@
       var faceModeSelect = document.createElement('select');
       faceModeSelect.id = 'mlsAvFaceMode';
       faceModeSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
-      [['drawn', 'Animated character — full facial expressions, tinted from your photo'], ['photo', 'My stylized photo — looks like me, moves as one piece']].forEach(function (opt) {
+      var initialFaceMode = faceModeOnLoad(cfg.faceMode, cfg.faceImage);
+      var faceModeTouched = false;
+      [['photo', 'My photo — closest likeness, moves gently while speaking'], ['drawn', 'Animated character — expressions, matched from your photo']].forEach(function (opt) {
         var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
-        if ((cfg.faceMode || 'drawn') === opt[0]) o.selected = true;
+        if (initialFaceMode === opt[0]) o.selected = true;
         faceModeSelect.appendChild(o);
       });
 
@@ -4982,7 +5164,7 @@
       /* fx-1.0: gate the SAVED look before it renders - a bad colour saved
          once used to render forever (the owner's standing white swatch). */
       var lookQuarantine = faceLookQuarantine(lookNow);
-      var lookLabel = make('label', '', 'Appearance — build the face patients meet');
+      var lookLabel = make('label', '', 'Appearance — animated character and photo fallback');
       var lookWrap = make('div', '');
       lookWrap.style.cssText = 'display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;border:1px solid #E7E5DD;border-radius:14px;padding:12px;background:#FAF9F5';
       var lookStage = make('div', '');
@@ -4991,7 +5173,33 @@
       var lookCtl = null;
       var lookGrid = make('div', '');
       lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
-      function lookApply() { if (lookCtl) safe(function () { lookCtl.retint(lookNow); }); }
+      function shownFaceImage() {
+        var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        return faceValidPhoto(shown) ? shown : '';
+      }
+      function renderPatientPreview() {
+        if (!lookStage || !faceModeSelect) return;
+        if (lookCtl) safe(function () { lookCtl.destroy(); });
+        lookCtl = null;
+        var portrait = shownFaceImage();
+        if (faceModeSelect.value === 'photo' && portrait) {
+          lookStage.setAttribute('data-face-preview-kind', 'photo');
+          lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait');
+        } else {
+          lookStage.setAttribute('data-face-preview-kind', faceModeSelect.value === 'photo' ? 'photo-fallback' : 'animated');
+          lookCtl = makeFace(lookStage, lookQuarantine.length ? faceLookSafe(FACE_LOOK) : lookNow);
+        }
+        if (moodBtn) moodBtn.textContent = faceModeSelect.value === 'photo' && portrait
+          ? '▶ Preview speaking & listening movement' : '🙂 See the expressions';
+        if (lookCtl) lookCtl.mood('idle', false, true);
+      }
+      function lookApply() {
+        if (lookCtl && faceModeSelect.value === 'drawn') safe(function () { lookCtl.retint(lookNow); });
+      }
+      faceModeSelect.addEventListener('change', function () {
+        faceModeTouched = true;
+        renderPatientPreview();
+      });
       var lookBadges = {};
       function lookRow(labelText, node, key) {
         var row = make('div', '');
@@ -5227,14 +5435,10 @@
       }
       matchBtn.addEventListener('click', function () {
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
-        /* MEASURE THE PHOTOGRAPH, NOT THE ILLUSTRATION. The stylized portrait is
-           posterized to six levels per channel - snapping every tone up to 51 units
-           from the truth - so measuring it could not answer "what colour is my skin"
-           however good the camera was. The full-quality copy of the same frame is kept
-           on this device by the capture above; when it is missing (an older portrait
-           captured before av-5.7.2, or a device that refused to store it) the stylized
-           copy is still measured, because a refusal would be worse - but the note says
-           which one was read, so a wrong swatch can be explained rather than puzzled over. */
+        /* Prefer the full-quality photograph. The 512px patient portrait is now natural,
+           but the local 1024px copy carries more detail for glasses, facial hair and eyes.
+           When only an older posterized portrait exists, the reader detects that source
+           and refuses manufactured colours instead of overwriting a real setting. */
         var hi = pendingHiUrl || faceHiRead();   /* this session's frame first — see pendingHiUrl */
         var src = hi || shown;
         var usedHi = !!hi;
@@ -5242,7 +5446,7 @@
         lookNoteCalm();
         lookNote.textContent = usedHi
           ? 'Reading the full-quality copy of your photo…'
-          : 'Reading your photo… (only the stylized copy is on this device — retake it for a full-quality reading)';
+          : 'Reading the saved patient portrait… (retake it for a full-resolution match)';
         /* ---- THE MODEL READS IT TOO (av-5.8.0) ------------------------------------
            Owner, 2026-08-08: "do the api way and make it good."
            The pixel matcher stays and runs first - it is offline, instant, and it is what
@@ -5438,12 +5642,18 @@
       moodBtn.type = 'button';
       moodBtn.addEventListener('click', function () {
         if (!lookCtl) return;
-        var reel = [['happy', 'Greeting - a real smile, all the way to the eyes'],
+        var photoPreview = lookStage.getAttribute('data-face-preview-kind') === 'photo';
+        var reel = photoPreview
+          ? [['speaking', 'Speaking — the portrait moves gently; it does not paint a fake mouth over your face'],
+             ['listening', 'Listening — a small lean keeps the real portrait present'],
+             ['idle', 'Resting — your exact patient-facing portrait']]
+          : [['happy', 'Greeting - a real smile, all the way to the eyes'],
           ['listening', 'Listening - eye contact, and it nods'],
           ['curious', 'Curious - one brow up'],
           ['thinking', 'Thinking - the gaze drifts up and away'],
           ['caring', 'When it hurts - the brows knit and the head shakes'],
-          ['idle', 'Resting - breathing']], i = 0;
+          ['idle', 'Resting - breathing']];
+        var i = 0;
         (function step() {
           if (i >= reel.length) { lookCtl.mood('idle', false, false); lookNoteSay('', 0); return; }
           var m = reel[i++];
@@ -5626,14 +5836,14 @@
       btnRow.appendChild(saveBtn);
       form.appendChild(btnRow); form.appendChild(status);
       host.appendChild(form);
-      /* mount the living preview only once the form is in the document, so the
-         face measures and animates from its first frame */
+      /* Mount the ACTUAL selected patient face only once the form is in the
+         document. Photo mode gets the saved portrait controller; Animated
+         mode gets the editable character. */
       /* fx-1.0 QUARANTINE: a saved look that fails the claim gates does not
          silently render (DIAGNOSIS root cause 4). Default preview + banner +
          marked controls; the saved values stay in the controls and on the
          server until the doctor himself decides. */
-      lookCtl = makeFace(lookStage, lookQuarantine.length ? faceLookSafe(FACE_LOOK) : lookNow);
-      if (lookCtl) lookCtl.mood('idle', false, true);
+      renderPatientPreview();
       if (lookQuarantine.length) {
         lookQuarantine.forEach(function (q) {
           if (!manualNow[q.knob]) lookMarks[q.knob] = 'from your last photo \u2014 retake or adjust';
@@ -7089,16 +7299,16 @@ function kioskLine(kind, text) {
     /* explicit — an identity payload that says "no PIN" must be able to LOWER
        the gate, and only a real payload resolves the unknown state */
     if (av && typeof av.exitPinSet === 'boolean') kiosk.pinSet = av.exitPinSet === true;
-    var hasPhoto = av && typeof av.faceImage === 'string' && av.faceImage.indexOf('data:image/') === 0;
+    var hasPhoto = av && faceValidPhoto(av.faceImage);
     if (hasPhoto && av.faceMode === 'photo') {
-      /* the doctor chose THEIR stylized photo as the face — motion animations
-         (pulse/lean/float) still run on the circle; the drawn controller is
-         retired for this interview */
+      /* The doctor chose THEIR real portrait. Use the same bounded portrait
+         controller Setup previews, so speech/listening state stays connected
+         without drawing fake mouth landmarks over a still image. */
       if (!kiosk.photoFace) {
         kiosk.photoFace = true;
         if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
         var mount = gid('mlsAvKioskFace');
-        if (mount) { mount.innerHTML = ''; var img = document.createElement('img'); img.alt = ''; img.src = av.faceImage; mount.appendChild(img); }
+        if (mount) kiosk.face = makePhotoFace(mount, av.faceImage, '');
       }
     } else if (av && av.faceLook && !kiosk.tinted) {
       /* drawn mode: the doctor's SAVED appearance wins — colours, hair cut,
@@ -7110,8 +7320,8 @@ function kioskLine(kind, text) {
       /* no saved appearance yet: derive one from the portrait so the face
          still resembles the doctor on day one.
          fx-1.0 (DIAGNOSIS Mechanism B, measured end to end): this branch
-         used to apply res.look WHOLESALE - and av.faceImage is ALWAYS the
-         posterized copy, so the first patient a dark-haired doctor ever
+         used to apply res.look WHOLESALE - and older av.faceImage values were
+         posterized, so the first patient a dark-haired doctor ever
          greeted met a #333333 gray-haired stranger. It now goes through the
          same claimed-knobs-only door as Setup: an illustration-only read
          applies NOTHING (the default character), and a claimed knob rides
