@@ -1091,7 +1091,7 @@
       /* calendar smart empty card */
       '#mlsT3Empty{grid-column:1/-1;margin:4px 0 12px;padding:16px 18px;border:1px dashed #c9d9f0;border-radius:12px;background:#f7faff;color:#204034;font:500 13px/1.5 system-ui,sans-serif}',
       '#mlsT3Empty .t3e-t{font-size:14px;color:#1E2B24}',
-      '#mlsT3Empty .t3e-s{margin-top:3px;color:#5b7186;font-size:12.5px}',
+      '#mlsT3Empty .t3e-s{margin-top:3px;color:#5c7186;font-size:12.5px}',
       '#mlsT3Empty .t3e-b{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}',
       '#mlsT3Empty button{font:700 12.5px/1 system-ui,sans-serif;border-radius:8px;padding:8px 14px;cursor:pointer;border:1px solid #cfe0f5;background:#fff;color:#204034}',
       '#mlsT3Empty button.t3e-all,#mlsT3Empty button.t3e-pull{background:#2E6A4B;border-color:#2E6A4B;color:#fff}',
