@@ -18,7 +18,10 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const EXPECTED_BUILD = 'p1-20260813-r3';
-const BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
+const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
+const P1_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
+const EXTENSION_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
+const PRODUCTION_BASE_COMMIT = '8f87cbd0ea9e536bf0a0ea8edbce0b403539eda9';
 
 const P1_FILES = [
   '1pScribeFlow.html',
@@ -43,6 +46,17 @@ for (const name of P1_FILES) {
   const file = path.join(root, name);
   assert(fs.existsSync(file) && fs.statSync(file).isFile(), `1p preview file is missing: ${name}`);
   assert(fs.statSync(file).size > 1000, `1p preview file is unexpectedly empty/truncated: ${name}`);
+}
+
+/* b1026 is an authorized production-only Day rendering train. Freeze every
+   1p runtime byte independently at the prior live checkpoint so a production
+   release can never make preview drift invisible. */
+const unchangedP1 = spawnSync('git', ['diff', '--quiet', P1_BASE_COMMIT, '--', ...P1_FILES],
+  { cwd: root, encoding: 'utf8', windowsHide: true });
+if (unchangedP1.status !== 0) {
+  const names = spawnSync('git', ['diff', '--name-only', P1_BASE_COMMIT, '--', ...P1_FILES],
+    { cwd: root, encoding: 'utf8', windowsHide: true });
+  assert.fail(`authorized production b1026 changed frozen 1p bytes: ${String(names.stdout || unchangedP1.stderr || '').trim()}`);
 }
 
 const shell = read('1pScribeFlow.html');
@@ -267,6 +281,7 @@ assert(versionBlock.includes('if(canCheck()){') && versionBlock.includes('setTim
    and document a new baseline instead of weakening this check. */
 const PROTECTED_PRODUCTION = [
   'ScribeFlow.html',
+  'ScribeFlow-staging.html',
   'mls-connect.js',
   'feat_mls_avatar.js',
   'feat_athena_provider_picker.js',
@@ -301,19 +316,25 @@ const PROTECTED_EXTENSION = [
   'MLS_Assist_v3.0.61.zip',
   'MLS_Assist_v3.0.61.bin'
 ];
-const protectedFiles = [...PROTECTED_PRODUCTION, ...PROTECTED_EXTENSION];
-const unchanged = spawnSync('git', ['diff', '--quiet', BASE_COMMIT, '--', ...protectedFiles],
+const unchangedProduction = spawnSync('git', ['diff', '--quiet', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
   { cwd: root, encoding: 'utf8', windowsHide: true });
-if (unchanged.status !== 0) {
-  const names = spawnSync('git', ['diff', '--name-only', BASE_COMMIT, '--', ...protectedFiles],
+if (unchangedProduction.status !== 0) {
+  const names = spawnSync('git', ['diff', '--name-only', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
     { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.fail(`1p-only repair changed protected production/extension bytes (git status ${unchanged.status}): ${String(names.stdout || unchanged.stderr || '').trim()}`);
+  assert.fail(`production bytes moved beyond the reviewed b1026 render release: ${String(names.stdout || unchangedProduction.stderr || '').trim()}`);
+}
+const unchangedExtension = spawnSync('git', ['diff', '--quiet', EXTENSION_BASE_COMMIT, '--', ...PROTECTED_EXTENSION],
+  { cwd: root, encoding: 'utf8', windowsHide: true });
+if (unchangedExtension.status !== 0) {
+  const names = spawnSync('git', ['diff', '--name-only', EXTENSION_BASE_COMMIT, '--', ...PROTECTED_EXTENSION],
+    { cwd: root, encoding: 'utf8', windowsHide: true });
+  assert.fail(`authorized production b1026 changed frozen extension bytes: ${String(names.stdout || unchangedExtension.stderr || '').trim()}`);
 }
 
 /* Publication config is shared infrastructure, so this 1p train authorizes
    exactly one narrow traversal block and still byte-compares everything else
    to the frozen production baseline. */
-const baseConfigResult = spawnSync('git', ['show', `${BASE_COMMIT}:_config.yml`],
+const baseConfigResult = spawnSync('git', ['show', `${P1_CONFIG_BASE_COMMIT}:_config.yml`],
   { cwd: root, encoding: 'utf8', windowsHide: true });
 assert.strictEqual(baseConfigResult.status, 0, 'could not read baseline _config.yml for exact 1p publication proof');
 const p1ConfigBlock = [
@@ -343,4 +364,4 @@ assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnec
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');
 
-console.log(`PASS 1p preview contract: ${EXPECTED_BUILD}, live /1p/ route, exact preview loaders, 1p freshness isolated from the production version feed, protected production/extension bytes unchanged from ${BASE_COMMIT.slice(0, 8)}`);
+console.log(`PASS 1p preview contract: ${EXPECTED_BUILD}, live /1p/ route and loaders frozen at ${P1_BASE_COMMIT.slice(0, 8)}, production frozen at ${PRODUCTION_BASE_COMMIT.slice(0, 8)}, extension frozen at ${EXTENSION_BASE_COMMIT.slice(0, 8)}`);
