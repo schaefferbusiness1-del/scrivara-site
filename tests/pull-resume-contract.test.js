@@ -63,16 +63,49 @@ function harness() {
   assert.strictEqual(api.resumeGet(), null, 'no intent by default');
 
   api.resumeSave({ date: '2026-07-24', startedAt: Date.now(), attempts: 0, includeHistory: true });
-  assert.strictEqual(api.resumeGet().date, '2026-07-24', 'the intent round-trips');
-  assert(Object.keys(mem).some(k => k === 'acct::pullResumeV1'),
-    'the intent must live in the ACCOUNT namespace, so another account never inherits it');
+  const saved = api.resumeGet();
+  assert.strictEqual(saved.date, '2026-07-24', 'the intent round-trips');
+  assert.strictEqual(saved.surface, 'production', 'a production intent must name its owning surface');
+  assert(/^[A-Za-z0-9._:-]{1,128}$/.test(String(saved.intentId || '')),
+    'a production intent must carry an exact ownership id');
+  assert(Object.keys(mem).some(k => k === 'acct::prodPullResumeV1'),
+    'the production intent must live in its own ACCOUNT namespace, so P1 and another account never inherit it');
 
   api.resumeClear();
   assert.strictEqual(api.resumeGet(), null, 'a completed pull clears its intent');
 
   // a corrupt intent must never throw on boot
-  mem['acct::pullResumeV1'] = '{not json';
+  mem['acct::prodPullResumeV1'] = '{not json';
   assert.strictEqual(api.resumeGet(), null, 'a corrupt intent reads as absent, never throws');
+  assert(!Object.prototype.hasOwnProperty.call(mem, 'acct::prodPullResumeV1'),
+    'a corrupt intent is cleared instead of being reconsidered on every boot');
+
+  // Old plain production records remain compatible and are upgraded in place.
+  mem['acct::pullResumeV1'] = JSON.stringify({
+    date: '2026-07-25', startedAt: Date.now(), attempts: 0, includeHistory: true
+  });
+  const legacy = api.resumeGet();
+  assert(legacy && legacy.date === '2026-07-25' && legacy.surface === 'production' && legacy.intentId,
+    'a legacy plain production intent was not upgraded safely');
+  assert(Object.prototype.hasOwnProperty.call(mem, 'acct::prodPullResumeV1') &&
+    !Object.prototype.hasOwnProperty.call(mem, 'acct::pullResumeV1'),
+    'a plain legacy production intent was not moved out of P1\'s old key');
+
+  // P1 used this key before the surfaces were split; production must never run it.
+  api.resumeClear();
+  mem['acct::pullResumeV1'] = JSON.stringify({
+    surface: 'p1', date: '2026-07-26', providerScope: { v: 1, mode: 'all', source: 'day-caller' }
+  });
+  assert.strictEqual(api.resumeGet(), null, 'a marked P1 intent crossed into production');
+  assert(Object.prototype.hasOwnProperty.call(mem, 'acct::pullResumeV1'),
+    'production damaged a marked P1 intent while refusing it');
+  api.resumeClear();
+  mem['acct::pullResumeV1'] = JSON.stringify({
+    date: '2026-07-27', providerScope: { v: 1, mode: 'selected', source: 'day-caller', id: 'synthetic' }
+  });
+  assert.strictEqual(api.resumeGet(), null, 'an old unmarked P1-shaped intent crossed into production');
+  assert(Object.prototype.hasOwnProperty.call(mem, 'acct::pullResumeV1'),
+    'production damaged an old P1-shaped intent while refusing it');
 }
 
 {
@@ -89,6 +122,56 @@ function harness() {
   const { api } = harness();
   assert.strictEqual(api.MAXTRIES, 2, 'automatic resumes must be capped so a failing day cannot loop');
   assert.strictEqual(api.MAXAGE, 2 * 60 * 60 * 1000, 'intents older than 2h are abandoned, not resumed');
+}
+
+// ---------------------------------------------------------------------------
+// RUNTIME: a queued card may start only the exact record it originally offered
+// ---------------------------------------------------------------------------
+let resumeRuntimePromise = Promise.resolve();
+{
+  const { api, mem, ctx } = harness();
+  const driverStart = src.indexOf('var resumeTimer = null, resumeCard = null;');
+  const driverEnd = src.indexOf('function resumeOffer(rec)', driverStart);
+  assert(driverStart >= 0 && driverEnd > driverStart, 'resumeStart runtime block is missing');
+  const pullCalls = [];
+  Object.assign(ctx, {
+    Promise,
+    lastPullResult: null,
+    pull(opts) { pullCalls.push(JSON.parse(JSON.stringify(opts))); return Promise.resolve({ ok: true, complete: true }); },
+    toast() {},
+    clearInterval() {},
+    document: { getElementById() { return null; } }
+  });
+  ctx.window.__mlsDsStatus = function () {};
+  vm.runInContext(src.slice(driverStart, driverEnd) + '\nthis.resumeStartRuntime=resumeStart;', ctx,
+    { filename: 'schedimport:resume-start' });
+
+  api.resumeSave({ date: '2026-07-28', startedAt: Date.now(), attempts: 0, includeHistory: true });
+  const captured = JSON.parse(JSON.stringify(api.resumeGet()));
+  api.resumeSave({ date: '2026-07-29', startedAt: Date.now(), attempts: 0, includeHistory: true });
+  const replacement = JSON.parse(JSON.stringify(api.resumeGet()));
+  resumeRuntimePromise = Promise.resolve(ctx.resumeStartRuntime(captured)).then(result => {
+    assert(result && result.reason === 'resume-intent-stale',
+      'a replaced queued resume did not return its explicit stale-intent refusal');
+    assert.strictEqual(pullCalls.length, 0,
+      'a stale queued resume started Athena navigation');
+    assert.strictEqual(JSON.parse(mem['acct::prodPullResumeV1']).intentId, replacement.intentId,
+      'a stale queued resume damaged the newer durable intent');
+
+    api.resumeClear();
+    api.resumeSave({ date: '2026-07-30', startedAt: Date.now(), attempts: 0, includeHistory: false, bodies: true });
+    const exact = JSON.parse(JSON.stringify(api.resumeGet()));
+    return Promise.resolve(ctx.resumeStartRuntime(exact)).then(() => {
+      assert.strictEqual(pullCalls.length, 1, 'an exact durable resume did not start once');
+      assert.strictEqual(pullCalls[0].date, '2026-07-30');
+      assert.strictEqual(pullCalls[0].__resumeIntentId, exact.intentId,
+        'the exact durable resume did not carry its ownership id into pull');
+      assert.strictEqual(pullCalls[0].includeHistory, false);
+      assert.strictEqual(pullCalls[0].pullVisitBodies, true);
+    });
+  }).then(() => {
+    console.log('PASS pull resume runtime: stale queued intent refuses before pull; exact durable intent starts once');
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -109,8 +192,14 @@ function harness() {
   assert(/if \(pullRunning \|\| resumeBusyElsewhere\(\)\) return;/.test(driver),
     'a pull already running here or in another tab must never be duplicated');
   assert(/resumeClear\(\); return;/.test(driver), 'a stale intent must be dropped, not resumed');
-  assert(/attempts: Number\(prev\.attempts \|\| 0\) \+ 1/.test(driver),
+  assert(/next\.attempts = Number\(prev\.attempts \|\| 0\) \+ 1/.test(driver),
     'each automatic resume must increment the attempt counter');
+  assert(/resumeIntentSignature\(rec\) !== resumeIntentSignature\(prev\)/.test(driver),
+    'a queued resume must re-read and match the exact durable intent before starting');
+  assert(/reason: "resume-intent-stale"/.test(driver),
+    'a stale resume timer must refuse explicitly instead of navigating Athena');
+  assert(/__resumeIntentId: next\.intentId/.test(driver),
+    'an accepted resume must carry its exact durable ownership id into pull');
   assert(/if \(!signedIn\) return;/.test(driver),
     'a resume must never run over the sign-in gate');
   assert(/mlsPullResumeNo/.test(driver) && /resumeDismiss\(true\)/.test(driver),
@@ -120,4 +209,9 @@ function harness() {
     'the card should say why resuming is cheap (si-2.0.0 carries)');
 }
 
-console.log('PASS pull resume: an interrupted pull is recorded and continued after a reload, bounded by a 2h expiry, a 2-attempt cap, cross-tab ownership, and the sign-in gate — and the doctor can always stop it');
+resumeRuntimePromise.then(() => {
+  console.log('PASS pull resume: an interrupted pull is recorded and continued after a reload, bounded by a 2h expiry, a 2-attempt cap, cross-tab ownership, and the sign-in gate — and the doctor can always stop it');
+}).catch(error => {
+  console.error(error && error.stack || error);
+  process.exitCode = 1;
+});

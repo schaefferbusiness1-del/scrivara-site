@@ -43,7 +43,12 @@
 ;(function () {
   if (window.__mlsSI && window.__mlsSI.installed) return;
 
-  var VERSION = "si-1.7.22";
+  var VERSION = "si-1.7.23-default-census";
+  /* A provider-unknown schedule is admissible only through the visible guarded
+     Day action. These unforgeable capabilities keep the exception out of the
+     public pull/import APIs and every month/selected-provider route. */
+  var PROD_DAY_CENSUS_TOKEN = {};
+  var PROD_CENSUS_IMPORT_TOKEN = {};
   /* Diagnostics cross a copy/support boundary, so reason keys are a closed
      vocabulary rather than merely "identifier-looking" strings. A patient
      name, MRN, or source id must collapse to the generic bucket even when it
@@ -838,6 +843,87 @@
   function rowSourcePatientId(a) { return firstField(a, ["athenaPatientId", "athena_patient_id", "patientId", "patient_id", "chartId", "chart_id"]); }
   function rowAppointmentId(a) { return firstField(a, ["athenaAppointmentId", "athena_appointment_id", "appointmentId", "appointment_id", "apptId", "appt_id", "encounterId", "encounter_id"]); }
   function rowProviderId(a) { return firstField(a, ["athenaProviderId", "athena_provider_id", "providerId", "provider_id", "renderingProviderId", "rendering_provider_id"]); }
+  function exactNonnegativeInteger(value) {
+    var n = Number(value);
+    return isFinite(n) && n >= 0 && Math.floor(n) === n ? n : -1;
+  }
+  function rowProviderName(a) {
+    return firstField(a, ["provider", "providerName", "provider_name", "providerDisplayName", "provider_display_name", "renderingProvider", "rendering_provider", "renderingProviderName", "rendering_provider_name"]);
+  }
+  function exactProviderUnknownCensusRows(rows, targetDate, expectedCount) {
+    rows = Array.isArray(rows) ? rows : [];
+    var expected = exactNonnegativeInteger(expectedCount), seen = {};
+    if (!targetDate || expected <= 0 || rows.length !== expected) return false;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i] || {}, appointmentId = String(rowAppointmentId(row) || "").trim().toLowerCase();
+      var ownDate = normDate(row.date || row.appt_date || "");
+      var exactTime = normTime(row.start_local || row.time || row.time_display || "");
+      if (!String(row.name || "").trim() || !appointmentId || !/^\d\d:\d\d$/.test(exactTime) || seen[appointmentId]) return false;
+      if (ownDate && ownDate !== targetDate) return false;
+      if (rowProviderName(row) || rowProviderId(row)) return false;
+      seen[appointmentId] = 1;
+    }
+    return Object.keys(seen).length === expected;
+  }
+  /* The legacy Athena reader can prove every appointment while exposing only
+     provider headers, with no row-to-header link. That is enough to reconcile
+     the appointment census and read each exactly-bound patient's history; it
+     is not provider attribution. Every conjunct below must hold. */
+  function productionAppointmentCensusDecision(resp, targetDate, requestId, requestedProvider, currentRosterReceipt, laneToken) {
+    var no = { ok: false, receipt: null, grant: null };
+    if (laneToken !== PROD_DAY_CENSUS_TOKEN || !resp || resp.ok !== true || resp.scheduleVerified !== true) return no;
+    requestedProvider = requestedProvider || {};
+    if (String(requestedProvider.mode || "") !== "all") return no;
+    var scheduleReceipt = resp.receipt || {}, rawRoster = resp.providerRosterReceipt || {};
+    var normalizedRoster = currentRosterReceipt || {}, coverage = rawRoster.attributionCoverage || {};
+    var expected = exactNonnegativeInteger(scheduleReceipt.expectedCount);
+    var parsed = exactNonnegativeInteger(scheduleReceipt.parsedCount);
+    var candidates = exactNonnegativeInteger(scheduleReceipt.candidateCount);
+    var rows = exactNonnegativeInteger(coverage.rows), unattributed = exactNonnegativeInteger(coverage.unattributedRows);
+    var foreign = exactNonnegativeInteger(coverage.foreignRows), headers = exactNonnegativeInteger(coverage.headerCount);
+    if (scheduleReceipt.complete !== true || scheduleReceipt.authoritativeEmpty === true || expected <= 0 ||
+        expected !== parsed || expected !== candidates || expected !== rows) return no;
+    if (!requestId || String(scheduleReceipt.requestId || "") !== requestId ||
+        String(rawRoster.requestId || "") !== requestId || String(normalizedRoster.requestId || "") !== requestId) return no;
+    if (normDate(resp.schedDate || "") !== targetDate || String(rawRoster.targetDate || "") !== targetDate ||
+        String(normalizedRoster.targetDate || "") !== targetDate) return no;
+    var rawProviderMode = String(rawRoster.providerMode || "");
+    if (rawRoster.complete === true || rawRoster.partial !== true || String(rawRoster.reason || "") !== "legacy-unverified" ||
+        (rawProviderMode && rawProviderMode !== "all") || String(rawRoster.requestedProviderId || "") !== "" || String(rawRoster.requestedProviderStableKey || "") !== "" ||
+        normalizedRoster.complete === true || normalizedRoster.partial !== true || String(normalizedRoster.reason || "") !== "legacy-unverified" ||
+        String(normalizedRoster.providerMode || "") !== "all" || String(normalizedRoster.requestedProviderId || "") !== "" || String(normalizedRoster.requestedProviderStableKey || "") !== "") return no;
+    if (String(coverage.verdict || "") !== "row-unattributed" || headers < 1 || unattributed !== rows || foreign !== 0) return no;
+    if (exactNonnegativeInteger(rawRoster.observedCount) !== headers || !exactProviderUnknownCensusRows(resp.appts, targetDate, rows)) return no;
+    var receipt = {
+      kind: "athena-appointment-census", complete: true, reason: "complete-provider-unknown",
+      scope: "appointment-census-only", targetDate: targetDate, requestId: requestId,
+      expectedCount: expected, parsedCount: parsed, candidateCount: candidates,
+      rowCount: rows, uniqueAppointmentIds: rows, providerHeaderCount: headers,
+      unattributedRows: unattributed, foreignRows: foreign,
+      providerAttributionComplete: false, providerFieldsBlank: true,
+      noProviderGuess: true, providerSnapshotAllowed: false
+    };
+    try { Object.freeze(receipt); } catch (eFreezeReceipt) {}
+    return { ok: true, receipt: receipt, grant: { token: PROD_CENSUS_IMPORT_TOKEN, response: resp, receipt: receipt } };
+  }
+  function productionAppointmentCensusScope(grant, rows, rawProvider, providerResp, scopeDate) {
+    if (!grant || grant.token !== PROD_CENSUS_IMPORT_TOKEN || grant.response !== providerResp || !grant.receipt || grant.receipt.complete !== true) return null;
+    var req = providerRequest(rawProvider), receipt = grant.receipt;
+    if (req.mode !== "all" || normDate(scopeDate || "") !== receipt.targetDate ||
+        String(providerResp && providerResp.receipt && providerResp.receipt.requestId || "") !== receipt.requestId ||
+        !exactProviderUnknownCensusRows(rows, receipt.targetDate, receipt.rowCount)) return null;
+    return {
+      complete: true, reason: "appointment-census-only", rows: rows.slice(),
+      receipt: {
+        mode: "all", complete: false, reason: "provider-attribution-unavailable",
+        scheduleComplete: true, sourceRows: rows.length, providerTaggedRows: 0,
+        matchingRows: 0, mismatchedRows: 0, unattributedRows: rows.length,
+        appointmentCensusComplete: true, providerAttributionComplete: false,
+        attribution: "provider-blank-exact-appointment-census", censusKind: receipt.kind,
+        targetDate: receipt.targetDate, requestId: receipt.requestId, noProviderGuess: true
+      }
+    };
+  }
   function sourceProof(a) {
     /* A non-empty date-like string is not identity proof. Only a real,
        non-future DOB may bind a schedule row to a local patient. */
@@ -1427,6 +1513,68 @@
     });
     return out;
   }
+  /* A provider-unknown pull owns the exact appointments painted on this day,
+     but owns no provider assignment. Publish that narrower authority in the
+     existing day store with an explicit mode and no selected-provider entries.
+     Default/day consumers get the exact backend-id slice; provider consumers
+     cannot mistake it for a selected-provider snapshot. */
+  function publishProviderUnknownAppointmentSnapshot(input) {
+    input = input || {};
+    var date = normDate(input.date), census = input.censusReceipt || null;
+    var calendarReceipt = input.calendarReceipt || null;
+    var mappings = Array.isArray(input.resolvedAppointments) ? input.resolvedAppointments : [];
+    var expected = Number(census && census.rowCount);
+    var out = {
+      published: false, complete: false, date: date || "", scope: "appointment-census-only",
+      expected: isFinite(expected) ? expected : 0, mapped: mappings.length,
+      providerAttributionComplete: false, coversPractice: false, reason: "unverified"
+    };
+    if (!date || !census || census.complete !== true || census.kind !== "athena-appointment-census" || normDate(census.targetDate) !== date) { out.reason = "census-unverified"; return out; }
+    if (!isFinite(expected) || expected < 1 || Math.floor(expected) !== expected || Number(census.uniqueAppointmentIds) !== expected) { out.reason = "census-count-unverified"; return out; }
+    if (census.providerAttributionComplete !== false || census.providerSnapshotAllowed !== false || census.noProviderGuess !== true) { out.reason = "provider-boundary-unverified"; return out; }
+    if (!calendarReceipt || calendarReceipt.complete !== true || calendarReceipt.appointmentCensusComplete !== true || calendarReceipt.providerAttributionComplete !== false) { out.reason = "calendar-unverified"; return out; }
+    if (Number(calendarReceipt.attempted) !== expected || Number(calendarReceipt.accounted) !== expected || Number(calendarReceipt.mapped) !== expected || mappings.length !== expected) { out.reason = "mapping-incomplete"; return out; }
+    var sources = {}, backend = {}, backendIds = [];
+    for (var i = 0; i < mappings.length; i++) {
+      var sourceIdentity = String(mappings[i] && mappings[i].sourceIdentity || "").trim();
+      var backendId = String(mappings[i] && mappings[i].backendAppointmentId || "").trim();
+      if (!sourceIdentity || sourceIdentity.length > 240 || /[\x00-\x1f\x7f]/.test(sourceIdentity) ||
+          !/^[A-Za-z0-9._:@\/-]{1,160}$/.test(backendId) || sources[sourceIdentity] || backend[backendId]) {
+        out.reason = "mapping-not-one-to-one"; return out;
+      }
+      sources[sourceIdentity] = 1; backend[backendId] = 1; backendIds.push(backendId);
+    }
+    var key = authoritativeKey(), store = null;
+    if (!key) { out.reason = "snapshot-key-unavailable"; return out; }
+    try {
+      var raw = localStorage.getItem(key);
+      store = raw ? JSON.parse(raw) : { v: 1, days: {} };
+    } catch (eReadCensusAuthority) { out.reason = "snapshot-store-read-failed"; return out; }
+    if (!store || store.v !== 1 || !store.days || typeof store.days !== "object" || Array.isArray(store.days)) { out.reason = "snapshot-store-invalid"; return out; }
+    store = safe(function () { return JSON.parse(JSON.stringify(store)); }, null);
+    if (!store || !store.days) { out.reason = "snapshot-copy-failed"; return out; }
+    var snap = {
+      v: 1, date: date, mode: "appointment-census-only", providerKey: "",
+      backendIds: backendIds, sourceCount: expected, providerAttributionComplete: false,
+      coversPractice: false, updated: Date.now()
+    };
+    /* Replacing the whole day entry atomically also retires any older selected
+       provider authority that this provider-unknown read can no longer prove. */
+    store.days[date] = { all: snap, providers: {}, active: { mode: "all", key: "" } };
+    var days = Object.keys(store.days).sort(function (a, b) {
+      var aa = store.days[a], bb = store.days[b];
+      var at = Number(aa && aa.all && aa.all.updated || 0), bt = Number(bb && bb.all && bb.all.updated || 0);
+      return at - bt;
+    });
+    while (days.length > 45) delete store.days[days.shift()];
+    if (!writeAuthoritativeStore(store)) { out.reason = "snapshot-persist-failed"; return out; }
+    out.published = true; out.complete = true; out.reason = "exact-appointment-census"; out.backendCount = backendIds.length;
+    safe(function () {
+      window.__mlsSIAuthoritativeChangedAt = Date.now();
+      if (isFn(window.dispatchEvent) && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("mls-authoritative-schedule", { detail: { date: date, scope: "appointment-census-only" } }));
+    });
+    return out;
+  }
   function authoritativeStatusForDay(day, rawProvider) {
     day = normDate(day); var snap = selectedSnapshot(day, rawProvider);
     var status = { available: false, exact: false, date: day || "", scope: snap && snap.mode || "", sourceCount: snap && Number(snap.sourceCount || 0) || 0, activeCount: 0, missingCount: 0, unclassifiedCount: 0, reason: snap ? "backend-rows-pending" : "no-snapshot" };
@@ -1442,7 +1590,10 @@
     ids.forEach(function (id) { if (byId[String(id)]) rows.push(byId[String(id)]); });
     var missing = ids.filter(function (id) { return !consumed[String(id)]; }).length;
     status.activeCount = rows.length; status.missingCount = missing; status.unclassifiedCount = unclassified;
-    status.available = missing === 0; status.exact = status.available; status.reason = status.available ? (ids.length ? "exact" : "authoritative-empty") : "backend-rows-pending";
+    status.available = missing === 0; status.exact = status.available;
+    status.providerAttributionComplete = !(snap && snap.providerAttributionComplete === false);
+    status.coversPractice = !(snap && snap.coversPractice === false);
+    status.reason = status.available ? (snap && snap.mode === "appointment-census-only" ? "exact-appointment-census" : (ids.length ? "exact" : "authoritative-empty")) : "backend-rows-pending";
     status._rows = rows; return status;
   }
   function authoritativeRowsForDay(day, rawProvider) {
@@ -1693,9 +1844,10 @@
        read, but only exact provider-token matches are imported. Any untagged
        schedule row means the selected provider's subset cannot be proven
        complete, so nothing is changed and the user can safely retry. */
-    var providerScope = requireProviderCoverage
+    var appointmentCensusScope = productionAppointmentCensusScope(opts.__productionAppointmentCensusGrant, appts, opts.provider, providerResp, scopeDate);
+    var providerScope = appointmentCensusScope || (requireProviderCoverage
       ? scopeProviderRows(appts, opts.provider, providerResp)
-      : { complete: true, reason: "direct-import", rows: appts, receipt: { mode: "all", complete: true, reason: "direct-import", sourceRows: appts.length, providerTaggedRows: appts.filter(function (a0) { return !!providerKey(a0 && a0.provider); }).length, unattributedRows: appts.filter(function (a0) { return !providerKey(a0 && a0.provider); }).length } };
+      : { complete: true, reason: "direct-import", rows: appts, receipt: { mode: "all", complete: true, reason: "direct-import", sourceRows: appts.length, providerTaggedRows: appts.filter(function (a0) { return !!providerKey(a0 && a0.provider); }).length, unattributedRows: appts.filter(function (a0) { return !providerKey(a0 && a0.provider); }).length } });
     if (!providerScope.complete) {
       return Promise.resolve(emptyResult(providerScope.reason, providerScope.receipt, wrongDay, invalidDate));
     }
@@ -4377,13 +4529,27 @@
            closed day fail 'provider-roster-incomplete' (live: 2026-07-03).
            Non-empty days keep the full fail-closed roster requirement. */
         var verifiedEmptyDay = r.receipt.authoritativeEmpty === true;
+        /* prod-census-1.0.0: Athena's legacy Day grid can prove every exact
+           appointment while exposing provider headers with no row-to-header
+           link. A retry cannot manufacture that relation. Only the private,
+           visible Day lane may admit this narrow evidence: the schedule,
+           request, date, counts, unique appointment ids, blank provider fields,
+           header count, and both partial roster receipts must all agree. */
+        var appointmentCensusDecision = productionAppointmentCensusDecision(
+          r, date, scheduleRequestId, frozenProviderRequest,
+          currentProviderRosterReceipt, opts.__prodDayCensusToken
+        );
         if(!verifiedEmptyDay&&!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true&&currentProviderRosterReceipt.partial!==true)){
-          onStatus("Athena's full provider roster was not verified. Nothing was imported; keep the complete Day schedule open and retry.","err");
-          return fail("provider-roster-incomplete",{scheduleReceipt:r.receipt,providerRosterReceipt:currentProviderRosterReceipt,retry:{schedule:true,providerRoster:true}});
+          if (!appointmentCensusDecision.ok) {
+            onStatus("Athena's full provider roster was not verified. Nothing was imported; keep the complete Day schedule open and retry.","err");
+            return fail("provider-roster-incomplete",{scheduleReceipt:r.receipt,providerRosterReceipt:currentProviderRosterReceipt,retry:{schedule:true,providerRoster:true}});
+          }
         }
         if (!verifiedEmptyDay && !rosterReceiptBatchBound(currentProviderRosterReceipt)) {
-          onStatus("Athena's provider roster receipt was not bound to this exact pull request and scope. Nothing was imported; retry.", "err");
-          return fail("provider-roster-unbound", { scheduleReceipt: r.receipt, providerRosterReceipt: currentProviderRosterReceipt, rosterOperationArmed: !!rosterOperationArmed, retry: { schedule: true, providerRoster: true } });
+          if (!appointmentCensusDecision.ok) {
+            onStatus("Athena's provider roster receipt was not bound to this exact pull request and scope. Nothing was imported; retry.", "err");
+            return fail("provider-roster-unbound", { scheduleReceipt: r.receipt, providerRosterReceipt: currentProviderRosterReceipt, rosterOperationArmed: !!rosterOperationArmed, retry: { schedule: true, providerRoster: true } });
+          }
         }
         if (!String(r.text || "").trim() && !(r.appts && r.appts.length) && !r.receipt.authoritativeEmpty) {
           onStatus("Athena returned no verifiable schedule rows. Nothing was imported.", "err");
@@ -4397,6 +4563,9 @@
         if (readDay !== date) {
           onStatus("Athena is showing " + readDay + " instead of " + date + ". Nothing was imported.", "err");
           return fail("wrong-day", { observedDay: readDay, scheduleReceipt: r.receipt, retry: { schedule: true } });
+        }
+        if (appointmentCensusDecision.ok) {
+          onStatus("Athena verified every appointment on " + date + ", but did not expose which provider owns each row. Importing the exact appointments with provider left blank; no provider will be guessed.", "");
         }
         lastResp = r;
         safe(function () { window.__schedRaw = {
@@ -4439,7 +4608,22 @@
             reason: a.reason || "",
             provider: a.provider || ""
           }; });
-          var preScoped = scopeProviderRows(rows, providerTarget, r);
+          var appointmentCensusPreScope = appointmentCensusDecision.ok
+            ? productionAppointmentCensusScope(appointmentCensusDecision.grant, rows, providerTarget, r, date)
+            : null;
+          /* Re-verify the transformed rows. The initial grant is tied to the
+             raw extension response by object identity; it cannot authorize a
+             parser result whose exact ids/date/time/provider blanks changed. */
+          if (appointmentCensusDecision.ok && !appointmentCensusPreScope) {
+            onStatus("Athena's exact appointment census changed before import. Nothing was imported; pull the day again.", "err");
+            return fail("appointment-census-unverified", {
+              scheduleReceipt: r.receipt,
+              providerRosterReceipt: currentProviderRosterReceipt,
+              appointmentCensusReceipt: appointmentCensusDecision.receipt,
+              retry: { schedule: true }
+            });
+          }
+          var preScoped = appointmentCensusPreScope || scopeProviderRows(rows, providerTarget, r);
           var bootstrapP = includeHistory && preScoped.complete
             ? hydrateMissingScheduleProof(preScoped.rows, onStatus, date)
             : Promise.resolve({ rows: preScoped.rows || [], receipt: {
@@ -4462,7 +4646,7 @@
             importSettled++;
             if (importSettled <= importTotal) onStatus("Saving the schedule — appointment " + importSettled + " of " + importTotal + "...", "");
           };
-          return importAppts(rows, { date: date, scopeDate: date, provider: providerTarget, providerResponse: r, requireProviderCoverage: true, includeHistory: includeHistory, requirePatientBinding: includeHistory, onEach: onEachImport }).then(async function (res) {
+          return importAppts(rows, { date: date, scopeDate: date, provider: providerTarget, providerResponse: r, requireProviderCoverage: true, includeHistory: includeHistory, requirePatientBinding: includeHistory, onEach: onEachImport, __productionAppointmentCensusGrant: appointmentCensusDecision.ok ? appointmentCensusDecision.grant : null }).then(async function (res) {
             res = res || {};
             /* Crash-safe phase boundary: appointments and any materialized or
                enriched patient identities are durable before chart navigation
@@ -4470,7 +4654,13 @@
             await Promise.resolve(checkpointPatientBatch(opts.__patientStoreBatch, "schedule-import", true));
             res.identityBootstrapReceipt = identityBootstrap && identityBootstrap.receipt || null;
             var selectedProvider = providerRequest(providerTarget);
-            if (!res.providerReceipt || res.providerReceipt.complete !== true) {
+            var appointmentCensusComplete = !!(appointmentCensusDecision.ok &&
+              res.providerReceipt && res.providerReceipt.appointmentCensusComplete === true &&
+              res.providerReceipt.providerAttributionComplete === false &&
+              String(res.providerReceipt.requestId || "") === String(appointmentCensusDecision.receipt.requestId || "") &&
+              String(res.providerReceipt.targetDate || "") === date);
+            res.appointmentCensusReceipt = appointmentCensusComplete ? appointmentCensusDecision.receipt : null;
+            if (!appointmentCensusComplete && (!res.providerReceipt || res.providerReceipt.complete !== true)) {
               var providerReason = res.reason || (res.providerReceipt && res.providerReceipt.reason) || "provider-unverified";
               /* mdx-1.0.0: provider-incomplete only fires AFTER the schedule
                  read proved complete (an unsettled grid reports
@@ -4519,6 +4709,8 @@
                  folded into it - a one-provider day is still a complete read of
                  that provider. */
               providerScope: providerScopeReceipt(selectedProvider.mode),
+              appointmentCensusComplete: appointmentCensusComplete,
+              providerAttributionComplete: appointmentCensusComplete ? false : !!(res.providerReceipt && res.providerReceipt.complete === true),
               attempted: attempted, accounted: accounted, mapped: mappings.length,
               uniqueSources: Object.keys(uniqueSources).length, uniqueBackend: Object.keys(uniqueBackend).length,
               rowFailuresAbsent: rowFailuresAbsent, dateComplete: dateComplete,
@@ -4531,7 +4723,26 @@
               providerBackfilled: Number(res.providerBackfilled || 0),
               failed: Number(res.failed || 0), wrongDay: Number(res.wrongDay || 0), invalidDate: Number(res.invalidDate || 0)
             };
-            var snapshotReceipt = publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, returnedAppointments: r.appts, providerDiag: r.providerDiag, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
+            if (appointmentCensusComplete) calendarReceipt.providerScope = {
+              stated: true,
+              scope: "appointment-census-only",
+              requestedMode: "all",
+              knownCount: null,
+              paintedCount: Number(appointmentCensusDecision.receipt.providerHeaderCount || 0),
+              rosterVerifiedCount: 0,
+              athenaListEnumerated: false,
+              coversPractice: false,
+              sources: {},
+              statement: "Appointments verified by exact appointment ID; provider attribution unavailable."
+            };
+            var snapshotReceipt = appointmentCensusComplete
+              ? publishProviderUnknownAppointmentSnapshot({
+                  date: date,
+                  censusReceipt: appointmentCensusDecision.receipt,
+                  calendarReceipt: calendarReceipt,
+                  resolvedAppointments: mappings
+                })
+              : publishAuthoritativeSnapshot({ date: date, provider: providerTarget, scheduleReceipt: r.receipt, returnedAppointments: r.appts, providerDiag: r.providerDiag, providerReceipt: res.providerReceipt || null, calendarReceipt: calendarReceipt, resolvedAppointments: mappings });
             calendarReceipt.snapshotPublished = snapshotReceipt.published === true;
             calendarReceipt.snapshotReason = snapshotReceipt.reason;
             if (calendarReceipt.complete && !calendarReceipt.snapshotPublished) calendarReceipt.complete = false;
@@ -4547,20 +4758,28 @@
             else if (res.reason === "provider-empty" && selectedProvider.mode === "selected" && calendarReceipt.snapshotPublished) onStatus("Athena verified no appointments for " + selectedProvider.name + " on " + date + ".", "ok");
             else if (r.receipt.authoritativeEmpty && calendarReceipt.snapshotPublished) onStatus("Athena verified that " + date + " has no appointments." + freshnessNotice(r) + providerScopeNotice(selectedProvider.mode), "ok");
             else onStatus("No verified patients could be imported for " + date + ".", "err");
+            if (appointmentCensusComplete && calendarReceipt.complete) {
+              onStatus("The exact appointments are saved for " + date + ". Provider is intentionally blank because Athena exposed no row-to-provider link; provider grouping is not being reported as complete.", "ok");
+            }
             var historyReceipt = includeHistory
               ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus)
               : { requested: 0, processed: 0, complete: true, exactIdentityVerified: true, skipped: true, reason: "not-requested", patients: [], retry: [], failures: 0 };
-            var providerComplete = selectedProvider.mode !== "selected" || !!(res.providerReceipt && res.providerReceipt.complete);
+            var providerComplete = appointmentCensusComplete || selectedProvider.mode !== "selected" || !!(res.providerReceipt && res.providerReceipt.complete);
             var identityBootstrapComplete = !includeHistory || !!(res.identityBootstrapReceipt && res.identityBootstrapReceipt.complete === true);
             var historyComplete = !includeHistory || !!(historyReceipt.complete && historyReceipt.exactIdentityVerified === true);
             var complete = !!(r.receipt.complete && providerComplete && identityBootstrapComplete && calendarReceipt.complete && historyComplete);
             res.ok = complete; res.complete = complete;
             res.includeHistory = includeHistory;
-            res.reason = complete ? (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only"))) : (!providerComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : "history-partial")));
+            res.appointmentCensusOnly = appointmentCensusComplete;
+            res.providerAttributionComplete = appointmentCensusComplete ? false : !!(res.providerReceipt && res.providerReceipt.complete === true);
+            res.reason = complete
+              ? (appointmentCensusComplete ? (includeHistory ? "complete-appointment-census-history" : "complete-appointment-census-only") : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only"))))
+              : (!providerComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : "history-partial")));
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
             res.retry = { schedule: false, calendarFailed: calendarReceipt.failed, calendarClass: calendarReceipt.failureClass, history: historyReceipt.retry || [] };
+            if (appointmentCensusComplete) res.retry.providerRoster = false;
             var scheduleSummary = calendarReceipt.accounted + "/" + calendarReceipt.attempted;
             /* b752: this fraction is the sentence the doctor acts on, so it must
                be MEASURED. processed and requested are both walk counters -
@@ -4692,9 +4911,51 @@
      the countdown with a way to stop it.
      --------------------------------------------------------------------- */
   var RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000, RESUME_MAX_ATTEMPTS = 2, RESUME_COUNTDOWN_S = 10;
-  function resumeKey() { return safe(function () { return isFn(window.uns) ? window.uns("pullResumeV1") : "pullResumeV1"; }, "pullResumeV1"); }
-  function resumeGet() { return safe(function () { var r = window.localStorage.getItem(resumeKey()); return r ? JSON.parse(r) : null; }, null); }
-  function resumeSave(rec) { safe(function () { window.localStorage.setItem(resumeKey(), JSON.stringify(rec)); }); }
+  var RESUME_SURFACE = "production", resumeIntentSeq = 0;
+  function resumeKey() { return safe(function () { return isFn(window.uns) ? window.uns("prodPullResumeV1") : "prodPullResumeV1"; }, "prodPullResumeV1"); }
+  function legacyResumeKey() { return safe(function () { return isFn(window.uns) ? window.uns("pullResumeV1") : "pullResumeV1"; }, "pullResumeV1"); }
+  function newResumeIntentId() {
+    resumeIntentSeq++;
+    return "prod-" + Date.now().toString(36) + "-" + resumeIntentSeq.toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+  function validResumeIntentId(value) { return /^[A-Za-z0-9._:-]{1,128}$/.test(String(value || "")); }
+  function resumeGet() {
+    return safe(function () {
+      var key = resumeKey(), legacyKey = legacyResumeKey(), raw = window.localStorage.getItem(key), fromLegacy = false;
+      if (!raw) { raw = window.localStorage.getItem(legacyKey); fromLegacy = !!raw; }
+      if (!raw) return null;
+      var rec;
+      try { rec = JSON.parse(raw); } catch (eParse) { window.localStorage.removeItem(fromLegacy ? legacyKey : key); return null; }
+      if (!rec || typeof rec !== "object" || Array.isArray(rec)) { window.localStorage.removeItem(fromLegacy ? legacyKey : key); return null; }
+      /* p1/prod-isolation-1.0: both site surfaces historically wrote the same
+         account key. A P1 provider-scoped intent must never wake production
+         and drive a different date/provider. New records name their surface;
+         the providerScope/P1 fields reject and clear old unmarked P1 records.
+         Old plain production records remain compatible and are upgraded once. */
+      if ((rec.surface && rec.surface !== RESUME_SURFACE) ||
+          (!rec.surface && (rec.providerScope != null || rec.p1CensusEligible != null))) {
+        if (!fromLegacy) window.localStorage.removeItem(key);
+        return null;
+      }
+      if (rec.surface !== RESUME_SURFACE || !validResumeIntentId(rec.intentId)) {
+        rec.surface = RESUME_SURFACE;
+        rec.intentId = newResumeIntentId();
+        window.localStorage.setItem(key, JSON.stringify(rec));
+      }
+      if (fromLegacy) window.localStorage.removeItem(legacyKey);
+      return rec;
+    }, null);
+  }
+  function resumeSave(rec) {
+    return safe(function () {
+      var stored = {}, source = rec && typeof rec === "object" ? rec : {};
+      for (var k in source) if (Object.prototype.hasOwnProperty.call(source, k)) stored[k] = source[k];
+      stored.surface = RESUME_SURFACE;
+      if (!validResumeIntentId(stored.intentId)) stored.intentId = newResumeIntentId();
+      window.localStorage.setItem(resumeKey(), JSON.stringify(stored));
+      return stored;
+    }, null);
+  }
   function resumeClear() { safe(function () { window.localStorage.removeItem(resumeKey()); }); }
   function resumeBusyElsewhere() {
     var k = safe(function () { return isFn(window.uns) ? window.uns("mlsPullBusyXTabV1") : "mlsPullBusyXTabV1"; }, "mlsPullBusyXTabV1");
@@ -4712,12 +4973,25 @@
     opts = opts || {};
     var __resumeDate = String(opts.date || "");
     if (__resumeDate) {
+      /* A fresh explicit pull supersedes the countdown that may have been
+         painted from an older durable intent. The resume path carries the
+         exact intent id and therefore does not cancel itself. */
+      if (!validResumeIntentId(opts.__resumeIntentId) && typeof resumeDismiss === "function") resumeDismiss(false);
       var __prev = resumeGet();
       resumeSave({
         date: __resumeDate,
+        surface: RESUME_SURFACE,
+        intentId: validResumeIntentId(opts.__resumeIntentId) && __prev && __prev.intentId === opts.__resumeIntentId
+          ? __prev.intentId : newResumeIntentId(),
         startedAt: Date.now(),
-        attempts: (__prev && __prev.date === __resumeDate) ? Number(__prev.attempts || 0) : 0,
+        attempts: validResumeIntentId(opts.__resumeIntentId) && __prev && __prev.intentId === opts.__resumeIntentId
+          ? Number(__prev.attempts || 0) : 0,
         includeHistory: opts.includeHistory !== false,
+        /* Persist only the fact that the unfinished operation originated in
+           the private Day lane. On resume, the closure mints a fresh private
+           token only when this exact durable intent still owns that fact.
+           Public/month calls always overwrite it false. */
+        guardedDay: opts.__prodDayCensusToken === PROD_DAY_CENSUS_TOKEN,
         /* 2026-07-28 invariant fix: a resumed pull must keep the ORIGINAL
            bodies choice - a phone-commanded fast-lane pull that reloads must
            not resume as a full-bodies pull on the office default. */
@@ -5020,17 +5294,44 @@
     if (resumeCard) { safe(function () { resumeCard.remove(); }); resumeCard = null; }
     if (clearIntent) resumeClear();
   }
+  function resumeIntentSignature(rec) {
+    if (!rec || rec.surface !== RESUME_SURFACE || !validResumeIntentId(rec.intentId)) return "";
+    return [rec.surface, rec.intentId, String(rec.date || ""), Number(rec.startedAt || 0), Number(rec.attempts || 0),
+      rec.includeHistory === false ? "0" : "1", rec.guardedDay === true ? "guarded-day" : "ordinary",
+      typeof rec.bodies === "boolean" ? String(rec.bodies) : "default"].join("|");
+  }
   function resumeStart(rec) {
+    /* Re-read the durable record at click/timer fire time. A manual pull may
+       have replaced the offered intent while this timer was queued; captured
+       UI state is never authority to start Athena navigation. */
+    var prev = resumeGet();
+    if (!prev || !resumeIntentSignature(rec) || resumeIntentSignature(rec) !== resumeIntentSignature(prev)) {
+      resumeDismiss(false);
+      var refusal = { ok: false, complete: false, reason: "resume-intent-stale", gate: "resume-intent-ownership",
+        target: String(rec && rec.date || ""), error: "That saved pull was replaced by a newer pull. The old resume timer was stopped; nothing else was started.", retry: {} };
+      lastPullResult = refusal;
+      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: refusal.error }; });
+      safe(function () {
+        if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(refusal.error, "err");
+        else toast(refusal.error, "err");
+      });
+      return Promise.resolve(refusal);
+    }
     resumeDismiss(false);
-    var prev = resumeGet() || rec;
-    resumeSave({ date: rec.date, startedAt: Date.now(), attempts: Number(prev.attempts || 0) + 1, includeHistory: rec.includeHistory !== false, bodies: (typeof rec.bodies === 'boolean') ? rec.bodies : null });
-    safe(function () {
-      var resumeOpts = { date: rec.date, includeHistory: rec.includeHistory !== false, onStatus: function (m, k) {
+    var next = {};
+    for (var pk in prev) if (Object.prototype.hasOwnProperty.call(prev, pk)) next[pk] = prev[pk];
+    next.startedAt = Date.now();
+    next.attempts = Number(prev.attempts || 0) + 1;
+    next = resumeSave(next) || next;
+    return safe(function () {
+      var resumeOpts = { date: next.date, includeHistory: next.includeHistory !== false,
+        __resumeIntentId: next.intentId, onStatus: function (m, k) {
         safe(function () { if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(m, k); });
       } };
-      if (typeof rec.bodies === 'boolean') resumeOpts.pullVisitBodies = rec.bodies;
-      pull(resumeOpts);
-    });
+      if (next.guardedDay === true) resumeOpts.__prodDayCensusToken = PROD_DAY_CENSUS_TOKEN;
+      if (typeof next.bodies === 'boolean') resumeOpts.pullVisitBodies = next.bodies;
+      return pull(resumeOpts);
+    }, Promise.resolve(null));
   }
   function resumeOffer(rec) {
     if (resumeCard || typeof document === "undefined" || !document.body) return;
@@ -5188,6 +5489,11 @@
        batch already reading in this tab and then strip it mid-batch on its
        own settle. Disarm and the end-of-op focus return fire only from the
        call that armed. */
+    /* The visible manual lane owns this click. Stop any older resume card and
+       countdown before its queued callback can start a second day. The old
+       durable intent remains until pull() replaces it or a complete receipt
+       clears it. */
+    if (typeof resumeDismiss === "function") resumeDismiss(false);
     var __armedHere = false;
     var __armPresence = function () { __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
     return Promise.resolve().then(function () { return __dayPullInner(opts, __armPresence); }).then(
@@ -5288,6 +5594,10 @@
       runOpts.date = day;
       runOpts.provider = provider;
       if (runOpts.includeHistory === undefined) runOpts.includeHistory = true;
+      /* Capability is minted only after the visible Day lane's advisory gates
+         and scope resolution. Public pull(), month pulls, calendar/provider
+         lanes, and arbitrary callers never receive it. */
+      runOpts.__prodDayCensusToken = PROD_DAY_CENSUS_TOKEN;
       var preflight = {
         ran: !!needWarm,
         warmed: !!(warm && warm.warmed),

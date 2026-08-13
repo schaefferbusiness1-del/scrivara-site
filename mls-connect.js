@@ -8807,7 +8807,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1026: persist:false work belongs to this exact COW candidate. Passing
+    /* b1027: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9048,7 +9048,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1026: the retired 3-second owner synchronously regex-scanned every
+      /* b1027: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -36112,7 +36112,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1026';
+  window.__MLS_AV = window.__MLS_AV || 'b1027';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36455,7 +36455,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1026';
+  var MLS_APP_BUILD='2026-07-25-b1027';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44180,7 +44180,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260808asst220perf1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.2.0 - stale-lineage protection stays exact while cooperative bulk checks run in input-aware slices; refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.22 (responsive chunked history organization + cooperative managed-pull persistence; mdx-2.0.1 display-echo + mdx-2.0.2 credential delimiter + mdx-1.1.0 history refusal diagnostics retained) - PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + b346 engine-lease mutual exclusion */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_schedimport_exact.js si-1.7.23-default-census (responsive chunked history organization + cooperative managed-pull persistence; mdx-2.0.1 display-echo + mdx-2.0.2 credential delimiter + mdx-1.1.0 history refusal diagnostics retained) - guarded default-Day appointment census + exact history; PHI-free calendar failure classification + exact mapping/save/snapshot diagnostics + month systemic circuit breaker + exact provider/day/month identity + fresh verified histories + batch-bound roster provenance + public-seam calendar route + b346 engine-lease mutual exclusion */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -46208,7 +46208,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
-  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0 };
+  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, sessionSerial: 0 };
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -46381,6 +46381,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     DS.day = k; DS.followToday = (k === todayKey());
     try { accepted = easy.remote.setVisitDay(k) === true; } catch (e2) { accepted = false; }
     if (!accepted) { DS.day = previous; DS.followToday = previousFollow; syncStrip(); renderList(); return false; }
+    DS.lastAttemptResult = null; DS.statusLog = []; dsSyncDiagBtn(false);
     syncStrip(); renderList();
     try {
       window.dispatchEvent(new CustomEvent('mls:visit-day-changed', {
@@ -46451,8 +46452,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return out;
   }
   function dsDiagReport() {
-    var si = window.__mlsSI, res = null;
-    try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
+    var si = window.__mlsSI, res = DS.lastAttemptResult || null;
+    /* The button owns the exact receipt returned to this DaySwitch attempt.
+       The importer's engine-global last result may belong to an automatic
+       resume for another date, so it is only a legacy fallback when this
+       surface has not received an attempt result of its own. */
+    if (!res) try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
     if (!res && DS.lastResult) res = DS.lastResult;
     var hr = res && res.historyReceipt || null;
     var ib = res && res.identityBootstrapReceipt || null;
@@ -46625,6 +46630,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var sr2 = r && r.scheduleReceipt || {};
     var hr2 = r && r.historyReceipt || {};
     var messages = {
+      'pull-in-flight': 'Another Athena pull is already running. Wait for it to finish, then pull this day again. Nothing else was started.',
       'signin': 'Sign in to MLS before pulling from Athena.',
       'signin-expired': 'Your MLS sign-in expired on this device. Sign in to MLS again, then pull — nothing was imported.',
       'no-ext': 'MLS Assist is not available in this browser. Enable the extension, reload this page, and try again.',
@@ -46698,6 +46704,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.classifyPullResult = pullOutcome;
   api._safeReasonCounts = dsSafeReasonCounts;
+
+  function ownAttemptResult(result, day, fallbackReason, fallbackError) {
+    var source = result && typeof result === 'object' ? result : null, owned = {};
+    if (source) Object.keys(source).forEach(function (key) { owned[key] = source[key]; });
+    owned.ok = !!(source && source.ok === true);
+    owned.complete = !!(source && source.complete === true);
+    if (!owned.reason) owned.reason = fallbackReason || 'unverified-result';
+    if (!owned.target) owned.target = String(day || DS.day || '');
+    if (!owned.error && fallbackError) owned.error = String(fallbackError);
+    DS.lastAttemptResult = owned;
+    return owned;
+  }
 
   function retryItems(source) {
     var history = source && source.historyReceipt ? source.historyReceipt : source;
@@ -46860,6 +46878,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (eF) {}
     var sessionSerial = DS.sessionSerial;
+    DS.lastAttemptResult = null;
+    dsSyncDiagBtn(false);
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
     if (!DS.__autoRetrying) DS.autoRePull = 0;
@@ -46905,6 +46925,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
           DS.pulling = false;
+          ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || '') }, rday);
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
@@ -47004,6 +47025,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : si.pull({ date: day, onStatus: dsOnStatus });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
+          result = ownAttemptResult(result, day, 'unverified-result', 'The Athena pull returned no verifiable result.');
           var outcome = pullOutcome(result, day), retryCount = syncRetryControl(result);
           /* 2026-07-28 owner order: transient grid refusals must not end at a
              'retry after the grid finishes loading' banner. When the engine
@@ -47011,7 +47033,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              yet corroborated, nav race), re-run the SAME full fail-closed
              pull automatically - twice, with settle time - before surfacing
              the refusal. No gate is weakened; only the clicking is ours. */
-          var transientRefusal = !!(result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
+          var refusalReason = String(result && result.reason || '');
+          var deterministicRefusal = refusalReason === 'pull-in-flight' || /^provider-/.test(refusalReason);
+          var transientRefusal = !!(result && result.ok !== true && !deterministicRefusal && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(refusalReason)));
           if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
@@ -47038,11 +47062,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              automatically; identity/schedule refusals surface untouched */
           if (retryCount > 0) dsAutoConvergeBodies(sessionSerial);
         },
-               function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
+               function (err) {
+                 var errText = (err && err.message) || 'check the Athena tab and try again.';
+                 ownAttemptResult(null, day, 'pull-exception', errText);
+                 done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + errText);
+               });
       } else {
+        ownAttemptResult(null, day, 'no-receipt', 'The Athena pull engine did not return a verifiable completion receipt.');
         done(false, 'The Athena pull engine did not return a verifiable completion receipt. Reload MLS and try again.');
       }
-    } catch (e) { done(false, 'The pull could not start - make sure athenaOne is open, then try again.'); }
+    } catch (e) {
+      ownAttemptResult(null, day, 'pull-start-failed', (e && e.message) || 'The Athena pull could not start.');
+      done(false, 'The pull could not start - make sure athenaOne is open, then try again.');
+    }
   }
 
   function removeDoctorDayControls() {
@@ -47119,7 +47151,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
-        /* sbp-1.0 boot-paint settle (live b1016/b1026, final-live-proofs
+        /* sbp-1.0 boot-paint settle (live b1016/b1027, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
            exists - the resolver reads the placeholder slot, answers 'unset'
            (= on), and the box paints CHECKED while the settled preference is
@@ -47167,6 +47199,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var k = String(ev && ev.detail && ev.detail.day || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k === DS.day) return;
       DS.day = k; DS.followToday = (k === todayKey());
+      DS.lastAttemptResult = null; DS.statusLog = []; dsSyncDiagBtn(false);
       syncStrip();
     } catch (e) {}
   }
@@ -47180,7 +47213,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.statusLog = [];
+    DS.lastResult = null; DS.lastAttemptResult = null; DS.statusLog = [];
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
       var easy = window.__mlsEasyV32;
@@ -47303,7 +47336,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
          the wrong slot, so its 'unset' (= default on) is provisional and
-         views must re-read after the session settles (live b1016/b1026:
+         views must re-read after the session settles (live b1016/b1027:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
       var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
