@@ -236,6 +236,9 @@
   }
 
   function close() {
+    /* Setup can be speaking through its preview face. The panel owns that
+       sample, so removing the panel must stop both its audio and mouth loop. */
+    pvStopVoice();
     safe(function () { stopCamera(); }); /* never leave the camera running */
     var back = gid(BACK_ID);
     if (back && back.parentNode) back.parentNode.removeChild(back);
@@ -705,11 +708,11 @@
      browser's speechSynthesis only as fallback. The completion contract is
      identical either way: `then` fires exactly once — event, error, or
      watchdog — so the speak->listen chain can never strand. */
-  function pvSpeak(text, then) { pvSpeakVoiced(text, then, null, null); }
+  function pvSpeak(text, then, onStart) { pvSpeakVoiced(text, then, null, null, null, onStart); }
   /* the same speak engine, told WHAT KIND of line this is so the backend can
      shape the delivery (see ttsFetchUrl). Separate from pvSpeak only so the
      four existing call sites keep their exact two-argument shape. */
-  function pvSpeakShaped(text, then, shape) { pvSpeakVoiced(text, then, null, shape); }
+  function pvSpeakShaped(text, then, shape, onStart) { pvSpeakVoiced(text, then, null, shape, null, onStart); }
   /* the sentence currently leaving the speaker, normalised — LIVENESS ONLY.
      "Is a sentence still playing?" Read by the barge-in decision, by the voice
      gate's room-floor learning, and by the silence watchdog, and by nothing that
@@ -1073,6 +1076,18 @@
        no caller can strand waiting for a sentence that never plays. */
     if (kiosk && kiosk.ambient) { if (then) safe(then); return; }
     var mySeq = ++pvSpeakSeq;
+    /* One sentence owns one face. The kiosk normally supplies that face, while
+       Setup may pass its own preview controller as the fifth argument. Capture
+       it now: a later retint/rebuild must never redirect audio that is already
+       in flight onto a different face. */
+    var speechFace = (arguments.length > 4 && arguments[4]) ? arguments[4] : safe(function () { return kiosk && kiosk.face; }, null);
+    var speechOnStart = arguments.length > 5 ? arguments[5] : null;
+    var startReported = false;
+    function reportStart() {
+      if (startReported || mySeq !== pvSpeakSeq) return;
+      startReported = true;
+      if (speechOnStart) safe(speechOnStart);
+    }
     var finished = false;
     function finish() {
       if (finished || mySeq !== pvSpeakSeq) return;
@@ -1086,7 +1101,7 @@
       pvSaying = '';
       if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
       pvHeld.length = 0;
-      faceTalkStop();
+      faceTalkStop(speechFace);
       if (then) safe(then);
     }
     var t = String(text == null ? '' : text);
@@ -1104,7 +1119,7 @@
     pvWatchdog = setTimeout(function () {
       if (mySeq !== pvSpeakSeq || started) return;
       started = true;
-      pvSpeakSynth(t, mySeq, finish);
+      pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
     }, 5000);
     /* av-5.6.4 — STREAMED IN TWO PIECES. Time-to-first-word used to be the
        generation time of the WHOLE reply, because the audio was fetched as one
@@ -1130,36 +1145,40 @@
       ttsFetchUrl(chunks[0], voiceOverride, 'open').then(function (u1) {
         if (mySeq !== pvSpeakSeq || finished || started) return;
         started = true;
-        if (!u1) { pvSpeakSynth(t, mySeq, finish); return; }   /* nothing played yet — the old path, whole line */
+        if (!u1) { pvSpeakSynth(t, mySeq, finish, speechFace, reportStart); return; }   /* nothing played yet — the old path, whole line */
         ttsPlayUrl(u1, mySeq, function () {
           if (mySeq !== pvSpeakSeq || finished) return;
+          /* Close part one's exact mouth before any wait on the prefetched
+             continuation. The face must not hold its last open vowel across a
+             network seam, and this also retires any already-queued RAF. */
+          faceTalkStop(speechFace);
           second.then(function (u2) {
             if (mySeq !== pvSpeakSeq || finished) return;
-            if (u2) ttsPlayUrl(u2, mySeq, finish); else pvSpeakSynth(chunks[1], mySeq, finish);
+            if (u2) ttsPlayUrl(u2, mySeq, finish, speechFace, reportStart); else pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
           }, function () {
             if (mySeq !== pvSpeakSeq || finished) return;
-            pvSpeakSynth(chunks[1], mySeq, finish);
+            pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
           });
-        });
+        }, speechFace, reportStart);
       }, function () {
         if (mySeq !== pvSpeakSeq || finished || started) return;
         started = true;
-        pvSpeakSynth(t, mySeq, finish);
+        pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
       });
       return;
     }
     ttsFetchUrl(t, voiceOverride, shape).then(function (url) {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
-      if (url) { ttsPlayUrl(url, mySeq, finish); return; }
-      pvSpeakSynth(t, mySeq, finish);
+      if (url) { ttsPlayUrl(url, mySeq, finish, speechFace, reportStart); return; }
+      pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
     }, function () {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
-      pvSpeakSynth(t, mySeq, finish);
+      pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
     });
   }
-  function pvSpeakSynth(text, mySeq, finish) {
+  function pvSpeakSynth(text, mySeq, finish, speechFace, reportStart) {
     var synth = safe(function () { return window.speechSynthesis; }, null);
     if (mySeq !== pvSpeakSeq) return;
     if (!synth || typeof window.SpeechSynthesisUtterance !== 'function') { finish(); return; }
@@ -1191,13 +1210,24 @@
       }
       u.onend = finish;
       u.onerror = finish;
+      var synthStarted = false;
+      function reportSynthStart() {
+        if (synthStarted || mySeq !== pvSpeakSeq) return;
+        synthStarted = true;
+        if (reportStart) safe(reportStart);
+        faceTalkCycle(true, speechFace);
+      }
+      /* Chrome normally emits start; some installed Windows voices only emit
+         boundary. Either is proof that audible playback began, and the local
+         once-gate keeps both from starting two mouth cycles. */
+      u.onstart = reportSynthStart;
+      u.onboundary = reportSynthStart;
       pvHeld.push(u); /* defeat the GC */
       /* watchdog: ~160 wpm reading speed + 3s grace — speech that "never
          ends" still hands off to the next stage. */
       if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); }
       var expectMs = Math.min(30000, Math.max(2500, String(text).split(/\s+/).length * 380 + 3000));
       pvWatchdog = setTimeout(finish, expectMs);
-      faceTalkCycle(true);
       synth.speak(u);
     } catch (e) { finish(); }
   }
@@ -4208,17 +4238,28 @@
                     eL: eL && { y: eL.medY, cx: Math.round(eL.cx), sp: eL.spread, n: eL.n },
                     eR: eR && { y: eR.medY, cx: Math.round(eR.cx), sp: eR.spread, n: eR.n } } };
   }
-  function faceTalkStop() {
+  function faceTalkStop(face) {
+    /* Invalidate the exact mouth loop before cancelling its frame. A split
+       sentence creates a new <audio> element for part two; the last queued RAF
+       from part one must become inert rather than cancelling part two's RAF. */
+    ttsMouthGeneration++;
     if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
-    safe(function () { if (kiosk.face) { kiosk.face.talkCycle(false); kiosk.face.talk(-1); } });
+    var target = face || pvTalkFace || safe(function () { return kiosk && kiosk.face; }, null);
+    safe(function () { if (target) { target.talkCycle(false); target.talk(-1); } });
+    if (!face || pvTalkFace === face) pvTalkFace = null;
   }
-  function faceTalkCycle(on) { safe(function () { if (kiosk.face) kiosk.face.talkCycle(on); }); }
+  function faceTalkCycle(on, face) {
+    var target = face || pvTalkFace || safe(function () { return kiosk && kiosk.face; }, null);
+    if (on && target) pvTalkFace = target;
+    safe(function () { if (target) target.talkCycle(on); });
+  }
 
   /* ---- NATURAL SPEECH: the backend voice first, the browser as fallback.
      MP3 from /api/avatar/office/tts (clinician-authed), cached per text so
      a repeated question is instant, with a short circuit-breaker so an outage
      degrades to browser speech instead of stalling every question. ---- */
   var ttsCache = {}, ttsOrder = [], ttsDownUntil = 0, ttsAudioNow = null, ttsCtx = null, ttsRaf = 0;
+  var ttsMouthGeneration = 0, pvTalkFace = null;
   function ttsEnsureCtx() {
     if (ttsCtx) { safe(function () { if (ttsCtx.state === 'suspended') ttsCtx.resume(); }); return; }
     ttsCtx = safe(function () { var C = window.AudioContext || window.webkitAudioContext; return C ? new C() : null; }, null);
@@ -4335,7 +4376,14 @@
       return null;
     });
   }
-  function ttsPlayUrl(url, mySeq, finish) {
+  function ttsPlayUrl(url, mySeq, finish, speechFace, reportStart) {
+    /* Each audio element exclusively owns its mouth frames. In a two-piece
+       sentence, cancel the completed first element's queued frame before part
+       two publishes its own. This removes the race where the stale frame saw
+       `a.ended`, called the global stop, and froze the live second half. */
+    var mouthGeneration = ++ttsMouthGeneration;
+    if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
+    if (speechFace) pvTalkFace = speechFace;
     var a = new Audio(url);
     ttsAudioNow = a;
     a.onended = finish; a.onerror = finish;
@@ -4345,27 +4393,38 @@
       pvWatchdog = setTimeout(finish, Math.min(45000, Math.max(2500, (a.duration || 12) * 1000 + 2500)));
     };
     /* amplitude lip-sync when the AudioContext is willing; otherwise cycle */
+    var ampStart = null;
     var wired = safe(function () {
-      if (!ttsCtx || ttsCtx.state !== 'running' || !kiosk.face) return false;
+      if (!ttsCtx || ttsCtx.state !== 'running' || !speechFace) return false;
       var src = ttsCtx.createMediaElementSource(a);
       var an = ttsCtx.createAnalyser(); an.fftSize = 256;
       src.connect(an); an.connect(ttsCtx.destination);
       var buf = new Uint8Array(an.frequencyBinCount);
       var lastAt = 0;
-      (function amp(now) {
-        if (mySeq !== pvSpeakSeq || a.ended) { faceTalkStop(); return; }
-        ttsRaf = requestAnimationFrame(amp);
-        if (now - lastAt < 70) return;
-        lastAt = now;
-        an.getByteFrequencyData(buf);
-        var sum = 0; for (var i = 2; i < 40; i++) sum += buf[i];
-        kiosk.face.talk(Math.min(1, (sum / 38) / 150));
-      })(0);
+      ampStart = function () {
+        (function amp(now) {
+          if (mouthGeneration !== ttsMouthGeneration) return;
+          if (mySeq !== pvSpeakSeq || a.ended) { faceTalkStop(speechFace); return; }
+          ttsRaf = requestAnimationFrame(amp);
+          if (now - lastAt < 70) return;
+          lastAt = now;
+          an.getByteFrequencyData(buf);
+          var sum = 0; for (var i = 2; i < 40; i++) sum += buf[i];
+          speechFace.talk(Math.min(1, (sum / 38) / 150));
+        })(0);
+      };
       return true;
     }, false);
-    if (!wired) faceTalkCycle(true);
+    var mouthStarted = false;
+    a.onplaying = function () {
+      if (mouthStarted || mySeq !== pvSpeakSeq || mouthGeneration !== ttsMouthGeneration) return;
+      mouthStarted = true;
+      if (reportStart) safe(reportStart);
+      if (wired && ampStart) ampStart(); else faceTalkCycle(true, speechFace);
+    };
     var p = safe(function () { return a.play(); }, null);
-    if (p && p.catch) p.catch(function () { finish(); });
+    if (p && p.then) p.then(function () { if (a.onplaying) a.onplaying(); }, function () { finish(); });
+    else if (p && p.catch) p.catch(function () { finish(); });
   }
 
   var cameraStream = null;
@@ -5445,7 +5504,10 @@
            greeting is generated with 'greet'. He was auditioning a voice on
            material it never speaks. This mirrors INTERVIEW_SYSTEM rule 9's
            example, spoken exactly as the kiosk speaks the opening line. */
-        pvSpeakVoiced('Hi there, I\'m ' + (nameInput.value.trim() || 'Ava') + ' — I\'m the practice\'s AI assistant, and I help get everyone settled before the doctor comes in. It\'s good to meet you. This only takes a few minutes, and you can just answer in your own words.', null, voiceSelect.value, 'greet');
+        /* The sample belongs to the visible Setup portrait, not kiosk.face
+           (which does not exist here). Passing that controller makes the face
+           patients are being shown lip-sync to the voice they are choosing. */
+        pvSpeakVoiced('Hi there, I\'m ' + (nameInput.value.trim() || 'Ava') + ' — I\'m the practice\'s AI assistant, and I help get everyone settled before the doctor comes in. It\'s good to meet you. This only takes a few minutes, and you can just answer in your own words.', null, voiceSelect.value, 'greet', lookCtl);
       });
       voiceRow.appendChild(voiceSelect); voiceRow.appendChild(voiceTry);
 
@@ -5636,6 +5698,7 @@
            The live loop also self-terminates on !video.isConnected, but the
            camera should die the moment the surface that owns it does. */
         stopCamera();
+        pvStopVoice();
         Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
         tab.classList.add('on');
         if (def[0] === 'setup') setupForm(body); else inboxList(body, def[0]);
@@ -6124,6 +6187,16 @@ function kioskLine(kind, text) {
     /* the FACE carries the emotion now: brows, eyes, mouth, head tilt */
     if (kiosk.face) kiosk.face.mood(state, caring, happy);
   }
+  function kioskSpeechStarted(say, answer) {
+    /* The media element / SpeechSynthesis event is the sole caller. A live mic
+       turns actual playback into duplex; a closed mic turns it into speaking.
+       One helper prevents apology, alert, nudge and routine-question paths from
+       painting different truths for the same hardware state. */
+    if (!kiosk.open || kiosk.completed || kiosk.paused || kiosk.ambient) return false;
+    kioskMood('speaking', say, answer);
+    if (pvRec) kioskState('duplex');
+    return true;
+  }
   function kioskClose(reason) {
     pvStopVoice();
     /* release the echo-cancelled companion stream with the overlay, or the microphone light
@@ -6267,8 +6340,9 @@ function kioskLine(kind, text) {
         }
         openingTimer = setTimeout(settleOpening, speakIt ? 6000 : 500);
         if (speakIt) {
-          kioskMood('speaking', msg);
-          pvSpeakShaped(msg, settleOpening, 'calm');
+          pvSpeakShaped(msg, settleOpening, 'calm', function () {
+            if (turnCurrent()) kioskSpeechStarted(msg);
+          });
         }
         return;
       }
@@ -6296,8 +6370,9 @@ function kioskLine(kind, text) {
       }
       retryTimer = setTimeout(settleRetry, speakIt ? 6000 : 500);
       if (speakIt) {
-        kioskMood('speaking', msg);
-        pvSpeakShaped(msg, settleRetry, 'calm');
+        pvSpeakShaped(msg, settleRetry, 'calm', function () {
+          if (turnCurrent()) kioskSpeechStarted(msg);
+        });
       }
     }
     var requestSettled = false;
@@ -6378,12 +6453,13 @@ function kioskLine(kind, text) {
         if (j.emergency === true && kiosk.lastSay) {
           kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
           kioskSetSay(kiosk.lastSay);
-          kioskMood('speaking', kiosk.lastSay, answer);
           pvSpeakShaped(kiosk.lastSay, function () {
             if (!turnCurrent() || kiosk.completed) return;
             var alertContinuation = kioskTakeSpeech();
             if (alertContinuation) kioskTurn(alertContinuation, kioskNonce());
-          }, 'alert');
+          }, 'alert', function () {
+            if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay, answer);
+          });
         } else {
           continued = kioskTakeSpeech();
           kiosk.lastSay = '';
@@ -6403,17 +6479,24 @@ function kioskLine(kind, text) {
            new patient turn. Any speech during request latency was already queued
            and handled above, before this branch can run. */
         pvStopMic();
-        kioskMood('speaking', kiosk.lastSay);
-        pvSpeakShaped(kiosk.lastSay, function () { kioskFinish(); }, saidShape);
+        pvSpeakShaped(kiosk.lastSay, function () { kioskFinish(); }, saidShape, function () {
+          if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay);
+        });
         setTimeout(function () { if (turnCurrent() && !kiosk.completed) kioskFinish(); }, 12000);
       } else {
-        kioskMood('speaking', kiosk.lastSay, answer);
         /* owner: "it should be able to listen while it is talking" - the mic
            opens WITH the question, not after it. Patients answer as soon as
            they understand, usually before the sentence ends; those first
            words used to be discarded and the kiosk looked frozen. */
         kioskListen(true);
         pvSpeakShaped(kiosk.lastSay, function () {
+          /* Speech is over. The recogniser may have been open for the whole
+             question, but the visible owner now becomes listening: retire the
+             speaking wave/class, preserve the mic, and let one function set
+             the chip, face mood and CSS from the same fact. */
+          if (turnCurrent() && kiosk.open && !kiosk.completed && !kiosk.paused && !kiosk.ambient) {
+            kioskMood('listening', kiosk.lastSay, answer);
+          }
           if (!pvRec) { kioskListen(); return; }
           /* THE SILENCE CLOCK STARTS WHEN THE QUESTION ENDS. kioskListen arms
              it, and the microphone now opens WITH the question, so a long
@@ -6422,6 +6505,10 @@ function kioskLine(kind, text) {
              with "take your time". Re-armed here, from the moment there is
              actually something to answer. */
           kioskArmWatchdog(9000);
+        }, saidShape, function () {
+          /* Fetching/generating audio is Thinking, not Speaking. Flip to the
+             duplex state only when the browser reports real playback. */
+          if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay, answer);
         });
       }
     }, function () {
@@ -6525,11 +6612,13 @@ function kioskLine(kind, text) {
     if (kiosk.nudgedFor !== kiosk.lastSay) {
       kiosk.nudgedFor = kiosk.lastSay;
       pvStopVoice();
-      kioskMood('speaking', '');
+      kioskMood('thinking', '');
       /* 'calm' must match the shape the pre-fetch used in kioskConsentYes, or
          the cache key differs and the one request this line exists to have
          already made is paid for again, right when the patient is waiting */
-      pvSpeakShaped(NUDGE_LINE, function () { kioskListen(); }, 'calm');
+      pvSpeakShaped(NUDGE_LINE, function () { kioskListen(); }, 'calm', function () {
+        kioskSpeechStarted(NUDGE_LINE);
+      });
     } else {
       pvStopVoice();
       kioskListen();
@@ -6690,7 +6779,14 @@ function kioskLine(kind, text) {
         kiosk.heard = true;
         kiosk.speechFails = 0; kiosk.speechFailAt = 0;
       }
-      if (pvSaying && otherVoice) pvStopSpeechOnly();
+      var bargedIn = !!(pvSaying && otherVoice);
+      if (bargedIn) pvStopSpeechOnly();
+      /* A real barge-in ended the speaker synchronously. Move the entire UI to
+         listening in that same transition; otherwise the chip can say Duplex
+         and the waveform can keep animating while no audio exists. */
+      if (bargedIn && kiosk.open && !kiosk.paused && !kiosk.ambient) {
+        kioskMood('listening', kiosk.lastSay, interim);
+      }
       kioskLine('transcript', interim);
     }, function (code, recoverable) {
       code = String(code || 'unknown');
