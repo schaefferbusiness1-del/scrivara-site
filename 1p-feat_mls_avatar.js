@@ -849,7 +849,8 @@
      `track.getSettings()` back to confirm the browser actually applied it. If it did not,
      `vgReady` stays false and every decision below falls back to the string gate exactly as
      it behaves today. A device without AEC must never be made worse by this. */
-  var vgStream = null, vgCtx = null, vgNode = null, vgData = null, vgRaf = 0;
+  var vgStream = null, vgCtx = null, vgNode = null, vgData = null, vgRaf = 0, vgStartGeneration = 0;
+  var vgStartPending = null;
   var vgReady = false, vgWhy = 'not started', vgLevel = 0, vgFloor = 0;
   var vgFloorSamples = [], vgLoudFrames = 0, vgQuietFrames = 0, vgSettings = null;
   var VG_FRAME_MS = 40;          /* ~25 reads a second: fast enough to feel instant */
@@ -929,26 +930,48 @@
      kiosk path: the mic is requested exactly once, on the staff tap (see kioskMicPreflight).
      It exists so the gate can be proven in a harness without driving a whole interview. */
   function pvVoiceGateStart(done) {
-    if (vgReady || vgStream) { if (done) safe(done); return; }
+    if (vgReady || vgStream) { if (done) safe(function () { done(true); }); return; }
+    if (vgStartPending) { if (done) vgStartPending.waiters.push(done); return; }
     var md = safe(function () { return navigator.mediaDevices; }, null);
-    if (!md || !md.getUserMedia) { vgWhy = 'this browser has no getUserMedia'; if (done) safe(done); return; }
+    if (!md || !md.getUserMedia) { vgWhy = 'this browser has no getUserMedia'; if (done) safe(function () { done(false); }); return; }
+    var request = { generation: ++vgStartGeneration, waiters: done ? [done] : [] };
+    vgStartPending = request;
+    function finishStart() {
+      if (vgStartPending !== request) return;
+      vgStartPending = null;
+      var waiters = request.waiters.slice(); request.waiters = [];
+      for (var wi = 0; wi < waiters.length; wi++) (function (fn) { safe(function () { fn(vgReady === true); }); })(waiters[wi]);
+    }
     safe(function () {
       md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
         .then(function (stream) {
+          if (vgStartPending !== request || request.generation !== vgStartGeneration) {
+            /* Pause/close happened while permission was pending. Never let a
+               late grant resurrect a microphone behind a non-listening UI. */
+            safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+            return;
+          }
           if (!pvVoiceGateAdopt(stream)) safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
-          if (done) safe(done);
+          finishStart();
         }, function (err) {
+          if (vgStartPending !== request || request.generation !== vgStartGeneration) return;
           vgWhy = 'microphone refused for the voice gate (' + String(err && err.name || err) + ')';
-          if (done) safe(done);
+          finishStart();
         });
     });
   }
   function pvVoiceGateStop() {
+    vgStartGeneration++;
+    var canceledRequest = vgStartPending;
+    vgStartPending = null;
     if (vgRaf) { safe(function () { cancelAnimationFrame(vgRaf); }); vgRaf = 0; }
     if (vgStream) safe(function () { vgStream.getTracks().forEach(function (t) { t.stop(); }); });
     if (vgCtx) safe(function () { vgCtx.close(); });
     vgStream = null; vgCtx = null; vgNode = null; vgData = null; vgReady = false;
     vgLevel = 0; vgFloor = 0; vgFloorSamples = []; vgLoudFrames = 0; vgQuietFrames = 0;
+    var canceledWaiters = canceledRequest ? canceledRequest.waiters.slice() : [];
+    if (canceledRequest) canceledRequest.waiters = [];
+    for (var cwi = 0; cwi < canceledWaiters.length; cwi++) (function (fn) { safe(function () { fn(false); }); })(canceledWaiters[cwi]);
   }
   /* true only with sustained energy ABOVE the learned room floor on the echo-cancelled
      stream. While the avatar is speaking, its own voice has already been removed, so this
@@ -1023,21 +1046,22 @@
        (The multi-word cases are untouched: they are what actually caught the
        owner's "it records itself talking".) */
     if (words.length < 2) return false;
-    /* THE ECHO TEMPLATE, not the liveness value — see `var pvEchoSaying`. This is
-       a FILING GATE: what it returns true for is deleted and never reaches the
-       chart, so it must compare against a string whose lifetime is the one this
-       classifier was calibrated against, not against "is audio still playing". */
-    if (pvEchoSaying && pvEchoMatch(pvEchoSaying, h, words, 2, 2)) return true;
+    /* p1-listener-1.0.0 — A STRING SLICE ALONE IS NOT PROOF OF ECHO.
+       The normal answer to an A-or-B question is made from the question's own
+       words ("worse at night", "both knees", "more of a dull ache"). The old
+       2-word slice rule deleted those answers at the recogniser source, before
+       either the transcript or barge-in path could see them. AEC presence can
+       positively preserve even an exact repeat, but a false-negative must not
+       delete "worse at night" or another normal answer. Therefore the only
+       destructive filing evidence is exact full-line equality. */
+    if (pvEchoSaying && pvVoiceGateReady() && pvOtherVoiceNow()) return false;
+    if (pvEchoSaying && h === pvEchoSaying) return true;
     var now = Date.now();
     for (var i = 0; i < pvEchoTail.length; i++) {
-      /* THE TAIL IS CONTIGUITY ONLY. The overlap branch (>80% of the heard words
-         appearing anywhere in the sentence) could delete a real answer for 1.6
-         seconds after the question ended - including a red-flag answer, which is
-         the worst thing in this file to lose - because a short reply reuses the
-         question's words by nature. The comment always claimed only a long
-         contiguous quote counted here; now that is what the code does. The
-         minOverlapWords argument is deliberately unreachable. */
-      if (pvEchoTail[i].until > now && pvEchoMatch(pvEchoTail[i].norm, h, words, 4, 9999)) return true;
+      /* In the post-audio tail there is no simultaneous energy fact to
+         distinguish a polite answer from the speaker. Preserve every option or
+         clause; only the exact full sentence is destructive evidence. */
+      if (pvEchoTail[i].until > now && h === pvEchoTail[i].norm) return true;
     }
     return false;
   }
@@ -1198,7 +1222,7 @@
     var rec; try { rec = new C(); } catch (e) { return false; }
     pvRec = rec;
     rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
-    var finalText = '', quiet = null, dead = false;
+    var finalText = '', lastInterim = '', quiet = null, dead = false, finalSeen = {};
     /* published on the recogniser so a teardown can reach into this closure and
        disarm the quiet timer - see pvStopVoice */
     function killQuiet() { if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; } dead = true; }
@@ -1213,13 +1237,22 @@
          caller, and the recogniser was already torn down by then: mic dead, no
          answer taken, and only the 9s watchdog could revive the question. That
          is the "doesn't listen for answers" half of the owner's report. */
-      if (!v) return;
-      if (pvRec === rec) { safe(function () { rec.stop(); }); pvRec = null; }
+      if (!v) return false;
+      /* p1-listener-1.0.0 — KEEP THE MICROPHONE OPEN THROUGH THE BACKEND TURN.
+         Stopping here made the kiosk deaf for exactly the request latency and
+         also let a late stop() result post the same buffer twice. Consume the
+         buffer atomically, leave this continuous recogniser alive, and let the
+         kiosk queue any continuation while its prior turn is in flight. */
+      finalText = '';
+      lastInterim = '';
+      if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; }
       if (onFinal) onFinal(v);
+      return true;
     }
     /* av-5.2.0: 1.3s of quiet after real speech submits — snappier turns */
     function armQuiet() { if (quiet) clearTimeout(quiet); quiet = setTimeout(function () { if (finalText.trim()) submit(); }, 1300); }
     rec.onresult = function (ev) {
+      if (dead) return;
       var interim = '';
       for (var i = ev.resultIndex; i < ev.results.length; i++) {
         var r = ev.results[i];
@@ -1228,14 +1261,44 @@
            avatar's own words entered finalText and the caller then had to
            reject the WHOLE result - the patient's words with it. */
         if (piece && pvIsSelfEcho(piece)) continue;
-        if (r.isFinal) { if (piece) finalText += (finalText ? ' ' : '') + piece; }
+        if (r.isFinal) {
+          /* A continuous recogniser keeps old final slots in ev.results. Only a
+             new result index/text pair may enter this turn buffer. Re-delivery
+             of a final can no longer create a second answer nonce. */
+          var finalKey = String(i) + '\u0000' + piece;
+          if (piece && !finalSeen[finalKey]) {
+            finalSeen[finalKey] = true;
+            finalText += (finalText ? ' ' : '') + piece;
+          }
+        }
         else interim += String(r[0].transcript || '');
       }
+      lastInterim = interim.trim();
       if (onInterim) onInterim((finalText + ' ' + interim).trim());
       armQuiet();
     };
-    rec.onerror = function () { if (pvRec === rec) { pvRec = null; if (onDead) safe(onDead); } };
-    rec.onend = function () { if (pvRec === rec) { if (finalText.trim()) submit(); else { pvRec = null; if (onDead) safe(onDead); } } };
+    rec.onerror = function (ev) {
+      if (pvRec !== rec) return;
+      var code = String((ev && ev.error) || 'unknown');
+      var recoverable = lastInterim;
+      /* Final segments are safe to submit once. Interim-only words are handed to
+         the caller for a visible, editable typing fallback instead of being
+         silently discarded or silently promoted to a clinical answer. */
+      submit();
+      pvRec = null;
+      dead = true;
+      if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; }
+      if (onDead) safe(function () { onDead(code, recoverable); });
+    };
+    rec.onend = function () {
+      if (pvRec !== rec) return;
+      var recoverable = lastInterim;
+      submit();
+      pvRec = null;
+      dead = true;
+      if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; }
+      if (onDead) safe(function () { onDead('end', recoverable); });
+    };
     try { rec.start(); return true; } catch (e) { pvRec = null; return false; }
   }
 
@@ -5607,6 +5670,112 @@
      caring when the patient's words sound like pain/distress. Reduced-motion
      kills all of it. ========================================================= */
   var kiosk = { open: false, sid: null, ext: null, busy: false, lastSay: '', lastTry: null };
+  /* p1-listener-1.0.0 — one continuous capture owns the full patient turn.
+     A backend request no longer creates a deaf window. Speech that finalises
+     while that request is in flight is held here, bounded, and sent as the next
+     continuation before the avatar asks another question. */
+  function kioskQueueSpeech(text) {
+    var v = clean(text);
+    if (!v) return '';
+    var prior = clean(kiosk.pendingSpeech);
+    if (prior === v || (prior && prior.slice(-v.length) === v)) return prior;
+    /* A turn now has a hard 30-second owner below, so this buffer cannot grow
+       forever. Do not silently slice its newest clinical words: that was an
+       invisible loss exactly when the backend was slowest. */
+    kiosk.pendingSpeech = clean((prior ? prior + ' ' : '') + v);
+    kiosk.heard = true;
+    return kiosk.pendingSpeech;
+  }
+  function kioskTakeSpeech() {
+    var v = clean(kiosk.pendingSpeech);
+    kiosk.pendingSpeech = '';
+    return v;
+  }
+  function kioskOfferRecoverable(text) {
+    var v = clean(text);
+    if (!v) return false;
+    var prior = clean(kiosk.provisionalSpeech), merged = prior;
+    if (!prior) merged = v;
+    else if (prior === v || prior.indexOf(v) >= 0) merged = prior;
+    else if (v.indexOf(prior) >= 0) merged = v;
+    else {
+      var pw = prior.split(/\s+/), vw = v.split(/\s+/), overlap = 0;
+      var cap = Math.min(pw.length, vw.length);
+      for (var oi = 1; oi <= cap; oi++) {
+        if (pvNorm(pw.slice(pw.length - oi).join(' ')) === pvNorm(vw.slice(0, oi).join(' '))) overlap = oi;
+      }
+      merged = clean(prior + (overlap < vw.length ? ' ' + vw.slice(overlap).join(' ') : ''));
+    }
+    if (merged.length > 8000) {
+      /* Never silently slice the newest words. Stop automatic listening and
+         keep the complete accumulated text visible for an explicit Send. */
+      kiosk.provisionalSpeech = merged;
+      kiosk.provisionalEdited = true;
+      kioskTypingFallback('The speech service produced too many unfinished fragments. I stopped listening and kept all of them below for review.', merged);
+      return true;
+    }
+    kiosk.provisionalSpeech = merged;
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+    var input = gid('mlsAvKioskInput');
+    if (input) {
+      var existing = clean(input.value);
+      var priorShown = clean(kiosk.provisionalShown);
+      if (!existing || existing === priorShown) {
+        input.value = merged;
+        kiosk.provisionalShown = merged;
+      } else {
+        /* The patient/staff edited the offer. Never overwrite those edits; add
+           only this newly recovered fragment and leave the box for review. */
+        kiosk.provisionalEdited = true;
+        if (existing.indexOf(v) < 0) input.value = clean(existing + ' ' + v);
+      }
+    }
+    kioskLine('hint', 'I heard these words but the speech service did not finalize them. Review the text below and tap Send if it is missing from your answer.');
+    return true;
+  }
+  function kioskConfirmRecoverable(finalText) {
+    var held = clean(kiosk.provisionalSpeech), confirmed = clean(finalText);
+    if (!held || !confirmed) return false;
+    var hn = pvNorm(held), cn = pvNorm(confirmed);
+    if (!hn || cn.indexOf(hn) < 0) return false;
+    var row = gid('mlsAvKioskTypeRow'), input = gid('mlsAvKioskInput');
+    if (!kiosk.provisionalEdited && input && clean(input.value) === clean(kiosk.provisionalShown)) input.value = '';
+    if (row && !kiosk.provisionalEdited && kiosk.mic !== false && (!input || !clean(input.value))) row.style.display = 'none';
+    kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+    return true;
+  }
+  function kioskRetryAnswer(answer, nonce, retryAttempt) {
+    var v = clean(answer);
+    if (!v) return false;
+    /* The server did not accept this answer. It owns the next turn ahead of any
+       later clause, with the SAME nonce, so a response that reached the server
+       just before the refusal cannot duplicate it. The continuation remains
+       queued and will drain after this retry succeeds. */
+    kiosk.lastTry = { answer: v, nonce: nonce };
+    kioskTurn(v, nonce || kioskNonce(), false, retryAttempt == null ? 1 : retryAttempt);
+    return true;
+  }
+  function kioskTypingFallback(reason, recoverable) {
+    kiosk.mic = false;
+    /* This screen now says the microphone is off. Release the adopted AEC stream,
+       animation frame and AudioContext in the same transition so that statement
+       is true and the browser's microphone indicator goes dark. */
+    safe(function () { pvStopMic(); });
+    safe(function () { pvVoiceGateStop(); });
+    if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+    var input = gid('mlsAvKioskInput');
+    if (input && recoverable) {
+      var held = clean(recoverable), existing = clean(input.value);
+      if (!existing) input.value = held;
+      else if (held && existing !== held && existing.indexOf(held) < 0) input.value = clean(existing + ' ' + held);
+    }
+    if (input) safe(function () { input.focus(); });
+    kioskState('ready');
+    kioskLine('alert', reason || 'The speech service is unavailable right now — type your answer below.');
+    kioskArmWatchdog(20000);
+    return false;
+  }
   function kioskNonce() {
     var v = 'an-', A = 'abcdefghjkmnpqrstuvwxyz23456789';
     for (var i = 0; i < 16; i++) v += A[Math.floor(Math.random() * A.length)];
@@ -5971,8 +6140,12 @@ function kioskLine(kind, text) {
        it - they can never cross into the next patient's session */
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
-    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = ''; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
+    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
+    kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+    kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null;
+    if (kiosk.preflightRequest) { kiosk.preflightRequest.waiters = []; kiosk.preflightRequest = null; }
+    kiosk.speechFails = 0; kiosk.speechFailAt = 0; kiosk.ambExitPending = false;
     kiosk.paused = false;
     /* the consent dies with the screen it was given on - nothing reached from a
        later session may act on it */
@@ -6023,7 +6196,7 @@ function kioskLine(kind, text) {
     for (var k in ctx) { if (Object.prototype.hasOwnProperty.call(ctx, k)) return ctx; }
     return null;
   }
-  function kioskTurn(answer, nonce, finish) {
+  function kioskTurn(answer, nonce, finish, retryAttempt) {
     if (!kiosk.open || kiosk.busy) return;
     /* AND NO TURN EITHER, including a `finish`. This is the second half of the
        same defect: from the consent screen, Tab+Enter on "End interview" reached
@@ -6040,15 +6213,20 @@ function kioskLine(kind, text) {
        moves a finished kiosk. */
     if (kiosk.completed && !finish) return;
     if (kiosk.ambient) return;   /* ambient records the room, it never interviews */
+    var turnGeneration = kiosk.generation | 0;
+    var turnSid = clean(kiosk.sid), turnExt = clean(kiosk.ext);
+    function turnCurrent() {
+      return !!(kiosk.open && (kiosk.generation | 0) === turnGeneration &&
+        clean(kiosk.sid) === turnSid && clean(kiosk.ext) === turnExt);
+    }
+    retryAttempt = Math.max(0, Number(retryAttempt) || 0);
+    var answerNonce = answer ? (nonce || kioskNonce()) : '';
     kiosk.busy = true;
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
-    /* pvStopMic, NOT pvStopVoice. This is the ordinary turn: the answer arrives
-       through rec.onresult while the question is still playing (the mic opens WITH
-       it), so cancelling here truncated the question on EVERY answer — and on every
-       echo the classifier missed, which is a question cut off by its own voice.
-       The next line still replaces this one: pvSpeakShaped bumps pvSpeakSeq when
-       the reply lands. What is gone is the silence in between. */
-    pvStopMic();
+    /* Keep the continuous recogniser alive for an answered turn. It queues any
+       extra clause spoken while this request runs. Opening/finish turns carry no
+       patient answer and still close any stale recogniser explicitly. */
+    if (!answer || finish) pvStopMic();
     kioskMood('thinking', '', answer);
     kioskLineReset();
     var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
@@ -6056,11 +6234,97 @@ function kioskLine(kind, text) {
        every turn - resolved once, at the first turn, and reused */
     if (kiosk.chartCtx === undefined) kiosk.chartCtx = kioskChartContext();
     if (kiosk.chartCtx) body.chartContext = kiosk.chartCtx;
-    if (answer) { body.answer = answer; body.answerNonce = nonce || kioskNonce(); kiosk.silent = 0; kiosk.finishTries = 0; }
+    if (answer) { body.answer = answer; body.answerNonce = answerNonce; kiosk.silent = 0; kiosk.finishTries = 0; }
     if (finish) body.finish = true;
-    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+    /* p1-listener-1.1.0 - one bounded owner for a refused turn.
+       ---------------------------------------------------------
+       The recogniser deliberately remains live while the request is in flight.
+       Therefore a refusal cannot clear `busy` before its apology finishes: a
+       patient continuation would otherwise start first and the original answer
+       (which the server did not accept) would disappear. The apology callback is
+       not a reliable completion signal either - a barge-in cancels speech - so a
+       wall-clock watchdog races it. Exactly ONE automatic resend is allowed, with
+       the exact same answer nonce. A second failure stops every microphone owner
+       and leaves the original answer editable; any later clause remains queued and
+       drains only after the patient explicitly resends the original successfully.
+       No rejection can recurse forever or spin the backend. */
+    function handleTurnFailure(message, speakIt) {
+      if (!turnCurrent()) return;
+      var msg = message || 'Sorry, I didn\'t quite catch that on my end. Could you say it once more?';
+      kioskSetSay(msg);
+      if (!answer) {
+        var openingSettled = false, openingTimer = null;
+        function settleOpening() {
+          if (openingSettled) return;
+          openingSettled = true;
+          if (openingTimer) { safe(function () { clearTimeout(openingTimer); }); openingTimer = null; }
+          if (!turnCurrent()) return;
+          kiosk.busy = false;
+          /* This is the opening turn: there is no question-speech callback that
+             will arm the silence clock for us. Use the normal listening path so
+             repeated no-speech events still end this abandoned interview. */
+          kioskListen();
+        }
+        openingTimer = setTimeout(settleOpening, speakIt ? 6000 : 500);
+        if (speakIt) {
+          kioskMood('speaking', msg);
+          pvSpeakShaped(msg, settleOpening, 'calm');
+        }
+        return;
+      }
+
+      kiosk.lastTry = { answer: answer, nonce: answerNonce };
+      if (retryAttempt >= 1) {
+        kiosk.busy = false;
+        var stillQueued = clean(kiosk.pendingSpeech);
+        kioskTypingFallback(
+          'I could not send that answer after two tries. Please review it below and tap Send.' +
+            (stillQueued ? ' I kept the rest of what you said and will send it next.' : ''),
+          answer
+        );
+        return;
+      }
+
+      var retrySettled = false, retryTimer = null;
+      function settleRetry() {
+        if (retrySettled) return;
+        retrySettled = true;
+        if (retryTimer) { safe(function () { clearTimeout(retryTimer); }); retryTimer = null; }
+        if (!turnCurrent()) return;
+        kiosk.busy = false;
+        kioskRetryAnswer(answer, answerNonce, 1);
+      }
+      retryTimer = setTimeout(settleRetry, speakIt ? 6000 : 500);
+      if (speakIt) {
+        kioskMood('speaking', msg);
+        pvSpeakShaped(msg, settleRetry, 'calm');
+      }
+    }
+    var requestSettled = false;
+    var requestTimer = setTimeout(function () {
+      if (requestSettled) return;
+      requestSettled = true;
+      if (!turnCurrent()) return;
       kiosk.busy = false;
-      if (!kiosk.open) return;
+      safe(function () { pvStopMic(); });
+      safe(function () { pvVoiceGateStop(); });
+      if (answer) {
+        kiosk.lastTry = { answer: answer, nonce: answerNonce };
+        kioskTypingFallback('That answer is still waiting because the connection took too long. Please review it below and tap Send; nothing was discarded.', answer);
+      } else {
+        kioskState('ready');
+        kioskSetSay('I could not start the interview because the connection took too long.');
+        kioskLine('alert', 'Staff: the opening request timed out. Nothing was recorded or sent; end the interview and check the connection.');
+      }
+    }, 30000);
+    function settleRequest() {
+      if (requestSettled) return false;
+      requestSettled = true;
+      if (requestTimer) { safe(function () { clearTimeout(requestTimer); }); requestTimer = null; }
+      return true;
+    }
+    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+      if (!settleRequest() || !turnCurrent()) return;
       var j = r.json || {};
       /* A non-2xx that carries no {ok:false} — a 401, a 402 gate, a 429 whose
          body never parsed — must NEVER be walked as a successful turn: that
@@ -6068,19 +6332,16 @@ function kioskLine(kind, text) {
          patient, then reopened the mic on a blank face forever. Any refusal
          keeps the answer resendable and re-opens the mic. */
       if (!r.ok || j.ok === false) {
-        if (answer) kiosk.lastTry = { answer: answer, nonce: nonce };
         /* SPOKEN, so it apologises like a person and does not name our plumbing.
            "The connection hiccuped" describes something the patient cannot see,
            did not cause and cannot fix; what they need is permission to just say
            it again. Shaped 'calm' for the same reason the silence nudge is: this
            is the moment a patient decides the machine is broken, and a brisk
            delivery here is what makes them give up and wait for a human. */
-        var msg = j.message || 'Sorry, I didn\'t quite catch that on my end. Could you say it once more?';
-        kioskSetSay(msg);
-        kioskMood('speaking', msg);
-        pvSpeakShaped(msg, function () { kioskListen(); }, 'calm');
+        handleTurnFailure(j.message || 'Sorry, I didn\'t quite catch that on my end. Could you say it once more?', true);
         return;
       }
+      kiosk.busy = false;
       kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
       /* WHICH KIND OF LINE THIS IS, decided here because this is the only place
          that can see it. `greet` fires once per interview — the first line the
@@ -6107,14 +6368,44 @@ function kioskLine(kind, text) {
          "Avatar" and every later one as the real name - one speaker under
          two names in a chart-bound transcript. */
       if (answer) kioskIntakeAdd('Patient', answer);
+      /* The patient kept talking while the server handled the preceding clause.
+         Do not speak the now-stale follow-up over them. Feed the continuation as
+         the next turn first; each consumed buffer gets one new nonce exactly once.
+         An emergency warning is the sole exception: it is spoken immediately,
+         then the buffered continuation is sent. */
+      var continued = clean(kiosk.pendingSpeech);
+      if (continued) {
+        if (j.emergency === true && kiosk.lastSay) {
+          kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
+          kioskSetSay(kiosk.lastSay);
+          kioskMood('speaking', kiosk.lastSay, answer);
+          pvSpeakShaped(kiosk.lastSay, function () {
+            if (!turnCurrent() || kiosk.completed) return;
+            var alertContinuation = kioskTakeSpeech();
+            if (alertContinuation) kioskTurn(alertContinuation, kioskNonce());
+          }, 'alert');
+        } else {
+          continued = kioskTakeSpeech();
+          kiosk.lastSay = '';
+          kioskSetSay('I’m listening — keep going.');
+          kioskMood('thinking', '', continued);
+          kioskTurn(continued, kioskNonce());
+        }
+        return;
+      }
       if (kiosk.lastSay) kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
       kioskSetSay(kiosk.lastSay);
       var pg = gid('mlsAvKioskProgress');
       if (pg && j.progress && j.progress.total) pg.textContent = j.done ? '' : ('Question ' + Math.min(j.progress.covered || 1, j.progress.total) + ' of ' + j.progress.total);
       if (j.done) {
+        /* The server has closed the interview and no further question follows.
+           Stop before the closing thank-you so its partial audio cannot become a
+           new patient turn. Any speech during request latency was already queued
+           and handled above, before this branch can run. */
+        pvStopMic();
         kioskMood('speaking', kiosk.lastSay);
         pvSpeakShaped(kiosk.lastSay, function () { kioskFinish(); }, saidShape);
-        setTimeout(function () { if (kiosk.open && !kiosk.completed) kioskFinish(); }, 12000);
+        setTimeout(function () { if (turnCurrent() && !kiosk.completed) kioskFinish(); }, 12000);
       } else {
         kioskMood('speaking', kiosk.lastSay, answer);
         /* owner: "it should be able to listen while it is talking" - the mic
@@ -6134,15 +6425,13 @@ function kioskLine(kind, text) {
         });
       }
     }, function () {
-      kiosk.busy = false;
-      if (!kiosk.open) return;
+      if (!settleRequest() || !turnCurrent()) return;
       /* the same words the spoken refusal above uses. This path is DISPLAY only
          (nothing is spoken when the fetch itself rejects), and two different
          apologies for one condition is how a patient ends up reading one thing
          and hearing another. */
       kioskSetSay('Sorry, I didn\'t quite catch that on my end. Could you say it once more?');
-      if (answer) kiosk.lastTry = { answer: answer, nonce: nonce };
-      kioskListen();
+      handleTurnFailure('Sorry, I didn\'t quite catch that on my end. Could you say it once more?', false);
     });
   }
   /* THE SELF-END WATCHDOG — armed on EVERY waiting path, not just the voice
@@ -6251,6 +6540,7 @@ function kioskLine(kind, text) {
      PIN-gated office rests for staff exactly as a normal completion does. */
   function kioskStopBounded() {
     pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     kiosk.completed = true;
     kioskMood('speaking', 'thank you');
@@ -6284,7 +6574,9 @@ function kioskLine(kind, text) {
     if (!kiosk.consentAt) return;     /* see the note above this function */
     if (kiosk.ambient) return;
     if (kiosk.paused) return;         /* see kioskPauseToggle */   /* the ambient loop owns the microphone and never takes turns */
-    if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+    /* Busy means the prior clause is at the backend; it no longer means deaf.
+       Finals received in that interval are queued by the callback below. */
+    if (!kiosk.open || kiosk.completed) return;
     if (keepMood && pvRec) return;            /* already listening */
     if (kiosk.mic === false) {
       kioskArmWatchdog(20000);   /* typed mode self-ends too — armed on the FIRST
@@ -6352,11 +6644,14 @@ function kioskLine(kind, text) {
          second filing gate: everything it refuses is deleted, so it reads the
          string whose lifetime origin/main gave it. */
       if (pvEchoSaying && pvVoiceGateReady() && !pvOtherVoiceNow() &&
-          pvNovelWordCount(pvEchoSaying, finalText) === 0) {
+          pvNorm(finalText) === pvEchoSaying) {
         kiosk.echoRefused = (kiosk.echoRefused || 0) + 1;
         return;
       }
+      kioskConfirmRecoverable(finalText);
+      kiosk.speechFails = 0; kiosk.speechFailAt = 0;
       if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+      if (kiosk.busy) { kioskQueueSpeech(finalText); return; }
       var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
       kiosk.lastTry = { answer: finalText, nonce: reuse };
       kioskTurn(finalText, reuse);
@@ -6384,31 +6679,49 @@ function kioskLine(kind, text) {
         /* somebody is audibly there AND it behaves like speech rather than a throat-clear:
            it produced a word the avatar is not saying, or it has run on well past any cough.
            Presence alone is not enough — see pvOtherVoiceSustained. */
-        otherVoice = pvOtherVoiceNow() && (novel >= 1 || pvOtherVoiceSustained());
+        otherVoice = pvOtherVoiceNow() && interim.trim().split(/\s+/).filter(Boolean).length >= 1;
       } else {
         /* no confirmed echo cancellation: fall back to the measured string gate exactly as
            av-6.0.9 shipped it, which a cough also cannot pass (it yields no novel words) */
         otherVoice = novel >= 2;
       }
       if (pvSaying && !otherVoice) return;   /* our own voice coming back: do not stop, do not paint */
-      if (interim.trim()) kiosk.heard = true;
+      if (interim.trim()) {
+        kiosk.heard = true;
+        kiosk.speechFails = 0; kiosk.speechFailAt = 0;
+      }
       if (pvSaying && otherVoice) pvStopSpeechOnly();
       kioskLine('transcript', interim);
-    }, function () {
-      /* the recogniser died on its own with nothing to submit — re-open the
-         mic. The small delay keeps Chrome's routine `no-speech` error from
-         becoming a hot restart loop. */
+    }, function (code, recoverable) {
+      code = String(code || 'unknown');
+      var terminal = code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture';
+      if (terminal) {
+        kioskTypingFallback('The microphone or speech service is unavailable right now — type your answer below.', recoverable);
+        return;
+      }
+      if (code === 'network') {
+        var now = Date.now();
+        if (!kiosk.speechFailAt || now - kiosk.speechFailAt > 30000) {
+          kiosk.speechFailAt = now; kiosk.speechFails = 0;
+        }
+        kiosk.speechFails = (kiosk.speechFails || 0) + 1;
+        if (kiosk.speechFails >= 3) {
+          kioskTypingFallback('The speech service cannot connect right now — type your answer below. The check-in will still continue.', recoverable);
+          return;
+        }
+      }
+      if (recoverable) kioskOfferRecoverable(recoverable);
+      /* A transient end/error re-opens capture without resetting the silence
+         watchdog. That timer must be allowed to nudge and self-end an abandoned
+         kiosk even when Chrome emits no-speech every few seconds. */
       if (kiosk.deadTimer) safe(function () { clearTimeout(kiosk.deadTimer); });
       kiosk.deadTimer = setTimeout(function () {
         kiosk.deadTimer = null;
-        if (kiosk.open && !kiosk.busy && !kiosk.completed) kioskListen();
-      }, 400);
+        if (kiosk.open && !kiosk.completed && kiosk.mic !== false) kioskListen(true);
+      }, code === 'network' ? Math.min(1600, 400 * (kiosk.speechFails || 1)) : 400);
     });
     if (!started) {
-      kiosk.mic = false;
-      var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
-      kioskLine('alert', 'The microphone is not available here — typing works below.');
-      kioskArmWatchdog(20000);   /* a failed mic start must still self-end */
+      kioskTypingFallback('The microphone is not available here — typing works below.', '');
       return;
     }
     if (!keepMood) kioskArmWatchdog(9000);
@@ -6436,6 +6749,7 @@ function kioskLine(kind, text) {
        does its real job (a speak that never completes cannot strand the kiosk);
        it just no longer amputates the sentence to do it. */
     pvStopMic();
+    safe(function () { pvVoiceGateStop(); });
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
     var iv = gid('mlsAvKioskInterim');
@@ -6452,6 +6766,9 @@ function kioskLine(kind, text) {
      Pause stops instantly and that can only ever be written to the chart this
      check-in was bound to, is not that. */
   function kioskRestShow() {
+    /* Rest means neither SpeechRecognition nor the independently adopted AEC
+       analyser owns a microphone. The room button is a promise to START later. */
+    safe(function () { pvVoiceGateStop(); });
     var host = gid('mlsAvKioskRest'); if (!host) return;
     host.style.display = 'flex';
     /* AND THE SCREEN STOPS CLAIMING TO SPEAK. kioskFinish sets the mood to
@@ -6472,6 +6789,7 @@ function kioskLine(kind, text) {
   function kioskRequestEnd() {
     if (kiosk.pinSet === false) { kioskEndForStaff('ended'); return; }
     pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
     if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
     var pad = gid('mlsAvKioskPin'), input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg');
     if (!pad) { kioskEndForStaff('ended'); return; }
@@ -6484,10 +6802,19 @@ function kioskLine(kind, text) {
          turn). Ask the server — it answers unset:true for a no-PIN practice,
          so that office still exits in one tap, and an unreachable server
          leaves the gate CLOSED rather than open. */
+      if (kiosk.pinProbeBusy) return;
+      kiosk.pinProbeBusy = true;
+      var probeGeneration = kiosk.generation | 0, probeSid = clean(kiosk.sid), probeExt = clean(kiosk.ext);
+      function probeCurrent() {
+        return !!(kiosk.open && (kiosk.generation | 0) === probeGeneration &&
+          clean(kiosk.sid) === probeSid && clean(kiosk.ext) === probeExt);
+      }
       api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: '' }) }).then(function (r) {
+        if (!probeCurrent()) return;
+        kiosk.pinProbeBusy = false;
         if (r.ok && r.json && r.json.ok && r.json.unset === true) { kiosk.pinSet = false; kioskEndForStaff('ended'); }
         else if (r.ok && r.json) { kiosk.pinSet = true; }
-      }, function () {});
+      }, function () { if (probeCurrent()) kiosk.pinProbeBusy = false; });
     }
   }
   /* Staff leaving must CLOSE the interview server-side, or the row sits
@@ -6500,9 +6827,25 @@ function kioskLine(kind, text) {
        active chart and the overlay all still exist - kioskClose tears down
        every one of those, and a capture filed after them is a capture
        thrown away. */
-    kioskAmbientStop('staff');
-    kioskCloseServerSide();
-    kioskClose(reason);
+    function finishExit(owned) {
+      if (owned && kiosk.ambient) {
+        kioskAmbientSave(true);
+        kioskAmbientStop('staff');
+      }
+      kiosk.ambExitPending = false;
+      kioskCloseServerSide();
+      kioskClose(reason);
+    }
+    if (kiosk.ambient || kiosk.ambClosing) {
+      if (kiosk.ambExitPending) return;
+      kiosk.ambExitPending = true;
+      /* The PIN exit is still a terminal owner, but it waits for Chrome's last
+         final/interim exactly like End Visit. Closing the overlay first would
+         erase both the recovery buffer and its canonical transcript target. */
+      kioskAmbientFlush(finishExit, 'staff');
+      return;
+    }
+    finishExit(false);
   }
   function kioskPinSubmit(mode) {
     /* TWO OUTCOMES, one gate. 'ambient' keeps the room microphone open for
@@ -6514,9 +6857,18 @@ function kioskLine(kind, text) {
     var amb = gid('mlsAvKioskPinAmb');
     var pin = input ? input.value.trim() : '';
     if (!/^\d{4,8}$/.test(pin)) { if (msg) msg.textContent = 'The PIN is 4 to 8 digits.'; return; }
+    if (kiosk.pinUnlockBusy) return;
+    kiosk.pinUnlockBusy = true;
+    var unlockGeneration = kiosk.generation | 0, unlockSid = clean(kiosk.sid), unlockExt = clean(kiosk.ext);
+    function unlockCurrent() {
+      return !!(kiosk.open && (kiosk.generation | 0) === unlockGeneration &&
+        clean(kiosk.sid) === unlockSid && clean(kiosk.ext) === unlockExt);
+    }
     if (go) go.disabled = true;
     if (amb) amb.disabled = true;
     api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: pin }) }).then(function (r) {
+      if (!unlockCurrent()) return;
+      kiosk.pinUnlockBusy = false;
       if (go) go.disabled = false;
       if (amb) amb.disabled = false;
       if (r.ok && r.json && r.json.ok) {
@@ -6525,7 +6877,7 @@ function kioskLine(kind, text) {
           var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
           if (input) input.value = '';
           if (msg) msg.textContent = '';
-          kioskAmbientStart();
+          if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
           return;
         }
         /* staff just proved themselves — a COMPLETED interview hands the
@@ -6540,6 +6892,8 @@ function kioskLine(kind, text) {
       if (msg) msg.textContent = (r.json && r.json.message) || 'That PIN isn\'t right — try again.';
       if (input) { input.value = ''; safe(function () { input.focus(); }); }
     }, function () {
+      if (!unlockCurrent()) return;
+      kiosk.pinUnlockBusy = false;
       if (go) go.disabled = false;
       if (msg) msg.textContent = 'Could not check the PIN — check the connection and try again.';
     });
@@ -6551,12 +6905,36 @@ function kioskLine(kind, text) {
        without it the recogniser transcribes the avatar itself into the
        patient's answer, which corrupts the record rather than merely
        annoying anyone. */
+    if (kiosk.preflightRequest) {
+      if (then) kiosk.preflightRequest.waiters.push(then);
+      return;
+    }
+    var preflightGeneration = kiosk.generation | 0;
+    var preflightConsent = Number(kiosk.consentAt || 0);
+    var gateGeneration = ++vgStartGeneration;
+    var preflight = { generation: preflightGeneration, consent: preflightConsent,
+      gateGeneration: gateGeneration, waiters: then ? [then] : [] };
+    kiosk.preflightRequest = preflight;
+    kiosk.preflighting = true;
+    function finishPreflight() {
+      if (kiosk.preflightRequest !== preflight) return;
+      kiosk.preflightRequest = null;
+      kiosk.preflighting = false; kiosk.preflightContinue = null;
+      var waiters = preflight.waiters.slice(); preflight.waiters = [];
+      for (var pwi = 0; pwi < waiters.length; pwi++) safe(waiters[pwi]);
+    }
     var media = safe(function () {
       return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     }, null);
-    if (!media) { kiosk.mic = false; then(); return; }
+    if (!media) { kiosk.mic = false; finishPreflight(); return; }
     media.then(function (stream) {
+      if (!kiosk.open || (kiosk.generation | 0) !== preflightGeneration ||
+          Number(kiosk.consentAt || 0) !== preflightConsent || gateGeneration !== vgStartGeneration ||
+          kiosk.preflightRequest !== preflight) {
+        safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+        return;
+      }
       /* av-6.1.0: KEEP this stream instead of throwing it away. The comment above already
          said echo cancellation is the prerequisite for an open mic during playback — but the
          stream carrying it was stopped one line later, and the recogniser then opened its own
@@ -6568,12 +6946,15 @@ function kioskLine(kind, text) {
          released exactly as before, so the old behaviour is the floor. */
       var adopted = pvVoiceGateAdopt(stream);
       if (!adopted) safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
-      kiosk.mic = true; then();
+      kiosk.mic = true; finishPreflight();
     }, function () {
+      if (!kiosk.open || (kiosk.generation | 0) !== preflightGeneration ||
+          Number(kiosk.consentAt || 0) !== preflightConsent || gateGeneration !== vgStartGeneration ||
+          kiosk.preflightRequest !== preflight) return;
       kiosk.mic = false;
       kioskLine('hint', 'Microphone is off — the interview will use typing.');
       var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
-      then();
+      finishPreflight();
     });
   }
   /* which of the eight backend voices are male. Named rather than inferred: the
@@ -7507,6 +7888,7 @@ function kioskLine(kind, text) {
     ['ambCap', 'ambTick', 'ambRestart', 'ambSaveTimer', 'ambFlushTimer', 'ambDetectTimer'].forEach(function (key) {
       if (kiosk[key]) { safe(function () { clearTimeout(kiosk[key]); }); kiosk[key] = null; }
     });
+    kiosk.ambFlushWaiters = [];
   }
   function kioskAmbientElapsed() {
     var ms = Math.max(0, Date.now() - (kiosk.ambStart || Date.now()));
@@ -7595,6 +7977,17 @@ function kioskLine(kind, text) {
     kioskLine('transcript', tail.length > 160 ? ('...' + tail.slice(tail.length - 160)) : tail);
     kioskAmbientClock();
   }
+  /* p1-listener-1.0.0 — an interim phrase already shown as heard must not vanish
+     at a recogniser boundary. It is promoted once, then cleared before append so
+     onerror+onend, a late final, and a stop timeout cannot file it twice. Exact
+     repeats are still rejected by kioskAmbientAppend's existing last-chunk gate. */
+  function kioskAmbientCommitPending() {
+    var v = clean(kiosk.ambPending);
+    kiosk.ambPending = '';
+    if (!v) return false;
+    kioskAmbientAppend(v);
+    return true;
+  }
   function kioskAmbientNoMic() {
     /* No recogniser, or a microphone that has been revoked mid-capture. Say so and
        STOP: a red recording badge over a microphone that is not open is the one lie
@@ -7629,6 +8022,16 @@ function kioskLine(kind, text) {
     var lived = Date.now() - (kiosk.ambRecAt || 0);
     if (lived > 5000) kiosk.ambFails = 0;
     kiosk.ambFails = (kiosk.ambFails || 0) + 1;
+    if (kiosk.ambFails >= 6) {
+      /* A clock that keeps advancing over an endlessly restarting recogniser
+         is a false recording indicator. File the words already captured and
+         stop honestly after a bounded outage instead of polling forever. */
+      kiosk.ambSayOverride = 'The speech service stayed unavailable, so I stopped recording.';
+      kiosk.ambInterimOverride = 'Staff: recording stopped after repeated speech-service failures.';
+      kioskAmbientSave(true);
+      kioskAmbientStop('speech-service-unavailable');
+      return;
+    }
     var wait = kiosk.ambFails > 6 ? 4000 : (kiosk.ambFails > 2 ? 800 : 200);
     kiosk.ambRestart = setTimeout(function () {
       kiosk.ambRestart = null;
@@ -7638,6 +8041,7 @@ function kioskLine(kind, text) {
   function kioskAmbientListen() {
     if (!kiosk.ambient) return false;
     if (kiosk.paused) return false;   /* paused means the microphone is CLOSED, not merely ignored */
+    if (kiosk.ambClosing) return false;
     var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
     if (!C) { kioskAmbientNoMic(); return false; }
     var rec = safe(function () { return new C(); }, null);
@@ -7658,10 +8062,12 @@ function kioskLine(kind, text) {
         if (r.isFinal) kioskAmbientAppend(String(r[0].transcript || ''));
         else interim += String(r[0].transcript || '');
       }
+      kiosk.ambPending = clean(interim);
       kioskAmbientPaint(interim);
     };
     rec.onerror = function (ev) {
       if (kiosk.ambRec !== rec) return;
+      kioskAmbientCommitPending();
       kiosk.ambRec = null;
       /* PERMISSION IS NOT A HICCUP. `not-allowed` and `service-not-allowed` mean
          the microphone will not open on the next try either, and the bounded
@@ -7672,7 +8078,13 @@ function kioskLine(kind, text) {
       if (code === 'not-allowed' || code === 'service-not-allowed') { kioskAmbientNoMic(); return; }
       kioskAmbientRetry();
     };
-    rec.onend = function () { if (kiosk.ambRec === rec) { kiosk.ambRec = null; kioskAmbientRetry(); } };
+    rec.onend = function () {
+      if (kiosk.ambRec === rec) {
+        kioskAmbientCommitPending();
+        kiosk.ambRec = null;
+        kioskAmbientRetry();
+      }
+    };
     var ok = safe(function () { rec.start(); return true; }, false);
     if (!ok) { if (kiosk.ambRec === rec) kiosk.ambRec = null; kioskAmbientRetry(); return false; }
     kiosk.ambRecAt = Date.now();
@@ -7924,6 +8336,18 @@ function kioskLine(kind, text) {
       kioskLine('alert', 'Staff: open the patient, then start the check-in again. Nothing is being recorded.');
       return false;
     }
+    if (activePtIdSafe() !== bound) {
+      /* The rest/review overlay can outlive a chart switch while no ambient
+         microphone is open. Never begin recording B's room under the binding
+         retained from A, even though final filing would later refuse it. */
+      kioskSetSay('I cannot record this visit - the open chart changed.');
+      kioskLine('alert', 'Staff: return to the patient this check-in belongs to before starting the room recording. Nothing is being recorded.');
+      return false;
+    }
+    /* Room capture is silent, so echo classification has no job. Release the
+       independently adopted preflight stream before opening SpeechRecognition;
+       one room recording must never retain two microphone owners. */
+    safe(function () { pvVoiceGateStop(); });
     /* Close the INTERVIEW row server-side first. The summary pipeline runs on
        that active->ready transition, and a row left 'active' is invisible to
        every status-filtered inbox query. Ambient capture is a local recording
@@ -7959,7 +8383,20 @@ function kioskLine(kind, text) {
        capture whose recogniser kioskListen refuses to start while the screen said
        "Recording this visit" with a running clock. Nothing on screen contradicted it. */
     kiosk.paused = false;
-    kiosk.ambParts = carried; kiosk.ambLast = ''; kiosk.ambFails = 0;
+    /* A resumed capture is born visibly recording before its microphone opens.
+       Pause can be followed by End Visit and then Keep listening; the overlay
+       survives that route, so resetting only the boolean leaves `.paused`, the
+       Resume label and "not recording" disclosure painted over a live mic. */
+    var resumeRoot = gid('mlsAvKiosk');
+    if (resumeRoot) resumeRoot.classList.remove('paused');
+    var resumeButton = gid('mlsAvKioskMute');
+    if (resumeButton) {
+      resumeButton.textContent = '⏸ Pause';
+      resumeButton.setAttribute('aria-pressed', 'false');
+    }
+    var resumeDisclosure = gid('mlsAvKioskRecText');
+    if (resumeDisclosure) resumeDisclosure.textContent = AMBIENT_REC_TEXT;
+    kiosk.ambParts = carried; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambFails = 0;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null;
     kiosk.ambActions = carriedActions; kiosk.ambWindow = ''; kiosk.ambClosing = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
@@ -7990,7 +8427,13 @@ function kioskLine(kind, text) {
     kioskAmbientPaint('');
     /* HARD STOP. Ninety minutes and it ends itself and says so - a capture
        that rolled on would record the next patient in this room. */
-    kiosk.ambCap = setTimeout(function () { kioskAmbientStop('cap'); }, AMBIENT_MAX_MS);
+    kiosk.ambCap = setTimeout(function () {
+      kioskAmbientFlush(function (owned) {
+        if (!owned) return;
+        kioskAmbientSave(true);
+        kioskAmbientStop('cap');
+      }, 'cap');
+    }, AMBIENT_MAX_MS);
     kioskAmbientTick();
     ordersRender();
     /* Write the backup record BEFORE the first word. A capture that dies in
@@ -8005,7 +8448,17 @@ function kioskLine(kind, text) {
      The recogniser is stopped on purpose and then WAITED ON: Chrome delivers
      any pending final result during stop(), and the last sentence of a visit
      is often the plan. Ending without that wait would drop it. ---------- */
-  function kioskAmbientFlush(then) {
+  function kioskAmbientFlush(then, intent) {
+    /* One recogniser stop owns a flush. Cap, End Visit, staff exit and a chart
+       change can race in one task. Every caller may observe completion, but only
+       ONE terminal owner is allowed to file/stop the capture. A terminal intent
+       outranks a pause waiter, even when Pause got here first. */
+    if (then) {
+      if (!Array.isArray(kiosk.ambFlushWaiters)) kiosk.ambFlushWaiters = [];
+      kiosk.ambFlushWaiters.push({ fn: then, intent: clean(intent || 'pause'),
+        terminal: !!(intent && intent !== 'pause') });
+    }
+    if (kiosk.ambClosing) return;
     kiosk.ambClosing = true;
     var rec = kiosk.ambRec;
     /* handlers stay attached - the tail results still have to arrive. The
@@ -8014,7 +8467,37 @@ function kioskLine(kind, text) {
     var waited = 0;
     (function poll() {
       waited += 120;
-      if (!kiosk.ambRec || waited >= 960) { safe(then); return; }
+      if (!kiosk.ambRec || waited >= 960) {
+        /* If Chrome never upgraded the painted interim to a final, keep that
+           bounded tail now. Clearing happens inside the commit, before append,
+           so a late event cannot duplicate it. At the ceiling the recogniser is
+           explicitly detached BEFORE the screen may say Paused: a browser that
+           delivers onresult after stop() is no longer allowed to append private
+           speech behind that claim. */
+        kioskAmbientCommitPending();
+        if (rec && kiosk.ambRec === rec) {
+          safe(function () { rec.onresult = rec.onerror = rec.onend = null; });
+          kiosk.ambRec = null;
+          safe(function () { if (typeof rec.abort === 'function') rec.abort(); else rec.stop(); });
+        }
+        kiosk.ambFlushTimer = null;
+        var waiters = (kiosk.ambFlushWaiters || []).slice();
+        kiosk.ambFlushWaiters = [];
+        var owner = 0;
+        for (var oi = 0; oi < waiters.length; oi++) {
+          if (waiters[oi] && waiters[oi].terminal) { owner = oi; break; }
+        }
+        /* The owner runs first and may produce kiosk.ambResult. Later observers
+           can display/close around that SAME result but cannot stop/file again. */
+        if (waiters[owner] && typeof waiters[owner].fn === 'function') {
+          safe(function () { waiters[owner].fn(true, kiosk.ambResult || null); });
+        }
+        for (var wi = 0; wi < waiters.length; wi++) {
+          if (wi === owner || !waiters[wi] || typeof waiters[wi].fn !== 'function') continue;
+          (function (row) { safe(function () { row.fn(false, kiosk.ambResult || null); }); })(waiters[wi]);
+        }
+        return;
+      }
       kiosk.ambFlushTimer = setTimeout(poll, 120);
     })();
   }
@@ -8039,9 +8522,30 @@ function kioskLine(kind, text) {
     }
     if (root) { if (kiosk.paused) root.classList.add('paused'); else root.classList.remove('paused'); }
     if (kiosk.paused) {
-      if (kiosk.ambient) kioskAmbientSave(true);   /* nothing already heard is lost by pausing */
-      pvStopVoice();                               /* stops the voice AND the microphone */
-      kiosk.ambRec = null;
+      /* Pause is a privacy state, not a UI preference. Stop the independently
+         adopted AEC stream/RAF/AudioContext synchronously with the disclosure. */
+      safe(function () { pvVoiceGateStop(); });
+      if (kiosk.preflighting) kiosk.preflightNeedsResume = true;
+      if (kiosk.ambient) {
+        /* stop() is immediate, but its trailing final remains wired for at most
+           960ms. The disclosure changes to PAUSED synchronously; only the backup
+           write waits for Chrome's tail. */
+        kioskAmbientFlush(function (owned) {
+          if (!owned) return;
+          kioskAmbientSave(true);
+          /* A chart event can be delayed or coalesced. Re-check the immutable
+             patient binding before permitting a resume, not only when flush
+             began. */
+          if (activePtIdSafe() !== clean(kiosk.ambBound)) {
+            kioskAmbientStop('patient-changed');
+            return;
+          }
+          kiosk.ambClosing = false;
+          if (!kiosk.paused && kiosk.ambient) kioskAmbientListen();
+        }, 'pause');
+      } else {
+        pvStopVoice();
+      }
       kioskState('paused');
       if (recText) recText.textContent = 'PAUSED — not recording. Nothing is being captured right now.';
       kioskSetSay(kiosk.ambient ? 'Paused. I am not listening or recording.' : 'Paused. I am not listening.');
@@ -8052,10 +8556,24 @@ function kioskLine(kind, text) {
     if (kiosk.ambient) {
       kioskSetSay('I am listening to the visit and taking notes for the doctor.');
       kioskMood('listening', '');
-      kioskAmbientListen();
+      if (!kiosk.ambClosing) kioskAmbientListen();
     } else if (!kiosk.completed) {
       kioskSetSay(kiosk.lastSay || '');
-      kioskListen();
+      if (kiosk.preflighting || kiosk.preflightNeedsResume) {
+        /* Consent preflight never produced an opening question. Resume must
+           restart THAT proof/turn, not open a recogniser on "Getting ready". */
+        kiosk.preflightNeedsResume = false;
+        if (kiosk.preflightRequest) { kiosk.preflightRequest.waiters = []; kiosk.preflightRequest = null; }
+        kiosk.preflighting = false;
+        kiosk.preflightContinue = null;
+        kioskMicPreflight(function () { if (kiosk.open && !kiosk.paused && !kiosk.completed) kioskTurn(null, null); });
+        return false;
+      }
+      /* Resume is the trusted user gesture that may reacquire the optional AEC
+         stream. Speech recognition still works if the browser declines it. */
+      pvVoiceGateStart(function (adopted) {
+        if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen();
+      });
     }
     return false;
   }
@@ -8067,12 +8585,17 @@ function kioskLine(kind, text) {
     kioskSetSay('Saving the visit…');
     var iv = gid('mlsAvKioskInterim');
     kioskLine('status', 'Finishing the recording and writing it to the transcript…');
-    kioskAmbientFlush(function () {
+    kioskAmbientFlush(function (owned, priorResult) {
+      if (!owned) {
+        if (root) root.classList.remove('saving');
+        kioskReviewShow(priorResult || kiosk.ambResult);
+        return;
+      }
       kioskAmbientSave(true);              /* the tail reaches the backup before the file attempt */
       var res = kioskAmbientStop('end-visit');
       if (root) root.classList.remove('saving');
       kioskReviewShow(res);
-    });
+    }, 'end-visit');
   }
   /* THE REVIEW. It states what is true and nothing else: whether the words
      reached the transcript, how much, what the doctor confirmed, and - said
@@ -8203,7 +8726,7 @@ function kioskLine(kind, text) {
       /* a visit that is not over after all: a NEW capture, appended to the
          same chart on its own file. The filed one is never re-filed. */
       kiosk.ambEnding = false;
-      kioskAmbientStart();
+      if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
     });
     row.appendChild(again);
     card.appendChild(row);
@@ -8214,8 +8737,10 @@ function kioskLine(kind, text) {
     if (!kiosk.ambient) return null;
     kiosk.ambient = false;
     kiosk.ambRec = null;
+    kiosk.ambClosing = false;
     kioskAmbientClear();
     pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
     var res = kioskAmbientFile();
     kiosk.ambResult = { reason: String(reason || ''), filed: res.ok === true, why: res.why || '', chars: res.chars || 0 };
     var root = gid('mlsAvKiosk');
@@ -8286,7 +8811,8 @@ function kioskLine(kind, text) {
     if (!activeId) { toast('Open the patient first — the interview files to their chart.'); return; }
     if (kiosk.open) return;
     kioskStyle(); style();
-    kiosk.open = true; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
+    kiosk.open = true; kiosk.generation = (kiosk.generation | 0) + 1; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
+    kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false;
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
     kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
     kiosk.finishTries = 0; kiosk.heard = false;
@@ -8311,12 +8837,15 @@ function kioskLine(kind, text) {
        file. The recording state must never join them - it carries a
        patient's words, and a leak here is a cross-patient transcript. */
     kioskAmbientClear();
-    kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambBound = '';
+    kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = '';
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null; kiosk.ambFails = 0;
     kiosk.ambStart = 0; kiosk.ambRecAt = 0; kiosk.intake = []; kiosk.avName = '';
+    kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+    kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null; kiosk.preflightRequest = null;
+    kiosk.speechFails = 0; kiosk.speechFailAt = 0;
     /* the proposed actions carry a patient's clinical plan and must leak
        across interviews exactly as little as the transcript does */
-    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false;
+    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambFlushWaiters = []; kiosk.ambExitPending = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false; kiosk.ambSavedAt = 0;
     kiosk.paused = false;   /* a paused kiosk must never be inherited by the next patient */
     kiosk.ext = activeId;
@@ -8403,13 +8932,20 @@ function kioskLine(kind, text) {
     root.querySelector('#mlsAvKioskPinBack').addEventListener('click', function () {
       var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
       /* a FINISHED interview stays at rest — Back never reopens the mic */
-      if (kiosk.open && !kiosk.busy && !kiosk.completed) kioskListen();
+      if (kiosk.open && !kiosk.busy && !kiosk.completed) {
+        /* Back is a new trusted staff gesture. Reacquire the optional AEC gate
+           here; a canceled PIN pad must never silently inherit a stopped gate. */
+        pvVoiceGateStart(function (adopted) { if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen(); });
+      }
     });
     function kioskTypedSubmit() {
       var input = gid('mlsAvKioskInput'); var value = input ? input.value.trim() : '';
       if (!value || kiosk.busy) return;
       pvStopVoice();
       if (input) input.value = '';
+      if (clean(kiosk.provisionalSpeech) === clean(value)) {
+        kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+      }
       var reuse = kiosk.lastTry && kiosk.lastTry.answer === value ? kiosk.lastTry.nonce : kioskNonce();
       kiosk.lastTry = { answer: value, nonce: reuse };
       kioskTurn(value, reuse);
@@ -8446,11 +8982,11 @@ function kioskLine(kind, text) {
             var tr = gid('mlsAvKioskTypeRow');
             if (tr) safe(function () { tr.style.display = 'none'; });
           }
-          kioskAmbientStart();
+          if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
         });
         return;
       }
-      kioskAmbientStart();
+      if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
     });
     root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskConsentYes);
     root.querySelector('#mlsAvKioskConsentNo').addEventListener('click', kioskConsentNo);
@@ -8938,7 +9474,13 @@ function kioskLine(kind, text) {
        belongs to whoever is on screen now, so the microphone closes at
        once - and the write is refused, because the words already captured
        belong to the patient whose chart just left. */
-    if (kiosk.ambient && activePtIdSafe() !== clean(kiosk.ambBound)) kioskAmbientStop('patient-changed');
+    if (kiosk.ambient && activePtIdSafe() !== clean(kiosk.ambBound)) {
+      kioskAmbientFlush(function (owned) {
+        if (!owned) return;
+        kioskAmbientSave(true);
+        kioskAmbientStop('patient-changed');
+      }, 'patient-changed');
+    }
     ensureVisitCard();
   }
   function boot() {
@@ -9005,6 +9547,17 @@ function kioskLine(kind, text) {
     voiceGateStart: function (then) { return pvVoiceGateStart(then); },
     voiceGateStop: function () { return pvVoiceGateStop(); },
     otherVoiceNow: function () { return pvOtherVoiceNow(); },
+    /* PHI-free listener receipt for preview QA: state/counts only, never words. */
+    listenerState: function () {
+      return {
+        microphoneOpen: !!pvRec,
+        backendTurnInFlight: kiosk.busy === true,
+        typingFallback: kiosk.mic === false,
+        queuedContinuationWords: clean(kiosk.pendingSpeech).split(/\s+/).filter(Boolean).length,
+        consecutiveNetworkFailures: kiosk.speechFails | 0,
+        ambientTailPending: !!clean(kiosk.ambPending)
+      };
+    },
     /* diagnostics only: whether a room capture is running and how much it
        holds. READ-ONLY on purpose - starting a recording is a staff action
        behind the exit PIN and has no programmatic door. */
