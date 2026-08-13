@@ -27,6 +27,7 @@ const P1_FILES = [
   '1p/marketing/index.html',
   '1p-mls-connect.js',
   '1p-feat_mls_athena_occurrence.js',
+  '1p-feat_athena_provider_roster.js',
   '1p-feat_mls_avatar.js',
   '1p-feat_mls_avatar_face.js',
   '1p-feat_fullhistory_pdf.js',
@@ -48,6 +49,7 @@ const shell = read('1pScribeFlow.html');
 const liveShell = read('1p/index.html');
 const connect = read('1p-mls-connect.js');
 const occurrence = read('1p-feat_mls_athena_occurrence.js');
+const providerRoster = read('1p-feat_athena_provider_roster.js');
 
 /* One immutable identity must own the shell, bundle, downstream preview
    assets, and diagnostics. Production b-numbers are not valid preview tokens. */
@@ -141,6 +143,20 @@ assert(occurrence.includes("type: 'mlsAppSearchProcedure'") && occurrence.includ
   '1p occurrence search must use the read-only report bridge and delegate selected chart pulls to the canonical importer');
 assert(connect.includes('window._assistReadChart(target') && connect.includes('window.__mlsVerifiedCandidateImport=verifiedCandidateImport'),
   '1p canonical candidate importer must own the exact chart-read helper');
+
+assert.strictEqual((connect.match(/src:'1p-feat_athena_provider_roster\.js'/g) || []).length, 1,
+  '1p bundle must load the preview canonical provider roster exactly once');
+assert(!connect.includes("src:'1p-feat_athena_provider_picker.js'"),
+  '1p bundle must not load the legacy widening provider picker');
+assert(connect.includes("ctl.state='blocked-picker'") && connect.includes("retireGlobal('__mlsProviderTagFix')") &&
+  connect.includes("retireGlobal('__mlsProviderPicker')") && connect.includes("data-mls-load-state','retired-p1-no-widen'"),
+  '1p roster loader does not fail closed while retiring a hot picker/tag owner');
+assert(providerRoster.includes("var INSTALL_TOKEN=loader.installToken") && providerRoster.includes('installToken: INSTALL_TOKEN') &&
+  providerRoster.includes("e.source===root&&!!root.location&&e.origin===String(root.location.origin||'')") &&
+  providerRoster.includes("reason:'unowned-raw-replay-disabled'") && providerRoster.includes("root.addEventListener('mls:session-boundary'"),
+  '1p roster lost exact token/message/request/session ownership');
+assert(!providerRoster.includes('__mlsProviderPicker') && !/widenToAll|applyScope\s*\(/.test(providerRoster),
+  '1p roster forwards into a selected-to-all legacy picker path');
 
 assert.strictEqual((connect.match(/s\.src='1p-feat_mls_schedimport_exact\.js\?v='/g) || []).length, 1,
   '1p bundle must load the isolated preview importer exactly once');
@@ -247,6 +263,8 @@ const PROTECTED_PRODUCTION = [
   'ScribeFlow.html',
   'mls-connect.js',
   'feat_mls_avatar.js',
+  'feat_athena_provider_picker.js',
+  'feat_athena_provider_roster.js',
   'feat_mls_writeflow.js',
   'feat_mls_schedimport_exact.js',
   'app-version.json',
@@ -314,6 +332,7 @@ assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnec
   !productionConnect.includes('1p-feat_mls_avatar_face.js') &&
   !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
   !productionConnect.includes('1p-feat_mls_legalpack.js') && !productionConnect.includes('1p-feat_mls_athena_occurrence.js') &&
+  !productionConnect.includes('1p-feat_athena_provider_roster.js') &&
   !productionConnect.includes('1p-feat_mls_marketing.js') &&
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');

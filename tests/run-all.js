@@ -8,6 +8,8 @@ const tests = [
   'public-publication-boundary.test.js',
   '1p-preview-contract.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
+  '1p-study-session-modal-runtime.test.js',
+  '1p-provider-roster-session-loader-runtime.test.js',
   '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
   '1p-legal-ime-workspace-runtime.test.js',

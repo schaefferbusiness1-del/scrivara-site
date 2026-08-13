@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "paths": [
     "1p-feat_mls_athena_occurrence.js",
+    "1p-feat_athena_provider_roster.js",
     "1p-feat_mls_avatar.js",
     "1p-feat_mls_avatar_face.js",
     "1p-feat_fullhistory_pdf.js",

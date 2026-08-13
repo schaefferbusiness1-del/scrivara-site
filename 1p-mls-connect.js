@@ -19052,6 +19052,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return rp && isFn(rp.getReceipt) ? safe(function () { return rp.getReceipt(); }, null) : null;
   }
   var provRefreshing = false;
+  function rosterCapture(api,kind){return api&&isFn(api._captureOwner)?safe(function(){return api._captureOwner(kind||'provider-ui');},null):null;}
+  function rosterCurrent(api,owner){return !!(api&&owner&&isFn(api._ownerCurrent)&&safe(function(){return api._ownerCurrent(owner);},false));}
+  function armRosterRead(api,targetDate,providerMode,provider){
+    var owner=rosterCapture(api,'provider-read'),requestId='p1-provider-read-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
+    if(!rosterCurrent(api,owner)||!isFn(api.beginOperation))return null;
+    var selected=providerMode==='selected'&&provider?provider:{};
+    var armed=safe(function(){return api.beginOperation({targetDate:targetDate,requestId:requestId,providerMode:providerMode==='selected'?'selected':'all',requestedProviderId:String(selected.id||''),requestedProviderStableKey:String(selected.stableKey||'')});},null);
+    return armed?{owner:owner,requestId:requestId}:null;
+  }
+  function onProviderSessionBoundary(){provRefreshing=false;}
+  safe(function(){window.addEventListener('mls:session-boundary',onProviderSessionBoundary,true);});
+  cleanup.push(function(){safe(function(){window.removeEventListener('mls:session-boundary',onProviderSessionBoundary,true);});});
   /* pa-1.0.0: the honest before/after number for providers assigned to
      their correct patients. GET /api/appointments/integrity counts rows
      whose provider_name is NULL or empty and rows with no mapped MLS
@@ -19079,16 +19091,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!(canonical && isFn(canonical.list) && isFn(canonical.ingestResp))) {
       provRefreshing = false; toast('The canonical provider roster is still loading. Reload MLS and try again.'); render(); return;
     }
+    var rosterRead=armRosterRead(canonical,todayLocal(),'all',null),refreshOwner=rosterRead&&rosterRead.owner;
+    if(!rosterRead){provRefreshing=false;toast('The provider reader could not establish an account-owned request. Reopen MLS and retry.');render();return;}
     var accountRoster = fetch(bkBase() + '/api/providers', { headers: { Authorization: 'Bearer ' + bkToken() } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && Array.isArray(d.providers)) { if (isFn(canonical.merge)) canonical.merge(d.providers, 'backend-calendar'); return true; } return false; }, function () { return false; });
-    var athenaRoster = readSchedule().then(function (r) {
+      .then(function (d) { if(!rosterCurrent(canonical,refreshOwner))return false;if (d && Array.isArray(d.providers)) { if (isFn(canonical.merge)) canonical.merge(d.providers, 'backend-calendar',refreshOwner); return true; } return false; }, function () { return false; });
+    var athenaRoster = readSchedule(null,rosterRead.requestId).then(function (r) {
+      if(!rosterCurrent(canonical,refreshOwner))return false;
       if (!r || r.ok !== true) return false;
       var hostName = safe(function () { return r.url ? new URL(r.url).host : ''; }, '');
       if (hostName && !/athenahealth|athenanet|athenaone/i.test(hostName) && String(r.emr || '').toLowerCase() !== 'athena') return false;
-      canonical.ingestResp(r); return true;
+      canonical.ingestResp(r,refreshOwner); return true;
     }, function () { return false; });
     Promise.all([accountRoster, athenaRoster]).then(function (sources) {
+      if(!rosterCurrent(canonical,refreshOwner))return;
       provRefreshing = false;
       var total = providerList().length, receipt = providerRosterReceipt();
       if (!sources[0] && !sources[1]) toast('Could not refresh providers - sign in to MLS and keep the Athena Day schedule open.');
@@ -21858,7 +21874,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
   function extPing() { return bridge('mlsPing', null, 'mlsPong', 3500).then(function (r) { return !!r; }); }
-  function readSchedule(onProgress) { return bridge('mlsAppPullSchedule', null, 'mlsAppScheduleResult', 45000, onProgress); }
+  function readSchedule(onProgress,requestId) { return bridge('mlsAppPullSchedule', requestId?{requestId:String(requestId)}:null, 'mlsAppScheduleResult', 45000, onProgress); }
   function gotoDate(dateKey, probe, onProgress) { return bridge('mlsAppGotoDate', { date: dateKey, probe: !!probe }, 'mlsAppGotoDateResult', probe ? 6000 : 60000, onProgress); }
   function respSchedDate(r) {
     var sd = safe(function () { return String((r && r.schedDate) || '').slice(0, 10); }, '');
@@ -22123,11 +22139,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         pSet('ez3PullNow2', 'MLS is opening the Athena Day schedule and verifying your provider roster — no clicks needed.');
         plog('Provider roster not verified yet — opening the Athena Day schedule automatically…');
         var canonicalR = safe(function () { return window.__mlsProviderRoster; }, null);
+        var ownedRosterR=armRosterRead(canonicalR,todayLocal(),'all',null);
+        if(!ownedRosterR){pSet('ez3PullNow','The provider reader could not establish an account-owned request.');return;}
         gotoDate(todayLocal(), false, function (m0) { if (m0) pSet('ez3PullNow2', String(m0)); }).then(function () {
-          return readSchedule();
+          return rosterCurrent(canonicalR,ownedRosterR.owner)?readSchedule(null,ownedRosterR.requestId):null;
         }).then(function (r0) {
-          if (r0 && r0.ok === true && canonicalR && isFn(canonicalR.ingestResp)) safe(function () { canonicalR.ingestResp(r0); });
-        }).then(null, function () {}).then(function () { startMonthPull(retryOnly, true); });
+          if (rosterCurrent(canonicalR,ownedRosterR.owner)&&r0 && r0.ok === true && isFn(canonicalR.ingestResp)) safe(function () { canonicalR.ingestResp(r0,ownedRosterR.owner); });
+        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalR,ownedRosterR.owner))startMonthPull(retryOnly, true); });
         return;
       }
       pSet('ez3PullNow', (exactGate && exactGate.error) || 'Athena did not return a verifiable provider list for this pull.');
@@ -22243,11 +22261,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         pSet('ez3PullNow', 'Setting up Athena automatically…');
         pSet('ez3PullNow2', 'MLS is opening the Athena Day schedule and verifying your provider - no clicks needed.');
         var canonicalD = safe(function () { return window.__mlsProviderRoster; }, null);
+        var ownedRosterD=armRosterRead(canonicalD,todayLocal(),'all',null);
+        if(!ownedRosterD){pSet('ez3PullNow','The provider reader could not establish an account-owned request.');return;}
         gotoDate(todayLocal(), false, function (m0) { if (m0) pSet('ez3PullNow2', String(m0)); }).then(function () {
-          return readSchedule();
+          return rosterCurrent(canonicalD,ownedRosterD.owner)?readSchedule(null,ownedRosterD.requestId):null;
         }).then(function (r0) {
-          if (r0 && r0.ok === true && canonicalD && isFn(canonicalD.ingestResp)) safe(function () { canonicalD.ingestResp(r0); });
-        }).then(null, function () {}).then(function () { startDayPull(retryOnly, true); });
+          if (rosterCurrent(canonicalD,ownedRosterD.owner)&&r0 && r0.ok === true && isFn(canonicalD.ingestResp)) safe(function () { canonicalD.ingestResp(r0,ownedRosterD.owner); });
+        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalD,ownedRosterD.owner))startDayPull(retryOnly, true); });
         return;
       }
       pSet('ez3PullNow', (exactGate && exactGate.error) || 'The selected provider is not verified.');
@@ -42752,6 +42772,65 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function toast(m){ safe(function(){ if(window.toast) window.toast(m,'info'); }); }
   function getPatients(){ return safe(function(){ return window.getPatients()||[]; }, []); }
 
+  /* p1-study-session-1.0.0 -------------------------------------------------
+     Study contains patient names/DOBs and can launch chart, report, import,
+     calendar and FHIR work.  Every such continuation is owned by the exact
+     authenticated account, bearer token, shell session epoch and this
+     module's same-email boundary generation.  A boundary invalidates all old
+     receipts synchronously; an old promise may finish only to drain its
+     frozen-extension lease, never to paint or mutate the next account. */
+  var studySessionGeneration=1, studyUiEpoch=0, studyRequestSerial=0;
+  var studyOpener=null, studyBgRecords=[], studyBgObserver=null, studyKeyHandler=null;
+  function studyAccount(){ return cleanOwner(safe(function(){return window.__mlsSessionAccount||'';},'')); }
+  function cleanOwner(v){ return String(v||'').replace(/^\s+|\s+$/g,'').toLowerCase(); }
+  function studyEpoch(){ return Number(safe(function(){return window.__mlsSessionEpoch;},0))||0; }
+  function studyToken(){ return String(safe(function(){return typeof window.bkToken==='function'?window.bkToken():(localStorage.getItem('sf_bk_token')||sessionStorage.getItem('sf_bk_token')||'');},'')||''); }
+  function studyCapture(kind,withUi){
+    return Object.freeze({generation:studySessionGeneration,account:studyAccount(),epoch:studyEpoch(),token:studyToken(),uiEpoch:withUi===false?null:studyUiEpoch,requestId:'p1-study-'+String(kind||'task')+'-'+(++studyRequestSerial)});
+  }
+  function studyCurrent(receipt,withUi){
+    try{return !!receipt&&!!receipt.account&&!!receipt.token&&Number(receipt.epoch)>0&&receipt.generation===studySessionGeneration&&receipt.account===studyAccount()&&Number(receipt.epoch)===studyEpoch()&&receipt.token===studyToken()&&(withUi===false||receipt.uiEpoch===studyUiEpoch);}catch(e){return false;}
+  }
+  function studyDomCurrent(receipt,node){
+    return studyCurrent(receipt,true)&&!!node&&!!document.getElementById('mlsStudyOv')&&document.getElementById('mlsStudyOv').contains(node);
+  }
+  function studyCancelledError(){ var e=new Error('Study request cancelled at the account or panel boundary.'); e.code='P1_STUDY_STALE'; return e; }
+  function studySilent(err){ return !!(err&&err.code==='P1_STUDY_STALE'); }
+  function studyOwnedStatus(receipt,node,fn){ return function(m){ if(studyDomCurrent(receipt,node)) try{fn(m);}catch(e){} }; }
+  function studyRecordBackground(node){
+    if(!node||node.id==='mlsStudyOv')return;
+    for(var i=0;i<studyBgRecords.length;i++)if(studyBgRecords[i].node===node)return;
+    var rec={node:node,ariaHad:node.hasAttribute('aria-hidden'),aria:node.getAttribute('aria-hidden'),inertHad:node.hasAttribute('inert'),inertAttr:node.getAttribute('inert'),inertValue:!!node.inert};
+    studyBgRecords.push(rec); try{node.setAttribute('aria-hidden','true');node.inert=true;}catch(e){}
+  }
+  function studyIsolateBackground(overlay){
+    if(!document.body)return;
+    [].slice.call(document.body.children||[]).forEach(function(node){if(node!==overlay)studyRecordBackground(node);});
+    if(studyBgObserver)try{studyBgObserver.disconnect();}catch(e){}
+    try{studyBgObserver=new MutationObserver(function(records){records.forEach(function(rec){[].slice.call(rec.addedNodes||[]).forEach(function(node){if(node&&node.nodeType===1&&node!==document.getElementById('mlsStudyOv'))studyRecordBackground(node);});});});studyBgObserver.observe(document.body,{childList:true});}catch(e2){studyBgObserver=null;}
+  }
+  function studyRestoreBackground(){
+    if(studyBgObserver)try{studyBgObserver.disconnect();}catch(e){} studyBgObserver=null;
+    studyBgRecords.forEach(function(rec){var node=rec.node;if(!node)return;try{if(rec.ariaHad)node.setAttribute('aria-hidden',rec.aria);else node.removeAttribute('aria-hidden');node.inert=rec.inertValue;if(rec.inertHad)node.setAttribute('inert',rec.inertAttr==null?'':rec.inertAttr);else if(!rec.inertValue)node.removeAttribute('inert');}catch(e){}});studyBgRecords=[];
+  }
+  function studyFocusable(overlay){return [].slice.call((overlay||document).querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')).filter(function(el){return !el.hidden&&el.getAttribute('aria-hidden')!=='true';});}
+  function studyInstallKeys(overlay,receipt){
+    if(studyKeyHandler)try{document.removeEventListener('keydown',studyKeyHandler,true);}catch(e){}
+    studyKeyHandler=function(e){if(!studyDomCurrent(receipt,overlay))return;if(e.key==='Escape'){e.preventDefault();close();return;}if(e.key!=='Tab')return;var f=studyFocusable(overlay);if(!f.length){e.preventDefault();return;}var first=f[0],last=f[f.length-1],active=document.activeElement;if(e.shiftKey&&(active===first||!overlay.contains(active))){e.preventDefault();last.focus();}else if(!e.shiftKey&&(active===last||!overlay.contains(active))){e.preventDefault();first.focus();}};
+    document.addEventListener('keydown',studyKeyHandler,true);
+  }
+  function studyScrubOverlay(overlay){
+    if(!overlay)return;try{[].slice.call(overlay.querySelectorAll('input,textarea')).forEach(function(el){el.value='';if(el.type==='checkbox'||el.type==='radio')el.checked=false;});[].slice.call(overlay.querySelectorAll('.mls-study-results,.mls-study-body,.mls-study-rn,.mls-study-rd')).forEach(function(el){el.textContent='';});}catch(e){}
+  }
+  function studyReleaseModal(restoreFocus){
+    if(studyKeyHandler)try{document.removeEventListener('keydown',studyKeyHandler,true);}catch(e){} studyKeyHandler=null;studyRestoreBackground();
+    var opener=studyOpener;studyOpener=null;if(restoreFocus&&opener&&typeof opener.focus==='function'&&document.contains(opener))try{opener.focus();}catch(e2){}
+  }
+  function studySessionBoundary(){
+    studySessionGeneration++;studyUiEpoch++;
+    var overlay=document.getElementById('mlsStudyOv');studyScrubOverlay(overlay);if(overlay)try{overlay.remove();}catch(e){}studyReleaseModal(false);studyLifecycle('session-boundary');
+  }
+
   /* ---------- DOB / name normalization ---------- */
   function normDob(d){
     if(!d) return '';
@@ -42819,19 +42898,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* ---------- read one chart via the app's Assist bridge ---------- */
-  function readChartFor(target){
+  function readChartFor(target,owner){
+    owner=owner||studyCapture('legacy-chart',false);
     return new Promise(function(resolve){
-      var done=false; function fin(v){ if(!done){ done=true; resolve(v); } }
+      var done=false; function fin(v){ if(!done){ done=true; resolve(studyCurrent(owner,false)?v:{__err:'cancelled'}); } }
       var TIMEOUT=setTimeout(function(){ fin({__err:'error', __timeout:true}); }, 45000);
       safe(function(){
         if(typeof window._assistReadChart!=='function'){ clearTimeout(TIMEOUT); fin({__err:'no-bridge'}); return; }
         var p=window._assistReadChart(target);
         if(!p || typeof p.then!=='function'){ clearTimeout(TIMEOUT); fin({__err:'no-bridge'}); return; }
         p.then(function(rd){
+          if(!studyCurrent(owner,false)){clearTimeout(TIMEOUT);fin({__err:'cancelled'});return;}
           if(!rd || !rd.text){ clearTimeout(TIMEOUT); fin(null); return; }
           var parsed=null; try{ parsed=window._parsePatientChart?window._parsePatientChart(rd.text):null; }catch(e){}
           if(parsed && typeof parsed.then==='function'){
-            parsed.then(function(c){ c=c||{}; c.text=rd.text; c.url=rd.url; c.__mlsReadIdentity={chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}; clearTimeout(TIMEOUT); fin(c); })
+            parsed.then(function(c){ if(!studyCurrent(owner,false)){clearTimeout(TIMEOUT);fin({__err:'cancelled'});return;} c=c||{}; c.text=rd.text; c.url=rd.url; c.__mlsReadIdentity={chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}; clearTimeout(TIMEOUT); fin(c); })
                   .catch(function(){ clearTimeout(TIMEOUT); fin({name:'',dob:'',text:rd.text,url:rd.url,__mlsReadIdentity:{chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}}); });
           } else { var c=parsed||{}; c.text=rd.text; c.url=rd.url; c.__mlsReadIdentity={chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''}; clearTimeout(TIMEOUT); fin(c); }
         }).catch(function(e){ clearTimeout(TIMEOUT); fin({__err:(e&&e.message==='OLDEXT')?'old-ext':'error'}); });
@@ -42843,17 +42924,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      Falls back to the existing schedule read (window._assistReadAthenaTab) on older extensions,
      so "Find in Athena" still does something on v1.28 and reads reports properly on v1.29+. */
   function assistReadReport(onStatus){
+    var owner=arguments.length>1?arguments[1]:null;owner=owner||studyCapture('open-report',true);
     return new Promise(function(resolve,reject){
-      var say=function(m){ try{ if(onStatus) onStatus(m); }catch(e){} };
+      var say=function(m){ try{ if(studyCurrent(owner,true)&&onStatus) onStatus(m); }catch(e){} };
       var ponged=false,sent=false,timedOut=false,tries=0,iv=null,got=false,settled=false,safetyTo=null,leaseTouch=null;
       var leaseMgr=safe(function(){return window.__mlsP1AthenaReadLease;},null),leaseToken=leaseMgr&&typeof leaseMgr.claim==='function'?leaseMgr.claim('p1-study-open-report',35000):null;
       if(!leaseToken){reject(new Error(leaseMgr?'Another Athena read or schedule pull is active. Wait for it to finish, then retry.':'The preview Athena read coordinator is still loading. Reopen this panel and retry.'));return;}
       leaseTouch=setInterval(function(){try{leaseMgr.touch(leaseToken);}catch(e){}},25000);
-      function trusted(e){try{return !(e.source&&e.source!==window)&&!(e.origin&&window.location&&e.origin!==window.location.origin);}catch(x){return false;}}
+      function trusted(e){try{return !!e&&e.source===window&&e.origin===window.location.origin;}catch(x){return false;}}
       function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); if(iv) clearInterval(iv);if(safetyTo)clearTimeout(safetyTo);if(leaseTouch)clearInterval(leaseTouch); try{leaseMgr.release(leaseToken);}catch(e){} fn(v); }
-      function onPong(e){ if(trusted(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
+      function onPong(e){ if(!studyCurrent(owner,true)){if(!sent)fin(reject,studyCancelledError());return;} if(trusted(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
       function onResult(e){
         if(!trusted(e)||!sent||!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppReportResult')) return;
+        if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}
         if(timedOut){var late=new Error('The timed-out Athena report read finished and was discarded.');late.code='UNCORRELATED_TIMEOUT_DRAINED';fin(reject,late);return;}
         got=true; var r=e.data.resp||{};
         if(!r.ok||!r.text){ fin(reject,new Error(r.error||'Couldn’t read your Athena report tab.')); return; }
@@ -42861,9 +42944,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       window.addEventListener('message',onPong);
       var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
-      function begin(){say('Looking for MLS Assist…');ping();iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('NOEXT')); } else ping(); },350);}
-      Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(leaseToken):true;}).then(function(ok){if(!ok){fin(reject,new Error('Another MLS tab owns the Athena reader.'));return;}begin();},function(){fin(reject,new Error('The Athena reader lock could not be acquired.'));});
+      function begin(){if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}say('Looking for MLS Assist…');ping();iv=setInterval(function(){ if(!studyCurrent(owner,true)){clearInterval(iv);fin(reject,studyCancelledError());return;} tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('NOEXT')); } else ping(); },350);}
+      Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(leaseToken):true;}).then(function(ok){if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}if(!ok){fin(reject,new Error('Another MLS tab owns the Athena reader.'));return;}begin();},function(){fin(reject,studyCurrent(owner,true)?new Error('The Athena reader lock could not be acquired.'):studyCancelledError());});
       function proceed(){
+        if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}
         say('Reading the open Athena report…');
         window.addEventListener('message',onResult);
         try{ window.postMessage({source:'mls-app',type:'mlsAppReadReport'},'*');sent=true;}catch(e){fin(reject,e);return;}
@@ -42872,11 +42956,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
   function readReportText(onStatus){
-    return assistReadReport(onStatus).catch(function(err){
+    var owner=arguments.length>1?arguments[1]:null;owner=owner||studyCapture('report-text',true);
+    return assistReadReport(onStatus,owner).catch(function(err){
+      if(!studyCurrent(owner,true)||studySilent(err)) throw studyCancelledError();
       var msg=(err&&err.message)||'';
       if(msg==='OLDEXT' && typeof window._assistReadAthenaTab==='function'){
         if(onStatus) onStatus('Update MLS Assist to v1.29 for proper report reading — using the older read path for now…');
-        return window._assistReadAthenaTab(onStatus);
+        return Promise.resolve(window._assistReadAthenaTab(onStatus)).then(function(v){if(!studyCurrent(owner,true))throw studyCancelledError();return v;});
       }
       if(msg==='NOEXT') throw new Error('MLS Assist isn’t responding. Install/enable it (latest version) and open your signed-in Athena report tab, then try again.');
       throw err;
@@ -43049,19 +43135,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             -> 200 { ok:true, patients:[ {name, dob, mrn, history?} ], cpt, count }  */
   function backendBase(){ return safe(function(){ return window.MLS_BACKEND || window.__mlsBackend || (window.MLS && window.MLS.backend) || 'https://scrivara-backend.onrender.com'; }, 'https://scrivara-backend.onrender.com'); }
   function authToken(){ return safe(function(){ return localStorage.getItem('sf_bk_token')||sessionStorage.getItem('sf_bk_token')||''; }, ''); }
-  function apiFetch(path, opts){
+  function apiFetch(path, opts, owner){
     opts=opts||{}; var h=Object.assign({'Content-Type':'application/json'}, opts.headers||{});
     var t=authToken(); if(t) h['Authorization']='Bearer '+t; opts.headers=h;
-    return fetch(backendBase()+path, opts);
+    if(owner&&!studyCurrent(owner,true))return Promise.reject(studyCancelledError());
+    return fetch(backendBase()+path, opts).then(function(r){if(owner&&!studyCurrent(owner,true))throw studyCancelledError();return r;});
   }
-  function studyFhirProbe(){
-    return apiFetch('/api/study/cohort-by-cpt/capability', {method:'GET'})
+  function studyFhirProbe(owner){
+    owner=owner||studyCapture('fhir-probe',true);
+    return apiFetch('/api/study/cohort-by-cpt/capability', {method:'GET'},owner)
       .then(function(r){ if(!r.ok) return {available:false, status:r.status}; return r.json().catch(function(){ return {available:false}; }); })
       .then(function(j){ return {available:!!(j&&j.available), info:j}; })
       .catch(function(){ return {available:false, error:'network'}; });
   }
-  function fhirCohortByCpt(codes, from, to){
-    return apiFetch('/api/study/cohort-by-cpt', {method:'POST', body:JSON.stringify({cpt:codes||[], dateFrom:from||'', dateTo:to||''})})
+  function fhirCohortByCpt(codes, from, to, owner){
+    owner=owner||studyCapture('fhir-cohort',true);
+    return apiFetch('/api/study/cohort-by-cpt', {method:'POST', body:JSON.stringify({cpt:codes||[], dateFrom:from||'', dateTo:to||''})},owner)
       .then(function(r){ if(!r.ok) return {ok:false, status:r.status}; return r.json().catch(function(){ return {ok:false}; }); })
       .catch(function(e){ return {ok:false, error:String(e&&e.message||e)}; });
   }
@@ -43118,12 +43207,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var reason = (row.codes&&row.codes.length) ? ('Procedure '+row.codes[0]) : 'Procedure (study import)';
     return { name:row.name, dob:row.dob||'', appt_date:ymd, date:ymd, start_at:ymd+'T00:00', time:'', reason:reason, source:'study-import' };
   }
-  function addToCalendar(appts){
+  function addToCalendar(appts,owner){
     appts=(appts||[]).filter(Boolean);
-    if(!appts.length) return 0;
+    if(!appts.length||!owner||!studyCurrent(owner,true)) return 0;
     safe(function(){
       if(typeof window._importPulledSchedule==='function'){
         Promise.resolve(window._importPulledSchedule(appts)).then(function(){
+          if(!studyCurrent(owner,true))return;
           safe(function(){ if(window.loadCalendar) window.loadCalendar(); else if(window.renderCalendar) window.renderCalendar(); });
         }).catch(function(){});
       }
@@ -43150,8 +43240,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      _parsePatientChart -> _savePatientChart persistence path. */
   function verifiedCandidateImport(row,cohort,opts){
     row=row||{};opts=opts||{};
-    var current=function(){try{return typeof opts.isCurrent!=='function'||opts.isCurrent()===true;}catch(e){return false;}};
-    var say=function(m){try{if(opts.onStatus)opts.onStatus(m);}catch(e){}};
+    var candidateOwner=studyCapture('candidate-import',false);
+    /* Missing proof is never authority. Every caller, including the bundled
+       Study/Grab drivers, must supply an exact current-generation predicate. */
+    var current=function(){try{return studyCurrent(candidateOwner,false)&&typeof opts.isCurrent==='function'&&opts.isCurrent()===true;}catch(e){return false;}};
+    var say=function(m){try{if(current()&&opts.onStatus)opts.onStatus(m);}catch(e){}};
     if(!current())return Promise.resolve({row:row,code:'failed',label:'Failed',status:'error',reason:'cancelled before identity check'});
     var decision=candidateDecision(row);
     if(decision.action==='already'){
@@ -43203,7 +43296,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
   window.__mlsVerifiedCandidateImport=verifiedCandidateImport;
-  function importRow(row, cohort){ return verifiedCandidateImport(row,cohort,{}); }
+  function importRow(row, cohort){ var opts=arguments.length>2?arguments[2]:null;return verifiedCandidateImport(row,cohort,opts||{}); }
 
   /* status -> display */
   var STAT={
@@ -43219,19 +43312,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function statOf(s){ return STAT[s]||STAT.error; }
 
   /* shared sequential importer: rows[] -> verify+import each, updating per-row + summary nodes */
-  function importSequential(rows, cohort, els, onDone){
+  function importSequential(rows, cohort, els, onDone, owner){
+    owner=owner||studyCapture('sequential-import',true);
     var counts={match:0,dob_mismatch:0,not_found:0,review:0,no_bridge:0,error:0,old_ext:0}, idx=0, appts=[];
     function step(){
+      if(!studyCurrent(owner,true))return;
       if(idx>=rows.length){
         if(els.sum) els.sum.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+((counts.no_bridge+counts.old_ext)?(' · '+(counts.no_bridge+counts.old_ext)+' need Assist'):'');
-        var calN=addToCalendar(appts);
+        var calN=addToCalendar(appts,owner);
         if(els.sum && calN) els.sum.innerHTML+=' · 📅 '+calN+' added to calendar';
         safe(function(){ if(window.renderPatients) window.renderPatients(); });
         if(onDone) onDone(counts);
         return;
       }
       var r=rows[idx];
-      importRow(r, cohort).then(function(res){
+      importRow(r, cohort, {isCurrent:function(){return studyCurrent(owner,true);}}).then(function(res){
+        if(!studyCurrent(owner,true))return;
         if(res.status==='match' && res.appt) appts.push(res.appt);
         var st=res.status==='old-ext'?'old_ext':res.status;
         counts[st]=(counts[st]||0)+1;
@@ -43243,7 +43339,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var rs=el.querySelector('.mls-study-rs'); if(rs){ rs.className='mls-study-rs '+s.cls; rs.textContent=s.icon+' '+s.label+extra; }
         }
         if(els.sum) els.sum.textContent='Importing '+(idx+1)+' / '+rows.length+'…';
-        idx++; setTimeout(step, 120);
+        idx++; setTimeout(function(){if(studyCurrent(owner,true))step();}, 120);
       });
     }
     step();
@@ -43251,20 +43347,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ====================== UI ====================== */
   var TAB='A';
-  function open(initTab){ TAB=initTab||'A'; injectCss(); render(); }
+  function open(initTab){
+    var openOwner=studyCapture('modal-open',false);if(!studyCurrent(openOwner,false))return false;
+    if(!document.getElementById('mlsStudyOv'))studyOpener=document.activeElement;
+    TAB=initTab||'A';injectCss();render();return true;
+  }
   function studyLifecycle(reason){try{window.dispatchEvent(new CustomEvent('mls:study-lifecycle',{detail:{reason:String(reason||'render')}}));}catch(e){try{var ev=new Event('mls:study-lifecycle');ev.detail={reason:String(reason||'render')};window.dispatchEvent(ev);}catch(_){}}}
-  function close(){ studyLifecycle('close'); var o=document.getElementById('mlsStudyOv'); if(o) o.remove(); }
+  function close(){ studyUiEpoch++;studyLifecycle('close');var o=document.getElementById('mlsStudyOv');studyScrubOverlay(o);if(o)o.remove();studyReleaseModal(true); }
 
   function render(){
+    studyUiEpoch++;
     studyLifecycle('render');
-    var ex=document.getElementById('mlsStudyOv'); if(ex) ex.remove();
+    var ex=document.getElementById('mlsStudyOv'); if(ex){studyScrubOverlay(ex);ex.remove();}
+    studyRestoreBackground();
     var o=document.createElement('div'); o.id='mlsStudyOv';
     o.innerHTML=''
-      +'<div class="mls-study-card" role="dialog" aria-label="Study / Import Patients">'
+      +'<div class="mls-study-card" role="dialog" aria-modal="true" aria-labelledby="mlsStudyTitle" aria-describedby="mlsStudyDialogHelp">'
       +' <div class="mls-study-head">'
-      +'   <span class="mls-study-title">🧪 Study / Import Patients</span>'
+      +'   <span class="mls-study-title" id="mlsStudyTitle">🧪 Study / Import Patients</span>'
       +'   <button type="button" class="mls-study-x" aria-label="Close">✕</button>'
       +' </div>'
+      +' <p id="mlsStudyDialogHelp" class="mls-study-sr">Build a local cohort with explicit, identity-verified Athena reads.</p>'
       +' <div class="mls-study-tabs">'
       +'   <button type="button" data-t="A" class="'+(TAB==='A'?'on':'')+'">By name + DOB</button>'
       +'   <button type="button" data-t="B" class="'+(TAB==='B'?'on':'')+'">By procedure</button>'
@@ -43273,19 +43376,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +' <div class="mls-study-body" id="mlsStudyBody"></div>'
       +'</div>';
     document.body.appendChild(o);
-    o.addEventListener('mousedown', function(e){ if(e.target===o) close(); });
-    o.querySelector('.mls-study-x').addEventListener('click', close);
+    studyIsolateBackground(o);
+    var renderOwner=studyCapture('modal-render',true);
+    studyInstallKeys(o,renderOwner);
+    o.addEventListener('mousedown', function(e){ if(studyDomCurrent(renderOwner,o)&&e.target===o) close(); });
+    o.querySelector('.mls-study-x').addEventListener('click', function(){if(studyDomCurrent(renderOwner,o))close();});
     o.querySelectorAll('.mls-study-tabs [data-t]').forEach(function(b){
-      b.addEventListener('click', function(){ TAB=b.getAttribute('data-t'); render(); });
+      b.addEventListener('click', function(){ if(!studyDomCurrent(renderOwner,o))return;TAB=b.getAttribute('data-t'); render(); });
     });
     var body=o.querySelector('#mlsStudyBody');
     if(TAB==='A') renderModeA(body);
     else if(TAB==='B') renderModeB(body);
     else renderCohorts(body);
+    var initial=o.querySelector('.mls-study-tabs .on')||o.querySelector('.mls-study-x');if(initial&&studyDomCurrent(renderOwner,o))try{initial.focus();}catch(e){}
   }
 
   /* ----- Mode A ----- */
   function renderModeA(body){
+    var owner=studyCapture('mode-a',true);
     body.innerHTML=''
       +'<p class="mls-study-help">Paste one patient per line as <b>Name, DOB</b> (e.g. <code>Jane Doe, 04/12/1968</code>). '
       +'For each, MLS searches your signed-in Athena tab, <b>verifies name + DOB</b>, and imports the patient + history into the cohort. '
@@ -43299,8 +43407,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'  <button type="button" id="mlsStudyImport" class="mls-study-btn">Import &amp; verify</button>'
       +'</div>'
       +'<div id="mlsStudyResults" class="mls-study-results"></div>';
-    body.querySelector('#mlsStudyParse').addEventListener('click', function(){ previewList(body); });
-    body.querySelector('#mlsStudyImport').addEventListener('click', function(){ runImport(body); });
+    body.querySelector('#mlsStudyParse').addEventListener('click', function(){ if(studyDomCurrent(owner,body))previewList(body); });
+    body.querySelector('#mlsStudyImport').addEventListener('click', function(){ if(studyDomCurrent(owner,body))runImport(body); });
   }
   function previewList(body){
     var rows=parseRows(body.querySelector('#mlsStudyRows').value);
@@ -43313,6 +43421,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }).join('');
   }
   function runImport(body){
+    var owner=studyCapture('mode-a-import',true);if(!studyDomCurrent(owner,body))return;
     var cohort=(body.querySelector('#mlsStudyCohort').value||'').trim();
     var rows=parseRows(body.querySelector('#mlsStudyRows').value);
     var out=body.querySelector('#mlsStudyResults');
@@ -43322,7 +43431,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var banner = bridge ? '' : '<div class="mls-study-gate">⚠ MLS Assist isn’t detected. Install/enable the extension and open your signed-in Athena tab, then import. Rows will report "Assist needed".</div>';
     out.innerHTML=banner+'<div class="mls-study-sum" id="mlsStudySumLine">Importing 0 / '+rows.length+'…</div>'
       +rows.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsr'+i+'"><span class="mls-study-rn">'+esc(r.name||'(no name)')+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('');
-    importSequential(rows, cohort, { sum: body.querySelector('#mlsStudySumLine'), row:function(i){ return body.querySelector('#mlsr'+i); } });
+    importSequential(rows, cohort, { sum: body.querySelector('#mlsStudySumLine'), row:function(i){ return body.querySelector('#mlsr'+i); } }, null, owner);
   }
 
   /* ----- Mode B ----- */
@@ -43335,6 +43444,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return map;
   }
   function renderModeB(body){
+    var owner=studyCapture('mode-b',true);
     var map=proceduresInMls();
     var keys=Object.keys(map).sort();
     var localHtml = keys.length
@@ -43380,10 +43490,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +' <div class="mls-study-actions"><button type="button" id="mlsStudyFhirBtn" class="mls-study-btn ghost" disabled>Run exact FHIR cohort query (disabled until API access)</button></div>'
       +' <div id="mlsStudyFhirOut" class="mls-study-results"></div>'
       +'</div>';
-    body.querySelector('#mlsStudyBAuto').addEventListener('click', function(){ doAutoSearchAthena(body); });
-    body.querySelector('#mlsStudyBFind').addEventListener('click', function(){ doFindInAthena(body); });
-    body.querySelector('#mlsStudyBTag').addEventListener('click', function(){ tagLocalProcedures(body, map); });
-    wireFhirPanel(body);
+    body.querySelector('#mlsStudyBAuto').addEventListener('click', function(){ if(studyDomCurrent(owner,body))doAutoSearchAthena(body); });
+    body.querySelector('#mlsStudyBFind').addEventListener('click', function(){ if(studyDomCurrent(owner,body))doFindInAthena(body); });
+    body.querySelector('#mlsStudyBTag').addEventListener('click', function(){ if(studyDomCurrent(owner,body))tagLocalProcedures(body, map); });
+    wireFhirPanel(body,owner);
   }
 
   /* ---------- Mode C: MLS Assist DRIVES the athenaOne search + paginates (v1.31) ----------
@@ -43394,19 +43504,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      Selectors/labels are tunable via window.__mlsStudyConfig.search (passed to the extension). */
   function searchCfg(){ return safe(function(){ return (window.__mlsStudyConfig&&window.__mlsStudyConfig.search)||{}; }, {})||{}; }
   function assistSearchProcedure(params, cfg, onStatus){
+    var owner=arguments.length>3?arguments[3]:null;owner=owner||studyCapture('procedure-search',true);
     return new Promise(function(resolve,reject){
-      var say=function(m){ try{ if(onStatus) onStatus(m); }catch(e){} };
+      var say=function(m){ try{ if(studyCurrent(owner,true)&&onStatus) onStatus(m); }catch(e){} };
       var ponged=false,sent=false,timedOut=false,tries=0,iv=null,settled=false,safetyTo=null,leaseTouch=null;
       var leaseMgr=safe(function(){return window.__mlsP1AthenaReadLease;},null), leaseToken=leaseMgr&&typeof leaseMgr.claim==='function'?leaseMgr.claim('p1-study-report',365000):null;
       if(!leaseToken){ reject(new Error(leaseMgr?'Another Athena read or schedule pull is active. Wait for it to finish, then retry.':'The preview Athena read coordinator is still loading. Reopen this panel and retry.')); return; }
       leaseTouch=setInterval(function(){try{leaseMgr.touch(leaseToken);}catch(e){}},25000);
       function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onEvt); if(iv) clearInterval(iv); if(safetyTo) clearTimeout(safetyTo); if(leaseTouch)clearInterval(leaseTouch); try{leaseMgr.release(leaseToken);}catch(e){} fn(v); }
-      function trusted(e){try{return !(e.source&&e.source!==window)&&!(e.origin&&window.location&&e.origin!==window.location.origin);}catch(x){return false;}}
-      function onPong(e){ if(trusted(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
+      function trusted(e){try{return !!e&&e.source===window&&e.origin===window.location.origin;}catch(x){return false;}}
+      function onPong(e){ if(!studyCurrent(owner,true)){if(!sent)fin(reject,studyCancelledError());return;}if(trusted(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
       function onEvt(e){
         if(!trusted(e)||!sent)return;var d=e.data; if(!(d&&d.source==='mls-ext')) return;
-        if(d.type==='mlsAppSearchProgress'){ say(d.msg||'Working...'); return; }
+        if(d.type==='mlsAppSearchProgress'){ if(studyCurrent(owner,true))say(d.msg||'Working...'); return; }
         if(d.type==='mlsAppSearchResult'){
+          if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}
           if(timedOut){var late=new Error('The timed-out Athena search finished and was discarded.');late.code='UNCORRELATED_TIMEOUT_DRAINED';fin(reject,late);return;}
           var r=d.resp||{};
           if(!r.ok){ var err=new Error(r.error||'Search failed.'); err.code=r.code||''; fin(reject,err); return; }
@@ -43416,11 +43528,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       window.addEventListener('message',onPong);
       var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
       function begin(){
+        if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}
         say('Looking for MLS Assist...'); ping();
-        iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('MLS Assist is not responding. Install/enable it (latest version) and sign into athenaOne in another tab, then try again.')); } else ping(); }, 350);
+        iv=setInterval(function(){ if(!studyCurrent(owner,true)){clearInterval(iv);fin(reject,studyCancelledError());return;}tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('MLS Assist is not responding. Install/enable it (latest version) and sign into athenaOne in another tab, then try again.')); } else ping(); }, 350);
       }
-      Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(leaseToken):true;}).then(function(ok){if(!ok){fin(reject,new Error('Another MLS tab owns the Athena reader. Nothing started; retry after it finishes.'));return;}begin();},function(){fin(reject,new Error('The Athena reader lock could not be acquired. Nothing started.'));});
+      Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(leaseToken):true;}).then(function(ok){if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}if(!ok){fin(reject,new Error('Another MLS tab owns the Athena reader. Nothing started; retry after it finishes.'));return;}begin();},function(){fin(reject,studyCurrent(owner,true)?new Error('The Athena reader lock could not be acquired. Nothing started.'):studyCancelledError());});
       function proceed(){
+        if(!studyCurrent(owner,true)){fin(reject,studyCancelledError());return;}
         window.addEventListener('message',onEvt);
         say('Driving the athenaOne procedure search...');
         try{ window.postMessage({source:'mls-app',type:'mlsAppSearchProcedure',params:params,cfg:cfg},'*');sent=true;}catch(e){fin(reject,e);return;}
@@ -43429,6 +43543,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
   function doAutoSearchAthena(body){
+    var owner=studyCapture('auto-search-ui',true);if(!studyDomCurrent(owner,body))return;
     var out=body.querySelector('#mlsStudyBFindOut');
     var crit=resolveCriteria(body.querySelector('#mlsStudyBSel').value, body.querySelector('#mlsStudyBProc').value);
     crit.from=(body.querySelector('#mlsStudyBFrom').value||''); crit.to=(body.querySelector('#mlsStudyBTo').value||'');
@@ -43437,36 +43552,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var params={ cpt:crit.codes||[], procedureName:procName||'', dateFrom:crit.from||'', dateTo:crit.to||'' };
     if(!params.cpt.length && !params.procedureName){ out.innerHTML='<div class="mls-study-gate">Pick a procedure or type a CPT/shot name first.</div>'; return; }
     out.innerHTML='<div class="mls-study-sum" id="mlsStudyBStatus">Starting MLS Assist...</div>';
-    var setS=function(m){ var n=body.querySelector('#mlsStudyBStatus'); if(n) n.textContent=m; };
-    assistSearchProcedure(params, searchCfg(), setS).then(function(rd){
+    var setS=studyOwnedStatus(owner,body,function(m){ var n=body.querySelector('#mlsStudyBStatus'); if(n) n.textContent=m; });
+    assistSearchProcedure(params, searchCfg(), setS,owner).then(function(rd){
+      if(!studyDomCurrent(owner,body))return;
       var text=(rd&&rd.text)?rd.text:'';
       if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist ran the search but read 0 rows'+(rd&&rd.pages?(' across '+rd.pages+' page(s)'):'')+'. The results table likely needs selector tuning to your athenaOne layout (set <code>window.__mlsStudyConfig.search</code>), or run the report yourself and use the read-only Find in Athena.</div>'; return; }
       var all=parseReportRows(text);
       var rows=dedupeReportRows(filterReportRows(all, crit));
       renderCandidates(body, rows, all.length, crit, {bestScore:null, pages:(rd&&rd.pages)||0});
     }).catch(function(err){
+      if(!studyDomCurrent(owner,body)||studySilent(err))return;
       out.innerHTML='<div class="mls-study-gate">&#9888; '+esc((err&&err.message)||'Search failed.')+'</div>';
     });
   }
 
   /* ---- Section 1 logic: read Athena report -> parse -> filter -> review -> verify+import ---- */
   function doFindInAthena(body){
+    var owner=studyCapture('find-report-ui',true);if(!studyDomCurrent(owner,body))return;
     var out=body.querySelector('#mlsStudyBFindOut');
     var crit=resolveCriteria(body.querySelector('#mlsStudyBSel').value, body.querySelector('#mlsStudyBProc').value);
     crit.from=(body.querySelector('#mlsStudyBFrom').value||''); crit.to=(body.querySelector('#mlsStudyBTo').value||'');
     out.innerHTML='<div class="mls-study-sum" id="mlsStudyBStatus">Looking for MLS Assist…</div>';
-    var setS=function(m){ var n=body.querySelector('#mlsStudyBStatus'); if(n) n.textContent=m; };
-    readReportText(setS).then(function(rd){
+    var setS=studyOwnedStatus(owner,body,function(m){ var n=body.querySelector('#mlsStudyBStatus'); if(n) n.textContent=m; });
+    readReportText(setS,owner).then(function(rd){
+      if(!studyDomCurrent(owner,body))return;
       var text=(rd&&rd.text)?rd.text:'';
       if(!text){ out.innerHTML='<div class="mls-study-gate">Couldn’t read an Athena report. Open the procedure/claims report (or a filtered schedule) as your signed-in Athena tab, then try again.</div>'; return; }
       var all=parseReportRows(text);
       var rows=dedupeReportRows(filterReportRows(all, crit));
       renderCandidates(body, rows, all.length, crit, rd);
     }).catch(function(err){
+      if(!studyDomCurrent(owner,body)||studySilent(err))return;
       out.innerHTML='<div class="mls-study-gate">⚠ '+esc((err&&err.message)||'Couldn’t read the Athena tab.')+'</div>';
     });
   }
   function renderCandidates(body, rows, totalParsed, crit, rd){
+    var owner=studyCapture('candidate-list',true);if(!studyDomCurrent(owner,body))return;
     var out=body.querySelector('#mlsStudyBFindOut');
     if(!rows.length){
       out.innerHTML='<div class="mls-study-gate">Read the report ('+esc(String(totalParsed))+' patient row(s) parsed'+(rd&&rd.bestScore!=null?(', match score '+esc(String(rd.bestScore))):'')+') but none matched <b>'+esc(crit.label)+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column; widen or clear the date range; or open the report so the patient rows are visible. This scrape is conservative and may need tuning to your report’s layout (set <code>window.__mlsStudyConfig</code>).</div>';
@@ -43489,17 +43610,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'<div class="mls-study-sum" id="mlsStudyBImpSum"></div>'
       +'<div id="mlsStudyBImpRows"></div>';
     var all=out.querySelector('#mlsStudyBAll');
-    if(all) all.addEventListener('change', function(){ out.querySelectorAll('.mls-study-cchk').forEach(function(c){ if(!c.disabled) c.checked=all.checked; }); });
-    out.querySelector('#mlsStudyBImport').addEventListener('click', function(){ importCandidates(body, rows, out); });
+    if(all) all.addEventListener('change', function(){ if(!studyDomCurrent(owner,out))return;out.querySelectorAll('.mls-study-cchk').forEach(function(c){ if(!c.disabled) c.checked=all.checked; }); });
+    out.querySelector('#mlsStudyBImport').addEventListener('click', function(){ if(studyDomCurrent(owner,out))importCandidates(body, rows, out); });
   }
   function importCandidates(body, rows, out){
+    var owner=studyCapture('candidate-batch',true);if(!studyDomCurrent(owner,out))return;
     var cohort=(out.querySelector('#mlsStudyBFCohort2').value||'').trim();
     if(!cohort){ out.querySelector('#mlsStudyBImpSum').innerHTML='<span class="mls-study-gatetext">Enter a cohort name first.</span>'; return; }
     var picked=[]; out.querySelectorAll('.mls-study-cchk').forEach(function(c){ if(c.checked && !c.disabled){ picked.push(rows[parseInt(c.getAttribute('data-i'),10)]); } });
     if(!picked.length){ out.querySelector('#mlsStudyBImpSum').innerHTML='<span class="mls-study-gatetext">Tick at least one patient with a DOB.</span>'; return; }
     var rowsBox=out.querySelector('#mlsStudyBImpRows');
     rowsBox.innerHTML=picked.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsbc'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('');
-    importSequential(picked, cohort, { sum: out.querySelector('#mlsStudyBImpSum'), row:function(i){ return out.querySelector('#mlsbc'+i); } });
+    importSequential(picked, cohort, { sum: out.querySelector('#mlsStudyBImpSum'), row:function(i){ return out.querySelector('#mlsbc'+i); } },null,owner);
   }
 
   function tagLocalProcedures(body, map){
@@ -43514,14 +43636,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* ---- Section 3 logic: probe + (when enabled) run the FHIR cohort query ---- */
-  function wireFhirPanel(body){
+  function wireFhirPanel(body,owner){
+    owner=owner||studyCapture('fhir-panel',true);
     var badge=body.querySelector('#mlsStudyFhirBadge'), btn=body.querySelector('#mlsStudyFhirBtn'), out=body.querySelector('#mlsStudyFhirOut');
     if(!badge||!btn) return;
-    studyFhirProbe().then(function(p){
+    studyFhirProbe(owner).then(function(p){
+      if(!studyDomCurrent(owner,body))return;
       if(p.available){
         badge.textContent='API connected'; badge.className='mls-study-badge live';
         btn.disabled=false; btn.textContent='Run exact FHIR cohort query';
-        btn.addEventListener('click', function(){ runFhirCohort(body); });
+        btn.addEventListener('click', function(){ if(studyDomCurrent(owner,body))runFhirCohort(body); });
       } else {
         badge.textContent='gated'; badge.className='mls-study-badge gate';
         btn.disabled=true; btn.textContent='Run exact FHIR cohort query (disabled until API access)';
@@ -43529,33 +43653,37 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
   function runFhirCohort(body){
+    var owner=studyCapture('fhir-run',true);if(!studyDomCurrent(owner,body))return;
     var out=body.querySelector('#mlsStudyFhirOut');
     var crit=resolveCriteria(body.querySelector('#mlsStudyBSel').value, body.querySelector('#mlsStudyBProc').value);
     if(!crit.codes.length){ out.innerHTML='<div class="mls-study-gate">Pick a procedure or enter a CPT code first (the FHIR query needs a CPT/HCPCS code).</div>'; return; }
     var cohort=(body.querySelector('#mlsStudyBFCohort').value||crit.label||'').trim();
     out.innerHTML='<div class="mls-study-sum">Querying athenahealth FHIR for CPT '+esc(crit.codes.join(', '))+'…</div>';
-    fhirCohortByCpt(crit.codes, body.querySelector('#mlsStudyBFrom').value, body.querySelector('#mlsStudyBTo').value).then(function(res){
+    fhirCohortByCpt(crit.codes, body.querySelector('#mlsStudyBFrom').value, body.querySelector('#mlsStudyBTo').value,owner).then(function(res){
+      if(!studyDomCurrent(owner,body))return;
       if(!res||!res.ok||!Array.isArray(res.patients)){ out.innerHTML='<div class="mls-study-gate">The FHIR query didn’t return a cohort'+(res&&res.status?(' (HTTP '+esc(String(res.status))+')'):'')+'. The API may not be approved yet.</div>'; return; }
       var rows=res.patients.map(function(p){ return { name:p.name||'', dob:p.dob||'', raw:'', dobValid:!!normDob(p.dob) }; }).filter(function(r){ return r.name; });
       out.innerHTML='<div class="mls-study-sum">FHIR returned '+rows.length+' patient(s) for CPT '+esc(crit.codes.join(', '))+'. Verifying + importing into “'+esc(cohort)+'”…</div>'
         +rows.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsfc'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('')
         +'<div class="mls-study-sum" id="mlsStudyFhirSum"></div>';
-      importSequential(rows, cohort||'FHIR cohort', { sum: out.querySelector('#mlsStudyFhirSum'), row:function(i){ return out.querySelector('#mlsfc'+i); } });
+      importSequential(rows, cohort||'FHIR cohort', { sum: out.querySelector('#mlsStudyFhirSum'), row:function(i){ return out.querySelector('#mlsfc'+i); } },null,owner);
     });
   }
 
   /* ----- Cohorts view ----- */
   function renderCohorts(body){
+    var owner=studyCapture('cohort-list',true);
     var cohorts=listCohorts();
     if(!cohorts.length){ body.innerHTML='<div class="mls-study-empty">No cohorts yet. Use “By name + DOB” or “By procedure” to build one.</div>'; return; }
     body.innerHTML='<div class="mls-study-cohlist">'+cohorts.map(function(c){
       return '<button type="button" class="mls-study-coh" data-c="'+esc(c.name)+'"><span>'+esc(c.name)+'</span><span class="mls-study-cnt">'+c.n+'</span></button>';
     }).join('')+'</div><div id="mlsStudyCohDetail"></div>';
     body.querySelectorAll('.mls-study-coh').forEach(function(b){
-      b.addEventListener('click', function(){ showCohort(body, b.getAttribute('data-c')); });
+      b.addEventListener('click', function(){ if(studyDomCurrent(owner,body))showCohort(body, b.getAttribute('data-c')); });
     });
   }
   function showCohort(body, cohort){
+    var owner=studyCapture('cohort-detail',true);if(!studyDomCurrent(owner,body))return;
     var det=body.querySelector('#mlsStudyCohDetail'); if(!det) return;
     var mem=cohortMembers(cohort);
     det.innerHTML='<div class="mls-study-sum">'+esc(cohort)+' — '+mem.length+' patient(s)</div>'
@@ -43568,6 +43696,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }).join('')+'</div>';
     det.querySelectorAll('.mls-study-open').forEach(function(b){
       b.addEventListener('click', function(){
+        if(!studyDomCurrent(owner,body))return;
         var id=b.getAttribute('data-id');
         safe(function(){ if(window.setActivePtId) window.setActivePtId(id); });
         safe(function(){ if(window.openPatient) window.openPatient(id); });
@@ -43575,9 +43704,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         close();
       });
     });
-    var csv=det.querySelector('#mlsStudyCsv'); if(csv) csv.addEventListener('click', function(){ exportCohortCsv(cohort, mem); });
+    var csv=det.querySelector('#mlsStudyCsv'); if(csv) csv.addEventListener('click', function(){ if(studyDomCurrent(owner,body))exportCohortCsv(cohort, mem,owner); });
   }
-  function exportCohortCsv(cohort, mem){
+  function exportCohortCsv(cohort, mem,owner){
+    if(!studyCurrent(owner,true))return;
     // De-identified: cohort, a sequential study id, age (from DOB year), sex, visit count. No name/DOB/MRN.
     var yr=new Date().getFullYear();
     var lines=['cohort,study_id,age,sex,visits'];
@@ -43588,7 +43718,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     safe(function(){
       var blob=new Blob([lines.join('\n')],{type:'text/csv'});
       var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='MLS_cohort_'+cohort.replace(/[^a-z0-9]+/gi,'_')+'_deidentified.csv';
-      document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); if(a&&a.remove)a.remove(); }, 500);
     });
   }
 
@@ -43626,6 +43756,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'#mlsStudyOv .mls-study-card{background:var(--card,#fff);border:1px solid var(--line,#e6e9ef);border-radius:16px;box-shadow:0 24px 60px rgba(15,28,46,.3);width:640px;max-width:100%;font-size:13px;color:var(--ink,#1A211C);}'
       +'#mlsStudyOv .mls-study-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line,#e6e9ef);}'
       +'#mlsStudyOv .mls-study-title{font-weight:700;font-size:15px;}'
+      +'#mlsStudyOv .mls-study-sr{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;}'
       +'#mlsStudyOv .mls-study-x{border:0;background:transparent;cursor:pointer;color:var(--muted,#9aa7b4);font-size:16px;}'
       +'#mlsStudyOv .mls-study-tabs{display:flex;gap:4px;padding:10px 12px 0;}'
       +'#mlsStudyOv .mls-study-tabs button{flex:1;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line,#e6e9ef);background:var(--surface,#fafcff);color:var(--muted,#5b6b7c);border-radius:9px 9px 0 0;padding:8px;}'
@@ -43674,14 +43805,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     (document.head||document.documentElement).appendChild(s);
   }
 
+  safe(function(){window.addEventListener('mls:session-boundary',studySessionBoundary,true);});
   function boot(){ injectLaunch(); wireTimeline(); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   // re-inject the launch button if the Patients toolbar re-renders
-  var tries=0; var iv=setInterval(function(){ tries++; if(tries>40){ clearInterval(iv); return; } safe(injectLaunch); }, 1200);
+  var tries=0; var iv=setInterval(function(){ var owner=studyCapture('launch-poll',false);if(!studyCurrent(owner,false))return;tries++; if(tries>40){ clearInterval(iv); return; } safe(injectLaunch); }, 1200);
 
   window.__mlsStudy={ open:open, close:close, _strictMatch:strictMatch, _parseRows:parseRows, _normDob:normDob, _importRow:importRow, _listCohorts:listCohorts,
     _extractReportRows:extractReportRows, _parseReportRows:parseReportRows, _filterReportRows:filterReportRows, _dedupeReportRows:dedupeReportRows, _resolveCriteria:resolveCriteria,
-    _classifyDates:classifyDates, _detectName:detectName, _tagPatientCohort:tagPatientCohort, _studyFhirProbe:studyFhirProbe, _library:library, _autoSearch:doAutoSearchAthena, _assistSearchProcedure:assistSearchProcedure, _buildApptForRow:buildApptForRow, _svcToYMD:svcToYMD, _addToCalendar:addToCalendar, _searchCfg:searchCfg };
+    _classifyDates:classifyDates, _detectName:detectName, _tagPatientCohort:tagPatientCohort, _studyFhirProbe:studyFhirProbe, _library:library, _autoSearch:doAutoSearchAthena, _assistSearchProcedure:assistSearchProcedure, _buildApptForRow:buildApptForRow, _svcToYMD:svcToYMD, _addToCalendar:addToCalendar, _searchCfg:searchCfg,
+    _captureOwner:studyCapture,_ownerCurrent:studyCurrent,_sessionBoundary:studySessionBoundary,_debugOwner:function(){return {generation:studySessionGeneration,uiEpoch:studyUiEpoch,account:studyAccount(),epoch:studyEpoch(),overlay:!!document.getElementById('mlsStudyOv')};} };
 })();
 
 
@@ -43854,6 +43987,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function safe(fn,d){ try{ return fn(); }catch(e){ return d; } }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];}); }
   function S(){ return window.__mlsStudy || null; }
+  var grabGeneration=1,grabSerial=0,grabBoundaryHandler=null;
+  function grabCapture(kind){var st=S(),study=st&&typeof st._captureOwner==='function'?st._captureOwner('grab-'+String(kind||'task'),true):null;return Object.freeze({generation:grabGeneration,serial:++grabSerial,study:study});}
+  function grabCurrent(owner){var st=S();try{return !!owner&&owner.generation===grabGeneration&&!!st&&typeof st._ownerCurrent==='function'&&st._ownerCurrent(owner.study,true)===true;}catch(e){return false;}}
+  function grabDomCurrent(owner,node){var ov=document.getElementById('mlsStudyOv');return grabCurrent(owner)&&!!ov&&!!node&&ov.contains(node);}
+  function grabStale(){return {error:'cancelled',code:'P1_GRAB_STALE'};}
+  function grabBoundary(){grabGeneration++;try{var out=document.getElementById('mlsGrabOut');if(out){out.textContent='';out.remove();}}catch(e){}}
 
   /* ---- backend helpers (MLS app DB, not Athena) ---- */
   function bkBase(){ return safe(function(){ if(typeof window.bkBase==='function') return window.bkBase(); },null) || safe(function(){ return window.MLS_BACKEND||window.__mlsBackend||'https://scrivara-backend.onrender.com'; },'https://scrivara-backend.onrender.com'); }
@@ -43882,7 +44021,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function calHasAppt(pid, iso){
     return safe(function(){ return (window._calAppts||[]).some(function(a){ return String(a.patient_external_id||'')===String(pid) && String(a.appt_date||'')===iso; }); }, false);
   }
-  function ensureCalendarEntry(pid, name, dateStr, line, reason){
+  function ensureCalendarEntry(pid, name, dateStr, line, reason, opts){
+    opts=opts||{};var owner=opts.owner||null;
+    if(!owner||!grabCurrent(owner)||typeof opts.isCurrent!=='function'||opts.isCurrent()!==true)return Promise.resolve({created:false,why:'cancelled'});
     var iso=toIsoDate(dateStr);
     if(!iso) return Promise.resolve({created:false, why:'no-date'});
     if(!isFutureOrToday(iso)) return Promise.resolve({created:false, why:'past'}); // a scheduled appt is today/future
@@ -43890,13 +44031,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var body={ name:name, reason:reason||'Imported from Athena (procedure cohort)', patient_external_id:pid||null, appt_date:iso, start_at:startIso(iso, rowTime(line)), end_at:null };
     return safe(function(){
       return fetch(bkBase()+'/api/appointments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify(body)})
-        .then(function(r){ return r.ok?{created:true, iso:iso}:{created:false, why:'http'+r.status}; })
+        .then(function(r){ if(!grabCurrent(owner)||opts.isCurrent()!==true)return {created:false,why:'cancelled'};return r.ok?{created:true, iso:iso}:{created:false, why:'http'+r.status}; })
         .catch(function(){ return {created:false, why:'net'}; });
     }, Promise.resolve({created:false, why:'err'}));
   }
 
   /* ---- bridge: drive athenaOne search + paginate via MLS Assist v1.31 (mlsAppSearchProcedure) ---- */
-  function grabViaAssist(criteria, onStatus){
+  function grabViaAssist(criteria, onStatus, owner){
+    owner=owner||grabCapture('assist');
+    if(!grabCurrent(owner))return Promise.resolve(grabStale());
     // criteria = { params:{cpt:[],procedureName,dateFrom,dateTo}, cfg:{} }
     var params=(criteria&&criteria.params)||criteria||{};
     var cfg=(criteria&&criteria.cfg)||{};
@@ -43904,27 +44047,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     // Preferred: reuse the Study module's proven, progress-emitting driver (mlsAppSearchProcedure).
     var st=S();
     if(st && typeof st._assistSearchProcedure==='function'){
-      return st._assistSearchProcedure(params, cfg, onStatus).then(mapResult, function(err){ return { error:(err&&err.message)||'search-failed', code:(err&&err.code)||'' }; });
+      return st._assistSearchProcedure(params, cfg, function(m){if(grabCurrent(owner)&&onStatus)onStatus(m);},owner.study).then(function(r){return grabCurrent(owner)?mapResult(r):grabStale();}, function(err){ return grabCurrent(owner)?{ error:(err&&err.message)||'search-failed', code:(err&&err.code)||'' }:grabStale(); });
     }
-    // Fallback: drive the extension's live mlsAppSearchProcedure protocol directly (with live progress).
-    return new Promise(function(resolve){
-      var settled=false, ponged=false, iv=null, toR=null, tries=0;
-      function fin(v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onEvt); if(iv) clearInterval(iv); if(toR) clearTimeout(toR); resolve(v); }
-      function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; proceed(); } }
-      function onEvt(e){ var d=e.data; if(!(d&&d.source==='mls-ext')) return;
-        if(d.type==='mlsAppSearchProgress'){ if(onStatus) onStatus(d.msg||'Working…'); return; }
-        if(d.type==='mlsAppSearchResult'){ var r=d.resp||{}; if(r.ok===false){ fin({error:r.error||'search-failed',code:r.code||''}); return; } fin(mapResult(r)); } }
-      window.addEventListener('message',onPong);
-      var ping=function(){ safe(function(){ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }); };
-      ping(); iv=setInterval(function(){ if(ponged){ clearInterval(iv); iv=null; return; } if(++tries>8){ clearInterval(iv); iv=null; if(!settled) fin({error:'no-ext'}); } else ping(); }, 350);
-      function proceed(){
-        if(iv){ clearInterval(iv); iv=null; }
-        window.addEventListener('message',onEvt);
-        if(onStatus) onStatus('Driving the athenaOne procedure search…');
-        safe(function(){ window.postMessage({source:'mls-app',type:'mlsAppSearchProcedure',params:params,cfg:cfg},'*'); });
-        toR=setTimeout(function(){ fin({error:'timeout'}); }, 360000); // generous: many pages
-      }
-    });
+    return Promise.resolve({error:'The account-owned Study reader is unavailable. Reopen the Study panel and retry.',code:'NO_CANONICAL_STUDY_READER'});
   }
 
   /* ---- import selected candidates: strict verify+import (reuse) + calendar link ---- */
@@ -43932,10 +44057,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     not_found:{i:'⚠',c:'warn',l:'Not found in Athena'}, review:{i:'⚠',c:'warn',l:'Verify manually'},
     no_bridge:{i:'⚠',c:'gate',l:'MLS Assist needed'}, old_ext:{i:'⚠',c:'gate',l:'Update MLS Assist'},
     error:{i:'⚠',c:'warn',l:'Read error — retry'}, pending:{i:'…',c:'wait',l:'Verifying in Athena…'} };
-  function importSelected(picked, cohort, addCal, els, onDone){
+  function importSelected(picked, cohort, addCal, els, onDone, owner){
+    owner=owner||grabCapture('import');
     var st=S(); if(!st||!st._importRow){ if(onDone) onDone(); return; }
     var counts={match:0,dob_mismatch:0,not_found:0,review:0,no_bridge:0,error:0,old_ext:0}, cal=0, i=0;
     function step(){
+      if(!grabCurrent(owner))return;
       if(i>=picked.length){
         if(els.sum) els.sum.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+(addCal?(' · 📅 '+cal+' calendar entr'+(cal===1?'y':'ies')):'');
         safe(function(){ if(window.renderPatients) window.renderPatients(); });
@@ -43945,22 +44072,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       var r=picked[i];
       if(els.sum) els.sum.textContent='Importing '+esc(r.name||('patient '+(i+1)))+' ('+(i+1)+'/'+picked.length+') — verifying DOB in athenaOne…';
-      Promise.resolve(safe(function(){ return st._importRow(r, cohort); }, Promise.resolve({status:'error'}))).then(function(res){
+      Promise.resolve(safe(function(){ return st._importRow(r, cohort,{isCurrent:function(){return grabCurrent(owner);}}); }, Promise.resolve({status:'error'}))).then(function(res){
+        if(!grabCurrent(owner))return;
         res=res||{status:'error'};
         var key=res.status==='old-ext'?'old_ext':res.status; counts[key]=(counts[key]||0)+1;
         var s=STAT[key]||STAT.error, el=els.row(i);
         function paint(extra){ if(!el) return; var rs=el.querySelector('.mls-study-rs'); if(rs){ rs.className='mls-study-rs '+s.c; rs.textContent=s.i+' '+s.l+(extra||''); } }
         if(res.status==='match' && addCal && res.patientId){
-          ensureCalendarEntry(res.patientId, (res.chartName||r.name), r.svc, r.line, els.reason).then(function(c){
+          ensureCalendarEntry(res.patientId, (res.chartName||r.name), r.svc, r.line, els.reason,{owner:owner,isCurrent:function(){return grabCurrent(owner);}}).then(function(c){
+            if(!grabCurrent(owner))return;
             if(c&&c.created){ cal++; paint(' · 📅 appt '+(c.iso||'')); } else { paint(''); }
             if(els.sum) els.sum.textContent='Importing '+(i+1)+' / '+picked.length+'…';
-            i++; setTimeout(step,120);
+            i++; setTimeout(function(){if(grabCurrent(owner))step();},120);
           });
         } else {
           var ex=''; if(res.status==='dob_mismatch') ex=' (Athena: '+esc(res.chartDob||'?')+')'; else if(res.status==='review'&&res.reason) ex=' ('+esc(res.reason)+')';
           paint(ex);
           if(els.sum) els.sum.textContent='Importing '+(i+1)+' / '+picked.length+'…';
-          i++; setTimeout(step,120);
+          i++; setTimeout(function(){if(grabCurrent(owner))step();},120);
         }
       });
     }
@@ -43968,7 +44097,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* ---- run the whole driven grab from the existing By-procedure inputs ---- */
-  function runGrab(sec){
+  function runGrab(sec,owner){
+    owner=owner||grabCapture('run');if(!grabDomCurrent(owner,sec))return;
     var st=S(); var out=sec.querySelector('#mlsGrabOut'); if(!out) return;
     if(!st){ out.innerHTML='<div class="mls-study-gate">Study module not ready — reopen the panel.</div>'; return; }
     var crit=safe(function(){ return st._resolveCriteria(sec.querySelector('#mlsStudyBSel').value, sec.querySelector('#mlsStudyBProc').value); }, {label:'',keywords:[],codes:[]})||{label:'',keywords:[],codes:[]};
@@ -43976,10 +44106,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var addCal=!!(sec.querySelector('#mlsGrabCal')||{}).checked;
     var procName=(sec.querySelector('#mlsStudyBProc').value||'').trim()||(crit.label||'');
     out.innerHTML='<div class="mls-study-sum" id="mlsGrabStatus">Searching Athena for '+esc(crit.label||procName||'procedure')+'…</div>';
-    var setS=function(m){ var n=sec.querySelector('#mlsGrabStatus'); if(n) n.textContent=m; };
+    var setS=function(m){ if(!grabDomCurrent(owner,sec))return;var n=sec.querySelector('#mlsGrabStatus'); if(n) n.textContent=m; };
     var params={ cpt:crit.codes||[], procedureName:procName, dateFrom:crit.from, dateTo:crit.to };
     var cfg=safe(function(){ return (window.__mlsStudyConfig&&(window.__mlsStudyConfig.search||window.__mlsStudyConfig.grabCfg))||{}; },{});
-    grabViaAssist({params:params,cfg:cfg}, setS).then(function(resp){
+    grabViaAssist({params:params,cfg:cfg}, setS,owner).then(function(resp){
+      if(!grabDomCurrent(owner,sec))return;
       if(!resp || resp.error){
         var em = resp&&resp.error;
         var msg = em==='no-ext' ? 'MLS Assist isn’t responding. Install/enable the extension (v1.31+) and keep your signed-in athenaOne tab open, then try again.'
@@ -43991,11 +44122,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached athenaOne but read 0 result rows'+(resp.pages?(' across '+resp.pages+' page(s)'):'')+'. Open a procedure/claims search or report so the result rows are visible, or tune <code>window.__mlsStudyConfig.search</code> to your layout — or use 🔎 Find in Athena on a report you’ve already run.</div>'; return; }
       var all=safe(function(){ return st._parseReportRows(text); }, [])||[];
       var rows=safe(function(){ var hit=st._filterReportRows(all, crit); return st._dedupeReportRows?st._dedupeReportRows(hit):hit; }, [])||[];
-      renderCandidates(sec, rows, all.length, crit, resp, addCal);
+      renderCandidates(sec, rows, all.length, crit, resp, addCal,owner);
     });
   }
 
-  function renderCandidates(sec, rows, totalParsed, crit, resp, addCal){
+  function renderCandidates(sec, rows, totalParsed, crit, resp, addCal,owner){
+    owner=owner||grabCapture('candidates');if(!grabDomCurrent(owner,sec))return;
     var out=sec.querySelector('#mlsGrabOut'); if(!out) return;
     var norm=safe(function(){ return S()._normDob; }, null);
     var pageInfo='Harvested '+(resp.pages||1)+' page'+((resp.pages||1)===1?'':'s')+(resp.drove?' · auto-ran the search':'')+(resp.paginated?' · paginated':'');
@@ -44020,8 +44152,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'<div class="mls-study-actions"><button type="button" id="mlsGrabImport" class="mls-study-btn">✓ Verify &amp; import selected'+(addCal?' (+ calendar)':'')+'</button></div>'
       +'<div class="mls-study-sum" id="mlsGrabImpSum"></div><div id="mlsGrabImpRows"></div>';
     var allc=out.querySelector('#mlsGrabAll');
-    if(allc) allc.addEventListener('change', function(){ out.querySelectorAll('.mls-grab-chk').forEach(function(c){ if(!c.disabled) c.checked=allc.checked; }); });
+    if(allc) allc.addEventListener('change', function(){ if(!grabDomCurrent(owner,out))return;out.querySelectorAll('.mls-grab-chk').forEach(function(c){ if(!c.disabled) c.checked=allc.checked; }); });
     out.querySelector('#mlsGrabImport').addEventListener('click', function(){
+      if(!grabDomCurrent(owner,out))return;
       var cohort=((out.querySelector('#mlsGrabCohort')||{}).value||'').trim();
       var sum=out.querySelector('#mlsGrabImpSum');
       if(!cohort){ if(sum) sum.innerHTML='<span class="mls-study-gatetext">Enter a cohort name first.</span>'; return; }
@@ -44029,7 +44162,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(!picked.length){ if(sum) sum.innerHTML='<span class="mls-study-gatetext">Tick at least one patient with a DOB.</span>'; return; }
       var box=out.querySelector('#mlsGrabImpRows');
       box.innerHTML=picked.map(function(r,i){ var s=STAT.pending; return '<div class="mls-study-row" id="mlsg'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.c+'">'+s.i+' '+s.l+'</span></div>'; }).join('');
-      importSelected(picked, cohort, addCal, { sum:sum, reason:(crit.label||'Procedure cohort'), row:function(i){ return box.querySelector('#mlsg'+i); } });
+      importSelected(picked, cohort, addCal, { sum:sum, reason:(crit.label||'Procedure cohort'), row:function(i){ return box.querySelector('#mlsg'+i); } },null,owner);
     });
   }
 
@@ -44038,6 +44171,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     safe(function(){
       var findBtn=document.getElementById('mlsStudyBFind'); if(!findBtn) return;
       var sec=findBtn.closest('.mls-study-sec'); if(!sec) return;
+      var owner=grabCapture('injected-controls');if(!grabDomCurrent(owner,sec))return;
       if(sec.querySelector('#mlsGrabAthenaBtn')) return;
       // badge: this is the autopilot upgrade
       var head=sec.querySelector('.mls-study-sech'); if(head && !head.querySelector('.mls-grab-badge')){ var bd=document.createElement('span'); bd.className='mls-study-badge live mls-grab-badge'; bd.textContent='autopilot v1.31'; head.appendChild(bd); }
@@ -44055,13 +44189,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var findOut=sec.querySelector('#mlsStudyBFindOut'); (findOut&&findOut.parentElement?findOut.parentElement:sec).insertBefore(out, findOut?findOut.nextSibling:null);
       // tiny style for the options row
       if(!document.getElementById('mlsGrabCss')){ var s=document.createElement('style'); s.id='mlsGrabCss'; s.textContent='#mlsStudyOv .mls-grab-opts{display:flex;flex-direction:column;gap:4px;margin:2px 0 8px;font-size:11.5px;color:var(--muted,#5b6b7c);} #mlsStudyOv .mls-grab-opts label{display:flex;align-items:center;gap:7px;cursor:pointer;}'; (document.head||document.documentElement).appendChild(s); }
-      b.addEventListener('click', function(){ runGrab(sec); });
+      b.addEventListener('click', function(){ if(grabDomCurrent(owner,sec))runGrab(sec,owner); });
     });
   }
   // poll: the Study overlay is created/destroyed on demand; (re)inject whenever Mode B is shown
-  var grabInjectIv = setInterval(inject, 700);
+  var grabInjectIv = setInterval(function(){var owner=grabCapture('inject-poll');if(grabCurrent(owner))inject();}, 700);
+  grabBoundaryHandler=grabBoundary;safe(function(){window.addEventListener('mls:session-boundary',grabBoundaryHandler,true);});safe(function(){window.addEventListener('mls:study-lifecycle',function(e){if(e&&e.detail&&e.detail.reason==='close')grabBoundary();},true);});
 
-  window.__mlsGrab={ _grabViaAssist:grabViaAssist, _ensureCalendarEntry:ensureCalendarEntry, _toIsoDate:toIsoDate, _isFutureOrToday:isFutureOrToday, _startIso:startIso, _rowTime:rowTime, _runGrab:runGrab };
+  window.__mlsGrab={ _grabViaAssist:grabViaAssist, _ensureCalendarEntry:ensureCalendarEntry, _toIsoDate:toIsoDate, _isFutureOrToday:isFutureOrToday, _startIso:startIso, _rowTime:rowTime, _runGrab:runGrab,_captureOwner:grabCapture,_ownerCurrent:grabCurrent,_sessionBoundary:grabBoundary };
 })();
 
 /* ============================================================================
@@ -44478,7 +44613,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_ux_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_ux_unify.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_athena_ux_unify.js');document.head.appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_centerpiece.js"]'))return;var s=document.createElement('script');s.src='feat_mls_centerpiece.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_centerpiece.js');document.head.appendChild(s);}catch(e){}})();
 (function(){try{if(document.querySelector('script[data-mls-asset="feat_fab_layout.js"]'))return;var s=document.createElement('script');s.src='feat_fab_layout.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_fab_layout.js');document.head.appendChild(s);}catch(e){}})();
-/* ---- loader feat_athena_provider_picker.js (Whose patients? doctor dropdown + provider-scoped schedule pull) ---- */
+/* The legacy provider picker is intentionally not loaded in P1: its missing-
+   attribution fallback can widen a selected-provider pull to every row. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_after_visit_summary.js"]'))return;var s=document.createElement('script');s.src='/feat_after_visit_summary.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_after_visit_summary.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 /* ---- loader: feat_mls_protocol (MLS Easy protocol: auto-advance to NEXT UP Slide 2, record textbox, full ordered flow, provider-name-everywhere, sizing/readability; additive, reversible) ---- */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_protocol.js"]'))return;var s=document.createElement('script');s.src='feat_mls_protocol.js?v='+(window.__MLS_AV||Date.now());s.async=false;s.setAttribute('data-mls-asset','feat_mls_protocol.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
@@ -44489,7 +44625,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_contrast_fix.js"]'))return;var s=document.createElement('script');s.src='/feat_mls_contrast_fix.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_mls_contrast_fix.js');s.async=true;(document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})();
 
 ;(function(){try{['feat_opnote_history.js'].forEach(function(f){if(document.querySelector('script[data-mls-asset="'+f+'"]'))return;var s=document.createElement('script');s.src=f+'?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset',f);(document.head||document.documentElement).appendChild(s);});}catch(e){}})(); /* MLS — history-aware op-note generation + real loading/ready indicator (append-only, guarded) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_provider_roster.js"]'))return;var s=document.createElement('script');s.src='feat_athena_provider_roster.js?v='+(window.__MLS_AV||Date.now());s.async=true;s.setAttribute('data-mls-asset','feat_athena_provider_roster.js');(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+;/* 1p-owned canonical roster. The widening legacy picker stays retired. */
+(function(){try{
+  if(!window.__MLS_P1_PREVIEW||window.__MLS_P1_PREVIEW.enabled!==true)return;
+  function install(cfg){
+    var prior=window[cfg.ctlKey],valid={idle:1,loading:1,ready:1,'network-error':1,'owner-missing':1,'failed-bounded':1,'blocked-owner':1,'blocked-picker':1};
+    function shape(api,ctl){return !!(api&&ctl&&api.installed===true&&api.version===cfg.version&&api.installToken===ctl.installToken&&cfg.methods.every(function(k){return typeof api[k]==='function';}));}
+    if(prior&&prior.installed===true&&prior.version===cfg.version&&prior.installToken&&typeof prior.ensure==='function'&&typeof prior.revert==='function'&&valid[prior.state]){var kept=false;try{kept=prior.ensure()===true&&window[cfg.ctlKey]===prior&&shape(window[cfg.apiKey],prior);}catch(_ensureError){kept=false;}if(kept)return;}
+    if(prior){if(typeof prior.revert!=='function')return;try{if(prior.revert()===false)return;}catch(_priorError){return;}if(window[cfg.ctlKey]===prior||prior.installed===true)return;}
+    var ctl={installed:true,version:cfg.version,state:'idle',attempts:0,maxAttempts:2,node:null,retryTimer:null,installToken:'p1-provider-'+cfg.kind+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)};
+    function active(){return ctl.installed===true&&window[cfg.ctlKey]===ctl;}
+    function owner(){var api=window[cfg.apiKey];return shape(api,ctl)?api:null;}
+    function remove(node,state){if(!node)return;try{node.onload=null;node.onerror=null;node.setAttribute('data-mls-load-state',state||'retired');node.setAttribute('data-mls-retired-asset',cfg.asset);node.removeAttribute('data-mls-asset');if(node.parentNode)node.parentNode.removeChild(node);}catch(_e){}}
+    function retireGlobal(key){var api=window[key];if(!api||api.installed!==true)return true;if(typeof api.revert!=='function')return false;try{if(api.revert()===false)return false;}catch(_e){return false;}api=window[key];return !(api&&api.installed===true);}
+    function retireLegacyPicker(){
+      if(!retireGlobal('__mlsProviderTagFix')||!retireGlobal('__mlsProviderPicker'))return false;
+      [].slice.call(document.querySelectorAll('script[data-mls-asset="feat_athena_provider_picker.js"]')).forEach(function(n){try{n.onload=null;n.onerror=null;n.setAttribute('data-mls-load-state','retired-p1-no-widen');n.setAttribute('data-mls-retired-asset','feat_athena_provider_picker.js');n.removeAttribute('data-mls-asset');if(n.parentNode)n.parentNode.removeChild(n);}catch(_e){}});
+      return !document.getElementById('mlsppWrap')&&!document.getElementById('mlsPtfBox');
+    }
+    function retireShared(){return retireGlobal(cfg.apiKey);}
+    function fail(node,state){if(!active()||ctl.node!==node){remove(node,'stale-load');return;}ctl.node=null;remove(node,state);ctl.state=state;if(ctl.attempts<ctl.maxAttempts&&!ctl.retryTimer)ctl.retryTimer=setTimeout(function(){ctl.retryTimer=null;if(active())ctl.ensure();},1000);}
+    ctl.ensure=function(){
+      if(!active()||ctl.state==='reverted')return false;if(!retireLegacyPicker()){ctl.state='blocked-picker';return false;}if(owner()){ctl.state='ready';return true;}if(!retireShared()){ctl.state='blocked-owner';return false;}
+      if(ctl.state==='loading'&&ctl.node&&ctl.node.getAttribute('data-mls-load-state')==='loading')return true;if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';return false;}
+      [].slice.call(document.querySelectorAll('script[data-mls-asset="'+cfg.asset+'"]')).forEach(function(n){remove(n,'superseded');});
+      var s=document.createElement('script');ctl.node=s;ctl.attempts++;ctl.state='loading';s.src=cfg.src+'?v='+(window.__MLS_AV||'p1-preview');s.async=false;s.setAttribute('data-mls-asset',cfg.asset);s.setAttribute('data-mls-version',cfg.version);s.setAttribute('data-mls-install-token',ctl.installToken);s.setAttribute('data-mls-load-state','loading');
+      s.onload=function(){if(!active()||ctl.node!==s){remove(s,'stale-load');return;}if(owner()){s.setAttribute('data-mls-load-state','ready');ctl.state='ready';return;}fail(s,'owner-missing');};
+      s.onerror=function(){fail(s,'network-error');};(document.head||document.documentElement).appendChild(s);return true;
+    };
+    ctl.revert=function(){if(window[cfg.ctlKey]!==ctl)return false;var api=owner();if(api&&typeof api.revert==='function'){try{if(api.revert()===false)return false;}catch(_e){return false;}if(api.installed===true)return false;}ctl.installed=false;if(ctl.retryTimer)clearTimeout(ctl.retryTimer);ctl.retryTimer=null;remove(ctl.node,'reverted');ctl.node=null;ctl.state='reverted';if(window[cfg.ctlKey]===ctl)try{delete window[cfg.ctlKey];}catch(_d){window[cfg.ctlKey]=null;}return true;};
+    window[cfg.ctlKey]=ctl;ctl.ensure();
+  }
+  install({kind:'roster',asset:'feat_athena_provider_roster.js',src:'1p-feat_athena_provider_roster.js',version:'p1-provider-roster-1.0.0',ctlKey:'__mlsP1ProviderRosterLoader',apiKey:'__mlsProviderRoster',methods:['revert','beginOperation','ingestResp','getReceipt','_captureOwner','_ownerCurrent']});
+}catch(e){}})();
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_stdline_insert.js"]'))return;var s=document.createElement('script');s.src='/feat_stdline_insert.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_stdline_insert.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_opnote_pdf_anyview.js"]'))return;var s=document.createElement('script');s.src='/feat_opnote_pdf_anyview.js?v=20260622c1';s.setAttribute('data-mls-asset','feat_opnote_pdf_anyview.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 
