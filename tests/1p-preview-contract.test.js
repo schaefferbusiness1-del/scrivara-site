@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260813-r2';
+const EXPECTED_BUILD = 'p1-20260813-r3';
 const BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 
 const P1_FILES = [
