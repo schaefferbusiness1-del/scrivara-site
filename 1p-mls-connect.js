@@ -36147,7 +36147,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.__mlsBootLoader={installed:true,version:'single-owner-1.0.0',owner:'ScribeFlow'};
 })();
 
-;(function(){try{var A="feat_task3_frontsync.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260808t3113perf2";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* TASK3: calendar/day/week truth + provider scope + patient-selector/MLS-Easy sync + MLSStatus (additive, reversible: window.__mlsT3.revert(); delete this line + feat_task3_frontsync.js to fully remove) */
+;(function(){try{var A="feat_task3_frontsync.js",SRC="1p-feat_task3_frontsync.js",V="t3-p1-1.2.0",api=window.__mlsT3,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){try{if(api&&typeof api.revert==="function")api.revert();}catch(e0){}old.setAttribute("data-mls-retired-asset",A);old.removeAttribute("data-mls-asset");}var s=document.createElement("script");s.src=SRC+"?v="+(window.__MLS_AV||"p1-preview");s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 1p TASK3 fork: exact provider/day or provider-unknown appointment-census display truth; shared production consumer untouched. */
 
 /* ============================================================================
  * __mlsT6Stab — Task 6: reload / flicker / layout-jump stabilizer (b19).
@@ -43730,6 +43730,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   try {
+    /* p1-census-display-1.0.0: this bundle still contains the historical raw
+       calendar Next Up IIFE. Its permanent 1.5s timer would race the isolated
+       exact-census consumer and repaint retired Athena rows. The 1p lane owns
+       a dedicated external replacement; retire this embedded copy before it
+       installs any API, timeout, or interval. */
+    if (window.__MLS_P1_PREVIEW && window.__MLS_P1_PREVIEW.enabled === true) {
+      window.__mlsP1LegacyNextUpRetired = true;
+      return;
+    }
     if (window.__mlsNextUp && window.__mlsNextUp.__installed) return; // guard against double-append
   } catch (e) { }
 
@@ -44252,7 +44261,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260808asst220perf1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.2.0 - stale-lineage protection stays exact while cooperative bulk checks run in input-aware slices; refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_schedimport_exact.js"]'))return;var s=document.createElement('script');s.src='1p-feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 1p preview importer: canonical dedupe identity, isolated source; production/shared importer untouched. */
+;(function(){try{var A='feat_mls_schedimport_exact.js',V='si-1.7.22-p1-census1',api=window.__mlsSI,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='1p-feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 1p preview importer: canonical identity, isolated source, version-aware takeover; production/shared importer untouched. */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */

@@ -104,10 +104,14 @@
   var IMPORT_INDEX_SUFFIX = "schedImportIndexV1";
   var IMPORT_DAYS_SUFFIX = "schedImportDaysV1";
   var AUTHORITATIVE_SNAPSHOT_SUFFIX = "schedAuthoritativeDaysV1";
+  /* p1-census-display-1.0.0: provider-unknown pulls own only the exact
+     appointment IDs painted on one Athena day. Keep that display proof in a
+     separate, PHI-free store; it must never satisfy provider/practice
+     authority checks. */
+  var APPOINTMENT_CENSUS_DISPLAY_SUFFIX = "p1SchedAppointmentCensusDaysV1";
   var PENDING_TTL = 5 * 60 * 1000;
   var inFlight = {};
   var knownDays = {};
-  var authoritativeMemory = { v: 1, days: {} };
   var historyBatchRunning = false;
   var pullRunning = false;
   var lastPullResult = null;
@@ -1440,17 +1444,84 @@
   function authoritativeKey() {
     return safe(function () { return isFn(window.uns) ? window.uns(AUTHORITATIVE_SNAPSHOT_SUFFIX) : ""; }, "");
   }
-  function readAuthoritativeStore() {
+  function sanitizeAuthoritativeStore(value) {
+    if (!value || value.v !== 1 || !value.days || typeof value.days !== "object" || Array.isArray(value.days)) return null;
+    if (Object.keys(value).some(function (key) { return key !== "v" && key !== "days"; })) return null;
+    var dayKeys = Object.keys(value.days);
+    if (dayKeys.length > 90) return null;
+    var clean = { v: 1, days: {} }, invalid = false;
+    function cleanSnapshot(raw, day, expectedMode, expectedKey) {
+      if (!raw || raw.v !== 1 || normDate(raw.date) !== day || raw.date !== day || raw.mode !== expectedMode) return null;
+      var allowed = { v: 1, date: 1, mode: 1, providerKey: 1, backendIds: 1, sourceCount: 1, updated: 1 };
+      if (Object.keys(raw).some(function (key) { return !allowed[key]; })) return null;
+      var providerKeyRaw = String(raw.providerKey || ""), count = Number(raw.sourceCount), updated = Number(raw.updated);
+      if (expectedMode === "all" ? !!providerKeyRaw : providerKeyRaw !== expectedKey) return null;
+      if (!Array.isArray(raw.backendIds) || !isFinite(count) || count < 0 || Math.floor(count) !== count || count > 10000 || raw.backendIds.length !== count || !isFinite(updated) || updated <= 0) return null;
+      var ids = [], seen = {};
+      for (var i = 0; i < raw.backendIds.length; i++) {
+        var id = appointmentCensusBackendId(raw.backendIds[i]);
+        if (!id || seen[id]) return null;
+        seen[id] = 1; ids.push(id);
+      }
+      return { v: 1, date: day, mode: expectedMode, providerKey: providerKeyRaw, backendIds: ids, sourceCount: count, updated: updated };
+    }
+    dayKeys.forEach(function (rawDay) {
+      if (invalid) return;
+      var day = normDate(rawDay), entry = value.days[rawDay];
+      if (!day || day !== rawDay || !entry || typeof entry !== "object" || Array.isArray(entry)) { invalid = true; return; }
+      if (Object.keys(entry).some(function (key) { return key !== "all" && key !== "providers" && key !== "active"; })) { invalid = true; return; }
+      var providers = entry.providers;
+      if (!providers || typeof providers !== "object" || Array.isArray(providers) || Object.keys(providers).length > 250) { invalid = true; return; }
+      var cleanEntry = { all: null, providers: {} };
+      if (entry.all != null) {
+        cleanEntry.all = cleanSnapshot(entry.all, day, "all", "");
+        if (!cleanEntry.all) { invalid = true; return; }
+      }
+      Object.keys(providers).forEach(function (key) {
+        if (invalid) return;
+        if (!key || key.length > 240 || /[\x00-\x1f\x7f]/.test(key)) { invalid = true; return; }
+        var snap = cleanSnapshot(providers[key], day, "selected", key);
+        if (!snap) { invalid = true; return; }
+        cleanEntry.providers[key] = snap;
+      });
+      if (invalid) return;
+      if (entry.active != null) {
+        var active = entry.active;
+        if (!active || typeof active !== "object" || Array.isArray(active) || Object.keys(active).some(function (key) { return key !== "mode" && key !== "key"; })) { invalid = true; return; }
+        var mode = String(active.mode || ""), key = String(active.key || "");
+        if (mode === "all") {
+          if (key || !cleanEntry.all) { invalid = true; return; }
+          cleanEntry.active = { mode: "all", key: "" };
+        } else if (mode === "provider") {
+          if (!key || !cleanEntry.providers[key]) { invalid = true; return; }
+          cleanEntry.active = { mode: "provider", key: key };
+        } else { invalid = true; return; }
+      }
+      clean.days[day] = cleanEntry;
+    });
+    return invalid ? null : clean;
+  }
+  function loadAuthoritativeStore() {
     var k = authoritativeKey();
-    if (!k) return authoritativeMemory;
-    return safe(function () {
-      var x = JSON.parse(localStorage.getItem(k) || "null");
-      if (!x || x.v !== 1 || !x.days || typeof x.days !== "object") x = { v: 1, days: {} };
-      authoritativeMemory = x; return x;
-    }, authoritativeMemory);
+    if (!k) return { ok: false, reason: "authority-store-key-unavailable", store: null };
+    try {
+      var raw = localStorage.getItem(k);
+      if (!raw) return { ok: true, reason: "empty", store: { v: 1, days: {} } };
+      var x = sanitizeAuthoritativeStore(JSON.parse(raw));
+      if (!x) {
+        return { ok: false, reason: "authority-store-invalid", store: null };
+      }
+      return { ok: true, reason: "ok", store: x };
+    } catch (eReadAuthorityStore) {
+      /* Never let a fresh tab reinterpret unreadable provider authority as an
+         empty store. Consumers must stay fail-closed and publishers must not
+         overwrite bytes they could not validate. */
+      return { ok: false, reason: "authority-store-read-failed", store: null };
+    }
   }
   function writeAuthoritativeStore(x) {
-    x = x && x.days ? x : { v: 1, days: {} };
+    x = sanitizeAuthoritativeStore(x);
+    if (!x) return false;
     var k = authoritativeKey(); if (!k) return false;
     var raw = safe(function () { return JSON.stringify(x); }, "");
     if (!raw) return false;
@@ -1458,7 +1529,6 @@
       localStorage.setItem(k, raw);
       return localStorage.getItem(k) === raw;
     }, false);
-    if (stored) authoritativeMemory = x;
     return stored;
   }
   /* p1-census-1.0.1: a provider-unknown census supersedes the appointment
@@ -1513,13 +1583,203 @@
       return x.getFullYear() + "-" + ("0" + (x.getMonth() + 1)).slice(-2) + "-" + ("0" + x.getDate()).slice(-2);
     }, "");
   }
+  function appointmentCensusDisplayKey() {
+    return safe(function () { return isFn(window.uns) ? window.uns(APPOINTMENT_CENSUS_DISPLAY_SUFFIX) : ""; }, "");
+  }
+  function appointmentCensusBackendId(value) {
+    var id = String(value == null ? "" : value).trim();
+    /* Backend appointment IDs are opaque, never patient-facing text. Refuse
+       spaces/control characters and cap them before they can enter storage. */
+    return /^[A-Za-z0-9._:@\/-]{1,160}$/.test(id) ? id : "";
+  }
+  function sanitizeAppointmentCensusStore(value) {
+    if (!value || value.v !== 1 || !value.days || typeof value.days !== "object" || Array.isArray(value.days)) return null;
+    var rootKeys = Object.keys(value);
+    if (rootKeys.some(function (key) { return key !== "v" && key !== "days"; })) return null;
+    var rawDays = Object.keys(value.days);
+    if (rawDays.length > 90) return null;
+    var clean = { v: 1, days: {} }, invalid = false;
+    rawDays.forEach(function (rawDay) {
+      var day = normDate(rawDay), snap = value.days[rawDay];
+      if (!day || day !== rawDay || !snap || snap.v !== 1 || snap.date !== day || snap.kind !== "appointment-census-only") { invalid = true; return; }
+      var snapKeys = Object.keys(snap), allowed = { v: 1, date: 1, kind: 1, backendIds: 1, sourceCount: 1, providerAttributionComplete: 1, coversPractice: 1, updated: 1 };
+      if (snapKeys.some(function (key) { return !allowed[key]; })) { invalid = true; return; }
+      if (snap.providerAttributionComplete !== false || snap.coversPractice !== false || !Array.isArray(snap.backendIds)) { invalid = true; return; }
+      var count = Number(snap.sourceCount), updated = Number(snap.updated), ids = [], seen = {};
+      if (!isFinite(count) || count < 0 || Math.floor(count) !== count || count > 10000 || snap.backendIds.length !== count) { invalid = true; return; }
+      for (var i = 0; i < snap.backendIds.length; i++) {
+        var id = appointmentCensusBackendId(snap.backendIds[i]);
+        if (!id || seen[id]) { invalid = true; return; }
+        seen[id] = 1; ids.push(id);
+      }
+      if (invalid) return;
+      if (!isFinite(updated) || updated <= 0) { invalid = true; return; }
+      clean.days[day] = {
+        v: 1, date: day, kind: "appointment-census-only", backendIds: ids,
+        sourceCount: count, providerAttributionComplete: false,
+        coversPractice: false, updated: updated
+      };
+    });
+    return invalid ? null : clean;
+  }
+  function loadAppointmentCensusStore() {
+    var key = appointmentCensusDisplayKey();
+    if (!key) return { ok: false, reason: "snapshot-key-unavailable", store: { v: 1, days: {} } };
+    try {
+      var raw = localStorage.getItem(key), parsed = raw ? JSON.parse(raw) : { v: 1, days: {} };
+      var clean = sanitizeAppointmentCensusStore(parsed);
+      if (!clean) return { ok: false, reason: "snapshot-store-invalid", store: { v: 1, days: {} } };
+      return { ok: true, reason: raw ? "ok" : "empty", store: clean };
+    } catch (eReadCensus) {
+      /* A detached in-memory copy is not durable authority after a storage
+         read failure. Refuse it instead of resurrecting a stale day. */
+      return { ok: false, reason: "snapshot-store-read-failed", store: { v: 1, days: {} } };
+    }
+  }
+  function writeAppointmentCensusStore(value) {
+    var key = appointmentCensusDisplayKey(); if (!key) return false;
+    var clean = sanitizeAppointmentCensusStore(value);
+    if (!clean) return false;
+    var raw = safe(function () { return JSON.stringify(clean); }, "");
+    if (!raw) return false;
+    var stored = safe(function () {
+      localStorage.setItem(key, raw);
+      return localStorage.getItem(key) === raw;
+    }, false);
+    return stored;
+  }
+  function clearAppointmentCensusDisplayDay(day) {
+    day = normDate(day);
+    var out = { complete: false, cleared: false, date: day || "", reason: "unverified" };
+    if (!day) { out.reason = "day-unverified"; return out; }
+    var loaded = loadAppointmentCensusStore();
+    if (!loaded.ok) { out.reason = loaded.reason; return out; }
+    if (!Object.prototype.hasOwnProperty.call(loaded.store.days, day)) {
+      out.complete = true; out.reason = "no-prior-census"; return out;
+    }
+    var next = safe(function () { return JSON.parse(JSON.stringify(loaded.store)); }, null);
+    if (!next || !next.days) { out.reason = "snapshot-copy-failed"; return out; }
+    delete next.days[day];
+    if (!writeAppointmentCensusStore(next)) { out.reason = "snapshot-clear-persist-failed"; return out; }
+    out.complete = true; out.cleared = true; out.reason = "prior-census-cleared";
+    return out;
+  }
+  function publishAppointmentCensusDisplaySnapshot(input) {
+    input = input || {};
+    var day = normDate(input.date), census = input.appointmentCensusReceipt || null;
+    var cal = input.calendarReceipt || null, mappings = Array.isArray(input.resolvedAppointments) ? input.resolvedAppointments : [];
+    var expected = Number(census && census.rowCount);
+    var out = {
+      published: false, complete: false, date: day || "", kind: "appointment-census-only",
+      sourceCount: isFinite(expected) ? expected : 0, providerAuthorityPublished: false,
+      providerAttributionComplete: false, coversPractice: false, reason: "unverified"
+    };
+    if (!day || !census || census.complete !== true || census.kind !== "athena-appointment-census" || normDate(census.targetDate) !== day) { out.reason = "census-unverified"; return out; }
+    if (!isFinite(expected) || expected < 1 || Math.floor(expected) !== expected || Number(census.uniqueAppointmentIds) !== expected) { out.reason = "census-count-unverified"; return out; }
+    if (census.providerAttributionComplete !== false || census.providerSnapshotAllowed !== false || census.noProviderGuess !== true) { out.reason = "provider-boundary-unverified"; return out; }
+    if (!cal || cal.complete !== true || cal.appointmentCensusComplete !== true || cal.providerAttributionComplete !== false) { out.reason = "calendar-unverified"; return out; }
+    if (Number(cal.attempted) !== expected || Number(cal.accounted) !== expected || Number(cal.mapped) !== expected) { out.reason = "calendar-count-unverified"; return out; }
+    if (mappings.length !== expected) { out.reason = "mapping-incomplete"; return out; }
+    var sources = {}, backend = {}, backendIds = [];
+    for (var i = 0; i < mappings.length; i++) {
+      var sourceId = String(mappings[i] && mappings[i].sourceIdentity || "").trim();
+      var backendId = appointmentCensusBackendId(mappings[i] && mappings[i].backendAppointmentId);
+      if (!sourceId || sourceId.length > 240 || /[\x00-\x1f\x7f]/.test(sourceId) || !backendId || sources[sourceId] || backend[backendId]) { out.reason = "mapping-not-one-to-one"; return out; }
+      sources[sourceId] = 1; backend[backendId] = 1; backendIds.push(backendId);
+    }
+    var loaded = loadAppointmentCensusStore();
+    if (!loaded.ok) { out.reason = loaded.reason; return out; }
+    var current = loaded.store;
+    var next = safe(function () { return JSON.parse(JSON.stringify(current)); }, null);
+    if (!next || !next.days) { out.reason = "snapshot-copy-failed"; return out; }
+    next.days[day] = {
+      v: 1, date: day, kind: "appointment-census-only", backendIds: backendIds,
+      sourceCount: expected, providerAttributionComplete: false,
+      coversPractice: false, updated: Date.now()
+    };
+    var days = Object.keys(next.days).sort(function (a, b) { return Number(next.days[a] && next.days[a].updated || 0) - Number(next.days[b] && next.days[b].updated || 0); });
+    while (days.length > 45) delete next.days[days.shift()];
+    if (!writeAppointmentCensusStore(next)) { out.reason = "snapshot-persist-failed"; return out; }
+    out.published = true; out.complete = true; out.reason = "exact-appointment-census";
+    out.backendCount = backendIds.length;
+    safe(function () {
+      window.__mlsSIAppointmentCensusChangedAt = Date.now();
+      if (isFn(window.dispatchEvent) && typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("mls-appointment-census-display", { detail: { date: day, scope: "appointment-census-only" } }));
+    });
+    return out;
+  }
+  function appointmentCensusStatusForDay(day) {
+    day = normDate(day);
+    var loaded = loadAppointmentCensusStore(), store = loaded.store, snap = day && store.days[day] || null;
+    var status = {
+      available: false, exactAppointments: false, date: day || "",
+      kind: snap ? "appointment-census-only" : "", sourceCount: snap ? Number(snap.sourceCount || 0) : 0,
+      activeCount: 0, missingCount: 0, unclassifiedCount: 0,
+      providerAttributionComplete: false, coversPractice: false,
+      reason: snap ? "backend-rows-pending" : "no-snapshot"
+    };
+    /* A corrupt or unreadable census store makes every queried day
+       indeterminate after a fresh page load: memory cannot tell us whether a
+       durable snapshot existed. Own the day as unavailable instead of
+       returning "no-snapshot", which would reopen the append-only calendar
+       fallback and could resurrect cancelled Athena rows. */
+    if (!loaded.ok && day) {
+      status.kind = "appointment-census-only";
+      status.reason = loaded.reason;
+      status.storeUnavailable = true;
+      return status;
+    }
+    if (!snap) return status;
+    var wanted = {}, consumed = {}, byId = {}, rows = [], unclassified = 0, duplicates = 0;
+    snap.backendIds.forEach(function (id) { wanted[id] = 1; });
+    (Array.isArray(window._calAppts) ? window._calAppts : []).forEach(function (row) {
+      if (localDayOf(row) !== day) return;
+      var id = backendRowId(row);
+      if (id && wanted[id] && !consumed[id]) { consumed[id] = 1; byId[id] = row; }
+      else { if (id && wanted[id]) duplicates++; unclassified++; }
+    });
+    snap.backendIds.forEach(function (id) { if (byId[id]) rows.push(byId[id]); });
+    status.activeCount = rows.length;
+    status.missingCount = snap.backendIds.length - rows.length;
+    status.unclassifiedCount = unclassified;
+    status.duplicateCount = duplicates;
+    status.available = status.missingCount === 0 && duplicates === 0;
+    status.exactAppointments = status.available;
+    status.reason = status.available ? "exact-appointment-census" : (duplicates ? "duplicate-backend-rows" : "backend-rows-pending");
+    status._rows = rows;
+    return status;
+  }
+  function appointmentCensusRowsForDay(day) {
+    var status = appointmentCensusStatusForDay(day);
+    return status.available ? status._rows.slice() : null;
+  }
   function selectedSnapshot(day, rawProvider) {
-    var store = readAuthoritativeStore(), entry = store.days[String(day || "")] || null;
+    var loaded = loadAuthoritativeStore();
+    if (!loaded.ok) return { _storeUnavailable: true, _storeReason: loaded.reason };
+    var store = loaded.store, entry = store.days[String(day || "")] || null;
     if (!entry) return null;
     var req = providerRequest(rawProvider);
-    if (req.mode === "selected") return entry.providers && entry.providers[req.key] || null;
-    if (rawProvider != null && req.mode === "all") return entry.all || null;
-    if (entry.active && entry.active.mode === "provider") return entry.providers && entry.providers[entry.active.key] || null;
+    if (req.mode === "selected") {
+      var selected = entry.providers && entry.providers[req.key] || null;
+      if (selected) return selected;
+      /* A complete all-provider snapshot proves the exact day membership even
+         when this clinician has never been pulled separately. Reuse only that
+         membership, then let authoritativeStatusForDay filter the hydrated
+         rows by the requested canonical provider key. This never reopens the
+         append-only raw calendar for a selected view. */
+      if (entry.all) {
+        var derived = {};
+        for (var kAll in entry.all) if (Object.prototype.hasOwnProperty.call(entry.all, kAll)) derived[kAll] = entry.all[kAll];
+        derived.mode = "provider-from-all";
+        derived.providerKey = req.key;
+        derived.membershipMode = "all";
+        return derived;
+      }
+      return null;
+    }
+    /* An omitted provider means the unfiltered day, never whichever selected
+       provider happened to publish most recently. This keeps a selected
+       subset from masquerading as "All providers" in schedule consumers. */
     return entry.all || null;
   }
   function publishAuthoritativeSnapshot(input) {
@@ -1553,8 +1813,10 @@
     if (mappings.length !== expected || backendIds.length !== expected) { out.reason = "mapping-incomplete"; return out; }
     /* Work on a detached copy so a quota/storage failure cannot mutate the
        last verified in-memory snapshot by reference before persistence. */
-    var store = safe(function () { return JSON.parse(JSON.stringify(readAuthoritativeStore())); }, { v: 1, days: {} });
-    if (!store || !store.days) store = { v: 1, days: {} };
+    var loadedAuthority = loadAuthoritativeStore();
+    if (!loadedAuthority.ok) { out.reason = loadedAuthority.reason; return out; }
+    var store = safe(function () { return JSON.parse(JSON.stringify(loadedAuthority.store)); }, null);
+    if (!store || !store.days) { out.reason = "snapshot-copy-failed"; return out; }
     var entry = store.days[date] || { all: null, providers: {} };
     if (!entry.providers || typeof entry.providers !== "object") entry.providers = {};
     var snap = { v: 1, date: date, mode: req.mode, providerKey: req.key || "", backendIds: backendIds, sourceCount: expected, updated: Date.now() };
@@ -1569,6 +1831,20 @@
     });
     while (days.length > 45) delete store.days[days.shift()];
     if (!writeAuthoritativeStore(store)) { out.reason = "snapshot-persist-failed"; return out; }
+    /* Persist the stronger proof before touching the existing appointment
+       census. If this write fails, the prior exact 26-ID display slice stays
+       intact. Only an all-provider snapshot supersedes a whole-day census;
+       a selected-provider snapshot is stronger for its subset only and must
+       coexist so clearing the visible filter can still reveal the exact day. */
+    var censusClear = req.mode === "all"
+      ? clearAppointmentCensusDisplayDay(date)
+      : { complete: true, cleared: false, date: date, reason: "selected-scope-coexists" };
+    out.appointmentCensusDisplayClear = censusClear;
+    if (!censusClear.complete) {
+      out.providerSnapshotPersisted = true;
+      out.reason = "census-display-clear-failed";
+      return out;
+    }
     out.published = true; out.complete = true; out.reason = expected ? "exact" : "authoritative-empty";
     out.backendCount = backendIds.length;
     safe(function () {
@@ -1580,6 +1856,12 @@
   function authoritativeStatusForDay(day, rawProvider) {
     day = normDate(day); var snap = selectedSnapshot(day, rawProvider);
     var status = { available: false, exact: false, date: day || "", scope: snap && snap.mode || "", sourceCount: snap && Number(snap.sourceCount || 0) || 0, activeCount: 0, missingCount: 0, unclassifiedCount: 0, reason: snap ? "backend-rows-pending" : "no-snapshot" };
+    if (snap && snap._storeUnavailable) {
+      status.scope = "authority-unavailable";
+      status.reason = String(snap._storeReason || "authority-store-unavailable");
+      status.storeUnavailable = true;
+      return status;
+    }
     if (!snap) return status;
     var wanted = {}, consumed = {}, byId = {}, ids = snap.backendIds || [], raw = Array.isArray(window._calAppts) ? window._calAppts : [], rows = [], unclassified = 0;
     ids.forEach(function (id) { wanted[String(id)] = 1; });
@@ -1591,6 +1873,13 @@
     });
     ids.forEach(function (id) { if (byId[String(id)]) rows.push(byId[String(id)]); });
     var missing = ids.filter(function (id) { return !consumed[String(id)]; }).length;
+    if (snap.mode === "provider-from-all") {
+      rows = rows.filter(function (row) { return providerKey(p1RowProviderName(row)) === snap.providerKey; });
+      status.scope = "all";
+      status.requestedScope = "selected";
+      status.sourceCount = rows.length;
+      status.derivedFromAllMembership = true;
+    }
     status.activeCount = rows.length; status.missingCount = missing; status.unclassifiedCount = unclassified;
     status.available = missing === 0; status.exact = status.available; status.reason = status.available ? (ids.length ? "exact" : "authoritative-empty") : "backend-rows-pending";
     status._rows = rows; return status;
@@ -4757,6 +5046,25 @@
               calendarReceipt.authorityInvalidationReason = String(p1AuthorityInvalidation && p1AuthorityInvalidation.reason || "unverified");
               if (!calendarReceipt.authorityInvalidationComplete) calendarReceipt.complete = false;
             }
+            /* Publish the exact appointment slice only after both the 1:1
+               backend mapping and durable removal of any older provider/day
+               authority succeeded. A write failure makes this pull partial:
+               falling back to the append-only calendar could resurrect a
+               cancelled Athena row on the next render. */
+            var p1DisplaySnapshotReceipt = p1AppointmentCensusComplete && calendarReceipt.complete
+              ? publishAppointmentCensusDisplaySnapshot({
+                  date: date,
+                  appointmentCensusReceipt: p1CensusDecision.receipt,
+                  calendarReceipt: calendarReceipt,
+                  resolvedAppointments: mappings
+                })
+              : null;
+            if (p1AppointmentCensusComplete) {
+              calendarReceipt.appointmentCensusDisplayPublished = !!(p1DisplaySnapshotReceipt && p1DisplaySnapshotReceipt.published === true);
+              calendarReceipt.appointmentCensusDisplayReason = String(p1DisplaySnapshotReceipt && p1DisplaySnapshotReceipt.reason || "prerequisite-unverified");
+              if (!calendarReceipt.appointmentCensusDisplayPublished) calendarReceipt.complete = false;
+              res.appointmentCensusDisplaySnapshot = p1DisplaySnapshotReceipt;
+            }
             /* A provider-unknown census must never become the authoritative
                all-provider/practice snapshot. That snapshot is consumed by
                provider-scoped workflows and would turn blank attribution into
@@ -5311,10 +5619,15 @@
 
   function loadAuthoritativeNextUpConsumer() {
     safe(function () {
-      if (window.__mlsNextUp && window.__mlsNextUp.version === "nextup-2.0.1") return;
-      if (document.querySelector('script[data-mls-asset="feat_nextup_connect.js"]')) return;
+      if (window.__mlsNextUp && window.__mlsNextUp.version === "nextup-p1-2.1.0") return;
+      var old = document.querySelector('script[data-mls-asset="feat_nextup_connect.js"]');
+      if (old) {
+        safe(function () { if (window.__mlsNextUp && isFn(window.__mlsNextUp.revert)) window.__mlsNextUp.revert(); });
+        old.setAttribute("data-mls-retired-asset", "feat_nextup_connect.js");
+        old.removeAttribute("data-mls-asset");
+      }
       var s = document.createElement("script");
-      s.src = "feat_nextup_connect.js?v=20260808auth3perf1";
+      s.src = "1p-feat_nextup_connect.js?v=" + (window.__MLS_AV || "p1-preview");
       s.async = false; s.setAttribute("data-mls-asset", "feat_nextup_connect.js");
       (document.head || document.documentElement).appendChild(s);
     });
@@ -5749,6 +6062,13 @@
       for (var k in s) if (s.hasOwnProperty(k) && k !== "_rows") out[k] = s[k];
       return out;
     },
+    appointmentCensusRowsForDay: appointmentCensusRowsForDay,
+    appointmentCensusStatusForDay: function (day) {
+      var s = appointmentCensusStatusForDay(day), out = {};
+      for (var k in s) if (s.hasOwnProperty(k) && k !== "_rows") out[k] = s[k];
+      return out;
+    },
+    _publishAppointmentCensusDisplaySnapshot: publishAppointmentCensusDisplaySnapshot,
     _publishAuthoritativeSnapshot: publishAuthoritativeSnapshot,
     _classifyCalendarFailure: classifyCalendarFailure,
     _phiFreeReasonCounts: phiFreeReasonCounts,
@@ -5760,6 +6080,7 @@
     _deadlineScheduler: absoluteDeadlines,
     _lastPullResult: function () { return lastPullResult; },
     _lastResp: function () { return lastResp; },
+    isBusy: function () { return !!(pullRunning || monthPullRunning || historyBatchRunning); },
     revert: revert
   };
 

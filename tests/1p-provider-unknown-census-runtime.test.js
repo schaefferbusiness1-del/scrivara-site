@@ -68,6 +68,7 @@ function makeHarness(options) {
   const listeners = new Set();
   const store = new Map();
   const authorityKey = 'p1-census-test::schedAuthoritativeDaysV1';
+  const displayKey = 'p1-census-test::p1SchedAppointmentCensusDaysV1';
   if (Object.prototype.hasOwnProperty.call(options, 'initialAuthoritativeRaw')) {
     store.set(authorityKey, String(options.initialAuthoritativeRaw));
   }
@@ -232,6 +233,9 @@ function makeHarness(options) {
             throw new Error('simulated authoritative-store persistence failure');
           }
         }
+        if (options.failDisplayWrites && String(key) === displayKey) {
+          throw new Error('simulated appointment-census display persistence failure');
+        }
         store.set(key, String(value));
       },
       removeItem: key => store.delete(key)
@@ -364,7 +368,7 @@ function makeHarness(options) {
   vm.runInNewContext(importer, rt, { filename: '1p-feat_mls_schedimport_exact.js', timeout: 3000 });
   return {
     rt, api: rt.__mlsSI, rows, statuses, posted, savedBodies, backendRows, events,
-    responseFor, store, authorityKey, armedOperations,
+    responseFor, store, authorityKey, displayKey, armedOperations,
     scheduleResponseCount: () => scheduleResponseCount,
     authoritativeWriteAttempts: () => authoritativeWriteAttempts,
     onStatus: message => statuses.push(String(message || ''))
@@ -753,6 +757,25 @@ async function main() {
     'authority-clear persistence failure did not produce an honest calendar-partial result');
   assert.strictEqual(authorityFailure.api.authoritativeStatusForDay(DAY, 'all').exact, true,
     'the persistence-failure harness did not retain the stale snapshot it failed to clear');
+
+  const displayFailure = makeHarness({ failDisplayWrites: true });
+  const displayFailureResult = await displayFailure.api.dayPull({
+    date: DAY, provider: 'all', includeHistory: false, onStatus: displayFailure.onStatus
+  });
+  assert.strictEqual(displayFailureResult.ok, false,
+    'real census pull reported success when exact display snapshot persistence failed');
+  assert.strictEqual(displayFailureResult.complete, false,
+    'real census pull reported complete when exact display snapshot persistence failed');
+  assert.strictEqual(displayFailureResult.reason, 'calendar-partial',
+    'display snapshot persistence failure did not produce calendar-partial');
+  assert(displayFailureResult.calendarReceipt && displayFailureResult.calendarReceipt.complete === false,
+    'display snapshot persistence failure left the calendar receipt complete');
+  assert.strictEqual(displayFailureResult.calendarReceipt.appointmentCensusDisplayPublished, false,
+    'display snapshot persistence failure claimed publication');
+  assert.strictEqual(displayFailureResult.calendarReceipt.appointmentCensusDisplayReason, 'snapshot-persist-failed',
+    'display snapshot persistence failure lost its exact reason');
+  assert.strictEqual(displayFailure.store.has(displayFailure.displayKey), false,
+    'failed display persistence left a plausible durable census snapshot');
 
   await assertAuthorityReadRefuses({
     failAuthoritativeReads: true,
