@@ -32142,8 +32142,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  *     full, richer row wins), upserts full-fidelity patient records (full name
  *     + DOB) for the pulling-as provider's patients, merges/deletes the junk
  *     truncated no-data stubs earlier pulls created (backed up first to
- *     localStorage mls_b49_stub_backup_20260706), and rescans for cross-patient
- *     summary contamination (first-name mismatch) -> clears + backs up.
+ *     localStorage mls_b49_stub_backup_20260706). Its contamination pass is
+ *     provenance-only: prose never decides, and a cleanup needs an exact
+ *     receipt mismatch, an exact importer-owned slice, and a verified backup.
  *  D) pullChartsForToday(): sequential per-patient chart pull for the
  *     pulling-as provider's TODAY list via the app's own calPullChartFor()
  *     (which resolves/creates the patient, sets it active, and drives
@@ -32279,7 +32280,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ---------- C) reconcile today's data ---------- */
   function getPts() { try { return window.getPatients ? (window.getPatients() || []) : []; } catch (e) { return []; } }
-  function upsert(p) { try { if (window.upsertPatient) { window.upsertPatient(p); return true; } } catch (e) {} return false; }
+  function upsert(p) { try { if (window.upsertPatient) { return window.upsertPatient(p) !== false; } } catch (e) {} return false; }
   function backup(key, items) {
     try {
       var k = 'mls_b49_' + key + '_backup_20260706';
@@ -32287,8 +32288,215 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       localStorage.setItem(k, JSON.stringify(prev.concat(items)));
     } catch (e) {}
   }
+
+  /* ---------- contamination: provenance and exact ownership only ----------
+     The old cleaner treated a capitalised word in prose as another patient's
+     name, then blanked summary, meds, problems and allergies together.  That
+     guess fired on ordinary sentences ("Patient is...", "Today...", "She...")
+     and even on an empty patient name.  Prose is context, never evidence.
+
+     This preview-only replacement has three independent gates before it may
+     remove anything:
+       1. historyImportReceipt names a DIFFERENT stored patient id;
+       2. the current value exactly contains a slice listed by the importer's
+          own athenaHistorySummary / athenaHistoryFactsSnapshot metadata; and
+       3. a full-record, account-namespaced local backup is written and read
+          back byte-for-byte.
+     Missing, malformed, duplicated, embedded or otherwise ambiguous ownership
+     fails closed.  Only exact owned lines are removed; unrelated clinician
+     text is never reformatted. */
+  var _B49_UNVERIFIABLE = ['no-record', 'no-receipt', 'receipt-predates-provenance', 'record-has-no-id', 'record-identity-unavailable'];
+  function _b49IdentityFingerprintFn() {
+    try {
+      var M = window.__mlsVisitModel;
+      if (M && typeof M._identityFingerprint === 'function') return M._identityFingerprint;
+    } catch (e) {}
+    return null;
+  }
+  function _b49ContaminationVerdict(p, fpFn) {
+    var str = function (x) { return x == null ? '' : String(x); };
+    var out = { flagged: false, verifiable: false, basis: 'no-record', receiptIdentity: null,
+                recordIdentity: null, why: 'no patient record was supplied' };
+    if (!p || typeof p !== 'object') return out;
+    var rec = { patientId: str(p.id).trim(), identityFingerprint: '' };
+    out.recordIdentity = rec;
+    var r = p.historyImportReceipt;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      out.basis = 'no-receipt';
+      out.why = 'record carries no usable history import receipt';
+      return out;
+    }
+    var rcp = { patientId: str(r.patientId).trim(), identityFingerprint: str(r.identityFingerprint).trim() };
+    out.receiptIdentity = rcp;
+    if (!rcp.patientId) {
+      out.basis = 'receipt-predates-provenance';
+      out.why = 'receipt cannot name its source patient';
+      return out;
+    }
+    if (!rec.patientId) {
+      out.basis = 'record-has-no-id';
+      out.why = 'record has no id to compare with the receipt';
+      return out;
+    }
+    if (rcp.patientId !== rec.patientId) {
+      out.flagged = true; out.verifiable = true; out.basis = 'receipt-patient-id-mismatch';
+      out.why = 'history receipt names a different patient record';
+      return out;
+    }
+    var fp = (typeof fpFn === 'function') ? fpFn : _b49IdentityFingerprintFn();
+    if (!fp || !rcp.identityFingerprint) {
+      out.verifiable = true; out.basis = 'provenance-consistent-id-only';
+      out.why = 'receipt names this record; fingerprint comparison was unavailable';
+      return out;
+    }
+    var cur = '';
+    try { cur = str(fp(p)).trim(); } catch (eFp) { cur = ''; }
+    rec.identityFingerprint = cur;
+    if (!cur) {
+      out.basis = 'record-identity-unavailable'; out.why = 'current record identity is unavailable';
+      return out;
+    }
+    out.verifiable = true;
+    if (cur !== rcp.identityFingerprint) {
+      out.basis = 'identity-changed-since-import';
+      out.why = 'identity drift alone is ambiguous and cannot authorize cleanup';
+      return out;
+    }
+    out.basis = 'provenance-consistent'; out.why = 'receipt still names this record and identity';
+    return out;
+  }
+  function _b49ContaminationScan(pts, opts) {
+    var list = Array.isArray(pts) ? pts : [], o = opts || {};
+    var fp = (typeof o.fingerprint === 'function') ? o.fingerprint : _b49IdentityFingerprintFn();
+    var res = { examined: 0, flagged: 0, unverifiable: 0, identityDrift: 0, consistent: 0, verdicts: [] };
+    list.forEach(function (p) {
+      var v = _b49ContaminationVerdict(p, fp); res.examined++;
+      res.verdicts.push({ record: p, verdict: v });
+      if (v.flagged) res.flagged++;
+      else if (_B49_UNVERIFIABLE.indexOf(v.basis) >= 0) res.unverifiable++;
+      else if (v.basis === 'identity-changed-since-import') res.identityDrift++;
+      else res.consistent++;
+    });
+    return res;
+  }
+  function _b49Clone(value) {
+    try { return JSON.parse(JSON.stringify(value)); } catch (e) { return null; }
+  }
+  function _b49OwnedLinePlan(current, owned) {
+    var lines = S(current).split('\n'), remove = {}, seenOwned = {}, matched = [];
+    if (!Array.isArray(owned)) return { ok: false, reason: 'owned-snapshot-malformed' };
+    for (var i = 0; i < owned.length; i++) {
+      var exact = S(owned[i]);
+      if (!exact) continue;
+      /* "Exact" is byte-exact. Whitespace normalization would let a merely
+         similar clinician-authored line masquerade as the importer's slice. */
+      if (exact !== exact.trim() || /\r|\n/.test(exact) || seenOwned[exact])
+        return { ok: false, reason: 'owned-snapshot-ambiguous' };
+      seenOwned[exact] = 1;
+      var hits = [];
+      for (var j = 0; j < lines.length; j++) if (S(lines[j]) === exact) hits.push(j);
+      if (hits.length > 1) return { ok: false, reason: 'owned-slice-ambiguous' };
+      if (hits.length === 1) { remove[hits[0]] = 1; matched.push(exact); }
+      else if (S(current).indexOf(exact) >= 0) return { ok: false, reason: 'owned-slice-embedded' };
+    }
+    var next = lines.filter(function (_, idx) { return !remove[idx]; }).join('\n');
+    return { ok: true, next: next, matched: matched, changed: matched.length > 0 };
+  }
+  function _b49CleanupPlan(p, verdict) {
+    if (!verdict || verdict.flagged !== true || verdict.basis !== 'receipt-patient-id-mismatch')
+      return { ok: false, reason: 'provenance-not-mismatched' };
+    /* A patientId-shaped object is not automatically an importer receipt.
+       Every receipt written by the provenance-aware history importer carries
+       this full shape. Near misses may be reported, but cannot clean. */
+    var receipt = p && p.historyImportReceipt;
+    var verifiedVisits = receipt && receipt.verifiedVisits;
+    if (!receipt || typeof receipt.complete !== 'boolean' ||
+        typeof verifiedVisits !== 'number' || !isFinite(verifiedVisits) || verifiedVisits < 0 ||
+        !/^idfp-[a-z0-9]+$/i.test(S(receipt.identityFingerprint)) ||
+        !S(receipt.organizedAt).trim() || isNaN(Date.parse(S(receipt.organizedAt))))
+      return { ok: false, reason: 'receipt-shape-unverified' };
+    var before = _b49Clone(p); if (!before) return { ok: false, reason: 'record-not-serializable' };
+    var next = _b49Clone(p); if (!next) return { ok: false, reason: 'record-not-serializable' };
+    var changed = false, removed = { summary: 0, problems: 0, meds: 0, allergies: 0 };
+    var ownedSummary = (typeof p.athenaHistorySummary === 'string') ? p.athenaHistorySummary : '';
+    if (ownedSummary) {
+      if (S(p.summary) === ownedSummary) {
+        next.summary = ''; next.athenaHistorySummary = ''; removed.summary = 1; changed = true;
+      } else if (S(p.summary).indexOf(ownedSummary) >= 0 || ownedSummary.indexOf(S(p.summary)) >= 0) {
+        return { ok: false, reason: 'summary-ownership-ambiguous' };
+      }
+    }
+    var snap = p.athenaHistoryFactsSnapshot;
+    if (snap != null && (!snap || typeof snap !== 'object' || Array.isArray(snap)))
+      return { ok: false, reason: 'owned-snapshot-malformed' };
+    var nextSnap = snap ? _b49Clone(snap) : null;
+    if (snap && !nextSnap) return { ok: false, reason: 'owned-snapshot-malformed' };
+    var fields = ['problems', 'meds', 'allergies'];
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      if (!Object.prototype.hasOwnProperty.call(snap || {}, field)) continue;
+      var plan = _b49OwnedLinePlan(p[field], snap[field]);
+      if (!plan.ok) return plan;
+      if (!plan.changed) continue;
+      next[field] = plan.next; removed[field] = plan.matched.length; changed = true;
+      nextSnap[field] = snap[field].filter(function (item) { return plan.matched.indexOf(S(item)) < 0; });
+    }
+    if (!changed) return { ok: false, reason: 'no-exact-importer-owned-slice' };
+    if (nextSnap) next.athenaHistoryFactsSnapshot = nextSnap;
+    return { ok: true, before: before, next: next, removed: removed };
+  }
+  function _b49BackupKey() {
+    try {
+      if (typeof window.uns !== 'function') return '';
+      return S(window.uns('p1ContaminationCleanupBackupsV1')).trim();
+    } catch (e) { return ''; }
+  }
+  function _b49VerifiedBackup(plan, verdict) {
+    var key = _b49BackupKey();
+    if (!key || !window.localStorage) return { ok: false, reason: 'backup-store-unavailable' };
+    var oldRaw = null, existed = false;
+    try {
+      oldRaw = window.localStorage.getItem(key); existed = oldRaw != null;
+      var prior = [];
+      if (existed) {
+        try { prior = JSON.parse(oldRaw); }
+        catch (eParse) { return { ok: false, reason: 'backup-store-malformed' }; }
+      }
+      if (!Array.isArray(prior)) return { ok: false, reason: 'backup-store-malformed' };
+      var entry = { v: 1, at: new Date().toISOString(), patientId: S(plan.before.id),
+                    receiptPatientId: S(verdict.receiptIdentity && verdict.receiptIdentity.patientId),
+                    removed: _b49Clone(plan.removed), before: _b49Clone(plan.before) };
+      if (!entry.before) return { ok: false, reason: 'backup-copy-failed' };
+      var want = JSON.stringify(prior.concat([entry]));
+      window.localStorage.setItem(key, want);
+      var gotRaw = window.localStorage.getItem(key), got = JSON.parse(gotRaw || 'null');
+      var last = Array.isArray(got) ? got[got.length - 1] : null;
+      if (gotRaw !== want || !last || JSON.stringify(last.before) !== JSON.stringify(plan.before))
+        throw new Error('backup-round-trip-mismatch');
+      return { ok: true, key: key, entry: entry };
+    } catch (e) {
+      try { if (existed) window.localStorage.setItem(key, oldRaw); else window.localStorage.removeItem(key); } catch (eRestore) {}
+      return { ok: false, reason: 'backup-round-trip-failed' };
+    }
+  }
+  function _b49CleanupContamination(p, verdict) {
+    var plan = _b49CleanupPlan(p, verdict);
+    if (!plan.ok) return { ok: false, cleaned: false, reportOnly: true, reason: plan.reason };
+    var backupReceipt = _b49VerifiedBackup(plan, verdict);
+    if (!backupReceipt.ok) return { ok: false, cleaned: false, reportOnly: true, backupFailed: true, reason: backupReceipt.reason };
+    if (upsert(plan.next)) return { ok: true, cleaned: true, removed: plan.removed, backupKey: backupReceipt.key };
+    var restored = upsert(_b49Clone(plan.before));
+    return { ok: false, cleaned: false, writeFailed: true, rollbackRestored: restored,
+             reason: restored ? 'cleanup-write-failed-original-restored' : 'cleanup-write-and-rollback-failed',
+             backupKey: backupReceipt.key };
+  }
   function reconcileToday() {
-    var report = { rowFixes: 0, rowDupesDropped: 0, recordsUpserted: 0, stubsMerged: 0, stubsDeleted: 0, contamCleared: 0, details: [] };
+    /* contamCleared is retained for old callers and stays zero: no four-field
+       blanket clear exists. contamCleaned counts exact owned-slice removals. */
+    var report = { rowFixes: 0, rowDupesDropped: 0, recordsUpserted: 0, stubsMerged: 0, stubsDeleted: 0,
+                   contamCleared: 0, contamExamined: 0, contamFlagged: 0, contamCleaned: 0,
+                   contamReportOnly: 0, contamUnverifiable: 0, contamIdentityDrift: 0,
+                   contamBackupFailed: 0, contamWriteFailed: 0, details: [] };
     var A = Array.isArray(window._calAppts) ? window._calAppts : [];
     var td = todayLocal();
     var fulls = A.filter(function (a) { return (a.day_local || a.appt_date) === td; })
@@ -32357,18 +32565,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       } catch (e) {}
     }
 
-    getPts().forEach(function (p) {
-      var s = S(p.summary); if (!s) return;
-      var m = s.match(/(?:^|\n)[^\n]*?(?:The patient,\s+|—\s*)?\b([A-Z][a-z]{2,})(?:\s+[A-Z][a-zA-Z'-]+)?\s+is\s+(?:a\s+patient|experiencing|being\s+(?:seen|evaluated))/);
-      if (!m) { var m2 = s.match(/The patient,\s+([A-Z][a-z]{2,})\b/); m = m2; }
-      if (!m) return;
-      var first = m[1].toLowerCase();
-      var ptoks = norm(p.name).split(' ');
-      if (ptoks.indexOf(first) >= 0) return;
-      backup('contam', [JSON.parse(JSON.stringify(p))]);
-      p.summary = ''; p.meds = ''; p.problems = ''; p.allergies = '';
-      if (upsert(p)) { report.contamCleared++; report.details.push('cleared contaminated summary on ' + p.name + ' (mentions "' + m[1] + '")'); }
+    /* Contamination pass. The verdict never reads summary prose. A flagged
+       receipt mismatch is still report-only unless exact importer ownership
+       and a verified, account-scoped backup both resolve. */
+    var contamScan = _b49ContaminationScan(getPts(), {});
+    report.contamExamined = contamScan.examined;
+    report.contamFlagged = contamScan.flagged;
+    report.contamUnverifiable = contamScan.unverifiable;
+    report.contamIdentityDrift = contamScan.identityDrift;
+    contamScan.verdicts.forEach(function (row) {
+      if (!row.verdict.flagged) return;
+      var outcome = _b49CleanupContamination(row.record, row.verdict);
+      if (outcome.cleaned) {
+        report.contamCleaned++; report.recordsUpserted++;
+        report.details.push('Removed exact importer-owned slices after a receipt mismatch and verified backup.');
+      } else {
+        report.contamReportOnly++;
+        if (outcome.backupFailed) report.contamBackupFailed++;
+        if (outcome.writeFailed) report.contamWriteFailed++;
+        report.details.push('Receipt mismatch reported only; no cleanup write (' + S(outcome.reason || 'unresolved') + ').');
+      }
     });
+    report.details.push('Contamination safeguard: examined ' + report.contamExamined +
+      ', receipt mismatches ' + report.contamFlagged + ', exact cleanups ' + report.contamCleaned +
+      ', report-only ' + report.contamReportOnly + ', unverifiable ' + report.contamUnverifiable +
+      ', identity drift ' + report.contamIdentityDrift + '; prose authorized 0 writes.');
 
     fixAgenda();
     return report;
@@ -32568,7 +32789,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   cleanup.push(function () { clearInterval(iv); });
 
   window.__mlsPullTruthB49 = {
-    version: '1.0.0',
+    version: '1.1.0-p1-safe-cleaner',
     reconcileToday: reconcileToday,
     pullChartsForToday: pullChartsForToday,
     setActiveByName: setActiveByName,
@@ -32576,6 +32797,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     sanitizeAppts: sanitizeAppts,
     fixAgenda: fixAgenda,
     openEmrPreview: openEmrPreview,
+    contaminationVerdict: _b49ContaminationVerdict,
+    contaminationScan: _b49ContaminationScan,
+    cleanupContamination: function (p) { var v = _b49ContaminationVerdict(p); return _b49CleanupContamination(p, v); },
+    contaminationCleanupPlan: function (p) { var v = _b49ContaminationVerdict(p); return _b49CleanupPlan(p, v); },
     _provName: provName,
     _todaysRows: todaysRows
   };

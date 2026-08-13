@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const tests = [
   'public-publication-boundary.test.js',
   '1p-preview-contract.test.js',
+  '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
   '1p-ondemand-templates.test.js',
   '1p-autobind-encounter.test.js',
