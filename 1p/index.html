@@ -22139,8 +22139,18 @@ function _athenaHistoryVerifiedRef(target, observed){
 function _assistReadChart(patientRef, onStatus){
   var requestOptions=arguments[2]||{};
   return new Promise(function(resolve,reject){
-    var target=_athenaHistoryTargetSnapshot(patientRef,false);
-    if(!target){ reject(new Error('Choose one MLS patient with a verified DOB or MRN before pulling history. Name alone is not safe, so nothing was saved.')); return; }
+    var leaseMgr=window.__mlsP1AthenaReadLease,ownerToken=String(requestOptions.athenaOwnerToken||''),ownedToken='',leaseTouch=null,leaseReady=false;
+    function releaseLease(){if(leaseTouch){clearInterval(leaseTouch);leaseTouch=null;}if(ownedToken&&leaseMgr&&typeof leaseMgr.release==='function'){try{leaseMgr.release(ownedToken);}catch(_){}ownedToken='';}}
+    if(leaseMgr&&ownerToken&&typeof leaseMgr.owns==='function'&&leaseMgr.owns(ownerToken))leaseReady=true;
+    else{
+      if(!leaseMgr||typeof leaseMgr.claim!=='function'){reject(new Error('pull-in-flight: the preview Athena reader is unavailable. Nothing started.'));return;}
+      ownedToken=leaseMgr.claim('p1-chart-read',110000)||'';
+      if(!ownedToken){reject(new Error('pull-in-flight: another Athena read or schedule pull is active. Nothing started.'));return;}
+      ownerToken=ownedToken;leaseTouch=setInterval(function(){try{leaseMgr.touch(ownedToken);}catch(_){}},25000);
+    }
+    var candidateRead=requestOptions.verifiedCandidate===true&&patientRef&&patientRef.__mlsVerifiedCandidateRead==='athena-candidate-read-r1'&&Object.isFrozen(patientRef);
+    var target=null;try{target=candidateRead?{patientId:String(patientRef.patientId||''),name:String(patientRef.name||''),dob:String(patientRef.dob||''),mrn:String(patientRef.mrn||patientRef.athenaId||'')}:_athenaHistoryTargetSnapshot(patientRef,false);}catch(targetErr){releaseLease();reject(targetErr);return;}
+    if(!target||!String(target.name||'').trim()||(!String(target.dob||'').trim()&&!String(target.mrn||'').trim())){ releaseLease(); reject(new Error('Choose one MLS patient with a verified DOB or MRN before pulling history. Name alone is not safe, so nothing was saved.')); return; }
     var patientName=String(target.name||'').trim();
     var say=function(m,k){ try{ if(onStatus) onStatus(m,k); }catch(e){} };
     var ponged=false, tries=0, iv=null, got=false, cancelDeadline=null;
@@ -22149,7 +22159,7 @@ function _assistReadChart(patientRef, onStatus){
     var requestId=suppliedRequestId||('chart-'+readStartedAt.toString(36)+'-'+Math.random().toString(36).slice(2,8));
     var suppliedDeadline=Number(requestOptions.deadlineAt||0);
     var deadlineAt=isFinite(suppliedDeadline)&&suppliedDeadline>0?suppliedDeadline:(readStartedAt+100000);
-    function cleanup(){ if(iv) clearInterval(iv); if(cancelDeadline) cancelDeadline(); iv=null; cancelDeadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); }
+    function cleanup(){ if(iv) clearInterval(iv); if(cancelDeadline) cancelDeadline(); iv=null; cancelDeadline=null; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); releaseLease(); }
     function fail(err){ if(got) return; got=true; cleanup(); reject(err); }
     function armDeadline(){
       var scheduler=window.__mlsAbsoluteDeadline;
@@ -22161,7 +22171,10 @@ function _assistReadChart(patientRef, onStatus){
       tid=setTimeout(function(){ fail(new Error('chart-read-deadline-exceeded: Athena did not finish the exact chart read before its immutable deadline. Nothing was saved.')); },Math.max(0,deadlineAt-Date.now()));
       return cancel;
     }
-    function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
+    function trustedMessage(e){try{return (!e.source||e.source===window)&&(!e.origin||!window.location||e.origin===window.location.origin);}catch(_){return false;}}
+    function onPong(e){ if(trustedMessage(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); iv=null; window.removeEventListener('message',onPong); proceed(); } }
+    function beginOwnedRead(){
+    try{
     window.addEventListener('message',onPong);
     cancelDeadline=armDeadline();
     if(cancelDeadline&&typeof cancelDeadline.isTerminal==='function'&&cancelDeadline.isTerminal()) return;
@@ -22169,16 +22182,26 @@ function _assistReadChart(patientRef, onStatus){
     var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
     say('Looking for MLS Assist…'); ping();
     iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); iv=null; return; } if(tries>8){ fail(new Error('MLS Assist isn’t responding. Make sure it’s installed/enabled and your Athena tab is open.')); } else ping(); }, 350);
+    }catch(beginErr){fail(beginErr);}
+    }
+    if(leaseReady)beginOwnedRead();else Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(ownedToken):true;}).then(function(ok){if(!ok){fail(new Error('pull-in-flight: another MLS tab owns the Athena reader. Nothing started.'));return;}beginOwnedRead();},function(){fail(new Error('pull-in-flight: the Athena reader lock could not be acquired. Nothing started.'));});
     function onResult(e){
-      if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
+      if(!trustedMessage(e)||!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppChartResult')) return;
       if(!e.data.requestId||String(e.data.requestId)!==requestId) return;
+      if(Number(e.data.deadlineAt||0)!==deadlineAt||Date.now()>=deadlineAt) return;
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
       if(!r.ok || !r.text){ reject(new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'))); return; }
       var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
-      if(!_athenaHistoryProofMatches(target,observed)){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
+      var proofOk=false;
+      if(candidateRead){
+        var idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+        var seenName=String(observed.chartName||'').trim(),seenDob=_athenaHistoryDigits(observed.chartDob),wantDob=_athenaHistoryDigits(target.dob),seenId=idKey(observed.chartMrn),wantId=idKey(target.mrn);
+        proofOk=!!seenName&&_athenaHistoryNameCompatible(seenName,target.name)&&!!wantDob&&seenDob===wantDob&&(!wantId||(!!seenId&&seenId===wantId));
+      }else proofOk=_athenaHistoryProofMatches(target,observed);
+      if(!proofOk){ reject(new Error('Athena did not return matching DOB/MRN proof for the selected MLS patient, so MLS discarded the read. Nothing was saved.')); return; }
       var rawReceipt=r.receipt&&typeof r.receipt==='object'?r.receipt:null;
-      var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000);
+      var receiptFresh=!!(rawReceipt&&Number(rawReceipt.capturedAt||0)>=readStartedAt-5000&&Number(rawReceipt.capturedAt||0)<=deadlineAt);
       var receiptFrames=!!(rawReceipt&&Number(rawReceipt.expectedClinicalFrames||0)>=1&&Number(rawReceipt.readClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.boundClinicalFrames||0)===Number(rawReceipt.expectedClinicalFrames||0)&&Number(rawReceipt.unboundClinicalFrames||0)===0&&Number(rawReceipt.oversizeClinicalFrames||0)===0&&Number(rawReceipt.unreadFrames||0)===0&&Number(rawReceipt.omittedForCap||0)===0);
       var receiptBound=!!(rawReceipt&&String(rawReceipt.requestId||'')===requestId&&String(r.requestId||'')===requestId);
       if(!rawReceipt||rawReceipt.kind!=='athena-chart-coverage'||rawReceipt.complete!==true||rawReceipt.truncated===true||String(rawReceipt.readerVersion||'')!=='2.9.19-chart-r3'||rawReceipt.identityObserved!==true||!receiptFresh||!receiptFrames||!receiptBound||Number(rawReceipt.textChars||0)!==String(r.text||'').length){ reject(new Error('MLS Assist could not prove that every patient chart frame finished loading and belonged to the selected patient. Nothing was saved; update the extension and retry.')); return; }
@@ -22280,9 +22303,12 @@ async function pullPatientFromAthenaPrompt(btn){
 }
 async function pullPatientChartViaAssist(btn, opts){
   opts=opts||{};
+  var lm=window.__mlsP1AthenaReadLease,directLeaseToken='',directTouch=null;
+  var releaseDirect=function(){if(directTouch){clearInterval(directTouch);directTouch=null;}try{if(directLeaseToken)lm.release(directLeaseToken);}catch(_){}directLeaseToken='';};
+  try{if(!lm||typeof lm.claim!=='function'){toast('The preview Athena reader is still loading. Retry in a moment.','err');return false;}directLeaseToken=lm.claim('p1-direct-chart',110000)||'';if(!directLeaseToken){toast('Another Athena read or schedule pull is active. Wait for it to finish, then retry.','err');return false;}directTouch=setInterval(function(){try{lm.touch(directLeaseToken);}catch(_){}},25000);if(typeof lm.ready==='function'&&await lm.ready(directLeaseToken)!==true){releaseDirect();toast('Another MLS tab owns the Athena reader. Wait for it to finish, then retry.','err');return false;}}catch(eLease){releaseDirect();return false;}
   var requested=(opts.patientId||opts.name)?opts:((typeof activePatient==='function'&&activePatient())||null);
   var pullTarget=_athenaHistoryTargetSnapshot(requested,true);
-  if(!pullTarget){ try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
+  if(!pullTarget){ releaseDirect(); try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
   // Make this patient the active one so the pulled chart attaches to them + the UI follows.
   try{ if(typeof setActivePtId==='function' && (typeof getActivePtId!=='function' || getActivePtId()!==pullTarget.patientId)){ setActivePtId(pullTarget.patientId); if(typeof renderProfile==='function') renderProfile(); if(typeof renderPatientBar==='function') renderPatientBar(); if(typeof renderPatients==='function') renderPatients(); } }catch(e){}
   var orig = btn ? btn.innerHTML : '';
@@ -22290,13 +22316,13 @@ async function pullPatientChartViaAssist(btn, opts){
   var setT=function(m,k){ try{ toast(m, k==='err'?'err':(k==='ok'?'ok':'')); }catch(e){} };
   try{
     var rd;
-    rd=await _assistReadChart(pullTarget, setT);
+    rd=await _assistReadChart(pullTarget, setT,{athenaOwnerToken:directLeaseToken});
     if(rd && rd.opened){ setT('Opened the chart in Athena — reading it…',''); }
     setT('Read the chart ('+Math.round((rd.text||'').length/100)/10+'k chars) — extracting history…');
     var chart=await _parsePatientChart(_athenaChartTextForParse(rd));
     if(!chart || _athenaChartProfileCoverage(chart).complete!==true){
       setT('Read the page, but all six patient-history sections were not verified. Nothing was saved as a complete pull; keep the exact chart open and retry.','err');
-      if(btn){ btn.disabled=false; btn.innerHTML=orig; } return false;
+      if(btn){ btn.disabled=false; btn.innerHTML=orig; } releaseDirect(); return false;
     }
     var saveRef=_athenaHistoryVerifiedRef(pullTarget,rd);
     if(!saveRef||_savePatientChart(saveRef,null,chart)!==true) throw new Error('The selected MLS patient changed or could not be re-verified before save, so the history was discarded. Nothing was saved.');
@@ -22304,10 +22330,11 @@ async function pullPatientChartViaAssist(btn, opts){
     try{ if(typeof renderHistory==='function') renderHistory(); }catch(e){}
     setT('✅ Saved '+pullTarget.name+'’s Athena history to their MLS chart — it’s on your account now.','ok');
     if(btn){ btn.disabled=false; btn.innerHTML=orig; }
-    return true;
+    releaseDirect(); return true;
   }catch(err){
     setT((err&&err.message)?err.message:'Couldn’t pull the chart. Open the patient’s chart in Athena and try again.','err');
   }
+  releaseDirect();
   if(btn){ btn.disabled=false; btn.innerHTML=orig; }
   return false;
 }
@@ -22437,6 +22464,42 @@ function _patientHistoryCardCoverage(patientOrId){
    nondeterministic across pulls (the chart parse is an AI call) and were
    undiagnosable while every exit looked identical. */
 function _chartSaveRefused(gate,extra){ try{ window.__mlsChartSaveTrace=window.__mlsChartSaveTrace||[]; window.__mlsChartSaveTrace.push(Object.assign({gate:gate,at:new Date().toISOString()},extra||{})); if(window.__mlsChartSaveTrace.length>60)window.__mlsChartSaveTrace.shift(); }catch(_){} return false; }
+/* Preview-only transactional create seam for strict Athena candidate imports.
+   It creates no patient.  It only seals a fully identity-proven, collision-free
+   specification that _savePatientChart may consume after its normal six-card
+   coverage gate.  The first/only persistence remains the canonical upsert at
+   the bottom of _savePatientChart. */
+function _athenaNewPatientVerifiedRef(candidate,observed){
+  candidate=(candidate&&typeof candidate==='object')?candidate:{};
+  observed=(observed&&typeof observed==='object')?observed:{};
+  var clean=function(v,n){return String(v==null?'':v).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,n||200);};
+  var idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+  var name=clean(candidate.name,200),dob=clean(candidate.dob,20),athenaId=clean(candidate.athenaId||candidate.mrn,80);
+  var requestId=clean(candidate.requestId,100),observedRequestId=clean(observed.requestId,100);
+  var seenName=clean(observed.chartName||observed.name,200),seenDob=clean(observed.chartDob||observed.dob,20),seenId=clean(observed.chartMrn||observed.mrn||observed.athenaId,80);
+  if(!name||!requestId||requestId!==observedRequestId)return null;
+  if(!_athenaHistoryNameCompatible(seenName,name))return null;
+  if(dob&&(!seenDob||_athenaHistoryDigits(seenDob)!==_athenaHistoryDigits(dob)))return null;
+  if(athenaId&&(!seenId||!idKey(seenId)||idKey(seenId)!==idKey(athenaId)))return null;
+  if(!athenaId&&(!dob||!seenDob))return null;
+  var pts=(typeof getPatients==='function'?getPatients():[])||[],nk=_athenaHistoryName(name),dk=_athenaHistoryDigits(dob),ik=idKey(athenaId);
+  var collision=pts.some(function(p){
+    if(!p)return false;
+    var pk=idKey(p.athenaId||p.athenaPatientId||p.mrn);
+    if(ik&&pk&&ik===pk)return true;
+    return !!(nk&&dk&&_athenaHistoryName(p.name)===nk&&_athenaHistoryDigits(p.dob)===dk);
+  });
+  if(collision)return null;
+  var cohort=clean(candidate.cohort||candidate.studyLabel,120);
+  var localId='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  var patient={id:localId,name:name,dob:dob,mrn:athenaId,athenaId:athenaId,source:'study-import',problems:'',meds:'',allergies:'',summary:'',docs:[],studyTags:cohort?[cohort]:[],cohort:cohort,created:Date.now(),updated:Date.now()};
+  try{Object.freeze(patient.studyTags);Object.freeze(patient);}catch(e){}
+  var out={__mlsVerifiedNewPatient:'athena-new-patient-r1',patientId:localId,name:name,dob:dob,mrn:athenaId,athenaId:athenaId,
+    verifiedName:seenName,verifiedDob:seenDob,verifiedMrn:seenId,requestId:requestId,newPatient:patient};
+  try{Object.freeze(out);}catch(e2){}
+  return out;
+}
+window._athenaNewPatientVerifiedRef=_athenaNewPatientVerifiedRef;
 function _savePatientChart(name, appt, chart){
   if(!chart) return _chartSaveRefused('no-chart');
   var ref=(name&&typeof name==='object')?name:{};
@@ -22445,10 +22508,22 @@ function _savePatientChart(name, appt, chart){
   var targetId=String(ref.patientId||ref.id||(appt&&appt._mlsTargetPatientId)||'').trim();
   if(!targetId||!nm) return _chartSaveRefused('no-target-id-or-name'); /* legacy name-only callers fail closed */
   var p=pts.find(function(x){return String(x&&x.id||'')===targetId;})||null;
+  var creating=!p&&ref.__mlsVerifiedNewPatient==='athena-new-patient-r1'&&ref.newPatient&&String(ref.newPatient.id||'')===targetId&&
+    Object.isFrozen(ref)&&Object.isFrozen(ref.newPatient)&&String(ref.requestId||'').trim();
+  if(!p&&creating){
+    var np=ref.newPatient,idKey=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+    var nk=_athenaHistoryName(np.name),dk=_athenaHistoryDigits(np.dob),ik=idKey(np.athenaId||np.mrn);
+    var collided=pts.some(function(x){if(!x)return false;var xk=idKey(x.athenaId||x.athenaPatientId||x.mrn);return String(x.id||'')===targetId||(ik&&xk&&ik===xk)||(nk&&dk&&_athenaHistoryName(x.name)===nk&&_athenaHistoryDigits(x.dob)===dk);});
+    var exactName=_athenaHistoryNameCompatible(ref.verifiedName,np.name);
+    var exactDob=!np.dob||(_athenaHistoryDigits(ref.verifiedDob)&&_athenaHistoryDigits(ref.verifiedDob)===dk);
+    var exactId=!ik||(idKey(ref.verifiedMrn)&&idKey(ref.verifiedMrn)===ik);
+    if(collided||!exactName||!exactDob||!exactId||(!ik&&!dk))return _chartSaveRefused('verified-create-refused',{collision:!!collided,exactName:exactName,exactDob:exactDob,exactId:exactId});
+    p=Object.assign({},np);
+  }
   if(!p) return _chartSaveRefused('patient-not-found');
   var target={patientId:targetId,name:nm,dob:String(ref.dob||(appt&&appt._mlsTargetDob)||''),mrn:String(ref.mrn||ref.athenaId||(appt&&appt._mlsTargetMrn)||'')};
   var observed={chartName:String(ref.verifiedName||(appt&&appt._mlsVerifiedName)||''),chartDob:String(ref.verifiedDob||(appt&&appt._mlsVerifiedDob)||''),chartMrn:String(ref.verifiedMrn||(appt&&appt._mlsVerifiedMrn)||'')};
-  if(!_athenaHistoryProofMatches(target,observed)) return _chartSaveRefused('identity-proof-mismatch',{hasObsName:!!observed.chartName,hasObsDob:!!observed.chartDob,hasObsMrn:!!observed.chartMrn});
+  if(!creating&&!_athenaHistoryProofMatches(target,observed)) return _chartSaveRefused('identity-proof-mismatch',{hasObsName:!!observed.chartName,hasObsDob:!!observed.chartDob,hasObsMrn:!!observed.chartMrn});
   p=Object.assign({},p);
   var priorAthenaSnapshot=(p.athenaChartSnapshot&&typeof p.athenaChartSnapshot==='object')?p.athenaChartSnapshot:{};
   /* Merge clinical lists fact-by-fact. Athena commonly changes separators between

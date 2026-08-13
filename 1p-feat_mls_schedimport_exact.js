@@ -3685,7 +3685,7 @@
         try {
           var reChartDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 110000);
           var reReadStartedAt = Date.now();
-          var rdRetry = await boundedUntil(window._assistReadChart(overlap.args.target, function () {}, { requestId: overlap.args.requestId + "-r2chart", deadlineAt: reChartDeadlineAt }), reChartDeadlineAt, "chart-read-deadline-exceeded");
+          var rdRetry = await boundedUntil(window._assistReadChart(overlap.args.target, function () {}, { requestId: overlap.args.requestId + "-r2chart", deadlineAt: reChartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), reChartDeadlineAt, "chart-read-deadline-exceeded");
           stageMs.chart += Date.now() - __rpChartT0;
           __rpParseT0 = Date.now();
           var reParseDeadlineAt = Math.min(batchDeadlineAt, Date.now() + 120000);
@@ -3783,7 +3783,7 @@
             var chartReadStartedAt = chartAttempt > 1 ? Date.now() : patientReadStartedAt;
             var chartRequestId = patientRequestId + "-chart" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
             var chartDeadlineAt = Math.min(patientDeadlineAt, Date.now() + ((chartAttempt === 1 && !sweepDepth) ? adaptiveCeilingMs('chart', 45000, 180000, 90000) : 180000));
-            rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt }), chartDeadlineAt, "chart-read-deadline-exceeded");
+            rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), chartDeadlineAt, "chart-read-deadline-exceeded");
             stageMs.chart += Date.now() - __chartT0;
             recordReadMs('chart', Date.now() - __chartT0);
             var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
@@ -3914,7 +3914,7 @@
                 one.deadlineAt = patientDeadlineAt;
                 try {
                   var trReopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 100000);
-                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-trreopen" + visitsAttempt, deadlineAt: trReopenDeadlineAt }), trReopenDeadlineAt, "chart-reopen-deadline-exceeded");
+                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-trreopen" + visitsAttempt, deadlineAt: trReopenDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), trReopenDeadlineAt, "chart-reopen-deadline-exceeded");
                 } catch (trReopenErr) {}
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
@@ -3992,7 +3992,7 @@
                 one.visitsChartReopened = true;
                 try {
                   var reopenDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 80000);
-                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-reopen" + visitsAttempt, deadlineAt: reopenDeadlineAt }), reopenDeadlineAt, "chart-reopen-deadline-exceeded");
+                  await boundedUntil(window._assistReadChart(target, function () {}, { requestId: patientRequestId + "-reopen" + visitsAttempt, deadlineAt: reopenDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), reopenDeadlineAt, "chart-reopen-deadline-exceeded");
                 } catch (reopenErr) {}
                 await new Promise(function (rWait) { var c = safe(function () { return absoluteDeadlines.arm(Date.now() + 1800, rWait); }, null); if (!c) rWait(); });
                 continue;
@@ -4146,7 +4146,7 @@
           var __dChartT0 = Date.now(), __dParseT0 = 0;
           try {
             var pRetryChartDeadlineAt = Math.min(pRetryDeadlineAt, Date.now() + 110000);
-            var rdRetry = await boundedUntil(window._assistReadChart(pEntry.target, function () {}, { requestId: pOne.requestId + "-chart-d2", deadlineAt: pRetryChartDeadlineAt }), pRetryChartDeadlineAt, "chart-read-deadline-exceeded");
+            var rdRetry = await boundedUntil(window._assistReadChart(pEntry.target, function () {}, { requestId: pOne.requestId + "-chart-d2", deadlineAt: pRetryChartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), pRetryChartDeadlineAt, "chart-read-deadline-exceeded");
             pEntry.stageMs.chart += Date.now() - __dChartT0;
             __dParseT0 = Date.now();
             var pRetryParseDeadlineAt = Math.min(pRetryDeadlineAt, Date.now() + 120000);
@@ -4417,6 +4417,7 @@
      lease slot while running, so the engine's claimPullLease refuses in the
      other direction. Cross-tab exclusion stays on the Web Lock. */
   var SI_LEASE_ID = "mls-si-managed-" + Math.random().toString(36).slice(2, 8);
+  var siAthenaOwnerToken = "";
   function foreignPullLease() {
     var l = safe(function () { return window.__mlsSchedulePullLease; }, null);
     if (!l || l.id === SI_LEASE_ID) return null;
@@ -4470,7 +4471,13 @@
     if (pullRunning) return Promise.resolve(busy("same-tab"));
     if (foreignPullLease()) return Promise.resolve(busy("same-tab"));
     pullRunning = true;
-    var operationStarted = false, leaseTouch = null;
+    var operationStarted = false, leaseTouch = null, athenaMgr = safe(function(){return window.__mlsP1AthenaReadLease;}, null), athenaToken = "", athenaTouch = null;
+    function releaseAthenaOwner(){
+      if(athenaTouch!=null){safe(function(){clearInterval(athenaTouch);});athenaTouch=null;}
+      if(athenaToken&&athenaMgr&&isFn(athenaMgr.release))safe(function(){athenaMgr.release(athenaToken);});
+      if(siAthenaOwnerToken===athenaToken)siAthenaOwnerToken="";
+      athenaToken="";
+    }
     /* b490: cross-tab pull-busy stamp. The update banner's Refresh killed a
        75-minute pull twice on 2026-07-22 (the owner cannot know another tab
        is mid-pull). Every tab can read this stamp and defer reload-shaped
@@ -4490,18 +4497,24 @@
     }
     var operation;
     try {
-      if (safe(function () { return !!(navigator && navigator.locks && isFn(navigator.locks.request)); }, false)) {
-        operation = navigator.locks.request("mls-managed-athena-pull", { mode: "exclusive", ifAvailable: true }, function (lock) {
-          return lock ? start() : busy("other-tab");
-        });
+      if(athenaMgr&&isFn(athenaMgr.claim)){
+        athenaToken=athenaMgr.claim("p1-si-managed",420000)||"";
+        if(!athenaToken){pullRunning=false;return Promise.resolve(busy("other-tab"));}
+        siAthenaOwnerToken=athenaToken;
+        athenaTouch=setInterval(function(){safe(function(){athenaMgr.touch(athenaToken);});},25000);
+        operation=Promise.resolve().then(function(){return isFn(athenaMgr.ready)?athenaMgr.ready(athenaToken):true;}).then(function(ok){return ok?start():busy("other-tab");});
+      }else if (safe(function () { return !!(navigator && navigator.locks && isFn(navigator.locks.request)); }, false)) {
+        operation = navigator.locks.request("mls-managed-athena-pull", { mode: "exclusive", ifAvailable: true }, function (lock) { return lock ? start() : busy("other-tab"); });
       } else operation = start();
     } catch (lockError) {
+      releaseAthenaOwner();
       operation = Promise.reject(lockError);
     }
     return Promise.resolve(operation).then(function (value) {
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
+      releaseAthenaOwner();
       /* the busy stamp is cleared identically on success and rejection, so the
          progress chip cannot tell them apart from its disappearance alone —
          record the real outcome BEFORE zeroing the stamp (finding #5) */
@@ -4516,6 +4529,7 @@
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
+      releaseAthenaOwner();
       safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: String(error && error.message || error || 'pull failed').slice(0, 200) }; });
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();

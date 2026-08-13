@@ -25,6 +25,7 @@ const P1_FILES = [
   '1p/index.html',
   '1p/legal/index.html',
   '1p-mls-connect.js',
+  '1p-feat_mls_athena_occurrence.js',
   '1p-feat_mls_avatar.js',
   '1p-feat_fullhistory_pdf.js',
   '1p-feat_mls_legalpack.js',
@@ -43,6 +44,7 @@ for (const name of P1_FILES) {
 const shell = read('1pScribeFlow.html');
 const liveShell = read('1p/index.html');
 const connect = read('1p-mls-connect.js');
+const occurrence = read('1p-feat_mls_athena_occurrence.js');
 
 /* One immutable identity must own the shell, bundle, downstream preview
    assets, and diagnostics. Production b-numbers are not valid preview tokens. */
@@ -104,6 +106,16 @@ assert(connect.includes("s.src=SRC+'?v='+(window.__MLS_AV||Date.now())"),
 assert(!connect.includes("s.src='feat_mls_avatar.js?v='"),
   '1p bundle still has a direct production avatar fetch');
 
+assert.strictEqual((connect.match(/SRC='1p-feat_mls_athena_occurrence\.js'/g) || []).length, 1,
+  '1p bundle must load the exact Athena occurrence search exactly once');
+assert(connect.includes("A='feat_mls_athena_occurrence.js',SRC='1p-feat_mls_athena_occurrence.js',V='p1-athena-occurrence-1.0.0',KEY='__mlsP1AthenaOccurrenceLoader'") &&
+  connect.includes("node.setAttribute('data-mls-install-token',ctl.installToken)"),
+  '1p occurrence loader is missing its immutable preview owner version');
+assert(occurrence.includes("type: 'mlsAppSearchProcedure'") && occurrence.includes('window.__mlsVerifiedCandidateImport'),
+  '1p occurrence search must use the read-only report bridge and delegate selected chart pulls to the canonical importer');
+assert(connect.includes('window._assistReadChart(target') && connect.includes('window.__mlsVerifiedCandidateImport=verifiedCandidateImport'),
+  '1p canonical candidate importer must own the exact chart-read helper');
+
 assert.strictEqual((connect.match(/s\.src='1p-feat_mls_schedimport_exact\.js\?v='/g) || []).length, 1,
   '1p bundle must load the isolated preview importer exactly once');
 assert(connect.includes("s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js')"),
@@ -128,7 +140,10 @@ assert(connect.includes("s.setAttribute('data-mls-asset','feat_fullhistory_pdf.j
 assert(!connect.includes("s.src='feat_fullhistory_pdf.js?v='"),
   '1p bundle still loads the shared full-history PDF implementation');
 
-assert.strictEqual((connect.match(/node\.src=SRC\+'\?v='/g) || []).length, 1,
+const legalLoaderStart = connect.indexOf("A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js',V='p1-legal-1.0.0'");
+const legalLoaderEnd = connect.indexOf('/* av-6.0.8:', legalLoaderStart);
+const legalLoader = legalLoaderStart >= 0 && legalLoaderEnd > legalLoaderStart ? connect.slice(legalLoaderStart, legalLoaderEnd) : '';
+assert.strictEqual((legalLoader.match(/node\.src=SRC\+'\?v='/g) || []).length, 1,
   '1p bundle must have exactly one canonical Legal / IME preview source assignment');
 assert(connect.includes("A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js',V='p1-legal-1.0.0'"),
   '1p Legal loader must separate canonical dedupe identity from its isolated source/version');
@@ -249,7 +264,7 @@ assert(!productionShell.includes('__MLS_P1_PREVIEW') && !productionShell.include
   '1p preview marker/loader leaked into the production shell');
 assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnect.includes('1p-feat_mls_writeflow.js') &&
   !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
-  !productionConnect.includes('1p-feat_mls_legalpack.js') &&
+  !productionConnect.includes('1p-feat_mls_legalpack.js') && !productionConnect.includes('1p-feat_mls_athena_occurrence.js') &&
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');
 

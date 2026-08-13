@@ -63,6 +63,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
+/* 1p-only exact Athena occurrence search. Frozen extension/main site untouched. */
+;(function(){try{
+  var A='feat_mls_athena_occurrence.js',SRC='1p-feat_mls_athena_occurrence.js',V='p1-athena-occurrence-1.0.0',KEY='__mlsP1AthenaOccurrenceLoader';
+  if(!window.__MLS_P1_PREVIEW||window.__MLS_P1_PREVIEW.enabled!==true)return;
+  var prior=window[KEY],validStates={idle:1,loading:1,ready:1,'owner-missing':1,'network-error':1,'failed-bounded':1,'blocked-p1-owner':1};
+  if(prior&&prior.installed===true&&prior.version===V&&typeof prior.installToken==='string'&&prior.installToken&&typeof prior.ensure==='function'&&typeof prior.revert==='function'&&validStates[String(prior.state||'')]===1){
+    var ensured=false;try{ensured=prior.ensure()===true;}catch(_ensureError){ensured=false;}
+    if(ensured&&window[KEY]===prior&&prior.installed===true&&validStates[String(prior.state||'')]===1)return;
+  }
+  if(prior){if(typeof prior.revert!=='function')return;try{prior.revert();}catch(_priorError){return;}if(window[KEY]===prior)return;}
+  var loaderSeq=(Number(window.__mlsP1AthenaOccurrenceLoaderSeq)||0)+1;window.__mlsP1AthenaOccurrenceLoaderSeq=loaderSeq;
+  var ctl={installed:true,version:V,state:'idle',attempts:0,maxAttempts:2,node:null,retryTimer:null,installToken:'p1-occurrence-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+loaderSeq.toString(36)};
+  function active(){return ctl.installed===true&&window[KEY]===ctl;}
+  function ownedPreview(){var api=window.__mlsAthenaOccurrence;return api&&api.installed===true&&api.version===V&&api.installToken===ctl.installToken&&typeof api.mount==='function'&&typeof api.cancel==='function'&&typeof api.revert==='function'?api:null;}
+  function disposeLatePreview(){var api=ownedPreview();if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}}
+  function removeNode(node,reason){if(!node)return;try{node.onload=null;node.onerror=null;node.setAttribute('data-mls-retired-asset',A);node.setAttribute('data-mls-load-state',reason||'retired');node.removeAttribute('data-mls-asset');if(node.parentNode)node.parentNode.removeChild(node);}catch(_e){}}
+  function retireForeignApi(){var api=window.__mlsAthenaOccurrence;if(!api||api.installed!==true||ownedPreview())return true;if(typeof api.revert!=='function'){ctl.state='blocked-p1-owner';return false;}try{api.revert();}catch(_e){ctl.state='blocked-p1-owner';return false;}if(api.installed===true){ctl.state='blocked-p1-owner';return false;}return true;}
+  function fail(node,reason){if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}if(ctl.node!==node){disposeLatePreview();removeNode(node,'stale-load');return;}var malformed=window.__mlsAthenaOccurrence;if(malformed&&malformed.installed===true&&malformed.installToken===ctl.installToken&&!ownedPreview()&&typeof malformed.revert==='function')try{malformed.revert();}catch(_malformedError){}ctl.node=null;removeNode(node,reason);ctl.state=reason||'error';if(ctl.attempts<ctl.maxAttempts&&!ctl.retryTimer){ctl.retryTimer=setTimeout(function(){ctl.retryTimer=null;if(active())ctl.ensure();},1000);}}
+  ctl.ensure=function(){
+    if(!active()||ctl.state==='reverted')return false;
+    var api=window.__mlsAthenaOccurrence;if(ownedPreview()){ctl.state='ready';return true;}if(!retireForeignApi())return false;
+    if(ctl.state==='loading'&&ctl.node&&ctl.node.getAttribute('data-mls-load-state')==='loading')return true;
+    if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';return false;}
+    var tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;for(i=0;i<tags.length;i++)removeNode(tags[i],'superseded');
+    node=document.createElement('script');ctl.node=node;ctl.attempts++;ctl.state='loading';node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview');node.async=false;
+    node.setAttribute('data-mls-asset',A);node.setAttribute('data-mls-version',V);node.setAttribute('data-mls-install-token',ctl.installToken);node.setAttribute('data-mls-load-state','loading');
+    node.onload=function(){if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}if(ctl.node!==node){disposeLatePreview();removeNode(node,'stale-load');return;}if(ownedPreview()){node.setAttribute('data-mls-load-state','ready');ctl.state='ready';return;}fail(node,'owner-missing');};
+    node.onerror=function(){if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}if(ctl.node!==node){disposeLatePreview();removeNode(node,'stale-load');return;}fail(node,'network-error');};
+    (document.head||document.documentElement).appendChild(node);return true;
+  };
+  ctl.revert=function(){if(window[KEY]!==ctl)return false;var api=ownedPreview();if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}ctl.installed=false;if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}removeNode(ctl.node,'reverted');ctl.node=null;ctl.state='reverted';if(window[KEY]===ctl){try{delete window[KEY];}catch(_e2){window[KEY]=null;}}return true;};
+  window[KEY]=ctl;ctl.ensure();
+}catch(e){}})();
+
 /* A hot bundle refresh is allowed to reload this tab only when the clinical
  * workspace is provably idle. This gate is shared by opaque inline-owner
  * upgrades (Easy and the speech hub). If any visit/editor/microphone state is
@@ -42810,24 +42844,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function assistReadReport(onStatus){
     return new Promise(function(resolve,reject){
       var say=function(m){ try{ if(onStatus) onStatus(m); }catch(e){} };
-      var ponged=false, tries=0, iv=null, got=false, settled=false;
-      function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); if(iv) clearInterval(iv); fn(v); }
-      function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
+      var ponged=false,sent=false,timedOut=false,tries=0,iv=null,got=false,settled=false,safetyTo=null,leaseTouch=null;
+      var leaseMgr=safe(function(){return window.__mlsP1AthenaReadLease;},null),leaseToken=leaseMgr&&typeof leaseMgr.claim==='function'?leaseMgr.claim('p1-study-open-report',35000):null;
+      if(!leaseToken){reject(new Error(leaseMgr?'Another Athena read or schedule pull is active. Wait for it to finish, then retry.':'The preview Athena read coordinator is still loading. Reopen this panel and retry.'));return;}
+      leaseTouch=setInterval(function(){try{leaseMgr.touch(leaseToken);}catch(e){}},25000);
+      function trusted(e){try{return !(e.source&&e.source!==window)&&!(e.origin&&window.location&&e.origin!==window.location.origin);}catch(x){return false;}}
+      function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onResult); if(iv) clearInterval(iv);if(safetyTo)clearTimeout(safetyTo);if(leaseTouch)clearInterval(leaseTouch); try{leaseMgr.release(leaseToken);}catch(e){} fn(v); }
+      function onPong(e){ if(trusted(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
       function onResult(e){
-        if(!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppReportResult')) return;
+        if(!trusted(e)||!sent||!(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsAppReportResult')) return;
+        if(timedOut){var late=new Error('The timed-out Athena report read finished and was discarded.');late.code='UNCORRELATED_TIMEOUT_DRAINED';fin(reject,late);return;}
         got=true; var r=e.data.resp||{};
         if(!r.ok||!r.text){ fin(reject,new Error(r.error||'Couldn’t read your Athena report tab.')); return; }
         fin(resolve,{text:r.text||'',url:r.url||'',frames:r.frames,bestScore:r.bestScore});
       }
       window.addEventListener('message',onPong);
       var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
-      say('Looking for MLS Assist…'); ping();
-      iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('NOEXT')); } else ping(); }, 350);
+      function begin(){say('Looking for MLS Assist…');ping();iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('NOEXT')); } else ping(); },350);}
+      Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(leaseToken):true;}).then(function(ok){if(!ok){fin(reject,new Error('Another MLS tab owns the Athena reader.'));return;}begin();},function(){fin(reject,new Error('The Athena reader lock could not be acquired.'));});
       function proceed(){
         say('Reading the open Athena report…');
         window.addEventListener('message',onResult);
-        try{ window.postMessage({source:'mls-app',type:'mlsAppReadReport'},'*'); }catch(e){}
-        setTimeout(function(){ if(!got) fin(reject,new Error('OLDEXT')); }, 30000);
+        try{ window.postMessage({source:'mls-app',type:'mlsAppReadReport'},'*');sent=true;}catch(e){fin(reject,e);return;}
+        safetyTo=setTimeout(function(){if(got||settled)return;timedOut=true;safetyTo=null;say('Athena is still finishing this report read. The reader remains quarantined until it returns or the preview reloads.');},30000);
       }
     });
   }
@@ -42942,14 +42981,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       // A real procedure/claims/schedule row carries a DOB and/or a procedure code. Header/
       // title/total lines carry neither — drop them (a row with no DOB can't be verified anyway).
       if(!normDob(cl.dob) && !codes.length) return;
-      rows.push({ name:name, dob:cl.dob, svc:cl.svc, codes:codes, line:raw });
+      var facility='';
+      if(/\bPOSM\s+ASC\s+Chester\s+County\s+Hospital\b/i.test(raw)) facility='POSM ASC Chester County Hospital';
+      else if(/\bPOSM\s+ASC\s+Chester\s+County\b/i.test(raw)) facility='POSM ASC Chester County';
+      rows.push({ name:name, dob:cl.dob, svc:cl.svc, codes:codes, facility:facility, line:raw });
     });
-    // de-dup by name+dob, merging codes / filling svc/dob
+    /* Keep every report/claim occurrence intact until all exact occurrence
+       constraints have run. Merging here used to let one patient's CPT on one
+       claim combine with that patient's facility on another claim. */
+    return rows;
+  }
+  function dedupeReportRows(rows){
     var seen={}, out=[];
     rows.forEach(function(r){
       var k=norm(r.name)+'|'+normDob(r.dob);
-      if(seen[k]){ var ex=seen[k]; r.codes.forEach(function(c){ if(ex.codes.indexOf(c)<0) ex.codes.push(c); }); if(!ex.svc&&r.svc) ex.svc=r.svc; if(!ex.dob&&r.dob) ex.dob=r.dob; return; }
-      seen[k]=r; out.push(r);
+      if(seen[k]){ seen[k].occurrences=(seen[k].occurrences||1)+1; return; }
+      r.occurrences=1; seen[k]=r; out.push(r);
     });
     return out;
   }
@@ -42958,10 +43005,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return parseReportRows(text).map(function(r){ return { name:r.name, dob:r.dob }; }).filter(function(r){ return r.name && r.dob; });
   }
   function inRange(svc, from, to){
-    if(!svc) return true; // can't exclude a row with no service date
-    var d=dobToDate(svc); if(!d) return true;
-    var f=parseDateInput(from); if(f && d<f) return false;
-    var t=parseDateInput(to); if(t){ t.setHours(23,59,59,999); if(d>t) return false; }
+    var f=parseDateInput(from), t=parseDateInput(to);
+    if(!f&&!t) return true;
+    if(!svc) return false;
+    var d=dobToDate(svc); if(!d) return false;
+    if(f && d<f) return false;
+    if(t){ t.setHours(23,59,59,999); if(d>t) return false; }
     return true;
   }
   function filterReportRows(rows, crit){
@@ -42973,9 +43022,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var codeHit = codes.length && r.codes.some(function(c){ return codes.indexOf(c)>=0; });
         var line=(r.line||'').toLowerCase();
         var kwHit = kw.length && kw.some(function(k){ return line.indexOf(k)>=0; });
-        hit = codeHit || kwHit;
+        /* An explicitly supplied CPT is exact and mandatory. Keywords are an
+           alternative only when no CPT was supplied, never an OR escape hatch. */
+        hit = codes.length ? codeHit : kwHit;
       }
       if(!hit) return false;
+      if(crit.facilityName){
+        var wanted=String(crit.facilityName||'').replace(/\s+/g,' ').trim().toLowerCase();
+        var got=String(r.facility||'').replace(/\s+/g,' ').trim().toLowerCase();
+        if(!got || got!==wanted) return false;
+      }
       return inRange(r.svc, crit.from, crit.to);
     });
   }
@@ -43074,31 +43130,79 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return appts.length;
   }
 
-  function importRow(row, cohort, resolver){
-    resolver = resolver || readChartFor;
-    var ps=getPatients(),rn=norm(row&&row.name),rdob=normDob(row&&row.dob),matches=ps.filter(function(x){return x&&norm(x.name)===rn;});
-    if(rdob)matches=matches.filter(function(x){return normDob(x&&x.dob)===rdob;});
-    if(matches.length>1)return Promise.resolve({row:row,status:'review',reason:'duplicate MLS patients match this name/DOB'});
-    var p=matches[0]||null;
-    if(!p){
-      if(!rdob)return Promise.resolve({row:row,status:'review',reason:'DOB is required before creating an MLS target'});
-      p=safe(function(){var np={id:'p'+Date.now()+Math.random().toString(36).slice(2,7),name:row.name,dob:row.dob||'',problems:'',meds:'',allergies:'',summary:'',docs:[],source:'study-import',created:Date.now(),updated:Date.now()};window.upsertPatient(np);return np;},null);
+  function candidateNameKey(v){return String(v||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(function(x){return x.length>1;}).sort().join('|');}
+  function candidateIdKey(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+  function candidateDecision(row){
+    var ps=getPatients(),rid=candidateIdKey(row&&row.patientId),nk=candidateNameKey(row&&row.name),dk=normDob(row&&row.dob),byId=[];
+    if(rid)byId=ps.filter(function(p){return [p&&p.athenaId,p&&p.athenaPatientId,p&&p.mrn].some(function(v){return candidateIdKey(v)&&candidateIdKey(v)===rid;});});
+    if(byId.length>1)return {action:'review',reason:'duplicate Athena patient identity in MLS'};
+    if(byId.length===1){if(nk&&dk&&candidateNameKey(byId[0].name)===nk&&normDob(byId[0].dob)===dk)return {action:'already',patient:byId[0],via:'athena-id'};return {action:'review',reason:'Athena patient ID conflicts with name or DOB'};}
+    if(!nk||!dk)return {action:'review',reason:'name and DOB are required for strict verification'};
+    var exact=ps.filter(function(p){return candidateNameKey(p&&p.name)===nk&&normDob(p&&p.dob)===dk;});
+    if(exact.length>1)return {action:'review',reason:'duplicate MLS patients match this name and DOB'};
+    if(exact.length===1){var storedId=candidateIdKey(exact[0]&&(exact[0].athenaId||exact[0].athenaPatientId||exact[0].mrn));if(rid&&storedId&&rid!==storedId)return {action:'review',reason:'name and DOB match an MLS patient with a different Athena patient ID'};return {action:'already',patient:exact[0],via:'name-dob'};}
+    return {action:'import'};
+  }
+  /* ONE preview candidate importer. Study Mode A/B and the exact occurrence
+     panel both call this identity. Report rows never enter its chart parser:
+     only a newly request-bound mlsAppReadChart response can reach the normal
+     _parsePatientChart -> _savePatientChart persistence path. */
+  function verifiedCandidateImport(row,cohort,opts){
+    row=row||{};opts=opts||{};
+    var current=function(){try{return typeof opts.isCurrent!=='function'||opts.isCurrent()===true;}catch(e){return false;}};
+    var say=function(m){try{if(opts.onStatus)opts.onStatus(m);}catch(e){}};
+    if(!current())return Promise.resolve({row:row,code:'failed',label:'Failed',status:'error',reason:'cancelled before identity check'});
+    var decision=candidateDecision(row);
+    if(decision.action==='already'){
+      if(cohort&&decision.patient)tagPatientCohort(decision.patient,cohort);
+      return Promise.resolve({row:row,code:'already',label:'Already present',status:'match',patientId:decision.patient&&decision.patient.id,via:decision.via,appt:buildApptForRow(row)});
     }
-    var target=(p&&typeof window._athenaHistoryTargetSnapshot==='function')?window._athenaHistoryTargetSnapshot({patientId:p.id,name:p.name,dob:p.dob||row.dob||'',mrn:p.mrn||p.athenaId||''},false):null;
-    if(!target)return Promise.resolve({row:row,status:'review',reason:'could not freeze one verified MLS patient target'});
-    return Promise.resolve(safe(function(){ return resolver===readChartFor?resolver(target):resolver(row.name); }, null)).then(function(chart){
-      var r=strictMatch(row, chart);
-      if(r.status==='match'){
-        var observed=(chart&&chart.__mlsReadIdentity)||{chartName:(chart&&(chart.name||chart.patient))||r.chartName||'',chartDob:(chart&&chart.dob)||row.dob||'',chartMrn:(chart&&(chart.mrn||chart.chartMrn))||''};
-        var saveRef=(typeof window._athenaHistoryVerifiedRef==='function')?window._athenaHistoryVerifiedRef(target,observed):null;
-        if(!saveRef||!window._savePatientChart||window._savePatientChart(saveRef,null,chart||{})!==true)return {row:row,status:'error',reason:'exact patient save was refused'};
-        p=getPatients().filter(function(x){return x&&String(x.id||'')===String(target.patientId);})[0]||null;
-        if(p){ if(!p.dob && (row.dob||(chart&&chart.dob))) p.dob=row.dob||chart.dob; tagPatientCohort(p, cohort); }
-        return { row:row, status:'match', chartName:r.chartName||row.name, patientId:p?p.id:null, appt:buildApptForRow(row) };
-      }
-      return { row:row, status:r.status, reason:r.reason, chartName:r.chartName, chartDob:r.chartDob };
+    if(decision.action==='review')return Promise.resolve({row:row,code:'review',label:'Needs identity review',status:'review',reason:decision.reason});
+    if(!current())return Promise.resolve({row:row,code:'failed',label:'Failed',status:'error',reason:'cancelled before chart read'});
+    if(typeof window._assistReadChart!=='function'||typeof window._athenaChartTextForParse!=='function'||typeof window._parsePatientChart!=='function'||typeof window._athenaChartProfileCoverage!=='function'||typeof window._athenaNewPatientVerifiedRef!=='function'||typeof window._savePatientChart!=='function')return Promise.resolve({row:row,code:'failed',label:'Failed',status:'error',reason:'canonical MLS chart import path unavailable'});
+    var leaseMgr=window.__mlsP1AthenaReadLease,ownerToken=String(opts.athenaOwnerToken||''),ownedToken='',ownedTouch=null;
+    function releaseOwned(){if(ownedTouch){clearInterval(ownedTouch);ownedTouch=null;}if(ownedToken&&leaseMgr&&typeof leaseMgr.release==='function'){try{leaseMgr.release(ownedToken);}catch(e){}ownedToken='';}}
+    function acquire(){
+      if(ownerToken&&leaseMgr&&typeof leaseMgr.owns==='function'&&leaseMgr.owns(ownerToken))return Promise.resolve(true);
+      if(!leaseMgr||typeof leaseMgr.claim!=='function')return Promise.resolve(false);
+      ownedToken=leaseMgr.claim('p1-candidate-chart',110000)||'';
+      if(!ownedToken)return Promise.resolve(false);
+      ownedTouch=setInterval(function(){try{leaseMgr.touch(ownedToken);}catch(e){}},25000);
+      return Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(ownedToken):true;});
+    }
+    function readAndSave(){
+      if(!current())return Promise.resolve({row:row,code:'failed',label:'Failed',status:'error',reason:'cancelled before chart read'});
+      var started=Date.now(),requestId='study-candidate-'+started.toString(36)+'-'+Math.random().toString(36).slice(2,8),deadlineAt=started+100000;
+      var target={__mlsVerifiedCandidateRead:'athena-candidate-read-r1',patientId:String(row.patientId||requestId),name:String(row.name||'').trim(),dob:String(row.dob||'').trim(),mrn:String(row.patientId||'').trim()};
+      try{Object.freeze(target);}catch(e0){}
+      say('Verifying the selected patient in Athena...');
+      return Promise.resolve(window._assistReadChart(target,say,{verifiedCandidate:true,requestId:requestId,deadlineAt:deadlineAt,athenaOwnerToken:ownerToken||ownedToken})).then(function(rd){
+        if(!current())return {row:row,code:'failed',label:'Failed',status:'error',reason:'cancelled before chart extraction'};
+        var chartText=window._athenaChartTextForParse(rd);
+        return Promise.resolve(window._parsePatientChart(chartText)).then(function(chart){
+          if(!current())return {row:row,code:'failed',label:'Failed',status:'error',reason:'cancelled before MLS import'};
+          var coverage=null;try{coverage=chart&&window._athenaChartProfileCoverage(chart);}catch(e1){}
+          if(!chart||!coverage||coverage.complete!==true)return {row:row,code:'failed',label:'Failed',status:'error',reason:'all six chart sections were not verified'};
+          var race=candidateDecision(row);
+          if(race.action==='already')return {row:row,code:'already',label:'Already present',status:'match',patientId:race.patient&&race.patient.id,via:race.via,appt:buildApptForRow(row)};
+          if(race.action==='review')return {row:row,code:'review',label:'Needs identity review',status:'review',reason:race.reason};
+          var saveRef=window._athenaNewPatientVerifiedRef({name:row.name,dob:row.dob,athenaId:row.patientId||rd.chartMrn||'',cohort:cohort||'',requestId:requestId},{requestId:rd.requestId||'',chartName:rd.chartName||'',chartDob:rd.chartDob||'',chartMrn:rd.chartMrn||''});
+          if(!saveRef||!current())return {row:row,code:'review',label:'Needs identity review',status:'review',reason:'exact candidate identity could not be sealed'};
+          var saved=false;try{saved=window._savePatientChart(saveRef,null,chart)===true;}catch(e2){saved=false;}
+          if(!saved)return {row:row,code:'failed',label:'Failed',status:'error',reason:'canonical verified chart save was refused'};
+          return {row:row,code:'imported',label:'Imported',status:'match',patientId:saveRef.patientId,chartName:rd.chartName||row.name,appt:buildApptForRow(row)};
+        });
+      });
+    }
+    return acquire().then(function(ok){if(!ok)return {row:row,code:'failed',label:'Failed',status:'error',reason:'another MLS tab owns the Athena reader'};return readAndSave();}).then(function(result){releaseOwned();return result;}).catch(function(err){
+      releaseOwned();
+      var msg=String(err&&err.message||err||'chart import failed');
+      var review=/did not return matching DOB\/MRN proof|identity|patient.*match/i.test(msg);
+      return {row:row,code:review?'review':'failed',label:review?'Needs identity review':'Failed',status:review?'review':'error',reason:msg.slice(0,180)};
     });
   }
+  window.__mlsVerifiedCandidateImport=verifiedCandidateImport;
+  function importRow(row, cohort){ return verifiedCandidateImport(row,cohort,{}); }
 
   /* status -> display */
   var STAT={
@@ -43147,9 +43251,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ====================== UI ====================== */
   var TAB='A';
   function open(initTab){ TAB=initTab||'A'; injectCss(); render(); }
-  function close(){ var o=document.getElementById('mlsStudyOv'); if(o) o.remove(); }
+  function studyLifecycle(reason){try{window.dispatchEvent(new CustomEvent('mls:study-lifecycle',{detail:{reason:String(reason||'render')}}));}catch(e){try{var ev=new Event('mls:study-lifecycle');ev.detail={reason:String(reason||'render')};window.dispatchEvent(ev);}catch(_){}}}
+  function close(){ studyLifecycle('close'); var o=document.getElementById('mlsStudyOv'); if(o) o.remove(); }
 
   function render(){
+    studyLifecycle('render');
     var ex=document.getElementById('mlsStudyOv'); if(ex) ex.remove();
     var o=document.createElement('div'); o.id='mlsStudyOv';
     o.innerHTML=''
@@ -43289,13 +43395,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function assistSearchProcedure(params, cfg, onStatus){
     return new Promise(function(resolve,reject){
       var say=function(m){ try{ if(onStatus) onStatus(m); }catch(e){} };
-      var ponged=false, tries=0, iv=null, settled=false, safetyTo=null;
-      function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onEvt); if(iv) clearInterval(iv); if(safetyTo) clearTimeout(safetyTo); fn(v); }
-      function onPong(e){ if(e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
+      var ponged=false,sent=false,timedOut=false,tries=0,iv=null,settled=false,safetyTo=null,leaseTouch=null;
+      var leaseMgr=safe(function(){return window.__mlsP1AthenaReadLease;},null), leaseToken=leaseMgr&&typeof leaseMgr.claim==='function'?leaseMgr.claim('p1-study-report',365000):null;
+      if(!leaseToken){ reject(new Error(leaseMgr?'Another Athena read or schedule pull is active. Wait for it to finish, then retry.':'The preview Athena read coordinator is still loading. Reopen this panel and retry.')); return; }
+      leaseTouch=setInterval(function(){try{leaseMgr.touch(leaseToken);}catch(e){}},25000);
+      function fin(fn,v){ if(settled) return; settled=true; window.removeEventListener('message',onPong); window.removeEventListener('message',onEvt); if(iv) clearInterval(iv); if(safetyTo) clearTimeout(safetyTo); if(leaseTouch)clearInterval(leaseTouch); try{leaseMgr.release(leaseToken);}catch(e){} fn(v); }
+      function trusted(e){try{return !(e.source&&e.source!==window)&&!(e.origin&&window.location&&e.origin!==window.location.origin);}catch(x){return false;}}
+      function onPong(e){ if(trusted(e)&&e.data&&e.data.source==='mls-ext'&&e.data.type==='mlsPong'&&!ponged){ ponged=true; if(iv) clearInterval(iv); proceed(); } }
       function onEvt(e){
-        var d=e.data; if(!(d&&d.source==='mls-ext')) return;
+        if(!trusted(e)||!sent)return;var d=e.data; if(!(d&&d.source==='mls-ext')) return;
         if(d.type==='mlsAppSearchProgress'){ say(d.msg||'Working...'); return; }
         if(d.type==='mlsAppSearchResult'){
+          if(timedOut){var late=new Error('The timed-out Athena search finished and was discarded.');late.code='UNCORRELATED_TIMEOUT_DRAINED';fin(reject,late);return;}
           var r=d.resp||{};
           if(!r.ok){ var err=new Error(r.error||'Search failed.'); err.code=r.code||''; fin(reject,err); return; }
           fin(resolve,{text:r.text||'', pages:r.pages||0, ranControls:r.ranControls});
@@ -43303,13 +43414,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       window.addEventListener('message',onPong);
       var ping=function(){ try{ window.postMessage({source:'mls-app',type:'mlsPing'},'*'); }catch(e){} };
-      say('Looking for MLS Assist...'); ping();
-      iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('MLS Assist is not responding. Install/enable it (latest version) and sign into athenaOne in another tab, then try again.')); } else ping(); }, 350);
+      function begin(){
+        say('Looking for MLS Assist...'); ping();
+        iv=setInterval(function(){ tries++; if(ponged){ clearInterval(iv); return; } if(tries>8){ clearInterval(iv); fin(reject,new Error('MLS Assist is not responding. Install/enable it (latest version) and sign into athenaOne in another tab, then try again.')); } else ping(); }, 350);
+      }
+      Promise.resolve().then(function(){return typeof leaseMgr.ready==='function'?leaseMgr.ready(leaseToken):true;}).then(function(ok){if(!ok){fin(reject,new Error('Another MLS tab owns the Athena reader. Nothing started; retry after it finishes.'));return;}begin();},function(){fin(reject,new Error('The Athena reader lock could not be acquired. Nothing started.'));});
       function proceed(){
         window.addEventListener('message',onEvt);
         say('Driving the athenaOne procedure search...');
-        try{ window.postMessage({source:'mls-app',type:'mlsAppSearchProcedure',params:params,cfg:cfg},'*'); }catch(e){}
-        safetyTo=setTimeout(function(){ fin(reject,new Error('Search timed out. Open the procedure/claims report manually and use Find in Athena, or tune selectors.')); }, 360000);
+        try{ window.postMessage({source:'mls-app',type:'mlsAppSearchProcedure',params:params,cfg:cfg},'*');sent=true;}catch(e){fin(reject,e);return;}
+        safetyTo=setTimeout(function(){if(settled)return;timedOut=true;safetyTo=null;say('Athena is still finishing the timed-out search. The reader remains quarantined until it returns or the preview reloads.');},360000);
       }
     });
   }
@@ -43327,7 +43441,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var text=(rd&&rd.text)?rd.text:'';
       if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist ran the search but read 0 rows'+(rd&&rd.pages?(' across '+rd.pages+' page(s)'):'')+'. The results table likely needs selector tuning to your athenaOne layout (set <code>window.__mlsStudyConfig.search</code>), or run the report yourself and use the read-only Find in Athena.</div>'; return; }
       var all=parseReportRows(text);
-      var rows=filterReportRows(all, crit);
+      var rows=dedupeReportRows(filterReportRows(all, crit));
       renderCandidates(body, rows, all.length, crit, {bestScore:null, pages:(rd&&rd.pages)||0});
     }).catch(function(err){
       out.innerHTML='<div class="mls-study-gate">&#9888; '+esc((err&&err.message)||'Search failed.')+'</div>';
@@ -43345,7 +43459,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var text=(rd&&rd.text)?rd.text:'';
       if(!text){ out.innerHTML='<div class="mls-study-gate">Couldn’t read an Athena report. Open the procedure/claims report (or a filtered schedule) as your signed-in Athena tab, then try again.</div>'; return; }
       var all=parseReportRows(text);
-      var rows=filterReportRows(all, crit);
+      var rows=dedupeReportRows(filterReportRows(all, crit));
       renderCandidates(body, rows, all.length, crit, rd);
     }).catch(function(err){
       out.innerHTML='<div class="mls-study-gate">⚠ '+esc((err&&err.message)||'Couldn’t read the Athena tab.')+'</div>';
@@ -43565,7 +43679,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var tries=0; var iv=setInterval(function(){ tries++; if(tries>40){ clearInterval(iv); return; } safe(injectLaunch); }, 1200);
 
   window.__mlsStudy={ open:open, close:close, _strictMatch:strictMatch, _parseRows:parseRows, _normDob:normDob, _importRow:importRow, _listCohorts:listCohorts,
-    _extractReportRows:extractReportRows, _parseReportRows:parseReportRows, _filterReportRows:filterReportRows, _resolveCriteria:resolveCriteria,
+    _extractReportRows:extractReportRows, _parseReportRows:parseReportRows, _filterReportRows:filterReportRows, _dedupeReportRows:dedupeReportRows, _resolveCriteria:resolveCriteria,
     _classifyDates:classifyDates, _detectName:detectName, _tagPatientCohort:tagPatientCohort, _studyFhirProbe:studyFhirProbe, _library:library, _autoSearch:doAutoSearchAthena, _assistSearchProcedure:assistSearchProcedure, _buildApptForRow:buildApptForRow, _svcToYMD:svcToYMD, _addToCalendar:addToCalendar, _searchCfg:searchCfg };
 })();
 
@@ -43875,7 +43989,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var text=resp.text||'';
       if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached athenaOne but read 0 result rows'+(resp.pages?(' across '+resp.pages+' page(s)'):'')+'. Open a procedure/claims search or report so the result rows are visible, or tune <code>window.__mlsStudyConfig.search</code> to your layout — or use 🔎 Find in Athena on a report you’ve already run.</div>'; return; }
       var all=safe(function(){ return st._parseReportRows(text); }, [])||[];
-      var rows=safe(function(){ return st._filterReportRows(all, crit); }, [])||[];
+      var rows=safe(function(){ var hit=st._filterReportRows(all, crit); return st._dedupeReportRows?st._dedupeReportRows(hit):hit; }, [])||[];
       renderCandidates(sec, rows, all.length, crit, resp, addCal);
     });
   }

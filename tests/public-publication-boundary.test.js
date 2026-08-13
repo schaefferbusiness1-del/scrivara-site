@@ -63,6 +63,7 @@ const P1_LIVE_HTML = [
 
 const P1_PREVIEW_ASSETS = [
   '1p-mls-connect.js',
+  '1p-feat_mls_athena_occurrence.js',
   '1p-feat_mls_avatar.js',
   '1p-feat_fullhistory_pdf.js',
   '1p-feat_mls_legalpack.js',
