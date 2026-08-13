@@ -1812,56 +1812,183 @@
   }
 
   /* ========================================================================
-     p1-autobind-1.0.0 (1p PREVIEW ONLY) -- STOP ASKING THE DOCTOR TO TEACH THE APP
-     SOMETHING IT CAN SEE.
+     p1-autobind-2.0.0 (1p PREVIEW ONLY) -- satisfy the frozen 3.0.61 probe
+     contract without changing MLS Assist or guessing a provider.
 
-     Owner: "well this is unacceptable it should be able to figure it out".
+     3.0.61 rejects a probe before reading Athena unless expectedContext names
+     date + provider + (appointment ID or encounter ID/URL). A null-context
+     "discover it for me" probe therefore never reached the read-only driver.
 
-     THE CHICKEN AND EGG. A row is only executable when the visit is BOUND:
-       visitReady = visitDate && provider && (appointmentId || (encounterId && encounterUrl))
-     Those fields come from a day pull. Without one, every row reads CANNOT SEND and
-     the review tells him to go run a pull. But the app ALREADY reads the exact open
-     encounter, read-only, on this very screen -- validatedUnifiedProbe() returns a
-     lockedContext carrying encounterId, encounterUrl, visitDate and provider, and
-     REFUSES unless all four are present. The only reason that never helped is that
-     probeUnifiedRow() opens with
-       if (!row || row.capability !== 'ready' || !row.action) { ...refuse...; return; }
-     so it will not probe until the row is ready, and the row cannot be ready until the
-     probe has told it what the encounter is. The app locks itself out of the one read
-     that answers its own question.
+     This lane starts only from one exact same-day appointment ID already in
+     the account-namespaced schedule import index. Provider candidates come
+     only from the structured headers on the same in-memory, request-bound Day
+     response: schedule receipt ID, roster receipt ID, served day, row counts,
+     header count and exact appointment census must all agree. Each distinct
+     provider is tried with a V2 read-only probe carrying the complete patient
+     identity plus that exact appointment/date/provider tuple.
 
-     WHAT THIS DOES. On open, if the visit is unbound but the patient identity is
-     complete, run the SAME read-only probe and, if it comes back verified, adopt the
-     four context fields and REBUILD the manifest. The rows then evaluate ready on
-     their own existing predicate.
+     Adoption is deliberately harder than probe success: exactly one response
+     must pass the existing name+DOB+MRN validator and echo the exact
+     appointment, date and provider. Zero or multiple successes, stale/wrong-day
+     data, a patient switch, timeout, malformed receipt, or any mismatch leaves
+     the original blocked manifest untouched. Probe tokens are discarded; the
+     normal row check still mints the only token that can enable Confirm.
 
-     NO GUARD IS WEAKENED. Three-factor identity (name + DOB + MRN) is checked inside
-     validatedUnifiedProbe against the real open chart BEFORE any context is returned;
-     a mismatch errors and nothing binds. The extension enforces the same predicate at
-     execute time and accepts encounterId + encounterUrl without an appointment ID, so
-     this satisfies both sides rather than papering over one.
-
-     REBUILD, NEVER MUTATE. The manifest is deep-frozen and its previewHash/manifestHash
-     are pinned by other contracts, so the enriched visit goes through
-     buildUnifiedManifest() again to get a fresh, correctly-hashed freeze. Mutating a
-     frozen hashed manifest would give a green row whose hash no longer matches its
-     payload -- a worse bug than the one being fixed.
-
-     FAILS CLOSED, ALWAYS. Probe absent, timed out, not ok, identity mismatch, missing
-     any of the four fields, state closed, user already acting -- every one of those
-     paths does nothing at all and the existing refusal stands untouched.
-
-       UNVERIFIED AGAINST THE LIVE EXTENSION: whether the driver answers a probe whose
-     expectedContext is null has NOT been exercised against the real 3.0.61 build (doing
-     so drives the owner's real EMR). If it refuses, auto-bind simply never fires and
-     the review behaves exactly as it does today. Confirm on the owner's next live pass.
+     Rebuild, never mutate: expectedContext is detached, the manifest is rebuilt
+     and the complete result is re-verified before state assignment. Billing,
+     signing and orders remain manual under their existing capability gates.
 
      Reversible: window.__mlsP1AutoBind.revert().
      ======================================================================== */
-  var p1AutoBindOff = false, p1AutoBindLast = null;
+  var p1AutoBindOff = false, p1AutoBindLast = null, P1_AUTOBIND_RESPONSE_MAX_AGE_MS = 30 * 60 * 1000;
   function p1VisitBound(v) {
     v = v || {};
     return !!(S(v.appointmentId).trim() || (S(v.encounterId).trim() && S(v.encounterUrl).trim()));
+  }
+  function p1SamePatient(a, b) {
+    a = a || {}; b = b || {};
+    return !!S(a.patientId).trim() && S(a.patientId).trim() === S(b.patientId).trim() &&
+      !!S(a.name).trim() && !!S(a.dob).trim() && !!S(a.mrn).trim() &&
+      nrmName(a.name) === nrmName(b.name) && nrmDob(a.dob) === nrmDob(b.dob) && nrmId(a.mrn) === nrmId(b.mrn);
+  }
+  function p1ProviderNorm(value) { return nrmName(S(value).replace(/^(?:provider|doctor)\s*[:\-]?\s*/i, '')); }
+  function p1ExactInteger(value) {
+    var n = Number(value); return isFinite(n) && n >= 0 && Math.floor(n) === n ? n : -1;
+  }
+  function p1Epoch(value) {
+    var numeric = Number(value);
+    if (isFinite(numeric) && numeric > 0) return numeric;
+    var parsed = Date.parse(S(value).trim());
+    return isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+  function p1LedgerAppointment(patientId, backendRowId, day) {
+    var out = [];
+    try {
+      if (!patientId || !backendRowId || !day || typeof window.uns !== 'function') return '';
+      var raw = localStorage.getItem(window.uns('schedImportIndexV1::' + day));
+      var parsed = raw ? JSON.parse(raw) : null, rows = parsed && parsed.v === 1 && parsed.rows;
+      if (!rows || typeof rows !== 'object' || Array.isArray(rows)) return '';
+      Object.keys(rows).forEach(function (key) {
+        var m = /^appointment-id:(\d+)$/.exec(key), row = rows[key];
+        if (!m || !row || row.state !== 'done') return;
+        if (S(row.patientId).trim() === S(patientId).trim() &&
+            S(row.backendAppointmentId).trim() === S(backendRowId).trim() &&
+            visitDay(row.appt_date) === day) out.push(m[1]);
+      });
+    } catch (e) { return ''; }
+    return out.length === 1 ? out[0] : '';
+  }
+  function p1AutoBindCandidates(manifest, source, pullResult, now, sourceAt) {
+    var no = { ok: false, reason: 'unverified', candidates: [] };
+    manifest = manifest || {}; source = source || {}; pullResult = pullResult || {}; now = p1Epoch(now || Date.now()); sourceAt = p1Epoch(sourceAt);
+    var p = manifest.patient || {}, visit = manifest.visit || {};
+    if (!S(p.patientId).trim() || !S(p.name).trim() || !S(p.dob).trim() || !S(p.mrn).trim()) { no.reason = 'patient-identity-incomplete'; return no; }
+    if (!isFinite(sourceAt) || sourceAt <= 0 || sourceAt > now + 60000 || now - sourceAt > P1_AUTOBIND_RESPONSE_MAX_AGE_MS) { no.reason = 'schedule-response-stale'; return no; }
+    var sourceDay = visitDay(source.schedDate);
+    if (!sourceDay || (visit.visitDate && visitDay(visit.visitDate) !== sourceDay)) { no.reason = 'schedule-day-mismatch'; return no; }
+    var cal = calendarRows().filter(function (row) {
+      return row && S(row.patient_external_id || row.patientId).trim() === S(p.patientId).trim() &&
+        visitDay(row.day_local || row.appt_date || row.start_at) === sourceDay;
+    });
+    var exact = [];
+    cal.forEach(function (row) {
+      var day = visitDay(row.day_local || row.appt_date || row.start_at);
+      var appointmentId = day ? p1LedgerAppointment(p.patientId, row.id, day) : '';
+      if (day && appointmentId) exact.push({ row: row, day: day, appointmentId: appointmentId });
+    });
+    if (exact.length !== 1) { no.reason = exact.length ? 'appointment-ambiguous' : 'appointment-unverified'; return no; }
+    var appointment = exact[0], receipt = source.receipt || {}, rosterReceipt = source.providerRosterReceipt || {};
+    var requestId = S(receipt.requestId).trim(), servedDay = visitDay(source.schedDate);
+    var expected = p1ExactInteger(receipt.expectedCount), parsedCount = p1ExactInteger(receipt.parsedCount), candidateCount = p1ExactInteger(receipt.candidateCount);
+    var coverage = rosterReceipt.attributionCoverage || (source.providerDiag && source.providerDiag.attributionCoverage) || {};
+    var coverageRows = p1ExactInteger(coverage.rows), unattributedRows = p1ExactInteger(coverage.unattributedRows), foreignRows = p1ExactInteger(coverage.foreignRows);
+    var headerCount = p1ExactInteger(coverage.headerCount), observedCount = p1ExactInteger(rosterReceipt.observedCount);
+    var census = pullResult.appointmentCensusReceipt || {}, normalizedRoster = pullResult.providerRosterReceipt || {};
+    var sourceRequestId = S(source.requestId || source.id).trim();
+    if (source.ok !== true || source.scheduleVerified !== true || receipt.complete !== true || receipt.authoritativeEmpty === true || !requestId ||
+        (sourceRequestId && sourceRequestId !== requestId) ||
+        S(rosterReceipt.requestId).trim() !== requestId || servedDay !== appointment.day ||
+        visitDay(rosterReceipt.targetDate) !== appointment.day || expected <= 0 || expected !== parsedCount ||
+        expected !== candidateCount || expected !== coverageRows || headerCount <= 0 || observedCount !== headerCount ||
+        rosterReceipt.complete === true || rosterReceipt.partial !== true || S(rosterReceipt.reason) !== 'legacy-unverified' ||
+        (S(rosterReceipt.providerMode) && S(rosterReceipt.providerMode) !== 'all') || S(rosterReceipt.requestedProviderId) || S(rosterReceipt.requestedProviderStableKey) ||
+        S(coverage.verdict) !== 'row-unattributed' || unattributedRows !== coverageRows || foreignRows !== 0 ||
+        pullResult.ok !== true || pullResult.complete !== true || S(pullResult.reason) !== 'complete-appointment-census-only' ||
+        normalizedRoster.complete === true || normalizedRoster.partial !== true || S(normalizedRoster.reason) !== 'legacy-unverified' ||
+        S(normalizedRoster.providerMode) !== 'all' || S(normalizedRoster.requestId) !== requestId || visitDay(normalizedRoster.targetDate) !== appointment.day ||
+        S(normalizedRoster.requestedProviderId) || S(normalizedRoster.requestedProviderStableKey) ||
+        census.complete !== true || S(census.kind) !== 'athena-appointment-census' || S(census.reason) !== 'complete-provider-unknown' ||
+        S(census.scope) !== 'appointment-census-only' || S(census.requestId) !== requestId || visitDay(census.targetDate) !== appointment.day ||
+        p1ExactInteger(census.expectedCount) !== expected || p1ExactInteger(census.parsedCount) !== expected ||
+        p1ExactInteger(census.candidateCount) !== expected || p1ExactInteger(census.rowCount) !== expected ||
+        p1ExactInteger(census.uniqueAppointmentIds) !== expected || p1ExactInteger(census.providerHeaderCount) !== headerCount ||
+        p1ExactInteger(census.unattributedRows) !== expected || p1ExactInteger(census.foreignRows) !== 0 ||
+        census.providerAttributionComplete !== false || census.providerFieldsBlank !== true || census.noProviderGuess !== true || census.providerSnapshotAllowed !== false) {
+      no.reason = 'schedule-receipt-unbound'; return no;
+    }
+    var sourceRows = Array.isArray(source.appts) ? source.appts : [], sourceMatches = [], sourceIds = {}, sourceInvalid = false;
+    sourceRows.forEach(function (row) {
+      var appointmentId = S(row && (row.athenaAppointmentId || row.athena_appointment_id || row.appointmentId || row.appointment_id || row.apptId || row.appt_id)).replace(/\D/g, '');
+      var rowDay = visitDay(row && (row.date || row.appt_date || sourceDay));
+      var providerName = S(row && (row.provider || row.providerName || row.provider_name || row.providerDisplayName || row.provider_display_name || row.renderingProvider || row.rendering_provider || row.renderingProviderName || row.rendering_provider_name)).trim();
+      var providerId = S(row && (row.providerId || row.provider_id || row.athenaProviderId || row.athena_provider_id || row.renderingProviderId || row.rendering_provider_id)).trim();
+      if (!appointmentId || sourceIds[appointmentId] || rowDay !== sourceDay || providerName || providerId) { sourceInvalid = true; return; }
+      sourceIds[appointmentId] = 1;
+      if (appointmentId === appointment.appointmentId) sourceMatches.push(row);
+    });
+    if (sourceInvalid || sourceRows.length !== expected || Object.keys(sourceIds).length !== expected || sourceMatches.length !== 1) { no.reason = 'appointment-response-unbound'; return no; }
+    var roster = Array.isArray(source.providerRoster) ? source.providerRoster : [], providers = [], seen = {};
+    roster.forEach(function (entry) {
+      var label = S(entry && (entry.name || entry.raw)).trim(), norm = p1ProviderNorm(label);
+      if (!label || !norm || seen[norm]) return;
+      seen[norm] = 1; providers.push({ provider: label, providerNorm: norm });
+    });
+    if (providers.length !== headerCount) { no.reason = 'provider-headers-unbound'; return no; }
+    return { ok: true, reason: 'candidate-set-verified', requestId: requestId, patient: stableClone(p),
+      appointmentId: appointment.appointmentId, visitDate: athenaVisitDate(appointment.day), day: appointment.day,
+      candidates: providers.map(function (entry) { return { appointmentId: appointment.appointmentId,
+        visitDate: athenaVisitDate(appointment.day), provider: entry.provider, providerNorm: entry.providerNorm }; }) };
+  }
+  function p1SameCandidateSet(a, b) {
+    a = a || {}; b = b || {};
+    if (!a.ok || !b.ok || a.requestId !== b.requestId || a.appointmentId !== b.appointmentId ||
+        a.visitDate !== b.visitDate || a.day !== b.day || !Array.isArray(a.candidates) || !Array.isArray(b.candidates) ||
+        a.candidates.length !== b.candidates.length) return false;
+    return !a.candidates.some(function (candidate, index) {
+      var other = b.candidates[index];
+      return !other || candidate.appointmentId !== other.appointmentId || candidate.visitDate !== other.visitDate ||
+        candidate.provider !== other.provider || candidate.providerNorm !== other.providerNorm;
+    });
+  }
+  function p1IndeterminateProbe(reason) {
+    return { ok: false, conclusive: false, determinate: false, indeterminate: true, reason: reason || 'probe-indeterminate' };
+  }
+  function p1DefinitiveNegative(reason) {
+    return { ok: false, conclusive: true, determinate: true, indeterminate: false, reason: reason || 'candidate-not-found' };
+  }
+  function p1ValidateAutoBindProbe(patient, candidate, probe) {
+    candidate = candidate || {};
+    if (!probe || typeof probe !== 'object' || Array.isArray(probe)) return p1IndeterminateProbe('probe-malformed');
+    if (probe.__timeout === true) return p1IndeterminateProbe('probe-timeout');
+    var reason = S(probe.reason).trim();
+    if (reason === 'outcome-uncertain' || /outcome-uncertain/i.test(S(probe.detail))) return p1IndeterminateProbe('probe-outcome-uncertain');
+    /* Frozen 3.0.61 returns this exact blocked receipt when a fully completed
+       read found no encounter for one candidate provider. It is the only safe
+       negative to count toward the exactly-one rule. Transport errors,
+       malformed success shapes and every other refusal poison the whole bind. */
+    if (probe.ok === false) {
+      if (probe.blocked === true && reason === 'context-unverified') return p1DefinitiveNegative('candidate-context-unverified');
+      return p1IndeterminateProbe(reason ? ('probe-' + reason) : 'probe-transport-unverified');
+    }
+    if (probe.ok !== true || probe.mode !== 'probe' || probe.readOnly !== true) return p1IndeterminateProbe('probe-unverified');
+    var lock;
+    try { lock = validatedUnifiedProbe(patient, probe); } catch (eValidate) { return p1IndeterminateProbe('probe-validation-failed'); }
+    if (!lock || !lock.ok || !lock.context) return p1IndeterminateProbe('patient-identity-mismatch');
+    var raw = probe.context || {}, appointmentId = contextValue(raw, ['appointmentId', 'athenaAppointmentId'], '');
+    if (!appointmentId || nrmId(appointmentId) !== nrmId(candidate.appointmentId) ||
+        visitDay(lock.context.visitDate) !== visitDay(candidate.visitDate) ||
+        p1ProviderNorm(lock.context.provider) !== candidate.providerNorm) return p1IndeterminateProbe('probe-context-mismatch');
+    return { ok: true, conclusive: true, determinate: true, indeterminate: false, reason: 'exact-probe-match', lock: lock };
   }
   function p1AutoBindEncounter(state) {
     if (p1AutoBindOff || !state || state.closed || state.running || state.halted) return false;
@@ -1876,48 +2003,111 @@
       if (r && r.payload && (r.action === 'write_note' || r.id === 'write-note')) { row = r; break; }
     }
     if (!row) return false;
-    var gen = state.probeGeneration, bp = bridgePatient(m.patient), payload = row.payload || {};
-    unifiedStatus(state, 'Reading the open Athena encounter read-only to bind this visit \u2014 nothing is sent.', '');
+    var source = null, pullResult = null, sourceAt = 0;
     try {
-      bridge('mlsAppAthenaActionV2', {
-        mode: 'probe', action: 'write_note', patient: bp,
-        expectedPatient: bp, expectedContext: null,
-        previewHash: m.previewHash, payload: payload,
-        noteText: payload.noteText || '', sections: payload.sections || [],
-        notePolicy: 'empty_only', noteWriteProof: '',
-        billing: null, order: null, rowHash: '', clientOrderId: ''
-      }, 'mlsAppAthenaActionV2Result', 25000).then(function (probe) {
+      source = window.__mlsSI && typeof window.__mlsSI._lastResp === 'function' ? window.__mlsSI._lastResp() : null;
+      pullResult = window.__mlsSI && typeof window.__mlsSI._lastPullResult === 'function' ? window.__mlsSI._lastPullResult() : null;
+      sourceAt = window.__mlsSI && typeof window.__mlsSI._lastRespAt === 'function' ? window.__mlsSI._lastRespAt() : 0;
+    } catch (eSource) {}
+    var set = p1AutoBindCandidates(m, source, pullResult, Date.now(), sourceAt);
+    if (!set.ok || !set.candidates.length) return false;
+    var gen = state.probeGeneration, patientAtStart = stableClone(m.patient), bp = bridgePatient(m.patient), payload = row.payload || {};
+    unifiedStatus(state, 'Checking the exact Athena appointment against ' + set.candidates.length + ' same-day provider header' + (set.candidates.length === 1 ? '' : 's') + ' read-only \u2014 nothing is sent.', '');
+    var probeDeadlineAt = Date.now() + 60000;
+    function p1ProbeCandidate(candidate) {
+      var probePromise;
+      var remainingMs = Math.max(0, probeDeadlineAt - Date.now());
+      if (remainingMs <= 0) return Promise.resolve(p1IndeterminateProbe('probe-deadline-exceeded'));
+      try { probePromise = bridge('mlsAppAthenaActionV2', {
+          foregroundOk: false, mode: 'probe', action: 'write_note', patient: bp, expectedPatient: bp,
+          expectedContext: { appointmentId: candidate.appointmentId, visitDate: candidate.visitDate, provider: candidate.provider },
+          previewHash: m.previewHash, manifestHash: m.manifestHash, payload: payload,
+          noteText: payload.noteText || '', sections: payload.sections || [], notePolicy: 'empty_only', noteWriteProof: '',
+          billing: null, order: null, rowHash: row.rowHash || '', clientOrderId: ''
+        }, 'mlsAppAthenaActionV2Result', Math.min(25000, remainingMs)); }
+      catch (eProbeStart) { return Promise.resolve(p1IndeterminateProbe('probe-start-failed')); }
+      return Promise.resolve(probePromise).then(function (probe) {
+        return p1ValidateAutoBindProbe(patientAtStart, candidate, probe);
+      }, function () { return p1IndeterminateProbe('probe-failed'); }).then(function (result) { return result; }, function () {
+        return p1IndeterminateProbe('probe-validation-failed');
+      });
+    }
+    /* The frozen background handler is asynchronous and does not serialize
+       probe mode. Run candidates one at a time so two same-tab driver reads
+       can never overlap or race the browser's current frame generation. */
+    var results = [], sequenceAborted = false;
+    var probeSequence = Promise.resolve();
+    set.candidates.forEach(function (candidate) {
+      probeSequence = probeSequence.then(function () {
+        if (sequenceAborted) return null;
+        if (p1AutoBindOff || athenaActionRunning || !state || state.closed || state.running || state.halted || state.probeGeneration !== gen ||
+            !p1SamePatient(patientAtStart, actionPatient({ patient: activePt() }))) { sequenceAborted = true; return null; }
+        var stepSource = null, stepPullResult = null, stepSourceAt = 0;
         try {
-          if (p1AutoBindOff || !state || state.closed || state.probeGeneration !== gen) return;
-          if (p1VisitBound(state.manifest && state.manifest.visit)) return;
-          var lock = validatedUnifiedProbe(state.manifest.patient, probe || {});
-          if (!lock || !lock.ok || !lock.context) return;          /* fails closed */
-          var c = lock.context;
-          if (!S(c.encounterId).trim() || !S(c.encounterUrl).trim()) return;
-          var v0 = state.manifest.visit || {}, v1 = {}, k;
-          for (k in v0) if (Object.prototype.hasOwnProperty.call(v0, k)) v1[k] = v0[k];
-          v1.encounterId = S(c.encounterId).trim();
-          v1.encounterUrl = S(c.encounterUrl).trim();
-          if (!S(v1.visitDate).trim()) v1.visitDate = S(c.visitDate).trim();
-          if (!S(v1.provider).trim()) v1.provider = S(c.provider).trim();
-          var o0 = state.sourceOpts || {}, o1 = {};
-          for (k in o0) if (Object.prototype.hasOwnProperty.call(o0, k)) o1[k] = o0[k];
-          o1.visit = v1;
-          var rebuilt = buildUnifiedManifest(o1);                  /* fresh freeze, correct hashes */
-          if (!rebuilt) return;
-          state.manifest = rebuilt; state.sourceOpts = o1;
-          state.reopenOpts = reopenOptions(o1, rebuilt);
-          p1AutoBindLast = { encounterId: v1.encounterId, at: Date.now() };
-          if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
-          unifiedStatus(state, 'This visit was bound from the Athena encounter that is open now \u2014 verified read-only against this patient\u2019s name, DOB and MRN. Nothing was sent.', 'ok');
-        } catch (e1) {}
-      }, function () {});
-    } catch (e2) { return false; }
+          stepSource = window.__mlsSI && typeof window.__mlsSI._lastResp === 'function' ? window.__mlsSI._lastResp() : null;
+          stepPullResult = window.__mlsSI && typeof window.__mlsSI._lastPullResult === 'function' ? window.__mlsSI._lastPullResult() : null;
+          stepSourceAt = window.__mlsSI && typeof window.__mlsSI._lastRespAt === 'function' ? window.__mlsSI._lastRespAt() : 0;
+        } catch (eStepSource) {}
+        if (stepSource !== source || stepPullResult !== pullResult || p1Epoch(stepSourceAt) !== p1Epoch(sourceAt)) { sequenceAborted = true; return null; }
+        var stepSet = p1AutoBindCandidates(state.manifest, stepSource, stepPullResult, Date.now(), stepSourceAt);
+        if (!p1SameCandidateSet(set, stepSet)) { sequenceAborted = true; return null; }
+        return p1ProbeCandidate(candidate);
+      }).then(function (result) {
+        if (!result) return;
+        results.push(result);
+        if (result.indeterminate === true || result.determinate !== true || result.conclusive !== true) sequenceAborted = true;
+      });
+    });
+    probeSequence.then(function () {
+      try {
+        if (sequenceAborted || p1AutoBindOff || athenaActionRunning || !state || state.closed || state.running || state.halted || state.probeGeneration !== gen) return;
+        if (p1VisitBound(state.manifest && state.manifest.visit) || !p1SamePatient(patientAtStart, state.manifest && state.manifest.patient) ||
+            !p1SamePatient(patientAtStart, actionPatient({ patient: activePt() }))) return;
+        var currentSource = null, currentPullResult = null, currentSourceAt = 0;
+        try {
+          currentSource = window.__mlsSI && typeof window.__mlsSI._lastResp === 'function' ? window.__mlsSI._lastResp() : null;
+          currentPullResult = window.__mlsSI && typeof window.__mlsSI._lastPullResult === 'function' ? window.__mlsSI._lastPullResult() : null;
+          currentSourceAt = window.__mlsSI && typeof window.__mlsSI._lastRespAt === 'function' ? window.__mlsSI._lastRespAt() : 0;
+        } catch (eCurrentSource) {}
+        if (currentSource !== source || currentPullResult !== pullResult || p1Epoch(currentSourceAt) !== p1Epoch(sourceAt)) return;
+        var currentSet = p1AutoBindCandidates(state.manifest, currentSource, currentPullResult, Date.now(), currentSourceAt);
+        if (!p1SameCandidateSet(set, currentSet)) return;
+        if (results.length !== set.candidates.length || results.some(function (result) {
+          return !result || result.indeterminate === true || result.determinate !== true || result.conclusive !== true;
+        })) return;
+        var successes = results.filter(function (result) { return result && result.ok === true; });
+        if (successes.length !== 1) return;                          /* zero/multiple fail closed */
+        var lock = successes[0].lock, raw = lock.rawContext || {}, v1 = {
+          appointmentId: contextValue(raw, ['appointmentId', 'athenaAppointmentId'], ''),
+          encounterId: S(lock.context.encounterId).trim(), encounterUrl: S(lock.context.encounterUrl).trim(),
+          visitDate: S(lock.context.visitDate).trim(), provider: S(lock.context.provider).trim()
+        };
+        if (!v1.appointmentId || !v1.encounterId || !v1.encounterUrl || !v1.visitDate || !v1.provider) return;
+        var o0 = state.sourceOpts || {}, o1 = {}, k;
+        for (k in o0) if (Object.prototype.hasOwnProperty.call(o0, k)) o1[k] = o0[k];
+        o1.expectedContext = stableClone(v1);
+        var rebuilt = buildUnifiedManifest(o1);                      /* fresh freeze, correct hashes */
+        if (!rebuilt || !p1SamePatient(patientAtStart, rebuilt.patient) ||
+            nrmId(rebuilt.visit.appointmentId) !== nrmId(v1.appointmentId) ||
+            visitDay(rebuilt.visit.visitDate) !== visitDay(v1.visitDate) ||
+            p1ProviderNorm(rebuilt.visit.provider) !== p1ProviderNorm(v1.provider) ||
+            nrmId(rebuilt.visit.encounterId) !== nrmId(v1.encounterId) ||
+            S(rebuilt.visit.encounterUrl).trim() !== v1.encounterUrl || !p1VisitBound(rebuilt.visit)) return;
+        if (!p1SamePatient(patientAtStart, actionPatient({ patient: activePt() }))) return;
+        state.manifest = rebuilt; state.sourceOpts = o1;
+        state.reopenOpts = reopenOptions(o1, rebuilt);
+        p1AutoBindLast = { encounterId: v1.encounterId, appointmentId: v1.appointmentId, requestId: set.requestId, at: Date.now() };
+        if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
+        unifiedStatus(state, 'This exact appointment is now bound to one Athena provider and encounter \u2014 verified read-only against name, DOB and MRN. Nothing was sent.', 'ok');
+      } catch (e1) {}
+    }, function () {});
     return true;
   }
   try {
-    window.__mlsP1AutoBind = { v: 'p1-autobind-1.0.0',
+    window.__mlsP1AutoBind = { v: 'p1-autobind-2.0.0',
       state: function () { return { off: p1AutoBindOff, last: p1AutoBindLast }; },
+      _test: { candidates: p1AutoBindCandidates, validateProbe: p1ValidateAutoBindProbe, samePatient: p1SamePatient, sameCandidateSet: p1SameCandidateSet,
+        currentState: function () { return unifiedAthenaState; } },
       revert: function () { p1AutoBindOff = true; return true; } };
   } catch (eAB) {}
   function openUnifiedConfirmation(opts) {
@@ -1934,7 +2124,8 @@
     state.reopenOpts = reopenOptions(opts, manifest);
     unifiedAthenaState = state;
     if (typeof document !== 'undefined' && document.body) renderUnifiedConfirmation(state);
-    /* p1-autobind-1.0.0: if the visit is unbound, read the open encounter instead of
+    /* p1-autobind-2.0.0: if the visit is unbound, use its exact imported appointment
+       and request-bound provider headers to read the matching encounter instead of
        telling him to go run a day pull. Fails closed; see the block above. */
     try { p1AutoBindEncounter(state); } catch (eP1AB) {}
     actionSay(opts, manifest.rows.some(function (row) { return row.capability === 'ready' && row.action; })

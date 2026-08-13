@@ -1996,14 +1996,14 @@
   }
 
   /* ---- read-only capture of the latest schedule read (for DOM-scrape fallback) ---- */
-  var lastResp = null;
+  var lastResp = null, lastRespAt = 0;
   function onSchedMsg(e) {
     safe(function () {
       var d = e && e.data;
       if (!d || d.source !== "mls-ext" || d.type !== "mlsAppScheduleResult") return;
       var response = d.resp || null;
       if (!authoritativeEmptyContract(response).ok) return;
-      lastResp = response;   // kept in memory only; never logged or forwarded
+      lastResp = response; lastRespAt = Date.now(); // memory only; never logged or forwarded
     });
   }
 
@@ -4873,7 +4873,7 @@
         if (p1CensusDecision.ok) {
           onStatus("Athena verified every appointment on " + date + ", but did not expose which provider owns each row. Importing the exact appointment census with provider left blank - no provider will be guessed.", "");
         }
-        lastResp = r;
+        lastResp = r; lastRespAt = Date.now();
         safe(function () { window.__schedRaw = {
           text: r.text || "", url: r.url || "", frames: r.frames, appts: r.appts || [], schedDate: readDay,
           providers: r.providers || [], providerRoster: r.providerRoster || [], providerRosterReceipt: r.providerRosterReceipt || null,
@@ -6080,6 +6080,7 @@
     _deadlineScheduler: absoluteDeadlines,
     _lastPullResult: function () { return lastPullResult; },
     _lastResp: function () { return lastResp; },
+    _lastRespAt: function () { return lastRespAt; },
     isBusy: function () { return !!(pullRunning || monthPullRunning || historyBatchRunning); },
     revert: revert
   };

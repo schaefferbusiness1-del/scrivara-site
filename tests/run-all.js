@@ -11,6 +11,8 @@ const tests = [
   '1p-preview-freshness-runtime.test.js',
   '1p-ondemand-templates.test.js',
   '1p-autobind-encounter.test.js',
+  '1p-athena-write-unlock-frozen-contract-runtime.test.js',
+  '1p-athena-write-unlock-adversarial-runtime.test.js',
   '1p-avatar-mic-not-fragments.test.js',
   '1p-fullhistory-pdf-idle-runtime.test.js',
   'p1-appointment-census-display-authority.test.js',
