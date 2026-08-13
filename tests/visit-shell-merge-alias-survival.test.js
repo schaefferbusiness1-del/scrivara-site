@@ -25,11 +25,16 @@ const root = path.join(__dirname, '..');
 
 const source = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 
+function testSetTimeout(fn, delay, ...args) {
+  if ([4500, 20000, 25000].includes(Number(delay))) return 0;
+  return setTimeout(fn, delay, ...args);
+}
+
 function makeContext() {
   const store = { patients: [] };
   const el = () => ({ style: {}, appendChild() {}, remove() {}, addEventListener() {}, setAttribute() {}, textContent: '', innerHTML: '', className: '', id: '' });
   const ctx = {
-    console, setTimeout, clearTimeout,
+    console, setTimeout: testSetTimeout, clearTimeout,
     setInterval: () => 0, clearInterval: () => {},
     document: {
       readyState: 'complete',

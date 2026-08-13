@@ -73,6 +73,11 @@ const context = {
   }
 };
 context.window = context;
+/* Settle-recheck timing is production behavior; this deterministic pipeline
+   suite verifies the receipts after each round and must not spend 31 real
+   seconds per deliberately refused sink. Keep every round, but yield it on
+   the next microtask. */
+context.__mlsBgSleep = () => Promise.resolve();
 context.uns = (k) => 'pipeline::' + k;
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);

@@ -145,6 +145,16 @@ const TOKEN = /\bb(\d{3,4})\b/;
 const claimed = new Map();   /* token -> [sha, ...] */
 const unnamed = [];
 
+/* One already-pushed Git-generated revert predates this forward fix. Git's
+ * automatic subject names the REVERTED build (b1022), while reverting
+ * app-version.json necessarily restores the older tree token (b1019). Do not
+ * advance the broad cutoff and erase scrutiny of every intervening bump; pin
+ * this one immutable SHA+token instead. Future reverts remain subject to the
+ * normal rule and must add the restored build to their commit body. */
+const KNOWN_PUSHED_UNNAMED = new Map([
+  ['f8d85d77d9dd28a43fe25f5d9c6900f36cc4425f', 'b1019']
+]);
+
 /* The token may appear ANYWHERE in the message, not only the subject.
  *
  * The guarantee this suite protects is that `git log --grep <build>` finds the
@@ -182,7 +192,11 @@ for (const c of commits) {
 
   let message = c.subject;
   try { message = git(['log', '-1', '--format=%B', c.sha]); } catch (e) {}
-  if (message.indexOf(token) === -1) unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
+  const knownPushedViolation = KNOWN_PUSHED_UNNAMED.get(c.sha) === token;
+  if (message.indexOf(token) === -1 && !knownPushedViolation) {
+    unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
+  }
+  if (knownPushedViolation) continue;
   const arr = claimed.get(token) || [];
   arr.push(c.sha.slice(0, 7));
   claimed.set(token, arr);

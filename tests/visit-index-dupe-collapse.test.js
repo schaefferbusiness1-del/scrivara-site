@@ -20,6 +20,11 @@ const vm = require('vm');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 
+function testSetTimeout(fn, delay, ...args) {
+  if ([4500, 20000, 25000].includes(Number(delay))) return 0;
+  return setTimeout(fn, delay, ...args);
+}
+
 /* Harness matching the REAL store semantics (ScribeFlow.html):
    - upsertPatient REPLACES the row (arr[i]=p) in the authoritative array;
    - getPatients() serves that authoritative (batch) array — fresh clones;
@@ -30,7 +35,7 @@ function makeContext() {
   const store = { arr: [], frozen: [] };
   const el = () => ({ style: {}, appendChild() {}, remove() {}, addEventListener() {}, setAttribute() {}, textContent: '', innerHTML: '', className: '', id: '' });
   const ctx = {
-    console, setTimeout, clearTimeout,
+    console, setTimeout: testSetTimeout, clearTimeout,
     setInterval: () => 0, clearInterval: () => {},
     document: {
       readyState: 'complete',

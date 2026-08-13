@@ -14,13 +14,18 @@ const vm = require('vm');
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 
+function testSetTimeout(fn, delay, ...args) {
+  if ([4500, 20000, 25000].includes(Number(delay))) return 0;
+  return setTimeout(fn, delay, ...args);
+}
+
 function makeContext() {
   const store = { patients: [{ id: 'pt-1', name: 'Helen L Perigo', dob: '04/14/1934', mrn: '7728445', visits: [] }] };
   const el = () => ({ style: {}, appendChild() {}, remove() {}, addEventListener() {}, setAttribute() {}, textContent: '', innerHTML: '', className: '', id: '' });
   const calls = [];
   const ctx = {
     console: { warn() {}, log() {}, error() {} },
-    setTimeout, clearTimeout, setInterval: () => 0, clearInterval: () => {},
+    setTimeout: testSetTimeout, clearTimeout, setInterval: () => 0, clearInterval: () => {},
     document: { readyState: 'complete', addEventListener() {}, removeEventListener() {}, getElementById: () => null, createElement: el, querySelector: () => null, querySelectorAll: () => [], head: el(), documentElement: el(), body: el() },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     getPatients: () => store.patients.map(p => p),

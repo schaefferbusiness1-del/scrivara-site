@@ -9,6 +9,13 @@ const root = path.resolve(__dirname, '..');
 const visitsSource = fs.readFileSync(path.join(root, 'feat_visits.js'), 'utf8');
 const historyUiSource = fs.readFileSync(path.join(root, 'feat_visit_history_ext.js'), 'utf8');
 
+/* Do not retain the visit model's unrelated page-lifetime hygiene retry in
+ * this isolated trust-provenance harness. Zero-delay model yields still run. */
+function testSetTimeout(fn, delay, ...args) {
+  if ([4500, 20000, 25000].includes(Number(delay))) return 0;
+  return setTimeout(fn, delay, ...args);
+}
+
 function between(source, start, end) {
   const a = source.indexOf(start);
   assert(a >= 0, `missing start marker ${start}`);
@@ -36,7 +43,7 @@ function makeModelHarness(loadCopy) {
   const context = {
     console, Promise, Date, Math, JSON, Object, String, Number, Array, RegExp,
     document,
-    setTimeout, clearTimeout,
+    setTimeout: testSetTimeout, clearTimeout,
     setInterval() { return 1; }, clearInterval() {},
     addEventListener() {}, removeEventListener() {}, postMessage() {},
     getPatients() { return patients; },
