@@ -5017,6 +5017,15 @@
     var hosts = root.querySelectorAll('[data-mls-avatar-setup-host]');
     for (var i = 0; i < hosts.length; i++) discardAvatarSetup(hosts[i], true);
   }
+  /* A POST cannot own face state forever. The doctor may remove or replace a
+     portrait while it is in flight; only the exact form revision that started
+     the request may commit its local full-resolution copy or clear pending UI. */
+  function faceSaveApplyIfCurrent(sentGeneration, currentGeneration, host, setupEpoch, apply) {
+    if (sentGeneration !== currentGeneration || !host ||
+        host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return false;
+    if (typeof apply === 'function') apply();
+    return true;
+  }
 
   /* ---- setup tab ---- */
   function setupForm(host) {
@@ -5057,8 +5066,10 @@
       /* Full quality stays in this form until Save. The accepted portrait and
          measurement copy are committed together; abandoning Setup cannot
          replace the cache behind the currently saved patient face. */
-      var pendingHiUrl = '', lookCtl = null;
+      var pendingHiUrl = '', lookCtl = null, faceMutationGeneration = 0;
+      function faceMutated() { faceMutationGeneration++; return faceMutationGeneration; }
       host.__mlsAvatarSetupCleanup = function () {
+        faceMutated();
         pendingHiUrl = '';
         pendingFace = undefined;
         if (lookCtl) { safe(function () { lookCtl.destroy(); }); lookCtl = null; }
@@ -5073,6 +5084,7 @@
       removeFaceBtn.type = 'button';
       var camHost = make('div', '');
       removeFaceBtn.addEventListener('click', function () {
+        faceMutated();
         cancelFaceCapture();
         pendingFace = '';
         pendingHiUrl = '';
@@ -5169,6 +5181,7 @@
                 return;
               }
               if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
+              faceMutated();
               pendingFace = dataUrl;
               /* Held in this form only. Save commits it after the server echoes
                  the exact matching patient portrait. */
@@ -5275,6 +5288,7 @@
         if (lookCtl && faceModeSelect.value === 'drawn') safe(function () { lookCtl.retint(lookNow); });
       }
       faceModeSelect.addEventListener('change', function () {
+        faceMutated();
         faceModeTouched = true;
         renderPatientPreview();
       });
@@ -5340,6 +5354,7 @@
         });
       }
       function lookManualTouch(key) {
+        faceMutated();
         manualNow[key] = true;
         delete lookMarks[key];
         var ig = lastGot.indexOf(key); if (ig >= 0) lastGot.splice(ig, 1);
@@ -5460,6 +5475,7 @@
       clearLookBtn.type = 'button';
       clearLookBtn.id = 'mlsAvClearDerived';
       clearLookBtn.addEventListener('click', function () {
+        faceMutated();
         lookNow = faceClearDerived(lookNow, manualNow);
         Object.keys(lookMarks).forEach(function (mk) { delete lookMarks[mk]; });
         quarantineHide();
@@ -5512,6 +5528,7 @@
         quarantineBox = box;
       }
       matchBtn.addEventListener('click', function () {
+        faceMutated();
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         /* Prefer the full-quality photograph. The 512px patient portrait is now natural,
            but the local 1024px copy carries more detail for glasses, facial hair and eyes.
@@ -5577,6 +5594,7 @@
                 if (aiKnobs.indexOf(k) < 0) aiKnobs.push(k);
                 delete lookMarks[k];
               });
+              if (aiKnobs.length) faceMutated();
               lookNow = faceLookSafe(lookNow);
               skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
               shirtPick.value = lookNow.shirt; lipPick.value = lookNow.lip;
@@ -5665,6 +5683,7 @@
           var refusedNow = (res && res.refused) || [];
           /* fx-1.0: THE SHARED APPLIER - the same door the kiosk uses, so the
              two consumers can never drift apart again. */
+          faceMutated();
           lookNow = faceApplyDerived(lookNow, res);
           got.forEach(function (k) { delete manualNow[k]; delete lookMarks[k]; });
           refusedNow.forEach(function (r) {
@@ -5849,6 +5868,7 @@
       saveBtn.type = 'button';
       var status = make('div', 'mlsAvMeta', '');
       saveBtn.addEventListener('click', function () {
+        if (saveBtn.disabled) return; /* one authoritative echo at a time */
         var questions = qValues();
         /* The server DROPS a malformed PIN to '' by design. Saving silently and
            reporting success let a doctor type "123", believe the kiosk was
@@ -5863,6 +5883,7 @@
            discard its UI closure while this explicit Save is in flight. */
         var sentPhoto = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         var sentHi = pendingHiUrl;
+        var sentFaceGeneration = faceMutationGeneration;
         saveBtn.disabled = true; status.textContent = 'Saving…';
         api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
           tone: toneSelect.value,
@@ -5884,17 +5905,29 @@
               var photoLost = !!(sentPhoto && sentPhoto.indexOf('data:image/') === 0 &&
                 String(saved.faceImage || '').indexOf('data:image/') !== 0);
               var why = String(r2.json.faceImageRefused || '');
-              /* Commit only a full-resolution copy that corresponds to the
-                 exact portrait the server says it stored. Removal clears it;
-                 an unchanged saved portrait keeps its already-matching cache. */
-              if (!faceValidPhoto(saved.faceImage)) faceHiClear();
-              else if (faceValidPhoto(sentHi) && facePhotoMatches(saved.faceImage, sentPhoto)) {
-                faceHiCommit(sentHi, saved.faceImage);
-              } else faceHiRead(saved.faceImage); /* prunes a cache for the prior saved face */
-              cfg.faceImage = saved.faceImage || '';
-              cfg.faceMode = saved.faceMode || faceModeSelect.value;
-              pendingFace = undefined;
-              pendingHiUrl = '';
+              /* A late echo is still the server's truth, but it no longer owns
+                 this form after Remove, another capture, mode/look edit, or
+                 close. In that case leave the newer pending UI and cache alone;
+                 its next Save will intentionally replace the older server row. */
+              var faceSaveCurrent = faceSaveApplyIfCurrent(sentFaceGeneration,
+                faceMutationGeneration, host, setupEpoch, function () {
+                  if (!faceValidPhoto(saved.faceImage)) faceHiClear();
+                  else if (faceValidPhoto(sentHi) && facePhotoMatches(saved.faceImage, sentPhoto)) {
+                    faceHiCommit(sentHi, saved.faceImage);
+                  } else faceHiRead(saved.faceImage); /* prunes a cache for the prior saved face */
+                  cfg.faceImage = saved.faceImage || '';
+                  cfg.faceMode = saved.faceMode || faceModeSelect.value;
+                  pendingFace = undefined;
+                  pendingHiUrl = '';
+                });
+              if (!faceSaveCurrent) {
+                /* Remove/capture already wrote a more specific instruction.
+                   Mode and appearance edits do not, so retire a stranded
+                   "Saving…" without erasing a newer face message. */
+                if (status.textContent === 'Saving…') status.textContent =
+                  'The earlier save finished, but your newer face changes still need Save avatar.';
+                return;
+              }
               status.textContent =
                 (questions.length ? ('Saved — the avatar now asks ' + questions.length + ' question' + (questions.length === 1 ? '' : 's') + '. Patients see it in their portal.') : 'Saved, but with no questions the check-in stays OFF for patients.') +
                 (saved.exitPin ? ' Kiosk exit PIN is set.' : ' No exit PIN — “End interview” closes straight into your app.') +
@@ -5902,8 +5935,11 @@
                   (why === 'too_large' ? ' — it came out too large for the server (' + Math.round(sentPhoto.length / 1024) + 'KB). Retake it a little further back.'
                     : why === 'shape' ? ' — the camera returned something this server will not store. Retake it.'
                     : ' — the server did not store it. Retake the photo and save again.')) : '');
-            } else status.textContent = 'Could not save — check your connection and try again.';
-          }, function () { saveBtn.disabled = false; status.textContent = 'Could not save — check your connection and try again.'; });
+            } else if (sentFaceGeneration === faceMutationGeneration) status.textContent = 'Could not save — check your connection and try again.';
+          }, function () {
+            saveBtn.disabled = false;
+            if (sentFaceGeneration === faceMutationGeneration) status.textContent = 'Could not save — check your connection and try again.';
+          });
       });
       /* av-5.3.0 — the typed rehearsal log is GONE by owner order ("GET RIDE
          OF THEAT AWEFUL ... BUTTON ON THE OLD AWERFUL SYSTEM"). It demoed a

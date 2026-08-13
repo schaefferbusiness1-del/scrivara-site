@@ -88,15 +88,70 @@ store.set('acct:mlsAvFaceMeasureV1', hiA);
 eq(cache.read(portraitA), '', 'legacy unassociated cache is still trusted');
 eq(store.size, 0, 'legacy unassociated cache was not retired');
 
+/* The exact production ownership guard executes both late-Save races. A
+   server may already have accepted A, but its callback cannot resurrect A
+   after Remove or clobber a newer captured B in the still-open form. */
+const saveApply = new Function(
+  between(source, 'function faceSaveApplyIfCurrent', '/* ---- setup tab') +
+  '\nreturn faceSaveApplyIfCurrent;')();
+const saveHost = { isConnected: true, __mlsAvatarSetupEpoch: 41 };
+let faceGeneration = 1, pendingFace = portraitA, pendingHi = hiA, patientPreview = portraitA;
+const saveAGeneration = faceGeneration;
+cache.commit(hiA, portraitA);                  // the previously accepted state
+faceGeneration++;                             // Remove while Save A is pending
+pendingFace = ''; pendingHi = ''; patientPreview = 'removed'; cache.clear();
+let lateApplied = 0;
+eq(saveApply(saveAGeneration, faceGeneration, saveHost, 41, () => {
+  lateApplied++; cache.commit(hiA, portraitA);
+  pendingFace = undefined; pendingHi = ''; patientPreview = portraitA;
+}), false, 'late Save A still owns the form after Remove');
+eq(lateApplied, 0, 'late Save A ran its local commit after Remove');
+eq(store.size, 0, 'late Save A resurrected cache bytes after Remove');
+eq(pendingFace, '', 'late Save A erased the pending removal intent');
+eq(patientPreview, 'removed', 'late Save A repainted the removed portrait');
+
+const portraitBNew = 'data:image/jpeg;base64,PORTRAIT-B-NEW';
+const hiB = 'data:image/jpeg;base64,FULL-RES-B';
+faceGeneration = 7; pendingFace = portraitA; pendingHi = hiA; patientPreview = portraitA;
+const saveAThenBGeneration = faceGeneration;
+faceGeneration++;                             // Capture B completes while A is pending
+pendingFace = portraitBNew; pendingHi = hiB; patientPreview = portraitBNew;
+eq(saveApply(saveAThenBGeneration, faceGeneration, saveHost, 41, () => {
+  lateApplied++; cache.commit(hiA, portraitA);
+  pendingFace = undefined; pendingHi = ''; patientPreview = portraitA;
+}), false, 'late Save A still owns the form after capture B');
+eq(pendingFace, portraitBNew, 'late Save A erased pending capture B');
+eq(pendingHi, hiB, 'late Save A erased capture B full-resolution bytes');
+eq(patientPreview, portraitBNew, 'late Save A repainted over capture B');
+eq(store.size, 0, 'late Save A committed cache behind capture B');
+
+let currentApplied = 0;
+eq(saveApply(faceGeneration, faceGeneration, saveHost, 41, () => { currentApplied++; }), true,
+  'current Save cannot apply its authoritative response');
+eq(currentApplied, 1, 'current Save did not apply exactly once');
+
 const removeSlice = between(source, "removeFaceBtn.addEventListener('click'", "camBtn.addEventListener('click'");
-ok(/cancelFaceCapture\(\)[\s\S]*pendingHiUrl = ''[\s\S]*faceHiClear\(\)/.test(removeSlice), 'Remove does not cancel capture and clear pending/committed bytes');
+ok(/faceMutated\(\)[\s\S]*cancelFaceCapture\(\)[\s\S]*pendingHiUrl = ''[\s\S]*faceHiClear\(\)/.test(removeSlice), 'Remove does not supersede Save, cancel capture, and clear pending/committed bytes');
 const captureSlice = between(source, "camBtn.addEventListener('click'", 'faceRow.appendChild(facePreview)');
 ok(captureSlice.includes('faceCaptureAdopt(stream, captureGeneration, camHost)'), 'late permission grant is not generation-gated');
 ok(/grabBestFrame\(video, 6,[\s\S]*faceCaptureIsCurrent\(captureGeneration, camHost\)[\s\S]*pendingFace = dataUrl/.test(captureSlice), 'late best-of-six callback can persist after cancellation');
 ok(!/faceHiCommit|localStorage\.setItem/.test(captureSlice), 'shutter click writes full-resolution bytes before Save');
 ok(/matchBtn\.isConnected/.test(captureSlice), 'detached auto-match button can run after close');
+ok(/faceMutated\(\)[\s\S]*pendingFace = dataUrl/.test(captureSlice), 'completed capture does not supersede an older Save');
 const saveSlice = between(source, "saveBtn.addEventListener('click'", '/* av-5.3.0 — the typed rehearsal log');
 ok(/r2\.ok && r2\.json && r2\.json\.ok[\s\S]*facePhotoMatches\(saved\.faceImage, sentPhoto\)[\s\S]*faceHiCommit/.test(saveSlice), 'full-resolution cache is not committed behind authoritative exact-photo Save');
+const saveGuardAt = saveSlice.indexOf('faceSaveApplyIfCurrent(sentFaceGeneration');
+const saveCommitAt = saveSlice.indexOf('faceHiCommit(sentHi', saveGuardAt);
+const saveResetAt = saveSlice.indexOf('pendingFace = undefined', saveCommitAt);
+const staleReturnAt = saveSlice.indexOf('if (!faceSaveCurrent)', saveResetAt);
+ok(saveSlice.includes('sentFaceGeneration = faceMutationGeneration') && saveGuardAt >= 0 &&
+  saveCommitAt > saveGuardAt && saveResetAt > saveCommitAt && staleReturnAt > saveResetAt,
+  'late Save is not generation-gated around cache and pending-state commit');
+ok(/if \(saveBtn\.disabled\) return/.test(saveSlice), 'Save handler permits request reentry');
+const modeSlice = between(source, "faceModeSelect.addEventListener('change'", 'var lookBadges');
+ok(modeSlice.includes('faceMutated()'), 'face mode change does not supersede an older Save');
+const manualSlice = between(source, 'function lookManualTouch', 'function colourControl');
+ok(manualSlice.includes('faceMutated()'), 'manual appearance edit does not supersede an older Save');
 
 /* Form cleanup itself is executable, then lifecycle call sites are pinned. */
 let cleanups = 0;
