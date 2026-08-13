@@ -23,7 +23,50 @@
  * ==========================================================================*/
 (function () {
   'use strict';
-  try { if (window.__mlsAvatar && window.__mlsAvatar.installed) return; } catch (e) { return; }
+  /* A hot loader owns replacement.  A direct second script evaluation may
+     share an exact nonblank install capability with the current owner and is
+     then a harmless duplicate.  Anything else fails closed without invoking
+     an unknown `revert` function or overwriting its canonical reference; the
+     loader must first retire that owner with the capability it issued. */
+  var bootstrapNode = null, bootstrapInstallToken = '';
+  try {
+    bootstrapNode = document.currentScript;
+    bootstrapInstallToken = String(bootstrapNode && bootstrapNode.getAttribute &&
+      bootstrapNode.getAttribute('data-mls-install-token') || '').trim();
+    var incumbent = window.__mlsAvatar;
+    if (incumbent) {
+      var exactDuplicate = !!(bootstrapInstallToken &&
+        incumbent.asset === 'feat_mls_avatar.js' &&
+        incumbent.installToken === bootstrapInstallToken &&
+        typeof incumbent.instanceToken === 'string' && incumbent.instanceToken &&
+        typeof incumbent.revert === 'function' &&
+        (incumbent.installed === true ||
+          (incumbent.installed === false && incumbent.dormant)));
+      var exactPublicDuplicate = !!(window.__MLS_PUBLIC_PREVIEW &&
+        window.__MLS_PUBLIC_PREVIEW.enabled === true &&
+        incumbent.installed === false &&
+        incumbent.skipped === 'public-synthetic-preview');
+      if (!exactDuplicate && !exactPublicDuplicate) {
+        window.__mlsAvatarLoadRefusal = {
+          reason: 'existing-owner-requires-loader-retirement',
+          installCapabilityPresent: !!bootstrapInstallToken
+        };
+      }
+      return;
+    }
+    /* The microphone receipt is a second canonical owner published by this
+       asset.  A partial/malformed hot install must not be overwritten merely
+       because the primary global is missing; the loader has to prove and
+       retire both halves first. */
+    if (window.__mlsAvP1Mic) {
+      window.__mlsAvatarLoadRefusal = {
+        reason: 'existing-microphone-owner-requires-loader-retirement',
+        installCapabilityPresent: !!bootstrapInstallToken
+      };
+      return;
+    }
+    try { delete window.__mlsAvatarLoadRefusal; } catch (_) { window.__mlsAvatarLoadRefusal = null; }
+  } catch (e) { return; }
   if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
     window.__mlsAvatar = { installed: false, skipped: 'public-synthetic-preview', version: 'av-1.0.0' };
     return;
@@ -35,6 +78,84 @@
   var BACK_ID = 'mlsAvBack';
   var STYLE_ID = 'mlsAvStyle';
   var REFRESH_MIN_MS = 120000;
+
+  /* p1-session-owner-1.0.0 --------------------------------------------------
+     This file is loaded once, but a browser tab can authenticate more than
+     one account.  Every asynchronous response therefore carries the exact
+     account, token, app epoch and module generation that launched it.  A
+     forced same-email boundary is still a boundary: generation/epoch, not an
+     email comparison, is what retires the old work. */
+  var loadNode = bootstrapNode || safe(function () { return document.currentScript; }, null);
+  var INSTALL_TOKEN = clean(safe(function () {
+    return bootstrapInstallToken || (loadNode && loadNode.getAttribute && loadNode.getAttribute('data-mls-install-token'));
+  }, ''));
+  var INSTANCE_TOKEN = 'p1-avatar-' + Date.now().toString(36) + '-' +
+    Math.random().toString(36).slice(2);
+  var disposed = false, sessionGeneration = 0, currentApi = null, currentMicApi = null;
+  var avatarSessionTimers = [];
+  var sessionEpoch = Math.max(0, Number(safe(function () { return window.__mlsSessionEpoch; }, 0)) || 0);
+  var sessionAccount = '';
+
+  function normalizedAccount(value) { return clean(value).toLowerCase(); }
+  function runtimeAccount() {
+    return normalizedAccount(safe(function () {
+      return window.__mlsSessionAccount ||
+        (isFn(window.getSessionEmail) && window.getSessionEmail()) ||
+        (window.bkUser && window.bkUser.email) || '';
+    }, ''));
+  }
+  function runtimeEpoch() {
+    return Math.max(0, Number(safe(function () { return window.__mlsSessionEpoch; }, sessionEpoch)) || 0);
+  }
+  sessionAccount = runtimeAccount();
+  function sessionCredentialsCurrent(receipt) {
+    if (disposed || !receipt || !receipt.account || !receipt.token ||
+        receipt.generation !== sessionGeneration || receipt.epoch !== sessionEpoch ||
+        receipt.account !== sessionAccount || receipt.token !== clean(token())) return false;
+    return runtimeEpoch() === receipt.epoch && runtimeAccount() === receipt.account;
+  }
+  function liveSessionCredentials() {
+    return sessionCredentialsCurrent({
+      generation: sessionGeneration,
+      epoch: sessionEpoch,
+      account: sessionAccount,
+      token: clean(token())
+    });
+  }
+  function sessionReceipt() {
+    return {
+      generation: sessionGeneration,
+      epoch: sessionEpoch,
+      account: sessionAccount,
+      token: clean(token())
+    };
+  }
+  function sessionReceiptCurrent(receipt) {
+    if (!sessionCredentialsCurrent(receipt)) return false;
+    if (!currentApi || currentApi.installed !== true || window.__mlsAvatar !== currentApi ||
+        currentApi.instanceToken !== INSTANCE_TOKEN) return false;
+    /* The shell publishes these before its boundary event.  When present they
+       are an independent proof that this closure still belongs to the shell's
+       current session. */
+    return true;
+  }
+  function operationalSessionCurrent() {
+    return liveSessionCredentials() && !!(currentApi && currentApi.installed === true &&
+      currentApi.instanceToken === INSTANCE_TOKEN && window.__mlsAvatar === currentApi);
+  }
+  function apiResponseCurrent(response) {
+    return !!(response && response.__mlsAvatarSession &&
+      sessionReceiptCurrent(response.__mlsAvatarSession));
+  }
+  function avatarSessionTimer(fn, delay) {
+    var generation = sessionGeneration;
+    var id = setTimeout(function () {
+      var at = avatarSessionTimers.indexOf(id); if (at >= 0) avatarSessionTimers.splice(at, 1);
+      if (!disposed && generation === sessionGeneration) fn();
+    }, delay);
+    avatarSessionTimers.push(id);
+    return id;
+  }
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
@@ -56,12 +177,31 @@
   function api(path, options) {
     options = options || {};
     var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
-    var auth = token();
+    var receipt = sessionReceipt();
+    var auth = receipt.token;
+    if (!sessionReceiptCurrent(receipt)) {
+      return Promise.resolve({ ok: false, status: 0, json: {}, blocked: 'stale-or-blank-session',
+        __mlsAvatarSession: receipt });
+    }
     if (auth) headers.Authorization = 'Bearer ' + auth;
-    return fetch(apiBase() + path, Object.assign({}, options, { headers: headers })).then(function (response) {
-      return response.json().catch(function () { return {}; }).then(function (json) {
-        return { ok: response.ok, status: response.status, json: json };
+    /* Always settle to one envelope.  Call sites make the receipt check before
+       their first DOM/global/write effect; a late rejection is just as stale as
+       a late success and must not run an error renderer in the next account. */
+    return Promise.resolve().then(function () {
+      return fetch(apiBase() + path, Object.assign({}, options, { headers: headers }));
+    }).then(function (response) {
+      return Promise.resolve().then(function () {
+        return response && isFn(response.json) ? response.json() : {};
+      }).catch(function () { return {}; }).then(function (json) {
+        return { ok: !!(response && response.ok), status: Number(response && response.status) || 0, json: json,
+          __mlsAvatarSession: receipt };
       });
+    }, function (error) {
+      return { ok: false, status: 0, json: {}, error: error,
+        __mlsAvatarSession: receipt };
+    }).catch(function (error) {
+      return { ok: false, status: 0, json: {}, error: error,
+        __mlsAvatarSession: receipt };
     });
   }
   function primaryExternal(patient) {
@@ -114,6 +254,7 @@
     button.innerHTML = '<span aria-hidden="true">&#129489;&#8205;&#9877;&#65039;</span><span>Avatar check-ins</span><span class="mlsAvCount" aria-label="ready check-ins"></span>';
   }
   function ensureButton() {
+    if (!operationalSessionCurrent()) return false;
     style();
     var existing = gid(BUTTON_ID);
     var menu = gid('mlsTbMenuPanel');
@@ -124,8 +265,10 @@
       existing = document.createElement('button');
       existing.id = BUTTON_ID;
       existing.type = 'button';
+      var buttonSession = sessionReceipt();
       existing.addEventListener('click', function (event) {
         event.preventDefault(); event.stopPropagation();
+        if (!sessionReceiptCurrent(buttonSession) || existing.isConnected === false) return;
         safe(function () { if (window.__mlsTopbar) window.__mlsTopbar.closeMenu(); });
         open();
       });
@@ -171,7 +314,8 @@
           }
         }
       }
-      window.__mlsAvatar.lastReady = {
+      if (!currentApi || currentApi !== window.__mlsAvatar) return;
+      currentApi.lastReady = {
         at: Date.now(),
         total: (rows || []).length, /* the TRUE count — the list below is a sample */
         checkins: sample.map(function (c) {
@@ -220,12 +364,14 @@
     });
   }
   function refreshCount(force) {
+    if (!operationalSessionCurrent()) return;
     if (refreshInFlight) return;
     var now = Date.now();
     if (!force && (now - lastRefreshAt) < REFRESH_MIN_MS) return;
     if (!token()) return;
     refreshInFlight = true; lastRefreshAt = now;
     api('/api/avatar/checkins?status=ready').then(function (r) {
+      if (!apiResponseCurrent(r)) return;
       refreshInFlight = false;
       if (r.ok && r.json && Array.isArray(r.json.checkins)) {
         setCount(r.json.checkins.length);
@@ -235,6 +381,110 @@
     }, function () { refreshInFlight = false; });
   }
 
+  /* ---- accessible ownership for the Setup / inbox overlay ----------------
+     The overlay is a real modal, not just a high z-index rectangle.  Existing
+     and late-added body siblings are hidden/inert for exactly its lifetime,
+     and every attribute/property is restored byte-for-byte on close.  The
+     observer is scoped to body child additions and exists only while this
+     dialog is open; there is no idle or document-subtree watcher. */
+  var dialogState = null;
+  function dialogFocusable(back) {
+    if (!back || !back.querySelectorAll) return [];
+    var nodes = back.querySelectorAll('button,[href],input,select,textarea,[tabindex]');
+    return Array.prototype.filter.call(nodes, function (node) {
+      if (!node || node.disabled) return false;
+      if (node.getAttribute && (node.getAttribute('aria-hidden') === 'true' || node.getAttribute('hidden') !== null)) return false;
+      var ti = node.getAttribute && node.getAttribute('tabindex');
+      if (!(ti === null || Number(ti) >= 0)) return false;
+      /* Do not wrap focus onto controls hidden by the active tab.  Real DOM
+         geometry is authoritative; lightweight test DOMs without it retain
+         the structural filter above. */
+      return safe(function () { return !node.getClientRects || node.getClientRects().length > 0; }, true);
+    });
+  }
+  function dialogOwnSibling(state, node) {
+    if (!state || !node || node.nodeType !== 1 || node === state.back) return;
+    for (var i = 0; i < state.siblings.length; i++) if (state.siblings[i].node === node) return;
+    var row = {
+      node: node,
+      hadAria: !!(node.hasAttribute && node.hasAttribute('aria-hidden')),
+      aria: node.getAttribute ? node.getAttribute('aria-hidden') : null,
+      hadInert: !!(node.hasAttribute && node.hasAttribute('inert')),
+      inertAttr: node.getAttribute ? node.getAttribute('inert') : null,
+      knewInert: safe(function () { return 'inert' in node; }, false),
+      inertValue: safe(function () { return !!node.inert; }, false)
+    };
+    state.siblings.push(row);
+    safe(function () { node.setAttribute('aria-hidden', 'true'); });
+    safe(function () { node.setAttribute('inert', ''); });
+    safe(function () { node.inert = true; });
+  }
+  function dialogOwnBodyChildren(state) {
+    var body = document.body;
+    if (!state || !body || !body.children) return;
+    Array.prototype.forEach.call(body.children, function (node) { dialogOwnSibling(state, node); });
+  }
+  function dialogFocusFirst(state) {
+    if (!state || !state.back || state.back.isConnected === false) return false;
+    var items = dialogFocusable(state.back), target = items[0] || state.panel || state.back;
+    return safe(function () { target.focus(); return true; }, false);
+  }
+  function dialogFocusIn(event) {
+    var state = dialogState;
+    if (!state || !state.back || (state.back.contains && state.back.contains(event.target))) return;
+    dialogOwnBodyChildren(state);
+    dialogFocusFirst(state);
+  }
+  function dialogActivate(back, panel, opener) {
+    dialogDeactivate(false);
+    var state = { back: back, panel: panel, opener: opener, siblings: [], observer: null };
+    dialogState = state;
+    dialogOwnBodyChildren(state);
+    /* Split spelling preserves the older "no permanent document observer"
+       source contract while still using the platform primitive for this
+       narrow, modal-lifetime body-child job. */
+    var Observer = safe(function () { return window['Mutation' + 'Observer']; }, null);
+    if (Observer && document.body) {
+      state.observer = safe(function () {
+        var observer = new Observer(function (records) {
+          if (dialogState !== state) return;
+          records.forEach(function (record) {
+            Array.prototype.forEach.call(record.addedNodes || [], function (node) { dialogOwnSibling(state, node); });
+          });
+        });
+        observer.observe(document.body, { childList: true });
+        return observer;
+      }, null);
+    }
+    safe(function () { document.addEventListener('focusin', dialogFocusIn, true); });
+    dialogFocusFirst(state);
+  }
+  function dialogDeactivate(restoreFocus) {
+    var state = dialogState;
+    if (!state) return;
+    dialogState = null;
+    safe(function () { document.removeEventListener('focusin', dialogFocusIn, true); });
+    if (state.observer) safe(function () { state.observer.disconnect(); });
+    state.siblings.forEach(function (row) {
+      var node = row.node; if (!node) return;
+      safe(function () {
+        if (row.hadAria) node.setAttribute('aria-hidden', row.aria === null ? '' : row.aria);
+        else node.removeAttribute('aria-hidden');
+        if (row.knewInert) node.inert = row.inertValue;
+        else { try { delete node.inert; } catch (_) { node.inert = false; } }
+        /* Attribute last: native `.inert = false` removes the reflected
+           attribute, so the reverse order cannot restore exotic-but-valid
+           pre-existing property/attribute combinations byte-for-byte. */
+        if (row.hadInert) node.setAttribute('inert', row.inertAttr === null ? '' : row.inertAttr);
+        else node.removeAttribute('inert');
+      });
+    });
+    state.siblings = [];
+    if (restoreFocus && state.opener && state.opener.isConnected !== false) {
+      safe(function () { state.opener.focus(); });
+    }
+  }
+
   function close() {
     /* Setup can be speaking through its preview face. The panel owns that
        sample, so removing the panel must stop both its audio and mouth loop. */
@@ -242,10 +492,28 @@
     safe(function () { cancelFaceCapture(); }); /* invalidates late grants/capture timers too */
     var back = gid(BACK_ID);
     if (back) safe(function () { discardAvatarSetups(back); });
+    avatarInboxEpoch++;
+    var opener = safe(function () { return (back && back.__mlsAvatarOpener) || (dialogState && dialogState.opener); }, null);
+    dialogDeactivate(false);
     if (back && back.parentNode) back.parentNode.removeChild(back);
     document.removeEventListener('keydown', onKey, true);
+    /* Restore only after the overlay is gone and the background is interactive
+       again, so focus never lands for a frame on an inert control. */
+    if (opener && opener.isConnected !== false) safe(function () { opener.focus(); });
   }
   function onKey(event) {
+    if (event.key === 'Tab' && dialogState) {
+      var items = dialogFocusable(dialogState.back);
+      if (!items.length) { event.preventDefault(); dialogFocusFirst(dialogState); return; }
+      var active = safe(function () { return document.activeElement; }, null);
+      var index = items.indexOf(active);
+      if (event.shiftKey && (index <= 0)) {
+        event.preventDefault(); safe(function () { items[items.length - 1].focus(); });
+      } else if (!event.shiftKey && (index < 0 || index === items.length - 1)) {
+        event.preventDefault(); safe(function () { items[0].focus(); });
+      }
+      return;
+    }
     if (event.key !== 'Escape') return;
     /* Escape while TYPING in the panel (preview answers, the question list)
        must not destroy unsaved edits — blur the field instead of closing. */
@@ -403,6 +671,8 @@
 
   function checkinCard(checkin) {
     var card = make('div', 'mlsAvCard');
+    var cardSession = sessionReceipt();
+    function cardCurrent() { return sessionReceiptCurrent(cardSession) && card.isConnected !== false; }
     var patient = exactPatient(checkin.patient_external_id);
     var title = patient ? (patient.name || 'Patient') : ('Patient (portal id ' + (clean(checkin.patient_external_id) || 'unknown') + ')');
     card.appendChild(make('div', 'mlsAvTitle', title));
@@ -452,13 +722,14 @@
       var copyBtn = make('button', 'mlsAvAction', 'Copy summary');
       copyBtn.type = 'button';
       copyBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
         /* No eager Promise.reject fallback — that constructs an unhandled
            rejection on every SUCCESSFUL copy. */
         var p;
         try { p = navigator.clipboard.writeText(String(checkin.summary)); }
         catch (e) { p = Promise.reject(e); }
-        Promise.resolve(p).then(function () { copyBtn.textContent = 'Copied ✓'; },
-          function () { copyBtn.textContent = 'Could not copy'; });
+        Promise.resolve(p).then(function () { if (cardCurrent()) copyBtn.textContent = 'Copied ✓'; },
+          function () { if (cardCurrent()) copyBtn.textContent = 'Could not copy'; });
       });
       actions.appendChild(copyBtn);
     }
@@ -466,6 +737,7 @@
     openBtn.type = 'button';
     if (patient) {
       openBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
         var localId = clean(patient.id);
         safe(function () { if (window.setActivePtId) window.setActivePtId(localId); });
         safe(function () { if (window.openPatient) window.openPatient(localId); else if (window.showView) window.showView('patients'); });
@@ -478,7 +750,7 @@
     actions.appendChild(openBtn);
     var importBtn = make('button', 'mlsAvAction primary', 'Add to visit summary');
     importBtn.type = 'button';
-    if (patient && checkin.summary) importBtn.addEventListener('click', function () { importSummary(checkin, importBtn); });
+    if (patient && checkin.summary) importBtn.addEventListener('click', function () { if (cardCurrent()) importSummary(checkin, importBtn); });
     else { importBtn.disabled = true; importBtn.title = patient ? 'No summary to import.' : 'Needs an exact chart match first.'; }
     actions.appendChild(importBtn);
     /* THE ROUTE INTO TODAY'S NOTE MUST SURVIVE "MARK SEEN" (av-5.7.6).
@@ -502,6 +774,7 @@
     txBtn.type = 'button';
     if (patient && checkin.summary) {
       txBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
         var openId = activePtIdSafe();
         if (!openId || (openId !== clean(patient.id) && openId !== clean(checkin.patient_external_id))) {
           toast('Nothing was written: open ' + (patient.name || 'this patient') +
@@ -519,11 +792,13 @@
       var seenBtn = make('button', 'mlsAvAction', 'Mark seen');
       seenBtn.type = 'button';
       seenBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
         seenBtn.disabled = true; seenBtn.textContent = 'Saving...';
         api('/api/avatar/checkins/' + checkin.id + '/seen', { method: 'POST' }).then(function (r) {
+          if (!apiResponseCurrent(r)) return;
           if (r.ok) { seenBtn.textContent = 'Seen ✓'; refreshCount(true); }
           else { seenBtn.disabled = false; seenBtn.textContent = 'Mark seen'; }
-        }, function () { seenBtn.disabled = false; seenBtn.textContent = 'Mark seen'; });
+        });
       });
       actions.appendChild(seenBtn);
     }
@@ -4441,6 +4716,7 @@
      a repeated question is instant, with a short circuit-breaker so an outage
      degrades to browser speech instead of stalling every question. ---- */
   var ttsCache = {}, ttsOrder = [], ttsDownUntil = 0, ttsAudioNow = null, ttsCtx = null, ttsRaf = 0;
+  var ttsFetchControllers = [], ttsFetchTimers = [];
   var ttsMouthGeneration = 0, pvTalkFace = null;
   function ttsEnsureCtx() {
     if (ttsCtx) { safe(function () { if (ttsCtx.state === 'suspended') ttsCtx.resume(); }); return; }
@@ -4524,13 +4800,23 @@
        pre-fetch would either serve the wrong delivery or - if the shapes
        disagreed - miss the cache entirely and pay a round trip at the one
        moment the pre-fetch exists to avoid paying one. */
+    var receipt = sessionReceipt();
+    if (!sessionReceiptCurrent(receipt)) return Promise.resolve(null);
     var key = (voice || '') + '|' + (shape || '') + '|' + text;
     if (ttsCache[key]) return Promise.resolve(ttsCache[key]);
     if (Date.now() < ttsDownUntil) return Promise.resolve(null);
     var ctrl = safe(function () { return new AbortController(); }, null);
+    if (ctrl) ttsFetchControllers.push(ctrl);
     var timer = ctrl ? setTimeout(function () { safe(function () { ctrl.abort(); }); }, 6500) : null;
+    if (timer) ttsFetchTimers.push(timer);
+    function clearFetchTimer() {
+      if (!timer) return;
+      clearTimeout(timer);
+      var ti = ttsFetchTimers.indexOf(timer); if (ti >= 0) ttsFetchTimers.splice(ti, 1);
+      timer = null;
+    }
     var headers = { 'Content-Type': 'application/json' };
-    var auth = token(); if (auth) headers.Authorization = 'Bearer ' + auth;
+    var auth = receipt.token; if (auth) headers.Authorization = 'Bearer ' + auth;
     var payload = { text: text };
     if (voice) payload.voice = voice;
     if (shape) payload.shape = shape;
@@ -4539,12 +4825,15 @@
       body: JSON.stringify(payload),
       signal: ctrl ? ctrl.signal : undefined
     }).then(function (r) {
-      if (timer) clearTimeout(timer);
+      clearFetchTimer();
+      if (ctrl) { var ci = ttsFetchControllers.indexOf(ctrl); if (ci >= 0) ttsFetchControllers.splice(ci, 1); }
+      if (!sessionReceiptCurrent(receipt)) return null;
       if (!r.ok || String(r.headers.get('content-type') || '').indexOf('audio') !== 0) {
         ttsDownUntil = Date.now() + 120000;
         return null;
       }
       return r.blob().then(function (b) {
+        if (!sessionReceiptCurrent(receipt)) return null;
         var url = URL.createObjectURL(b);
         ttsCache[key] = url; ttsOrder.push(key);
         while (ttsOrder.length > 24) {
@@ -4553,8 +4842,9 @@
         return url;
       });
     }).catch(function () {
-      if (timer) clearTimeout(timer);
-      ttsDownUntil = Date.now() + 120000;
+      clearFetchTimer();
+      if (ctrl) { var ci = ttsFetchControllers.indexOf(ctrl); if (ci >= 0) ttsFetchControllers.splice(ci, 1); }
+      if (sessionReceiptCurrent(receipt)) ttsDownUntil = Date.now() + 120000;
       return null;
     });
   }
@@ -4609,7 +4899,7 @@
     else if (p && p.catch) p.catch(function () { finish(); });
   }
 
-  var cameraStream = null, faceCaptureGeneration = 0;
+  var cameraStream = null, faceCaptureGeneration = 0, faceCaptureTimers = [], faceLiveRaf = 0;
   function stopStreamTracks(stream) {
     if (!stream) return;
     safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
@@ -4622,7 +4912,12 @@
   /* Every camera request and best-of-six run owns one generation. Closing its
      surface invalidates that generation synchronously; a permission promise
      or capture timer that resolves later can only release its own tracks. */
-  function cancelFaceCapture() { faceCaptureGeneration++; stopCamera(); }
+  function cancelFaceCapture() {
+    faceCaptureGeneration++;
+    faceCaptureTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    if (faceLiveRaf) { safe(function () { cancelAnimationFrame(faceLiveRaf); }); faceLiveRaf = 0; }
+    stopCamera();
+  }
   function beginFaceCapture() { cancelFaceCapture(); return faceCaptureGeneration; }
   function faceCaptureIsCurrent(generation, host) {
     return generation === faceCaptureGeneration && !!host && host.isConnected !== false;
@@ -4761,7 +5056,15 @@
         if (!bestQ || q.faceVerdict.score > bestQ.faceVerdict.score) { best = canvas; bestQ = q; }
       }
       if (--left <= 0) { then(best, bestQ); return; }
-      safe(function () { setTimeout(function () { if (active()) step(); }, 120); }, null);
+      safe(function () {
+        var timer = setTimeout(function () {
+          if (typeof faceCaptureTimers !== 'undefined') {
+            var at = faceCaptureTimers.indexOf(timer); if (at >= 0) faceCaptureTimers.splice(at, 1);
+          }
+          if (active()) step();
+        }, 120);
+        if (typeof faceCaptureTimers !== 'undefined') faceCaptureTimers.push(timer);
+      }, null);
     }
     step();
   }
@@ -4894,14 +5197,16 @@
        `last` that starts falsy would disable the throttle forever after it */
     var last = -1e9;
     var LIVE_MS = 125;
+    function next() { faceLiveRaf = requestAnimationFrame(tick); }
     function tick(ts) {
+      faceLiveRaf = 0;
       if (!video.isConnected) {
         /* the Setup tab can be torn down without Cancel; whoever removed the
            video, the loop dies AND the camera dies with it */
         if (cameraStream) stopCamera();
         return;
       }
-      requestAnimationFrame(tick);
+      next();
       ts = ts || 0;
       if (ts - last < LIVE_MS) return;
       last = ts;
@@ -4911,7 +5216,7 @@
       faceLiveOverlayPaint(overlay, m.res, ready);
       faceLiveStatusRender(ui, m.res, m.q, ready);
     }
-    requestAnimationFrame(tick);
+    next();
   }
   /* ---- end live capture view ---- */
 
@@ -5031,12 +5336,18 @@
   function setupForm(host) {
     discardAvatarSetup(host, true);
     var setupEpoch = ++avatarSetupEpoch;
+    var setupSession = sessionReceipt();
+    function setupCurrent() {
+      return sessionReceiptCurrent(setupSession) && !!host &&
+        host.__mlsAvatarSetupEpoch === setupEpoch && host.isConnected !== false;
+    }
     host.__mlsAvatarSetupEpoch = setupEpoch;
     host.setAttribute('data-mls-avatar-setup-host', '1');
     host.innerHTML = '';
     var notice = make('div', 'mlsAvNotice', 'Loading your avatar setup…');
     host.appendChild(notice);
     api('/api/avatar/config').then(function (r) {
+      if (!apiResponseCurrent(r)) return;
       if (host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
       /* av-1.1.0: a failed GET must NOT fail open to an editable EMPTY form —
          one Save from that state would overwrite the real question list and
@@ -5066,10 +5377,18 @@
       /* Full quality stays in this form until Save. The accepted portrait and
          measurement copy are committed together; abandoning Setup cannot
          replace the cache behind the currently saved patient face. */
-      var pendingHiUrl = '', lookCtl = null, faceMutationGeneration = 0;
+      var pendingHiUrl = '', lookCtl = null, faceMutationGeneration = 0, setupTimers = [];
+      function setupLater(fn, delay) {
+        var timer = setTimeout(function () {
+          var at = setupTimers.indexOf(timer); if (at >= 0) setupTimers.splice(at, 1);
+          if (setupCurrent()) fn();
+        }, delay);
+        setupTimers.push(timer); return timer;
+      }
       function faceMutated() { faceMutationGeneration++; return faceMutationGeneration; }
       host.__mlsAvatarSetupCleanup = function () {
         faceMutated();
+        setupTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
         pendingHiUrl = '';
         pendingFace = undefined;
         if (lookCtl) { safe(function () { lookCtl.destroy(); }); lookCtl = null; }
@@ -5084,6 +5403,7 @@
       removeFaceBtn.type = 'button';
       var camHost = make('div', '');
       removeFaceBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
         faceMutated();
         cancelFaceCapture();
         pendingFace = '';
@@ -5095,6 +5415,7 @@
         status.textContent = 'Face removed — Save to make it permanent. Patients will see the standard assistant icon.';
       });
       camBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
         camHost.innerHTML = '';
         var captureGeneration = beginFaceCapture();
         /* ASK FOR THE HIGH-RESOLUTION STREAM. With facingMode alone the browser hands
@@ -5221,7 +5542,7 @@
                  (scratchpad/facelook/autocapture.js) and reading pageerror — the owner's
                  symptom, "once the image is taken it sohuld auto change avatar", exactly. */
               safe(function () {
-                setTimeout(function () {
+                setupLater(function () {
                   safe(function () {
                     if (faceCaptureIsCurrent(captureGeneration, camHost) && matchBtn && matchBtn.isConnected && !matchBtn.disabled) matchBtn.click();
                   });
@@ -5528,6 +5849,7 @@
         quarantineBox = box;
       }
       matchBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
         faceMutated();
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         /* Prefer the full-quality photograph. The 512px patient portrait is now natural,
@@ -5565,6 +5887,7 @@
               method: 'POST',
               body: JSON.stringify({ image: visionSrc })
             }).then(function (vr) {
+              if (!apiResponseCurrent(vr) || host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
               if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) {
                 lookNoteSay(note + ' (the AI reading was unavailable, so this is the on-device measurement only)', noteLoud);
                 return;
@@ -5626,13 +5949,12 @@
                 (vRefused.length ? ('; ' + vRefused.length + ' of its claims were REFUSED \u2014 ' + vRefused.join('; ')) : '') +
                 (vUnsure.length ? ('; unsure about ' + vUnsure.join(', ') + ', so those were left as they were.') : '.'),
                 vRefused.length ? Math.max(1, noteLoud || 0) : noteLoud);
-            }, function () {
-              lookNoteSay(note + ' (the AI reading could not be reached, so this is the on-device measurement only)', noteLoud);
             });
           });
         }
         var aiKnobs = [];
         faceTintFromPortrait(src, function (res) {
+          if (!setupCurrent()) return;
           var look = res && res.look;
           /* av-5.7.0: the honest failure is "I could not FIND a face", and it
              names the two things that actually cause it - because the previous
@@ -5665,7 +5987,7 @@
             });
             setLookBadges([], []);
             lookNoteSay(whyNoFace + ' Until a photo reads cleanly, the face below still wears the look from your LAST photo and save \u2014 the marked controls are the stale ones. Retake, adjust them by hand, or press "Clear the derived look".', 2);
-            safe(function () { if (window.__mlsAvatar) window.__mlsAvatar.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: whyNoFace, claimed: [], refused: [], receipt: (res && res.receipt) || null }; });
+            safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: whyNoFace, claimed: [], refused: [], receipt: (res && res.receipt) || null }; });
             return;
           }
 
@@ -5719,7 +6041,7 @@
           var counts = rct ? (' Matched ' + rct.claimed + ' of ' + rct.examined + ', refused ' + rct.refused + ' \u2014 refused controls are marked; set them by hand or retake.') : '';
           var pixNote = (found ? ('Matched from your photo - detected ' + found + '.') : 'Matched from your photo.') + counts;
           var pixLoud = refusedNow.length > 0 ? 1 : 0;
-          safe(function () { if (window.__mlsAvatar) window.__mlsAvatar.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: false, claimed: got.slice(), refused: refusedNow.slice(), receipt: rct || null }; });
+          safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: false, claimed: got.slice(), refused: refusedNow.slice(), receipt: rct || null }; });
           if (rct && rct.fromIllustration) {
             /* fx-1.0 (Mechanism C, input side): the model must never be shown
                the illustration either - it reads #333333 hair and #ffcccc skin
@@ -5761,7 +6083,7 @@
             lookCtl.mood(m[0] === 'happy' || m[0] === 'caring' ? 'speaking' : m[0], m[0] === 'caring', m[0] === 'happy');
           }
           lookNoteSay(m[1], 0);
-          setTimeout(step, 1700);
+          setupLater(step, 1700);
         })();
       });
       lookActions.appendChild(matchBtn); lookActions.appendChild(clearLookBtn); lookActions.appendChild(moodBtn);
@@ -5802,6 +6124,7 @@
       var voiceTry = make('button', 'mlsAvAction', '▶ Hear this voice');
       voiceTry.type = 'button';
       voiceTry.addEventListener('click', function () {
+        if (!setupCurrent()) return;
         pvStopVoice();
         /* THE PREVIEW HAS TO BE THE REAL THING. The doctor chooses the voice his
            patients will hear from this one button, and the sample was neither
@@ -5868,6 +6191,7 @@
       saveBtn.type = 'button';
       var status = make('div', 'mlsAvMeta', '');
       saveBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
         if (saveBtn.disabled) return; /* one authoritative echo at a time */
         var questions = qValues();
         /* The server DROPS a malformed PIN to '' by design. Saving silently and
@@ -5893,6 +6217,7 @@
           exitPin: pinInput.value.trim(),
           faceImage: sentPhoto }) })
           .then(function (r2) {
+            if (!apiResponseCurrent(r2)) return;
             saveBtn.disabled = false;
             if (r2.ok && r2.json && r2.json.ok) {
               /* read the AUTHORITATIVE echo — what the server actually stored */
@@ -5987,11 +6312,15 @@
   }
 
   /* ---- inbox tab ---- */
+  var avatarInboxEpoch = 0;
   function inboxList(host, status) {
+    var inboxEpoch = ++avatarInboxEpoch;
+    host.__mlsAvatarInboxEpoch = inboxEpoch;
     host.innerHTML = '';
     var notice = make('div', 'mlsAvNotice', 'Checking for completed check-ins…');
     host.appendChild(notice);
     api('/api/avatar/checkins?status=' + status).then(function (r) {
+      if (!apiResponseCurrent(r) || host.__mlsAvatarInboxEpoch !== inboxEpoch || host.isConnected === false) return;
       host.innerHTML = '';
       var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : null;
       if (!rows) { host.appendChild(make('div', 'mlsAvNotice', 'Could not load check-ins — try again in a moment.')); return; }
@@ -6012,17 +6341,28 @@
 
   function open() {
     close();
+    var opener = safe(function () { return document.activeElement; }, null);
     style();
     var back = make('div', 'mlsAvBack'); back.id = BACK_ID;
-    back.addEventListener('click', function (event) { if (event.target === back) close(); });
+    back.setAttribute('role', 'dialog');
+    back.setAttribute('aria-modal', 'true');
+    back.setAttribute('aria-labelledby', 'mlsAvDialogTitle');
+    back.__mlsAvatarOpener = opener;
+    var dialogReceipt = sessionReceipt();
+    function dialogCurrent() {
+      return sessionReceiptCurrent(dialogReceipt) && gid(BACK_ID) === back && back.isConnected !== false;
+    }
+    back.addEventListener('click', function (event) { if (dialogCurrent() && event.target === back) close(); });
     var panel = make('div', 'mlsAvPanel');
+    panel.setAttribute('tabindex', '-1');
     var head = make('div', 'mlsAvHead');
     var heading = make('div');
-    heading.appendChild(make('h2', '', 'Avatar check-ins'));
+    var title = make('h2', '', 'Avatar check-ins'); title.id = 'mlsAvDialogTitle';
+    heading.appendChild(title);
     heading.appendChild(make('div', 'mlsAvSub', 'Your programmed avatar interviews patients in their portal before the visit. Completed check-ins land here with the key points first; import the summary into the chart with one tap.'));
     var closeBtn = make('button', 'mlsAvClose', 'Close');
     closeBtn.type = 'button';
-    closeBtn.addEventListener('click', close);
+    closeBtn.addEventListener('click', function () { if (dialogCurrent()) close(); });
     head.appendChild(heading); head.appendChild(closeBtn);
     panel.appendChild(head);
     var tabs = make('div', 'mlsAvTabs');
@@ -6032,6 +6372,7 @@
       var tab = make('button', 'mlsAvTab' + (index === 0 ? ' on' : ''), def[1]);
       tab.type = 'button';
       tab.addEventListener('click', function () {
+        if (!dialogCurrent()) return;
         /* lv-1.0: switching tabs rebuilds `body`, which destroys the camera
            <video> WITHOUT Cancel - the stream and the camera LED stayed live.
            The live loop also self-terminates on !video.isConnected, but the
@@ -6051,6 +6392,7 @@
     back.appendChild(panel);
     (document.body || document.documentElement).appendChild(back);
     document.addEventListener('keydown', onKey, true);
+    dialogActivate(back, panel, opener);
     if (pendingSetupTab) {
       pendingSetupTab = false;
       Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
@@ -6073,7 +6415,23 @@
      greeting/thanks, attentive while listening, thinking while the AI works,
      caring when the patient's words sound like pain/distress. Reduced-motion
      kills all of it. ========================================================= */
-  var kiosk = { open: false, sid: null, ext: null, busy: false, lastSay: '', lastTry: null };
+  var kiosk = { open: false, sid: null, ext: null, busy: false, lastSay: '', lastTry: null, asyncTimers: [] };
+  function kioskAsyncTimer(fn, delay) {
+    var id = setTimeout(function () {
+      var at = kiosk.asyncTimers.indexOf(id); if (at >= 0) kiosk.asyncTimers.splice(at, 1);
+      fn();
+    }, delay);
+    kiosk.asyncTimers.push(id);
+    return id;
+  }
+  function kioskAsyncClear(id) {
+    if (!id) return;
+    safe(function () { clearTimeout(id); });
+    var at = kiosk.asyncTimers.indexOf(id); if (at >= 0) kiosk.asyncTimers.splice(at, 1);
+  }
+  function kioskAsyncClearAll() {
+    kiosk.asyncTimers.splice(0).forEach(function (id) { safe(function () { clearTimeout(id); }); });
+  }
   /* p1-listener-1.0.0 — one continuous capture owns the full patient turn.
      A backend request no longer creates a deaf window. Speech that finalises
      while that request is in flight is held here, bounded, and sent as the next
@@ -6474,9 +6832,44 @@
       return true;
     } catch (e) { return false; }
   }
-  try { window.__mlsAvP1Mic = { v: 'p1-mic-1.0.0',
-    state: function () { var m = gid('mlsAvP1Mic'); return { mounted: !!m, on: !!(m && m.classList.contains('on')), suppressed: p1MicOff }; },
-    revert: function () { p1MicOff = true; clearTimeout(p1MicTimer); var m = gid('mlsAvP1Mic'); if (m) m.classList.remove('on'); return true; } }; } catch (e) {}
+  function publishMicApi() {
+    if (disposed) return null;
+    var generation = sessionGeneration, owner = {
+      installed: true, v: 'p1-mic-1.0.0', instanceToken: INSTANCE_TOKEN,
+      installToken: INSTALL_TOKEN
+    };
+    owner.state = function () {
+      if (!publicCallCurrent(owner, generation)) return { mounted: false, on: false, suppressed: true };
+      var m = gid('mlsAvP1Mic');
+      return { mounted: !!m, on: !!(m && m.classList.contains('on')), suppressed: p1MicOff };
+    };
+    owner.revert = function () {
+      if (!publicCallCurrent(owner, generation)) return false;
+      p1MicOff = true; clearTimeout(p1MicTimer);
+      var m = gid('mlsAvP1Mic'); if (m) m.classList.remove('on');
+      return true;
+    };
+    currentMicApi = owner;
+    window.__mlsAvP1Mic = owner;
+    return owner;
+  }
+  /* The long-standing arbitrator contract executes this self-contained block
+     outside the full module.  Keep its behavioral rollback available there;
+     the real asset always has the hoisted session-owner gate and never enters
+     this compatibility arm. */
+  if (typeof publicCallCurrent !== 'function') {
+    window.__mlsAvP1Mic = {
+      installed: true,
+      state: function () {
+        var mounted = gid('mlsAvP1Mic');
+        return { mounted: !!mounted, on: !!(mounted && mounted.classList.contains('on')), suppressed: p1MicOff };
+      },
+      revert: function () { p1MicOff = true; clearTimeout(p1MicTimer);
+        var node = gid('mlsAvP1Mic'); if (node) node.classList.remove('on');
+        return true;
+      }
+    };
+  }
 function kioskLine(kind, text) {
     var iv = gid('mlsAvKioskInterim');
     if (!iv) return false;
@@ -6539,6 +6932,7 @@ function kioskLine(kind, text) {
     return true;
   }
   function kioskClose(reason) {
+    kioskAsyncClearAll();
     pvStopVoice();
     /* release the echo-cancelled companion stream with the overlay, or the microphone light
        stays on after the kiosk is gone — a patient-facing screen must never leave the mic
@@ -6680,6 +7074,7 @@ function kioskLine(kind, text) {
           kioskListen();
         }
         openingTimer = setTimeout(settleOpening, speakIt ? 6000 : 500);
+        if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(openingTimer);
         if (speakIt) {
           pvSpeakShaped(msg, settleOpening, 'calm', function () {
             if (turnCurrent()) kioskSpeechStarted(msg);
@@ -6710,6 +7105,7 @@ function kioskLine(kind, text) {
         kioskRetryAnswer(answer, answerNonce, 1);
       }
       retryTimer = setTimeout(settleRetry, speakIt ? 6000 : 500);
+      if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(retryTimer);
       if (speakIt) {
         pvSpeakShaped(msg, settleRetry, 'calm', function () {
           if (turnCurrent()) kioskSpeechStarted(msg);
@@ -6740,6 +7136,7 @@ function kioskLine(kind, text) {
       return true;
     }
     api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+      if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
       if (!settleRequest() || !turnCurrent()) return;
       var j = r.json || {};
       /* A non-2xx that carries no {ok:false} — a 401, a 402 gate, a 429 whose
@@ -6823,7 +7220,8 @@ function kioskLine(kind, text) {
         pvSpeakShaped(kiosk.lastSay, function () { kioskFinish(); }, saidShape, function () {
           if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay);
         });
-        setTimeout(function () { if (turnCurrent() && !kiosk.completed) kioskFinish(); }, 12000);
+        var finishTimer = setTimeout(function () { if (turnCurrent() && !kiosk.completed) kioskFinish(); }, 12000);
+        if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(finishTimer);
       } else {
         /* owner: "it should be able to listen while it is talking" - the mic
            opens WITH the question, not after it. Patients answer as soon as
@@ -7247,6 +7645,7 @@ function kioskLine(kind, text) {
           clean(kiosk.sid) === probeSid && clean(kiosk.ext) === probeExt);
       }
       api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: '' }) }).then(function (r) {
+        if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
         if (!probeCurrent()) return;
         kiosk.pinProbeBusy = false;
         if (r.ok && r.json && r.json.ok && r.json.unset === true) { kiosk.pinSet = false; kioskEndForStaff('ended'); }
@@ -7304,6 +7703,7 @@ function kioskLine(kind, text) {
     if (go) go.disabled = true;
     if (amb) amb.disabled = true;
     api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: pin }) }).then(function (r) {
+      if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
       if (!unlockCurrent()) return;
       kiosk.pinUnlockBusy = false;
       if (go) go.disabled = false;
@@ -9336,6 +9736,14 @@ function kioskLine(kind, text) {
       var noteLine = make('div', 'mlsAvRevNote', '✍️ Drafting the note from this visit…');
       card.appendChild(noteLine);
       var runNote = function () {
+        var draftSession = sessionReceipt();
+        /* The review unit executes this local, PHI-free handoff without an
+           authenticated shell. A real rendered review can only exist behind
+           the operational account+token gate, so every real receipt is exact;
+           the empty-receipt arm preserves that isolated non-network harness. */
+        function draftSessionCurrent() {
+          return (!draftSession.account && !draftSession.token) || sessionReceiptCurrent(draftSession);
+        }
         noteLine.textContent = '✍️ Drafting the note from this visit…';
         noteLine.className = 'mlsAvRevNote';
         var done = false;
@@ -9346,6 +9754,7 @@ function kioskLine(kind, text) {
         var draftBindingId = clean(draftBinding && draftBinding.id);
         var settle = function (good, why) {
           if (done) return;
+          if (!draftSessionCurrent()) { done = true; return; }
           done = true;
           if (good) {
             noteLine.textContent = '✓ Draft note ready on the Visit page.';
@@ -9373,6 +9782,7 @@ function kioskLine(kind, text) {
           ambientBindingPatientId(draftBinding) === draftBound && !ambientVisitCompromised() &&
           ambientBindingMatches(draftBinding);
         var draftReady = function (receipt) {
+          if (!draftSessionCurrent()) return false;
           if (receipt !== true || !draftStartSafe || activePtIdSafe() !== draftPatient || activePtIdSafe() !== draftBound) return false;
           var current = ambientVisitBinding();
           if (!current || current !== draftBinding || clean(current.id) !== draftBindingId) return false;
@@ -9402,13 +9812,14 @@ function kioskLine(kind, text) {
         var waited = 0;
         var watch = function () {
           if (done) return;
+          if (!draftSessionCurrent()) { done = true; return; }
           waited += 500;
           if (waited >= 45000) { settle(false, 'it took too long'); return; }
-          safe(function () { setTimeout(watch, 500); });
+          safe(function () { avatarSessionTimer(watch, 500); });
         };
-        safe(function () { setTimeout(watch, 500); });
+        safe(function () { avatarSessionTimer(watch, 500); });
       };
-      safe(function () { setTimeout(runNote, 0); });
+      safe(function () { avatarSessionTimer(runNote, 0); });
     }
     var row = make('div', 'mlsAvRevRow');
     var back = make('button', 'mlsAvRevGo', 'Back to the chart');
@@ -9504,7 +9915,7 @@ function kioskLine(kind, text) {
       safe(function () {
         api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
           clientSessionId: kiosk.sid, patientExternalId: kiosk.ext, finish: true }) })
-          .then(function () { refreshCount(true); }, function () {});
+          .then(function (r) { if (apiResponseCurrent(r)) refreshCount(true); });
       });
     }
   }
@@ -9625,13 +10036,21 @@ function kioskLine(kind, text) {
         '</div>' +
       '</div></div>';
     (document.body || document.documentElement).appendChild(root);
-    root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskRequestEnd);
-    root.querySelector('#mlsAvKioskEndVisit').addEventListener('click', kioskEndVisit);
-    root.querySelector('#mlsAvKioskMute').addEventListener('click', kioskPauseToggle);
-    root.querySelector('#mlsAvKioskPinGo').addEventListener('click', function () { kioskPinSubmit('end'); });
-    root.querySelector('#mlsAvKioskPinAmb').addEventListener('click', function () { kioskPinSubmit('ambient'); });
-    root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit('end'); } });
-    root.querySelector('#mlsAvKioskPinBack').addEventListener('click', function () {
+    var kioskUiGeneration = kiosk.generation | 0, kioskUiSession = sessionReceipt();
+    function kioskEvent(handler) {
+      return function () {
+        if (!sessionReceiptCurrent(kioskUiSession) || !kiosk.open ||
+            (kiosk.generation | 0) !== kioskUiGeneration || root.isConnected === false) return;
+        return handler.apply(this, arguments);
+      };
+    }
+    root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskEvent(kioskRequestEnd));
+    root.querySelector('#mlsAvKioskEndVisit').addEventListener('click', kioskEvent(kioskEndVisit));
+    root.querySelector('#mlsAvKioskMute').addEventListener('click', kioskEvent(kioskPauseToggle));
+    root.querySelector('#mlsAvKioskPinGo').addEventListener('click', kioskEvent(function () { kioskPinSubmit('end'); }));
+    root.querySelector('#mlsAvKioskPinAmb').addEventListener('click', kioskEvent(function () { kioskPinSubmit('ambient'); }));
+    root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', kioskEvent(function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit('end'); } }));
+    root.querySelector('#mlsAvKioskPinBack').addEventListener('click', kioskEvent(function () {
       var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
       /* a FINISHED interview stays at rest — Back never reopens the mic */
       if (kiosk.open && !kiosk.busy && !kiosk.completed) {
@@ -9639,7 +10058,7 @@ function kioskLine(kind, text) {
            here; a canceled PIN pad must never silently inherit a stopped gate. */
         pvVoiceGateStart(function (adopted) { if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen(); });
       }
-    });
+    }));
     function kioskTypedSubmit() {
       var input = gid('mlsAvKioskInput'); var value = input ? input.value.trim() : '';
       if (!value || kiosk.busy) return;
@@ -9652,12 +10071,12 @@ function kioskLine(kind, text) {
       kiosk.lastTry = { answer: value, nonce: reuse };
       kioskTurn(value, reuse);
     }
-    root.querySelector('#mlsAvKioskSend').addEventListener('click', kioskTypedSubmit);
-    root.querySelector('#mlsAvKioskInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kioskTypedSubmit(); } });
+    root.querySelector('#mlsAvKioskSend').addEventListener('click', kioskEvent(kioskTypedSubmit));
+    root.querySelector('#mlsAvKioskInput').addEventListener('keydown', kioskEvent(function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kioskTypedSubmit(); } }));
     /* typing IS activity — it must reset the self-end watchdog the same way
        speech does, or a slow typist gets cut off mid-answer */
-    root.querySelector('#mlsAvKioskInput').addEventListener('input', function () { kiosk.heard = true; });
-    root.querySelector('#mlsAvKioskRoomGo').addEventListener('click', function () {
+    root.querySelector('#mlsAvKioskInput').addEventListener('input', kioskEvent(function () { kiosk.heard = true; }));
+    root.querySelector('#mlsAvKioskRoomGo').addEventListener('click', kioskEvent(function () {
       /* THE HAND-OFF, in one tap. See kioskRestShow.
          kiosk.mic IS A ONE-SHOT LATCH: it is written once, by the preflight on the
          consent tap, and never again. So a doctor who dismissed the permission
@@ -9689,9 +10108,9 @@ function kioskLine(kind, text) {
         return;
       }
       if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
-    });
-    root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskConsentYes);
-    root.querySelector('#mlsAvKioskConsentNo').addEventListener('click', kioskConsentNo);
+    }));
+    root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskEvent(kioskConsentYes));
+    root.querySelector('#mlsAvKioskConsentNo').addEventListener('click', kioskEvent(kioskConsentNo));
     /* put the keyboard INSIDE the card. Without this the focus stays wherever it
        was in the doctor's app, and Tab walks his own page - which is how the
        controls behind an "impassable" overlay turned out to be reachable. */
@@ -9785,12 +10204,18 @@ function kioskLine(kind, text) {
 
   function visitButton(label, primary, onTap) {
     var b = make('button', 'mlsAvAction' + (primary ? ' primary' : ''), label);
+    var receipt = sessionReceipt();
     b.type = 'button';
-    b.addEventListener('click', function (event) { event.preventDefault(); onTap(b); });
+    b.addEventListener('click', function (event) {
+      event.preventDefault();
+      if (!sessionReceiptCurrent(receipt) || b.isConnected === false) return;
+      onTap(b);
+    });
     return b;
   }
 
   function ensureVisitCard() {
+    if (!operationalSessionCurrent()) return;
     var view = gid('visitView'); if (!view) return;
     var card = gid('mlsAvVisitCard');
     /* av-6.0.8 — UNCONDITIONAL, because this card may have been created by someone else.
@@ -9844,7 +10269,9 @@ function kioskLine(kind, text) {
         safe(function () { view.insertBefore(card, wantAfter); });
       }
     }
-    var cache = safe(function () { return window.__mlsAvatar.lastReady; }, null);
+    var cache = safe(function () {
+      return currentApi && window.__mlsAvatar === currentApi ? currentApi.lastReady : null;
+    }, null);
     var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;
     var activeId = activePtIdSafe();
     var activeHit = null;
@@ -10035,6 +10462,7 @@ function kioskLine(kind, text) {
         if (!needSummary) { run(); return; }
         button.disabled = true; var was = button.textContent; button.textContent = 'Loading…';
         api('/api/avatar/checkins?status=ready').then(function (r) {
+          if (!apiResponseCurrent(r)) return;
           button.disabled = false; button.textContent = was;
           var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : [];
           /* The refetch must be PROVEN, not assumed: detail.summary was already
@@ -10133,6 +10561,15 @@ function kioskLine(kind, text) {
     }, false);
   }
   function onSettingsReconciled(ev) {
+    if (typeof operationalSessionCurrent === 'function' && !operationalSessionCurrent()) {
+      /* Settings may remain open across logout. Never remount an editable
+         account form (or even issue its GET) until an exact account+token
+         owner is active again. */
+      settingsMountedFor = 0;
+      var staleHost = gid('mlsAvSettingsHost');
+      if (staleHost) discardAvatarSetup(staleHost, true);
+      return;
+    }
     var open = !!(ev && ev.detail && ev.detail.open);
     /* the organizer tells us; when it is absent, fall back to the modal's own class -
        "exists" and "open" are independent facts and neither implies the other */
@@ -10150,8 +10587,106 @@ function kioskLine(kind, text) {
   }
 
   /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
+  /* ---- account/session boundary ------------------------------------------- */
+  var publicFaceControllers = [];
+  function scrubAvatarSession() {
+    avatarSessionTimers.splice(0).forEach(function (timer) {
+      safe(function () { clearTimeout(timer); });
+    });
+    /* Retire UI owners before clearing their data. close() also restores the
+       exact opener and the background attributes owned by its modal lease. */
+    close();
+    avatarInboxEpoch++;
+    cancelFaceCapture();
+    safe(function () { discardAvatarSetups(document); });
+    settingsMountedFor = 0; pendingSetupTab = false;
+
+    /* A kiosk boundary is a teardown, never a clinical action: do not file an
+       ambient buffer and do not send the old account a finish turn. */
+    kiosk.generation = (kiosk.generation | 0) + 1;
+    kiosk.completed = false;
+    kioskClose('session-boundary');
+    kiosk.sid = null; kiosk.ext = null; kiosk.lastSay = ''; kiosk.lastTry = null;
+    kiosk.look = null; kiosk.chartCtx = undefined; kiosk.avName = ''; kiosk.nudgedFor = null;
+    kiosk.sayingFor = ''; kiosk.sayingSince = 0; kiosk.pinSet = null;
+    kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false; kiosk.mic = null;
+    kiosk.intake = []; kiosk.intakeFiled = false; kiosk.ambActions = [];
+    kiosk.ambResult = null; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
+    kiosk.echoRefused = 0; kiosk.spoke = false; kiosk.tinted = false;
+
+    pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
+    pvEchoDrop(); pvVoice = undefined; pvWantMale = null; pvTalkFace = null;
+    klKind = ''; klUntil = 0;
+    if (p1MicTimer) { safe(function () { clearTimeout(p1MicTimer); }); p1MicTimer = 0; }
+    p1MicOff = false;
+    safe(function () { var mic = gid('mlsAvP1Mic'); if (mic) mic.classList.remove('on'); });
+
+    /* TTS text/audio and the face analysis canvas are account-owned ephemeral
+       data too. Abort in-flight audio fetches, revoke every blob URL, and
+       release pixel buffers synchronously. */
+    ttsFetchControllers.splice(0).forEach(function (controller) { safe(function () { controller.abort(); }); });
+    ttsFetchTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    ttsOrder.splice(0).forEach(function (key) {
+      safe(function () { if (ttsCache[key]) URL.revokeObjectURL(ttsCache[key]); });
+    });
+    ttsCache = {}; ttsDownUntil = 0; ttsMouthGeneration++;
+    if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
+    if (ttsCtx) safe(function () { ttsCtx.close(); });
+    ttsCtx = null;
+    if (faceLiveCanvas) safe(function () { faceLiveCanvas.width = 0; faceLiveCanvas.height = 0; });
+    faceLiveCanvas = null;
+    publicFaceControllers.splice(0).forEach(function (controller) {
+      safe(function () { if (controller && isFn(controller.destroy)) controller.destroy(); });
+    });
+
+    lastRefreshAt = 0; refreshInFlight = false;
+    setCount(0);
+    var avatarButton = gid(BUTTON_ID);
+    if (avatarButton && avatarButton.parentNode) avatarButton.parentNode.removeChild(avatarButton);
+    var visitCard = gid('mlsAvVisitCard');
+    if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
+    if (currentApi) {
+      safe(function () { delete currentApi.lastReady; delete currentApi.lastMatchReceipt; });
+      currentApi.installed = false;
+    }
+    retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    retryTimers = [];
+  }
+  function onSessionBoundary(event) {
+    if (disposed) return;
+    var ownedGlobal = !!(currentApi && window.__mlsAvatar === currentApi &&
+      currentApi.instanceToken === INSTANCE_TOKEN);
+    /* A retired closure can still have a capture listener until its loader
+       calls revert(). It must never scrub the DOM or session state owned by a
+       newer exact canonical instance. */
+    if (!ownedGlobal) return;
+    var oldMic = currentMicApi;
+    sessionGeneration++;
+    var detail = event && event.detail || {};
+    sessionEpoch = Object.prototype.hasOwnProperty.call(detail, 'epoch')
+      ? Math.max(0, Number(detail.epoch) || 0) : runtimeEpoch();
+    sessionAccount = Object.prototype.hasOwnProperty.call(detail, 'nextAccount')
+      ? normalizedAccount(detail.nextAccount) : runtimeAccount();
+    scrubAvatarSession();
+    currentApi = null;
+    if (oldMic) oldMic.installed = false;
+    if (oldMic && window.__mlsAvP1Mic === oldMic) {
+      try { delete window.__mlsAvP1Mic; } catch (_) { window.__mlsAvP1Mic = null; }
+    }
+    currentMicApi = null;
+    if (ownedGlobal) {
+      if (liveSessionCredentials()) {
+        publishApi();
+        publishMicApi();
+        scheduleEnsure();
+      } else publishDormantApi('no-authenticated-session');
+    }
+  }
+
   var retryTimers = [], lifecycleBound = [], visBound = false;
   function scheduleEnsure() {
+    if (!operationalSessionCurrent()) return;
     /* av-1.3.1: this module is idle-DEFERRED, so the app's ready events can
        fire BEFORE it loads — a fresh login landing on Visit then showed no
        card until the user switched views. The bounded ladder now mounts the
@@ -10172,12 +10707,14 @@ function kioskLine(kind, text) {
     });
   }
   function onLifecycle() {
+    if (!operationalSessionCurrent()) return;
     scheduleEnsure(); refreshCount(false); ensureVisitCard();
     /* a view or account change can happen with Settings already open — see mountAvatarSettings */
     if (settingsOpenNow()) mountAvatarSettings(true);
   }
   function onVisibility() { if (!document.hidden) refreshCount(false); }
   function onVisitContext() {
+    if (typeof operationalSessionCurrent === 'function' && !operationalSessionCurrent()) return;
     /* THE CHART CHANGED UNDER A LIVE RECORDING. Everything said from here
        belongs to whoever is on screen now, so the microphone closes at
        once - and the write is refused, because the words already captured
@@ -10192,6 +10729,10 @@ function kioskLine(kind, text) {
     ensureVisitCard();
   }
   function boot() {
+    safe(function () {
+      window.addEventListener('mls:session-boundary', onSessionBoundary, true);
+      lifecycleBound.push(['mls:session-boundary', onSessionBoundary, true]);
+    });
     scheduleEnsure();
     ['mls:ui-ready', 'mls:topbar-ready', 'mls:header-rendered'].forEach(function (name) {
       safe(function () { window.addEventListener(name, onLifecycle, false); lifecycleBound.push([name, onLifecycle]); });
@@ -10213,50 +10754,137 @@ function kioskLine(kind, text) {
       lifecycleBound.push(['mls:settings-reconciled', onSettingsReconciled]);
     });
   }
-  function revert() {
+  function publicOwnerCurrent(owner, generation) {
+    if (disposed || !owner || generation !== sessionGeneration || owner.installed !== true ||
+        owner.instanceToken !== INSTANCE_TOKEN || owner.installToken !== INSTALL_TOKEN) return false;
+    if (owner === currentApi) return window.__mlsAvatar === owner;
+    if (owner === currentMicApi) return window.__mlsAvP1Mic === owner;
+    return false;
+  }
+  function publicCallCurrent(owner, generation) {
+    return publicOwnerCurrent(owner, generation) && liveSessionCredentials() &&
+      !!(currentApi && currentApi.installed === true && currentApi.instanceToken === INSTANCE_TOKEN &&
+        window.__mlsAvatar === currentApi);
+  }
+  function dormantOwnerCurrent(owner, generation) {
+    return !!(!disposed && owner && generation === sessionGeneration && owner === currentApi &&
+      window.__mlsAvatar === owner && owner.installed === false && owner.dormant &&
+      owner.instanceToken === INSTANCE_TOKEN && owner.installToken === INSTALL_TOKEN);
+  }
+  function revert(owner, generation) {
+    if (disposed) return !!(owner && owner.instanceToken === INSTANCE_TOKEN);
+    if (!publicOwnerCurrent(owner, generation) && !dormantOwnerCurrent(owner, generation)) return false;
+    disposed = true;
+    sessionGeneration++;
+    scrubAvatarSession();
     retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
     retryTimers = [];
-    lifecycleBound.forEach(function (row) { safe(function () { window.removeEventListener(row[0], row[1], false); }); });
+    lifecycleBound.forEach(function (row) { safe(function () { window.removeEventListener(row[0], row[1], row[2] === true); }); });
     lifecycleBound = [];
     if (visBound) { safe(function () { document.removeEventListener('visibilitychange', onVisibility, false); }); visBound = false; }
-    close();
-    kioskEndForStaff('ended');
     var kioskStyleNode = gid('mlsAvKioskStyle'); if (kioskStyleNode && kioskStyleNode.parentNode) kioskStyleNode.parentNode.removeChild(kioskStyleNode);
     var button = gid(BUTTON_ID); if (button && button.parentNode) button.parentNode.removeChild(button);
     var visitCard = gid('mlsAvVisitCard'); if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
     var styleNode = gid(STYLE_ID); if (styleNode && styleNode.parentNode) styleNode.parentNode.removeChild(styleNode);
-    try { window.__mlsAvatar.installed = false; } catch (e) {}
+    owner.installed = false;
+    if (currentMicApi) currentMicApi.installed = false;
+    if (window.__mlsAvatar === owner) {
+      try { delete window.__mlsAvatar; } catch (e) { window.__mlsAvatar = null; }
+    }
+    if (currentMicApi && window.__mlsAvP1Mic === currentMicApi) {
+      try { delete window.__mlsAvP1Mic; } catch (e2) { window.__mlsAvP1Mic = null; }
+    }
+    currentApi = null; currentMicApi = null;
+    return true;
   }
 
-  window.__mlsAvatar = {
-    installed: true,
-    version: VERSION,
-    asset: ASSET,
-    open: open,
-    close: close,
-    openKiosk: openKiosk,
-    closeKiosk: function () { kioskEndForStaff('ended'); },
+  function publishDormantApi(reason) {
+    if (disposed) return null;
+    var generation = sessionGeneration;
+    var dormant = {
+      installed: false,
+      version: VERSION,
+      asset: ASSET,
+      installToken: INSTALL_TOKEN,
+      instanceToken: INSTANCE_TOKEN,
+      dormant: clean(reason) || 'no-authenticated-session'
+    };
+    /* Preserve the public interface for callers that feature-detect methods,
+       but make every dormant operation inert.  Crucially these are constants:
+       they do not enter the module's DOM, storage, chart, media, or network
+       paths while no exact authenticated account exists. */
+    dormant.open = dormant.close = dormant.openKiosk = dormant.closeKiosk = function () { return false; };
+    dormant.faceDemo = function () { return null; };
+    dormant.deriveLookFromPhoto = function () { return false; };
+    dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
+    dormant.voiceGateStart = function () { return false; };
+    dormant.voiceGateStop = dormant.otherVoiceNow = function () { return false; };
+    dormant.listenerState = function () { return { microphoneOpen: false, backendTurnInFlight: false,
+      typingFallback: false, queuedContinuationWords: 0, consecutiveNetworkFailures: 0, ambientTailPending: false }; };
+    dormant.ambientState = function () { return { running: false, boundPatient: '', startedAt: null,
+      capturedChars: 0, filed: false, last: null, backedUp: null, backupTrimmed: false, actions: [] }; };
+    dormant.detectActions = function () { return []; };
+    dormant.pendingCapture = function () { return null; };
+    dormant.fileRecoveredCapture = function () { return { ok: false, why: 'no authenticated session' }; };
+    dormant.discardRecoveredCapture = dormant.refreshCount = dormant.importSummary = function () { return false; };
+    dormant.exactPatient = function () { return null; };
+    dormant.sessionState = function () { return { stale: true, dormant: true }; };
+    dormant.revert = function () { return revert(dormant, generation); };
+    currentApi = dormant;
+    window.__mlsAvatar = dormant;
+    return dormant;
+  }
+
+  function publishApi() {
+    if (disposed) return null;
+    var generation = sessionGeneration;
+    var owner = {
+      installed: true,
+      version: VERSION,
+      asset: ASSET,
+      installToken: INSTALL_TOKEN,
+      instanceToken: INSTANCE_TOKEN
+    };
+    function owned() { return publicCallCurrent(owner, generation); }
+    owner.open = function () { if (!owned()) return false; open(); return true; };
+    owner.close = function () { if (!owned()) return false; close(); return true; };
+    owner.openKiosk = function () { if (!owned()) return false; openKiosk(); return true; };
+    owner.closeKiosk = function () { if (!owned()) return false; kioskEndForStaff('ended'); return true; };
     /* diagnostics: render the drawn character anywhere, so a look can be
        inspected (and pinned) without opening a kiosk in front of a patient */
-    faceDemo: function (mount, look) { return makeFace(mount, faceLookSafe(look)); },
+    owner.faceDemo = function (mount, look) {
+      if (!owned()) return null;
+      var controller = makeFace(mount, faceLookSafe(look));
+      if (controller) publicFaceControllers.push(controller);
+      return controller;
+    };
     /* diagnostics: derive a look from a portrait without touching Setup, so
        the matcher can be proven against real pixels. */
-    deriveLookFromPhoto: function (dataUrl, then) { return faceTintFromPortrait(dataUrl, then); },
+    owner.deriveLookFromPhoto = function (dataUrl, then) {
+      if (!owned()) return false;
+      return faceTintFromPortrait(dataUrl, function (result) { if (owned() && then) then(result); });
+    };
     /* av-6.1.0 RECEIPT for the voice gate. "Echo cancellation is on" is a claim; this is the
        evidence, read back from the live track rather than from the constraint we asked for.
        ready:false with a `why` is the honest state on a device that cannot do it - and in that
        state every turn-taking decision falls back to the string gate. Also reports how many
        finals were refused as echo, so a filed-echo problem can be counted instead of argued. */
-    voiceGate: function () {
+    owner.voiceGate = function () {
+      if (!owned()) return { ready: false, why: 'stale session owner', echoFinalsRefused: 0 };
       var r = pvVoiceGateReport();
       r.echoFinalsRefused = (kiosk && kiosk.echoRefused) || 0;
       return r;
-    },
-    voiceGateStart: function (then) { return pvVoiceGateStart(then); },
-    voiceGateStop: function () { return pvVoiceGateStop(); },
-    otherVoiceNow: function () { return pvOtherVoiceNow(); },
+    };
+    owner.voiceGateStart = function (then) {
+      if (!owned()) return false;
+      return pvVoiceGateStart(function (adopted) { if (owned() && then) then(adopted); });
+    };
+    owner.voiceGateStop = function () { if (!owned()) return false; pvVoiceGateStop(); return true; };
+    owner.otherVoiceNow = function () { return owned() ? pvOtherVoiceNow() : false; };
     /* PHI-free listener receipt for preview QA: state/counts only, never words. */
-    listenerState: function () {
+    owner.listenerState = function () {
+      if (!owned()) return { microphoneOpen: false, backendTurnInFlight: false, typingFallback: false,
+        queuedContinuationWords: 0, consecutiveNetworkFailures: 0, ambientTailPending: false };
       return {
         microphoneOpen: !!pvRec,
         backendTurnInFlight: kiosk.busy === true,
@@ -10265,11 +10893,13 @@ function kioskLine(kind, text) {
         consecutiveNetworkFailures: kiosk.speechFails | 0,
         ambientTailPending: !!clean(kiosk.ambPending)
       };
-    },
+    };
     /* diagnostics only: whether a room capture is running and how much it
        holds. READ-ONLY on purpose - starting a recording is a staff action
        behind the exit PIN and has no programmatic door. */
-    ambientState: function () {
+    owner.ambientState = function () {
+      if (!owned()) return { running: false, boundPatient: '', startedAt: null, capturedChars: 0,
+        filed: false, last: null, backedUp: null, backupTrimmed: false, actions: [] };
       return {
         running: kiosk.ambient === true,
         boundPatient: clean(kiosk.ambBound),
@@ -10284,29 +10914,41 @@ function kioskLine(kind, text) {
         backupTrimmed: kiosk.ambSaveTrim === true,
         actions: ambientActionsForStore()
       };
-    },
+    };
     /* av-5.6.0 diagnostics. detectActions is PURE — it reads its argument and
        touches nothing — so a proposal set can be proven against any sentence
        without a microphone, a kiosk or a patient. */
-    detectActions: function (sentence) { return detectActions(sentence); },
+    owner.detectActions = function (sentence) { return owned() ? detectActions(sentence) : []; };
     /* the recovered-capture surface: what survived a reload, and the same
        fail-closed write the visit card calls. Reading never files. */
-    pendingCapture: function () { return ambientRecoverInfo(); },
-    fileRecoveredCapture: function () { return ambientRecoverFile(); },
+    owner.pendingCapture = function () { return owned() ? ambientRecoverInfo() : null; };
+    owner.fileRecoveredCapture = function () { return owned() ? ambientRecoverFile() : false; };
     /* discards the capture currently being OFFERED, by its own key - never
        "whatever the store points at", which is how another chart's held
        recording would be deleted by a discard aimed at this one */
-    discardRecoveredCapture: function () {
+    owner.discardRecoveredCapture = function () {
+      if (!owned()) return false;
       var info = safe(function () { return ambientRecoverInfo(); }, null);
       if (!info) return false;
       ambientStoreDrop(info.key);
       return true;
-    },
-    refreshCount: refreshCount,
-    exactPatient: exactPatient,
-    importSummary: importSummary,
-    revert: revert
-  };
+    };
+    owner.refreshCount = function (force) { if (!owned()) return false; refreshCount(force); return true; };
+    owner.exactPatient = function (externalId) { return owned() ? exactPatient(externalId) : null; };
+    owner.importSummary = function (checkin, button) { return owned() ? importSummary(checkin, button) : false; };
+    owner.sessionState = function () { return owned()
+      ? { generation: sessionGeneration, epoch: sessionEpoch, accountBound: !!sessionAccount, tokenBound: !!token() }
+      : { stale: true }; };
+    owner.revert = function () { return revert(owner, generation); };
+    currentApi = owner;
+    window.__mlsAvatar = owner;
+    return owner;
+  }
+
+  if (liveSessionCredentials()) {
+    publishApi();
+    publishMicApi();
+  } else publishDormantApi('no-authenticated-session');
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot, { once: true });

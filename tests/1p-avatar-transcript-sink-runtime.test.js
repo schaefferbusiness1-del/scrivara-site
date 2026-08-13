@@ -89,6 +89,8 @@ function makeHarness(options) {
   let epoch = options.binding === 'same-patient-other-visit' ? 8 : 7;
   const window = {
     window: null, document, localStorage, location: { origin: 'https://mlsscribe.com', hostname: 'mlsscribe.com' },
+    __mlsSessionAccount: 'synthetic-clinician@example.test', __mlsSessionEpoch: 101,
+    bkToken: () => 'synthetic-avatar-session-token',
     uns: name => 'acct:' + name, getActivePtId: () => active && active.id, activePatient: () => active,
     getPatients: () => [PATIENT_A, PATIENT_B], addEventListener() {}, removeEventListener() {}, dispatchEvent() {}, toast() {},
     _athenaGuardBoundEditor: () => options.guard !== false,

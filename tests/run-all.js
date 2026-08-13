@@ -28,6 +28,7 @@ const tests = [
   '1p-avatar-listener-reliability-runtime.test.js',
   '1p-avatar-transcript-sink-runtime.test.js',
   '1p-avatar-note-readiness-runtime.test.js',
+  '1p-avatar-session-boundary-runtime.test.js',
   '1p-transcript-note-athena-handoff-contract.test.js',
   '1p-fullhistory-pdf-idle-runtime.test.js',
   'p1-appointment-census-display-authority.test.js',
