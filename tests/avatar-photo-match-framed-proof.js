@@ -33,6 +33,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
 const OLD = process.env.MLS_AVATAR_OLD || '';
+const ASSET = process.env.MLS_AVATAR_ASSET || 'feat_mls_avatar.js';
 
 /* the fixture, drawn INSIDE a camera transform. o.scale/dx/dy place the head
    the way a webcam does; o.ceiling paints the brighter band above it that made
@@ -145,24 +146,36 @@ const CASES = {
 };
 
 async function probe(file) {
+  const isP1 = /^1p-/.test(path.basename(file));
   const browser = await chromium.launch({ channel: 'chrome' });
   const page = await browser.newPage();
   const errs = []; page.on('pageerror', e => errs.push(String(e && e.message)));
   await page.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, r => r.abort());
   await page.setContent('<div id="visitView"></div>');
-  await page.evaluate(() => {
+  await page.evaluate((isP1) => {
     window.toast = () => {}; window.getPatients = () => []; window.getActivePtId = () => '';
-    window.bkToken = () => ''; window.requestIdleCallback = window.requestIdleCallback || (f => setTimeout(f, 0));
-  });
-  await page.addScriptTag({ path: file });
+    window.__mlsSessionEpoch = isP1 ? 92 : 0;
+    window.__mlsSessionAccount = isP1 ? 'avatar-framed-proof@example.test' : '';
+    window.bkToken = () => isP1 ? 'synthetic-avatar-framed-token' : '';
+    window.requestIdleCallback = window.requestIdleCallback || (f => setTimeout(f, 0));
+  }, isP1);
+  const assetSource = require('fs').readFileSync(file, 'utf8');
+  await page.evaluate(({assetSource,isP1,asset}) => {
+    const script=document.createElement('script');
+    if(isP1){script.setAttribute('data-mls-install-token','synthetic-avatar-framed-install');script.setAttribute('data-mls-asset',asset);}
+    script.textContent=assetSource;document.head.appendChild(script);
+  }, {assetSource,isP1,asset:path.basename(file)});
   await page.waitForTimeout(250);
   const out = await page.evaluate(async ({ fixtureSrc, cases }) => {
     const portrait = eval('(' + fixtureSrc + ')');
     const res = {};
     for (const k of Object.keys(cases)) {
       const url = portrait(cases[k].o);
-      res[k] = await new Promise(r => window.__mlsAvatar.deriveLookFromPhoto
-        ? window.__mlsAvatar.deriveLookFromPhoto(url, r) : r('NO_HOOK'));
+      res[k] = await new Promise(r => {
+        if(!window.__mlsAvatar || !window.__mlsAvatar.deriveLookFromPhoto)return r('NO_HOOK');
+        const accepted=window.__mlsAvatar.deriveLookFromPhoto(url,r);
+        if(accepted===false)r('REFUSED');
+      });
     }
     return res;
   }, { fixtureSrc: FIXTURE.toString(), cases: CASES });
@@ -196,7 +209,11 @@ function checks(out) {
     ['W4 with dark hair', lumOf(L('W4').hair) >= 0 && lumOf(L('W4').hair) < 110],
     ['W5 grey hair is not BALD (it is lighter than the skin, not darker)', L('W5').hairStyle !== 'bald'],
     ['W5 and it reads light', lumOf(L('W5').hair) > 150],
-    ['W6 a bald head IS bald', L('W6').hairStyle === 'bald'],
+    /* A shaved scalp and very light hair are pixel-identical in this fixture.
+       The safe contract is an explicit refusal, not overwriting a clinician's
+       chosen hair with a confident bald guess. */
+    ['W6 little/no hair is disclosed without claiming bald as certain',
+      D('W6').indexOf('hairStyle') < 0 && ((out.W6 && out.W6.found) || []).some(function (f) { return /little or no hair/i.test(f); })],
     ['W7 glasses are found on a small face', L('W7').glasses === true],
     ['W8 long hair is found on a small face', L('W8').hairStyle === 'long'],
     ['W9 deep skin is read as deep, not lightened', lumOf(L('W9').skin) > 0 && lumOf(L('W9').skin) < 110],
@@ -226,7 +243,8 @@ function checks(out) {
     ['X2 CONTROL: the same face on a light wall still reads its hair',
       L('X2').hairStyle === 'short' && D('X2').indexOf('hairStyle') >= 0],
     ['X2 CONTROL: and reads it dark', lumOf(L('X2').hair) >= 0 && lumOf(L('X2').hair) < 90],
-    ['X3 a DARK WALL does not put stubble on a clean-shaven face', L('X3').beard === 'none'],
+    ['X3 a DARK WALL does not put stubble on a clean-shaven face',
+      L('X3').beard !== 'stubble' && L('X3').beard !== 'beard' && D('X3').indexOf('beard') < 0],
     /* THE CLAIM IS "NEVER A DIFFERENT ASSERTED SHAPE", NOT "ALWAYS THE SAME
        ANSWER". A refusal is a correct outcome here: `derived` without faceShape
        means Match leaves whatever the doctor chose alone, which is exactly what
@@ -274,7 +292,7 @@ function checks(out) {
 }
 
 (async () => {
-  const now = await probe(path.join(ROOT, 'feat_mls_avatar.js'));
+  const now = await probe(path.join(ROOT, ASSET));
   if (now.out.W1 === 'NO_HOOK') { console.log('NO DIAGNOSTIC HOOK'); process.exit(2); }
   for (const k of Object.keys(CASES)) {
     const r = now.out[k];

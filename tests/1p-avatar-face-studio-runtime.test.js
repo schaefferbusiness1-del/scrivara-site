@@ -66,8 +66,9 @@ ok(s.score >= 80 && s.score <= 100, 'strong score is outside its honest range');
 ok(/12 of 14/.test(s.detail) && /2 left unchanged/.test(s.detail), 'strong summary hides refusals');
 
 s = api.summarizeReceipt({ claimed: 5, refused: 9, examined: 14, faceW: 108, grid: 256 });
-eq(s.level, 'usable', 'a correctly framed partial match is not presented as a useful starting point');
-ok(/9 left unchanged/.test(s.detail), 'partial match implies that refused fields changed');
+eq(s.level, 'limited', 'a minority partial read is presented as an applied likeness');
+eq(s.applied, false, 'a partial read claims it changed the animated character');
+ok(/all character settings stayed unchanged/.test(s.detail), 'partial match hides its zero-application rule');
 
 const photo = api.summarizeReceipt({ claimed: 8, refused: 6, examined: 14, faceW: 120, grid: 256 });
 const illustration = api.summarizeReceipt({ claimed: 8, refused: 6, examined: 14, faceW: 120, grid: 256, fromIllustration: true });

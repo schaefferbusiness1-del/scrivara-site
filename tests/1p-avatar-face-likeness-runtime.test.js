@@ -129,7 +129,9 @@ ok(/cannot tell your face from the room/.test(ambiguous.found[0]), 'ambiguous re
 
 const verdictSource = between(source, 'function faceCaptureVerdict', '/* BEST OF SEVERAL FRAMES');
 const verdict = new Function(verdictSource + '\nreturn faceCaptureVerdict;')();
-const ready = verdict({ look: { skin: '#f0c8a0' }, derived: ['skin'], receipt: { faceW: 112, grid: 256, claimed: 8 } }, { exposure: 130, sharp: 4 });
+const ready = verdict({ look: { skin: '#f0c8a0' }, derived: ['skin'],
+  receipt: { faceW: 112, grid: 256, claimed: 8 }, box: { grid: 256, L: 72, R: 183, T: 28, B: 225 } },
+  { exposure: 130, sharp: 4 });
 eq(ready.ready, true, 'usable face cannot pass the capture gate');
 const wall = verdict(null, { exposure: 130, sharp: 20 });
 eq(wall.ready, false, 'sharp wall can pass the capture gate');
@@ -177,7 +179,8 @@ ok(source.includes('Animated character — expressions, matched from your photo'
 
 const stylizeBlock = between(source, 'function stylizeCanvas', 'function stylizePortrait');
 ok(!/getImageData|putImageData|levels\s*=|step2/.test(stylizeBlock), 'patient portrait is still recoloured/posterized');
-ok(/toDataURL\('image\/jpeg', 0\.92\)/.test(stylizeBlock), 'natural portrait encode is not high quality');
+ok(/toDataURL\('image\/png'\)/.test(stylizeBlock) && /\[0\.98, 0\.96, 0\.94, 0\.92\]/.test(stylizeBlock),
+  'natural portrait does not prefer lossless pixels with a high-quality bounded fallback');
 ok(source.includes('class="fHairTexture"') && source.includes('width="31" height="25"'), 'optional animated face still has flat helmet hair or oversized glasses');
 
 console.log('PASS 1p avatar face likeness: ' + passed + ' assertions');

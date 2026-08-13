@@ -188,8 +188,19 @@
        their first DOM/global/write effect; a late rejection is just as stale as
        a late success and must not run an error renderer in the next account. */
     return Promise.resolve().then(function () {
+      /* `then` is a real scheduling boundary.  A logout/account switch can
+         happen after api() is called but before this microtask gets to fetch.
+         Re-prove the exact receipt here so an old bearer token never leaves
+         the browser after its owner has already been retired. */
+      if (!sessionReceiptCurrent(receipt)) {
+        return { ok: false, status: 0, json: {}, blocked: 'stale-before-fetch',
+          __mlsAvatarSession: receipt };
+      }
       return fetch(apiBase() + path, Object.assign({}, options, { headers: headers }));
     }).then(function (response) {
+      if (response && response.blocked === 'stale-before-fetch' && response.__mlsAvatarSession === receipt) {
+        return response;
+      }
       return Promise.resolve().then(function () {
         return response && isFn(response.json) ? response.json() : {};
       }).catch(function () { return {}; }).then(function (json) {
@@ -435,9 +446,9 @@
     dialogOwnBodyChildren(state);
     dialogFocusFirst(state);
   }
-  function dialogActivate(back, panel, opener) {
+  function dialogActivate(back, panel, opener, onEscape) {
     dialogDeactivate(false);
-    var state = { back: back, panel: panel, opener: opener, siblings: [], observer: null };
+    var state = { back: back, panel: panel, opener: opener, onEscape: onEscape, siblings: [], observer: null };
     dialogState = state;
     dialogOwnBodyChildren(state);
     /* Split spelling preserves the older "no permanent document observer"
@@ -457,6 +468,7 @@
       }, null);
     }
     safe(function () { document.addEventListener('focusin', dialogFocusIn, true); });
+    safe(function () { document.addEventListener('keydown', onKey, true); });
     dialogFocusFirst(state);
   }
   function dialogDeactivate(restoreFocus) {
@@ -464,6 +476,7 @@
     if (!state) return;
     dialogState = null;
     safe(function () { document.removeEventListener('focusin', dialogFocusIn, true); });
+    safe(function () { document.removeEventListener('keydown', onKey, true); });
     if (state.observer) safe(function () { state.observer.disconnect(); });
     state.siblings.forEach(function (row) {
       var node = row.node; if (!node) return;
@@ -486,20 +499,26 @@
   }
 
   function close() {
+    var back = gid(BACK_ID);
+    if (!back && dialogState && dialogState.back && dialogState.back.id === BACK_ID) back = dialogState.back;
+    /* This method owns only the Setup/inbox dialog.  Calling a saved `close`
+       while the patient kiosk is open must not silently release the kiosk's
+       modal/inert lease or stop its media. */
+    if (!back) return false;
     /* Setup can be speaking through its preview face. The panel owns that
        sample, so removing the panel must stop both its audio and mouth loop. */
     pvStopVoice();
     safe(function () { cancelFaceCapture(); }); /* invalidates late grants/capture timers too */
-    var back = gid(BACK_ID);
     if (back) safe(function () { discardAvatarSetups(back); });
     avatarInboxEpoch++;
     var opener = safe(function () { return (back && back.__mlsAvatarOpener) || (dialogState && dialogState.opener); }, null);
-    dialogDeactivate(false);
+    if (dialogState && dialogState.back === back) dialogDeactivate(false);
     if (back && back.parentNode) back.parentNode.removeChild(back);
     document.removeEventListener('keydown', onKey, true);
     /* Restore only after the overlay is gone and the background is interactive
        again, so focus never lands for a frame on an inert control. */
     if (opener && opener.isConnected !== false) safe(function () { opener.focus(); });
+    return true;
   }
   function onKey(event) {
     if (event.key === 'Tab' && dialogState) {
@@ -522,7 +541,9 @@
       safe(function () { target.blur(); });
       return;
     }
-    close();
+    var state = dialogState;
+    if (state && isFn(state.onEscape)) state.onEscape();
+    else close();
   }
   function make(tag, className, textValue) {
     var node = document.createElement(tag);
@@ -1640,6 +1661,11 @@
   var FACE_EYE_SETS = ['close', 'normal', 'wide'];
   var FACE_HAIRLINES = ['full', 'receding'];
   var FACE_AGES = ['adult', 'mature'];
+  /* The matcher has one finite evidence ledger.  Keeping the list beside the
+     look schema lets the pixel reader, model combiner and apply decision count
+     the same controls instead of each inventing a different denominator. */
+  var FACE_MATCH_FIELDS = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
+    'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
   /* shade a whitelisted 6-digit hex toward white (amt > 0) or black (amt < 0).
      Accessory colours are DERIVED from the palette the doctor already picked,
      so a scrub cap matches the scrubs and no colour arrives unchosen. */
@@ -1754,13 +1780,107 @@
     });
     return faceLookSafe(out);
   }
+  /* A PARTIAL READ IS NOT A LIKENESS (p1-photo-truth-1.0.0).
+     The owner supplied the clearest possible negative control: a readable
+     camera portrait of a fair-skinned, dark-haired person produced one
+     claimed field out of fourteen, while the preview continued to show a
+     dark default/stale character.  Applying the one surviving field does not
+     make the other thirteen defaults true; it only makes the drawing look
+     confidently unlike the photograph.
+
+     `derived` remains useful diagnostic evidence, but it is not an apply
+     licence until the whole receipt clears a deliberately conservative bar.
+     A success must identify the person-defining skin and hair pair, and at
+     least six independently examined controls.  Anything below that is a
+     truthful refusal: the natural photo remains the patient-facing face and
+     the animated controls remain exactly as the doctor set them. */
+  function faceMatchDecision(res) {
+    var r = res && res.receipt || {};
+    var got = res && Array.isArray(res.derived) ? res.derived.slice() : [];
+    var examined = Math.max(0, Number(r.examined) || 0);
+    var claimed = Math.max(0, Math.min(examined, Number(r.claimed) || got.length));
+    var refused = Math.max(0, Number(r.refused) || Math.max(0, examined - claimed));
+    var hasIdentityPalette = got.indexOf('skin') >= 0 && got.indexOf('hair') >= 0;
+    var applies = !!(res && res.look && r.srcKind === 'photo' && r.fromIllustration !== true &&
+      examined >= 10 && claimed >= 6 && claimed > refused && hasIdentityPalette);
+    return { applies: applies, claimed: claimed, refused: refused, examined: examined,
+      derived: applies ? got : [], observed: got,
+      why: applies ? '' : (res && res.look
+        ? ('Only ' + claimed + ' of ' + examined + ' appearance details were reliable. No animated traits were changed.')
+        : 'The matcher could not make a reliable appearance read. No animated traits were changed.') };
+  }
+  /* Pixel evidence and high-confidence model evidence are candidates until
+     this function has built one complete receipt.  Nothing here mutates the
+     doctor's look.  The caller may apply the returned result only through
+     faceMatchDecision, which prevents a weak first read and a weak second read
+     from painting unrelated fragments onto a default character.
+
+     `trustedNaturalPhoto` is deliberately explicit.  It is true only for the
+     full-quality, in-memory camera copy; without it, a result with no pixel
+     receipt cannot prove that the source was not a legacy illustration. */
+  function faceCombineEvidence(pixelRes, modelLook, modelClaimed, trustedNaturalPhoto) {
+    var px = pixelRes || {};
+    var pxReceipt = px.receipt || {};
+    var pxLook = px.look || {};
+    var pxDerived = Array.isArray(px.derived) ? px.derived : [];
+    var ml = modelLook || {};
+    var mc = Array.isArray(modelClaimed) ? modelClaimed : [];
+    var look = {}, derived = [], visionClaimed = [], visionRefused = [];
+    var refusedByKnob = {};
+    (Array.isArray(px.refused) ? px.refused : []).forEach(function (r) {
+      if (r && FACE_MATCH_FIELDS.indexOf(r.knob) >= 0) refusedByKnob[r.knob] = r;
+    });
+    FACE_MATCH_FIELDS.forEach(function (k) {
+      if (pxDerived.indexOf(k) < 0 || pxLook[k] === undefined) return;
+      var why = faceVisionClaimGate(k, pxLook[k]);
+      if (why) { refusedByKnob[k] = { knob: k, reason: why, source: 'pixels' }; return; }
+      look[k] = pxLook[k];
+      derived.push(k);
+    });
+    mc.forEach(function (k) {
+      if (FACE_MATCH_FIELDS.indexOf(k) < 0 || ml[k] === undefined) return;
+      var why = faceVisionClaimGate(k, ml[k]);
+      if (why) {
+        visionRefused.push({ knob: k, reason: why, source: 'model' });
+        return;
+      }
+      look[k] = ml[k];
+      if (derived.indexOf(k) < 0) derived.push(k);
+      if (visionClaimed.indexOf(k) < 0) visionClaimed.push(k);
+      delete refusedByKnob[k];
+    });
+    var refused = [];
+    FACE_MATCH_FIELDS.forEach(function (k) {
+      if (derived.indexOf(k) >= 0) return;
+      refused.push(refusedByKnob[k] || { knob: k, reason: 'not reliably measured', source: 'combined' });
+    });
+    var fromIllustration = pxReceipt.fromIllustration === true;
+    var provedPhoto = !fromIllustration && (pxReceipt.srcKind === 'photo' || trustedNaturalPhoto === true);
+    var receipt = {
+      claimed: derived.length, refused: refused.length, examined: FACE_MATCH_FIELDS.length,
+      faceW: Number(pxReceipt.faceW) || 0, grid: Number(pxReceipt.grid) || 0,
+      fromIllustration: fromIllustration,
+      srcKind: fromIllustration ? 'illustration' : (provedPhoto ? 'photo' : 'unknown'),
+      adaptiveSegmentation: pxReceipt.adaptiveSegmentation === true,
+      combinedEvidence: true
+    };
+    return {
+      look: derived.length ? look : null,
+      derived: derived,
+      refused: refused,
+      found: Array.isArray(px.found) ? px.found.slice() : [],
+      receipt: receipt,
+      visionClaimed: visionClaimed,
+      visionRefused: visionRefused
+    };
+  }
   /* day one in the kiosk with no saved appearance: the only copy the server
      holds is the POSTERIZED illustration, and measuring it is how a
      dark-haired doctor greeted his patients as a gray-haired stranger
      (Mechanism B, measured end to end). An illustration-only read applies
      NOTHING - the default character, never an illustration-derived one. */
   function faceKioskDayOneLook(res) {
-    if (res && res.receipt && res.receipt.fromIllustration) return faceLookSafe(FACE_LOOK);
+    if (!faceMatchDecision(res).applies) return faceLookSafe(FACE_LOOK);
     return faceApplyDerived(FACE_LOOK, res);
   }
   /* the colours the 6-level posterize manufactures out of ordinary faces
@@ -1821,12 +1941,22 @@
     if (knob === 'age') return 'a face-lines guess is never applied without your own click';
     var colourKnob = knob === 'skin' || knob === 'hair' || knob === 'shirt' ||
       knob === 'lip' || knob === 'eyes' || knob === 'browCol';
+    if (colourKnob && !/^#[0-9a-fA-F]{6}$/.test(String(value || ''))) return 'the claimed colour was not valid';
     if (colourKnob && faceHexIsPosterArtifact(value)) {
       return String(value) + ' is a posterize artifact of the stylized copy, not a colour of a person';
     }
     if (knob === 'skin' && !faceHexSkinGate(value)) {
       return String(value) + ' is outside the range real skin occupies';
     }
+    if (knob === 'hairStyle' && FACE_HAIR_STYLES.indexOf(value) < 0) return 'the hair style was not one this character supports';
+    if (knob === 'beard' && FACE_BEARDS.indexOf(value) < 0) return 'the facial-hair value was not supported';
+    if (knob === 'glasses' && typeof value !== 'boolean') return 'the glasses answer was not true or false';
+    if (knob === 'brows' && FACE_BROWS.indexOf(value) < 0) return 'the eyebrow value was not supported';
+    if (knob === 'nose' && FACE_NOSES.indexOf(value) < 0) return 'the nose value was not supported';
+    if (knob === 'lips' && FACE_LIPS.indexOf(value) < 0) return 'the lip-shape value was not supported';
+    if (knob === 'faceShape' && FACE_SHAPES.indexOf(value) < 0) return 'the face-shape value was not supported';
+    if (knob === 'eyeSet' && FACE_EYE_SETS.indexOf(value) < 0) return 'the eye-spacing value was not supported';
+    if (knob === 'hairline' && FACE_HAIRLINES.indexOf(value) < 0) return 'the hairline value was not supported';
     return '';
   }
   var FACE_MOUTHS = {
@@ -2534,6 +2664,7 @@
        and away while thinking. That contrast is most of what makes a drawn face
        look like it is paying attention. ---- */
     function setGaze(dx, dy) {
+      if (dead) return;
       var t = 'translate(' + Number(dx).toFixed(2) + 'px,' + Number(dy).toFixed(2) + 'px)';
       if (pupL) pupL.style.transform = t;
       if (pupR) pupR.style.transform = t;
@@ -2651,6 +2782,7 @@
         caringNow ? 'rotate(1.6deg) translateY(1.5px)' : '';
     }
     function mood(state, caring, happy) {
+      if (dead) return;
       var wasMood = moodNow, wasCaring = caringNow, wasHappy = happyNow;
       moodNow = state || 'idle'; caringNow = !!caring; happyNow = !!happy && !caring;
       /* a CHANGE retires every gesture in flight and every one scheduled. The
@@ -2704,7 +2836,7 @@
        hair cut, so a full look change RE-RENDERS and re-binds - then replays the
        current mood so the face never flickers back to neutral. */
     function retint(lk) {
-      if (!lk) return;
+      if (dead || !lk) return;
       var keep = { state: moodNow, caring: caringNow, happy: happyNow };
       mount.innerHTML = faceSvg(lk);
       var fresh = mount.querySelector('svg');
@@ -2773,6 +2905,7 @@
       img.style.transform = tx;
     }
     function mood(state) {
+      if (dead) return;
       moodNow = state || 'idle';
       if (mount.setAttribute) mount.setAttribute('data-photo-mood', moodNow);
       settle();
@@ -4653,8 +4786,7 @@
        CLAIMED in `derived` or REFUSED with a reason and the control to set
        by hand - no third state, so 'it did nothing' and 'it refused 9 of 14
        and told you' are different, visible facts. */
-    var EXAMINABLE = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
-      'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
+    var EXAMINABLE = FACE_MATCH_FIELDS;
     EXAMINABLE.forEach(function (k) {
       if (derived.indexOf(k) >= 0) return;
       var why = 'not measurable on this photo';
@@ -5020,16 +5152,20 @@
     q = q || { sharp: 0, exposure: 0 };
     var r = res && res.receipt || {};
     var derived = res && res.derived || [];
-    var hasFace = !!(res && res.look && res.receipt);
+    /* A reader success must carry the exact geometry it used. A bare look or
+       receipt can be fabricated by a stale/partial caller; a no-face/wall
+       refusal never has a box. */
+    var hasFace = !!(res && res.look && res.receipt && res.box && res.box.grid);
     var hasSkin = derived.indexOf('skin') >= 0;
+    /* faceW is the widest SKIN run, not the head width. Dark hair, glasses,
+       facial hair and side light can legitimately narrow it even when the
+       person fills the camera frame (the reported frame read 44/256). It may
+       grade matcher confidence; it must never veto saving a real portrait. */
     var faceRatio = r.grid ? Math.max(0, Math.min(1, Number(r.faceW || 0) / Number(r.grid))) : 0;
     var why = '';
     if (q.exposure < 45) why = 'The picture is too dark — turn a light on, or face a window.';
     else if (q.exposure > 225) why = 'The picture is washed out — move the bright light behind you out of shot.';
     else if (!hasFace) why = (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
-    else if (faceRatio < 0.34) why = 'Move closer — your face spans ' + (r.faceW || 0) + ' of ' +
-      (r.grid || 0) + ' measurement pixels; ' + Math.round((r.grid || 0) * 0.34) + '+ reads best.';
-    else if (!hasSkin) why = 'The face boundary is not reading cleanly — face a soft light and use a plainer background.';
     else if (q.sharp < 2.2) why = 'The picture is blurred — hold still, and give the camera a moment to focus.';
     /* A ready face always outranks an unusable frame.  The lower terms only
        choose among frames in the same evidence class. */
@@ -5038,7 +5174,10 @@
       Math.round(faceRatio * 4000) + Math.min(2000, Number(r.claimed || 0) * 100) +
       Math.min(1000, Math.max(0, Number(q.sharp || 0)) * 40) -
       Math.min(1000, Math.abs(Number(q.exposure || 0) - 135) * 5);
-    return { ready: ready, why: why, score: score };
+    return { ready: ready, why: why, score: score,
+      matchLimited: ready && (!hasSkin || faceRatio < 0.34),
+      matchWhy: ready && (!hasSkin || faceRatio < 0.34)
+        ? 'Portrait ready. The optional animated-trait matcher could not read enough of the face reliably, so it will leave the character unchanged.' : '' };
   }
   /* BEST OF SEVERAL FRAMES, not whichever frame the tap landed on. A single grab
      catches a blink, a turn, or the frame the autofocus was still working on. */
@@ -5116,11 +5255,10 @@
     if (!res) return null;
     return { res: res, q: frameQuality(canvas) };
   }
-  /* READY = this frame would come back with the skin claimed and the face big
-     enough for the resolution-limited estimators. 0.34 is 44/128: the brow
-     weight needs faceW >= 44 on the 128 grid (browMed >= 3 rows on a natural
-     brow), and the bound is grid-relative so it means the same face size on
-     either grid. The exposure/sharpness bounds are the capture guard's own. */
+  /* READY means the natural portrait itself is usable. Optional animated
+     traits have their own truth gate; a narrow skin mask is not evidence that
+     the camera photo is bad. The exposure/sharpness bounds are the capture
+     guard's own. */
   function faceLiveReady(res, q) {
     return faceCaptureVerdict(res, q).ready;
   }
@@ -5154,13 +5292,13 @@
   function faceLiveStatusRender(ui, res, q, ready) {
     var line;
     if (res && res.receipt) {
-      line = 'Face width: ' + res.receipt.faceW + ' of ' + res.receipt.grid +
-        ' — matching ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' controls' +
-        (ready ? ' — looking good, snap when ready' : '');
+      line = 'Portrait found — optional match sees ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' details' +
+        (ready ? ' — portrait ready, snap when ready' : '');
     } else {
       line = 'Looking for your face…';
     }
-    var nudge = faceLiveNudge(res, q);
+    var verdict = faceCaptureVerdict(res, q);
+    var nudge = verdict.why || verdict.matchWhy;
     if (nudge) line += ' · ' + nudge;
     if (ui.status && ui.status.__mlsLast !== line) { ui.status.__mlsLast = line; ui.status.textContent = line; }
     if (ui.snapBtn && !ui.snapBtn.disabled && ui.snapBtn.__mlsReady !== ready) {
@@ -5235,13 +5373,27 @@
     canvas.width = size; canvas.height = size;
     var ctx = canvas.getContext('2d');
     ctx.drawImage(src, 0, 0, size, size);
-    /* p1-photo-likeness-1.0.0 — preserve the person.  Quantising every colour
+    /* p1-photo-likeness-1.1.0 — preserve the person.  Quantising every colour
        channel was not a harmless "style": it banded skin, recoloured dark hair
        and made the patient-facing portrait look less like the capture.  The
        optional animated character already supplies an illustrated mode; photo
-       mode now keeps the natural 512px crop and only performs a high-quality
-       JPEG encode. */
-    return canvas.toDataURL('image/jpeg', 0.92);
+       mode keeps the natural 512px crop. Prefer PNG, whose decoded pixels are
+       byte-for-byte the canvas patients were previewing. A noisy webcam frame
+       can make PNG exceed the server's existing 600KB data-URL guard; only in
+       that case make ONE high-quality JPEG from the untouched canvas. Trying
+       qualities does not re-compress an earlier JPEG — each candidate is
+       encoded independently from the same natural pixels, and the highest
+       one that fits wins. */
+    var png = safe(function () { return canvas.toDataURL('image/png'); }, '');
+    if (faceValidPhoto(png) && png.length <= 600000) return png;
+    var qualities = [0.98, 0.96, 0.94, 0.92], best = '';
+    for (var qi = 0; qi < qualities.length; qi++) {
+      var candidate = safe(function () { return canvas.toDataURL('image/jpeg', qualities[qi]); }, '');
+      if (!faceValidPhoto(candidate)) continue;
+      best = candidate;
+      if (candidate.length <= 600000) return candidate;
+    }
+    return best;
   }
   function stylizePortrait(video) {
     var raw = captureSquare(video, MEASURE_MAX);
@@ -5469,8 +5621,12 @@
           camHost.appendChild(camWrap); camHost.appendChild(row);
           camHost.appendChild(liveStatus); camHost.appendChild(liveList);
           faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn });
-          cancelBtn.addEventListener('click', function () { cancelFaceCapture(); camHost.innerHTML = ''; });
+          cancelBtn.addEventListener('click', function () {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            cancelFaceCapture(); camHost.innerHTML = '';
+          });
           snapBtn.addEventListener('click', function () {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
             snapBtn.disabled = true; snapBtn.textContent = 'Taking the best of a few…';
             grabBestFrame(video, 6, function () {
               return faceCaptureIsCurrent(captureGeneration, camHost) && video.isConnected;
@@ -5519,7 +5675,8 @@
                 ' — best of 6 frames, processed on this device' +
                 (pendingHiUrl ? '. Match my photo will measure the full-quality copy; it is stored only after Save.'
                       : '. Match will measure the patient portrait and say so.') +
-                ' The patient-facing preview now shows this exact portrait. Save to publish it.';
+                ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
+                (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
               /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
                  click match my photo when I take the picutre it sohuld auto match my photo."
                  Right: taking a photo of your face IS the request to be drawn from it. The
@@ -5850,7 +6007,7 @@
       }
       matchBtn.addEventListener('click', function () {
         if (!setupCurrent()) return;
-        faceMutated();
+        var matchGeneration = faceMutated();
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
         /* Prefer the full-quality photograph. The 512px patient portrait is now natural,
            but the local 1024px copy carries more detail for glasses, facial hair and eyes.
@@ -5859,160 +6016,23 @@
         var hi = faceHiForShown(pendingHiUrl, pendingFace, shown);
         var src = hi || shown;
         var usedHi = !!hi;
+        var matchPortrait = String(shown || '');
         if (!src) { lookNoteSay('Capture your photo above first, then Match my photo.', 0); return; }
         lookNoteCalm();
         lookNote.textContent = usedHi
           ? 'Reading the full-quality copy of your photo…'
           : 'Reading the saved patient portrait… (retake it for a full-resolution match)';
-        /* ---- THE MODEL READS IT TOO (av-5.8.0) ------------------------------------
-           Owner, 2026-08-08: "do the api way and make it good."
-           The pixel matcher stays and runs first - it is offline, instant, and it is what
-           produces the shape verdicts. The model answers the questions pixels kept
-           getting wrong: which of these tones is his SKIN rather than his wall, is that a
-           moustache, are those spectacles.
-           WHERE THEY DISAGREE, THE MODEL WINS ONLY IF IT SAID 'high'. The route already
-           refuses to return anything less as a claim, so this cannot apply a guess over a
-           setting the doctor made by hand - the rule that governs `derived` is unchanged,
-           the model is simply another source that must earn its place in it.
-           AND IT NEVER BLOCKS: no backend, no key, a 502, a timeout - the pixel answer is
-           already applied by the time this resolves, so a failure costs the doctor
-           nothing except the extra precision. */
+        /* The local and model reads now form ONE transaction. Neither may
+           mutate the character independently: their evidence is merged, judged
+           as a whole, then either every licensed claim commits together or zero
+           animated traits change. */
         var visionSrc = src;
-        function applyVision(base, note, noteLoud) {
-          safe(function () {
-            /* api(path, options) takes FETCH options, not a body object - passing
-               { image: ... } here would have issued a GET with no payload and the route
-               would have answered 404 for the rest of time */
-            api('/api/avatar/office/facelook', {
-              method: 'POST',
-              body: JSON.stringify({ image: visionSrc })
-            }).then(function (vr) {
-              if (!apiResponseCurrent(vr) || host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
-              if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) {
-                lookNoteSay(note + ' (the AI reading was unavailable, so this is the on-device measurement only)', noteLoud);
-                return;
-              }
-              var vl = vr.json.look || {}, vClaimed = vr.json.claimed || [], vUnsure = vr.json.unsure || [];
-              if (!vClaimed.length) {
-                lookNoteSay(note + ' The AI looked too and was not confident about anything, so nothing of its was applied.', noteLoud);
-                return;
-              }
-              /* fx-1.0 OUTPUT GATES (DIAGNOSIS Mechanism C): the model's claims
-                 used to be applied with no colour gates at all - a model
-                 honestly describing the posterized illustration reports gray
-                 hair and pale pink skin, and it outranked everyone. Every
-                 claim now passes the same gates the pixels apply to
-                 themselves, and a refusal is COUNTED and NAMED, never silent
-                 (a failed sample must not leave a value under a green flow). */
-              var vRefused = [];
-              vClaimed.forEach(function (k) {
-                if (vl[k] === undefined) return;
-                var vWhy = faceVisionClaimGate(k, vl[k]);
-                if (vWhy) {
-                  vRefused.push(k + ': ' + vWhy);
-                  if (!manualNow[k] && lastGot.indexOf(k) < 0 && !lookMarks[k]) lookMarks[k] = 'not measured \u2014 pick manually';
-                  return;
-                }
-                lookNow[k] = vl[k];
-                if (aiKnobs.indexOf(k) < 0) aiKnobs.push(k);
-                delete lookMarks[k];
-              });
-              if (aiKnobs.length) faceMutated();
-              lookNow = faceLookSafe(lookNow);
-              skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
-              shirtPick.value = lookNow.shirt; lipPick.value = lookNow.lip;
-              stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
-              glassesBox.checked = lookNow.glasses === true;
-              /* ⛔ EVERY CONTROL, OR THE SCREEN CONTRADICTS ITSELF (av-6.0.4). This path synced
-                 EIGHT pickers while the pixel path below syncs all fifteen — which was harmless
-                 only because the route was never asked about the other seven. Now that the model
-                 answers faceShape / eyeSet / brows / browCol / nose / lips / hairline / age, a
-                 missing sync would leave the drawing showing the model's read while the SELECT
-                 next to it still showed the old value — and the next Save writes back whatever
-                 the control says, so the model's answer would be silently undone by the doctor
-                 doing nothing. Same list, same order as the pixel path, deliberately. */
-              browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
-              shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
-              hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
-              if (lookNow.browCol) {
-                if (browColPick.options.length < 2) {
-                  var vbo = document.createElement('option'); vbo.value = 'set'; vbo.textContent = 'Its own colour';
-                  browColPick.appendChild(vbo);
-                }
-                browColPick.value = 'set';
-                if (browColWell) browColWell.value = lookNow.browCol;
-              } else { browColPick.value = ''; }
-              setLookBadges(base, aiKnobs);
-              lookApply();
-              lookNoteSay(note + ' The AI also read it' +
-                (aiKnobs.length ? (' and was confident about ' + aiKnobs.join(', ')) : '') +
-                (vRefused.length ? ('; ' + vRefused.length + ' of its claims were REFUSED \u2014 ' + vRefused.join('; ')) : '') +
-                (vUnsure.length ? ('; unsure about ' + vUnsure.join(', ') + ', so those were left as they were.') : '.'),
-                vRefused.length ? Math.max(1, noteLoud || 0) : noteLoud);
-            });
-          });
+        var trustedNaturalPhoto = usedHi === true;
+        function matchStillCurrent() {
+          return setupCurrent() && faceMutationGeneration === matchGeneration &&
+            String(shownFaceImage() || '') === matchPortrait;
         }
-        var aiKnobs = [];
-        faceTintFromPortrait(src, function (res) {
-          if (!setupCurrent()) return;
-          var look = res && res.look;
-          /* av-5.7.0: the honest failure is "I could not FIND a face", and it
-             names the two things that actually cause it - because the previous
-             message ("too dark or too flat") sent the doctor to the colour
-             pickers when the real problem was that the head filled a third of
-             the frame and the matcher had measured the wall. */
-          if (!look) {
-            /* SAY WHICH FAILURE IT WAS (av-6.0.5). The reader now names the cause and the number
-               behind it — see the !head branch in faceReadPortrait — and those three causes want
-               opposite actions from the doctor: move closer, or change the LIGHT, or change the
-               BACKGROUND. The generic sentence below advised all three at once, which is the same
-               as advising none, and it was printed even when the reader knew exactly which one it
-               was. The specific reason wins when there is one; the general advice stays as the
-               fallback for a reader that returned nothing at all. */
-            var whyNoFace = (res && Array.isArray(res.found) && res.found.length)
-              ? res.found.join(' ')
-              : ('I could not find a face in that photo. Retake it with your face filling more of the frame, ' +
-                 'looking straight at the camera, and with a background that is not the same colour as your skin - or set the colours by hand.');
-            /* fx-1.0: A REFUSAL MUST NEVER LEAVE A STALE LOOK SILENTLY
-               RENDERING (owner 2026-08-11, screenshot): the read refused and
-               the panel kept showing the look derived from his LAST photo as
-               if nothing had happened, with the refusal line pale enough to
-               miss. The refusal is now LOUD, every derivable control still
-               carrying an older value is marked, and one click clears the
-               derived look (manual picks preserved). */
-            Object.keys(FACE_LOOK).forEach(function (sk) {
-              if (sk === 'cap' || sk === 'stethoscope' || sk === 'age') return;
-              if (manualNow[sk]) return;
-              lookMarks[sk] = 'from your last photo \u2014 retake or adjust';
-            });
-            setLookBadges([], []);
-            lookNoteSay(whyNoFace + ' Until a photo reads cleanly, the face below still wears the look from your LAST photo and save \u2014 the marked controls are the stale ones. Retake, adjust them by hand, or press "Clear the derived look".', 2);
-            safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: whyNoFace, claimed: [], refused: [], receipt: (res && res.receipt) || null }; });
-            return;
-          }
-
-
-          /* APPLY EXACTLY WHAT THE PHOTO ANSWERED, AND NOTHING ELSE.
-             res.derived names the knobs that were really measured; every other
-             knob keeps the value the doctor set. That single rule replaces the
-             hand-maintained keep-list this used to carry, which is what made
-             Match feel broken: brow weight, nose and lip shape were listed as
-             unreadable and pinned back to their defaults on every run, so the
-             drawn face could not move toward the photo no matter how good the
-             photo was. A cap and a stethoscope are still never touched -
-             they are not in `derived` because no portrait can decide them. */
-          var got = (res && res.derived) || [];
-          var refusedNow = (res && res.refused) || [];
-          /* fx-1.0: THE SHARED APPLIER - the same door the kiosk uses, so the
-             two consumers can never drift apart again. */
-          faceMutated();
-          lookNow = faceApplyDerived(lookNow, res);
-          got.forEach(function (k) { delete manualNow[k]; delete lookMarks[k]; });
-          refusedNow.forEach(function (r) {
-            if (!r || !r.knob) return;
-            if (manualNow[r.knob]) return;
-            if (!lookMarks[r.knob]) lookMarks[r.knob] = 'not measured \u2014 pick manually';
-          });
+        function syncLookControls() {
           skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
           lipPick.value = lookNow.lip; shirtPick.value = lookNow.shirt;
           stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
@@ -6030,31 +6050,111 @@
           glassesBox.checked = lookNow.glasses === true;
           capBox.checked = lookNow.cap === true;
           stethBox.checked = lookNow.stethoscope === true;
-          /* every control now states its provenance from the SAME list that decided
-             what to overwrite, so "your setting" and "not measured" cannot drift apart */
-          setLookBadges(got);
-          lookApply();
-          var found = (res && res.found && res.found.length) ? res.found.join(', ') : '';
-          var rct = res && res.receipt;
-          /* fx-1.0: the note CARRIES THE COUNT, so 'it did nothing' and 'it
-             refused 9 of 14 and told you' are different, visible facts. */
-          var counts = rct ? (' Matched ' + rct.claimed + ' of ' + rct.examined + ', refused ' + rct.refused + ' \u2014 refused controls are marked; set them by hand or retake.') : '';
-          var pixNote = (found ? ('Matched from your photo - detected ' + found + '.') : 'Matched from your photo.') + counts;
-          var pixLoud = refusedNow.length > 0 ? 1 : 0;
-          safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = { at: Date.now(), usedHi: usedHi, wholeReadRefusal: false, claimed: got.slice(), refused: refusedNow.slice(), receipt: rct || null }; });
-          if (rct && rct.fromIllustration) {
-            /* fx-1.0 (Mechanism C, input side): the model must never be shown
-               the illustration either - it reads #333333 hair and #ffcccc skin
-               off it honestly, and its claims outrank everyone. No call is
-               made; the doctor is told what to do instead. */
-            lookNoteSay(pixNote + ' The AI was NOT asked to read this: only the stylized copy is on this device and its colours are manufactured. Retake your photo for a full-quality reading.', 2);
-          } else {
-            /* the model reads the same photo and refines what pixels get wrong. Started
-               AFTER the on-device answer is already applied, so a slow or missing backend
-               costs precision and never the feature. */
-            lookNoteSay(pixNote, pixLoud);
-            applyVision(got, pixNote, pixLoud);
+        }
+        function finishMatch(combined, modelUnsure, modelUnavailable, extraWhy) {
+          if (!matchStillCurrent()) return;
+          var decision = faceMatchDecision(combined);
+          var refusedNow = (combined && combined.refused) || [];
+          var aiKnobs = (combined && combined.visionClaimed) || [];
+          var allObserved = decision.observed.slice();
+          var pixelKnobs = allObserved.filter(function (k) { return aiKnobs.indexOf(k) < 0; });
+          var modelRefused = (combined && combined.visionRefused) || [];
+          if (!decision.applies) {
+            Object.keys(FACE_LOOK).forEach(function (sk) {
+              if (sk === 'cap' || sk === 'stethoscope' || sk === 'age' || manualNow[sk]) return;
+              lookMarks[sk] = 'not changed \u2014 match incomplete';
+            });
+            setLookBadges([], []);
+            if (faceValidPhoto(shown)) {
+              faceModeSelect.value = 'photo';
+              renderPatientPreview();
+            }
+            var why = extraWhy || decision.why;
+            if (modelUnavailable) why += ' The second read was unavailable.';
+            else if (modelUnsure && modelUnsure.length) why += ' The second read was also unsure about ' + modelUnsure.join(', ') + '.';
+            why += ' Your real photo remains the patient-facing face. You can retake or fine-tune the optional animated character by hand.';
+            lookNoteSay(why, 2);
+            safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
+              at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: why,
+              claimed: [], observed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
+              refused: refusedNow.slice(), modelRefused: modelRefused.slice(),
+              receipt: (combined && combined.receipt) || null }; });
+            return;
           }
+
+          /* The exact photo/edit revision is still current. This is the first
+             mutation after Match began and the only point either reader can
+             touch the character. */
+          faceMutated();
+          lookNow = faceApplyDerived(lookNow, combined);
+          allObserved.forEach(function (k) { delete manualNow[k]; delete lookMarks[k]; });
+          refusedNow.forEach(function (r) {
+            if (!r || !r.knob || manualNow[r.knob]) return;
+            if (!lookMarks[r.knob]) lookMarks[r.knob] = 'not measured \u2014 pick manually';
+          });
+          syncLookControls();
+          setLookBadges(pixelKnobs, aiKnobs);
+          lookApply();
+          var rct = combined && combined.receipt;
+          var counts = rct ? ('Matched ' + rct.claimed + ' of ' + rct.examined +
+            ' appearance details; ' + rct.refused + ' stayed unchanged.') : 'Matched the reliable appearance details.';
+          var note = counts + (aiKnobs.length ? (' The second read confirmed ' + aiKnobs.join(', ') + '.') : '') +
+            (modelRefused.length ? (' It refused ' + modelRefused.length + ' unsafe claim' + (modelRefused.length === 1 ? '' : 's') + '.') : '') +
+            (modelUnsure && modelUnsure.length ? (' It was unsure about ' + modelUnsure.join(', ') + ', so those stayed unchanged.') : '');
+          lookNoteSay(note, refusedNow.length || modelRefused.length ? 1 : 0);
+          safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
+            at: Date.now(), usedHi: usedHi, wholeReadRefusal: false,
+            claimed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
+            refused: refusedNow.slice(), modelRefused: modelRefused.slice(), receipt: rct || null }; });
+        }
+        function requestVision(pixelRes) {
+          if (!matchStillCurrent()) return;
+          var local = faceCombineEvidence(pixelRes, null, [], trustedNaturalPhoto);
+          lookNoteSay('The on-device read found ' + local.receipt.claimed + ' of ' + local.receipt.examined +
+            ' appearance details. Checking the second read before changing any character traits\u2026', 0);
+          var request = safe(function () {
+            return api('/api/avatar/office/facelook', {
+              method: 'POST', body: JSON.stringify({ image: visionSrc })
+            });
+          }, null);
+          if (!request || typeof request.then !== 'function') {
+            finishMatch(local, [], true, faceMatchDecision(local).why);
+            return;
+          }
+          request.then(function (vr) {
+            if (!matchStillCurrent() || !apiResponseCurrent(vr)) return;
+            if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) {
+              finishMatch(local, [], true, faceMatchDecision(local).why);
+              return;
+            }
+            var combined = faceCombineEvidence(pixelRes, vr.json.look || {}, vr.json.claimed || [], trustedNaturalPhoto);
+            finishMatch(combined, vr.json.unsure || [], false, '');
+          }, function () {
+            if (!matchStillCurrent()) return;
+            finishMatch(local, [], true, faceMatchDecision(local).why);
+          });
+        }
+        faceTintFromPortrait(src, function (res) {
+          if (!matchStillCurrent()) return;
+          var rct = res && res.receipt;
+          if (rct && rct.fromIllustration === true) {
+            var illustrated = faceCombineEvidence(res, null, [], false);
+            finishMatch(illustrated, [], false,
+              'Only a stylized copy was available, so none of its manufactured colours were used and the second read was not asked.');
+            return;
+          }
+          /* A high-resolution in-memory capture is independently known to be a
+             natural photo even when the local detector cannot build a receipt.
+             This rescues difficult dark-hair, glasses and wall combinations. */
+          if (trustedNaturalPhoto || (rct && rct.srcKind === 'photo')) {
+            requestVision(res);
+            return;
+          }
+          var unproved = faceCombineEvidence(res, null, [], false);
+          var whyNoFace = (res && Array.isArray(res.found) && res.found.length)
+            ? res.found.join(' ')
+            : 'The matcher could not prove that this saved image was a natural portrait.';
+          finishMatch(unproved, [], false, whyNoFace + ' No animated traits were changed.');
         });
       });
       var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
@@ -6340,6 +6440,10 @@
   }
 
   function open() {
+    if (kiosk.open || gid('mlsAvKiosk')) {
+      toast('End the patient check-in before opening Avatar setup.');
+      return false;
+    }
     close();
     var opener = safe(function () { return document.activeElement; }, null);
     style();
@@ -6401,6 +6505,7 @@
     } else {
       inboxList(body, 'ready');
     }
+    return true;
   }
 
   /* =========================================================================
@@ -6416,6 +6521,30 @@
      caring when the patient's words sound like pain/distress. Reduced-motion
      kills all of it. ========================================================= */
   var kiosk = { open: false, sid: null, ext: null, busy: false, lastSay: '', lastTry: null, asyncTimers: [] };
+  function kioskControlReceipt() {
+    var session = sessionReceipt(), root = gid('mlsAvKiosk');
+    return { session: session, generation: kiosk.generation | 0, root: root,
+      /* A few PHI-free unit harnesses execute the real review renderer without
+         booting an authenticated shell or kiosk.  This arm cannot exist in a
+         real operational session and never authorizes network access. */
+      isolatedLocal: !session.account && !session.token && !root && !kiosk.open };
+  }
+  function kioskControlCurrent(receipt) {
+    if (receipt && receipt.isolatedLocal) {
+      return !receipt.session.account && !receipt.session.token && !runtimeAccount() && !clean(token()) &&
+        !gid('mlsAvKiosk') && !kiosk.open && (kiosk.generation | 0) === receipt.generation;
+    }
+    return !!(receipt && sessionReceiptCurrent(receipt.session) && kiosk.open &&
+      (kiosk.generation | 0) === receipt.generation && receipt.root &&
+      receipt.root.isConnected !== false && gid('mlsAvKiosk') === receipt.root);
+  }
+  function kioskControl(handler, receipt) {
+    receipt = receipt || kioskControlReceipt();
+    return function () {
+      if (!kioskControlCurrent(receipt)) return false;
+      return handler.apply(this, arguments);
+    };
+  }
   function kioskAsyncTimer(fn, delay) {
     var id = setTimeout(function () {
       var at = kiosk.asyncTimers.indexOf(id); if (at >= 0) kiosk.asyncTimers.splice(at, 1);
@@ -6943,7 +7072,12 @@ function kioskLine(kind, text) {
     kiosk.open = false; kiosk.busy = false;
     if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
     safe(function () { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {}); });
-    var node = gid('mlsAvKiosk'); if (node && node.parentNode) node.parentNode.removeChild(node);
+    var node = gid('mlsAvKiosk');
+    if (!node && dialogState && dialogState.back && dialogState.back.id === 'mlsAvKiosk') node = dialogState.back;
+    var kioskOpener = safe(function () { return (node && node.__mlsAvatarOpener) ||
+      (dialogState && dialogState.back === node && dialogState.opener); }, null);
+    if (dialogState && dialogState.back === node) dialogDeactivate(false);
+    if (node && node.parentNode) node.parentNode.removeChild(node);
     /* the recording stops with the overlay, and the captured words go with
        it - they can never cross into the next patient's session */
     kiosk.ambient = false; kiosk.ambRec = null;
@@ -6958,6 +7092,12 @@ function kioskLine(kind, text) {
     /* the consent dies with the screen it was given on - nothing reached from a
        later session may act on it */
     kiosk.consentAt = 0;
+    /* Return the keyboard to the exact still-connected control that opened
+       the kiosk. The shell removes account-owned controls before they could
+       qualify; a persistent navigation control remains the safest neutral
+       landing point after a session boundary. */
+    if (reason !== 'reverted' && kioskOpener &&
+        kioskOpener.isConnected !== false) safe(function () { kioskOpener.focus(); });
     if (reason === 'done' || kiosk.completed) {
       refreshCount(true);
       safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
@@ -7114,6 +7254,10 @@ function kioskLine(kind, text) {
     }
     var requestSettled = false;
     var requestTimer = setTimeout(function () {
+      if (Array.isArray(kiosk.asyncTimers)) {
+        var timerAt = kiosk.asyncTimers.indexOf(requestTimer);
+        if (timerAt >= 0) kiosk.asyncTimers.splice(timerAt, 1);
+      }
       if (requestSettled) return;
       requestSettled = true;
       if (!turnCurrent()) return;
@@ -7129,10 +7273,15 @@ function kioskLine(kind, text) {
         kioskLine('alert', 'Staff: the opening request timed out. Nothing was recorded or sent; end the interview and check the connection.');
       }
     }, 30000);
+    if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(requestTimer);
     function settleRequest() {
       if (requestSettled) return false;
       requestSettled = true;
-      if (requestTimer) { safe(function () { clearTimeout(requestTimer); }); requestTimer = null; }
+      if (requestTimer) {
+        if (Array.isArray(kiosk.asyncTimers)) kioskAsyncClear(requestTimer);
+        else safe(function () { clearTimeout(requestTimer); });
+        requestTimer = null;
+      }
       return true;
     }
     api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
@@ -7858,8 +8007,14 @@ function kioskLine(kind, text) {
          applies NOTHING (the default character), and a claimed knob rides
          over the default only when `derived` licenses it. */
       kiosk.tinted = true;
+      var tintReceipt = { session: sessionReceipt(), generation: kiosk.generation | 0,
+        portrait: String(av.faceImage), face: kiosk.face };
+      kiosk.tintPortrait = tintReceipt.portrait;
       faceTintFromPortrait(av.faceImage, function (res) {
-        if (!kiosk.face) return;
+        if (!sessionReceiptCurrent(tintReceipt.session) || !kiosk.open ||
+            (kiosk.generation | 0) !== tintReceipt.generation ||
+            kiosk.face !== tintReceipt.face || !kiosk.face ||
+            kiosk.tintPortrait !== tintReceipt.portrait) return;
         var applied = faceKioskDayOneLook(res);
         kiosk.look = applied;
         safe(function () { kiosk.face.retint(applied); });
@@ -8554,6 +8709,7 @@ function kioskLine(kind, text) {
   /* the card is built with DOM nodes and textContent throughout: `heard` is
      raw speech off a microphone and must never be interpolated into markup */
   function ordersCard(a) {
+    var controlReceipt = kioskControlReceipt();
     var card = make('div', 'mlsAvOrd');
     card.setAttribute('data-id', a.id);
     card.setAttribute('data-kind', a.kind);
@@ -8577,27 +8733,29 @@ function kioskLine(kind, text) {
       input.value = a.title + (a.detail ? ' - ' + a.detail : '');
       input.setAttribute('aria-label', 'Edit this action');
       input.maxLength = 120;
-      function commitEdit() {
+      var commitEdit = kioskControl(function () {
         var v = clean(input.value);
         if (!v) return;                       /* an empty action is not a correction */
         a.title = v.slice(0, 120); a.detail = ''; a.missing = []; a.edited = true; a.editing = false;
         ordersRender(); kioskAmbientSave(true);
-      }
-      input.addEventListener('keydown', function (e) {
+      }, controlReceipt);
+      input.addEventListener('keydown', kioskControl(function (e) {
         if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
         else if (e.key === 'Escape') { e.preventDefault(); a.editing = false; ordersRender(); }
-      });
+      }, controlReceipt));
       ed.appendChild(input);
       var save = make('button', 'mlsAvOrdGo', 'Save');
       save.type = 'button';
       save.addEventListener('click', commitEdit);
       var cancel = make('button', 'mlsAvOrdEdit', 'Cancel');
       cancel.type = 'button';
-      cancel.addEventListener('click', function () { a.editing = false; ordersRender(); });
+      cancel.addEventListener('click', kioskControl(function () { a.editing = false; ordersRender(); }, controlReceipt));
       ed.appendChild(save); ed.appendChild(cancel);
       card.appendChild(ed);
       /* focus after the node is in the document, or the caret goes nowhere */
-      safe(function () { setTimeout(function () { safe(function () { input.focus(); input.select(); }); }, 0); });
+      safe(function () { setTimeout(function () {
+        if (kioskControlCurrent(controlReceipt)) safe(function () { input.focus(); input.select(); });
+      }, 0); });
       return card;
     }
     /* A CORRECTED order that was already confirmed says so loudly. The doctor
@@ -8621,13 +8779,13 @@ function kioskLine(kind, text) {
       ['left', 'right', 'bilateral'].forEach(function (side) {
         var b = make('button', 'mlsAvOrdPick', side === 'bilateral' ? 'Both' : actTitleCase(side));
         b.type = 'button';
-        b.addEventListener('click', function () {
+        b.addEventListener('click', kioskControl(function () {
           a.picked = side;
           a.fields.side = side;
           a.detail = (actTitleCase(side) + ' ' + (a.detail || '')).trim();
           a.missing = missing.filter(function (k) { return k !== 'side'; });
           ordersRender(); kioskAmbientSave(true);
-        });
+        }, controlReceipt));
         sideRow.appendChild(b);
       });
       card.appendChild(sideRow);
@@ -8639,25 +8797,25 @@ function kioskLine(kind, text) {
       confirm.disabled = true;
       confirm.title = 'Missing: ' + ordersMissingText(a);
     }
-    confirm.addEventListener('click', function () {
+    confirm.addEventListener('click', kioskControl(function () {
       if ((a.missing || []).length) return;    /* the gate is enforced here too, not only by the attribute */
       a.status = 'confirmed';
       a.confirmedAt = Date.now();
       ordersRender(); kioskAmbientSave(true);
-    });
+    }, controlReceipt));
     var edit = make('button', 'mlsAvOrdEdit', 'Edit');
     edit.type = 'button';
     /* INLINE, never window.prompt. A native dialog blocks the whole renderer -
        it would freeze the recording clock, the save badge and the microphone
        loop behind a modal the doctor may be holding open in front of a
        patient, and this app has already been wedged once by exactly that. */
-    edit.addEventListener('click', function () { a.editing = true; ordersRender(); });
+    edit.addEventListener('click', kioskControl(function () { a.editing = true; ordersRender(); }, controlReceipt));
     var drop = make('button', 'mlsAvOrdNo', 'Dismiss');
     drop.type = 'button';
-    drop.addEventListener('click', function () {
+    drop.addEventListener('click', kioskControl(function () {
       a.status = 'dismissed';
       ordersRender(); kioskAmbientSave(true);
-    });
+    }, controlReceipt));
     row.appendChild(confirm); row.appendChild(edit); row.appendChild(drop);
     card.appendChild(row);
     return card;
@@ -9680,6 +9838,7 @@ function kioskLine(kind, text) {
   function kioskReviewShow(res) {
     var pane = gid('mlsAvKioskReview');
     if (!pane) return;
+    var reviewReceipt = kioskControlReceipt();
     var ok = !!(res && res.filed);
     pane.innerHTML = '';
     var card = make('div', 'mlsAvRevCard');
@@ -9736,13 +9895,15 @@ function kioskLine(kind, text) {
       var noteLine = make('div', 'mlsAvRevNote', '✍️ Drafting the note from this visit…');
       card.appendChild(noteLine);
       var runNote = function () {
+        if (!kioskControlCurrent(reviewReceipt)) return;
         var draftSession = sessionReceipt();
         /* The review unit executes this local, PHI-free handoff without an
            authenticated shell. A real rendered review can only exist behind
            the operational account+token gate, so every real receipt is exact;
            the empty-receipt arm preserves that isolated non-network harness. */
         function draftSessionCurrent() {
-          return (!draftSession.account && !draftSession.token) || sessionReceiptCurrent(draftSession);
+          return kioskControlCurrent(reviewReceipt) &&
+            ((!draftSession.account && !draftSession.token) || sessionReceiptCurrent(draftSession));
         }
         noteLine.textContent = '✍️ Drafting the note from this visit…';
         noteLine.className = 'mlsAvRevNote';
@@ -9766,10 +9927,10 @@ function kioskLine(kind, text) {
           noteLine.className = 'mlsAvRevNote bad';
           var retry = make('button', 'mlsAvRevMore', 'Try drafting again');
           retry.type = 'button';
-          retry.addEventListener('click', function () {
+          retry.addEventListener('click', kioskControl(function () {
             if (retry.parentNode) retry.parentNode.removeChild(retry);
             runNote();
-          });
+          }, reviewReceipt));
           noteLine.appendChild(document.createElement('br'));
           noteLine.appendChild(retry);
         };
@@ -9826,21 +9987,21 @@ function kioskLine(kind, text) {
     back.type = 'button';
     /* Ending the RECORDING needs no PIN - it is not a door into the app. The
        door still has the same lock it always had. */
-    back.addEventListener('click', function () {
+    back.addEventListener('click', kioskControl(function () {
       if (kiosk.pinSet === false) { kioskEndForStaff('ended'); return; }
       pane.style.display = 'none';
       kioskRequestEnd();
-    });
+    }, reviewReceipt));
     row.appendChild(back);
     var again = make('button', 'mlsAvRevMore', 'Keep listening');
     again.type = 'button';
-    again.addEventListener('click', function () {
+    again.addEventListener('click', kioskControl(function () {
       pane.style.display = 'none';
       /* a visit that is not over after all: a NEW capture, appended to the
          same chart on its own file. The filed one is never re-filed. */
       kiosk.ambEnding = false;
       if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
-    });
+    }, reviewReceipt));
     row.appendChild(again);
     card.appendChild(row);
     pane.appendChild(card);
@@ -9920,14 +10081,22 @@ function kioskLine(kind, text) {
     }
   }
   function openKiosk() {
+    /* A shell rerender can detach Setup before its cleanup runs. The retained
+       dialog lease still owns camera/voice work, so DOM presence alone is not
+       enough to authorize a second Avatar modal. */
+    if (gid(BACK_ID) || (dialogState && dialogState.back && dialogState.back.id === BACK_ID)) {
+      toast('Close Avatar setup before starting the patient check-in.');
+      return false;
+    }
     var activeId = activePtIdSafe();
     if (!activeId) { toast('Open the patient first — the interview files to their chart.'); return; }
-    if (kiosk.open) return;
+    if (kiosk.open) return false;
+    var kioskOpener = safe(function () { return document.activeElement; }, null);
     kioskStyle(); style();
     kiosk.open = true; kiosk.generation = (kiosk.generation | 0) + 1; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
     kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false;
     kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
-    kiosk.photoFace = false; kiosk.completed = false; kiosk.silent = 0;
+    kiosk.photoFace = false; kiosk.tintPortrait = ''; kiosk.completed = false; kiosk.silent = 0;
     kiosk.finishTries = 0; kiosk.heard = false;
     /* NOTHING HAS BEEN SAID TO *THIS* PATIENT YET. kioskTurn uses this to mark
        the opening line as a greeting so it is delivered as a welcome rather
@@ -9964,6 +10133,11 @@ function kioskLine(kind, text) {
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-label', 'Patient check-in assistant');
+    root.setAttribute('tabindex', '-1');
+    root.__mlsAvatarOpener = kioskOpener;
     /* mounted PRE-CONSENT: every other control is display:none until the consent
        question is answered, so the tab order contains exactly Yes and No */
     root.className = 'preconsent';
@@ -10036,6 +10210,16 @@ function kioskLine(kind, text) {
         '</div>' +
       '</div></div>';
     (document.body || document.documentElement).appendChild(root);
+    /* The opaque kiosk is also a real modal lease: underlying and late-added
+       app surfaces are inert/hidden, Tab stays inside, and Escape follows the
+       same staff exit/PIN rules as the visible End interview control. */
+    dialogActivate(root, root, kioskOpener, function () {
+      /* Escape before consent is only a cancellation.  It must never probe
+         the staff PIN endpoint (or any backend/microphone path) before the
+         doctor has recorded the patient's answer. */
+      if (!kiosk.consentAt) kioskConsentNo();
+      else kioskRequestEnd();
+    });
     var kioskUiGeneration = kiosk.generation | 0, kioskUiSession = sessionReceipt();
     function kioskEvent(handler) {
       return function () {
@@ -10125,6 +10309,7 @@ function kioskLine(kind, text) {
        anyone had been asked whether that was allowed. They now run on the
        consent answer, which is a click of its own and therefore just as
        trusted a gesture. See kioskConsentYes. */
+    return true;
   }
   /* av-5.7.0 - CONSENT, THEN EVERYTHING ELSE. The Yes tap carries three jobs
      that all need a user gesture and were previously spent on the Start click:
@@ -10766,6 +10951,13 @@ function kioskLine(kind, text) {
       !!(currentApi && currentApi.installed === true && currentApi.instanceToken === INSTANCE_TOKEN &&
         window.__mlsAvatar === currentApi);
   }
+  function avatarOwnerDirty() {
+    return !!(dialogState || gid(BACK_ID) || gid('mlsAvKiosk') || kiosk.open || kiosk.ambient || kiosk.ambClosing ||
+      safe(function () { return !!document.querySelector('[data-mls-avatar-setup-host]'); }, false) ||
+      cameraStream || faceCaptureTimers.length || faceLiveRaf || vgStream || vgStartPending || vgRaf ||
+      pvRec || pvSaying || ttsAudioNow || ttsFetchControllers.length || ttsFetchTimers.length ||
+      publicFaceControllers.length);
+  }
   function dormantOwnerCurrent(owner, generation) {
     return !!(!disposed && owner && generation === sessionGeneration && owner === currentApi &&
       window.__mlsAvatar === owner && owner.installed === false && owner.dormant &&
@@ -10829,6 +11021,7 @@ function kioskLine(kind, text) {
     dormant.discardRecoveredCapture = dormant.refreshCount = dormant.importSummary = function () { return false; };
     dormant.exactPatient = function () { return null; };
     dormant.sessionState = function () { return { stale: true, dormant: true }; };
+    dormant.isDirty = function () { return false; };
     dormant.revert = function () { return revert(dormant, generation); };
     currentApi = dormant;
     window.__mlsAvatar = dormant;
@@ -10846,16 +11039,24 @@ function kioskLine(kind, text) {
       instanceToken: INSTANCE_TOKEN
     };
     function owned() { return publicCallCurrent(owner, generation); }
-    owner.open = function () { if (!owned()) return false; open(); return true; };
-    owner.close = function () { if (!owned()) return false; close(); return true; };
-    owner.openKiosk = function () { if (!owned()) return false; openKiosk(); return true; };
+    owner.open = function () { if (!owned()) return false; return open() === true; };
+    owner.close = function () { if (!owned()) return false; return close() === true; };
+    owner.openKiosk = function () { if (!owned()) return false; return openKiosk() === true; };
     owner.closeKiosk = function () { if (!owned()) return false; kioskEndForStaff('ended'); return true; };
     /* diagnostics: render the drawn character anywhere, so a look can be
        inspected (and pinned) without opening a kiosk in front of a patient */
     owner.faceDemo = function (mount, look) {
       if (!owned()) return null;
       var controller = makeFace(mount, faceLookSafe(look));
-      if (controller) publicFaceControllers.push(controller);
+      if (controller) {
+        var originalDestroy = controller.destroy;
+        controller.destroy = function () {
+          var at = publicFaceControllers.indexOf(controller);
+          if (at >= 0) publicFaceControllers.splice(at, 1);
+          if (isFn(originalDestroy)) originalDestroy();
+        };
+        publicFaceControllers.push(controller);
+      }
       return controller;
     };
     /* diagnostics: derive a look from a portrait without touching Setup, so
@@ -10939,6 +11140,10 @@ function kioskLine(kind, text) {
     owner.sessionState = function () { return owned()
       ? { generation: sessionGeneration, epoch: sessionEpoch, accountBound: !!sessionAccount, tokenBound: !!token() }
       : { stale: true }; };
+    /* Hot replacement is allowed only when every media/UI controller is idle.
+       A stale saved owner reports dirty so a loader never treats loss of
+       authority as permission to destroy a newer session. */
+    owner.isDirty = function () { return owned() ? avatarOwnerDirty() : true; };
     owner.revert = function () { return revert(owner, generation); };
     currentApi = owner;
     window.__mlsAvatar = owner;

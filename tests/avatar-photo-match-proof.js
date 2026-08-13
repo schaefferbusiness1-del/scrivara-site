@@ -45,6 +45,8 @@ const path = require('path');
    pinned to one worktree silently measures ANOTHER lane's bytes when it is run
    from anywhere else. MLS_AVATAR_DIR overrides it for old-vs-new controls. */
 const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
+const ASSET = process.env.MLS_AVATAR_ASSET || 'feat_mls_avatar.js';
+const IS_P1 = /^1p-/.test(path.basename(ASSET));
 
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome' });
@@ -52,11 +54,22 @@ const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
   const errs = []; page.on('pageerror', e => errs.push(String(e && e.message)));
   await page.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, r => r.abort());
   await page.setContent('<div id="visitView"></div>');
-  await page.evaluate(() => {
+  await page.evaluate((isP1) => {
     window.toast = () => {}; window.getPatients = () => []; window.getActivePtId = () => '';
-    window.bkToken = () => ''; window.requestIdleCallback = window.requestIdleCallback || (f => setTimeout(f, 0));
-  });
-  await page.addScriptTag({ path: path.join(ROOT, 'feat_mls_avatar.js') });
+    window.__mlsSessionEpoch = isP1 ? 91 : 0;
+    window.__mlsSessionAccount = isP1 ? 'avatar-proof@example.test' : '';
+    window.bkToken = () => isP1 ? 'synthetic-avatar-proof-token' : '';
+    window.requestIdleCallback = window.requestIdleCallback || (f => setTimeout(f, 0));
+  }, IS_P1);
+  const assetSource = require('fs').readFileSync(path.join(ROOT, ASSET), 'utf8');
+  await page.evaluate(({assetSource,isP1,asset}) => {
+    const script = document.createElement('script');
+    if (isP1) {
+      script.setAttribute('data-mls-install-token','synthetic-avatar-proof-install');
+      script.setAttribute('data-mls-asset',asset);
+    }
+    script.textContent = assetSource; document.head.appendChild(script);
+  }, {assetSource,isP1:IS_P1,asset:ASSET});
   await page.waitForTimeout(300);
 
   const out = await page.evaluate(async () => {
@@ -132,9 +145,11 @@ const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
       return c.toDataURL('image/jpeg', 0.95);
     }
     function derive(url) {
-      return new Promise(res => window.__mlsAvatar.deriveLookFromPhoto
-        ? window.__mlsAvatar.deriveLookFromPhoto(url, res)
-        : res('NO_HOOK'));
+      return new Promise(res => {
+        if (!window.__mlsAvatar || !window.__mlsAvatar.deriveLookFromPhoto) return res('NO_HOOK');
+        const accepted = window.__mlsAvatar.deriveLookFromPhoto(url, res);
+        if (accepted === false) res('REFUSED');
+      });
     }
     const A = await derive(portrait({ skin: '#f3d3b3', hair: '#241a12' }));
     const B = await derive(portrait({ skin: '#7a4a24', hair: '#140f0b', beard: '#140f0b' }));
@@ -232,7 +247,8 @@ const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
     ['I: mid lips land in the middle', L('I').lips === 'normal'],
     ['I: a mid nose lands in the middle', L('I').nose === 'straight'],
     ['F: a face with no eyebrows claims NO brows (the hairline is not a brow)', D_('F').indexOf('brows') < 0],
-    ['E: RED LIPS ON A CLEAN-SHAVEN FACE DO NOT READ AS A BEARD', L('E').beard === 'none'],
+    ['E: RED LIPS ON A CLEAN-SHAVEN FACE DO NOT READ AS A BEARD',
+      L('E').beard !== 'beard' && L('E').beard !== 'stubble' && D_('E').indexOf('beard') < 0],
     ['E: those same lips ARE read as lips', D_('E').indexOf('lips') >= 0],
     ['F: a flat face claims NO nose', D_('F').indexOf('nose') < 0],
     ['F: a flat face claims NO lips', D_('F').indexOf('lips') < 0],
@@ -240,14 +256,14 @@ const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
     ['C: a spectacle frame is not reported as eyebrows', D_('C').indexOf('brows') < 0],
     ['derived never names a knob no photo can decide (cap)', !['A','B','C','D','E','F','G','H','I','J','K','L2','M2','N2','O','P','Q','R','S'].some(k => D_(k).indexOf('cap') >= 0)],
     ['derived never names a knob no photo can decide (stethoscope)', !['A','B','C','D','E','F','G','H','I','J','K','L2','M2','N2','O','P','Q','R','S'].some(k => D_(k).indexOf('stethoscope') >= 0)],
-    /* ---- the HEAD. Until this release faceSvg could draw all of these and
-       nothing in the product could ask for one — no control, no derivation.
-       Correct behaviour the doctor cannot reach is indistinguishable from
-       behaviour that was never built. ---- */
-    ['J: a narrow tall face reads as long', L('J').faceShape === 'long'],
-    ['K: a wide short face reads as round', L('K').faceShape === 'round'],
-    ['L: a square jaw OUTRANKS the oval proportions it sits on', L('L2').faceShape === 'square'],
-    ['A: an ordinary head still reads as oval (the default is not a fallback)', L('A').faceShape === 'oval'],
+    /* One front-on silhouette cannot reliably separate face shape from crop,
+       hairstyle and camera distance. Refusal is safer than painting a guessed
+       jaw onto a clinician, and the model may only rescue it as part of a
+       coherent whole-face receipt. */
+    ['J: a narrow tall crop does not claim a face shape', D_('J').indexOf('faceShape') < 0],
+    ['K: a wide short crop does not claim a face shape', D_('K').indexOf('faceShape') < 0],
+    ['L: a synthetic square jaw does not create a standalone shape claim', D_('L2').indexOf('faceShape') < 0],
+    ['A: an ordinary head does not present the default oval as measured', D_('A').indexOf('faceShape') < 0],
     ['M: close-set irises read as close', L('M2').eyeSet === 'close'],
     ['N: wide-set irises read as wide', L('N2').eyeSet === 'wide'],
     ['O: bare temples with a haired crown read as receding', L('O').hairline === 'receding'],
@@ -265,7 +281,7 @@ const ROOT = process.env.MLS_AVATAR_DIR || path.resolve(__dirname, '..');
   for (const [name, ok] of checks) { if (!ok) bad++; console.log((ok ? '  ok   ' : '  FAIL ') + name); }
   console.log(bad
     ? ('FAIL photo match: ' + bad + ' of ' + checks.length + ' checks')
-    : ('PASS photo match: ' + checks.length + '/' + checks.length + ' — colour AND shape are read from the photo, ' +
+    : ('PASS photo match: ' + checks.length + '/' + checks.length + ' — colour and supported geometry are read from the photo, ' +
        'and `derived` refuses to claim what the pixels do not show'));
   await browser.close();
   process.exit(bad ? 1 : 0);

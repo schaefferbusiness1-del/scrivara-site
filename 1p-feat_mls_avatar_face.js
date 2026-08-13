@@ -116,7 +116,7 @@
     if (dropped) clearPollTimers();
   }
 
-  function summarizeReceipt(receipt) {
+  function summarizeReceipt(receipt, wholeReadRefusal) {
     var r = receipt || {};
     var examined = Math.max(0, Number(r.examined) || 0);
     var claimed = Math.max(0, Math.min(examined, Number(r.claimed) || 0));
@@ -129,12 +129,19 @@
     var matchPart = examined ? (claimed / examined) * 64 : 0;
     var framingPart = Math.min(1, ratio / 0.52) * 30;
     var score = examined ? Math.max(0, Math.min(100, Math.round(matchPart + framingPart + 6 - sourcePenalty - adaptivePenalty))) : 0;
-    var level = score >= 76 && claimed >= 8 ? 'strong' : (score >= 48 && claimed >= 4 ? 'usable' : 'limited');
-    var heading = level === 'strong' ? 'Strong photo match' : (level === 'usable' ? 'Good starting match' : 'This photo needs a quick check');
+    /* The meter may describe evidence, but only a whole-match receipt may call
+       it an applied likeness. A 1-of-14 read is not a "starting match" — it is
+       a refusal, and the natural portrait remains the patient-facing face. */
+    var applyEligible = !wholeReadRefusal && r.fromIllustration !== true &&
+      examined >= 10 && claimed >= 6 && claimed > refused;
+    var level = applyEligible && score >= 76 && claimed >= 8 ? 'strong' : (applyEligible ? 'usable' : 'limited');
+    var heading = level === 'strong' ? 'Strong animated match' :
+      (level === 'usable' ? 'Animated match applied' : 'No animated traits changed');
     var detail = examined
-      ? (claimed + ' of ' + examined + ' appearance details matched' + (refused ? '; ' + refused + ' left unchanged' : ''))
+      ? (claimed + ' of ' + examined + ' details were readable; ' +
+         (applyEligible ? (refused + ' left unchanged') : 'the match was incomplete, so all character settings stayed unchanged'))
       : 'No appearance details were changed';
-    return { score: score, level: level, heading: heading, detail: detail };
+    return { score: score, level: level, heading: heading, detail: detail, applied: applyEligible };
   }
 
   function style() {
@@ -186,11 +193,11 @@
     }
   }
 
-  function updateMeter(meter, receipt) {
+  function updateMeter(meter, receipt, wholeReadRefusal) {
     if (!meter) return;
-    var summary = summarizeReceipt(receipt);
+    var summary = summarizeReceipt(receipt, wholeReadRefusal);
     meter.setAttribute('data-level', summary.level);
-    meter.setAttribute('aria-label', summary.heading + '. ' + summary.detail + '. Confidence ' + summary.score + ' percent.');
+    meter.setAttribute('aria-label', summary.heading + '. ' + summary.detail + '. Evidence coverage ' + summary.score + ' percent.');
     var head = meter.querySelector('.mlsP1FaceMeterHead');
     var detail = meter.querySelector('.mlsP1FaceMeterDetail');
     var bar = meter.querySelector('.mlsP1FaceBar>i');
@@ -271,7 +278,7 @@
           var owner = window.__mlsAvatar;
           var latest = owner && owner.lastMatchReceipt;
           if (latest && latest.receipt && Number(latest.at || 0) > before && Number(latest.at || 0) >= startedAt) {
-            updateMeter(meter, latest.receipt);
+            updateMeter(meter, latest.receipt, latest.wholeReadRefusal === true);
             if (latest.wholeReadRefusal || Number(latest.receipt.refused || 0) > Number(latest.receipt.claimed || 0)) details.open = true;
             return;
           }

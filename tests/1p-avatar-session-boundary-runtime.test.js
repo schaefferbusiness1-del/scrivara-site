@@ -17,6 +17,27 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const avatarPath = path.join(root, '1p-feat_mls_avatar.js');
 const source = fs.readFileSync(avatarPath, 'utf8');
+const moduleEnd = source.lastIndexOf('})();');
+assert(moduleEnd > 0, 'Avatar module terminator missing');
+const servedSource = source.slice(0, moduleEnd) + `
+  window.__mlsAvatarBoundaryTest = {
+    seedAction: function (label) {
+      kiosk.ambActions = [{ id:'synthetic-action', kind:'note', title:String(label||'Synthetic action'),
+        detail:'', heard:'synthetic words', fields:{}, missing:[], status:'proposed', editing:false }];
+      ordersRender();
+      return true;
+    },
+    showReview: function () {
+      kiosk.ambBound = kiosk.ext; kiosk.ambStart = Date.now() - 60000;
+      kioskReviewShow({ filed:false, why:'synthetic local refusal', chars:0 });
+      return true;
+    },
+    state: function () {
+      return { action:kiosk.ambActions[0] && kiosk.ambActions[0].status,
+        ambient:!!kiosk.ambient, open:!!kiosk.open, generation:kiosk.generation|0 };
+    }
+  };
+` + source.slice(moduleEnd);
 let checks = 0;
 function ok(value, message) { assert.ok(value, message); checks++; }
 function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }
@@ -33,7 +54,7 @@ function slice(first, last) {
  * visible review decision rather than an accidental omission. */
 const guarded = [
   ['config GET', "api('/api/avatar/config')", "/* ---- inbox tab"],
-  ['face model POST', "api('/api/avatar/office/facelook'", 'var aiKnobs = []'],
+  ['face model POST', "api('/api/avatar/office/facelook'", 'faceTintFromPortrait(src, function (res)'],
   ['config POST', "api('/api/avatar/config', { method: 'POST'", '/* av-5.3.0'],
   ['inbox GET', "api('/api/avatar/checkins?status=' + status)", 'function open()'],
   ['kiosk turn POST', "api('/api/avatar/office/turn'", '/* THE SELF-END WATCHDOG'],
@@ -49,6 +70,8 @@ ok(/function sessionCredentialsCurrent\(receipt\)[\s\S]*!receipt\.account[\s\S]*
   'the response receipt is not exact across generation, epoch, account, and token');
 ok(/function api\(path, options\)[\s\S]{0,900}if \(!sessionReceiptCurrent\(receipt\)\)[\s\S]{0,260}blocked: 'stale-or-blank-session'/.test(source),
   'the network door does not fail closed before fetch for a blank/stale session');
+ok(/return Promise\.resolve\(\)\.then\(function \(\) \{[\s\S]{0,500}if \(!sessionReceiptCurrent\(receipt\)\)[\s\S]{0,250}blocked: 'stale-before-fetch'[\s\S]{0,250}return fetch\(/.test(source),
+  'the network door does not re-prove ownership inside the fetch microtask');
 ok(/function publicCallCurrent\(owner, generation\)[\s\S]{0,180}publicOwnerCurrent\(owner, generation\) && liveSessionCredentials\(\)/.test(source),
   'exported reads/mutations are not bound to a live account and token');
 ok(/function onSessionBoundary\(event\)[\s\S]*sessionGeneration\+\+[\s\S]*scrubAvatarSession\(\)[\s\S]*publishDormantApi\('no-authenticated-session'\)/.test(source),
@@ -60,6 +83,8 @@ ok(/back\.setAttribute\('role', 'dialog'\)[\s\S]*back\.setAttribute\('aria-modal
   'the Setup/inbox overlay is not a labelled modal dialog');
 ok(/event\.key === 'Tab' && dialogState[\s\S]*event\.shiftKey[\s\S]*items\[items\.length - 1\]\.focus\(\)[\s\S]*items\[0\]\.focus\(\)/.test(source),
   'the modal has no two-way focus trap');
+ok(/root\.setAttribute\('role', 'dialog'\)[\s\S]{0,220}root\.setAttribute\('aria-modal', 'true'\)[\s\S]{0,220}root\.setAttribute\('aria-label', 'Patient check-in assistant'\)/.test(source),
+  'the patient kiosk is not a named modal dialog');
 ok(/ttsFetchControllers\.splice\(0\)[\s\S]*controller\.abort\(\)[\s\S]*faceLiveCanvas\.width = 0[\s\S]*delete currentApi\.lastReady[\s\S]*delete currentApi\.lastMatchReceipt/.test(source),
   'session scrub does not retire audio/pixel buffers and public receipts');
 
@@ -112,6 +137,7 @@ function harnessHtml(malformed) {
       window.__requestState=()=>window.__requests.map(({id,path,method,auth,body,settled,aborted})=>({id,path,method,auth,body,settled,aborted}));
 
       window.__media=[];
+      Object.defineProperty(HTMLMediaElement.prototype,'srcObject',{configurable:true,get(){return this.__syntheticStream||null;},set(value){this.__syntheticStream=value;}});
       Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:(constraints)=>{
         const row={id:window.__media.length+1,constraints,settled:false,stops:0};
         row.promise=new Promise((resolve,reject)=>{row.resolve=resolve;row.reject=reject;});
@@ -155,7 +181,7 @@ function serve() {
       const url = new URL(req.url, 'http://127.0.0.1');
       if (url.pathname === '/avatar.js') {
         res.writeHead(200, {'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'});
-        return res.end(source);
+        return res.end(servedSource);
       }
       res.writeHead(200, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
       res.end(harnessHtml(url.searchParams.get('malformed') || ''));
@@ -439,15 +465,34 @@ function config(marker) {
       await page.evaluate(({id,payload}) => window.__settleRequest(id,payload),{id:cfgId,payload:config('MEDIA-A')});
       await page.getByRole('button',{name:/Create from my camera/}).click();
       await page.waitForFunction(() => window.__media.some(r => r.constraints && r.constraints.video));
-      await page.evaluate(() => {
+      const modalOwnership = await page.evaluate(() => {
         window.__gateCallback=[];
         window.__oldMediaApi.voiceGateStart(ok => window.__gateCallback.push(ok));
         window.__savedSetupSave=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Save avatar');
-        window.__oldMediaApi.openKiosk();
+        const setup=document.getElementById('mlsAvBack');
+        const refusedKiosk=window.__oldMediaApi.openKiosk();
+        const setupStill=document.getElementById('mlsAvBack')===setup && setup.getAttribute('aria-modal')==='true';
+        const closeSetup=window.__oldMediaApi.close();
+        const openedKiosk=window.__oldMediaApi.openKiosk();
         window.__savedConsent=document.getElementById('mlsAvKioskConsentYes');
         window.__savedEnd=document.getElementById('mlsAvKioskEnd');
+        const kiosk=document.getElementById('mlsAvKiosk');
+        const refusedInbox=window.__oldMediaApi.open();
+        const kioskStill=document.getElementById('mlsAvKiosk')===kiosk && kiosk.getAttribute('aria-modal')==='true' && document.getElementById('appShell').inert===true;
         window.__savedConsent.click();
+        return {refusedKiosk,setupStill,closeSetup,openedKiosk,refusedInbox,kioskStill,
+          role:kiosk&&kiosk.getAttribute('role'),modal:kiosk&&kiosk.getAttribute('aria-modal'),
+          label:kiosk&&kiosk.getAttribute('aria-label')};
       });
+      eq(modalOwnership.refusedKiosk,false,'Setup allowed a second Avatar kiosk modal to replace its lease');
+      eq(modalOwnership.setupStill,true,'refused kiosk disturbed the Setup modal');
+      eq(modalOwnership.closeSetup,true,'Setup could not be explicitly closed before kiosk');
+      eq(modalOwnership.openedKiosk,true,'kiosk did not open after Setup released its modal lease');
+      eq(modalOwnership.refusedInbox,false,'kiosk allowed a second Avatar inbox modal to replace its lease');
+      eq(modalOwnership.kioskStill,true,'refused inbox disturbed kiosk containment');
+      eq(modalOwnership.role,'dialog','patient kiosk lacks dialog semantics');
+      eq(modalOwnership.modal,'true','patient kiosk is not aria-modal');
+      eq(modalOwnership.label,'Patient check-in assistant','patient kiosk lacks an accessible name');
       await page.waitForFunction(() => window.__media.filter(r => r.constraints && r.constraints.audio).length >= 2);
       const mediaIds = await page.evaluate(() => ({
         video:window.__media.find(r=>r.constraints&&r.constraints.video).id,
@@ -516,6 +561,172 @@ function config(marker) {
       ok((await page.evaluate(() => window.__requestState().find(r=>r.path==='/api/avatar/office/tts').aborted)) === true,
         'session boundary did not abort the pending A TTS fetch');
       eq(pageErrors.length,0,'media runtime raised errors: '+pageErrors.join(' | '));
+      await page.close();
+    }
+
+    /* A request called in the current task must re-check ownership inside its
+     * fetch microtask. The same boundary also destroys public face controllers
+     * so saved A handles cannot repaint their mount under B. */
+    {
+      const page = await browser.newPage({viewport:{width:1000,height:760}});
+      await page.goto(base + '/', {waitUntil:'load'});
+      await page.waitForFunction(() => window.__mlsAvatar && window.__mlsAvatar.installed === true && window.__requests.length);
+      const boot = await page.evaluate(() => window.__requests[0].id);
+      await page.evaluate(id=>window.__settleRequest(id,{checkins:[]}),boot);
+      const race = await page.evaluate(async () => {
+        const mount=document.createElement('div');document.body.appendChild(mount);
+        const api=window.__mlsAvatar, ctl=api.faceDemo(mount,{});
+        ctl.mood('listening',false,false);
+        const before=window.__requestState().length;
+        api.refreshCount(true);
+        window.__testToken='token-B';window.__mlsSessionEpoch=12;
+        window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{epoch:12,nextAccount:'same-session@example.test'}}));
+        const afterDestroy=mount.innerHTML;
+        ctl.mood('happy',false,true);ctl.retint({hair:'#000'});ctl.gaze(9,9);ctl.talk(.9);
+        await Promise.resolve();await Promise.resolve();
+        return {before,after:window.__requestState().length,oldTokenRows:window.__requestState().filter(r=>r.auth==='Bearer token-A').length,
+          unchanged:mount.innerHTML===afterDestroy,oldOpen:api.open(),current:window.__mlsAvatar.sessionState()};
+      });
+      eq(race.after,race.before,'same-task session boundary still allowed the queued A fetch');
+      eq(race.oldTokenRows,1,'same-task race appended an A bearer request after boundary');
+      eq(race.unchanged,true,'destroyed public face controller repainted after boundary');
+      eq(race.oldOpen,false,'stale API reopened after the same-task boundary');
+      eq(race.current.epoch,12,'same-task boundary did not publish the B owner');
+      await page.close();
+    }
+
+    /* Escape on the pre-consent screen is a local cancellation—not a staff
+     * unlock probe, backend turn, microphone request, or hidden close write. */
+    {
+      const page = await browser.newPage({viewport:{width:1000,height:760}});
+      await page.goto(base + '/', {waitUntil:'load'});
+      await page.waitForFunction(() => window.__mlsAvatar && window.__mlsAvatar.installed === true && window.__requests.length);
+      const boot = await page.evaluate(() => window.__requests[0].id);
+      await page.evaluate(id=>window.__settleRequest(id,{checkins:[]}),boot);
+      const before = await page.evaluate(() => { document.getElementById('exactOpener').focus(); window.__mlsAvatar.openKiosk(); return {requests:window.__requests.length,media:window.__media.length}; });
+      await page.waitForSelector('#mlsAvKioskConsentYes');
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !document.getElementById('mlsAvKiosk'));
+      const escaped = await page.evaluate(() => ({requests:window.__requests.length,media:window.__media.length,focus:document.activeElement&&document.activeElement.id,
+        appInert:document.getElementById('appShell').inert,appAria:document.getElementById('appShell').getAttribute('aria-hidden')}));
+      eq(escaped.requests,before.requests,'pre-consent Escape sent a backend request');
+      eq(escaped.media,before.media,'pre-consent Escape opened microphone/camera');
+      eq(escaped.focus,'exactOpener','pre-consent Escape did not restore its opener');
+      eq(escaped.appInert,false,'pre-consent Escape left the app inert');
+      eq(escaped.appAria,'false','pre-consent Escape did not restore aria-hidden exactly');
+      await page.close();
+    }
+
+    /* Detached dynamic order/review controls from A cannot mutate a newly
+     * opened B kiosk even when the old DOM references are scripted directly. */
+    {
+      const page = await browser.newPage({viewport:{width:1000,height:760}});
+      await page.goto(base + '/', {waitUntil:'load'});
+      await page.waitForFunction(() => window.__mlsAvatar && window.__mlsAvatar.installed === true && window.__requests.length);
+      const boot = await page.evaluate(() => window.__requests[0].id);
+      await page.evaluate(id=>window.__settleRequest(id,{checkins:[]}),boot);
+      await page.evaluate(() => {
+        window.__mlsAvatar.openKiosk();
+        window.__mlsAvatarBoundaryTest.seedAction('A action');
+        window.__oldOrderConfirm=document.querySelector('#mlsAvKioskOrders .mlsAvOrdGo');
+        window.__mlsAvatarBoundaryTest.showReview();
+        window.__oldReviewAgain=Array.from(document.querySelectorAll('#mlsAvKioskReview button')).find(b=>/Keep listening/.test(b.textContent));
+        window.__testToken='token-B';window.__mlsSessionEpoch=12;
+        window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{epoch:12,nextAccount:'same-session@example.test'}}));
+        window.__mlsAvatar.openKiosk();window.__mlsAvatarBoundaryTest.seedAction('B action');
+        window.__oldOrderConfirm.click();window.__oldReviewAgain.click();
+      });
+      const dynamic = await page.evaluate(() => window.__mlsAvatarBoundaryTest.state());
+      eq(dynamic.action,'proposed','detached A order control confirmed/dismissed B action');
+      eq(dynamic.ambient,false,'detached A review control started B room capture');
+      eq(dynamic.open,true,'detached A controls closed B kiosk');
+      await page.evaluate(()=>window.__mlsAvatar.closeKiosk());
+      await page.close();
+    }
+
+    /* A rendered camera Cancel button carries its exact Setup/session receipt.
+     * Clicking that detached A node after B opens a camera cannot stop B. */
+    {
+      const page = await browser.newPage({viewport:{width:1000,height:760}});
+      await page.goto(base + '/', {waitUntil:'load'});
+      await page.waitForFunction(() => window.__mlsAvatar && window.__mlsAvatar.installed === true && window.__requests.length);
+      const boot = await page.evaluate(() => window.__requests[0].id);
+      await page.evaluate(id=>window.__settleRequest(id,{checkins:[]}),boot);
+      await page.evaluate(()=>window.__mlsAvatar.open());
+      await page.getByRole('button',{name:'Set up the avatar'}).click();
+      await page.waitForFunction(()=>window.__requests.some(r=>r.path==='/api/avatar/config'&&!r.settled));
+      let cfgId=await page.evaluate(()=>window.__requests.find(r=>r.path==='/api/avatar/config'&&!r.settled).id);
+      await page.evaluate(({id,payload})=>window.__settleRequest(id,payload),{id:cfgId,payload:config('CAMERA-A')});
+      await page.getByRole('button',{name:/Create from my camera/}).click();
+      let videoId=await page.evaluate(()=>window.__media.find(r=>r.constraints&&r.constraints.video&&!r.settled).id);
+      await page.evaluate(id=>window.__resolveMedia(id),videoId);
+      await page.waitForFunction(()=>!!document.querySelector('#mlsAvBack video'));
+      ok(await page.evaluate(()=>!!document.querySelector('#mlsAvBack video')),
+        'A camera grant did not mount video: '+JSON.stringify(await page.evaluate(()=>({media:window.__mediaState(),text:document.getElementById('mlsAvBack')&&document.getElementById('mlsAvBack').textContent}))));
+      await page.evaluate(()=>{window.__oldCameraCancel=Array.from(document.querySelectorAll('#mlsAvBack button')).find(b=>b.textContent.trim()==='Cancel');
+        window.__testToken='token-B';window.__mlsSessionEpoch=12;window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{epoch:12,nextAccount:'same-session@example.test'}}));});
+      await page.evaluate(()=>window.__mlsAvatar.open());await page.getByRole('button',{name:'Set up the avatar'}).click();
+      await page.waitForFunction(()=>window.__requests.some(r=>r.auth==='Bearer token-B'&&r.path==='/api/avatar/config'&&!r.settled));
+      cfgId=await page.evaluate(()=>window.__requests.find(r=>r.auth==='Bearer token-B'&&r.path==='/api/avatar/config'&&!r.settled).id);
+      await page.evaluate(({id,payload})=>window.__settleRequest(id,payload),{id:cfgId,payload:config('CAMERA-B')});
+      await page.getByRole('button',{name:/Create from my camera/}).click();
+      const bVideoId=await page.evaluate(()=>window.__media.find(r=>r.constraints&&r.constraints.video&&!r.settled).id);
+      await page.evaluate(id=>window.__resolveMedia(id),bVideoId);
+      await page.waitForFunction(()=>!!document.querySelector('#mlsAvBack video'));
+      ok(await page.evaluate(()=>!!document.querySelector('#mlsAvBack video')),
+        'B camera grant did not mount video: '+JSON.stringify(await page.evaluate(()=>({media:window.__mediaState(),text:document.getElementById('mlsAvBack')&&document.getElementById('mlsAvBack').textContent}))));
+      const staleCancel=await page.evaluate(id=>{const row=window.__media.find(r=>r.id===id),before=row.stops;window.__oldCameraCancel.click();
+        return {before,after:row.stops,video:!!document.querySelector('#mlsAvBack video')};},bVideoId);
+      eq(staleCancel.after,staleCancel.before,'detached A camera Cancel stopped B stream');
+      eq(staleCancel.video,true,'detached A camera Cancel removed B camera UI');
+      await page.evaluate(()=>window.__mlsAvatar.close());
+      ok(await page.evaluate(id=>window.__media.find(r=>r.id===id).stops>=1,bVideoId),'current B close did not stop B camera');
+      await page.close();
+    }
+
+    /* External shell rerenders can detach an overlay before Avatar receives
+     * its boundary/revert. The retained modal lease must still restore every
+     * inert/aria attribute and focus listener from its owned detached node. */
+    {
+      const page = await browser.newPage({viewport:{width:1000,height:760}});
+      await page.goto(base + '/', {waitUntil:'load'});
+      await page.waitForFunction(() => window.__mlsAvatar && window.__mlsAvatar.installed === true && window.__requests.length);
+      const boot = await page.evaluate(() => window.__requests[0].id);
+      await page.evaluate(id=>window.__settleRequest(id,{checkins:[]}),boot);
+      const setupDetached = await page.evaluate(() => {
+        document.getElementById('exactOpener').focus();const api=window.__mlsAvatar;api.open();
+        const back=document.getElementById('mlsAvBack');back.remove();
+        const dirty=api.isDirty(),refusedKiosk=api.openKiosk(),setupLeaseStill=api.isDirty();
+        window.__testToken='token-B';window.__mlsSessionEpoch=12;
+        window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{epoch:12,nextAccount:'same-session@example.test'}}));
+        return {dirty,oldInstalled:api.installed,appInert:document.getElementById('appShell').inert,
+          appAria:document.getElementById('appShell').getAttribute('aria-hidden'),focus:document.activeElement&&document.activeElement.id,
+          refusedKiosk,setupLeaseStill,reopened:window.__mlsAvatar.open()};
+      });
+      eq(setupDetached.dirty,true,'detached Setup modal was misreported clean to the loader');
+      eq(setupDetached.refusedKiosk,false,'detached Setup allowed a kiosk to replace its modal/media lease');
+      eq(setupDetached.setupLeaseStill,true,'refused kiosk disturbed the detached Setup lease');
+      eq(setupDetached.oldInstalled,false,'detached Setup boundary did not retire A owner');
+      eq(setupDetached.appInert,false,'detached Setup boundary left app inert');
+      eq(setupDetached.appAria,'false','detached Setup boundary failed exact aria restoration');
+      eq(setupDetached.focus,'exactOpener','detached Setup boundary did not restore opener');
+      eq(setupDetached.reopened,true,'B could not open Setup after detached A cleanup');
+      await page.evaluate(()=>window.__mlsAvatar.close());
+
+      const kioskDetached = await page.evaluate(() => {
+        document.getElementById('exactOpener').focus();const api=window.__mlsAvatar;api.openKiosk();
+        const root=document.getElementById('mlsAvKiosk');root.remove();
+        const dirty=api.isDirty(),reverted=api.revert();
+        return {dirty,reverted,appInert:document.getElementById('appShell').inert,
+          appAria:document.getElementById('appShell').getAttribute('aria-hidden'),focus:document.activeElement&&document.activeElement.id,
+          avatar:window.__mlsAvatar};
+      });
+      eq(kioskDetached.dirty,true,'detached kiosk modal was misreported clean to the loader');
+      eq(kioskDetached.reverted,true,'exact revert could not clean a detached kiosk');
+      eq(kioskDetached.appInert,false,'detached kiosk revert left app inert');
+      eq(kioskDetached.appAria,'false','detached kiosk revert failed exact aria restoration');
+      eq(kioskDetached.focus,'exactOpener','detached kiosk revert did not restore opener');
+      eq(kioskDetached.avatar,undefined,'detached kiosk revert left canonical owner');
       await page.close();
     }
   } catch (error) {
