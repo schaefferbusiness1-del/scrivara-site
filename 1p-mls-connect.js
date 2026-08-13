@@ -36529,24 +36529,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
   /* Production app-version.json names the production shell, not this isolated
-     preview. Comparing the two created a permanent Refresh banner that could
-     never converge. Extension-version checks remain active elsewhere. */
-  function canCheck(){ try{ if(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true)return false; return !(typeof window.backendMode==='function' && !window.backendMode()); }catch(_){ return false; } }
+     preview. The preview therefore checks the response metadata for its own
+     canonical /1p/ document. It never compares itself with the production
+     build feed, and it never reloads without an explicit Refresh click. */
+  function isPreview(){ try{return !!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true);}catch(_){return false;} }
+  function canCheck(){ try{return !(typeof window.backendMode==='function' && !window.backendMode());}catch(_){ return false; } }
+  function pullBusy(){
+    try{var ds=window.__mlsDaySwitch;if(ds&&typeof ds.isBusy==='function'&&ds.isBusy())return true;}catch(e0){}
+    try{var si=window.__mlsSI;if(si&&typeof si.isBusy==='function'&&si.isBusy())return true;}catch(e1){}
+    try{var lease=window.__mlsSchedulePullLease;if(lease&&Date.now()-Number(lease.at||0)<180000)return true;}catch(e2){}
+    try{if(window.__mlsPullBusyAt&&Date.now()-window.__mlsPullBusyAt<90000)return true;var k=(typeof window.uns==='function')?window.uns('mlsPullBusyXTabV1'):'mlsPullBusyXTabV1';var t=Number(localStorage.getItem(k)||0);return t>0&&Date.now()-t<90000;}catch(e3){return false;}
+  }
   function showBanner(newv){
     if(banner&&banner.parentNode) return;
     banner=document.createElement('div'); banner.id='mlsVerBanner';
     banner.style.cssText='position:fixed;left:50%;bottom:100px;transform:translateX(-50%);z-index:99999;background:#204034;color:#eef4ff;border:1px solid #2E6A4B;border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:12px;font:600 14px system-ui;box-shadow:0 8px 30px rgba(0,0,0,.45);max-width:92vw';
     var sp=document.createElement('span'); sp.textContent='\u2728 A newer version of MLS is ready.'; banner.appendChild(sp);
     var b=document.createElement('button'); b.textContent='Refresh'; b.style.cssText='cursor:pointer;background:#2E6A4B;color:#fff;border:none;border-radius:9px;padding:8px 14px;font-weight:700';
-    /* b493: a Refresh mid-pull killed two 75-minute pulls on 2026-07-22 (the
-       clicker cannot know another tab is pulling). While any tab's managed
-       pull stamp is fresh, hold the reload and finish it automatically. */
-    var pullBusy=function(){ try{ if(window.__mlsPullBusyAt&&Date.now()-window.__mlsPullBusyAt<90000)return true; var k=(typeof window.uns==='function')?window.uns('mlsPullBusyXTabV1'):'mlsPullBusyXTabV1'; var t=Number(localStorage.getItem(k)||0); return t>0&&Date.now()-t<90000; }catch(e){ return false; } };
+    /* A Refresh mid-pull can kill a long Athena import. Discovery is passive:
+       never arm a delayed reload from one click, even between retry stamps. */
     var goRefresh=function(){ try{location.href=location.pathname+'?rv='+encodeURIComponent(newv);}catch(_){location.reload();} };
     b.onclick=function(){
       if(!pullBusy())return goRefresh();
-      b.disabled=true; b.textContent='Waiting for the pull to finish…';
-      var iv=setInterval(function(){ if(!pullBusy()){ try{clearInterval(iv);}catch(_){} goRefresh(); } },20000);
+      b.disabled=false; b.textContent='Pull running — refresh afterward';
     };
     banner.appendChild(b);
     var x=document.createElement('button'); x.textContent='\u00d7'; x.style.cssText='cursor:pointer;background:transparent;color:#B9CEC2;border:none;font-size:18px;line-height:1'; x.onclick=function(){ if(banner){banner.remove();banner=null;} }; banner.appendChild(x);
@@ -36554,16 +36559,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function check(){
     if(!canCheck()) return Promise.resolve();
+    if(pullBusy()) return Promise.resolve();
     var now=Date.now();
     if(checking) return checking;
     if(now-lastCheck<60000) return Promise.resolve();
     lastCheck=now;
     try{
-      checking=fetch(URL+'?nc='+now,{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
-        var next=d&&d.build;
-        if(next&&next!==MLS_APP_BUILD) showBanner(next);
-        checking=null;
-      },function(){ checking=null; });
+      if(isPreview()){
+        checking=fetch('/1p/?nc='+now,{method:'HEAD',cache:'no-store'}).then(function(r){
+          if(!(r&&r.ok))return null;
+          var raw=r.headers&&typeof r.headers.get==='function'?r.headers.get('Last-Modified'):'';
+          var remote=Date.parse(String(raw||'')), loaded=Date.parse(String(document.lastModified||''));
+          return isFinite(remote)&&isFinite(loaded)&&remote>loaded?remote:null;
+        }).then(function(remote){ if(remote)showBanner('p1-'+remote); checking=null; },function(){ checking=null; });
+      }else{
+        checking=fetch(URL+'?nc='+now,{cache:'no-store'}).then(function(r){ return r.ok?r.json():null; }).then(function(d){
+          var next=d&&d.build;
+          if(next&&next!==MLS_APP_BUILD) showBanner(next);
+          checking=null;
+        },function(){ checking=null; });
+      }
       return checking;
     }catch(_){ checking=null; return Promise.resolve(); }
   }
@@ -36571,6 +36586,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setTimeout(check, 8000);
     var checkIv = setInterval(check, 180000);
     window.addEventListener('focus', function(){ setTimeout(check, 1200); });
+    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&!document.hidden)setTimeout(check,1200);});
   }
 })();
 
@@ -47626,6 +47642,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.rowsFor = rowsFor;
   api.pullDay = startPull;
   api.renderList = renderList;
+  api.isBusy = function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); };
   api.revert = function () {
     try { clearInterval(iv); } catch (e) {}
     try { window.removeEventListener('mls:easy-visit-day-changed', onEasyVisitDayChanged); } catch (e) {}
