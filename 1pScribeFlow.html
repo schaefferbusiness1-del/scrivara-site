@@ -4306,7 +4306,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </span>
         <div id="calMonthLabel" style="font-weight:800;font-size:19px;margin-left:8px"></div>
         <input type="month" id="calJump" aria-label="Jump to month" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px" title="Jump to a month">
-        <select id="calProvFilter" aria-label="Filter calendar by provider" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px"><option value="">All providers</option></select>
+        <select id="calProvFilter" aria-label="Filter calendar by provider" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px"><option value="">Default schedule</option></select>
         <button class="btn-ghost" onclick="cleanupDuplicateAppointments(this)" style="font-size:13px;padding:6px 11px;margin-left:auto;color:#a12c2c;border-color:#e8b7b7" title="Scan the whole calendar and remove duplicate appointments (same patient, same day & time) — keeps one of each">🧹 Remove duplicates</button>
         <button class="btn-ghost" onclick="loadCalendar()" style="font-size:13px;padding:6px 11px">↻ Refresh</button>
       </div>
@@ -14090,7 +14090,7 @@ function _calResetForSession(account,epoch){
     var grid=document.getElementById('calGrid'); if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Loading appointments\u2026</div>';
     var day=document.getElementById('calDayPanel'); if(day){ day.innerHTML=''; day.style.display='none'; }
     var checkin=document.getElementById('calCheckinWrap'); if(checkin){ checkin.innerHTML=''; checkin.style.display='none'; }
-    var pf=document.getElementById('calProvFilter'); if(pf){ pf.innerHTML='<option value="">All providers</option>'; pf.value=''; }
+    var pf=document.getElementById('calProvFilter'); if(pf){ pf.innerHTML='<option value="">Default schedule</option>'; pf.value=''; }
   }catch(e4){}
   try{ window.dispatchEvent(new CustomEvent('mls:calendar-session-reset',{detail:{account:account,epoch:epoch}})); }catch(e5){}
   return true;
@@ -14218,7 +14218,7 @@ function _calRowMatchesProv(a,pfVal){
 }
 function _calFilterVal(){
   var pf=document.getElementById('calProvFilter'); var pfVal=pf?pf.value:'';
-  if(pf){ if((_calProviders&&_calProviders.length)||(window._calApptProviders&&window._calApptProviders.length)){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">All providers</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+((window._calApptProviders||[]).filter(function(q){ return q&&q.provider_key&&!q.doctor_user_id; }).map(function(q){ return '<option value="pk:'+esc(q.provider_key)+'">'+esc(q.label||q.provider_key)+' ('+(q.count||0)+')</option>'; }).join('')); pf.value=pfVal; } } else { pf.style.display='none'; } }
+  if(pf){ if((_calProviders&&_calProviders.length)||(window._calApptProviders&&window._calApptProviders.length)){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">Default schedule</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+((window._calApptProviders||[]).filter(function(q){ return q&&q.provider_key&&!q.doctor_user_id; }).map(function(q){ return '<option value="pk:'+esc(q.provider_key)+'">'+esc(q.label||q.provider_key)+' ('+(q.count||0)+')</option>'; }).join('')); pf.value=pfVal; } } else { pf.style.display='none'; } }
   return pfVal;
 }
 function renderCalendar(){
@@ -14410,7 +14410,7 @@ function _calRenderMonth(){
   var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent=months[_calMonth]+' '+_calYear;
   var jump=document.getElementById('calJump'); if(jump && document.activeElement!==jump) jump.value=_calYear+'-'+_calPad(_calMonth+1);
   var pf=document.getElementById('calProvFilter'); var pfVal=pf?pf.value:'';
-  if(pf){ if((_calProviders&&_calProviders.length)||(window._calApptProviders&&window._calApptProviders.length)){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">All providers</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+((window._calApptProviders||[]).filter(function(q){ return q&&q.provider_key&&!q.doctor_user_id; }).map(function(q){ return '<option value="pk:'+esc(q.provider_key)+'">'+esc(q.label||q.provider_key)+' ('+(q.count||0)+')</option>'; }).join('')); pf.value=pfVal; } } else { pf.style.display='none'; } }
+  if(pf){ if((_calProviders&&_calProviders.length)||(window._calApptProviders&&window._calApptProviders.length)){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">Default schedule</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+((window._calApptProviders||[]).filter(function(q){ return q&&q.provider_key&&!q.doctor_user_id; }).map(function(q){ return '<option value="pk:'+esc(q.provider_key)+'">'+esc(q.label||q.provider_key)+' ('+(q.count||0)+')</option>'; }).join('')); pf.value=pfVal; } } else { pf.style.display='none'; } }
   var grid=document.getElementById('calGrid'); if(!grid) return;
   var byDate={}; (_calAppts||[]).filter(function(a){ return _calRowMatchesProv(a,pfVal); }).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
   var startDow=new Date(_calYear,_calMonth,1).getDay();

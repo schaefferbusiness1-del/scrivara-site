@@ -556,6 +556,26 @@ function makeCompleteRosterUnattributed(response) {
   return response;
 }
 
+function makePartialSingleDetectedProvider(response, target) {
+  target = target || { stableKey: 'header:1', id: '101', raw: 'Header_One_MD', name: 'Header One, MD', rosterVerified: false };
+  response.providers = [target.name];
+  response.providerRoster = [clone(target)];
+  response.providerDiag.providerNames = [target.name];
+  response.providerDiag.attributionCoverage = {
+    verdict: 'row-unattributed', rows: ROWS, headerCount: 1,
+    unattributedRows: ROWS, foreignRows: 0
+  };
+  Object.assign(response.providerRosterReceipt, {
+    complete: false,
+    partial: true,
+    reason: 'legacy-unverified',
+    expectedCount: null,
+    observedCount: 1,
+    attributionCoverage: clone(response.providerDiag.attributionCoverage)
+  });
+  return response;
+}
+
 function seedSelectedResumeIntent(h) {
   const rec = {
     date: DAY,
@@ -893,6 +913,57 @@ async function main() {
     v: 1, mode: 'selected', source: 'day-caller', id: '101', stableKey: 'header:1'
   });
 
+  /* The current extension's legacy receipt can detect a provider header while
+   * remaining honest that it did not enumerate a complete practice roster.
+   * A deliberate selected pull may use that identity only when the fresh,
+   * request-bound Day read shows exactly the selected header. Columnless rows
+   * can then be attributed to that explicit one-provider view; the receipt
+   * remains partial and is never promoted to a practice-wide roster. */
+  const detectedSelected = makeHarness({ mutateResponse: response => makePartialSingleDetectedProvider(response) });
+  const detectedSelectedResult = await detectedSelected.api.dayPull({
+    date: DAY,
+    provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: false },
+    includeHistory: false,
+    onStatus: detectedSelected.onStatus
+  });
+  assert.strictEqual(detectedSelectedResult.ok, true,
+    'one exact detected Athena provider could not complete a selected Day pull');
+  assert.strictEqual(detectedSelectedResult.complete, true,
+    'one exact detected Athena provider returned a partial selected Day pull');
+  assert.strictEqual(detectedSelected.savedBodies.length, ROWS,
+    'one exact detected provider did not import the full selected Day census');
+  assert(detectedSelected.savedBodies.every(body => body.provider === 'Header One, MD'),
+    'detected selected-provider import stamped a different provider name');
+  assert(detectedSelectedResult.providerRosterReceipt && detectedSelectedResult.providerRosterReceipt.complete === false,
+    'detected selected-provider route falsely promoted the partial practice roster');
+  assert.strictEqual(detectedSelectedResult.providerRosterReceipt.reason, 'legacy-unverified',
+    'detected selected-provider route rewrote the live legacy roster reason');
+  assert(detectedSelectedResult.providerReceipt && detectedSelectedResult.providerReceipt.mode === 'selected' &&
+    detectedSelectedResult.providerReceipt.complete === true,
+  'detected selected-provider route did not distinguish exact row scope from partial practice roster');
+  const detectedRead = detectedSelected.armedOperations[detectedSelected.armedOperations.length - 1];
+  assert(detectedRead && detectedRead.providerMode === 'selected' &&
+    detectedRead.requestedProviderId === '101' && detectedRead.requestedProviderStableKey === 'header:1',
+  'detected selected-provider read lost its exact frozen identity');
+
+  const wrongDetected = makeHarness({
+    mutateResponse: response => makePartialSingleDetectedProvider(response, {
+      stableKey: 'header:2', id: '202', raw: 'Header_Two_MD', name: 'Header Two, MD', rosterVerified: false
+    })
+  });
+  const wrongDetectedResult = await wrongDetected.api.dayPull({
+    date: DAY,
+    provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: false },
+    includeHistory: false,
+    onStatus: wrongDetected.onStatus
+  });
+  assert.strictEqual(wrongDetectedResult.ok, false,
+    'a selected provider absent from the fresh Athena response was imported');
+  assert.strictEqual(wrongDetected.savedBodies.length, 0,
+    'a different detected provider response wrote rows under the selected clinician');
+  assert(!receiptComplete(wrongDetectedResult.providerReceipt),
+    'a different detected provider response minted selected-provider completion');
+
   /* A selected provider that cannot be resolved after the warm-up must not be
      silently widened to `all`.  Use a response that is otherwise a perfectly
      importable, completely attributed all-provider day: zero writes here prove
@@ -1109,7 +1180,7 @@ async function main() {
   assert(!receiptComplete(directResult && directResult.appointmentCensusReceipt),
     'public direct import minted a complete appointment census');
 
-  console.log('PASS p1 appointment-census-only runtime: exact 24/24 all-day row-unattributed imports idempotently without provider guesses; default history skips chart work; selected scope never widens across warm/resume, resume scope is bounded and TOCTOU-safe, guarded all census resume works; near misses and selected/month/direct routes refuse; stale authority is cleared durably and unreadable authority fails closed');
+  console.log('PASS p1 appointment-census-only runtime: exact 24/24 all-day row-unattributed imports idempotently without provider guesses; one unique legacy-detected selected provider is admitted only through fresh request-bound identity and exact row scope, while a different detected header refuses; default history skips chart work; selected scope never widens across warm/resume, resume scope is bounded and TOCTOU-safe, guarded all census resume works; near misses and selected/month/direct routes refuse; stale authority is cleared durably and unreadable authority fails closed');
 }
 
 main().catch(error => {

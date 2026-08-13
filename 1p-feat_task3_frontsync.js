@@ -40,6 +40,10 @@
   }
 
   var VERSION = 't3-p1-1.2.0';
+  /* Empty provider scope remains the canonical internal "all" value. Calendar
+     wording stays deliberately neutral because this is a saved-schedule
+     display filter, not proof that Athena's entire practice roster was read. */
+  var DEFAULT_SCOPE_LABEL = 'Default schedule';
   var wrapped = [], trackedTimeouts = [], destroyed = false, started = false, runtimeGeneration = 0;
   var nodes = ['mlsT3Status', 'mlsT3Roster', 'mlsT3Empty', 'mlsT3PickEmpty', 'mlsT3PickHead', 'mlsT3Css', 'mlsT3GlanceNote'];
 
@@ -463,9 +467,9 @@
     },
     getScope: function () {
       var raw = lsGet('mlsProvScope3');
-      if (!raw) return { pk: '', label: 'All providers' };
-      var i = raw.indexOf('|'); if (i < 0) return { pk: '', label: 'All providers' };
-      return { pk: raw.slice(0, i), label: raw.slice(i + 1) || 'All providers' };
+      if (!raw) return { pk: '', label: DEFAULT_SCOPE_LABEL };
+      var i = raw.indexOf('|'); if (i < 0) return { pk: '', label: DEFAULT_SCOPE_LABEL };
+      return { pk: raw.slice(0, i), label: raw.slice(i + 1) || DEFAULT_SCOPE_LABEL };
     },
     setScope: function (pk, label) {
       lsSet('mlsProvScope3', pk ? (pk + '|' + (label || pk)) : '');
@@ -647,7 +651,7 @@
     if (scope.pk && c.all > 0) {
       el.innerHTML = '<div class="t3e-t">No patients for <b>' + esc(scope.label) + '</b> ' + (opt.mode === 'day' ? 'on ' + esc(label) : esc(label)) + '.</div>' +
         '<div class="t3e-s">' + c.all + ' patient' + (c.all === 1 ? ' is' : 's are') + ' booked with other providers.</div>' +
-        '<div class="t3e-b"><button type="button" class="t3e-all">View all providers</button><button type="button" class="t3e-rf">Refresh</button></div>';
+        '<div class="t3e-b"><button type="button" class="t3e-all">View default schedule</button><button type="button" class="t3e-rf">Refresh</button></div>';
       el.querySelector('.t3e-all').onclick = function () { Cal.setScope('', ''); };
     } else {
       el.innerHTML = '<div class="t3e-t">No appointments ' + (opt.mode === 'day' ? 'on ' + esc(label) : esc(label)) + '.</div>' +
@@ -675,7 +679,7 @@
          not associate any appointment with a provider. Clear it durably and
          keep the native filter neutral without emitting a misleading click. */
       lsSet('mlsProvScope3', '');
-      scope = { pk: '', label: 'All providers' };
+      scope = { pk: '', label: DEFAULT_SCOPE_LABEL };
       safe(function () { var pf = $('calProvFilter'); if (pf && pf.value !== '') pf.value = ''; });
     }
     var allCount = Cal.rows(Object.assign({}, opt, { all: true })).length;
@@ -700,7 +704,7 @@
       return;
     }
     var html = '<span class="t3r-cap">Providers</span>' +
-      '<span class="t3r-chip' + (!scope.pk ? ' t3r-on' : '') + '" data-pk="" data-label="All providers">All providers <b>' + allCount + '</b></span>';
+      '<span class="t3r-chip' + (!scope.pk ? ' t3r-on' : '') + '" data-pk="" data-label="' + esc(DEFAULT_SCOPE_LABEL) + '">' + esc(DEFAULT_SCOPE_LABEL) + ' <b>' + allCount + '</b></span>';
     provs.forEach(function (p) {
       if (!p.label) return;
       var on = scope.pk && (scope.pk === p.pk);
@@ -819,7 +823,7 @@
     if (!scope.census && scope.pk && !scoped.length && all.length) {
       if (!note) {
         note = document.createElement('div'); note.id = 'mlsT3PickEmpty';
-        note.innerHTML = '<span class="t3pe-t"></span><button type="button" class="t3pe-all">Show all providers for this day</button>';
+        note.innerHTML = '<span class="t3pe-t"></span><button type="button" class="t3pe-all">Show default schedule for this day</button>';
         note.querySelector('.t3pe-all').onclick = function () { Cal.setScope('', ''); };
       }
       note.querySelector('.t3pe-t').textContent = 'No patients for ' + scope.label + ' on ' + (date === todayKey() ? 'today' : pretty(date)) + ' - ' + all.length + ' booked with other providers.';

@@ -18901,7 +18901,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     signedAt: 0,                         /* our sign-step marker (reset on regen / new patient) */
     expanded: null, editing: false, lastWarn: '',
     showCount: 5,
-    providerFilter: '',                  /* 1p preview defaults explicitly to All providers; null = follow app, else canonical name */
+    providerFilter: '',                  /* 1p preview default = current athenaOne view; internal '' remains canonical all/account scope */
     providerRef: '',                     /* canonical stableKey; never a fuzzy display-name key */
     staffRange: 'today', customFrom: '', customTo: '',
     advOpen: false, query: '',
@@ -18909,6 +18909,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* auto-pull-on-entry state: idle | running | done | failed */
     autoPull: 'idle', autoPullAt: 0, autoPullNote: ''
   };
+  /* The internal value stays `all` for receipt/protocol compatibility. The
+     user-facing label is intentionally narrower: without enumerating Athena's
+     own practice list, this default reads exactly the providers painted in the
+     current athenaOne view and must not promise "all providers." */
+  var DEFAULT_PROVIDER_SCOPE_LABEL = 'Your athenaOne view (default)';
 
   /* ---------------- small utils ------------------------------------------ */
   function $(id) { return document.getElementById(id); }
@@ -18998,6 +19003,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return out.slice().sort(function (a, b) { return String(a && a.name || '').localeCompare(String(b && b.name || '')); });
   }
   function activeProvider() { return S.providerFilter != null ? S.providerFilter : resolveAppProvider(); }
+  function activeProviderLabel() { return activeProvider() || DEFAULT_PROVIDER_SCOPE_LABEL; }
   function activeProviderRequest() {
     if (S.providerFilter === '') return 'all';
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
@@ -19051,8 +19057,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       provRefreshing = false;
       var total = providerList().length, receipt = providerRosterReceipt();
       if (!sources[0] && !sources[1]) toast('Could not refresh providers - sign in to MLS and keep the Athena Day schedule open.');
-      else if (!(receipt && receipt.complete)) toast('Provider list is still partial (' + total + ' seen). Keep the full Athena Day schedule open and refresh again.');
-      else toast('Verified full Athena provider roster - ' + total + ' provider' + (total === 1 ? '' : 's') + '.');
+      else if (!(receipt && receipt.complete)) toast('Detected ' + total + ' provider' + (total === 1 ? '' : 's') + ' from MLS and the current Athena view. You can select any listed clinician; the pull will verify that exact clinician before importing.');
+      else toast('Detected and verified ' + total + ' provider' + (total === 1 ? '' : 's') + ' in the current Athena Day view.');
       render();
     });
     return;
@@ -19719,7 +19725,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = selectedEntry.name; }
     }
     list.forEach(function (p0) { var k0 = String(p0 && p0.name || '').toLowerCase(); counts[k0] = (counts[k0] || 0) + 1; });
-    var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>All providers</option>';
+    var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) + '</option>';
     list.forEach(function (p) {
       var key = String(p && p.stableKey || ''), name = String(p && p.name || ''), label = name;
       if (!key || !name) return;
@@ -19737,7 +19743,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (v === '__all') { S.providerFilter = ''; S.providerRef = ''; S.showCount = 5; render(); return; }
       var rp = safe(function () { return window.__mlsProviderRoster; }, null);
       var entry = rp && isFn(rp.resolve) ? safe(function () { return rp.resolve(v); }, null) : null;
-      if (!entry) { toast('That provider is no longer uniquely verifiable. Refresh the Athena roster and choose again.'); return; }
+      if (!entry) { toast('That provider is no longer unique in the detected Athena list. Refresh providers and choose again.'); return; }
       S.providerFilter = entry.name; S.providerRef = entry.stableKey; S.showCount = 5; render();
     };
   }
@@ -20425,7 +20431,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function homeStatus() {
     var prov = activeProvider(), g = guardInfo();
     var bits = [];
-    bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
+    bits.push('🩺 ' + esc(prov || DEFAULT_PROVIDER_SCOPE_LABEL));
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -20802,13 +20808,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * without duplicating the selected-day strip's pull action. Two causes:
    *  - nothing pulled at all         → point to "Pull this day" above
    *  - pulled, but the current provider filter hides everything
-   *                                  → one-tap "Show all providers"        */
+   *                                  → one-tap return to default view       */
   function emptyTodayHtml() {
     var un = visitCountUnscoped(), prov = activeProvider(), dayLabel = visitDayShort();
     if (un > 0 && prov) {
-      return '<button type="button" class="ez3-big" id="ez3AllProv">👥 Show all providers' +
+      return '<button type="button" class="ez3-big" id="ez3AllProv">👥 Use ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) +
              '<small>Nothing for ' + esc(prov) + ' on ' + esc(dayLabel) + ' — ' + un + ' appointment' + (un === 1 ? '' : 's') +
-             ' loaded for other providers</small></button>';
+             ' loaded elsewhere in this Athena view</small></button>';
     }
     /* Owner 2026-07-21 (screenshot): right after sign-in the calendar cache is
        still hydrating, and this state falsely claimed "No appointments
@@ -22069,7 +22075,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        before freshPull resets them), not the whole verified month. A retry
        click with nothing recorded as failed falls back to the full month. */
     var retryDates = (retryOnly === true && P && Array.isArray(P.failedDays) && P.failedDays.length) ? P.failedDays.slice() : null;
-    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: true });
+    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: true, allowDetectedProvider: true });
     if (!exactGate || !exactGate.ok) {
       /* smp-1.1.0 (owner ask 2026-07-17): never tell the user to stage Athena by
          hand. Drive athenaOne to the current Day schedule ourselves (read-only
@@ -22089,11 +22095,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }).then(null, function () {}).then(function () { startMonthPull(retryOnly, true); });
         return;
       }
-      pSet('ez3PullNow', (exactGate && exactGate.error) || 'The full Athena provider roster is not verified yet.');
+      pSet('ez3PullNow', (exactGate && exactGate.error) || 'Athena did not return a verifiable provider list for this pull.');
       pSet('ez3PullNow2', 'MLS tried to verify it automatically but could not read the Athena Day schedule — check that athenaOne is signed in, then press Start again.');
       plog('Roster auto-verify did not complete — is athenaOne signed in?', 'err');
       return;
     }
+    /* Keep the progress owner's protocol value canonical. The narrower
+       default wording belongs only in rendered labels above. */
     var exactProviderLabel = exactGate.provider === 'all' ? 'all' : exactGate.provider.name;
     P = freshPull(exactRange, exactProviderLabel); P.running = true; P.cancelled = false;
     if (retryDates) {
@@ -22191,7 +22199,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (P && P.running) return;
     var exact = safe(function () { return window.__mlsSI; }, null), exactDay = todayLocal();
     if (!(exact && isFn(exact.pull) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', "The Athena pull is not ready yet. Give it a moment, then try again."); return; }
-    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: false });
+    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: false, allowDetectedProvider: true });
     if (!exactGate || !exactGate.ok) {
       /* smp-1.1.0 parity (owner ask 2026-07-17): the DAY pull stages Athena
          itself too - same auto-recovery the month pull got. Drive athenaOne to
@@ -22217,6 +22225,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     Promise.resolve(exact.pull({
       date: exactDay,
       provider: exactGate.provider,
+      __p1DetectedProvider: !!(exactGate.provider && exactGate.provider !== 'all' && exactGate.provider.detectedOnly === true),
       includeHistory: true,
       onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
     })).then(function (res) {
@@ -22279,7 +22288,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var selected = activeProviderRequest();
     if (S.providerFilter === '' && selected === 'all') return { ok: true, all: true, practitioner: '' };
     if (!selected || selected === 'all' || typeof selected !== 'object' || selected.fhirPractitionerVerified !== true) {
-      return { ok: false, all: false, practitioner: '', error: 'The selected doctor has no verified Athena FHIR Practitioner mapping. Choose All providers explicitly or refresh the provider roster and select a verified doctor.' };
+      return { ok: false, all: false, practitioner: '', error: 'The selected doctor has no verified Athena FHIR Practitioner mapping. Choose Your athenaOne view (default), or refresh providers and select a mapped doctor.' };
     }
     var ref = String(selected.fhirPractitioner || selected.fhirPractitionerId || '');
     if (!/^Practitioner\/[A-Za-z0-9.-]{1,128}$/.test(ref)) return { ok: false, all: false, practitioner: '', error: 'The selected doctor has an invalid Athena FHIR Practitioner mapping. Nothing was pulled.' };
@@ -22342,14 +22351,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          Provider selector as everything else in staff prep (no second
          "Doctor" dropdown that can drift out of sync). */
       '<div class="prow"><label>Month</label><input type="month" id="ez3sMonth" value="' + esc(ymVal) + '" max="' + esc(nowYm()) + '">' +
-        '<label>Pulling for</label><b id="ez3PullFor" style="font-size:13.5px">' + esc(activeProvider() || 'All providers') + '</b>' +
+        '<label>Pulling for</label><b id="ez3PullFor" style="font-size:13.5px">' + esc(activeProviderLabel()) + '</b>' +
         '<span class="ez3-status" style="margin:0;text-align:left">(set with the Provider selector above)</span>' +
         '<button type="button" class="ez3-sm" id="ez3ProvFix" style="padding:8px 12px;font-size:12px">Check provider attribution</button>' +
         '<button type="button" class="ez3-sm" id="ez3ProvRefresh" style="padding:8px 12px;font-size:12px"' +
-          (provRefreshing ? ' disabled' : '') + '>' + (provRefreshing ? '↻ Refreshing providers…' : '↻ Re-pull all providers') + '</button></div>' +
+          (provRefreshing ? ' disabled' : '') + '>' + (provRefreshing ? '↻ Refreshing providers…' : '↻ Refresh Athena providers') + '</button></div>' +
       (providerList().length <= 1 ? '<p class="ez3-status" style="text-align:left;margin:2px 0 6px">' + (providerList().length === 0 ?
-        '<b>No providers loaded yet.</b> Tap <b>↻ Re-pull all providers</b> and MLS reads your practice roster from Athena (read-only). You only need this once.' :
-        '<b>Only 1 provider loaded.</b> If your practice has more doctors, tap <b>↻ Re-pull all providers</b> to fetch the full roster from Athena (read-only).') + '</p>' : '') +
+        '<b>No providers detected yet.</b> Tap <b>↻ Refresh Athena providers</b> while the Athena Day schedule is open.' :
+        '<b>Only 1 provider detected.</b> If Athena currently shows more clinicians, tap <b>↻ Refresh Athena providers</b>.') + '</p>' : '') +
       '<div class="prow conn"><span class="dot" id="ez3PullDot"></span><span id="ez3PullConn">Ready — <b>1)</b> pick the month · <b>2)</b> press Start. MLS pulls the schedule and files every visit automatically.</span></div>' +
       '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>' +
       '<div class="ez3-status" id="ez3PullBarLbl" style="text-align:left;margin:0 0 4px"></div>' +
@@ -22411,7 +22420,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<p class="ez3-sub" style="margin:0 0 10px">' + esc(rb.label) +
          (rb.from === rb.to ? ' · ' + esc(rb.from) : ' · ' + esc(rb.from) + ' → ' + esc(rb.to)) +
          ' · ' + all.length + ' appointment' + (all.length === 1 ? '' : 's') +
-         (activeProvider() ? ' · scoped to ' + esc(activeProvider()) : ' · all providers') + '</p>';
+         (activeProvider() ? ' · scoped to ' + esc(activeProvider()) : ' · ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL)) + '</p>';
     if (!all.length) {
       h += '<div class="ez3-empty">Nothing in this range yet.<br>Use the month pull above (or 📥 Pull today only) to fetch it from Athena.</div>';
     } else {

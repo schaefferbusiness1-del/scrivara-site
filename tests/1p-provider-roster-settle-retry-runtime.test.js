@@ -27,22 +27,56 @@ const end = source.indexOf('/* ===== __mlsStorageJanitor', start);
 assert(start >= 0 && end > start, 'p1 DaySwitch module markers are missing');
 const moduleSource = source.slice(start, end);
 
-/* The preview starts and session-resets at an explicit All-provider scope.
- * This is different from `null`, which follows the signed-in account provider
- * and was the source of the live selector/pull mismatch. A doctor can still
- * deliberately choose one roster entry after boot. */
+/* The preview starts and session-resets at the explicit default/current-Athena
+ * scope. Internally this remains the canonical empty/all value, different from
+ * `null` (follow the signed-in account provider). The visible wording must not
+ * claim a practice-wide roster Athena never enumerated. A doctor can still
+ * deliberately choose one detected roster entry after boot. */
 const easyStart = source.indexOf('the effortless Visit tab  (__mlsEasyV32)');
 const easyEnd = source.indexOf('window.__mlsEasyV32 = api;', easyStart);
 assert(easyStart >= 0 && easyEnd > easyStart, 'canonical 1p Easy provider owner is missing');
 const easySource = source.slice(easyStart, easyEnd);
-assert(/providerFilter:\s*''\s*,\s*\/\* 1p preview defaults explicitly to All providers/.test(easySource),
-  'a fresh 1p workspace no longer defaults explicitly to All providers');
+assert(/providerFilter:\s*''\s*,\s*\/\* 1p preview default = current athenaOne view/.test(easySource),
+  'a fresh 1p workspace no longer defaults to the canonical empty/all scope');
+assert(/DEFAULT_PROVIDER_SCOPE_LABEL\s*=\s*'Your athenaOne view \(default\)'/.test(easySource) &&
+  />'\s*\+\s*esc\(DEFAULT_PROVIDER_SCOPE_LABEL\)\s*\+\s*'<\/option>/.test(easySource),
+  'the canonical default scope is not visibly labelled Your athenaOne view (default)');
+assert(!/>All providers<\/option>/.test(easySource),
+  'the active Easy provider selector still promises an unverified All providers scope');
 assert(/S\.providerFilter\s*=\s*'';\s*S\.providerRef\s*=\s*'';/.test(easySource),
-  'a 1p session reset no longer restores explicit All providers');
+  'a 1p session reset no longer restores the internal empty/all default scope');
 assert(/if\s*\(S\.providerFilter\s*===\s*''\)\s*return\s*'all';/.test(easySource),
   'the explicit All-provider state no longer reaches the Day pull as provider: all');
 assert(/S\.providerFilter\s*=\s*entry\.name;\s*S\.providerRef\s*=\s*entry\.stableKey/.test(easySource),
   'the explicit selected-provider control disappeared while making All the default');
+assert(/_resolveProviderRequest\(activeProviderRequest\(\),\s*\{\s*allowAll:\s*true,\s*requireRosterForAll:\s*false,\s*allowDetectedProvider:\s*true\s*\}/.test(easySource) &&
+  /exact\.pull\(\{[\s\S]{0,180}__p1DetectedProvider:\s*!!\(exactGate\.provider/.test(easySource),
+  'the Staff day-pull launcher does not preserve guarded detected-provider routing');
+assert(/exactGate\.provider\s*===\s*'all'\s*\?\s*'all'\s*:\s*exactGate\.provider\.name/.test(easySource),
+  'the visible default wording leaked into the canonical internal all progress value');
+
+/* Leaving Easy for Calendar/Task3 must not reintroduce the old promise. These
+ * surfaces keep their canonical empty provider key, but describe it as the
+ * neutral saved-schedule default rather than claiming Athena enumerated every
+ * provider in the practice. Pin both runtime rebuilding paths in both preview
+ * shells so a later render cannot silently put the old label back. */
+const task3Source = fs.readFileSync(path.join(root, '1p-feat_task3_frontsync.js'), 'utf8');
+const previewShell = fs.readFileSync(path.join(root, '1p', 'index.html'), 'utf8');
+const fallbackShell = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
+assert(/DEFAULT_SCOPE_LABEL\s*=\s*'Default schedule'/.test(task3Source),
+  'Task3 no longer owns the neutral Default schedule label');
+assert(/return\s*\{\s*pk:\s*''\s*,\s*label:\s*DEFAULT_SCOPE_LABEL\s*\}/.test(task3Source) &&
+  /data-pk=""[^\n]+DEFAULT_SCOPE_LABEL/.test(task3Source),
+  'Task3 default display label no longer maps to the canonical empty provider key');
+assert(!/data-pk=""[^\n]*All providers/.test(task3Source),
+  'Task3 still renders All providers for its empty/default provider key');
+[previewShell, fallbackShell].forEach((shell, index) => {
+  const shellName = index === 0 ? '1p/index.html' : '1pScribeFlow.html';
+  assert((shell.match(/<option value="">Default schedule<\/option>/g) || []).length >= 3,
+    shellName + ' does not preserve Default schedule through initial, reset, and rebuild paths');
+  assert(!/<option value="">All providers<\/option>/.test(shell),
+    shellName + ' still exposes All providers for the canonical empty provider key');
+});
 
 const DAY = '2026-08-12';
 const OTHER_DAY = '2026-08-13';
