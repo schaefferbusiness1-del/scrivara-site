@@ -162,6 +162,7 @@ include:
   # Exact nested showcase path. Do not include bare directory basenames here:
   # Jekyll treats those broadly enough to reopen unrelated legal/test files.
   - "1p/legal/index.html"
+  - "1p/marketing/index.html"
   - "terms.html"
 
   # Minimum reviewed phone-recorder runtime. The recorder HTML is above; these

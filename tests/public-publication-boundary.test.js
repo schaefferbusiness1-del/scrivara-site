@@ -58,7 +58,8 @@ const P1_PREVIEW_HTML = [
 
 const P1_LIVE_HTML = [
   '1p/index.html',
-  '1p/legal/index.html'
+  '1p/legal/index.html',
+  '1p/marketing/index.html'
 ];
 
 const P1_PREVIEW_ASSETS = [
@@ -68,6 +69,7 @@ const P1_PREVIEW_ASSETS = [
   '1p-feat_mls_avatar_face.js',
   '1p-feat_fullhistory_pdf.js',
   '1p-feat_mls_legalpack.js',
+  '1p-feat_mls_marketing.js',
   '1p-feat_nextup_connect.js',
   '1p-feat_mls_schedimport_exact.js',
   '1p-feat_mls_writeflow.js',
@@ -230,7 +232,7 @@ const extensionRelease = JSON.parse(read('extension-version.json'));
 assert(/^\d+(?:\.\d+){1,3}$/.test(String(extensionRelease.version || '')), 'published extension feed must contain a valid version');
 
 const vendorTraversalIncludes = ['vendor', ...PUBLIC_VENDOR_ASSETS.map((rel) => path.posix.basename(rel))];
-const p1TraversalIncludes = ['1p/legal/index.html'];
+const p1TraversalIncludes = ['1p/legal/index.html', '1p/marketing/index.html'];
 /* Owner directive 2026-07-20: the exact stamped 3.0.22 release ships publicly;
  * its bytes are digest-pinned below. Candidates stay excluded. */
 const RELEASED_PACKAGE = 'MLS_Assist_v3.0.61.zip';
@@ -355,6 +357,7 @@ for (const page of P1_LIVE_HTML) {
   assert(fs.existsSync(path.join(root, page)), `1p live page is missing: ${page}`);
   assert(includeSet.has(path.posix.basename(page)), `1p live page basename is not explicitly allowlisted for publication: ${page}`);
   if (page === '1p/legal/index.html') assert(includeSet.has(page), 'FREE Legal showcase lacks its exact nested publication include');
+  if (page === '1p/marketing/index.html') assert(includeSet.has(page), 'FREE Marketing showcase lacks its exact nested publication include');
   assert(inventorySet.has(page), `1p live page is absent from the generated-site publication inventory: ${page}`);
 }
 for (const asset of P1_PREVIEW_ASSETS) {
@@ -659,6 +662,12 @@ async function verifyServiceWorkerRuntime() {
     assert.strictEqual(legalShowcase.status, 200, `the FREE Legal showcase must open through an active worker: ${legalPath}`);
     assert.strictEqual(fetchCalls.length, callsBeforeLegal + 1, `the FREE Legal showcase must reach the network: ${legalPath}`);
   }
+  for (const marketingPath of ['/1p/marketing/', '/1p/marketing/index.html']) {
+    const callsBeforeMarketing = fetchCalls.length;
+    const marketingShowcase = await runFetch(origin + marketingPath, { mode: 'navigate', accept: 'text/html' });
+    assert.strictEqual(marketingShowcase.status, 200, `the FREE Marketing showcase must open through an active worker: ${marketingPath}`);
+    assert.strictEqual(fetchCalls.length, callsBeforeMarketing + 1, `the FREE Marketing showcase must reach the network: ${marketingPath}`);
+  }
   const encodedRetired = await runFetch(`${origin}/%41uthPilot.HTML`, { mode: 'navigate', accept: 'text/html' });
   assert.strictEqual(encodedRetired.status, 410, 'case or percent encoding must not bypass the retired HTML boundary');
   const packageNavigation = await runFetch(`${origin}/popup.html`, { mode: 'navigate', accept: 'text/html' });
@@ -743,6 +752,8 @@ async function verifyServiceWorkerRuntime() {
   assert(!cachedKeys.includes(`${origin}/1p/`), 'the /1p/ live preview HTML must remain network-only');
   assert(!cachedKeys.includes(`${origin}/1p/legal/`), 'the /1p/legal/ showcase must remain network-only');
   assert(!cachedKeys.includes(`${origin}/1p/legal/index.html`), 'the /1p/legal/index.html showcase must remain network-only');
+  assert(!cachedKeys.includes(`${origin}/1p/marketing/`), 'the /1p/marketing/ showcase must remain network-only');
+  assert(!cachedKeys.includes(`${origin}/1p/marketing/index.html`), 'the /1p/marketing/index.html showcase must remain network-only');
   assert(!cachedKeys.includes(`${origin}/phone.html`), 'phone recorder HTML must remain network-only');
   assert(!cachedKeys.includes(`${origin}/phone-manifest.json`), 'phone manifest must remain network-only');
   assert(cachedKeys.includes(`${origin}/feat_mls_force_full_phone.js?v=20260719ffp200`), 'exact reviewed phone UI asset should be cacheable by version');

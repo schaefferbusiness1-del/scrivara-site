@@ -1275,7 +1275,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ], [
         '🔧 Troubleshoot Athena — if pulls or write-backs ever act up, start here; it checks the connection end to end.',
         '📱 Use on your phone — put MLS on your phone’s home screen and record from anywhere.',
-        '⭐ Reviews & reputation — find your Google reviews and grow the practice (Premium).'
+        '📣 Marketing — build free, draft-only listing, review-reply, campaign, and ads plans from Tools.'
       ])
     },
     {
@@ -18765,7 +18765,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  *     home); "Change patient" reads "Wrong patient? Switch".
  *   - Widget re-homes (ONE home each, render-time existence-gated): premium
  *     "📤 Send to patient" (#mlsPtab_send) lives in the note-review actions;
- *     premium "⭐ Reviews & reputation" (#mlsPtab_reviews) lives in Staff
+ *     the retired Reviews shortcut redirects to free draft-only Marketing in Staff
  *     prep; "🤖 Ask Copilot" (AI Studio, where copilot-inline hosts the real
  *     thread) and "💡 Recommendations" (recs view) are one tap from the
  *     finished note. The silenced widget-strip's other cards were already
@@ -22482,7 +22482,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3sAthenaApiPull', pullStaffScheduleThroughAthenaApi);
     on('ez3sProv', function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor in the app’s picker.'); else toast('Provider picker not found.'); });
     on('ez3sPrep', openPrep);
-    on('ez3sReviews', function () { var t = $('mlsPtab_reviews'); if (t) handOff(function () { var r=window.__mlsPatientReach; if(r&&typeof r.openContext==='function') r.openContext('reviews',{source:'staff-action',invoker:t}); else t.click(); }, 'Reviews & reputation opened.'); });
+    on('ez3sReviews', function () { var t = $('mlsPtab_reviews'); if (t) handOff(function () { var r=window.__mlsPatientReach; if(r&&typeof r.openContext==='function') r.openContext('reviews',{source:'staff-action',invoker:t}); else t.click(); }, 'Marketing opened.'); });
     on('ez3ProvRefresh', refreshProviders);
     on('ez3ProvFix', reportProviderAttribution);
     on('ez3More', function () { S.showCount += 5; render(); });
@@ -24973,7 +24973,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  *     home); "Change patient" reads "Wrong patient? Switch".
  *   - Widget re-homes (ONE home each, render-time existence-gated): premium
  *     "📤 Send to patient" (#mlsPtab_send) lives in the note-review actions;
- *     premium "⭐ Reviews & reputation" (#mlsPtab_reviews) lives in Staff
+ *     the retired Reviews shortcut redirects to free draft-only Marketing in Staff
  *     prep; "🤖 Ask Copilot" (AI Studio, where copilot-inline hosts the real
  *     thread) and "💡 Recommendations" (recs view) are one tap from the
  *     finished note. The silenced widget-strip's other cards were already
@@ -27007,7 +27007,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3sPullToday', pullTodayProxy);
     on('ez3sProv', function () { var c = $('mlsProvChip'); if (c) handOff(function () { c.click(); }, 'Pick the doctor in the app’s picker.'); else toast('Provider picker not found.'); });
     on('ez3sPrep', openPrep);
-    on('ez3sReviews', function () { var t = $('mlsPtab_reviews'); if (t) handOff(function () { var r=window.__mlsPatientReach; if(r&&typeof r.openContext==='function') r.openContext('reviews',{source:'staff-action',invoker:t}); else t.click(); }, 'Reviews & reputation opened.'); });
+    on('ez3sReviews', function () { var t = $('mlsPtab_reviews'); if (t) handOff(function () { var r=window.__mlsPatientReach; if(r&&typeof r.openContext==='function') r.openContext('reviews',{source:'staff-action',invoker:t}); else t.click(); }, 'Marketing opened.'); });
     on('ez3More', function () { S.showCount += 5; render(); });
     var f = $('ez3From'), tt = $('ez3To');
     if (f) f.onchange = function () { S.customFrom = f.value; S.showCount = 5; render(); };
@@ -33419,7 +33419,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k:'custom widget card tool build', name:'Build a custom widget', where:'Menu -> Custom widget (also at the top of AI Studio)', how:'Describe the tool, review the generated widget, then pin it if useful.', route:'widget' },
     { k:'calendar schedule appointment new booking', name:'Calendar and appointments', where:'Calendar tab - your front desk turns this on for the practice; there is no doctor-side switch', how:'View the schedule or create a new appointment.', route:'view:calendar' },
     { k:'booking link patient scheduling share', name:'Patient booking link', where:'Patients workspace -> scheduling tools', how:'Generate the practice booking link and share it with patients.', route:'view:patients' },
-    { k:'reviews reputation google business profile', name:'Reviews and reputation', where:'Left navigation -> Reviews', how:'Use the sidebar for the full Reviews workspace. Context actions open the same live surface in a compact dialog with an Open full screen button.', route:'reach:reviews' },
+    { k:'marketing reputation review google post ads listing', name:'Free Marketing workspace', where:'Tools -> Marketing', how:'Build local, editable practice listing, privacy-safe review reply, neutral campaign, and ads-budget drafts. Copy or download them; nothing publishes, sends, connects, or spends.', route:'reach:reviews' },
     { k:'settings account access api key name specialty', name:'Account and access settings', where:'Settings -> Account & security -> Account & access', how:'Manage account identity and AI access in the first Settings section.', route:'settings:account' },
     { k:'practice provider credentials npi clinic address phone logo', name:'Practice and provider settings', where:'Settings -> Practice & provider', how:'Manage the provider identity and practice details used on generated documents.', route:'settings:practice' },
     { k:'note defaults format model comment style', name:'Note defaults', where:'Settings -> Notes & AI -> Note defaults', how:'Set the default note format, model, comment, and documentation style.', route:'settings:notes' },
@@ -35146,7 +35146,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { t: "\u{1F4B5} Pay Reports (Premium)", p: "Per-provider patient counts, half-day credits, days × rate and clearly-labeled AI-estimated collections — with Excel export. Find it at the top of Calendar and AI Studio.", },
     { t: "✨ AI Studio (Premium)", p: "Ask the MLS Copilot anything about your practice — it reads your own data. “Build a custom tool” turns a sentence into a working dashboard, calculator or worklist; every build saves to My creations, and the Improve box refines it.", go: "studio", sel: "#copilotCard" },
     { t: "\u{1F4CA} Study Groups (advanced)", p: "Down at the bottom of AI Studio: build a named patient cohort, then run a study that outputs a graph, an Excel file and a PDF. Collapsed until you need it.", sel: "#mlsB39SgWrap" },
-    { t: "⭐ Reviews & reputation (Premium)", p: "MLS auto-finds your Google listings and reviews and helps you market the practice. Open it from Menu → Reviews & reputation.", },
+    { t: "📣 Marketing (Free · Draft-only)", p: "Build editable listing, review-reply, neutral campaign, and ads-budget drafts. Open it from Tools → Marketing; nothing publishes, contacts patients, connects an account, or spends money.", },
     { t: "\u{1F916} ONE assistant for everything", p: "The MLS Assistant (bottom-left) is your single helper: chat or tap \u{1F3A4} and talk. It pulls schedules, answers questions like “how many patients did Dr. X see this month”, opens charts, and can change where notes write back — just ask.", sel: "#mlsAsstFab" },
     { t: "❓ Help, any time", p: "The Help button (top-right) opens the written step-by-step guide, and this tour is always in Menu → \u{1F4D8} How-To Guide. That's it — go see patients, MLS handles the paperwork. \u{1F389}", sel: "#nav_help" }
   ];
@@ -35867,9 +35867,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'Open <b>AI Studio</b> to ask MLS Copilot about your practice — e.g. “how many patients do I have,” ' +
       '“who’s overdue,” “how busy is tomorrow.” Type your question in the card and it answers with ' +
       'the details, and can open a chart or start a visit for you.'],
-    ['⭐', 'Reviews & reputation',
-      'The <b>Reviews</b> tab (also in the Menu) finds patient reviews and helps you reply — a simple way ' +
-      'to keep your online reputation healthy.'],
+    ['📣', 'Marketing',
+      'Open <b>Tools → Marketing</b> for the free draft-only workspace: listing checklists, privacy-safe ' +
+      'review replies, neutral campaign plans, and ads copy. Nothing publishes or sends.'],
     ['📱', 'Use it on your phone',
       'Scan the <b>Record on phone</b> QR code (top-right of MLS Easy) to capture a visit from your phone. ' +
       'Every screen also works in a narrow mobile browser — the cards stack into a single column.']
@@ -36450,7 +36450,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'p1-20260813-r1';
+  window.__MLS_AV = window.__MLS_AV || 'p1-20260813-r2';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36793,7 +36793,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='p1-20260813-r1';
+  var MLS_APP_BUILD='p1-20260813-r2';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44800,6 +44800,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   ctl.revert=function(){ctl.installed=false;if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}removeNode(ctl.node,'reverted');ctl.node=null;var api=ownedPreview();if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}ctl.state='reverted';if(window[KEY]===ctl){try{delete window[KEY];}catch(_e2){window[KEY]=null;}}};
   window[KEY]=ctl;ctl.ensure();
 }catch(e){}})(); /* 1p FREE Legal / IME preview: exact active-patient read-only chronology + local-file drafting; no intake, payment, messaging, signing, delivery, chart write, Athena write, extension, or shared production Legal asset. Reversible: window.__mlsP1LegalLoader.revert(). */
+;(function(){try{
+  if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;
+  var A='feat_mls_marketing.js',SRC='1p-feat_mls_marketing.js',V='mkt-p1-1.0.0',KEY='__mlsP1MarketingLoader',SEQ='__mlsP1MarketingLoaderSequence';
+  var prior=window[KEY];
+  var liveApi=window.__mlsP1Marketing;
+  if(liveApi&&liveApi.installed===true&&typeof liveApi.isDirty==='function'&&liveApi.isDirty()){
+    try{var upgradeGate=window.__mlsUpgradeSafety;if(upgradeGate&&typeof upgradeGate.defer==='function')upgradeGate.defer('marketing-'+V,'Marketing workspace',[{code:'marketing-draft',message:'Marketing drafts are still open. Copy, download, or clear them before applying this update.'}]);}catch(_deferError){}
+    return;
+  }
+  function valid(controller){return !!(controller&&controller.installed===true&&controller.version===V&&controller.installToken&&typeof controller.ensure==='function'&&typeof controller.revert==='function');}
+  function exactPriorOwner(controller){var api=window.__mlsP1Marketing;return !!(controller&&api&&api.installed===true&&api.version===V&&api.installToken===controller.installToken&&typeof api.reconcile==='function'&&typeof api.revert==='function'&&typeof api.isDirty==='function'&&typeof api.open==='function'&&typeof api.close==='function');}
+  if(valid(prior)){var kept=false;try{kept=prior.ensure()===true;}catch(_sameError){}if(kept&&window[KEY]===prior&&exactPriorOwner(prior)){try{var cleanGate=window.__mlsUpgradeSafety;if(cleanGate&&typeof cleanGate.clear==='function')cleanGate.clear('marketing-'+V);}catch(_clearError){}return;}if(window[KEY]!==prior)return;}
+  if(prior){if(typeof prior.revert!=='function')return;try{if(prior.revert()===false)return;}catch(_priorError){return;}if(window[KEY]||prior.installed===true)return;}
+  var sequence=(Number(window[SEQ])||0)+1;window[SEQ]=sequence;
+  var ctl={installed:true,version:V,state:'idle',attempts:0,maxAttempts:2,node:null,retryTimer:null,
+    installToken:'p1-marketing-'+Date.now().toString(36)+'-'+sequence.toString(36)+'-'+Math.random().toString(36).slice(2)};
+  function current(){return ctl.installed===true&&window[KEY]===ctl;}
+  function preview(){return !!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true);}
+  function owner(){var api=window.__mlsP1Marketing;return api&&api.installed===true&&api.version===V&&api.installToken===ctl.installToken&&typeof api.reconcile==='function'&&typeof api.revert==='function'&&typeof api.isDirty==='function'&&typeof api.open==='function'&&typeof api.close==='function'?api:null;}
+  function guardRefusal(){try{if(window.toast)window.toast('The old Premium Reviews workspace is retired in 1p. Marketing is not ready, so nothing opened.','err');}catch(_toastError){}return false;}
+  function releaseGuardReach(){var rec=ctl.guardReachRecord;ctl.guardReachRecord=null;if(!rec||!rec.api)return;if(rec.api.open===rec.wrappedOpen)rec.api.open=rec.open;if(rec.api.openReviews===rec.wrappedOpenReviews)rec.api.openReviews=rec.openReviews;if(rec.api.openContext===rec.wrappedOpenContext)rec.api.openContext=rec.openContext;}
+  ctl.guardReach=function(){if(!current())return false;if(owner())return true;var reach=window.__mlsPatientReach;if(!reach||typeof reach.open!=='function'||typeof reach.openReviews!=='function'||typeof reach.openContext!=='function')return false;var priorGuard=ctl.guardReachRecord;if(priorGuard&&priorGuard.api===reach&&reach.open===priorGuard.wrappedOpen&&reach.openReviews===priorGuard.wrappedOpenReviews&&reach.openContext===priorGuard.wrappedOpenContext)return true;if(priorGuard)releaseGuardReach();var rec={api:reach,open:reach.open,openReviews:reach.openReviews,openContext:reach.openContext};rec.wrappedOpen=function(kind,options){return kind==='reviews'?guardRefusal():rec.open.call(reach,kind,options);};rec.wrappedOpenReviews=function(){return guardRefusal();};rec.wrappedOpenContext=function(kind,options){return kind==='reviews'?guardRefusal():rec.openContext.call(reach,kind,options);};ctl.guardReachRecord=rec;reach.open=rec.wrappedOpen;reach.openReviews=rec.wrappedOpenReviews;reach.openContext=rec.wrappedOpenContext;return true;};
+  function installGuard(){try{if(document.getElementById){var old=document.getElementById('mlsP1MarketingLoadingGuardCss');if(old&&(!old.getAttribute||old.getAttribute('data-mls-install-token')!==ctl.installToken)){if(old.parentNode)old.parentNode.removeChild(old);old=null;}if(!old){old=document.createElement('style');old.id='mlsP1MarketingLoadingGuardCss';old.textContent='#mlsPtab_reviews,.mls-menu-reviews,#mlsEasyTools [data-target="mlsPtab_reviews"],#ez3sReviews{display:none!important}';old.setAttribute('data-mls-install-token',ctl.installToken);(document.head||document.documentElement).appendChild(old);}ctl.guardStyle=old;}if(document.addEventListener){ctl.guardClick=function(event){if(owner())return;var target=event&&event.target,legacy=target&&target.closest&&target.closest('#mlsPtab_reviews,.mls-menu-reviews,[data-target="mlsPtab_reviews"],#ez3sReviews');if(!legacy)return;event.preventDefault();event.stopPropagation();if(event.stopImmediatePropagation)event.stopImmediatePropagation();guardRefusal();};document.addEventListener('click',ctl.guardClick,true);}if(window.MutationObserver&&document.documentElement){ctl.guardObserver=new window.MutationObserver(function(){if(current()&&!owner())ctl.guardReach();});ctl.guardObserver.observe(document.documentElement,{childList:true,subtree:true});}}catch(_guardError){}ctl.guardReach();}
+  function remove(node,reason){if(!node)return;try{node.onload=null;node.onerror=null;node.setAttribute('data-mls-retired-asset',A);node.setAttribute('data-mls-load-state',reason||'retired');node.removeAttribute('data-mls-asset');if(node.parentNode)node.parentNode.removeChild(node);}catch(_removeError){}}
+  function retireStale(){var api=window.__mlsP1Marketing;if(!api||api.installed!==true||owner())return true;if(typeof api.isDirty!=='function'||typeof api.revert!=='function'||typeof api.reconcile!=='function'||typeof api.open!=='function'||typeof api.close!=='function'){ctl.state='blocked-stale-owner';return false;}if(api.isDirty()){ctl.state='blocked-dirty-owner';try{var upgradeGate=window.__mlsUpgradeSafety;if(upgradeGate&&typeof upgradeGate.defer==='function')upgradeGate.defer('marketing-'+V,'Marketing workspace',[{code:'marketing-draft',message:'Marketing drafts are still open. Copy, download, or clear them before applying this update.'}]);}catch(_deferError){}return false;}try{if(api.revert()===false){ctl.state='blocked-stale-owner';return false;}}catch(_ownerError){ctl.state='blocked-stale-owner';return false;}if(api.installed!==false||(window.__mlsP1Marketing&&window.__mlsP1Marketing.installed===true)){ctl.state='blocked-stale-owner';return false;}return true;}
+  function fail(node,reason){if(!current()){remove(node,'reverted-late');return;}if(ctl.node!==node){remove(node,'stale-load');return;}ctl.node=null;remove(node,reason);ctl.state=reason;ctl.guardReach();if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';return;}ctl.retryTimer=setTimeout(function(){ctl.retryTimer=null;if(current())ctl.ensure();},1000);}
+  ctl.ensure=function(){
+    if(!current()||ctl.state==='reverted')return false;
+    ctl.guardReach();
+    if(!preview()){if(ctl.node){remove(ctl.node,'preview-disabled');ctl.node=null;}ctl.state='blocked-preview';return false;}
+    var exactOwner=owner();if(exactOwner){try{exactOwner.reconcile();}catch(_reconcileError){ctl.state='blocked-owner-reconcile';return false;}if(owner()!==exactOwner){ctl.state='blocked-owner-changed';return false;}ctl.state='ready';try{var readyGate=window.__mlsUpgradeSafety;if(readyGate&&typeof readyGate.clear==='function')readyGate.clear('marketing-'+V);}catch(_clearReadyError){}return true;}
+    if(!retireStale())return false;
+    if(ctl.state==='loading'&&ctl.node&&ctl.node.getAttribute('data-mls-load-state')==='loading')return true;
+    if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';return false;}
+    var tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i;for(i=0;i<tags.length;i++)remove(tags[i],'superseded');
+    var node=document.createElement('script');ctl.node=node;ctl.attempts++;ctl.state='loading';node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview');node.async=false;
+    node.setAttribute('data-mls-asset',A);node.setAttribute('data-mls-version',V);node.setAttribute('data-mls-install-token',ctl.installToken);node.setAttribute('data-mls-load-state','loading');
+    node.onload=function(){if(!current()){remove(node,'reverted-late');return;}if(ctl.node!==node){remove(node,'stale-load');return;}var exactOwner=owner();if(exactOwner){try{exactOwner.reconcile();}catch(_reconcileError){fail(node,'owner-reconcile-error');return;}if(owner()!==exactOwner){fail(node,'owner-changed');return;}node.setAttribute('data-mls-load-state','ready');ctl.state='ready';try{var readyGate=window.__mlsUpgradeSafety;if(readyGate&&typeof readyGate.clear==='function')readyGate.clear('marketing-'+V);}catch(_clearReadyError){}return;}fail(node,'owner-missing');};
+    node.onerror=function(){if(!current()){remove(node,'reverted-late');return;}if(ctl.node!==node){remove(node,'stale-load');return;}fail(node,'network-error');};
+    (document.head||document.documentElement).appendChild(node);return true;
+  };
+  ctl.revert=function(){if(!current())return false;var api=owner();if(api&&typeof api.isDirty==='function'&&api.isDirty()){ctl.state='blocked-dirty-owner';return false;}if(api){try{if(api.revert()===false){ctl.state='blocked-owner-revert';return false;}}catch(_apiError){ctl.state='blocked-owner-revert';return false;}if(api.installed===true||window.__mlsP1Marketing===api){ctl.state='blocked-owner-revert';return false;}}releaseGuardReach();if(ctl.guardObserver)try{ctl.guardObserver.disconnect();}catch(_guardObserverError){}ctl.guardObserver=null;if(ctl.guardClick&&document.removeEventListener)try{document.removeEventListener('click',ctl.guardClick,true);}catch(_guardClickError){}ctl.guardClick=null;if(ctl.guardStyle&&ctl.guardStyle.parentNode)try{ctl.guardStyle.parentNode.removeChild(ctl.guardStyle);}catch(_guardStyleError){}ctl.guardStyle=null;if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}remove(ctl.node,'reverted');ctl.node=null;ctl.installed=false;ctl.state='reverted';if(window[KEY]===ctl){try{delete window[KEY];}catch(_deleteError){window[KEY]=null;}}return true;};
+  window[KEY]=ctl;installGuard();ctl.ensure();
+}catch(e){}})(); /* 1p FREE Marketing: session-memory practice drafts only; no fetch, storage, publish, message, checkout, account connection, launch, or spend. */
 /* av-6.0.8: THE AVATAR CARD NOW APPEARS AT ONCE. Owner, on a screenshot of the Visit page:
    "this top thing show shoup uop right away not take a secod". Measured cause, and it is not in
    feat_mls_avatar.js: __mlsDeferAsset runs deferred assets STRICTLY SERIALLY, one script at a
@@ -46400,7 +46444,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260723sr233";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');s.addEventListener('load',function(){try{var m=window.__mlsP1Marketing;if(m&&m.installed===true&&typeof m.reconcile==='function')m.reconcile();var l=window.__mlsP1MarketingLoader;if(l&&l.installed===true&&typeof l.guardReach==='function')l.guardReach();}catch(_marketingReconcileError){}});(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation; 1p Marketing reconciles or fail-closes Reviews after this late owner installs */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b904: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 /* Staff account provisioning is intentionally held; Staff Prep remains available from Menu. */

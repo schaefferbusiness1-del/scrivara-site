@@ -17,19 +17,21 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260813-r1';
+const EXPECTED_BUILD = 'p1-20260813-r2';
 const BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 
 const P1_FILES = [
   '1pScribeFlow.html',
   '1p/index.html',
   '1p/legal/index.html',
+  '1p/marketing/index.html',
   '1p-mls-connect.js',
   '1p-feat_mls_athena_occurrence.js',
   '1p-feat_mls_avatar.js',
   '1p-feat_mls_avatar_face.js',
   '1p-feat_fullhistory_pdf.js',
   '1p-feat_mls_legalpack.js',
+  '1p-feat_mls_marketing.js',
   '1p-feat_nextup_connect.js',
   '1p-feat_mls_schedimport_exact.js',
   '1p-feat_mls_writeflow.js',
@@ -165,7 +167,7 @@ assert(!connect.includes("s.src='feat_fullhistory_pdf.js?v='"),
   '1p bundle still loads the shared full-history PDF implementation');
 
 const legalLoaderStart = connect.indexOf("A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js',V='p1-legal-1.0.0'");
-const legalLoaderEnd = connect.indexOf('/* av-6.0.8:', legalLoaderStart);
+const legalLoaderEnd = connect.indexOf('/* 1p FREE Legal / IME preview:', legalLoaderStart);
 const legalLoader = legalLoaderStart >= 0 && legalLoaderEnd > legalLoaderStart ? connect.slice(legalLoaderStart, legalLoaderEnd) : '';
 assert.strictEqual((legalLoader.match(/node\.src=SRC\+'\?v='/g) || []).length, 1,
   '1p bundle must have exactly one canonical Legal / IME preview source assignment');
@@ -189,6 +191,26 @@ assert(p1Legal.includes("window.__MLS_P1_PREVIEW.enabled !== true") && p1Legal.i
   '1p Legal asset is not preview-gated or lacks its patient-level door');
 assert(/Free preview/.test(p1Legal) && /role === 'receptionist'/.test(p1Legal),
   '1p Legal door is not visibly free or fails to exclude receptionists');
+
+const marketingLoaderStart = connect.indexOf("A='feat_mls_marketing.js',SRC='1p-feat_mls_marketing.js',V='mkt-p1-1.0.0'");
+const marketingLoaderEnd = connect.indexOf('/* 1p FREE Marketing:', marketingLoaderStart);
+const marketingLoader = marketingLoaderStart >= 0 && marketingLoaderEnd > marketingLoaderStart ? connect.slice(marketingLoaderStart, marketingLoaderEnd) : '';
+assert(marketingLoader.includes('maxAttempts:2') && marketingLoader.includes("node.setAttribute('data-mls-install-token',ctl.installToken)") &&
+  marketingLoader.includes("code:'marketing-draft'") && !/\.src=['"]feat_mls_marketing\.js/.test(marketingLoader),
+  '1p Marketing loader lost bounded exact-token ownership or dirty-draft deferral');
+const p1Marketing = read('1p-feat_mls_marketing.js');
+assert(p1Marketing.includes("var LOADER_KEY = '__mlsP1MarketingLoader';") && p1Marketing.includes('loader.installToken !== installToken') &&
+  p1Marketing.includes("['admin', 'owner', 'practice_owner', 'head', 'doctor', 'user']") && p1Marketing.includes("byId('mlsToolsMenu')"),
+  '1p Marketing asset is not exact-token, canonical-role, and Calm/Lite reachable');
+assert(!/\bfetch\s*\(|XMLHttpRequest|localStorage|sessionStorage|indexedDB|\/api\//.test(p1Marketing) &&
+  !/mlsP1MktReview["']|Paste de-identified public review/.test(p1Marketing),
+  '1p Marketing asset contains network/storage or free-text review intake');
+for (const previewShell of [shell, liveShell]) {
+  assert(previewShell.includes('window.__mlsP1MarketingIdentity=function(){') &&
+    previewShell.includes("const account=sfNormalizeSessionAccount(window.__mlsSessionAccount||'');") &&
+    previewShell.includes("mls:p1-marketing-identity-ready"),
+    '1p shell lacks authoritative bounded Marketing identity reconciliation');
+}
 
 /* app-version.json describes production. Preview tabs must never compare
    themselves to it; they use metadata from their own /1p/ document while the
@@ -274,12 +296,14 @@ const p1ConfigBlock = [
   '  # Exact nested showcase path. Do not include bare directory basenames here:',
   '  # Jekyll treats those broadly enough to reopen unrelated legal/test files.',
   '  - "1p/legal/index.html"',
+  '  - "1p/marketing/index.html"',
   ''
 ].join('\n');
 const currentConfig = read('_config.yml').replace(/\r\n/g, '\n');
 assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).length, 1, 'exact FREE Legal showcase include must appear once');
+assert.strictEqual((currentConfig.match(/  - "1p\/marketing\/index\.html"/g) || []).length, 1, 'exact FREE Marketing showcase include must appear once');
 assert.strictEqual(currentConfig.replace(p1ConfigBlock, ''), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'),
-  '_config.yml changed beyond the exact reviewed 1p/legal traversal block');
+  '_config.yml changed beyond the exact reviewed 1p showcase traversal block');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');
@@ -290,6 +314,7 @@ assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnec
   !productionConnect.includes('1p-feat_mls_avatar_face.js') &&
   !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
   !productionConnect.includes('1p-feat_mls_legalpack.js') && !productionConnect.includes('1p-feat_mls_athena_occurrence.js') &&
+  !productionConnect.includes('1p-feat_mls_marketing.js') &&
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');
 

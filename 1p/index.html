@@ -6244,6 +6244,28 @@ function prefillHostedLoginEmail(){
   return email;
 }
 let bkUser=null; // {email,name,specialty,isAdmin,access,access_expires,hasAccess}
+/* 1p Free Marketing receives only the non-PHI account/role receipt it needs.
+   The lexical bkUser object is never exposed to an additive asset. */
+let sfP1MarketingIdentityReadyEpoch=0;
+window.__mlsP1MarketingIdentity=function(){
+  const account=sfNormalizeSessionAccount(window.__mlsSessionAccount||'');
+  const email=sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
+  const userEmail=sfNormalizeSessionAccount((bkUser&&bkUser.email)||'');
+  const role=String((bkUser&&bkUser.role)||((bkUser&&bkUser.isAdmin)?'admin':((bkUser&&bkUser.isHead)?'head':''))).trim().toLowerCase();
+  const epoch=Number(window.__mlsSessionEpoch)||0,readyEpoch=Number(sfP1MarketingIdentityReadyEpoch)||0;
+  return Object.freeze({resolved:!!(account&&email&&userEmail&&account===email&&email===userEmail&&role&&epoch>0&&readyEpoch===epoch),email:account,role:role,
+    epoch:epoch,isAdmin:!!(bkUser&&bkUser.isAdmin),isHead:!!(bkUser&&bkUser.isHead),
+    isLawyer:!!(bkUser&&(bkUser.isLawyer||role==='lawyer'))});
+};
+function sfP1ReleaseMarketingIdentity(user){
+  const account=sfNormalizeSessionAccount(window.__mlsSessionAccount||'');
+  const email=sfNormalizeSessionAccount((user&&user.email)||'');
+  const role=String((user&&user.role)||((user&&user.isAdmin)?'admin':((user&&user.isHead)?'head':''))).trim().toLowerCase();
+  const allowed=['admin','owner','practice_owner','head','doctor','user'].indexOf(role)>=0;
+  sfP1MarketingIdentityReadyEpoch=(!account||email!==account||!allowed)?0:(Number(window.__mlsSessionEpoch)||0);
+  try{ window.dispatchEvent(new CustomEvent('mls:p1-marketing-identity-ready',{detail:{epoch:sfP1MarketingIdentityReadyEpoch}})); }catch(e){ try{ window.dispatchEvent(new Event('mls:p1-marketing-identity-ready')); }catch(_){} }
+  return sfP1MarketingIdentityReadyEpoch>0;
+}
 /* Special marker thrown when the backend says the account lacks access (402). */
 function isNoAccessErr(e){ return !!(e && (e.noAccess || /no_access/i.test((e&&e.message)||''))); }
 
@@ -7159,6 +7181,7 @@ function sfResetSessionBoundary(nextEmail,opts){
   sfSessionUiAccount=next;
   window.__mlsSessionEpoch=sfSessionUiEpoch;
   window.__mlsSessionAccount=next;
+  sfP1MarketingIdentityReadyEpoch=0;
   /* Calendar rows/providers and visit bindings are process-global clinical
      state. Clear and re-own them before the next account's app can be
      revealed, and invalidate every request that started in the old session. */
@@ -7466,12 +7489,14 @@ async function logout(force){
 /* =========================================================
    HOSTED BACKEND: account info, access gating, redeem, admin
    ========================================================= */
-var _refreshMeInFlight=null, _refreshMeToken='', _refreshMeIdentityReady=null;
+var _refreshMeInFlight=null, _refreshMeToken='', _refreshMeEpoch=0, _refreshMeIdentityReady=null;
 function refreshMe(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return Promise.resolve(false);
   const token=bkToken();
-  if(_refreshMeInFlight&&_refreshMeToken===token){
+  const requestEpoch=Number(window.__mlsSessionEpoch)||0;
+  const requestStillOwned=()=>bkToken()===token&&(Number(window.__mlsSessionEpoch)||0)===requestEpoch;
+  if(_refreshMeInFlight&&_refreshMeToken===token&&_refreshMeEpoch===requestEpoch){
     if(typeof opts.onIdentity==='function'&&_refreshMeIdentityReady){
       Promise.resolve(_refreshMeIdentityReady).then(opts.onIdentity,opts.onIdentity);
     }
@@ -7504,7 +7529,12 @@ function refreshMe(opts){
       if(r.ok){
         const d=await r.json();
         if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
-        bkUser=d.user||bkUser; // /api/me carries role, head_id, isHead, isAdmin
+        /* A same-email reauthentication can keep the token string while
+           advancing the session epoch. Never let that older response stamp
+           its role into the new epoch. */
+        if(!requestStillOwned()){ notifyIdentity(); return false; }
+        if(!d.user||typeof d.user!=='object'){ sfP1ReleaseMarketingIdentity(null); notifyIdentity(); return false; }
+        bkUser=d.user; // /api/me carries role, head_id, isHead, isAdmin
         try{ window._calendarOn = d.calendarEnabled!==false; }catch(e){}
         const em=bkUser&&bkUser.email;
         const previousIdentity=sfSessionUiAccount||sfNormalizeSessionAccount((session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
@@ -7538,6 +7568,7 @@ function refreshMe(opts){
           if(histEl) histEl.textContent=em;
         }
         applyAccessUI();
+        sfP1ReleaseMarketingIdentity(d.user);
         notifyIdentity();
         /* Keep normal/manual refresh parallel, but give a newly revealed tab's
            input lane priority over cloud hydration. Preferences are small and
@@ -7588,7 +7619,8 @@ function refreshMe(opts){
     return false;
   })();
   _refreshMeToken=token;
-  const shared=run.finally(()=>{ if(_refreshMeInFlight===shared){ _refreshMeInFlight=null; _refreshMeToken=''; _refreshMeIdentityReady=null; } });
+  _refreshMeEpoch=requestEpoch;
+  const shared=run.finally(()=>{ if(_refreshMeInFlight===shared){ _refreshMeInFlight=null; _refreshMeToken=''; _refreshMeEpoch=0; _refreshMeIdentityReady=null; } });
   _refreshMeInFlight=shared;
   return shared;
 }
@@ -8344,6 +8376,7 @@ function getProviderCred(){ return localStorage.getItem(uns('providerCred'))||''
 function getNpi(){ return localStorage.getItem(uns('npi'))||''; }
 function getClinicAddress(){ return localStorage.getItem(uns('clinicAddress'))||''; }
 function getClinicPhone(){ return localStorage.getItem(uns('clinicPhone'))||''; }
+function getGoogleBusinessUrl(){ return localStorage.getItem(uns('googleBusinessUrl'))||''; }
 /* Facility = SITE OF SERVICE, which is not the practice. These two were the
    longest-standing hole in this cluster: getFacilityName() and
    getFacilityAddress() were CALLED in three places - _opPatientCtx below,
@@ -35487,7 +35520,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes preview requests only. */
-  var P1_BUILD='p1-20260813-r1';
+  var P1_BUILD='p1-20260813-r2';
   window.__MLS_P1_PREVIEW=Object.freeze({enabled:true,route:'/1p/',build:P1_BUILD});
   window.__MLS_AV=P1_BUILD;
   var CRITICAL=[
