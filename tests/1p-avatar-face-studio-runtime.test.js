@@ -51,7 +51,7 @@ vm.runInContext(source, context, { filename: file });
 
 const api = window.__mlsAvatarFaceStudio;
 ok(api && api.installed === true, 'preview face studio did not install');
-eq(api.version, 'p1-face-studio-1.0.0', 'unexpected studio version');
+eq(api.version, 'p1-face-studio-1.0.1', 'unexpected studio version');
 ok(typeof api.summarizeReceipt === 'function', 'PHI-free match summarizer is unavailable');
 ok(typeof api.reconcile === 'function' && typeof api.revert === 'function', 'studio lifecycle API is incomplete');
 
@@ -83,7 +83,7 @@ ok(source.includes('makes eye contact, changes expression, and moves its mouth w
 ok(source.includes('aria-live') && source.includes('aria-atomic'), 'match result is not announced accessibly');
 ok(source.includes('prefers-reduced-motion'), 'studio added motion without a reduced-motion rule');
 ok(source.includes("typeof api.revert === 'function'") && source.includes('observer.disconnect()'), 'hot reload cannot retire the old studio owner');
-ok(source.includes('timers.indexOf(timer)') && source.includes('clearTimeout(timers[ti])'), 'bounded receipt polling survives revert');
+ok(source.includes('timers.indexOf(timer)') && source.includes('clearPollTimers()'), 'bounded receipt polling survives revert');
 ok(source.includes('Number(latest.at || 0) > before'), 'a stale prior match receipt can paint a new run');
 ok(source.includes('help.__mlsP1FaceCopy === copyKey'), 'mutation reconciliation can rewrite its own copy forever');
 ok(!/fetch\s*\(|XMLHttpRequest|sendBeacon|localStorage|sessionStorage/.test(source), 'presentation shell gained network or storage ownership');

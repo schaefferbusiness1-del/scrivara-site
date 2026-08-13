@@ -9,7 +9,7 @@
 ;(function () {
   'use strict';
 
-  var VERSION = 'p1-face-studio-1.0.0';
+  var VERSION = 'p1-face-studio-1.0.1';
   var STYLE_ID = 'mlsP1FaceStudioStyle';
   var ROOT_CLASS = 'mlsP1FaceStudio';
   var api = window.__mlsAvatarFaceStudio;
@@ -43,6 +43,31 @@
     }, delay);
     timers.push(timer);
     return timer;
+  }
+  function clearPollTimers() {
+    for (var i = 0; i < timers.length; i++) { try { clearTimeout(timers[i]); } catch (e0) {} }
+    timers = [];
+  }
+  function pruneDetached() {
+    var dropped = false, kept = [];
+    for (var i = 0; i < enhanced.length; i++) {
+      var row = enhanced[i];
+      if (row.stage && row.stage.isConnected !== false) kept.push(row);
+      else dropped = true;
+    }
+    enhanced = kept;
+    var keptEvents = [];
+    for (var j = 0; j < eventRows.length; j++) {
+      var eventRow = eventRows[j];
+      if (eventRow[0] && eventRow[0].isConnected === false) {
+        try { eventRow[0].removeEventListener(eventRow[1], eventRow[2], false); } catch (e1) {}
+        dropped = true;
+      } else keptEvents.push(eventRow);
+    }
+    eventRows = keptEvents;
+    /* A receipt poll closes over its old meter/details tree. When that Setup
+       form leaves the document, no timer from it may retain the form. */
+    if (dropped) clearPollTimers();
   }
 
   function summarizeReceipt(receipt) {
@@ -213,6 +238,7 @@
   }
 
   function reconcile() {
+    pruneDetached();
     var stages = document.querySelectorAll ? document.querySelectorAll('#mlsAvLookStage') : [];
     for (var i = 0; i < stages.length; i++) enhance(stages[i]);
     /* Core swaps the stage contents immediately after a new capture. Keep the
@@ -225,8 +251,7 @@
 
   function revert() {
     if (observer) { try { observer.disconnect(); } catch (e1) {} observer = null; }
-    for (var ti = 0; ti < timers.length; ti++) { try { clearTimeout(timers[ti]); } catch (eTimer) {} }
-    timers = [];
+    clearPollTimers();
     for (var i = 0; i < eventRows.length; i++) {
       try { eventRows[i][0].removeEventListener(eventRows[i][1], eventRows[i][2], false); } catch (e2) {}
     }

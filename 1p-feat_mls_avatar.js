@@ -239,8 +239,9 @@
     /* Setup can be speaking through its preview face. The panel owns that
        sample, so removing the panel must stop both its audio and mouth loop. */
     pvStopVoice();
-    safe(function () { stopCamera(); }); /* never leave the camera running */
+    safe(function () { cancelFaceCapture(); }); /* invalidates late grants/capture timers too */
     var back = gid(BACK_ID);
+    if (back) safe(function () { discardAvatarSetups(back); });
     if (back && back.parentNode) back.parentNode.removeChild(back);
     document.removeEventListener('keydown', onKey, true);
   }
@@ -4608,11 +4609,28 @@
     else if (p && p.catch) p.catch(function () { finish(); });
   }
 
-  var cameraStream = null;
+  var cameraStream = null, faceCaptureGeneration = 0;
+  function stopStreamTracks(stream) {
+    if (!stream) return;
+    safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+  }
   function stopCamera() {
     if (!cameraStream) return;
-    safe(function () { cameraStream.getTracks().forEach(function (t) { t.stop(); }); });
+    stopStreamTracks(cameraStream);
     cameraStream = null;
+  }
+  /* Every camera request and best-of-six run owns one generation. Closing its
+     surface invalidates that generation synchronously; a permission promise
+     or capture timer that resolves later can only release its own tracks. */
+  function cancelFaceCapture() { faceCaptureGeneration++; stopCamera(); }
+  function beginFaceCapture() { cancelFaceCapture(); return faceCaptureGeneration; }
+  function faceCaptureIsCurrent(generation, host) {
+    return generation === faceCaptureGeneration && !!host && host.isConnected !== false;
+  }
+  function faceCaptureAdopt(stream, generation, host) {
+    if (!faceCaptureIsCurrent(generation, host)) { stopStreamTracks(stream); return false; }
+    cameraStream = stream;
+    return true;
   }
   /* ---- THE PHOTO THE MATCHER MEASURES IS NOT THE PHOTO PATIENTS SEE ------------
      Owner, 2026-08-08: "it has to find my skin color my eyes and hair and more and
@@ -4729,9 +4747,11 @@
   }
   /* BEST OF SEVERAL FRAMES, not whichever frame the tap landed on. A single grab
      catches a blink, a turn, or the frame the autofocus was still working on. */
-  function grabBestFrame(video, tries, then) {
+  function grabBestFrame(video, tries, active, then) {
+    if (typeof active !== 'function') { then = active; active = function () { return true; }; }
     var best = null, bestQ = null, left = Math.max(1, tries);
     function step() {
+      if (!active()) return;
       var canvas = captureSquare(video, MEASURE_MAX);
       if (canvas) {
         var q = frameQuality(canvas);
@@ -4741,7 +4761,7 @@
         if (!bestQ || q.faceVerdict.score > bestQ.faceVerdict.score) { best = canvas; bestQ = q; }
       }
       if (--left <= 0) { then(best, bestQ); return; }
-      safe(function () { setTimeout(step, 120); }, null);
+      safe(function () { setTimeout(function () { if (active()) step(); }, 120); }, null);
     }
     step();
   }
@@ -4932,14 +4952,41 @@
       return isFn(window.uns) ? (window.uns(FACE_HI_KEY) || FACE_HI_KEY) : FACE_HI_KEY;
     }, FACE_HI_KEY);
   }
-  function faceHiSave(dataUrl) {
-    return safe(function () { localStorage.setItem(faceHiKey(), String(dataUrl)); return true; }, false);
+  function facePhotoMatches(a, b) {
+    return faceValidPhoto(a) && faceValidPhoto(b) && String(a) === String(b);
   }
-  function faceHiRead() {
+  /* The full-resolution copy is a transaction with the SERVER-ACCEPTED
+     patient portrait, never with a shutter click. Exact association prevents
+     a removed/abandoned photo from being measured while a different portrait
+     is on screen. */
+  function faceHiCommit(hiUrl, patientPortrait) {
+    if (!faceValidPhoto(hiUrl) || !faceValidPhoto(patientPortrait)) return false;
+    /* Store the accepted 512px portrait beside its measurement copy. A short
+       checksum would make a collision theoretically capable of reviving the
+       wrong face; byte-for-byte equality makes the association exact. */
+    var record = JSON.stringify({ v: 2, portrait: String(patientPortrait), hi: String(hiUrl) });
+    return safe(function () { localStorage.setItem(faceHiKey(), record); return true; }, false);
+  }
+  function faceHiRead(patientPortrait) {
+    if (!faceValidPhoto(patientPortrait)) return '';
     return safe(function () {
-      var v = localStorage.getItem(faceHiKey());
-      return (v && String(v).indexOf('data:image/') === 0) ? v : '';
+      var raw = localStorage.getItem(faceHiKey());
+      if (!raw) return '';
+      var row;
+      try { row = JSON.parse(raw); } catch (e) { localStorage.removeItem(faceHiKey()); return ''; }
+      if (!row || row.v !== 2 || !faceValidPhoto(row.hi) || !faceValidPhoto(row.portrait)) {
+        localStorage.removeItem(faceHiKey()); return '';
+      }
+      if (!facePhotoMatches(row.portrait, patientPortrait)) {
+        localStorage.removeItem(faceHiKey()); return '';
+      }
+      return String(row.hi);
     }, '');
+  }
+  function faceHiClear() { safe(function () { localStorage.removeItem(faceHiKey()); }); }
+  function faceHiForShown(pendingHi, pendingPortrait, shownPortrait) {
+    if (faceValidPhoto(pendingHi) && facePhotoMatches(pendingPortrait, shownPortrait)) return pendingHi;
+    return faceHiRead(shownPortrait);
   }
   function facePreviewNode(dataUrl, look) {
     var wrap = make('div', '');
@@ -4952,12 +4999,36 @@
     return wrap;
   }
 
+  /* A Setup form owns camera, speech and animated-face timers. Detaching its
+     DOM is not cleanup by itself: promises and timers still hold the closure.
+     Every close/tab switch invalidates the async load and calls this owner. */
+  var avatarSetupEpoch = 0;
+  function discardAvatarSetup(host, clearHost) {
+    if (!host) return;
+    host.__mlsAvatarSetupEpoch = ++avatarSetupEpoch;
+    var cleanup = host.__mlsAvatarSetupCleanup;
+    host.__mlsAvatarSetupCleanup = null;
+    if (typeof cleanup === 'function') safe(cleanup);
+    if (clearHost) host.innerHTML = '';
+    safe(function () { host.removeAttribute('data-mls-avatar-setup-host'); });
+  }
+  function discardAvatarSetups(root) {
+    if (!root || !root.querySelectorAll) return;
+    var hosts = root.querySelectorAll('[data-mls-avatar-setup-host]');
+    for (var i = 0; i < hosts.length; i++) discardAvatarSetup(hosts[i], true);
+  }
+
   /* ---- setup tab ---- */
   function setupForm(host) {
+    discardAvatarSetup(host, true);
+    var setupEpoch = ++avatarSetupEpoch;
+    host.__mlsAvatarSetupEpoch = setupEpoch;
+    host.setAttribute('data-mls-avatar-setup-host', '1');
     host.innerHTML = '';
     var notice = make('div', 'mlsAvNotice', 'Loading your avatar setup…');
     host.appendChild(notice);
     api('/api/avatar/config').then(function (r) {
+      if (host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
       /* av-1.1.0: a failed GET must NOT fail open to an editable EMPTY form —
          one Save from that state would overwrite the real question list and
          switch the patient-facing check-in off. */
@@ -4983,15 +5054,15 @@
       introInput.placeholder = 'e.g. A few quick questions before your visit with Dr. Schaeffer.';
       /* ---- face section ---- */
       var pendingFace; /* undefined = keep current; '' = remove; data URL = new */
-      /* THE FULL-QUALITY FRAME, HELD IN MEMORY FOR THIS SESSION (av-6.0.2).
-         Owner: "take a higher rtes photo acatlly save the photo." faceHiSave writes the
-         ~0.95-quality JPEG into localStorage, which is 5-10MB SHARED with the whole app —
-         and when it refuses, older builds fell back to their posterized patient portrait.
-         So the best copy of his face could be thrown
-         away between taking it and measuring it, and the only symptom was one clause in a
-         status line. Storage is now a CACHE for later sessions, not the only path: the frame
-         we just captured stays right here, and Match prefers it. */
-      var pendingHiUrl = '';
+      /* Full quality stays in this form until Save. The accepted portrait and
+         measurement copy are committed together; abandoning Setup cannot
+         replace the cache behind the currently saved patient face. */
+      var pendingHiUrl = '', lookCtl = null;
+      host.__mlsAvatarSetupCleanup = function () {
+        pendingHiUrl = '';
+        pendingFace = undefined;
+        if (lookCtl) { safe(function () { lookCtl.destroy(); }); lookCtl = null; }
+      };
       var faceLabel = make('label', '', 'Avatar face — patients see this portrait during the check-in');
       var faceRow = make('div', '');
       faceRow.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
@@ -5002,7 +5073,10 @@
       removeFaceBtn.type = 'button';
       var camHost = make('div', '');
       removeFaceBtn.addEventListener('click', function () {
+        cancelFaceCapture();
         pendingFace = '';
+        pendingHiUrl = '';
+        faceHiClear();
         var fresh = facePreviewNode(null);
         faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
         renderPatientPreview();
@@ -5010,7 +5084,7 @@
       });
       camBtn.addEventListener('click', function () {
         camHost.innerHTML = '';
-        stopCamera();
+        var captureGeneration = beginFaceCapture();
         /* ASK FOR THE HIGH-RESOLUTION STREAM. With facingMode alone the browser hands
            back its default - typically 640x480 - and every colour the matcher reports
            was measured from that. `ideal` degrades gracefully: a camera that cannot do
@@ -5033,7 +5107,7 @@
         }
         if (!media) { camHost.appendChild(make('div', 'mlsAvNotice', 'This browser cannot open the camera here.')); return; }
         media.then(function (stream) {
-          cameraStream = stream;
+          if (!faceCaptureAdopt(stream, captureGeneration, camHost)) return;
           var video = document.createElement('video');
           video.autoplay = true; video.playsInline = true; video.muted = true;
           video.srcObject = stream;
@@ -5062,10 +5136,13 @@
           camHost.appendChild(camWrap); camHost.appendChild(row);
           camHost.appendChild(liveStatus); camHost.appendChild(liveList);
           faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn });
-          cancelBtn.addEventListener('click', function () { stopCamera(); camHost.innerHTML = ''; });
+          cancelBtn.addEventListener('click', function () { cancelFaceCapture(); camHost.innerHTML = ''; });
           snapBtn.addEventListener('click', function () {
             snapBtn.disabled = true; snapBtn.textContent = 'Taking the best of a few…';
-            grabBestFrame(video, 6, function (bestCanvas, q) {
+            grabBestFrame(video, 6, function () {
+              return faceCaptureIsCurrent(captureGeneration, camHost) && video.isConnected;
+            }, function (bestCanvas, q) {
+              if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
               var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
               stopCamera(); camHost.innerHTML = '';
               if (!bestCanvas) {
@@ -5091,12 +5168,11 @@
                 camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
                 return;
               }
+              if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
               pendingFace = dataUrl;
-              /* the measurement copy, kept on this device for Match. If storage refuses
-                 it (quota), Match falls back to the smaller natural portrait and says so.
-                 Legacy posterized portraits remain explicitly detected downstream. */
-              var hiOk = hiUrl ? faceHiSave(hiUrl) : false;
-              pendingHiUrl = hiUrl || '';   /* survives a quota refusal — see pendingHiUrl */
+              /* Held in this form only. Save commits it after the server echoes
+                 the exact matching patient portrait. */
+              pendingHiUrl = faceValidPhoto(hiUrl) ? hiUrl : '';
               var fresh = facePreviewNode(dataUrl);
               faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
               /* Taking a new face photo is an explicit request to use that
@@ -5107,8 +5183,8 @@
               status.textContent = 'Portrait captured from a ' + (bestCanvas.width) + '×' + (bestCanvas.height) +
                 ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
                 ' — best of 6 frames, processed on this device' +
-                (hiOk ? '. Match my photo will measure the full-quality copy.'
-                      : '. This device would not store the full-quality copy, so Match will measure the patient portrait and say so.') +
+                (pendingHiUrl ? '. Match my photo will measure the full-quality copy; it is stored only after Save.'
+                      : '. Match will measure the patient portrait and say so.') +
                 ' The patient-facing preview now shows this exact portrait. Save to publish it.';
               /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
                  click match my photo when I take the picutre it sohuld auto match my photo."
@@ -5133,12 +5209,15 @@
                  symptom, "once the image is taken it sohuld auto change avatar", exactly. */
               safe(function () {
                 setTimeout(function () {
-                  safe(function () { if (matchBtn && !matchBtn.disabled) matchBtn.click(); });
+                  safe(function () {
+                    if (faceCaptureIsCurrent(captureGeneration, camHost) && matchBtn && matchBtn.isConnected && !matchBtn.disabled) matchBtn.click();
+                  });
                 }, 60);
               });
             });
           });
         }, function () {
+          if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
           camHost.appendChild(make('div', 'mlsAvNotice', 'Camera permission was declined — nothing was captured.'));
         });
       });
@@ -5170,7 +5249,6 @@
       var lookStage = make('div', '');
       lookStage.id = 'mlsAvLookStage';
       lookStage.style.cssText = 'width:132px;height:132px;border-radius:999px;overflow:hidden;background:radial-gradient(circle at 50% 38%,#fff,#f2f4ef);border:3px solid #fff;box-shadow:0 8px 24px rgba(32,64,52,.16);flex:0 0 auto';
-      var lookCtl = null;
       var lookGrid = make('div', '');
       lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
       function shownFaceImage() {
@@ -5439,7 +5517,7 @@
            but the local 1024px copy carries more detail for glasses, facial hair and eyes.
            When only an older posterized portrait exists, the reader detects that source
            and refuses manufactured colours instead of overwriting a real setting. */
-        var hi = pendingHiUrl || faceHiRead();   /* this session's frame first — see pendingHiUrl */
+        var hi = faceHiForShown(pendingHiUrl, pendingFace, shown);
         var src = hi || shown;
         var usedHi = !!hi;
         if (!src) { lookNoteSay('Capture your photo above first, then Match my photo.', 0); return; }
@@ -5781,6 +5859,10 @@
           safe(function () { pinInput.focus(); });
           return;
         }
+        /* Snapshot the face transaction before the request. Closing Setup may
+           discard its UI closure while this explicit Save is in flight. */
+        var sentPhoto = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        var sentHi = pendingHiUrl;
         saveBtn.disabled = true; status.textContent = 'Saving…';
         api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
           tone: toneSelect.value,
@@ -5788,7 +5870,7 @@
           faceMode: faceModeSelect.value,
           faceLook: lookNow,
           exitPin: pinInput.value.trim(),
-          faceImage: pendingFace === undefined ? (cfg.faceImage || '') : pendingFace }) })
+          faceImage: sentPhoto }) })
           .then(function (r2) {
             saveBtn.disabled = false;
             if (r2.ok && r2.json && r2.json.ok) {
@@ -5799,10 +5881,20 @@
                  that fails its shape test or its size cap, and until now that drop was silent:
                  you pressed Save, saw "Saved", and your face was simply not there. Judge it by
                  the ECHO, not by the flag — a stored portrait comes back in the config. */
-              var sentPhoto = (pendingFace === undefined ? (cfg.faceImage || '') : pendingFace);
               var photoLost = !!(sentPhoto && sentPhoto.indexOf('data:image/') === 0 &&
                 String(saved.faceImage || '').indexOf('data:image/') !== 0);
               var why = String(r2.json.faceImageRefused || '');
+              /* Commit only a full-resolution copy that corresponds to the
+                 exact portrait the server says it stored. Removal clears it;
+                 an unchanged saved portrait keeps its already-matching cache. */
+              if (!faceValidPhoto(saved.faceImage)) faceHiClear();
+              else if (faceValidPhoto(sentHi) && facePhotoMatches(saved.faceImage, sentPhoto)) {
+                faceHiCommit(sentHi, saved.faceImage);
+              } else faceHiRead(saved.faceImage); /* prunes a cache for the prior saved face */
+              cfg.faceImage = saved.faceImage || '';
+              cfg.faceMode = saved.faceMode || faceModeSelect.value;
+              pendingFace = undefined;
+              pendingHiUrl = '';
               status.textContent =
                 (questions.length ? ('Saved — the avatar now asks ' + questions.length + ' question' + (questions.length === 1 ? '' : 's') + '. Patients see it in their portal.') : 'Saved, but with no questions the check-in stays OFF for patients.') +
                 (saved.exitPin ? ' Kiosk exit PIN is set.' : ' No exit PIN — “End interview” closes straight into your app.') +
@@ -5853,6 +5945,7 @@
         lookNoteSay('Your saved look needs a decision - see the notice above the appearance grid.', 1);
       }
     }, function () {
+      if (host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
       notice.textContent = 'Setup is temporarily unavailable — try again in a moment.';
     });
   }
@@ -5907,8 +6000,10 @@
            <video> WITHOUT Cancel - the stream and the camera LED stayed live.
            The live loop also self-terminates on !video.isConnected, but the
            camera should die the moment the surface that owns it does. */
-        stopCamera();
+        cancelFaceCapture();
+        stopCamera(); /* explicit lifecycle pin; cancel already invalidated the generation */
         pvStopVoice();
+        discardAvatarSetup(body, true);
         Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
         tab.classList.add('on');
         if (def[0] === 'setup') setupForm(body); else inboxList(body, def[0]);
@@ -9966,7 +10061,7 @@ function kioskLine(kind, text) {
   function mountAvatarSettings(open) {
     var host = gid('mlsAvSettingsHost');
     if (!host) return;                       /* an older ScribeFlow without the section */
-    if (!open) { settingsMountedFor = 0; return; }
+    if (!open) { settingsMountedFor = 0; discardAvatarSetup(host, true); return; }
     /* ⛔ THE LATCH IS NOT THE AUTHORITY — THE DOM IS (av-6.0.7).
        Owner, on a screenshot of Settings > Check-in avatar showing nothing but the static
        placeholder: "Its not acatlly there."
@@ -10008,6 +10103,12 @@ function kioskLine(kind, text) {
     if (!ev || !ev.detail) {
       var modal = gid('settingsModal');
       open = !!(modal && modal.classList && modal.classList.contains('show'));
+    }
+    if (!open) {
+      /* Settings stays connected while hidden; release camera and voice from
+         the lifecycle event rather than waiting for DOM disconnection. */
+      cancelFaceCapture();
+      pvStopVoice();
     }
     mountAvatarSettings(open);
   }
