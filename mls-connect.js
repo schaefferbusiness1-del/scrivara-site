@@ -8807,7 +8807,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1025: persist:false work belongs to this exact COW candidate. Passing
+    /* b1026: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9048,7 +9048,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1025: the retired 3-second owner synchronously regex-scanned every
+      /* b1026: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -18817,7 +18817,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var out = rp && isFn(rp.list) ? (safe(function () { return rp.list(); }, []) || []) : [];
     return out.slice().sort(function (a, b) { return String(a && a.name || '').localeCompare(String(b && b.name || '')); });
   }
+  var DEFAULT_PROVIDER_SCOPE_LABEL = 'Your athenaOne view (default)';
   function activeProvider() { return S.providerFilter != null ? S.providerFilter : resolveAppProvider(); }
+  /* Rendering has its own explicit scope. `null` is meaningful to the legacy
+     pull identity, but it is never a clinician selection in the Day UI. Only
+     this selector's exact stable provider reference may narrow visible rows. */
+  var renderedProviderReceipt = { ref: '', filter: '', label: '' };
+  function requestedRenderedProvider() {
+    return S.providerRef && String(S.providerFilter || '').trim() ? String(S.providerFilter).trim() : '';
+  }
+  function rememberRenderedProvider(label) {
+    renderedProviderReceipt = {
+      ref: String(S.providerRef || ''),
+      filter: String(S.providerFilter || ''),
+      label: String(label || '')
+    };
+    return renderedProviderReceipt.label;
+  }
+  function renderedProvider() {
+    var requested = requestedRenderedProvider();
+    if (!requested) return '';
+    return renderedProviderReceipt.ref === String(S.providerRef || '') &&
+      renderedProviderReceipt.filter === String(S.providerFilter || '') ? renderedProviderReceipt.label : '';
+  }
   function activeProviderRequest() {
     if (S.providerFilter === '') return 'all';
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
@@ -18825,6 +18847,96 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var ref = S.providerRef || activeProvider();
     var entry = ref ? safe(function () { return rp.resolve(ref); }, null) : null;
     return entry || (activeProvider() || 'all');
+  }
+  /* pdr-1.0.0: display-only provider proof. The default view keeps every
+     appointment already returned by the existing production pull/history
+     pipeline. A selected view renders a row only when the canonical roster
+     proves that row belongs to the exact selected identity. Blank, ambiguous,
+     or conflicting attribution is never guessed into a clinician's view. */
+  function sameProviderIdentity(left, right) {
+    if (!left || !right) return false;
+    var leftId = String(left.id || left.providerId || left.provider_id || '').trim();
+    var rightId = String(right.id || right.providerId || right.provider_id || '').trim();
+    if (leftId && rightId) return leftId === rightId;
+    var leftKey = String(left.stableKey || left.stable_key || '').trim();
+    var rightKey = String(right.stableKey || right.stable_key || '').trim();
+    return !!leftKey && leftKey === rightKey;
+  }
+  function providerSnapshotResolve(snapshot, ref) {
+    if (!snapshot || !Array.isArray(snapshot.entries)) return null;
+    var raw = ref;
+    if (raw && typeof raw === 'object') raw = raw.stableKey || raw.stable_key || raw.id || raw.providerId || raw.provider_id || raw.raw || raw.name || '';
+    raw = String(raw || '').trim();
+    if (raw.indexOf('pv:') === 0) { try { raw = decodeURIComponent(raw.slice(3)); } catch (ePv) { return null; } }
+    if (!raw) return null;
+    var matches = snapshot.entries.filter(function (entry) { return String(entry && (entry.stableKey || entry.stable_key) || '') === raw; });
+    if (matches.length === 1) return matches[0];
+    matches = snapshot.entries.filter(function (entry) { return !!String(entry && (entry.id || entry.providerId || entry.provider_id) || '') && String(entry.id || entry.providerId || entry.provider_id) === raw; });
+    if (matches.length === 1) return matches[0];
+    matches = snapshot.entries.filter(function (entry) { return Array.isArray(entry && entry.aliases) && entry.aliases.indexOf(raw) >= 0; });
+    if (matches.length === 1) return matches[0];
+    var eq = snapshot.equivalent(raw);
+    matches = eq ? snapshot.entries.filter(function (entry) {
+      return String(entry && entry.equivalentKey || snapshot.equivalent(entry && (entry.name || entry.raw) || '')) === eq;
+    }) : [];
+    return matches.length === 1 ? matches[0] : null;
+  }
+  function providerRenderProof() {
+    var selectedLabel = requestedRenderedProvider();
+    if (!selectedLabel) {
+      rememberRenderedProvider('');
+      return { defaultView: true, selected: null, entries: [], equivalent: function () { return ''; } };
+    }
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    if (!(roster && isFn(roster.list) && isFn(roster._equivalentKey))) {
+      rememberRenderedProvider('');
+      return { defaultView: true, selected: null, entries: [], equivalent: function () { return ''; } };
+    }
+    var proof = {
+      defaultView: false,
+      entries: safe(function () { return roster.list(); }, []) || [],
+      equivalent: function (value) { return safe(function () { return roster._equivalentKey(value, true, true); }, ''); }
+    };
+    var selectedRef = S.providerRef || selectedLabel;
+    proof.selected = providerSnapshotResolve(proof, selectedRef);
+    if (!proof.selected) {
+      rememberRenderedProvider('');
+      proof.defaultView = true;
+      return proof;
+    }
+    proof.label = rememberRenderedProvider(proof.selected.name || selectedLabel);
+    return proof;
+  }
+  function rowMatchesActiveProvider(row, proof) {
+    if (!proof) proof = providerRenderProof();
+    if (proof && proof.defaultView) return true;
+    var selected = proof && proof.selected;
+    if (!selected) return false;
+
+    var rowProvider = row && row.provider;
+    var rowProviderObject = rowProvider && typeof rowProvider === 'object' ? rowProvider : null;
+    var rowId = String(row && (row.athena_provider_id || row.athenaProviderId || row.provider_id || row.providerId || row.rendering_provider_id || row.renderingProviderId || row.doctor_user_id) ||
+      rowProviderObject && (rowProviderObject.athena_provider_id || rowProviderObject.athenaProviderId || rowProviderObject.provider_id || rowProviderObject.providerId || rowProviderObject.id) || '').trim();
+    var rowName = String(row && (typeof rowProvider === 'string' ? rowProvider : '') || row && (row.provider_name || row.providerName || row.rendering_provider_name || row.renderingProviderName || row.doctor_name) ||
+      rowProviderObject && (rowProviderObject.name || rowProviderObject.displayName || rowProviderObject.raw) || '').trim();
+    if (!rowId && !rowName) return false;
+
+    if (rowId) {
+      var selectedId = String(selected.id || selected.providerId || selected.provider_id || '').trim();
+      if (!selectedId || selectedId !== rowId) return false;
+      var sameIdEntries = proof.entries.filter(function (entry) { return String(entry && (entry.id || entry.providerId || entry.provider_id) || '').trim() === rowId; });
+      var sameIdNames = {};
+      sameIdEntries.forEach(function (entry) { var key = String(entry && entry.equivalentKey || proof.equivalent(entry && (entry.name || entry.raw) || '')); if (key) sameIdNames[key] = 1; });
+      if (Object.keys(sameIdNames).length > 1) return false;
+      if (rowName) {
+        var resolvedByName = providerSnapshotResolve(proof, rowName);
+        if (resolvedByName && !sameProviderIdentity(selected, resolvedByName)) return false;
+      }
+      return true;
+    }
+
+    var resolvedByNameOnly = providerSnapshotResolve(proof, rowName);
+    return sameProviderIdentity(selected, resolvedByNameOnly);
   }
   function providerRosterReceipt() {
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
@@ -18933,7 +19045,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            ((a && a.dob) || '') + '|' + apptDay(a) + '|' + (a && a.start_local || t12(a));
   }
   function rowsInRange(fromStr, toStr) {
-    var prov = activeProvider(), seen = {};
+    var providerProof = providerRenderProof();
+    var prov = providerProof && !providerProof.defaultView && providerProof.selected ? providerProof.label : '', seen = {};
     var rows = appts().filter(function (a) {
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
@@ -18942,12 +19055,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          blocks etc.) never render as patients. User-controlled list, never
          guessed; the record itself is untouched. */
       try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
-      /* b238: normalized provider match. Rows with NO provider recorded stay
-         VISIBLE for every provider (they were silently binned as "other
-         providers" — 721 of the account's 2977 stored appts had provider:null,
-         which hid a doctor's own pulled day and made the empty-state lie). */
-      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
-      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
+      /* pdr-1.0.0: the complete default view keeps unattributed rows visible;
+         an explicitly selected provider view requires exact roster proof. */
+      if (prov && !rowMatchesActiveProvider(a, providerProof)) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -19529,17 +19639,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
     var list = providerList();
-    if (!list.length) return '';
-    var cur = activeProvider(), counts = {};
+    if (!list.length) { rememberRenderedProvider(''); return ''; }
+    var cur = renderedProvider(), counts = {};
     var canonicalSelectedRef = '';
     if (S.providerRef) {
       var selectedRoster = safe(function () { return window.__mlsProviderRoster; }, null);
       var selectedEntry = selectedRoster && isFn(selectedRoster.resolve) ? safe(function () { return selectedRoster.resolve(S.providerRef); }, null) : null;
       canonicalSelectedRef = String(selectedEntry && selectedEntry.stableKey || S.providerRef || '');
-      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = selectedEntry.name; }
+      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = rememberRenderedProvider(selectedEntry.name); }
+      else { cur = rememberRenderedProvider(''); }
     }
     list.forEach(function (p0) { var k0 = String(p0 && p0.name || '').toLowerCase(); counts[k0] = (counts[k0] || 0) + 1; });
-    var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>All providers</option>';
+    var opts = '<option value="__all"' + (!cur ? ' selected' : '') + '>' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) + '</option>';
     list.forEach(function (p) {
       var key = String(p && p.stableKey || ''), name = String(p && p.name || ''), label = name;
       if (!key || !name) return;
@@ -19547,8 +19658,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var selected = canonicalSelectedRef ? canonicalSelectedRef === key : (counts[name.toLowerCase()] === 1 && cur === name);
       opts += '<option value="pv:' + encodeURIComponent(key) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
     });
-    return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
+    return '<div class="ez3-prov"><label for="ez3Prov">Show visits for</label>' +
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Show visits for provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
@@ -20243,9 +20354,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function homeStatus() {
-    var prov = activeProvider(), g = guardInfo();
+    var prov = renderedProvider(), g = guardInfo();
     var bits = [];
-    bits.push(prov ? ('🩺 ' + esc(prov)) : '🩺 All providers');
+    bits.push('🩺 ' + esc(prov || DEFAULT_PROVIDER_SCOPE_LABEL));
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
     return bits.join(' · ');
   }
@@ -20338,7 +20449,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        a scoped list may be compared against NEITHER the store total nor the
        Athena day total: both differences would read as missing patients. The
        selected provider is already named in the status line below. */
-    var scoped = !!activeProvider();
+    var scoped = !!renderedProvider();
     if (!scoped && stored !== null && stored > n) {
       return n + ' of ' + stored + ' saved for ' + label + ' are shown here';
     }
@@ -20624,7 +20735,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    *  - pulled, but the current provider filter hides everything
    *                                  → one-tap "Show all providers"        */
   function emptyTodayHtml() {
-    var un = visitCountUnscoped(), prov = activeProvider(), dayLabel = visitDayShort();
+    var un = visitCountUnscoped(), prov = renderedProvider(), dayLabel = visitDayShort();
     if (un > 0 && prov) {
       return '<button type="button" class="ez3-big" id="ez3AllProv">👥 Show all providers' +
              '<small>Nothing for ' + esc(prov) + ' on ' + esc(dayLabel) + ' — ' + un + ' appointment' + (un === 1 ? '' : 's') +
@@ -20994,7 +21105,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<span class="ez3-badge dob">' + dobLabel(a) + '</span>' +
              '<span class="ez3-badge">' + esc(visitType(a)) + '</span>' +
              '<span class="ez3-badge ' + (isSeen(a) ? 'g' : 'a') + '">' + esc(statusOf(a)) + '</span>' : '') +
-        (activeProvider() ? '<span class="ez3-badge">🩺 ' + esc(activeProvider()) + '</span>' : '') +
+        (renderedProvider() ? '<span class="ez3-badge">🩺 ' + esc(renderedProvider()) + '</span>' : '') +
         /* b438: b430 surfaced a missing Athena appointment id through S.lastWarn,
            but computePhase() clears lastWarn once the note reaches 30 characters and
            renderDoctor reads it AFTER that clear - so the signal vanished exactly when
@@ -22231,7 +22342,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<p class="ez3-sub" style="margin:0 0 10px">' + esc(rb.label) +
          (rb.from === rb.to ? ' · ' + esc(rb.from) : ' · ' + esc(rb.from) + ' → ' + esc(rb.to)) +
          ' · ' + all.length + ' appointment' + (all.length === 1 ? '' : 's') +
-         (activeProvider() ? ' · scoped to ' + esc(activeProvider()) : ' · all providers') + '</p>';
+         (renderedProvider() ? ' · scoped to ' + esc(renderedProvider()) : ' · ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL)) + '</p>';
     if (!all.length) {
       h += '<div class="ez3-empty">Nothing in this range yet.<br>Use the month pull above (or 📥 Pull today only) to fetch it from Athena.</div>';
     } else {
@@ -36001,7 +36112,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'b1025';
+  window.__MLS_AV = window.__MLS_AV || 'b1026';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36344,7 +36455,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='2026-07-25-b1025';
+  var MLS_APP_BUILD='2026-07-25-b1026';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -47008,7 +47119,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
-        /* sbp-1.0 boot-paint settle (live b1016/b1025, final-live-proofs
+        /* sbp-1.0 boot-paint settle (live b1016/b1026, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
            exists - the resolver reads the placeholder slot, answers 'unset'
            (= on), and the box paints CHECKED while the settled preference is
@@ -47192,7 +47303,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
          the wrong slot, so its 'unset' (= default on) is provisional and
-         views must re-read after the session settles (live b1016/b1025:
+         views must re-read after the session settles (live b1016/b1026:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
       var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
