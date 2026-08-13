@@ -9084,11 +9084,16 @@ function _studioPrefsValue(budget){
   try{
     const raw=localStorage.getItem(uns('studio_widgets'));
     if(raw===null) return null;
-    const cap=Math.max(0, Number(budget)||STUDIO_CLOUD_BUDGET);
+    const measured=Number(budget);
+    const cap=Math.max(0, isFinite(measured)?measured:STUDIO_CLOUD_BUDGET);
     const arr=JSON.parse(raw||'[]');
     if(!Array.isArray(arr)||!arr.length) return raw;
     if(raw.length<=cap) return raw;
-    return JSON.stringify(_studioCloudPlan(arr,cap).list);
+    const planned=_studioCloudPlan(arr,cap).list;
+    /* No room is different from a real empty local list: omit this preference
+       instead of replacing the account copy with an empty creations list. */
+    if(!planned.length) return null;
+    return JSON.stringify(planned);
   }catch(e){ return null; }
 }
 function syncPrefsToServer(opts){
@@ -15143,6 +15148,12 @@ function showView(v){
   // This is real access control, not just hidden tabs (a stray button/quick-find can't sneak a Lite user in).
   try{ if(typeof isLiteUser==='function' && isLiteUser() && v && v!=='visit'){ try{ toast('That’s a Standard feature — your Lite plan covers note generation. See plans on the MLS home page to unlock the full app.','err'); }catch(e){} v='visit'; } }catch(e){}
   var previousView=currentView;
+  /* A hidden iframe is still a live program and its srcdoc still contains the
+     serialized practice snapshot. Leaving Studio or a pinned tool unloads it. */
+  if(previousView==='studio'&&v!=='studio'){
+    try{ _studioUnloadFrame('studioFrame'); var _src=document.getElementById('studioResultCard'); if(_src) _src.style.display='none'; window.__mlsStudioPendingSave=null; if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; } }catch(e){}
+  }
+  if(previousView==='__pinned'&&v!=='__pinned'){ try{ _studioUnloadFrame('pinnedFrame'); }catch(e){} }
   currentView=v;
   /* Read-only public view state for additive site features. Top-level lexical
      `currentView` is not a window property, which previously made overlays
@@ -15589,7 +15600,9 @@ async function askMlsHelp(){
     var featureMap=(window.__mlsFeatureDirectory||[]).map(function(f){return {name:f.name,where:f.where,how:f.how};});
     var r=await fetch(bkBase()+'/api/assist/help',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({question:q,featureMap:featureMap})});
     var d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.answer){ setA((d&&d.error)||'Could not get an answer — try again.','#b4231e'); return; }
+    var fault=(typeof _mlsAiFault==='function')?_mlsAiFault(r,d,'Help'):'';
+    if(fault){ setA(fault,'#b4231e'); return; }
+    if(!String(d.answer||'').trim()){ setA((d&&d.error)||'No answer came back. Please ask again or rephrase the question.','#b4231e'); return; }
     setA(d.answer);
   }catch(e){ setA('Network error — try again.','#b4231e'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='Ask'; } }
@@ -16415,6 +16428,25 @@ function _ensureStudioMsgBound(){
     if(ev.data.__mlsWidgetReady){
       if(frame.id==='studioFrame'){
         if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
+        var blocked=(ev.data.blocked&&ev.data.blocked.length)?ev.data.blocked:null;
+        var observed=typeof ev.data.textLength==='number'&&isFinite(ev.data.textLength)&&typeof ev.data.surfaceCount==='number'&&isFinite(ev.data.surfaceCount);
+        var empty=!observed||(ev.data.textLength===0&&ev.data.surfaceCount===0);
+        if(blocked||empty){
+          try{ window.__mlsStudioPendingSave=null; }catch(eB){}
+          var errNote=document.getElementById('studioErrNote');
+          if(blocked){
+            var host=''; try{ host=String(blocked[0]).replace(/^(https?:\/\/[^/]+).*$/,'$1'); }catch(eH){ host=String(blocked[0]); }
+            studioFail('This tool tried to load code from the internet ('+host+'), which tools built here are not allowed to do. Ask for it again and say "no external libraries — plain HTML, CSS and JavaScript only".');
+            if(errNote){ errNote.style.display='block'; errNote.textContent='⚠️ Blocked external resource'+(blocked.length>1?('s ('+blocked.length+')'):'')+': '+String(blocked[0]).slice(0,180); }
+          } else if(!observed){
+            studioFail('The tool did not prove that it rendered any content. Rebuild it, or describe what you want to see on the screen.');
+            if(errNote){ errNote.style.display='block'; errNote.textContent='⚠️ The runtime check returned without rendered-content evidence.'; }
+          } else {
+            studioFail('The tool built, but it rendered nothing at all. Rebuild it, or describe what you want to see on the screen.');
+            if(errNote){ errNote.style.display='block'; errNote.textContent='⚠️ The finished page was empty: no visible text or usable controls, chart, form, table, or image.'; }
+          }
+          return;
+        }
         var repaired=_studioPendingQuality&&_studioPendingQuality.repaired;
         studioStatus(repaired?'Done. MLS checked and repaired the app, and it is running below.':'Done. MLS checked the app and it is running below.','#1c7a43');
         /* b940: the auto-save commits HERE - the one door that knows the tool
@@ -16442,11 +16474,29 @@ function _studioFrameForMessage(ev){
 function _studioNonce(){
   try{ var a=new Uint32Array(4); crypto.getRandomValues(a); return Array.prototype.map.call(a,function(x){return x.toString(36);}).join(''); }catch(e){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
 }
+/* Generated tools receive only the minimum useful practice snapshot. Keep direct
+   DOB/MRN identifiers out at the single iframe-injection seam, without mutating
+   the shared snapshot used elsewhere in MLS. */
+function _widgetSafeSnapshot(snap){
+  function clean(v){
+    if(Array.isArray(v)) return v.map(clean);
+    if(!v||typeof v!=='object') return v;
+    var out={};
+    Object.keys(v).forEach(function(k){
+      var normalized=String(k).toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(normalized==='dob'||normalized==='dateofbirth'||normalized==='mrn'||normalized==='medicalrecordnumber') return;
+      out[k]=clean(v[k]);
+    });
+    return out;
+  }
+  try{ return clean(snap&&typeof snap==='object'?snap:{patients:[]}); }
+  catch(e){ return {patients:[]}; }
+}
 function _composeWidgetSrcdoc(html, snap, nonce){
-  var json=JSON.stringify(snap||{patients:[]}).replace(/</g,'\\u003c');
+  var json=JSON.stringify(_widgetSafeSnapshot(snap)||{patients:[]}).replace(/</g,'\\u003c');
   var csp='<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; connect-src \'none\'; font-src \'none\'; media-src \'none\'; object-src \'none\'; frame-src \'none\'; worker-src \'none\'; form-action \'none\'; base-uri \'none\'">';
   var n=JSON.stringify(String(nonce||''));
-  var runtime='<scr'+'ipt>window.__MLS_WIDGET_RUNTIME_ERROR=false;window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS(nonce)+'window.onerror=function(m,s,l,c,e){window.__MLS_WIDGET_RUNTIME_ERROR=true;try{parent.postMessage({__mlsNonce:'+n+',__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){window.__MLS_WIDGET_RUNTIME_ERROR=true;try{parent.postMessage({__mlsNonce:'+n+',__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});window.addEventListener("DOMContentLoaded",function(){setTimeout(function(){try{if(!window.__MLS_WIDGET_RUNTIME_ERROR&&window.MLS_DATA&&window.MLS)parent.postMessage({__mlsNonce:'+n+',__mlsWidgetReady:true},"*");}catch(_){}},0);});<\/scr'+'ipt>';
+  var runtime='<scr'+'ipt>window.__MLS_WIDGET_RUNTIME_ERROR=false;window.__MLS_WIDGET_BLOCKED=[];window.MLS_DATA='+json+';'+_mlsWidgetBridgeJS(nonce)+'window.addEventListener("error",function(ev){try{var t=ev&&ev.target;if(t&&t!==window&&(t.src||t.href))window.__MLS_WIDGET_BLOCKED.push(String(t.src||t.href).slice(0,200));}catch(_){}},true);window.onerror=function(m,s,l,c,e){window.__MLS_WIDGET_RUNTIME_ERROR=true;try{parent.postMessage({__mlsNonce:'+n+',__mlsWidgetError:String((e&&e.message)||m||"Script error")},"*");}catch(_){}};window.addEventListener("unhandledrejection",function(ev){window.__MLS_WIDGET_RUNTIME_ERROR=true;try{parent.postMessage({__mlsNonce:'+n+',__mlsWidgetError:"Promise error: "+String((ev&&ev.reason&&ev.reason.message)||ev.reason||"")},"*");}catch(_){}});function __mlsRenderProof(){var b=document.body,tx=0,sf=0;if(!b)return{textLength:0,surfaceCount:0};var skip={SCRIPT:1,STYLE:1,LINK:1,META:1,TEMPLATE:1,NOSCRIPT:1,HEAD:1};var semantic={CANVAS:1,SVG:1,FORM:1,TABLE:1,IMG:1,VIDEO:1,INPUT:1,SELECT:1,TEXTAREA:1,BUTTON:1};var els=[b].concat(Array.prototype.slice.call(b.querySelectorAll("*")));els.forEach(function(el){try{var tag=String(el.tagName||"").toUpperCase();if(skip[tag]||el.hidden||el.getAttribute&&el.getAttribute("aria-hidden")==="true")return;var cs=window.getComputedStyle?window.getComputedStyle(el):null;if(cs&&(cs.display==="none"||cs.visibility==="hidden"||Number(cs.opacity)===0))return;var r=el.getBoundingClientRect?el.getBoundingClientRect():null;if(!r||r.width<=0||r.height<=0)return;var own="";Array.prototype.forEach.call(el.childNodes||[],function(ch){if(ch&&ch.nodeType===3)own+=String(ch.nodeValue||"");});own=own.trim();if(own){tx+=own.length;sf++;}else if(semantic[tag])sf++;}catch(_){}});return{textLength:tx,surfaceCount:sf};}window.addEventListener("DOMContentLoaded",function(){setTimeout(function(){try{var pf=__mlsRenderProof();if(!window.__MLS_WIDGET_RUNTIME_ERROR&&window.MLS_DATA&&window.MLS)parent.postMessage({__mlsNonce:'+n+',__mlsWidgetReady:true,textLength:pf.textLength,surfaceCount:pf.surfaceCount,blocked:window.__MLS_WIDGET_BLOCKED.slice(0,5)},"*");}catch(_){}},350);});<\/scr'+'ipt>';
   var doc=String(html||'');
   if(/<head\b[^>]*>/i.test(doc)) return doc.replace(/<head\b[^>]*>/i,function(m){ return m+csp+runtime; });
   if(/<html\b[^>]*>/i.test(doc)) return doc.replace(/<html\b[^>]*>/i,function(m){ return m+'<head>'+csp+runtime+'</head>'; });
@@ -16523,7 +16573,10 @@ async function _studioHandleRpc(req, source, nonce){
     if(m==='ai'){
       var r=await fetch(bkBase()+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:a.prompt,system:a.system})});
       var d=await r.json().catch(function(){return {};});
-      if(!r.ok) return reply(false,null,d.error||'AI error'); return reply(true, d.text||'');
+      var aiFault=_mlsAiFault(r,d,'AI'); if(aiFault) return reply(false,null,aiFault);
+      var aiText=String(d.text||'').trim();
+      if(!aiText) return reply(false,null,'No AI answer came back. Try again or rephrase the request.');
+      return reply(true, aiText);
     }
     if(m==='email'){
       return reply(false,{draftOnly:true},'Email sending is unavailable in MLS. Copy the draft and send it from your approved email system.');
@@ -16540,12 +16593,12 @@ async function _studioHandleRpc(req, source, nonce){
     if(m==='load'){ try{ var v=localStorage.getItem(uns('wdg_'+(a.key||''))); return reply(true, v==null?null:JSON.parse(v)); }catch(e){ return reply(true,null); } }
     if(m==='getPatient'){ var resolved=_studioResolvePatient(a.q); var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[]}; } var ps=snap.patients||[]; var p=resolved.patient?ps.find(function(x){return String(x.id)===String(resolved.patient.id);}):null; return reply(true, p||null); }
     if(m==='getSchedule'){ var snap2; try{ snap2=studioDataSnapshot(); }catch(e){ snap2={appointments:[]}; } var ds=String(a.date||'').slice(0,10); var ap=(snap2.appointments||[]); if(ds) ap=ap.filter(function(x){ return String(x.date||'').slice(0,10)===ds; }); return reply(true, ap); }
-    if(m==='aiJSON'){ var rj=await fetch(bkBase()+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:a.prompt,system:'You output ONLY valid minified JSON — no prose, no markdown, no code fences.'})}); var dj=await rj.json().catch(function(){return {};}); if(!rj.ok) return reply(false,null,dj.error||'AI error'); var tj=String(dj.text||'').replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/i,'').trim(); var obj=null; try{ obj=JSON.parse(tj); }catch(e){ var mm=tj.match(/[\{\[][\s\S]*[\}\]]/); if(mm){ try{ obj=JSON.parse(mm[0]); }catch(_){} } } return reply(true, obj); }
+    if(m==='aiJSON'){ var rj=await fetch(bkBase()+'/api/widget/ai',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:a.prompt,system:'You output ONLY valid minified JSON — no prose, no markdown, no code fences.'})}); var dj=await rj.json().catch(function(){return {};}); var jsonFault=_mlsAiFault(rj,dj,'AI'); if(jsonFault) return reply(false,null,jsonFault); var tj=String(dj.text||'').replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/i,'').trim(); if(!tj) return reply(false,null,'No AI answer came back. Try again or rephrase the request.'); var obj=null; try{ obj=JSON.parse(tj); }catch(e){ var mm=tj.match(/[\{\[][\s\S]*[\}\]]/); if(mm){ try{ obj=JSON.parse(mm[0]); }catch(_){} } } if(obj===null) return reply(false,null,'The AI answer was not valid data. Try again or make the request more specific.'); return reply(true, obj); }
     if(m==='download'){ try{ var blob=new Blob([String(a.content||'')],{type:String(a.mime||'text/plain')}); var url=URL.createObjectURL(blob); var aEl=document.createElement('a'); aEl.href=url; aEl.download=String(a.name||'export.csv').replace(/[\/\\<>:"|?*]/g,'_').slice(0,120); document.body.appendChild(aEl); aEl.click(); setTimeout(function(){ try{ URL.revokeObjectURL(url); aEl.remove(); }catch(e){} },200); try{ toast('Downloaded '+aEl.download,'ok'); }catch(e){} return reply(true,{downloaded:true}); }catch(e){ return reply(false,null,'Download failed.'); } }
     if(m==='copy'){ try{ navigator.clipboard.writeText(String(a.text||'')); }catch(e){ try{ var ta=document.createElement('textarea'); ta.value=String(a.text||''); document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }catch(_){} } try{ toast('Copied to clipboard.','ok'); }catch(e){} return reply(true,{copied:true}); }
     if(m==='sendToEMR'){ var txt=String(a.text||''); if(!txt.trim()) return reply(false,null,'Nothing to review.'); try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(null,{silent:false,text:txt}); return reply(false,{previewOnly:true},'This untyped item was not sent. Review it and place it manually in its intended Athena section.'); } }catch(e){} return reply(false,null,'MLS Assist isn’t available.'); }
     return reply(false,null,'Unknown method.');
-  }catch(e){ reply(false,null,'Bridge error.'); }
+  }catch(e){ reply(false,null,(m==='ai'||m==='aiJSON')?_mlsAiFault(null,null,'AI'):'Bridge error.'); }
 }
 /* Failures must be LOUD: the 13px muted status line under the composer was
    the only feedback, so a gated or failed build read as "the Build tab does
@@ -16564,6 +16617,7 @@ async function generateStudioWidget(){
       : 'Sign in to build widgets.');
     return;
   }
+  _studioShowBuildSection();
   var btn=document.getElementById('studioGenBtn'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="spin"></span> Building…'; }
   studioStatus('Gathering your real practice data…');
   /* svd-1.0.0: have the server visit summary ready BEFORE the widget renders,
@@ -16573,44 +16627,67 @@ async function generateStudioWidget(){
   try{
     var r=await fetch(bkBase()+'/api/widget/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({prompt:prompt})});
     var d=await r.json().catch(function(){return {};});
-    if(r.status===402){ studioFail(d.error||'Your MLS access is inactive — renew your subscription to use the widget builder.'); return; }
-    if(r.status===403){ studioFail('Widget builder is for clinician accounts.'); return; }
-    if(r.status===401){ if(typeof handle401==='function') handle401(); studioFail('Your session expired — sign in again to build widgets.'); return; }
-    if(!r.ok||!d.html){ studioFail(d.error||'Could not build the widget. Try rephrasing.'); return; }
+    var genFault=_mlsAiFault(r,d,'the widget builder');
+    if(genFault){ studioFail(genFault); return; }
+    if(!d.html){ studioFail(d.error||'No finished widget came back. Try rephrasing the request.'); return; }
     try{ if(typeof loadCalendar==='function' && (typeof _calAppts==='undefined' || !_calAppts || !_calAppts.length)) await loadCalendar(); }catch(e){}
     renderStudioWidget(d.html, prompt, d.quality||{});
   }catch(e){ studioFail('Network error while building — check your connection and try again.'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✨ Build it'; } }
 }
+/* The merged Studio remembers a section. Every builder entry point selects Build
+   before work starts so its spinner, status and output cannot land off-screen. */
+function _studioShowBuildSection(){
+  try{
+    if(window.__mlsCurrentView!=='studio'&&typeof showView==='function') showView('studio');
+    var merge=window.__mlsStudioMerge;
+    if(merge&&typeof merge.select==='function') merge.select('build');
+  }catch(e){}
+}
 function renderStudioWidget(html, title, quality){
   var snap; try{ snap=studioDataSnapshot(); }catch(e){ snap={patients:[],patientCount:0}; }
+  _studioShowBuildSection();
   _ensureStudioMsgBound();
   var note=document.getElementById('studioErrNote'); if(note){ note.style.display='none'; note.textContent=''; }
   var tt=document.getElementById('studioResultTitle'); if(tt) tt.textContent=(title||'Your widget').slice(0,80);
   // Show the result card FIRST so the iframe is visible, THEN set srcdoc — otherwise
   // the browser doesn't paint an iframe whose srcdoc was assigned while it was display:none.
-  var card=document.getElementById('studioResultCard'); if(card){ card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'start'}); }
+  var card=document.getElementById('studioResultCard'); if(card){ card.style.display='block'; card.setAttribute('tabindex','-1'); try{ card.focus({preventScroll:true}); }catch(eF){} card.scrollIntoView({behavior:'smooth',block:'start'}); }
   var frame=document.getElementById('studioFrame');
   if(frame){
     var nonce=_studioNonce(); frame.dataset.mlsWidgetNonce=nonce; _studioPendingQuality=quality||{};
     studioStatus('Checking the finished app before marking it done…');
     frame.srcdoc=_composeWidgetSrcdoc(html,snap,nonce);
     if(_studioReadyTimer) clearTimeout(_studioReadyTimer);
-    _studioReadyTimer=setTimeout(function(){ if(frame.dataset.mlsWidgetNonce===nonce){ studioFail('The app did not finish its runtime check. Rebuild it or try a more specific request.'); } },6000);
+    _studioReadyTimer=setTimeout(function(){ if(frame.dataset.mlsWidgetNonce===nonce){ try{ window.__mlsStudioPendingSave=null; }catch(eP){} _studioUnloadFrame('studioFrame'); studioFail('The app did not finish its runtime check. Rebuild it or try a more specific request.'); } },6000);
   }
   studioLastHtml=String(html||''); studioLastPrompt=title||'Your widget';
+}
+function _studioUnloadFrame(id){
+  try{
+    var f=document.getElementById(id); if(!f) return;
+    f.srcdoc='';
+    try{ f.removeAttribute('srcdoc'); }catch(eA){}
+    try{ f.src='about:blank'; }catch(eS){}
+    try{ delete f.dataset.mlsWidgetNonce; }catch(eD){ try{ f.removeAttribute('data-mls-widget-nonce'); }catch(_){} }
+  }catch(e){}
 }
 function closeStudioResult(){
   /* Closing used to throw the build away silently. If it was never saved, say so
      — the tool cost a model call and ~25s of the doctor's time. */
   var c=document.getElementById('studioResultCard'); if(!c) return;
+  var shut=function(){
+    c.style.display='none'; studioStatus(''); _studioUnloadFrame('studioFrame');
+    try{ window.__mlsStudioPendingSave=null; }catch(eP){}
+    if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
+  };
   if(studioLastHtml && !_studioIsSaved(studioLastHtml)){
     mlsConfirm('Close without saving this tool?\n\nIt is not in “My creations” yet, so it will be gone.',{okLabel:'Discard it',cancelLabel:'Keep it open',danger:true}).then(function(yes){
-      if(yes){ c.style.display='none'; studioStatus(''); }
+      if(yes) shut();
     });
     return;
   }
-  c.style.display='none'; studioStatus('');
+  shut();
 }
 /* ============================================================================
    MY CREATIONS — durable, per-account storage for built tools.
@@ -16878,7 +16955,8 @@ function renameStudioSaved(id){
 /* Which creations fit in the cloud copy, newest-and-pinned first. Deterministic,
    so a card can honestly show whether THIS tool is backed up to the account. */
 function _studioCloudPlan(arr,budget){
-  var cap=Math.max(0, Number(budget)||STUDIO_CLOUD_BUDGET);
+  var measured=Number(budget);
+  var cap=Math.max(0, isFinite(measured)?measured:STUDIO_CLOUD_BUDGET);
   var ranked=(arr||[]).slice().sort(function(a,b){
     if(!!b.pinned!==!!a.pinned) return (b.pinned?1:0)-(a.pinned?1:0);
     return (Number(b.ts)||0)-(Number(a.ts)||0);
@@ -17083,18 +17161,38 @@ function copilotSnapshot(){
   var today=new Date(); var todayStr=_acctTodayKey();
   function daysSince(d){ try{ if(!d) return null; var t=new Date(d); if(isNaN(t.getTime())) return null; return Math.max(0, Math.round((today-t)/86400000)); }catch(e){ return null; } }
   var pts=(snap.patients||[]).map(function(p){
-    return { id:p.id, name:p.name, age:p.age, sex:p.sex, problems:(p.problems||[]).slice(0,6),
-      fromAthena:!!p.fromAthena, summary:String(p.summary||'').slice(0,700), meds:(p.meds||[]).slice(0,10), allergies:(p.allergies||[]).slice(0,8),
+    return { id:String(p.id==null?'':p.id).slice(0,120), name:String(p.name||'').slice(0,120), age:p.age, sex:String(p.sex||'').slice(0,40), problems:(p.problems||[]).slice(0,6).map(function(x){return String(x||'').slice(0,180);}),
+      fromAthena:!!p.fromAthena, summary:String(p.summary||'').slice(0,700), meds:(p.meds||[]).slice(0,10).map(function(x){return String(x||'').slice(0,180);}), allergies:(p.allergies||[]).slice(0,8).map(function(x){return String(x||'').slice(0,180);}),
       visitCount:p.visitCount, firstVisit:p.firstVisit, lastVisit:p.lastVisit,
       daysSinceLastVisit:daysSince(p.lastVisit), lastPain:p.lastPain, avgPain:p.avgPain, maxPain:p.maxPain,
       painTrend:(function(){ try{ var s=p.painSeries||[]; if(s.length<2) return null; var a=s[s.length-2].pain, b=s[s.length-1].pain; if(a==null||b==null) return null; return b>a?'up':(b<a?'down':'flat'); }catch(e){ return null; } })() };
   });
-  var res={ today:todayStr, practice:snap.practice||{}, patientCount:snap.patientCount,
-    totalVisits:snap.totalVisits, avgPainAcrossPractice:snap.avgPainAcrossPractice,
-    visitsByMonth:snap.visitsByMonth, topProblems:snap.topProblems,
-    appointments:(snap.appointments||[]).slice(0,120), patients:pts };
+  /* The server keeps only the first 60,000 serialized characters. Property order
+     therefore is survival order: reserve the active visit and chart first, then
+     spend a smaller client-side budget on ranked panel rows. */
+  var COPILOT_CONTEXT_BUDGET=54000;
+  var res={today:todayStr};
+  var detailedTotal=pts.length, panelTotal=Math.max(detailedTotal,Number(snap.patientCount)||0);
+  var coverage={patientsIncluded:0,patientsAvailable:detailedTotal,patientsTotal:panelTotal,patientsTruncated:false,
+    note:'patients[] is ranked from the detailed charts available to this snapshot and may be a subset of charts already pulled into MLS. Compact rows omit details; omitted is not evidence of none.'};
+  res.coverage=coverage;
+  res.activeVisit=null;
+  var activeId='';
   // The chart the user currently has open — so "draft a follow-up for this patient" just works.
-  try{ var ap=(typeof activePatient==='function')?activePatient():null; if(ap){ res.activePatient = pts.find(function(x){return String(x.id)===String(ap.id);}) || {id:ap.id, name:String(ap.name||'')}; } }catch(e){}
+  try{ var ap=(typeof activePatient==='function')?activePatient():null; if(ap){ activeId=String(ap.id==null?'':ap.id).slice(0,120); res.activePatient=pts.find(function(x){return String(x.id)===activeId;})||{id:activeId,name:String(ap.name||'').slice(0,120)}; } }catch(e){}
+  var overdue=[], rising=[], high=[];
+  pts.forEach(function(p){
+    if(p.daysSinceLastVisit!=null&&p.daysSinceLastVisit>=90) overdue.push({id:p.id,name:p.name,days:p.daysSinceLastVisit});
+    if(p.painTrend==='up') rising.push({id:p.id,name:p.name,lastPain:p.lastPain});
+    if(p.lastPain!=null&&p.lastPain>=7) high.push({id:p.id,name:p.name,lastPain:p.lastPain});
+  });
+  overdue.sort(function(a,b){return b.days-a.days;}); rising.sort(function(a,b){return (b.lastPain||0)-(a.lastPain||0);}); high.sort(function(a,b){return (b.lastPain||0)-(a.lastPain||0);});
+  res.panel={computedFromPatients:pts.length,coverageComplete:pts.length>=panelTotal,note:pts.length>=panelTotal?'These panel lists cover every chart represented in MLS.':'These panel lists cover '+pts.length+' detailed charts out of '+panelTotal+' represented in MLS; do not call them complete.',overdue90:{total:overdue.length,showing:overdue.slice(0,20)},risingPain:{total:rising.length,showing:rising.slice(0,20)},painAtLeast7:{total:high.length,showing:high.slice(0,20)}};
+  res.practice={provider:String((snap.practice&&snap.practice.provider)||'').slice(0,120),name:String((snap.practice&&snap.practice.name)||'').slice(0,160)}; res.patientCount=snap.patientCount; res.totalVisits=snap.totalVisits;
+  res.avgPainAcrossPractice=snap.avgPainAcrossPractice; res.visitsByMonth=snap.visitsByMonth; res.topProblems=snap.topProblems;
+  res.appointments=[]; var appointmentBudget=14000, appointmentUsed=2;
+  (snap.appointments||[]).slice(0,120).some(function(a){ var row={name:String(a.name||'').slice(0,120),date:String(a.date||'').slice(0,10),time:String(a.time||'').slice(0,20),status:String(a.status||'').slice(0,40),reason:String(a.reason||'').slice(0,140),provider:String(a.provider||'').slice(0,120)}; var size=0; try{size=JSON.stringify(row).length+1;}catch(e){return false;} if(appointmentUsed+size>appointmentBudget)return true; appointmentUsed+=size; res.appointments.push(row); return false; });
+  res.patients=[];
   /* cvx-1.0.0 (2026-07-26) — THE VISIT IN FRONT OF THE DOCTOR.
      Owner, live on b683: Copilot "does not tell u about your visit". It was
      true: this snapshot described the PANEL (every patient, every appointment)
@@ -17117,7 +17215,7 @@ function copilotSnapshot(){
     var coding=(typeof currentCoding!=='undefined')?currentCoding:null;
     var rec=false; try{ rec=(typeof capturing!=='undefined'&&!!capturing); }catch(_r){}
     var av={
-      patient: vp?{ id:vp.id, name:String(vp.name||'') }:null,
+      patient: vp?{ id:String(vp.id==null?'':vp.id).slice(0,120), name:String(vp.name||'').slice(0,120) }:null,
       recording: rec,
       transcriptWords: words(tx),
       /* Bounded tail: enough for "what did we just capture", small enough that
@@ -17130,7 +17228,7 @@ function copilotSnapshot(){
          could not answer "summarize the note you just wrote". Bounded tail of
          the REAL note + the REAL code arrays, same b683 class of fix. */
       noteTail: String(soap||'').trim()?String(soap).slice(-4000):'',
-      codes: coding?{ icd10:(coding.icd10||[]).slice(0,20), cpt:(coding.cpt||[]).slice(0,20), em:coding.em||'' }:null,
+      codes: coding?{ icd10:(coding.icd10||[]).slice(0,20).map(function(x){return String(x||'').slice(0,40);}), cpt:(coding.cpt||[]).slice(0,20).map(function(x){return String(x||'').slice(0,40);}), em:String(coding.em||'').slice(0,80) }:null,
       codesSuggested: !!(coding&&((coding.icd10&&coding.icd10.length)||(coding.cpt&&coding.cpt.length)||coding.em)),
       /* The one thing a doctor must never be told wrongly: what stage this is at.
          Derived, not remembered. */
@@ -17140,6 +17238,20 @@ function copilotSnapshot(){
        invite the model to describe an encounter that is not open. */
     if(av.patient||av.transcriptWords||av.noteGenerated||av.recording) res.activeVisit=av;
   }catch(e){}
+  var scheduled={};
+  res.appointments.forEach(function(a){var n=String(a.name||'').trim().toLowerCase();if(n) scheduled[n]=1;});
+  function rank(p){ if(activeId&&String(p.id)===activeId) return 0; return scheduled[String(p.name||'').trim().toLowerCase()]?1:2; }
+  var ranked=pts.slice().sort(function(a,b){var ra=rank(a),rb=rank(b);if(ra!==rb)return ra-rb;var da=a.daysSinceLastVisit,db=b.daysSinceLastVisit;if(da==null)return 1;if(db==null)return -1;return da-db;});
+  function compact(p){ return {id:p.id,name:p.name,age:p.age,sex:p.sex,problems:(p.problems||[]).slice(0,3),visitCount:p.visitCount,lastVisit:p.lastVisit,daysSinceLastVisit:p.daysSinceLastVisit,lastPain:p.lastPain,painTrend:p.painTrend,detail:'compact'}; }
+  var used=null; try{ used=JSON.stringify(res).length; }catch(e){}
+  var full=0,small=0;
+  for(var i=0;i<ranked.length;i++){
+    var row=(rank(ranked[i])<2&&full<25)?ranked[i]:compact(ranked[i]);
+    if(used==null){ if(res.patients.length>=60) break; }
+    else { var rowSize=0; try{ rowSize=JSON.stringify(row).length+1; }catch(e){ continue; } if(used+rowSize>COPILOT_CONTEXT_BUDGET) break; used+=rowSize; }
+    res.patients.push(row); if(row===ranked[i]) full++; else small++;
+  }
+  coverage.patientsIncluded=res.patients.length; coverage.patientsTruncated=res.patients.length<panelTotal; coverage.detail={full:full,compact:small};
   return res;
 }
 var COPILOT_STARTERS = [
@@ -17386,7 +17498,9 @@ async function copilotTweak(i){
   try{
     var r=await fetch(bkBase()+'/api/copilot/edit',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({artifact:cur,instruction:instruction,kind:kind})});
     var d=await r.json().catch(function(){return {};});
-    if(!r.ok||!d.text){ try{ toast(d.error||'Could not revise.','err'); }catch(e){} }
+    var fault=_mlsAiFault(r,d,'the editor');
+    if(fault){ try{ toast(fault,'err'); }catch(e){} }
+    else if(!String(d.text||'').trim()){ try{ toast(d.error||'No revision came back. Try again or rephrase the instruction.','err'); }catch(e){} }
     else { ta.value=d.text; if(m&&m.artifact) m.artifact.content=d.text; tw.value=''; _copilotAutogrowArtifact(ta); _copilotSaveHist(); try{ toast('Updated.','ok'); }catch(e){} }
   }catch(e){ try{ toast('Network error.','err'); }catch(e){} }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✦ Tweak'; } }
@@ -17430,6 +17544,21 @@ async function copilotCopyEmailDraft(){
   }catch(e){ try{ toast('Could not copy the email draft.','err'); }catch(_){} }
   finally{ var bb=document.getElementById('cMailCopy'); if(bb){ bb.disabled=false; bb.textContent='Copy email draft'; } }
 }
+/* Every AI surface distinguishes an expired session, an account restriction and
+   a transient service fault. Returns an empty string only for a usable response. */
+function _mlsAiFault(r,d,noun){
+  noun=String(noun||'this'); var cap=noun.charAt(0).toUpperCase()+noun.slice(1);
+  if(!r) return 'Network trouble reaching '+noun+' — check your connection and try again.';
+  var server=''; try{ server=String((d&&(d.error||d.message))||'').trim(); }catch(e){}
+  if(r.status===401){ try{ if(typeof handle401==='function') handle401(); }catch(e){} return 'Your session expired — sign in again to use '+noun+'.'; }
+  if(r.status===402) return server||'Your MLS access is inactive — renew your subscription to use '+noun+'.';
+  if(r.status===403) return server||cap+' is available on clinician accounts.';
+  if(r.status===413) return server||'That request is too large to process — shorten it and try again.';
+  if(r.status===429) return server||'There are too many AI requests at once — wait a few seconds, then try again.';
+  if(r.status>=500) return server||cap+' is temporarily unavailable — try again in a moment.';
+  if(!r.ok) return server||cap+' could not complete the request.';
+  return '';
+}
 async function copilotAsk(){
   if(_copilotBusy) return;
   var inp=document.getElementById('copilotInput'); var q=((inp&&inp.value)||'').trim();
@@ -17449,9 +17578,9 @@ async function copilotAsk(){
     var r=await fetch(bkBase()+'/api/copilot',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({question:q, context:copilotSnapshot(), history:hist.slice(0,-1)})});
     var d=await r.json().catch(function(){return {};});
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
-    if(r.status===403){ _copilotHistory.push({role:'ai',text:'Copilot is available on clinician accounts.'}); }
-    else if(!r.ok){ _copilotHistory.push({role:'ai',text:(d.error||'Copilot had trouble answering. Try again.')}); }
-    else { _copilotHistory.push({role:'ai',text:d.reply||'Done.',actions:_copilotNormalizeActions(q,d.actions||[]),followups:d.followups||[],artifact:d.artifact||null}); }
+    var fault=_mlsAiFault(r,d,'Copilot');
+    if(fault){ _copilotHistory.push({role:'ai',text:fault}); }
+    else { var reply=String(d.reply||'').trim(); _copilotHistory.push({role:'ai',text:reply||'No answer came back that time — ask again or rephrase it.',actions:_copilotNormalizeActions(q,d.actions||[]),followups:d.followups||[],artifact:d.artifact||null}); }
   }catch(e){
     _copilotHistory=_copilotHistory.filter(function(m){return m.role!=='pending';});
     _copilotHistory.push({role:'ai',text:'Network error reaching Copilot. Try again.'});
@@ -17495,6 +17624,28 @@ function _copilotNavigate(raw, label){
   if(topPatients){ try{ toast('Patients are ranked by visit count.','ok'); }catch(e){} }
   return true;
 }
+function _copilotResolvePatientSafe(arg){
+  var out={patient:null,reason:'not-found',candidates:[]};
+  var raw=String(arg==null?'':arg).trim(); if(!raw){ out.reason='missing-target'; return out; }
+  var list=[]; try{ list=(typeof getPatients==='function'?getPatients():[])||[]; }catch(e){}
+  var byId=list.filter(function(p){return String(p.id)===raw;});
+  if(byId.length===1){ out.patient=byId[0]; out.reason='primary-id'; return out; }
+  if(byId.length>1){ out.reason='ambiguous-id'; out.candidates=byId; return out; }
+  var norm=function(s){return String(s==null?'':s).toLowerCase().replace(/\s+/g,' ').trim();};
+  var q=norm(raw), exact=[], partial=[];
+  list.forEach(function(p){var name=norm(p.name);if(!name)return;if(name===q)exact.push(p);else if(name.indexOf(q)>=0)partial.push(p);});
+  if(exact.length===1){ out.patient=exact[0]; out.reason='exact-name'; return out; }
+  if(exact.length>1){ out.reason='ambiguous-name'; out.candidates=exact; return out; }
+  if(partial.length){ out.reason='partial-name'; out.candidates=partial; }
+  return out;
+}
+function _copilotAskWhichPatient(kind,raw,candidates){
+  var shown=(candidates||[]).slice(0,6);
+  var actions=shown.map(function(p,i){return {label:'Choose match '+(i+1),kind:kind,arg:String(p.id)};});
+  var more=(candidates||[]).length>shown.length?(' (showing '+shown.length+' of '+candidates.length+')'):'';
+  try{ _copilotHistory.push({role:'ai',text:'More than one patient matches “'+String(raw||'')+'”'+more+'. Which one should I '+(kind==='startVisit'?'start a visit for':'open')+'?',actions:actions,followups:[]}); _copilotRenderThread(); }catch(e){}
+  try{ toast('Two or more patients match that name — choose one.',''); }catch(e){}
+}
 function _copilotDoAction(kind, arg, btn){
   try{
     var done=function(){ if(btn){ btn.classList.add('cact-done'); } };
@@ -17522,16 +17673,23 @@ function _copilotDoAction(kind, arg, btn){
       done(); return;
     }
     if(kind==='openPatient'||kind==='startVisit'){
-      var id=arg; var list=(typeof getPatients==='function'?getPatients():[])||[];
-      var p2=list.find(function(x){ return String(x.id)===String(id); });
-      if(!p2){ var q=String(arg||'').toLowerCase(); p2=list.find(function(x){ return String(x.name||'').toLowerCase()===q; })||list.find(function(x){ return String(x.name||'').toLowerCase().indexOf(q)>=0; }); }
-      if(p2 && typeof selectPatient==='function'){
-        selectPatient(p2.id);
-        if(kind==='startVisit' && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); }
-        else if(typeof showView==='function'){ showView('patients'); }
-        try{ toast((kind==='startVisit'?'Starting a visit for ':'Opened ')+(p2.name||'patient'),'ok'); }catch(e){}
-        done();
-      } else { if(typeof showView==='function') showView('patients'); try{ toast('Couldn’t find that patient.',''); }catch(e){} }
+      var resolved=_copilotResolvePatientSafe(arg);
+      if(!resolved.patient){
+        if(resolved.reason==='ambiguous-name'||resolved.reason==='ambiguous-id'||resolved.reason==='partial-name'){ _copilotAskWhichPatient(kind,arg,resolved.candidates); return; }
+        if(typeof showView==='function') showView('patients');
+        try{ toast('I could not find a patient matching “'+String(arg||'')+'”.',''); }catch(e){}
+        return;
+      }
+      var p2=resolved.patient;
+      if(typeof selectPatient!=='function'){ try{ toast('Opening charts is unavailable right now.','err'); }catch(e){} return; }
+      selectPatient(p2.id);
+      var moved=true,verified=false;
+      try{ if(typeof getActivePtId==='function'){ verified=true; moved=String(getActivePtId()||'')===String(p2.id); } else if(typeof activePatient==='function'){ var now=activePatient(); verified=true; moved=!!now&&String(now.id)===String(p2.id); } }catch(e){ moved=false; verified=true; }
+      if(verified&&!moved){ try{ toast('That chart did not open — try it from Patients.','err'); }catch(e){} return; }
+      if(kind==='startVisit' && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); }
+      else if(typeof showView==='function'){ showView('patients'); }
+      try{ toast((kind==='startVisit'?'Starting a visit for ':'Opened ')+(p2.name||'patient'),'ok'); }catch(e){}
+      done();
       return;
     }
     /* Unknown kind (model drift): resolve it as a view by keyword — the label
@@ -17556,7 +17714,9 @@ async function refineStudioWidget(){
   try{
     var r=await fetch(bkBase()+'/api/widget/refine',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({instruction:tweak,currentHtml:String(studioLastHtml)})});
     var d=await r.json().catch(function(){return {};});
-    if(!r.ok||!d.html){ studioStatus(d.error||'Could not refine. Try a different wording.','#b4231e'); return; }
+    var fault=_mlsAiFault(r,d,'the widget builder');
+    if(fault){ studioFail(fault); return; }
+    if(!d.html){ studioFail(d.error||'No refined widget came back. Try a different wording.'); return; }
     renderStudioWidget(d.html, (studioLastPrompt||'Your widget'), d.quality||{});
     if(ri) ri.value='';
   }catch(e){ studioStatus('Network error while refining.','#b4231e'); }
@@ -17581,7 +17741,13 @@ function _openFullscreenWidget(html, title){
   f.dataset.mlsWidgetNonce=nonce; f.srcdoc=_composeWidgetSrcdoc(html,snap,nonce);
   ov.style.display='flex';
 }
-function closeStudioFullscreen(){ var ov=document.getElementById('studioFsOverlay'); if(ov) ov.style.display='none'; }
+function closeStudioFullscreen(){ var ov=document.getElementById('studioFsOverlay'); if(ov) ov.style.display='none'; _studioUnloadFrame('studioFsFrame'); }
+try{ if(!window.__mlsStudioFrameBoundaryBound){ window.__mlsStudioFrameBoundaryBound=true; window.addEventListener('mls:session-boundary',function(){
+  ['studioFrame','studioFsFrame','pinnedFrame'].forEach(_studioUnloadFrame);
+  try{ var fs=document.getElementById('studioFsOverlay'); if(fs) fs.style.display='none'; var card=document.getElementById('studioResultCard'); if(card) card.style.display='none'; }catch(e){}
+  try{ window.__mlsStudioPendingSave=null; studioLastHtml=''; studioLastPrompt=''; _pinnedCur=null; }catch(e){}
+  if(_studioReadyTimer){ clearTimeout(_studioReadyTimer); _studioReadyTimer=null; }
+},true); } }catch(e){}
 /* Jump straight to the Copilot from anywhere (quick-find, FAB, header). */
 function openCopilot(seed){
   try{ if(typeof showView==='function') showView('studio'); }catch(e){}
