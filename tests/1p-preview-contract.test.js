@@ -23,9 +23,11 @@ const BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 const P1_FILES = [
   '1pScribeFlow.html',
   '1p/index.html',
+  '1p/legal/index.html',
   '1p-mls-connect.js',
   '1p-feat_mls_avatar.js',
   '1p-feat_fullhistory_pdf.js',
+  '1p-feat_mls_legalpack.js',
   '1p-feat_nextup_connect.js',
   '1p-feat_mls_schedimport_exact.js',
   '1p-feat_mls_writeflow.js',
@@ -126,6 +128,29 @@ assert(connect.includes("s.setAttribute('data-mls-asset','feat_fullhistory_pdf.j
 assert(!connect.includes("s.src='feat_fullhistory_pdf.js?v='"),
   '1p bundle still loads the shared full-history PDF implementation');
 
+assert.strictEqual((connect.match(/node\.src=SRC\+'\?v='/g) || []).length, 1,
+  '1p bundle must have exactly one canonical Legal / IME preview source assignment');
+assert(connect.includes("A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js',V='p1-legal-1.0.0'"),
+  '1p Legal loader must separate canonical dedupe identity from its isolated source/version');
+assert(connect.includes("node.setAttribute('data-mls-asset',A)") && connect.includes("node.setAttribute('data-mls-version',V)"),
+  '1p Legal loader must publish canonical identity and exact preview version');
+assert(connect.includes("KEY='__mlsP1LegalLoader'") && connect.includes('maxAttempts:2') &&
+  connect.includes("fail(node,'network-error')") && connect.includes("fail(node,'owner-missing')") &&
+  connect.includes("if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}"),
+  '1p Legal loader lacks bounded load/owner failure recovery');
+assert(connect.includes('var shared=window.__mlsLegalPack') && connect.includes("ctl.state='blocked-shared-owner'"),
+  '1p Legal loader does not retire or refuse a hot shared Legal owner');
+assert(!/\.src=['"]feat_mls_legalpack\.js\?v=/.test(connect),
+  '1p bundle directly fetches the held shared Legal implementation');
+const p1Legal = read('1p-feat_mls_legalpack.js');
+assert(connect.includes('p1.installToken===ctl.installToken') && connect.includes('if(window[KEY]===ctl)') &&
+  p1Legal.includes('installToken: liveLoader.installToken'),
+  '1p Legal loader/API ownership is not bound to the exact install token');
+assert(p1Legal.includes("window.__MLS_P1_PREVIEW.enabled !== true") && p1Legal.includes("byId('ptLawyerBtn')"),
+  '1p Legal asset is not preview-gated or lacks its patient-level door');
+assert(/Free preview/.test(p1Legal) && /role === 'receptionist'/.test(p1Legal),
+  '1p Legal door is not visibly free or fails to exclude receptionists');
+
 /* app-version.json describes production. Preview tabs must never compare
    themselves to it; they use metadata from their own /1p/ document while the
    ordinary production-capable branch retains app-version.json. */
@@ -164,8 +189,7 @@ const PROTECTED_PRODUCTION = [
   'feat_mls_writeflow.js',
   'feat_mls_schedimport_exact.js',
   'app-version.json',
-  'sw.js',
-  '_config.yml'
+  'sw.js'
 ];
 const PROTECTED_EXTENSION = [
   'manifest.json',
@@ -201,6 +225,23 @@ if (unchanged.status !== 0) {
   assert.fail(`1p-only repair changed protected production/extension bytes (git status ${unchanged.status}): ${String(names.stdout || unchanged.stderr || '').trim()}`);
 }
 
+/* Publication config is shared infrastructure, so this 1p train authorizes
+   exactly one narrow traversal block and still byte-compares everything else
+   to the frozen production baseline. */
+const baseConfigResult = spawnSync('git', ['show', `${BASE_COMMIT}:_config.yml`],
+  { cwd: root, encoding: 'utf8', windowsHide: true });
+assert.strictEqual(baseConfigResult.status, 0, 'could not read baseline _config.yml for exact 1p publication proof');
+const p1ConfigBlock = [
+  '  # Exact nested showcase path. Do not include bare directory basenames here:',
+  '  # Jekyll treats those broadly enough to reopen unrelated legal/test files.',
+  '  - "1p/legal/index.html"',
+  ''
+].join('\n');
+const currentConfig = read('_config.yml').replace(/\r\n/g, '\n');
+assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).length, 1, 'exact FREE Legal showcase include must appear once');
+assert.strictEqual(currentConfig.replace(p1ConfigBlock, ''), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'),
+  '_config.yml changed beyond the exact reviewed 1p/legal traversal block');
+
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');
 assert(productionShell.includes("s.src='mls-connect.js?v='+window.__MLS_AV"), 'production shell lost its production bundle loader');
@@ -208,6 +249,7 @@ assert(!productionShell.includes('__MLS_P1_PREVIEW') && !productionShell.include
   '1p preview marker/loader leaked into the production shell');
 assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnect.includes('1p-feat_mls_writeflow.js') &&
   !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
+  !productionConnect.includes('1p-feat_mls_legalpack.js') &&
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');
 

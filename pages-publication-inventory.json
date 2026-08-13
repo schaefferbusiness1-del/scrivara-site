@@ -3,6 +3,7 @@
   "paths": [
     "1p-feat_mls_avatar.js",
     "1p-feat_fullhistory_pdf.js",
+    "1p-feat_mls_legalpack.js",
     "1p-feat_nextup_connect.js",
     "1p-feat_mls_schedimport_exact.js",
     "1p-feat_mls_writeflow.js",
@@ -10,6 +11,7 @@
     "1p-mls-connect.js",
     "1pScribeFlow.html",
     "1p/index.html",
+    "1p/legal/index.html",
     "404.html",
     "CNAME",
     "MLS_Assist_v3.0.61.bin",

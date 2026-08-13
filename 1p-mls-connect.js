@@ -44542,6 +44542,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return f();};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;},{timeout:2500,priority:0,asset:'feat_mls_copilot_power.js'});}catch(e){}})(); /* pre-action integrity: secure-gate priority lane installs bounded large-roster Copilot context and provider coverage before the first request */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='1p-feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
+;(function(){try{
+  var A='feat_mls_legalpack.js',SRC='1p-feat_mls_legalpack.js',V='p1-legal-1.0.0',KEY='__mlsP1LegalLoader';
+  var prior=window[KEY];if(prior&&prior.installed===true&&prior.version===V&&typeof prior.ensure==='function'){prior.ensure();return;}
+  if(prior){if(typeof prior.revert!=='function')return;try{prior.revert();}catch(_priorError){return;}if(window[KEY]===prior)return;}
+  var ctl={installed:true,version:V,state:'idle',attempts:0,maxAttempts:2,node:null,retryTimer:null,installToken:'p1-legal-'+Math.random().toString(36).slice(2)};
+  function active(){return ctl.installed===true&&window[KEY]===ctl;}
+  function ownedPreview(){var p1=window.__mlsP1LegalPack;return p1&&p1.installed===true&&p1.version===V&&p1.installToken===ctl.installToken?p1:null;}
+  function disposeLatePreview(){var p1=ownedPreview();if(p1&&typeof p1.revert==='function')try{p1.revert();}catch(_e){}}
+  function removeNode(node,reason){if(!node)return;try{node.onload=null;node.onerror=null;node.setAttribute('data-mls-retired-asset',A);node.setAttribute('data-mls-load-state',reason||'retired');node.removeAttribute('data-mls-asset');if(node.parentNode)node.parentNode.removeChild(node);}catch(_e){}}
+  function refuseShared(){ctl.state='blocked-shared-owner';var p1=ownedPreview();if(p1&&typeof p1.revert==='function')try{p1.revert();}catch(_e){}return false;}
+  function retireShared(){var shared=window.__mlsLegalPack;if(!shared||shared.installed!==true)return true;if(typeof shared.revert!=='function')return refuseShared();try{shared.revert();}catch(_e){return refuseShared();}if(window.__mlsLegalPack&&window.__mlsLegalPack.installed===true)return refuseShared();return true;}
+  function fail(node,reason){if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}if(ctl.node!==node){disposeLatePreview();removeNode(node,'stale-load');return;}ctl.node=null;removeNode(node,reason);ctl.state=reason||'error';if(ctl.attempts<ctl.maxAttempts&&!ctl.retryTimer){ctl.retryTimer=setTimeout(function(){ctl.retryTimer=null;if(active())ctl.ensure();},1000);}}
+  ctl.ensure=function(){
+    if(!active()||ctl.state==='reverted')return false;
+    var api=window.__mlsP1LegalPack;if(!retireShared())return false;if(ownedPreview()){ctl.state='ready';return true;}
+    if(ctl.state==='loading'&&ctl.node&&ctl.node.getAttribute('data-mls-load-state')==='loading')return true;
+    if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';return false;}
+    if(api&&api.installed===true){ctl.state='blocked-p1-owner';return false;}
+    var tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;
+    for(i=0;i<tags.length;i++)removeNode(tags[i],'superseded');
+    node=document.createElement('script');ctl.node=node;ctl.attempts++;ctl.state='loading';
+    node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview');node.async=false;
+    node.setAttribute('data-mls-asset',A);node.setAttribute('data-mls-version',V);node.setAttribute('data-mls-install-token',ctl.installToken);node.setAttribute('data-mls-load-state','loading');
+    node.onload=function(){if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}if(ctl.node!==node){disposeLatePreview();removeNode(node,'stale-load');return;}if(ownedPreview()){node.setAttribute('data-mls-load-state','ready');ctl.state='ready';return;}fail(node,'owner-missing');};
+    node.onerror=function(){if(!active()){disposeLatePreview();removeNode(node,'reverted-late');return;}if(ctl.node!==node){disposeLatePreview();removeNode(node,'stale-load');return;}fail(node,'network-error');};
+    (document.head||document.documentElement).appendChild(node);return true;
+  };
+  ctl.revert=function(){ctl.installed=false;if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}removeNode(ctl.node,'reverted');ctl.node=null;var api=ownedPreview();if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}ctl.state='reverted';if(window[KEY]===ctl){try{delete window[KEY];}catch(_e2){window[KEY]=null;}}};
+  window[KEY]=ctl;ctl.ensure();
+}catch(e){}})(); /* 1p FREE Legal / IME preview: exact active-patient read-only chronology + local-file drafting; no intake, payment, messaging, signing, delivery, chart write, Athena write, extension, or shared production Legal asset. Reversible: window.__mlsP1LegalLoader.revert(). */
 /* av-6.0.8: THE AVATAR CARD NOW APPEARS AT ONCE. Owner, on a screenshot of the Visit page:
    "this top thing show shoup uop right away not take a secod". Measured cause, and it is not in
    feat_mls_avatar.js: __mlsDeferAsset runs deferred assets STRICTLY SERIALLY, one script at a

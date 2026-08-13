@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
+  <title>MLS 1p Legal / IME Preview</title>
+  <style>
+    :root{color-scheme:light;--green:#204034;--soft:#edf4ef;--line:#d9dfda;--muted:#607069}
+    *{box-sizing:border-box}body{margin:0;background:#f6f4ed;color:var(--green);font:15px/1.55 system-ui,sans-serif}
+    main{max-width:1040px;margin:auto;padding:54px 24px 80px}.badge{display:inline-block;border:1px solid #bfd3c7;background:var(--soft);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:800}
+    h1{font:750 clamp(34px,6vw,62px)/1.02 Georgia,serif;max-width:830px;margin:18px 0 14px}.lead{font-size:19px;max-width:760px;color:var(--muted)}
+    .cta{display:inline-flex;min-height:48px;align-items:center;margin:16px 0 38px;padding:0 18px;border-radius:12px;background:#2e6a4b;color:#fff;text-decoration:none;font-weight:800}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:#fff;border:1px solid var(--line);border-radius:17px;padding:21px;box-shadow:0 12px 30px rgba(32,64,52,.06)}
+    h2{margin:0 0 7px;font-size:18px}.card p{margin:0;color:var(--muted)}.warn{margin-top:18px;border:1px solid #ead6a8;background:#fff8e8;color:#765616;border-radius:13px;padding:14px}
+    @media(max-width:700px){.grid{grid-template-columns:1fr}main{padding-top:30px}}
+  </style>
+</head>
+<body>
+<main>
+  <span class="badge">1p preview · showcase only · no patient intake</span>
+  <h1>A read-only Legal / IME drafting workspace.</h1>
+  <p class="lead">This page contains no form and accepts no case or patient information. Sign in to the owner-only 1p app, open the exact patient chart, and launch the preview there.</p>
+  <a class="cta" href="/1p/?tool=legal">Open the 1p workspace</a>
+  <section class="grid" aria-label="Preview capabilities">
+    <div class="card"><h2>Exact active patient</h2><p>The workspace freezes the current chart identity and discards late results if the patient changes.</p></div>
+    <div class="card"><h2>Read-only chronology</h2><p>Visits, notes, diagnoses, imaging, plans, procedures, follow-ups, and stored records are organized without writing back.</p></div>
+    <div class="card"><h2>Local file reading</h2><p>Searchable PDF, DOCX, and text are read in the browser. Raw file bytes never leave the browser. If the clinician presses Generate, extracted text from files still listed in the workspace joins the configured MLS AI context. Image OCR is refused.</p></div>
+    <div class="card"><h2>Draft-only output</h2><p>Thirteen sections remain editable and unsigned. The only exits are copy, text download, and print.</p></div>
+  </section>
+  <div class="warn"><b>Not the released Legal product.</b> No public PHI intake, payments, lawyer messaging, signing, delivery, chart filing, or Athena write is available here.</div>
+</main>
+</body>
+</html>

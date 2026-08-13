@@ -9,6 +9,8 @@ const tests = [
   '1p-preview-contract.test.js',
   '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
+  '1p-legal-ime-workspace-runtime.test.js',
+  '1p-legal-loader-runtime.test.js',
   '1p-ondemand-templates.test.js',
   '1p-autobind-encounter.test.js',
   '1p-athena-write-unlock-frozen-contract-runtime.test.js',
