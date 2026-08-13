@@ -27,6 +27,23 @@ const end = source.indexOf('/* ===== __mlsStorageJanitor', start);
 assert(start >= 0 && end > start, 'p1 DaySwitch module markers are missing');
 const moduleSource = source.slice(start, end);
 
+/* The preview starts and session-resets at an explicit All-provider scope.
+ * This is different from `null`, which follows the signed-in account provider
+ * and was the source of the live selector/pull mismatch. A doctor can still
+ * deliberately choose one roster entry after boot. */
+const easyStart = source.indexOf('the effortless Visit tab  (__mlsEasyV32)');
+const easyEnd = source.indexOf('window.__mlsEasyV32 = api;', easyStart);
+assert(easyStart >= 0 && easyEnd > easyStart, 'canonical 1p Easy provider owner is missing');
+const easySource = source.slice(easyStart, easyEnd);
+assert(/providerFilter:\s*''\s*,\s*\/\* 1p preview defaults explicitly to All providers/.test(easySource),
+  'a fresh 1p workspace no longer defaults explicitly to All providers');
+assert(/S\.providerFilter\s*=\s*'';\s*S\.providerRef\s*=\s*'';/.test(easySource),
+  'a 1p session reset no longer restores explicit All providers');
+assert(/if\s*\(S\.providerFilter\s*===\s*''\)\s*return\s*'all';/.test(easySource),
+  'the explicit All-provider state no longer reaches the Day pull as provider: all');
+assert(/S\.providerFilter\s*=\s*entry\.name;\s*S\.providerRef\s*=\s*entry\.stableKey/.test(easySource),
+  'the explicit selected-provider control disappeared while making All the default');
+
 const DAY = '2026-08-12';
 const OTHER_DAY = '2026-08-13';
 

@@ -18901,7 +18901,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     signedAt: 0,                         /* our sign-step marker (reset on regen / new patient) */
     expanded: null, editing: false, lastWarn: '',
     showCount: 5,
-    providerFilter: null,                /* null = follow app "Pulling as"; '' = all; else canonical name */
+    providerFilter: '',                  /* 1p preview defaults explicitly to All providers; null = follow app, else canonical name */
     providerRef: '',                     /* canonical stableKey; never a fuzzy display-name key */
     staffRange: 'today', customFrom: '', customTo: '',
     advOpen: false, query: '',
@@ -22549,7 +22549,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     S.mode = 'doctor'; S.screen = 'home'; S.visitDay = todayLocal();
     S.appt = null; S.locked = null; S.phase = 'idle'; S.recStart = 0;
     S.genClickedAt = 0; S.signedAt = 0; S.expanded = null; S.editing = false;
-    S.lastWarn = ''; S.showCount = 5; S.providerFilter = null; S.providerRef = '';
+    S.lastWarn = ''; S.showCount = 5; S.providerFilter = ''; S.providerRef = '';
     S.staffRange = 'today'; S.customFrom = ''; S.customTo = ''; S.advOpen = false; S.query = '';
     S.autoPull = 'idle'; S.autoPullAt = 0; S.autoPullNote = '';
     safe(function () { if (typeof window._athenaSetVisitBinding === 'function') window._athenaSetVisitBinding(null, true); });
