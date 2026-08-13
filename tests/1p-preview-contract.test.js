@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260812-r3';
+const EXPECTED_BUILD = 'p1-20260812-r4';
 const BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 
 const P1_FILES = [
@@ -25,8 +25,11 @@ const P1_FILES = [
   '1p/index.html',
   '1p-mls-connect.js',
   '1p-feat_mls_avatar.js',
+  '1p-feat_fullhistory_pdf.js',
+  '1p-feat_nextup_connect.js',
   '1p-feat_mls_schedimport_exact.js',
-  '1p-feat_mls_writeflow.js'
+  '1p-feat_mls_writeflow.js',
+  '1p-feat_task3_frontsync.js'
 ];
 
 for (const name of P1_FILES) {
@@ -106,10 +109,26 @@ assert(connect.includes("s.setAttribute('data-mls-asset','feat_mls_schedimport_e
 assert(!connect.includes("s.src='feat_mls_schedimport_exact.js?v='"),
   '1p bundle still loads the shared production importer');
 
-/* app-version.json describes production. It may remain the endpoint used by
-   the shared code, but its refresh banner is disabled only when the explicit
-   frozen 1p marker is present. Exercise the real one-line predicate rather
-   than accepting a comment or a dead marker. */
+assert(connect.includes('1p-feat_task3_frontsync.js'),
+  '1p bundle must load the isolated Task3 calendar consumer');
+assert(!connect.includes('s.src=A+"?v=20260808t3113perf2"'),
+  '1p bundle still fetches the shared Task3 consumer');
+const p1Importer = read('1p-feat_mls_schedimport_exact.js');
+assert(p1Importer.includes('1p-feat_nextup_connect.js'),
+  '1p importer must load the isolated Next Up census consumer');
+assert(!p1Importer.includes('s.src = "feat_nextup_connect.js?v=20260808auth3perf1"'),
+  '1p importer still fetches the shared Next Up consumer');
+
+assert.strictEqual((connect.match(/s\.src='1p-feat_fullhistory_pdf\.js\?v='/g) || []).length, 1,
+  '1p bundle must load the isolated full-history PDF implementation exactly once');
+assert(connect.includes("s.setAttribute('data-mls-asset','feat_fullhistory_pdf.js')"),
+  '1p full-history PDF loader must retain the canonical dedupe identity');
+assert(!connect.includes("s.src='feat_fullhistory_pdf.js?v='"),
+  '1p bundle still loads the shared full-history PDF implementation');
+
+/* app-version.json describes production. Preview tabs must never compare
+   themselves to it; they use metadata from their own /1p/ document while the
+   ordinary production-capable branch retains app-version.json. */
 const versionStart = connect.indexOf('if(window.__mlsVersionCheck) return;');
 const versionEnd = connect.indexOf('\n(function(){', versionStart + 1);
 assert(versionStart >= 0 && versionEnd > versionStart, '1p production-version-check block could not be isolated');
@@ -118,16 +137,20 @@ assert(versionBlock.includes("var URL='app-version.json';"), 'version check no l
 const canCheckLine = versionBlock.split(/\r?\n/).find((line) => line.includes('function canCheck()'));
 assert(canCheckLine, '1p version-check predicate is missing');
 const makeCanCheck = new Function('window', `${canCheckLine}\nreturn canCheck;`);
-assert.strictEqual(makeCanCheck({ __MLS_P1_PREVIEW: { enabled: true }, backendMode: () => true })(), false,
-  'production update banner remains enabled inside the 1p preview');
+assert.strictEqual(makeCanCheck({ __MLS_P1_PREVIEW: { enabled: true }, backendMode: () => true })(), true,
+  'the isolated 1p freshness check is disabled inside the preview');
 assert.strictEqual(makeCanCheck({ __MLS_P1_PREVIEW: { enabled: false }, backendMode: () => true })(), true,
   'a non-enabled preview marker must not disable production version checks');
 assert.strictEqual(makeCanCheck({ backendMode: () => true })(), true,
   'ordinary production-capable callers must retain version checks');
 assert.strictEqual(makeCanCheck({ backendMode: () => false })(), false,
   'the pre-existing backend availability gate must remain intact');
+assert(versionBlock.includes("fetch('/1p/?nc='+now,{method:'HEAD',cache:'no-store'})"),
+  '1p freshness must use a metadata-only no-store request to its own route');
+assert(versionBlock.includes("if(isPreview()){") && versionBlock.includes("fetch(URL+'?nc='+now,{cache:'no-store'})"),
+  'preview and production version sources are no longer kept in separate branches');
 assert(versionBlock.includes('if(canCheck()){') && versionBlock.includes('setTimeout(check, 8000);'),
-  '1p version-check scheduling must stay behind the preview-aware predicate');
+  '1p version-check scheduling must stay behind the backend availability predicate');
 
 /* This train's hard boundary: none of the production app loaders, shared
    importer/service worker, or audited 3.0.61 extension release bytes may move.
@@ -183,7 +206,9 @@ const productionConnect = read('mls-connect.js');
 assert(productionShell.includes("s.src='mls-connect.js?v='+window.__MLS_AV"), 'production shell lost its production bundle loader');
 assert(!productionShell.includes('__MLS_P1_PREVIEW') && !productionShell.includes('1p-mls-connect.js'),
   '1p preview marker/loader leaked into the production shell');
-assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnect.includes('1p-feat_mls_writeflow.js'),
+assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnect.includes('1p-feat_mls_writeflow.js') &&
+  !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
+  !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');
 
-console.log(`PASS 1p preview contract: ${EXPECTED_BUILD}, live /1p/ route, exact preview loaders, production version banner suppressed only by the 1p marker, protected production/extension bytes unchanged from ${BASE_COMMIT.slice(0, 8)}`);
+console.log(`PASS 1p preview contract: ${EXPECTED_BUILD}, live /1p/ route, exact preview loaders, 1p freshness isolated from the production version feed, protected production/extension bytes unchanged from ${BASE_COMMIT.slice(0, 8)}`);

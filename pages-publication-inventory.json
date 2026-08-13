@@ -2,8 +2,11 @@
   "schemaVersion": 1,
   "paths": [
     "1p-feat_mls_avatar.js",
+    "1p-feat_fullhistory_pdf.js",
+    "1p-feat_nextup_connect.js",
     "1p-feat_mls_schedimport_exact.js",
     "1p-feat_mls_writeflow.js",
+    "1p-feat_task3_frontsync.js",
     "1p-mls-connect.js",
     "1pScribeFlow.html",
     "1p/index.html",
