@@ -25,6 +25,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const p1Connect = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
 const source = fs.readFileSync(path.join(root, 'feat_mls_avatar.js'), 'utf8');
 
 let pass = 0;
@@ -32,6 +33,24 @@ function ok(label, cond) {
   assert(cond, 'FAILED: ' + label);
   pass++;
   console.log('  ok  ' + label);
+}
+
+/* Production retains its compatibility shim below, but /1p no longer uses
+   that tag-only ownership model. Pin the actual preview handoff here too so
+   this suite cannot stay green by executing only the retired implementation. */
+{
+  const loaderAt = p1Connect.indexOf('/* p1-avatar-loader-1.0.0:');
+  const faceAt = p1Connect.indexOf("A='feat_mls_avatar_face.js'", loaderAt);
+  const p1Loader = loaderAt >= 0 && faceAt > loaderAt ? p1Connect.slice(loaderAt, faceAt) : '';
+  const shimAt = p1Connect.indexOf('/* av-6.0.8:', faceAt);
+  const shimEnd = p1Connect.indexOf('/* 2026-07-28 owner order:', shimAt);
+  const p1Shim = shimAt >= 0 && shimEnd > shimAt ? p1Connect.slice(shimAt, shimEnd) : '';
+  ok('the /1p instant card belongs to one exact capability controller',
+    p1Loader.includes("KEY='__mlsP1AvatarLoader'") && p1Loader.includes('ctl.mountSkeleton=function()'));
+  ok('the /1p controller has exactly one Avatar script creator',
+    (p1Loader.match(/document\.createElement\('script'\)/g) || []).length === 1);
+  ok('the later /1p card hook delegates instead of creating another script',
+    p1Shim.includes('ctl.mountSkeleton()') && !/createElement\('script'\)/.test(p1Shim));
 }
 
 /* ---------------------------------------------------------------------------

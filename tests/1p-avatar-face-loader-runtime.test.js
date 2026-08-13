@@ -369,7 +369,7 @@ for (const field of ['installToken', 'version', 'state', 'ensure', 'revert']) {
   const r = runtime({ preview: false });
   eq(r.window.__mlsP1AvatarFaceLoader, undefined, 'face loader installed outside an enabled /1p preview');
   eq(r.scripts.length, 0, 'face asset loaded outside an enabled /1p preview');
-  const avatarAt = connect.indexOf("s.src='1p-feat_mls_avatar.js?v='");
+  const avatarAt = connect.indexOf('/* p1-avatar-loader-1.0.0:');
   const legalAt = connect.indexOf("var A='feat_mls_legalpack.js'", avatarAt);
   ok(avatarAt >= 0 && avatarAt < markerAt && markerAt < legalAt,
     'face loader is not immediately between the preview Avatar and next asset loader');

@@ -102,12 +102,18 @@ assert(connect.includes("s.setAttribute('data-mls-asset','feat_mls_writeflow.js'
 assert(!connect.includes("s.src='feat_mls_writeflow.js?v='"),
   '1p bundle still loads the production write-flow implementation');
 
-assert.strictEqual((connect.match(/s\.src='1p-feat_mls_avatar\.js\?v='/g) || []).length, 1,
-  '1p deferred avatar loader must fetch the preview implementation exactly once');
-assert(connect.includes("var ASSET='feat_mls_avatar.js', SRC='1p-feat_mls_avatar.js', ID='mlsAvVisitCard';"),
-  '1p eager avatar loader must separate its canonical identity from its preview source');
-assert(connect.includes("s.src=SRC+'?v='+(window.__MLS_AV||Date.now())"),
-  '1p eager avatar loader must fetch the preview source');
+const avatarLoaderStart = connect.indexOf('/* p1-avatar-loader-1.0.0:');
+const avatarLoaderEnd = connect.indexOf("if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;", avatarLoaderStart);
+const avatarLoader = avatarLoaderStart >= 0 && avatarLoaderEnd > avatarLoaderStart
+  ? connect.slice(avatarLoaderStart, avatarLoaderEnd) : '';
+assert.strictEqual((avatarLoader.match(/node\.src=SRC\+'\?v='/g) || []).length, 1,
+  '1p Avatar must have exactly one preview script creator');
+assert(avatarLoader.includes("A='feat_mls_avatar.js',SRC='1p-feat_mls_avatar.js'") &&
+  avatarLoader.includes("KEY='__mlsP1AvatarLoader'") && avatarLoader.includes("node.setAttribute('data-mls-install-token',ctl.installToken)"),
+  '1p Avatar loader lost canonical identity, preview source, or exact install token');
+assert(avatarLoader.includes('ctl.mountSkeleton=function()') &&
+  connect.includes("ctl.version==='p1-avatar-loader-1.0.0'&&typeof ctl.mountSkeleton==='function'"),
+  'instant Avatar card is no longer delegated to the one canonical loader');
 assert(!connect.includes("s.src='feat_mls_avatar.js?v='"),
   '1p bundle still has a direct production avatar fetch');
 

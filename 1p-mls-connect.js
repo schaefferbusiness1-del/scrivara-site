@@ -44851,7 +44851,216 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_b121_pack.js"]'))return;var s=document.createElement('script');s.src='feat_mls_b121_pack.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_b121_pack.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b121: pack - addVisit cycle guard, day-key fix, dedup-by-id (dry-run default), visits backfill, pull-any-day, progress-always-on (additive; each module has revert()) */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_copilot_actions.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_actions.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_copilot_actions.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one local Assistant action/follow-up/draft-copy renderer with fail-closed patient targeting; ca-2.1.0 delegates agentic kinds to __mlsCopilotPower */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return f();};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_copilot_power.js"]'))return;var s=document.createElement('script');s.src='feat_mls_copilot_power.js?v=20260805cpw130';s.setAttribute('data-mls-asset','feat_mls_copilot_power.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;},{timeout:2500,priority:0,asset:'feat_mls_copilot_power.js'});}catch(e){}})(); /* pre-action integrity: secure-gate priority lane installs bounded large-roster Copilot context and provider coverage before the first request */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_avatar.js"]'))return;var s=document.createElement('script');s.src='1p-feat_mls_avatar.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_avatar.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* av-1.0.0: AVATAR doctor side -- program the patient-facing check-in interviewer, event-driven ready badge (no polling), read bullets, one-tap import of the patient-reported summary into the exact chart (fail-closed external-id match, idempotent stamp). DEFERRED past first paint -- additive, reversible (window.__mlsAvatar.revert()) */
+/* p1-avatar-loader-1.0.0: one capability-owned loader for both the deferred
+   Avatar fetch and the instant Visit skeleton. The tag is never evidence of a
+   working owner: the exact active owner+mic pair (or exact dormant owner) is. */
+;(function(){try{
+  var A='feat_mls_avatar.js',SRC='1p-feat_mls_avatar.js',OWNER_V='av-5.7.0',MIC_V='p1-mic-1.0.0';
+  var V='p1-avatar-loader-1.0.0',KEY='__mlsP1AvatarLoader',SEQ='__mlsP1AvatarLoaderSequence';
+  var prior=window[KEY];
+  function preview(){return !!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true);}
+  function controllerShape(value){return !!(value&&value.installed===true&&value.asset===A&&
+    value.version===V&&typeof value.installToken==='string'&&value.installToken&&
+    typeof value.ensure==='function'&&typeof value.mountSkeleton==='function'&&typeof value.revert==='function');}
+  function publishBootstrapRefusal(reason){
+    try{window.__mlsAvatarLoadRefusal={reason:reason,loader:V};}catch(_refusalError){}
+    try{var gate=window.__mlsUpgradeSafety;if(gate&&typeof gate.defer==='function')gate.defer('avatar-'+V,'Avatar',[{code:reason,message:'The Avatar update is waiting for a clean page reload so the current check-in cannot be interrupted.'}]);}catch(_gateError){}
+  }
+  if(prior){
+    if(!controllerShape(prior)){publishBootstrapRefusal('blocked-foreign-controller');return;}
+    try{prior.mountSkeleton();prior.deferEnsure();}catch(_sameControllerError){publishBootstrapRefusal('blocked-controller-error');}
+    return;
+  }
+  var sequence=Math.max(0,Number(window[SEQ])||0)+1;window[SEQ]=sequence;
+  var ctl={installed:true,asset:A,version:V,state:'idle',attempts:0,maxAttempts:2,node:null,retryTimer:null,
+    installToken:'p1-avatar-'+Date.now().toString(36)+'-'+sequence.toString(36)+'-'+Math.random().toString(36).slice(2),
+    attemptId:0,lifecycleTicket:1,skeletonTimers:[],skeletonEvents:[],deferTicket:0};
+  function current(){return ctl.installed===true&&window[KEY]===ctl;}
+  function text(value){return value==null?'':String(value).trim();}
+  function micShape(mic,api){return !!(mic&&mic.installed===true&&mic.v===MIC_V&&
+    mic.installToken===api.installToken&&mic.instanceToken===api.instanceToken&&
+    typeof mic.state==='function'&&typeof mic.revert==='function');}
+  function ownerShape(api,token,version){
+    if(!api||api.asset!==A||typeof api.version!=='string'||!api.version||typeof api.installToken!=='string'||!api.installToken||
+       typeof api.instanceToken!=='string'||!api.instanceToken||typeof api.revert!=='function'||
+       typeof api.isDirty!=='function'||(token&&api.installToken!==token)||(version&&api.version!==version))return null;
+    var mic=window.__mlsAvP1Mic;
+    if(api.installed===true)return micShape(mic,api)?{kind:'active',api:api,mic:mic}:null;
+    if(api.installed===false&&text(api.dormant)){
+      if(mic&&mic.installed===true)return null;
+      var dirty=true;try{dirty=api.isDirty()!==false;}catch(_dormantDirtyError){dirty=true;}
+      return dirty?null:{kind:'dormant',api:api,mic:null};
+    }
+    return null;
+  }
+  function exactOwner(){return ownerShape(window.__mlsAvatar,ctl.installToken,OWNER_V);}
+  function anyOwner(){return ownerShape(window.__mlsAvatar,'','');}
+  function setRefusal(reason,message){
+    ctl.state=reason;ctl.lastRefusal=reason;
+    try{window.__mlsAvatarLoadRefusal={reason:reason,loader:V,installToken:ctl.installToken};}catch(_refusalError){}
+    try{var gate=window.__mlsUpgradeSafety;if(gate&&typeof gate.defer==='function')gate.defer('avatar-'+V,'Avatar',[{code:reason,message:message||'The Avatar update is waiting for a clean page reload so the current check-in cannot be interrupted.'}]);}catch(_gateError){}
+    return false;
+  }
+  function clearRefusal(){
+    ctl.lastRefusal='';
+    try{if(window.__mlsAvatarLoadRefusal&&window.__mlsAvatarLoadRefusal.loader===V)delete window.__mlsAvatarLoadRefusal;}catch(_refusalError){}
+    try{var gate=window.__mlsUpgradeSafety;if(gate&&typeof gate.clear==='function')gate.clear('avatar-'+V);}catch(_gateError){}
+  }
+  function removeNode(node,reason,keepCallbacks){
+    if(!node)return;
+    try{if(!keepCallbacks){node.onload=null;node.onerror=null;}node.setAttribute('data-mls-retired-asset',A);
+      node.setAttribute('data-mls-load-state',reason||'retired');node.removeAttribute('data-mls-asset');
+      if(node.parentNode)node.parentNode.removeChild(node);}catch(_removeError){}
+  }
+  function exactSkeleton(){
+    var card=document.getElementById&&document.getElementById('mlsAvVisitCard');
+    return card&&card.getAttribute&&card.getAttribute('data-mls-av-skeleton')==='1'&&
+      card.getAttribute('data-mls-avatar-loader-token')===ctl.installToken?card:null;
+  }
+  function stopSkeleton(remove){
+    ctl.lifecycleTicket++;var i,row;
+    for(i=0;i<ctl.skeletonTimers.length;i++)try{clearTimeout(ctl.skeletonTimers[i]);}catch(_timerError){}
+    ctl.skeletonTimers=[];
+    for(i=0;i<ctl.skeletonEvents.length;i++){row=ctl.skeletonEvents[i];try{window.removeEventListener(row[0],row[1],false);}catch(_eventError){}}
+    ctl.skeletonEvents=[];
+    if(remove){var card=exactSkeleton();if(card&&card.parentNode)try{card.parentNode.removeChild(card);}catch(_cardError){}}
+  }
+  function ownerStillRetired(record){
+    if(!record||record.api.installed!==false||window.__mlsAvatar===record.api)return false;
+    if(record.mic&&(record.mic.installed===true||window.__mlsAvP1Mic===record.mic))return false;
+    var liveMic=window.__mlsAvP1Mic;return !(liveMic&&liveMic.installed===true);
+  }
+  function retireOwned(record,reason){
+    var dirty=true;try{dirty=record.api.isDirty()!==false;}catch(_dirtyError){dirty=true;}
+    if(dirty)return setRefusal(reason==='preview'?'blocked-preview-dirty':'blocked-dirty-owner',
+      'Avatar setup, a check-in, speech, camera, or unsaved Avatar work is still active. Finish it, then reload to apply the update.');
+    var result=false;try{result=record.api.revert()===true;}catch(_revertError){result=false;}
+    if(!result||!ownerStillRetired(record))return setRefusal('blocked-owner-revert');
+    var tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i;
+    for(i=0;i<tags.length;i++)if(tags[i].getAttribute('data-mls-install-token')===record.api.installToken)removeNode(tags[i],'retired-owner');
+    if(window.__mlsAvatar||window.__mlsAvP1Mic)return setRefusal('blocked-reentrant-owner');
+    return true;
+  }
+  function prepareOwner(){
+    var exact=exactOwner();if(exact)return exact;
+    var raw=window.__mlsAvatar,mic=window.__mlsAvP1Mic;
+    if(!raw&&!mic)return null;
+    var old=anyOwner();
+    if(!old)return setRefusal('blocked-foreign-owner');
+    if(!retireOwned(old,'upgrade'))return false;
+    return null;
+  }
+  function disposeLate(attempt,node){
+    if(!node||text(node.getAttribute&&node.getAttribute('data-mls-install-token'))!==ctl.installToken)return;
+    var late=ownerShape(window.__mlsAvatar,ctl.installToken,OWNER_V);
+    if(late){var dirty=true;try{dirty=late.api.isDirty()!==false;}catch(_dirtyError){dirty=true;}
+      if(!dirty)try{late.api.revert();}catch(_lateRevertError){}}
+  }
+  function retryableFailure(node,attempt,reason){
+    if(!current()||ctl.node!==node||ctl.attemptId!==attempt){disposeLate(attempt,node);removeNode(node,'stale-load');return;}
+    ctl.node=null;removeNode(node,reason);ctl.state=reason;
+    if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';stopSkeleton(true);return;}
+    var ticket=ctl.lifecycleTicket;
+    ctl.retryTimer=setTimeout(function(){
+      if(!current()||ticket!==ctl.lifecycleTicket||ctl.attemptId!==attempt||ctl.retryTimer==null)return;
+      ctl.retryTimer=null;ctl.ensure('retry');
+    },1000);
+  }
+  function tagsSafeForInsert(){
+    var foreignCard=document.getElementById&&document.getElementById('mlsAvVisitCard');
+    if(foreignCard&&foreignCard.getAttribute&&foreignCard.getAttribute('data-mls-av-skeleton')==='1'&&
+       foreignCard.getAttribute('data-mls-avatar-loader-token')!==ctl.installToken)
+      return setRefusal('blocked-foreign-skeleton');
+    var tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,tagToken;
+    for(i=0;i<tags.length;i++){
+      if(tags[i]===ctl.node)continue;
+      tagToken=text(tags[i].getAttribute('data-mls-install-token'));
+      if(tagToken!==ctl.installToken)return setRefusal('blocked-foreign-tag');
+      removeNode(tags[i],'duplicate-token');
+    }
+    return true;
+  }
+  ctl.ensure=function(){
+    if(!current()||ctl.state==='reverted')return false;
+    if(!preview()){
+      var previewOwner=exactOwner();
+      if(previewOwner&&!retireOwned(previewOwner,'preview'))return false;
+      if(window.__mlsAvatar||window.__mlsAvP1Mic)return setRefusal('blocked-preview-owner');
+      if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}
+      removeNode(ctl.node,'preview-disabled',true);ctl.node=null;stopSkeleton(true);ctl.state='blocked-preview';return false;
+    }
+    var ready=exactOwner();if(ready){if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}ctl.state=ready.kind==='dormant'?'ready-dormant':'ready';clearRefusal();stopSkeleton(true);return true;}
+    var prepared=prepareOwner();if(prepared===false)return false;
+    if(prepared){if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}ctl.state=prepared.kind==='dormant'?'ready-dormant':'ready';clearRefusal();stopSkeleton(true);return true;}
+    if(ctl.state==='loading'&&ctl.node&&ctl.node.getAttribute('data-mls-load-state')==='loading')return true;
+    if(ctl.attempts>=ctl.maxAttempts){ctl.state='failed-bounded';stopSkeleton(true);return false;}
+    if(!tagsSafeForInsert())return false;
+    var node=document.createElement('script'),attempt=++ctl.attemptId;ctl.node=node;ctl.attempts++;ctl.state='loading';
+    node.src=SRC+'?v='+(window.__MLS_AV||'p1-preview');node.async=true;
+    node.setAttribute('data-mls-asset',A);node.setAttribute('data-mls-version',OWNER_V);
+    node.setAttribute('data-mls-install-token',ctl.installToken);node.setAttribute('data-mls-load-state','loading');
+    node.onload=function(){
+      if(!current()||ctl.node!==node||ctl.attemptId!==attempt){disposeLate(attempt,node);removeNode(node,'stale-load');return;}
+      if(!preview()){ctl.ensure('preview-withdrawn');return;}
+      var owner=exactOwner();if(owner){node.setAttribute('data-mls-load-state','ready');if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}ctl.state=owner.kind==='dormant'?'ready-dormant':'ready';clearRefusal();stopSkeleton(true);return;}
+      if(window.__mlsAvatar||window.__mlsAvP1Mic){setRefusal('blocked-malformed-loaded-owner');return;}
+      retryableFailure(node,attempt,'owner-missing');
+    };
+    node.onerror=function(){
+      if(!current()||ctl.node!==node||ctl.attemptId!==attempt){removeNode(node,'stale-error');return;}
+      retryableFailure(node,attempt,'network-error');
+    };
+    (document.body||document.head||document.documentElement).appendChild(node);return true;
+  };
+  ctl.deferEnsure=function(){
+    if(!current())return false;var ticket=++ctl.deferTicket;
+    var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(fn){return setTimeout(fn,900);};
+    try{sched(function(){if(current()&&ticket===ctl.deferTicket)ctl.ensure('deferred');},{timeout:2500,priority:5,asset:A});return true;}catch(_deferError){return false;}
+  };
+  ctl.mountSkeleton=function(){
+    if(!current())return false;if(!preview()){ctl.ensure('preview-withdrawn');return false;}
+    if(ctl.skeletonEvents.length||ctl.skeletonTimers.length||exactSkeleton())return true;
+    var ticket=ctl.lifecycleTicket,BOX='margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
+    function live(){return current()&&preview()&&ticket===ctl.lifecycleTicket;}
+    function draw(){
+      if(!live())return;var owner=exactOwner();if(owner){stopSkeleton(false);return;}
+      var view=document.getElementById('visitView');if(!view)return;
+      var card=document.getElementById('mlsAvVisitCard');
+      if(card&&card.getAttribute('data-mls-av-skeleton')!=='1'){stopSkeleton(false);return;}
+      if(card&&card.getAttribute('data-mls-avatar-loader-token')!==ctl.installToken)return setRefusal('blocked-foreign-skeleton');
+      if(!card){
+        card=document.createElement('div');card.id='mlsAvVisitCard';card.setAttribute('data-mls-av-skeleton','1');
+        card.setAttribute('data-mls-avatar-loader-token',ctl.installToken);card.style.cssText=BOX;
+        var inner=document.createElement('div');inner.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer';inner.title='Tap to load your check-in assistant now';
+        var title=document.createElement('span');title.style.cssText='font-weight:800;color:#204034;font-size:13.5px';title.textContent='\uD83E\uDDD1\u200D\u2695\uFE0F Avatar';
+        var label=document.createElement('span');label.style.cssText='font-size:12.5px;color:#55605A';label.textContent='Getting your check-in assistant ready\u2026';
+        inner.appendChild(title);inner.appendChild(label);
+        inner.addEventListener('click',function(){if(!live()||exactSkeleton()!==card)return;label.textContent='Loading your check-in assistant\u2026';ctl.ensure('skeleton-click');},false);
+        card.appendChild(inner);
+        ctl.skeletonTimers.push(setTimeout(function(){if(live()&&exactSkeleton()===card)ctl.ensure('skeleton-promotion');},1200));
+      }
+      var rail=null;try{rail=view.querySelector('#mlsStages');}catch(_railError){}
+      var after=(rail&&rail.parentNode===view)?rail.nextElementSibling:view.firstElementChild;
+      if(card!==after)try{view.insertBefore(card,after);}catch(_placeError){}
+    }
+    [0,120,400,900,1800,3200].forEach(function(delay){ctl.skeletonTimers.push(setTimeout(function(){if(live())draw();},delay));});
+    ['mls:ui-ready','mls:view-changed','mls:active-patient-changed','mls:easy-mode-changed'].forEach(function(name){
+      var fn=function(){if(live())draw();};try{window.addEventListener(name,fn,false);ctl.skeletonEvents.push([name,fn]);}catch(_eventError){}
+    });
+    ctl.skeletonTimers.push(setTimeout(function(){if(live())stopSkeleton(false);},30000));return true;
+  };
+  ctl.revert=function(){
+    if(!current())return false;
+    var owned=exactOwner();
+    if(owned&&!retireOwned(owned,'revert'))return false;
+    if(!owned&&(window.__mlsAvatar||window.__mlsAvP1Mic))return setRefusal('blocked-foreign-owner');
+    if(ctl.retryTimer){clearTimeout(ctl.retryTimer);ctl.retryTimer=null;}
+    ctl.deferTicket++;stopSkeleton(true);removeNode(ctl.node,'reverted',true);ctl.node=null;
+    ctl.installed=false;ctl.state='reverted';if(window[KEY]===ctl)try{delete window[KEY];}catch(_deleteError){window[KEY]=null;}
+    return true;
+  };
+  window[KEY]=ctl;ctl.deferEnsure();
+}catch(e){}})();
 ;(function(){try{
   if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;
   var A='feat_mls_avatar_face.js',SRC='1p-feat_mls_avatar_face.js',V='p1-face-studio-1.0.1',KEY='__mlsP1AvatarFaceLoader',SEQ='__mlsP1AvatarFaceLoaderSequence';
@@ -45046,64 +45255,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    the placeholder instead of leaving a card that can never work, and it stands down the moment
    the module's script tag exists so the two can never fight over position (see av-6.0.2). */
 ;(function(){try{
-  /* Keep the canonical data-mls-asset identity so the adopter and deferred
-     loader dedupe one module, but fetch the preview implementation. The prior
-     eager path fetched production bytes first and permanently suppressed the
-     queued 1p avatar. */
-  var ASSET='feat_mls_avatar.js', SRC='1p-feat_mls_avatar.js', ID='mlsAvVisitCard';
-  var BOX='margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
-  var timers=[], bound=[], stopped=false, hurried=false, drawnAt=0;
-  function tag(){ try{ return document.querySelector('script[data-mls-asset="'+ASSET+'"]'); }catch(e){ return null; } }
-  function stop(){ if(stopped) return; stopped=true;
-    for(var i=0;i<timers.length;i++){ try{ clearTimeout(timers[i]); }catch(e){} }
-    for(var j=0;j<bound.length;j++){ try{ window.removeEventListener(bound[j][0],bound[j][1],false); }catch(e){} }
-    timers=[]; bound=[]; }
-  function hurry(){ if(hurried) return; hurried=true;
-    try{ if(tag()) return;
-      var s=document.createElement('script');
-      s.src=SRC+'?v='+(window.__MLS_AV||Date.now());
-      s.setAttribute('data-mls-asset',ASSET); s.async=true;
-      /* a placeholder for a module that will never arrive is a lie on screen: take it away */
-      s.addEventListener('error',function(){ try{ var c=document.getElementById(ID);
-        if(c&&c.getAttribute('data-mls-av-skeleton')&&c.parentNode) c.parentNode.removeChild(c); }catch(e){} },{once:true});
-      (document.body||document.head||document.documentElement).appendChild(s);
-    }catch(e){} }
-  function draw(){
-    if(stopped) return;
-    if(tag()){ stop(); return; }
-    var view=document.getElementById('visitView'); if(!view) return;
-    var card=document.getElementById(ID);
-    if(card&&!card.getAttribute('data-mls-av-skeleton')){ stop(); return; }
-    if(!card){
-      card=document.createElement('div');
-      card.id=ID; card.setAttribute('data-mls-av-skeleton','1'); card.style.cssText=BOX;
-      var inner=document.createElement('div');
-      inner.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer';
-      inner.title='Tap to load your check-in assistant now';
-      var t=document.createElement('span'); t.style.cssText='font-weight:800;color:#204034;font-size:13.5px'; t.textContent='\uD83E\uDDD1\u200D\u2695\uFE0F Avatar';
-      var l=document.createElement('span'); l.style.cssText='font-size:12.5px;color:#55605A'; l.textContent='Getting your check-in assistant ready\u2026';
-      inner.appendChild(t); inner.appendChild(l);
-      /* the listener is on the INNER node on purpose: the module clears card.innerHTML when it
-         adopts this node, which takes this handler with it -- no cross-module removeEventListener */
-      inner.addEventListener('click',function(){ l.textContent='Loading your check-in assistant\u2026'; hurry(); },false);
-      card.appendChild(inner);
-      drawnAt=Date.now();
-      /* He is LOOKING at the Visit page, so this module is the one he wants next. Promote it
-         once, shortly after the skeleton lands -- not at boot, and only on this view, so login
-         keeps its budget while the card he asked for becomes real in about a second. */
-      timers.push(setTimeout(function(){ try{ if(document.getElementById(ID)) hurry(); }catch(e){} },1200));
-    }
-    var rail=null; try{ rail=view.querySelector('#mlsStages'); }catch(e){}
-    var after=(rail&&rail.parentNode===view)?rail.nextElementSibling:view.firstElementChild;
-    if(card!==after){ try{ view.insertBefore(card,after); }catch(e){} }
-  }
-  var RUNGS=[0,120,400,900,1800,3200];
-  for(var r=0;r<RUNGS.length;r++) timers.push(setTimeout(draw,RUNGS[r]));
-  var EVENTS=['mls:ui-ready','mls:view-changed','mls:active-patient-changed','mls:easy-mode-changed'];
-  for(var e2=0;e2<EVENTS.length;e2++){ (function(n){ var fn=function(){ draw(); };
-    try{ window.addEventListener(n,fn,false); bound.push([n,fn]); }catch(e){} })(EVENTS[e2]); }
-  /* bounded by construction: no permanent polling, and it lets go after 30s regardless */
-  timers.push(setTimeout(stop,30000));
+  /* The controller above is the only script creator. This later hook preserves
+     the instant Visit card without creating a second ownership path. */
+  var ctl=window.__mlsP1AvatarLoader;
+  if(ctl&&ctl.installed===true&&ctl.asset==='feat_mls_avatar.js'&&
+     ctl.version==='p1-avatar-loader-1.0.0'&&typeof ctl.mountSkeleton==='function')ctl.mountSkeleton();
 }catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
@@ -46641,7 +46797,157 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* event-driven widget deck on Visit (window.__mlsWidgetDeck wd-1.2.0; revert()); shared build token prevents stale polling code */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{var want=false;var lay='';try{lay=localStorage.getItem('mls_layout_pref')||'';}catch(e){}if(lay==='full')return;if(lay==='simple')want=true;try{if(!want)want=(sessionStorage.getItem('mls_phone_mode')==='1');}catch(e){}try{if(!want&&localStorage.getItem('mls_device_role')==='phone')want=true;}catch(e){}try{if(!want&&/[?&]phone=1/.test(location.search))want=true;}catch(e){}try{if(!want)want=/iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent||'')&&((navigator.maxTouchPoints||0)>0||'ontouchstart' in window);}catch(e){}if(!want)return;if(document.querySelector('script[data-mls-asset="feat_mls_phone_ui.js"]'))return;var s=document.createElement('script');s.src='feat_mls_phone_ui.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_phone_ui.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS on a phone (ph3-1.0.0): a phone app written for the phone, replacing the 28-rule body.mls-phone hide layer that produced every defect in PHONE_AUDIT_2026-07-27.md. Requested ONLY on a handheld / explicit phone role / ?phone=1 / the Settings layout preference, so a desktop pays nothing. THE LAYOUT PREFERENCE IS READ FIRST AND IT IS READ HERE: wantPhone() has consulted mls_layout_pref since dr-1.5.0, but this loader did not, so Settings -> Integrations -> This device -> "Simple phone app" answered yes in one place and never fetched the file in the other -- a setting that saved and did nothing. 'full' returns immediately for the same reason in reverse. Deliberately NOT routed through __mlsDeferAsset: this module hides the desktop chrome, and deferring it past first paint shows the doctor the 8-item dock and the crowded workspace for a second before replacing them (window.__mlsPhoneUI ph3-1.0.0; revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_shell.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_shell.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;}catch(e){}},{timeout:1500,priority:0,owner:'__mlsCalmShell',retireVersion:'calm-1.0.0',barrier:true,fallback:'classic',asset:'feat_mls_calm_shell.js'});}catch(e){}})(); /* Calm Shell: gate-owned presentation foundation. It evaluates before the seven dependent polish/focus owners so no control can reshape after reveal; a real load failure fails back to the functional Classic shell. ?ui=classic remains the explicit escape hatch (window.__mlsCalmShell calm-1.0.0; revert()). */
+/* p1-calm-dock-1.0.0: normal preview owns one liquid-glass bottom dock.
+   A stale ?ui=classic/local preference can no longer strand later /1p loads in
+   the left-rail fallback. The rail is hidden and body padding is cleared only
+   after the canonical Calm owner and rendered dock both prove ready. */
+;(function(){try{
+  if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;
+  var A='feat_mls_calm_shell.js',V='p1-calm-dock-1.0.0',CALM_V='calm-1.0.0';
+  var KEY='__mlsP1CalmDock',SEQ='__mlsP1CalmDockSequence',prior=window[KEY];
+  function controllerShape(value){return !!(value&&value.installed===true&&value.version===V&&
+    typeof value.installToken==='string'&&value.installToken&&typeof value.ensure==='function'&&
+    typeof value.reconcile==='function'&&typeof value.revert==='function');}
+  if(prior){if(controllerShape(prior)){prior.ensure();return;}return;}
+  var sequence=Math.max(0,Number(window[SEQ])||0)+1;window[SEQ]=sequence;
+  var ctl={installed:true,version:V,state:'idle',installToken:'p1-calm-'+Date.now().toString(36)+'-'+
+    sequence.toString(36)+'-'+Math.random().toString(36).slice(2),node:null,owner:null,
+    settleTimer:null,settleAttempt:0,maxSettleAttempts:80,style:null,status:null,listeners:[],loadAttempt:0};
+  function current(){return ctl.installed===true&&window[KEY]===ctl;}
+  function preview(){return !!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true);}
+  function ownerShape(api){return !!(api&&api.installed!==false&&api.version===CALM_V&&
+    typeof api.boot==='function'&&typeof api.revert==='function'&&typeof api.render==='function'&&typeof api.go==='function');}
+  function removeClassicQuery(){
+    try{
+      var url=new URL(location.href),before=url.search;
+      if(url.searchParams.has('ui'))url.searchParams.delete('ui');
+      if(before!==url.search&&history&&typeof history.replaceState==='function')
+        history.replaceState(history.state||null,'',url.pathname+(url.searchParams.toString()?'?'+url.searchParams.toString():'')+url.hash);
+    }catch(_urlError){}
+  }
+  function storageSet(key,value){try{if(localStorage.getItem(key)!==value)localStorage.setItem(key,value);}catch(_storageError){}}
+  function normalizePreference(){
+    if(!current()||!preview())return false;
+    removeClassicQuery();storageSet('mlsCalmShell','1');storageSet('mls::qolDockSide','bottom');
+    try{if(typeof window.uns==='function'){var key=window.uns('qolDockSide');if(key)storageSet(key,'bottom');}}catch(_namespaceError){}
+    try{if(document.body)document.body.removeAttribute('data-mls-dock');}catch(_bodyError){}
+    try{if(typeof window.applyDockSidePreview==='function')window.applyDockSidePreview('bottom');}catch(_dockSideError){}
+    ['mlsClassicBtn','mlsCalmReturn','mlsCalmReturnCss'].forEach(function(id){
+      try{var node=document.getElementById(id);if(node&&node.parentNode)node.parentNode.removeChild(node);}catch(_removeError){}
+    });
+    return true;
+  }
+  function ensureStyle(){
+    if(ctl.style&&ctl.style.parentNode)return;
+    var old=document.getElementById('mlsP1CalmDockGuardCss');
+    if(old&&old.getAttribute('data-mls-install-token')!==ctl.installToken){if(old.parentNode)old.parentNode.removeChild(old);old=null;}
+    if(!old){old=document.createElement('style');old.id='mlsP1CalmDockGuardCss';old.setAttribute('data-mls-install-token',ctl.installToken);
+      old.textContent='#mlsClassicBtn,#mlsCalmReturn{display:none!important}'+
+        'html body.mls-p1-dock-ready{padding-left:0!important}'+
+        'html body.mls-p1-dock-ready #mlsRdNav{display:none!important}';
+      (document.head||document.documentElement).appendChild(old);}
+    ctl.style=old;
+  }
+  function clearReady(){try{if(document.body)document.body.classList.remove('mls-p1-dock-ready');}catch(_classError){};}
+  function removeStatus(){var node=ctl.status||document.getElementById('mlsP1CalmDockStatus');if(node&&node.parentNode)try{node.parentNode.removeChild(node);}catch(_removeError){}ctl.status=null;}
+  function fail(reason,message){
+    if(!current())return false;ctl.state=reason;clearReady();
+    var api=ownerShape(window.__mlsCalmShell)?window.__mlsCalmShell:null;
+    if(api&&api.active===true)try{api.revert();}catch(_ownerRevertError){}
+    try{if(document.body)document.body.removeAttribute('data-mls-dock');}catch(_bodyError){}
+    var node=document.getElementById('mlsP1CalmDockStatus');
+    if(!node){node=document.createElement('div');node.id='mlsP1CalmDockStatus';node.setAttribute('role','alert');node.setAttribute('aria-live','assertive');
+      node.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483200;max-width:420px;padding:11px 14px;border:1px solid #b85b53;border-radius:12px;background:#fff4f2;color:#6f2722;box-shadow:0 8px 24px rgba(55,31,27,.18);font:600 13px/1.4 system-ui,sans-serif';
+      (document.body||document.documentElement).appendChild(node);}
+    node.textContent=message||'The bottom navigation could not load. The existing navigation is still available; reload this preview to try again.';ctl.status=node;
+    try{window.__mlsP1CalmDockFailure={reason:reason,at:Date.now()};}catch(_failureError){}
+    return false;
+  }
+  function dockGeometry(){
+    var api=window.__mlsCalmShell,dock=document.getElementById('mlsDock'),body=document.body;
+    if(!ownerShape(api)||api.active!==true||!dock||!body||!body.classList.contains('mls-calm'))return null;
+    var css,rect;try{css=getComputedStyle(dock);rect=dock.getBoundingClientRect();}catch(_geometryError){return null;}
+    var viewport=Math.max(0,Number(window.innerHeight)||0),gap=viewport-Number(rect.bottom||0);
+    if(css.display==='none'||css.visibility==='hidden'||css.position!=='fixed'||Number(rect.width)<120||Number(rect.height)<36||
+       Number(rect.top)<viewport*.4||gap< -2||gap>120)return null;
+    return {dock:dock,rect:rect,gap:gap};
+  }
+  function markReady(){
+    if(!current()||!preview())return false;normalizePreference();
+    var proof=dockGeometry();if(!proof)return false;
+    try{document.body.classList.add('mls-p1-dock-ready');document.body.removeAttribute('data-mls-dock');}catch(_classError){return false;}
+    /* Re-read after the ready-only rail/padding rules land. A bad guard must not
+       claim success merely because the dock was healthy before its own CSS. */
+    var finalProof=dockGeometry(),rail=document.getElementById('mlsRdNav'),bodyCss;
+    try{bodyCss=getComputedStyle(document.body);}catch(_bodyCssError){bodyCss=null;}
+    if(!finalProof||!bodyCss||parseFloat(bodyCss.paddingLeft||'0')!==0){clearReady();return false;}
+    try{if(rail&&getComputedStyle(rail).display!=='none'){clearReady();return false;}}catch(_railError){clearReady();return false;}
+    ctl.owner=window.__mlsCalmShell;ctl.state='ready';ctl.settleAttempt=0;removeStatus();
+    try{delete window.__mlsP1CalmDockFailure;delete window.__mlsPresentationFallback;
+      if(document.documentElement)document.documentElement.removeAttribute('data-mls-presentation-fallback');}catch(_clearError){}
+    return true;
+  }
+  function armSettle(){
+    if(!current()||ctl.settleTimer||ctl.state==='reverted'||/^failed-|^blocked-/.test(ctl.state))return;
+    var attempt=ctl.loadAttempt;
+    ctl.settleTimer=setTimeout(function(){ctl.settleTimer=null;if(!current()||attempt!==ctl.loadAttempt)return;ctl.reconcile();},250);
+  }
+  ctl.reconcile=function(){
+    if(!current())return false;if(!preview())return fail('blocked-preview','The bottom navigation is disabled outside the 1p preview.');
+    ensureStyle();normalizePreference();
+    var api=window.__mlsCalmShell;
+    if(!ownerShape(api)){if(api)return fail('failed-owner-shape');ctl.state='waiting-owner';armSettle();return false;}
+    ctl.owner=api;
+    if(api.active!==true){var booted=false;try{booted=api.boot()===true;}catch(_bootError){booted=false;}
+      if(!booted){ctl.state='waiting-app';if(++ctl.settleAttempt>=ctl.maxSettleAttempts)return fail('failed-render-timeout');armSettle();return false;}}
+    normalizePreference();
+    try{api.render();}catch(_renderError){}
+    if(markReady())return true;
+    ctl.state='waiting-render';
+    if(++ctl.settleAttempt>=ctl.maxSettleAttempts)return fail('failed-render-timeout');
+    armSettle();return false;
+  };
+  function load(){
+    if(!current()||!preview())return;
+    ensureStyle();normalizePreference();
+    var api=window.__mlsCalmShell;
+    if(ownerShape(api)){ctl.owner=api;ctl.state='waiting-render';ctl.reconcile();return;}
+    if(api)return fail('blocked-foreign-owner');
+    var tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i;
+    for(i=0;i<tags.length;i++)if(tags[i]!==ctl.node)return fail('blocked-foreign-tag');
+    var node=document.createElement('script'),attempt=++ctl.loadAttempt;ctl.node=node;ctl.state='loading';
+    node.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now());node.async=false;
+    node.setAttribute('data-mls-asset',A);node.setAttribute('data-mls-version',CALM_V);node.setAttribute('data-mls-install-token',ctl.installToken);
+    node.onload=function(){if(!current()||ctl.node!==node||ctl.loadAttempt!==attempt)return;if(!ownerShape(window.__mlsCalmShell)){fail('failed-owner-shape');return;}ctl.owner=window.__mlsCalmShell;ctl.state='waiting-render';ctl.reconcile();};
+    node.onerror=function(){if(!current()||ctl.node!==node||ctl.loadAttempt!==attempt)return;fail('failed-network');};
+    (document.body||document.head||document.documentElement).appendChild(node);return node;
+  }
+  ctl.ensure=function(){
+    if(!current())return false;if(!preview())return fail('blocked-preview','The bottom navigation is disabled outside the 1p preview.');
+    ensureStyle();normalizePreference();
+    if(markReady())return true;
+    var api=window.__mlsCalmShell;
+    if(ownerShape(api)){ctl.owner=api;ctl.state='waiting-render';ctl.reconcile();return true;}
+    if(api)return fail('blocked-foreign-owner');
+    if(/^failed-|^blocked-/.test(ctl.state))return false;
+    if(ctl.node&&ctl.state==='loading')return true;
+    var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(fn){return setTimeout(fn,1200);};
+    ctl.state='queued';sched(load,{timeout:1500,priority:0,owner:'__mlsCalmShell',retireVersion:'calm-1.0.0',barrier:true,fallback:'classic',asset:'feat_mls_calm_shell.js'});return true;
+  };
+  ctl.revert=function(){
+    if(!current())return false;if(ctl.settleTimer){clearTimeout(ctl.settleTimer);ctl.settleTimer=null;}
+    ctl.listeners.splice(0).forEach(function(row){try{row[0].removeEventListener(row[1],row[2],row[3]);}catch(_listenerError){}});
+    clearReady();removeStatus();if(ctl.style&&ctl.style.parentNode)try{ctl.style.parentNode.removeChild(ctl.style);}catch(_styleError){}ctl.style=null;
+    var api=ctl.owner;if(ownerShape(api)&&api===window.__mlsCalmShell&&api.active===true)try{api.revert();}catch(_ownerError){}
+    ctl.installed=false;ctl.state='reverted';if(window[KEY]===ctl)try{delete window[KEY];}catch(_deleteError){window[KEY]=null;}return true;
+  };
+  function listen(target,name,fn,opts){try{target.addEventListener(name,fn,opts);ctl.listeners.push([target,name,fn,opts]);}catch(_listenerError){}}
+  function lifecycle(event){if(!current())return;var target=event&&event.target;
+    if(target&&target.closest&&target.closest('#mlsClassicBtn,#mlsCalmReturn')){try{event.preventDefault();event.stopPropagation();if(event.stopImmediatePropagation)event.stopImmediatePropagation();}catch(_eventError){}}
+    normalizePreference();if(ctl.state==='ready'&&!dockGeometry())clearReady();ctl.reconcile();}
+  listen(document,'click',lifecycle,true);['mls:ui-ready','mls:view-changed','mls:topbar-ready','mls:header-rendered'].forEach(function(name){listen(window,name,lifecycle,false);});
+  listen(window,'resize',lifecycle,false);window[KEY]=ctl;ctl.ensure();
+}catch(e){}})(); /* 1p-only Calm dock guard: bottom placement, no persisted Classic escape, visible fail-safe, reversible presentation owner. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_views.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_views.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_views.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000,priority:0,owner:'__mlsCalmViews',requiresFoundation:true});}catch(e){}})(); /* Calm Views: one primary action per screen on Calendar/History/AI Studio/Analysis, everything else class-folded behind an in-view More. Loaded on idle - it is chrome over views the doctor reaches after boot, and it must not join the post-login burst (window.__mlsCalmViews cv-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_room.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_room.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_room.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500});}catch(e){}})(); /* Op-note workroom home (opr-1.0.0, Stage 0 inert): the owner-approved full-screen room builds inside this one revertible module - see OPNOTE_WORKROOM_PLAN_2026-07-26.md. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_opnote_templates_ui.js";if(document.querySelector("script[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1800});}catch(e){}})(); /* ot-1.0.0: op notes + Templates rebuilt from scratch (owner order). Presentation ONLY - 102 structural grips live in these two subtrees, so this module builds no nodes and moves none; it removes the old #oprSkin and wins by specificity (body.mls-ot3), never by async load order. Revert: window.__mlsOpNoteTemplatesUi.revert() */

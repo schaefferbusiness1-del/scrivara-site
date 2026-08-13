@@ -22,6 +22,8 @@ const tests = [
   '1p-autobind-encounter.test.js',
   '1p-athena-write-unlock-frozen-contract-runtime.test.js',
   '1p-athena-write-unlock-adversarial-runtime.test.js',
+  '1p-avatar-loader-runtime.test.js',
+  '1p-calm-dock-owner-runtime.test.js',
   '1p-avatar-face-loader-runtime.test.js',
   '1p-avatar-face-studio-runtime.test.js',
   '1p-avatar-face-likeness-runtime.test.js',
