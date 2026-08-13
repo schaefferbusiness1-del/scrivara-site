@@ -42781,6 +42781,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      frozen-extension lease, never to paint or mutate the next account. */
   var studySessionGeneration=1, studyUiEpoch=0, studyRequestSerial=0;
   var studyOpener=null, studyBgRecords=[], studyBgObserver=null, studyKeyHandler=null;
+  var studyCalendarControllers=[];
   function studyAccount(){ return cleanOwner(safe(function(){return window.__mlsSessionAccount||'';},'')); }
   function cleanOwner(v){ return String(v||'').replace(/^\s+|\s+$/g,'').toLowerCase(); }
   function studyEpoch(){ return Number(safe(function(){return window.__mlsSessionEpoch;},0))||0; }
@@ -42826,8 +42827,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(studyKeyHandler)try{document.removeEventListener('keydown',studyKeyHandler,true);}catch(e){} studyKeyHandler=null;studyRestoreBackground();
     var opener=studyOpener;studyOpener=null;if(restoreFocus&&opener&&typeof opener.focus==='function'&&document.contains(opener))try{opener.focus();}catch(e2){}
   }
+  function studyAbortCalendarFetches(){studyCalendarControllers.slice().forEach(function(ctl){try{ctl.abort();}catch(e){}});studyCalendarControllers=[];}
   function studySessionBoundary(){
     studySessionGeneration++;studyUiEpoch++;
+    studyAbortCalendarFetches();
     var overlay=document.getElementById('mlsStudyOv');studyScrubOverlay(overlay);if(overlay)try{overlay.remove();}catch(e){}studyReleaseModal(false);studyLifecycle('session-boundary');
   }
 
@@ -43209,16 +43212,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function addToCalendar(appts,owner){
     appts=(appts||[]).filter(Boolean);
-    if(!appts.length||!owner||!studyCurrent(owner,true)) return 0;
-    safe(function(){
-      if(typeof window._importPulledSchedule==='function'){
-        Promise.resolve(window._importPulledSchedule(appts)).then(function(){
-          if(!studyCurrent(owner,true))return;
-          safe(function(){ if(window.loadCalendar) window.loadCalendar(); else if(window.renderCalendar) window.renderCalendar(); });
-        }).catch(function(){});
+    if(!appts.length||!owner||!studyCurrent(owner,true)) return Promise.resolve(0);
+    var frozenToken=String(owner.token||'');if(!frozenToken)return Promise.resolve(0);
+    function request(path,opts){
+      if(!studyCurrent(owner,true))return Promise.reject(studyCancelledError());
+      opts=opts||{};var cfg={},headers={};Object.keys(opts).forEach(function(k){if(k!=='headers')cfg[k]=opts[k];});Object.keys(opts.headers||{}).forEach(function(k){headers[k]=opts.headers[k];});headers.Authorization='Bearer '+frozenToken;cfg.headers=headers;
+      var ctl=typeof AbortController==='function'?new AbortController():null;if(ctl){cfg.signal=ctl.signal;studyCalendarControllers.push(ctl);}
+      function drop(){var i=studyCalendarControllers.indexOf(ctl);if(i>=0)studyCalendarControllers.splice(i,1);}
+      return Promise.resolve().then(function(){if(!studyCurrent(owner,true))throw studyCancelledError();return fetch(backendBase()+path,cfg);}).then(function(r){drop();if(!studyCurrent(owner,true))throw studyCancelledError();return r;},function(e){drop();throw e;});
+    }
+    function dayOf(a){return svcToYMD(a&&((a.appt_date||a.date||a.svc)||''));}
+    function keysOf(a){var day=dayOf(a),id=String(a&&(a.patient_external_id||a.patientId)||'').trim(),name=norm(a&&a.name),dob=normDob(a&&a.dob),out=[];if(!day)return out;if(id)out.push('id:'+id+'|'+day);if(name&&dob)out.push('nd:'+name+'|'+dob+'|'+day);return out;}
+    return request('/api/appointments',{method:'GET'}).then(function(r){if(!r||!r.ok)throw new Error('calendar-read-refused');return Promise.resolve(r.json());}).then(function(data){
+      if(!studyCurrent(owner,true))throw studyCancelledError();var seen={};((data&&data.appointments)||[]).forEach(function(a){keysOf(a).forEach(function(k){seen[k]=1;});});
+      var todo=appts.filter(function(a){var keys=keysOf(a);if(!keys.length||keys.some(function(k){return !!seen[k];}))return false;keys.forEach(function(k){seen[k]=1;});return true;}),created=0;
+      function step(i){
+        if(!studyCurrent(owner,true))throw studyCancelledError();if(i>=todo.length)return created;
+        var a=todo[i],day=dayOf(a),body={name:String(a.name||'').trim(),dob:String(a.dob||'').trim(),reason:String(a.reason||'Procedure (study import)'),patient_external_id:String(a.patient_external_id||a.patientId||'').trim()||null,appt_date:day,start_at:null,end_at:null};
+        return request('/api/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){if(r&&r.ok)created++;return step(i+1);});
       }
-    });
-    return appts.length;
+      return step(0);
+    }).then(function(created){
+      if(!studyCurrent(owner,true))return 0;if(created)safe(function(){if(window.loadCalendar)window.loadCalendar();else if(window.renderCalendar)window.renderCalendar();});return created;
+    }).catch(function(){return 0;});
   }
 
   function candidateNameKey(v){return String(v||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(function(x){return x.length>1;}).sort().join('|');}
@@ -43318,17 +43334,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     function step(){
       if(!studyCurrent(owner,true))return;
       if(idx>=rows.length){
-        if(els.sum) els.sum.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+((counts.no_bridge+counts.old_ext)?(' · '+(counts.no_bridge+counts.old_ext)+' need Assist'):'');
-        var calN=addToCalendar(appts,owner);
-        if(els.sum && calN) els.sum.innerHTML+=' · 📅 '+calN+' added to calendar';
-        safe(function(){ if(window.renderPatients) window.renderPatients(); });
-        if(onDone) onDone(counts);
+        Promise.resolve(addToCalendar(appts,owner)).then(function(calN){
+          if(!studyCurrent(owner,true))return;
+          if(els.sum) els.sum.innerHTML='Done. ✓ '+counts.match+' imported · ⚠ '+counts.dob_mismatch+' DOB mismatch · '+counts.not_found+' not found · '+counts.review+' to verify'+((counts.no_bridge+counts.old_ext)?(' · '+(counts.no_bridge+counts.old_ext)+' need Assist'):'')+(calN?(' · 📅 '+calN+' added to calendar'):'');
+          safe(function(){ if(window.renderPatients) window.renderPatients(); });
+          if(onDone) onDone(counts);
+        });
         return;
       }
       var r=rows[idx];
       importRow(r, cohort, {isCurrent:function(){return studyCurrent(owner,true);}}).then(function(res){
         if(!studyCurrent(owner,true))return;
-        if(res.status==='match' && res.appt) appts.push(res.appt);
+        if(res.status==='match' && res.appt){var linkedAppt={};Object.keys(res.appt).forEach(function(k){linkedAppt[k]=res.appt[k];});linkedAppt.patient_external_id=res.patientId||null;appts.push(linkedAppt);}
         var st=res.status==='old-ext'?'old_ext':res.status;
         counts[st]=(counts[st]||0)+1;
         var s=statOf(st), el=els.row(idx);
@@ -43353,10 +43370,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     TAB=initTab||'A';injectCss();render();return true;
   }
   function studyLifecycle(reason){try{window.dispatchEvent(new CustomEvent('mls:study-lifecycle',{detail:{reason:String(reason||'render')}}));}catch(e){try{var ev=new Event('mls:study-lifecycle');ev.detail={reason:String(reason||'render')};window.dispatchEvent(ev);}catch(_){}}}
-  function close(){ studyUiEpoch++;studyLifecycle('close');var o=document.getElementById('mlsStudyOv');studyScrubOverlay(o);if(o)o.remove();studyReleaseModal(true); }
+  function close(){ studyUiEpoch++;studyAbortCalendarFetches();studyLifecycle('close');var o=document.getElementById('mlsStudyOv');studyScrubOverlay(o);if(o)o.remove();studyReleaseModal(true); }
 
   function render(){
     studyUiEpoch++;
+    studyAbortCalendarFetches();
     studyLifecycle('render');
     var ex=document.getElementById('mlsStudyOv'); if(ex){studyScrubOverlay(ex);ex.remove();}
     studyRestoreBackground();

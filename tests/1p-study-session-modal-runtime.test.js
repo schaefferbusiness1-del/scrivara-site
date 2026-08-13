@@ -39,7 +39,8 @@ function html() {
       window.bkToken=()=>window.__testToken; window.__patients=[]; window.getPatients=()=>window.__patients;
       window.uns=(key)=>'synthetic:'+key; window.toast=()=>{}; window.renderPatients=()=>{}; window.loadCalendar=()=>{window.__calendarLoads++;};
       window.__calendarLoads=0; window.__calendarWrites=0; window._importPulledSchedule=()=>{window.__calendarWrites++;return Promise.resolve(true);};
-      window.fetch=()=>Promise.resolve({ok:false,status:404,json:()=>Promise.resolve({available:false})});
+      window.__calendarRequests=[];window.__calendarRows=[];window.__holdCalendar=false;window.__resolveCalendarGet=null;
+      window.fetch=(url,opts={})=>{const request={url:String(url),method:String(opts.method||'GET'),authorization:String((opts.headers||{}).Authorization||''),body:String(opts.body||'')};if(request.url.endsWith('/api/appointments')){window.__calendarRequests.push(request);if(window.__holdCalendar&&request.method==='GET')return new Promise(resolve=>{window.__resolveCalendarGet=()=>resolve({ok:true,status:200,json:()=>Promise.resolve({appointments:[]})});});if(request.method==='POST'){try{window.__calendarRows.push(JSON.parse(request.body));}catch(e){}return Promise.resolve({ok:true,status:200,json:()=>Promise.resolve({})});}return Promise.resolve({ok:true,status:200,json:()=>Promise.resolve({appointments:window.__calendarRows.slice()})});}return Promise.resolve({ok:false,status:404,json:()=>Promise.resolve({available:false})});};
       localStorage.setItem('sf_bk_token','token-A');
       window.__lease=''; window.__leaseSeq=0;
       window.__mlsP1AthenaReadLease={
@@ -85,7 +86,7 @@ function serve() {
     const pageErrors = [];
     page.on('pageerror', e => pageErrors.push(String(e && e.message || e)));
     await page.goto('http://127.0.0.1:' + server.address().port + '/', { waitUntil: 'load' });
-    await page.waitForFunction(() => window.__mlsStudy && window.__mlsGrab && window.__mlsAthenaOccurrence);
+    try{await page.waitForFunction(() => window.__mlsStudy && window.__mlsGrab && window.__mlsAthenaOccurrence);}catch(e){throw new Error(String(e&&e.message||e)+'; page errors: '+pageErrors.join(' | '));}
 
     /* Labelled dialog, initial focus, two-way trap, late siblings and exact
        restoration through both Escape and the visible Close control. */
@@ -136,9 +137,22 @@ function serve() {
     const freshB=await page.evaluate(() => window.__pB);eq(freshB.code,'imported','fresh B operation did not start after A terminal');
     const saves=await page.evaluate(() => window.__saves);eq(saves.length,2,'fresh B did not persist exactly once');eq(saves[1].token,'token-B','fresh B persisted with the wrong session token');
 
-    const dormant=await page.evaluate(() => {window.__mlsSessionAccount='';window.__mlsSessionEpoch=43;window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{reason:'logout'}}));const owner=window.__mlsStudy._captureOwner('logged-out',false);return {current:window.__mlsStudy._ownerCurrent(owner,false),opened:window.__mlsStudy.open('A'),overlay:!!document.getElementById('mlsStudyOv')};});
+    /* A calendar continuation that has already issued its read keeps the exact
+       B token and is aborted at the boundary. Even when this synthetic fetch
+       deliberately ignores AbortSignal and resolves late, it cannot issue a
+       POST, call the legacy importer, or repaint Account C. */
+    await page.evaluate(() => {window.__mlsStudy.open('A');const api=window.__mlsStudy,owner=api._captureOwner('pending-calendar-B',true);window.__holdCalendar=true;window.__lateCalendar=api._addToCalendar([{name:'Synthetic Beta',dob:'05/06/1985',appt_date:'2026-09-01',patient_external_id:'saved-B-1'}],owner);});
+    await page.waitForFunction(() => window.__calendarRequests.length===1&&typeof window.__resolveCalendarGet==='function');
+    await page.evaluate(() => {window.__mlsSessionEpoch=43;window.__testToken='token-C';localStorage.setItem('sf_bk_token','token-C');window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{reason:'calendar-boundary'}}));window.__resolveCalendarGet();});
+    const lateCalendar=await page.evaluate(() => window.__lateCalendar.then(result=>({result,requests:window.__calendarRequests.slice(),legacyWrites:window.__calendarWrites,loads:window.__calendarLoads})));
+    eq(lateCalendar.result,0,'late calendar read reported an Account-C write');eq(lateCalendar.requests.length,1,'late calendar read issued a POST after the boundary');eq(lateCalendar.requests[0].authorization,'Bearer token-B','calendar read did not freeze its starting bearer token');eq(lateCalendar.legacyWrites,0,'Study delegated to the unfenced legacy calendar importer');eq(lateCalendar.loads,0,'late calendar read repainted Account C');
+
+    const dormant=await page.evaluate(() => {window.__mlsSessionAccount='';window.__mlsSessionEpoch=44;window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{reason:'logout'}}));const owner=window.__mlsStudy._captureOwner('logged-out',false);return {current:window.__mlsStudy._ownerCurrent(owner,false),opened:window.__mlsStudy.open('A'),overlay:!!document.getElementById('mlsStudyOv')};});
     eq(dormant.current,false,'empty-account Study owner remained operational while the old token lingered');eq(dormant.opened,false,'logged-out Study reopened with a lingering old token');eq(dormant.overlay,false,'logged-out Study painted patient UI');
-    await page.evaluate(() => {window.__testToken='token-C';localStorage.setItem('sf_bk_token','token-C');window.__mlsSessionAccount='same-email@example.test';window.__mlsSessionEpoch=44;window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{reason:'reauth'}}));});
+    await page.evaluate(() => {window.__testToken='token-D';localStorage.setItem('sf_bk_token','token-D');window.__mlsSessionAccount='same-email@example.test';window.__mlsSessionEpoch=45;window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:{reason:'reauth'}}));});
+
+    const calendarOk=await page.evaluate(async()=>{window.__holdCalendar=false;window.__mlsStudy.open('A');const api=window.__mlsStudy,owner=api._captureOwner('calendar-D',true),appt={name:'Synthetic Delta',dob:'07/08/1990',appt_date:'2026-09-02',patient_external_id:'saved-D-1'};const first=await api._addToCalendar([appt],owner),second=await api._addToCalendar([appt],owner);return {first,second,posts:window.__calendarRequests.filter(x=>x.method==='POST'),rows:window.__calendarRows.slice(),loads:window.__calendarLoads,legacyWrites:window.__calendarWrites};});
+    eq(calendarOk.first,1,'current account-owned calendar import did not create its exact linked row');eq(calendarOk.second,0,'current calendar import duplicated an existing patient/day');eq(calendarOk.posts.length,1,'calendar importer posted more than one row');eq(calendarOk.posts[0].authorization,'Bearer token-D','calendar POST did not use its frozen owner token');eq(calendarOk.rows[0].patient_external_id,'saved-D-1','calendar row lost the identity-verified MLS patient link');eq(calendarOk.loads,1,'successful calendar import did not refresh once');eq(calendarOk.legacyWrites,0,'current calendar import delegated to the unfenced legacy helper');
 
     /* Real DOM lifecycle: the authenticated occurrence owner is loaded before
        Study, then mounts after Mode B creates its anchor. This reproduces the
