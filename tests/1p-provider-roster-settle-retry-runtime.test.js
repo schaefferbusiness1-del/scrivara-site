@@ -333,8 +333,14 @@ function createHarness(options) {
     state() { return { mode: 'doctor', screen: 'home' }; },
     remote: { setVisitDay() { return true; } }
   };
+  let providerTargetRead = 0;
   if (options.providerTargetThrows) {
     easyApi.providerTarget = function () { throw new Error('synthetic providerTarget failure'); };
+  } else if (Array.isArray(options.providerTargetSequence)) {
+    easyApi.providerTarget = function () {
+      const index = Math.min(providerTargetRead++, options.providerTargetSequence.length - 1);
+      return options.providerTargetSequence[index];
+    };
   } else if (Object.prototype.hasOwnProperty.call(options, 'providerTarget')) {
     easyApi.providerTarget = function () { return options.providerTarget; };
   }
@@ -518,10 +524,17 @@ async function testVisibleProviderTargetIsForwarded() {
       `a malformed provider target (${JSON.stringify(malformedTarget)}) was allowed to widen into all-provider census authority`);
   }
 
-  /* Attempt 3 is deliberately broader than the visible selected target. This
-     pre-existing escalation remains authoritative and must still force all. */
+  /* An automatic retry belongs to the same explicit clinician request. A
+     schedule-incomplete receipt must never promote that selected-provider
+     capability into the all-Day census route, including attempt 3. */
+  const differentProvider = {
+    id: 'provider-202', stableKey: 'athena:provider-202',
+    name: 'Header Two, MD', rosterVerified: true
+  };
   const escalated = createHarness({
-    providerTarget: selectedObject,
+    /* Simulate an adversarial selector change during the retry waits. The
+       original click's provider scope, not later UI state, owns this chain. */
+    providerTargetSequence: [selectedObject, differentProvider, 'all'],
     results: [scheduleIncompleteRefusal(), scheduleIncompleteRefusal(), verifiedResult()]
   });
   await reachAttemptThreeTimer(escalated);
@@ -531,8 +544,14 @@ async function testVisibleProviderTargetIsForwarded() {
     'attempt 2 lost the frozen visible selected provider');
   escalated.runNextTimer();
   await escalated.flush();
-  assert.strictEqual(escalated.pulls[2].provider, 'all',
-    'attempt-3 whole-grid escalation did not override the visible selected provider');
+  assert.strictEqual(escalated.pulls[2].provider, selectedObject,
+    'attempt 3 widened the frozen selected provider into another scope');
+  assert.strictEqual(escalated.pulls[2].provider.id, selectedObject.id,
+    'attempt 3 changed the selected provider id');
+  assert.strictEqual(escalated.pulls[2].provider.stableKey, selectedObject.stableKey,
+    'attempt 3 changed the selected provider stable key');
+  assert.strictEqual(escalated.pulls.some(pull => pull.provider === 'all'), false,
+    'a selected-provider retry entered the all-provider/census route');
 }
 
 async function testFullyRowUnattributedIsTerminalAndPhiFree() {
@@ -1144,7 +1163,7 @@ async function main() {
   await testCrossEngineAndSessionCancellation();
   await testExactClassifierAndOrdinaryRetries();
   await testCanceledAttemptThreeClearsEscalation();
-  console.log('PASS p1 provider-roster settle retry: the visible Easy provider target reaches dayPull exactly while missing/throwing targets retain fallback and attempt 3 still forces all; complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards; cancellation clears attempt-3 escalation');
+  console.log('PASS p1 provider-roster settle retry: the visible Easy provider target reaches dayPull exactly while missing/throwing targets retain fallback, and a selected provider stays identity-exact through every retry without entering the all-provider census route; complete all-provider receipts proving every row lacks provider identity terminate once with exact counts and a PHI-free attribution aggregate; other legacy-unverified receipts warm the frozen day under exclusive browser/local ownership before at most two retries; never-settling warms release both guards; cancellation clears attempt-3 escalation');
 }
 
 const watchdog = setTimeout(() => {
