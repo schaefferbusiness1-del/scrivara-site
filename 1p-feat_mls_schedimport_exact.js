@@ -4951,6 +4951,69 @@
   function resumeGet() { return safe(function () { var r = window.localStorage.getItem(resumeKey()); return r ? JSON.parse(r) : null; }, null); }
   function resumeSave(rec) { safe(function () { window.localStorage.setItem(resumeKey(), JSON.stringify(rec)); }); }
   function resumeClear() { safe(function () { window.localStorage.removeItem(resumeKey()); }); }
+  var P1_RESUME_SCOPE_SOURCES = { "day-caller": 1, "day-account": 1, "month": 1, "direct": 1 };
+  function p1ResumeScopeSource(value) {
+    value = String(value || "direct");
+    return P1_RESUME_SCOPE_SOURCES[value] === 1 ? value : "direct";
+  }
+  function p1ResumeIdentityField(value) {
+    value = String(value == null ? "" : value).trim();
+    if (!value || value.length > 160 || /[\x00-\x1f\x7f]/.test(value)) return "";
+    return value;
+  }
+  function p1ResumeScopeForProvider(raw, source) {
+    var req = providerRequest(raw), canonical = req;
+    if (req.mode === "selected") {
+      var gate = safe(function () { return resolveProviderRequest(raw, { allowAll: true, requireRosterForAll: false }); }, null);
+      if (gate && gate.ok === true && providerRequest(gate.provider).mode === "selected") canonical = providerRequest(gate.provider);
+    }
+    if (req.mode === "all") return { v: 1, mode: "all", source: p1ResumeScopeSource(source) };
+    return {
+      v: 1, mode: "selected", source: p1ResumeScopeSource(source),
+      id: p1ResumeIdentityField(canonical.id),
+      stableKey: p1ResumeIdentityField(canonical.stableKey)
+    };
+  }
+  function p1SanitizeResumeScope(raw) {
+    if (!raw || typeof raw !== "object" || Number(raw.v) !== 1) return null;
+    var source = String(raw.source || ""), mode = String(raw.mode || "");
+    if (P1_RESUME_SCOPE_SOURCES[source] !== 1 || (mode !== "all" && mode !== "selected")) return null;
+    var rawId = raw.id == null ? "" : String(raw.id), rawStable = raw.stableKey == null ? "" : String(raw.stableKey);
+    if (rawId.length > 160 || rawStable.length > 160 || /[\x00-\x1f\x7f]/.test(rawId + rawStable)) return null;
+    var id = p1ResumeIdentityField(rawId), stableKey = p1ResumeIdentityField(rawStable);
+    if (mode === "all") return (id || stableKey) ? null : { v: 1, mode: "all", source: source };
+    if (!id && !stableKey) return null;
+    return { v: 1, mode: "selected", source: source, id: id, stableKey: stableKey };
+  }
+  function p1ResumeScopeSignature(scope) {
+    return scope ? [scope.v, scope.mode, scope.source, scope.id || "", scope.stableKey || ""].join("|") : "";
+  }
+  function p1ResolveResumeProvider(scope) {
+    if (!scope) return null;
+    if (scope.mode === "all") return "all";
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var receipt = roster && isFn(roster.getReceipt) ? safe(function () { return roster.getReceipt(); }, null) : null;
+    if (!(roster && isFn(roster.resolve) && receipt && receipt.complete === true)) return null;
+    var entry = safe(function () { return roster.resolve(scope.stableKey || scope.id); }, null);
+    if (!entry || !entry.name || !entry.stableKey) return null;
+    var entryId = p1ResumeIdentityField(entry.id), entryStable = p1ResumeIdentityField(entry.stableKey);
+    if ((scope.id && entryId !== scope.id) || (scope.stableKey && entryStable !== scope.stableKey)) return null;
+    return { id: entryId, stableKey: entryStable, raw: String(entry.raw || entry.name), name: String(entry.name), rosterVerified: true };
+  }
+  function p1PersistResumeIntent(date, opts, provider, source, censusEligible) {
+    opts = opts || {};
+    var prev = resumeGet();
+    var rec = {
+      date: String(date || ""), startedAt: Date.now(),
+      attempts: (prev && prev.date === String(date || "")) ? Number(prev.attempts || 0) : 0,
+      includeHistory: opts.includeHistory !== false,
+      bodies: (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null,
+      providerScope: p1ResumeScopeForProvider(provider, source),
+      p1CensusEligible: censusEligible === true
+    };
+    resumeSave(rec);
+    return rec;
+  }
   function resumeBusyElsewhere() {
     var k = safe(function () { return isFn(window.uns) ? window.uns("mlsPullBusyXTabV1") : "mlsPullBusyXTabV1"; }, "mlsPullBusyXTabV1");
     var at = safe(function () { return Number(window.localStorage.getItem(k) || 0); }, 0);
@@ -4967,20 +5030,13 @@
     opts = opts || {};
     var __resumeDate = String(opts.date || "");
     if (__resumeDate) {
-      var __prev = resumeGet();
-      resumeSave({
-        date: __resumeDate,
-        startedAt: Date.now(),
-        attempts: (__prev && __prev.date === __resumeDate) ? Number(__prev.attempts || 0) : 0,
-        includeHistory: opts.includeHistory !== false,
-        /* 2026-07-28 invariant fix: a resumed pull must keep the ORIGINAL
-           bodies choice - a phone-commanded fast-lane pull that reloads must
-           not resume as a full-bodies pull on the office default. */
-        bodies: (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null,
-        /* Persist only the provenance bit derived from the private in-memory
-           token. Direct/month/selected callers cannot mint it themselves. */
-        p1CensusEligible: opts.__p1DayCensusToken === P1_DAY_CENSUS_TOKEN
-      });
+      /* p1-resume-scope-1.0.0: the durable intent carries the same frozen
+         provider scope as the interrupted pull. Only strong provider ids/keys
+         are stored (never display names), and resume re-resolves them against
+         the current complete roster instead of widening a selected pull. */
+      p1PersistResumeIntent(__resumeDate, opts, opts.provider,
+        opts.__p1ResumeScopeSource || "direct",
+        opts.__p1DayCensusToken === P1_DAY_CENSUS_TOKEN);
     }
     var __ownedPull = false;
     var run = function () {
@@ -5158,6 +5214,7 @@
         return pull({
           date: date,
           provider: frozenProvider,
+          __p1ResumeScopeSource: "month",
           includeHistory: includeHistory,
           onStatus: function (message, kind) { onStatus(date + ": " + String(message || ""), kind); }
         }).then(function (day) {
@@ -5280,11 +5337,51 @@
   }
   function resumeStart(rec) {
     resumeDismiss(false);
-    var prev = resumeGet() || rec;
-    var p1ResumeCensusEligible = !!(rec && rec.p1CensusEligible === true && prev && prev.p1CensusEligible === true);
-    resumeSave({ date: rec.date, startedAt: Date.now(), attempts: Number(prev.attempts || 0) + 1, includeHistory: rec.includeHistory !== false, bodies: (typeof rec.bodies === 'boolean') ? rec.bodies : null, p1CensusEligible: p1ResumeCensusEligible });
+    var prev = resumeGet();
+    var capturedScope = p1SanitizeResumeScope(rec && rec.providerScope);
+    var durableScope = p1SanitizeResumeScope(prev && prev.providerScope);
+    var capturedDate = normDate(rec && rec.date || ""), durableDate = normDate(prev && prev.date || "");
+    function refuseResume(reason, error, clearIntent) {
+      var refusal = { ok: false, complete: false, reason: reason, gate: "resume-provider-scope", error: error,
+        target: capturedDate || durableDate || "", created: 0, repaired: 0, skipped: 0, failed: 0, retry: {} };
+      if (clearIntent) resumeClear();
+      else if (prev) {
+        var nextAttempts = Number(prev.attempts || 0) + 1;
+        if (nextAttempts >= RESUME_MAX_ATTEMPTS) resumeClear();
+        else {
+          var boundedPrev = {};
+          for (var pk in prev) if (Object.prototype.hasOwnProperty.call(prev, pk)) boundedPrev[pk] = prev[pk];
+          boundedPrev.attempts = nextAttempts;
+          boundedPrev.startedAt = Date.now();
+          resumeSave(boundedPrev);
+        }
+      }
+      lastPullResult = refusal;
+      safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(refusal); });
+      safe(function () {
+        var status = document.getElementById("mlsDsStatus");
+        if (status) { status.textContent = error; status.style.display = ""; }
+        if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(error, "err");
+        else toast(error, "err");
+      });
+      return refusal;
+    }
+    if (!capturedScope || !durableScope || !capturedDate || capturedDate !== durableDate ||
+        p1ResumeScopeSignature(capturedScope) !== p1ResumeScopeSignature(durableScope)) {
+      return refuseResume("resume-scope-changed", "The saved pull scope changed before resume. Nothing was read or imported; start a new pull with the provider you want.", true);
+    }
+    var resumeProvider = p1ResolveResumeProvider(capturedScope);
+    if (!resumeProvider) {
+      return refuseResume("resume-provider-scope-unverified", "The selected provider from the unfinished pull is not uniquely verified in the current Athena roster. Nothing was read or imported; choose that clinician again.", false);
+    }
+    var p1ResumeCensusEligible = !!(capturedScope.mode === "all" && durableScope.mode === "all" &&
+      rec && rec.p1CensusEligible === true && prev && prev.p1CensusEligible === true);
+    resumeSave({ date: capturedDate, startedAt: Date.now(), attempts: Number(prev.attempts || 0) + 1,
+      includeHistory: rec.includeHistory !== false, bodies: (typeof rec.bodies === 'boolean') ? rec.bodies : null,
+      providerScope: capturedScope, p1CensusEligible: p1ResumeCensusEligible });
     safe(function () {
-      var resumeOpts = { date: rec.date, includeHistory: rec.includeHistory !== false, onStatus: function (m, k) {
+      var resumeOpts = { date: capturedDate, provider: resumeProvider, includeHistory: rec.includeHistory !== false,
+        __p1ResumeScopeSource: capturedScope.source, onStatus: function (m, k) {
         safe(function () { if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(m, k); });
       } };
       /* Resume the exception only when the original guarded all-Day call
@@ -5531,12 +5628,13 @@
     if (isFn(__armPresence)) __armPresence(); /* qol-2.3: presence assist belongs to the call that passed the advisory */
     var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");
     var scope0 = explicit ? opts.provider : accountProviderRequest();
+    var originalProviderRequest = providerRequest(scope0);
     var gate0 = _resolveDayScope(scope0);
     /* Freeze the caller/account's ORIGINAL scope before warm-up. A selected
        request that later fails to resolve may fall back to reading the whole
        grid, but that fallback is not authority to enter the all-provider
        census exception. */
-    var p1OriginalCensusAll = providerRequest(scope0).mode === "all";
+    var p1OriginalCensusAll = originalProviderRequest.mode === "all";
     var needWarm = (_dayPreflightDone !== true) || !(gate0 && gate0.ok === true);
     var warmed = needWarm ? warmUpDay(day, say) : Promise.resolve({ warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "skipped-already-warm" });
     return warmed.then(null, function () {
@@ -5545,8 +5643,36 @@
       if (needWarm) _dayPreflightDone = true;
       /* Re-resolve AFTER the pre-flight: that read is what makes a provider
          resolvable at all on a first pull after a reload. */
-      var scope = explicit ? opts.provider : accountProviderRequest();
+      /* A selected scope is immutable across the warm-up. Re-reading account
+         preferences may safely narrow an original All request, but it must
+         never turn an original selected clinician into All. */
+      var scope = originalProviderRequest.mode === "selected"
+        ? scope0
+        : (explicit ? opts.provider : accountProviderRequest());
       var gate = _resolveDayScope(scope);
+      /* p1-selected-no-widen-1.0.0: a selected clinician is a hard scope,
+         never an invitation to fall back to the whole grid. The warm-up may
+         make that clinician resolvable; if it still cannot, refuse before the
+         real pull. The previous fallback to `all` could import every provider
+         when the returned grid happened to carry complete row attribution. */
+      if (originalProviderRequest.mode === "selected" &&
+          (!(gate && gate.ok === true) || providerRequest(gate.provider).mode !== "selected")) {
+        var selectedReason = String(gate && gate.reason || "provider-unverified");
+        var selectedError = String(gate && gate.error || "The selected provider could not be verified after Athena's roster refresh. Nothing was imported; choose that clinician again.");
+        var selectedRefusal = {
+          ok: false, complete: false, reason: selectedReason, error: selectedError,
+          includeHistory: opts.includeHistory !== false,
+          created: 0, repaired: 0, skipped: 0, failed: 0, target: day,
+          providerMode: "selected", providerRosterReceipt: gate && gate.receipt || null,
+          scheduleReceipt: null, providerReceipt: null, calendarReceipt: null, historyReceipt: null,
+          retry: { providerRoster: true }
+        };
+        say(selectedError, "err");
+        p1PersistResumeIntent(day, opts, scope0, explicit ? "day-caller" : "day-account", false);
+        lastPullResult = selectedRefusal;
+        safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(selectedRefusal); });
+        return selectedRefusal;
+      }
       var provider = (gate && gate.ok === true) ? gate.provider : "all";
       say(provider === "all"
         ? "Pulling every provider painted on the athenaOne Day grid."
@@ -5555,6 +5681,7 @@
       for (var k in opts) if (opts.hasOwnProperty(k)) runOpts[k] = opts[k];
       runOpts.date = day;
       runOpts.provider = provider;
+      runOpts.__p1ResumeScopeSource = explicit ? "day-caller" : "day-account";
       if (p1OriginalCensusAll && provider === "all") runOpts.__p1DayCensusToken = P1_DAY_CENSUS_TOKEN;
       else delete runOpts.__p1DayCensusToken;
       if (runOpts.includeHistory === undefined) runOpts.includeHistory = true;

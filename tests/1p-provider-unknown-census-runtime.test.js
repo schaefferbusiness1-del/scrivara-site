@@ -71,6 +71,9 @@ function makeHarness(options) {
   if (Object.prototype.hasOwnProperty.call(options, 'initialAuthoritativeRaw')) {
     store.set(authorityKey, String(options.initialAuthoritativeRaw));
   }
+  if (options.accountProviderInitial) {
+    store.set('p1-census-test::pullProvider', String(options.accountProviderInitial));
+  }
   const elements = new Map();
   const statuses = [];
   const posted = [];
@@ -97,6 +100,8 @@ function makeHarness(options) {
   let armedOperation = null;
   let latestRosterReceipt = null;
   let authoritativeWriteAttempts = 0;
+  let scheduleResponseCount = 0;
+  const armedOperations = [];
 
   const headerRoster = [
     { stableKey: 'header:1', id: '101', raw: 'Header_One_MD', name: 'Header One, MD', rosterVerified: false },
@@ -104,6 +109,7 @@ function makeHarness(options) {
   ];
 
   function responseFor(day, requestId) {
+    scheduleResponseCount++;
     const responseRows = clone(rows).map(row => {
       row.date = day;
       row.athenaAppointmentId = row.athenaAppointmentId.replace(options.day || DAY, day);
@@ -151,7 +157,7 @@ function makeHarness(options) {
       }
     };
     if (typeof options.mutateResponse === 'function') {
-      response = options.mutateResponse(response) || response;
+      response = options.mutateResponse(response, scheduleResponseCount) || response;
     }
     latestRosterReceipt = clone(response.providerRosterReceipt);
     return response;
@@ -242,6 +248,7 @@ function makeHarness(options) {
     __mlsProviderRoster: {
       list: () => clone(headerRoster),
       resolve: ref => {
+        if (options.unresolvableProvider === true) return null;
         const raw = String(ref && typeof ref === 'object'
           ? (ref.stableKey || ref.id || ref.name || '') : (ref || '')).toLowerCase();
         const hit = headerRoster.find(p => [p.stableKey, p.id, p.name].some(v => String(v).toLowerCase() === raw));
@@ -249,6 +256,7 @@ function makeHarness(options) {
       },
       beginOperation: op => {
         armedOperation = clone(op);
+        armedOperations.push(clone(armedOperation));
         return clone(armedOperation);
       },
       ingestResp: response => {
@@ -332,6 +340,9 @@ function makeHarness(options) {
     });
     if (msg.type === 'mlsAppPullSchedule') queueMicrotask(() => {
       emit('mlsAppScheduleResult', responseFor(currentDay, msg.id), msg.id);
+      if (options.clearAccountProviderAfterWarm === true && scheduleResponseCount === 1) {
+        store.delete('p1-census-test::pullProvider');
+      }
     });
     if (options.chartHydrationUnavailable && msg.type === 'mlsAppReadChart') queueMicrotask(() => {
       emit('mlsAppChartResult', {
@@ -353,7 +364,8 @@ function makeHarness(options) {
   vm.runInNewContext(importer, rt, { filename: '1p-feat_mls_schedimport_exact.js', timeout: 3000 });
   return {
     rt, api: rt.__mlsSI, rows, statuses, posted, savedBodies, backendRows, events,
-    responseFor, store, authorityKey,
+    responseFor, store, authorityKey, armedOperations,
+    scheduleResponseCount: () => scheduleResponseCount,
     authoritativeWriteAttempts: () => authoritativeWriteAttempts,
     onStatus: message => statuses.push(String(message || ''))
   };
@@ -367,13 +379,27 @@ async function waitFor(predicate, label) {
   assert.fail(`timed out waiting for ${label}`);
 }
 
-async function assertIneligibleResumeRefuses(h, label) {
+function assertResumeProviderScope(rec, expected, label) {
+  assert(rec && rec.providerScope && typeof rec.providerScope === 'object',
+    `${label}: resume intent omitted its provider scope`);
+  assert.deepStrictEqual(clone(rec.providerScope), expected,
+    `${label}: resume intent did not preserve the exact bounded provider scope`);
+  assert(!Object.prototype.hasOwnProperty.call(rec.providerScope, 'name') &&
+    !Object.prototype.hasOwnProperty.call(rec.providerScope, 'raw'),
+  `${label}: resume intent persisted provider display text instead of stable identity only`);
+  assert(!/[\u0000-\u001f\u007f]/.test(JSON.stringify(rec.providerScope)),
+    `${label}: resume provider scope retained control characters`);
+}
+
+async function assertIneligibleResumeRefuses(h, label, expectedScope) {
   const key = 'p1-census-test::pullResumeV1';
   const rec = JSON.parse(h.store.get(key) || 'null');
   assert(rec && rec.date === DAY, `${label}: the incomplete pull did not persist its resume intent`);
+  assertResumeProviderScope(rec, expectedScope, label);
   assert.strictEqual(rec.p1CensusEligible, false,
     `${label}: an ineligible pull persisted appointment-census authority`);
   const readsBefore = h.posted.filter(message => message.type === 'mlsAppPullSchedule').length;
+  const priorOutcome = h.api._lastPullResult();
   h.api._maybeResumePull();
   const go = h.rt.document.getElementById('mlsPullResumeGo');
   assert(go && typeof go.onclick === 'function', `${label}: the persisted resume could not be exercised`);
@@ -382,13 +408,52 @@ async function assertIneligibleResumeRefuses(h, label) {
     `${label} resumed schedule read`);
   await waitFor(() => {
     const outcome = h.api._lastPullResult();
-    return outcome && outcome.ok === false && outcome.reason === 'provider-roster-incomplete';
+    return outcome && outcome !== priorOutcome && outcome.ok === false;
   }, `${label} fail-closed resume outcome`);
   const outcome = h.api._lastPullResult();
   assert.strictEqual(outcome.complete, false, `${label}: ineligible resume reported complete`);
   assert(!receiptComplete(outcome.appointmentCensusReceipt),
     `${label}: ineligible resume minted a complete appointment census`);
   assert.strictEqual(h.savedBodies.length, 0, `${label}: ineligible resume wrote provider-unknown rows`);
+  if (expectedScope.mode === 'selected') {
+    assert(outcome.providerReceipt && outcome.providerReceipt.mode === 'selected',
+      `${label}: resumed selected intent widened to an all-provider receipt`);
+    assert.strictEqual(String(outcome.providerReceipt.requestedId || ''), String(expectedScope.id || ''),
+      `${label}: resumed selected intent changed provider id`);
+    assert.strictEqual(String(outcome.providerReceipt.requestedStableKey || ''), String(expectedScope.stableKey || ''),
+      `${label}: resumed selected intent changed provider stable key`);
+  }
+}
+
+async function assertChangedResumeScopeRefuses(h, label, mutateRecord) {
+  const key = 'p1-census-test::pullResumeV1';
+  const captured = JSON.parse(h.store.get(key) || 'null');
+  assert(captured && captured.providerScope, `${label}: selected resume scope was not persisted`);
+  h.api._maybeResumePull();
+  const go = h.rt.document.getElementById('mlsPullResumeGo');
+  assert(go && typeof go.onclick === 'function', `${label}: persisted resume offer was not mounted`);
+  const changed = mutateRecord(clone(captured));
+  if (changed === undefined) h.store.delete(key);
+  else h.store.set(key, JSON.stringify(changed));
+  const readsBefore = h.posted.filter(message => message.type === 'mlsAppPullSchedule').length;
+  const writesBefore = h.savedBodies.length;
+  const priorOutcome = h.api._lastPullResult();
+  go.onclick();
+  await waitFor(() => {
+    const outcome = h.api._lastPullResult();
+    return outcome && outcome !== priorOutcome && outcome.reason === 'resume-scope-changed';
+  }, `${label} scope-change refusal`);
+  const outcome = h.api._lastPullResult();
+  assert.strictEqual(outcome.ok, false, `${label}: changed scope reported success`);
+  assert.strictEqual(outcome.complete, false, `${label}: changed scope reported complete`);
+  assert.strictEqual(outcome.gate, 'resume-provider-scope',
+    `${label}: changed scope refusal did not name the resume provider-scope gate`);
+  assert.strictEqual(h.posted.filter(message => message.type === 'mlsAppPullSchedule').length, readsBefore,
+    `${label}: changed resume scope started an Athena schedule read`);
+  assert.strictEqual(h.savedBodies.length, writesBefore,
+    `${label}: changed resume scope wrote calendar rows`);
+  assert.strictEqual(h.store.has(key), false,
+    `${label}: changed resume scope was not cleared after refusal`);
 }
 
 async function assertAuthorityReadRefuses(options, label, expectedReason) {
@@ -435,6 +500,73 @@ function seedAuthoritativeDay(h) {
 
 function receiptComplete(receipt) {
   return !!(receipt && receipt.complete === true);
+}
+
+function makeCompleteAttributedAll(response) {
+  response.appts.forEach((row, i) => {
+    const header = i % 2 === 0
+      ? { name: 'Header One, MD', id: '101' }
+      : { name: 'Header Two, MD', id: '202' };
+    row.provider = header.name;
+    row.providerName = header.name;
+    row.provider_name = header.name;
+    row.providerId = header.id;
+    row.provider_id = header.id;
+    row.athenaProviderId = header.id;
+    row.athena_provider_id = header.id;
+    row.renderingProviderId = header.id;
+    row.rendering_provider_id = header.id;
+  });
+  response.providerRoster.forEach(provider => { provider.rosterVerified = true; });
+  response.providerDiag.attributionCoverage = {
+    verdict: 'row-attributed', rows: ROWS, headerCount: 2,
+    unattributedRows: 0, foreignRows: 0
+  };
+  Object.assign(response.providerRosterReceipt, {
+    complete: true,
+    partial: false,
+    reason: 'complete',
+    expectedCount: 2,
+    observedCount: 2,
+    providerMode: 'all',
+    requestedProviderId: '',
+    requestedProviderStableKey: '',
+    attributionCoverage: clone(response.providerDiag.attributionCoverage)
+  });
+  return response;
+}
+
+function makeCompleteRosterUnattributed(response) {
+  /* The provider roster itself is complete enough to resolve the selected
+   * clinician, but the schedule rows still carry no row-to-provider link.
+   * This reaches the selected pull engine (and its resume persistence) without
+   * relying on the forbidden selected-to-all preflight fallback. */
+  response.providerRoster.forEach(provider => { provider.rosterVerified = true; });
+  Object.assign(response.providerRosterReceipt, {
+    complete: true,
+    partial: false,
+    reason: 'complete',
+    expectedCount: 2,
+    observedCount: 2
+  });
+  return response;
+}
+
+function seedSelectedResumeIntent(h) {
+  const rec = {
+    date: DAY,
+    startedAt: Date.now(),
+    attempts: 0,
+    includeHistory: false,
+    bodies: null,
+    p1CensusEligible: false,
+    providerScope: {
+      v: 1, mode: 'selected', source: 'day-caller',
+      id: '101', stableKey: 'header:1'
+    }
+  };
+  h.store.set('p1-census-test::pullResumeV1', JSON.stringify(rec));
+  return rec;
 }
 
 function assertNoProviderGuess(h, label) {
@@ -723,7 +855,7 @@ async function main() {
     response.appts[0].date = '2026-08-18'; return response;
   });
 
-  const selected = makeHarness();
+  const selected = makeHarness({ mutateResponse: makeCompleteRosterUnattributed });
   const selectedResult = await selected.api.dayPull({
     date: DAY,
     provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: true },
@@ -734,7 +866,185 @@ async function main() {
   assert.strictEqual(selected.savedBodies.length, 0, 'selected-provider census exception wrote rows');
   assert(!receiptComplete(selectedResult.appointmentCensusReceipt),
     'selected-provider route published a complete appointment census');
-  await assertIneligibleResumeRefuses(selected, 'selected-provider resume');
+  await assertIneligibleResumeRefuses(selected, 'selected-provider resume', {
+    v: 1, mode: 'selected', source: 'day-caller', id: '101', stableKey: 'header:1'
+  });
+
+  /* A selected provider that cannot be resolved after the warm-up must not be
+     silently widened to `all`.  Use a response that is otherwise a perfectly
+     importable, completely attributed all-provider day: zero writes here prove
+     the ORIGINAL selected scope remains authoritative, rather than merely
+     proving the provider-unknown census token was withheld. */
+  const unresolvedSelected = makeHarness({
+    unresolvableProvider: true,
+    mutateResponse: makeCompleteAttributedAll
+  });
+  const unresolvedSelectedResult = await unresolvedSelected.api.dayPull({
+    date: DAY,
+    provider: {
+      id: '999', stableKey: 'missing:999', name: 'Unresolvable Selected, MD',
+      rosterVerified: true
+    },
+    includeHistory: false,
+    onStatus: unresolvedSelected.onStatus
+  });
+  assert.strictEqual(unresolvedSelectedResult.ok, false,
+    'an unresolvable selected-provider pull widened to an attributed all-provider success');
+  assert.strictEqual(unresolvedSelectedResult.complete, false,
+    'an unresolvable selected-provider pull reported complete after widening to all');
+  assert.strictEqual(unresolvedSelected.savedBodies.length, 0,
+    'an unresolvable selected-provider pull imported the otherwise-valid all-provider response');
+  assert.strictEqual(unresolvedSelected.backendRows.length, 0,
+    'an unresolvable selected-provider pull changed the calendar through an all-provider fallback');
+  assert(!receiptComplete(unresolvedSelectedResult.appointmentCensusReceipt),
+    'an unresolvable selected-provider pull minted an appointment-census receipt');
+  assert(!receiptComplete(unresolvedSelectedResult.providerReceipt),
+    'an unresolvable selected-provider pull minted a complete provider receipt after widening');
+
+  /* Account-default scope is frozen before warm-up just like an explicit
+   * provider. Simulate the account mapping disappearing while the advisory
+   * read runs; the real read must remain selected instead of becoming all. */
+  const accountFrozen = makeHarness({
+    accountProviderInitial: 'Header One, MD',
+    clearAccountProviderAfterWarm: true,
+    mutateResponse: makeCompleteRosterUnattributed
+  });
+  const accountFrozenResult = await accountFrozen.api.dayPull({
+    date: DAY, includeHistory: false, onStatus: accountFrozen.onStatus
+  });
+  assert.strictEqual(accountFrozenResult.ok, false,
+    'an account-selected pull became all-provider after its warm-up mapping changed');
+  assert.strictEqual(accountFrozen.savedBodies.length, 0,
+    'an account-selected pull imported rows after widening during warm-up');
+  const accountRealRead = accountFrozen.armedOperations[accountFrozen.armedOperations.length - 1];
+  assert(accountRealRead && accountRealRead.providerMode === 'selected',
+    'the real read did not retain the account-selected provider mode frozen before warm-up');
+  assert.strictEqual(accountRealRead.requestedProviderId, '101',
+    'the real read changed the account-selected provider id during warm-up');
+  assert.strictEqual(accountRealRead.requestedProviderStableKey, 'header:1',
+    'the real read changed the account-selected stable key during warm-up');
+  const accountResume = JSON.parse(accountFrozen.store.get('p1-census-test::pullResumeV1') || 'null');
+  assertResumeProviderScope(accountResume, {
+    v: 1, mode: 'selected', source: 'day-account', id: '101', stableKey: 'header:1'
+  }, 'account-selected resume');
+
+  /* An untampered selected resume reconstructs its canonical provider from
+   * stable identity. Even when Athena returns a fully attributed all-provider
+   * grid, only the selected clinician's rows may be reconciled. */
+  const selectedResume = makeHarness({
+    mutateResponse: (response, call) => call >= 3
+      ? makeCompleteAttributedAll(response)
+      : makeCompleteRosterUnattributed(response)
+  });
+  const selectedResumeFirst = await selectedResume.api.dayPull({
+    date: DAY,
+    provider: { id: '101', stableKey: 'header:1', name: 'Header One, MD', rosterVerified: true },
+    includeHistory: false,
+    onStatus: selectedResume.onStatus
+  });
+  assert.strictEqual(selectedResumeFirst.ok, false,
+    'selected-resume fixture did not begin with an incomplete selected pull');
+  const selectedResumeRec = JSON.parse(selectedResume.store.get('p1-census-test::pullResumeV1') || 'null');
+  assertResumeProviderScope(selectedResumeRec, {
+    v: 1, mode: 'selected', source: 'day-caller', id: '101', stableKey: 'header:1'
+  }, 'untampered selected resume');
+  assert.strictEqual(selectedResumeRec.p1CensusEligible, false,
+    'selected resume persisted all-provider census authority');
+  selectedResume.api._maybeResumePull();
+  const selectedResumeGo = selectedResume.rt.document.getElementById('mlsPullResumeGo');
+  assert(selectedResumeGo && typeof selectedResumeGo.onclick === 'function',
+    'untampered selected resume offer was not mounted');
+  const selectedReadsBefore = selectedResume.scheduleResponseCount();
+  selectedResumeGo.onclick();
+  await waitFor(() => selectedResume.scheduleResponseCount() > selectedReadsBefore,
+    'untampered selected resume schedule read');
+  await waitFor(() => {
+    const outcome = selectedResume.api._lastPullResult();
+    return outcome && outcome.complete === true;
+  }, 'untampered selected resume completion');
+  const selectedResumeResult = selectedResume.api._lastPullResult();
+  assert.strictEqual(selectedResumeResult.ok, true,
+    'untampered selected resume did not reconcile its selected provider');
+  assert.strictEqual(selectedResume.savedBodies.length, ROWS / 2,
+    'untampered selected resume imported the whole attributed grid instead of one provider');
+  assert(selectedResume.savedBodies.every(body =>
+    String(body.provider_id || body.providerId || body.athena_provider_id || body.athenaProviderId || '') === '101'),
+  'untampered selected resume imported a row attributed to another provider');
+  const selectedResumeRead = selectedResume.armedOperations[selectedResume.armedOperations.length - 1];
+  assert(selectedResumeRead && selectedResumeRead.providerMode === 'selected' &&
+    selectedResumeRead.requestedProviderId === '101' &&
+    selectedResumeRead.requestedProviderStableKey === 'header:1',
+  'untampered resume did not pass the reconstructed canonical selected provider to pull');
+
+  /* The offer captures one exact scope. Any change in durable state before the
+   * click is a TOCTOU refusal before Athena is read, including malformed scope
+   * records and an attempted selected -> all+census privilege escalation. */
+  const changedResumeCases = [
+    ['durable resume key deleted after offer', () => undefined],
+    ['selected-to-all+census', rec => {
+      rec.providerScope = { v: 1, mode: 'all', source: 'day-caller' };
+      rec.p1CensusEligible = true;
+      return rec;
+    }],
+    ['missing provider scope', rec => { delete rec.providerScope; return rec; }],
+    ['missing provider-scope version', rec => { delete rec.providerScope.v; return rec; }],
+    ['selected scope missing id and stable key', rec => {
+      delete rec.providerScope.id; delete rec.providerScope.stableKey; return rec;
+    }],
+    ['provider scope with control characters', rec => {
+      rec.providerScope.stableKey = 'header:1\nforged'; return rec;
+    }],
+    ['oversize provider scope identity', rec => {
+      rec.providerScope.id = 'x'.repeat(500); delete rec.providerScope.stableKey; return rec;
+    }],
+    ['resume date changed after offer', rec => { rec.date = '2026-08-18'; return rec; }]
+  ];
+  for (const [label, mutate] of changedResumeCases) {
+    const changed = makeHarness();
+    seedSelectedResumeIntent(changed);
+    await assertChangedResumeScopeRefuses(changed, label, mutate);
+  }
+
+  /* Positive control: the private all-Day census grant survives an honest
+   * same-scope resume. The first real read is intentionally one count short;
+   * the resumed exact read may then import all 24 provider-unknown rows. */
+  const allResume = makeHarness({
+    mutateResponse: (response, call) => {
+      if (call === 2) response.receipt.parsedCount = ROWS - 1;
+      return response;
+    }
+  });
+  const allResumeFirst = await allResume.api.dayPull({
+    date: DAY, provider: 'all', includeHistory: false, onStatus: allResume.onStatus
+  });
+  assert.strictEqual(allResumeFirst.ok, false,
+    'all-resume fixture did not begin with an incomplete guarded Day pull');
+  const allResumeRec = JSON.parse(allResume.store.get('p1-census-test::pullResumeV1') || 'null');
+  assertResumeProviderScope(allResumeRec, {
+    v: 1, mode: 'all', source: 'day-caller'
+  }, 'guarded all census resume');
+  assert.strictEqual(allResumeRec.p1CensusEligible, true,
+    'guarded all-Day pull did not persist its private census eligibility provenance');
+  allResume.api._maybeResumePull();
+  const allResumeGo = allResume.rt.document.getElementById('mlsPullResumeGo');
+  assert(allResumeGo && typeof allResumeGo.onclick === 'function',
+    'guarded all census resume offer was not mounted');
+  const allReadsBefore = allResume.scheduleResponseCount();
+  allResumeGo.onclick();
+  await waitFor(() => allResume.scheduleResponseCount() > allReadsBefore,
+    'guarded all census resume schedule read');
+  await waitFor(() => {
+    const outcome = allResume.api._lastPullResult();
+    return outcome && outcome.complete === true;
+  }, 'guarded all census resume completion');
+  const allResumeResult = allResume.api._lastPullResult();
+  assert.strictEqual(allResumeResult.ok, true,
+    'guarded same-scope all resume failed');
+  assert.strictEqual(allResumeResult.reason, 'complete-appointment-census-only',
+    'guarded same-scope all resume lost its appointment-census authority');
+  assert.strictEqual(allResume.savedBodies.length, ROWS,
+    'guarded all census resume did not reconcile all exact appointments');
+  assertNoProviderGuess(allResume, 'guarded all census resume');
 
   const month = makeHarness({ day: MONTH_DAY });
   const monthResult = await month.api.pullMonth({
@@ -755,7 +1065,9 @@ async function main() {
     'direct public pull wrote provider-unknown census rows');
   assert(!receiptComplete(directPullResult.appointmentCensusReceipt),
     'direct public pull published a complete appointment census');
-  await assertIneligibleResumeRefuses(directPull, 'direct-pull resume');
+  await assertIneligibleResumeRefuses(directPull, 'direct-pull resume', {
+    v: 1, mode: 'all', source: 'direct'
+  });
 
   const direct = makeHarness();
   const directResponse = direct.responseFor(DAY, 'direct-request');
@@ -774,7 +1086,7 @@ async function main() {
   assert(!receiptComplete(directResult && directResult.appointmentCensusReceipt),
     'public direct import minted a complete appointment census');
 
-  console.log('PASS p1 appointment-census-only runtime: exact 24/24 all-day row-unattributed imports idempotently without provider guesses; default history is explicitly skipped without chart work; near misses and selected/month/direct/resume routes refuse; stale authority is cleared durably and unreadable authority fails closed');
+  console.log('PASS p1 appointment-census-only runtime: exact 24/24 all-day row-unattributed imports idempotently without provider guesses; default history skips chart work; selected scope never widens across warm/resume, resume scope is bounded and TOCTOU-safe, guarded all census resume works; near misses and selected/month/direct routes refuse; stale authority is cleared durably and unreadable authority fails closed');
 }
 
 main().catch(error => {
