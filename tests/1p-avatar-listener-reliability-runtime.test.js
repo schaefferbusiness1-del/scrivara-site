@@ -859,6 +859,16 @@ function makeAmbientStartHarness(active) {
     function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
     function gid(id) { return nodes[id] || null; }
     function activePtIdSafe() { return state.active; }
+    function ambientCaptureVisitReceipt(bound) {
+      return bound === state.active ? { v: 1, bindingId: 'binding-A', epoch: 1,
+        patient: { patientId: bound, name: '', dob: '', mrn: '' },
+        visit: { historical: false, noteTimestamp: null, visitDate: '2026-08-17',
+          provider: 'Synthetic Provider A', appointmentId: 'appointment-A',
+          encounterId: '', encounterUrl: '' } } : null;
+    }
+    function ambientCurrentVisitMatchesReceipt(receipt) {
+      return !!receipt && receipt.bindingId === 'binding-A' && receipt.epoch === 1 && receipt.patient.patientId === state.active;
+    }
     function kioskSetSay(v) { state.says.push(String(v || '')); }
     function kioskLine(k, v) { state.lines.push([k, v]); }
     function kioskCloseServerSide() { state.closeServer++; }

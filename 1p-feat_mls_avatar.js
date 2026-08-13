@@ -6140,7 +6140,7 @@ function kioskLine(kind, text) {
        it - they can never cross into the next patient's session */
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
-    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
+    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
     kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
     kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null;
@@ -7250,7 +7250,11 @@ function kioskLine(kind, text) {
              and re-filed the whole check-in block a second time, so the patient's
              intake answers landed in the chart twice. Both are in-memory-only
              flags that a reload is exactly the event that loses. */
-          consentAt: rec.consentAt || 0, intakeFiled: rec.intakeFiled === true
+          consentAt: rec.consentAt || 0, intakeFiled: rec.intakeFiled === true,
+          /* Closed, bounded ownership receipt captured BEFORE the microphone
+             opened. Patient ID alone cannot distinguish two appointments for
+             the same person. */
+          visitBinding: ambientClosedVisitReceipt(rec.visitBinding)
         });
       }, '');
       if (!body) return { ok: false, why: 'serialise', trimmed: trimmed };
@@ -7282,7 +7286,8 @@ function kioskLine(kind, text) {
       intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || [],
       /* carried so a RECOVERED capture can state its consent and can tell whether
          the check-in has already reached the transcript - see ambientStoreWrite */
-      consentAt: kiosk.consentAt || 0, intakeFiled: kiosk.intakeFiled === true
+       consentAt: kiosk.consentAt || 0, intakeFiled: kiosk.intakeFiled === true,
+       visitBinding: kiosk.ambVisit
     });
     kiosk.ambSavedAt = Date.now();
     kiosk.ambSaveOk = res.ok === true;
@@ -8175,6 +8180,75 @@ function kioskLine(kind, text) {
     var patient = binding && binding.patient;
     return clean(patient && (patient.patientId || patient.id || patient.athenaId || patient.mrn));
   }
+  function ambientReceiptText(value, max) {
+    var text = clean(value);
+    return text.length > max ? text.slice(0, max) : text;
+  }
+  function ambientClosedVisitReceipt(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var patient = raw.patient || {};
+    var visit = raw.visit || {};
+    var epoch = Number(raw.epoch);
+    var noteTimestamp = Number(visit.noteTimestamp);
+    var receipt = {
+      v: 1,
+      bindingId: ambientReceiptText(raw.bindingId, 180),
+      epoch: isFinite(epoch) ? epoch : null,
+      patient: {
+        patientId: ambientReceiptText(patient.patientId, 180),
+        name: ambientReceiptText(patient.name, 240),
+        dob: ambientReceiptText(patient.dob, 80),
+        mrn: ambientReceiptText(patient.mrn, 180)
+      },
+      visit: {
+        historical: visit.historical === true,
+        noteTimestamp: isFinite(noteTimestamp) && noteTimestamp > 0 ? noteTimestamp : null,
+        visitDate: ambientReceiptText(visit.visitDate, 40),
+        provider: ambientReceiptText(visit.provider, 240),
+        appointmentId: ambientReceiptText(visit.appointmentId, 180),
+        encounterId: ambientReceiptText(visit.encounterId, 180),
+        encounterUrl: ambientReceiptText(visit.encounterUrl, 1200)
+      }
+    };
+    if (!receipt.bindingId || !receipt.patient.patientId) return null;
+    safe(function () { Object.freeze(receipt.patient); Object.freeze(receipt.visit); Object.freeze(receipt); });
+    return receipt;
+  }
+  function ambientVisitReceiptFor(binding, epoch) {
+    if (!binding || !binding.patient) return null;
+    var patient = binding.patient || {};
+    var context = binding.visitContext || {};
+    return ambientClosedVisitReceipt({
+      bindingId: binding.id,
+      epoch: epoch,
+      patient: {
+        patientId: patient.patientId || patient.id || patient.athenaId || patient.mrn,
+        name: patient.name,
+        dob: patient.dob,
+        mrn: patient.mrn || patient.athenaId
+      },
+      visit: {
+        historical: binding.historical === true || context.historical === true,
+        noteTimestamp: context.noteTimestamp || binding.noteTimestamp,
+        visitDate: context.visitDate || binding.displayDate,
+        provider: context.provider || binding.displayProvider,
+        appointmentId: context.appointmentId,
+        encounterId: context.encounterId,
+        encounterUrl: context.encounterUrl
+      }
+    });
+  }
+  function ambientVisitReceiptStableKey(receipt) {
+    var r = ambientClosedVisitReceipt(receipt);
+    if (!r) return '';
+    var v = r.visit;
+    return v.appointmentId || v.encounterId || v.encounterUrl || (v.noteTimestamp ? String(v.noteTimestamp) : '');
+  }
+  function ambientVisitReceiptStableSame(left, right) {
+    var a = ambientClosedVisitReceipt(left), b = ambientClosedVisitReceipt(right);
+    if (!a || !b) return false;
+    return JSON.stringify(a.patient) === JSON.stringify(b.patient) && JSON.stringify(a.visit) === JSON.stringify(b.visit);
+  }
   function ambientVisitBinding() {
     return safe(function () {
       if (typeof currentVisitAthenaBinding !== 'undefined') return currentVisitAthenaBinding || null;
@@ -8254,7 +8328,33 @@ function kioskLine(kind, text) {
     if (ambientVisitEpoch() !== snapshot.epoch || ambientBindingPatientId(binding) !== snapshot.patient) return false;
     return ambientBindingMatches(binding);
   }
-  function ambientCommitTranscript(bound, block) {
+  function ambientVisitReceiptMatchesSnapshot(receipt, snapshot, exactLiveBinding) {
+    var expected = ambientClosedVisitReceipt(receipt);
+    var current = snapshot && ambientVisitReceiptFor(snapshot.binding, snapshot.epoch);
+    if (!expected || !current || !ambientVisitReceiptStableSame(expected, current)) return false;
+    if (expected.bindingId === current.bindingId && expected.epoch === current.epoch) return true;
+    /* Across a reload the binding object gets a new nonce. Recovery may cross
+       that boundary only when an immutable visit key reconstructs the exact
+       appointment/encounter/saved-note context. Date+provider alone are not
+       unique for one patient and therefore never qualify. */
+    if (exactLiveBinding) return false;
+    return !!ambientVisitReceiptStableKey(expected) && ambientVisitReceiptStableKey(expected) === ambientVisitReceiptStableKey(current);
+  }
+  function ambientCaptureVisitReceipt(bound) {
+    var snapshot = ambientTranscriptSnapshot(clean(bound));
+    if (!snapshot) return null;
+    return ambientVisitReceiptFor(snapshot.binding, snapshot.epoch);
+  }
+  function ambientCurrentVisitMatchesReceipt(receipt, exactLiveBinding) {
+    var expected = ambientClosedVisitReceipt(receipt);
+    if (!expected || activePtIdSafe() !== expected.patient.patientId || ambientVisitCompromised()) return false;
+    var binding = ambientVisitBinding();
+    if (!binding || !ambientBindingMatches(binding)) return false;
+    return ambientVisitReceiptMatchesSnapshot(expected, {
+      binding: binding, bindingId: clean(binding.id), epoch: ambientVisitEpoch(), patient: expected.patient.patientId
+    }, exactLiveBinding === true);
+  }
+  function ambientCommitTranscript(bound, block, visitReceipt, exactLiveBinding) {
     bound = clean(bound);
     block = String(block == null ? '' : block);
     var mirror = gid('ez3flTranscript') || gid('ez3Transcript');
@@ -8264,6 +8364,9 @@ function kioskLine(kind, text) {
     }
     var snapshot = ambientTranscriptSnapshot(bound);
     if (!snapshot) return { ok: false, why: 'the open patient and visit binding could not be verified, so nothing was written.' };
+    if (!ambientVisitReceiptMatchesSnapshot(visitReceipt, snapshot, exactLiveBinding === true)) {
+      return { ok: false, why: 'this recording belongs to a different visit for this patient, so nothing was written and the recovery copy was kept.' };
+    }
     var mirrorBefore = mirror.value;
     var transcriptBefore = transcript.value;
     if (ambientTranscriptHasBlock(mirrorBefore, block) && ambientTranscriptHasBlock(transcriptBefore, block) && ambientTranscriptSnapshotStillSafe(snapshot)) {
@@ -8277,6 +8380,7 @@ function kioskLine(kind, text) {
       dispatched = true;
     } catch (e) { dispatched = false; }
     var proved = dispatched && ambientTranscriptSnapshotStillSafe(snapshot) &&
+      ambientVisitReceiptMatchesSnapshot(visitReceipt, snapshot, exactLiveBinding === true) &&
       ambientTranscriptHasBlock(mirror.value, block) && ambientTranscriptHasBlock(transcript.value, block);
     if (!proved) {
       /* Restore every local byte. In particular, syncRealTranscript also seeds
@@ -8306,7 +8410,7 @@ function kioskLine(kind, text) {
     var body = (kiosk.ambParts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
     if (!body) return { ok: false, why: 'no speech was captured, so nothing was written.' };
     var block = kioskAmbientBlock(body);
-    var receipt = ambientCommitTranscript(bound, block);
+    var receipt = ambientCommitTranscript(bound, block, kiosk.ambVisit, true);
     if (!receipt.ok) return receipt;
     kiosk.ambFiled = true;
     /* the check-in has now reached the transcript, so a resumed capture must not
@@ -8362,7 +8466,8 @@ function kioskLine(kind, text) {
          direction on both counts (it states the gap, and it errs toward including
          the check-in rather than losing it) */
       consentAt: Number(rec.consentAt) || 0,
-      intakeFiled: rec.intakeFiled === true
+      intakeFiled: rec.intakeFiled === true,
+      visitBinding: ambientClosedVisitReceipt(rec.visitBinding)
     };
   }
   function ambientRecoverFile() {
@@ -8402,7 +8507,7 @@ function kioskLine(kind, text) {
     var block = lines.join('\n');
     /* The WHOLE labelled block is the idempotency key. A quoted sentence from
        the room capture is not evidence that this recovered visit was filed. */
-    var receipt = ambientCommitTranscript(info.bound, block);
+    var receipt = ambientCommitTranscript(info.bound, block, info.visitBinding, false);
     if (!receipt.ok) return receipt;
     /* BY KEY: this recovered record, not whichever capture the store points at now -
        another chart may be holding one, and a keyless drop would delete that instead
@@ -8460,6 +8565,24 @@ function kioskLine(kind, text) {
       kioskLine('alert', 'Staff: return to the patient this check-in belongs to before starting the room recording. Nothing is being recorded.');
       return false;
     }
+    var visitReceipt = null;
+    if (!kiosk.ambFiled && kiosk.ambVisit) {
+      /* A failed file followed by Keep listening is the SAME capture. It may
+         resume only in the exact binding/epoch where those words began. */
+      if (!ambientCurrentVisitMatchesReceipt(kiosk.ambVisit, true)) {
+        kioskSetSay('I cannot resume this recording - a different visit is open for this patient.');
+        kioskLine('alert', 'Staff: return to the exact visit where this room recording began. The held words were not changed or discarded.');
+        return false;
+      }
+      visitReceipt = kiosk.ambVisit;
+    } else {
+      visitReceipt = ambientCaptureVisitReceipt(bound);
+    }
+    if (!visitReceipt) {
+      kioskSetSay('I cannot record this visit - the exact visit could not be verified.');
+      kioskLine('alert', 'Staff: open the intended patient visit before starting room recording. Nothing is being recorded.');
+      return false;
+    }
     /* Room capture is silent, so echo classification has no job. Release the
        independently adopted preflight stream before opening SpeechRecognition;
        one room recording must never retain two microphone owners. */
@@ -8472,6 +8595,7 @@ function kioskLine(kind, text) {
     kiosk.completed = true;
     kiosk.ambient = true;
     kiosk.ambBound = bound;
+    kiosk.ambVisit = visitReceipt;
     kiosk.ambStart = Date.now();
     /* AN UNFILED CAPTURE IS NEVER DISCARDED BY STARTING A NEW ONE. Before the rest
        screen existed, a stop that failed to file left only the exit control, so the
@@ -8978,7 +9102,7 @@ function kioskLine(kind, text) {
        file. The recording state must never join them - it carries a
        patient's words, and a leak here is a cross-patient transcript. */
     kioskAmbientClear();
-    kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = '';
+    kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null; kiosk.ambFails = 0;
     kiosk.ambStart = 0; kiosk.ambRecAt = 0; kiosk.intake = []; kiosk.avName = '';
     kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
@@ -9615,7 +9739,7 @@ function kioskLine(kind, text) {
        belongs to whoever is on screen now, so the microphone closes at
        once - and the write is refused, because the words already captured
        belong to the patient whose chart just left. */
-    if (kiosk.ambient && activePtIdSafe() !== clean(kiosk.ambBound)) {
+    if (kiosk.ambient && (activePtIdSafe() !== clean(kiosk.ambBound) || !ambientCurrentVisitMatchesReceipt(kiosk.ambVisit, true))) {
       kioskAmbientFlush(function (owned) {
         if (!owned) return;
         kioskAmbientSave(true);
