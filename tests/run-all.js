@@ -40,6 +40,7 @@ const tests = [
   '1p-fullhistory-pdf-idle-runtime.test.js',
   'p1-appointment-census-display-authority.test.js',
   '1p-provider-unknown-census-runtime.test.js',
+  '1p-provider-day-calendar-runtime.test.js',
   /* an unmapped Settings heading is INVISIBLE with no error - measured, 1 of 12
      sections was reachable from no tab at all */
   'settings-every-section-reachable.test.js',

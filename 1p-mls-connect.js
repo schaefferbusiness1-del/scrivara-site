@@ -19047,6 +19047,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var entry = ref ? safe(function () { return rp.resolve(ref); }, null) : null;
     return entry || (activeProvider() || 'all');
   }
+  /* A selected provider is a display filter as well as a pull target. Older
+     builds kept provider-empty rows visible under every clinician, which made
+     "show Dr X" a mixed list. Selected pulls now persist the provider proof,
+     so the named view fails closed: exact provider id when both sides expose
+     one, otherwise an exact normalized roster name or alias. */
+  function providerIdentityKey(value) {
+    return String(value == null ? '' : value).toLowerCase()
+      .replace(/\./g, '').replace(/[_,\/]+/g, ' ').replace(/[^a-z0-9' -]/g, ' ')
+      .split(/\s+/).filter(function (token) {
+        return token && ['md','do','pa','pac','pa-c','np','crna','aprn','dpm','dds','dmd','crnp','dr'].indexOf(token) < 0;
+      }).sort().join(' ');
+  }
+  function rowProviderIdentity(row) {
+    row = row || {};
+    return {
+      id: String(row.athena_provider_id || row.athenaProviderId || row.provider_id || row.providerId || '').trim(),
+      name: String(row.provider || row.providerName || row.provider_name || row.renderingProviderName || row.rendering_provider_name || '').trim()
+    };
+  }
+  function rowMatchesActiveProvider(row) {
+    var selectedName = activeProvider();
+    if (!selectedName) return true;
+    var got = rowProviderIdentity(row);
+    var roster = safe(function () { return window.__mlsProviderRoster; }, null);
+    var entry = roster && isFn(roster.resolve)
+      ? safe(function () { return roster.resolve(S.providerRef || selectedName); }, null)
+      : null;
+    var wantedId = String(entry && entry.id || '').trim();
+    if (wantedId && got.id) return got.id.toLowerCase() === wantedId.toLowerCase();
+    if (!got.name) return false;
+    var gotKey = providerIdentityKey(got.name);
+    if (!gotKey) return false;
+    var wanted = [entry && entry.name, entry && entry.raw, selectedName]
+      .map(providerIdentityKey).filter(Boolean);
+    return wanted.indexOf(gotKey) >= 0;
+  }
   function providerRosterReceipt() {
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
     return rp && isFn(rp.getReceipt) ? safe(function () { return rp.getReceipt(); }, null) : null;
@@ -19179,12 +19215,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          blocks etc.) never render as patients. User-controlled list, never
          guessed; the record itself is untouched. */
       try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
-      /* b238: normalized provider match. Rows with NO provider recorded stay
-         VISIBLE for every provider (they were silently binned as "other
-         providers" — 721 of the account's 2977 stored appts had provider:null,
-         which hid a doctor's own pulled day and made the empty-state lie). */
-      var _ap = String(a.provider || '').replace(/^provider\s+/i, '').trim().toLowerCase();
-      if (prov && _ap && _ap !== String(prov).replace(/^provider\s+/i, '').trim().toLowerCase()) return false;
+      /* A chosen provider means only rows proven for that provider. Blank
+         legacy attribution remains visible in the default view, never inside
+         a named clinician's Day list. */
+      if (prov && !rowMatchesActiveProvider(a)) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -19784,8 +19818,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var selected = canonicalSelectedRef ? canonicalSelectedRef === key : (counts[name.toLowerCase()] === 1 && cur === name);
       opts += '<option value="pv:' + encodeURIComponent(key) + '"' + (selected ? ' selected' : '') + '>' + esc(label) + '</option>';
     });
-    return '<div class="ez3-prov"><label>Provider</label>' +
-           '<div class="selwrap"><select id="ez3Prov" aria-label="Filter by provider">' + opts + '</select></div></div>';
+    return '<div class="ez3-prov"><label for="ez3Prov">Show visits for</label>' +
+           '<div class="selwrap"><select id="ez3Prov" aria-label="Show visits for provider">' + opts + '</select></div></div>';
   }
   function wireProvSelect() {
     var sel = $('ez3Prov'); if (!sel) return;
