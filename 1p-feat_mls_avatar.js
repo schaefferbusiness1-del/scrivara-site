@@ -8165,6 +8165,135 @@ function kioskLine(kind, text) {
     if (orders) { lines.push(''); lines.push(orders); }
     return lines.join('\n');
   }
+
+  /* One proof gate owns BOTH live filing and recovery. The visible recorder is
+     only a mirror; its input listener is expected to merge into the canonical
+     #transcript. A dispatched event is therefore not a write receipt. We keep
+     the recovery copy until the complete provenance block is present in both
+     surfaces under the same immutable patient/visit binding. */
+  function ambientBindingPatientId(binding) {
+    var patient = binding && binding.patient;
+    return clean(patient && (patient.patientId || patient.id || patient.athenaId || patient.mrn));
+  }
+  function ambientVisitBinding() {
+    return safe(function () {
+      if (typeof currentVisitAthenaBinding !== 'undefined') return currentVisitAthenaBinding || null;
+      return window.currentVisitAthenaBinding || null;
+    }, null);
+  }
+  function ambientVisitEpoch() {
+    return safe(function () {
+      if (typeof currentVisitAthenaEpoch !== 'undefined') return currentVisitAthenaEpoch;
+      return window.currentVisitAthenaEpoch;
+    }, null);
+  }
+  function ambientVisitCompromised() {
+    return safe(function () {
+      if (typeof currentVisitAthenaCompromised !== 'undefined') return currentVisitAthenaCompromised === true;
+      return window.currentVisitAthenaCompromised === true;
+    }, true);
+  }
+  function ambientBindingMatches(binding) {
+    return safe(function () {
+      if (typeof _athenaCurrentMatchesBound === 'function') return _athenaCurrentMatchesBound(binding) === true;
+      if (isFn(window._athenaCurrentMatchesBound)) return window._athenaCurrentMatchesBound(binding) === true;
+      return false;
+    }, false);
+  }
+  function ambientTranscriptHasBlock(value, block) {
+    value = String(value == null ? '' : value);
+    block = String(block == null ? '' : block);
+    if (!block) return false;
+    var from = 0;
+    while (from <= value.length) {
+      var at = value.indexOf(block, from);
+      if (at < 0) return false;
+      var before = at === 0 || value.slice(at - 2, at) === '\n\n';
+      var end = at + block.length;
+      var after = end === value.length || value.slice(end, end + 2) === '\n\n';
+      if (before && after) return true;
+      from = at + 1;
+    }
+    return false;
+  }
+  function ambientTranscriptSnapshot(bound) {
+    if (!bound || activePtIdSafe() !== bound || ambientVisitCompromised()) return null;
+    var binding = ambientVisitBinding();
+    /* The first canonical transcript input normally establishes this binding.
+       Establish it immediately before the write instead, so the input event
+       cannot change ownership or epoch midway through the proof. */
+    if (!binding) {
+      var candidate = safe(function () {
+        if (typeof _athenaBindingForCurrentVisit === 'function') return _athenaBindingForCurrentVisit('avatar-room-capture');
+        if (isFn(window._athenaBindingForCurrentVisit)) return window._athenaBindingForCurrentVisit('avatar-room-capture');
+        return null;
+      }, null);
+      if (!candidate || ambientBindingPatientId(candidate) !== bound) return null;
+      var set = safe(function () {
+        if (typeof _athenaSetVisitBinding === 'function') return _athenaSetVisitBinding(candidate) === true;
+        if (isFn(window._athenaSetVisitBinding)) return window._athenaSetVisitBinding(candidate) === true;
+        return false;
+      }, false);
+      if (!set) return null;
+      binding = ambientVisitBinding();
+    }
+    if (!binding || binding.identityConflict === true || binding.routeBlocked === true) return null;
+    if (ambientBindingPatientId(binding) !== bound || !ambientBindingMatches(binding)) return null;
+    var guarded = safe(function () {
+      if (typeof _athenaGuardBoundEditor === 'function') return _athenaGuardBoundEditor('filing this Avatar transcript') === true;
+      if (isFn(window._athenaGuardBoundEditor)) return window._athenaGuardBoundEditor('filing this Avatar transcript') === true;
+      return false;
+    }, false);
+    if (!guarded || ambientVisitCompromised()) return null;
+    return { patient: bound, binding: binding, bindingId: clean(binding.id), epoch: ambientVisitEpoch() };
+  }
+  function ambientTranscriptSnapshotStillSafe(snapshot) {
+    if (!snapshot || activePtIdSafe() !== snapshot.patient || ambientVisitCompromised()) return false;
+    var binding = ambientVisitBinding();
+    if (!binding || binding !== snapshot.binding || clean(binding.id) !== snapshot.bindingId) return false;
+    if (ambientVisitEpoch() !== snapshot.epoch || ambientBindingPatientId(binding) !== snapshot.patient) return false;
+    return ambientBindingMatches(binding);
+  }
+  function ambientCommitTranscript(bound, block) {
+    bound = clean(bound);
+    block = String(block == null ? '' : block);
+    var mirror = gid('ez3flTranscript') || gid('ez3Transcript');
+    var transcript = gid('transcript');
+    if (!mirror || typeof mirror.value !== 'string' || !transcript || typeof transcript.value !== 'string') {
+      return { ok: false, why: 'the canonical visit transcript is not on this screen, so nothing was written.' };
+    }
+    var snapshot = ambientTranscriptSnapshot(bound);
+    if (!snapshot) return { ok: false, why: 'the open patient and visit binding could not be verified, so nothing was written.' };
+    var mirrorBefore = mirror.value;
+    var transcriptBefore = transcript.value;
+    if (ambientTranscriptHasBlock(mirrorBefore, block) && ambientTranscriptHasBlock(transcriptBefore, block) && ambientTranscriptSnapshotStillSafe(snapshot)) {
+      return { ok: true, chars: 0, already: true };
+    }
+    var next = mirrorBefore + (mirrorBefore ? '\n\n' : '') + block;
+    var dispatched = false;
+    try {
+      mirror.value = next;
+      mirror.dispatchEvent(new Event('input', { bubbles: true }));
+      dispatched = true;
+    } catch (e) { dispatched = false; }
+    var proved = dispatched && ambientTranscriptSnapshotStillSafe(snapshot) &&
+      ambientTranscriptHasBlock(mirror.value, block) && ambientTranscriptHasBlock(transcript.value, block);
+    if (!proved) {
+      /* Restore every local byte. In particular, syncRealTranscript also seeds
+         finalText, so leaving it advanced would make the recognizer resurrect
+         a block whose durable recovery record we correctly retained. */
+      transcript.value = transcriptBefore;
+      mirror.value = mirrorBefore;
+      safe(function () {
+        if (window.__mlsTxMirror && isFn(window.__mlsTxMirror.set)) window.__mlsTxMirror.set(mirror, mirrorBefore);
+      });
+      safe(function () {
+        if (typeof finalText !== 'undefined') finalText = transcriptBefore ? transcriptBefore + ' ' : '';
+      });
+      return { ok: false, why: 'the canonical visit transcript did not verify the complete block under the same patient and visit, so nothing was filed.' };
+    }
+    return { ok: true, chars: block.length, already: false };
+  }
   function kioskAmbientFile() {
     if (kiosk.ambFiled) return { ok: false, why: 'this capture was already filed, so nothing was written again.' };
     /* PATIENT BINDING FAILS CLOSED - equality against the chart the check-in
@@ -8176,17 +8305,9 @@ function kioskLine(kind, text) {
     if (now !== bound) return { ok: false, why: 'the open chart (' + now + ') is not the one this recording belongs to (' + bound + '), so nothing was written.' };
     var body = (kiosk.ambParts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
     if (!body) return { ok: false, why: 'no speech was captured, so nothing was written.' };
-    var box = gid('ez3flTranscript') || gid('ez3Transcript');
-    if (!box || typeof box.value !== 'string') return { ok: false, why: 'the visit transcript box is not on this screen, so nothing was written.' };
     var block = kioskAmbientBlock(body);
-    /* ADDITIVE AND NON-DESTRUCTIVE. The doctor's existing transcript is
-       carried through BYTE FOR BYTE - no trim, no normalise, no rewrite of
-       trailing whitespace - and the block is appended after it. Then the input
-       event, which is the whole integration: it is what drives the app's
-       transcript mirror to MERGE into #transcript instead of overwriting it. */
-    var prior = box.value;
-    box.value = prior + (prior ? '\n\n' : '') + block;
-    safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
+    var receipt = ambientCommitTranscript(bound, block);
+    if (!receipt.ok) return receipt;
     kiosk.ambFiled = true;
     /* the check-in has now reached the transcript, so a resumed capture must not
        lead with it again - see kioskAmbientBlock */
@@ -8203,7 +8324,7 @@ function kioskLine(kind, text) {
        node --check, which cannot see an undefined identifier.) */
     ambientStoreDrop(ambientStoreKeyFor(kiosk.ambBound));
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
-    return { ok: true, chars: block.length };
+    return receipt;
   }
   /* ---- RECOVERY. What the backup is FOR. A capture survives the page that
      took it, so a reload mid-visit, a discarded tab or a crashed renderer
@@ -8279,15 +8400,10 @@ function kioskLine(kind, text) {
     var orders = ordersBlockFrom(info.actions.filter(function (a) { return a && a.status === 'confirmed'; }));
     if (orders) { lines.push(''); lines.push(orders); }
     var block = lines.join('\n');
-    /* filing the same recovered capture twice would duplicate a whole visit
-       in the note - the body is its own idempotency key */
-    if (box.value.indexOf(info.body) >= 0) {
-      ambientStoreDrop(info.key);
-      return { ok: true, chars: 0, already: true };
-    }
-    var prior = box.value;
-    box.value = prior + (prior ? '\n\n' : '') + block;
-    safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
+    /* The WHOLE labelled block is the idempotency key. A quoted sentence from
+       the room capture is not evidence that this recovered visit was filed. */
+    var receipt = ambientCommitTranscript(info.bound, block);
+    if (!receipt.ok) return receipt;
     /* BY KEY: this recovered record, not whichever capture the store points at now -
        another chart may be holding one, and a keyless drop would delete that instead
        and leave this one to offer itself again forever. */
@@ -8302,7 +8418,7 @@ function kioskLine(kind, text) {
       kiosk.ambFiled = true;
       kiosk.intakeFiled = true;
     }
-    return { ok: true, chars: block.length };
+    return receipt;
   }
   function kioskAmbientStart() {
     if (!kiosk.open) return false;
@@ -8662,6 +8778,11 @@ function kioskLine(kind, text) {
         noteLine.textContent = '✍️ Drafting the note from this visit…';
         noteLine.className = 'mlsAvRevNote';
         var done = false;
+        var draftBound = clean(kiosk.ambBound);
+        var draftPatient = activePtIdSafe();
+        var draftBinding = ambientVisitBinding();
+        var draftEpoch = ambientVisitEpoch();
+        var draftBindingId = clean(draftBinding && draftBinding.id);
         var settle = function (good, why) {
           if (done) return;
           done = true;
@@ -8682,29 +8803,49 @@ function kioskLine(kind, text) {
           noteLine.appendChild(document.createElement('br'));
           noteLine.appendChild(retry);
         };
-        /* a note box that gains content is the proof, whatever the function
-           returns — some versions resolve before the write lands */
+        /* An exact successful drafter receipt, unchanged visit ownership, and
+           new canonical note bytes are ALL required. Old note text alone is
+           never evidence that this transcript produced a draft. */
         var box = gid('noteBox');
-        var before = (box && typeof box.value === 'string') ? box.value.length : -1;
-        var out = safe(function () { return window.generateNote(); }, null);
-        if (out && isFn(out.then)) {
-          out.then(function () {
-            var b2 = gid('noteBox');
-            settle(!!(b2 && typeof b2.value === 'string' && b2.value.trim().length > 0));
-          }, function (e) { settle(false, String((e && e.message) || 'the drafter refused')); });
+        var before = (box && typeof box.value === 'string') ? box.value : '';
+        var draftStartSafe = !!draftBound && draftPatient === draftBound && !!draftBinding &&
+          ambientBindingPatientId(draftBinding) === draftBound && !ambientVisitCompromised() &&
+          ambientBindingMatches(draftBinding);
+        var draftReady = function (receipt) {
+          if (receipt !== true || !draftStartSafe || activePtIdSafe() !== draftPatient || activePtIdSafe() !== draftBound) return false;
+          var current = ambientVisitBinding();
+          if (!current || current !== draftBinding || clean(current.id) !== draftBindingId) return false;
+          if (ambientVisitEpoch() !== draftEpoch || ambientVisitCompromised() || !ambientBindingMatches(draftBinding)) return false;
+          var asyncSafe = safe(function () {
+            if (typeof _athenaAsyncBindingStillSafe === 'function') return _athenaAsyncBindingStillSafe(draftBinding, 'drafting this Avatar visit note', draftEpoch) === true;
+            if (isFn(window._athenaAsyncBindingStillSafe)) return window._athenaAsyncBindingStillSafe(draftBinding, 'drafting this Avatar visit note', draftEpoch) === true;
+            return false;
+          }, false);
+          var currentBox = gid('noteBox');
+          var note = (currentBox && typeof currentBox.value === 'string') ? currentBox.value : '';
+          return asyncSafe && !!note.trim() && note !== before;
+        };
+        if (!draftStartSafe) { settle(false, 'the patient or visit binding was not exact'); return; }
+        var out;
+        try { out = window.generateNote(); }
+        catch (e0) { settle(false, String((e0 && e0.message) || 'the drafter refused')); return; }
+        if (!out || !isFn(out.then)) {
+          settle(draftReady(out), out === true ? 'the canonical note was not verified' : 'the drafter did not confirm success');
+          return;
         }
-        /* bounded fallback for the non-promise path: watch the box, give up
-           honestly rather than spinning forever */
+        out.then(function (receipt) {
+          settle(draftReady(receipt), receipt === true ? 'the canonical note was not verified for this visit' : 'the drafter did not confirm success');
+        }, function (e) { settle(false, String((e && e.message) || 'the drafter refused')); });
+        /* A pending drafter is bounded, but note-box text never resolves it.
+           Only the exact generateNote(true) receipt above can say ready. */
         var waited = 0;
-        (function watch() {
+        var watch = function () {
           if (done) return;
-          var b3 = gid('noteBox');
-          var now = (b3 && typeof b3.value === 'string') ? b3.value.length : -1;
-          if (now > 0 && now !== before) { settle(true); return; }
           waited += 500;
           if (waited >= 45000) { settle(false, 'it took too long'); return; }
           safe(function () { setTimeout(watch, 500); });
-        })();
+        };
+        safe(function () { setTimeout(watch, 500); });
       };
       safe(function () { setTimeout(runNote, 0); });
     }
