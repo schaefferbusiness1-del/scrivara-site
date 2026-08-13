@@ -15,8 +15,8 @@ assert(marker >= 0 && start >= 0 && end > start, 'optional satellite scheduler b
 
 assert((source.match(/var sched=window\.__mlsDeferAsset\|\|window\.requestIdleCallback/g) || []).length >= 90,
   'not every previously idle-deferred satellite uses the serialized scheduler');
-assert.strictEqual((source.match(/priority:0,owner:'__mls/g) || []).length, 8,
-  'priority readiness is not tied to the Calm foundation and all seven dependent owner APIs');
+assert.strictEqual((source.match(/priority:0,owner:'__mls/g) || []).length, 7,
+  'priority readiness is not tied to all seven Calm-dependent owner APIs');
 assert.strictEqual((source.match(/var sched=window\.requestIdleCallback/g) || []).length, 0,
   'a deferred satellite can still join the native requestIdleCallback timeout stampede');
 assert(source.includes("defer(appendReport,{timeout:2500})") && source.includes('window.__mlsProcReportQueued=1'),
@@ -44,19 +44,22 @@ assert(source.includes('if(priorityInFlight) return -1;') &&
   source.includes("scheduling.isInputPending({includeContinuous:true})") &&
   source.includes('INITIAL_QUIET_MS=2500, FIRST_USE_MS=30000, FIRST_USE_GAP=250, STEADY_GAP=80'),
   'a deadline or forced gate release can bypass fresh interaction/in-flight priority ownership');
-assert(source.includes("priority:0,owner:'__mlsCalmShell',retireVersion:'calm-1.0.0',barrier:true") &&
-  source.includes('if(priorityBarrierInFlight) return -1;') &&
-  source.includes('if(barrier) priorityBarrierInFlight++'),
-  'the Calm Shell is not an evaluation barrier ahead of dependent presentation owners');
+assert(source.includes("var A='feat_mls_calm_shell.js',owner=window.__mlsCalmShell") &&
+  source.includes("s.src='feat_mls_calm_shell.js?v='+(window.__MLS_AV||Date.now())") &&
+  appSource.includes("'feat_mls_theme_polish.js','feat_mls_calm_shell.js'"),
+  'production navigation is not an immediate auth-first critical asset');
 assert.strictEqual((source.match(/requiresFoundation:true/g) || []).length, 7,
   'a dependent presentation owner can still evaluate after the Calm foundation fails');
-assert(source.includes("fallback:'classic',asset:'feat_mls_calm_shell.js'") &&
-  source.includes("healthy?'mls:deferred-assets-ready':'mls:deferred-assets-error'"),
-  'foundation failure does not fail into Classic or optional errors can still publish a green ready event');
+assert(source.includes("healthy?'mls:deferred-assets-ready':'mls:deferred-assets-error'"),
+  'optional errors can still publish a green ready event');
+assert(calmSource.includes('window.__mlsCalmShell.installed !== false') &&
+  calmSource.includes('window.__mlsCalmShell.installed === false'),
+  'a retired load receipt can still permanently suppress production navigation');
 assert(!source.includes("localStorage.setItem('mlsCalmShell','0')"),
   'an automatic Calm load failure can still overwrite the user layout preference across later sessions');
-assert((calmSource.match(/localStorage\.setItem\(STORE_KEY,\s*'0'\)/g) || []).length >= 2,
-  'explicit user-selected Classic no longer persists through the Calm shell owner');
+assert(calmSource.includes("localStorage.setItem(STORE_KEY, '1')") &&
+  !/\n\s*classicSwitch\(\);/.test(calmSource),
+  'the retired Classic preference can still disable production navigation');
 
 let clock = 0;
 let sequence = 0;

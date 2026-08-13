@@ -30329,20 +30329,16 @@ function sfScheduleGateStages(el){
    Half of these only exist in the Calm Shell, so read the same flag the shell
    reads rather than promising a keystroke that does nothing. */
 function sfGateTipList(){
-  let calm=true;
-  try{ calm = localStorage.getItem('mlsCalmShell')!=='0'; }catch(e){}
   const both=[
     'Stop the recording and the note writes itself.',
     'Type or say "pull my last month" to bring in a month of visits.',
     'Everything you had is still here. Nothing was removed.'
   ];
-  if(!calm) return both;
   return both.concat([
     'Press / to jump to any patient or screen.',
     'Ask can run any button by name. Just type what you want.',
     'Ctrl+1 to 5 moves between Day, Patient, Visit, Review and Tools.',
-    'While you record, the controls fade. Move the mouse to bring them back.',
-    'Prefer the old layout? Classic is one click in the dock.'
+    'While you record, the controls fade. Move the mouse to bring them back.'
   ]);
 }
 
@@ -35387,7 +35383,7 @@ function _ptGroupSort(mode){
    the 200+ feature-script cost. Signed/demo callers share one promise, and the
    green loader owns first paint until the visible startup wave is settled. */
 (function(){
-  window.__MLS_AV='b1024';
+  window.__MLS_AV='b1025';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -35398,7 +35394,7 @@ function _ptGroupSort(mode){
     'feat_source_clarity.js','feat_athena_actions.js',
     'feat_mls_dayprogress.js','feat_mls_recentpts.js','feat_mls_ptsnapshot.js',
     'feat_mls_agenda_popover.js','feat_mls_appwidth_responsive.js',
-    'feat_mls_theme_polish.js',
+    'feat_mls_theme_polish.js','feat_mls_calm_shell.js',
     'feat_athena_tooltip_dedupe.js','feat_mls_stop_confirm.js',
     'mls-template-stdline.js','feat_mls_copilot_power.js',
     'feat_mls_audio_capture.js','feat_mls_athena_follow.js'

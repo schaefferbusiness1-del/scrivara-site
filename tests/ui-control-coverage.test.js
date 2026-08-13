@@ -195,8 +195,8 @@ if (fs.existsSync(SHELL_MODULE)) {
   }
 
   /* Escape hatch: the owner must always be one click from the old shell. */
-  if (!/ui=classic|calmShellOff|Classic layout/i.test(src)) {
-    fail('feat_mls_calm_shell.js must ship the Classic layout escape hatch (charter rollout §4).');
+  if (!/localStorage\.setItem\(STORE_KEY,\s*'1'\)/.test(src) || /\n\s*classicSwitch\(\);/.test(src)) {
+    fail('feat_mls_calm_shell.js must automatically own production navigation without a Classic escape hatch.');
   }
 
   /* showView stays the switcher. */

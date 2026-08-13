@@ -23,7 +23,13 @@
 (function () {
   'use strict';
 
-  if (window.__mlsCalmShell) return;
+  /* A timed-out foundation load publishes an installed:false retirement
+     receipt so late callbacks stay inert.  That receipt is not a real Calm
+     owner and must never block the next exact build from installing. */
+  if (window.__mlsCalmShell && window.__mlsCalmShell.installed !== false) return;
+  if (window.__mlsCalmShell && window.__mlsCalmShell.installed === false) {
+    try { delete window.__mlsCalmShell; } catch (e) { window.__mlsCalmShell = null; }
+  }
 
   var VERSION = 'calm-1.0.0';
 
@@ -158,11 +164,9 @@
   /* ---------------------------------------------------------------- enable */
 
   function enabled() {
-    var q = String(location.search || '');
-    if (/[?&]ui=classic/i.test(q)) { safe(function () { localStorage.setItem(STORE_KEY, '0'); }); return false; }
-    if (/[?&]ui=calm/i.test(q)) { safe(function () { localStorage.setItem(STORE_KEY, '1'); }); return true; }
-    var stored = safe(function () { return localStorage.getItem(STORE_KEY); });
-    if (stored === '0') return false;
+    /* The retired Classic shell can strand navigation off-screen. Production
+       now has one supported navigation owner: the liquid-glass Calm shell. */
+    safe(function () { localStorage.setItem(STORE_KEY, '1'); });
     return true;
   }
 
@@ -3202,7 +3206,7 @@
   }
 
   function boot() {
-    if (!enabled()) return mountReturn();
+    enabled();
     if (!qs('#appScreen') || !visible(qs('#appScreen'))) return false;
     /* If any part of the shell fails to come up we return the doctor to the
        classic layout rather than leaving them with a hidden rail and no dock.
@@ -3214,7 +3218,6 @@
          the sliding indicator is measured on the axis it will actually live on
          instead of flipping once on the next pass. */
       safe(function () { applyDockSide(dockSide()); });
-      classicSwitch();
       /* Set BEFORE the first render, not after: every deferred path below
          (the two boot timers, the queued rAF, Ask's 300ms follow-up) checks
          this flag, so a teardown that lands in between must make them no-ops.

@@ -88,6 +88,8 @@ assert(!criticalNames.includes('feat_mls_widget_deck.js'),
   'a normally deferred widget deck cannot also be critical or startup deadlocks behind its own gate');
 assert(criticalNames.includes('feat_mls_stop_confirm.js'),
   'recording-stop confirmation must load before the app becomes interactive');
+assert(criticalNames.includes('feat_mls_calm_shell.js'),
+  'production navigation must execute before the app becomes interactive');
 for (const name of ['mls-template-stdline.js','feat_mls_copilot_power.js','feat_mls_audio_capture.js','feat_mls_athena_follow.js']) {
   assert(criticalNames.includes(name), name + ' must settle before its first action can be used');
 }
@@ -247,11 +249,11 @@ async function verifyLoaderRuntime() {
   const secondBundle = success.window.__mlsEnsureUiBundle();
   assert.strictEqual(firstBundle, secondBundle, 'concurrent UI-bundle callers did not share one in-flight promise');
   assert.strictEqual(success.mainScripts.length, 1, 'on-demand loader appended duplicate main scripts');
-  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b1024', 'main UI script is not exact-versioned');
+  assert.strictEqual(success.mainScripts[0].src, 'mls-connect.js?v=b1025', 'main UI script is not exact-versioned');
   assert(success.timerDelays().includes(30440), 'loader-derived hard deadline was not scheduled');
   await success.flush();
   assert.strictEqual(success.mainScripts[0].id, 'mlsUiBundleScript');
-  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b1024');
+  assert.strictEqual(success.mainScripts[0].source, 'mls-connect.js?v=b1025');
   assert.strictEqual(success.window.__externalMainRuns, 1, 'external main source did not execute exactly once');
   await success.advance(2000);
   assert.strictEqual(await firstBundle, true, 'complete critical UI did not publish ready');
