@@ -131,9 +131,16 @@
     var score = examined ? Math.max(0, Math.min(100, Math.round(matchPart + framingPart + 6 - sourcePenalty - adaptivePenalty))) : 0;
     /* The meter may describe evidence, but only a whole-match receipt may call
        it an applied likeness. A 1-of-14 read is not a "starting match" — it is
-       a refusal, and the natural portrait remains the patient-facing face. */
+       a refusal, and the natural portrait remains the patient-facing face.
+       p1-photo-truth-1.2.0: this shadows the engine's faceMatchDecision and
+       the two must agree exactly, or the meter calls a real match "No animated
+       traits changed" while the traits visibly change beside it. The engine
+       dropped `claimed > refused` — a fifth condition that silently raised the
+       documented six-control bar to eight and failed a 7-of-14 tie — so this
+       drops it too. `wholeReadRefusal` still comes from the engine's own
+       decision, so a refusal there is still a refusal here. */
     var applyEligible = !wholeReadRefusal && r.fromIllustration !== true &&
-      examined >= 10 && claimed >= 6 && claimed > refused;
+      examined >= 10 && claimed >= 6;
     var level = applyEligible && score >= 76 && claimed >= 8 ? 'strong' : (applyEligible ? 'usable' : 'limited');
     var heading = level === 'strong' ? 'Strong animated match' :
       (level === 'usable' ? 'Animated match applied' : 'No animated traits changed');
@@ -272,9 +279,20 @@
         var md = meter.querySelector('.mlsP1FaceMeterDetail');
         if (mh) mh.textContent = 'Matching your photo…';
         if (md) md.textContent = 'Only details the photo supports will change.';
-        var pollCount = 0;
+        /* p1-face-studio-poll-1.1.0 — THE METER USED TO STOP LOOKING.
+           Owner, 2026-08-13: "this never loads", with a screenshot of this
+           meter frozen on "Matching your photo…" while the engine's own
+           refusal was already printed underneath it. The poll gave up after
+           30 ticks of 150ms — FOUR AND A HALF SECONDS — and gave up SILENTLY,
+           so a match that took longer than a warm round trip (a cold backend
+           is routinely 10-30s) left a permanent spinner that no later result
+           could ever clear. The engine now bounds its own vision read at 30s,
+           so this outlasts that deadline instead of expiring inside it, and
+           when it does expire it SAYS SO. A meter that stops looking must
+           never look like a meter that is still working. */
+        var POLL_DEADLINE_MS = 45000;
+        var polledMs = 0;
         (function poll() {
-          pollCount++;
           var owner = window.__mlsAvatar;
           var latest = owner && owner.lastMatchReceipt;
           if (latest && latest.receipt && Number(latest.at || 0) > before && Number(latest.at || 0) >= startedAt) {
@@ -282,7 +300,19 @@
             if (latest.wholeReadRefusal || Number(latest.receipt.refused || 0) > Number(latest.receipt.claimed || 0)) details.open = true;
             return;
           }
-          if (pollCount < 30) later(poll, 150);
+          if (polledMs >= POLL_DEADLINE_MS) {
+            meter.setAttribute('data-level', 'limited');
+            if (mh) mh.textContent = 'The match did not finish';
+            if (md) md.textContent = 'No animated traits were changed. Check the message below, then try Match my photo again.';
+            details.open = true;
+            return;
+          }
+          /* 150ms while a warm match is plausible, then a second apart: the
+             doctor cannot see a difference and a 45-second window does not
+             need 300 timers to watch one variable. */
+          var step = polledMs < 4500 ? 150 : 1000;
+          polledMs += step;
+          later(poll, step);
         }());
       });
     }

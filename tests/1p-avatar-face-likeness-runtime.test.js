@@ -137,7 +137,14 @@ const wall = verdict(null, { exposure: 130, sharp: 20 });
 eq(wall.ready, false, 'sharp wall can pass the capture gate');
 ok(ready.score > wall.score, 'best-of-six still prefers a sharp wall over a readable face');
 ok(source.includes('q.faceVerdict.score > bestQ.faceVerdict.score'), 'best-of-six does not use face evidence');
-ok(source.includes("'Not captured. ' + verdict.why") && source.includes('Nothing was saved, so your current photo is untouched'), 'failed capture overwrites the current portrait or lacks guidance');
+/* The refusal wording moved into the shared accept path (p1-photo-upload-1.0.0)
+   and each source supplies its own prefix; the rule is unchanged — a picture
+   that fails the readiness verdict is refused WITH ITS REASON and nothing is
+   saved, and that now has to hold for the file picker too. */
+ok(source.includes('opts.refusePrefix + verdict.why') &&
+  source.includes('Nothing was saved, so your current photo is untouched'), 'failed capture overwrites the current portrait or lacks guidance');
+ok(source.includes("refusePrefix: 'Not captured. '"), 'the camera lost its refusal wording');
+ok(source.includes("refusePrefix: 'Not used. '"), 'an uploaded picture is accepted without the readiness verdict speaking');
 
 const helpers = new Function(between(source, 'function faceValidPhoto', 'function makePhotoFace') +
   '\nreturn {valid:faceValidPhoto,onLoad:faceModeOnLoad,after:faceModeAfterCapture};')();

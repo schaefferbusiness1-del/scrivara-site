@@ -1793,7 +1793,20 @@
      A success must identify the person-defining skin and hair pair, and at
      least six independently examined controls.  Anything below that is a
      truthful refusal: the natural photo remains the patient-facing face and
-     the animated controls remain exactly as the doctor set them. */
+     the animated controls remain exactly as the doctor set them.
+
+     p1-photo-truth-1.2.0 — THE CODE ENFORCED A BAR ITS OWN COMMENT DOES NOT
+     STATE.  A fifth condition, `claimed > refused`, rode alongside the four
+     above.  With the fixed 14-control ledger that silently raises the real
+     threshold from six to EIGHT, and it fails a tie: the owner's own portrait
+     read 7 of 14, carried both skin and hair, and was refused with "Only 7 of
+     14 appearance details were reliable" while the paragraph above promised
+     six would do.  Six identified controls INCLUDING the skin/hair identity
+     pair is the documented bar and it is the bar now enforced.
+     ⛔ Nothing else here moved. `faceVisionClaimGate` (the skin-range and
+     posterize-artifact refusals), `fromIllustration` and `srcKind` are
+     untouched — a wall, a cartoon and an out-of-range skin tone are refused
+     exactly as before. This removes a threshold contradiction, not a guard. */
   function faceMatchDecision(res) {
     var r = res && res.receipt || {};
     var got = res && Array.isArray(res.derived) ? res.derived.slice() : [];
@@ -1802,7 +1815,7 @@
     var refused = Math.max(0, Number(r.refused) || Math.max(0, examined - claimed));
     var hasIdentityPalette = got.indexOf('skin') >= 0 && got.indexOf('hair') >= 0;
     var applies = !!(res && res.look && r.srcKind === 'photo' && r.fromIllustration !== true &&
-      examined >= 10 && claimed >= 6 && claimed > refused && hasIdentityPalette);
+      examined >= 10 && claimed >= 6 && hasIdentityPalette);
     return { applies: applies, claimed: claimed, refused: refused, examined: examined,
       derived: applies ? got : [], observed: got,
       why: applies ? '' : (res && res.look
@@ -1896,11 +1909,30 @@
      (h_ab >= 45, C* < 32 - see the av-5.7.6 numbers in faceReadPortrait),
      applicable to any hex arriving from a save or from the vision model.
      A swatch value nobody measured must never render as if measured. */
+  /* ⛔ p1-photo-truth-1.2.0 — THE GATE ACCEPTED EVERY GREY, INCLUDING WHITE.
+     Measured on this build: #ffffff, #fafafa, #808080 and #303030 all PASSED.
+     h_ab is atan2(b*,a*), and at zero chroma both terms are floating-point
+     dust — pure white lands on h_ab 296.8 with C* 0.01, which clears
+     `h_ab >= 45` by accident and `C* < 32` trivially. So the one rule
+     [[the hue gate is the only thing keeping a wall off the doctor's avatar]]
+     was written to enforce did not hold against the plainest wall there is,
+     and a blown-out or backlit sample could paint the character white.
+     A hue is only meaningful once there is chroma to take it from, so the
+     band now has a FLOOR as well as a ceiling. Measured margin: the least
+     saturated real skin in the reference set is C* 11.4 (#2b1a12) and the
+     palest is 11.9 (#f7e0d0), against 0.01 for every neutral — 6 sits with
+     roughly a factor of two of clearance on the skin side and none of the
+     greys come close.
+     ⛔ The CEILING is deliberately untouched. C* < 32 also refuses real olive
+     and deep tones (#c68642 reads 49, #8d5524 reads 41.8); that is a separate,
+     known narrowness and widening it needs the annotated fixture set, not a
+     number typed next to an unrelated fix. This change only ADDS refusals. */
   function faceHexSkinGate(hexv) {
     var p = faceRgb(hexv);
     if (!p) return false;
     var lb = faceLab(p);
-    return faceHueAb(lb) >= 45 && faceChroma(lb) < 32;
+    var c = faceChroma(lb);
+    return c >= 6 && c < 32 && faceHueAb(lb) >= 45;
   }
   /* QUARANTINE GATE for a SAVED look (fx-1.0; DIAGNOSIS root cause 4: a bad
      look, once saved, was trusted forever - the owner's standing white
@@ -3037,6 +3069,29 @@
   }
   function faceChroma(lab) { return Math.sqrt(lab.a * lab.a + lab.b * lab.b); }
 
+  /* ===== p1-camera-endurance-1.0.0 (2026-08-13) — THE CAMERA WENT BLACK ====
+     Owner: "if u take too long to take the picutre it blacks out."
+     The live capture view measures at 8Hz, and every tick allocated THREE
+     canvases that were thrown away 125ms later: the 1024x1024 square copy
+     (captureSquare re-assigned width/height, which reallocates even to the
+     same size), this reader's 256x256 analysis surface, and frameQuality's
+     96x96 grey copy. That is ~32MB/s of GPU-backed canvas garbage for as long
+     as the camera stays open — fine for a five-second framing, and a slow walk
+     into surface exhaustion for a doctor who takes a minute to get the shot.
+     When that pool is exhausted the browser drops the backing surfaces and
+     every canvas AND the composited <video> paint black; the stream is still
+     live, which is exactly why it looks like an unexplained blackout.
+     One canvas per purpose, resized only when the size actually changes.
+     Every user draws its whole surface (drawImage covering 0,0,w,h) before
+     reading it back, so reuse can never show a stale frame. */
+  var faceScratchPool = {};
+  function faceScratch(key, size) {
+    var canvas = faceScratchPool[key];
+    if (!canvas) { canvas = faceScratchPool[key] = document.createElement('canvas'); }
+    if (canvas.width !== size || canvas.height !== size) { canvas.width = size; canvas.height = size; }
+    return canvas;
+  }
+
   function faceReadPortrait(img) {
     /* THE GRID FOLLOWS THE SOURCE (gx-1.0). 128 was INVARIANT to camera
        resolution: captureSquare hands this function a 1024px frame and it was
@@ -3057,7 +3112,12 @@
     var iw = img.naturalWidth || img.width || 128, ih = img.naturalHeight || img.height || 128;
     var M = Math.min(iw, ih) >= 256 ? 256 : 128;
     var PR = M / 128;
-    var c = document.createElement('canvas'); c.width = M; c.height = M;
+    /* p1-camera-endurance-1.0.0: ONE analysis canvas, not one per read. The
+       live view calls this 8x a second; a fresh canvas per tick discarded a
+       256x256 GPU-backed surface every 125ms. Nothing is retained from it —
+       the return value is measurements — and the drawImage below covers the
+       whole surface, so reuse cannot leak a previous frame. */
+    var c = faceScratch('read', M);
     var x = c.getContext('2d');
     /* the browser's default downscale filter is the cheapest one; this frame is
        measured, so ask for the good filter (a no-op where unsupported) */
@@ -5110,9 +5170,34 @@
        every tick. A call site that says nothing gets what it always got - a
        fresh canvas (the a-flag-on-a-shared-helper law: opt IN, never out). */
     var canvas = into || document.createElement('canvas');
-    canvas.width = px2; canvas.height = px2;
+    /* p1-camera-endurance-1.0.0: assigning canvas.width REALLOCATES the
+       backing store even when the value is unchanged, so the live loop's
+       opt-in reuse was reusing the element and none of its memory. Only
+       resize when the size really changed; the drawImage below covers the
+       whole surface, so no clear is owed. */
+    if (canvas.width !== px2 || canvas.height !== px2) { canvas.width = px2; canvas.height = px2; }
     var ctx = canvas.getContext('2d');
     ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, px2, px2);
+    return canvas;
+  }
+  /* p1-photo-upload-1.0.0 — captureSquare's rule, for a decoded <img>.
+     Kept immediately beside it so the two cannot drift: the same centre-crop
+     (COVER, never stretch), the same MEASURE_MAX ceiling, and the same refusal
+     to upscale — inventing pixels would dress a thumbnail up as a portrait for
+     every check downstream. A live <video> and a decoded <img> report their
+     size through different properties, which is the whole reason this is a
+     second function and not a flag. */
+  function squareFromImage(img, out) {
+    var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return null;
+    var side = Math.min(iw, ih);
+    var px2 = Math.max(64, Math.min(out, side));
+    var canvas = document.createElement('canvas');
+    canvas.width = px2; canvas.height = px2;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, px2, px2);
     return canvas;
   }
   /* "MAKE SURE IT TAKES A GOOD PICTURE" - measured, not hoped for. Sharpness is mean
@@ -5123,7 +5208,8 @@
   function frameQuality(canvas) {
     return safe(function () {
       var G = 96;
-      var g = document.createElement('canvas'); g.width = G; g.height = G;
+      /* p1-camera-endurance-1.0.0: shared, not per-call. See faceScratch. */
+      var g = faceScratch('quality', G);
       var gx = g.getContext('2d');
       gx.drawImage(canvas, 0, 0, G, G);
       var d = gx.getImageData(0, 0, G, G).data;
@@ -5335,6 +5421,17 @@
        `last` that starts falsy would disable the throttle forever after it */
     var last = -1e9;
     var LIVE_MS = 125;
+    /* p1-camera-endurance-1.0.0 — THE LOOP IS ALSO THE WITNESS.
+       It is already measuring mean luminance every tick, so it is the one
+       place that can tell "the feed went black" from "the room is dim": a
+       real dark room reads 5-40, a dead surface reads a flat 0. Twelve
+       consecutive near-zero ticks (1.5s) is not a blink or a lens cover
+       being lifted. It reports every 1.5s FOR AS LONG AS the feed stays dark
+       and counts the reports, so the camera UI can try a silent re-attach on
+       the first one and only speak up if that did not bring the picture
+       back — a report that fired once could never tell those two apart. */
+    var DARK_TICKS = 12, DARK_EXPOSURE = 0.8;
+    var darkRun = 0, darkReports = 0;
     function next() { faceLiveRaf = requestAnimationFrame(tick); }
     function tick(ts) {
       faceLiveRaf = 0;
@@ -5350,6 +5447,14 @@
       last = ts;
       var m = faceLiveMeasure(video);
       if (!m) return;
+      if (Number(m.q && m.q.exposure) <= DARK_EXPOSURE) {
+        darkRun++;
+        if (darkRun >= DARK_TICKS) {
+          darkRun = 0;
+          darkReports++;
+          if (ui && isFn(ui.onDark)) { var nth = darkReports; safe(function () { ui.onDark(nth); }); }
+        }
+      } else { darkRun = 0; darkReports = 0; }
       var ready = faceLiveReady(m.res, m.q);
       faceLiveOverlayPaint(overlay, m.res, ready);
       faceLiveStatusRender(ui, m.res, m.q, ready);
@@ -5529,7 +5634,12 @@
       /* Full quality stays in this form until Save. The accepted portrait and
          measurement copy are committed together; abandoning Setup cannot
          replace the cache behind the currently saved patient face. */
-      var pendingHiUrl = '', lookCtl = null, faceMutationGeneration = 0, setupTimers = [];
+      /* p1-photo-upload-1.0.0: `pendingHiKind` is the PROVENANCE of the
+         measurement copy — 'camera' for the in-memory capture, 'upload' for a
+         file the doctor chose. Only the camera copy is independently known to
+         be a natural photograph; an uploaded file must prove that through the
+         pixel reader like any other image. See trustedNaturalPhoto. */
+      var pendingHiUrl = '', pendingHiKind = '', lookCtl = null, faceMutationGeneration = 0, setupTimers = [];
       function setupLater(fn, delay) {
         var timer = setTimeout(function () {
           var at = setupTimers.indexOf(timer); if (at >= 0) setupTimers.splice(at, 1);
@@ -5541,7 +5651,7 @@
       host.__mlsAvatarSetupCleanup = function () {
         faceMutated();
         setupTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
-        pendingHiUrl = '';
+        pendingHiUrl = ''; pendingHiKind = '';
         pendingFace = undefined;
         if (lookCtl) { safe(function () { lookCtl.destroy(); }); lookCtl = null; }
       };
@@ -5559,16 +5669,95 @@
         faceMutated();
         cancelFaceCapture();
         pendingFace = '';
-        pendingHiUrl = '';
+        pendingHiUrl = ''; pendingHiKind = '';
         faceHiClear();
         var fresh = facePreviewNode(null);
         faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
         renderPatientPreview();
         status.textContent = 'Face removed — Save to make it permanent. Patients will see the standard assistant icon.';
       });
+      /* ===== ONE ACCEPT PATH FOR EVERY PORTRAIT SOURCE (p1-photo-upload-1.0.0)
+         Owner, 2026-08-13: "u shopuld be able to uplaod a photo if u want."
+         A camera capture and an uploaded file differ in exactly one thing:
+         where the square frame came from. Everything after that — the
+         face-aware readiness verdict, the natural 512px patient portrait, the
+         1024px measurement copy, the Face style rule, the preview repaint, the
+         status line and the automatic match — is one contract, and this file
+         has already paid for the alternative twice (the auto-match that never
+         ran, the two divergent match implementations). So there is one accept
+         function and the source only names itself.
+         ⛔ The readiness gate is NOT relaxed for uploads. A picture with no
+         findable face, a blown-out or unlit one, is refused with its reason and
+         nothing is saved — same as the shutter. A wall may not become the
+         doctor's portrait just because it arrived through a file picker. */
+      function acceptPortrait(opts) {
+        var square = opts.square, q = opts.q;
+        function still() { return setupCurrent() && opts.still(); }
+        if (!still()) return;
+        if (!square) { opts.fail(opts.noFrame); return; }
+        /* The chosen frame has already gone through the SAME face-aware
+           verdict as the live guide.  Do not save a sharp background or
+           a frame whose ambiguous boundary would leave stale settings. */
+        var verdict = q && q.faceVerdict;
+        if (!verdict) verdict = faceCaptureVerdict(q && q.faceResult, q);
+        if (!verdict.ready) {
+          opts.fail(opts.refusePrefix + verdict.why + ' Nothing was saved, so your current photo is untouched.');
+          return;
+        }
+        var dataUrl = safe(function () { return stylizeCanvas(square); }, null);
+        var hiUrl = safe(function () { return square.toDataURL('image/jpeg', 0.95); }, '');
+        /* 600KB remains a pathological-encode guard, not a quality
+           target.  A 512px 0.92 JPEG normally leaves ample headroom even
+           with webcam noise, while keeping the face natural. */
+        if (!dataUrl || dataUrl.length > 600000) { opts.fail(opts.badEncode); return; }
+        if (!still()) return;
+        faceMutated();
+        pendingFace = dataUrl;
+        /* Held in this form only. Save commits it after the server echoes
+           the exact matching patient portrait. */
+        pendingHiUrl = faceValidPhoto(hiUrl) ? hiUrl : '';
+        pendingHiKind = pendingHiUrl ? opts.source : '';
+        var fresh = facePreviewNode(dataUrl);
+        faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+        /* Supplying a new face photo is an explicit request to use that
+           likeness.  Default it to the real portrait unless the doctor
+           deliberately changed Face style in this session. */
+        if (faceModeSelect) faceModeSelect.value = faceModeAfterCapture(faceModeSelect.value, faceModeTouched);
+        renderPatientPreview();
+        status.textContent = opts.describe(square, verdict, pendingHiUrl);
+        /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
+           click match my photo when I take the picutre it sohuld auto match my photo."
+           Right: supplying a photo of your face IS the request to be drawn from it. The
+           button stays, because a doctor who has hand-tuned a knob and then retakes the
+           photo needs a way to ask again — but nobody should have to find it.
+           Deferred one tick so the preview and the status line paint first, and routed
+           through the button's own handler rather than a copy of it: a second
+           implementation of the match would be a second thing to keep in step, and the
+           whole reason the AI read was ever missing from a surface is that it had two.
+           matchBtn is declared further down this same function scope, so it is assigned by
+           the time this runs; guarded anyway, because a build that removes the button
+           must degrade to 'no auto-match', never to a thrown error inside a capture.
+           ⛔ AND IT DID THROW, from b982 until now: this line called `later(fn, ms)`, a
+           helper that exists ONLY inside makeFace's scope — setupForm has no such
+           binding, so every capture raised "later is not defined" and the auto-match
+           never ran once. `node --check` cannot see an undefined identifier, and the
+           safe() was one level too deep: it wrapped the callback, not the call that
+           threw, so the guard this comment promises was never in the throwing position.
+           Found by driving the real capture with a real photograph through a fake camera
+           (scratchpad/facelook/autocapture.js) and reading pageerror — the owner's
+           symptom, "once the image is taken it sohuld auto change avatar", exactly. */
+        safe(function () {
+          setupLater(function () {
+            safe(function () {
+              if (still() && matchBtn && matchBtn.isConnected && !matchBtn.disabled) matchBtn.click();
+            });
+          }, 60);
+        });
+      }
       camBtn.addEventListener('click', function () {
         if (!setupCurrent()) return;
         camHost.innerHTML = '';
+        camHost.__mlsCamTrouble = false;
         var captureGeneration = beginFaceCapture();
         /* ASK FOR THE HIGH-RESOLUTION STREAM. With facingMode alone the browser hands
            back its default - typically 640x480 - and every colour the matcher reports
@@ -5620,7 +5809,53 @@
           var liveList = make('div', 'mlsAvLiveList');
           camHost.appendChild(camWrap); camHost.appendChild(row);
           camHost.appendChild(liveStatus); camHost.appendChild(liveList);
-          faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn });
+          /* p1-camera-endurance-1.0.0 — PLAYBACK IS ASKED FOR, NOT ASSUMED.
+             autoplay+muted+playsInline normally starts a MediaStream, but a
+             backgrounded tab, a policy change or a re-attach after a lost
+             surface all leave the element paused with nothing on screen and
+             no error anywhere. Asking costs one call and its rejection is
+             the only place that failure is observable. */
+          function playVideo() { safe(function () { var p = video.play(); if (p && p.catch) p.catch(function () {}); }); }
+          playVideo();
+          /* THE TRACK CAN DIE WITHOUT TELLING THE PAGE. Windows camera
+             privacy, a USB unplug, sleep/resume, or another app claiming the
+             device all end the track: the <video> keeps its last frame or
+             goes black and every guide line below it keeps describing a feed
+             that no longer exists. Say so, and offer the one action that
+             actually fixes it. */
+          function cameraTrouble(message) {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            if (camHost.__mlsCamTrouble) return;
+            camHost.__mlsCamTrouble = true;
+            var box = make('div', 'mlsAvNotice', message);
+            var againRow = make('div', 'mlsAvActions');
+            var again = make('button', 'mlsAvAction primary', '↻ Restart camera');
+            again.type = 'button';
+            /* the button reopens through camBtn's own handler: a second copy
+               of the open sequence would be a second thing to keep in step
+               with the consent, generation and adoption rules */
+            again.addEventListener('click', function () { if (setupCurrent()) safe(function () { camBtn.click(); }); });
+            againRow.appendChild(again);
+            box.appendChild(againRow);
+            camHost.insertBefore(box, liveStatus);
+          }
+          safe(function () {
+            (stream.getVideoTracks() || []).forEach(function (track) {
+              track.addEventListener('ended', function () {
+                cameraTrouble('The camera stopped — another app, a privacy switch or sleep took the device. Nothing was captured.');
+              }, false);
+            });
+          });
+          faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn,
+            onDark: function (nth) {
+              /* First dark spell: the usual cause is a dropped compositor
+                 surface, and re-attaching the same live stream brings the
+                 picture straight back. Only if it is STILL dark 1.5s later
+                 do we tell him, because a silent notice on a recoverable
+                 flicker is its own defect. */
+              if (nth === 1) { safe(function () { video.srcObject = stream; }); playVideo(); return; }
+              cameraTrouble('The camera picture went black while it was open. Restart it, then take the photo — nothing was captured.');
+            } });
           cancelBtn.addEventListener('click', function () {
             if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
             cancelFaceCapture(); camHost.innerHTML = '';
@@ -5634,76 +5869,22 @@
               if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
               var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
               stopCamera(); camHost.innerHTML = '';
-              if (!bestCanvas) {
-                camHost.appendChild(make('div', 'mlsAvNotice', 'The camera did not deliver a frame — try again.'));
-                return;
-              }
-              /* The chosen frame has already gone through the SAME face-aware
-                 verdict as the live guide.  Do not save a sharp background or
-                 a frame whose ambiguous boundary would leave stale settings. */
-              var verdict = q && q.faceVerdict;
-              if (!verdict) verdict = faceCaptureVerdict(q && q.faceResult, q);
-              if (!verdict.ready) {
-                camHost.appendChild(make('div', 'mlsAvNotice',
-                  'Not captured. ' + verdict.why + ' Nothing was saved, so your current photo is untouched.'));
-                return;
-              }
-              var dataUrl = safe(function () { return stylizeCanvas(bestCanvas); }, null);
-              var hiUrl = safe(function () { return bestCanvas.toDataURL('image/jpeg', 0.95); }, '');
-              /* 600KB remains a pathological-encode guard, not a quality
-                 target.  A 512px 0.92 JPEG normally leaves ample headroom even
-                 with webcam noise, while keeping the face natural. */
-              if (!dataUrl || dataUrl.length > 600000) {
-                camHost.appendChild(make('div', 'mlsAvNotice', 'That capture did not work — try again with more light.'));
-                return;
-              }
-              if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
-              faceMutated();
-              pendingFace = dataUrl;
-              /* Held in this form only. Save commits it after the server echoes
-                 the exact matching patient portrait. */
-              pendingHiUrl = faceValidPhoto(hiUrl) ? hiUrl : '';
-              var fresh = facePreviewNode(dataUrl);
-              faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
-              /* Taking a new face photo is an explicit request to use that
-                 likeness.  Default the new capture to the real portrait unless
-                 the doctor deliberately changed Face style in this session. */
-              if (faceModeSelect) faceModeSelect.value = faceModeAfterCapture(faceModeSelect.value, faceModeTouched);
-              renderPatientPreview();
-              status.textContent = 'Portrait captured from a ' + (bestCanvas.width) + '×' + (bestCanvas.height) +
-                ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
-                ' — best of 6 frames, processed on this device' +
-                (pendingHiUrl ? '. Match my photo will measure the full-quality copy; it is stored only after Save.'
-                      : '. Match will measure the patient portrait and say so.') +
-                ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
-                (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
-              /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
-                 click match my photo when I take the picutre it sohuld auto match my photo."
-                 Right: taking a photo of your face IS the request to be drawn from it. The
-                 button stays, because a doctor who has hand-tuned a knob and then retakes the
-                 photo needs a way to ask again — but nobody should have to find it.
-                 Deferred one tick so the preview and the status line paint first, and routed
-                 through the button's own handler rather than a copy of it: a second
-                 implementation of the match would be a second thing to keep in step, and the
-                 whole reason the AI read was ever missing from a surface is that it had two.
-                 matchBtn is declared further down this same function scope, so it is assigned by
-                 the time this runs; guarded anyway, because a build that removes the button
-                 must degrade to 'no auto-match', never to a thrown error inside a capture.
-                 ⛔ AND IT DID THROW, from b982 until now: this line called `later(fn, ms)`, a
-                 helper that exists ONLY inside makeFace's scope — setupForm has no such
-                 binding, so every capture raised "later is not defined" and the auto-match
-                 never ran once. `node --check` cannot see an undefined identifier, and the
-                 safe() was one level too deep: it wrapped the callback, not the call that
-                 threw, so the guard this comment promises was never in the throwing position.
-                 Found by driving the real capture with a real photograph through a fake camera
-                 (scratchpad/facelook/autocapture.js) and reading pageerror — the owner's
-                 symptom, "once the image is taken it sohuld auto change avatar", exactly. */
-              safe(function () {
-                setupLater(function () {
-                  safe(function () {
-                    if (faceCaptureIsCurrent(captureGeneration, camHost) && matchBtn && matchBtn.isConnected && !matchBtn.disabled) matchBtn.click();
-                  });
-                }, 60);
+              acceptPortrait({
+                square: bestCanvas, q: q, source: 'camera',
+                still: function () { return faceCaptureIsCurrent(captureGeneration, camHost); },
+                fail: function (message) { camHost.appendChild(make('div', 'mlsAvNotice', message)); },
+                noFrame: 'The camera did not deliver a frame — try again.',
+                refusePrefix: 'Not captured. ',
+                badEncode: 'That capture did not work — try again with more light.',
+                describe: function (square, verdict, hi) {
+                  return 'Portrait captured from a ' + (square.width) + '×' + (square.height) +
+                    ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
+                    ' — best of 6 frames, processed on this device' +
+                    (hi ? '. Match my photo will measure the full-quality copy; it is stored only after Save.'
+                        : '. Match will measure the patient portrait and say so.') +
+                    ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
+                    (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
+                }
               });
             });
           });
@@ -5712,7 +5893,92 @@
           camHost.appendChild(make('div', 'mlsAvNotice', 'Camera permission was declined — nothing was captured.'));
         });
       });
-      faceRow.appendChild(facePreview); faceRow.appendChild(camBtn); faceRow.appendChild(removeFaceBtn);
+      /* ---- UPLOAD A PHOTO (p1-photo-upload-1.0.0) --------------------------
+         The camera is not always the right instrument: a doctor may already
+         have a good headshot, may be on a desktop with no webcam, or may be
+         in a room the live guide keeps refusing for light it cannot fix. The
+         file goes through acceptPortrait, i.e. the same verdict, the same two
+         encodings and the same automatic match as the shutter. */
+      var uploadBtn = make('button', 'mlsAvAction', '🖼 Upload a photo');
+      uploadBtn.type = 'button';
+      var uploadInput = document.createElement('input');
+      uploadInput.type = 'file';
+      uploadInput.id = 'mlsAvFaceUpload';
+      /* an explicit list, not `image/*`: SVG is a script surface and HEIC does
+         not decode in any browser this app supports, so neither should be
+         offered in the picker and then refused after the doctor chose it */
+      uploadInput.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp';
+      uploadInput.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+      uploadBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        /* clearing first: choosing the SAME file twice fires no change event
+           otherwise, and a doctor re-picking after a refusal gets silence */
+        safe(function () { uploadInput.value = ''; });
+        safe(function () { uploadInput.click(); });
+      });
+      uploadInput.addEventListener('change', function () {
+        if (!setupCurrent()) return;
+        var file = safe(function () { return uploadInput.files && uploadInput.files[0]; }, null);
+        if (!file) return;
+        camHost.innerHTML = '';
+        camHost.__mlsCamTrouble = false;
+        /* the SAME generation fence the camera uses, and taking it also closes
+           an open camera — two portrait sources may not race each other into
+           pendingFace */
+        var uploadGeneration = beginFaceCapture();
+        function still() { return faceCaptureIsCurrent(uploadGeneration, camHost); }
+        function fail(message) {
+          if (!setupCurrent() || !still()) return;
+          camHost.innerHTML = '';
+          camHost.appendChild(make('div', 'mlsAvNotice', message));
+        }
+        if (!/^image\//.test(String(file.type || ''))) {
+          fail('That file is not an image this browser can read. Choose a PNG, JPEG or WebP photo.');
+          return;
+        }
+        if (Number(file.size) > 25000000) {
+          fail('That image is larger than 25 MB. Choose a smaller copy — the portrait is cropped to 1024px anyway.');
+          return;
+        }
+        camHost.appendChild(make('div', 'mlsAvNotice', 'Reading your photo on this device…'));
+        var reader = safe(function () { return new FileReader(); }, null);
+        if (!reader) { fail('This browser cannot read files here — use the camera instead.'); return; }
+        reader.onerror = function () { fail('That file could not be read. Try another copy of the photo.'); };
+        reader.onload = function () {
+          if (!setupCurrent() || !still()) return;
+          var img = new Image();
+          img.onload = function () {
+            if (!setupCurrent() || !still()) return;
+            var square = squareFromImage(img, MEASURE_MAX);
+            var q = square ? frameQuality(square) : null;
+            if (q) {
+              q.faceResult = safe(function () { return faceReadPortrait(square); }, null);
+              q.faceVerdict = faceCaptureVerdict(q.faceResult, q);
+            }
+            camHost.innerHTML = '';
+            acceptPortrait({
+              square: square, q: q, source: 'upload', still: still,
+              fail: function (message) { camHost.appendChild(make('div', 'mlsAvNotice', message)); },
+              noFrame: 'That image had no readable pixels — try another photo.',
+              refusePrefix: 'Not used. ',
+              badEncode: 'That photo could not be encoded for the patient view — try a different one.',
+              describe: function (accepted, verdict, hi) {
+                return 'Portrait taken from your uploaded photo — a ' + accepted.width + '×' + accepted.height +
+                  ' centre crop of a ' + (img.naturalWidth || 0) + '×' + (img.naturalHeight || 0) +
+                  ' image, processed on this device and never uploaded until you Save' +
+                  (hi ? '. Match my photo will measure the full-quality copy.' : '.') +
+                  ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
+                  (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
+              }
+            });
+          };
+          img.onerror = function () { fail('That image could not be decoded — HEIC photos from an iPhone need to be exported as JPEG first.'); };
+          img.src = String(reader.result || '');
+        };
+        safe(function () { reader.readAsDataURL(file); });
+      });
+      faceRow.appendChild(facePreview); faceRow.appendChild(camBtn);
+      faceRow.appendChild(uploadBtn); faceRow.appendChild(uploadInput); faceRow.appendChild(removeFaceBtn);
 
       /* av-5.1.0: which face the kiosk wears once a photo exists */
       var faceModeLabel = make('label', '', 'Face style — what patients see in the office');
@@ -6027,7 +6293,17 @@
            as a whole, then either every licensed claim commits together or zero
            animated traits change. */
         var visionSrc = src;
-        var trustedNaturalPhoto = usedHi === true;
+        /* p1-photo-upload-1.0.0 — THE CAMERA'S LICENCE IS NOT TRANSFERABLE.
+           `trustedNaturalPhoto` exists because the in-memory camera copy is
+           independently KNOWN to be a photograph of whatever was in front of
+           the lens, which rescues the hard dark-hair/glasses/wall reads the
+           pixel detector cannot receipt. An uploaded file carries no such
+           knowledge — it could be an illustration — so it proves itself
+           through the pixel reader's own srcKind like any other image, which
+           an accepted upload has already done by passing the face verdict.
+           This is strictly more conservative than the camera path. */
+        var trustedNaturalPhoto = usedHi === true &&
+          !(hi === pendingHiUrl && pendingHiKind === 'upload');
         function matchStillCurrent() {
           return setupCurrent() && faceMutationGeneration === matchGeneration &&
             String(shownFaceImage() || '') === matchPortrait;
@@ -6065,14 +6341,27 @@
               lookMarks[sk] = 'not changed \u2014 match incomplete';
             });
             setLookBadges([], []);
-            if (faceValidPhoto(shown)) {
+            /* p1-face-mode-choice-1.0.0 — A REFUSAL MAY NOT OVERRULE HIS OWN
+               CHOICE. Owner, 2026-08-13: "if i click animation it should keep
+               it not change it." Falling back to the photo is right when the
+               doctor has expressed no preference — an unmatched default
+               character is a worse likeness than the real portrait. It is
+               wrong when he has deliberately picked Animated character in this
+               session: the match failing is not a reason to silently undo a
+               setting he made, and he was left thinking the control did not
+               work. The fallback keeps its whole job for the untouched case
+               and the note says plainly that the character is unmatched. */
+            var keepAnimated = faceModeTouched && faceModeSelect.value === 'drawn';
+            if (faceValidPhoto(shown) && !keepAnimated) {
               faceModeSelect.value = 'photo';
               renderPatientPreview();
             }
             var why = extraWhy || decision.why;
             if (modelUnavailable) why += ' The second read was unavailable.';
             else if (modelUnsure && modelUnsure.length) why += ' The second read was also unsure about ' + modelUnsure.join(', ') + '.';
-            why += ' Your real photo remains the patient-facing face. You can retake or fine-tune the optional animated character by hand.';
+            why += keepAnimated
+              ? ' Your Animated character choice is kept exactly as you set it — its traits are simply unmatched, so fine-tune them below or retake the photo.'
+              : ' Your real photo remains the patient-facing face. You can retake or fine-tune the optional animated character by hand.';
             lookNoteSay(why, 2);
             safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
               at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: why,
@@ -6107,32 +6396,55 @@
             claimed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
             refused: refusedNow.slice(), modelRefused: modelRefused.slice(), receipt: rct || null }; });
         }
+        /* p1-match-never-hangs-1.0.0 \u2014 THE MATCH HAD NO DEADLINE.
+           Owner, 2026-08-13: "this never loads". api() wraps fetch with no
+           timeout of any kind, so a backend that is cold, throttled or simply
+           never answers left the note frozen on "Checking the second read\u2026"
+           for as long as the panel stayed open \u2014 no result, no refusal, no
+           way to tell a slow answer from a dead one. The pixel read had
+           already finished by then and was being thrown away by the wait.
+           A late reply arriving after the deadline is DISCARDED, not applied:
+           finishMatch has already spoken, and a second commit would mutate
+           the character behind a doctor who has moved on. */
+        var VISION_WAIT_MS = 30000, VISION_SLOW_MS = 7000;
         function requestVision(pixelRes) {
           if (!matchStillCurrent()) return;
           var local = faceCombineEvidence(pixelRes, null, [], trustedNaturalPhoto);
           lookNoteSay('The on-device read found ' + local.receipt.claimed + ' of ' + local.receipt.examined +
             ' appearance details. Checking the second read before changing any character traits\u2026', 0);
+          var settled = false;
+          function settle(fn) { if (settled) return; settled = true; fn(); }
+          function finishLocally(reason) {
+            settle(function () {
+              if (!matchStillCurrent()) return;
+              finishMatch(local, [], true, faceMatchDecision(local).why + (reason || ''));
+            });
+          }
           var request = safe(function () {
             return api('/api/avatar/office/facelook', {
               method: 'POST', body: JSON.stringify({ image: visionSrc })
             });
           }, null);
-          if (!request || typeof request.then !== 'function') {
-            finishMatch(local, [], true, faceMatchDecision(local).why);
-            return;
-          }
+          if (!request || typeof request.then !== 'function') { finishLocally(''); return; }
+          /* Say so before the deadline, so a slow answer still reads as
+             progress rather than a frozen panel. */
+          setupLater(function () {
+            if (settled || !matchStillCurrent()) return;
+            lookNoteSay('The second read is taking longer than usual. Waiting up to ' +
+              Math.round(VISION_WAIT_MS / 1000) + ' seconds, then finishing with the on-device read\u2026', 1);
+          }, VISION_SLOW_MS);
+          setupLater(function () {
+            if (settled) return;
+            finishLocally(' The second read did not answer in time, so only the on-device evidence was used.');
+          }, VISION_WAIT_MS);
           request.then(function (vr) {
-            if (!matchStillCurrent() || !apiResponseCurrent(vr)) return;
-            if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) {
-              finishMatch(local, [], true, faceMatchDecision(local).why);
-              return;
-            }
-            var combined = faceCombineEvidence(pixelRes, vr.json.look || {}, vr.json.claimed || [], trustedNaturalPhoto);
-            finishMatch(combined, vr.json.unsure || [], false, '');
-          }, function () {
-            if (!matchStillCurrent()) return;
-            finishMatch(local, [], true, faceMatchDecision(local).why);
-          });
+            if (settled || !matchStillCurrent() || !apiResponseCurrent(vr)) return;
+            if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) { finishLocally(''); return; }
+            settle(function () {
+              var combined = faceCombineEvidence(pixelRes, vr.json.look || {}, vr.json.claimed || [], trustedNaturalPhoto);
+              finishMatch(combined, vr.json.unsure || [], false, '');
+            });
+          }, function () { finishLocally(''); });
         }
         faceTintFromPortrait(src, function (res) {
           if (!matchStillCurrent()) return;
@@ -6343,7 +6655,7 @@
                   cfg.faceImage = saved.faceImage || '';
                   cfg.faceMode = saved.faceMode || faceModeSelect.value;
                   pendingFace = undefined;
-                  pendingHiUrl = '';
+                  pendingHiUrl = ''; pendingHiKind = '';
                 });
               if (!faceSaveCurrent) {
                 /* Remove/capture already wrote a more specific instruction.

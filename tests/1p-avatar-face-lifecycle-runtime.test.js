@@ -132,12 +132,31 @@ eq(currentApplied, 1, 'current Save did not apply exactly once');
 
 const removeSlice = between(source, "removeFaceBtn.addEventListener('click'", "camBtn.addEventListener('click'");
 ok(/faceMutated\(\)[\s\S]*cancelFaceCapture\(\)[\s\S]*pendingHiUrl = ''[\s\S]*faceHiClear\(\)/.test(removeSlice), 'Remove does not supersede Save, cancel capture, and clear pending/committed bytes');
+/* p1-photo-upload-1.0.0 moved the shared half of the shutter into
+   acceptPortrait, which the camera and the file picker both call. The
+   fencing rules below did not change and are pinned where they now live:
+   the camera slice must still open and hand its OWN generation fence in,
+   and the accept path must re-prove that fence on both sides of the encode
+   before it touches pendingFace. */
 const captureSlice = between(source, "camBtn.addEventListener('click'", 'faceRow.appendChild(facePreview)');
+const acceptSlice = between(source, 'function acceptPortrait(opts)', "camBtn.addEventListener('click'");
 ok(captureSlice.includes('faceCaptureAdopt(stream, captureGeneration, camHost)'), 'late permission grant is not generation-gated');
-ok(/grabBestFrame\(video, 6,[\s\S]*faceCaptureIsCurrent\(captureGeneration, camHost\)[\s\S]*pendingFace = dataUrl/.test(captureSlice), 'late best-of-six callback can persist after cancellation');
-ok(!/faceHiCommit|localStorage\.setItem/.test(captureSlice), 'shutter click writes full-resolution bytes before Save');
-ok(/matchBtn\.isConnected/.test(captureSlice), 'detached auto-match button can run after close');
-ok(/faceMutated\(\)[\s\S]*pendingFace = dataUrl/.test(captureSlice), 'completed capture does not supersede an older Save');
+ok(/grabBestFrame\(video, 6,[\s\S]*acceptPortrait\(\{[\s\S]*source: 'camera'[\s\S]*faceCaptureIsCurrent\(captureGeneration, camHost\)/.test(captureSlice),
+  'the shutter no longer hands the accept path its own capture generation');
+ok(/if \(!still\(\)\) return;[\s\S]*faceMutated\(\);\n\s*pendingFace = dataUrl;/.test(acceptSlice),
+  'late best-of-six callback can persist after cancellation');
+ok(!/faceHiCommit|localStorage\.setItem/.test(captureSlice + acceptSlice), 'shutter click writes full-resolution bytes before Save');
+ok(/still\(\) && matchBtn && matchBtn\.isConnected/.test(acceptSlice), 'detached auto-match button can run after close');
+ok(/faceMutated\(\)[\s\S]*pendingFace = dataUrl/.test(acceptSlice), 'completed capture does not supersede an older Save');
+/* Every portrait source goes through the one accept path — a second copy of
+   it is how the auto-match went missing for eleven builds. */
+const uploadSlice = between(source, "uploadInput.addEventListener('change'", 'faceRow.appendChild(facePreview)');
+ok(/beginFaceCapture\(\)/.test(uploadSlice) && /faceCaptureIsCurrent\(uploadGeneration, camHost\)/.test(uploadSlice),
+  'an uploaded portrait is not fenced by a capture generation');
+ok(/acceptPortrait\(\{[\s\S]*source: 'upload'/.test(uploadSlice), 'the upload path does not use the shared accept contract');
+ok(!/pendingFace = /.test(uploadSlice), 'the upload path writes the pending portrait behind the shared accept path');
+ok(/pendingHiKind === 'upload'/.test(source) && /trustedNaturalPhoto = usedHi === true &&/.test(source),
+  'an uploaded image inherits the camera copy’s licence to be trusted as a natural photograph');
 const saveSlice = between(source, "saveBtn.addEventListener('click'", '/* av-5.3.0 — the typed rehearsal log');
 ok(/r2\.ok && r2\.json && r2\.json\.ok[\s\S]*facePhotoMatches\(saved\.faceImage, sentPhoto\)[\s\S]*faceHiCommit/.test(saveSlice), 'full-resolution cache is not committed behind authoritative exact-photo Save');
 const saveGuardAt = saveSlice.indexOf('faceSaveApplyIfCurrent(sentFaceGeneration');
