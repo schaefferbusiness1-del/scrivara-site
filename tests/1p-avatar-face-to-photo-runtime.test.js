@@ -159,33 +159,22 @@ ok(/Your real photo remains the patient-facing face/.test(refusalSlice),
 
 /* ---- 5. THE CAMERA MUST SURVIVE A SLOW SHOT ---------------------------- */
 
+/* THE MEASUREMENT SURFACE IS NOT SHARED, and that is a deliberate refusal.
+   Sharing one canvas per purpose is the obvious cure for the live view's
+   allocation churn, and it was written and then withdrawn: driven in real
+   Chrome, a reused analysis surface returned skin #f4d3b3 on the first read of
+   a face and #f4d2b6 on every read after it, while a fresh canvas returns one
+   answer across forty. Whoever reaches for that optimisation next has to beat
+   tests/1p-avatar-camera-endurance-runtime.test.js first. */
 const readerSlice = between(source, 'function faceReadPortrait(img)', 'function faceTalkStop');
-ok(/faceScratch\('read', M\)/.test(readerSlice), 'the 8Hz analysis pass allocates a canvas per tick again');
-ok(!/document\.createElement\('canvas'\)/.test(readerSlice), 'the portrait reader allocates a canvas per read');
+ok(/var c = document\.createElement\('canvas'\); c\.width = M; c\.height = M;/.test(readerSlice),
+  'the portrait reader shares an analysis canvas, so its answer depends on the previous frame');
 const qualitySlice = between(source, 'function frameQuality(canvas)', 'function faceCaptureVerdict');
-ok(/faceScratch\('quality', G\)/.test(qualitySlice), 'the quality pass allocates a canvas per tick again');
-ok(!/document\.createElement\('canvas'\)/.test(qualitySlice), 'the quality pass allocates a canvas per frame');
-const squareSlice = between(source, 'function captureSquare(video, out, into)', 'function squareFromImage');
-ok(/if \(canvas\.width !== px2 \|\| canvas\.height !== px2\)/.test(squareSlice),
-  'the reused live canvas is reallocated every tick by an unconditional width assignment');
-
-/* faceScratch must hand back ONE element per purpose and only resize it when
-   the size really changes — that is the whole point. */
-let created = 0;
-const scratch = new Function('document',
-  between(source, 'var faceScratchPool = {};', 'function faceReadPortrait(img)') +
-  '\nreturn faceScratch;'
-)({ createElement() { created++; return { width: 0, height: 0 }; } });
-const a1 = scratch('read', 256);
-const a2 = scratch('read', 256);
-eq(created, 1, 'faceScratch allocates a new canvas for every call');
-ok(a1 === a2, 'faceScratch handed back a different element for the same purpose');
-eq(a2.width, 256, 'faceScratch did not size its canvas');
-scratch('read', 128);
-eq(created, 1, 'a resize allocated a second element');
-eq(a1.width, 128, 'a genuine size change was not applied');
-scratch('quality', 96);
-eq(created, 2, 'separate purposes share one canvas and would overwrite each other');
+ok(/var g = document\.createElement\('canvas'\); g\.width = G; g\.height = G;/.test(qualitySlice),
+  'the quality pass shares a canvas, so exposure and sharpness depend on the previous frame');
+ok(!/faceScratch/.test(source), 'a shared measurement canvas came back without beating the endurance proof');
+ok(/never measured that churn causes the blackout/.test(source),
+  'the withdrawn optimisation lost the record of why it was withdrawn');
 
 /* The dark-feed witness, and the two things it is allowed to do. */
 const liveSlice = between(source, 'function faceLiveLoopStart(video, overlay, ui)', '/* ---- end live capture view');

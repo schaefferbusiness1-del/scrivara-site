@@ -19,7 +19,13 @@ const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const EXPECTED_BUILD = 'p1-20260813-r3';
 const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
-const P1_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
+/* Advanced from a1903ff1 (b1025) to dd81ad88 by the AUTHORIZED 1p train of
+   2026-08-13 — the face-to-photo repair (match gate, skin-gate floor, vision
+   deadline, meter poll, face-style choice, camera endurance, photo upload).
+   This constant freezes 1p against a PRODUCTION train, which is why a 1p train
+   is the only thing allowed to move it, and why the production and extension
+   baselines below are deliberately NOT moved by it. */
+const P1_BASE_COMMIT = 'dd81ad88b979c397bb0559482e7ad1c82f250d1f';
 const EXTENSION_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
 const PRODUCTION_BASE_COMMIT = 'd038c1ce20e70fe57895af2a6ceec5be9f7d0c58';
 

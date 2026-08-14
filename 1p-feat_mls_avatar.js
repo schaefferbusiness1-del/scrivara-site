@@ -3069,28 +3069,34 @@
   }
   function faceChroma(lab) { return Math.sqrt(lab.a * lab.a + lab.b * lab.b); }
 
-  /* ===== p1-camera-endurance-1.0.0 (2026-08-13) — THE CAMERA WENT BLACK ====
+  /* ===== p1-camera-endurance-1.0.0 (2026-08-13) — WHAT I DID *NOT* SHIP =====
      Owner: "if u take too long to take the picutre it blacks out."
-     The live capture view measures at 8Hz, and every tick allocated THREE
-     canvases that were thrown away 125ms later: the 1024x1024 square copy
-     (captureSquare re-assigned width/height, which reallocates even to the
-     same size), this reader's 256x256 analysis surface, and frameQuality's
-     96x96 grey copy. That is ~32MB/s of GPU-backed canvas garbage for as long
-     as the camera stays open — fine for a five-second framing, and a slow walk
-     into surface exhaustion for a doctor who takes a minute to get the shot.
-     When that pool is exhausted the browser drops the backing surfaces and
-     every canvas AND the composited <video> paint black; the stream is still
-     live, which is exactly why it looks like an unexplained blackout.
-     One canvas per purpose, resized only when the size actually changes.
-     Every user draws its whole surface (drawImage covering 0,0,w,h) before
-     reading it back, so reuse can never show a stale frame. */
-  var faceScratchPool = {};
-  function faceScratch(key, size) {
-    var canvas = faceScratchPool[key];
-    if (!canvas) { canvas = faceScratchPool[key] = document.createElement('canvas'); }
-    if (canvas.width !== size || canvas.height !== size) { canvas.width = size; canvas.height = size; }
-    return canvas;
-  }
+     My first theory was canvas churn: the live view measures at 8Hz and every
+     tick allocates a 1024 square copy, a 256 analysis surface and a 96 grey
+     copy, so a camera left open for a minute burns tens of MB/s of GPU-backed
+     surfaces, and surface exhaustion paints every canvas AND the composited
+     <video> black while the stream is still live. Plausible, and I rewrote all
+     three call sites to share one canvas per purpose.
+     ⛔ TWO THINGS KILLED IT, and both are worth keeping written down.
+     First, I never measured that churn causes the blackout — I inferred it
+     from the symptom. Second, the reuse IS NOT MEASUREMENT-NEUTRAL: driving
+     two different portraits alternately through the real reader in real
+     Chrome, the first read of a face returned skin #f4d3b3 and every read
+     after it returned #f4d2b6. A fresh canvas per read returns ONE answer
+     across forty reads. clearRect does not close the gap, so it is not stale
+     compositing — a repeatedly-drawn surface simply does not resample
+     identically to a virgin one. Whatever the mechanism, "the skin tone
+     depends on how many frames this canvas has already drawn" is a worse
+     property than the allocation it saves, and the allocation saving was
+     never shown to buy anything.
+     So the reader allocates per call exactly as it always did, and the cure
+     for the blackout is the part that is actually measured against the
+     symptom: ask for playback rather than assume it, watch the feed's own
+     luminance, re-attach the stream when it goes flat, report a track another
+     app has taken, and offer Restart camera. That RECOVERS the blackout
+     whatever causes it, and changes no verdict.
+     tests/1p-avatar-camera-endurance-runtime.test.js is the determinism guard
+     this cost, and it stays: forty alternating real reads, one answer each. */
 
   function faceReadPortrait(img) {
     /* THE GRID FOLLOWS THE SOURCE (gx-1.0). 128 was INVARIANT to camera
@@ -3112,12 +3118,7 @@
     var iw = img.naturalWidth || img.width || 128, ih = img.naturalHeight || img.height || 128;
     var M = Math.min(iw, ih) >= 256 ? 256 : 128;
     var PR = M / 128;
-    /* p1-camera-endurance-1.0.0: ONE analysis canvas, not one per read. The
-       live view calls this 8x a second; a fresh canvas per tick discarded a
-       256x256 GPU-backed surface every 125ms. Nothing is retained from it —
-       the return value is measurements — and the drawImage below covers the
-       whole surface, so reuse cannot leak a previous frame. */
-    var c = faceScratch('read', M);
+    var c = document.createElement('canvas'); c.width = M; c.height = M;
     var x = c.getContext('2d');
     /* the browser's default downscale filter is the cheapest one; this frame is
        measured, so ask for the good filter (a no-op where unsupported) */
@@ -5170,12 +5171,7 @@
        every tick. A call site that says nothing gets what it always got - a
        fresh canvas (the a-flag-on-a-shared-helper law: opt IN, never out). */
     var canvas = into || document.createElement('canvas');
-    /* p1-camera-endurance-1.0.0: assigning canvas.width REALLOCATES the
-       backing store even when the value is unchanged, so the live loop's
-       opt-in reuse was reusing the element and none of its memory. Only
-       resize when the size really changed; the drawImage below covers the
-       whole surface, so no clear is owed. */
-    if (canvas.width !== px2 || canvas.height !== px2) { canvas.width = px2; canvas.height = px2; }
+    canvas.width = px2; canvas.height = px2;
     var ctx = canvas.getContext('2d');
     ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, px2, px2);
     return canvas;
@@ -5208,8 +5204,7 @@
   function frameQuality(canvas) {
     return safe(function () {
       var G = 96;
-      /* p1-camera-endurance-1.0.0: shared, not per-call. See faceScratch. */
-      var g = faceScratch('quality', G);
+      var g = document.createElement('canvas'); g.width = G; g.height = G;
       var gx = g.getContext('2d');
       gx.drawImage(canvas, 0, 0, G, G);
       var d = gx.getImageData(0, 0, G, G).data;
