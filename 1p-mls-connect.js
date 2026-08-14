@@ -7078,7 +7078,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      to press, parked under floating chrome) returns silently. */
   var REVIEW_FIXED_FURNITURE = ['mlsVoiceCluster', 'mlsCopVoiceBtn'];
   function openReviewStep() {
+    /* p1-review-note-source-1.0.0 (owner 2026-08-13: "the review and send to
+       athena byutton isnt working"). He pressed it with a fully generated note
+       ON SCREEN and got "Generate the note first" — the refusal for an empty
+       note, thrown at a doctor looking at his note.
+       WHY: the flow card owns its own copy, #ez3flNote, and that copy only
+       mirrors DOWN into #noteBox on the user's own `input` event. A note the
+       doctor GENERATED and never typed into can therefore be present, correct
+       and visible in the flow copy while $('noteBox') is still empty — and
+       this guard reads only #noteBox. Ruled out the other branch first: probed
+       his live /1p/ session, #pushAllEmrBtn exists with no inline hide and
+       disabled=false, so the plan/tier refusal cannot be the toast he saw.
+       The two textareas are the SAME note by construction, so treating the
+       flow copy as authoritative when the hidden one is empty is a sync, not a
+       relaxation: the guard still refuses when there is genuinely no note
+       anywhere, which is the only thing it exists to catch. */
     var note = $('noteBox');
+    var flowNote = $('ez3flNote');
+    var flowText = flowNote ? String(flowNote.value || '') : '';
+    if (note && !(note.value || '').trim() && flowText.trim()) {
+      note.value = flowText;
+      try { note.dispatchEvent(new Event('input', { bubbles: true })); } catch (eSync) {}
+    }
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
 
     /* A Lite account cannot reach this review at all, and until now said nothing.

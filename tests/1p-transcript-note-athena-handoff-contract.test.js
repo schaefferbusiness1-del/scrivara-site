@@ -127,4 +127,54 @@ assert(/send\.focus\s*\(\s*\{\s*preventScroll\s*:\s*true/.test(openReview), 'not
 assert(walkthrough.includes('ZERO action controls') && walkthrough.includes('openUnifiedConfirmation') && walkthrough.includes('orig.apply(this, arguments)'), 'writeback walkthrough no longer wraps the unified review as status-only UI');
 assert(!/setInterval\s*\(|setTimeout\s*\(/.test(walkthrough), 'writeback walkthrough introduced polling/action timing');
 
+/* THE REVIEW STEP REFUSED A NOTE THAT WAS ON SCREEN (p1-review-note-source-1.0.0).
+   Owner 2026-08-13: "the review and send to athena byutton isnt working" — with
+   a generated note visible in the flow card. The flow card owns its own copy,
+   #ez3flNote, which mirrors down into #noteBox only on the user's own `input`
+   event, so a note he generated and never typed into left #noteBox empty and
+   this guard answered "Generate the note first". Executed here rather than
+   pinned as text: the two copies are the same note by construction, so the
+   flow copy must satisfy the guard, and an empty screen must still refuse. */
+function driveReviewStep(noteBoxValue, flowValue) {
+  const toasts = [];
+  const nodes = {
+    noteBox: { value: noteBoxValue, dispatchEvent() { return true; } },
+    ez3flNote: { value: flowValue },
+    pushAllEmrBtn: { style: {}, disabled: false, focus() {}, scrollIntoView() {},
+      getBoundingClientRect: () => ({ top: 40, bottom: 90, left: 0, right: 100, height: 50 }) },
+    ez3Adv: { click() { nodes.__advClicks = (nodes.__advClicks || 0) + 1; } }
+  };
+  const sandbox = {
+    $: (id) => nodes[id] || null,
+    flowToast: (message, kind) => { toasts.push({ message, kind }); },
+    document: { body: { classList: { contains: () => false } } },
+    window: { innerHeight: 900, __mlsAdvQuietOpen: false },
+    getComputedStyle: () => ({ display: 'block', position: 'fixed', visibility: 'visible' }),
+    /* the deferred half re-reads the DOM; this test owns the synchronous
+       guard, so the timer is captured rather than run */
+    setTimeout: () => 0,
+    Event: function (type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(extractFunction(connect, 'openReviewStep') + '\nopenReviewStep();', sandbox);
+  return { toasts, noteBox: nodes.noteBox.value, advClicks: nodes.__advClicks || 0 };
+}
+
+const generated = 'SUBJECTIVE:\nChief Complaint: No specific complaint documented.\n';
+const fromFlow = driveReviewStep('', generated);
+assert.strictEqual(fromFlow.toasts.length, 0,
+  'the review step still refuses a generated note that is visible in the flow card: ' +
+  JSON.stringify(fromFlow.toasts));
+assert.strictEqual(fromFlow.noteBox, generated,
+  'the review step proceeded without adopting the flow copy into the canonical editor');
+
+const alreadySynced = driveReviewStep(generated, generated);
+assert.strictEqual(alreadySynced.toasts.length, 0, 'a normally synced note was refused');
+
+const genuinelyEmpty = driveReviewStep('', '');
+assert.strictEqual(genuinelyEmpty.toasts.length, 1, 'an empty visit no longer refuses review');
+assert(/Generate the note first/.test(genuinelyEmpty.toasts[0].message),
+  'the empty-note refusal lost its wording');
+assert.strictEqual(genuinelyEmpty.noteBox, '', 'the refusal path wrote to the canonical editor');
+
 console.log('PASS 1p transcript-to-Athena handoff: verified sink, exact note receipt, stable binding, human review, unified confirmation, and manual final lanes');
