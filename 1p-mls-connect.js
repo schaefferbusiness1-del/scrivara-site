@@ -15180,7 +15180,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var labels = { outcomes: 'Retrospective outcomes', volume: 'Visit volume & trends',
       procedure: 'Procedure comparison', profile: 'Cohort profile / demographics', custom: 'Custom question' };
     return { months: months, type: type, typeLabel: labels[type] || 'Study',
-      rangeLabel: months ? ('last ' + months + ' months') : 'all time' };
+      /* p1-study-range-month-1.0.0: "last 1 months" reads like a bug in the PDF
+         cover, the Excel summary block and the on-screen scope line, all three
+         of which print this string. */
+      rangeLabel: months ? (months === 1 ? 'last month' : 'last ' + months + ' months') : 'all time' };
   }
   function inRange(dateStr, months) {
     if (!months) return true;
@@ -34738,7 +34741,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<option value="profile">Cohort profile / demographics</option>' +
       '<option value="custom">Custom question&hellip;</option>' +
       '</select></span>' +
-      '<span><label>Date range</label><select id="sgpRange"><option value="all">All time</option><option value="12">Last 12 months</option><option value="6">Last 6 months</option><option value="3">Last 3 months</option></select></span>' +
+      /* p1-study-range-month-1.0.0 (owner 2026-08-13: "the save all patints pull
+         for a year and for a month should work"). A year was selectable; A MONTH
+         WAS NOT — the list went All time / 12 / 6 / 3, so the shortest window a
+         doctor could ask for was a quarter. Nothing downstream needed changing:
+         inRange() and filteredClone() already take an arbitrary month count. */
+      '<span><label>Date range</label><select id="sgpRange"><option value="all">All time</option><option value="12">Last 12 months</option><option value="6">Last 6 months</option><option value="3">Last 3 months</option><option value="1">Last month</option></select></span>' +
       '<span><label>&nbsp;</label><label style="display:flex;align-items:center;gap:6px;font:600 12.5px system-ui;color:#16233a;margin:0"><input type="checkbox" id="sgpAi" checked> &#129504; Premium AI narrative (stronger model)</label></span>' +
       '</div>' +
       '<div class="sgp-row" id="sgpCustomRow" style="display:none"><input type="text" id="sgpCustomTx" placeholder="Ask anything about this cohort &mdash; e.g. did pain scores improve after injections?" style="flex:1;min-width:320px"></div>' +

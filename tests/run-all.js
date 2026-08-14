@@ -31,6 +31,7 @@ const tests = [
   '1p-avatar-photo-truth-runtime.test.js',
   '1p-avatar-face-to-photo-runtime.test.js',
   '1p-avatar-camera-endurance-runtime.test.js',
+  '1p-one-template-upload-and-month-range.test.js',
   '1p-avatar-face-async-ownership-runtime.test.js',
   '1p-avatar-speech-connection-runtime.test.js',
   '1p-avatar-mic-not-fragments.test.js',
