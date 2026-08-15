@@ -19,13 +19,13 @@ const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const EXPECTED_BUILD = 'p1-20260815-launch-r1';
 const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
-/* Advanced by the AUTHORIZED /p1-only avatar train of 2026-08-15 — automatic
-   capture-to-match recovery, face-aware upload framing, natural-photo quality,
-   professional illustrated proportions, subtle motion, and truthful meter state.
+/* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
+   month/year pulls, scoped storage recovery, clinical review confirmation,
+   mobile encounter safety, study provenance, and P1 presentation controls.
    This constant freezes 1p against a PRODUCTION train, which is why a 1p train
    is the only thing allowed to move it, and why the production and extension
    baselines below are deliberately NOT moved by it. */
-const P1_BASE_COMMIT = '3efdd972bc1f504fcff2dac6747a2562f14195fc';
+const P1_BASE_COMMIT = '4ffcd17b963bfefbb4604d3a3f7f70979bed243b';
 const EXTENSION_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
 const PRODUCTION_BASE_COMMIT = 'd038c1ce20e70fe57895af2a6ceec5be9f7d0c58';
 
