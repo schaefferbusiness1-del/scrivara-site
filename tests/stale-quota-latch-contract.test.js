@@ -246,6 +246,7 @@ for (let i = 0; i < 200; i++) big.push({ id: 'p' + i, name: 'X'.repeat(60) });
       'var normDate = function (d) { d = String(d || ""); return /^\\d{4}-\\d{2}-\\d{2}$/.test(d) ? d : ""; };\n' +
       'var safe = function (fn, fb) { try { return fn(); } catch (e) { return fb; } };\n' +
       'var foreignPullLease = function () { return null; };\n' +
+      'var PROD_DAY_CENSUS_TOKEN = {};\n' +
       'var _dayPreflightDone = true;\n' +
       'var warmUpDay = ctx.warmUpDay;\n' +
       'var accountProviderRequest = function () { return "all"; };\n' +

@@ -215,6 +215,7 @@ const setDaySource = functionSource(ds, 'setDay', 'shift');
     acceptance: false,
     throwOnSet: false,
     todayKey() { return '2026-07-19'; },
+    dsSyncDiagBtn() {},
     syncStrip() { calls.push('sync'); },
     renderList() { calls.push('render'); },
     CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init.detail; },

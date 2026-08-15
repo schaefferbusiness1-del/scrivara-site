@@ -118,7 +118,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
   retryButton.onclick();
   assert.strictEqual(retryCalls, 1, 'manual retry click did not invoke the importer exactly once');
-  assert.strictEqual(retrySource, partialPull, 'manual retry did not receive the settled pull result');
+  assert.notStrictEqual(retrySource, partialPull, 'manual retry reused the caller-owned pull result instead of its settled ownership copy');
+  assert.strictEqual(retrySource.historyReceipt, partialPull.historyReceipt, 'manual retry ownership copy lost the exact settled history receipt');
+  assert.strictEqual(retrySource.reason, partialPull.reason, 'manual retry ownership copy changed the settled failure reason');
+  assert.strictEqual(retrySource.target, '2026-08-15', 'manual retry ownership copy omitted the selected-day target');
   assert.strictEqual(retryButton.disabled, true, 'retry control was not disabled while its request was in flight');
   assert.strictEqual(pullButton.disabled, true, 'full pull remained clickable during a history-only retry');
   assert(/incomplete histories/i.test(status.textContent), 'live aggregate retry status was not shown');

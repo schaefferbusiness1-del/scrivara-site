@@ -202,10 +202,9 @@ context.__mlsCopyVisits = {
 
 vm.runInNewContext(source, context, { filename: 'feat_mls_schedimport_exact.js', timeout: 1000 });
 const api = context.__mlsSI;
-/* pin moved si-1.7.18 -> si-1.7.19 deliberately: mdx-2.0.0 same-clinician
-   roster-echo collapse for the selected-provider name fallback; every
+/* The default-census release changed only admission/census authority; every
    adversarial identity behavior this suite pins is unchanged and re-run. */
-assert(api && api.version === 'si-1.7.22');
+assert(api && api.version === 'si-1.7.23-default-census');
 
 (async () => {
   const bootstrapDate = '2026-07-22';

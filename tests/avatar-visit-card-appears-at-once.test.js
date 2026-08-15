@@ -40,8 +40,10 @@ function ok(label, cond) {
    this suite cannot stay green by executing only the retired implementation. */
 {
   const loaderAt = p1Connect.indexOf('/* p1-avatar-loader-1.0.0:');
+  const mobileAt = p1Connect.indexOf("A='1p-feat_mls_mobile_encounter.js'", loaderAt);
   const faceAt = p1Connect.indexOf("A='feat_mls_avatar_face.js'", loaderAt);
-  const p1Loader = loaderAt >= 0 && faceAt > loaderAt ? p1Connect.slice(loaderAt, faceAt) : '';
+  const loaderEnd = mobileAt > loaderAt ? mobileAt : faceAt;
+  const p1Loader = loaderAt >= 0 && loaderEnd > loaderAt ? p1Connect.slice(loaderAt, loaderEnd) : '';
   const shimAt = p1Connect.indexOf('/* av-6.0.8:', faceAt);
   const shimEnd = p1Connect.indexOf('/* 2026-07-28 owner order:', shimAt);
   const p1Shim = shimAt >= 0 && shimEnd > shimAt ? p1Connect.slice(shimAt, shimEnd) : '';
