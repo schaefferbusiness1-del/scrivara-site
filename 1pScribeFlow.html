@@ -1143,7 +1143,7 @@
   .spin{width:17px;height:17px;border:3px solid rgba(255,255,255,.4);border-top-color:#fff;
     border-radius:50%;animation:rot .7s linear infinite;display:inline-block}
   @keyframes rot{to{transform:rotate(360deg)}}
-  /* optimize-for-payout panel */
+  /* evidence-gated E/M documentation review panel */
   .opt-card{background:var(--gold-bg);border:1px solid #efe2b8;border-radius:16px;padding:16px;margin-top:14px}
   .opt-card h3{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:8px;color:#7a5c08}
   .opt-section{margin-top:12px}
@@ -3477,27 +3477,43 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div class="code-disclaim" id="codeDisclaim">⚠️ Suggested codes for the provider to review and confirm — final coding is the provider's responsibility. Codes reflect only what is documented in this visit; nothing is added to raise the level of billing.</div>
       </div>
 
-      <!-- Optimize for payout output -->
+      <!-- P1 E/M documentation and coding review. Suggestions remain pending
+           until the physician explicitly confirms them. -->
       <div class="opt-card" id="optCard" style="display:none">
-        <h3>📈 Reimbursement optimization <span style="font-weight:400;font-size:13px;color:#9c7209">(complete documentation of real work)</span></h3>
+        <h3>🧾 E/M Documentation &amp; Coding Review <span id="optCardState" style="font-weight:400;font-size:13px;color:#9c7209">(pending clinician confirmation)</span></h3>
         <div class="opt-section">
           <div class="h">Supported E/M level</div>
           <div class="lv"><span class="em-pill" id="opt_em">—</span><span id="opt_em_just" style="color:#7a5c08;font-size:13.5px"></span></div>
         </div>
-        <div class="opt-section" id="opt_reimb_sec">
-          <div class="h">💵 Reimbursement impact (estimate)</div>
-          <div id="opt_reimb" style="font-size:14px;color:var(--ink)"></div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:5px">Ballpark national Medicare-ish allowables — actual pay varies by payer, contract, geography, and modifiers. Estimate only; the higher levels are valid only if the documented work genuinely supports them.</div>
-        </div>
         <div class="opt-section" id="opt_mdm_sec">
-          <div class="h">MDM justification (2021+ AMA)</div>
+          <div class="h">Method and justification</div>
+          <div id="opt_method" style="font-size:13px;color:var(--muted);margin-bottom:5px"></div>
           <div id="opt_mdm" style="font-size:14px;color:var(--ink)"></div>
         </div>
+        <div class="opt-section" id="opt_evidence_sec">
+          <div class="h">Supporting documentation found in this visit</div>
+          <div id="opt_evidence"></div>
+        </div>
+        <div class="opt-section" id="opt_codes_sec">
+          <div class="h">Reviewed diagnosis and procedure coding</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:4px">ICD-10</div>
+          <div id="opt_icd"></div>
+          <div style="font-size:13px;color:var(--muted);margin:8px 0 4px">CPT</div>
+          <div id="opt_cpt"></div>
+        </div>
         <div class="opt-section" id="opt_gaps_sec">
-          <div class="h">Documentation gaps to review</div>
+          <div class="h">Missing documentation to review</div>
           <div id="opt_gaps"></div>
         </div>
-        <div class="opt-disclaim">✅ Suggested codes — provider reviews and confirms; document only what actually occurred. This tool flags real work you may have left undocumented and confirms correct coding. It never invents findings, problems, time, or complexity, and never instructs you to bill for anything that did not happen.</div>
+        <div class="opt-section" id="opt_reference_sec">
+          <div class="h">Reference and provenance</div>
+          <div id="opt_reference" style="font-size:12px;color:var(--muted)"></div>
+        </div>
+        <div id="optReviewStatus" class="opt-disclaim">Pending review. Nothing in Suggested coding or EMR fields changes until the physician confirms this result.</div>
+        <div class="row tight" style="gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn-green" id="optConfirmBtn" type="button" onclick="confirmCodingReview()">Confirm and apply reviewed coding</button>
+          <button class="btn-ghost" id="optDiscardBtn" type="button" onclick="discardCodingReview()">Discard review</button>
+        </div>
       </div>
 
       <!-- 💵 Revenue tools — denial-risk check + prior-auth letter -->
@@ -3842,7 +3858,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <button class="btn-ghost" onclick="copyNote()" disabled id="copyBtn">📑 Copy</button>
         <button class="btn-ghost" onclick="printNote()" disabled id="printBtn">🖨 Print</button>
         <button class="btn-ghost" onclick="gradeVisitExperience(this)" id="gradeExpBtn" title="AI rates how good the patient's experience was during this visit (bedside manner / communication), from the transcript — a coaching score that rolls into your Analysis">🌟 Grade experience</button>
-        <button class="btn-gold" id="optBtn" onclick="optimizeForPayout()" disabled>📈 Optimize for Insurance Payout</button>
+        <button class="btn-gold" id="optBtn" onclick="reviewCodingDocumentation()" disabled>🧾 E/M Documentation &amp; Coding Review</button>
         <button class="btn-ghost" id="mipsBtn" onclick="runMipsCheck()" disabled>🎯 MIPS check</button>
         <button class="btn-ghost" id="redflagBtn" onclick="runRedFlagScan()" disabled>🚩 Red-flag scan</button>
         <button class="btn-ghost" id="ddxBtn" onclick="generateDifferentials()" disabled>🔍 Differentials</button>
@@ -21279,7 +21295,7 @@ function newVisit(opts){
   try{ if(typeof _heroReset==='function') _heroReset(); }catch(e){}   // clear the record-first hero for the next patient
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
-  currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; currentFormat='soap';
+  currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; pendingCodingReview=null; currentFormat='soap';
   _athenaSetVisitBinding(null); _athenaResetSuperbill(true);
   currentAVS=''; currentReferral=''; currentRecs=null; currentHandout=''; currentIME='';
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
@@ -21820,7 +21836,9 @@ function loadRecordIntoEditor(n){
   document.getElementById('patientLabel').value=n.patient&&n.patient!=='Unlabeled'?n.patient:'';
   document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
   currentSoap=n.soap||''; currentInsurance=n.insurance||''; currentCoding=n.coding||null;
-  currentOpt=n.opt||null; currentFormat='soap'; lastEMR=n.emr||null;
+  currentOpt=n.opt||null;
+  pendingCodingReview=(currentOpt&&currentOpt.review&&currentOpt.review.status==='pending')?currentOpt.review:null;
+  currentFormat='soap'; lastEMR=n.emr||null;
   currentAVS=n.avs||''; currentReferral=n.referral||''; currentRecs=null; currentHandout=n.handout||''; currentIME=n.ime||'';
   currentOrders=Array.isArray(n.orders)?n.orders.slice():[]; editingOrderId=null;
   ordersDx=n.ordersDx&&typeof n.ordersDx==='object'?{text:n.ordersDx.text||'',icd:n.ordersDx.icd||[]}:{text:'',icd:[]};
@@ -23533,7 +23551,7 @@ function loadExample(){
    NOTE STATE + RENDERING
    ========================================================= */
 let signed=false;
-let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, currentFormat='soap';
+let currentSoap='', currentInsurance='', currentCoding=null, currentOpt=null, pendingCodingReview=null, currentFormat='soap';
 /* One immutable patient/visit owner for the editor contents. Changing the
    active patient does not retarget an already-recorded or reopened visit. */
 let currentVisitAthenaBinding=null, currentSuperbillSnapshot=null;
@@ -23938,7 +23956,7 @@ async function generateNote(){
       currentInsurance=offlineExampleInsuranceNote();
       currentCoding=offlineExampleCoding();
       _athenaSetVisitBinding(generationBinding);
-      currentOpt=null;
+      currentOpt=null; pendingCodingReview=null;
       currentFormat=getDefaultFormat(); /* 2026-07-28: the Default note format setting was written but never read here - soap was hardcoded */
       if(currentFormat==='insurance'&&!(currentInsurance&&currentInsurance.trim()))currentFormat='soap'; /* never claim a format whose body does not exist */
       lastEMR=offlineExampleEMR();
@@ -23986,7 +24004,7 @@ async function generateNote(){
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
     _athenaSetVisitBinding(generationBinding);
-    currentOpt=null;
+    currentOpt=null; pendingCodingReview=null;
     currentFormat=getDefaultFormat(); /* 2026-07-28: honor the Default note format setting */
     if(currentFormat==='insurance'&&!(currentInsurance&&currentInsurance.trim()))currentFormat='soap'; /* never claim a format whose body does not exist */
     lastEMR=result.emr;
@@ -24783,10 +24801,52 @@ function parseGenJSON(content){
 }
 
 /* =========================================================
-   OPTIMIZE FOR INSURANCE PAYOUT
-   Accurate-coding + gap-flagging ONLY. Never upcodes.
+   P1 E/M DOCUMENTATION & CODING REVIEW
+
+   This is deliberately a two-step workflow. The model may prepare a review,
+   but it cannot replace currentCoding or the EMR fields. Only an explicit
+   physician confirmation, against the same bound visit and unchanged editor
+   fingerprint, applies the reviewed result.
    ========================================================= */
-async function optimizeForPayout(){
+const P1_EM_REFERENCE=Object.freeze({
+  id:'AMA-CPT-office-outpatient-E-M',
+  frameworkEffective:'2021-01-01',
+  verifiedThrough:'2026-08-15',
+  revision:'p1-em-review-1',
+  basis:'Office/outpatient level selected by MDM or documented total physician/QHP time on the date of service.'
+});
+function p1CodingHash(value){
+  var s='';try{s=typeof value==='string'?value:JSON.stringify(value);}catch(e){s=String(value||'');}
+  var h=2166136261;for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
+  return 'fnv1a-'+(h>>>0).toString(16).padStart(8,'0');
+}
+function p1CodingReviewFingerprint(){
+  var visitComment='',context='',patientId='';
+  try{visitComment=String((document.getElementById('visitComment')||{}).value||'');}catch(e){}
+  try{context=String((document.getElementById('contextBox')||{}).value||'');}catch(e2){}
+  try{patientId=String((typeof getActivePtId==='function'&&getActivePtId())||'');}catch(e3){}
+  return p1CodingHash(JSON.stringify([_athenaEditorFingerprint(),visitComment,context,patientId]));
+}
+function p1PracticeCodeReceipt(){
+  var table={v:1,entries:[],updated:0};
+  try{if(window.__mlsCodeTable&&typeof window.__mlsCodeTable.load==='function')table=window.__mlsCodeTable.load()||table;}catch(e){}
+  var entries=Array.isArray(table.entries)?table.entries:[];
+  return Object.freeze({configured:entries.length>0,entries:entries.length,revision:Number(table.updated||0)||0,hash:p1CodingHash(entries)});
+}
+function p1PrepareCodingReview(opt,binding,epoch,fingerprint,source){
+  var review={
+    v:1,status:(opt&&opt.valid)?'pending':'invalid',generatedAt:Date.now(),
+    bindingId:String(binding&&binding.id||''),bindingEpoch:Number(epoch||0),
+    editorFingerprint:String(fingerprint||''),sourceHash:p1CodingHash(source||''),
+    method:String(opt&&opt.method||''),valid:!!(opt&&opt.valid),
+    reason:String(opt&&opt.validationReason||''),guideline:P1_EM_REFERENCE,
+    practiceReference:p1PracticeCodeReceipt()
+  };
+  pendingCodingReview=review.status==='pending'?review:null;
+  if(opt)opt.review=review;
+  return review;
+}
+async function reviewCodingDocumentation(){
   if(!currentSoap){ toast('Generate a note first.','err'); return; }
   if(!currentVisitAthenaBinding){
     toast('Open or generate this note inside the correct patient visit before reviewing its coding. Nothing changed in Athena.','err');
@@ -24795,7 +24855,7 @@ async function optimizeForPayout(){
   if(!_athenaGuardBoundEditor('coding optimization')) return;
   const optimizationBinding=currentVisitAthenaBinding;
   const optimizationEpoch=currentVisitAthenaEpoch;
-  const optimizationFingerprint=_athenaEditorFingerprint();
+  const optimizationFingerprint=p1CodingReviewFingerprint();
   const key=getKey();
   const preOptEm=(currentCoding&&currentCoding.em)||'';
   const noteText=(currentFormat==='soap'?document.getElementById('noteBox').value:currentSoap);
@@ -24806,11 +24866,27 @@ async function optimizeForPayout(){
   // OFFLINE example path
   if(!hasAI()){
     if(transcript.trim()===EXAMPLE.trim()){
-      currentOpt=offlineExampleOptimization();
+      const offlineReview=offlineExampleOptimization();
+      currentOpt=normalizeOpt({
+        supported_em:offlineReview.em,potential_em:offlineReview.potentialEm,
+        em_justification:offlineReview.emJust,mdm_breakdown:offlineReview.mdm,
+        icd10:offlineReview.icd,cpt:offlineReview.cpt,gaps:offlineReview.gaps,
+        method:'mdm',supporting_evidence:[
+          {element:'problems',quote:'Acute bronchitis, rule out early lower respiratory tract infection / pneumonia (J20.9).'},
+          {element:'data',quote:'Chest X-ray (PA/lateral) today to rule out pneumonia.'},
+          {element:'risk',quote:'doxycycline 100 mg PO BID x 7 days'}
+        ],
+        mdm_elements:{
+          problems:{level:'low',explanation:'One acute uncomplicated illness and one stable chronic illness.'},
+          data:{level:'low',explanation:'One unique diagnostic test ordered.'},
+          risk:{level:'moderate',explanation:'Prescription drug management is documented.'}
+        }
+      },noteText+'\n'+insText+'\n'+transcript,preOptEm);
       currentOpt.docEm=preOptEm;
+      p1PrepareCodingReview(currentOpt,optimizationBinding,optimizationEpoch,optimizationFingerprint,noteText+'\n'+insText+'\n'+transcript);
       renderOpt(currentOpt);
       _markVisitDirty();
-      toast('Offline example optimization shown. Add your OpenAI key for any visit.','');
+      toast('Offline example review shown. It remains pending until you confirm it.','');
       document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
     } else {
       toast('Add your OpenAI API key in Settings to optimize coding.','err');
@@ -24819,7 +24895,7 @@ async function optimizeForPayout(){
     return;
   }
 
-  optBtn.disabled=true; optBtn.innerHTML='<span class="spin"></span> Optimizing…';
+  optBtn.disabled=true; optBtn.innerHTML='<span class="spin"></span> Reviewing documentation…';
   try{
     const sys=`You are a meticulous, ethical medical-coding auditor. The clinician has a finished clinical note. Your job is to ensure the documentation FULLY and EXPLICITLY supports the appropriate, ACCURATE E/M level under the 2021+ AMA outpatient E/M guidelines — by ensuring COMPLETE documentation of REAL work and CORRECT coding. You are an accuracy + completeness tool, NOT an upcoding tool.
 
@@ -24837,37 +24913,45 @@ ${STANDARDS}\n${(window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?windo
 Return ONLY valid JSON (no fences) with this shape:
 {
  "supported_em": "<the highest E/M code 99202-99215 ACTUALLY supported by current documentation>",
- "potential_em": "<the E/M code that WOULD be supported IF the real-but-possibly-undocumented work flagged in 'gaps' were properly documented. Equal to supported_em when there are no gaps. This is CONDITIONAL on that work having truly occurred — never a promise, and never higher than the flagged real work could legitimately support.>",
+ "method": "<mdm or time — use time only when an exact total time on the date of service is documented>",
+ "documented_time_minutes": <number copied from the documentation when method is time, otherwise null>,
  "em_justification": "<one line tying it to documented MDM or time>",
  "mdm_breakdown": "<2-4 sentences walking the 3 MDM elements as currently documented: (1) number/complexity of problems addressed, (2) data reviewed/ordered, (3) risk — and which 2 of 3 set the level>",
- "icd10": [ {"code":"","desc":""} ],
- "cpt": [ {"code":"","desc":""} ],
- "gaps": [ "<each item a conditional prompt to document real-but-possibly-omitted work, e.g. 'You addressed 2 chronic conditions; IF you also reviewed labs or imaging during the visit, documenting that data would support moderate MDM (99214).' Include 0-6 items. Empty array if documentation is already complete.>" ]
+ "mdm_elements": {
+   "problems": {"level":"<straightforward|low|moderate|high>","explanation":"<why, using only documented work>"},
+   "data": {"level":"<straightforward|low|moderate|high>","explanation":"<why, using only documented work>"},
+   "risk": {"level":"<straightforward|low|moderate|high>","explanation":"<why, using only documented work>"}
+ },
+ "supporting_evidence": [ {"element":"<problems|data|risk|time>","quote":"<a short EXACT quote copied verbatim from the note or transcript; never paraphrase or invent>"} ],
+ "icd10": [ {"code":"","desc":"","evidence_quote":"<short exact quote from the note or transcript that supports this diagnosis>"} ],
+ "cpt": [ {"code":"","desc":"","evidence_quote":"<short exact quote from the note or transcript that supports this service; never infer that a planned service was performed>"} ],
+ "missing_documentation": [ "<a neutral question about information needed to validate the level; never suggest adding work that did not occur. Include 0-6 items.>" ]
 }`;
     const pctx=buildPatientContext();
+    /* Background may help the model understand the chart, but a diagnosis,
+       service, MDM element, or time claim is eligible for confirmation only
+       when its exact quote exists in this visit's note/transcript. */
+    const reviewEvidenceSource=noteText+'\n'+insText+'\n'+transcript;
     const user=`SOAP NOTE:\n${noteText}\n\nINSURANCE-READY NOTE:\n${insText||'(none)'}\n\nORIGINAL TRANSCRIPT (ground truth — do not exceed what this supports):\n${transcript||'(not available)'}`+(pctx?('\n\nPATIENT CHART BACKGROUND (chronic problems/meds already on file — relevant to MDM problem-complexity, but do NOT invent data review or findings not documented):\n'+pctx):'');
     const data=await postChatRaw(sys,user,key);
     if(!_athenaAsyncBindingStillSafe(optimizationBinding,'coding optimization',optimizationEpoch)) return;
-    if(_athenaEditorFingerprint()!==optimizationFingerprint){
+    if(p1CodingReviewFingerprint()!==optimizationFingerprint){
       toast('The visit content changed while coding was being reviewed, so MLS discarded that result. Review the current note and try again. Nothing changed in Athena.','err');
       return;
     }
-    currentOpt=normalizeOpt(data);
+    currentOpt=normalizeOpt(data,reviewEvidenceSource,preOptEm);
     currentOpt.docEm=preOptEm;
-    // update suggested coding to the audited (still accurate) codes if present
-    if(currentOpt.icd && currentOpt.icd.length) currentCoding.icd=currentOpt.icd;
-    if(currentOpt.cpt) currentCoding.cpt=currentOpt.cpt;
-    if(currentOpt.em){ currentCoding.em=currentOpt.em; currentCoding.emJust=currentOpt.emJust; }
-    renderCoding(currentCoding);
-    if(lastEMR) populateEMR(lastEMR,currentCoding);
+    p1PrepareCodingReview(currentOpt,optimizationBinding,optimizationEpoch,optimizationFingerprint,reviewEvidenceSource);
     renderOpt(currentOpt);
     _markVisitDirty();
-    toast('Coding reviewed. Check the flagged gaps — document only what truly happened.','ok');
+    toast(currentOpt.valid
+      ? 'Review prepared. Suggested coding is unchanged until you confirm it.'
+      : 'Review needs stronger source evidence and cannot be applied. Suggested coding is unchanged.',currentOpt.valid?'':'err');
     document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
   }catch(err){
     toast(friendlyError(err),'err');
   }finally{
-    optBtn.disabled=false; optBtn.innerHTML='📈 Optimize for Insurance Payout';
+    optBtn.disabled=false; optBtn.innerHTML='🧾 E/M Documentation &amp; Coding Review';
   }
 }
 
@@ -24880,71 +24964,205 @@ async function postChatRaw(sys,user,key){
   return JSON.parse(content);
 }
 
-function normalizeOpt(p){
-  const fmtCodes=arr=>Array.isArray(arr)?arr.map(c=>(c.code||'')+(c.desc?' — '+c.desc:'')).filter(Boolean):[];
+function p1CodingText(value,max){
+  return String(value==null?'':value).replace(/\s+/g,' ').trim().slice(0,max||500);
+}
+function p1EvidenceText(value){
+  return p1CodingText(value,200000).toLocaleLowerCase('en-US');
+}
+function p1ReviewedCodes(value,sourceText,kind){
+  if(!Array.isArray(value)) return {values:[],rejected:0};
+  var source=p1EvidenceText(sourceText||''),seen=Object.create(null),out=[],rejected=0;
+  value.slice(0,64).forEach(function(item){
+    if(!item||typeof item!=='object'){rejected++;return;}
+    var code=p1CodingText(item.code,32).toUpperCase().replace(/\s+/g,''),desc=p1CodingText(item.desc||item.description,140);
+    var quote=p1CodingText(item.evidence_quote||item.source_quote||item.quote,280),quoteKey=p1EvidenceText(quote);
+    var codeOk=kind==='icd'
+      ?/^[A-Z][0-9][A-Z0-9](?:\.[A-Z0-9]{1,4})?$/.test(code)
+      :/^(?:[0-9]{5}|[A-Z][0-9]{4}|[0-9]{4}[A-Z])$/.test(code);
+    if(!codeOk||!desc||quoteKey.length<4||source.indexOf(quoteKey)<0){rejected++;return;}
+    var text=code+' — '+desc;
+    var key=text.toLocaleLowerCase('en-US');
+    if(text&&!seen[key]){seen[key]=1;out.push(text);}
+  });
+  return {values:out,rejected:rejected};
+}
+function p1TimeCodeForMinutes(code,minutes){
+  var family=String(code||'').slice(0,4),n=Number(minutes);
+  if(!Number.isFinite(n)||n<=0) return '';
+  if(family==='9920') return n>=60?'99205':n>=45?'99204':n>=30?'99203':n>=15?'99202':'';
+  if(family==='9921') return n>=40?'99215':n>=30?'99214':n>=20?'99213':n>=10?'99212':'';
+  return '';
+}
+function p1MdmCodeForElements(code,mdmElements,evidenceElements){
+  var score={straightforward:1,low:2,moderate:3,high:4},names=['problems','data','risk'],values=[];
+  names.forEach(function(name){
+    var row=mdmElements&&mdmElements[name],level=row&&row.level;
+    if(evidenceElements&&evidenceElements[name]&&score[level]) values.push(score[level]);
+  });
+  if(values.length<2) return '';
+  values.sort(function(a,b){return b-a;});
+  var selected=values[1],family=String(code||'').slice(0,4);
+  if(family==='9920') return selected===4?'99205':selected===3?'99204':selected===2?'99203':'99202';
+  if(family==='9921') return selected===4?'99215':selected===3?'99214':selected===2?'99213':'99212';
+  return '';
+}
+function normalizeOpt(payload,sourceText,baselineEm){
+  var p=(payload&&typeof payload==='object')?payload:{};
+  var em=p1CodingText(p.supported_em,16).replace(/\s/g,'');
+  var method=p1CodingText(p.method,12).toLowerCase();
+  var source=p1EvidenceText(sourceText||'');
+  var allowed={problems:1,data:1,risk:1,time:1},seen=Object.create(null),evidence=[];
+  (Array.isArray(p.supporting_evidence)?p.supporting_evidence:(Array.isArray(p.evidence)?p.evidence:[])).slice(0,24).forEach(function(row){
+    if(!row||typeof row!=='object') return;
+    var element=p1CodingText(row.element,20).toLowerCase();
+    var quote=p1CodingText(row.quote,280);
+    var quoteKey=p1EvidenceText(quote),key=element+'\u0000'+quoteKey;
+    if(!allowed[element]||quoteKey.length<4||source.indexOf(quoteKey)<0||seen[key]) return;
+    seen[key]=1;evidence.push({element:element,quote:quote});
+  });
+  var elements=Object.create(null);
+  evidence.forEach(function(row){elements[row.element]=1;});
+  var minutes=Number(p.documented_time_minutes);
+  if(!Number.isFinite(minutes)||minutes<=0) minutes=null;
+  var reasons=[];
+  var baselineMatch=String(baselineEm||'').match(/992(?:0[2-5]|1[2-5])/),baselineCode=baselineMatch?baselineMatch[0]:'';
+  if(!/^(?:9920[2-5]|9921[2-5])$/.test(em)) reasons.push('The returned office/outpatient E/M code was not recognized.');
+  if(baselineCode&&baselineCode.slice(0,4)!==em.slice(0,4)) reasons.push('The review changed the visit between new- and established-patient code families.');
+  if(method!=='mdm'&&method!=='time') reasons.push('The review did not identify MDM or documented time as its method.');
+  if(!p1CodingText(p.em_justification,500)) reasons.push('The returned E/M level did not include a documentation-based explanation.');
+  if(method==='time'){
+    var minutePattern=minutes==null?null:new RegExp('(?:^|\\D)'+String(minutes).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:\\D|$)');
+    var timeQuote=evidence.some(function(row){return row.element==='time'&&minutePattern&&minutePattern.test(row.quote)&&/\b(?:min|mins|minute|minutes)\b/i.test(row.quote);});
+    if(!minutes||!timeQuote) reasons.push('Time-based coding needs an exact source quote with the documented total minutes.');
+    else if(p1TimeCodeForMinutes(em,minutes)!==em) reasons.push('The documented minutes do not match the returned new- or established-patient E/M level.');
+  }
+  var mdmElements={},rawMdm=(p.mdm_elements&&typeof p.mdm_elements==='object')?p.mdm_elements:{};
+  ['problems','data','risk'].forEach(function(name){
+    var raw=rawMdm[name],level='',explanation='';
+    if(typeof raw==='string') level=p1CodingText(raw,24).toLowerCase();
+    else if(raw&&typeof raw==='object'){
+      level=p1CodingText(raw.level,24).toLowerCase();
+      explanation=p1CodingText(raw.explanation||raw.reason,320);
+    }
+    if(level==='minimal')level='straightforward';
+    if(!/^(?:straightforward|low|moderate|high)$/.test(level))level='';
+    mdmElements[name]={level:level,explanation:explanation};
+  });
+  if(method==='mdm'){
+    var verifiedMdmNames=['problems','data','risk'].filter(function(name){return elements[name];});
+    if(verifiedMdmNames.length<2) reasons.push('MDM coding needs exact source evidence for at least two of problems, data, and risk.');
+    else if(verifiedMdmNames.some(function(name){return !mdmElements[name]||!mdmElements[name].level;})) reasons.push('Each documented MDM element needs a recognized complexity level.');
+    else if(p1MdmCodeForElements(em,mdmElements,elements)!==em) reasons.push('The returned E/M code does not match the level reached by two of the three documented MDM elements.');
+  }
+  var gaps=(Array.isArray(p.missing_documentation)?p.missing_documentation:(Array.isArray(p.gaps)?p.gaps:[]))
+    .slice(0,12).map(function(x){return p1CodingText(x,320);}).filter(Boolean);
+  var icdResult=p1ReviewedCodes(p.icd10,sourceText,'icd'),cptResult=p1ReviewedCodes(p.cpt,sourceText,'cpt');
+  var icd=icdResult.values,cpt=cptResult.values;
   return {
-    em:p.supported_em||'',
-    potentialEm:p.potential_em||p.supported_em||'',
-    emJust:p.em_justification||'',
-    mdm:p.mdm_breakdown||'',
-    icd:fmtCodes(p.icd10),
-    cpt:fmtCodes(p.cpt),
-    gaps:Array.isArray(p.gaps)?p.gaps.filter(Boolean):[]
+    em:em,
+    potentialEm:em,
+    emJust:p1CodingText(p.em_justification,500),
+    mdm:p1CodingText(p.mdm_breakdown,1200),
+    mdmElements:mdmElements,
+    method:method,
+    documentedTimeMinutes:minutes,
+    evidence:evidence,
+    reviewedIcd:icd,
+    reviewedCpt:cpt,
+    codeEvidenceRejected:icdResult.rejected+cptResult.rejected,
+    icd:icd,
+    cpt:cpt,
+    gaps:gaps,
+    valid:reasons.length===0,
+    validationReason:reasons.join(' ')
   };
+}
+
+function p1CodingReviewActor(){
+  var role=(bkUser&&bkUser.role)||((bkUser&&bkUser.isHead)?'head':'');
+  /* The authenticated record write already binds the server-side actor. Keep
+     only the bounded clinical role inside the visit payload; a raw account id,
+     name, email, or session token does not belong in portable note metadata. */
+  return {role:p1CodingText(role,40).toLowerCase()};
+}
+function p1CodingReviewRoleAllowed(){
+  if(!bkUser)return false;
+  var role=p1CodingReviewActor().role;
+  return /^(?:user|doctor|physician|head)$/.test(role);
+}
+function p1CodingReviewSessionValid(review){
+  return !!(review&&currentVisitAthenaBinding&&review.bindingId===currentVisitAthenaBinding.id&&Number(review.bindingEpoch)===Number(currentVisitAthenaEpoch));
+}
+function confirmCodingReview(){
+  var opt=currentOpt,review=opt&&opt.review;
+  if(!opt||!review||review.status!=='pending'||!opt.valid){toast('This review is not eligible for confirmation. Run it again after completing the missing documentation.','err');return false;}
+  if(!p1CodingReviewRoleAllowed()){toast('Only the treating clinician can confirm and apply this coding review. Nothing changed.','err');return false;}
+  if(!_athenaGuardBoundEditor('confirming this coding review')) return false;
+  if(!p1CodingReviewSessionValid(review)){toast('This review no longer belongs to the active visit session. Run the review again on this visit. Nothing changed.','err');return false;}
+  if(p1CodingReviewFingerprint()!==review.editorFingerprint){toast('The visit content changed after this review was prepared. Run it again before confirming. Nothing changed.','err');return false;}
+  var currentPractice=p1PracticeCodeReceipt(),reviewPractice=review.practiceReference||{};
+  if(currentPractice.hash!==String(reviewPractice.hash||'')||Number(currentPractice.revision)!==Number(reviewPractice.revision)||Number(currentPractice.entries)!==Number(reviewPractice.entries)){toast('The practice coding reference changed after this review was prepared. Run it again before confirming. Nothing changed.','err');return false;}
+  var oldCoding=currentCoding,oldReview=Object.assign({},review),next=Object.assign({},currentCoding||{});
+  next.em=opt.em;next.emJust=opt.emJust;
+  if(opt.reviewedIcd&&opt.reviewedIcd.length) next.icd=opt.reviewedIcd.slice();
+  if(opt.reviewedCpt&&opt.reviewedCpt.length) next.cpt=opt.reviewedCpt.slice();
+  review.status='confirmed';review.confirmedAt=Date.now();review.actor=p1CodingReviewActor();
+  currentCoding=next;pendingCodingReview=null;
+  renderCoding(currentCoding);if(lastEMR)populateEMR(lastEMR,currentCoding);renderOpt(opt);
+  if(saveCurrentNote(false)!==true){
+    currentCoding=oldCoding;Object.keys(review).forEach(function(k){delete review[k];});Object.assign(review,oldReview);pendingCodingReview=review;
+    renderCoding(currentCoding);if(lastEMR)populateEMR(lastEMR,currentCoding);renderOpt(opt);
+    toast('The confirmed review could not be saved, so MLS restored the prior coding. Try again after resolving storage access.','err');return false;
+  }
+  toast('Reviewed coding confirmed and saved to this visit. Athena still requires its normal final review and sign step.','ok');
+  return true;
+}
+function discardCodingReview(){
+  if(!currentOpt){var empty=document.getElementById('optCard');if(empty)empty.style.display='none';return true;}
+  if(!_athenaGuardBoundEditor('discarding this coding review')) return false;
+  var oldOpt=currentOpt,oldPending=pendingCodingReview;
+  currentOpt=null;pendingCodingReview=null;
+  if(saveCurrentNote(false)!==true){currentOpt=oldOpt;pendingCodingReview=oldPending;renderOpt(currentOpt);toast('The review could not be discarded safely because the visit could not be saved.','err');return false;}
+  var card=document.getElementById('optCard');if(card)card.style.display='none';
+  toast('Coding review discarded. Existing suggested coding was not changed.','');return true;
 }
 
 function renderOpt(o){
   const card=document.getElementById('optCard');
+  if(!o){card.style.display='none';return;}
   card.style.display='block';
+  var review=o.review||{},status=String(review.status||'invalid');
+  var sessionValid=p1CodingReviewSessionValid(review);
   document.getElementById('opt_em').textContent=o.em||'—';
   document.getElementById('opt_em_just').textContent=o.emJust?(' — '+o.emJust):'';
-  document.getElementById('opt_mdm').textContent=o.mdm||'(no MDM breakdown returned)';
-  renderOptReimb(o);
+  document.getElementById('opt_method').textContent=o.method==='time'
+    ?('Documented total time'+(o.documentedTimeMinutes?(': '+o.documentedTimeMinutes+' minutes'):'') )
+    :(o.method==='mdm'?'Medical decision making (MDM)':'Method could not be validated');
+  var mdmSummary=['problems','data','risk'].map(function(name){var row=o.mdmElements&&o.mdmElements[name];return row&&row.level?(name.charAt(0).toUpperCase()+name.slice(1)+': '+row.level.toUpperCase()+(row.explanation?' — '+row.explanation:'')):'';}).filter(Boolean).join(' · ');
+  document.getElementById('opt_mdm').textContent=[o.mdm||'(no MDM explanation returned)',mdmSummary].filter(Boolean).join(' ');
+  var evidence=document.getElementById('opt_evidence');
+  evidence.innerHTML=(o.evidence&&o.evidence.length)
+    ?o.evidence.map(function(row){return '<div class="gap-item"><b>'+esc(row.element.toUpperCase())+'</b>: “'+esc(row.quote)+'”</div>';}).join('')
+    :'<div class="gap-item">No exact supporting quote could be verified in this visit.</div>';
+  var chips=function(arr){return arr&&arr.length?arr.map(function(x){return '<span class="codechip">'+esc(x)+'</span>';}).join(''):'<span style="color:var(--muted)">No replacement suggested; existing coding will remain.</span>';};
+  document.getElementById('opt_icd').innerHTML=chips(o.reviewedIcd||o.icd);
+  document.getElementById('opt_cpt').innerHTML=chips(o.reviewedCpt||o.cpt);
   const g=document.getElementById('opt_gaps');
-  if(o.gaps && o.gaps.length){
-    g.innerHTML=o.gaps.map(x=>'<div class="gap-item">⚑ '+esc(x)+'</div>').join('');
-  } else {
-    g.innerHTML='<div class="gap-item">✅ No gaps flagged — documentation already supports the coded level. Confirm and sign.</div>';
-  }
-}
-
-/* Reimbursement before -> after on the optimization card.
-   Shows: as originally coded -> highest level supported now -> potential
-   level IF the flagged real work is documented, each with a $ estimate
-   from FEE_TABLE, plus the per-visit delta. Honest: higher tiers are
-   conditional on the work having actually occurred. */
-function renderOptReimb(o){
-  const box=document.getElementById('opt_reimb');
-  if(!box) return;
-  const money=n=>'$'+Number(n).toLocaleString();
-  const docEm=o.docEm||'', supEm=o.em||'', potEm=o.potentialEm||supEm;
-  const fD=feeForCode(docEm), fS=feeForCode(supEm), fP=feeForCode(potEm);
-  const rows=[];
-  const row=(label,em,fee,extra)=>'<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0">'
-    +'<span>'+label+' — <b>'+esc(em)+'</b>'+(extra||'')+'</span>'
-    +'<span style="font-weight:700">'+(fee!=null?money(fee):'—')+'</span></div>';
-  if(docEm && fD!=null) rows.push(row('As originally coded',docEm,fD,''));
-  if(supEm && fS!=null){
-    let ex='';
-    if(fD!=null && fS>fD) ex=' <span style="color:#15803d;font-weight:700">▲ +'+money(fS-fD)+'/visit</span>';
-    else if(fD!=null && fS===fD) ex=' <span style="color:var(--muted)">— already at the supported level</span>';
-    rows.push(row('Optimized · supported now',supEm,fS,ex));
-  }
-  if(potEm && potEm!==supEm && fP!=null && (fS==null || fP>fS)){
-    const ex=(fS!=null?' <span style="color:#b45309;font-weight:700">▲ +'+money(fP-fS)+' more</span>':'')
-      +' <span style="color:var(--muted);font-size:12px">(only if that work truly occurred)</span>';
-    rows.push(row('Potential · with complete documentation',potEm,fP,ex));
-  }
-  if(!rows.length){ box.innerHTML='<span class="note" style="margin:0">No fee estimate available for the coded level.</span>'; return; }
-  // Headline: from the starting code to the best honest target.
-  const fromEm=docEm||supEm, toEm=potEm||supEm;
-  const fFrom=feeForCode(fromEm), fTo=feeForCode(toEm);
-  let head='';
-  if(fromEm && toEm && fFrom!=null && fTo!=null && fTo>fFrom){
-    head='<div style="font-weight:800;font-size:15px;margin-bottom:7px">'+esc(fromEm)+' → '+esc(toEm)
-      +' &nbsp;('+money(fFrom)+' → '+money(fTo)+', up to +'+money(fTo-fFrom)+'/visit)</div>';
-  }
-  box.innerHTML=head+rows.join('');
+  if(o.gaps && o.gaps.length) g.innerHTML=o.gaps.map(function(x){return '<div class="gap-item">⚑ '+esc(x)+'</div>';}).join('');
+  else g.innerHTML='<div class="gap-item">No missing documentation was identified. The clinician must still verify the result.</div>';
+  var practice=review.practiceReference||{};
+  document.getElementById('opt_reference').textContent=P1_EM_REFERENCE.id+' · framework effective '+P1_EM_REFERENCE.frameworkEffective+' · verified through '+P1_EM_REFERENCE.verifiedThrough+' · practice reference '+(practice.configured?(String(practice.entries||0)+' entries, '+String(practice.hash||'').slice(0,18)):'not configured');
+  var statusEl=document.getElementById('optReviewStatus'),confirm=document.getElementById('optConfirmBtn'),discard=document.getElementById('optDiscardBtn');
+  var cardState=document.getElementById('optCardState');
+  var canConfirm=status==='pending'&&o.valid&&sessionValid;
+  if(status==='confirmed') statusEl.textContent='Confirmed and saved for this visit. Athena still requires its normal final review and sign step.';
+  else if(!o.valid||status==='invalid') statusEl.textContent='Cannot apply this result: '+(o.validationReason||review.reason||'supporting documentation could not be validated.');
+  else if(!sessionValid) statusEl.textContent='This pending review is from an earlier visit session. Run the review again before confirming.';
+  else statusEl.textContent='Pending clinician confirmation. Nothing in Suggested coding or EMR fields changes until you confirm.';
+  if(cardState)cardState.textContent=status==='confirmed'?'(confirmed)':((!o.valid||status==='invalid')?'(needs documentation)':'(pending clinician confirmation)');
+  confirm.disabled=!canConfirm;confirm.style.display=status==='confirmed'?'none':'';
+  discard.style.display=status==='confirmed'?'none':'';
 }
 
 /* =========================================================
@@ -35678,7 +35896,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes preview requests only. */
-  var P1_BUILD='p1-20260815-avatar-r1';
+  var P1_BUILD='p1-20260815-launch-r1';
   window.__MLS_P1_PREVIEW=Object.freeze({enabled:true,route:'/1pScribeFlow.html',build:P1_BUILD});
   window.__MLS_AV=P1_BUILD;
   var CRITICAL=[

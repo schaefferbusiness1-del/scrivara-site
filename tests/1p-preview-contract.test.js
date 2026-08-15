@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260815-avatar-r1';
+const EXPECTED_BUILD = 'p1-20260815-launch-r1';
 const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 /* Advanced by the AUTHORIZED /p1-only avatar train of 2026-08-15 — automatic
    capture-to-match recovery, face-aware upload framing, natural-photo quality,
@@ -44,6 +44,10 @@ const P1_FILES = [
   '1p-feat_mls_marketing.js',
   '1p-feat_nextup_connect.js',
   '1p-feat_mls_schedimport_exact.js',
+  '1p-feat_mls_mobile_encounter.js',
+  '1p-feat_mls_rangejobs.js',
+  '1p-feat_mls_study_provenance.js',
+  '1p-feat_mls_template_modes.js',
   '1p-feat_mls_writeflow.js',
   '1p-feat_task3_frontsync.js'
 ];
@@ -190,6 +194,25 @@ assert(connect.includes("s.setAttribute('data-mls-asset','feat_mls_schedimport_e
   '1p importer loader must retain the canonical dedupe identity');
 assert(!connect.includes("s.src='feat_mls_schedimport_exact.js?v='"),
   '1p bundle still loads the shared production importer');
+assert.strictEqual((connect.match(/A='1p-feat_mls_rangejobs\.js',V='p1-rangejobs-1\.1\.0'/g) || []).length, 1,
+  '1p bundle must load the durable Month/Year coordinator exactly once');
+assert.strictEqual((connect.match(/A='1p-feat_mls_study_provenance\.js',V='p1sp-1\.0\.0'/g) || []).length, 1,
+  '1p bundle must declare the stored-evidence provenance loader exactly once');
+assert(connect.includes("A='1p-feat_mls_study_provenance.js',V='p1sp-1.0.0'") &&
+  connect.includes('api=window.__mlsP1StudyProvenance'),
+  '1p bundle must load the exact stored-evidence provenance owner');
+assert.strictEqual((connect.match(/A='1p-feat_mls_mobile_encounter\.js',V='p1-mobile-encounter-1\.0\.0',K='__mlsP1MobileEncounterLoader'/g) || []).length, 1,
+  '1p bundle must declare the mobile encounter coordinator exactly once');
+assert(connect.indexOf("A='1p-feat_mls_mobile_encounter.js',V='p1-mobile-encounter-1.0.0'") >
+  connect.indexOf("SRC='1p-feat_mls_avatar.js'") &&
+  connect.indexOf("A='1p-feat_mls_mobile_encounter.js',V='p1-mobile-encounter-1.0.0'") <
+  connect.indexOf("SRC='1p-feat_mls_avatar_face.js'"),
+  'mobile coordinator must load after Avatar and before the face presentation owner');
+assert.strictEqual((connect.match(/A='1p-feat_mls_template_modes\.js',V='p1-template-modes-1\.0\.0',K='__mlsP1TemplateModesLoader'/g) || []).length, 1,
+  '1p bundle must declare the template-mode adapter loader exactly once');
+assert(connect.indexOf("A='1p-feat_mls_template_modes.js',V='p1-template-modes-1.0.0'") >
+  connect.indexOf('var A="feat_mls_opnote_templates_ui.js"'),
+  '1p template-mode adapter must load after the established template UI loader');
 
 assert(connect.includes('1p-feat_task3_frontsync.js'),
   '1p bundle must load the isolated Task3 calendar consumer');
@@ -366,6 +389,10 @@ assert(!productionConnect.includes('1p-feat_mls_avatar.js') && !productionConnec
   !productionConnect.includes('1p-feat_fullhistory_pdf.js') && !productionConnect.includes('1p-feat_task3_frontsync.js') &&
   !productionConnect.includes('1p-feat_mls_legalpack.js') && !productionConnect.includes('1p-feat_mls_athena_occurrence.js') &&
   !productionConnect.includes('1p-feat_athena_provider_roster.js') &&
+  !productionConnect.includes('1p-feat_mls_mobile_encounter.js') &&
+  !productionConnect.includes('1p-feat_mls_rangejobs.js') &&
+  !productionConnect.includes('1p-feat_mls_study_provenance.js') &&
+  !productionConnect.includes('1p-feat_mls_template_modes.js') &&
   !productionConnect.includes('1p-feat_mls_marketing.js') &&
   !read('feat_mls_schedimport_exact.js').includes('1p-feat_nextup_connect.js'),
   '1p preview feature loaders leaked into the production bundle');

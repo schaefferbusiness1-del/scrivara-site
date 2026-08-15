@@ -4865,7 +4865,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/^no-athena-tab/.test(head) || /signed-in athenaOne/i.test(head)) return 'no signed-in athenaOne tab';
     if (/^encounter-index-incomplete/.test(head)) return 'the visit list could not be fully confirmed';
     if (/^same-frame-name-mismatch|^same-frame-name-missing/.test(head)) return 'a different athenaOne tab was in front';
-    if (/^storage-full-not-saved/.test(head)) return 'read but not saved \u2014 MLS storage is full';
+    if (/^storage-full-not-saved/.test(head)) return 'read, but the latest save could not be verified';
     if (/^chart-swap-never-settled/.test(head)) return 'the chart switched before it could be read';
     if (/^six-card-profile-freshness-unproven/.test(head)) return 'could not confirm the chart was fresh';
     if (/^history-partial/.test(head)) return 'part of the history could not be read';
@@ -36533,7 +36533,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'p1-20260815-avatar-r1';
+  window.__MLS_AV = window.__MLS_AV || 'p1-20260815-launch-r1';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -36876,7 +36876,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='p1-20260815-avatar-r1';
+  var MLS_APP_BUILD='p1-20260815-launch-r1';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44876,6 +44876,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_assistant_exact.js?v=20260808asst220perf1';s.setAttribute('data-mls-asset','feat_mls_assistant_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe feat_mls_assistant_exact.js (PROD) - one honest assistant panel, additive reversible */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_saveshield.js"]'))return;var s=document.createElement('script');s.src='feat_mls_saveshield.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_saveshield.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e2){}},{timeout:4000});}catch(e){}})(); /* MLSscribe feat_mls_saveshield.js svs-1.2.0 - stale-lineage protection stays exact while cooperative bulk checks run in input-aware slices; refusals counted and visible (the 2026-08-08 twin-tab clobber, 98/153 healed rows) */
 ;(function(){try{var A='feat_mls_schedimport_exact.js',V='si-1.7.22-p1-census1',api=window.__mlsSI,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src='1p-feat_mls_schedimport_exact.js?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset','feat_mls_schedimport_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* 1p preview importer: canonical identity, isolated source, version-aware takeover; production/shared importer untouched. */
+;(function(){try{var A='1p-feat_mls_rangejobs.js',V='p1-rangejobs-1.1.0',api=window.__mlsP1RangeJobs,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* /p1-only durable Month/Year coordinator; no regular-site loader or source is changed. */
 
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_writeback_router.js"]'))return;var s=document.createElement('script');s.src='feat_mls_writeback_router.js?v=20260624wb1c1';s.setAttribute('data-mls-asset','feat_mls_writeback_router.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe writeback router (per-doctor adaptive location), additive reversible */
@@ -45124,6 +45125,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
   window[KEY]=ctl;ctl.deferEnsure();
 }catch(e){}})();
+;(function(){try{if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;var A='1p-feat_mls_mobile_encounter.js',V='p1-mobile-encounter-1.0.0',K='__mlsP1MobileEncounterLoader',prior=window[K];if(prior){if(prior.installed===true&&prior.version===V&&typeof prior.installToken==='string'&&prior.installToken)return;return;}if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var token='p1-mobile-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2),loader={installed:true,version:V,installToken:token};window[K]=loader;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.setAttribute('data-mls-install-token',token);s.async=false;s.onerror=function(){if(window[K]===loader){loader.installed=false;try{delete window[K];}catch(_deleteError){window[K]=null;}}};(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* /p1-only exact local encounter coordinator; no remote handoff or final clinical action. */
 ;(function(){try{
   if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;
   var A='feat_mls_avatar_face.js',SRC='1p-feat_mls_avatar_face.js',V='p1-face-studio-1.0.1',KEY='__mlsP1AvatarFaceLoader',SEQ='__mlsP1AvatarFaceLoaderSequence';
@@ -46676,9 +46678,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * ======================================================================= */
 (function () {
   var QG = window.__mlsQuotaGuard = window.__mlsQuotaGuard || { failures: 0, lastFail: null, lastToastAt: 0, installed: false };
+  QG.activeEpisode = QG.activeEpisode === true;
+  var qvSequence = 0, qvLatestSequence = 0, qvFailureScope = null, qvFailureExpectedBytes = null, qvBoundaryListener = null;
+  var qvDiag = { version: 'p1-qv-2.0.0', active: false, count: Number(QG.failures) || 0,
+    lastFailureAt: 0, category: '', store: '', expectedBytes: null, storedBytes: null,
+    lastRecoveryAt: 0, recoverySource: '', lateResultsDropped: 0 };
   function qvKey() {
     try { return typeof window.uns === 'function' ? String(window.uns('patients') || '') : ''; } catch (e) { return ''; }
   }
+  function qvAccountScope() {
+    var key = qvKey(), account = '', epoch = 0;
+    try {
+      if (!Object.prototype.hasOwnProperty.call(window, '__mlsSessionAccount') ||
+          !Object.prototype.hasOwnProperty.call(window, '__mlsSessionEpoch')) return null;
+      account = String(window.__mlsSessionAccount || '').trim().toLowerCase();
+      epoch = Number(window.__mlsSessionEpoch) || 0;
+    } catch (_scopeReadError) { return null; }
+    if (!key || !account || !Number.isFinite(epoch) || epoch <= 0 || Math.floor(epoch) !== epoch ||
+        key.indexOf('\x00') >= 0 || key.toLowerCase().indexOf('::' + account + '::') < 0 || /(?:^|::)_::/.test(key)) return null;
+    return { key: key, account: account, epoch: epoch };
+  }
+  function qvSameScope(left, right) {
+    return !!(left && right && left.key === right.key && left.account === right.account && left.epoch === right.epoch);
+  }
+  function qvCurrent(scope, sequence) {
+    return !!(scope && qvSameScope(scope, qvAccountScope()) && Number(sequence) === qvLatestSequence);
+  }
+  function qvBoundedBytes(value) {
+    value = Number(value);
+    return Number.isFinite(value) && value >= 0 ? Math.min(1000000000, Math.floor(value)) : null;
+  }
+  function qvDiagnosticSnapshot() {
+    return { version: qvDiag.version, active: qvDiag.active, count: qvDiag.count,
+      lastFailureAt: qvDiag.lastFailureAt, category: qvDiag.category, store: qvDiag.store,
+      expectedBytes: qvDiag.expectedBytes, storedBytes: qvDiag.storedBytes,
+      lastRecoveryAt: qvDiag.lastRecoveryAt, recoverySource: qvDiag.recoverySource,
+      lateResultsDropped: qvDiag.lateResultsDropped };
+  }
+  function qvDropped() { qvDiag.lateResultsDropped = Math.min(1000000, qvDiag.lateResultsDropped + 1); }
   /* qv-1.2 (stale-quota-latch fix 2026-08-11): the sj-2.0 migration RETIRED
      the localStorage patients key this guard reads back, so in idb mode the
      old echo check condemned every healthy save as a silent-no-op (armed at
@@ -46706,7 +46743,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function qvStoreHealthy(r) {
     return !!(r && r.mode === 'idb' && r.hydrated === true && r.degraded === false && Number(r.wbFailures) === 0 && Number(r.gen) === Number(r.confirmedGen));
   }
-  function qvIdbVerify(expect) {
+  function qvReasonCode(reason) {
+    var value = String(reason || '').toLowerCase();
+    if (value === 'quota-exceeded' || value === 'local-write-unconfirmed' ||
+        value === 'idb-confirm-rejected' || value === 'idb-receipt-unhealthy' || value === 'write-error') return value;
+    if (/quota|storage-full/.test(value)) return 'quota-exceeded';
+    if (/silent-no-op/.test(value)) return 'local-write-unconfirmed';
+    if (/idb-confirm/.test(value)) return 'idb-confirm-rejected';
+    if (/idb-unhealthy/.test(value)) return 'idb-receipt-unhealthy';
+    return 'write-error';
+  }
+  function qvClear(scope, sequence, source, proofBytes) {
+    if (qvFailureScope && (!qvSameScope(qvFailureScope, scope || qvAccountScope()) ||
+        (sequence && Number(sequence) !== qvLatestSequence))) { qvDropped(); return false; }
+    var hadFailure = !!window.__mlsStoreWriteFailed;
+    var boundedProof = qvBoundedBytes(proofBytes);
+    if (hadFailure && qvFailureExpectedBytes !== null && /^(?:local-echo|idb-confirm)$/.test(String(source || '')) &&
+        (boundedProof === null || boundedProof < qvFailureExpectedBytes)) return false;
+    window.__mlsStoreWriteFailed = null;
+    qvFailureScope = null;
+    qvFailureExpectedBytes = null;
+    QG.activeEpisode = false;
+    qvDiag.active = false;
+    if (hadFailure) {
+      qvDiag.lastRecoveryAt = Date.now();
+      qvDiag.recoverySource = /^(?:local-echo|idb-confirm|idb-receipt|pull-preflight)$/.test(String(source || '')) ? String(source) : 'verified-write';
+    }
+    try { qvChip(); } catch (_chipClearError) {}
+    return true;
+  }
+  function qvIdbVerify(expect, scope, sequence) {
     /* the idb-mode verified write: flushNow() resolves only after the
        IndexedDB write-back is content-verified by the store itself (gen +
        length + recomputed hash echo) and rejects once the store degrades -
@@ -46718,50 +46784,68 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var ps = window.__mlsPtsStore;
       if (!ps || typeof ps.flushNow !== 'function') return;
       ps.flushNow().then(function () {
-        var r = qvStoreReceipt();
-        if (qvStoreHealthy(r)) { window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQv1) {} }
-        else if (r && (r.degraded === true || Number(r.wbFailures) > 0)) qvFail('idb-unhealthy: ' + String(r.degradedWhy || r.lastError || 'write-behind failing').slice(0, 44), expect, -1);
-      }, function (eF) {
-        qvFail('idb-confirm: ' + String((eF && eF.message) || eF).slice(0, 44), expect, -1);
+        if (!qvCurrent(scope, sequence) || window.__mlsPtsStore !== ps) { qvDropped(); return; }
+        var r = null; try { r = typeof ps.receipt === 'function' ? ps.receipt() : null; } catch (_receiptError) {}
+        if (qvStoreHealthy(r)) qvClear(scope, sequence, 'idb-confirm', expect);
+        else if (r && (r.degraded === true || Number(r.wbFailures) > 0)) qvFail('idb-receipt-unhealthy', expect, -1, scope, sequence, 'idb');
+      }, function () {
+        if (!qvCurrent(scope, sequence) || window.__mlsPtsStore !== ps) { qvDropped(); return; }
+        qvFail('idb-confirm-rejected', expect, -1, scope, sequence, 'idb');
       });
-    } catch (eS) {}
+    } catch (eS) { qvFail('write-error', expect, -1, scope, sequence, 'idb'); }
   }
-  function qvFail(reason, expected, got) {
+  function qvFail(reason, expected, got, scope, sequence, storeKind) {
+    if (!qvCurrent(scope, sequence)) { qvDropped(); return false; }
+    var alreadyActive = !!window.__mlsStoreWriteFailed && qvSameScope(qvFailureScope, scope);
+    var code = qvReasonCode(reason);
     QG.failures++;
-    QG.lastFail = { at: Date.now(), reason: String(reason).slice(0, 60), expected: expected, got: got };
+    QG.lastFail = { at: Date.now(), reason: code, expected: expected, got: got };
     window.__mlsStoreWriteFailed = QG.lastFail;
-    try { qvChip(); } catch (eQc) {} /* qv-1.1: the persistent chip appears the moment the condition does */
+    qvFailureScope = scope;
+    var boundedExpected = qvBoundedBytes(expected);
+    qvFailureExpectedBytes = alreadyActive && qvFailureExpectedBytes !== null
+      ? Math.max(qvFailureExpectedBytes, boundedExpected === null ? 0 : boundedExpected)
+      : boundedExpected;
+    QG.activeEpisode = true;
+    qvDiag.active = true; qvDiag.count = QG.failures; qvDiag.lastFailureAt = QG.lastFail.at;
+    qvDiag.category = code; qvDiag.store = storeKind === 'idb' ? 'idb' : 'local';
+    qvDiag.expectedBytes = qvBoundedBytes(expected); qvDiag.storedBytes = qvBoundedBytes(got);
+    qvDiag.recoverySource = '';
+    var mounted = false;
+    try { mounted = qvChip() === true; } catch (eQc) {} /* persistent action-required surface */
     try {
-      if (Date.now() - QG.lastToastAt > 60000) {
+      if (!alreadyActive && !mounted) {
         QG.lastToastAt = Date.now();
-        if (typeof window.toast === 'function') window.toast('MLS storage is FULL — this save did NOT happen. Existing records are intact. Free space, then pull again.');
+        if (typeof window.toast === 'function') window.toast("MLS couldn't verify the latest save on this device. Keep this tab open, check available storage, then retry the last action.", 'err');
       }
     } catch (eT) {}
-    try { console.error('[mlsQuotaGuard] persist FAILED (' + reason + ') key=' + qvKey() + ' expected~' + expected + ' stored=' + got); } catch (eC) {} /* qv-1.1: the line names the store KEY */
+    return true;
   }
   function qvWrap(orig) {
     function qv(arr) {
-      var key = qvKey();
+      var scope = qvAccountScope(), sequence = ++qvSequence; qvLatestSequence = sequence;
+      var key = scope ? scope.key : '';
       var prevLen = -1, expect = -1;
       try { prevLen = key ? String(localStorage.getItem(key) || '').length : -1; } catch (eP) {}
       try { expect = JSON.stringify(arr).length; } catch (eX) {}
       var out;
       try { out = orig.apply(this, arguments); }
-      catch (e) { qvFail(String(e && e.name || e), expect, prevLen); throw e; }
+      catch (e) { qvFail(/quota/i.test(String(e && e.name || '')) ? 'quota-exceeded' : 'write-error', expect, prevLen, scope, sequence, 'local'); throw e; }
       try {
+        if (!qvCurrent(scope, sequence)) { qvDropped(); return out; }
         if (qvIdbLive()) {
           /* qv-1.2: the store runs on IndexedDB - the localStorage key the
              branch below reads back no longer exists there, so the byte-echo
              judgment would false-alarm on every material save (the stale-
              latch bug, live-proven 2026-08-11). Verify through the store's
              own confirm instead. */
-          qvIdbVerify(expect);
+          qvIdbVerify(expect, scope, sequence);
         } else {
           var got = key ? String(localStorage.getItem(key) || '').length : -1;
           if (key && prevLen >= 0 && got === prevLen && expect >= 0 && Math.abs(expect - prevLen) > 64) {
-            qvFail('silent-no-op', expect, got);
+            qvFail('local-write-unconfirmed', expect, got, scope, sequence, 'local');
           } else {
-            window.__mlsStoreWriteFailed = null; try { qvChip(); } catch (eQc2) {} /* qv-1.1: the chip clears with the flag */
+            qvClear(scope, sequence, 'local-echo', expect); /* verified same-or-larger retry recovery is silent */
           }
         }
       } catch (eR) {}
@@ -46804,30 +46888,53 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var f = window.__mlsStoreWriteFailed;
       var el = document.getElementById('mlsQuotaChip');
-      if (!f) { if (el) el.remove(); return; }
+      if (!f) { QG.activeEpisode = false; if (el) el.remove(); return false; }
       if (!el) {
         el = document.createElement('div');
         el.id = 'mlsQuotaChip';
         el.setAttribute('role', 'alert');
-        el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:56px;z-index:2147483000;background:#7a1f1f;color:#fff;border:1px solid #d9534f;border-radius:10px;padding:8px 14px;font:600 13px/1.4 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);pointer-events:none;max-width:92vw;text-align:center;';
-        (document.body || document.documentElement).appendChild(el);
+        el.setAttribute('aria-live', 'assertive');
+        el.style.cssText = 'position:relative;z-index:10;box-sizing:border-box;width:min(760px,calc(100% - 24px));margin:10px auto;background:#fff4f2;color:#6f2722;border:1px solid #c87870;border-radius:10px;padding:10px 14px;font:600 13px/1.45 system-ui,sans-serif;box-shadow:0 3px 12px rgba(55,31,27,.12);text-align:left;';
       }
+      var host = document.getElementById('appWrap') || document.body || document.documentElement;
+      if (host && el.parentNode !== host) host.insertBefore(el, host.firstChild || null);
       var n = Number((window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures) || 0);
-      var age = Math.max(0, Math.round((Date.now() - Number(f.at || Date.now())) / 60000));
-      var txt = 'Local storage full \u2014 changes safe in memory+sync, storage fix in progress (' + n + ' failed save' + (n === 1 ? '' : 's') + (age ? ', last ' + age + ' min ago' : ', just now') + ')';
+      var txt = "MLS couldn't verify the latest save on this device. Keep this tab open, check available storage, then retry the last action.";
       if (el.textContent !== txt) el.textContent = txt;
-    } catch (eChip) {}
+      el.setAttribute('data-mls-failure-count', String(Math.max(1, n)));
+      el.setAttribute('data-mls-failure-code', qvReasonCode(f.reason));
+      return !!(el.parentNode && host);
+    } catch (eChip) { return false; }
   }
   QG._chip = qvChip;
+  QG.diagnostic = qvDiagnosticSnapshot;
+  QG._recover = function (source) {
+    var scope = qvAccountScope(), r = qvStoreReceipt();
+    if (!window.__mlsStoreWriteFailed || !qvFailureScope || !qvSameScope(scope, qvFailureScope) || !qvStoreHealthy(r)) return false;
+    return qvClear(scope, 0, /pull-preflight/.test(String(source || '')) ? 'pull-preflight' : 'idb-receipt');
+  };
+  function qvSessionBoundary() {
+    qvLatestSequence = ++qvSequence;
+    qvFailureScope = null;
+    qvFailureExpectedBytes = null;
+    window.__mlsStoreWriteFailed = null;
+    QG.activeEpisode = false;
+    qvDiag.active = false; qvDiag.category = ''; qvDiag.store = '';
+    qvDiag.expectedBytes = null; qvDiag.storedBytes = null; qvDiag.recoverySource = '';
+    try { qvChip(); } catch (_boundaryChipError) {}
+  }
+  try { qvBoundaryListener = qvSessionBoundary; window.addEventListener('mls:session-boundary', qvBoundaryListener, true); } catch (_boundaryListenerError) {}
   QG._heal = setInterval(function () {
     try { if (typeof window.savePatients === 'function' && !chainHasQv(window.savePatients)) qvInstall(); } catch (e) {}
     try { qvChip(); } catch (eQh) {} /* qv-1.1: re-assert the persistent surface every heal tick */
-    try { if (window.__mlsStoreWriteFailed && qvStoreHealthy(qvStoreReceipt())) { window.__mlsStoreWriteFailed = null; qvChip(); try { console.warn('[mlsQuotaGuard] stale write-failure latch CLEARED - the sj-2.0 store receipt proves healthy confirmed IndexedDB writes.'); } catch (eQw) {} } } catch (eQs) {} /* qv-1.2: the chip follows CURRENT reality, not a frozen latch */
+    try { if (window.__mlsStoreWriteFailed) QG._recover('idb-receipt'); } catch (eQs) {} /* verified same-scope self-recovery is intentionally quiet */
   }, 4000);
   QG.revert = function () {
     try { clearInterval(QG._heal); } catch (e) {}
+    try { if (qvBoundaryListener) window.removeEventListener('mls:session-boundary', qvBoundaryListener, true); } catch (_boundaryRemoveError) {}
     try { if (window.savePatients && window.savePatients.__mlsQvGuarded && window.savePatients.__mlsQvOrig) window.savePatients = window.savePatients.__mlsQvOrig; } catch (e) {}
     try { var elQr = document.getElementById('mlsQuotaChip'); if (elQr) elQr.remove(); } catch (eQr) {} /* qv-1.1: the chip dies with the guard */
+    qvFailureScope = null; qvFailureExpectedBytes = null; window.__mlsStoreWriteFailed = null; qvDiag.active = false;
     QG.installed = false;
     return 'reverted';
   };
@@ -46849,6 +46956,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260723sr233";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* sr-2.0.0 natural-language StudySpec -> academic-paper limited-data draft from ALL stores (patients/demographics/meds, notes, calendar, harvester, code table) with stats+tables+figures and number-verified optional AI narrative (up to 60 evidence-supported pages, never padded) */
+;(function(){try{var A='1p-feat_mls_study_provenance.js',V='p1sp-1.0.0',api=window.__mlsP1StudyProvenance,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* /p1-only stored-evidence provenance, exact scope accounting, and PHI-free coverage receipts. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');s.addEventListener('load',function(){try{var m=window.__mlsP1Marketing;if(m&&m.installed===true&&typeof m.reconcile==='function')m.reconcile();var l=window.__mlsP1MarketingLoader;if(l&&l.installed===true&&typeof l.guardReach==='function')l.guardReach();}catch(_marketingReconcileError){}});(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation; 1p Marketing reconciles or fail-closes Reviews after this late owner installs */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_template_library.js"]'))return;var s=document.createElement('script');s.src='feat_mls_template_library.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_template_library.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b904: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
@@ -46860,13 +46968,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_widget_deck.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* event-driven widget deck on Visit (window.__mlsWidgetDeck wd-1.2.0; revert()); shared build token prevents stale polling code */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_voice_cluster.js"]'))return;var s=document.createElement('script');s.src='feat_mls_voice_cluster.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_voice_cluster.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* Voice cluster: the bottom-left trio (Copilot Voice + MLS Assistant + Dictate) becomes ONE bubble that EXPANDS - never one that decides, because Copilot Voice and Dictate are different recognizers under the one-recognizer truce. Loaded on idle: not first-paint content, and boot already serialises ~177 scripts (window.__mlsVoiceCluster vc-1.0.0; revert()) */
 ;(function(){try{var want=false;var lay='';try{lay=localStorage.getItem('mls_layout_pref')||'';}catch(e){}if(lay==='full')return;if(lay==='simple')want=true;try{if(!want)want=(sessionStorage.getItem('mls_phone_mode')==='1');}catch(e){}try{if(!want&&localStorage.getItem('mls_device_role')==='phone')want=true;}catch(e){}try{if(!want&&/[?&]phone=1/.test(location.search))want=true;}catch(e){}try{if(!want)want=/iPhone|iPod|Android.*Mobile|Mobile.*Android|Windows Phone/i.test(navigator.userAgent||'')&&((navigator.maxTouchPoints||0)>0||'ontouchstart' in window);}catch(e){}if(!want)return;if(document.querySelector('script[data-mls-asset="feat_mls_phone_ui.js"]'))return;var s=document.createElement('script');s.src='feat_mls_phone_ui.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_phone_ui.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLS on a phone (ph3-1.0.0): a phone app written for the phone, replacing the 28-rule body.mls-phone hide layer that produced every defect in PHONE_AUDIT_2026-07-27.md. Requested ONLY on a handheld / explicit phone role / ?phone=1 / the Settings layout preference, so a desktop pays nothing. THE LAYOUT PREFERENCE IS READ FIRST AND IT IS READ HERE: wantPhone() has consulted mls_layout_pref since dr-1.5.0, but this loader did not, so Settings -> Integrations -> This device -> "Simple phone app" answered yes in one place and never fetched the file in the other -- a setting that saved and did nothing. 'full' returns immediately for the same reason in reverse. Deliberately NOT routed through __mlsDeferAsset: this module hides the desktop chrome, and deferring it past first paint shows the doctor the 8-item dock and the crowded workspace for a second before replacing them (window.__mlsPhoneUI ph3-1.0.0; revert()) */
-/* p1-calm-dock-1.0.0: normal preview owns one liquid-glass bottom dock.
-   A stale ?ui=classic/local preference can no longer strand later /1p loads in
-   the left-rail fallback. The rail is hidden and body padding is cleared only
-   after the canonical Calm owner and rendered dock both prove ready. */
+/* p1-calm-dock-2.0.0: normal preview owns one liquid-glass dock while the
+   established Calm owner keeps the account's chosen side. Narrow screens use
+   the proven bottom geometry without rewriting that desktop preference. The
+   old rail is hidden only after the rendered dock (or its 44px reveal handle)
+   and the matching content clearance prove ready. */
 ;(function(){try{
   if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;
-  var A='feat_mls_calm_shell.js',V='p1-calm-dock-1.0.0',CALM_V='calm-1.0.0';
+  var A='feat_mls_calm_shell.js',V='p1-calm-dock-2.0.0',CALM_V='calm-1.0.0';
   var KEY='__mlsP1CalmDock',SEQ='__mlsP1CalmDockSequence',prior=window[KEY];
   function controllerShape(value){return !!(value&&value.installed===true&&value.version===V&&
     typeof value.installToken==='string'&&value.installToken&&typeof value.ensure==='function'&&
@@ -46875,7 +46984,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var sequence=Math.max(0,Number(window[SEQ])||0)+1;window[SEQ]=sequence;
   var ctl={installed:true,version:V,state:'idle',installToken:'p1-calm-'+Date.now().toString(36)+'-'+
     sequence.toString(36)+'-'+Math.random().toString(36).slice(2),node:null,owner:null,
-    settleTimer:null,settleAttempt:0,maxSettleAttempts:80,style:null,status:null,listeners:[],loadAttempt:0};
+    settleTimer:null,settleAttempt:0,maxSettleAttempts:80,style:null,status:null,listeners:[],loadAttempt:0,
+    handle:null,compactTimer:null,revealTimer:null,overlayTimer:null,compactPinned:true,compactExpanded:true,pinKey:'',pinRow:null,compactObserver:null};
+  var DOCK_SIDES={bottom:1,top:1,left:1,right:1};
   function current(){return ctl.installed===true&&window[KEY]===ctl;}
   function preview(){return !!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true);}
   function ownerShape(api){return !!(api&&api.installed!==false&&api.version===CALM_V&&
@@ -46883,18 +46994,43 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function removeClassicQuery(){
     try{
       var url=new URL(location.href),before=url.search;
-      if(url.searchParams.has('ui'))url.searchParams.delete('ui');
+      if(String(url.searchParams.get('ui')||'').toLowerCase()==='classic')url.searchParams.delete('ui');
       if(before!==url.search&&history&&typeof history.replaceState==='function')
         history.replaceState(history.state||null,'',url.pathname+(url.searchParams.toString()?'?'+url.searchParams.toString():'')+url.hash);
     }catch(_urlError){}
   }
   function storageSet(key,value){try{if(localStorage.getItem(key)!==value)localStorage.setItem(key,value);}catch(_storageError){}}
+  function storageGet(key){try{return key?String(localStorage.getItem(key)||''):'';}catch(_storageError){return '';}}
+  function accountPreferenceKey(suffix){
+    try{if(typeof window.uns==='function'){var key=String(window.uns(suffix)||'');
+      if(key&&key.slice(-suffix.length)===suffix&&!/(?:^|::)_::/.test(key))return key;}}
+    catch(_namespaceError){}return '';
+  }
+  function savedDockSide(){
+    var value='';
+    try{if(typeof window.mlsDockSide==='function')value=String(window.mlsDockSide()||'');}catch(_ownerPreferenceError){}
+    if(!DOCK_SIDES[value])value=storageGet(accountPreferenceKey('qolDockSide'));
+    if(!DOCK_SIDES[value])value=storageGet('mls::qolDockSide');
+    return DOCK_SIDES[value]?value:'bottom';
+  }
+  function narrowDock(){try{return Number(window.innerWidth)<=640||!!(window.matchMedia&&window.matchMedia('(max-width:640px)').matches);}catch(_mediaError){return Number(window.innerWidth)<=640;}}
+  function actualDockSide(){
+    if(narrowDock())return 'bottom';
+    var attr='';try{attr=String(document.body&&document.body.getAttribute('data-mls-dock')||'');}catch(_attrError){}
+    return DOCK_SIDES[attr]?attr:savedDockSide();
+  }
+  function applySavedDockSide(){
+    var side=savedDockSide();
+    /* Do not call applyDockSidePreview here: that public settings action writes
+       localStorage. Boot/reconcile/account-boundary work must only render the
+       already-saved preference, never create or migrate one. api.render() below
+       then runs the Calm owner's orientation/top-clearance pass synchronously. */
+    try{if(document.body){if(side==='bottom')document.body.removeAttribute('data-mls-dock');else document.body.setAttribute('data-mls-dock',side);}}
+    catch(_dockSideError){}return side;
+  }
   function normalizePreference(){
     if(!current()||!preview())return false;
-    removeClassicQuery();storageSet('mlsCalmShell','1');storageSet('mls::qolDockSide','bottom');
-    try{if(typeof window.uns==='function'){var key=window.uns('qolDockSide');if(key)storageSet(key,'bottom');}}catch(_namespaceError){}
-    try{if(document.body)document.body.removeAttribute('data-mls-dock');}catch(_bodyError){}
-    try{if(typeof window.applyDockSidePreview==='function')window.applyDockSidePreview('bottom');}catch(_dockSideError){}
+    removeClassicQuery();storageSet('mlsCalmShell','1');applySavedDockSide();
     ['mlsClassicBtn','mlsCalmReturn','mlsCalmReturnCss'].forEach(function(id){
       try{var node=document.getElementById(id);if(node&&node.parentNode)node.parentNode.removeChild(node);}catch(_removeError){}
     });
@@ -46907,7 +47043,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(!old){old=document.createElement('style');old.id='mlsP1CalmDockGuardCss';old.setAttribute('data-mls-install-token',ctl.installToken);
       old.textContent='#mlsClassicBtn,#mlsCalmReturn{display:none!important}'+
         'html body.mls-p1-dock-ready{padding-left:0!important}'+
-        'html body.mls-p1-dock-ready #mlsRdNav{display:none!important}';
+        'html body.mls-p1-dock-ready #mlsRdNav{display:none!important}'+
+        '#mlsP1DockHandle{display:none;position:fixed;width:44px;height:44px;min-width:44px;min-height:44px;box-sizing:border-box;align-items:center;justify-content:center;border:1px solid rgba(32,64,52,.28);border-radius:15px;background:rgba(247,250,248,.97);color:#204034;box-shadow:0 6px 20px rgba(22,48,38,.18);font:700 20px/1 system-ui,sans-serif;cursor:pointer;touch-action:manipulation}'+
+        'html body.mls-p1-dock-collapsed #mlsDock{opacity:0!important;visibility:hidden!important;pointer-events:none!important}'+
+        'html body.mls-p1-dock-collapsed #mlsP1DockHandle{display:flex}'+
+        '#mlsAskResults,#mlsToolsMenu{max-width:calc(100vw - 16px);max-height:calc(100vh - 16px)}'+
+        'html body[data-mls-dock="top"] #mlsAskResults{top:46px;bottom:auto}'+
+        'html body[data-mls-dock="left"] #mlsAskResults{left:calc(100% + 8px);right:auto;top:0;bottom:auto}'+
+        'html body[data-mls-dock="right"] #mlsAskResults{right:calc(100% + 8px);left:auto;top:0;bottom:auto}'+
+        '@media(max-width:640px){html body #mlsDock{top:auto!important}html body #mlsP1DockHandle{display:none!important}html body.mls-p1-dock-collapsed #mlsDock{opacity:1!important;visibility:visible!important;pointer-events:auto!important}}'+
+        '@media(prefers-reduced-motion:reduce){html body #mlsDock,html body #mlsP1DockHandle{transition:none!important;animation:none!important}}';
       (document.head||document.documentElement).appendChild(old);}
     ctl.style=old;
   }
@@ -46922,28 +47067,182 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(!node){node=document.createElement('div');node.id='mlsP1CalmDockStatus';node.setAttribute('role','alert');node.setAttribute('aria-live','assertive');
       node.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483200;max-width:420px;padding:11px 14px;border:1px solid #b85b53;border-radius:12px;background:#fff4f2;color:#6f2722;box-shadow:0 8px 24px rgba(55,31,27,.18);font:600 13px/1.4 system-ui,sans-serif';
       (document.body||document.documentElement).appendChild(node);}
-    node.textContent=message||'The bottom navigation could not load. The existing navigation is still available; reload this preview to try again.';ctl.status=node;
+    node.textContent=message||'The navigation bar could not load. The existing navigation is still available; reload this preview to try again.';ctl.status=node;
     try{window.__mlsP1CalmDockFailure={reason:reason,at:Date.now()};}catch(_failureError){}
     return false;
+  }
+  function pinPreferenceKey(){return accountPreferenceKey('p1DockPinnedV1')||'mls::p1DockPinnedV1';}
+  function readPinned(){
+    var key=pinPreferenceKey(),value=storageGet(key);
+    if(!value&&key!=='mls::p1DockPinnedV1')value=storageGet('mls::p1DockPinnedV1');
+    ctl.pinKey=key;return value!=='0';
+  }
+  function updatePinRow(){
+    var row=ctl.pinRow||document.getElementById('mlsP1DockMode');if(!row)return;
+    row.setAttribute('role','menuitemcheckbox');row.setAttribute('aria-checked',ctl.compactPinned?'true':'false');
+    row.setAttribute('title',ctl.compactPinned?'Keep navigation visible':'Hide navigation until hover, tap, or keyboard focus');
+    row.innerHTML='<span class="ri" aria-hidden="true">'+(ctl.compactPinned?'&#128204;':'&#8644;')+'</span><span class="rn">Navigation: '+(ctl.compactPinned?'Pinned open':'Auto-hide')+'</span>';
+  }
+  function setExpanded(value){
+    if(!current()||!document.body)return false;
+    if(narrowDock()||ctl.compactPinned)value=true;
+    ctl.compactExpanded=value===true;
+    if(!ctl.compactExpanded)positionHandle();
+    document.body.classList.toggle('mls-p1-dock-collapsed',!ctl.compactExpanded);
+    if(ctl.handle)ctl.handle.setAttribute('aria-expanded',ctl.compactExpanded?'true':'false');
+    if(ctl.compactExpanded)setTimeout(function(){if(current()){ensurePinRow();clampOverlays();}},0);
+    return ctl.compactExpanded;
+  }
+  function setPinned(value){
+    ctl.compactPinned=value===true;ctl.pinKey=pinPreferenceKey();storageSet(ctl.pinKey,ctl.compactPinned?'1':'0');
+    updatePinRow();if(ctl.compactPinned)setExpanded(true);else scheduleCompact(900);return ctl.compactPinned;
+  }
+  function compactBusy(){
+    if(ctl.compactHover||narrowDock())return true;
+    var active=document.activeElement,dock=document.getElementById('mlsDock'),menu=document.getElementById('mlsToolsMenu'),ask=document.getElementById('mlsAskResults');
+    try{if(active&&((dock&&dock.contains(active))||(menu&&menu.contains(active))))return true;}catch(_focusError){}
+    try{if(menu&&getComputedStyle(menu).display!=='none')return true;}catch(_menuError){}
+    try{if(ask&&ask.children&&ask.children.length&&getComputedStyle(ask).display!=='none')return true;}catch(_askError){}
+    return false;
+  }
+  function scheduleCompact(delay){
+    if(ctl.compactTimer){clearTimeout(ctl.compactTimer);ctl.compactTimer=null;}
+    if(ctl.compactPinned||narrowDock())return;
+    ctl.compactTimer=setTimeout(function tick(){ctl.compactTimer=null;if(!current()||ctl.compactPinned||narrowDock())return;
+      if(compactBusy()){scheduleCompact(500);return;}setExpanded(false);},Math.max(80,Number(delay)||500));
+  }
+  function positionHandle(){
+    var dock=document.getElementById('mlsDock'),handle=ctl.handle;if(!dock||!handle)return false;
+    var rect;try{rect=dock.getBoundingClientRect();}catch(_rectError){return false;}
+    var vw=Math.max(44,Number(window.innerWidth)||44),vh=Math.max(44,Number(window.innerHeight)||44);
+    var left=Math.max(4,Math.min(vw-48,Number(rect.left||0)+(Number(rect.width||44)-44)/2));
+    var top=Math.max(4,Math.min(vh-48,Number(rect.top||0)+(Number(rect.height||44)-44)/2));
+    handle.style.left=Math.round(left)+'px';handle.style.top=Math.round(top)+'px';handle.style.right='auto';handle.style.bottom='auto';
+    handle.setAttribute('data-mls-side',actualDockSide());
+    try{handle.style.zIndex=String(Math.max(921,Number(getComputedStyle(dock).zIndex)||920)+1);}catch(_zError){handle.style.zIndex='921';}
+    return true;
+  }
+  function ensurePinRow(){
+    var menu=document.getElementById('mlsToolsMenu');if(!menu)return false;
+    var row=document.getElementById('mlsP1DockMode');
+    if(!row){row=document.createElement('div');row.id='mlsP1DockMode';row.className='r';row.tabIndex=0;
+      row.addEventListener('click',function(event){try{event.preventDefault();event.stopPropagation();}catch(_clickError){}setPinned(!ctl.compactPinned);});
+      row.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' '){try{event.preventDefault();event.stopPropagation();}catch(_keyError){}setPinned(!ctl.compactPinned);}});
+      var group=null;try{group=menu.querySelector('.grp[aria-label="App"]')||menu.querySelector('.grp');}catch(_queryError){}
+      (group||menu).appendChild(row);}
+    ctl.pinRow=row;updatePinRow();return true;
+  }
+  function clampToolsMenu(){
+    var menu=document.getElementById('mlsToolsMenu'),dock=document.getElementById('mlsDock');if(!menu||!dock)return false;
+    var rect,dockRect;try{rect=menu.getBoundingClientRect();dockRect=dock.getBoundingClientRect();}catch(_menuRectError){return false;}
+    var vw=Math.max(1,Number(window.innerWidth)||1),vh=Math.max(1,Number(window.innerHeight)||1),side=actualDockSide();
+    var width=Math.min(vw-16,Math.max(1,Number(rect.width||menu.offsetWidth)||1));
+    var height=Math.min(vh-16,Math.max(1,Number(rect.height||menu.offsetHeight)||1));
+    var left=Math.max(8,Math.min(Number(rect.left)||8,vw-width-8)),top;
+    if(side==='top')top=Number(dockRect.bottom||0)+8;
+    else if(side==='left'||side==='right')top=Number(dockRect.top||0);
+    else top=Number(rect.top)||Math.max(8,Number(dockRect.top||0)-height-8);
+    top=Math.max(8,Math.min(top,vh-height-8));menu.style.left=Math.round(left)+'px';menu.style.top=Math.round(top)+'px';menu.style.bottom='auto';return true;
+  }
+  function clampAskResults(){
+    var ask=document.getElementById('mlsAskResults'),dock=document.getElementById('mlsDock');if(!ask||!dock)return false;
+    try{var askCss=getComputedStyle(ask);if(askCss.display==='none'||askCss.visibility==='hidden')return false;}catch(_askCssError){return false;}
+    /* #mlsDock is transformed, so a fixed descendant is still positioned in
+       the dock's containing block. Keep results absolute and translate the
+       desired viewport point back into their real offset-parent coordinates. */
+    ['position','left','top','right','bottom'].forEach(function(name){try{ask.style.removeProperty(name);}catch(_styleResetError){}});
+    var rect,dockRect;try{rect=ask.getBoundingClientRect();dockRect=dock.getBoundingClientRect();}catch(_askRectError){return false;}
+    var vw=Math.max(1,Number(window.innerWidth)||1),vh=Math.max(1,Number(window.innerHeight)||1),side=actualDockSide();
+    var width=Math.min(Math.max(1,vw-16),Math.max(1,Number(rect.width||ask.offsetWidth)||340));
+    var height=Math.min(Math.max(1,vh-16),Math.max(1,Number(rect.height||ask.offsetHeight)||1));
+    var left=Number(rect.left)||8,top=Number(rect.top)||8;
+    if(side==='top')top=Number(dockRect.bottom||0)+8;
+    else if(side==='bottom')top=Number(dockRect.top||0)-height-8;
+    else if(side==='left')left=Number(dockRect.right||0)+8;
+    else if(side==='right')left=Number(dockRect.left||0)-width-8;
+    left=Math.max(8,Math.min(left,vw-width-8));top=Math.max(8,Math.min(top,vh-height-8));
+    var parent=ask.offsetParent||ask.parentNode,parentRect={left:0,top:0};
+    try{if(parent&&typeof parent.getBoundingClientRect==='function')parentRect=parent.getBoundingClientRect();}catch(_parentRectError){}
+    ask.style.position='absolute';ask.style.left=Math.round(left-Number(parentRect.left||0)+(Number(parent&&parent.scrollLeft)||0))+'px';
+    ask.style.top=Math.round(top-Number(parentRect.top||0)+(Number(parent&&parent.scrollTop)||0))+'px';ask.style.right='auto';ask.style.bottom='auto';return true;
+  }
+  function clampOverlays(){var a=clampToolsMenu(),b=clampAskResults();return !!(a||b);}
+  function queueOverlays(){if(ctl.overlayTimer)return;ctl.overlayTimer=setTimeout(function(){ctl.overlayTimer=null;if(current()){ensurePinRow();clampOverlays();}},0);}
+  function ensureCompactObserver(){
+    if(ctl.compactObserver||typeof MutationObserver!=='function'||!document.body)return;
+    try{ctl.compactObserver=new MutationObserver(function(records){
+      if(!current())return;var relevant=false;
+      for(var i=0;i<records.length&&!relevant;i++){
+        var record=records[i],target=record&&record.target;
+        if(target&&target.id==='mlsAskResults'){relevant=true;break;}
+        var added=record&&record.addedNodes;for(var j=0;added&&j<added.length;j++){
+          var node=added[j];if(node&&node.nodeType===1&&(node.id==='mlsToolsMenu'||node.id==='mlsAskResults'||(node.querySelector&&node.querySelector('#mlsToolsMenu,#mlsAskResults')))){relevant=true;break;}
+        }
+      }
+      if(relevant)setTimeout(function(){if(current()){ensurePinRow();setExpanded(true);clampOverlays();}},0);
+    });ctl.compactObserver.observe(document.body,{childList:true,subtree:true});}catch(_observerError){ctl.compactObserver=null;}
+  }
+  function ensureCompact(dock){
+    if(!dock)return false;
+    if(!ctl.handle){var handle=document.createElement('button');handle.id='mlsP1DockHandle';handle.type='button';handle.setAttribute('aria-label','Show navigation');handle.setAttribute('title','Show navigation');handle.innerHTML='<span aria-hidden="true">&#9776;</span>';
+      (document.body||document.documentElement).appendChild(handle);ctl.handle=handle;
+      listen(handle,'click',function(event){try{event.preventDefault();event.stopPropagation();}catch(_handleError){}if(ctl.revealTimer){clearTimeout(ctl.revealTimer);ctl.revealTimer=null;}setExpanded(true);scheduleCompact(2200);},false);
+      listen(handle,'pointerenter',function(){ctl.compactHover=true;if(ctl.revealTimer)clearTimeout(ctl.revealTimer);ctl.revealTimer=setTimeout(function(){ctl.revealTimer=null;if(current()&&ctl.compactHover)setExpanded(true);},180);},false);
+      listen(handle,'pointerleave',function(){if(ctl.revealTimer){clearTimeout(ctl.revealTimer);ctl.revealTimer=null;}ctl.compactHover=false;scheduleCompact(500);},false);
+      listen(handle,'focus',function(){setExpanded(true);},false);listen(handle,'blur',function(){scheduleCompact(300);},false);}
+    if(ctl.compactDock!==dock){ctl.compactDock=dock;
+      listen(dock,'pointerenter',function(){ctl.compactHover=true;setExpanded(true);},false);
+      listen(dock,'pointerleave',function(){ctl.compactHover=false;scheduleCompact(500);},false);
+      listen(dock,'focusin',function(){setExpanded(true);},false);
+      listen(dock,'focusout',function(){scheduleCompact(300);},false);}
+    var key=pinPreferenceKey();if(ctl.pinKey!==key){ctl.compactPinned=readPinned();ctl.compactExpanded=true;}
+    ensureCompactObserver();positionHandle();ensurePinRow();updatePinRow();clampOverlays();if(ctl.compactPinned||narrowDock())setExpanded(true);else scheduleCompact(1000);return true;
+  }
+  function removeCompact(){
+    if(ctl.compactTimer){clearTimeout(ctl.compactTimer);ctl.compactTimer=null;}
+    if(ctl.revealTimer){clearTimeout(ctl.revealTimer);ctl.revealTimer=null;}
+    if(ctl.overlayTimer){clearTimeout(ctl.overlayTimer);ctl.overlayTimer=null;}
+    if(ctl.compactObserver)try{ctl.compactObserver.disconnect();}catch(_observerError){}ctl.compactObserver=null;
+    try{if(document.body)document.body.classList.remove('mls-p1-dock-collapsed');}catch(_classError){}
+    if(ctl.handle&&ctl.handle.parentNode)try{ctl.handle.parentNode.removeChild(ctl.handle);}catch(_handleRemoveError){}
+    var row=ctl.pinRow||document.getElementById('mlsP1DockMode');if(row&&row.parentNode)try{row.parentNode.removeChild(row);}catch(_rowRemoveError){}
+    ctl.handle=null;ctl.compactDock=null;ctl.pinRow=null;
   }
   function dockGeometry(){
     var api=window.__mlsCalmShell,dock=document.getElementById('mlsDock'),body=document.body;
     if(!ownerShape(api)||api.active!==true||!dock||!body||!body.classList.contains('mls-calm'))return null;
-    var css,rect;try{css=getComputedStyle(dock);rect=dock.getBoundingClientRect();}catch(_geometryError){return null;}
-    var viewport=Math.max(0,Number(window.innerHeight)||0),gap=viewport-Number(rect.bottom||0);
-    if(css.display==='none'||css.visibility==='hidden'||css.position!=='fixed'||Number(rect.width)<120||Number(rect.height)<36||
-       Number(rect.top)<viewport*.4||gap< -2||gap>120)return null;
-    return {dock:dock,rect:rect,gap:gap};
+    var side=actualDockSide(),collapsed=body.classList.contains('mls-p1-dock-collapsed')&&!narrowDock();
+    var target=collapsed?(ctl.handle||document.getElementById('mlsP1DockHandle')):dock,css,rect;
+    if(!target)return null;try{css=getComputedStyle(target);rect=target.getBoundingClientRect();}catch(_geometryError){return null;}
+    var vw=Math.max(0,Number(window.innerWidth)||0),vh=Math.max(0,Number(window.innerHeight)||0),width=Number(rect.width)||0,height=Number(rect.height)||0;
+    if(css.display==='none'||css.visibility==='hidden'||css.position!=='fixed'||width<36||height<36||Number(rect.left)<-2||Number(rect.top)<-2||Number(rect.right)>vw+2||Number(rect.bottom)>vh+2)return null;
+    if(collapsed){if(width<44||height<44)return null;return {dock:dock,target:target,rect:rect,side:side,collapsed:true};}
+    if((side==='left'||side==='right')?(height<120):(width<120))return null;
+    var edgeGap=side==='top'?Number(rect.top):side==='left'?Number(rect.left):side==='right'?vw-Number(rect.right):vh-Number(rect.bottom);
+    if(edgeGap< -2||edgeGap>Math.max(140,side==='top'?vh*.55:140))return null;
+    /* Top navigation must sit below patient/header identity surfaces. A header
+       may be absent/hidden in small fixtures, but a visible one is authoritative. */
+    if(side==='top'){
+      var blocked=false;['appHeader','mlsCtxBar'].forEach(function(id){var node=document.getElementById(id);if(!node)return;try{var nodeCss=getComputedStyle(node),r=node.getBoundingClientRect();if(nodeCss.display!=='none'&&nodeCss.visibility!=='hidden'&&Number(r.height)>1&&Number(rect.top)<Number(r.bottom)+6)blocked=true;}catch(_identityGeometryError){}});
+      if(blocked)return null;
+    }
+    return {dock:dock,target:dock,rect:rect,side:side,collapsed:false};
   }
   function markReady(){
     if(!current()||!preview())return false;normalizePreference();
     var proof=dockGeometry();if(!proof)return false;
-    try{document.body.classList.add('mls-p1-dock-ready');document.body.removeAttribute('data-mls-dock');}catch(_classError){return false;}
+    try{document.body.classList.add('mls-p1-dock-ready');}catch(_classError){return false;}
+    ensureCompact(proof.dock);
     /* Re-read after the ready-only rail/padding rules land. A bad guard must not
        claim success merely because the dock was healthy before its own CSS. */
-    var finalProof=dockGeometry(),rail=document.getElementById('mlsRdNav'),bodyCss;
-    try{bodyCss=getComputedStyle(document.body);}catch(_bodyCssError){bodyCss=null;}
+    var finalProof=dockGeometry(),rail=document.getElementById('mlsRdNav'),bodyCss,wrap=document.getElementById('appWrap'),wrapCss;
+    try{bodyCss=getComputedStyle(document.body);wrapCss=wrap?getComputedStyle(wrap):null;}catch(_bodyCssError){bodyCss=null;wrapCss=null;}
     if(!finalProof||!bodyCss||parseFloat(bodyCss.paddingLeft||'0')!==0){clearReady();return false;}
+    if(wrapCss&&!narrowDock()){
+      if(finalProof.side==='left'&&parseFloat(wrapCss.paddingLeft||'0')<100){clearReady();return false;}
+      if(finalProof.side==='right'&&parseFloat(wrapCss.paddingRight||'0')<100){clearReady();return false;}
+      if(finalProof.side==='top'&&parseFloat(wrapCss.paddingTop||'0')<80){clearReady();return false;}
+    }
     try{if(rail&&getComputedStyle(rail).display!=='none'){clearReady();return false;}}catch(_railError){clearReady();return false;}
     ctl.owner=window.__mlsCalmShell;ctl.state='ready';ctl.settleAttempt=0;removeStatus();
     try{delete window.__mlsP1CalmDockFailure;delete window.__mlsPresentationFallback;
@@ -46956,7 +47255,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     ctl.settleTimer=setTimeout(function(){ctl.settleTimer=null;if(!current()||attempt!==ctl.loadAttempt)return;ctl.reconcile();},250);
   }
   ctl.reconcile=function(){
-    if(!current())return false;if(!preview())return fail('blocked-preview','The bottom navigation is disabled outside the 1p preview.');
+    if(!current())return false;if(!preview())return fail('blocked-preview','The navigation bar is disabled outside the 1p preview.');
     ensureStyle();normalizePreference();
     var api=window.__mlsCalmShell;
     if(!ownerShape(api)){if(api)return fail('failed-owner-shape');ctl.state='waiting-owner';armSettle();return false;}
@@ -46986,7 +47285,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     (document.body||document.head||document.documentElement).appendChild(node);return node;
   }
   ctl.ensure=function(){
-    if(!current())return false;if(!preview())return fail('blocked-preview','The bottom navigation is disabled outside the 1p preview.');
+    if(!current())return false;if(!preview())return fail('blocked-preview','The navigation bar is disabled outside the 1p preview.');
     ensureStyle();normalizePreference();
     if(markReady())return true;
     var api=window.__mlsCalmShell;
@@ -46999,6 +47298,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
   ctl.revert=function(){
     if(!current())return false;if(ctl.settleTimer){clearTimeout(ctl.settleTimer);ctl.settleTimer=null;}
+    removeCompact();
     ctl.listeners.splice(0).forEach(function(row){try{row[0].removeEventListener(row[1],row[2],row[3]);}catch(_listenerError){}});
     clearReady();removeStatus();if(ctl.style&&ctl.style.parentNode)try{ctl.style.parentNode.removeChild(ctl.style);}catch(_styleError){}ctl.style=null;
     var api=ctl.owner;if(ownerShape(api)&&api===window.__mlsCalmShell&&api.active===true)try{api.revert();}catch(_ownerError){}
@@ -47007,13 +47307,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function listen(target,name,fn,opts){try{target.addEventListener(name,fn,opts);ctl.listeners.push([target,name,fn,opts]);}catch(_listenerError){}}
   function lifecycle(event){if(!current())return;var target=event&&event.target;
     if(target&&target.closest&&target.closest('#mlsClassicBtn,#mlsCalmReturn')){try{event.preventDefault();event.stopPropagation();if(event.stopImmediatePropagation)event.stopImmediatePropagation();}catch(_eventError){}}
-    normalizePreference();if(ctl.state==='ready'&&!dockGeometry())clearReady();ctl.reconcile();}
+    normalizePreference();if(ctl.state==='ready'&&!dockGeometry())clearReady();ctl.reconcile();
+    setTimeout(function(){if(!current())return;ensurePinRow();positionHandle();clampOverlays();
+      if(!ctl.compactPinned&&target&&target.closest&&!target.closest('#mlsDock,#mlsToolsMenu,#mlsP1DockHandle'))scheduleCompact(120);},0);}
+  function settingsChange(event){var target=event&&event.target;if(!target||target.id!=='qolDockSide')return;setTimeout(function(){if(!current())return;normalizePreference();ctl.reconcile();},0);}
+  function sessionBoundary(){if(!current())return;ctl.pinKey='';ctl.compactPinned=readPinned();ctl.compactExpanded=true;normalizePreference();ctl.reconcile();}
+  function escapeCompact(event){if(!current()||ctl.compactPinned||!event||event.key!=='Escape')return;setTimeout(function(){if(current()&&!compactBusy())setExpanded(false);},0);}
+  function focusCompact(event){queueOverlays();var target=event&&event.target;if(!ctl.compactPinned&&target&&target.closest&&!target.closest('#mlsDock,#mlsToolsMenu,#mlsP1DockHandle'))scheduleCompact(120);}
   listen(document,'click',lifecycle,true);['mls:ui-ready','mls:view-changed','mls:topbar-ready','mls:header-rendered'].forEach(function(name){listen(window,name,lifecycle,false);});
+  listen(document,'change',settingsChange,false);listen(document,'keydown',escapeCompact,false);listen(document,'focusin',focusCompact,false);listen(document,'input',queueOverlays,false);listen(window,'mls:session-boundary',sessionBoundary,false);
   listen(window,'resize',lifecycle,false);window[KEY]=ctl;ctl.ensure();
-}catch(e){}})(); /* 1p-only Calm dock guard: bottom placement, no persisted Classic escape, visible fail-safe, reversible presentation owner. */
+}catch(e){}})(); /* 1p-only Calm dock guard: saved-side fidelity, phone-safe bottom fallback, optional 44px reveal, visible fail-safe, reversible presentation owner. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calm_views.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calm_views.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_calm_views.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000,priority:0,owner:'__mlsCalmViews',requiresFoundation:true});}catch(e){}})(); /* Calm Views: one primary action per screen on Calendar/History/AI Studio/Analysis, everything else class-folded behind an in-view More. Loaded on idle - it is chrome over views the doctor reaches after boot, and it must not join the post-login burst (window.__mlsCalmViews cv-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_opnote_room.js"]'))return;var s=document.createElement('script');s.src='feat_mls_opnote_room.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_opnote_room.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500});}catch(e){}})(); /* Op-note workroom home (opr-1.0.0, Stage 0 inert): the owner-approved full-screen room builds inside this one revertible module - see OPNOTE_WORKROOM_PLAN_2026-07-26.md. Idle-deferred: op notes are minutes-after-boot work, never the post-login burst */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_opnote_templates_ui.js";if(document.querySelector("script[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1800});}catch(e){}})(); /* ot-1.0.0: op notes + Templates rebuilt from scratch (owner order). Presentation ONLY - 102 structural grips live in these two subtrees, so this module builds no nodes and moves none; it removes the old #oprSkin and wins by specificity (body.mls-ot3), never by async load order. Revert: window.__mlsOpNoteTemplatesUi.revert() */
+;(function(){try{if(!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true))return;var A='1p-feat_mls_template_modes.js',V='p1-template-modes-1.0.0',K='__mlsP1TemplateModesLoader',prior=window[K];if(prior){if(prior.installed===true&&prior.version===V&&typeof prior.installToken==='string'&&prior.installToken)return;return;}if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var token='p1-template-modes-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2),loader={installed:true,version:V,installToken:token};window[K]=loader;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.setAttribute('data-mls-install-token',token);s.async=true;s.onerror=function(){if(window[K]===loader){loader.installed=false;try{delete window[K];}catch(_deleteError){window[K]=null;}}};(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* /p1-only labels over the established template-mode values: Closely, Balanced, Adapt to case. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_ui_clinical.js";if(document.querySelector("script[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2200,priority:0,owner:'__mlsUiClinical',requiresFoundation:true});}catch(e){}})(); /* uc-1.0.0: the clinical surfaces. Four READ-ME states the white-card equalizer missed - a completed flow step was pixel-identical to one not started, the day row hover was white-5% on white, "already seen" was opacity alone, and the amber chip family disagreed with itself - plus the last blue island in a green app. Glyph or word beside every colour. Revert: window.__mlsUiClinical.revert() */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_ui_shell.js";if(document.querySelector("script[data-mls-asset=\""+A+"\"]"))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2400,priority:0,owner:'__mlsUiShell',requiresFoundation:true});}catch(e){}})(); /* uish-1.0.0: the shell and dialog surfaces - consistent dialog chrome, findable exits, focus rings that stay visible. Carries no animation at all, so it needs no reduced-motion off-switch. Revert: window.__mlsUiShell.revert() */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return f();};sched(function(){if(document.querySelector('script[data-mls-asset="feat_mls_athena_follow.js"]'))return;var s=document.createElement('script');s.src='feat_mls_athena_follow.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_athena_follow.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;},{timeout:2500,priority:0,asset:'feat_mls_athena_follow.js'});}catch(e){}})(); /* pre-action identity safety: secure-gate priority lane installs bidirectional follow listeners before the first patient selection or Athena arrival */

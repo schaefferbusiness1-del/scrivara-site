@@ -278,6 +278,20 @@
       return new Intl.DateTimeFormat("en-CA", { timeZone: EST_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     }, new Date().toISOString().slice(0, 10));
   }
+  /* p1-date-guard-1.0: backend start_at is an instant, while every pull
+     receipt is an account-wall date. Never use the browser's local zone for
+     this fallback: a UTC-midnight row can otherwise move to the adjacent day
+     on a clinician's device. If the account-zone conversion cannot be proven,
+     return an empty date and let the existing exact-day gates refuse it. */
+  function accountDayFromInstant(value) {
+    try {
+      var instant = new Date(value);
+      if (!isFinite(instant.getTime()) || !Intl || !isFn(Intl.DateTimeFormat)) return "";
+      var parts = new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(instant), y = "", m = "", d = "";
+      parts.forEach(function (part) { if (part.type === "year") y = part.value; else if (part.type === "month") m = part.value; else if (part.type === "day") d = part.value; });
+      return /^\d{4}$/.test(y) && /^\d{2}$/.test(m) && /^\d{2}$/.test(d) ? y + "-" + m + "-" + d : "";
+    } catch (eAccountDay) { return ""; }
+  }
   function normDate(d) { var f = gfn("_normDate"); return f ? (f(d) || "") : String(d || "").slice(0, 10); }
   function normTime(t) { var f = gfn("_normTime"); return f ? (f(t) || "") : ""; }
   function apptKey(n, d, t) { var f = gfn("_apptKey"); return f ? f(n, d, t) : (String(n || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + d + "|" + normTime(t)); }
@@ -1053,29 +1067,156 @@
     for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
     return "p_sched_" + (h >>> 0).toString(36);
   }
+  /* p1-metadata-durability-1.0: schedule ledgers, month ownership, and resume
+     intents are small account-local metadata, but a swallowed quota/security
+     exception is still a false durability claim. Every write is echoed before
+     it can be reported as successful. The latch is in memory only so it cannot
+     itself become another quota failure; the active pull turns it into a
+     named receipt and refuses the next navigation until a verified write
+     proves the metadata lane healthy again. */
+  var p1MetadataFailureSerial = 0, p1MetadataFailures = [];
+  function p1MetadataFailureKind(error) {
+    var name = String(error && error.name || ""), code = Number(error && error.code || 0);
+    return name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014 ? "storage-full" : "metadata-persist-failed";
+  }
+  function p1PublishMetadataFailures() {
+    if (!p1MetadataFailures.length) {
+      safe(function () { window.__mlsP1MetadataWriteFailed = null; });
+      return null;
+    }
+    var primary = p1MetadataFailures[0], newestAt = Number(primary.at || 0);
+    for (var fi = 0; fi < p1MetadataFailures.length; fi++) {
+      var item = p1MetadataFailures[fi];
+      if (String(item.reason || "") === "storage-full") primary = item;
+      newestAt = Math.max(newestAt, Number(item.at || 0));
+    }
+    var out = { v: 1, at: newestAt || Date.now(), serial: p1MetadataFailureSerial, scope: "pull-metadata", reason: String(primary.reason || "metadata-persist-failed"), pending: p1MetadataFailures.length };
+    safe(function () { window.__mlsP1MetadataWriteFailed = out; });
+    return out;
+  }
+  function p1RememberMetadataFailure(key, reason, error, operation, attemptedBytes) {
+    p1MetadataFailureSerial++;
+    /* The key can contain the account namespace and browser exceptions can
+       contain implementation details. Neither belongs on the public pull
+       receipt or in a physician-facing diagnostic surface. The fixed reason
+       code plus a monotonic serial is enough to fail closed and correlate the
+       failure without leaking either value. */
+    key = String(key || "@missing-metadata-key"); operation = String(operation || "read");
+    var bytes = Math.max(0, Number(attemptedBytes || 0)), slot = null;
+    for (var fi = 0; fi < p1MetadataFailures.length; fi++) {
+      if (p1MetadataFailures[fi].key === key && p1MetadataFailures[fi].operation === operation) { slot = p1MetadataFailures[fi]; break; }
+    }
+    if (!slot) {
+      slot = { key: key, operation: operation, attemptedBytes: bytes, reason: String(reason || "metadata-persist-failed"), at: Date.now() };
+      p1MetadataFailures.push(slot);
+    } else {
+      slot.attemptedBytes = Math.max(Number(slot.attemptedBytes || 0), bytes);
+      if (String(reason || "") === "storage-full") slot.reason = "storage-full";
+      slot.at = Date.now();
+    }
+    return p1PublishMetadataFailures();
+  }
+  function p1ProveMetadataRecovery(key, operation, provenBytes) {
+    key = String(key || ""); operation = String(operation || ""); provenBytes = Math.max(0, Number(provenBytes || 0));
+    if (!key || !p1MetadataFailures.length) return p1PublishMetadataFailures();
+    var kept = [];
+    for (var fi = 0; fi < p1MetadataFailures.length; fi++) {
+      var item = p1MetadataFailures[fi], recovered = false;
+      if (item.key === key) {
+        if (operation === "set" && (item.operation === "set" || item.operation === "read") && provenBytes >= Number(item.attemptedBytes || 0)) recovered = true;
+        else if (operation === "remove" && item.operation === "remove") recovered = true;
+        else if (operation === "scope" && item.operation === "scope") recovered = true;
+      }
+      if (!recovered) kept.push(item);
+    }
+    p1MetadataFailures = kept;
+    return p1PublishMetadataFailures();
+  }
+  function p1MetadataFailure() { return safe(function () { return window.__mlsP1MetadataWriteFailed || null; }, null); }
+  function p1VerifiedMetadataSet(key, raw) {
+    key = String(key || "");
+    raw = String(raw == null ? "" : raw);
+    if (!key) return { ok: false, reason: "metadata-persist-failed", receipt: p1RememberMetadataFailure(key, "metadata-persist-failed", null, "set", raw.length) };
+    try {
+      localStorage.setItem(key, raw);
+      if (localStorage.getItem(key) !== raw) {
+        var mismatch = p1RememberMetadataFailure(key, "metadata-persist-failed", null, "set", raw.length);
+        return { ok: false, reason: mismatch.reason, receipt: mismatch };
+      }
+      p1ProveMetadataRecovery(key, "set", raw.length);
+      return { ok: true };
+    } catch (eMetadataSet) {
+      var reason = p1MetadataFailureKind(eMetadataSet), failure = p1RememberMetadataFailure(key, reason, eMetadataSet, "set", raw.length);
+      return { ok: false, reason: reason, receipt: failure };
+    }
+  }
+  function p1VerifiedMetadataRemove(key) {
+    key = String(key || "");
+    if (!key) return { ok: false, reason: "metadata-persist-failed", receipt: p1RememberMetadataFailure(key, "metadata-persist-failed", null, "remove", 0) };
+    try {
+      localStorage.removeItem(key);
+      if (localStorage.getItem(key) != null) {
+        var mismatch = p1RememberMetadataFailure(key, "metadata-persist-failed", null, "remove", 0);
+        return { ok: false, reason: mismatch.reason, receipt: mismatch };
+      }
+      p1ProveMetadataRecovery(key, "remove", 0);
+      return { ok: true };
+    } catch (eMetadataRemove) {
+      var reason = p1MetadataFailureKind(eMetadataRemove), failure = p1RememberMetadataFailure(key, reason, eMetadataRemove, "remove", 0);
+      return { ok: false, reason: reason, receipt: failure };
+    }
+  }
+  function p1MetadataRefusal(onStatus) {
+    var failure = p1MetadataFailure();
+    if (!failure) return null;
+    var storage = String(failure.reason || "") === "storage-full", reason = storage ? "storage-full" : "metadata-persist-failed";
+    var error = storage
+      ? "MLS local pull metadata is full, so this pull cannot prove its receipt will survive a reload. Free local storage, then try again."
+      : "MLS local pull metadata could not be verified, so this pull was not started. Reload MLS and try again.";
+    var out = { ok: false, complete: false, reason: reason, gate: "p1-metadata-preflight", error: error, metadataReceipt: failure, retry: {} };
+    if (isFn(onStatus)) onStatus(error, "err");
+    lastPullResult = out;
+    safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(out); });
+    return out;
+  }
   function indexKey(day) { return safe(function () { return isFn(window.uns) ? window.uns(IMPORT_INDEX_SUFFIX + "::" + String(day || "")) : ""; }, ""); }
   function daysKey() { return safe(function () { return isFn(window.uns) ? window.uns(IMPORT_DAYS_SUFFIX) : ""; }, ""); }
   function ensureDay(day) {
-    day = String(day || ""); if (!day || knownDays[day]) return;
+    day = String(day || ""); if (!day || knownDays[day]) return !!day;
+    var k = daysKey(); if (!k) { p1RememberMetadataFailure(k, "metadata-persist-failed"); return false; }
+    var days;
+    try { days = JSON.parse(localStorage.getItem(k) || "[]"); } catch (eDaysRead) { p1RememberMetadataFailure(k, p1MetadataFailureKind(eDaysRead), eDaysRead); return false; }
+    if (!Array.isArray(days)) days = [];
+    if (days.indexOf(day) < 0) days.push(day);
+    days.sort();
+    var evicted = [];
+    while (days.length > 45) evicted.push(days.shift());
+    var saved = p1VerifiedMetadataSet(k, JSON.stringify(days));
+    if (!saved.ok) return false;
+    for (var ei = 0; ei < evicted.length; ei++) {
+      var removed = p1VerifiedMetadataRemove(indexKey(evicted[ei]));
+      if (!removed.ok) return false;
+      delete knownDays[evicted[ei]];
+    }
     knownDays[day] = 1;
-    var k = daysKey(); if (!k) return;
-    safe(function () {
-      var days = JSON.parse(localStorage.getItem(k) || "[]"); if (!Array.isArray(days)) days = [];
-      if (days.indexOf(day) < 0) days.push(day);
-      days.sort();
-      while (days.length > 45) { var old = days.shift(); delete knownDays[old]; localStorage.removeItem(indexKey(old)); }
-      localStorage.setItem(k, JSON.stringify(days));
-    });
+    return true;
   }
   function readIndex(day) {
-    var k = indexKey(day); if (!k) return { v: 1, rows: {} };
-    return safe(function () {
+    var k = indexKey(day); if (!k) { p1RememberMetadataFailure(k, "metadata-persist-failed"); return { v: 1, rows: {}, _p1MetadataUnavailable: true }; }
+    try {
       var x = JSON.parse(localStorage.getItem(k) || "null");
       if (!x || x.v !== 1 || !x.rows || typeof x.rows !== "object") x = { v: 1, rows: {} };
       return x;
-    }, { v: 1, rows: {} });
+    } catch (eIndexRead) {
+      p1RememberMetadataFailure(k, p1MetadataFailureKind(eIndexRead), eIndexRead);
+      return { v: 1, rows: {}, _p1MetadataUnavailable: true };
+    }
   }
-  function writeIndex(day, x) { var k = indexKey(day); if (k) { ensureDay(day); safe(function () { localStorage.setItem(k, JSON.stringify(x)); }); } }
+  function writeIndex(day, x) {
+    var k = indexKey(day); if (!k || !x || x._p1MetadataUnavailable || !ensureDay(day)) { if (!k) p1RememberMetadataFailure(k, "metadata-persist-failed"); return false; }
+    var copy = {}; for (var key in x) if (Object.prototype.hasOwnProperty.call(x, key) && key !== "_p1MetadataUnavailable") copy[key] = x[key];
+    return p1VerifiedMetadataSet(k, JSON.stringify(copy)).ok;
+  }
   /* b752: THE STORE CENSUS. The verdict was built entirely out of counts of
      rows the pull had WALKED, so it could not disagree with the store no
      matter what the store held. Measured live on the owner account, Wed
@@ -1461,31 +1602,35 @@
   }
   function markDone(key, meta) {
     var day = String((meta && meta.date) || ""), x = readIndex(day);
+    if (x._p1MetadataUnavailable) return { ok: false, reason: "metadata-persist-failed" };
     x.rows[key] = { state: "done", patientId: String((meta && meta.patientId) || ""), backendAppointmentId: String((meta && meta.backendAppointmentId) || ""), appt_date: String((meta && meta.date) || ""), updated: Date.now() };
-    writeIndex(day, x); delete inFlight[key];
+    var saved = writeIndex(day, x); if (saved) delete inFlight[key];
+    return saved ? { ok: true } : { ok: false, reason: String((p1MetadataFailure() || {}).reason || "metadata-persist-failed") };
   }
   function claim(key, meta) {
     if (inFlight[key]) return "";
     var day = String((meta && meta.date) || ""), now = Date.now(), x = readIndex(day), old = x.rows[key];
+    if (x._p1MetadataUnavailable) return "";
     if (old && old.state === "done") return "";
     if (old && old.state === "pending" && now - Number(old.updated || 0) < PENDING_TTL) return "";
     var owner = now.toString(36) + Math.random().toString(36).slice(2);
     x.rows[key] = { state: "pending", owner: owner, patientId: String((meta && meta.patientId) || ""), appt_date: String((meta && meta.date) || ""), updated: now };
-    writeIndex(day, x);
+    if (!writeIndex(day, x)) return "";
     var check = readIndex(day).rows[key];
     if (!check || check.state !== "pending" || check.owner !== owner) return "";
     inFlight[key] = owner; return owner;
   }
   function rollback(key, owner, day) {
     var x = readIndex(day), old = x.rows[key];
-    if (old && old.state === "pending" && old.owner === owner) { delete x.rows[key]; writeIndex(day, x); }
+    if (!x._p1MetadataUnavailable && old && old.state === "pending" && old.owner === owner) { delete x.rows[key]; writeIndex(day, x); }
     if (inFlight[key] === owner) delete inFlight[key];
   }
   function clearDone(key, day, backendAppointmentId) {
     var x = readIndex(day), old = x.rows[key];
+    if (x._p1MetadataUnavailable) return false;
     if (!old || old.state !== "done") return false;
     if (backendAppointmentId && String(old.backendAppointmentId || "") !== String(backendAppointmentId)) return false;
-    delete x.rows[key]; writeIndex(day, x); delete inFlight[key]; return true;
+    delete x.rows[key]; if (!writeIndex(day, x)) return false; delete inFlight[key]; return true;
   }
 
   /* ---- authoritative Athena day/provider snapshots ------------------------
@@ -1631,11 +1776,7 @@
   function backendRowId(row) { return String(row && row.id != null ? row.id : "").trim(); }
   function localDayOf(row) {
     var d = normDate(row && row.appt_date); if (d) return d;
-    return safe(function () {
-      if (!row || !row.start_at) return "";
-      var x = new Date(row.start_at);
-      return x.getFullYear() + "-" + ("0" + (x.getMonth() + 1)).slice(-2) + "-" + ("0" + x.getDate()).slice(-2);
-    }, "");
+    return row && row.start_at ? accountDayFromInstant(row.start_at) : "";
   }
   function appointmentCensusDisplayKey() {
     return safe(function () { return isFn(window.uns) ? window.uns(APPOINTMENT_CENSUS_DISPLAY_SUFFIX) : ""; }, "");
@@ -4428,6 +4569,7 @@
     safe(function () { window.__mlsSchedulePullLease = { id: SI_LEASE_ID, kind: "si-pull", at: Date.now() }; });
   }
   function releaseSiLease() {
+    if (typeof monthOwnerToken !== "undefined" && monthOwnerToken) return;
     safe(function () { var l = window.__mlsSchedulePullLease; if (l && l.id === SI_LEASE_ID) delete window.__mlsSchedulePullLease; });
   }
   /* hs-1.0 (live 2026-08-12, b1017 proof-1 caveat): "resolved" is NOT
@@ -5182,7 +5324,16 @@
             var scheduleScopeComplete = p1AppointmentCensusComplete || providerComplete;
             var identityBootstrapComplete = !includeHistory || !!(res.identityBootstrapReceipt && res.identityBootstrapReceipt.complete === true);
             var historyComplete = !includeHistory || !!(historyReceipt.complete && historyReceipt.exactIdentityVerified === true);
-            var complete = !!(r.receipt.complete && scheduleScopeComplete && identityBootstrapComplete && calendarReceipt.complete && historyComplete);
+            var __metadataFailure = p1MetadataFailure();
+            if (!__metadataFailure && Number(opts.__p1MetadataStartSerial || 0) < p1MetadataFailureSerial) {
+              __metadataFailure = { v: 1, at: Date.now(), reason: "metadata-persist-failed", error: "A p1 local metadata write failed during this pull." };
+            }
+            if (__metadataFailure) {
+              calendarReceipt.metadataPersistenceComplete = false;
+              calendarReceipt.metadataPersistenceReason = String(__metadataFailure.reason || "metadata-persist-failed");
+              res.metadataReceipt = __metadataFailure;
+            }
+            var complete = !!(r.receipt.complete && scheduleScopeComplete && identityBootstrapComplete && calendarReceipt.complete && historyComplete && !__metadataFailure);
             res.ok = complete; res.complete = complete;
             res.includeHistory = p1CensusHistoryRequested || includeHistory;
             res.historyRequested = p1CensusHistoryRequested || includeHistory;
@@ -5191,7 +5342,7 @@
             res.providerAttributionComplete = providerComplete;
             res.reason = complete
               ? (p1AppointmentCensusComplete ? "complete-appointment-census-only" : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only"))))
-              : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : "history-partial")));
+              : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : "history-partial"))));
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
@@ -5297,7 +5448,7 @@
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read (" + __ppWhy("no-chart-frame-candidate") + "), so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
-              (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly but could NOT be saved because this browser's MLS storage is full. Existing records are intact - nothing was lost or overwritten. Free storage space, then pull again." : "") +
+              (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly, but MLS could not verify the latest save on this device. Keep this tab open, check available storage, then retry those charts." : "") +
               (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + __ppWhy(String(p.reason || "unread")).slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + (__chartOnly ? " " + __chartOnly + " of the incomplete chart" + (__chartOnly === 1 ? "" : "s") + " DID save the six-card chart summary \u2014 only the visit notes are incomplete; Retry re-reads just those." : "") + contentNotice(historyReceipt) + __redoNote + __tnNote, "err");
             else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; " + (p1CensusHistoryRequested ? "chart history was intentionally skipped because provider attribution is unavailable for this appointment census." : "history was not requested.") + freshnessNotice(r) + __p1ScopeNotice, "ok");
             else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + __p1ScopeNotice + contentNotice(historyReceipt) + __redoNote + __tnNote, "ok");
@@ -5332,9 +5483,17 @@
      --------------------------------------------------------------------- */
   var RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000, RESUME_MAX_ATTEMPTS = 2, RESUME_COUNTDOWN_S = 10;
   function resumeKey() { return safe(function () { return isFn(window.uns) ? window.uns("pullResumeV1") : "pullResumeV1"; }, "pullResumeV1"); }
-  function resumeGet() { return safe(function () { var r = window.localStorage.getItem(resumeKey()); return r ? JSON.parse(r) : null; }, null); }
-  function resumeSave(rec) { safe(function () { window.localStorage.setItem(resumeKey(), JSON.stringify(rec)); }); }
-  function resumeClear() { safe(function () { window.localStorage.removeItem(resumeKey()); }); }
+  function resumeGet() {
+    var key = resumeKey();
+    try { var r = window.localStorage.getItem(key); return r ? JSON.parse(r) : null; }
+    catch (eResumeRead) { p1RememberMetadataFailure(key, p1MetadataFailureKind(eResumeRead), eResumeRead); return null; }
+  }
+  function resumeSave(rec) {
+    var key = resumeKey(), raw = safe(function () { return JSON.stringify(rec); }, "");
+    if (!raw) return { ok: false, reason: "metadata-persist-failed", receipt: p1RememberMetadataFailure(key, "metadata-persist-failed") };
+    return p1VerifiedMetadataSet(key, raw);
+  }
+  function resumeClear() { return p1VerifiedMetadataRemove(resumeKey()); }
   var P1_RESUME_SCOPE_SOURCES = { "day-caller": 1, "day-account": 1, "month": 1, "direct": 1 };
   function p1ResumeScopeSource(value) {
     value = String(value || "direct");
@@ -5398,7 +5557,7 @@
       providerScope: p1ResumeScopeForProvider(provider, source),
       p1CensusEligible: censusEligible === true
     };
-    resumeSave(rec);
+    rec.persistence = resumeSave(rec);
     return rec;
   }
   function resumeBusyElsewhere() {
@@ -5415,15 +5574,22 @@
 
   function pull(opts) {
     opts = opts || {};
+    var __monthOwned = !!(monthOwnerCapability && opts.__p1MonthOwnerToken === monthOwnerCapability);
+    var __foreignMonth = p1MonthForeignOwner();
+    if ((monthPullRunning && !__monthOwned) || (__foreignMonth && !__monthOwned)) return Promise.resolve(p1MonthOverlapRefusal(opts.onStatus, __foreignMonth && __foreignMonth.storageFailure ? "metadata-persist-failed" : "pull-in-flight"));
+    var __metadataBefore = p1MetadataRefusal(opts.onStatus);
+    if (__metadataBefore) return Promise.resolve(__metadataBefore);
+    opts.__p1MetadataStartSerial = p1MetadataFailureSerial;
     var __resumeDate = String(opts.date || "");
     if (__resumeDate) {
       /* p1-resume-scope-1.0.0: the durable intent carries the same frozen
          provider scope as the interrupted pull. Only strong provider ids/keys
          are stored (never display names), and resume re-resolves them against
          the current complete roster instead of widening a selected pull. */
-      p1PersistResumeIntent(__resumeDate, opts, opts.provider,
+      var __resumeIntent = p1PersistResumeIntent(__resumeDate, opts, opts.provider,
         opts.__p1ResumeScopeSource || "direct",
         opts.__p1DayCensusToken === P1_DAY_CENSUS_TOKEN);
+      if (!(__resumeIntent.persistence && __resumeIntent.persistence.ok === true)) return Promise.resolve(p1MetadataRefusal(opts.onStatus));
     }
     var __ownedPull = false;
     var run = function () {
@@ -5448,7 +5614,15 @@
       lastPullResult = value || null;
       /* Clear the intent only when the day is genuinely finished. An honest
          partial keeps it, so the next load continues instead of forgetting. */
-      if (__resumeDate && value && value.complete === true) resumeClear();
+      if (__resumeDate && value && value.complete === true) {
+        var __resumeClear = resumeClear();
+        if (!(__resumeClear && __resumeClear.ok === true)) {
+          value.ok = false; value.complete = false;
+          value.reason = __resumeClear && __resumeClear.reason || "metadata-persist-failed";
+          value.metadataReceipt = __resumeClear && (__resumeClear.receipt || __resumeClear) || p1MetadataFailure();
+          if (isFn(opts.onStatus)) opts.onStatus("The pull finished, but its resume receipt could not be cleared safely. Reload MLS and try again after freeing local storage.", "err");
+        }
+      }
       return value;
     }, function (err) {
       /* A failed pull must not leave a remote caller's choice in force for the
@@ -5468,19 +5642,238 @@
      stands untouched. Keep the predicate in lockstep with qvStoreHealthy
      (mls-connect.js qv-1.2). */
   function _quotaLatchStale() {
-    var r = safe(function () {
-      var ps = window.__mlsPtsStore;
-      if (!ps || typeof ps.isReady !== "function" || !ps.isReady() || typeof ps.receipt !== "function") return null;
-      return ps.receipt() || null;
-    }, null);
-    if (!(r && r.mode === "idb" && r.hydrated === true && r.degraded === false && Number(r.wbFailures) === 0 && Number(r.gen) === Number(r.confirmedGen))) return false;
-    safe(function () { console.warn("[mls-si] quota-preflight: stale write-failure latch CLEARED - the store receipt proves healthy confirmed IndexedDB writes (gen " + r.gen + " == confirmedGen, wbFailures 0, not degraded)."); });
-    safe(function () { window.__mlsStoreWriteFailed = null; });
-    safe(function () { var qg = window.__mlsQuotaGuard; if (qg && typeof qg._chip === "function") qg._chip(); });
-    return true;
+    return safe(function () {
+      var qg = window.__mlsQuotaGuard;
+      return !!(qg && typeof qg._recover === "function" && qg._recover("pull-preflight") === true);
+    }, false);
   }
 
-  var monthPullRunning = false;
+  var monthPullRunning = false, monthOwnerToken = "", monthOwnerCapability = null, monthOwnerTimer = null, monthOwnerLost = false, monthLockRelease = null;
+  var monthOwnerClaimPending = false, monthOwnerStorageKey = "", monthOwnerHeartbeatKey = "", monthOwnerScopeProof = "", monthOwnerScopeEpoch = 0;
+  var P1_MONTH_OWNER_TTL_MS = 180000, P1_MONTH_OWNER_SETTLE_MS = 90, P1_MONTH_SCOPE_FAILURE_KEY = "@p1-month-account-scope";
+  function p1MonthOwnerScope() {
+    try {
+      if (!isFn(window.uns)) return null;
+      /* Keep the established owner key/version so a rolling/reloaded P1 bundle
+         still sees an older live lease; the additive heartbeat is optional. */
+      var suffix = "p1MonthPullOwnerV1", probeSuffix = "p1MonthPullScopeProbeV2";
+      var key = String(window.uns(suffix) || ""), probe = String(window.uns(probeSuffix) || "");
+      if (!key || !probe || key === suffix || probe === probeSuffix || key.slice(-suffix.length) !== suffix || probe.slice(-probeSuffix.length) !== probeSuffix) return null;
+      var prefix = key.slice(0, key.length - suffix.length), probePrefix = probe.slice(0, probe.length - probeSuffix.length);
+      /* `uns()` uses an underscore only before a session is owned. It is a
+         placeholder, not an account namespace, and must never own a month. */
+      if (!prefix || prefix !== probePrefix || /(?:^|::)_::$/.test(prefix)) return null;
+      var accountKnown = Object.prototype.hasOwnProperty.call(window, "__mlsSessionAccount");
+      var account = String(safe(function () { return window.__mlsSessionAccount; }, "") || "").trim().toLowerCase();
+      if (accountKnown && (!account || prefix.toLowerCase().indexOf("::" + account + "::") < 0)) return null;
+      p1ProveMetadataRecovery(P1_MONTH_SCOPE_FAILURE_KEY, "scope", 0);
+      return { key: key, proof: prefix, epoch: Math.max(0, Number(safe(function () { return window.__mlsSessionEpoch; }, 0) || 0)) };
+    } catch (eMonthScope) { return null; }
+  }
+  function p1MonthHeartbeatKey(key, token) { return String(key || "") + "::heartbeat::" + String(token || ""); }
+  function p1MonthOwnerSnapshot(scope) {
+    if (!scope || !scope.key) return { ok: false, reason: "account-scope-unverified" };
+    var raw, parsed = null, heartbeat = null;
+    try {
+      raw = localStorage.getItem(scope.key);
+      if (!raw) return { ok: true, owner: null, fresh: false };
+      parsed = JSON.parse(raw);
+      if (!parsed || (parsed.v !== 1 && parsed.v !== 2) || !/^p1-month-[a-z0-9]{6,24}$/.test(String(parsed.id || ""))) throw new Error("invalid month owner receipt");
+    } catch (eMonthOwnerRead) {
+      var reason = p1MetadataFailureKind(eMonthOwnerRead), failure = p1RememberMetadataFailure(scope.key, reason, eMonthOwnerRead, "read", 0);
+      return { ok: false, reason: reason, receipt: failure };
+    }
+    var heartbeatKey = p1MonthHeartbeatKey(scope.key, parsed.id);
+    try {
+      var heartbeatRaw = localStorage.getItem(heartbeatKey);
+      if (heartbeatRaw) heartbeat = JSON.parse(heartbeatRaw);
+    } catch (eMonthHeartbeatRead) {
+      var heartbeatReason = p1MetadataFailureKind(eMonthHeartbeatRead), heartbeatFailure = p1RememberMetadataFailure(heartbeatKey, heartbeatReason, eMonthHeartbeatRead, "read", 0);
+      return { ok: false, reason: heartbeatReason, receipt: heartbeatFailure, owner: parsed };
+    }
+    var heartbeatValid = !!(heartbeat && heartbeat.v === 1 && String(heartbeat.id || "") === String(parsed.id));
+    var stamp = heartbeatValid ? Number(heartbeat.at || 0) : (parsed.v === 1 ? Number(parsed.at || 0) : 0);
+    var age = Date.now() - stamp, fresh = !!(isFinite(age) && age >= 0 && age < P1_MONTH_OWNER_TTL_MS);
+    return { ok: true, owner: parsed, fresh: fresh, heartbeatKey: heartbeatKey, heartbeat: heartbeatValid ? heartbeat : null };
+  }
+  function p1MonthForeignOwner() {
+    var scope = p1MonthOwnerScope();
+    /* A day pull need not depend on month metadata when no account namespace
+       exists: an unscoped month cannot be acquired in the first place. */
+    if (!scope) return null;
+    var snapshot = p1MonthOwnerSnapshot(scope);
+    if (!snapshot.ok) return { storageFailure: true };
+    if (!snapshot.owner || !snapshot.fresh) return null;
+    if (monthOwnerToken && monthOwnerStorageKey === scope.key && String(snapshot.owner.id) === monthOwnerToken) return null;
+    return snapshot.owner;
+  }
+  function p1MonthCandidateStillHeld(candidate) {
+    if (!candidate || !candidate.token || !candidate.scope) return false;
+    var current = p1MonthOwnerScope();
+    if (!current || current.key !== candidate.scope.key || current.proof !== candidate.scope.proof || (candidate.scope.epoch > 0 && current.epoch > 0 && current.epoch !== candidate.scope.epoch)) return false;
+    var snapshot = p1MonthOwnerSnapshot(candidate.scope);
+    return !!(snapshot.ok && snapshot.fresh && snapshot.owner && String(snapshot.owner.id) === candidate.token);
+  }
+  function p1MonthOwnerStillHeld() {
+    if (!monthOwnerToken || !monthOwnerStorageKey || !monthOwnerHeartbeatKey) return false;
+    return p1MonthCandidateStillHeld({ token: monthOwnerToken, heartbeatKey: monthOwnerHeartbeatKey, scope: { key: monthOwnerStorageKey, proof: monthOwnerScopeProof, epoch: monthOwnerScopeEpoch } });
+  }
+  function p1CleanupMonthCandidate(candidate) {
+    if (!candidate) return { ok: true };
+    var ownerRemoval = { ok: true }, heartbeatRemoval = { ok: true };
+    try {
+      var raw = localStorage.getItem(candidate.scope.key), parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && String(parsed.id || "") === candidate.token) ownerRemoval = p1VerifiedMetadataRemove(candidate.scope.key);
+    } catch (eCandidateCleanupRead) {
+      var readReason = p1MetadataFailureKind(eCandidateCleanupRead), readFailure = p1RememberMetadataFailure(candidate.scope.key, readReason, eCandidateCleanupRead, "read", 0);
+      ownerRemoval = { ok: false, reason: readReason, receipt: readFailure };
+    }
+    heartbeatRemoval = p1VerifiedMetadataRemove(candidate.heartbeatKey);
+    return { ok: ownerRemoval.ok === true && heartbeatRemoval.ok === true, reason: ownerRemoval.ok !== true ? (ownerRemoval.reason || "metadata-persist-failed") : (heartbeatRemoval.reason || "metadata-persist-failed"), metadataReceipt: ownerRemoval.receipt || heartbeatRemoval.receipt || null };
+  }
+  function p1PrepareMonthCandidate(scope) {
+    if (!scope) {
+      var scopeFailure = p1RememberMetadataFailure(P1_MONTH_SCOPE_FAILURE_KEY, "metadata-persist-failed", null, "scope", 0);
+      return { ok: false, reason: "account-scope-unverified", metadataReceipt: scopeFailure };
+    }
+    if (monthPullRunning || monthOwnerToken || pullRunning || foreignPullLease()) return { ok: false, reason: "pull-in-flight" };
+    var snapshot = p1MonthOwnerSnapshot(scope);
+    if (!snapshot.ok) return { ok: false, reason: snapshot.reason || "metadata-persist-failed", metadataReceipt: snapshot.receipt || null };
+    if (snapshot.owner && snapshot.fresh) return { ok: false, reason: "pull-in-flight" };
+    var token = "p1-month-" + (Math.random().toString(36).slice(2, 12) + "0000000000").slice(0, 10), now = Date.now();
+    var candidate = { token: token, scope: scope, heartbeatKey: p1MonthHeartbeatKey(scope.key, token) };
+    var heartbeat = p1VerifiedMetadataSet(candidate.heartbeatKey, JSON.stringify({ v: 1, id: token, at: now }));
+    if (!heartbeat.ok) return { ok: false, reason: heartbeat.reason, metadataReceipt: heartbeat.receipt || null };
+    var owner = p1VerifiedMetadataSet(scope.key, JSON.stringify({ v: 1, id: token, at: now, heartbeat: 1 }));
+    if (!owner.ok) {
+      p1VerifiedMetadataRemove(candidate.heartbeatKey);
+      return { ok: false, reason: owner.reason, metadataReceipt: owner.receipt || null };
+    }
+    if (!p1MonthCandidateStillHeld(candidate)) {
+      p1CleanupMonthCandidate(candidate);
+      return { ok: false, reason: "pull-in-flight", metadataReceipt: p1MetadataFailure() };
+    }
+    return { ok: true, candidate: candidate };
+  }
+  function p1ActivateMonthCandidate(candidate) {
+    if (!p1MonthCandidateStillHeld(candidate)) return { ok: false, reason: "pull-in-flight", metadataReceipt: p1MetadataFailure() };
+    monthOwnerToken = candidate.token; monthOwnerStorageKey = candidate.scope.key; monthOwnerHeartbeatKey = candidate.heartbeatKey;
+    monthOwnerScopeProof = candidate.scope.proof; monthOwnerScopeEpoch = candidate.scope.epoch; monthOwnerCapability = {}; monthOwnerLost = false; monthPullRunning = true; claimSiLease();
+    monthOwnerTimer = setInterval(function () {
+      if (!monthOwnerToken || monthOwnerLost) return;
+      if (!p1MonthOwnerStillHeld()) { monthOwnerLost = true; safe(function () { window.__mlsPullStopRequested = true; }); return; }
+      /* Heartbeats are token-specific. A stale tab can update only its own
+         retired heartbeat; it can never overwrite a replacement owner in the
+         compare-to-write gap. */
+      var refreshed = p1VerifiedMetadataSet(monthOwnerHeartbeatKey, JSON.stringify({ v: 1, id: monthOwnerToken, at: Date.now() }));
+      if (!refreshed.ok || !p1MonthOwnerStillHeld()) { monthOwnerLost = true; safe(function () { window.__mlsPullStopRequested = true; }); }
+    }, 25000);
+    return { ok: true, token: monthOwnerCapability };
+  }
+  function p1ClaimMonthOwnerCore(scope) {
+    var prepared = p1PrepareMonthCandidate(scope);
+    if (!prepared.ok) return prepared;
+    var activated = p1ActivateMonthCandidate(prepared.candidate);
+    if (activated && activated.ok) return activated;
+    var cleanup = p1CleanupMonthCandidate(prepared.candidate);
+    return {
+      ok: false,
+      reason: cleanup.ok === true ? String(activated && activated.reason || 'pull-in-flight') : String(cleanup.reason || 'metadata-persist-failed'),
+      metadataReceipt: cleanup.metadataReceipt || (activated && activated.metadataReceipt) || p1MetadataFailure()
+    };
+  }
+  function p1MonthSettle() { return new Promise(function (resolve) { setTimeout(resolve, P1_MONTH_OWNER_SETTLE_MS); }); }
+  function p1ClaimMonthOwnerFallback(scope) {
+    var prepared = p1PrepareMonthCandidate(scope);
+    if (!prepared.ok) return Promise.resolve(prepared);
+    var candidate = prepared.candidate;
+    /* Two separated observations make a simultaneous last-writer visible.
+       The protocol never refreshes the shared pointer afterward; if a browser
+       cannot keep the same candidate visible through both observations, it
+       fails closed instead of starting Athena navigation. */
+    return p1MonthSettle().then(function () {
+      if (!p1MonthCandidateStillHeld(candidate)) throw { p1Arbitration: true };
+      return p1MonthSettle();
+    }).then(function () {
+      if (!p1MonthCandidateStillHeld(candidate)) throw { p1Arbitration: true };
+      var activated = p1ActivateMonthCandidate(candidate);
+      if (activated && activated.ok) return activated;
+      var activationCleanup = p1CleanupMonthCandidate(candidate);
+      return { ok: false, reason: activationCleanup.ok === true ? "pull-in-flight" : (activationCleanup.reason || "metadata-persist-failed"), metadataReceipt: activationCleanup.metadataReceipt || p1MetadataFailure() };
+    }).catch(function (error) {
+      var cleanup = p1CleanupMonthCandidate(candidate);
+      return { ok: false, reason: cleanup.ok === true && error && error.p1Arbitration ? "pull-in-flight" : (cleanup.reason || "metadata-persist-failed"), metadataReceipt: cleanup.metadataReceipt || p1MetadataFailure() };
+    });
+  }
+  function p1ClaimMonthOwner() {
+    if (monthPullRunning || monthOwnerClaimPending || monthOwnerToken || monthLockRelease) return Promise.resolve({ ok: false, reason: "pull-in-flight" });
+    var scope = p1MonthOwnerScope();
+    if (!scope) {
+      var scopeFailure = p1RememberMetadataFailure(P1_MONTH_SCOPE_FAILURE_KEY, "metadata-persist-failed", null, "scope", 0);
+      return Promise.resolve({ ok: false, reason: "account-scope-unverified", metadataReceipt: scopeFailure });
+    }
+    monthOwnerClaimPending = true;
+    var locks = safe(function () { return navigator && navigator.locks && isFn(navigator.locks.request) ? navigator.locks : null; }, null);
+    if (!locks) return p1ClaimMonthOwnerFallback(scope).then(function (result) { monthOwnerClaimPending = false; return result; }, function () { monthOwnerClaimPending = false; return { ok: false, reason: "metadata-persist-failed", metadataReceipt: p1MetadataFailure() }; });
+    var readyResolve, readySettled = false, heldResolve;
+    var ready = new Promise(function (resolve) { readyResolve = resolve; });
+    var held = new Promise(function (resolve) { heldResolve = resolve; });
+    var attemptRelease = function () { if (heldResolve) { heldResolve(); heldResolve = null; } };
+    function finish(result) { if (readySettled) return; readySettled = true; monthOwnerClaimPending = false; readyResolve(result); }
+    try {
+      Promise.resolve(locks.request("mls-p1-month-owner", { mode: "exclusive", ifAvailable: true }, function (lock) {
+        if (!lock) { finish({ ok: false, reason: "pull-in-flight" }); return; }
+        var result = p1ClaimMonthOwnerCore(scope);
+        if (!result.ok) { finish(result); return; }
+        /* Publish only this successfully acquired attempt's resolver. A later
+           refused click cannot null or replace the active owner's release. */
+        monthLockRelease = attemptRelease;
+        finish(result);
+        return held;
+      })).catch(function () { if (!readySettled) finish({ ok: false, reason: "pull-in-flight" }); });
+    } catch (eMonthLock) { finish({ ok: false, reason: "pull-in-flight" }); }
+    return ready;
+  }
+  function p1ReleaseMonthOwner() {
+    var token = monthOwnerToken, key = monthOwnerStorageKey, heartbeatKey = monthOwnerHeartbeatKey, lostBeforeRelease = monthOwnerLost === true;
+    if (monthOwnerTimer != null) { safe(function () { clearInterval(monthOwnerTimer); }); monthOwnerTimer = null; }
+    var ownerRemoval = { ok: false, reason: "metadata-persist-failed" }, heartbeatRemoval = { ok: false, reason: "metadata-persist-failed" }, ownerCurrent = false;
+    try {
+      var scope = { key: key, proof: monthOwnerScopeProof, epoch: monthOwnerScopeEpoch }, snapshot = p1MonthOwnerSnapshot(scope);
+      if (!snapshot.ok) ownerRemoval = { ok: false, reason: snapshot.reason || "metadata-persist-failed", receipt: snapshot.receipt || null };
+      else {
+        ownerCurrent = !!(token && snapshot.owner && snapshot.fresh && String(snapshot.owner.id) === token);
+        /* Even a stale copy of our own token is safe to remove. A replacement
+           token is never touched. */
+        if (token && snapshot.owner && String(snapshot.owner.id) === token) ownerRemoval = p1VerifiedMetadataRemove(key);
+        else {
+          var missing = p1RememberMetadataFailure(key, "metadata-persist-failed", null, "read", 0);
+          ownerRemoval = { ok: false, reason: missing.reason, receipt: missing };
+        }
+      }
+    } catch (eMonthOwnerRelease) {
+      var releaseReason = p1MetadataFailureKind(eMonthOwnerRelease), releaseFailure = p1RememberMetadataFailure(key, releaseReason, eMonthOwnerRelease, "read", 0);
+      ownerRemoval = { ok: false, reason: releaseReason, receipt: releaseFailure };
+    }
+    heartbeatRemoval = heartbeatKey ? p1VerifiedMetadataRemove(heartbeatKey) : { ok: false, reason: "metadata-persist-failed", receipt: p1RememberMetadataFailure(heartbeatKey, "metadata-persist-failed", null, "remove", 0) };
+    monthOwnerToken = ""; monthOwnerCapability = null; monthOwnerLost = false; monthOwnerStorageKey = ""; monthOwnerHeartbeatKey = ""; monthOwnerScopeProof = ""; monthOwnerScopeEpoch = 0;
+    if (monthLockRelease) { var unlock = monthLockRelease; monthLockRelease = null; unlock(); }
+    releaseSiLease();
+    var ok = !lostBeforeRelease && ownerCurrent && ownerRemoval.ok === true && heartbeatRemoval.ok === true;
+    var failedRemoval = ownerRemoval.ok !== true ? ownerRemoval : heartbeatRemoval;
+    return { ok: ok, reason: ok ? "released" : String(failedRemoval.reason || "month-owner-unverified"), ownerLost: lostBeforeRelease || !ownerCurrent, metadataReceipt: failedRemoval.ok === true ? null : (failedRemoval.receipt || null) };
+  }
+  function p1MonthOverlapRefusal(onStatus, reason) {
+    var out = { ok: false, complete: false, reason: reason || "pull-in-flight", gate: "p1-month-owner", holder: "month pull", error: reason === "metadata-persist-failed" || reason === "storage-full"
+      ? "MLS local pull metadata could not be verified, so no Athena navigation was started. Reload MLS and try again."
+      : "A month pull is already running. Let it finish before starting another day or month pull.", retry: {} };
+    if (reason === "storage-full") out.error = "MLS could not save pull coordination data on this device, so no Athena navigation was started. Keep this tab open, check available storage, then try again.";
+    if (reason === "account-scope-unverified") out.error = "MLS could not prove which signed-in account owns this pull, so no Athena navigation was started. Sign in again and reload MLS.";
+    if (isFn(onStatus)) onStatus(out.error, "err");
+    lastPullResult = out;
+    safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(out); });
+    return out;
+  }
   function monthDateKeys(month) {
     var m = /^(\d{4})-(\d{2})$/.exec(String(month || ""));
     if (!m) return null;
@@ -5500,6 +5893,22 @@
     return out;
   }
 
+  function p1MonthDayCheckpoint(callback, date, outcome) {
+    var reason = String(outcome && outcome.reason || "no-result");
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(reason)) reason = "unclassified";
+    var checkpoint = {
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date) : "",
+      ok: !!(outcome && outcome.ok === true),
+      complete: !!(outcome && outcome.complete === true),
+      reason: reason
+    };
+    /* This callback is a PHI-free durability seam for a caller that owns a
+       larger range manifest. It is advisory to the month engine: a broken
+       callback can never interrupt the clinical pull or its cleanup. */
+    if (isFn(callback)) safe(function () { callback(checkpoint); });
+    return checkpoint;
+  }
+
   /* One exact month route for Staff prep and the chart-history continuation.
      It deliberately reuses pull() for every frozen day: same two-dimensional
      schedule receipt, same exact provider/appointment/patient identity, same
@@ -5517,14 +5926,18 @@
       dates = dates.filter(function (d) { return onlyDates[d] === 1; });
     }
     var includeHistory = opts.includeHistory !== false;
+    var monthPullVisitBodies = (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null;
     var onStatus = isFn(opts.onStatus) ? opts.onStatus : function () {};
+    var onDayCheckpoint = isFn(opts.onDayCheckpoint) ? opts.onDayCheckpoint : null;
+    var shouldStop = isFn(opts.shouldStop) ? opts.shouldStop : null;
     var gate = resolveProviderRequest(opts.provider, { allowAll: true, requireRosterForAll: true, allowDetectedProvider: true });
     function failed(reason, error) {
       return { ok: false, complete: false, reason: reason, error: error || "", month: month, includeHistory: includeHistory, provider: gate.provider || null, providerRosterReceipt: gate.receipt || null, days: [], totals: { days: 0, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 }, retry: { dates: [] } };
     }
     if (!dates || !dates.length) return Promise.resolve(failed("invalid-month", "Choose the current or a past month."));
     if (!gate.ok) { onStatus(gate.error || "The provider roster is incomplete.", "err"); return Promise.resolve(failed(gate.reason, gate.error)); }
-    if (monthPullRunning) return Promise.resolve(failed("pull-in-flight", "Another exact month pull is already running."));
+    var __metadataBeforeMonth = p1MetadataRefusal(onStatus);
+    if (__metadataBeforeMonth) return Promise.resolve(Object.assign(failed(__metadataBeforeMonth.reason, __metadataBeforeMonth.error), __metadataBeforeMonth));
     /* ql-1.0 (stale-quota-latch 2026-08-11, proof-2 disclosed gap): the MONTH
        lane bypassed the b1014 quota preflight entirely. Same gate as the day
        lane, same reality check first: a stale latch over a provably-healthy
@@ -5534,8 +5947,7 @@
     var _lrQuotaM = safe(function () { return window.__mlsStoreWriteFailed; }, null);
     if (_lrQuotaM && typeof _quotaLatchStale === "function" && _quotaLatchStale()) _lrQuotaM = null;
     if (_lrQuotaM) {
-      var _lrQMAge = Math.max(0, Math.round((Date.now() - Number(_lrQuotaM.at || Date.now())) / 60000));
-      var _lrQMRefusal = failed("storage-full-writes-failing", "Local storage is FULL - a save failed to persist " + (_lrQMAge ? _lrQMAge + " min ago" : "just now") + ", so new pull data would not survive a reload. No Athena navigation was started. Free storage space (the storage fix is in progress), then pull again.");
+      var _lrQMRefusal = failed("storage-full-writes-failing", "MLS could not verify the latest save on this device, so new pull data might not survive a reload. No Athena navigation was started. Keep this tab open, check available storage, then retry the last action before pulling again.");
       _lrQMRefusal.gate = "quota-preflight";
       _lrQMRefusal.failures = Number(safe(function () { return window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures; }, 0) || 0);
       _lrQMRefusal.lastFailAt = Number(_lrQuotaM.at || 0) || null;
@@ -5543,6 +5955,16 @@
       safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: _lrQMRefusal.error }; });
       return Promise.resolve(_lrQMRefusal);
     }
+    /* Arm this admitted run before the asynchronous owner claim. A pause,
+       cancel, or account-boundary stop that arrives while the claim settles
+       must remain armed; resetting inside the continuation could erase it and
+       start one more day after the caller explicitly stopped. */
+    window.__mlsPullStopRequested = false;
+    return Promise.resolve(p1ClaimMonthOwner()).then(function (monthOwner) {
+      if (!monthOwner || !monthOwner.ok) {
+        var ownerRefusal = p1MonthOverlapRefusal(onStatus, monthOwner && monthOwner.reason || "pull-in-flight");
+        return Object.assign(failed(ownerRefusal.reason, ownerRefusal.error), ownerRefusal);
+      }
     var frozenProvider = gate.provider === "all" ? "all" : {
       id: String(gate.provider.id || ""), stableKey: String(gate.provider.stableKey || ""), raw: String(gate.provider.raw || gate.provider.name || ""),
       name: String(gate.provider.name || ""), rosterVerified: gate.provider.rosterVerified === true,
@@ -5557,8 +5979,11 @@
       totals: { days: dates.length, completeDays: 0, scheduleAttempted: 0, scheduleAccounted: 0, created: 0, repaired: 0, skipped: 0, historiesRequested: 0, historiesProcessed: 0, failures: 0 },
       retry: { dates: [] }
     };
-    monthPullRunning = true;
-    window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
+    /* A durable range owner can be paused/cancelled while this async month
+       owner claim is still settling. Re-check its frozen control immediately
+       after the normal new-run reset so that race starts zero Athena days. A
+       broken predicate fails closed; ordinary month callers provide none. */
+    if (shouldStop && safe(function () { return shouldStop() === true; }, true)) window.__mlsPullStopRequested = true;
     /* si-1.7.12 (live 2026-07-18): with athenaOne signed out, the month sweep
        machine-gunned all 30 days in five seconds — thirty identical failures
        and a bare "0/30 verified". A failure that repeats identically on
@@ -5585,30 +6010,49 @@
     var chain = Promise.resolve();
     dates.forEach(function (date, index) {
       chain = chain.then(function () {
+        if (!monthOwnerLost && !p1MonthOwnerStillHeld()) {
+          monthOwnerLost = true;
+          safe(function () { window.__mlsPullStopRequested = true; });
+        }
+        if (monthOwnerLost) {
+          var ownerLostDay = { date: date, ok: false, complete: false, reason: "metadata-persist-failed" };
+          result.days.push(ownerLostDay);
+          result.totals.failures++; result.retry.dates.push(date);
+          onStatus(date + ": Month owner metadata could not be refreshed, so this day was not attempted and remains queued for retry.", "err");
+          p1MonthDayCheckpoint(onDayCheckpoint, date, ownerLostDay);
+          return;
+        }
         if (window.__mlsPullStopRequested === true) {
-          result.days.push({ date: date, ok: false, complete: false, reason: "stopped-by-user" });
+          var stoppedDay = { date: date, ok: false, complete: false, reason: "stopped-by-user" };
+          result.days.push(stoppedDay);
           result.stoppedByUser = true;
           result.retry.dates.push(date);
           onStatus(date + ": Not pulled — stop was requested. The day is queued for retry.", "warn");
+          p1MonthDayCheckpoint(onDayCheckpoint, date, stoppedDay);
           return;
         }
         if (breaker.tripped) {
-          result.days.push({ date: date, ok: false, complete: false, reason: "not-attempted-after-systemic-failure" });
+          var breakerDay = { date: date, ok: false, complete: false, reason: "not-attempted-after-systemic-failure" };
+          result.days.push(breakerDay);
           result.totals.failures++; result.retry.dates.push(date);
           onStatus(date + ": Not attempted — three days in a row failed the same way (" + breaker.reason + "), so MLS stopped rather than repeat the failure. The day is queued for retry.", "err");
+          p1MonthDayCheckpoint(onDayCheckpoint, date, breakerDay);
           return;
         }
         onStatus("Month pull " + (index + 1) + "/" + dates.length + ": " + date, "");
         return pull({
           date: date,
           provider: frozenProvider,
+          __p1MonthOwnerToken: monthOwner.token,
           __p1DetectedProvider: !!(frozenProvider && frozenProvider !== "all" && frozenProvider.detectedOnly === true),
           __p1ResumeScopeSource: "month",
           includeHistory: includeHistory,
+          pullVisitBodies: monthPullVisitBodies,
           onStatus: function (message, kind) { onStatus(date + ": " + String(message || ""), kind); }
         }).then(function (day) {
           day = day || { ok: false, complete: false, reason: "no-result" };
-          result.days.push({ date: date, ok: day.ok === true, complete: day.complete === true, reason: day.reason || "", receipt: day });
+          var settledDay = { date: date, ok: day.ok === true, complete: day.complete === true, reason: day.reason || "no-result", receipt: day };
+          result.days.push(settledDay);
           var cr = day.calendarReceipt || {}, hr = day.historyReceipt || {};
           result.totals.scheduleAttempted += Number(cr.attempted || 0);
           result.totals.scheduleAccounted += Number(cr.accounted || 0);
@@ -5630,22 +6074,46 @@
               if (breaker.streak >= 3) breaker.tripped = true;
             } else { breaker.reason = ""; breaker.streak = 0; }
           }
+          p1MonthDayCheckpoint(onDayCheckpoint, date, settledDay);
         }, function (err) {
           /* A day must never close silently: this rejection path previously
              recorded the exception into result.days and emitted NOTHING, so a
              live observer only noticed when the date sequence jumped (day 6,
              2026-08-09). Same day-end shape as every other exit. */
-          result.days.push({ date: date, ok: false, complete: false, reason: "exception", error: String(err && err.message || err || "") });
+          /* Exception messages can contain DOM text, chart fragments, URLs, or
+             implementation details. The physician and durable range receipt
+             need the failed date and retry state, not the raw exception. */
+          var exceptionType = String(err && err.name || "Error").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || "Error";
+          var exceptionDay = { date: date, ok: false, complete: false, reason: "exception", errorType: exceptionType };
+          result.days.push(exceptionDay);
           result.totals.failures++; result.retry.dates.push(date);
-          onStatus(date + ": Day failed with an unexpected error before finishing — nothing was marked complete and the day is queued for retry. (" + String(err && err.message || err || "unknown").slice(0, 160) + ")", "err");
+          onStatus(date + ": Day stopped before finishing. Nothing was marked complete, and this day is queued for retry.", "err");
+          p1MonthDayCheckpoint(onDayCheckpoint, date, exceptionDay);
         });
       });
     });
     return chain.then(function () {
+      /* Prove ownership once more after the final day. A suspended tab can
+         lose its heartbeat during that last long read; checking only before
+         each day would otherwise announce a false completed month. Cleanup
+         is also verified, so a stuck owner record cannot hide behind green. */
+      var ownerHeldAtFinish = !monthOwnerLost && p1MonthOwnerStillHeld();
+      var ownerRelease = p1ReleaseMonthOwner();
       monthPullRunning = false;
-      result.complete = result.totals.completeDays === dates.length && result.retry.dates.length === 0;
+      var ownerProofComplete = ownerHeldAtFinish && ownerRelease && ownerRelease.ok === true;
+      if (!ownerProofComplete) {
+        var finalRetryDate = dates.length ? dates[dates.length - 1] : "";
+        if (finalRetryDate && result.retry.dates.indexOf(finalRetryDate) < 0) result.retry.dates.push(finalRetryDate);
+        result.totals.failures++;
+        result.monthOwnerReceipt = {
+          complete: false,
+          reason: ownerRelease && ownerRelease.reason || "month-owner-unverified",
+          ownerLost: !ownerHeldAtFinish || !!(ownerRelease && ownerRelease.ownerLost)
+        };
+      }
+      result.complete = ownerProofComplete && result.totals.completeDays === dates.length && result.retry.dates.length === 0;
       result.ok = result.complete;
-      result.reason = result.complete ? "complete" : (breaker.tripped ? "month-stopped-systemic" : "month-partial");
+      result.reason = result.complete ? "complete" : (!ownerProofComplete ? "month-owner-unverified" : (breaker.tripped ? "month-stopped-systemic" : "month-partial"));
       if (breaker.tripped) result.systemicReason = breaker.reason;
       onStatus(result.complete
         ? ("Verified month complete: " + result.totals.completeDays + "/" + dates.length + " days; schedule " + result.totals.scheduleAccounted + "/" + result.totals.scheduleAttempted + "; histories " + result.totals.historiesProcessed + "/" + result.totals.historiesRequested + "; failures 0." + providerScopeNotice(frozenProvider === "all" ? "all" : "selected"))
@@ -5654,9 +6122,19 @@
           : ("Month incomplete: " + result.totals.completeDays + "/" + dates.length + " days verified; retry " + result.retry.dates.length + " day" + (result.retry.dates.length === 1 ? "" : "s") + ".")), result.complete ? "ok" : "err");
       return result;
     }, function (err) {
+      var ownerRelease = p1ReleaseMonthOwner();
       monthPullRunning = false;
-      result.reason = "month-exception"; result.error = String(err && err.message || err || "");
+      result.reason = ownerRelease && ownerRelease.ok === true ? "month-exception" : "month-owner-unverified";
+      result.errorType = String(err && err.name || "Error").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || "Error";
+      if (!(ownerRelease && ownerRelease.ok === true)) result.monthOwnerReceipt = { complete: false, reason: ownerRelease && ownerRelease.reason || "month-owner-unverified", ownerLost: !!(ownerRelease && ownerRelease.ownerLost) };
       result.totals.failures++; return result;
+    });
+    }).catch(function (err) {
+      var cleanup = monthOwnerToken ? p1ReleaseMonthOwner() : { ok: true };
+      monthPullRunning = false;
+      var out = failed(cleanup.ok === true ? "month-exception" : "month-owner-unverified", "The month pull stopped before it could start safely. Reload MLS and retry the remaining days.");
+      if (cleanup.ok !== true) out.monthOwnerReceipt = { complete: false, reason: cleanup.reason || "month-owner-unverified", ownerLost: !!cleanup.ownerLost };
+      return out;
     });
   }
 
@@ -5959,9 +6437,14 @@
      mechanism was the bg watchdog firing during bridge-silent reads; that
      deferral (qol-2.3, background.js) is the fix and stands. */
   function __dayPullInner(opts, __armPresence) {
-    window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
     opts = opts || {};
     var say = isFn(opts.onStatus) ? opts.onStatus : function () {};
+    var monthForeign = p1MonthForeignOwner();
+    if (monthPullRunning || monthForeign) {
+      var monthRefusal = p1MonthOverlapRefusal(say, monthForeign && monthForeign.storageFailure ? "metadata-persist-failed" : "pull-in-flight");
+      return Promise.resolve(monthRefusal);
+    }
+    window.__mlsPullStopRequested = false; /* stp-1.0.0: each new run starts unarmed */
     var day = normDate(opts.date) || "";
     /* No date is not this lane to judge: hand it straight to the engine so its
         own refusal is the one the clinician reads. */
@@ -6010,11 +6493,10 @@
        refuses loudly below, unchanged. */
     if (_lrQuota && typeof _quotaLatchStale === "function" && _quotaLatchStale()) _lrQuota = null;
     if (_lrQuota) {
-      var _lrQAge = Math.max(0, Math.round((Date.now() - Number(_lrQuota.at || Date.now())) / 60000));
       var _lrQFails = Number(safe(function () { return window.__mlsQuotaGuard && window.__mlsQuotaGuard.failures; }, 0) || 0);
       var _lrQRefusal = { ok: false, complete: false, reason: "storage-full-writes-failing", gate: "quota-preflight",
         failures: _lrQFails, lastFailAt: Number(_lrQuota.at || 0) || null, at: Date.now(),
-        error: "Local storage is FULL - a save failed to persist " + (_lrQAge ? _lrQAge + " min ago" : "just now") + ", so new pull data would not survive a reload. No Athena navigation was started. Free storage space (the storage fix is in progress), then pull again." };
+        error: "MLS could not verify the latest save on this device, so new pull data might not survive a reload. No Athena navigation was started. Keep this tab open, check available storage, then retry the last action before pulling again." };
       say(_lrQRefusal.error, "err");
       lastPullResult = _lrQRefusal;
       safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: _lrQRefusal.error }; });

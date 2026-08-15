@@ -73,6 +73,10 @@ const P1_PREVIEW_ASSETS = [
   '1p-feat_mls_marketing.js',
   '1p-feat_nextup_connect.js',
   '1p-feat_mls_schedimport_exact.js',
+  '1p-feat_mls_mobile_encounter.js',
+  '1p-feat_mls_rangejobs.js',
+  '1p-feat_mls_study_provenance.js',
+  '1p-feat_mls_template_modes.js',
   '1p-feat_mls_writeflow.js',
   '1p-feat_task3_frontsync.js'
 ];

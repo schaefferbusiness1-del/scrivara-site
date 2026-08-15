@@ -1,9 +1,11 @@
 'use strict';
 
-/* P1 BOTTOM-DOCK OWNER
- * Real Chrome executes the exact preview guard. A small synthetic Calm owner
- * supplies the canonical API and rendered geometry, without modifying the
- * shared Calm asset or loading the app/backend.
+/* P1 CALM DOCK OWNER
+ *
+ * Real Chrome executes the exact /p1 guard against a deliberately small Calm
+ * owner. The fixture owns only the shared shell contract; positioning,
+ * preference, compact-mode, and fallback assertions belong to the /p1 guard.
+ * Production/shared assets are never loaded or modified by this suite.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -13,7 +15,7 @@ const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
 const connect = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
-const marker = connect.indexOf('/* p1-calm-dock-1.0.0:');
+const marker = connect.search(/\/\* p1-calm-dock-\d+\.\d+\.\d+:/);
 const start = connect.indexOf(';(function(){try{', marker);
 const endMark = '}catch(e){}})();';
 const end = connect.indexOf(endMark, start);
@@ -23,156 +25,390 @@ const guard = connect.slice(start, end + endMark.length);
 let checks = 0;
 function ok(value, message) { assert.ok(value, message); checks++; }
 function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }
+function noOverlap(a, b) {
+  return !a || !b || a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom;
+}
+function withinViewport(rect, viewport, label) {
+  ok(rect.left >= -1 && rect.top >= -1 && rect.right <= viewport.width + 1 && rect.bottom <= viewport.height + 1,
+    `${label} escaped ${viewport.width}x${viewport.height}: ${JSON.stringify(rect)}`);
+}
+
 ok(!/1p-feat_mls_classic_bridge/.test(connect), 'preview still references the retired Classic bridge');
 ok(/mls-p1-dock-ready/.test(guard) && /failed-render-timeout/.test(guard),
   'dock owner lost its ready-only geometry gate or honest render timeout');
+ok(/mlsP1DockHandle/.test(guard) && /p1DockPinnedV1/.test(guard),
+  'P1 compact handle or persisted pin contract is absent');
 
 const calmAsset = String.raw`(function(){
   if(window.__mlsCalmShell)return;
-  var mode=window.__calmMode||'ready',active=false;
-  function renderDock(){
-    if(mode==='delayed'&&!(window.__allowDock===true))return;
-    if(mode==='blank')return;
-    var dock=document.getElementById('mlsDock');if(!dock){dock=document.createElement('nav');dock.id='mlsDock';dock.setAttribute('aria-label','Primary navigation');
-      dock.innerHTML='<button data-dest="day">Today</button><button data-dest="visit">Visit</button><button data-dest="tools">Tools</button>';document.body.appendChild(dock);}
-    dock.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;width:520px;height:64px;visibility:visible';
+  var mode=window.__calmMode||'ready',active=false,dock=null;
+  var SIDES={bottom:1,top:1,left:1,right:1};
+  function key(){try{return window.uns('qolDockSide');}catch(e){return 'mls::qolDockSide';}}
+  function side(){var v='';try{v=localStorage.getItem(key())||'';}catch(e){}return SIDES[v]?v:'bottom';}
+  function rectStyle(el,css){el.style.cssText=css;}
+  function buildDock(){
+    dock=document.getElementById('mlsDock');if(dock)return dock;
+    dock=document.createElement('nav');dock.id='mlsDock';dock.setAttribute('aria-label','Primary navigation');
+    dock.innerHTML='<button data-dest="day">Today</button><button data-dest="visit">Visit</button><button data-dest="tools">Tools</button>'+
+      '<div id="mlsDockAskWrap"><input id="mlsDockAsk" aria-label="Ask or find anything"><div id="mlsAskResults" role="listbox"><div>Result</div></div></div>';
+    document.body.appendChild(dock);
+    var tools=dock.querySelector('[data-dest="tools"]');
+    tools.addEventListener('click',function(){
+      if(window.__fixtureToolsClose){window.__fixtureToolsClose();return;}
+      var menu=document.createElement('div');menu.id='mlsToolsMenu';menu.setAttribute('role','menu');
+      menu.innerHTML='<div class="grp" role="group" aria-label="App"><div class="gh">App</div><div class="r" role="menuitem">Settings</div></div>';
+      rectStyle(menu,'position:fixed;width:300px;height:230px;box-sizing:border-box;display:block;left:10px;bottom:'+(innerHeight-tools.getBoundingClientRect().top+10)+'px;background:white');
+      document.body.appendChild(menu);
+      function close(){if(menu.parentNode)menu.remove();document.removeEventListener('click',away,true);window.__fixtureToolsClose=null;}
+      function away(event){if(!menu.contains(event.target)&&!tools.contains(event.target))close();}
+      window.__fixtureToolsClose=close;setTimeout(function(){document.addEventListener('click',away,true);},0);
+      menu.addEventListener('keydown',function(event){if(event.key==='Escape')close();});
+    });
+    var ask=dock.querySelector('#mlsDockAsk'),results=dock.querySelector('#mlsAskResults');
+    ask.addEventListener('focus',function(){results.style.display='block';});
+    ask.addEventListener('blur',function(){setTimeout(function(){results.style.display='none';},20);});
+    return dock;
   }
+  function apply(sideValue){
+    var saved=SIDES[sideValue]?sideValue:side();
+    if(saved==='bottom')document.body.removeAttribute('data-mls-dock');else document.body.setAttribute('data-mls-dock',saved);
+    if(!dock)return saved;
+    var actual=innerWidth<=640?'bottom':saved,w=Math.max(120,Math.min(520,innerWidth-16)),h=64;
+    var base='position:fixed;display:flex;align-items:center;gap:4px;visibility:visible;opacity:1;box-sizing:border-box;z-index:920;padding:6px;';
+    if(actual==='bottom')rectStyle(dock,base+'left:50%;right:auto;top:auto;bottom:18px;width:'+w+'px;height:'+h+'px;transform:translateX(-50%);flex-direction:row');
+    else if(actual==='top')rectStyle(dock,base+'left:50%;right:auto;top:124px;bottom:auto;width:'+w+'px;height:'+h+'px;transform:translateX(-50%);flex-direction:row');
+    else if(actual==='left')rectStyle(dock,base+'left:18px;right:auto;top:50%;bottom:auto;width:104px;height:'+Math.min(440,innerHeight-150)+'px;transform:translateY(-50%);flex-direction:column');
+    else rectStyle(dock,base+'left:auto;right:18px;top:50%;bottom:auto;width:104px;height:'+Math.min(440,innerHeight-150)+'px;transform:translateY(-50%);flex-direction:column');
+    return saved;
+  }
+  function renderDock(){
+    if(mode==='delayed'&&window.__allowDock!==true)return;
+    if(mode==='blank')return;
+    buildDock();apply(side());
+  }
+  window.applyDockSidePreview=function(next){if(!SIDES[next])next='bottom';try{localStorage.setItem(key(),next);}catch(e){}apply(next);return next;};
+  window.mlsDockSide=side;
+  window.addEventListener('resize',function(){if(dock)apply(side());});
   var api={installed:true,version:'calm-1.0.0',active:false,go:function(){},render:function(){if(active)renderDock();},
     boot:function(){if(mode==='boot-fail')return false;active=true;api.active=true;document.body.classList.add('mls-calm');renderDock();return true;},
-    revert:function(){active=false;api.active=false;document.body.classList.remove('mls-calm');var dock=document.getElementById('mlsDock');if(dock)dock.remove();return true;}};
+    revert:function(){active=false;api.active=false;document.body.classList.remove('mls-calm');if(window.__fixtureToolsClose)window.__fixtureToolsClose();['mlsDock','mlsToolsMenu'].forEach(function(id){var n=document.getElementById(id);if(n)n.remove();});dock=null;return true;}};
   window.__mlsCalmShell=api;
 })();`;
 
-function html(mode) {
+function html(params) {
+  const p1 = params.get('p1') !== '0';
+  const side = params.get('side') || 'bottom';
+  const device = params.get('device') || (side === 'left' ? 'top' : 'left');
+  const pin = params.get('pin') == null ? '1' : params.get('pin');
+  const mode = params.get('mode') || 'ready';
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-    body{margin:0;padding-left:236px;min-height:100vh}#mlsRdNav{display:block;position:fixed;left:0;top:0;width:236px;height:100vh;background:#eee}
+    *{box-sizing:border-box}html,body{width:100%;min-height:100%;margin:0}body{padding-left:236px;font-family:system-ui,sans-serif}
+    #mlsRdNav{display:block;position:fixed;left:0;top:0;width:236px;height:100vh;background:#eee;z-index:50}
+    #appHeader{display:block;position:fixed;left:0;right:0;top:0;height:64px;background:#f7faf8;z-index:6000}
+    #mlsCtxBar{display:block;position:fixed;left:0;right:0;top:64px;height:48px;background:#eef5f0;z-index:5900}
+    #appWrap{position:relative;margin-top:120px;min-height:650px;padding:28px;background:#fff}
+    body[data-mls-dock="left"] #appWrap{padding-left:148px!important}body[data-mls-dock="right"] #appWrap{padding-right:148px!important}
+    body[data-mls-dock="top"] #appWrap{padding-top:110px!important}
+    #primaryAction{display:block;width:240px;height:64px}
+    #mlsDock button{min-width:64px;height:44px}#mlsDockAskWrap{position:relative;width:92px;height:36px}
+    #mlsDockAsk{width:92px;height:36px}#mlsAskResults{display:none;position:absolute;right:0;bottom:46px;width:250px;height:120px;background:#fff;border:1px solid #bbb}
+    #mlsToolsMenu .grp{display:block}#mlsToolsMenu .r{min-height:44px;padding:8px}
   </style><script>
-    window.__MLS_P1_PREVIEW={enabled:true,route:'/1p/'};window.__MLS_AV='${mode}';window.__calmMode='${mode}';
+    ${p1 ? "window.__MLS_P1_PREVIEW={enabled:true,route:'/1p/'};" : ''}
+    window.__MLS_AV='${mode}';window.__calmMode='${mode}';window.__acct='a';
     window.__jobs=[];window.__mlsDeferAsset=function(fn){window.__jobs.push(fn);setTimeout(fn,0);return window.__jobs.length;};
-    window.uns=function(k){return 'account-preview:'+k;};
-    try{localStorage.setItem('mlsCalmShell','0');localStorage.setItem('mls::qolDockSide','left');localStorage.setItem('account-preview:qolDockSide','right');}catch(e){}
-  </script></head><body><nav id="mlsRdNav">Old left rail</nav><main id="appScreen">Preview</main><script src="/guard.js"></script></body></html>`;
+    window.uns=function(k){return 'account-'+window.__acct+':'+k;};
+    try{localStorage.setItem('mlsCalmShell','0');localStorage.setItem('mls::qolDockSide','${device}');localStorage.setItem('account-a:qolDockSide','${side}');localStorage.setItem('account-a:p1DockPinnedV1','${pin}');}catch(e){}
+  </script></head><body><header id="appHeader">Header</header><div id="mlsCtxBar">Patient context</div>
+  <nav id="mlsRdNav">Old left rail</nav><main id="appWrap"><section id="appScreen"><button id="primaryAction">Primary action</button>
+  <label for="qolDockSide">Navigation bar position</label><select id="qolDockSide" onchange="applyDockSidePreview(this.value)">
+  <option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
+  </section></main><script src="/guard.js"></script></body></html>`;
 }
 
 function serve() {
   return new Promise(resolve => {
     const server = http.createServer((req, res) => {
-      const url = new URL(req.url, 'http://127.0.0.1'); res.setHeader('Cache-Control', 'no-store');
+      const url = new URL(req.url, 'http://127.0.0.1');
+      res.setHeader('Cache-Control', 'no-store');
       if (url.pathname === '/guard.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(guard); }
       if (url.pathname === '/feat_mls_calm_shell.js') {
         if (url.searchParams.get('v') === 'network-error') { res.statusCode = 404; return res.end('not found'); }
         res.setHeader('Content-Type', 'text/javascript'); return res.end(calmAsset);
       }
-      res.setHeader('Content-Type', 'text/html'); res.end(html(url.searchParams.get('mode') || 'ready'));
+      res.setHeader('Content-Type', 'text/html'); res.end(html(url.searchParams));
     });
     server.listen(0, '127.0.0.1', () => resolve(server));
   });
 }
 
-async function open(browser, base, mode, query) {
-  const page = await browser.newPage(); const errors = []; page.on('pageerror', e => errors.push(String(e && e.message || e)));
-  await page.goto(base + '/?mode=' + mode + (query || ''), { waitUntil: 'load' }); return { page, errors };
+async function open(browser, base, options = {}) {
+  const viewport = options.viewport || { width: 1280, height: 800 };
+  const context = await browser.newContext({ viewport });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error && error.message || error)));
+  const query = new URLSearchParams({
+    mode: options.mode || 'ready', side: options.side || 'bottom',
+    device: options.device || (options.side === 'left' ? 'top' : 'left'),
+    pin: options.pin == null ? '1' : String(options.pin), p1: options.p1 === false ? '0' : '1'
+  });
+  if (options.classic) query.set('ui', 'classic');
+  await page.goto(`${base}/?${query}`, { waitUntil: 'load' });
+  return { context, page, errors, viewport };
+}
+
+async function ready(page) {
+  await page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'ready');
+}
+
+async function snapshot(page) {
+  return page.evaluate(() => {
+    function rect(id) { const n = document.getElementById(id); if (!n) return null; const r = n.getBoundingClientRect(); return { left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height }; }
+    const dock = document.getElementById('mlsDock'), handle = document.getElementById('mlsP1DockHandle');
+    return {
+      state: window.__mlsP1CalmDock && window.__mlsP1CalmDock.state,
+      calm: localStorage.getItem('mlsCalmShell'),
+      deviceSide: localStorage.getItem('mls::qolDockSide'),
+      accountSide: localStorage.getItem('account-'+window.__acct+':qolDockSide'),
+      pin: localStorage.getItem('account-'+window.__acct+':p1DockPinnedV1'),
+      attr: document.body.getAttribute('data-mls-dock') || 'bottom',
+      query: location.search,
+      rail: getComputedStyle(document.getElementById('mlsRdNav')).display,
+      padding: getComputedStyle(document.body).paddingLeft,
+      ready: document.body.classList.contains('mls-p1-dock-ready'),
+      collapsed: document.body.classList.contains('mls-p1-dock-collapsed'),
+      dockVisibility: dock ? getComputedStyle(dock).visibility : 'absent',
+      handleDisplay: handle ? getComputedStyle(handle).display : 'absent',
+      dock: rect('mlsDock'), handle: rect('mlsP1DockHandle'), header: rect('appHeader'),
+      context: rect('mlsCtxBar'), primary: rect('primaryAction'), menu: rect('mlsToolsMenu'), results: rect('mlsAskResults')
+    };
+  });
+}
+
+function assertGeometry(result, side, viewport, label) {
+  withinViewport(result.dock, viewport, `${label} dock`);
+  ok(noOverlap(result.dock, result.header), `${label} dock obstructed the header`);
+  ok(noOverlap(result.dock, result.context), `${label} dock obstructed patient context`);
+  ok(noOverlap(result.dock, result.primary), `${label} dock obstructed the primary action`);
+  if (side === 'bottom') ok(viewport.height - result.dock.bottom >= -1 && viewport.height - result.dock.bottom <= 80, `${label} did not render at bottom`);
+  if (side === 'top') ok(result.dock.top >= result.context.bottom && result.dock.bottom < viewport.height * .55, `${label} did not render below top chrome`);
+  if (side === 'left') ok(result.dock.left >= -1 && result.dock.left <= 50, `${label} did not render at left`);
+  if (side === 'right') ok(viewport.width - result.dock.right >= -1 && viewport.width - result.dock.right <= 50, `${label} did not render at right`);
 }
 
 (async () => {
   const server = await serve(), base = 'http://127.0.0.1:' + server.address().port;
-  const browser = await chromium.launch({ channel: 'chrome', headless: true }); let failure = null;
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  let failure = null;
   try {
-    /* Stale Classic/device/account preferences are normalized and the old rail
-       disappears only after the fixed bottom dock has real geometry. */
+    /* The same bytes are inert without the exact preview marker. */
     {
-      const { page, errors } = await open(browser, base, 'ready', '&ui=classic');
-      await page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'ready');
-      const result = await page.evaluate(() => {
-        const dock = document.getElementById('mlsDock'), rect = dock.getBoundingClientRect();
-        return { state: window.__mlsP1CalmDock.state, calm: localStorage.getItem('mlsCalmShell'),
-          deviceSide: localStorage.getItem('mls::qolDockSide'), accountSide: localStorage.getItem('account-preview:qolDockSide'),
-          query: location.search, bodyPadding: getComputedStyle(document.body).paddingLeft,
-          rail: getComputedStyle(document.getElementById('mlsRdNav')).display, dockPosition: getComputedStyle(dock).position,
-          dockBottomGap: innerHeight - rect.bottom, dockTop: rect.top, readyClass: document.body.classList.contains('mls-p1-dock-ready') };
-      });
-      eq(result.state, 'ready', 'healthy dock owner did not report ready');
-      eq(result.calm, '1', 'stale Classic preference survived normal preview boot');
-      eq(result.deviceSide, 'bottom', 'device dock placement was not forced to bottom');
-      eq(result.accountSide, 'bottom', 'account dock placement was not forced to bottom');
-      ok(!/ui=classic/i.test(result.query), 'diagnostic Classic query survived and can poison later navigation');
-      eq(result.bodyPadding, '0px', 'ready bottom dock retained left-rail body padding');
-      eq(result.rail, 'none', 'ready bottom dock retained the old left rail');
-      eq(result.dockPosition, 'fixed', 'bottom dock is not fixed to the viewport');
-      ok(result.dockBottomGap >= -2 && result.dockBottomGap <= 120 && result.dockTop > 300,
-        'rendered dock geometry is not at the viewport bottom');
-      eq(result.readyClass, true, 'ready-only presentation class was not applied');
-      eq(errors.length, 0, 'healthy dock runtime raised page errors: ' + errors.join(' | '));
-
-      /* A click aimed at the shared Classic control is captured by the preview
-         owner and cannot persist the old layout. */
-      const click = await page.evaluate(() => {
-        const b = document.createElement('button'); b.id = 'mlsClassicBtn'; b.textContent = 'Classic layout';
-        b.addEventListener('click', () => localStorage.setItem('mlsCalmShell', '0')); document.body.appendChild(b); b.click();
-        return { calm: localStorage.getItem('mlsCalmShell'), exists: !!document.getElementById('mlsClassicBtn'), state: window.__mlsP1CalmDock.state };
-      });
-      eq(click.calm, '1', 'Classic control poisoned the persistent preference');
-      eq(click.exists, false, 'Classic control survived preview reconciliation');
-      eq(click.state, 'ready', 'Classic control disrupted the ready dock');
-      await page.close();
+      const { context, page, errors } = await open(browser, base, { p1: false, side: 'left', pin: 0 });
+      await page.waitForTimeout(80);
+      const result = await page.evaluate(() => ({ controller: !!window.__mlsP1CalmDock, dock: !!document.getElementById('mlsDock'),
+        rail: getComputedStyle(document.getElementById('mlsRdNav')).display, account: localStorage.getItem('account-a:qolDockSide'),
+        pin: localStorage.getItem('account-a:p1DockPinnedV1') }));
+      eq(result.controller, false, 'dock guard installed outside /p1');
+      eq(result.dock, false, 'shared dock asset loaded outside /p1');
+      eq(result.rail, 'block', 'non-P1 page lost its existing navigation');
+      eq(result.account, 'left', 'non-P1 page changed its saved side');
+      eq(result.pin, '0', 'non-P1 page changed its pin preference');
+      eq(errors.length, 0, 'non-P1 early exit raised page errors: ' + errors.join(' | '));
+      await context.close();
     }
 
-    /* Delayed render keeps the old rail usable while it waits, then atomically
-       switches only after bottom geometry becomes provable. */
-    {
-      const { page } = await open(browser, base, 'delayed');
-      await page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'waiting-render');
-      const waiting = await page.evaluate(() => ({ rail: getComputedStyle(document.getElementById('mlsRdNav')).display,
-        padding: getComputedStyle(document.body).paddingLeft, ready: document.body.classList.contains('mls-p1-dock-ready') }));
-      eq(waiting.rail, 'block', 'old rail was hidden before delayed dock geometry existed');
-      eq(waiting.padding, '236px', 'left padding was cleared before delayed dock geometry existed');
-      eq(waiting.ready, false, 'delayed dock claimed ready without geometry');
-      await page.evaluate(() => { window.__allowDock = true; window.__mlsP1CalmDock.reconcile(); });
-      await page.waitForFunction(() => window.__mlsP1CalmDock.state === 'ready');
-      const ready = await page.evaluate(() => ({ rail: getComputedStyle(document.getElementById('mlsRdNav')).display,
-        padding: getComputedStyle(document.body).paddingLeft, dock: !!document.getElementById('mlsDock') }));
-      eq(ready.rail, 'none', 'old rail survived after delayed dock became ready');
-      eq(ready.padding, '0px', 'left padding survived after delayed dock became ready');
-      eq(ready.dock, true, 'delayed canonical owner never rendered its dock');
-      await page.close();
+    /* Every supported desktop side survives boot and proves non-obstructing geometry. */
+    for (const side of ['bottom', 'top', 'left', 'right']) {
+      const device = side === 'left' ? 'top' : 'left';
+      const opened = await open(browser, base, { side, device, pin: 1, classic: true });
+      await ready(opened.page);
+      const result = await snapshot(opened.page);
+      eq(result.state, 'ready', `${side}: owner did not report ready`);
+      eq(result.calm, '1', `${side}: stale Classic preference survived`);
+      eq(result.accountSide, side, `${side}: account preference was overwritten`);
+      eq(result.deviceSide, device, `${side}: unrelated device fallback was overwritten`);
+      eq(result.attr, side, `${side}: rendered side attribute was normalized away`);
+      ok(!/ui=classic/i.test(result.query), `${side}: Classic query survived`);
+      eq(result.rail, 'none', `${side}: old rail survived ready dock`);
+      eq(result.padding, '0px', `${side}: old rail body gutter survived`);
+      eq(result.ready, true, `${side}: ready marker absent`);
+      assertGeometry(result, side, opened.viewport, side);
+      eq(opened.errors.length, 0, `${side}: page errors: ${opened.errors.join(' | ')}`);
+
+      /* Tools and Ask must stay in the viewport for every orientation. */
+      await opened.page.click('#mlsDock button[data-dest="tools"]');
+      await opened.page.waitForSelector('#mlsToolsMenu #mlsP1DockMode');
+      await opened.page.waitForTimeout(60);
+      let overlays = await snapshot(opened.page);
+      withinViewport(overlays.menu, opened.viewport, `${side} Tools menu`);
+      await opened.page.click('#mlsDockAsk');
+      await opened.page.waitForFunction(() => getComputedStyle(document.getElementById('mlsAskResults')).display !== 'none');
+      await opened.page.waitForTimeout(60);
+      overlays = await snapshot(opened.page);
+      withinViewport(overlays.results, opened.viewport, `${side} Ask results`);
+      await opened.context.close();
     }
 
-    /* Network failure is visible and leaves the proven existing navigation. */
+    /* Auto-hide is opt-in, persists per account, and keeps a 44x44 reveal target. */
     {
-      const { page } = await open(browser, base, 'network-error');
-      await page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'failed-network');
-      const result = await page.evaluate(() => ({ alert: document.getElementById('mlsP1CalmDockStatus') && document.getElementById('mlsP1CalmDockStatus').textContent,
+      const opened = await open(browser, base, { side: 'left', pin: 1 });
+      await ready(opened.page);
+      await opened.page.click('#mlsDock button[data-dest="tools"]');
+      await opened.page.waitForSelector('#mlsP1DockMode');
+      await opened.page.click('#mlsP1DockMode');
+      await opened.page.mouse.click(opened.viewport.width - 4, opened.viewport.height / 2);
+      await opened.page.waitForSelector('#mlsToolsMenu', { state: 'detached' }); /* open menu correctly holds auto-hide open */
+      await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 3500 });
+      let result = await snapshot(opened.page);
+      eq(result.pin, '0', 'Auto-hide choice was not persisted to the account');
+      eq(result.collapsed, true, 'unpinned dock did not collapse');
+      eq(result.dockVisibility, 'hidden', 'collapsed dock remained interactive/visible');
+      eq(result.handleDisplay, 'flex', 'collapsed reveal handle is not visible');
+      ok(result.handle.width >= 44 && result.handle.height >= 44, 'collapsed reveal target is below 44x44');
+      withinViewport(result.handle, opened.viewport, 'collapsed reveal handle');
+      ok(noOverlap(result.handle, result.header) && noOverlap(result.handle, result.context) && noOverlap(result.handle, result.primary),
+        'collapsed handle obstructs header, patient context, or primary action');
+
+      /* The reveal target intentionally disappears as pointerenter reveals the
+         dock. Move a real pointer to its measured centre instead of asking
+         Playwright's locator hover to keep that target visible afterward. */
+      await opened.page.mouse.move(result.handle.left + result.handle.width / 2, result.handle.top + result.handle.height / 2);
+      await opened.page.waitForFunction(() => !document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 1200 });
+      await opened.page.hover('#primaryAction');
+      await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 2200 });
+
+      await opened.page.focus('#mlsP1DockHandle');
+      await opened.page.waitForFunction(() => !document.body.classList.contains('mls-p1-dock-collapsed'));
+      await opened.page.focus('#primaryAction');
+      await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 2200 });
+
+      await opened.page.click('#mlsP1DockHandle');
+      await opened.page.waitForFunction(() => !document.body.classList.contains('mls-p1-dock-collapsed'));
+      result = await snapshot(opened.page);
+      eq(result.collapsed, false, 'tap/click did not reveal navigation');
+
+      await opened.page.click('#mlsDock button[data-dest="tools"]');
+      await opened.page.waitForSelector('#mlsP1DockMode');
+      await opened.page.click('#mlsP1DockMode');
+      await opened.page.mouse.click(opened.viewport.width - 4, opened.viewport.height / 2);
+      await opened.page.waitForSelector('#mlsToolsMenu', { state: 'detached' });
+      await opened.page.waitForTimeout(1300);
+      result = await snapshot(opened.page);
+      eq(result.pin, '1', 'Pin-open choice was not persisted');
+      eq(result.collapsed, false, 'pinned dock auto-hid');
+      await opened.context.close();
+    }
+
+    /* A session boundary applies B's side/pin without mutating either account. */
+    {
+      const opened = await open(browser, base, { side: 'left', pin: 1 });
+      await ready(opened.page);
+      await opened.page.evaluate(() => {
+        localStorage.setItem('account-b:qolDockSide', 'top');
+        localStorage.setItem('account-b:p1DockPinnedV1', '0');
+        window.__acct = 'b';
+        window.dispatchEvent(new CustomEvent('mls:session-boundary', { detail: { nextAccount: 'b', epoch: 2 } }));
+      });
+      await opened.page.waitForFunction(() => document.body.getAttribute('data-mls-dock') === 'top');
+      await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 3500 });
+      const result = await snapshot(opened.page);
+      eq(result.accountSide, 'top', 'account B side was not applied on the session boundary');
+      eq(result.pin, '0', 'account B pin preference was not applied');
+      const retained = await opened.page.evaluate(() => ({ aSide: localStorage.getItem('account-a:qolDockSide'), aPin: localStorage.getItem('account-a:p1DockPinnedV1'),
+        bSide: localStorage.getItem('account-b:qolDockSide'), bPin: localStorage.getItem('account-b:p1DockPinnedV1') }));
+      assert.deepStrictEqual(retained, { aSide:'left', aPin:'1', bSide:'top', bPin:'0' }, 'account switch mutated a saved preference'); checks++;
+      assertGeometry(result, 'top', opened.viewport, 'account B top');
+      await opened.context.close();
+    }
+
+    /* The one existing setting applies immediately and survives later reconciliation. */
+    {
+      const opened = await open(browser, base, { side: 'bottom', pin: 1 });
+      await ready(opened.page);
+      await opened.page.selectOption('#qolDockSide', 'left');
+      await opened.page.click('#primaryAction');
+      await opened.page.setViewportSize({ width: 1270, height: 790 });
+      await opened.page.waitForTimeout(100);
+      const result = await snapshot(opened.page);
+      eq(result.accountSide, 'left', 'position setting did not persist to the account key');
+      eq(result.attr, 'left', 'position setting was reverted by click/resize reconciliation');
+      assertGeometry(result, 'left', { width:1270, height:790 }, 'changed left');
+      await opened.context.close();
+    }
+
+    /* A saved desktop side remains saved on a phone; actual geometry is bottom. */
+    {
+      const viewport = { width: 390, height: 844 };
+      const opened = await open(browser, base, { side: 'left', device: 'top', pin: 0, viewport });
+      await ready(opened.page);
+      await opened.page.waitForTimeout(1200);
+      const result = await snapshot(opened.page);
+      eq(result.accountSide, 'left', 'phone overwrote the saved desktop side');
+      eq(result.deviceSide, 'top', 'phone overwrote the unrelated device fallback');
+      eq(result.attr, 'left', 'phone discarded the saved side attribute instead of rendering a responsive fallback');
+      eq(result.collapsed, false, 'phone hid its primary navigation behind auto-hide');
+      eq(result.dockVisibility, 'visible', 'phone primary navigation is not visible');
+      assertGeometry(result, 'bottom', viewport, 'phone responsive fallback');
+      ok(result.dock.width <= viewport.width + 1, 'phone dock overflows the viewport');
+      eq(opened.errors.length, 0, 'phone layout raised page errors: ' + opened.errors.join(' | '));
+      await opened.context.close();
+    }
+
+    /* Delayed/failing owners preserve the old rail until replacement is proven. */
+    {
+      const opened = await open(browser, base, { side: 'top', mode: 'delayed' });
+      await opened.page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'waiting-render');
+      let result = await snapshot(opened.page);
+      eq(result.rail, 'block', 'delayed dock hid the only working navigation');
+      eq(result.padding, '236px', 'delayed dock cleared the old navigation gutter');
+      eq(result.ready, false, 'delayed dock claimed ready without geometry');
+      await opened.page.evaluate(() => { window.__allowDock = true; window.__mlsP1CalmDock.reconcile(); });
+      await ready(opened.page);
+      result = await snapshot(opened.page);
+      eq(result.attr, 'top', 'delayed dock lost its saved top side');
+      assertGeometry(result, 'top', opened.viewport, 'delayed top');
+      await opened.context.close();
+    }
+    {
+      const opened = await open(browser, base, { mode: 'network-error' });
+      await opened.page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'failed-network');
+      const result = await opened.page.evaluate(() => ({ alert: document.getElementById('mlsP1CalmDockStatus') && document.getElementById('mlsP1CalmDockStatus').textContent,
         rail: getComputedStyle(document.getElementById('mlsRdNav')).display, padding: getComputedStyle(document.body).paddingLeft,
         ready: document.body.classList.contains('mls-p1-dock-ready') }));
-      ok(/could not load/i.test(result.alert), 'failed dock load was not surfaced honestly');
+      ok(/navigation bar could not load/i.test(result.alert), 'failed dock load was not surfaced honestly');
       eq(result.rail, 'block', 'failed dock load hid the only working navigation');
       eq(result.padding, '236px', 'failed dock load cleared the old navigation gutter');
       eq(result.ready, false, 'failed dock load retained the ready marker');
-      await page.close();
+      await opened.context.close();
     }
 
-    /* Exact revert removes only this guard's presentation and restores the
-       canonical owner's normal teardown. Saved stale owner cannot re-enter. */
+    /* Exact revert removes only P1 presentation and never rewrites preferences. */
     {
-      const { page } = await open(browser, base, 'ready');
-      await page.waitForFunction(() => window.__mlsP1CalmDock && window.__mlsP1CalmDock.state === 'ready');
-      const result = await page.evaluate(() => {
-        const old = window.__mlsP1CalmDock, value = old.revert(), staleEnsure = old.ensure(), staleRevert = old.revert();
-        return { value, staleEnsure, staleRevert, controller: !!window.__mlsP1CalmDock,
-          guardStyle: !!document.getElementById('mlsP1CalmDockGuardCss'), ready: document.body.classList.contains('mls-p1-dock-ready'),
-          dock: !!document.getElementById('mlsDock') };
+      const opened = await open(browser, base, { side: 'right', pin: 0 });
+      await ready(opened.page);
+      const result = await opened.page.evaluate(() => {
+        const old=window.__mlsP1CalmDock,before={side:localStorage.getItem('account-a:qolDockSide'),pin:localStorage.getItem('account-a:p1DockPinnedV1')};
+        const value=old.revert(),staleEnsure=old.ensure(),staleRevert=old.revert();
+        return {value,staleEnsure,staleRevert,before,after:{side:localStorage.getItem('account-a:qolDockSide'),pin:localStorage.getItem('account-a:p1DockPinnedV1')},
+          controller:!!window.__mlsP1CalmDock,guardStyle:!!document.getElementById('mlsP1CalmDockGuardCss'),handle:!!document.getElementById('mlsP1DockHandle'),
+          collapsed:document.body.classList.contains('mls-p1-dock-collapsed'),ready:document.body.classList.contains('mls-p1-dock-ready'),dock:!!document.getElementById('mlsDock')};
       });
       eq(result.value, true, 'exact dock guard did not revert');
       eq(result.staleEnsure, false, 'stale dock guard ensure re-entered');
       eq(result.staleRevert, false, 'stale dock guard reverted twice');
-      eq(result.controller, false, 'revert left the canonical guard global');
-      eq(result.guardStyle, false, 'revert left the ready-only guard stylesheet');
-      eq(result.ready, false, 'revert left the ready-only body class');
+      eq(result.controller, false, 'revert left the controller global');
+      eq(result.guardStyle, false, 'revert left its stylesheet');
+      eq(result.handle, false, 'revert left the compact handle');
+      eq(result.collapsed, false, 'revert left compact body state');
+      eq(result.ready, false, 'revert left ready body state');
       eq(result.dock, false, 'revert left the canonical dock active');
-      await page.close();
+      assert.deepStrictEqual(result.after, result.before, 'revert mutated saved side/pin'); checks++;
+      await opened.context.close();
     }
   } catch (error) { failure = error; }
-  await browser.close(); await new Promise(resolve => server.close(resolve));
+  await browser.close();
+  await new Promise(resolve => server.close(resolve));
   if (failure) throw failure;
-  console.log('PASS P1 Calm bottom-dock owner runtime: ' + checks + ' assertions');
+  console.log('PASS P1 Calm dock owner runtime: ' + checks + ' assertions');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });
