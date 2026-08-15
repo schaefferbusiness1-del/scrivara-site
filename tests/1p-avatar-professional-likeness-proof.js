@@ -23,7 +23,7 @@ function gitSha(file) {
     'regular avatar file changed; p1 proof boundary failed');
 
   const browser = await chromium.launch({ channel: 'chrome' });
-  const page = await browser.newPage({ viewport: { width: 980, height: 760 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: { width: 980, height: 760 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e && e.message)));
   await page.setContent('<body style="margin:0;background:#eef2ef"><main id="gallery"></main></body>');
