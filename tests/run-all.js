@@ -4,6 +4,14 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 
+/* These two deterministic visual proofs are automated release gates even
+   though their historical filenames predate the .test.js convention. Keep
+   the denominator explicit so live/manual proof scripts remain excluded. */
+const AUTOMATED_PROOF_FILES = new Set([
+  '1p-avatar-photo-framing-proof.js',
+  '1p-avatar-professional-likeness-proof.js'
+]);
+
 const tests = [
   'public-publication-boundary.test.js',
   '1p-preview-contract.test.js',
@@ -1059,7 +1067,7 @@ const tests = [
 ];
 
 const discovered = fs.readdirSync(__dirname)
-  .filter(name => name.endsWith('.test.js'))
+  .filter(name => name.endsWith('.test.js') || AUTOMATED_PROOF_FILES.has(name))
   .sort();
 const duplicates = tests.filter((name, index) => tests.indexOf(name) !== index).sort();
 const registered = [...new Set(tests)].sort();
