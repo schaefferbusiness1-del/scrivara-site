@@ -170,6 +170,7 @@
       '.mlsP1FaceControls[open]>summary{border-radius:11px 11px 0 0;border-bottom-color:#eef2ef}.mlsP1FaceControls[open]>summary::after{content:"Hide controls"}' +
       '.mlsP1FaceControlsGrid{border:1px solid #d9e4dc;border-top:0;border-radius:0 0 11px 11px;padding:12px;background:#fff}' +
       '.mlsP1FaceModeHelp{border:1px solid #dfe7e2;border-radius:11px;padding:10px 12px;background:#f8faf8;font:500 12px/1.45 system-ui;color:#55605a;margin-top:-2px}' +
+      '.mlsP1FaceModeHelp .mlsP1FaceProvenance{display:block;margin-top:5px;color:#69736d;font-size:11px}' +
       '.mlsP1FaceModeHelp strong{display:block;color:#204034;font-weight:800;margin-bottom:2px}' +
       '.mlsP1FaceStudio .mlsAvActions{gap:9px}.mlsP1FaceStudio .mlsAvAction{min-height:40px}' +
       '.mlsP1FaceStudio #mlsAvLookNote[role="status"]{line-height:1.5!important}' +
@@ -189,13 +190,13 @@
     help.__mlsP1FaceCopy = copyKey;
     previewSub.__mlsP1FaceCopy = copyKey;
     if (photo && kind === 'photo') {
-      help.innerHTML = '<strong>Your photo is the patient-facing face</strong>This is the exact portrait patients see. It keeps the closest likeness and moves gently with speaking and listening.';
+      help.innerHTML = '<strong>Your photo is the patient-facing face</strong>This is the exact portrait patients see. It keeps the closest likeness and moves gently with speaking and listening.<span class="mlsP1FaceProvenance">Matched field badges distinguish on-device pixels, the second vision read, and your manual settings.</span>';
       previewSub.textContent = 'Actual patient view — your saved camera portrait, with subtle voice and listening movement.';
     } else if (photo) {
-      help.innerHTML = '<strong>Take a photo to use photo mode</strong>No portrait is available yet, so the animated fallback shown here is what patients would see.';
+      help.innerHTML = '<strong>Take a photo to use photo mode</strong>No portrait is available yet, so the animated fallback shown here is what patients would see.<span class="mlsP1FaceProvenance">Photo mode is recommended whenever a valid portrait is available.</span>';
       previewSub.textContent = 'Current patient fallback — take a camera portrait to replace it with your photo.';
     } else {
-      help.innerHTML = '<strong>The animated face is patient-facing</strong>It uses the matched features below, makes eye contact, changes expression, and moves its mouth with the selected voice.';
+      help.innerHTML = '<strong>The animated face is patient-facing</strong>It is an approximate illustrated likeness: matched fields below inform the character, but it is not a photo likeness. It makes eye contact, changes expression, and moves its mouth with the selected voice.<span class="mlsP1FaceProvenance">Badges identify on-device pixels, the second vision read, or your manual setting; refused fields stay unchanged.</span>';
       previewSub.textContent = 'Live patient preview — expressions and speaking use this same face.';
     }
   }

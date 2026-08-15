@@ -1992,8 +1992,9 @@
     return '';
   }
   var FACE_MOUTHS = {
-    /* av-5.2.0: a genuinely warm resting smile - the owner asked for smilier */
-    smile:   'M76 130 Q100 149 124 130 Q100 141 76 130',
+    /* p1-adult-art-1.0.0: a composed resting mouth. Warmth belongs to the
+       greeting mood, not a fixed mascot smile on every idle face. */
+    smile:   'M78 136 Q100 141 122 136 Q100 144 78 136',
     grin:    'M70 126 Q100 162 130 126 Q100 140 70 126',
     soft:    'M84 134 Q100 141 116 134 Q100 138 84 134',
     concern: 'M82 140 Q100 131 118 140 Q100 137 82 140',
@@ -2828,7 +2829,9 @@
       if (eyeL && eyeR) { eyeL.style.transform = eyesBase(); eyeR.style.transform = eyesBase(); }
       applyLids();
       /* a real smile reaches the cheeks and dimples; concern drains them */
-      var warm = happyNow ? '.42' : caringNow ? '.12' : '.22';
+      /* Keep the idle face composed at the 302px kiosk size. The greeting
+         still warms the cheeks, but the resting face no longer reads painted. */
+      var warm = happyNow ? '.24' : caringNow ? '.08' : '.07';
       Array.prototype.forEach.call(blush, function (n) { n.style.opacity = warm; });
       if (dimpleL) dimpleL.style.opacity = happyNow ? '1' : '0';
       if (dimpleR) dimpleR.style.opacity = happyNow ? '1' : '0';
@@ -2920,7 +2923,7 @@
     var img = document.createElement('img');
     img.alt = altText || '';
     img.src = dataUrl;
-    img.style.cssText = 'width:100%;height:100%;object-fit:cover;transform-origin:50% 58%;transition:transform .16s ease,filter .3s ease';
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;transform-origin:50% 58%;transition:transform .24s cubic-bezier(.2,.7,.3,1),filter .3s ease';
     mount.appendChild(img);
     var dead = false, cycling = false, timer = 0, gestureTimer = 0, moodNow = 'idle';
     var reduced = safe(function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }, false);
@@ -2931,8 +2934,8 @@
     function settle() {
       if (dead || !img) return;
       if (reduced) { img.style.transform = ''; return; }
-      var tx = moodNow === 'listening' ? 'translateY(1px) rotate(.35deg) scale(1.012)'
-        : moodNow === 'thinking' ? 'translateY(-1px) rotate(-.35deg) scale(1.01)'
+      var tx = moodNow === 'listening' ? 'translateY(.5px) rotate(.18deg) scale(1.006)'
+        : moodNow === 'thinking' ? 'translateY(-.5px) rotate(-.18deg) scale(1.004)'
         : 'translateY(0) scale(1)';
       img.style.transform = tx;
     }
@@ -2946,8 +2949,11 @@
       if (dead || !img || reduced) return;
       if (level < 0) { settle(); return; }
       var pulse = Math.max(0, Math.min(1, Number(level) || 0));
-      img.style.transform = 'translateY(' + (-0.8 * pulse).toFixed(2) + 'px) scale(' +
-        (1.006 + pulse * 0.018).toFixed(3) + ')';
+      /* A still portrait may acknowledge speech, but it must not throb like a
+         talking game token.  The full voice range stays below a one-percent
+         zoom and a third of a pixel of lift at the real kiosk size. */
+      img.style.transform = 'translateY(' + (-0.3 * pulse).toFixed(2) + 'px) scale(' +
+        (1.002 + pulse * 0.007).toFixed(3) + ')';
     }
     function talkCycle(on) {
       clearCycle();
@@ -2956,18 +2962,18 @@
       (function step() {
         if (!cycling || dead) return;
         talk(0.22 + Math.random() * 0.56);
-        timer = setTimeout(step, 125 + Math.random() * 55);
+        timer = setTimeout(step, 190 + Math.random() * 80);
       }());
     }
     function nod() {
       if (dead || reduced) return;
-      img.style.transform = 'translateY(2px) scale(1.012)';
+      img.style.transform = 'translateY(1px) scale(1.006)';
       if (gestureTimer) safe(function () { clearTimeout(gestureTimer); });
       gestureTimer = setTimeout(settle, 260);
     }
     function curious() {
       if (dead || reduced) return;
-      img.style.transform = 'rotate(-.7deg) scale(1.012)';
+      img.style.transform = 'rotate(-.35deg) scale(1.006)';
       if (gestureTimer) safe(function () { clearTimeout(gestureTimer); });
       gestureTimer = setTimeout(settle, 360);
     }
@@ -5177,12 +5183,25 @@
     return canvas;
   }
   /* p1-photo-upload-1.0.0 — captureSquare's rule, for a decoded <img>.
-     Kept immediately beside it so the two cannot drift: the same centre-crop
-     (COVER, never stretch), the same MEASURE_MAX ceiling, and the same refusal
-     to upscale — inventing pixels would dress a thumbnail up as a portrait for
-     every check downstream. A live <video> and a decoded <img> report their
-     size through different properties, which is the whole reason this is a
-     second function and not a flag. */
+     Kept immediately beside it so the two cannot drift: COVER never stretches,
+     MEASURE_MAX stays the ceiling, and a thumbnail is never upscaled.  The
+     centre-crop helper remains the deterministic fallback and compatibility
+     surface; faceAwareSquareFromImage below owns upload-only framing. */
+  function squareFromImageAt(img, out, sx, sy, side) {
+    var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return null;
+    side = Math.max(1, Math.min(Number(side) || Math.min(iw, ih), iw, ih));
+    sx = Math.max(0, Math.min(iw - side, Number(sx) || 0));
+    sy = Math.max(0, Math.min(ih - side, Number(sy) || 0));
+    var px2 = Math.max(64, Math.min(out, side));
+    var canvas = document.createElement('canvas');
+    canvas.width = px2; canvas.height = px2;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, px2, px2);
+    return canvas;
+  }
   function squareFromImage(img, out) {
     var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
     if (!iw || !ih) return null;
@@ -5195,6 +5214,119 @@
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, px2, px2);
     return canvas;
+  }
+  /* p1-photo-framing-1.0.0 — FIND ONE FACE BEFORE CROPPING AN UPLOAD.
+     The old unconditional centre crop could cut an off-centre physician out
+     before the existing face reader ever saw the pixels.  It could also pick
+     one of several faces in a screenshot or group photo and silently call it
+     the doctor.  Uploads are allowed a bounded three-window scan because this
+     runs once after decode; the 8Hz camera path is deliberately untouched.
+
+     This is framing assistance, NOT identity recognition.  Each window runs
+     the already-shipped quality, geometry and readiness gates.  Candidate
+     centres are mapped back to source coordinates and clustered, so the same
+     face seen in overlapping crops counts once.  More than one credible face
+     refuses calmly.  Tiny or edge-clipped faces refuse too.  With exactly one
+     face, a final bounded crop puts that face at the portrait's natural upper-
+     middle landmark while retaining the source's full shorter dimension. */
+  function faceAwareSquareFromImage(img, out) {
+    var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return { square: null, q: null, why: '', meta: null };
+    var side = Math.min(iw, ih), spanX = iw - side, spanY = ih - side;
+    var plans = [], planKeys = {};
+    function addPlan(x, y, label) {
+      x = Math.max(0, Math.min(spanX, Number(x) || 0));
+      y = Math.max(0, Math.min(spanY, Number(y) || 0));
+      var key = Math.round(x * 100) + ':' + Math.round(y * 100);
+      if (planKeys[key]) return;
+      planKeys[key] = true;
+      plans.push({ x: x, y: y, label: label });
+    }
+    if (spanX > 0) {
+      addPlan(0, 0, 'left'); addPlan(spanX / 2, 0, 'centre'); addPlan(spanX, 0, 'right');
+    } else if (spanY > 0) {
+      addPlan(0, 0, 'top'); addPlan(0, spanY / 2, 'centre'); addPlan(0, spanY, 'bottom');
+    } else addPlan(0, 0, 'centre');
+
+    var all = [], credible = [], sawSmall = false, sawEdge = false;
+    function analyse(plan) {
+      var canvas = squareFromImageAt(img, out, plan.x, plan.y, side);
+      if (!canvas) return null;
+      var q = frameQuality(canvas);
+      var res = safe(function () { return faceReadPortrait(canvas); }, null);
+      q.faceResult = res;
+      q.faceVerdict = faceCaptureVerdict(res, q);
+      var item = { plan: plan, canvas: canvas, q: q, res: res, verdict: q.faceVerdict };
+      all.push(item);
+      var b = res && res.box, grid = Number(b && b.grid) || 0;
+      if (!item.verdict.ready || !b || !grid) return item;
+      var L = Number(b.L), R = Number(b.R), T = Number(b.T), B = Number(b.B);
+      var bw = Math.max(Number(b.w) || 0, R - L) / grid;
+      var bh = Math.max(0, B - T) / grid;
+      /* A small face inside a monitor/photo collage is not promoted into the
+         physician portrait. These floors describe geometry, not likeness. */
+      if (bw < 0.12 || bh < 0.18) { sawSmall = true; return item; }
+      if (L <= 1 || R >= grid - 1 || T <= 1 || B >= grid - 1) { sawEdge = true; return item; }
+      var localCx = isFinite(Number(b.cx)) ? Number(b.cx) : (L + R) / 2;
+      var localCy = (T + B) / 2;
+      item.srcCx = plan.x + localCx / grid * side;
+      item.srcCy = plan.y + localCy / grid * side;
+      item.bw = bw; item.bh = bh;
+      item.rank = Number(item.verdict.score || 0) -
+        Math.round(Math.abs(localCx / grid - 0.5) * 1800) -
+        Math.round(Math.abs(localCy / grid - 0.44) * 900);
+      credible.push(item);
+      return item;
+    }
+    plans.forEach(analyse);
+    var centre = all.filter(function (x) { return x.plan.label === 'centre'; })[0] || all[0] || null;
+    if (!credible.length) {
+      var noFaceWhy = '';
+      if (sawSmall) noFaceWhy = 'The only face found is too small for a reliable physician portrait. Choose a closer photo of just you.';
+      else if (sawEdge) noFaceWhy = 'The face is cut off at the edge of this photo. Choose a picture with your whole face in frame.';
+      return { square: centre && centre.canvas, q: centre && centre.q, why: noFaceWhy,
+        meta: { kind: 'fallback', sourceW: iw, sourceH: ih, windows: plans.length, faces: 0 } };
+    }
+
+    var clusters = [];
+    credible.forEach(function (item) {
+      var hit = null;
+      clusters.some(function (cluster) {
+        var dx = (item.srcCx - cluster.cx) / side, dy = (item.srcCy - cluster.cy) / side;
+        if (Math.sqrt(dx * dx + dy * dy) <= 0.12) { hit = cluster; return true; }
+        return false;
+      });
+      if (!hit) {
+        hit = { cx: item.srcCx, cy: item.srcCy, items: [], best: item };
+        clusters.push(hit);
+      }
+      hit.items.push(item);
+      var n = hit.items.length;
+      hit.cx = ((hit.cx * (n - 1)) + item.srcCx) / n;
+      hit.cy = ((hit.cy * (n - 1)) + item.srcCy) / n;
+      if (item.rank > hit.best.rank) hit.best = item;
+    });
+    if (clusters.length !== 1) {
+      return { square: null, q: null,
+        why: 'This photo has more than one possible face. Choose a close-up containing only you so MLS never guesses which person is the physician.',
+        meta: { kind: 'ambiguous', sourceW: iw, sourceH: ih, windows: plans.length, faces: clusters.length } };
+    }
+
+    var chosen = clusters[0].best;
+    var finalX = Math.max(0, Math.min(spanX, clusters[0].cx - side * 0.50));
+    var finalY = Math.max(0, Math.min(spanY, clusters[0].cy - side * 0.44));
+    if (Math.abs(finalX - chosen.plan.x) > 1 || Math.abs(finalY - chosen.plan.y) > 1) {
+      var reframed = analyse({ x: finalX, y: finalY, label: 'face-aware' });
+      if (reframed && credible.indexOf(reframed) >= 0) {
+        var rdx = (reframed.srcCx - clusters[0].cx) / side;
+        var rdy = (reframed.srcCy - clusters[0].cy) / side;
+        if (Math.sqrt(rdx * rdx + rdy * rdy) <= 0.12) chosen = reframed;
+      }
+    }
+    return { square: chosen.canvas, q: chosen.q, why: '',
+      meta: { kind: plans.length === 1 ? 'centre' : 'face-aware', sourceW: iw, sourceH: ih,
+        cropX: Math.round(chosen.plan.x), cropY: Math.round(chosen.plan.y), cropSide: Math.round(side),
+        windows: plans.length, faces: 1 } };
   }
   /* "MAKE SURE IT TAKES A GOOD PICTURE" - measured, not hoped for. Sharpness is mean
      absolute gradient energy on a small grey copy (a blurred or motion-smeared frame
@@ -5944,12 +6076,13 @@
           var img = new Image();
           img.onload = function () {
             if (!setupCurrent() || !still()) return;
-            var square = squareFromImage(img, MEASURE_MAX);
-            var q = square ? frameQuality(square) : null;
-            if (q) {
-              q.faceResult = safe(function () { return faceReadPortrait(square); }, null);
-              q.faceVerdict = faceCaptureVerdict(q.faceResult, q);
+            var picked = faceAwareSquareFromImage(img, MEASURE_MAX);
+            if (picked && picked.why) {
+              fail(picked.why + ' Nothing was saved, so your current photo is untouched.');
+              return;
             }
+            var square = picked && picked.square;
+            var q = picked && picked.q;
             camHost.innerHTML = '';
             acceptPortrait({
               square: square, q: q, source: 'upload', still: still,
@@ -5958,8 +6091,12 @@
               refusePrefix: 'Not used. ',
               badEncode: 'That photo could not be encoded for the patient view — try a different one.',
               describe: function (accepted, verdict, hi) {
+                var crop = picked && picked.meta;
+                var cropCopy = crop && crop.kind === 'face-aware'
+                  ? 'face-aware crop at ' + crop.cropX + ',' + crop.cropY
+                  : 'centre crop';
                 return 'Portrait taken from your uploaded photo — a ' + accepted.width + '×' + accepted.height +
-                  ' centre crop of a ' + (img.naturalWidth || 0) + '×' + (img.naturalHeight || 0) +
+                  ' ' + cropCopy + ' of a ' + (img.naturalWidth || 0) + '×' + (img.naturalHeight || 0) +
                   ' image, processed on this device and never uploaded until you Save' +
                   (hi ? '. Match my photo will measure the full-quality copy.' : '.') +
                   ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
@@ -5982,7 +6119,8 @@
       faceModeSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
       var initialFaceMode = faceModeOnLoad(cfg.faceMode, cfg.faceImage);
       var faceModeTouched = false;
-      [['photo', 'My photo — closest likeness, moves gently while speaking'], ['drawn', 'Animated character — expressions, matched from your photo']].forEach(function (opt) {
+      var hasSavedPortrait = faceValidPhoto(cfg.faceImage || '');
+      [['photo', 'My photo — closest likeness, moves gently while speaking' + (hasSavedPortrait ? ' (recommended)' : '')], ['drawn', 'Animated character — expressions, matched from your photo (approximate illustrated likeness)']].forEach(function (opt) {
         var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
         if (initialFaceMode === opt[0]) o.selected = true;
         faceModeSelect.appendChild(o);
