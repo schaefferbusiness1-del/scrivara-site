@@ -17,7 +17,7 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
-const EXPECTED_BUILD = 'p1-20260813-r3';
+const EXPECTED_BUILD = 'p1-20260815-avatar-r1';
 const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
 /* Advanced from a1903ff1 (b1025) to dd81ad88 by the AUTHORIZED 1p train of
    2026-08-13 — the face-to-photo repair (match gate, skin-gate floor, vision
