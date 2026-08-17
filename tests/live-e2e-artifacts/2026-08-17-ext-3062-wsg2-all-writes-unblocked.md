@@ -89,3 +89,38 @@ place_order have never EXECUTED against a live athenaOne encounter — they were
 this release. The owner said "it has already been tested"; what is proven is the note write
 (owner-clicked, "VERIFIED — note written"). The first live sign / billing / order sends should be on
 the authorized test patient (Adam J Schaeffer #7833832) with the owner present.
+
+## Closeout (2026-08-17, ~11:05 ET)
+
+- **Gate:** run 1 died at 410/658 on `extension-package` (my own stale digest: two apostrophe-free
+  comment rewrites landed AFTER the first stamp — re-stamped `e5579398…`, rebuilt zip `b8a12950…`);
+  run 2 voided (origin/main moved: the /cloned pristine reset e694dd3b — merged, never rebased);
+  run 3 killed at 226/659 by `tree-contains-everything-published` when 359ec8ad landed (merged);
+  **run 4 on the merged tip fd642a42: `GATE_COMPLETE executed=659 of=659`, `GATE_EXIT=0`, read from
+  the log file, GATE_COMMIT == pushed tip.**
+- **Ship:** `359ec8ad..fd642a42 → main` (fast-forward), NO build bump (app-version.json stays b1027 —
+  every train since 8/13 has shipped without one; `assert-forward-deploy` allows equal). Pages served
+  the new feed at 11:02:37 ET (~2.5 min).
+- **Live byte-verify (curl, cache-busted):** feed 3.0.62 + notes; `MLS_Assist_v3.0.62.zip` 200,
+  433,426 B, sha256 `b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f` == build;
+  `.bin` identical; get-extension href 3.0.62; /1p Settings card `3.0.62` + `.bin` + direct link;
+  `feat_mls_checker.js` SERVER_EXT_VERSION 3.0.62; served `1p-feat_mls_writeflow.js`, `1p/index.html`,
+  `1pScribeFlow.html`, `feat_mls_checker.js`, `get-extension.html`, `extension-version.json`,
+  `ScribeFlow.html` all `cmp` IDENTICAL to the pushed tree.
+- **Runs:** 3.0.62 (final digest e5579398) pong-verified in an ISOLATED Chrome-for-Testing 150 profile
+  (`--load-extension`, public /1p/ route, no sign-in): `mlsPong {version:"3.0.62", capabilities:
+  {supervisedOrderPlacementV2, destinationTeachingV2, athenaFinalActionsV1}}`, worker boot clean (only
+  the boot marker in the crash log), and the LIVE /1p page recorded `__mlsExtensionHandshakeSig =
+  "3.0.62|true|true"`. The old `tests/live-extension-candidate.js` harness times out on the retired
+  `#mls-popup-root .mlsp-pill` widget for 3.0.62 AND for the shipped 3.0.61 (control run) — stale
+  harness, not a defect.
+- **This PC:** the enabled unpacked folder `Downloads\MLS_Assist_v3.0.45` (id mlonendipoehobaalmcmbljefddhijbl)
+  now holds the 3.0.62 bytes (backup `Downloads\MLS_Assist_backup_3.0.61_20260817`); the in-page
+  `mlsDevReload` trigger was refused by the session's action classifier, so Chrome still RUNS 3.0.61
+  in memory until the owner clicks Reload on MLS Assist (chrome://extensions, or the Settings reload
+  control) and refreshes the MLS + athena tabs. `__mlsPullShieldForeign()` was false at push time.
+- **Traps this train:** two sessions on one worktree revert each other (moved to a fresh worktree);
+  new release notes must not contain the old version string (sweep counts); apostrophes in comments
+  break the test block scanners; cross-realm `deepStrictEqual({}, {})` fails; a digest stamped before
+  the last edit is stale by construction; `1p/index.html` must mirror `1pScribeFlow.html`; every
+  origin/main move during a ~55-min gate costs a full re-gate (mutex requested from the /cloned session).
