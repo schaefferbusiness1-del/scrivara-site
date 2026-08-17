@@ -37033,6 +37033,40 @@ html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ 
   .msl-next::after{ animation:none !important; opacity:1 !important; }
 }
 
+/* ---- msl-fit-1.0.0: breakpoints that measure the CONTENT BOX --------
+   Every width breakpoint in this shell measures the VIEWPORT. But from 901px
+   up, feat_mls_redesign.js parks a FIXED 236px rail to the left of the
+   content and .wrap adds 44px of its own padding, so the box the content
+   actually gets is ~280px narrower than the number the breakpoint tested.
+   At a 920px viewport - exactly where .grid is supposed to fall to one
+   column - the real content box is ~640px and .grid is still two columns of
+   ~310px. A 1366x768 laptop lands squarely inside that gap, which is why the
+   app feels cramped there and nowhere else.
+
+   The corrective widths are the shell's own breakpoints plus the rail. They
+   are gated on the rail genuinely being present: html.mls-rail-collapsed
+   sets padding-left:0, and in THAT state the original breakpoints are
+   already correct, so shifting them would be wrong in the other direction.
+   This is additive - it only ever collapses columns earlier, never later. */
+@media (max-width:1156px){
+  html:not(.mls-rail-collapsed) body.mls-rd-shell .grid{ grid-template-columns:1fr !important; }
+}
+@media (max-width:1337px){
+  html:not(.mls-rail-collapsed) body.mls-rd-shell .mlsRdAnaGrid{
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  }
+}
+@media (max-width:900px){
+  html:not(.mls-rail-collapsed) body.mls-rd-shell .mlsRdAnaGrid{
+    grid-template-columns:minmax(0,1fr) !important;
+  }
+}
+/* #calGrid has no CSS rule of its own anywhere and no overflow wrapper, so a
+   week view narrower than its seven columns is CLIPPED rather than
+   scrollable - unreachable, not just ugly. Scroll it in its own box; the page
+   body must never scroll sideways. */
+#calGrid{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
 /* ---- Responsive: the laptop case ------------------------------------
    The room's two-column grid is 290px of rail plus the editor. Below 1100px
    of VIEWPORT the editor is already narrow, and the shipped shell only
