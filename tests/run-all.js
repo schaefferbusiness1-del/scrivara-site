@@ -176,6 +176,11 @@ const tests = [
      the localStorage lane. Pins the shipped activation and a 3,000-patient
      round trip through the real store. */
   '1p-pts-store-activation-runtime.test.js',
+  /* psq-1.0.0: the pending patient-sync queue had ONE driver, a 60s interval
+     capped at 25 ids, so a 300-patient pull idled a full minute before the
+     first id moved (12 minutes against a refusing server) with nothing on
+     screen counting a single outstanding patient. */
+  '1p-pending-patient-sync-drain-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
   'production-default-view-pull-runtime.test.js',
   'day-switch-current-pull-result-runtime.test.js',

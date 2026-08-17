@@ -12143,6 +12143,12 @@ window.__mlsPatientStoreBatch={
       if(st.depth===0){
         if(st.timer)__mlsPtsCancelBatchTimer(st);
         delete __mlsPtsBatchByKey[st.key];
+        /* psq-1.0.0: THIS is the pull's terminal receipt. The batch is closed
+           and its mirrors are queued, so the pending-sync drain may finally
+           run - immediately, instead of waiting up to 60s for the interval.
+           Guarded on a clean close: a failed mirror write means the queue
+           itself is not trustworthy yet. */
+        if(!finalError&&mirrorQueued){try{__mlsPendingSyncKick('batch-end');}catch(ePsq){}}
       }
       if(!mirrorQueued&&!finalError)finalError=new Error('Patient changes were saved locally, but their server retry queue could not be persisted.');
       if(finalError)throw finalError;
@@ -12857,7 +12863,9 @@ function _pendingSyncSet(list,key){
 function _pendingSyncAdd(id,key,arm){
   if(!id)return false;key=key||uns('pendingPtSync');id=String(id);let ok=true;
   try{localStorage.setItem(__mlsPtsMirrorItemKey(key,id),'1');}catch(e){ok=false;var mem=__mlsPtsPendingMirrorMemoryByKey[key]||(__mlsPtsPendingMirrorMemoryByKey[key]=Object.create(null));mem[id]=1;}
+  __mlsPendingSyncFreshAt=Date.now(); /* psq-1.0.0: a live enqueue is fresh work */
   if(arm!==false){try{if(key===uns('pendingPtSync'))_armPendingSyncFlush();}catch(e){}}
+  __mlsPendingBadgeSoon(); /* psq-1.0.0: the count must be visible (throttled) */
   return ok;
 }
 function _pendingSyncRemove(id,key){
@@ -12869,6 +12877,51 @@ function _pendingSyncRemove(id,key){
   try{const raw=localStorage.getItem(key),a=raw?JSON.parse(raw):[];if(Array.isArray(a)&&a.indexOf(id)>=0)localStorage.setItem(key,JSON.stringify(a.filter(function(x){return String(x)!==id;})));}catch(e){}
 }
 let _pendingSyncTimer=0, _pendingSyncBusy=false;
+/* ===== psq-1.0.0: the patient sync queue drains at the receipt, not on a timer
+   The queue was drained ONLY by a 60s interval, ≤25 ids per pass. A managed
+   pull that enqueues 300 patients therefore sat untouched for up to a full
+   minute after its terminal receipt before the first id moved, and nothing on
+   screen said a single patient was still unsent. Three changes, no gate
+   weakened: drain immediately at the batch's terminal receipt (the 60s
+   interval stays as the fallback), spend a larger budget while the work is
+   FRESH, and show the outstanding patient count next to the note count. */
+/* -1 means "never fresh". A plain 0 sentinel would be indistinguishable from a
+   real timestamp of 0 under a test clock, and a freshness test that can be
+   wrong at one instant is a freshness test that can be wrong. */
+var __mlsPendingSyncFreshAt=-1;
+var PENDING_SYNC_FRESH_MS=120000, PENDING_SYNC_BUDGET_FRESH=200, PENDING_SYNC_BUDGET_IDLE=25;
+/* _pendingSyncGet() scans every localStorage key, and a 300-patient pull calls
+   _pendingSyncAdd 300 times. Repainting the badge on each one would make the
+   pull quadratic in the queue length, so the enqueue path repaints at most
+   once per PENDING_BADGE_THROTTLE_MS. The drain and the terminal-receipt kick
+   repaint unthrottled - they are rare and they are what the doctor waits on. */
+var PENDING_BADGE_THROTTLE_MS=750, __mlsPendingBadgeAt=-1e12;
+function __mlsPendingBadgeSoon(){
+  var now=Date.now();
+  if(now-__mlsPendingBadgeAt<PENDING_BADGE_THROTTLE_MS)return false;
+  __mlsPendingBadgeAt=now;
+  try{_renderBackupBadge();}catch(e){}
+  return true;
+}
+function __mlsPendingSyncBudget(now){
+  now=typeof now==='number'?now:Date.now();
+  return (__mlsPendingSyncFreshAt>=0&&(now-__mlsPendingSyncFreshAt)<PENDING_SYNC_FRESH_MS)
+    ? PENDING_SYNC_BUDGET_FRESH : PENDING_SYNC_BUDGET_IDLE;
+}
+/* Called at the pull's terminal receipt (the patient batch closing at depth 0).
+   Never throws into its caller: a drain is best-effort, the queue is durable,
+   and the interval below is still the safety net. */
+function __mlsPendingSyncKick(why){
+  try{
+    if(!_pendingSyncGet().length)return false;
+    __mlsPendingSyncFreshAt=Date.now();
+    _armPendingSyncFlush();
+    try{_renderBackupBadge();}catch(eB){}
+    _flushPendingSync();
+    return true;
+  }catch(e){ return false; }
+}
+/* ===== end psq-1.0.0 */
 function _armPendingSyncFlush(){
   if(_pendingSyncTimer) return;
   _pendingSyncTimer=setInterval(function(){ _flushPendingSync(); },60000);
@@ -12883,12 +12936,14 @@ async function _flushPendingSync(){
   const pendingKey=uns('pendingPtSync'),patientKey=uns('patients'),token=bkToken(),base=bkBase();
   const scope={pendingKey:pendingKey,patientKey:patientKey,token:token,base:base,isCurrent:function(){try{return uns('pendingPtSync')===pendingKey&&uns('patients')===patientKey&&bkToken()===token&&bkBase()===base;}catch(e){return false;}}};
   const ids=_pendingSyncGet(pendingKey);
-  if(!ids.length){ if(_pendingSyncTimer){ clearInterval(_pendingSyncTimer); _pendingSyncTimer=0; } return; }
+  if(!ids.length){ if(_pendingSyncTimer){ clearInterval(_pendingSyncTimer); _pendingSyncTimer=0; } try{_renderBackupBadge();}catch(e){} return; }
   _pendingSyncBusy=true;
   let progressed=false;
+  /* psq-1.0.0: spend a larger budget while the work is fresh */
+  const budget=__mlsPendingSyncBudget();
   try{
     const pts=getPatients()||[];
-    for(let i=0;i<ids.length&&i<25;i++){
+    for(let i=0;i<ids.length&&i<budget;i++){
       if(!scope.isCurrent())break;
       const p=pts.find(x=>x&&String(x.id)===ids[i]);
       if(!p){ _pendingSyncRemove(ids[i],pendingKey);progressed=true;continue; }
@@ -12898,6 +12953,7 @@ async function _flushPendingSync(){
     }
   }catch(e){} finally{
     _pendingSyncBusy=false;
+    try{_renderBackupBadge();}catch(e){} /* psq-1.0.0: the count follows the drain */
     if(scope.isCurrent()&&progressed&&_pendingSyncGet(pendingKey).length){try{setTimeout(function(){_flushPendingSync();},0);}catch(e){}}
   }
 }
@@ -21785,10 +21841,17 @@ function _svrDeclinedAdd(id){ if(!id) return; var a=_svrDeclinedGet(); if(a.inde
 function _svrDeclinedRemove(id){ var a=_svrDeclinedGet(); if(a.indexOf(id)>=0){ _svrDeclinedSet(a.filter(function(x){ return x!==id; })); } }
 function _renderBackupBadge(){
   var n=_pendingBackupGet().length;
+  /* psq-1.0.0: patients waiting to reach the server were counted NOWHERE on
+     screen. A doctor could finish a 300-patient pull and see nothing at all
+     while the queue drained. Same badge, same one-tap retry. */
+  var pn=0; try{ pn=_pendingSyncGet().length; }catch(ePsq){}
   var el=document.getElementById('_backupBadge');
-  if(!n){ if(el) el.remove(); return; }
-  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.setAttribute('data-tip','Click to retry the server backup now'); el.style.cssText='position:fixed;left:16px;bottom:84px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ _retryPendingBackups(true); }; document.body.appendChild(el); }
-  el.textContent='⏳ '+n+' note'+(n===1?'':'s')+' syncing to server…';
+  if(!n&&!pn){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.setAttribute('data-tip','Click to retry the server backup now'); el.style.cssText='position:fixed;left:16px;bottom:84px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ try{ __mlsPendingSyncKick('badge-tap'); }catch(eK){} _retryPendingBackups(true); }; document.body.appendChild(el); }
+  var parts=[];
+  if(n) parts.push(n+' note'+(n===1?'':'s'));
+  if(pn) parts.push(pn+' patient'+(pn===1?'':'s'));
+  el.textContent='⏳ '+parts.join(' and ')+' syncing to server…';
 }
 async function _retryPendingBackups(manual){
   if(!backendMode()||!bkToken()) return;
