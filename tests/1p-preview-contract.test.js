@@ -28,7 +28,7 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    the file is still byte-compared. */
 const P1_CONFIG_RELEASE_SUBS = [
   ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.62'],
-  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', '56710c442e7feb67398ffa533fb199bbf89feed10e7fe9baf9671b5877eb24b1']
+  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', 'b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
@@ -40,19 +40,19 @@ const P1_CONFIG_RELEASE_SUBS = [
    3.0.62 / wsg-2.0.0, owner directive 2026-08-12: every supervised Athena action
    executes after the clinician's own confirm) - the 1p writeflow gained typed
    place_order rows and the Settings card moved to 3.0.62. */
-const P1_BASE_COMMIT = '304a00bf8c0780fee3664b78212599e23ea5b316';
+const P1_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
-   7bac5591..., zip 56710c44... - documented in scripts/sweep-3062.js and the
+   e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
    2026-08-17 evidence artifact. */
-const EXTENSION_BASE_COMMIT = '304a00bf8c0780fee3664b78212599e23ea5b316';
+const EXTENSION_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
    mls-connect.js (chk3061 -> chk3062) - exactly what every prior extension
    release moved. The production write contract (feat_mls_writeflow.js:
    note write/save only) did NOT move and is pinned by athena-action-contract. */
-const PRODUCTION_BASE_COMMIT = '304a00bf8c0780fee3664b78212599e23ea5b316';
+const PRODUCTION_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
 
 const P1_FILES = [
   '1pScribeFlow.html',
