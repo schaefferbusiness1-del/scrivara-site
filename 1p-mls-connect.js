@@ -16952,7 +16952,56 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          has a note" has never meant "this run produced one". */
       var hadNote = false, hadGen = false;
       try { var r0 = (window._opPrep || [])[idx]; hadGen = !!(r0 && r0.gen); hadNote = S(r0 && r0.note).trim(); } catch (ePre) {}
-      return Promise.resolve().then(function () { return window.opPrepGenerateOne(idx); }).then(function (drafted) {
+      /* dr-1.1.0 (owner, 2026-08-18: 9 of 16 drafts failed — "502 Upstream
+         request failed" twice and "AI draft failed twice" seven times).
+
+         THE RUNNER NEVER RETRIED. opPrepGenerateOne was called exactly once per
+         row, so "failed twice" was stale copy describing something that did not
+         happen — and a 502 from a proxy timeout or a momentarily overloaded
+         model is the most transient failure there is. Sixteen back-to-back
+         calls with one attempt each and no spacing is the shape that produces
+         a scattered mix of failures rather than a clean run.
+
+         WHAT IS RETRIED, AND WHAT IS DELIBERATELY NOT. Only TRANSPORT faults:
+         5xx, 429, and a bare network failure. A deterministic refusal is never
+         retried — not a fidelity failure, not a clinical-consistency refusal,
+         not an identity refusal, not a hand-edited row, not a missing template.
+         Those are the safety answers this codebase paid for, and re-spending an
+         AI call against one would both cost money and risk turning a refusal
+         into an accident. If the reason is a sentence, a human wrote it on
+         purpose and it stands.
+
+         Backoff is deliberate: 1.2s then 3s. Long enough for an overloaded
+         model to recover, short enough that a 28-patient day does not crawl.
+         RUN.stop is honoured between attempts, so Stop still stops. */
+      var _drTransient = function (err) {
+        var m = S((err && (err.message || err)) || '');
+        if (!m) return false;                                   /* no reason captured — do not spend more calls blindly */
+        if (/^s*(?:HTTP[_ ])?(?:429|5dd)/i.test(m)) return true;
+        if (/(?:429|500|502|503|504)/.test(m) && /upstream|gateway|timeout|timed out|server error|temporarily|unavailable|rate|overload/i.test(m)) return true;
+        if (/failed to fetch|network ?error|load failed|connection|ECONN|socket hang up/i.test(m)) return true;
+        return false;
+      };
+      var _drWait = function (ms) { return new Promise(function (res) { setTimeout(res, ms); }); };
+      var _drAttempt = function (n) {
+        return Promise.resolve()
+          .then(function () { return window.opPrepGenerateOne(idx); })
+          .catch(function (err) {
+            var delays = [1200, 3000];
+            if (n >= delays.length || RUN.stop || !_drTransient(err)) throw err;
+            /* Record what we are waiting on, so the ledger tells the truth
+               while it happens rather than after it gives up. */
+            try {
+              var rw = (window._opPrep || [])[idx];
+              if (rw) rw._lastDraftErr = 'the note service was busy — retrying (' + (n + 1) + ' of ' + delays.length + ')';
+            } catch (eRw) {}
+            return _drWait(delays[n]).then(function () {
+              if (RUN.stop) throw err;
+              return _drAttempt(n + 1);
+            });
+          });
+      };
+      return _drAttempt(0).then(function (drafted) {
         var r = (window._opPrep || [])[idx];
         if (r && r._confirmRedraft) {
           /* the base drafter refused mid-run because this row was hand-edited
@@ -17197,7 +17246,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             else if (code === "401" || code === "403") why = "the note service rejected our credentials (" + code + ") \u2014 sign out and back in";
             else if (code && code.charAt(0) === "5") why = "the note service had a server error (" + code + ") \u2014 usually temporary";
             else if (code) why = "the note service refused the request (" + code + ")";
-            else why = "AI draft failed twice";
+            else why = "the note service did not return a draft and gave no reason";
           }
           states[idx].st = "fail"; states[idx].msg = why + " \u2014 re-try this one from its card";
         }
