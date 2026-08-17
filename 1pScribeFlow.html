@@ -38886,228 +38886,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 }
 </style>
 <!-- ===== end msl-fit-1.1.0 ============================================ -->
-<!-- ===== dock-1p-1.0.0 — the taskbar stops covering the work ==========
-     Owner: "that task bar getting in the way of everything. It needs to be
-     better and smarter made."
-
-     WHAT WAS ACTUALLY WRONG, MEASURED (2026-08-17, real Chrome, 28 synthetic
-     patients, #patientsView, 1366x900 over a 1505px-tall page). Of 25 sample
-     points inside the dock's own rectangle, how many had real screen content
-     underneath (elementsFromPoint, so genuine obstruction rather than mere
-     bounding-box overlap):
-
-         side     scroll 0%   scroll 50%   scroll 100%   reserved clearance
-         bottom     25/25       25/25          0/25      #appWrap pad-b 96px
-         top         0/25       25/25         25/25      pad-t 112px
-         left        0/25        0/25          0/25      pad-l 128px
-         right       0/25        0/25          0/25      pad-r 128px
-
-     The mechanism, and why more padding could never have fixed it: top and
-     bottom reserve their clearance on the SCROLLING axis, so the reservation
-     only protects the one end of the document the bar happens to sit at - at
-     any other scroll offset a fixed bar is over live content by construction.
-     Left and right reserve on the non-scrolling axis, so they are
-     obstruction-free at EVERY scroll offset. The app shipped `bottom`.
-
-     SO THIS BLOCK CHANGES A DEFAULT, NOT A MECHANISM. Everything it needs
-     already exists and was measured working: p1-calm-dock-2.0.0 provides four
-     sides, auto-hide, a 44x44 reveal handle, a debounced clearance release and
-     a persisted preference. What it lacked was (a) a default that does not
-     obstruct, and (b) any way for a doctor whose taskbar is in the way to find
-     out it is configurable - position and auto-hide lived in a Settings tab
-     that is itself unreachable below ~800px, and in a row inside the dock's
-     own Tools menu.
-
-     WHAT IT DELIBERATELY DOES NOT DO. It never overrides a stored choice: if
-     the doctor has ever picked a side, that side is honoured forever. It does
-     not touch phones - below 760px the shell pins the dock to a full-width
-     bottom bar regardless of any attribute, so a side preference there would
-     be a lie. And it writes the preference exactly once, through the app's own
-     public settings action, so there is still one source of truth.
-
-     Feature-detected throughout: no reference to any lane, route or bundle. If
-     the dock owner is not installed this block does nothing at all. -->
-<script>
-(function () {
-  var SIDE_KEY = 'qolDockSide';
-  var SEEDED = 'mlsDockSideSeeded';       /* '1' once this block has had its say */
-  var WIDE = 1100;                        /* below this a side rail costs more width than it saves */
-
-  function store(key) {
-    /* Per-account where the app's namespaced store is up, plain key otherwise. */
-    var out = [];
-    try { if (typeof window.uns === 'function') out.push(window.uns(key)); } catch (e) {}
-    out.push(key);
-    out.push('mls::' + key);
-    return out;
-  }
-  function readAny(key) {
-    var keys = store(key), i, v;
-    for (i = 0; i < keys.length; i++) {
-      try { v = localStorage.getItem(keys[i]); } catch (e) { v = null; }
-      if (v) return String(v);
-    }
-    return '';
-  }
-  function writeAll(key, value) {
-    var keys = store(key), i, ok = false;
-    for (i = 0; i < keys.length; i++) {
-      try { localStorage.setItem(keys[i], value); ok = true; } catch (e) {}
-    }
-    return ok;
-  }
-  function dockReady() {
-    return !!(document.getElementById('mlsDock') && typeof window.applyDockSidePreview === 'function');
-  }
-
-  /* ---- 1. the non-obstructing default --------------------------------- */
-  var seedTries = 0;
-  function seedSide() {
-    if (readAny(SEEDED) === '1') return true;
-    if (!dockReady()) { if (++seedTries < 60) setTimeout(seedSide, 500); return false; }
-    /* An existing choice - the doctor's, or an earlier session's - always wins. */
-    if (/^(bottom|top|left|right)$/.test(readAny(SIDE_KEY))) { writeAll(SEEDED, '1'); return true; }
-    var w = 0;
-    try { w = Number(window.innerWidth) || 0; } catch (e) { w = 0; }
-    if (w < WIDE) {
-      /* Narrow: the shell forces a bottom bar anyway. Record that this block
-         has had its say so a later resize cannot silently re-seed and move the
-         navigation out from under someone mid-task. */
-      writeAll(SEEDED, '1');
-      return true;
-    }
-    try { window.applyDockSidePreview('left'); } catch (e) { return false; }
-    writeAll(SEEDED, '1');
-    return true;
-  }
-
-  /* ---- 2. the taskbar controls, where a doctor will find them ---------
-     Rendered into the mode chip's menu when that exists (one top-right place
-     for "how the screen behaves"), so this block adds no second chip of its
-     own. If the chip is absent this block still does its job silently - the
-     default above is the part that matters. */
-  var SIDES = [
-    ['left',   'Side — left (never covers your work)'],
-    ['right',  'Side — right'],
-    ['top',    'Top'],
-    ['bottom', 'Floating — bottom centre']
-  ];
-  function currentSide() {
-    var v = '';
-    try { if (typeof window.mlsDockSide === 'function') v = String(window.mlsDockSide() || ''); } catch (e) {}
-    if (!/^(bottom|top|left|right)$/.test(v)) v = readAny(SIDE_KEY);
-    return /^(bottom|top|left|right)$/.test(v) ? v : 'bottom';
-  }
-  function autoHideOn() {
-    try { if (typeof window.mlsDockAutoHide === 'function') return window.mlsDockAutoHide() === true; } catch (e) {}
-    return false;
-  }
-  function paint() {
-    var host = document.getElementById('dockChipRows');
-    if (!host) return;
-    var side = currentSide(), items = host.querySelectorAll('[data-dock-side]'), i;
-    for (i = 0; i < items.length; i++) {
-      items[i].setAttribute('aria-checked', items[i].getAttribute('data-dock-side') === side ? 'true' : 'false');
-    }
-    var hide = host.querySelector('[data-dock-autohide]');
-    if (hide) {
-      hide.setAttribute('aria-checked', autoHideOn() ? 'true' : 'false');
-      hide.textContent = autoHideOn() ? 'Hide it until I need it — on' : 'Hide it until I need it';
-    }
-  }
-  function ensureRows() {
-    var menu = document.getElementById('mslChipMenu');
-    if (!menu) return false;
-    if (document.getElementById('dockChipRows')) { paint(); return true; }
-    if (!dockReady()) return false;
-    var box = document.createElement('div');
-    box.id = 'dockChipRows';
-    var head = document.createElement('div');
-    head.className = 'mslChipGroup';
-    head.textContent = 'Where the taskbar sits';
-    box.appendChild(head);
-    SIDES.forEach(function (row) {
-      var b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'mslChipItem';
-      b.setAttribute('role', 'menuitemradio');
-      b.setAttribute('data-dock-side', row[0]);
-      b.textContent = row[1];
-      b.addEventListener('click', function () {
-        try { window.applyDockSidePreview(row[0]); } catch (e) {}
-        writeAll(SEEDED, '1');
-        setTimeout(paint, 120);
-      }, false);
-      box.appendChild(b);
-    });
-    var hide = document.createElement('button');
-    hide.type = 'button';
-    hide.className = 'mslChipItem';
-    hide.setAttribute('role', 'menuitemcheckbox');
-    hide.setAttribute('data-dock-autohide', '1');
-    hide.textContent = 'Hide it until I need it';
-    hide.addEventListener('click', function () {
-      try { if (typeof window.applyDockAutoHidePreview === 'function') window.applyDockAutoHidePreview(!autoHideOn()); } catch (e) {}
-      setTimeout(paint, 120);
-    }, false);
-    box.appendChild(hide);
-    menu.appendChild(box);
-    paint();
-    return true;
-  }
-
-  var queued = false;
-  function tick() {
-    if (queued) return;
-    queued = true;
-    /* setTimeout, never requestAnimationFrame: rAF does not fire in a
-       backgrounded or non-compositing tab, and a doctor returning to that tab
-       would find the rows never rendered. */
-    setTimeout(function () {
-      queued = false;
-      /* The dock owner is idle-scheduled behind requiresFoundation and can take
-         well over 30s to land on a busy or throttled tab - measured never
-         arriving inside 40s in a headless run. seedTries is a bounded retry
-         WITHIN one attempt; an external wake (a click, mls:ui-ready, a session
-         boundary) is new evidence that the app moved on, so it re-arms rather
-         than inheriting an exhausted counter and giving up forever. */
-      if (!dockReady()) seedTries = 0;
-      seedSide();
-      ensureRows();
-    }, 0);
-  }
-
-  window.__mlsDockP1 = {
-    version: 'dock-1p-1.0.0',
-    side: currentSide,
-    autoHide: autoHideOn,
-    /* The honest answer to "why is the dock where it is" - for diagnostics. */
-    status: function () {
-      return { side: currentSide(), autoHide: autoHideOn(), seeded: readAny(SEEDED) === '1',
-        stored: readAny(SIDE_KEY), dockReady: dockReady(), rows: !!document.getElementById('dockChipRows') };
-    },
-    refresh: tick,
-    revert: function () {
-      var box = document.getElementById('dockChipRows');
-      if (box && box.parentNode) box.parentNode.removeChild(box);
-      return true;
-    }
-  };
-
-  function boot() { tick(); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
-  /* The chip and the dock both arrive after boot, on their own schedules. */
-  document.addEventListener('click', function () { setTimeout(tick, 0); }, true);
-  ['mls:ui-ready', 'mls:view-changed', 'mls:session-boundary'].forEach(function (name) {
-    try { window.addEventListener(name, tick, false); } catch (e) {}
-  });
-  setTimeout(tick, 1500);
-  setTimeout(tick, 4000);
-})();
-</script>
-<!-- ===== end dock-1p-1.0.0 ============================================ -->
-<!-- ===== opnote-open-1.0.0 — the room appears when you press the button ===
+<!-- ===== opnote-open-1.1.0 — the room appears when you press the button ===
      Owner: "a big complaint of the UI is that it's very clunky."
 
      MEASURED (real Chrome, 28 synthetic patients, 1366x900): pressing Prep Op
@@ -39187,7 +38966,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var done = function () {
       inside = true;
       try { original.call(window, dayKey); }
-      finally { inside = false; if (modal) modal.classList.remove(BUSY); }
+      finally {
+        inside = false;
+        if (modal) modal.classList.remove(BUSY);
+        /* 1.1.0: a module that wraps openOpPrep DURING this pass (the room and
+           the Fields box both install late) would otherwise sit outside the
+           yield until the next human wake. Re-adopting here means the SECOND
+           programmatic open is already deferred even when no event ever fires
+           - the Copilot and deep-link callers. */
+        setTimeout(stayOutermost, 0);
+      }
     };
     /* setTimeout, not requestAnimationFrame: rAF never fires in a hidden or
        non-compositing tab, and the room would then never render at all. A
@@ -39206,7 +38994,24 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
      So: if something has wrapped us, adopt that wrapper as the new original
      and put the yield back on the outside. Tagged, so this can never wrap
-     itself, and bounded to a few settle points rather than a standing poll. */
+     itself, and bounded to a few settle points rather than a standing poll.
+
+     1.1.0 — THE RE-ADOPTION WAS ALWAYS ONE CLICK TOO LATE. Both wakes ran
+     `setTimeout(stayOutermost, 0)`, so re-adoption landed AFTER the click it
+     was woken by. feat_mls_opnote_fill.js installs its wrapper late (and
+     re-installs it), so the very next press of Prep Op Notes still went
+     through that wrapper's synchronous room scan.
+
+     MEASURED in this worktree at origin/main 5e80f340, real Chrome, a warmed
+     28-patient room: openOpPrep blocked for 1,080ms with outermost() already
+     reporting FALSE and window.openOpPrep reading
+     `function () { var r = orig.apply(this, arguments); kickTicks(); return r; }`
+     — feat_mls_opnote_fill's wrapper, sitting outside the yield. One
+     `document.body.click()` to wake the old re-adoption, and the identical
+     call cost 3.5ms. So the fix is not more timers: it is to re-adopt
+     SYNCHRONOUSLY in the capture phase, which runs before the button's own
+     handler, and on pointerdown as well so a press is already covered before
+     the click event exists. The check is two property reads. */
   function stayOutermost() {
     var fn = window.openOpPrep;
     if (typeof fn !== 'function' || fn.__mlsDeferOpen) return false;
@@ -39215,10 +39020,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return true;
   }
   [400, 1500, 4000, 9000].forEach(function (ms) { setTimeout(stayOutermost, ms); });
-  document.addEventListener('click', function () { setTimeout(stayOutermost, 0); }, true);
+  ['pointerdown', 'mousedown', 'touchstart', 'click', 'keydown'].forEach(function (name) {
+    try { document.addEventListener(name, stayOutermost, true); } catch (e) {}
+  });
 
   window.__mlsOpNoteOpen = {
-    version: 'opnote-open-1.0.0',
+    version: 'opnote-open-1.1.0',
     installed: true,
     outermost: function () { return window.openOpPrep === defer; },
     revert: function () {
@@ -39231,6 +39038,1819 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   };
 })();
 </script>
-<!-- ===== end opnote-open-1.0.0 ======================================== -->
+<!-- ===== end opnote-open-1.1.0 ======================================== -->
+<!-- ===== opnote-vocab-1.0.0 — the day-brain learns the rest of surgery ===
+     FINDING-A, handed back by the previous UI lane and reproduced here.
+
+     feat_mls_opnote_daybrain.js triages every scheduled row into needs / done /
+     held, and "held" is a SAFETY verdict: it is why unfiltered drafting stopped
+     writing operative notes for follow-ups and cancelled slots. The verdict
+     turns on procedureEvidenceOf(text), and the last thing that function
+     consults is PROC_WORD — a vocabulary that is, by its own comment,
+     "deliberately NOT a general clinical vocabulary": injections, blocks,
+     ablations, epidurals, stimulators, kyphoplasty, pump refills.
+
+     Pain management. Nothing else. MEASURED in this worktree, 28 synthetic
+     orthopaedic rows ("Right knee arthroscopy with partial medial
+     meniscectomy", "Left rotator cuff repair", "Carpal tunnel release, right",
+     "ORIF distal radius"):
+
+         verdict tally  { "held:not-a-procedure": 28 }   needs = 0
+
+     — the room renders ZERO cards, Draft-all has nothing to draft, and
+     msl-autodraft correctly refuses. For any practice that is not a pain
+     clinic, "Prep op notes" is an empty screen that looks broken.
+
+     THE HOOK, AND WHY THIS IS AN OVERLAY RATHER THAN A FORK. daybrain resolves
+     the integrity owner DYNAMICALLY on every call — `function oni() { return
+     window.__mlsOpNoteIntegrity || null; }` (feat_mls_opnote_daybrain.js:73) —
+     and procedureEvidenceOf asks it first:
+
+         facts = oni().parseProcedureFacts(text)
+         if (facts && (facts.procedureType || facts.approach || facts.levelCount > 0))
+             -> has: true                                    (daybrain.js:242-245)
+
+     So extending the vocabulary needs no edit to either shared module: wrapping
+     that ONE function adds evidence through the seam daybrain already reads.
+     No fork of feat_mls_opnote_daybrain.js is required.
+
+     WHAT THIS DELIBERATELY DOES NOT DO, because the filter it feeds is a
+     safety filter:
+
+       * It never removes evidence. The original is called first and any answer
+         it gives is returned untouched — this can only ever ADD a procedureType
+         where oni found none.
+       * It never overrides a "no procedure was performed" statement. daybrain
+         calls oni.statesNoProcedure(text) BEFORE parseProcedureFacts and returns
+         held on the spot, so that text never reaches this wrapper at all.
+       * It is STRICTER than PROC_WORD in one direction on purpose: a text that
+         names a visit type ("post-op check", "follow-up", "pre-op clearance",
+         "results", "telehealth") is refused even when it also carries an
+         operation word, because "post-op check, knee arthroscopy" is a clinic
+         visit. daybrain's own PROC_WORD path does not make that distinction;
+         this one does, and only ever in the safe direction.
+       * Every other gate is untouched: cancelled / no-show status, an op note
+         already saved for the procedure, and the never-arrived hold all run
+         exactly as before, after this. The room's own one-card-at-a-time
+         filter is not referenced either.
+
+     THE VOCABULARY is two things: the operative SUFFIX families, which carry
+     most of surgery by construction (-ectomy, -ostomy, -otomy, -oplasty,
+     -odesis, -orrhaphy, -opexy, -oscopy), and an explicit list of the compound
+     names those suffixes miss ("rotator cuff repair", "carpal tunnel release",
+     "open reduction internal fixation"). A short EXCLUDE list keeps the suffix
+     families from swallowing words that are not operations ("phlebotomy",
+     "ostomy care", "anatomy"). -->
+<script>
+(function () {
+  var VERSION = 'opnote-vocab-1.0.0';
+  if (window.__mlsOpNoteVocab) return;
+
+  /* A visit type. If the schedule says this, it is a clinic visit even when an
+     operation is named in the same line. */
+  var VISIT_WORD = new RegExp(
+    '\\b(' +
+    'follow[\\s-]?up|f\\/u|recheck|re[\\s-]?check|consult(?:ation)?|new\\s*patient|' +
+    'office\\s*visit|established\\s*patient|med(?:ication)?\\s*(?:check|management|refill)|' +
+    'post[\\s-]?op(?:erative)?\\s*(?:check|visit|follow)|pre[\\s-]?op(?:erative)?\\s*(?:clearance|visit|eval(?:uation)?)|' +
+    'telehealth|telephone|virtual\\s*visit|nurse\\s*visit|imaging\\s*review|mri\\s*review|results\\s*review|' +
+    'wound\\s*check|suture\\s*removal|cast\\s*check|dressing\\s*change|' +
+    'physical\\s*therapy|pt\\s*eval|wellness|annual|paperwork|dme|discussion|' +
+    'second\\s*opinion|no\\s*show|cancell?ed' +
+    ')\\b', 'i');
+
+  /* Words the suffix families would otherwise claim and should not. */
+  var NOT_AN_OPERATION = new RegExp(
+    '\\b(' +
+    'phlebotomy|venipuncture|anatomy|autonomy|economy|dichotomy|taxonomy|' +
+    '(?:colo|ileo|uro|trache)?stomy\\s*(?:care|supplies|teaching|bag|change)|' +
+    'stoma\\s*care' +
+    ')\\b', 'i');
+
+  /* The operative suffix families. Most of surgery is named by construction:
+     -ectomy (removal), -ostomy (opening), -otomy (incision), -oplasty (repair
+     by reshaping), -odesis (fusion), -orrhaphy (suture), -opexy (fixation),
+     -oscopy (endoscopic look, which is a documented procedure in every
+     specialty that does one). Four letters of stem minimum, so a bare suffix
+     cannot match. */
+  var SUFFIX = new RegExp(
+    '\\b[a-z]{4,}(?:ectomy|ostomy|otomy|oplasty|odesis|orrhaphy|opexy|oscopy|otripsy)\\b', 'i');
+
+  /* The compound operation names the suffix families miss. Every entry is an
+     operation somebody writes an operative note for; nothing here is a symptom,
+     a region, or a diagnosis. */
+  var COMPOUND = new RegExp(
+    '\\b(' +
+    /* orthopaedics + sports */
+    'arthroscop(?:y|ic)|arthroplast(?:y|ies)|hemiarthroplasty|' +
+    'rotator\\s*cuff\\s*(?:repair|debridement)|labral\\s*repair|bankart|latarjet|' +
+    'subacromial\\s*decompression|acromioplasty|' +
+    'meniscal\\s*repair|chondroplasty|microfracture|' +
+    'acl\\s*reconstruction|pcl\\s*reconstruction|ligament\\s*reconstruction|' +
+    'tendon\\s*(?:repair|transfer|release)|achilles\\s*repair|' +
+    'carpal\\s*tunnel\\s*release|cubital\\s*tunnel\\s*release|trigger\\s*finger\\s*release|' +
+    'de\\s*quervain\\s*release|plantar\\s*fascia\\s*release|' +
+    'total\\s*(?:knee|hip|shoulder|ankle|elbow)|tka|tha|tsa|' +
+    'open\\s*reduction|closed\\s*reduction|internal\\s*fixation|orif|' +
+    'percutaneous\\s*pinning|hardware\\s*removal|' +
+    'manipulation\\s*under\\s*(?:anesthesia|anaesthesia)|mua\\b|' +
+    'spinal\\s*fusion|instrumented\\s*fusion|' +
+    /* general, thoracic, vascular, urology, gyn, ENT, eye, plastics */
+    'hernia\\s*repair|hernioplasty|' +
+    'laparoscop(?:y|ic)|laparotomy|robotic\\s*assisted|' +
+    'incision\\s*and\\s*drainage|i\\s*&\\s*d\\b|' +
+    'excisional\\s*biopsy|core\\s*biopsy|needle\\s*biopsy|wide\\s*local\\s*excision|' +
+    'sentinel\\s*lymph\\s*node|mohs|' +
+    'skin\\s*graft|flap\\s*(?:repair|reconstruction|coverage)|' +
+    'port\\s*(?:a\\s*cath|placement)|central\\s*line\\s*placement|' +
+    'stent\\s*placement|angioplasty|endarterectomy|bypass\\s*graft|' +
+    'av\\s*fistula|thrombectomy|embolization|' +
+    'pacemaker\\s*(?:implant|placement)|defibrillator\\s*(?:implant|placement)|cardioversion|' +
+    'cardiac\\s*catheteri[sz]ation|' +
+    'peg\\s*tube|feeding\\s*tube\\s*placement|' +
+    'dilation\\s*and\\s*curettage|d\\s*&\\s*c\\b|' +
+    'cesarean|c\\s*section|tubal\\s*ligation|' +
+    'phacoemulsification|cataract\\s*(?:extraction|surgery)|' +
+    'tympanostomy\\s*tubes?|myringotomy|sinus\\s*surgery|fess\\b|' +
+    'circumcision|vasectomy|turp\\b|lithotripsy|' +
+    'debridement|fasciotomy|amputation|' +
+    'closed\\s*manipulation|casting\\s*under|' +
+    'repair\\s*of\\s*(?:tear|rupture|fracture|laceration|defect)|' +
+    'excision\\s*of\\s*(?:mass|lesion|cyst|lipoma|tumor|tumour|ganglion)|' +
+    'removal\\s*of\\s*(?:hardware|foreign\\s*body|lesion|mass|cyst)|' +
+    'reconstruction\\s*of' +
+    ')\\b', 'i');
+
+  /* The one question this block answers. Public, so a test can execute it
+     against real strings rather than grep for its presence. */
+  function extraEvidence(text) {
+    var t = String(text == null ? '' : text);
+    if (!t) return '';
+    if (VISIT_WORD.test(t)) return '';
+    if (NOT_AN_OPERATION.test(t)) return '';
+    if (COMPOUND.test(t)) return 'operation';
+    if (SUFFIX.test(t)) return 'operation';
+    return '';
+  }
+
+  var wrapped = null, tries = 0, timer = 0;
+
+  function install() {
+    var oni = null;
+    try { oni = window.__mlsOpNoteIntegrity || null; } catch (e) { oni = null; }
+    if (!oni || typeof oni.parseProcedureFacts !== 'function') return false;
+    if (oni.parseProcedureFacts.__mlsVocab) return true;
+
+    var base = oni.parseProcedureFacts;
+    var w = function (text) {
+      var facts = null;
+      /* THE ORIGINAL ALWAYS RUNS FIRST AND ITS ANSWER IS NEVER EDITED. */
+      try { facts = base.apply(this, arguments); } catch (e) { facts = null; }
+      try {
+        if (facts && (facts.procedureType || facts.approach || (facts.levelCount > 0))) return facts;
+        var kind = extraEvidence(text);
+        if (!kind) return facts;
+        /* Add the MINIMUM daybrain needs to see a procedure: a procedureType.
+           Nothing else on the facts object is invented - no approach, no
+           levels, no laterality - because every one of those is a clinical
+           value and this block has not measured one. */
+        if (!facts || typeof facts !== 'object') facts = {};
+        facts.procedureType = 'procedure';
+        facts.__mlsVocab = VERSION;
+        return facts;
+      } catch (e2) { return facts; }
+    };
+    w.__mlsVocab = VERSION;
+    w.__mlsVocabBase = base;
+    try { oni.parseProcedureFacts = w; } catch (e3) { return false; }
+    wrapped = oni;
+    /* A day already triaged under the old vocabulary is stale. Re-triage
+       through the day-brain's own entry point; it is idempotent. */
+    try {
+      var brain = window.__mlsOpNoteDayBrain;
+      if (brain && brain.installed && typeof brain.triageAll === 'function') {
+        brain.triageAll();
+        if (typeof window.opPrepRender === 'function' &&
+            document.getElementById('opPrepModal') &&
+            document.getElementById('opPrepModal').classList.contains('show')) {
+          window.opPrepRender();
+        }
+      }
+    } catch (e4) {}
+    return true;
+  }
+
+  /* oni installs on DOMContentLoaded and this block is parsed before it, so a
+     bounded ladder rather than a standing interval - the boot-script-budget
+     suite's interval ceiling is at its limit. */
+  function tick() {
+    timer = 0;
+    if (install()) return;
+    if (++tries >= 40) return;
+    timer = setTimeout(tick, 400);
+  }
+
+  window.__mlsOpNoteVocab = {
+    version: VERSION,
+    installed: function () {
+      try {
+        var o = window.__mlsOpNoteIntegrity;
+        return !!(o && typeof o.parseProcedureFacts === 'function' && o.parseProcedureFacts.__mlsVocab === VERSION);
+      } catch (e) { return false; }
+    },
+    /* '' when this block adds nothing; 'operation' when it does. */
+    evidence: extraEvidence,
+    ensure: function () { tries = 0; return install(); },
+    revert: function () {
+      try { if (timer) clearTimeout(timer); } catch (e) {}
+      timer = 0;
+      try {
+        var o = wrapped || window.__mlsOpNoteIntegrity;
+        if (o && o.parseProcedureFacts && o.parseProcedureFacts.__mlsVocabBase) {
+          o.parseProcedureFacts = o.parseProcedureFacts.__mlsVocabBase;
+        }
+      } catch (e2) {}
+      try { delete window.__mlsOpNoteVocab; } catch (e3) { window.__mlsOpNoteVocab = null; }
+      return true;
+    }
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick, { once: true });
+  else tick();
+  /* The op-note room can be opened before the ladder has run out; a click is
+     new evidence that the app moved on. */
+  document.addEventListener('click', function () { if (!timer) setTimeout(function () { install(); }, 0); }, true);
+})();
+</script>
+<!-- ===== end opnote-vocab-1.0.0 ======================================= -->
+<!-- ===== opnote-day-1.0.0 — the day, as cards, drafting by itself =====
+     Owner, 2026-08-17, after seeing /1p: "the op notes are still too confusing
+     and didn't include the things I asked; they need to be even MORE simple and
+     START ON ALL PATIENTS."
+
+     WHAT WAS MEASURED FIRST (real Chrome, 28 synthetic pain-management
+     patients, 1366x900, this worktree at origin/main 5e80f340):
+
+       mode      cards VISIBLE   controls outside the cards   visible chars
+       Simple          1                    46                    4,696
+       Normal          1                    46                    4,696
+       Everything      1                    63                    5,872
+
+     ONE card. Not 28. feat_mls_opnote_room.js's markSolo() puts `.opr-solo` on
+     #opPrepList as soon as the day has two or more rows, and the room's own
+     stylesheet then says `#opPrepList.opr-solo > div{display:none}` with
+     `.opr-cur{display:block}`. So the "list of the day" is one patient plus a
+     Prev/Next pager, and in a run where nothing had marked .opr-cur yet it was
+     measured at ZERO visible cards out of 28 — a room that renders every card
+     and shows none of them.
+
+     Meanwhile 28 of the 46 controls outside the cards were #oprRowNav's
+     one-button-per-patient rail, i.e. the day WAS on screen, as a list of
+     buttons in a sidebar, spelled "Ada Sample not drafted yet".
+
+     SO THIS BLOCK BUILDS THE DAY AS CARDS AND FOLDS THE ROOM AROUND IT.
+
+       1. #mlsOpDay — one compact card per row of window._opPrep, always all of
+          them, each carrying the patient, the procedure and an honest status:
+          Queued / Drafting / Ready to save / Needs review / Could not draft /
+          Already in the chart, each with one line of reason where there is one.
+          Clicking a card selects that patient in the room the room's own way
+          (__mlsOpNoteRoom.select), so nothing here owns selection.
+       2. ONE primary action at a time. Draft all -> Review -> Save, computed
+          from the day rather than from a mode: while anything is queued or
+          failed the primary IS the shell's own #opPrepGenAllBtn (relabelled
+          with the count); once nothing needs drafting it becomes Review, then
+          Save. Everything else in the room folds behind ONE "More" disclosure.
+       3. The day itself is a heading on the board, so it is visible in every
+          mode even when the whole rail is folded.
+
+     WHY #opPrepGenAllBtn STAYS THE PRIMARY AND IS NEVER FOLDED. msl-autodraft
+     -1.0.0 starts the day by clicking that button, and its own readiness test
+     refuses when `btn.offsetParent === null`. Folding it would have silently
+     turned "auto start on for all patients" off. It is relabelled in place and
+     left visible for exactly as long as there is anything to draft.
+
+     WHAT THIS BLOCK NEVER DOES. It does not decide who gets drafted: the set is
+     feat_mls_opnote_daybrain.js's triage, unchanged, and a row it holds is
+     shown as held WITH the day-brain's own sentence. It does not draft, save,
+     or reach Athena. It reads state and renders it. -->
+<style id="mlsOpDayCss">
+/* THE FOLD. One attribute on the modal drives it, and one "More" disclosure
+   releases it, so a folded control is exactly one obvious click away. Written
+   as :not([data-mlsopn-more="open"]) rather than a second, re-showing rule
+   because `display:revert` cannot restore the inline `display:flex` several of
+   these nodes are given by their own modules. */
+#opPrepModal[data-mlsopn="simple"]:not([data-mlsopn-more="open"]) .mlsopn-adv-simple,
+#opPrepModal[data-mlsopn="normal"]:not([data-mlsopn-more="open"]) .mlsopn-adv-normal{
+  display:none !important;
+}
+/* #oprPanelProcs is `grid-template-columns:290px minmax(0,1fr)`. Folding the
+   rail without this leaves a 290px empty column and the editor still squeezed
+   into the right-hand track - the fold would have cost width instead of
+   giving it back. */
+#opPrepModal[data-mlsopn-rail="folded"] #oprPanelProcs{
+  grid-template-columns:minmax(0,1fr) !important;
+}
+
+/* THE BOARD. */
+#mlsOpDay{ margin:2px 0 14px; }
+#mlsOpDayHead{
+  display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:0 0 9px;
+}
+#mlsOpDayTitle{ font:800 14px/1.25 var(--sans); color:var(--ink); }
+#mlsOpDayCount{ font:600 12px/1.25 var(--sans); color:var(--muted); }
+#mlsOpDayActions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 10px; }
+#mlsOpDayMore{
+  display:inline-flex; align-items:center; gap:6px;
+  min-height:32px; padding:6px 12px;
+  font:600 12px/1.2 var(--sans); color:var(--muted);
+  background:var(--soft); border:1px solid var(--line);
+  border-radius:var(--r-pill,999px); cursor:pointer;
+}
+#mlsOpDayMore:hover{ color:var(--ink); border-color:var(--muted); }
+#mlsOpDayMore[aria-expanded="true"]{ color:var(--ink); background:var(--field-bg); }
+#mlsOpDayGo{
+  font:700 13px/1.2 var(--sans); min-height:38px; padding:9px 16px;
+  border-radius:var(--r-ctl,10px); border:1px solid var(--brand,#2E6A4B);
+  background:var(--brand,#2E6A4B); color:#fff; cursor:pointer;
+}
+#mlsOpDayGo[hidden]{ display:none; }
+#mlsOpDayGrid{
+  display:grid; gap:8px;
+  grid-template-columns:repeat(auto-fill,minmax(224px,1fr));
+}
+.mlsOpDayCard{
+  display:flex; flex-direction:column; gap:3px; text-align:left;
+  padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-ctl,10px);
+  background:var(--card); cursor:pointer; min-height:44px;
+  font:inherit; color:var(--ink);
+}
+.mlsOpDayCard:hover{ border-color:var(--muted); }
+.mlsOpDayCard[aria-current="true"]{ border-color:var(--brand,#2E6A4B); box-shadow:0 0 0 1px var(--brand,#2E6A4B) inset; }
+.mlsOpDayName{ font:700 12.5px/1.25 var(--sans); }
+.mlsOpDayProc{ font:500 11.5px/1.3 var(--sans); color:var(--muted); }
+.mlsOpDayWhy{ font:500 11px/1.3 var(--sans); color:var(--muted); }
+.mlsOpDayChip{
+  align-self:flex-start; margin-top:2px; padding:2px 8px; border-radius:var(--r-pill,999px);
+  font:700 10.5px/1.5 var(--sans); letter-spacing:.2px;
+  border:1px solid var(--line); background:var(--soft); color:var(--muted);
+}
+/* Six states, and each one is a WORD before it is a colour: the room is read on
+   laptop screens in bright rooms and a colour-only signal is not a status. */
+.mlsOpDayCard[data-mls-cardstate="drafting"] .mlsOpDayChip{ border-color:#c9a227; color:#7a5a16; background:#fff7e6; }
+.mlsOpDayCard[data-mls-cardstate="ready"]    .mlsOpDayChip{ border-color:#bfe6cf; color:#12744a; background:#eefaf3; }
+.mlsOpDayCard[data-mls-cardstate="saved"]    .mlsOpDayChip{ border-color:#bfe6cf; color:#12744a; background:#eefaf3; }
+.mlsOpDayCard[data-mls-cardstate="review"]   .mlsOpDayChip{ border-color:#f0d79a; color:#7a5a16; background:#fff7e6; }
+.mlsOpDayCard[data-mls-cardstate="failed"]   .mlsOpDayChip{ border-color:#e8b4b1; color:#a51f1a; background:#fdeceb; }
+@media (max-width:520px){
+  #mlsOpDayGrid{ grid-template-columns:minmax(0,1fr); }
+}
+@media print{ #mlsOpDay{ display:none; } }
+</style>
+<script>
+(function () {
+  var BOARD = 'mlsOpDay', GRID = 'mlsOpDayGrid';
+  var moreOpen = false;
+
+  function S(v) { return v == null ? '' : String(v); }
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function rows() { try { return window._opPrep || []; } catch (e) { return []; } }
+  function roomOpen() { var m = el('opPrepModal'); return !!(m && m.classList && m.classList.contains('show')); }
+
+  /* full -> everything visible; calm -> normal; guided -> simple. */
+  function level() {
+    var m = '';
+    try { m = document.documentElement.getAttribute('data-msl') || 'calm'; } catch (e) { m = 'calm'; }
+    return m === 'full' ? 'all' : (m === 'guided' ? 'simple' : 'normal');
+  }
+
+  /* ---- 1. WHAT FOLDS -------------------------------------------------
+     Containers, not individual controls: a per-control registry has to be
+     re-derived every time a shared module renames a button, and the four
+     modules that fill this room rebuild their own nodes constantly.
+
+     #oprDayRail is the whole secondary column - the mode switch, the day
+     picker, the month tools, the template rail, the per-patient nav and the
+     drafting-style picker: 40 of the 46 controls measured outside the cards.
+     The board below replaces its navigational job, and "More" gives all of it
+     back in one click. */
+  var ADV = [
+    { sel: '#oprDayRail',        levels: ['simple', 'normal'], rail: true },
+    { sel: '#oprRowNav',         levels: ['simple', 'normal'] },
+    { sel: '#tpfLedgerList',     levels: ['simple', 'normal'] },
+    { sel: '#oprReceipt',        levels: ['simple'] },
+    { sel: '#oprPager',          levels: ['simple'] },
+    { sel: '.opr-tabs',          levels: ['simple'] },
+    { sel: '#opPrepRetryFailedBtn', levels: ['simple'] },
+    { sel: '#mlsOnfBar',         levels: ['simple'] },
+    /* msl-1.0.0 inserts its own named disclosure BEFORE each region it folds,
+       and those buttons are siblings of the region rather than children - so
+       folding #mlsOnfBar left its "▸ Assign templates in bulk" button behind,
+       measured as the 6th control in Simple. Simple gets ONE disclosure; msl's
+       own come back with it. */
+    { sel: '.msl-more',          levels: ['simple'] }
+  ];
+  /* NEVER folded, at any level, and the reason is load-bearing:
+       #opPrepGenAllBtn - msl-autodraft refuses when its offsetParent is null,
+                          so folding it turns automatic drafting off silently.
+       #tpfStop         - the Stop button of an automatic run.
+       .modal-x, #oprBack - the way out of a full-screen room. */
+  function markOne(row, lvl) {
+    var nodes;
+    try { nodes = document.querySelectorAll('#opPrepModal ' + row.sel); } catch (e) { return 0; }
+    var on = row.levels.indexOf(lvl) >= 0, i, n = 0;
+    for (i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node.classList.contains('mlsopn-adv-simple')) node.classList.remove('mlsopn-adv-simple');
+      if (node.classList.contains('mlsopn-adv-normal')) node.classList.remove('mlsopn-adv-normal');
+      if (!on) continue;
+      if (row.levels.indexOf('simple') >= 0) node.classList.add('mlsopn-adv-simple');
+      if (row.levels.indexOf('normal') >= 0) node.classList.add('mlsopn-adv-normal');
+      n++;
+    }
+    return n;
+  }
+  function applyFold() {
+    var modal = el('opPrepModal');
+    if (!modal) return 0;
+    var lvl = level(), i, n = 0, railFolded = false;
+    for (i = 0; i < ADV.length; i++) {
+      var got = markOne(ADV[i], lvl);
+      n += got;
+      if (ADV[i].rail && got) railFolded = true;
+    }
+    if (modal.getAttribute('data-mlsopn') !== lvl) modal.setAttribute('data-mlsopn', lvl);
+    var railWant = (railFolded && !moreOpen) ? 'folded' : '';
+    if (S(modal.getAttribute('data-mlsopn-rail')) !== railWant) {
+      if (railWant) modal.setAttribute('data-mlsopn-rail', railWant);
+      else modal.removeAttribute('data-mlsopn-rail');
+    }
+    var wantMore = moreOpen ? 'open' : '';
+    if (S(modal.getAttribute('data-mlsopn-more')) !== wantMore) {
+      if (wantMore) modal.setAttribute('data-mlsopn-more', wantMore);
+      else modal.removeAttribute('data-mlsopn-more');
+    }
+    return n;
+  }
+
+  /* ---- 2. THE HONEST PER-CARD STATUS ---------------------------------
+     Six states, each read from the surface that actually knows:
+
+       drafting  the Draft-all runner's own ledger row says this one is running
+       saved     the day-brain found an op note already in the chart
+       review    the day-brain HELD this row (its sentence is shown verbatim),
+                 or the draft landed with blanks still in it
+       failed    the runner's ledger says fail, or the row carries an error
+       ready     a draft exists with no blanks left
+       queued    none of the above - it is in the set and has not started
+
+     The ledger is #tpfLedgerList, which the Draft-all runner
+     (__mlsTplPrepFix, in the connect bundle) paints one <div> per row of
+     window._opPrep IN ROW ORDER, so index i is row i. It is the only place
+     the runner's in-flight state is observable: `states` is a local. */
+  function ledgerState(i) {
+    var list = el('tpfLedgerList');
+    if (!list || !list.children || i >= list.children.length) return '';
+    var node = list.children[i];
+    if (!node) return '';
+    var cls = S(node.className);
+    if (cls === 'ok') return 'ok';
+    if (cls === 'bad') return 'fail';
+    if (cls === 'skip') return 'skip';
+    /* the runner paints a running row with class "pend" and an hourglass mark */
+    if (S(node.textContent).charAt(0) === '⏳') return 'run';
+    return 'pend';
+  }
+  function blanksLeft(row) {
+    var note = S(row && row.note);
+    if (!note) return 0;
+    try {
+      if (typeof window.opNoteBlankTokens === 'function') {
+        return (window.opNoteBlankTokens(note) || []).length;
+      }
+    } catch (e) {}
+    var m = note.match(/\[\[[a-z0-9_]+\]\]/gi);
+    return m ? m.length : 0;
+  }
+  function oneLine(t, n) {
+    var s = S(t).replace(/\s+/g, ' ').trim();
+    n = n || 68;
+    return s.length > n ? (s.slice(0, n - 1) + '…') : s;
+  }
+  function statusOf(row, i) {
+    var led = ledgerState(i);
+    if (led === 'run') return { k: 'drafting', label: 'Drafting…', why: '' };
+    var t = row && row._opdbTriage;
+    if (t && t.verdict === 'done') return { k: 'saved', label: 'Already in the chart', why: oneLine(t.why) };
+    if (t && t.verdict === 'held') return { k: 'review', label: 'Not drafted', why: oneLine(t.why) };
+    var err = S(row && (row._genErr || row._lastDraftErr));
+    /* THE ROW BEATS A STALE LEDGER ROW. The ledger is per-RUN state and it is
+       not cleared between runs, so a row that failed at 09:00 and was drafted
+       successfully at 09:20 still has a `bad` ledger entry. Reading the ledger
+       first made every such card say "Could not draft" while holding a
+       finished note - measured: 28 of 28 cards read `failed` in a session
+       where the first automatic run had failed offline and the rows were
+       drafted afterwards. A row that HOLDS a draft and carries no error of its
+       own has been drafted, whatever an older run recorded. */
+    if (row && row.gen && S(row.note).trim() && !err) {
+      var b = blanksLeft(row);
+      if (b) return { k: 'review', label: 'Needs review', why: b + ' blank' + (b === 1 ? '' : 's') + ' still to fill' };
+      return { k: 'ready', label: 'Ready to save', why: '' };
+    }
+    if (led === 'fail' || err) {
+      return { k: 'failed', label: 'Could not draft',
+        why: oneLine(err || 'open this one for the reason') };
+    }
+    if (led === 'skip') return { k: 'review', label: 'Your edits kept', why: 'nothing was overwritten' };
+    return { k: 'queued', label: 'Queued', why: '' };
+  }
+  function tally() {
+    var r = rows(), out = { queued: 0, drafting: 0, ready: 0, review: 0, failed: 0, saved: 0, n: r.length }, i;
+    for (i = 0; i < r.length; i++) out[statusOf(r[i], i).k]++;
+    return out;
+  }
+
+  /* ---- 3. ONE PRIMARY ACTION ----------------------------------------- */
+  function dayState() {
+    var t = tally();
+    if (t.drafting) return 'stop';
+    if (t.queued || t.failed) return 'draft';
+    if (t.review) return 'review';
+    if (t.ready) return 'save';
+    return 'done';
+  }
+  function selectRow(i) {
+    try {
+      if (window.__mlsOpNoteRoom && typeof window.__mlsOpNoteRoom.select === 'function') {
+        window.__mlsOpNoteRoom.select(i);
+        return true;
+      }
+    } catch (e) {}
+    /* The room is the owner of selection; this is only the fallback for a page
+       where it never installed, and it does exactly what the room does. */
+    return markCurrent(i);
+  }
+  /* .opr-solo hides every card except .opr-cur. MEASURED: in a run where
+     nothing had marked .opr-cur the editor showed 0 of 28 cards. Marking the
+     first row current when NOTHING is current can only ever reveal a card. */
+  function markCurrent(i) {
+    var list = el('opPrepList');
+    if (!list || !list.children) return false;
+    if (i == null || i < 0 || i >= list.children.length) return false;
+    var cur = list.querySelectorAll('.opr-cur'), k;
+    for (k = 0; k < cur.length; k++) cur[k].classList.remove('opr-cur');
+    var card = list.children[i];
+    if (!card || !card.classList) return false;
+    card.classList.add('opr-cur');
+    return true;
+  }
+  function currentIndex() {
+    var list = el('opPrepList');
+    if (!list || !list.children) return -1;
+    for (var i = 0; i < list.children.length; i++) {
+      if (list.children[i].classList && list.children[i].classList.contains('opr-cur')) return i;
+    }
+    return -1;
+  }
+  function repairSolo() {
+    var list = el('opPrepList');
+    if (!list || !list.classList || !list.classList.contains('opr-solo')) return false;
+    if (!list.children || !list.children.length) return false;
+    if (currentIndex() >= 0) return false;
+    return markCurrent(0);
+  }
+  function firstOfKind(kind) {
+    var r = rows(), i;
+    for (i = 0; i < r.length; i++) if (statusOf(r[i], i).k === kind) return i;
+    return -1;
+  }
+
+  /* ---- 4. RENDER ------------------------------------------------------ */
+  function ensureHost() {
+    var editor = el('oprEditor'), list = el('opPrepList');
+    if (!editor || !list) return null;
+    var host = el(BOARD);
+    if (host && host.parentNode === editor) return host;
+    if (!host) {
+      host = document.createElement('section');
+      host.id = BOARD;
+      host.setAttribute('aria-label', 'Every patient on this day');
+      host.innerHTML =
+        '<div id="mlsOpDayHead">' +
+          '<span id="mlsOpDayTitle"></span><span id="mlsOpDayCount"></span>' +
+        '</div>' +
+        '<div id="mlsOpDayActions">' +
+          '<button type="button" id="mlsOpDayGo" hidden></button>' +
+          '<button type="button" id="mlsOpDayMore" aria-expanded="false">' +
+            '<span aria-hidden="true">⋯</span><span id="mlsOpDayMoreLbl">More</span>' +
+          '</button>' +
+        '</div>' +
+        '<div id="' + GRID + '" role="list"></div>';
+      host.querySelector('#mlsOpDayMore').addEventListener('click', function () {
+        moreOpen = !moreOpen;
+        paint();
+      }, false);
+      host.querySelector('#mlsOpDayGo').addEventListener('click', function () { runPrimary(); }, false);
+    }
+    editor.insertBefore(host, list);
+    return host;
+  }
+  function runPrimary() {
+    var st = dayState(), i;
+    if (st === 'draft') { var b = el('opPrepGenAllBtn'); if (b) b.click(); return; }
+    if (st === 'stop')  { var s = el('tpfStop'); if (s) s.click(); return; }
+    if (st === 'review') { i = firstOfKind('review'); if (i >= 0) selectRow(i); return; }
+    if (st === 'save')  { i = firstOfKind('ready');  if (i >= 0) selectRow(i); return; }
+  }
+  function dayLabel() {
+    var r = rows();
+    var s = S(r[0] && r[0].dateStr);
+    if (s) return s;
+    var lbl = el('opPrepDayLbl');
+    s = S(lbl && lbl.textContent).trim();
+    if (s) return s;
+    try { if (window._opPrepDay && typeof window._opDayStr === 'function') return S(window._opDayStr(window._opPrepDay)); } catch (e) {}
+    return S(window._opPrepDay);
+  }
+
+  var lastSig = '';
+  function paint() {
+    if (!roomOpen()) return false;
+    var host = ensureHost();
+    if (!host) return false;
+    repairSolo();
+    applyFold();
+
+    var r = rows(), t = tally(), cur = currentIndex(), i;
+    var st = dayState();
+    var sig = level() + '|' + (moreOpen ? '1' : '0') + '|' + st + '|' + cur + '|' + dayLabel() + '|';
+    var parts = [];
+    for (i = 0; i < r.length; i++) {
+      var s = statusOf(r[i], i);
+      parts.push([S(r[i] && r[i].appt && r[i].appt.name), S(r[i] && r[i].proc), s.k, s.label, s.why].join(''));
+    }
+    sig += parts.join('');
+    if (sig === lastSig) return true;
+    lastSig = sig;
+
+    var title = el('mlsOpDayTitle'), count = el('mlsOpDayCount');
+    var day = dayLabel();
+    if (title) title.textContent = day ? ('Op notes — ' + day) : 'Op notes';
+    if (count) {
+      count.textContent = r.length
+        ? (r.length + ' patient' + (r.length === 1 ? '' : 's') + ' · ' +
+           t.ready + ' ready · ' + t.review + ' to review · ' + t.failed + ' failed')
+        : 'no patients on this day';
+    }
+
+    /* The primary action. In 'draft' and 'stop' the shell's own button IS the
+       primary, so this one steps aside rather than competing with it. */
+    var go = el('mlsOpDayGo');
+    if (go) {
+      if (st === 'review') {
+        go.hidden = false;
+        go.textContent = '👁 Review ' + t.review + ' note' + (t.review === 1 ? '' : 's');
+      } else if (st === 'save') {
+        go.hidden = false;
+        go.textContent = '💾 Save ' + t.ready + ' note' + (t.ready === 1 ? '' : 's') + ' to the charts';
+      } else {
+        go.hidden = true;
+        go.textContent = '';
+      }
+    }
+    /* Relabel, never move: opPrepRender() writes only this button's display,
+       so a label written here survives every repaint, and revert() puts the
+       shell's own words back. */
+    var gen = el('opPrepGenAllBtn');
+    if (gen) {
+      if (!gen.__mlsOpDayLbl) gen.__mlsOpDayLbl = S(gen.textContent);
+      var want = (st === 'draft' && (t.queued + t.failed))
+        ? ('✨ Draft all ' + (t.queued + t.failed) + ' op note' + ((t.queued + t.failed) === 1 ? '' : 's'))
+        : gen.__mlsOpDayLbl;
+      if (S(gen.textContent) !== want) gen.textContent = want;
+    }
+
+    var more = el('mlsOpDayMore'), moreLbl = el('mlsOpDayMoreLbl');
+    if (more) {
+      var lvl = level();
+      more.hidden = (lvl === 'all');
+      more.setAttribute('aria-expanded', moreOpen ? 'true' : 'false');
+      if (moreLbl) moreLbl.textContent = moreOpen ? 'Fewer options' : 'More';
+    }
+
+    var grid = el(GRID);
+    if (grid) {
+      var html = '';
+      for (i = 0; i < r.length; i++) {
+        var row = r[i], sx = statusOf(row, i);
+        html += '<button type="button" class="mlsOpDayCard" role="listitem" data-mls-card-i="' + i + '"' +
+          ' data-mls-cardstate="' + sx.k + '"' + (i === cur ? ' aria-current="true"' : '') + '>' +
+          '<span class="mlsOpDayName"></span>' +
+          '<span class="mlsOpDayProc"></span>' +
+          '<span class="mlsOpDayChip"></span>' +
+          (sx.why ? '<span class="mlsOpDayWhy"></span>' : '') +
+          '</button>';
+      }
+      if (grid.__sig !== sig) {
+        grid.innerHTML = html;
+        grid.__sig = sig;
+        /* textContent rather than interpolation: a patient name is data and
+           never markup, and this room already carries real names. */
+        for (i = 0; i < grid.children.length; i++) {
+          var card = grid.children[i], rw = r[i], sy = statusOf(rw, i);
+          card.querySelector('.mlsOpDayName').textContent = S(rw && rw.appt && rw.appt.name) || 'Patient';
+          card.querySelector('.mlsOpDayProc').textContent = oneLine(S(rw && rw.proc) || 'no procedure text', 46);
+          card.querySelector('.mlsOpDayChip').textContent = sy.label;
+          var why = card.querySelector('.mlsOpDayWhy');
+          if (why) why.textContent = sy.why;
+        }
+      }
+    }
+    return true;
+  }
+
+  /* One delegated listener rather than one per card, so a repaint cannot leak
+     handlers. */
+  document.addEventListener('click', function (ev) {
+    if (!ev || !ev.target || !ev.target.closest) return;
+    var card = ev.target.closest('.mlsOpDayCard');
+    if (!card) return;
+    var i = parseInt(card.getAttribute('data-mls-card-i'), 10);
+    if (isNaN(i)) return;
+    selectRow(i);
+    setTimeout(paint, 0);
+  }, false);
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never requestAnimationFrame: rAF does not fire in a hidden
+       or non-compositing tab and the board would never paint there. */
+    setTimeout(function () { queued = false; paint(); }, 0);
+  }
+
+  function watch() {
+    var m = el('opPrepModal');
+    if (m && !m.__mlsOpDayWatched) {
+      m.__mlsOpDayWatched = true;
+      /* childList+subtree only. Attribute changes are ignored so this block's
+         own data-mlsopn writes cannot re-enter the observer. */
+      try { new MutationObserver(refresh).observe(m, { childList: true, subtree: true }); } catch (e) {}
+      try { new MutationObserver(refresh).observe(m, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+    }
+    var html = document.documentElement;
+    if (html && !html.__mlsOpDayModeWatched) {
+      html.__mlsOpDayModeWatched = true;
+      try { new MutationObserver(refresh).observe(html, { attributes: true, attributeFilter: ['data-msl'] }); } catch (e) {}
+    }
+  }
+
+  window.__mlsOpDay = {
+    version: 'opnote-day-1.0.0',
+    refresh: refresh,
+    level: level,
+    tally: tally,
+    dayState: dayState,
+    statusOf: function (i) { return statusOf(rows()[i], i); },
+    /* The honest answer to "what is on this screen", for diagnostics and for
+       the contract suite - counted, not asserted. */
+    status: function () {
+      var modal = el('opPrepModal');
+      return {
+        open: roomOpen(), level: level(), more: moreOpen,
+        board: !!el(BOARD), cards: (el(GRID) || { children: [] }).children.length,
+        railFolded: !!(modal && modal.getAttribute('data-mlsopn-rail') === 'folded'),
+        primary: dayState(), tally: tally()
+      };
+    },
+    setMore: function (v) { moreOpen = !!v; paint(); return moreOpen; },
+    revert: function () {
+      var host = el(BOARD); if (host && host.parentNode) host.parentNode.removeChild(host);
+      var gen = el('opPrepGenAllBtn');
+      if (gen && gen.__mlsOpDayLbl) { gen.textContent = gen.__mlsOpDayLbl; try { delete gen.__mlsOpDayLbl; } catch (e) {} }
+      var marked = document.querySelectorAll('.mlsopn-adv-simple,.mlsopn-adv-normal'), i;
+      for (i = 0; i < marked.length; i++) {
+        marked[i].classList.remove('mlsopn-adv-simple');
+        marked[i].classList.remove('mlsopn-adv-normal');
+      }
+      var m = el('opPrepModal');
+      if (m) { m.removeAttribute('data-mlsopn'); m.removeAttribute('data-mlsopn-rail'); m.removeAttribute('data-mlsopn-more'); }
+      lastSig = '';
+      return true;
+    }
+  };
+
+  function boot() { watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
+  ['mls:ui-ready', 'mls:view-changed'].forEach(function (name) {
+    try { window.addEventListener(name, refresh, false); } catch (e) {}
+  });
+})();
+</script>
+<!-- ===== end opnote-day-1.0.0 ========================================= -->
+<!-- ===== dock-1p-1.1.0 — the taskbar stops covering the work ==========
+     Owner: "that task bar getting in the way of everything. It needs to be
+     better and smarter made."
+
+     WHAT WAS ACTUALLY WRONG, MEASURED (2026-08-17, real Chrome, 28 synthetic
+     patients, #patientsView, 1366x900 over a 1505px-tall page). Of 25 sample
+     points inside the dock's own rectangle, how many had real screen content
+     underneath (elementsFromPoint, so genuine obstruction rather than mere
+     bounding-box overlap):
+
+         side     scroll 0%   scroll 50%   scroll 100%   reserved clearance
+         bottom     25/25       25/25          0/25      #appWrap pad-b 96px
+         top         0/25       25/25         25/25      pad-t 112px
+         left        0/25        0/25          0/25      pad-l 128px
+         right       0/25        0/25          0/25      pad-r 128px
+
+     The mechanism, and why more padding could never have fixed it: top and
+     bottom reserve their clearance on the SCROLLING axis, so the reservation
+     only protects the one end of the document the bar happens to sit at - at
+     any other scroll offset a fixed bar is over live content by construction.
+     Left and right reserve on the non-scrolling axis, so they are
+     obstruction-free at EVERY scroll offset. The app shipped `bottom`.
+
+     1.0.0 CHANGED THE DEFAULT. That was necessary and not sufficient: it never
+     overrides a stored choice, and the owner HAS a stored choice -
+     qolDockSide=bottom, seeded long before this block existed. So on his own
+     account the side rail never applied, and the only ways to change it were a
+     Settings tab and a row in the mode chip's menu, neither of which a doctor
+     whose taskbar is in the way has any reason to open.
+
+     1.1.0 ADDS THE THREE THINGS THAT WERE MISSING, all measured against the
+     same instrument:
+
+       (a) AN AFFORDANCE ON THE DOCK ITSELF. #mlsDockNub - a 44x44 "⋮ Taskbar"
+           button pinned to the dock's own edge, opening the four positions and
+           auto-hide in place. It is NOT a child of #mlsDock: the /1p dock
+           guard measures the dock's geometry and reverts to the legacy rail
+           when the size it measures disagrees with the side it believes, so
+           adding a child would have risked switching the navigation off. It is
+           positioned from the dock's measured rect instead, and always INSIDE
+           the clearance band the dock already reserves, so it cannot become a
+           second thing covering the work.
+
+       (b) REAL SETTERS. __mlsDockP1.side and .autoHide were GETTERS that
+           ignored their argument - `side('left')` returned 'bottom' and
+           `autoHide(true)` returned false, which reads exactly like a broken
+           dock rather than a misused API. They are now dual accessors: called
+           with no argument they report, called with a value they write through
+           the app's own public settings action, persist, and re-layout
+           immediately (__mlsP1CalmDock.reconcile plus a resize, because the
+           calm shell recomputes its top clearance on resize).
+           window.__mlsDock1p is an alias of the same object, because that is
+           the name this API has been called by.
+
+       (c) A ONE-TIME, HONEST NUDGE for accounts sitting on the legacy bottom
+           bar - the owner's case. It states the measured reason, offers one
+           click, and is remembered EITHER WAY: "Keep it here" is an answer,
+           not a snooze, and it is never asked again.
+
+     WHAT IT STILL DELIBERATELY DOES NOT DO. It never silently overrides a
+     stored choice - (c) asks. It does not touch phones: below 760px the shell
+     pins the dock to a full-width bottom bar regardless of any attribute, so a
+     side preference there would be a lie, and neither the nub nor the nudge
+     appears. Feature-detected throughout: no reference to any lane, route or
+     bundle. If the dock owner is not installed this block does nothing. -->
+<style id="mlsDockNubCss">
+#mlsDockNub{
+  position:fixed; z-index:9405; display:none;
+  width:44px; height:44px; min-width:44px; min-height:44px;
+  align-items:center; justify-content:center;
+  border:1px solid var(--line,rgba(32,64,52,.28)); border-radius:14px;
+  background:var(--card,#f7faf8); color:var(--ink,#204034);
+  box-shadow:var(--shadow,0 6px 20px rgba(22,48,38,.18));
+  font:700 17px/1 var(--sans,system-ui,sans-serif); cursor:pointer;
+  touch-action:manipulation;
+}
+#mlsDockNub.on{ display:flex; }
+#mlsDockNub:hover{ border-color:var(--muted,#55605A); }
+#mlsDockNub[aria-expanded="true"]{ border-color:var(--brand,#2E6A4B); }
+#mlsDockNubMenu{
+  position:fixed; z-index:9406; min-width:238px; padding:8px;
+  border-radius:var(--r-ctl,12px); background:var(--card,#fff);
+  border:1px solid var(--line,#dfe6e2); box-shadow:var(--shadow,0 10px 30px rgba(22,48,38,.18));
+  display:flex; flex-direction:column; gap:2px;
+}
+#mlsDockNubMenu[hidden]{ display:none; }
+#mlsDockNubMenu .mlsDockGroup{
+  font:700 10.5px/1.2 var(--sans); letter-spacing:.4px; text-transform:uppercase;
+  color:var(--muted); padding:4px 8px 6px;
+}
+#mlsDockNubMenu .mlsDockItem{
+  text-align:left; min-height:40px; padding:9px 10px; border:0; border-radius:8px;
+  font:600 12.5px/1.25 var(--sans); color:var(--ink); background:transparent; cursor:pointer;
+}
+#mlsDockNubMenu .mlsDockItem:hover{ background:var(--soft); }
+#mlsDockNubMenu .mlsDockItem[aria-checked="true"]{ background:var(--soft); }
+#mlsDockNubMenu .mlsDockItem[aria-checked="true"]::before{ content:'\2713\00a0'; font-weight:800; }
+/* The nudge. A standing strip, not a dialog: it must never block the work it
+   is offering to stop covering. */
+#mlsDockNudge{
+  position:fixed; z-index:9404; display:none;
+  max-width:min(420px,calc(100vw - 32px));
+  padding:12px 14px; border-radius:var(--r-ctl,12px);
+  background:var(--card,#fff); border:1px solid var(--line,#dfe6e2);
+  box-shadow:var(--shadow,0 10px 30px rgba(22,48,38,.18));
+  font:600 12.5px/1.45 var(--sans); color:var(--ink);
+}
+#mlsDockNudge.on{ display:block; }
+#mlsDockNudge .mlsDockNudgeRow{ display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
+#mlsDockNudge button{
+  min-height:38px; padding:8px 14px; border-radius:var(--r-ctl,10px);
+  font:700 12.5px/1.2 var(--sans); cursor:pointer;
+  border:1px solid var(--line); background:var(--soft); color:var(--ink);
+}
+#mlsDockNudge button.primary{ background:var(--brand,#2E6A4B); border-color:var(--brand,#2E6A4B); color:#fff; }
+@media (max-width:760px){
+  #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge{ display:none !important; }
+}
+@media print{ #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge{ display:none !important; } }
+</style>
+<script>
+(function () {
+  var SIDE_KEY = 'qolDockSide';
+  var SEEDED = 'mlsDockSideSeeded';       /* '1' once this block has had its say */
+  var ASKED  = 'mlsDockSideAsked';        /* 'moved' | 'kept' — answered either way */
+  var WIDE = 1100;                        /* below this a side rail costs more width than it saves */
+  var NARROW = 760;                       /* the shell's own phone threshold */
+  var SIDE_RE = /^(bottom|top|left|right)$/;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function store(key) {
+    /* Per-account where the app's namespaced store is up, plain key otherwise. */
+    var out = [];
+    try { if (typeof window.uns === 'function') out.push(window.uns(key)); } catch (e) {}
+    out.push(key);
+    out.push('mls::' + key);
+    return out;
+  }
+  function readAny(key) {
+    var keys = store(key), i, v;
+    for (i = 0; i < keys.length; i++) {
+      try { v = localStorage.getItem(keys[i]); } catch (e) { v = null; }
+      if (v) return String(v);
+    }
+    return '';
+  }
+  function writeAll(key, value) {
+    var keys = store(key), i, ok = false;
+    for (i = 0; i < keys.length; i++) {
+      try { localStorage.setItem(keys[i], value); ok = true; } catch (e) {}
+    }
+    return ok;
+  }
+  function dockReady() {
+    return !!(el('mlsDock') && typeof window.applyDockSidePreview === 'function');
+  }
+  function narrow() {
+    try { return Number(window.innerWidth) <= NARROW; } catch (e) { return false; }
+  }
+
+  /* ---- 1. the non-obstructing default --------------------------------- */
+  var seedTries = 0;
+  function seedSide() {
+    if (readAny(SEEDED) === '1') return true;
+    if (!dockReady()) { if (++seedTries < 60) setTimeout(seedSide, 500); return false; }
+    /* An existing choice - the doctor's, or an earlier session's - always wins.
+       Section 3 below is what asks him about it, once. */
+    if (SIDE_RE.test(readAny(SIDE_KEY))) { writeAll(SEEDED, '1'); return true; }
+    var w = 0;
+    try { w = Number(window.innerWidth) || 0; } catch (e) { w = 0; }
+    if (w < WIDE) {
+      /* Narrow: the shell forces a bottom bar anyway. Record that this block
+         has had its say so a later resize cannot silently re-seed and move the
+         navigation out from under someone mid-task. */
+      writeAll(SEEDED, '1');
+      return true;
+    }
+    try { window.applyDockSidePreview('left'); } catch (e) { return false; }
+    writeAll(SEEDED, '1');
+    return true;
+  }
+
+  /* ---- 2. reading and WRITING the preference -------------------------- */
+  var SIDES = [
+    ['left',   'Side — left (never covers your work)'],
+    ['right',  'Side — right (never covers your work)'],
+    ['top',    'Top'],
+    ['bottom', 'Floating — bottom centre']
+  ];
+  function currentSide() {
+    var v = '';
+    try { if (typeof window.mlsDockSide === 'function') v = String(window.mlsDockSide() || ''); } catch (e) {}
+    if (!SIDE_RE.test(v)) v = readAny(SIDE_KEY);
+    return SIDE_RE.test(v) ? v : 'bottom';
+  }
+  function autoHideOn() {
+    try { if (typeof window.mlsDockAutoHide === 'function') return window.mlsDockAutoHide() === true; } catch (e) {}
+    return false;
+  }
+  /* The calm shell recomputes the dock's top clearance on resize, and the /1p
+     dock guard re-measures on reconcile. Both are the app's own seams; neither
+     is re-implemented here. */
+  function relayout() {
+    try {
+      var ctl = window.__mlsP1CalmDock;
+      if (ctl && typeof ctl.reconcile === 'function') ctl.reconcile();
+    } catch (e) {}
+    try { window.dispatchEvent(new Event('resize')); } catch (e2) {}
+    setTimeout(place, 0);
+    setTimeout(place, 240);
+  }
+  function setSide(next) {
+    var want = String(next == null ? '' : next);
+    if (!SIDE_RE.test(want)) return currentSide();
+    try { if (typeof window.applyDockSidePreview === 'function') window.applyDockSidePreview(want); } catch (e) {}
+    /* applyDockSidePreview writes ONLY uns('qolDockSide'); the /1p dock guard
+       also reads the plain and mls:: keys, so all three are made to agree
+       rather than left to disagree after a reload. */
+    writeAll(SIDE_KEY, want);
+    writeAll(SEEDED, '1');
+    relayout();
+    setTimeout(paint, 60);
+    return currentSide();
+  }
+  function setAutoHide(on) {
+    var want = (on === true);
+    try {
+      if (typeof window.applyDockAutoHidePreview === 'function') window.applyDockAutoHidePreview(want);
+    } catch (e) {}
+    relayout();
+    setTimeout(paint, 60);
+    return autoHideOn();
+  }
+
+  /* ---- 3. the controls, where a doctor will actually find them --------- */
+  function paint() {
+    var side = currentSide(), hideOn = autoHideOn(), i;
+    /* the mode chip's menu (one top-right place for "how the screen behaves") */
+    var host = el('dockChipRows');
+    if (host) {
+      var items = host.querySelectorAll('[data-dock-side]');
+      for (i = 0; i < items.length; i++) {
+        items[i].setAttribute('aria-checked', items[i].getAttribute('data-dock-side') === side ? 'true' : 'false');
+      }
+      var hide = host.querySelector('[data-dock-autohide]');
+      if (hide) {
+        hide.setAttribute('aria-checked', hideOn ? 'true' : 'false');
+        hide.textContent = hideOn ? 'Hide it until I need it — on' : 'Hide it until I need it';
+      }
+    }
+    /* the nub's own menu */
+    var menu = el('mlsDockNubMenu');
+    if (menu) {
+      var nubItems = menu.querySelectorAll('[data-dock-side]');
+      for (i = 0; i < nubItems.length; i++) {
+        nubItems[i].setAttribute('aria-checked', nubItems[i].getAttribute('data-dock-side') === side ? 'true' : 'false');
+      }
+      var nubHide = menu.querySelector('[data-dock-autohide]');
+      if (nubHide) {
+        nubHide.setAttribute('aria-checked', hideOn ? 'true' : 'false');
+        nubHide.textContent = hideOn ? 'Hide it until I need it — on' : 'Hide it until I need it';
+      }
+    }
+    /* THE SETTINGS FIELD ALREADY EXISTS IN THIS SHELL (#qolDockSide,
+       #qolDockAutoHide). It is not rebuilt here - two selects for one
+       preference is how they drift - but it IS kept honest: the option that
+       never covers the work says so, and both controls are re-synced from the
+       live state, because the app only syncs them when Settings is opened. */
+    var sel = el('qolDockSide');
+    if (sel && sel.options) {
+      for (i = 0; i < sel.options.length; i++) {
+        var o = sel.options[i], want = '';
+        if (o.value === 'left') want = 'Side — left edge (never covers your work)';
+        else if (o.value === 'right') want = 'Side — right edge (never covers your work)';
+        else if (o.value === 'top') want = 'Floating — top centre (covers the page as you scroll)';
+        else if (o.value === 'bottom') want = 'Floating — bottom centre (covers the page as you scroll)';
+        if (want && o.textContent !== want) o.textContent = want;
+      }
+      if (sel.value !== side) sel.value = side;
+    }
+    var cb = el('qolDockAutoHide');
+    if (cb && cb.checked !== hideOn) cb.checked = hideOn;
+    paintNudge();
+  }
+  function ensureRows() {
+    var menu = el('mslChipMenu');
+    if (!menu) return false;
+    if (el('dockChipRows')) { paint(); return true; }
+    if (!dockReady()) return false;
+    var box = document.createElement('div');
+    box.id = 'dockChipRows';
+    var head = document.createElement('div');
+    head.className = 'mslChipGroup';
+    head.textContent = 'Where the taskbar sits';
+    box.appendChild(head);
+    SIDES.forEach(function (row) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mslChipItem';
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('data-dock-side', row[0]);
+      b.textContent = row[1];
+      b.addEventListener('click', function () { setSide(row[0]); }, false);
+      box.appendChild(b);
+    });
+    var hide = document.createElement('button');
+    hide.type = 'button';
+    hide.className = 'mslChipItem';
+    hide.setAttribute('role', 'menuitemcheckbox');
+    hide.setAttribute('data-dock-autohide', '1');
+    hide.textContent = 'Hide it until I need it';
+    hide.addEventListener('click', function () { setAutoHide(!autoHideOn()); }, false);
+    box.appendChild(hide);
+    menu.appendChild(box);
+    paint();
+    return true;
+  }
+
+  /* ---- 4. the affordance ON the dock ---------------------------------- */
+  function nubMenuOpen() {
+    var m = el('mlsDockNubMenu');
+    return !!(m && !m.hasAttribute('hidden'));
+  }
+  function closeNub() {
+    var m = el('mlsDockNubMenu'), b = el('mlsDockNub');
+    if (m) m.setAttribute('hidden', '');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+  function openNub() {
+    var m = el('mlsDockNubMenu'), b = el('mlsDockNub');
+    if (!m) return;
+    m.removeAttribute('hidden');
+    if (b) b.setAttribute('aria-expanded', 'true');
+    paint();
+    place();
+  }
+  function ensureNub() {
+    if (!dockReady() || narrow()) { var old = el('mlsDockNub'); if (old) old.classList.remove('on'); return false; }
+    var nub = el('mlsDockNub');
+    if (nub) { nub.classList.add('on'); place(); return true; }
+    if (!document.body) return false;
+    nub = document.createElement('button');
+    nub.type = 'button';
+    nub.id = 'mlsDockNub';
+    nub.className = 'on';
+    nub.setAttribute('aria-haspopup', 'true');
+    nub.setAttribute('aria-expanded', 'false');
+    nub.setAttribute('aria-label', 'Taskbar position and auto-hide');
+    nub.setAttribute('title', 'Taskbar — where it sits, and whether it hides');
+    nub.textContent = '⋮';
+    nub.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (nubMenuOpen()) closeNub(); else openNub();
+    }, false);
+    document.body.appendChild(nub);
+
+    var menu = document.createElement('div');
+    menu.id = 'mlsDockNubMenu';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('hidden', '');
+    var head = document.createElement('div');
+    head.className = 'mlsDockGroup';
+    head.textContent = 'Taskbar';
+    menu.appendChild(head);
+    SIDES.forEach(function (row) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mlsDockItem';
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('data-dock-side', row[0]);
+      b.textContent = row[1];
+      b.addEventListener('click', function () { setSide(row[0]); closeNub(); }, false);
+      menu.appendChild(b);
+    });
+    var hide = document.createElement('button');
+    hide.type = 'button';
+    hide.className = 'mlsDockItem';
+    hide.setAttribute('role', 'menuitemcheckbox');
+    hide.setAttribute('data-dock-autohide', '1');
+    hide.textContent = 'Hide it until I need it';
+    hide.addEventListener('click', function () { setAutoHide(!autoHideOn()); }, false);
+    menu.appendChild(hide);
+    document.body.appendChild(menu);
+
+    document.addEventListener('click', function (ev) {
+      if (!nubMenuOpen()) return;
+      if (ev.target && ev.target.closest && ev.target.closest('#mlsDockNub,#mlsDockNubMenu')) return;
+      closeNub();
+    }, false);
+    document.addEventListener('keydown', function (ev) { if (ev && ev.key === 'Escape') closeNub(); }, false);
+    place();
+    return true;
+  }
+  /* THE NUB IS PLACED INSIDE THE BAND THE DOCK ALREADY RESERVES, never beside
+     it in live content: for a side rail that means directly below the dock and
+     within its own width; for a top or bottom bar, beside the dock but within
+     the full-width strip the shell has already padded clear. Clamped to the
+     viewport in both axes. */
+  function place() {
+    var nub = el('mlsDockNub'), dock = el('mlsDock');
+    if (!nub || !dock) return false;
+    var r;
+    try { r = dock.getBoundingClientRect(); } catch (e) { return false; }
+    if (!r || r.width <= 0 || r.height <= 0) { nub.classList.remove('on'); return false; }
+    if (narrow()) { nub.classList.remove('on'); closeNub(); return false; }
+    nub.classList.add('on');
+    var W = 44, H = 44, vw = 0, vh = 0;
+    try { vw = window.innerWidth || 0; vh = window.innerHeight || 0; } catch (e2) {}
+    var side = currentSide(), left, top;
+    if (side === 'left' || side === 'right') {
+      left = r.left + (r.width - W) / 2;
+      top = r.bottom + 8;
+      if (top + H > vh - 4) top = r.top - H - 8;
+    } else {
+      top = r.top + (r.height - H) / 2;
+      left = r.right + 8;
+      if (left + W > vw - 4) left = r.left - W - 8;
+    }
+    if (left < 4) left = 4;
+    if (left + W > vw - 4) left = Math.max(4, vw - 4 - W);
+    if (top < 4) top = 4;
+    if (top + H > vh - 4) top = Math.max(4, vh - 4 - H);
+    nub.style.left = Math.round(left) + 'px';
+    nub.style.top = Math.round(top) + 'px';
+
+    var menu = el('mlsDockNubMenu');
+    if (menu && !menu.hasAttribute('hidden')) {
+      var mr;
+      try { mr = menu.getBoundingClientRect(); } catch (e3) { mr = { width: 240, height: 220 }; }
+      var ml = left + W + 8, mt = top;
+      if (ml + mr.width > vw - 8) ml = Math.max(8, left - mr.width - 8);
+      if (mt + mr.height > vh - 8) mt = Math.max(8, vh - 8 - mr.height);
+      menu.style.left = Math.round(ml) + 'px';
+      menu.style.top = Math.round(mt) + 'px';
+    }
+    placeNudge();
+    return true;
+  }
+
+  /* ---- 5. the one-time, honest nudge ---------------------------------- */
+  function nudgeDue() {
+    if (readAny(ASKED)) return false;             /* answered - either way */
+    if (!dockReady() || narrow()) return false;
+    var w = 0; try { w = Number(window.innerWidth) || 0; } catch (e) {}
+    if (w < WIDE) return false;
+    return currentSide() === 'bottom';
+  }
+  function answer(kind) {
+    writeAll(ASKED, kind);
+    var n = el('mlsDockNudge');
+    if (n) n.classList.remove('on');
+  }
+  function ensureNudge() {
+    if (!nudgeDue()) { var old = el('mlsDockNudge'); if (old) old.classList.remove('on'); return false; }
+    var box = el('mlsDockNudge');
+    if (box) { box.classList.add('on'); placeNudge(); return true; }
+    if (!document.body) return false;
+    box = document.createElement('div');
+    box.id = 'mlsDockNudge';
+    box.setAttribute('role', 'status');
+    box.innerHTML =
+      '<div id="mlsDockNudgeText"></div>' +
+      '<div class="mlsDockNudgeRow">' +
+        '<button type="button" class="primary" id="mlsDockNudgeYes"></button>' +
+        '<button type="button" id="mlsDockNudgeNo"></button>' +
+      '</div>';
+    /* textContent, not markup: this copy is the whole point and it must read
+       the same everywhere it is quoted. */
+    box.querySelector('#mlsDockNudgeText').textContent =
+      'Move the taskbar to the side so it never covers your work? Along the bottom it sits over the page at every scroll position except the very end; on the left or right it never does.';
+    var yes = box.querySelector('#mlsDockNudgeYes');
+    var no = box.querySelector('#mlsDockNudgeNo');
+    yes.textContent = 'Move it to the left';
+    no.textContent = 'Keep it at the bottom';
+    yes.addEventListener('click', function () { setSide('left'); answer('moved'); }, false);
+    no.addEventListener('click', function () { answer('kept'); }, false);
+    document.body.appendChild(box);
+    box.classList.add('on');
+    placeNudge();
+    return true;
+  }
+  function placeNudge() {
+    var box = el('mlsDockNudge'), dock = el('mlsDock');
+    if (!box || !box.classList.contains('on')) return false;
+    var vw = 0, vh = 0;
+    try { vw = window.innerWidth || 0; vh = window.innerHeight || 0; } catch (e) {}
+    var br;
+    try { br = box.getBoundingClientRect(); } catch (e2) { return false; }
+    var top = vh - br.height - 16, left = vw - br.width - 16;
+    if (dock) {
+      var r;
+      try { r = dock.getBoundingClientRect(); } catch (e3) { r = null; }
+      /* Sit ABOVE a bottom bar rather than on top of it. */
+      if (r && r.height > 0) top = Math.max(8, r.top - br.height - 12);
+    }
+    box.style.left = Math.max(8, Math.round(left)) + 'px';
+    box.style.top = Math.max(8, Math.round(top)) + 'px';
+    return true;
+  }
+  function paintNudge() { ensureNudge(); }
+
+  /* ---- 6. is it actually covering anything? ---------------------------
+     The diagnostic the 1.0.0 table was built from, made public so a test can
+     re-measure rather than trust the comment. Real obstruction
+     (elementsFromPoint), not bounding-box overlap. */
+  function obstruction(sel) {
+    var dock = el('mlsDock');
+    var host = null;
+    try { host = document.querySelector(sel || '#patientsView'); } catch (e) {}
+    if (!dock || !host) return { n: 0, hits: 0, why: 'no dock or no target' };
+    var r;
+    try { r = dock.getBoundingClientRect(); } catch (e2) { return { n: 0, hits: 0, why: 'no rect' }; }
+    if (r.width <= 0 || r.height <= 0) return { n: 0, hits: 0, why: 'dock not shown' };
+    var hits = 0, n = 0, ix, iy;
+    for (ix = 0; ix < 5; ix++) {
+      for (iy = 0; iy < 5; iy++) {
+        var x = r.left + (r.width * (ix + 0.5)) / 5;
+        var y = r.top + (r.height * (iy + 0.5)) / 5;
+        n++;
+        var stack = [];
+        try { stack = document.elementsFromPoint(x, y) || []; } catch (e3) { stack = []; }
+        for (var k = 0; k < stack.length; k++) {
+          var node = stack[k];
+          if (dock.contains(node)) continue;
+          if (node.id === 'mlsDockNub' || node.id === 'mlsDockNubMenu' || node.id === 'mlsDockNudge') continue;
+          if (node === document.documentElement || node === document.body) continue;
+          if (host.contains(node)) { hits++; break; }
+        }
+      }
+    }
+    return { n: n, hits: hits, side: currentSide() };
+  }
+
+  var queued = false;
+  function tick() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never requestAnimationFrame: rAF does not fire in a
+       backgrounded or non-compositing tab, and a doctor returning to that tab
+       would find the rows never rendered. */
+    setTimeout(function () {
+      queued = false;
+      /* The dock owner is idle-scheduled behind requiresFoundation and can take
+         well over 30s to land on a busy or throttled tab - measured never
+         arriving inside 40s in a headless run. seedTries is a bounded retry
+         WITHIN one attempt; an external wake (a click, mls:ui-ready, a session
+         boundary) is new evidence that the app moved on, so it re-arms rather
+         than inheriting an exhausted counter and giving up forever. */
+      if (!dockReady()) seedTries = 0;
+      seedSide();
+      ensureRows();
+      ensureNub();
+      ensureNudge();
+      paint();
+    }, 0);
+  }
+
+  var API = {
+    version: 'dock-1p-1.1.0',
+    /* Dual accessors. No argument reports; an argument WRITES. */
+    side: function (next) { return (next === undefined || next === null) ? currentSide() : setSide(next); },
+    autoHide: function (next) { return (next === undefined || next === null) ? autoHideOn() : setAutoHide(next); },
+    obstruction: obstruction,
+    /* The honest answer to "why is the dock where it is" - for diagnostics. */
+    status: function () {
+      return { side: currentSide(), autoHide: autoHideOn(), seeded: readAny(SEEDED) === '1',
+        asked: readAny(ASKED), stored: readAny(SIDE_KEY), dockReady: dockReady(),
+        rows: !!el('dockChipRows'), nub: !!(el('mlsDockNub') && el('mlsDockNub').classList.contains('on')),
+        nudge: !!(el('mlsDockNudge') && el('mlsDockNudge').classList.contains('on')) };
+    },
+    refresh: tick,
+    revert: function () {
+      ['dockChipRows', 'mlsDockNub', 'mlsDockNubMenu', 'mlsDockNudge'].forEach(function (id) {
+        var n = el(id); if (n && n.parentNode) n.parentNode.removeChild(n);
+      });
+      return true;
+    }
+  };
+  window.__mlsDockP1 = API;
+  /* The same object under the name this API is called by. */
+  window.__mlsDock1p = API;
+
+  function boot() { tick(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  /* The chip and the dock both arrive after boot, on their own schedules. */
+  document.addEventListener('click', function () { setTimeout(tick, 0); }, true);
+  ['mls:ui-ready', 'mls:view-changed', 'mls:session-boundary'].forEach(function (name) {
+    try { window.addEventListener(name, tick, false); } catch (e) {}
+  });
+  try { window.addEventListener('resize', function () { setTimeout(place, 0); }, { passive: true }); } catch (e) {}
+  try { window.addEventListener('scroll', function () { setTimeout(place, 0); }, { passive: true }); } catch (e) {}
+  setTimeout(tick, 1500);
+  setTimeout(tick, 4000);
+})();
+</script>
+<!-- ===== end dock-1p-1.1.0 ============================================ -->
+<!-- ===== view-hold-1.0.0 — the page stops jumping when you change screen ==
+     Owner: "the UI is very clunky."
+
+     WHAT IT IS. Switching a view in this app shows an EMPTY container and then
+     lets six or seven feature modules fill it, each on its own schedule. The
+     container therefore goes short -> tall within a second or two of the
+     click, the document height goes with it, and everything the doctor was
+     looking at moves under the pointer. The previous UI lane measured this and
+     handed it back untouched; measured again here with this worktree's own
+     instrument (the view container's own top/height, sampled every 50ms for 2s
+     after the click, worst absolute change), at origin/main 5e80f340:
+
+         Patients 100px · Calendar 246px · History 84px · Visit 0px
+
+     WHY A HEIGHT RESERVATION AND NOT A REWRITE. The filling happens inside
+     shared view renderers this lane may not edit. What CAN be done from here
+     is to stop the container from being short in the first place: a view that
+     is about to be filled is given the height it settled at last time, so the
+     page is the right size before the content arrives and nothing below it
+     moves. The reservation is a floor (min-height), never a cap, so a taller
+     day is never clipped.
+
+     THE THREE THINGS THAT MAKE IT SAFE.
+       1. It writes min-height ONLY. Every module that owns one of these
+          containers drives `display` inline; a rule or a write touching that
+          would silently kill the feature that owns it.
+       2. The reservation is released as soon as the view has settled, so a
+          screen that is genuinely shorter this time never strands empty space
+          - the reserve exists for the ~1.2s in which the modules are painting
+          and for nothing else.
+       3. Its own writes are excluded from its own observer (a `mine` flag),
+          because the trigger IS the style attribute and a self-trigger here
+          would be an endless loop rather than a bug you notice later.
+
+     The remembered heights are per view and per WIDTH BUCKET - a height learnt
+     on a 1920px window is not a useful reservation on a 1366px one - and live
+     in the app's own namespaced store so they follow the account. -->
+<script>
+(function () {
+  var VERSION = 'view-hold-1.0.0';
+  if (window.__mlsViewHold) return;
+
+  var VIEWS = ['patientsView', 'calendarView', 'visitView', 'historyView', 'recsView',
+    'ordersView', 'analysisView', 'studioView', 'intakeView', 'adminView', 'teamView', 'legalReqView'];
+  var SETTLE_MS = 1200;       /* how long the modules are given to paint */
+  var MIN_KEEP = 160;         /* never reserve less than this; below it there is nothing to hold */
+  var MAX_KEEP = 4000;        /* and never reserve a runaway measurement */
+
+  var mine = false;           /* true while THIS block is writing a style */
+  var timers = Object.create(null);
+  var held = Object.create(null);
+
+  function key(id) {
+    var w = 0;
+    try { w = Number(window.innerWidth) || 0; } catch (e) {}
+    /* Width buckets, so a height learnt on a wide window is not reserved on a
+       narrow one where the same content wraps to twice the height. */
+    var bucket = w < 700 ? 's' : (w < 1200 ? 'm' : (w < 1700 ? 'l' : 'xl'));
+    return 'mlsViewH:' + id + ':' + bucket;
+  }
+  function readH(id) {
+    var k = key(id), v = '';
+    try { if (typeof window.uns === 'function') v = localStorage.getItem(window.uns(k)) || ''; } catch (e) {}
+    if (!v) { try { v = localStorage.getItem(k) || ''; } catch (e2) {} }
+    var n = parseInt(v, 10);
+    if (!n || n < MIN_KEEP || n > MAX_KEEP) return 0;
+    return n;
+  }
+  function writeH(id, n) {
+    if (!n || n < MIN_KEEP || n > MAX_KEEP) return false;
+    var k = key(id), v = String(Math.round(n));
+    try { if (typeof window.uns === 'function') localStorage.setItem(window.uns(k), v); } catch (e) {}
+    try { localStorage.setItem(k, v); } catch (e2) {}
+    return true;
+  }
+  function shown(el) {
+    if (!el) return false;
+    var cs;
+    try { cs = getComputedStyle(el); } catch (e) { return false; }
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    var r;
+    try { r = el.getBoundingClientRect(); } catch (e2) { return false; }
+    return !!(r && r.width > 0);
+  }
+  function setMin(el, px) {
+    if (!el || !el.style) return;
+    mine = true;
+    try {
+      if (px) el.style.minHeight = Math.round(px) + 'px';
+      else el.style.removeProperty('min-height');
+    } catch (e) {}
+    /* The flag is cleared on the next macrotask, not synchronously: a
+       MutationObserver delivers in a microtask AFTER the write, so clearing it
+       here would let our own record through. */
+    setTimeout(function () { mine = false; }, 0);
+  }
+
+  function onShown(id) {
+    var el = document.getElementById(id);
+    if (!el || !shown(el)) return;
+    if (held[id]) return;                 /* already holding this pass */
+    held[id] = 1;
+    var want = readH(id);
+    var now = 0;
+    try { now = Math.round(el.getBoundingClientRect().height); } catch (e) {}
+    /* Reserve only when the container is genuinely SHORTER than it will be.
+       Writing a floor a filled view already clears is a no-op write, and a
+       no-op style write still re-commits the document's styles. */
+    if (want && now < want - 8) setMin(el, want);
+
+    if (timers[id]) clearTimeout(timers[id]);
+    timers[id] = setTimeout(function () {
+      timers[id] = 0;
+      held[id] = 0;
+      var node = document.getElementById(id);
+      if (!node) return;
+      /* Learn first, THEN release, so the measurement is taken while the
+         reservation is still standing and cannot record a collapsed box. */
+      var h = 0;
+      try { h = Math.round(node.getBoundingClientRect().height); } catch (e) {}
+      var natural = 0;
+      setMin(node, 0);
+      try { natural = Math.round(node.getBoundingClientRect().height); } catch (e2) { natural = h; }
+      writeH(id, natural || h);
+    }, SETTLE_MS);
+  }
+
+  function watch() {
+    for (var i = 0; i < VIEWS.length; i++) {
+      var id = VIEWS[i], el = document.getElementById(id);
+      if (!el || el.__mlsViewHeld) continue;
+      el.__mlsViewHeld = 1;
+      (function (viewId) {
+        try {
+          new MutationObserver(function () {
+            if (mine) return;             /* our own min-height write */
+            setTimeout(function () { onShown(viewId); }, 0);
+          }).observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+        } catch (e) {}
+      })(id);
+    }
+  }
+
+  window.__mlsViewHold = {
+    version: VERSION,
+    /* What is remembered right now, for diagnostics and for the contract
+       suite - reported, not asserted. */
+    status: function () {
+      var out = { version: VERSION, remembered: {}, holding: [] };
+      for (var i = 0; i < VIEWS.length; i++) {
+        var h = readH(VIEWS[i]);
+        if (h) out.remembered[VIEWS[i]] = h;
+        if (held[VIEWS[i]]) out.holding.push(VIEWS[i]);
+      }
+      return out;
+    },
+    refresh: function () { watch(); for (var i = 0; i < VIEWS.length; i++) onShown(VIEWS[i]); },
+    revert: function () {
+      for (var i = 0; i < VIEWS.length; i++) {
+        var el = document.getElementById(VIEWS[i]);
+        if (el) setMin(el, 0);
+        if (timers[VIEWS[i]]) { clearTimeout(timers[VIEWS[i]]); timers[VIEWS[i]] = 0; }
+        held[VIEWS[i]] = 0;
+      }
+      try { delete window.__mlsViewHold; } catch (e) { window.__mlsViewHold = null; }
+      return true;
+    }
+  };
+
+  function boot() { watch(); for (var i = 0; i < VIEWS.length; i++) onShown(VIEWS[i]); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  /* The views exist in the shell's markup, but the nav that switches them
+     arrives with the bundle; a click is the cheapest proof the app moved on. */
+  document.addEventListener('click', function () { setTimeout(watch, 0); }, true);
+  ['mls:ui-ready', 'mls:view-changed'].forEach(function (name) {
+    try { window.addEventListener(name, function () { boot(); }, false); } catch (e) {}
+  });
+})();
+</script>
+<!-- ===== end view-hold-1.0.0 ========================================== -->
+<!-- ===== note-model-1.0.0 — the cheaper 4-series model is the fallback ==
+     Owner cost ruling relayed 2026-08-17: the default note model must be the
+     cheapest good one, not the most expensive allowlisted one.
+
+     WHAT THE BRIEF SAID, AND WHAT IS ACTUALLY SHIPPED. The brief describes
+     getNoteModel() — the shell's own reader, above — returning 'gpt-4o' for
+     any value that is not exactly 'gpt-4o' or 'gpt-4o-mini', including the
+     absent value a new account starts with. That reading of the shell is
+     correct. It is NOT what the app does, and the difference matters enough
+     that this block deliberately does less than it was asked to.
+
+     feat_mls_fixpack_0701.js — a SHARED module this lane may not edit, and the
+     same bytes production serves — loads after the shell and:
+
+       * runs two one-time migrations that WRITE uns('noteModel'):
+             absent | 'gpt-5o' | 'gpt-5'   -> 'gpt-5-mini'      (mlsFpModelMig2)
+             absent | 'gpt-5-mini'         -> 'gpt-5.6-luna'    (mlsFpModelMig3)
+       * wraps getNoteModel to return 'gpt-5.6-luna' for anything unrecognised;
+       * inserts 'gpt-5.6-luna' and 'gpt-5-mini' into #noteModelSel, luna
+         labelled "(recommended)".
+
+     So the live effective default for notes is gpt-5.6-luna, and its own
+     comment records an owner re-confirmation dated 2026-08-11, quoted
+     verbatim, authorizing exactly that on COST grounds — luna at $0.20/$1.20
+     per 1M against gpt-5-mini at $0.25/$2.00 — and saying "...for op notes too
+     for sure". The instruction this block was given says the opposite: luna is
+     for reports only.
+
+     TWO OWNER RULINGS DISAGREE, AND ONE OF THEM IS A PRICE DECISION WITH
+     NUMBERS ATTACHED. This block therefore does the part that is unambiguous
+     and leaves the part that is not to the lead:
+
+       DOES  make the SHELL's own fallback gpt-4o-mini rather than gpt-4o, so
+             wherever the 4-series is what answers — a page where the fixpack
+             did not load, or a stored 'gpt-4o-mini' — the cheaper of the two
+             is the one that is picked by default.
+       DOES  order the two 4-series options mini-before-4o and label them by
+             what they cost rather than by a recommendation nobody wrote down.
+       DOES  mark "(default)" on whichever option is ACTUALLY what
+             getNoteModel() returns, so the picker cannot claim a default it
+             does not have.
+       DOES NOT add gpt-5.6-luna or any other model to the picker.
+       DOES NOT remove luna or gpt-5-mini, and does not override the fixpack's
+             effective default. Doing either would reverse a documented,
+             priced owner decision from inside a UI lane, and would silently
+             re-point every existing account's note generation at a model this
+             lane has not qualified.
+       DOES NOT write a preference. A default is what you get when you have not
+             chosen; writing one down converts every account's non-choice into
+             a choice nobody can tell apart afterwards.
+       DOES NOT touch the Premium gate — openSettings() owns `_nm.disabled`.
+
+     REVERT puts the shell's own default and the shell's own option list and
+     labels back exactly. -->
+<script>
+(function () {
+  var VERSION = 'note-model-1.0.0';
+  if (window.__mlsNoteModel) return;
+
+  /* The two models the SHELL's own reader knows. Deliberately not a copy of
+     the fixpack's four - this block is the shell's fallback, not a second
+     opinion about the whole roster. */
+  var ALLOWED = { 'gpt-4o': 1, 'gpt-4o-mini': 1 };
+  var CHEAP = 'gpt-4o-mini';
+  /* value -> [label, order] for the two this block owns. Any other option in
+     the select is left exactly where its owner put it. */
+  var OPTIONS = [
+    ['gpt-4o-mini', 'GPT-4o mini — fast & affordable'],
+    ['gpt-4o',      'GPT-4o — stronger, costs more']
+  ];
+
+  var baseGet = null, baseOpts = null;
+
+  function stored() {
+    var v = null;
+    try { if (typeof window.uns === 'function') v = localStorage.getItem(window.uns('noteModel')); } catch (e) {}
+    if (v == null) { try { v = localStorage.getItem('noteModel'); } catch (e2) {} }
+    return v == null ? '' : String(v);
+  }
+  /* THE ANSWER THIS BLOCK IS RESPONSIBLE FOR, on its own, so a test can ask it
+     without having to un-install every module that wraps the global. */
+  function shellModel() {
+    var v = stored();
+    return ALLOWED[v] ? v : CHEAP;
+  }
+  function wrapGetter() {
+    if (typeof window.getNoteModel !== 'function') return false;
+    if (window.getNoteModel.__mlsNoteModel) return true;
+    /* Only the SHELL's own reader is wrapped. If something else has already
+       taken this global (the fixpack tags its wrapper __fpWrap) the roster is
+       not this block's to answer for, and wrapping over it would override a
+       priced owner decision from a UI lane. */
+    if (window.getNoteModel.__fpWrap) return false;
+    baseGet = window.getNoteModel;
+    var w = function () {
+      var v = stored();
+      /* An explicit, allowlisted choice is returned untouched - the original
+         would have returned exactly this too. Only the no-choice case moves. */
+      if (ALLOWED[v]) return v;
+      return CHEAP;
+    };
+    w.__mlsNoteModel = VERSION;
+    w.__mlsNoteModelBase = baseGet;
+    window.getNoteModel = w;
+    return true;
+  }
+
+  function live() {
+    try { return String(window.getNoteModel()); } catch (e) { return shellModel(); }
+  }
+  function paintPicker() {
+    var sel;
+    try { sel = document.getElementById('noteModelSel'); } catch (e) { sel = null; }
+    if (!sel || !sel.options) return false;
+    if (baseOpts === null) {
+      baseOpts = [];
+      for (var k = 0; k < sel.options.length; k++) baseOpts.push([sel.options[k].value, sel.options[k].textContent]);
+    }
+    var now = live();
+    /* 1. LABEL the two this block owns, and nothing else. */
+    var i, o;
+    for (i = 0; i < sel.options.length; i++) {
+      o = sel.options[i];
+      var row = null, r;
+      for (r = 0; r < OPTIONS.length; r++) if (OPTIONS[r][0] === o.value) row = OPTIONS[r];
+      if (!row) continue;
+      var want = row[1] + (o.value === now ? ' (default)' : '');
+      if (o.textContent !== want) o.textContent = want;
+    }
+    /* 2. ORDER: gpt-4o-mini must come before gpt-4o. Moving one node, not
+       rebuilding the list, so an option another module owns keeps its place
+       and the select's current value is never snapped to index 0. */
+    var mini = null, full = null;
+    for (i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === 'gpt-4o-mini') mini = sel.options[i];
+      if (sel.options[i].value === 'gpt-4o') full = sel.options[i];
+    }
+    if (mini && full && Array.prototype.indexOf.call(sel.options, mini) >
+                        Array.prototype.indexOf.call(sel.options, full)) {
+      var keep = String(sel.value || '');
+      sel.insertBefore(mini, full);
+      if (keep) sel.value = keep;
+    }
+    return true;
+  }
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never requestAnimationFrame: rAF does not fire in a hidden
+       or non-compositing tab. */
+    setTimeout(function () { queued = false; wrapGetter(); paintPicker(); }, 0);
+  }
+
+  function watch() {
+    var host;
+    try { host = document.getElementById('settingsModal'); } catch (e) { host = null; }
+    if (host && !host.__mlsNoteModelWatched) {
+      host.__mlsNoteModelWatched = true;
+      try { new MutationObserver(refresh).observe(host, { attributes: true, attributeFilter: ['class'] }); } catch (e2) {}
+      try { new MutationObserver(refresh).observe(host, { childList: true, subtree: true }); } catch (e3) {}
+    }
+  }
+
+  window.__mlsNoteModel = {
+    version: VERSION,
+    def: CHEAP,
+    /* What THIS block answers, independent of who else has wrapped the global. */
+    shellModel: shellModel,
+    /* What the app actually returns right now, whoever owns it. */
+    current: live,
+    stored: stored,
+    /* Who owns the global, in one word - the honest answer to "why is the
+       default not what this block's default is". */
+    owner: function () {
+      try {
+        var f = window.getNoteModel;
+        if (!f) return 'none';
+        if (f.__fpWrap) return 'fixpack';
+        if (f.__mlsNoteModel) return VERSION;
+        return 'shell';
+      } catch (e) { return 'none'; }
+    },
+    options: function () {
+      var sel = document.getElementById('noteModelSel');
+      if (!sel) return [];
+      return Array.prototype.map.call(sel.options, function (o) { return o.value; });
+    },
+    installed: function () {
+      try {
+        var f = window.getNoteModel;
+        return !!(f && (f.__mlsNoteModel === VERSION || (f.__mlsNoteModelBase && f.__mlsNoteModelBase.__mlsNoteModel === VERSION)));
+      } catch (e) { return false; }
+    },
+    refresh: refresh,
+    revert: function () {
+      try { if (baseGet && window.getNoteModel && window.getNoteModel.__mlsNoteModel) window.getNoteModel = baseGet; } catch (e) {}
+      var sel = document.getElementById('noteModelSel');
+      if (sel && baseOpts) {
+        var keep = String(sel.value || '');
+        sel.innerHTML = '';
+        baseOpts.forEach(function (row) {
+          var o = document.createElement('option');
+          o.value = row[0]; o.textContent = row[1];
+          sel.appendChild(o);
+        });
+        sel.value = keep;
+      }
+      try { delete window.__mlsNoteModel; } catch (e3) { window.__mlsNoteModel = null; }
+      return true;
+    }
+  };
+
+  function boot() { wrapGetter(); watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  /* The Settings dialog is markup in the shell, but the modules that fill it
+     land later; a click is the cheapest proof the app moved on. */
+  document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
+})();
+</script>
+<!-- ===== end note-model-1.0.0 ========================================= -->
 </body>
 </html>
