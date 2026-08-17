@@ -6400,11 +6400,69 @@
      first-navigation-after-a-reload failure; after that it only runs when a
      provider scope cannot be resolved, exactly like the staff-prep lane. */
   var _dayPreflightDone = false;
+  /* ===== p1-roster-settle-preflight-1.0.0 =====
+     Owner report 2026-08-16: providerRosterReceipt {complete:true,partial:false}
+     while preflightReceipt.rosterComplete:false and
+     providerReceipt.rosterVerified:false. The roster DID complete - the
+     pre-flight sampled roster.getReceipt() in the SAME turn its schedule read
+     returned, before the receipt for that read was published, and that stale
+     false travelled into rosterVerified via `detectedOnly = !rosterComplete`.
+     The pre-flight now waits, BOUNDED, on the same
+     'mls-provider-roster-updated' signal the receipt is published with, and
+     re-samples before publishing. setTimeout is the only clock (rAF never
+     fires in a hidden/non-compositing tab) and the wait is skipped entirely
+     when the receipt is already complete or the warm-up read failed, so a
+     healthy pull pays nothing. */
+  var ROSTER_SETTLE_CEILING_MS = 1000;
+  var ROSTER_SETTLE_STEP_MS = 50;
+  var ROSTER_SETTLE_EVENT = "mls-provider-roster-updated";
+  function rosterReceiptComplete() {
+    return !!safe(function () {
+      var roster = window.__mlsProviderRoster;
+      var rec = roster && isFn(roster.getReceipt) ? roster.getReceipt() : null;
+      return !!(rec && rec.complete === true && rec.partial !== true);
+    }, false);
+  }
+  /* Resolves true as soon as the roster receipt reports complete, or false at
+     the ceiling. At most ceil(ceiling/step) wakeups - never a busy loop, and
+     never a wait when there is nothing to wait for. */
+  function awaitRosterSettle(ceilingMs) {
+    if (rosterReceiptComplete()) return Promise.resolve({ complete: true, waitedMs: 0, settled: false });
+    var ceiling = Number(ceilingMs) > 0 ? Number(ceilingMs) : ROSTER_SETTLE_CEILING_MS;
+    var startedAt = Date.now();
+    return new Promise(function (resolve) {
+      var done = false, tickTimer = null, deadlineTimer = null;
+      function finish(complete) {
+        if (done) return;
+        done = true;
+        safe(function () { if (tickTimer != null) clearTimeout(tickTimer); });
+        safe(function () { if (deadlineTimer != null) clearTimeout(deadlineTimer); });
+        safe(function () { if (isFn(window.removeEventListener)) window.removeEventListener(ROSTER_SETTLE_EVENT, onUpdate, false); });
+        resolve({ complete: !!complete, waitedMs: Date.now() - startedAt, settled: !!complete });
+      }
+      function check() { if (!done && rosterReceiptComplete()) finish(true); }
+      function onUpdate() { check(); }
+      function tick() {
+        if (done) return;
+        check();
+        if (done) return;
+        tickTimer = setTimeout(tick, ROSTER_SETTLE_STEP_MS);
+      }
+      safe(function () { if (isFn(window.addEventListener)) window.addEventListener(ROSTER_SETTLE_EVENT, onUpdate, false); });
+      deadlineTimer = setTimeout(function () { if (done) return; finish(rosterReceiptComplete()); }, ceiling);
+      tickTimer = setTimeout(tick, ROSTER_SETTLE_STEP_MS);
+    });
+  }
+  /* ===== end p1-roster-settle-preflight-1.0.0 ===== */
   function warmUpDay(date, onStatus) {
     var day = normDate(date) || "";
     var say = isFn(onStatus) ? onStatus : function () {};
-    var out = { warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "" };
+    var out = { warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "",
+      rosterCompleteAtEntry: false, rosterSettled: false, rosterSettleMs: 0 };
     if (!day) { out.reason = "no-date"; return Promise.resolve(out); }
+    /* p1-roster-settle-preflight-1.0.0: an ALREADY-verified roster is never
+       flipped back to unverified by a sample taken later in this warm-up. */
+    out.rosterCompleteAtEntry = rosterReceiptComplete();
     say("Opening " + day + " in athenaOne before the pull...", "");
     return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: day, probe: false }).then(function (nav) {
       out.navOk = !!(nav && nav.ok !== false);
@@ -6427,11 +6485,25 @@
       safe(function () {
         var roster = window.__mlsProviderRoster;
         if (out.readOk && roster && isFn(roster.ingestResp)) roster.ingestResp(r);
-        var rec = roster && isFn(roster.getReceipt) ? roster.getReceipt() : null;
-        out.rosterComplete = !!(rec && rec.complete === true);
       });
       out.warmed = out.navOk && out.readOk;
-      return out;
+      /* p1-roster-settle-preflight-1.0.0: sampling here - the same turn the
+         read returned - is what published the stale rosterComplete:false. Wait
+         (bounded) for the receipt this read produces, then re-sample. A failed
+         read has nothing to settle, so it pays no wait at all. */
+      if (!out.readOk) {
+        out.rosterComplete = out.rosterCompleteAtEntry || rosterReceiptComplete();
+        return out;
+      }
+      return awaitRosterSettle(ROSTER_SETTLE_CEILING_MS).then(function (settle) {
+        out.rosterSettled = !!(settle && settle.settled);
+        out.rosterSettleMs = Number((settle && settle.waitedMs) || 0);
+        out.rosterComplete = !!((settle && settle.complete) || out.rosterCompleteAtEntry);
+        return out;
+      }, function () {
+        out.rosterComplete = out.rosterCompleteAtEntry || rosterReceiptComplete();
+        return out;
+      });
     }, function (err) {
       out.reason = String((err && err.message) || err || "warmup-failed");
       return out;
@@ -6577,9 +6649,11 @@
        census exception. */
     var p1OriginalCensusAll = originalProviderRequest.mode === "all";
     var needWarm = (_dayPreflightDone !== true) || !(gate0 && gate0.ok === true);
-    var warmed = needWarm ? warmUpDay(day, say) : Promise.resolve({ warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "skipped-already-warm" });
+    /* p1-roster-settle-preflight-1.0.0: a skipped pre-flight states the LIVE
+       roster receipt, not a synthetic false. */
+    var warmed = needWarm ? warmUpDay(day, say) : Promise.resolve({ warmed: false, navOk: false, readOk: false, rosterComplete: rosterReceiptComplete(), observedDay: "", reason: "skipped-already-warm", rosterCompleteAtEntry: rosterReceiptComplete(), rosterSettled: false, rosterSettleMs: 0 });
     return warmed.then(null, function () {
-      return { warmed: false, navOk: false, readOk: false, rosterComplete: false, observedDay: "", reason: "warmup-threw" };
+      return { warmed: false, navOk: false, readOk: false, rosterComplete: rosterReceiptComplete(), observedDay: "", reason: "warmup-threw", rosterCompleteAtEntry: false, rosterSettled: false, rosterSettleMs: 0 };
     }).then(function (warm) {
       if (needWarm) _dayPreflightDone = true;
       /* Re-resolve AFTER the pre-flight: that read is what makes a provider
@@ -6632,7 +6706,17 @@
         warmed: !!(warm && warm.warmed),
         navOk: !!(warm && warm.navOk),
         readOk: !!(warm && warm.readOk),
-        rosterComplete: !!(warm && warm.rosterComplete),
+        /* p1-roster-settle-preflight-1.0.0: a SKIPPED pre-flight used to
+           publish the synthetic rosterComplete:false unconditionally, so an
+           already-verified roster was reported UNVERIFIED on every pull after
+           the first. Never state less than the live receipt. */
+        rosterComplete: !!(warm && warm.rosterComplete) || rosterReceiptComplete(),
+        rosterSettled: !!(warm && warm.rosterSettled),
+        rosterSettleMs: Number((warm && warm.rosterSettleMs) || 0),
+        /* the field the owner's report compared against providerReceipt */
+        rosterVerified: (provider && provider !== "all")
+          ? provider.rosterVerified === true
+          : rosterReceiptComplete(),
         observedDay: String((warm && warm.observedDay) || ""),
         reason: String((warm && warm.reason) || ""),
         providerMode: provider === "all" ? "all" : "selected",

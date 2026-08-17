@@ -45,6 +45,11 @@ const tests = [
   '1p-study-session-modal-runtime.test.js',
   '1p-study-provenance-runtime.test.js',
   '1p-provider-roster-session-loader-runtime.test.js',
+  /* p1-roster-settle-preflight-1.0.0 (owner report 2026-08-16): the day-pull
+     pre-flight sampled the roster receipt in the same turn its schedule read
+     returned, so a roster that completed 300 ms later was published as
+     rosterComplete:false and carried into providerReceipt.rosterVerified. */
+  '1p-roster-settle-preflight-runtime.test.js',
   '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
   '1p-legal-ime-workspace-runtime.test.js',
