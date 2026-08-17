@@ -19166,42 +19166,126 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var entry = ref ? safe(function () { return rp.resolve(ref); }, null) : null;
     return entry || (activeProvider() || 'all');
   }
-  /* A selected provider is a display filter as well as a pull target. Older
-     builds kept provider-empty rows visible under every clinician, which made
-     "show Dr X" a mixed list. Selected pulls now persist the provider proof,
-     so the named view fails closed: exact provider id when both sides expose
-     one, otherwise an exact normalized roster name or alias. */
-  function providerIdentityKey(value) {
-    return String(value == null ? '' : value).toLowerCase()
-      .replace(/\./g, '').replace(/[_,\/]+/g, ' ').replace(/[^a-z0-9' -]/g, ' ')
-      .split(/\s+/).filter(function (token) {
-        return token && ['md','do','pa','pac','pa-c','np','crna','aprn','dpm','dds','dmd','crnp','dr'].indexOf(token) < 0;
-      }).sort().join(' ');
+  /* ===== pdr-1.0.0 (ported verbatim-in-behaviour from production b1026,
+     mls-connect.js:18822-18940). The fork previously carried a name-normalising
+     predicate (providerIdentityKey/rowProviderIdentity) that read only four
+     row spellings, so appointment rows carrying an OBJECT provider, a
+     rendering_provider_id, or a doctor_user_id were dropped from a selected
+     Day view that production renders. It also treated a null internal pull
+     identity as a clinician selection. Both are fixed by using production's
+     explicit render proof. */
+  /* Rendering has its own explicit scope. `null` is meaningful to the legacy
+     pull identity, but it is never a clinician selection in the Day UI. Only
+     this selector's exact stable provider reference may narrow visible rows. */
+  var renderedProviderReceipt = { ref: '', filter: '', label: '' };
+  function requestedRenderedProvider() {
+    return S.providerRef && String(S.providerFilter || '').trim() ? String(S.providerFilter).trim() : '';
   }
-  function rowProviderIdentity(row) {
-    row = row || {};
-    return {
-      id: String(row.athena_provider_id || row.athenaProviderId || row.provider_id || row.providerId || '').trim(),
-      name: String(row.provider || row.providerName || row.provider_name || row.renderingProviderName || row.rendering_provider_name || '').trim()
+  function rememberRenderedProvider(label) {
+    renderedProviderReceipt = {
+      ref: String(S.providerRef || ''),
+      filter: String(S.providerFilter || ''),
+      label: String(label || '')
     };
+    return renderedProviderReceipt.label;
   }
-  function rowMatchesActiveProvider(row) {
-    var selectedName = activeProvider();
-    if (!selectedName) return true;
-    var got = rowProviderIdentity(row);
+  function renderedProvider() {
+    var requested = requestedRenderedProvider();
+    if (!requested) return '';
+    return renderedProviderReceipt.ref === String(S.providerRef || '') &&
+      renderedProviderReceipt.filter === String(S.providerFilter || '') ? renderedProviderReceipt.label : '';
+  }
+  /* display-only provider proof. The default view keeps every appointment
+     already returned by the existing pull/history pipeline. A selected view
+     renders a row only when the canonical roster proves that row belongs to
+     the exact selected identity. Blank, ambiguous, or conflicting attribution
+     is never guessed into a clinician's view. */
+  function sameProviderIdentity(left, right) {
+    if (!left || !right) return false;
+    var leftId = String(left.id || left.providerId || left.provider_id || '').trim();
+    var rightId = String(right.id || right.providerId || right.provider_id || '').trim();
+    if (leftId && rightId) return leftId === rightId;
+    var leftKey = String(left.stableKey || left.stable_key || '').trim();
+    var rightKey = String(right.stableKey || right.stable_key || '').trim();
+    return !!leftKey && leftKey === rightKey;
+  }
+  function providerSnapshotResolve(snapshot, ref) {
+    if (!snapshot || !Array.isArray(snapshot.entries)) return null;
+    var raw = ref;
+    if (raw && typeof raw === 'object') raw = raw.stableKey || raw.stable_key || raw.id || raw.providerId || raw.provider_id || raw.raw || raw.name || '';
+    raw = String(raw || '').trim();
+    if (raw.indexOf('pv:') === 0) { try { raw = decodeURIComponent(raw.slice(3)); } catch (ePv) { return null; } }
+    if (!raw) return null;
+    var matches = snapshot.entries.filter(function (entry) { return String(entry && (entry.stableKey || entry.stable_key) || '') === raw; });
+    if (matches.length === 1) return matches[0];
+    matches = snapshot.entries.filter(function (entry) { return !!String(entry && (entry.id || entry.providerId || entry.provider_id) || '') && String(entry.id || entry.providerId || entry.provider_id) === raw; });
+    if (matches.length === 1) return matches[0];
+    matches = snapshot.entries.filter(function (entry) { return Array.isArray(entry && entry.aliases) && entry.aliases.indexOf(raw) >= 0; });
+    if (matches.length === 1) return matches[0];
+    var eq = snapshot.equivalent(raw);
+    matches = eq ? snapshot.entries.filter(function (entry) {
+      return String(entry && entry.equivalentKey || snapshot.equivalent(entry && (entry.name || entry.raw) || '')) === eq;
+    }) : [];
+    return matches.length === 1 ? matches[0] : null;
+  }
+  function providerRenderProof() {
+    var selectedLabel = requestedRenderedProvider();
+    if (!selectedLabel) {
+      rememberRenderedProvider('');
+      return { defaultView: true, selected: null, entries: [], equivalent: function () { return ''; } };
+    }
     var roster = safe(function () { return window.__mlsProviderRoster; }, null);
-    var entry = roster && isFn(roster.resolve)
-      ? safe(function () { return roster.resolve(S.providerRef || selectedName); }, null)
-      : null;
-    var wantedId = String(entry && entry.id || '').trim();
-    if (wantedId && got.id) return got.id.toLowerCase() === wantedId.toLowerCase();
-    if (!got.name) return false;
-    var gotKey = providerIdentityKey(got.name);
-    if (!gotKey) return false;
-    var wanted = [entry && entry.name, entry && entry.raw, selectedName]
-      .map(providerIdentityKey).filter(Boolean);
-    return wanted.indexOf(gotKey) >= 0;
+    if (!(roster && isFn(roster.list) && isFn(roster._equivalentKey))) {
+      rememberRenderedProvider('');
+      return { defaultView: true, selected: null, entries: [], equivalent: function () { return ''; } };
+    }
+    var proof = {
+      defaultView: false,
+      entries: safe(function () { return roster.list(); }, []) || [],
+      equivalent: function (value) { return safe(function () { return roster._equivalentKey(value, true, true); }, ''); }
+    };
+    var selectedRef = S.providerRef || selectedLabel;
+    proof.selected = providerSnapshotResolve(proof, selectedRef);
+    if (!proof.selected) {
+      rememberRenderedProvider('');
+      proof.defaultView = true;
+      return proof;
+    }
+    proof.label = rememberRenderedProvider(proof.selected.name || selectedLabel);
+    return proof;
   }
+  function rowMatchesActiveProvider(row, proof) {
+    if (!proof) proof = providerRenderProof();
+    if (proof && proof.defaultView) return true;
+    var selected = proof && proof.selected;
+    if (!selected) return false;
+
+    var rowProvider = row && row.provider;
+    var rowProviderObject = rowProvider && typeof rowProvider === 'object' ? rowProvider : null;
+    var rowId = String(row && (row.athena_provider_id || row.athenaProviderId || row.provider_id || row.providerId || row.rendering_provider_id || row.renderingProviderId || row.doctor_user_id) ||
+      rowProviderObject && (rowProviderObject.athena_provider_id || rowProviderObject.athenaProviderId || rowProviderObject.provider_id || rowProviderObject.providerId || rowProviderObject.id) || '').trim();
+    var rowName = String(row && (typeof rowProvider === 'string' ? rowProvider : '') || row && (row.provider_name || row.providerName || row.rendering_provider_name || row.renderingProviderName || row.doctor_name) ||
+      rowProviderObject && (rowProviderObject.name || rowProviderObject.displayName || rowProviderObject.raw) || '').trim();
+    if (!rowId && !rowName) return false;
+
+    if (rowId) {
+      var selectedId = String(selected.id || selected.providerId || selected.provider_id || '').trim();
+      if (!selectedId || selectedId !== rowId) return false;
+      var sameIdEntries = proof.entries.filter(function (entry) { return String(entry && (entry.id || entry.providerId || entry.provider_id) || '').trim() === rowId; });
+      var sameIdNames = {};
+      sameIdEntries.forEach(function (entry) { var key = String(entry && entry.equivalentKey || proof.equivalent(entry && (entry.name || entry.raw) || '')); if (key) sameIdNames[key] = 1; });
+      if (Object.keys(sameIdNames).length > 1) return false;
+      if (rowName) {
+        var resolvedByName = providerSnapshotResolve(proof, rowName);
+        if (resolvedByName && !sameProviderIdentity(selected, resolvedByName)) return false;
+      }
+      return true;
+    }
+
+    var resolvedByNameOnly = providerSnapshotResolve(proof, rowName);
+    return sameProviderIdentity(selected, resolvedByNameOnly);
+  }
+  /* ===== end pdr-1.0.0 */
   function providerRosterReceipt() {
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
     return rp && isFn(rp.getReceipt) ? safe(function () { return rp.getReceipt(); }, null) : null;
@@ -19325,7 +19409,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            ((a && a.dob) || '') + '|' + apptDay(a) + '|' + (a && a.start_local || t12(a));
   }
   function rowsInRange(fromStr, toStr) {
-    var prov = activeProvider(), seen = {};
+    /* pdr-1.0.0: one frozen roster snapshot per render, reused by every row. */
+    var providerProof = providerRenderProof();
+    var prov = providerProof && !providerProof.defaultView && providerProof.selected ? providerProof.label : '', seen = {};
     var rows = appts().filter(function (a) {
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
@@ -19334,10 +19420,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          blocks etc.) never render as patients. User-controlled list, never
          guessed; the record itself is untouched. */
       try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
-      /* A chosen provider means only rows proven for that provider. Blank
-         legacy attribution remains visible in the default view, never inside
-         a named clinician's Day list. */
-      if (prov && !rowMatchesActiveProvider(a)) return false;
+      /* pdr-1.0.0: the complete default view keeps unattributed rows visible;
+         an explicitly selected provider view requires exact roster proof. */
+      if (prov && !rowMatchesActiveProvider(a, providerProof)) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -19919,17 +20004,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
     var list = providerList();
-    if (!list.length) return '';
-    var cur = activeProvider(), counts = {};
+    /* pdr-1.0.0: the selector is the only thing that may narrow the render, so
+       it files the render receipt every time it draws. */
+    if (!list.length) { rememberRenderedProvider(''); return ''; }
+    var cur = renderedProvider(), counts = {};
     var canonicalSelectedRef = '';
     if (S.providerRef) {
       var selectedRoster = safe(function () { return window.__mlsProviderRoster; }, null);
       var selectedEntry = selectedRoster && isFn(selectedRoster.resolve) ? safe(function () { return selectedRoster.resolve(S.providerRef); }, null) : null;
       canonicalSelectedRef = String(selectedEntry && selectedEntry.stableKey || S.providerRef || '');
-      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = selectedEntry.name; }
+      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = rememberRenderedProvider(selectedEntry.name); }
+      else { cur = rememberRenderedProvider(''); }
     }
     list.forEach(function (p0) { var k0 = String(p0 && p0.name || '').toLowerCase(); counts[k0] = (counts[k0] || 0) + 1; });
-    var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) + '</option>';
+    var opts = '<option value="__all"' + (!cur ? ' selected' : '') + '>' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) + '</option>';
     list.forEach(function (p) {
       var key = String(p && p.stableKey || ''), name = String(p && p.name || ''), label = name;
       if (!key || !name) return;
@@ -20633,7 +20721,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function homeStatus() {
-    var prov = activeProvider(), g = guardInfo();
+    var prov = renderedProvider(), g = guardInfo();
     var bits = [];
     bits.push('🩺 ' + esc(prov || DEFAULT_PROVIDER_SCOPE_LABEL));
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
@@ -20728,7 +20816,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        a scoped list may be compared against NEITHER the store total nor the
        Athena day total: both differences would read as missing patients. The
        selected provider is already named in the status line below. */
-    var scoped = !!activeProvider();
+    var scoped = !!renderedProvider();
     if (!scoped && stored !== null && stored > n) {
       return n + ' of ' + stored + ' saved for ' + label + ' are shown here';
     }
@@ -21014,7 +21102,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    *  - pulled, but the current provider filter hides everything
    *                                  → one-tap return to default view       */
   function emptyTodayHtml() {
-    var un = visitCountUnscoped(), prov = activeProvider(), dayLabel = visitDayShort();
+    var un = visitCountUnscoped(), prov = renderedProvider(), dayLabel = visitDayShort();
     if (un > 0 && prov) {
       return '<button type="button" class="ez3-big" id="ez3AllProv">👥 Use ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) +
              '<small>Nothing for ' + esc(prov) + ' on ' + esc(dayLabel) + ' — ' + un + ' appointment' + (un === 1 ? '' : 's') +
@@ -21384,7 +21472,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<span class="ez3-badge dob">' + dobLabel(a) + '</span>' +
              '<span class="ez3-badge">' + esc(visitType(a)) + '</span>' +
              '<span class="ez3-badge ' + (isSeen(a) ? 'g' : 'a') + '">' + esc(statusOf(a)) + '</span>' : '') +
-        (activeProvider() ? '<span class="ez3-badge">🩺 ' + esc(activeProvider()) + '</span>' : '') +
+        (renderedProvider() ? '<span class="ez3-badge">🩺 ' + esc(renderedProvider()) + '</span>' : '') +
         /* b438: b430 surfaced a missing Athena appointment id through S.lastWarn,
            but computePhase() clears lastWarn once the note reaches 30 characters and
            renderDoctor reads it AFTER that clear - so the signal vanished exactly when
@@ -22847,7 +22935,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<p class="ez3-sub" style="margin:0 0 10px">' + esc(rb.label) +
          (rb.from === rb.to ? ' · ' + esc(rb.from) : ' · ' + esc(rb.from) + ' → ' + esc(rb.to)) +
          ' · ' + all.length + ' appointment' + (all.length === 1 ? '' : 's') +
-         (activeProvider() ? ' · scoped to ' + esc(activeProvider()) : ' · ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL)) + '</p>';
+         (renderedProvider() ? ' · scoped to ' + esc(renderedProvider()) : ' · ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL)) + '</p>';
     if (!all.length) {
       h += '<div class="ez3-empty">Nothing in this range yet.<br>Use the month pull above (or 📥 Pull today only) to fetch it from Athena.</div>';
     } else {
@@ -48124,7 +48212,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
   var DS_AUTO_RETRY = {}; /* private identity; public pullDay(true) is still manual */
-  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
+  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, sessionSerial: 0,
     pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null };
 
   function rowSortMinute(a) {
@@ -48302,6 +48390,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        change invalidates that chain even before its bounded retry notices the
        frozen-date mismatch. */
     DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
+    DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
     syncStrip(); renderList();
     try {
       window.dispatchEvent(new CustomEvent('mls:visit-day-changed', {
@@ -48484,8 +48573,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return out;
   }
   function dsDiagReport() {
-    var si = window.__mlsSI, res = null;
-    try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
+    /* oar-1.0.0: the button owns the exact receipt returned to THIS DaySwitch
+       attempt. The importer's engine-global last result may belong to an
+       automatic resume for another date, so it is only a legacy fallback when
+       this surface has not received an attempt result of its own. */
+    var si = window.__mlsSI, res = DS.lastAttemptResult || null;
+    if (!res) try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
     if (!res && DS.lastResult) res = DS.lastResult;
     var hr = res && res.historyReceipt || null;
     var ib = res && res.identityBootstrapReceipt || null;
@@ -48765,6 +48858,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.classifyPullResult = pullOutcome;
   api._safeReasonCounts = dsSafeReasonCounts;
+
+  /* ===== oar-1.0.0 (ported from production mls-connect.js:46708-46718)
+     THIS surface owns the receipt returned to THIS DaySwitch attempt. Without
+     it the fork's error report read the importer's engine-global
+     _lastPullResult(), which may belong to an automatic resume for ANOTHER
+     date - so a doctor's copied diagnostic could describe a pull they never
+     clicked, and a promise that resolved to nothing at all produced no
+     attempt record whatsoever. */
+  function ownAttemptResult(result, day, fallbackReason, fallbackError) {
+    var source = result && typeof result === 'object' ? result : null, owned = {};
+    if (source) Object.keys(source).forEach(function (key) { owned[key] = source[key]; });
+    owned.ok = !!(source && source.ok === true);
+    owned.complete = !!(source && source.complete === true);
+    if (!owned.reason) owned.reason = fallbackReason || 'unverified-result';
+    if (!owned.target) owned.target = String(day || DS.day || '');
+    if (!owned.error && fallbackError) owned.error = String(fallbackError);
+    DS.lastAttemptResult = owned;
+    return owned;
+  }
+  /* ===== end oar-1.0.0 */
 
   function retryItems(source) {
     var history = source && source.historyReceipt ? source.historyReceipt : source;
@@ -49115,6 +49228,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (eF) {}
     var sessionSerial = DS.sessionSerial, pullSerial = DS.pullSerial;
+    DS.lastAttemptResult = null;                          /* oar-1.0.0: a new attempt owns its own receipt */
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
     if (!automaticRetry) {
@@ -49166,6 +49280,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
           DS.pulling = false;
+          ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || '') }, rday);
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
@@ -49290,6 +49405,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : si.pull({ date: day, onStatus: dsOnStatus });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
+          /* oar-1.0.0: own this attempt's receipt BEFORE anything reads it, so
+             a promise that resolves to nothing still leaves an honest record. */
+          result = ownAttemptResult(result, day, 'unverified-result', 'The Athena pull returned no verifiable result.');
           var attributionCoverage = dsBoundAttributionCoverage(si, result, day);
           DS.providerAttributionCoverage = attributionCoverage;
           if (attributionCoverage && result && result.providerRosterReceipt) {
@@ -49510,11 +49628,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             done(outcome.ok, outcome.message + cvNote, finalRetry > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
           });
         },
-               function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
+               function (err) {
+                 var errText = (err && err.message) || 'check the Athena tab and try again.';
+                 ownAttemptResult(null, day, 'pull-exception', errText);
+                 done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + errText);
+               });
       } else {
+        ownAttemptResult(null, day, 'no-receipt', 'The Athena pull engine did not return a verifiable completion receipt.');
         done(false, 'The Athena pull engine did not return a verifiable completion receipt. Reload MLS and try again.');
       }
-    } catch (e) { done(false, 'The pull could not start - make sure athenaOne is open, then try again.'); }
+    } catch (e) {
+      ownAttemptResult(null, day, 'pull-start-failed', (e && e.message) || 'The Athena pull could not start.');
+      done(false, 'The pull could not start - make sure athenaOne is open, then try again.');
+    }
   }
 
   function removeDoctorDayControls() {
@@ -49639,6 +49765,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var k = String(ev && ev.detail && ev.detail.day || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k === DS.day) return;
       DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
+    DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
       DS.day = k; DS.followToday = (k === todayKey());
       syncStrip();
     } catch (e) {}
@@ -49653,7 +49780,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++; DS.pullSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
+    DS.lastResult = null; DS.lastAttemptResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
     DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.pullProviderScope = null;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {

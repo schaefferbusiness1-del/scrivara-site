@@ -7243,6 +7243,62 @@ function sfStartupValid(opts){
    a hung IndexedDB open must never brick boot - the paint runs anyway
    after 4000ms and the re-routed readers fall through to the legacy path
    (loud-empty, never stale PHI). */
+/* ===== ptsmig-1.0.0: ACTIVATE the sj-2.0 patient store =====================
+   The store, its journal, its verified cutover and five passing suites all
+   shipped, but nothing ever CALLED migrate(): every account stayed in
+   S.mode==='ls', isReady() never became true, and savePatients() therefore
+   always fell to the localStorage lane whose measured ceiling is ~1,400
+   patients. This is the one-shot activation, and it is deliberately thin -
+   every safety decision belongs to the store's own fail-closed migrate():
+   verified IndexedDB write, byte-identical echo, live journal, gen stamp, and
+   only THEN the blob removal, with failCleanup() restoring localStorage as
+   authoritative on any failed step.
+
+   Rules kept here:
+   - never bind a migration to an unresolved account namespace (the
+     sf_u::undefined:: / ::_:: class) - refuse instead;
+   - never run before this account's init() settles, and re-check that the
+     account has not changed in between;
+   - one attempt per account key per page;
+   - never gate boot paint on it, and never let it throw into a caller;
+   - the store's OWN receipt is the only verdict; a refusal is logged loudly
+     and leaves localStorage authoritative. */
+var __mlsPtsMigrateOnce=Object.create(null);
+function __mlsPtsNamespaceUsable(key){
+  return !!key&&/::patients$/.test(key)&&key.indexOf('::undefined::')<0&&key.indexOf('::_::')<0;
+}
+function __mlsPtsAutoMigrate(initPromise,why){
+  if(!initPromise||typeof initPromise.then!=='function')return null;
+  var store=null; try{ store=window.__mlsPtsStore; }catch(eS){ return null; }
+  if(!store||typeof store.migrate!=='function'||typeof store.mode!=='function')return null;
+  var key=''; try{ key=uns('patients'); }catch(eK){ key=''; }
+  if(!__mlsPtsNamespaceUsable(key)){
+    try{ console.warn('[pts-migrate] refused: unresolved account namespace'); }catch(_e){}
+    return null;
+  }
+  if(__mlsPtsMigrateOnce[key])return __mlsPtsMigrateOnce[key];
+  var run=initPromise.then(function(){
+    var live=''; try{ live=uns('patients'); }catch(eL){ live=''; }
+    if(live!==key)return {migrated:false,skipped:'account-changed'};
+    if(store.mode()!=='ls')return {migrated:true,already:true};
+    return store.migrate();
+  }).then(function(rep){
+    try{ window.__mlsPtsMigrationReceipt={why:String(why||''),at:Date.now(),report:rep||null}; }catch(eR){}
+    try{
+      if(!(rep&&rep.migrated===true))
+        console.warn('[pts-migrate] '+String(why||'')+' did NOT migrate - patients stay on localStorage: '+
+          JSON.stringify((rep&&(rep.steps||rep.skipped))||rep||null).slice(0,400));
+    }catch(eW){}
+    return rep||null;
+  },function(err){
+    try{ window.__mlsPtsMigrationReceipt={why:String(why||''),at:Date.now(),error:String((err&&err.message)||err).slice(0,200)}; }catch(eR2){}
+    try{ console.warn('[pts-migrate] '+String(why||'')+' refused: '+String((err&&err.message)||err)); }catch(eW2){}
+    return null;
+  });
+  __mlsPtsMigrateOnce[key]=run;
+  return run;
+}
+/* ===== end ptsmig-1.0.0 */
 function __mlsPtsBootBarrier(paint){
   var ranPaint=false;
   var runPaint=function(why){
@@ -7257,6 +7313,10 @@ function __mlsPtsBootBarrier(paint){
   try{ window.__mlsPtsBootReady=p; }catch(ePw){}
   if(!p||typeof p.then!=='function'){ runPaint(); return; }
   p.then(null,function(ePr){ try{ console.warn('[pts-boot] store init refused: '+String((ePr&&ePr.message)||ePr)); }catch(_e){} return null; });
+  /* ptsmig-1.0.0: one-shot activation, after init() and never in front of the
+     paint - a migration that is slow, refused, or impossible must not delay a
+     single roster pixel. */
+  try{ __mlsPtsAutoMigrate(p,'boot'); }catch(ePmg){}
   var migrated=false;
   try{ migrated=(localStorage.getItem(uns('ptsGenV2'))!=null)&&(localStorage.getItem(uns('patients'))==null); }catch(ePm){}
   if(!migrated){ runPaint(); return; }
@@ -7592,7 +7652,7 @@ function refreshMe(opts){
              authenticated namespace (idempotent per account key). Without
              this, a migrated account reached via identity drift stays on
              the legacy loud-empty path until the next reload. */
-          try{ if(window.__mlsPtsStore&&typeof window.__mlsPtsStore.init==='function'){ window.__mlsPtsBootReady=window.__mlsPtsStore.init(); window.__mlsPtsBootReady.then(null,function(ePtsIc){ try{ console.warn('[pts-boot] identity-change init refused: '+String((ePtsIc&&ePtsIc.message)||ePtsIc)); }catch(_e){} }); } }catch(ePtsI){}
+          try{ if(window.__mlsPtsStore&&typeof window.__mlsPtsStore.init==='function'){ window.__mlsPtsBootReady=window.__mlsPtsStore.init(); window.__mlsPtsBootReady.then(null,function(ePtsIc){ try{ console.warn('[pts-boot] identity-change init refused: '+String((ePtsIc&&ePtsIc.message)||ePtsIc)); }catch(_e){} }); try{ __mlsPtsAutoMigrate(window.__mlsPtsBootReady,'identity-change'); }catch(ePtsMg){} } }catch(ePtsI){}
           const whoEl=document.getElementById('whoLabel');
           if(whoEl) whoEl.textContent='👤 '+em;
           const histEl=document.getElementById('histWho');
@@ -11808,7 +11868,7 @@ function savePatients(arr,__storageKey,__opts){
         try{
           for(var qi=localStorage.length-1;qi>=0;qi--){var qk=localStorage.key(qi);if(/(?:^|_)(?:studygroups_v1|mlsRFScrapeCache2)$|ScrapeCache/.test(String(qk||''))){try{localStorage.removeItem(qk);}catch(_){}}}
           localStorage.setItem(__key,packed);
-        }catch(e2){try{toast('âš  Local storage is full â€” patient changes could NOT be saved. Tell MLS support.','');}catch(_){}throw e2;}
+        }catch(e2){try{toast('⚠ Local storage is full — patient changes could NOT be saved. Tell MLS support.','');}catch(_){}throw e2;}
       }
       __mlsPtsLastSavedKey=__key;__mlsPtsLastSaved=__json;__mlsPtsLastPacked=packed;__mlsPtsGen++;
       /* The exact rows that produced `packed` are already in memory. Seed the
@@ -12083,6 +12143,12 @@ window.__mlsPatientStoreBatch={
       if(st.depth===0){
         if(st.timer)__mlsPtsCancelBatchTimer(st);
         delete __mlsPtsBatchByKey[st.key];
+        /* psq-1.0.0: THIS is the pull's terminal receipt. The batch is closed
+           and its mirrors are queued, so the pending-sync drain may finally
+           run - immediately, instead of waiting up to 60s for the interval.
+           Guarded on a clean close: a failed mirror write means the queue
+           itself is not trustworthy yet. */
+        if(!finalError&&mirrorQueued){try{__mlsPendingSyncKick('batch-end');}catch(ePsq){}}
       }
       if(!mirrorQueued&&!finalError)finalError=new Error('Patient changes were saved locally, but their server retry queue could not be persisted.');
       if(finalError)throw finalError;
@@ -12477,7 +12543,7 @@ window.__mlsDebRender=(function(){var t={};return function(key,fn){ if(typeof fn
    patient-id map and A-Z ordering. Cache only derived read data, keyed by the
    exact persisted roster (or the active batch generations); no write semantics
    or patient objects are changed. */
-var __mlsPtRosterCache={key:null,raw:null,batch:null,batchChanges:-1,batchExternalWrites:-1,rows:null,nameRows:null,byId:null,visitsVer:-1,visitRows:null};
+var __mlsPtRosterCache={key:null,raw:null,gen:-1,batch:null,batchChanges:-1,batchExternalWrites:-1,rows:null,nameRows:null,byId:null,visitsVer:-1,visitRows:null};
 function __mlsPtRosterData(all){
   all=Array.isArray(all)?all:[];
   var key=''; try{key=uns('patients');}catch(e){}
@@ -12489,14 +12555,25 @@ function __mlsPtRosterData(all){
      that path). Track that existing monotonic counter too, or Patients and
      History can keep the derived rows from before the replacement. */
   var batchExternalWrites=batch?Number(batch.externalWrites||0):-1;
-  var raw=null;
+  var raw=null,gen=-1;
   if(!batch){
-    try{ if(__mlsPtsMemo&&__mlsPtsMemo.key===key)raw=__mlsPtsMemo.raw; else raw=localStorage.getItem(key); }
-    catch(e){ raw=null; }
+    /* ptsmig-1.0.0: this cache was keyed on the raw localStorage blob. After
+       the store migration there IS no blob, so `raw` is null forever, the
+       cacheable test fails for every non-empty roster, and Patients/History
+       would rebuild + re-sort the whole roster on EVERY render. The store's
+       own monotonic generation is the exact equivalent key: it advances on
+       every committed change (including another tab's, via the gen stamp) and
+       stands still when nothing changed. */
+    try{ var __psRc=window.__mlsPtsStore; if(__psRc&&__psRc.isReady()&&uns('patients')===key)gen=Number(__psRc.genRead()); }catch(eRc){ gen=-1; }
+    if(!(gen>=0)){
+      gen=-1;
+      try{ if(__mlsPtsMemo&&__mlsPtsMemo.key===key)raw=__mlsPtsMemo.raw; else raw=localStorage.getItem(key); }
+      catch(e){ raw=null; }
+    }
   }
   var c=__mlsPtRosterCache;
-  var cacheable=!!batch||raw!==null||all.length===0;
-  if(cacheable&&c.rows&&c.key===key&&c.batch===batch&&c.batchChanges===batchChanges&&c.batchExternalWrites===batchExternalWrites&&(batch||c.raw===raw))return c;
+  var cacheable=!!batch||gen>=0||raw!==null||all.length===0;
+  if(cacheable&&c.rows&&c.key===key&&c.batch===batch&&c.batchChanges===batchChanges&&c.batchExternalWrites===batchExternalWrites&&c.gen===gen&&(batch||gen>=0||c.raw===raw))return c;
   var rows=[],byId=new Map();
   for(var i=0;i<all.length;i++){
     var p=all[i]; if(!p)continue;
@@ -12504,7 +12581,7 @@ function __mlsPtRosterData(all){
     rows.push(row); byId.set(p.id,p);
   }
   var nameRows=rows.slice().sort(function(a,b){ return (a.patient.name||'').localeCompare(b.patient.name||'',undefined,{sensitivity:'base'}); });
-  __mlsPtRosterCache={key:key,raw:raw,batch:batch,batchChanges:batchChanges,batchExternalWrites:batchExternalWrites,rows:rows,nameRows:nameRows,byId:byId,visitsVer:-1,visitRows:null};
+  __mlsPtRosterCache={key:key,raw:raw,gen:gen,batch:batch,batchChanges:batchChanges,batchExternalWrites:batchExternalWrites,rows:rows,nameRows:nameRows,byId:byId,visitsVer:-1,visitRows:null};
   return __mlsPtRosterCache;
 }
 function __mlsPtVisitRows(data){
@@ -12797,7 +12874,9 @@ function _pendingSyncSet(list,key){
 function _pendingSyncAdd(id,key,arm){
   if(!id)return false;key=key||uns('pendingPtSync');id=String(id);let ok=true;
   try{localStorage.setItem(__mlsPtsMirrorItemKey(key,id),'1');}catch(e){ok=false;var mem=__mlsPtsPendingMirrorMemoryByKey[key]||(__mlsPtsPendingMirrorMemoryByKey[key]=Object.create(null));mem[id]=1;}
+  __mlsPendingSyncFreshAt=Date.now(); /* psq-1.0.0: a live enqueue is fresh work */
   if(arm!==false){try{if(key===uns('pendingPtSync'))_armPendingSyncFlush();}catch(e){}}
+  __mlsPendingBadgeSoon(); /* psq-1.0.0: the count must be visible (throttled) */
   return ok;
 }
 function _pendingSyncRemove(id,key){
@@ -12809,6 +12888,51 @@ function _pendingSyncRemove(id,key){
   try{const raw=localStorage.getItem(key),a=raw?JSON.parse(raw):[];if(Array.isArray(a)&&a.indexOf(id)>=0)localStorage.setItem(key,JSON.stringify(a.filter(function(x){return String(x)!==id;})));}catch(e){}
 }
 let _pendingSyncTimer=0, _pendingSyncBusy=false;
+/* ===== psq-1.0.0: the patient sync queue drains at the receipt, not on a timer
+   The queue was drained ONLY by a 60s interval, ≤25 ids per pass. A managed
+   pull that enqueues 300 patients therefore sat untouched for up to a full
+   minute after its terminal receipt before the first id moved, and nothing on
+   screen said a single patient was still unsent. Three changes, no gate
+   weakened: drain immediately at the batch's terminal receipt (the 60s
+   interval stays as the fallback), spend a larger budget while the work is
+   FRESH, and show the outstanding patient count next to the note count. */
+/* -1 means "never fresh". A plain 0 sentinel would be indistinguishable from a
+   real timestamp of 0 under a test clock, and a freshness test that can be
+   wrong at one instant is a freshness test that can be wrong. */
+var __mlsPendingSyncFreshAt=-1;
+var PENDING_SYNC_FRESH_MS=120000, PENDING_SYNC_BUDGET_FRESH=200, PENDING_SYNC_BUDGET_IDLE=25;
+/* _pendingSyncGet() scans every localStorage key, and a 300-patient pull calls
+   _pendingSyncAdd 300 times. Repainting the badge on each one would make the
+   pull quadratic in the queue length, so the enqueue path repaints at most
+   once per PENDING_BADGE_THROTTLE_MS. The drain and the terminal-receipt kick
+   repaint unthrottled - they are rare and they are what the doctor waits on. */
+var PENDING_BADGE_THROTTLE_MS=750, __mlsPendingBadgeAt=-1e12;
+function __mlsPendingBadgeSoon(){
+  var now=Date.now();
+  if(now-__mlsPendingBadgeAt<PENDING_BADGE_THROTTLE_MS)return false;
+  __mlsPendingBadgeAt=now;
+  try{_renderBackupBadge();}catch(e){}
+  return true;
+}
+function __mlsPendingSyncBudget(now){
+  now=typeof now==='number'?now:Date.now();
+  return (__mlsPendingSyncFreshAt>=0&&(now-__mlsPendingSyncFreshAt)<PENDING_SYNC_FRESH_MS)
+    ? PENDING_SYNC_BUDGET_FRESH : PENDING_SYNC_BUDGET_IDLE;
+}
+/* Called at the pull's terminal receipt (the patient batch closing at depth 0).
+   Never throws into its caller: a drain is best-effort, the queue is durable,
+   and the interval below is still the safety net. */
+function __mlsPendingSyncKick(why){
+  try{
+    if(!_pendingSyncGet().length)return false;
+    __mlsPendingSyncFreshAt=Date.now();
+    _armPendingSyncFlush();
+    try{_renderBackupBadge();}catch(eB){}
+    _flushPendingSync();
+    return true;
+  }catch(e){ return false; }
+}
+/* ===== end psq-1.0.0 */
 function _armPendingSyncFlush(){
   if(_pendingSyncTimer) return;
   _pendingSyncTimer=setInterval(function(){ _flushPendingSync(); },60000);
@@ -12823,12 +12947,14 @@ async function _flushPendingSync(){
   const pendingKey=uns('pendingPtSync'),patientKey=uns('patients'),token=bkToken(),base=bkBase();
   const scope={pendingKey:pendingKey,patientKey:patientKey,token:token,base:base,isCurrent:function(){try{return uns('pendingPtSync')===pendingKey&&uns('patients')===patientKey&&bkToken()===token&&bkBase()===base;}catch(e){return false;}}};
   const ids=_pendingSyncGet(pendingKey);
-  if(!ids.length){ if(_pendingSyncTimer){ clearInterval(_pendingSyncTimer); _pendingSyncTimer=0; } return; }
+  if(!ids.length){ if(_pendingSyncTimer){ clearInterval(_pendingSyncTimer); _pendingSyncTimer=0; } try{_renderBackupBadge();}catch(e){} return; }
   _pendingSyncBusy=true;
   let progressed=false;
+  /* psq-1.0.0: spend a larger budget while the work is fresh */
+  const budget=__mlsPendingSyncBudget();
   try{
     const pts=getPatients()||[];
-    for(let i=0;i<ids.length&&i<25;i++){
+    for(let i=0;i<ids.length&&i<budget;i++){
       if(!scope.isCurrent())break;
       const p=pts.find(x=>x&&String(x.id)===ids[i]);
       if(!p){ _pendingSyncRemove(ids[i],pendingKey);progressed=true;continue; }
@@ -12838,6 +12964,7 @@ async function _flushPendingSync(){
     }
   }catch(e){} finally{
     _pendingSyncBusy=false;
+    try{_renderBackupBadge();}catch(e){} /* psq-1.0.0: the count follows the drain */
     if(scope.isCurrent()&&progressed&&_pendingSyncGet(pendingKey).length){try{setTimeout(function(){_flushPendingSync();},0);}catch(e){}}
   }
 }
@@ -21644,14 +21771,35 @@ function upsertNote(rec){
   else if(!currentVisitAthenaBinding && activePatient() && !rec.patientId) rec.patientId=getActivePtId();
   if(i>=0){ const created=arr[i].created||arr[i].updated; arr[i]=rec; arr[i].created=created; }
   else { rec.created=Date.now(); arr.unshift(rec); }
-  saveNotes(arr);
+  /* ===== nq-1.0.0: a finished note is never lost to a full device =========
+     This used to call saveNotes() - a bare localStorage.setItem with no
+     try/catch - BEFORE saveNoteToBackend(). A QuotaExceededError therefore
+     threw out of upsertNote and the encrypted server write, which would have
+     accepted the note, never ran: the doctor saw "Could not save this visit"
+     and the finished note existed nowhere. The server is the record, so the
+     server write starts FIRST and independently of the device write, and a
+     full device degrades to an honest message instead of losing the note.
+     Note content is untouched; ordering and error handling only. */
+  var __nqServer=null;
+  try{ __nqServer = saveNoteToBackend(rec) || null; }catch(eNqS){ __nqServer=null; }
+  try{ saveNotes(arr); }
+  catch(eNq){
+    /* No server copy is being written: this note is nowhere. Never report
+       success - let the caller's catch surface the real failure. */
+    if(!__nqServer) throw eNq;
+    try{ toast('This device is out of space, so the note could not be stored on this computer. MLS is saving it to your account instead…','err'); }catch(eNqT){}
+    try{
+      Promise.resolve(__nqServer).then(function(outcome){
+        if(outcome==='synced') toast('Saved to your MLS account, not this device. This computer is full — free space to keep a local copy.','ok');
+        else toast('This device is full AND this note has NOT reached your MLS account'+(outcome==='declined'?' (your account refused it)':'')+'. Do not close this tab: copy the note text somewhere safe now.','err');
+      }, function(){ try{ toast('This device is full AND this note has NOT reached your MLS account. Do not close this tab: copy the note text somewhere safe now.','err'); }catch(eNqT3){} });
+    }catch(eNqT2){}
+  }
+  /* ===== end nq-1.0.0 */
   currentNoteId=rec.id;
   renderHistory();
   updateNavCounts();
   if(currentView==='patients'){ renderPatients(); renderProfile(); }
-  // hosted mode: write-through of the FULL record to the server (best-effort,
-  // never blocks the local save) — covers notes, drafts, orders, and signing.
-  try{ saveNoteToBackend(rec); }catch(e){}
 }
 
 function saveDraft(){
@@ -21764,10 +21912,17 @@ function _svrDeclinedAdd(id){ if(!id) return; var a=_svrDeclinedGet(); if(a.inde
 function _svrDeclinedRemove(id){ var a=_svrDeclinedGet(); if(a.indexOf(id)>=0){ _svrDeclinedSet(a.filter(function(x){ return x!==id; })); } }
 function _renderBackupBadge(){
   var n=_pendingBackupGet().length;
+  /* psq-1.0.0: patients waiting to reach the server were counted NOWHERE on
+     screen. A doctor could finish a 300-patient pull and see nothing at all
+     while the queue drained. Same badge, same one-tap retry. */
+  var pn=0; try{ pn=_pendingSyncGet().length; }catch(ePsq){}
   var el=document.getElementById('_backupBadge');
-  if(!n){ if(el) el.remove(); return; }
-  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.setAttribute('data-tip','Click to retry the server backup now'); el.style.cssText='position:fixed;left:16px;bottom:84px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ _retryPendingBackups(true); }; document.body.appendChild(el); }
-  el.textContent='⏳ '+n+' note'+(n===1?'':'s')+' syncing to server…';
+  if(!n&&!pn){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='_backupBadge'; el.setAttribute('data-tip','Click to retry the server backup now'); el.style.cssText='position:fixed;left:16px;bottom:84px;z-index:9000;background:#fff7e6;border:1px solid #f0d9a0;color:#8a5a00;border-radius:10px;padding:8px 12px;font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer'; el.onclick=function(){ try{ __mlsPendingSyncKick('badge-tap'); }catch(eK){} _retryPendingBackups(true); }; document.body.appendChild(el); }
+  var parts=[];
+  if(n) parts.push(n+' note'+(n===1?'':'s'));
+  if(pn) parts.push(pn+' patient'+(pn===1?'':'s'));
+  el.textContent='⏳ '+parts.join(' and ')+' syncing to server…';
 }
 async function _retryPendingBackups(manual){
   if(!backendMode()||!bkToken()) return;

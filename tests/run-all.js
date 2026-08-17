@@ -162,6 +162,32 @@ const tests = [
   '1p-uns-namespace-guard-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
+  /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so
+     /1p hid object-provider, rendering_provider_id and doctor_user_id rows the
+     production Day view renders. This is the 1p twin of the production suite
+     below and names those row shapes so the regression cannot return. */
+  '1p-provider-day-render-runtime.test.js',
+  /* the /1p regression audit was token-presence only, so it could not see a
+     production function that carries no release token. This diffs the FUNCTION
+     SET of every production file against its 1p fork and fails when a
+     production function with call sites has neither a fork counterpart nor a
+     verified supersession record. */
+  '1p-fork-parity-contract.test.js',
+  '1p-pull-attempt-receipt-runtime.test.js',
+  /* nq-1.0.0: upsertNote wrote the device copy through a bare setItem BEFORE
+     the encrypted server write, so a full device threw the finished note away
+     instead of letting the server accept it. */
+  '1p-note-never-lost-to-quota-runtime.test.js',
+  /* ptsmig-1.0.0: the sj-2.0 IndexedDB patient store shipped with five green
+     suites and ZERO shipped migrate() call sites, so every account stayed on
+     the localStorage lane. Pins the shipped activation and a 3,000-patient
+     round trip through the real store. */
+  '1p-pts-store-activation-runtime.test.js',
+  /* psq-1.0.0: the pending patient-sync queue had ONE driver, a 60s interval
+     capped at 25 ids, so a 300-patient pull idled a full minute before the
+     first id moved (12 minutes against a refusing server) with nothing on
+     screen counting a single outstanding patient. */
+  '1p-pending-patient-sync-drain-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
   'production-default-view-pull-runtime.test.js',
   'day-switch-current-pull-result-runtime.test.js',
