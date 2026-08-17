@@ -4581,7 +4581,23 @@
         /* b346: the text-parse fallback can call an async parser; a hung parser
            used to leave the pull at "Finding patients..." forever. Bound it to
            an absolute deadline so this stage always terminates. */
-        var parsedP = exactRows.length
+        /* ed-1.0.0 (live 2026-08-17, production, Mon 2026-08-31): a VERIFIED-EMPTY
+           day (authoritativeEmpty:true, liveSessionProven:true, 0 rows, empty
+           text — proven internally consistent by authoritativeEmptyContract
+           above) still fell into the text-parse fallback, which is an AI call
+           (_parseScheduleText -> aiCallRaw -> /api/complete) bounded to 25 s.
+           When the AI provider was slow that call timed out, the pull refused
+           with schedule-parse-timeout, and the auto-retry re-ran the SAME thing
+           three times ("The Athena grid was still settling - re-reading
+           automatically (attempt 3 of 3)...") before surfacing "did not return
+           a verified completion receipt" for a day that was simply empty. There
+           is nothing to parse on a verified-empty day, and asking an AI to parse
+           an empty grid is also how a phantom row could be invented. Skip the
+           parser entirely; the empty-day path below reports the day as verified
+           empty exactly as before. Non-empty days keep the bounded fallback. */
+        var parsedP = verifiedEmptyDay
+          ? Promise.resolve([])
+          : exactRows.length
           ? Promise.resolve(exactRows)
           : boundedUntil(
               Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, [])),

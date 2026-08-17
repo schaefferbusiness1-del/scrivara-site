@@ -540,6 +540,10 @@ const tests = [
   'schedule-row-demographics-adversarial.test.js',
   'schedule-visit-persistence-adversarial.test.js',
   'schedule-authoritative-empty-contract.test.js',
+  /* ed-1.0.0 (2026-08-17, live production repro): a verified-empty day never
+     reaches the AI schedule-text parser; the day-strip's 'grid still settling'
+     auto-retry can no longer be triggered by an empty day. */
+  'schedule-verified-empty-day-skips-ai-parse.test.js',
   'schedule-authoritative-reconciliation-runtime.test.js',
   'schedule-calendar-partial-diagnostics-runtime.test.js',
   'schedule-import-scan-performance-contract.test.js',

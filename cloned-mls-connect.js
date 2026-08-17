@@ -8807,7 +8807,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         n++;
       } catch (e) {}
     });
-    /* b1027: persist:false work belongs to this exact COW candidate. Passing
+    /* b1028: persist:false work belongs to this exact COW candidate. Passing
        _patientRef prevents a second roster lookup/clone per repaired patient
        and guarantees the one yielded maintenance row owns every new visit. */
     return n;
@@ -9048,7 +9048,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function sweep() {
     try {
-      /* b1027: the retired 3-second owner synchronously regex-scanned every
+      /* b1028: the retired 3-second owner synchronously regex-scanned every
          patient and produced repeat 650ms+ long tasks on a large roster. The
          timer is gone. Canonical signals now admit one exact-generation scan
          through the shared session-ready/input-aware maintenance owner. At
@@ -47151,7 +47151,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            repaints when any other tab changes the preference (qol-1.1d). */
         var paint = function () { try { var r = window.__mlsVisitNotesPref; tgl.checked = (r && typeof r.read === 'function') ? r.read().on === true : true; } catch (e) { tgl.checked = true; } };
         paint();
-        /* sbp-1.0 boot-paint settle (live b1016/b1027, final-live-proofs
+        /* sbp-1.0 boot-paint settle (live b1016/b1028, final-live-proofs
            Proof 3): the ONE paint above can run before the session namespace
            exists - the resolver reads the placeholder slot, answers 'unset'
            (= on), and the box paints CHECKED while the settled preference is
@@ -47336,7 +47336,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          from a REAL session namespace - during boot uns() builds a
          placeholder ('sf_u::_::' / '::undefined::') and this read consults
          the wrong slot, so its 'unset' (= default on) is provisional and
-         views must re-read after the session settles (live b1016/b1027:
+         views must re-read after the session settles (live b1016/b1028:
            the day-strip checkbox painted CHECKED while the settled
            preference was off). */
       var settledNs = !!kM && kM.indexOf('::_::') < 0 && kM.indexOf('::undefined::') < 0;
