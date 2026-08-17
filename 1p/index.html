@@ -21584,14 +21584,35 @@ function upsertNote(rec){
   else if(!currentVisitAthenaBinding && activePatient() && !rec.patientId) rec.patientId=getActivePtId();
   if(i>=0){ const created=arr[i].created||arr[i].updated; arr[i]=rec; arr[i].created=created; }
   else { rec.created=Date.now(); arr.unshift(rec); }
-  saveNotes(arr);
+  /* ===== nq-1.0.0: a finished note is never lost to a full device =========
+     This used to call saveNotes() - a bare localStorage.setItem with no
+     try/catch - BEFORE saveNoteToBackend(). A QuotaExceededError therefore
+     threw out of upsertNote and the encrypted server write, which would have
+     accepted the note, never ran: the doctor saw "Could not save this visit"
+     and the finished note existed nowhere. The server is the record, so the
+     server write starts FIRST and independently of the device write, and a
+     full device degrades to an honest message instead of losing the note.
+     Note content is untouched; ordering and error handling only. */
+  var __nqServer=null;
+  try{ __nqServer = saveNoteToBackend(rec) || null; }catch(eNqS){ __nqServer=null; }
+  try{ saveNotes(arr); }
+  catch(eNq){
+    /* No server copy is being written: this note is nowhere. Never report
+       success - let the caller's catch surface the real failure. */
+    if(!__nqServer) throw eNq;
+    try{ toast('This device is out of space, so the note could not be stored on this computer. MLS is saving it to your account instead…','err'); }catch(eNqT){}
+    try{
+      Promise.resolve(__nqServer).then(function(outcome){
+        if(outcome==='synced') toast('Saved to your MLS account, not this device. This computer is full — free space to keep a local copy.','ok');
+        else toast('This device is full AND this note has NOT reached your MLS account'+(outcome==='declined'?' (your account refused it)':'')+'. Do not close this tab: copy the note text somewhere safe now.','err');
+      }, function(){ try{ toast('This device is full AND this note has NOT reached your MLS account. Do not close this tab: copy the note text somewhere safe now.','err'); }catch(eNqT3){} });
+    }catch(eNqT2){}
+  }
+  /* ===== end nq-1.0.0 */
   currentNoteId=rec.id;
   renderHistory();
   updateNavCounts();
   if(currentView==='patients'){ renderPatients(); renderProfile(); }
-  // hosted mode: write-through of the FULL record to the server (best-effort,
-  // never blocks the local save) — covers notes, drafts, orders, and signing.
-  try{ saveNoteToBackend(rec); }catch(e){}
 }
 
 function saveDraft(){

@@ -167,6 +167,10 @@ const tests = [
      verified supersession record. */
   '1p-fork-parity-contract.test.js',
   '1p-pull-attempt-receipt-runtime.test.js',
+  /* nq-1.0.0: upsertNote wrote the device copy through a bare setItem BEFORE
+     the encrypted server write, so a full device threw the finished note away
+     instead of letting the server accept it. */
+  '1p-note-never-lost-to-quota-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
   'production-default-view-pull-runtime.test.js',
   'day-switch-current-pull-result-runtime.test.js',
