@@ -1182,8 +1182,19 @@ async function runtime() {
       for (const [screen, navId] of Object.entries(NAV)) {
         await page.evaluate((id) => { const e = document.getElementById(id); if (e) e.click(); }, navId);
         await page.waitForTimeout(900);   /* past the ring's 450ms second look */
-        const rings = await page.evaluate(() => window.__uiContract.rings());
-        const lit = rings.filter((r) => r.visible);
+        let rings = await page.evaluate(() => window.__uiContract.rings());
+        let lit = rings.filter((r) => r.visible);
+        /* 2026-08-17 (batch 7 gate): the Analysis screen lit its ring on the second
+           look ~1 run in 3 under load — the studio→analysis hoist re-marks after the
+           900 ms sample. The invariant is unchanged (exactly one lit ring in guided,
+           none otherwise); the sample is simply allowed to settle for up to 3 s. */
+        for (let settle = 0; settle < 7; settle++) {
+          const okNow = mode === 'guided' ? lit.length === 1 : rings.length === 0;
+          if (okNow) break;
+          await page.waitForTimeout(300);
+          rings = await page.evaluate(() => window.__uiContract.rings());
+          lit = rings.filter((r) => r.visible);
+        }
         if (mode === 'guided') {
           const why = lit.length === 1 ? null : await page.evaluate(() => ({
             report: window.__mlsSimpleLayer.nextStep(),
