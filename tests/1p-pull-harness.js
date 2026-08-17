@@ -323,8 +323,16 @@ function makeMonthHarness(options) {
   }
   function scheduleResponse(day, requestId) {
     scheduleReads.push(day);
-    if (loginExpired || scheduleErrorDays.has(day)) {
-      return { id: requestId, ok: false, schedDate: day, error: 'athenaOne is not signed in', appts: [], text: '' };
+    /* Two DIFFERENT unreadable days, exactly as the extension reports them:
+       a signed-out athenaOne carries the bounded session probe verdict
+       (sessionLikelyExpired), a grid that simply never answered does not. */
+    if (loginExpired) {
+      return { id: requestId, ok: false, schedDate: day, appts: [], text: '',
+        error: 'MLS could not find a signed-in athenaOne tab.', sessionLikelyExpired: true };
+    }
+    if (scheduleErrorDays.has(day)) {
+      return { id: requestId, ok: false, schedDate: day, appts: [], text: '',
+        error: 'The athenaOne schedule grid did not answer.' };
     }
     if (incompleteDays.has(day)) {
       return { id: requestId, ok: true, schedDate: day, text: 'partial schedule', appts: [],

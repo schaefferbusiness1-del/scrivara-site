@@ -22053,9 +22053,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     pSet('ez3cDup', String(P.dups)); pSet('ez3cFail', String(P.failedDays.length));
     var bar = $('ez3PullBar'); if (bar) bar.style.width = Math.round(done * 100 / Math.max(1, P.range.keys.length)) + '%';
     pSet('ez3PullBarLbl', done + ' of ' + P.range.keys.length + ' days' + (P.emptyDays.length ? (' · ' + P.emptyDays.length + ' empty') : ''));
-    var btnR = $('ez3PullRetry'); if (btnR) btnR.style.display = (!P.running && P.failedDays.length) ? '' : 'none';
-    var btnC = $('ez3PullCancel'); if (btnC) btnC.style.display = P.running ? '' : 'none';
-    var btnS = $('ez3PullStart'); if (btnS) { btnS.disabled = !!P.running; btnS.style.display = P.running ? 'none' : ''; }
+    /* ===== p1-durable-month-1.0.0 (controls follow the SAVED job) =====
+       With the durable job installed, "running" is a property of the
+       manifest, not of this tab: after a reload the panel must offer Resume,
+       and while a job runs (here, or resumed by the boot) it must offer
+       Pause and Cancel. */
+    var durable = p1RangeState(), live = p1RangeRunning(durable), resumable = p1RangeResumable(durable);
+    var durableStatus = durable ? String(durable.status || '') : '';
+    /* An INTERRUPTED job is continued ("Resume"); a job that SETTLED with days
+       it could not verify is retried ("Retry failed days"). Both are the same
+       safe resume() of the same manifest - only the sentence differs, and only
+       one of them is ever on screen. */
+    var settledWithFailures = durableStatus === 'waiting-retry' || durableStatus === 'needs-attention';
+    var btnP = $('ez3PullPause'); if (btnP) btnP.style.display = (durable && live) ? '' : 'none';
+    var btnU = $('ez3PullResume');
+    if (btnU) btnU.style.display = (resumable && !settledWithFailures) ? '' : 'none';
+    var btnR = $('ez3PullRetry');
+    if (btnR) btnR.style.display = durable
+      ? ((resumable && settledWithFailures) ? '' : 'none')
+      : ((!P.running && P.failedDays.length) ? '' : 'none');
+    var btnC = $('ez3PullCancel'); if (btnC) btnC.style.display = (durable ? (live || resumable) : P.running) ? '' : 'none';
+    var btnS = $('ez3PullStart');
+    if (btnS) {
+      var blockedByJob = durable ? (live || resumable) : !!P.running;
+      btnS.disabled = blockedByJob; btnS.style.display = blockedByJob ? 'none' : '';
+    }
+    /* ===== end p1-durable-month-1.0.0 ===== */
   }
   function loadExistingKeys() {
     touchPullLease();
@@ -22225,6 +22248,180 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       });
     });
   }
+  /* ===== p1-durable-month-1.0.0 (the month pull IS the durable job) =====
+     Lead ruling 2026-08-17. Start month pull used to call __mlsSI.pullMonth
+     directly: no manifest, no per-day checkpoint, nothing survived a reload,
+     and "Retry failed days" only existed in this tab's memory. It now runs
+     __mlsP1RangeJobs, so the same click gets incremental durable saves,
+     resume after a browser close or a sign-out, a bounded retry, and a
+     receipt. The raw pullMonth stays reachable as the engine call underneath
+     (and as the fallback if the range engine is not installed). */
+  var p1RangeWatchTimer = null;
+  function p1RangeApi() {
+    var api = safe(function () { return window.__mlsP1RangeJobs; }, null);
+    return api && api.installed === true && isFn(api.startMonth) && isFn(api.resume) ? api : null;
+  }
+  function p1RangeState() {
+    var api = p1RangeApi();
+    return api ? safe(function () { return api.state(); }, null) : null;
+  }
+  function p1RangeRunning(st) { return !!st && (st.status === 'running' || st.status === 'pending'); }
+  function p1RangeResumable(st) {
+    return !!st && (st.status === 'paused' || st.status === 'waiting-login' || st.status === 'waiting-retry' ||
+      st.status === 'storage-failed' || st.status === 'needs-attention' || st.status === 'account-changed');
+  }
+  /* the frozen provider identity, never a display label */
+  function p1RangeProviderRequest(gate) {
+    if (!gate || gate.provider === 'all') return 'all';
+    return { mode: 'selected', id: String(gate.provider.id || ''), stableKey: String(gate.provider.stableKey || '') };
+  }
+  /* the ONE human toggle for full visit notes lives in this same card */
+  function p1RangeFullNotes() {
+    var box = $('mlsP1YearFullNotes');
+    return !!(box && box.checked === true);
+  }
+  function p1RangeReceiptLine(st) {
+    var s = (st && st.summary) || null, run = (st && st.run) || null;
+    if (!s) return '';
+    return s.complete + ' of ' + s.days + ' days done · ' + s.withRows + ' with appointments · ' +
+      s.empty + ' verified empty · ' + s.failed + ' still to retry · ' + s.needsAttention + ' need attention · ' +
+      (run ? run.skippedComplete : 0) + ' skipped as already verified.';
+  }
+  function p1RangeAttentionLine(st) {
+    var list = (st && st.summary && st.summary.attention) || [];
+    if (!list.length) return '';
+    return 'Needs attention: ' + list.slice(0, 6).map(function (row) {
+      return row.date + ' (' + String(row.reason || '').replace(/-/g, ' ') + ')';
+    }).join('; ') + (list.length > 6 ? '; …' : '') + '.';
+  }
+  /* mirror the durable day records into the panel's existing progress state so
+     the bar, the counts and the day list stay the ones the doctor knows */
+  function p1RangeSyncP(st) {
+    if (!P || !P.range || !st || !st.months) return false;
+    var month = st.months[P.range.ym];
+    if (!month || !month.days) return false;
+    P.dayStatus = {}; P.emptyDays = []; P.failedDays = [];
+    Object.keys(month.days).sort().forEach(function (key) {
+      var day = month.days[key] || {}, status = '';
+      if (day.status === 'complete') status = (day.reason === 'empty-day' || day.reason === 'provider-empty') ? 'empty' : 'done';
+      else if (day.status === 'retry' || day.status === 'needs-attention') status = 'failed';
+      else return;
+      P.dayStatus[key] = { status: status, error: status === 'failed' ? String(day.reason || '') : '' };
+      if (status === 'empty') P.emptyDays.push(key);
+      if (status === 'failed') P.failedDays.push(key);
+    });
+    return true;
+  }
+  function p1RangePaint(st) {
+    st = st || p1RangeState();
+    if (!st) return null;
+    p1RangeSyncP(st);
+    if (P) P.running = p1RangeRunning(st) && P.p1Owned === true;
+    var receipt = p1RangeReceiptLine(st), attention = p1RangeAttentionLine(st);
+    if (receipt) pSet('ez3PullNow2', receipt + (attention ? ' ' + attention : ''));
+    pCounts();
+    return st;
+  }
+  /* A job the boot resumed - or one this tab just asked for, whose manifest is
+     still being written behind the account lock - still has to paint here. The
+     grace ticks cover that admission gap; once the job is seen running the
+     watcher follows it to its end. */
+  function p1RangeWatch() {
+    if (p1RangeWatchTimer != null) return;
+    var grace = 10;
+    p1RangeWatchTimer = setInterval(function () {
+      var st = p1RangeState();
+      if (st && p1RangeRunning(st)) { grace = 0; p1RangePaint(st); return; }
+      if (grace > 0 && !st) { grace--; return; }
+      safe(function () { clearInterval(p1RangeWatchTimer); }); p1RangeWatchTimer = null;
+      if (st) p1RangePaint(st);
+    }, 600);
+  }
+  /* on Staff Prep mount: adopt a saved job so a reload shows it, resumable */
+  function p1RangeAdopt() {
+    if (!p1RangeApi() || (P && P.running)) return P;
+    var st = p1RangeState();
+    if (!st || st.status === 'cancelled') return P;
+    var monthKey = st.kind === 'month' ? String(st.target || '') : String(st.currentMonth || '');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) {
+      var keys = Object.keys(st.months || {}).sort();
+      monthKey = keys.length ? keys[keys.length - 1] : '';
+    }
+    var range = monthKey ? pullMonthRange(monthKey) : null;
+    if (!range) return P;
+    if (!P || !P.range || P.range.ym !== monthKey) { P = freshPull(range, ''); P.p1Owned = false; }
+    P.running = false;
+    p1RangeSyncP(st);
+    if (p1RangeRunning(st)) p1RangeWatch();
+    return P;
+  }
+  function p1RangeStatus(m, kind) {
+    pSet('ez3PullNow', String(m || ''));
+    if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : ''));
+    p1RangePaint();
+  }
+  function p1RangeSettled(result) {
+    var st = p1RangePaint((result && result.state) || null) || p1RangeState();
+    var status = (st && st.status) || (result && result.status) || '';
+    if (P) P.running = false;
+    if (status === 'complete') pSet('ez3PullNow', 'Verified ' + (P && P.range ? P.range.label : 'the month') + ' complete.');
+    else if (status === 'needs-attention') pSet('ez3PullNow', 'Finished — some days still need attention.');
+    else if (status === 'paused') pSet('ez3PullNow', 'Paused. Resume continues from the saved checkpoint.');
+    else if (status === 'cancelled') pSet('ez3PullNow', 'Cancelled. Days already saved stay saved.');
+    else if (status === 'waiting-login') pSet('ez3PullNow', 'athenaOne signed you out — sign in again and press Resume.');
+    else if (result && result.ok === false && !st) pSet('ez3PullNow', 'The month pull did not start: ' + String(result.reason || 'unknown') + '.');
+    else pSet('ez3PullNow', 'Stopped safely — press Resume to continue where it left off.');
+    pCounts(); safe(function () { if (isFn(window.loadCalendar)) window.loadCalendar(); }); render();
+  }
+  function p1RangeRun(promise) {
+    p1RangeWatch();
+    Promise.resolve(promise).then(function (result) {
+      if (result && result.ok === false && result.reason === 'job-busy') { p1RangeWatch(); return; }
+      p1RangeSettled(result || {});
+    }, function (err) {
+      if (P) P.running = false;
+      pSet('ez3PullNow', 'The month pull stopped safely.');
+      pSet('ez3PullNow2', String(err && err.message || err || 'Press Resume when Athena is ready.'));
+      pCounts();
+    });
+  }
+  function p1RangeResume() {
+    var api = p1RangeApi();
+    if (!api) return false;
+    if (P) P.p1Owned = true;
+    P && (P.running = true);
+    pSet('ez3PullNow', 'Resuming from the saved checkpoint…');
+    pCounts();
+    p1RangeRun(api.resume({ onStatus: p1RangeStatus }));
+    return true;
+  }
+  function p1RangeStartMonth(monthKey, range, gate) {
+    var api = p1RangeApi();
+    if (!api) return false;
+    var saved = p1RangeState();
+    /* a saved, unfinished job for THIS month is a resume, never a restart */
+    if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' &&
+        saved.kind === 'month' && saved.target === monthKey) return p1RangeResume();
+    if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' && saved.status !== 'needs-attention') {
+      pSet('ez3PullNow', 'A saved pull for ' + String(saved.kind === 'year' ? saved.target : saved.target) + ' is still unfinished.');
+      pSet('ez3PullNow2', 'Resume or cancel it before starting a different month.');
+      return true;
+    }
+    P = freshPull(range, gate.provider === 'all' ? 'all' : gate.provider.name);
+    P.running = true; P.cancelled = false; P.p1Owned = true;
+    pSet('ez3PullNow', 'Starting verified exact month pull…');
+    pSet('ez3PullNow2', 'Every verified day is saved as it finishes, so this survives a reload.');
+    pCounts();
+    p1RangeRun(api.startMonth(monthKey, {
+      provider: p1RangeProviderRequest(gate),
+      includeHistory: true,
+      pullVisitBodies: p1RangeFullNotes(),
+      fullNotes: p1RangeFullNotes(),
+      onStatus: p1RangeStatus
+    }));
+    return true;
+  }
+  /* ===== end p1-durable-month-1.0.0 ===== */
   function startMonthPull(retryOnly, rosterRetried) {
     if (P && P.running) return;
     var exact = safe(function () { return window.__mlsSI; }, null);
@@ -22262,6 +22459,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       pSet('ez3PullNow2', 'MLS tried to verify it automatically but could not read the Athena Day schedule — check that athenaOne is signed in, then press Start again.');
       plog('Roster auto-verify did not complete — is athenaOne signed in?', 'err');
       return;
+    }
+    /* p1-durable-month-1.0.0: the doctor-facing month pull IS the durable job.
+       Retry failed days is a Resume of that job - it re-runs only the days the
+       manifest still shows as unproved. The direct pullMonth below stays as
+       the engine call and the fallback when the range engine is absent. */
+    if (p1RangeApi()) {
+      if (retryOnly === true) { if (p1RangeResume()) return; }
+      else if (p1RangeStartMonth(exactMonth, exactRange, exactGate)) return;
     }
     /* Keep the progress owner's protocol value canonical. The narrower
        default wording belongs only in rendered labels above. */
@@ -22507,6 +22712,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
   function pullPanelHtml() {
+    /* p1-durable-month-1.0.0: a saved job is adopted before the panel is
+       built, so a reload lands on the unfinished month with its progress. */
+    p1RangeAdopt();
     var ymVal = ($('ez3sMonth') && $('ez3sMonth').value) || (P && P.range && P.range.ym) || prevYm();
     var running = !!(P && P.running);
     return '<div class="ez3-card ez3-pull">' +
@@ -22538,12 +22746,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<div class="plog" id="ez3PullLog" aria-live="polite"></div>' +
       '<div class="ez3-row2" style="margin:12px 0 0">' +
         '<button type="button" class="ez3-sm pri" id="ez3PullStart"' + (running ? ' style="display:none"' : '') + '>▶ Start month pull</button>' +
+        /* p1-durable-month-1.0.0: the durable job's own controls, in the
+           same panel. Visibility is decided in pCounts from the SAVED
+           manifest, so a reload shows the unfinished job with one click. */
+        '<button type="button" class="ez3-sm pri" id="ez3PullResume" style="display:none">▶ Resume month pull</button>' +
+        '<button type="button" class="ez3-sm" id="ez3PullPause" style="display:none">⏸ Pause</button>' +
         '<button type="button" class="ez3-sm warn" id="ez3PullRetry" style="display:none">↻ Retry failed days</button>' +
         '<button type="button" class="ez3-sm" id="ez3PullCancel"' + (running ? '' : ' style="display:none"') + '>✕ Cancel</button>' +
         '<button type="button" class="ez3-sm" id="ez3sPullToday">📥 Pull today only</button>' +
       '</div></div>';
   }
   function restorePullPanel() {
+    /* p1-durable-month-1.0.0: the re-render rebuilt the panel - put the
+       durable receipt and control state back into it. */
+    p1RangePaint();
     if (!P) return;
     /* re-render of staff view rebuilt the panel — restore live state into it */
     pCounts();
@@ -22602,7 +22818,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* v3.4: registry-based (delegated); range tabs + rows via data attributes */
     on('ez3PullStart', function () { startMonthPull(false); });
     on('ez3PullRetry', function () { startMonthPull(true); });
-    on('ez3PullCancel', cancelPullRun);
+    /* p1-durable-month-1.0.0: Pause/Resume/Cancel act on the durable job;
+       Cancel falls back to the in-tab cancel when no job is saved. */
+    on('ez3PullResume', function () { if (!p1RangeResume()) startMonthPull(true); });
+    on('ez3PullPause', function () {
+      var api = p1RangeApi();
+      if (!api) { cancelPullRun(); return; }
+      pSet('ez3PullNow', 'Pausing after the day that is already running...');
+      p1RangeRun(api.pause());
+    });
+    on('ez3PullCancel', function () {
+      var api = p1RangeApi();
+      if (api && p1RangeState()) { p1RangeRun(api.cancel()); return; }
+      cancelPullRun();
+    });
     on('ez3sPullToday', pullTodayProxy);
     on('ez3sAthenaApiCheck', function () {
       if (!isFn(window.updateAthenaStatus)) { athenaApiPrepNote = 'Athena API status is unavailable.'; render(); return; }

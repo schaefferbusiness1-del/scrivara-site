@@ -113,10 +113,14 @@ async function testWholeMonthReplay() {
 
   /* --- progress BY DAY, one line per day, in order, never skipping ------ */
   const progress = dayProgress(lines);
-  eq(progress.length, 28, 'the month did not announce one progress line per day');
   eq(progress[0].total, 28, 'the progress line does not carry the day total');
-  eq(progress.map(p => p.date).join(','), dayStates(h.manifest(), '2026-02').map(d => d.date).join(','),
-    'the announced day order is not the manifest day order');
+  eq(progress.slice(0, 28).map(p => p.date).join(','), dayStates(h.manifest(), '2026-02').map(d => d.date).join(','),
+    'the first pass did not announce every day once, in manifest order');
+  /* p1-range-continue-1.0.0: the range comes BACK for the retryable days -
+     two extra passes over exactly the two that failed, nothing else. */
+  eq(progress.length, 32, 'the range did not come back for the retryable days (got ' + progress.length + ' lines)');
+  eq(Array.from(new Set(progress.slice(28).map(p => p.date))).sort().join(','), '2026-02-10,2026-02-17',
+    'a later pass re-ran a day that was already proved');
 
   /* --- per-day checkpoints are DURABLE and carry the day's OWN verdict -- */
   const states = dayStates(h.manifest(), '2026-02');
@@ -125,23 +129,30 @@ async function testWholeMonthReplay() {
   eq(byDate['2026-02-03'].status, 'complete', 'a clean 3-row day did not checkpoint complete');
   eq(byDate['2026-02-03'].reason, 'complete', 'a day with appointments lost its verdict');
   eq(byDate['2026-02-01'].reason, 'provider-empty', 'a verified-empty day is indistinguishable from a day with patients');
-  eq(byDate['2026-02-10'].status, 'retry', 'a day that lost two charts was marked complete');
+  /* three genuine attempts, then the day is SETTLED as needs-attention with
+     its own cause - never retried forever, never silently dropped */
+  eq(byDate['2026-02-10'].status, 'needs-attention', 'a day that lost two charts three times is still being retried');
+  eq(byDate['2026-02-10'].attempts, 3, 'the attempt cap is not 3 (got ' + byDate['2026-02-10'].attempts + ')');
   eq(byDate['2026-02-10'].reason, 'history-partial',
     'the failed day did not keep the importer\'s own cause (got ' + byDate['2026-02-10'].reason + ')');
   eq(byDate['2026-02-17'].reason, 'schedule-incomplete',
     'the unsettled-grid day did not keep its own cause (got ' + byDate['2026-02-17'].reason + ')');
   ok(byDate['2026-02-10'].reason !== byDate['2026-02-17'].reason,
     'two different failures were flattened into one durable reason');
-  eq(h.manifest().status, 'waiting-retry', 'a month with two failed days claimed a terminal state');
+  eq(h.manifest().status, 'needs-attention', 'a settled month with two capped days did not settle');
 
-  /* --- the completion receipt: done / with rows / empty / failed / skipped */
+  /* --- the completion receipt: done / rows / empty / failed / attention --- */
   const summary = h.manifest().summary;
   eq(summary.days, 28, 'the receipt lost the day total');
   eq(summary.complete, 26, 'the receipt miscounted completed days');
   eq(summary.empty, 25, 'the receipt cannot say how many days Athena verified empty');
   eq(summary.withRows, 1, 'the receipt cannot say how many days actually held appointments');
-  eq(summary.failed, 2, 'the receipt miscounted days still to retry');
+  eq(summary.failed, 0, 'a capped day is still being reported as retryable');
+  eq(summary.needsAttention, 2, 'the receipt miscounted days needing attention');
   eq(summary.pending, 0, 'a day was left unaccounted for');
+  eq(summary.attention.map(a => a.date + ':' + a.reason).join(','),
+    '2026-02-10:history-partial,2026-02-17:schedule-incomplete',
+    'the receipt does not LIST the days needing attention with their own reasons');
   eq(h.manifest().run.skippedComplete, 0, 'a first run claimed it skipped verified work');
   eq(h.manifest().run.plannedDays, 28, 'a first run did not plan every day');
 
@@ -152,8 +163,10 @@ async function testWholeMonthReplay() {
   eq(census.uniqueAppointments, 7, 'the same Athena appointment was stored twice');
 
   /* --- empty days are not paid for: ed-1.0.0 over a whole month --------- */
-  const emptyDayNav = h.gotoDates.filter(d => !['2026-02-03', '2026-02-10'].includes(d)).length;
-  eq(emptyDayNav, 26, 'the month did not visit each empty day exactly once');
+  const emptyDays = h.gotoDates.filter(d => !['2026-02-03', '2026-02-10', '2026-02-17'].includes(d));
+  eq(emptyDays.length, 25, 'the month did not visit each verified-empty day exactly once');
+  eq(new Set(emptyDays).size, 25, 'a verified-empty day was navigated more than once');
+  eq(h.gotoDates.filter(d => d === '2026-02-17').length, 3, 'the failing day was not retried exactly to the cap');
   eq(h.chartCalls.filter(c => !['2026-02-03', '2026-02-10'].includes(c.day)).length, 0,
     'an Athena chart was opened on a verified-empty day');
   eq(h.noteCalls.filter(c => !['2026-02-03', '2026-02-10'].includes(c.onlyDate)).length, 0,
@@ -337,20 +350,23 @@ async function testLoginExpiryMidRun() {
     provider: PROVIDER,
     onStatus: m => { if (/^Month pull \d+\/\d+: /.test(String(m))) { seen++; if (seen === 5) h.setLoginExpired(true); } }
   });
-  eq(result.status, 'waiting-retry', 'an expired athenaOne sign-in did not leave a resumable job');
-  eq(result.reason, 'no-read',
-    'the job does not name the ONE cause the importer proved (got ' + result.reason + ')');
-  eq(tap.results[0].reason, 'month-stopped-systemic', 'the importer did not stop the sweep systemically');
+  /* p1-range-signout-1.0.0: the extension's bounded session probe turns an
+     ambiguous `no-read` into a sign-in problem, so the job WAITS for a login
+     instead of burning the month's retry budget. */
+  eq(result.status, 'waiting-login', 'an athenaOne sign-out did not put the job in waiting-login');
+  eq(result.reason, 'athena-session-expired',
+    'the job does not name the sign-out (got ' + result.reason + ')');
 
   const states = dayStates(h.manifest(), '2026-02');
   const proved = states.filter(s => s.status === 'complete');
   eq(proved.length, 4, 'the four days proved before the sign-in expired were lost');
-  eq(states.filter(s => s.reason === 'no-read').length, 3,
-    'the days that hit the expired sign-in are not marked with that cause');
-  eq(states.filter(s => s.reason === 'not-attempted-after-systemic-failure').length, 21,
-    'the days after the systemic stop were silently dropped instead of queued');
-  eq(states.filter(s => s.status === 'pending').length, 0, 'a day was left in limbo by the systemic stop');
-  eq(h.gotoDates.length, 7, 'the sweep kept driving Athena after three identical failures');
+  const signedOut = states.filter(s => s.reason === 'athena-session-expired');
+  eq(signedOut.length, 1, 'the sign-out was not confined to the one day that hit it');
+  eq(signedOut[0].date, '2026-02-05', 'the sign-out was recorded on the wrong day');
+  eq(signedOut[0].attempts, 0, 'a sign-out spent one of that day\'s three retry attempts');
+  eq(states.filter(s => s.status === 'needs-attention').length, 0,
+    'a sign-out pushed days past the attempt cap');
+  eq(h.gotoDates.length, 5, 'the sweep kept driving Athena after athenaOne signed out');
 
   /* the doctor signs back in and presses Resume */
   h.setLoginExpired(false);
@@ -362,6 +378,19 @@ async function testLoginExpiryMidRun() {
   eq(h.manifest().run.skippedComplete, 4, 'the receipt cannot say what the recovery skipped');
   eq(h.census().uniqueIds, 2, 'recovery after a sign-in expiry duplicated appointments');
   range.revert();
+
+  /* CONTROL: the SAME unreadable day WITHOUT the session probe must stay a
+     retryable read failure, not a login wait - the classification is the
+     probe, not the word "no-read". */
+  const plain = makeMonthHarness({ today: '2026-03-15' });
+  plain.scheduleErrorDays.add('2026-02-05');
+  const plainRange = plain.installRangeJobs();
+  const plainResult = await plainRange.startMonth('2026-02', { provider: PROVIDER, onStatus: () => {} });
+  ok(plainResult.status !== 'waiting-login', 'a plain unreadable grid was mis-classified as a sign-out');
+  const plainDay = dayStates(plain.manifest(), '2026-02').find(s => s.date === '2026-02-05');
+  ok(plainDay.reason !== 'athena-session-expired', 'a plain read failure claimed athenaOne signed out');
+  eq(plainDay.attempts, 3, 'a plain read failure did not spend its retry budget');
+  plainRange.revert();
 }
 
 /* ======================================================================== 5 ==
@@ -432,10 +461,15 @@ async function testAccountZoneAheadOfEasternStillCompletes() {
   eq(preStates.length, 17, 'the pre-fix control did not reproduce the extra day - the control proves nothing');
   eq(preResult.complete, false, 'the pre-fix control completed - the divergence is not what stalled the month');
   eq(preStates[preStates.length - 1].reason, 'not-attempted', 'the pre-fix control failed for some other reason');
+  /* it can never converge: the day is dropped by the importer every time, so
+     it is never even ATTEMPTED - it cannot complete and cannot reach the
+     attempt cap either. Two Resumes, same stuck day. */
   await preFix.resume({});
-  eq(before.manifest().months['2026-03'].days['2026-03-17'].attempts, 2,
-    'the pre-fix control did not re-attempt the impossible day on Resume');
-  eq(before.manifest().status !== 'complete', true, 'the pre-fix control eventually completed - it should never');
+  await preFix.resume({});
+  const stuck = before.manifest().months['2026-03'].days['2026-03-17'];
+  eq(stuck.status, 'retry', 'the pre-fix control settled the impossible day somehow');
+  eq(stuck.reason, 'not-attempted', 'the pre-fix control failed for some other reason');
+  ok(before.manifest().status !== 'complete', 'the pre-fix control eventually completed - it should never');
   preFix.revert();
 }
 
@@ -453,34 +487,76 @@ async function testYearIsMonthsChained() {
   const range = h.installRangeJobs();
 
   const first = await range.startYear(2026, { provider: PROVIDER, onStatus: () => {} });
-  eq(first.status, 'waiting-retry', 'a year with one failed day claimed a terminal state');
-  eq(tap.calls.map(c => c.month).join(','), '2026-01,2026-02', 'the year did not stop at the incomplete month');
+
+  /* p1-range-continue-1.0.0, the ruling: February losing a day must NOT stop
+     March, and the range must come BACK to February at the end. */
+  const monthOrder = tap.calls.map(c => c.month);
+  eq(monthOrder.slice(0, 3).join(','), '2026-01,2026-02,2026-03',
+    'a partial February stopped the year instead of continuing to March');
+  eq(monthOrder.slice(3).join(','), '2026-02,2026-02',
+    'the range did not come back to the retryable month at the end (got ' + monthOrder.slice(3).join(',') + ')');
+  eq(tap.calls[3].dates.join(','), '2026-02-11', 'the February retry re-ran days it had already proved');
+  eq(first.status, 'needs-attention', 'a bounded, settled year did not settle');
+
   const manifest = h.manifest();
   eq(Object.keys(manifest.months).sort().join(','), '2026-01,2026-02,2026-03', 'the year queued future months');
   eq(manifest.months['2026-01'].status, 'complete', 'January completion was not durable');
-  eq(manifest.months['2026-02'].status, 'retry', 'the month that lost a day was promoted');
-  eq(manifest.months['2026-03'].status, 'pending', 'a month after the failure was silently consumed');
+  eq(manifest.months['2026-03'].status, 'complete', 'March never ran because February failed');
+  eq(manifest.months['2026-02'].status, 'needs-attention', 'the capped month is still claiming retryable work');
+  eq(manifest.months['2026-02'].days['2026-02-11'].attempts, 3, 'the per-day attempt cap did not hold at 3');
   eq(manifest.summary.months, 3, 'the year receipt lost its month count');
-  eq(manifest.summary.completeMonths, 1, 'the year receipt miscounted complete months');
-  eq(manifest.summary.failed, 1, 'the year receipt miscounted days still to retry');
+  eq(manifest.summary.completeMonths, 2, 'the year receipt miscounted complete months');
+  eq(manifest.summary.failed, 0, 'a capped day is still being reported as retryable');
+  eq(manifest.summary.needsAttention, 1, 'the year receipt miscounted days needing attention');
+  eq(manifest.summary.attention.map(a => a.date + ':' + a.reason).join(','), '2026-02-11:schedule-incomplete',
+    'the year receipt does not LIST the day that needs attention');
   const januaryNav = h.gotoDates.filter(d => d.slice(0, 7) === '2026-01').length;
   eq(januaryNav, 31, 'January was not pulled exactly once');
+  eq(h.gotoDates.filter(d => d === '2026-02-11').length, 3, 'the failing day was not retried exactly to the cap');
 
-  /* the failure recovers: only the ONE day re-runs, then the year continues */
+  /* the failure recovers: an explicit Resume re-arms exactly that day */
   h.incompleteDays.clear();
   const callsBefore = tap.calls.length;
   const done = await range.resume({ onStatus: () => {} });
   eq(done.complete, true, 'the year did not finish after its one failed day recovered');
   const retried = tap.calls.slice(callsBefore);
-  eq(retried.map(c => c.month).join(','), '2026-02,2026-03', 'the resume restarted a completed month');
-  eq(retried[0].dates.join(','), '2026-02-11', 'the February retry re-ran days it had already proved');
+  eq(retried.map(c => c.month).join(','), '2026-02', 'the resume restarted a completed month');
+  eq(retried[0].dates.join(','), '2026-02-11', 'the resume re-ran days it had already proved');
   eq(h.gotoDates.filter(d => d.slice(0, 7) === '2026-01').length, januaryNav,
     'January restarted because February failed');
   eq(h.manifest().summary.completeMonths, 3, 'the finished year does not report three complete months');
   eq(h.manifest().summary.days, 31 + 28 + 15, 'the year receipt lost days');
+  eq(h.manifest().summary.needsAttention, 0, 'the recovered year still lists a day needing attention');
   eq(h.census().uniqueIds, 4, 'the chained year duplicated appointments');
   eq(h.locksHeld().length, 0, 'the finished year still holds a Web Lock');
   eq(h.store.has(h.monthOwnerKey()), false, 'the finished year left the month-owner record held');
+  range.revert();
+}
+
+/* ======================================================================== 7b =
+ * The other half of the ruling: continuing past a PARTIAL month is right, but
+ * continuing past a second month that died the SAME systemic way would just
+ * machine-gun Athena. Two in a row stops the range and names the one cause.
+ * ========================================================================== */
+async function testTwoSystemicMonthsStopTheRange() {
+  const h = makeMonthHarness({ today: '2026-03-15' });
+  /* every day of January and February fails its schedule read the same way */
+  for (let d = 1; d <= 31; d++) {
+    h.scheduleErrorDays.add('2026-01-' + String(d).padStart(2, '0'));
+    if (d <= 28) h.scheduleErrorDays.add('2026-02-' + String(d).padStart(2, '0'));
+  }
+  const tap = { calls: [], results: [] };
+  tapMonth(h, tap);
+  const range = h.installRangeJobs();
+  const result = await range.startYear(2026, { provider: PROVIDER, onStatus: () => {} });
+
+  eq(tap.calls.map(c => c.month).join(','), '2026-01,2026-02',
+    'the range kept walking months that were all dying the same way');
+  eq(result.status, 'waiting-retry', 'a systemic outage settled the year instead of leaving it resumable');
+  eq(result.reason, 'no-read', 'the range did not name the ONE systemic cause (got ' + result.reason + ')');
+  eq(h.manifest().months['2026-03'].status, 'pending', 'March was consumed by the systemic stop');
+  /* the importer's own 3-strike breaker still bounds each month */
+  eq(h.gotoDates.length, 6, 'the range drove Athena more than three days per systemic month');
   range.revert();
 }
 
@@ -522,8 +598,9 @@ async function main() {
   await testNoFutureDayIsTouched();
   await testAccountZoneAheadOfEasternStillCompletes();
   await testYearIsMonthsChained();
+  await testTwoSystemicMonthsStopTheRange();
   await testCancelIsCleanAndReleasesTheLease();
-  console.log('PASS 1p-rangejobs-harness-runtime: ' + checks + ' checks - a whole synthetic month replayed through the REAL /1p importer under the REAL range engine: every day checkpoints durably with its own verdict (empty-day / history-partial / schedule-incomplete, no longer one generic code), Pause after day 9 and a browser close both resume without re-pulling one proved day, an expired athenaOne sign-in stops the sweep after three identical failures and names that one cause, a repeat month pull adds no duplicate appointment or patient, no future day is queued/navigated/note-read while today\'s own note still is, the queue is clamped to the day the importer itself will accept, and a year runs month by month so October can never restart January');
+  console.log('PASS 1p-rangejobs-harness-runtime: ' + checks + ' checks - a whole synthetic month and year replayed through the REAL /1p importer under the REAL range engine: every day checkpoints durably with its OWN verdict (empty-day / history-partial / schedule-incomplete, no longer one generic code); a failing day is retried to a cap of 3 and then settles as needs-attention, listed on the receipt with its reason, so one bad day never blocks a later month and never spins forever; February failing does not stop March and never restarts January; two months dying the same systemic way DO stop the range and name that cause; an athenaOne sign-out is classified by the extension\'s bounded session probe into waiting-login without spending a retry (a probe-less unreadable grid still is not); Pause after day 9, a browser close, and a login recovery all resume without re-pulling one proved day; a repeat month pull adds no duplicate appointment or patient; no future day is queued/navigated/note-read while today\'s own note still is; and the queue is clamped to the day the importer itself will accept');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-rangejobs-harness-runtime did not finish')); process.exit(1); }, 600000);
