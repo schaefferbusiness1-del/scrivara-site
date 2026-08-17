@@ -51,13 +51,22 @@
   function pad2(value) { return value < 10 ? '0' + value : String(value); }
   function daysInMonth(year, month) { return new Date(Date.UTC(year, month, 0)).getUTCDate(); }
 
+  /* ===== p1-range-continue-1.0.0 (one bad day must not block the year) =====
+     Lead ruling 2026-08-17: a year may NOT stop at the first partial month. It
+     runs every month, then comes back for the retryable days, BOUNDED: after
+     DAY_ATTEMPT_CAP genuine attempts a day becomes 'needs-attention' - it
+     keeps its own specific reason, stops being retried automatically, is
+     listed on the receipt, and never blocks a later month. RANGE_MAX_PASSES is
+     a hard stop so no manifest shape can spin the chain. */
+  var DAY_ATTEMPT_CAP = 3;
+  var RANGE_MAX_PASSES = 3;
   var JOB_STATUS = {
     pending: 1, running: 1, paused: 1, 'waiting-login': 1,
-    'waiting-retry': 1, cancelled: 1, complete: 1,
+    'waiting-retry': 1, cancelled: 1, complete: 1, 'needs-attention': 1,
     'account-changed': 1, 'storage-failed': 1
   };
-  var MONTH_STATUS = { pending: 1, running: 1, retry: 1, complete: 1 };
-  var DAY_STATUS = { pending: 1, retry: 1, complete: 1 };
+  var MONTH_STATUS = { pending: 1, running: 1, retry: 1, complete: 1, 'needs-attention': 1 };
+  var DAY_STATUS = { pending: 1, retry: 1, complete: 1, 'needs-attention': 1 };
   var REASONS = {
     '': 1, complete: 1, pending: 1, paused: 1, cancelled: 1,
     'account-changed': 1, 'job-exists': 1, 'job-busy': 1,
@@ -74,11 +83,45 @@
     'not-attempted-after-systemic-failure': 1, 'not-attempted': 1,
     exception: 1, 'no-result': 1, 'pull-failed': 1,
     'range-lock-unavailable': 1, 'range-lock-denied': 1,
-    'manifest-invalid': 1, 'importer-not-ready': 1
+    'manifest-invalid': 1, 'importer-not-ready': 1,
+    /* ===== p1-range-reasons-1.0.0 (the day's own verdict, not a generic) =====
+       MEASURED 2026-08-17 against the REAL importer: a day that failed its
+       history batch reported `history-partial` and a day whose Athena grid
+       never settled reported `schedule-incomplete`; every reason outside this
+       table collapsed to `pull-failed`, so the durable receipt could not tell
+       the doctor which of the two happened. These are the exact verdicts
+       cloned-feat_mls_schedimport_exact.js can put on a day or a month. */
+    'history-partial': 1, 'calendar-partial': 1, 'identity-bootstrap-partial': 1,
+    'provider-unverified': 1, 'history-store-empty': 1, 'history-store-unmeasured': 1,
+    'empty-day': 1, 'provider-empty': 1, 'complete-schedule-only': 1,
+    'complete-appointment-census-only': 1, 'complete-appointment-census-with-history': 1,
+    'complete-appointment-census-history-partial': 1,
+    'invalid-month': 1, 'month-exception': 1, 'schedule-parse-timeout': 1,
+    'account-scope-unverified': 1, unclassified: 1, 'needs-attention': 1
+    /* ===== end p1-range-reasons-1.0.0 ===== */
   };
+  /* A day whose Athena schedule was verified to hold no appointments. Both
+     codes come from the importer's own completion branch. */
+  var EMPTY_REASONS = { 'empty-day': 1, 'provider-empty': 1 };
   var LOGIN_REASONS = {
     signin: 1, 'signin-expired': 1, 'session-expired': 1,
     'athena-session-expired': 1, 'no-athena-tab': 1
+  };
+  /* p1-range-signout-1.0.0: read failures that are AMBIGUOUS on their own -
+     they mean "no readable schedule" whether athenaOne signed out or the grid
+     simply never painted. The importer's bounded session probe (sx-1.1,
+     forwarded as checkpoint.sessionExpired) is what settles it; with no probe
+     the reason stands as it is and today's behaviour is unchanged. */
+  var SIGNOUT_CANDIDATE_REASONS = {
+    'no-read': 1, 'nav-failed': 1, 'no-athena-tab': 1,
+    'unverified-day': 1, 'schedule-incomplete': 1, exception: 1
+  };
+  /* A day that was never DRIVEN did not spend an attempt. Counting these
+     would let one athenaOne outage burn every day's retry budget. */
+  var NON_ATTEMPT_REASONS = {
+    'not-attempted': 1, 'not-attempted-after-systemic-failure': 1,
+    'stopped-by-user': 1, 'month-owner-unverified': 1, paused: 1, cancelled: 1,
+    'metadata-persist-failed': 1, 'storage-full': 1, 'storage-full-writes-failing': 1
   };
 
   function reasonCode(value) {
@@ -128,8 +171,8 @@
     }, '');
     return cleanText(zone, 80) || 'America/New_York';
   }
-  function todayKey() {
-    var date = new Date(now()), zone = accountTimezone();
+  function zoneDayKey(zone) {
+    var date = new Date(now());
     var parts = safe(function () {
       return new Intl.DateTimeFormat('en-CA', {
         timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit'
@@ -140,14 +183,77 @@
       for (var i = 0; i < parts.length; i++) if (parts[i] && parts[i].type) values[parts[i].type] = parts[i].value;
       if (values.year && values.month && values.day) return values.year + '-' + values.month + '-' + values.day;
     }
-    /* Invalid account timezone or missing Intl must not move the boundary via
-       UTC. Fail closed rather than queue an unproven future/past day. */
+    /* Invalid timezone or missing Intl must not move the boundary via UTC.
+       Fail closed rather than queue an unproven future/past day. */
     return '';
   }
+  function todayKey() { return zoneDayKey(accountTimezone()); }
+  /* ===== p1-range-daybound-1.0.0 (queue no day the importer will refuse) =====
+     MEASURED 2026-08-17 (tests/1p-rangejobs-harness-runtime.test.js, real
+     importer): the importer's monthDateKeys() bounds a month with its OWN
+     EASTERN day (estTodayKey, EST_TZ), while this module bounded it with the
+     ACCOUNT timezone. For an account zone AHEAD of Eastern (Asia/Tokyo at
+     16:00Z) the two disagree by one day: the job queued 2026-03-17, the
+     importer silently dropped it from `dates`, so it never appeared in
+     result.days, was checkpointed 'not-attempted', and the month could NEVER
+     reach complete - every Resume re-attempted the same impossible day.
+     The queued range is now the EARLIER of the two days: fail closed toward a
+     day both sides agree exists. */
+  var IMPORTER_DAY_ZONE = 'America/New_York';
+  function queueBoundDayKey() {
+    var accountDay = todayKey(), importerDay = zoneDayKey(IMPORTER_DAY_ZONE);
+    if (!accountDay || !importerDay) return '';
+    return accountDay < importerDay ? accountDay : importerDay;
+  }
+  /* ===== end p1-range-daybound-1.0.0 ===== */
 
+  /* ===== p1-range-receipt-1.0.0 (a completion receipt the doctor can read) ==
+     The owner's requirement is a receipt that names days done / failed /
+     skipped / empty. Every count here is DERIVED from the day records on each
+     write and recomputed on every read, so a stale or hand-edited stored
+     summary can never claim more than the days themselves prove. Counts and
+     bounded codes only - no identity, no PHI. */
+  function summarize(manifest) {
+    var out = { days: 0, complete: 0, empty: 0, withRows: 0, failed: 0, pending: 0,
+      needsAttention: 0, months: 0, completeMonths: 0, attention: [] };
+    if (!manifest || !manifest.months) return out;
+    var monthKeys = Object.keys(manifest.months);
+    out.months = monthKeys.length;
+    for (var mi = 0; mi < monthKeys.length; mi++) {
+      var month = manifest.months[monthKeys[mi]] || {};
+      if (month.status === 'complete') out.completeMonths++;
+      var dayKeys = month.days ? Object.keys(month.days).sort() : [];
+      for (var di = 0; di < dayKeys.length; di++) {
+        var day = month.days[dayKeys[di]] || {};
+        out.days++;
+        if (day.status === 'complete') {
+          out.complete++;
+          if (EMPTY_REASONS[day.reason] === 1) out.empty++; else out.withRows++;
+        } else if (day.status === 'needs-attention') {
+          /* p1-range-continue-1.0.0: the receipt LISTS these - a date and a
+             bounded code, nothing else - so the doctor can act on them. */
+          out.needsAttention++;
+          if (out.attention.length < 60) out.attention.push({ date: dayKeys[di], reason: day.reason });
+        } else if (day.status === 'retry') out.failed++;
+        else out.pending++;
+      }
+    }
+    return out;
+  }
+  function sanitizeRun(raw) {
+    raw = raw && typeof raw === 'object' ? raw : null;
+    function bounded(value) { return Math.max(0, Math.min(400, Math.floor(Number(value || 0) || 0))); }
+    return {
+      startedAt: finiteStamp(raw && raw.startedAt),
+      skippedComplete: bounded(raw && raw.skippedComplete),
+      plannedDays: bounded(raw && raw.plannedDays)
+    };
+  }
+  /* ===== end p1-range-receipt-1.0.0 ===== */
   function writeManifestAt(key, manifest) {
     if (!key || !manifest) return { ok: false, reason: 'metadata-persist-failed' };
     manifest.updatedAt = now();
+    manifest.summary = summarize(manifest);
     var raw = safe(function () { return JSON.stringify(manifest); }, '');
     if (!raw) return { ok: false, reason: 'metadata-persist-failed' };
     try {
@@ -203,10 +309,16 @@
         if (!new RegExp('^' + monthKey.replace('-', '\\-') + '-(0[1-9]|[12]\\d|3[01])$').test(dayKey) || !dayRaw || typeof dayRaw !== 'object') return null;
         var dayNumber = Number(dayKey.slice(8, 10));
         if (dayNumber > daysInMonth(Number(dayKey.slice(0, 4)), Number(dayKey.slice(5, 7))) || dayKey > today) return null;
+        var dayStatus = DAY_STATUS[String(dayRaw.status || '')] ? String(dayRaw.status) : 'retry';
+        var dayAttempts = Math.max(0, Math.min(1000, Math.floor(Number(dayRaw.attempts || 0) || 0)));
+        /* p1-range-continue-1.0.0: a day at the cap is settled whatever the
+           stored status says - including manifests written before the cap
+           existed. The cap is enforced on READ as well as on write. */
+        if (dayStatus === 'retry' && dayAttempts >= DAY_ATTEMPT_CAP) dayStatus = 'needs-attention';
         days[dayKey] = {
-          status: DAY_STATUS[String(dayRaw.status || '')] ? String(dayRaw.status) : 'retry',
+          status: dayStatus,
           reason: reasonCode(dayRaw.reason),
-          attempts: Math.max(0, Math.min(1000, Math.floor(Number(dayRaw.attempts || 0) || 0))),
+          attempts: dayAttempts,
           updatedAt: finiteStamp(dayRaw.updatedAt)
         };
       }
@@ -226,7 +338,7 @@
     if (status === 'complete') {
       for (var completeMonth in months) if (own(months, completeMonth) && months[completeMonth].status !== 'complete') { status = 'waiting-retry'; break; }
     }
-    return {
+    var clean = {
       v: MANIFEST_VERSION,
       build: cleanText(raw.build, 100) || VERSION,
       jobId: cleanText(raw.jobId, 100) || ('range-' + finiteStamp(raw.createdAt)),
@@ -245,8 +357,16 @@
       lastCheckpointAt: finiteStamp(raw.lastCheckpointAt),
       completedAt: finiteStamp(raw.completedAt),
       currentMonth: currentMonth,
+      run: sanitizeRun(raw.run),
       months: months
     };
+    /* p1-range-continue-1.0.0: a job cannot claim it is settled while a day is
+       still retryable, and cannot claim retryable work that no longer exists. */
+    if (clean.status === 'needs-attention' && anyRetryable(clean)) clean.status = 'waiting-retry';
+    else if (clean.status === 'waiting-retry' && !anyRetryable(clean) && !allComplete(clean)) clean.status = 'needs-attention';
+    /* p1-range-receipt-1.0.0: never trust a stored summary - recount. */
+    clean.summary = summarize(clean);
+    return clean;
   }
   function readManifestAt(key) {
     var read = readRawAt(key);
@@ -308,7 +428,7 @@
     return stored ? { ok: true, stored: stored } : { ok: false, reason: 'invalid-provider' };
   }
   function createManifest(kind, target, opts, provider) {
-    var stamp = now(), months = createMonths(kind, target, todayKey(), stamp);
+    var stamp = now(), months = createMonths(kind, target, queueBoundDayKey(), stamp);
     if (!months) return null;
     var explicitFullNotes = typeof opts.pullVisitBodies === 'boolean'
       ? opts.pullVisitBodies : (typeof opts.fullNotes === 'boolean' ? opts.fullNotes : false);
@@ -322,7 +442,7 @@
       options: { includeHistory: opts.includeHistory !== false, fullNotes: explicitFullNotes === true },
       status: 'pending', reason: 'pending', createdAt: stamp, startedAt: 0,
       updatedAt: stamp, lastCheckpointAt: 0, completedAt: 0,
-      currentMonth: '', months: months
+      currentMonth: '', run: sanitizeRun(null), months: months
     };
   }
 
@@ -431,18 +551,51 @@
     } };
   }
 
+  /* p1-range-continue-1.0.0: a day is RETRYABLE while it is unproved and has
+     spent fewer than DAY_ATTEMPT_CAP genuine attempts. Past the cap it is
+     'needs-attention': settled, listed, never retried automatically again. */
+  function dayRetryable(day) {
+    return !!day && day.status !== 'complete' && day.status !== 'needs-attention' &&
+      Number(day.attempts || 0) < DAY_ATTEMPT_CAP;
+  }
   function pendingDates(month) {
-    return Object.keys(month.days).sort().filter(function (day) { return month.days[day].status !== 'complete'; });
+    return Object.keys(month.days).sort().filter(function (day) { return dayRetryable(month.days[day]); });
   }
   function monthComplete(month) {
     var days = Object.keys(month.days);
     for (var i = 0; i < days.length; i++) if (month.days[days[i]].status !== 'complete') return false;
     return !!days.length;
   }
+  function monthRetryable(month) {
+    var days = Object.keys(month.days);
+    for (var i = 0; i < days.length; i++) if (dayRetryable(month.days[days[i]])) return true;
+    return false;
+  }
   function allComplete(manifest) {
     var months = Object.keys(manifest.months);
     for (var i = 0; i < months.length; i++) if (manifest.months[months[i]].status !== 'complete') return false;
     return !!months.length;
+  }
+  function anyRetryable(manifest) {
+    var months = Object.keys(manifest.months);
+    for (var i = 0; i < months.length; i++) if (monthRetryable(manifest.months[months[i]])) return true;
+    return false;
+  }
+  /* An explicit human Resume on a settled needs-attention job is a NEW intent:
+     re-arm exactly those days for one more bounded round. The automatic boot
+     resume never reaches here - it only resumes running/pending/waiting-login. */
+  function rearmAttention(manifest) {
+    var months = Object.keys(manifest.months), rearmed = 0;
+    for (var mi = 0; mi < months.length; mi++) {
+      var month = manifest.months[months[mi]], days = Object.keys(month.days);
+      for (var di = 0; di < days.length; di++) {
+        var day = month.days[days[di]];
+        if (day.status !== 'needs-attention') continue;
+        day.status = 'retry'; day.attempts = 0; day.updatedAt = now(); rearmed++;
+      }
+      if (month.status === 'needs-attention') { month.status = 'retry'; month.updatedAt = now(); }
+    }
+    return rearmed;
   }
   function checkpointDay(ctx, monthKey, payload, seen) {
     if (!payload || typeof payload !== 'object') return false;
@@ -454,11 +607,28 @@
     if (!month || !own(month.days, date)) return false;
     var day = month.days[date], first = !seen[date];
     seen[date] = 1;
-    if (first) day.attempts = Math.min(1000, Number(day.attempts || 0) + 1);
     var complete = payload.ok === true && payload.complete === true;
-    var code = complete ? 'complete' : reasonCode(payload.reason || 'pull-failed');
+    /* p1-range-reasons-1.0.0: keep the importer's OWN verdict on both arms. A
+       complete day says HOW it completed (`empty-day`/`provider-empty` is the
+       difference between "Athena verified no appointments" and "16 charts
+       landed"), and a failed day keeps its specific cause instead of a
+       generic one. */
+    var code = reasonCode(payload.reason || (complete ? 'complete' : 'pull-failed'));
     if (payload.loginExpired === true || payload.athenaSignedOutSuspected === true) code = 'no-athena-tab';
-    day.status = complete ? 'complete' : 'retry';
+    /* ===== p1-range-signout-1.0.0 (a sign-out is a sign-in problem) =====
+       Lead ruling 2026-08-17. `no-read`/`nav-failed` are ambiguous alone; the
+       importer's bounded session probe rides the checkpoint as ONE boolean
+       (p1-month-signout-1.0.0). With the probe positive this is a sign-out and
+       the job must wait for a sign-in, not burn retries. With no probe the
+       reason is untouched and behaviour is exactly what it was. */
+    if (payload.sessionExpired === true && SIGNOUT_CANDIDATE_REASONS[code] === 1) code = 'athena-session-expired';
+    /* ===== end p1-range-signout-1.0.0 ===== */
+    /* p1-range-continue-1.0.0: only a day Athena was actually DRIVEN through
+       spends an attempt, and only such a day can reach the cap. */
+    var attemptable = !complete && NON_ATTEMPT_REASONS[code] !== 1 && !isLoginReason(code);
+    if (first && attemptable) day.attempts = Math.min(1000, Number(day.attempts || 0) + 1);
+    day.status = complete ? 'complete'
+      : (attemptable && Number(day.attempts || 0) >= DAY_ATTEMPT_CAP ? 'needs-attention' : 'retry');
     day.reason = code;
     day.updatedAt = now();
     month.updatedAt = day.updatedAt;
@@ -486,7 +656,12 @@
         complete: row.complete === true,
         reason: row.reason || receipt.reason,
         loginExpired: receipt.loginExpired === true,
-        athenaSignedOutSuspected: receipt.athenaSignedOutSuspected === true
+        athenaSignedOutSuspected: receipt.athenaSignedOutSuspected === true,
+        /* p1-range-signout-1.0.0: the same bounded probe the per-day callback
+           carries, read off the full day receipt on the settling path. */
+        sessionExpired: row.sessionExpired === true || receipt.schedSessionLikelyExpired === true ||
+          receipt.navSessionLikelyExpired === true || receipt.athenaSignedOutSuspected === true ||
+          !!(receipt.historyReceipt && receipt.historyReceipt.sessionExpired === true)
       }, seen);
     }
     /* A day callback settles before the month owner's final release proof. If
@@ -495,9 +670,19 @@
        never promote an unverified month to complete. */
     var finalRetry = result && result.retry && Array.isArray(result.retry.dates) ? result.retry.dates : [];
     for (var ri = 0; ri < finalRetry.length && !ctx.storageFailure; ri++) {
-      if (dates.indexOf(String(finalRetry[ri] || '').slice(0, 10)) < 0) continue;
+      var retryDate = String(finalRetry[ri] || '').slice(0, 10);
+      if (dates.indexOf(retryDate) < 0) continue;
+      /* p1-range-reasons-1.0.0: the importer puts EVERY failed day in
+         retry.dates, so re-checkpointing all of them overwrote each day's
+         specific cause with the month-level one (MEASURED: a history failure
+         and a schedule-incomplete day both ended up reading `month-partial`).
+         Only a day the per-day walk left GREEN - or never reported at all -
+         needs this final receipt. */
+      var retryMonth = ctx.manifest.months[monthKey];
+      var retryDay = retryMonth && own(retryMonth.days, retryDate) ? retryMonth.days[retryDate] : null;
+      if (seen[retryDate] && retryDay && retryDay.status !== 'complete') continue;
       checkpointDay(ctx, monthKey, {
-        date: finalRetry[ri], ok: false, complete: false,
+        date: retryDate, ok: false, complete: false,
         reason: result.reason || 'month-partial'
       }, seen);
     }
@@ -532,6 +717,15 @@
     active = ctx;
     manifest.status = 'running'; manifest.reason = '';
     if (!manifest.startedAt) manifest.startedAt = now();
+    /* p1-range-receipt-1.0.0: the days this run will NOT re-pull because a
+       previous run already verified them. Recorded before the first Athena
+       navigation so the receipt can say "skipped" honestly. */
+    var beforeRun = summarize(manifest);
+    manifest.run = sanitizeRun({
+      startedAt: now(),
+      skippedComplete: beforeRun.complete,
+      plannedDays: beforeRun.days - beforeRun.complete
+    });
     if (!persistContext(ctx)) { active = null; return Promise.resolve(outcome(ctx)); }
     var liveProvider = resolveStoredProvider(manifest.provider);
     if (!liveProvider.ok) {
@@ -540,18 +734,38 @@
     }
     var monthKeys = Object.keys(manifest.months).sort();
 
-    function runMonthAt(index) {
-      if (!accountGuard(ctx) || applyControl(ctx)) return Promise.resolve(outcome(ctx));
-      while (index < monthKeys.length && manifest.months[monthKeys[index]].status === 'complete') index++;
-      if (index >= monthKeys.length) {
-        if (!allComplete(manifest)) {
-          manifest.status = 'waiting-retry'; manifest.reason = 'month-partial';
-        } else {
-          manifest.status = 'complete'; manifest.reason = 'complete'; manifest.completedAt = now(); manifest.currentMonth = '';
-        }
+    /* ===== p1-range-continue-1.0.0 (a pass over the whole range) =====
+       Lead ruling 2026-08-17: October failing must not stop November, and it
+       must never restart January either. A pass walks every month, skipping
+       ones already complete or with nothing left to retry; the range then
+       comes BACK for the retryable days in a later pass, bounded by
+       RANGE_MAX_PASSES and by the per-day attempt cap. */
+    function settlePass(pass) {
+      if (allComplete(manifest)) {
+        manifest.status = 'complete'; manifest.reason = 'complete';
+        manifest.completedAt = now(); manifest.currentMonth = '';
         persistContext(ctx);
         return Promise.resolve(outcome(ctx));
       }
+      if (anyRetryable(manifest) && pass + 1 < RANGE_MAX_PASSES) return runMonthAt(0, pass + 1);
+      manifest.currentMonth = '';
+      if (anyRetryable(manifest)) { manifest.status = 'waiting-retry'; manifest.reason = 'month-partial'; }
+      else { manifest.status = 'needs-attention'; manifest.reason = 'needs-attention'; }
+      persistContext(ctx);
+      return Promise.resolve(outcome(ctx));
+    }
+    function runMonthAt(index, pass) {
+      pass = Number(pass || 0);
+      if (!accountGuard(ctx) || applyControl(ctx)) return Promise.resolve(outcome(ctx));
+      while (index < monthKeys.length) {
+        var candidate = manifest.months[monthKeys[index]];
+        if (candidate.status === 'complete') { index++; continue; }
+        /* a month whose days are all proved still owes the final owner receipt */
+        if (monthComplete(candidate) || monthRetryable(candidate)) break;
+        if (candidate.status !== 'needs-attention') { candidate.status = 'needs-attention'; candidate.updatedAt = now(); }
+        index++;
+      }
+      if (index >= monthKeys.length) return settlePass(pass);
       var monthKey = monthKeys[index], month = manifest.months[monthKey], dates = pendingDates(month);
       if (!dates.length) {
         /* All day callbacks may be durable while the browser closes before
@@ -593,32 +807,53 @@
       return Promise.resolve(request).then(function (result) {
         processMonthResult(ctx, monthKey, dates, result || {}, seen);
         if (ctx.storageFailure) return outcome(ctx);
+        month.updatedAt = now();
         if (monthComplete(month)) {
-          month.status = 'complete'; month.reason = 'complete'; month.updatedAt = now();
+          month.status = 'complete'; month.reason = 'complete';
+          ctx.systemicReason = ''; ctx.systemicStreak = 0;
+        } else {
+          month.status = monthRetryable(month) ? 'retry' : 'needs-attention';
+          month.reason = reasonCode((result && result.reason) || 'month-partial');
+          /* p1-range-reasons-1.0.0: the importer stops a month after three
+             identical consecutive day failures and names the ONE real cause on
+             result.systemicReason. "month-stopped-systemic" tells the doctor
+             the shape; the systemic code tells them what to fix. Keep the
+             month's structural verdict, but let the job say the cause. */
+          var systemic = (month.reason === 'month-stopped-systemic' && result && result.systemicReason)
+            ? reasonCode(result.systemicReason) : '';
+          if (systemic && systemic !== 'pull-failed') {
+            if (!ctx.control) manifest.reason = systemic;
+            /* p1-range-continue-1.0.0: continuing past a PARTIAL month is the
+               ruling; continuing past a second month that died the SAME
+               systemic way would just machine-gun Athena. Two in a row stops
+               the range and names the one cause. */
+            ctx.systemicStreak = ctx.systemicReason === systemic ? Number(ctx.systemicStreak || 0) + 1 : 1;
+            ctx.systemicReason = systemic;
+          } else { ctx.systemicReason = ''; ctx.systemicStreak = 0; }
+        }
+        if (ctx.control) { persistContext(ctx); applyControl(ctx); return outcome(ctx); }
+        if (Number(ctx.systemicStreak || 0) >= 2) {
+          manifest.status = 'waiting-retry'; manifest.reason = reasonCode(ctx.systemicReason);
+          manifest.currentMonth = '';
           persistContext(ctx);
-          if (ctx.control) { applyControl(ctx); return outcome(ctx); }
-          return runMonthAt(index + 1);
+          return outcome(ctx);
         }
-        month.status = 'retry';
-        month.reason = reasonCode((result && result.reason) || manifest.reason || 'month-partial');
-        if (!ctx.control) {
-          manifest.status = 'waiting-retry'; manifest.reason = month.reason === 'complete' ? 'month-partial' : month.reason;
-        }
-        applyControl(ctx);
-        if (!ctx.control) persistContext(ctx);
-        return outcome(ctx);
+        if (!persistContext(ctx)) return outcome(ctx);
+        return runMonthAt(index + 1, pass);
       }, function () {
         for (var i = 0; i < dates.length && !ctx.storageFailure; i++) {
           if (!seen[dates[i]]) checkpointDay(ctx, monthKey, { date: dates[i], ok: false, complete: false, reason: 'exception' }, seen);
         }
-        month.status = 'retry'; month.reason = 'exception';
+        month.status = monthRetryable(month) ? 'retry' : 'needs-attention';
+        month.reason = 'exception'; month.updatedAt = now();
         if (!ctx.control) { manifest.status = 'waiting-retry'; manifest.reason = 'exception'; persistContext(ctx); }
         else applyControl(ctx);
         return outcome(ctx);
       });
     }
 
-    return runMonthAt(0).then(function (result) {
+    ctx.systemicReason = ''; ctx.systemicStreak = 0;
+    return runMonthAt(0, 0).then(function (result) {
       var resumeAfterSettle = ctx.resumeAfterSettle === true;
       if (active === ctx) active = null;
       if (resumeAfterSettle) scheduleBoot(true);
@@ -634,7 +869,11 @@
   }
 
   function existingBlocksStart(manifest) {
-    return !!(manifest && manifest.status !== 'complete' && manifest.status !== 'cancelled');
+    /* p1-range-continue-1.0.0: 'needs-attention' is SETTLED - it must not hold
+       the doctor hostage. An explicit new pull is admitted; Resume is still
+       offered beside it for one more bounded round on those exact days. */
+    return !!(manifest && manifest.status !== 'complete' && manifest.status !== 'cancelled' &&
+      manifest.status !== 'needs-attention');
   }
   function parseStartArgs(value, opts, kind) {
     if (value && typeof value === 'object') { opts = value; value = kind === 'year' ? opts.year : opts.month; }
@@ -672,6 +911,9 @@
       if (!manifest) return refusal('manifest-invalid');
       if (manifest.status === 'complete') return { ok: true, complete: true, status: 'complete', reason: 'complete', state: copy(manifest) };
       if (manifest.status === 'cancelled') return refusal('cancelled', manifest);
+      /* p1-range-continue-1.0.0: a human pressing Resume on a settled job is a
+         new intent - re-arm exactly the days that hit the attempt cap. */
+      if (manifest.status === 'needs-attention') rearmAttention(manifest);
       manifest.status = 'running'; manifest.reason = '';
       return executeLocked(key, manifest, opts.onStatus);
     });
@@ -834,8 +1076,15 @@
     signin: 'Sign in to MLS and athenaOne before continuing.',
     'signin-expired': 'Athena sign-in expired. Sign in again, then Resume.',
     'session-expired': 'The MLS session expired. Sign in again, then Resume.',
-    'athena-session-expired': 'Athena sign-in expired. Sign in again, then Resume.',
+    'athena-session-expired': 'athenaOne signed you out — sign in again and press Resume.',
+    'needs-attention': 'Everything else finished. The days listed below could not be verified after three tries — check Athena for those days, then Resume to try them again.',
     'no-athena-tab': 'Open signed-in athenaOne, then Resume.',
+    'no-read': 'Athena is not returning a readable schedule. Check that the athenaOne tab is signed in and on the Day schedule, then Resume.',
+    'nav-failed': 'Athena cannot be moved between days. Check the athenaOne tab is signed in and responsive, then Resume.',
+    'schedule-request-unbound': 'Athena’s replies are not binding to these requests. Reload the athenaOne tab and this tab, then Resume.',
+    'not-attempted-after-systemic-failure': 'MLS stopped rather than repeat the same failure. Fix the cause above, then Resume.',
+    'not-attempted': 'Those days were not attempted. Resume runs only the remaining days.',
+    'stopped-by-user': 'You stopped this pull. Resume continues from the saved checkpoint.',
     'no-ext': 'MLS Assist is unavailable. Restore the extension connection, then Resume.',
     'pull-in-flight': 'Another schedule pull is active. Let it finish before continuing.',
     'range-lock-unavailable': 'This browser cannot safely coordinate a year pull. Nothing was started.',
@@ -851,6 +1100,16 @@
     'month-owner-unverified': 'MLS could not verify the month checkpoint owner. Resume retries only the unverified work.',
     'month-stopped-systemic': 'The month stopped before all days were verified. Resume retries the remaining work.',
     'month-partial': 'Some days still need verification. Resume retries only those days.',
+    /* p1-range-reasons-1.0.0: the importer's own day verdicts, said plainly. */
+    'history-partial': 'Some charts on that day did not finish reading. Resume retries only those days.',
+    'calendar-partial': 'That day’s appointments were not all saved. Resume retries only those days.',
+    'identity-bootstrap-partial': 'Some patients on that day could not be identified exactly. Check Athena, then Resume.',
+    'history-store-empty': 'Charts were read but nothing was stored for that day. Check available storage, then Resume.',
+    'history-store-unmeasured': 'MLS could not verify what was stored for that day. Resume re-reads it.',
+    'schedule-parse-timeout': 'Reading that day’s schedule took too long. Check the Athena tab, then Resume.',
+    'invalid-month': 'That month is not available to pull. Choose the current or a past month.',
+    'month-exception': 'The month stopped safely after an unexpected error. Resume retries the remaining days.',
+    'account-scope-unverified': 'MLS could not prove which signed-in account owns this pull. Sign in again, then Resume.',
     exception: 'The pull stopped safely after an unexpected error. Check Athena, then Resume.',
     'pull-failed': 'The pull stopped safely before the next unverified step. Check Athena, then Resume.',
     'job-exists': 'A saved range pull already exists. Resume, pause, or cancel it before starting another.',
@@ -858,6 +1117,27 @@
   };
   function uiReasonCopy(reason) {
     return UI_REASON_COPY[reasonCode(reason)] || 'The pull stopped safely before the next unverified step. Check Athena, then Resume.';
+  }
+  /* p1-range-receipt-1.0.0: the one sentence that answers "what did it do?" -
+     days done, how many of those Athena verified empty, how many failed, and
+     how many this run skipped because a previous run had already proved them. */
+  function uiReceiptCopy(manifest) {
+    var receipt = (manifest && manifest.summary) || summarize(manifest);
+    var run = (manifest && manifest.run) || sanitizeRun(null);
+    return receipt.complete + ' of ' + receipt.days + ' days done · ' +
+      receipt.withRows + ' with appointments · ' + receipt.empty + ' verified empty · ' +
+      receipt.failed + ' still to retry · ' + receipt.needsAttention + ' need attention · ' +
+      run.skippedComplete + ' skipped as already verified.';
+  }
+  /* p1-range-continue-1.0.0: the days that hit the attempt cap, named. Dates
+     and bounded codes only. */
+  function uiAttentionCopy(manifest) {
+    var receipt = (manifest && manifest.summary) || summarize(manifest);
+    var list = receipt.attention || [];
+    if (!list.length) return '';
+    var shown = list.slice(0, 6).map(function (row) { return row.date + ' (' + String(row.reason || '').replace(/-/g, ' ') + ')'; });
+    return 'Needs attention: ' + shown.join('; ') + (list.length > shown.length ? '; …' : '') +
+      (receipt.needsAttention > list.length ? ' (' + receipt.needsAttention + ' total)' : '') + '.';
   }
   function uiStatusCopy(manifest, progress, selected) {
     if (!manifest) {
@@ -867,7 +1147,11 @@
     }
     var count = progress.completeDays + ' of ' + progress.totalDays + ' days complete';
     var scope = manifest.kind === 'year' ? manifest.target : ('month ' + manifest.target);
-    if (manifest.status === 'complete') return 'Complete: ' + scope + ' · ' + count + '.';
+    if (manifest.status === 'complete') return 'Complete: ' + scope + ' · ' + uiReceiptCopy(manifest);
+    if (manifest.status === 'needs-attention') {
+      return 'Finished with exceptions: ' + scope + ' · ' + uiReceiptCopy(manifest) + ' ' +
+        uiAttentionCopy(manifest) + ' ' + uiReasonCopy('needs-attention');
+    }
     if (manifest.status === 'cancelled') return 'Cancelled: ' + scope + ' · ' + count + '. Starting again requires a new click.';
     if (manifest.status === 'paused') return 'Paused: ' + scope + ' · ' + count + '. Resume continues from the saved checkpoint.';
     if (manifest.status === 'waiting-login') return count + '. ' + uiReasonCopy(manifest.reason || 'signin-expired');
@@ -982,9 +1266,14 @@
     if (!root || !installedApi || installedApi.installed !== true) return;
     var manifest = state(), selected = uiProviderSelection(), progress = uiProgress(manifest);
     var status = manifest && manifest.status || '', running = status === 'running' || status === 'pending';
-    var terminal = status === 'complete' || status === 'cancelled', blocksStart = !!(manifest && !terminal);
-    var resumable = status === 'paused' || status === 'waiting-login' || status === 'waiting-retry' || status === 'storage-failed';
-    var error = !!uiNotice || (!blocksStart && !selected.ok) || status === 'waiting-retry' || status === 'storage-failed' || status === 'account-changed';
+    /* p1-range-continue-1.0.0: 'needs-attention' is terminal (a new pull is
+       admitted) AND resumable (one more bounded round on those days). */
+    var terminal = status === 'complete' || status === 'cancelled' || status === 'needs-attention';
+    var blocksStart = !!(manifest && !terminal);
+    var resumable = status === 'paused' || status === 'waiting-login' || status === 'waiting-retry' ||
+      status === 'storage-failed' || status === 'needs-attention';
+    var error = !!uiNotice || (!blocksStart && !selected.ok) || status === 'waiting-retry' ||
+      status === 'storage-failed' || status === 'account-changed' || status === 'needs-attention';
     root.setAttribute('data-status', status || 'ready'); root.setAttribute('data-error', error ? 'true' : 'false');
     root.setAttribute('aria-busy', running ? 'true' : 'false');
     var year = uiFillYearSelect(root.querySelector('#mlsP1YearChoice'), manifest, blocksStart);

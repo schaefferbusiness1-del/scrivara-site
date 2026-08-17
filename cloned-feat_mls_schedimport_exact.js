@@ -6613,6 +6613,21 @@
     return out;
   }
 
+  /* ===== p1-month-signout-1.0.0 (a sign-out is not a generic read failure) ==
+     A durable range caller has to tell "athenaOne signed you out" apart from
+     "the grid did not paint": the first needs a sign-in and a Resume, the
+     second needs a retry. The evidence already exists on the day receipt -
+     the same bounded session probes ScribeFlow's day strip classifies on
+     (sx-1.1) - but the PHI-free checkpoint dropped it. Forward ONE boolean;
+     no error text, no identity, ever crosses this seam. */
+  function p1MonthDaySignedOut(receipt) {
+    if (!receipt || typeof receipt !== "object") return false;
+    var history = receipt.historyReceipt && typeof receipt.historyReceipt === "object" ? receipt.historyReceipt : null;
+    if (receipt.schedSessionLikelyExpired === true || receipt.navSessionLikelyExpired === true ||
+        receipt.athenaSignedOutSuspected === true || (history && history.sessionExpired === true)) return true;
+    return /sign-?in page|signed[- ]?out|sign in to athenaone|no signed-?in athenaone/i.test(String(receipt.error || ""));
+  }
+  /* ===== end p1-month-signout-1.0.0 ===== */
   function p1MonthDayCheckpoint(callback, date, outcome) {
     var reason = String(outcome && outcome.reason || "no-result");
     if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(reason)) reason = "unclassified";
@@ -6620,7 +6635,9 @@
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date) : "",
       ok: !!(outcome && outcome.ok === true),
       complete: !!(outcome && outcome.complete === true),
-      reason: reason
+      reason: reason,
+      sessionExpired: reason === "athena-session-expired" || reason === "no-athena-tab" ||
+        p1MonthDaySignedOut(outcome && outcome.receipt)
     };
     /* This callback is a PHI-free durability seam for a caller that owns a
        larger range manifest. It is advisory to the month engine: a broken
