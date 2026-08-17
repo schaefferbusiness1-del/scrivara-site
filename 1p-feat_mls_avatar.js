@@ -5168,7 +5168,11 @@
     else if (p && p.catch) p.catch(function () { finish(); });
   }
 
-  var cameraStream = null, faceCaptureGeneration = 0, faceCaptureTimers = [], faceLiveRaf = 0;
+  /* avcam-1.0.0 renamed faceLiveRaf -> faceLiveTimer: the live preview no
+     longer rides requestAnimationFrame (see faceLiveLoopStart), and a slot
+     named after the API that no longer drives it is the kind of lie the next
+     reader pays for. The three other references moved with it. */
+  var cameraStream = null, faceCaptureGeneration = 0, faceCaptureTimers = [], faceLiveTimer = 0;
   function stopStreamTracks(stream) {
     if (!stream) return;
     safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
@@ -5184,7 +5188,7 @@
   function cancelFaceCapture() {
     faceCaptureGeneration++;
     faceCaptureTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
-    if (faceLiveRaf) { safe(function () { cancelAnimationFrame(faceLiveRaf); }); faceLiveRaf = 0; }
+    if (faceLiveTimer) { safe(function () { clearTimeout(faceLiveTimer); }); faceLiveTimer = 0; }
     stopCamera();
   }
   function beginFaceCapture() { cancelFaceCapture(); return faceCaptureGeneration; }
@@ -5485,7 +5489,23 @@
       var canvas = captureSquare(video, MEASURE_MAX);
       if (canvas) {
         var q = frameQuality(canvas);
-        var res = safe(function () { return faceReadPortrait(canvas); }, null);
+        /* ===== avcam-1.0.0 — NOT ON A FRAME WITH NO LIGHT IN IT.
+           The shutter's own ranking pass ran the matcher on every grab,
+           including the transparent-black canvas a <video> yields before its
+           first decoded frame, and reported the resulting colour ledger as if
+           it described the doctor. faceCaptureVerdict still owns the verdict
+           and still says "the camera picture went black" for such a frame —
+           it simply no longer has an invented face reading attached to it.
+           The literals are faceCaptureVerdict's DEAD_FEED_EXPOSURE and
+           avcamFrameLooksLive's two thresholds. They are repeated rather than
+           referenced for the reason those two already are: 1p-avatar-face-
+           lifecycle-runtime slices this function out and evaluates it alone,
+           so an identifier declared outside it is not in scope.
+           tests/avatar-camera-feed-readiness.test.js pins all four equal. */
+        var lit = Number(q && q.exposure) > 0.8 || Number(q && q.sharp) > 0.02;
+        var res = lit ? safe(function () { return faceReadPortrait(canvas); }, null) : null;
+        q.faceLit = lit;
+        /* ===== end avcam-1.0.0 ===== */
         q.faceResult = res;
         q.faceVerdict = faceCaptureVerdict(res, q);
         if (!bestQ || q.faceVerdict.score > bestQ.faceVerdict.score) { best = canvas; bestQ = q; }
@@ -5535,6 +5555,211 @@
          Cancel, and before this train that leaked the stream and kept the
          camera LED lit (the tab handler now also calls stopCamera - this
          guard covers every OTHER way the video can leave the DOM). */
+  /* ===== avcam-1.0.0 — A FEED IS PROVEN, NOT ASSUMED ======================
+     Owner report, 2026-08-17: the picture-to-avatar camera preview is BLACK,
+     and the matcher then says "3 of 14" and "Skin — the sample was not a
+     colour real skin has". The matcher is not wrong. It is correctly refusing
+     an image with no light in it. Nothing above it had ever established that
+     a frame had been delivered at all.
+
+     Read against the element contract, the open path had four holes:
+
+       1. THE CAPTURE HAD NO PRECONDITION. `video.srcObject = stream` was
+          followed, in the same turn, by the 8Hz live loop (and on a fast tap
+          by grabBestFrame) drawing that element into a canvas. captureSquare's
+          only precondition is videoWidth/videoHeight — and a <video> reports
+          both from `loadedmetadata`, i.e. from readyState 1, while
+          CanvasRenderingContext2D.drawImage is specified to "return without
+          drawing anything" until readyState reaches HAVE_CURRENT_DATA (2).
+          So between metadata and the first decoded frame the canvas stayed at
+          its initial transparent black, frameQuality measured exposure 0 on
+          it, and faceReadPortrait was handed a black square. Every word the
+          doctor read after that was a true statement about an image the
+          camera never sent.
+       2. `video.play()`'s rejection was caught and DISCARDED
+          (`p.catch(function () {})`), so a blocked or interrupted playback
+          left a paused element, a black picture, and no evidence anywhere.
+       3. The whole preview was driven by requestAnimationFrame, which does
+          not fire in a hidden or non-compositing tab. The dark-feed witness —
+          the one thing in this file that can say "your picture is gone" — was
+          therefore asleep in precisely the state that produces a black
+          picture, and no local harness could observe it either.
+       4. Every getUserMedia rejection printed "Camera permission was
+          declined", including NotReadableError (the camera is held by another
+          app — the most common cause of a black or absent preview) and
+          NotFoundError (there is no camera). A doctor cannot act on a
+          diagnosis that is not his.
+
+     The rule installed here: NOTHING measures the feed until a decoded frame
+     exists, and the matcher does not speak until AVCAM_LIVE_FRAMES
+     consecutive frames carry light that a dead surface cannot produce. A live
+     camera never delivers identical black frames; a dropped compositor
+     surface delivers nothing else.
+
+     ⛔ This block changes what the matcher is ALLOWED TO READ. It does not
+     touch what the matcher decides: faceMatchDecision's
+     `examined >= 10 && claimed >= 6` gate and faceCaptureVerdict's thresholds
+     are exactly as they were. */
+  var AVCAM_DEAD_EXPOSURE = 0.8;   /* keep equal to faceCaptureVerdict's DEAD_FEED_EXPOSURE, faceLiveLoopStart's DARK_EXPOSURE and grabBestFrame's literal — pinned by tests/avatar-camera-feed-readiness.test.js */
+  /* mean |gradient| on the 96px grey copy. A cleared canvas is a flat zero by
+     construction; a real sensor frame never is, even with the lens covered —
+     which is why liveness is exposure OR texture, not exposure alone. A dark
+     ROOM still reads 5-40 exposure and passes here, and is then refused by
+     faceCaptureVerdict with the lighting advice that actually applies to it. */
+  var AVCAM_DEAD_SHARP = 0.02;
+  var AVCAM_LIVE_FRAMES = 3;       /* consecutive lit frames before the matcher may speak */
+  var AVCAM_FIRST_FRAME_MS = 6000; /* a camera that has sent nothing by now is not warming up */
+  var AVCAM_POLL_MS = 60;
+  var AVCAM_STALL_WHY = 'No camera frames yet — allow the camera for this site, close any other app using it, then restart the camera. Nothing was captured.';
+  function avcamFrameLooksLive(q) {
+    if (!q) return false;
+    var exposure = Number(q.exposure), sharp = Number(q.sharp);
+    if (!isFinite(exposure) || !isFinite(sharp)) return false;
+    return exposure > AVCAM_DEAD_EXPOSURE || sharp > AVCAM_DEAD_SHARP;
+  }
+  function avcamTrack(stream) {
+    return safe(function () {
+      var tracks = stream && stream.getVideoTracks ? stream.getVideoTracks() : null;
+      return (tracks && tracks[0]) || null;
+    }, null);
+  }
+  /* readyState >= 2 AND real dimensions. Either one alone is the trap: a
+     stream element reports dimensions a whole readyState before it has a
+     frame to give. */
+  function avcamDecoded(video) {
+    return !!video && Number(video.readyState || 0) >= 2 &&
+      Number(video.videoWidth || 0) > 0 && Number(video.videoHeight || 0) > 0;
+  }
+  /* WHY no frame arrived, in words a doctor can act on. Track state is read
+     here and ONLY here: `muted` is a camera held by another app or a privacy
+     switch, and it is never used as the readiness signal itself, because some
+     engines leave a fresh camera track muted until frames flow and gating on
+     it would invent a hang this file has never had. */
+  function avcamStallWhy(video, stream) {
+    var t = avcamTrack(stream);
+    if (!t) return 'The camera opened without a video track, so no picture can arrive. Restart the camera — nothing was captured.';
+    if (String(t.readyState || 'live') !== 'live') return 'The camera closed before it sent a picture — another app or a privacy switch took the device. Restart the camera — nothing was captured.';
+    if (t.muted === true) return 'No camera frames yet — the camera is held by another app, or a privacy switch is on. Close the other app (or turn the switch off), then restart the camera. Nothing was captured.';
+    if (t.enabled === false) return 'The camera track was switched off before it sent a picture. Restart the camera — nothing was captured.';
+    if (video && video.paused === true) return 'The browser never started the camera preview, so no frames arrived. Restart the camera; if it stays black, reload this page. Nothing was captured.';
+    return AVCAM_STALL_WHY;
+  }
+  function avcamOpenWhy(err) {
+    var name = String(safe(function () { return err && err.name; }, '') || '');
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError')
+      return 'Camera permission was declined — nothing was captured. Allow the camera for this site, then try again.';
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError')
+      return 'No camera was found on this device — plug one in, or use Upload a photo instead. Nothing was captured.';
+    if (name === 'NotReadableError' || name === 'TrackStartError')
+      return 'The camera is busy — another app (a video call, or the camera app) has it, or a privacy switch is on. Close it, then try again. Nothing was captured.';
+    if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError')
+      return 'This camera could not open at any size this browser asked for. Nothing was captured.';
+    if (name === 'AbortError')
+      return 'The camera stopped while it was opening. Try again — nothing was captured.';
+    return 'The camera could not be opened' + (name ? ' (' + name + ')' : '') + ' — nothing was captured.';
+  }
+  /* the ONLY rejection worth retrying with a plainer request. The sized ask is
+     all `ideal`, so this should never fire — but the file already carried a
+     "must still get a camera" fallback wrapped in safe(), which can only ever
+     catch a SYNCHRONOUS throw and therefore never ran for a rejected
+     constraint at all. This is where that intent actually lives now. */
+  function avcamSizeRefusal(err) {
+    var name = String(safe(function () { return err && err.name; }, '') || '');
+    return name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError';
+  }
+  function avcamFeedNew() {
+    return { state: 'opening', why: '', frames: 0, litRun: 0, darkFrames: 0,
+      matcherAllowed: false, exposure: -1, sharp: -1, playRejected: '' };
+  }
+  /* Observable on purpose. The lead can read window.__mlsAvCam in devtools on
+     a real camera and see the readiness state and the measured luminance of
+     the frames the matcher is being fed — the evidence that was missing when
+     this was reported as "it just goes black". */
+  function avcamFeedPublish(feed) {
+    safe(function () {
+      window.__mlsAvCam = { state: feed.state, why: feed.why, frames: feed.frames,
+        litRun: feed.litRun, darkFrames: feed.darkFrames, matcherAllowed: feed.matcherAllowed,
+        exposure: feed.exposure, sharp: feed.sharp, playRejected: feed.playRejected, at: Date.now() };
+    });
+    return feed;
+  }
+  function avcamFeedSet(feed, state, why) {
+    if (!feed) return feed;
+    feed.state = state; feed.why = why || '';
+    if (state !== 'live') feed.matcherAllowed = false;
+    return avcamFeedPublish(feed);
+  }
+  /* one measured frame in; TRUE only when the matcher may read it */
+  function avcamFeedFrame(feed, q) {
+    if (!feed) return false;
+    feed.frames++;
+    feed.exposure = Number(q && q.exposure);
+    feed.sharp = Number(q && q.sharp);
+    if (avcamFrameLooksLive(q)) {
+      feed.darkFrames = 0;
+      feed.litRun++;
+      feed.why = '';
+      if (feed.litRun >= AVCAM_LIVE_FRAMES) { feed.matcherAllowed = true; feed.state = 'live'; }
+      else { feed.matcherAllowed = false; feed.state = 'warming'; }
+    } else {
+      feed.litRun = 0; feed.darkFrames++;
+      feed.matcherAllowed = false;
+      feed.state = 'dark';
+      feed.why = 'No picture is arriving from the camera.';
+    }
+    avcamFeedPublish(feed);
+    return feed.matcherAllowed;
+  }
+  function avcamWaitingLine(feed) {
+    if (!feed) return '';
+    if (feed.state === 'opening') return 'Opening the camera…';
+    if (feed.state === 'waiting') return 'Waiting for the first camera frame…';
+    if (feed.state === 'warming') return 'Camera frames are arriving — checking the picture…';
+    if (feed.state === 'dark') return 'The camera picture is black — no frames are arriving. Restart the camera. This is not a lighting problem.';
+    if (feed.state === 'stalled' || feed.state === 'failed') return feed.why || AVCAM_STALL_WHY;
+    return '';
+  }
+  /* WAIT FOR A DECODED FRAME — with setTimeout as the mechanism.
+     requestVideoFrameCallback fires ON a decoded frame and is exactly the
+     event this wants, and `loadeddata` is the older approximation of it; both
+     are accelerators here and neither is the mechanism, because both can have
+     fired before this ran and rVFC does not fire in a background tab. The
+     poll is what actually settles it, and it is a re-armed setTimeout rather
+     than rAF for that same reason. */
+  function avcamAwaitFirstFrame(video, opts, then) {
+    opts = opts || {};
+    var settled = false, waited = 0;
+    var limit = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : AVCAM_FIRST_FRAME_MS;
+    var step = Number(opts.stepMs) > 0 ? Number(opts.stepMs) : AVCAM_POLL_MS;
+    var timers = opts.timers && opts.timers.push ? opts.timers : null;
+    function finish(arrived, why) {
+      if (settled) return;
+      settled = true;
+      if (isFn(then)) safe(function () { then(arrived, why); });
+    }
+    function look() {
+      if (settled) return;
+      /* a closed surface is not a failure to report — it is a cancelled wait */
+      if (isFn(opts.active) && !opts.active()) { settled = true; return; }
+      if (avcamDecoded(video)) { finish(true, ''); return; }
+      waited += step;
+      if (waited >= limit) { finish(false, avcamStallWhy(video, opts.stream)); return; }
+      safe(function () {
+        var timer = setTimeout(function () {
+          if (timers) { var at = timers.indexOf(timer); if (at >= 0) timers.splice(at, 1); }
+          look();
+        }, step);
+        if (timers) timers.push(timer);
+      });
+    }
+    safe(function () {
+      if (isFn(video.requestVideoFrameCallback)) video.requestVideoFrameCallback(function () { look(); });
+    });
+    safe(function () { video.addEventListener('loadeddata', function () { look(); }, false); });
+    look();
+    return { cancel: function () { settled = true; }, settled: function () { return settled; } };
+  }
+  /* ===== end avcam-1.0.0 ===== */
   var FACE_LIVE_ORDER = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
     'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
   var FACE_LIVE_LABELS = { skin: 'Skin', hair: 'Hair colour', hairStyle: 'Hair style',
@@ -5546,10 +5771,23 @@
     if (!faceLiveCanvas) faceLiveCanvas = document.createElement('canvas');
     var canvas = captureSquare(video, MEASURE_MAX, faceLiveCanvas);
     if (!canvas) return null;
+    /* ===== avcam-1.0.0 — MEASURE THE LIGHT BEFORE THE FACE.
+       The quality pass used to run AFTER faceReadPortrait, so the reader was
+       handed every frame including the transparent-black canvas a <video>
+       leaves behind before its first decoded frame. That is where "3 of 14"
+       and "Skin — the sample was not a colour real skin has" came from: a
+       correct refusal, of an image the camera never sent. Both passes read
+       `canvas` without mutating it and each allocates its own scratch surface
+       (pinned by 1p-avatar-face-to-photo-runtime), so the swap is order-only.
+       `dead: true` is not "no result" — it is a MEASURED result the caller
+       must report differently, which is why it is not folded into null. */
+    var q = frameQuality(canvas);
+    if (!avcamFrameLooksLive(q)) return { res: null, q: q, dead: true };
+    /* ===== end avcam-1.0.0 ===== */
     var res = null;
     try { res = faceReadPortrait(canvas); } catch (e) { res = null; }
     if (!res) return null;
-    return { res: res, q: frameQuality(canvas) };
+    return { res: res, q: q };
   }
   /* READY means the natural portrait itself is usable. Optional animated
      traits have their own truth gate; a narrow skin mask is not evidence that
@@ -5585,8 +5823,27 @@
       ctx.strokeRect((sp[0] - pr) * s, (sp[1] - pr) * s, (2 * pr + 1) * s, (2 * pr + 1) * s);
     });
   }
-  function faceLiveStatusRender(ui, res, q, ready) {
+  function faceLiveStatusRender(ui, res, q, ready, feed) {
     var line;
+    /* ===== avcam-1.0.0 — AN UNPROVEN FEED IS NOT "LOOKING FOR YOUR FACE".
+       Until the readiness state reaches live, the guide says what is actually
+       happening (opening / waiting for the first frame / warming / black) and
+       the per-control ledger is cleared rather than being filled in from a
+       frame nobody has proven exists. The shutter is owned from here too: it
+       is enabled exactly when the matcher is allowed to speak, and never
+       while a capture is in flight (__mlsShooting). ===== */
+    if (ui && ui.snapBtn && !ui.snapBtn.__mlsShooting && feed) {
+      var allow = !!feed.matcherAllowed;
+      if (allow && ui.snapBtn.disabled) { ui.snapBtn.disabled = false; ui.snapBtn.__mlsReady = null; ui.snapBtn.textContent = 'Snap photo'; }
+      else if (!allow && !ui.snapBtn.disabled) { ui.snapBtn.disabled = true; ui.snapBtn.__mlsReady = null; ui.snapBtn.textContent = 'Waiting for the camera…'; }
+    }
+    if (feed && !feed.matcherAllowed) {
+      line = avcamWaitingLine(feed) || 'Waiting for the first camera frame…';
+      if (ui.status && ui.status.__mlsLast !== line) { ui.status.__mlsLast = line; ui.status.textContent = line; }
+      if (ui.list && ui.list.__mlsRows) { ui.list.__mlsRows = null; ui.list.textContent = ''; }
+      return;
+    }
+    /* ===== end avcam-1.0.0 ===== */
     if (res && res.receipt) {
       line = 'Portrait found — optional match sees ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' details' +
         (ready ? ' — portrait ready, snap when ready' : '');
@@ -5627,10 +5884,20 @@
     });
   }
   function faceLiveLoopStart(video, overlay, ui) {
-    /* -1e9, not 0: rAF hands the first frame a timestamp that can be 0, and a
-       `last` that starts falsy would disable the throttle forever after it */
-    var last = -1e9;
     var LIVE_MS = 125;
+    /* ===== avcam-1.0.0 — setTimeout, NOT requestAnimationFrame.
+       rAF does not fire at all in a hidden or non-compositing tab, so this
+       loop — which is also the dead-feed witness below — was asleep in
+       exactly the state that produces a black picture, and no local harness
+       could observe it either. A self-re-arming setTimeout keeps the same
+       8Hz cadence, dies with the element on the isConnected check, and is
+       cancelled by cancelFaceCapture through faceLiveTimer. setInterval stays
+       banned module-wide; this is one shot at a time.
+       The rAF timestamp throttle went with it: the timer IS the cadence, so
+       comparing timestamps only re-implemented the delay it was given.
+       `feed` is the readiness state this loop advances one frame at a time;
+       the camera passes its own so the open path and the loop share one. ===== */
+    var feed = (ui && ui.feed) || avcamFeedNew();
     /* p1-camera-endurance-1.0.0 — THE LOOP IS ALSO THE WITNESS.
        It is already measuring mean luminance every tick, so it is the one
        place that can tell "the feed went black" from "the room is dim": a
@@ -5642,9 +5909,9 @@
        back — a report that fired once could never tell those two apart. */
     var DARK_TICKS = 12, DARK_EXPOSURE = 0.8;   /* keep equal to faceCaptureVerdict's DEAD_FEED_EXPOSURE — pinned by tests/p1-avatar-dead-feed-threshold.test.js */
     var darkRun = 0, darkReports = 0;
-    function next() { faceLiveRaf = requestAnimationFrame(tick); }
-    function tick(ts) {
-      faceLiveRaf = 0;
+    function next() { faceLiveTimer = setTimeout(tick, LIVE_MS); }
+    function tick() {
+      faceLiveTimer = 0;
       if (!video.isConnected) {
         /* the Setup tab can be torn down without Cancel; whoever removed the
            video, the loop dies AND the camera dies with it */
@@ -5652,9 +5919,6 @@
         return;
       }
       next();
-      ts = ts || 0;
-      if (ts - last < LIVE_MS) return;
-      last = ts;
       var m = faceLiveMeasure(video);
       if (!m) return;
       if (Number(m.q && m.q.exposure) <= DARK_EXPOSURE) {
@@ -5665,9 +5929,18 @@
           if (ui && isFn(ui.onDark)) { var nth = darkReports; safe(function () { ui.onDark(nth); }); }
         }
       } else { darkRun = 0; darkReports = 0; }
-      var ready = faceLiveReady(m.res, m.q);
-      faceLiveOverlayPaint(overlay, m.res, ready);
-      faceLiveStatusRender(ui, m.res, m.q, ready);
+      /* ===== avcam-1.0.0 — THE MATCHER DOES NOT SPEAK FOR AN UNPROVEN FRAME.
+         m.dead means faceLiveMeasure refused to run faceReadPortrait at all,
+         so m.res is null by construction; avcamFeedFrame additionally holds
+         the guide back until AVCAM_LIVE_FRAMES consecutive lit frames have
+         arrived, because one lit frame after a black spell is a flicker, not
+         a recovery. The witness above still counts every tick — a feed that
+         dies mid-session must still be reported. ===== */
+      var lit = avcamFeedFrame(feed, m.q);
+      var ready = !m.dead && lit && faceLiveReady(m.res, m.q);
+      faceLiveOverlayPaint(overlay, m.dead ? null : m.res, ready);
+      faceLiveStatusRender(ui, m.dead ? null : m.res, m.q, ready, feed);
+      /* ===== end avcam-1.0.0 ===== */
     }
     next();
   }
@@ -5968,6 +6241,7 @@
         if (!setupCurrent()) return;
         camHost.innerHTML = '';
         camHost.__mlsCamTrouble = false;
+        camHost.__mlsCamPlain = false;   /* avcam-1.0.0: one plain-constraint retry per open, not per session */
         var captureGeneration = beginFaceCapture();
         /* ASK FOR THE HIGH-RESOLUTION STREAM. With facingMode alone the browser hands
            back its default - typically 640x480 - and every colour the matcher reports
@@ -5990,13 +6264,53 @@
           }, null);
         }
         if (!media) { camHost.appendChild(make('div', 'mlsAvNotice', 'This browser cannot open the camera here.')); return; }
-        media.then(function (stream) {
+        /* ===== avcam-1.0.0 — THE TWO OUTCOMES ARE NAMED FUNCTIONS.
+           The `safe()` wrapper above can only catch a SYNCHRONOUS throw, so
+           the documented "a browser that refuses the sized request must still
+           get a camera" fallback could never run for a REJECTED constraint:
+           that rejection went straight to the error handler, which told the
+           doctor he had declined permission he had already granted. The retry
+           now lives in the rejection path, where it can re-enter the success
+           path — which is why both sides need a name. ===== */
+        function camFailed(err) {
+          if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
+          if (avcamSizeRefusal(err) && !camHost.__mlsCamPlain) {
+            camHost.__mlsCamPlain = true;
+            var plain = safe(function () {
+              return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ video: true });
+            }, null);
+            if (plain && plain.then) { plain.then(camOpened, camFailed); return; }
+          }
+          /* SAY WHICH FAILURE THIS WAS. Every rejection used to print "Camera
+             permission was declined" — including NotReadableError, a camera
+             held by another app, which is the single most common cause of a
+             black or absent preview, and NotFoundError, which is no camera at
+             all. avcamOpenWhy names the one that happened. */
+          camHost.appendChild(make('div', 'mlsAvNotice', avcamOpenWhy(err)));
+        }
+        function camOpened(stream) {
           if (!faceCaptureAdopt(stream, captureGeneration, camHost)) return;
           var video = document.createElement('video');
           video.autoplay = true; video.playsInline = true; video.muted = true;
+          /* avcam-1.0.0: the ATTRIBUTES as well as the properties. The
+             properties are what Chrome reads and they were already set; the
+             attributes are what iOS Safari's inline-autoplay rule is written
+             against and what survives any serialization of this node. Not the
+             measured cause of the owner's black picture — recorded as what it
+             is, the cheap closure of a documented gap. */
+          safe(function () {
+            video.setAttribute('autoplay', ''); video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', ''); video.setAttribute('muted', '');
+          });
           video.srcObject = stream;
-          video.style.cssText = 'width:200px;height:200px;object-fit:cover;border-radius:14px;border:1px solid #E7E5DD;transform:scaleX(-1)';
-          var snapBtn = make('button', 'mlsAvAction primary', 'Snap photo'); snapBtn.type = 'button';
+          var feed = avcamFeedNew();
+          avcamFeedSet(feed, 'opening', '');
+          video.style.cssText ='width:200px;height:200px;object-fit:cover;border-radius:14px;border:1px solid #E7E5DD;transform:scaleX(-1)';
+          /* avcam-1.0.0: the shutter opens DISABLED. It is enabled from
+             faceLiveStatusRender the moment the readiness state reaches live,
+             so it is never possible to photograph a feed nothing has proven. */
+          var snapBtn = make('button', 'mlsAvAction primary', 'Waiting for the camera…'); snapBtn.type = 'button';
+          snapBtn.disabled = true;
           var cancelBtn = make('button', 'mlsAvAction', 'Cancel'); cancelBtn.type = 'button';
           var row = make('div', 'mlsAvActions');
           row.appendChild(snapBtn); row.appendChild(cancelBtn);
@@ -6015,7 +6329,7 @@
              backwards; the words live in the DOM lines below. */
           overlay.style.cssText = 'position:absolute;left:0;top:0;width:200px;height:200px;pointer-events:none;transform:scaleX(-1);border-radius:14px';
           camWrap.appendChild(video); camWrap.appendChild(overlay);
-          var liveStatus = make('div', 'mlsAvLiveLine', 'Looking for your face…');
+          var liveStatus = make('div', 'mlsAvLiveLine', 'Opening the camera…');   /* avcam-1.0.0: the guide starts on the truth, not on a search that has not begun */
           var liveList = make('div', 'mlsAvLiveList');
           camHost.appendChild(camWrap); camHost.appendChild(row);
           camHost.appendChild(liveStatus); camHost.appendChild(liveList);
@@ -6025,7 +6339,20 @@
              surface all leave the element paused with nothing on screen and
              no error anywhere. Asking costs one call and its rejection is
              the only place that failure is observable. */
-          function playVideo() { safe(function () { var p = video.play(); if (p && p.catch) p.catch(function () {}); }); }
+          /* avcam-1.0.0: the rejection was swallowed by an empty catch, so a
+             refused autoplay left a paused element, a black picture and no
+             evidence at all. It is recorded on the feed state now, which is
+             what avcamStallWhy reads to say "the browser never started the
+             camera preview" instead of guessing. */
+          function playVideo() {
+            safe(function () {
+              var p = video.play();
+              if (p && p.catch) p.catch(function (e) {
+                feed.playRejected = String(safe(function () { return e && (e.name || e.message); }, '') || 'rejected');
+                avcamFeedPublish(feed);
+              });
+            });
+          }
           playVideo();
           /* THE TRACK CAN DIE WITHOUT TELLING THE PAGE. Windows camera
              privacy, a USB unplug, sleep/resume, or another app claiming the
@@ -6056,22 +6383,58 @@
               }, false);
             });
           });
-          faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn,
-            onDark: function (nth) {
-              /* First dark spell: the usual cause is a dropped compositor
-                 surface, and re-attaching the same live stream brings the
-                 picture straight back. Only if it is STILL dark 1.5s later
-                 do we tell him, because a silent notice on a recoverable
-                 flicker is its own defect. */
-              if (nth === 1) { safe(function () { video.srcObject = stream; }); playVideo(); return; }
-              cameraTrouble('The camera picture went black while it was open. Restart it, then take the photo — nothing was captured.');
-            } });
+          /* ===== avcam-1.0.0 — NOTHING MEASURES THE FEED UNTIL A FRAME EXISTS.
+             This is the owner's defect. The live loop used to start on this
+             line, in the same turn as `video.srcObject = stream`, and it drew
+             an element that had metadata and no decoded frame into a canvas.
+             drawImage is specified to do nothing until readyState reaches 2,
+             so the canvas stayed transparent black, frameQuality read
+             exposure 0, and the doctor was shown a colour ledger measured
+             from nothing ("3 of 14", "Skin — the sample was not a colour real
+             skin has"). The wait below is the precondition that was missing;
+             if it never arrives the doctor is told WHY, in words that name an
+             action, and no lamp is ever mentioned for a feed that is dead. */
+          function startLiveGuide() {
+            avcamFeedSet(feed, 'warming', '');
+            faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn, feed: feed,
+              onDark: function (nth) {
+                /* First dark spell: the usual cause is a dropped compositor
+                   surface, and re-attaching the same live stream brings the
+                   picture straight back. Only if it is STILL dark 1.5s later
+                   do we tell him, because a silent notice on a recoverable
+                   flicker is its own defect. */
+                if (nth === 1) { safe(function () { video.srcObject = stream; }); playVideo(); return; }
+                cameraTrouble('The camera picture went black while it was open. Restart it, then take the photo — nothing was captured.');
+              } });
+          }
+          avcamFeedSet(feed, 'waiting', '');
+          liveStatus.textContent = avcamWaitingLine(feed);
+          avcamAwaitFirstFrame(video, {
+            stream: stream, timers: faceCaptureTimers,
+            active: function () {
+              return setupCurrent() && faceCaptureIsCurrent(captureGeneration, camHost) && video.isConnected !== false;
+            }
+          }, function (arrived, why) {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            if (arrived) { startLiveGuide(); return; }
+            avcamFeedSet(feed, 'stalled', why);
+            liveStatus.textContent = why;
+            snapBtn.textContent = 'No camera picture';
+            cameraTrouble(why);
+          });
+          /* ===== end avcam-1.0.0 ===== */
           cancelBtn.addEventListener('click', function () {
             if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
             cancelFaceCapture(); camHost.innerHTML = '';
           });
           snapBtn.addEventListener('click', function () {
             if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            /* avcam-1.0.0: belt as well as braces. The button is already
+               disabled until the feed is proven; a programmatic click, an
+               Enter key on a re-enabled control or any future caller must not
+               be able to photograph a feed nothing has measured. */
+            if (!feed.matcherAllowed) { liveStatus.textContent = avcamWaitingLine(feed) || AVCAM_STALL_WHY; return; }
+            snapBtn.__mlsShooting = true;
             snapBtn.disabled = true; snapBtn.textContent = 'Taking the best of a few…';
             grabBestFrame(video, 6, function () {
               return faceCaptureIsCurrent(captureGeneration, camHost) && video.isConnected;
@@ -6098,10 +6461,8 @@
               });
             });
           });
-        }, function () {
-          if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
-          camHost.appendChild(make('div', 'mlsAvNotice', 'Camera permission was declined — nothing was captured.'));
-        });
+        }
+        media.then(camOpened, camFailed);   /* avcam-1.0.0 */
       });
       /* ---- UPLOAD A PHOTO (p1-photo-upload-1.0.0) --------------------------
          The camera is not always the right instrument: a doctor may already
@@ -11482,7 +11843,7 @@ function kioskLine(kind, text) {
   function avatarOwnerDirty() {
     return !!(dialogState || gid(BACK_ID) || gid('mlsAvKiosk') || kiosk.open || kiosk.ambient || kiosk.ambClosing ||
       safe(function () { return !!document.querySelector('[data-mls-avatar-setup-host]'); }, false) ||
-      cameraStream || faceCaptureTimers.length || faceLiveRaf || vgStream || vgStartPending || vgRaf ||
+      cameraStream || faceCaptureTimers.length || faceLiveTimer || vgStream || vgStartPending || vgRaf ||
       pvRec || pvSaying || ttsAudioNow || ttsFetchControllers.length || ttsFetchTimers.length ||
       publicFaceControllers.length);
   }

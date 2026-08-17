@@ -31,6 +31,17 @@ const tests = [
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
   'p1-avatar-dead-feed-threshold.test.js',
+  /* avcam-1.0.0 (owner report 2026-08-17): the camera preview was BLACK and
+     the matcher then reported "3 of 14" and "Skin — the sample was not a
+     colour real skin has". The matcher was right; nothing above it had ever
+     established that a frame existed. A <video> reports videoWidth from
+     readyState 1 while drawImage paints nothing until readyState 2, so the
+     analysis canvas stayed transparent black. Measured on the pre-fix source
+     through this file's own harness: 8 matcher calls in one second, every one
+     on a luminance-0 canvas, with the shutter enabled over it. This drives the
+     real camera-open handler, the real live view and the real verdict through
+     a virtual clock and a fake device. */
+  'avatar-camera-feed-readiness.test.js',
   /* p1-lease-loan-1.0.0 (owner report 2026-08-16): schedule pull 6/6, mapped
      6/6, then all six today-note reads refused "pull-in-flight" because the
      frozen feat_visits.js calls _assistReadChart with no token at all. The
