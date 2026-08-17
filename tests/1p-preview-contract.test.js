@@ -58,7 +58,12 @@ const P1_CONFIG_RELEASE_SUBS = [
    default, never covers content), opnote-open-1.0.0 (Prep Op Notes opens in 15 ms), _opContextDay ok()
    regex fix (no more wrong-day auto-draft), harness account for the uns guard. Production and
    extension baselines untouched. */
-const P1_BASE_COMMIT = 'a126c1edcc199bf0e2985f41b40def1c6bd5cdd6';
+/* Advanced by the 1p train of 2026-08-17 (Fable straighten-up, batch 5): range jobs (durable month job in
+   Staff Prep with Pause/Resume, year continues past a partial month with caps, sign-out → waiting-login),
+   avatar (avlook-1.0.0 adult proportions, avanim-1.0.0 blink/gaze/visemes/neutral mouth,
+   avintake-1.0.0 topics/correction/repeat guard/one encounter write); /cloned re-derived. Production and
+   extension baselines untouched. */
+const P1_BASE_COMMIT = '01bccca4533be916d87a8bc6875785ba017fae83';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
