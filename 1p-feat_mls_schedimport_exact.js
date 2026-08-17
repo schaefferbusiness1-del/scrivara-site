@@ -293,6 +293,28 @@
     } catch (eAccountDay) { return ""; }
   }
   function normDate(d) { var f = gfn("_normDate"); return f ? (f(d) || "") : String(d || "").slice(0, 10); }
+  /* ===== fd-1.0.0 (a future day has no note to read) =====
+     MEASURED on the owner's PRODUCTION pull 2026-08-17/18 (b1027, ext 3.0.62,
+     bodies OFF): pulling TOMORROW, every row spent 60-80 s inside the day-note
+     leg and the batch sat at "Reading verified history 2 of 14" for >75 s.
+     There is no encounter on a day that has not happened, so this is the
+     slowness AND the "0 ok" the owner sees. The account day key is the only
+     honest "today" (never the browser zone); if it cannot be proven this fails
+     OPEN toward reading the note, because reading a note that exists is always
+     safer than skipping one that does. TODAY and every PAST day are unchanged. */
+  function acctTodayKey() {
+    var f = gfn("_acctTodayKey");
+    var k = f ? safe(function () { return String(f() || ""); }, "") : "";
+    if (k) return k;
+    return safe(estTodayKey, "") || "";
+  }
+  function dayNoteFuture(dayKey) {
+    var d = normDate(dayKey || "") || "";
+    var t = acctTodayKey();
+    /* ISO yyyy-mm-dd keys order correctly as strings. */
+    return !!(d && t && d > t);
+  }
+  /* ===== end fd-1.0.0 ===== */
   function normTime(t) { var f = gfn("_normTime"); return f ? (f(t) || "") : ""; }
   function apptKey(n, d, t) { var f = gfn("_apptKey"); return f ? f(n, d, t) : (String(n || "").trim().toLowerCase().replace(/\s+/g, " ") + "|" + d + "|" + normTime(t)); }
   function wallToUtc(d, hhmm) { var f = gfn("_acctWallToUtcIso"); return f ? safe(function () { return f(d, hhmm); }, null) : null; }
@@ -1758,6 +1780,72 @@
     }
     return false;
   }
+  /* ===== p1-authority-repair-1.0.0 (the quarantine hole) =====
+     p1-authority-quarantine-1.0.0 healed a store with ONE bad DAY. It does not
+     heal a store whose TOP LEVEL is alien: v!==1, an extra root key, days not
+     an object, or more than 90 day keys all return null from
+     sanitizeAuthoritativeStore, so loadAuthoritativeStore reports
+     "authority-store-invalid" and every consumer fails closed. And because
+     writeAuthoritativeStore SANITISES BEFORE WRITING, the bad bytes can never
+     be replaced - there is no removeItem for AUTHORITATIVE_SNAPSHOT_SUFFIX
+     anywhere in this file. That is permanent: the owner's
+     "snapshotPublished:false / authority-store-invalid" cannot clear itself.
+
+     The repair is deliberately the SMALLEST thing that works, and it never
+     wipes a day it could have kept:
+       1. SALVAGE. Re-shape the raw blob to the only legal top level
+          ({v:1, days}) and re-run the SAME per-day validator. Every day that
+          validates on its own survives; only days that cannot be validated
+          are dropped, exactly as the existing quarantine does. If more than
+          90 days are present the NEWEST 90 are kept (the store is capped at
+          45 on write, so >90 is already outside the contract).
+       2. RESET, only when salvage is impossible - the bytes are not JSON, or
+          days is not an object. In that state NO day can be attributed to
+          anything, so there is no verified day to lose.
+     Both paths are bounded (one pass, no retry, no loop), record a receipt,
+     and carry no PHI: the store holds backend appointment ids and dates only. */
+  function repairAuthoritativeStore(reason) {
+    var out = { attempted: true, action: "none", ok: false, reason: String(reason || ""), salvagedDays: 0, droppedDays: 0, at: Date.now() };
+    if (String(reason || "") !== "authority-store-invalid") { out.attempted = false; out.action = "not-applicable"; return out; }
+    var k = authoritativeKey();
+    if (!k) { out.action = "key-unavailable"; return out; }
+    var raw = safe(function () { return localStorage.getItem(k); }, null);
+    if (!raw) { out.action = "already-empty"; out.ok = true; return out; }
+    var parsed = safe(function () { return JSON.parse(raw); }, null);
+    var days = (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.days &&
+      typeof parsed.days === "object" && !Array.isArray(parsed.days)) ? parsed.days : null;
+    if (days) {
+      var keys = Object.keys(days);
+      out.droppedDays = 0;
+      if (keys.length > 90) {
+        /* keep the NEWEST 90 by their own updated stamps; the rest are already
+           outside the 45-day write cap and cannot be the day being pulled. */
+        keys = keys.slice().sort(function (a, b) {
+          function t(d) { var e = days[d]; return Number((e && ((e.all && e.all.updated) || (e.active && e.providers && e.providers[e.active.key] && e.providers[e.active.key].updated))) || 0); }
+          return t(b) - t(a);
+        }).slice(0, 90);
+        out.droppedDays += Object.keys(days).length - keys.length;
+      }
+      var shaped = { v: 1, days: {} };
+      keys.forEach(function (d) { shaped.days[d] = days[d]; });
+      var report = {};
+      var cleaned = sanitizeAuthoritativeStore(shaped, report);
+      if (cleaned) {
+        out.droppedDays += (report.dropped || []).length;
+        out.salvagedDays = Object.keys(cleaned.days).length;
+        var wrote = safe(function () { return localStorage.setItem(k, JSON.stringify(cleaned)), true; }, false);
+        if (!wrote) { out.action = "salvage-write-failed"; return out; }
+        out.action = "salvaged"; out.ok = true;
+        return out;
+      }
+    }
+    /* Nothing in these bytes can be attributed to any day. */
+    var removed = safe(function () { return localStorage.removeItem(k), true; }, false);
+    out.action = removed ? "reset-unreadable" : "reset-failed";
+    out.ok = removed;
+    return out;
+  }
+  /* ===== end p1-authority-repair-1.0.0 ===== */
   function writeAuthoritativeStore(x) {
     x = sanitizeAuthoritativeStore(x);
     if (!x) return false;
@@ -2053,6 +2141,15 @@
     /* Work on a detached copy so a quota/storage failure cannot mutate the
        last verified in-memory snapshot by reference before persistence. */
     var loadedAuthority = loadAuthoritativeStore();
+    /* p1-authority-repair-1.0.0: a whole-store refusal is the one failure that
+       could never clear itself. Try the bounded repair ONCE and re-load; if it
+       still refuses, the original reason is what the receipt reports - the
+       repair may never invent a success. */
+    if (!loadedAuthority.ok && loadedAuthority.reason === "authority-store-invalid") {
+      var repair = safe(function () { return repairAuthoritativeStore(loadedAuthority.reason); }, null);
+      out.authorityRepair = repair;
+      if (repair && repair.ok === true) loadedAuthority = loadAuthoritativeStore();
+    }
     if (!loadedAuthority.ok) { out.reason = loadedAuthority.reason; return out; }
     /* Refuse to publish over a date whose own stored bytes could not be
        validated, and do not attempt the write: those bytes may belong to
@@ -3335,15 +3432,26 @@
       patientId: String(target.patientId || row._mlsTargetPatientId || row.patient_external_id || row.patientId || ""),
       reason: String(reason || row.reason || "history-partial").slice(0, 120),
       frozenDob: normDob(target.dob || row._mlsTargetDob || row.dob || row.frozenDob || ""),
-      frozenMrn: normMrn(target.mrn || target.athenaId || row._mlsTargetMrn || row.mrn || row.athenaId || row.frozenMrn || "")
+      frozenMrn: normMrn(target.mrn || target.athenaId || row._mlsTargetMrn || row.mrn || row.athenaId || row.frozenMrn || ""),
+      /* dnd-1.0.0 (owner 2026-08-17, "Pull Thursday the 27th": tnReasons
+         {no-day-on-row:15}). A retry entry carried identity but NOT the day,
+         so buildRetryRows rebuilt day-less rows and every sweep / Retry round
+         reported no-day-on-row for the pulled day's own note - the one note
+         the owner says must always be read with bodies OFF. The day is a
+         property of the SCHEDULE ROW, so it is frozen with the identity. */
+      scheduleDate: normDate(target.scheduleDate || row.scheduleDate || row.date || row.frozenDay || "") || ""
     };
     /* mdx-1.1.0: carry the PHI-free refusal evidence with the retry entry so
        the error report can name the sub-cause without the patient record. */
-    if (diagSource && (diagSource.visitsFailedHistogram || diagSource.visitsEnumDiag || diagSource.visitsReadReceipt)) {
+    if (diagSource && (diagSource.visitsFailedHistogram || diagSource.visitsEnumDiag || diagSource.visitsReadReceipt || diagSource.findDiag)) {
       entry.diag = {
         hist: diagSource.visitsFailedHistogram || null,
         enumDiag: diagSource.visitsEnumDiag || null,
-        receipt: diagSource.visitsReadReceipt || null
+        receipt: diagSource.visitsReadReceipt || null,
+        /* fdx-1.0.0: the chart-open verdict travels with the retry entry so the
+           error report can name WHICH of the four collapsed find outcomes the
+           extension actually reported. */
+        find: diagSource.findDiag || null
       };
     }
     return entry;
@@ -3650,6 +3758,69 @@
        (base + i of the original total) — the bar only ever moves forward. */
     var sweepProgressBase = Math.max(0, Math.floor(Number(sweepOpts && sweepOpts.progressBase || 0)));
     var sweepProgressTotal = Math.max(0, Math.floor(Number(sweepOpts && sweepOpts.progressTotal || 0)));
+    /* ===== dnd-1.0.0 (day-note day resolution) =====
+       Owner 2026-08-17, "Pull Thursday the 27th" (2026-08-27, 15 appts):
+       dayVerdict tnReasons {no-day-on-row:15}. MEASURED CAUSE: the retry/sweep
+       rows are rebuilt by buildRetryRows from frozenRetryEntry, which carried
+       identity but no day, so `row.scheduleDate || row.date` was EMPTY and the
+       pulled day's own note was never read for any row. The day is now frozen
+       onto the retry entry (above) AND the batch keeps its own scope day, so a
+       row can only be day-less when the pull itself has no day - which is the
+       only case that may honestly settle "no-day-on-row". */
+    var batchScopeDay = normDate((sweepOpts && sweepOpts.scopeDay) || "") || "";
+    if (!batchScopeDay) {
+      for (var bsdI = 0; bsdI < rows.length && !batchScopeDay; bsdI++) {
+        batchScopeDay = normDate((rows[bsdI] && (rows[bsdI].scheduleDate || rows[bsdI].date)) || "") || "";
+      }
+    }
+    function batchRowDay(row) {
+      return normDate((row && (row.scheduleDate || row.date)) || "") || batchScopeDay;
+    }
+    /* ===== end dnd-1.0.0 (day-note day resolution) ===== */
+    /* ===== dnf-1.0.0 (the day-note leg is bounded, and never asks a future day) =====
+       MEASURED on the owner's PRODUCTION pull 2026-08-17 (b1027, ext 3.0.62,
+       Tue 2026-08-18 = TOMORROW, 14 rows, bodies OFF): the batch sat at
+       "Reading verified history 2 of 14" for more than 75 SECONDS with the
+       day-note leg running - a scoped encounter read for a day that has not
+       happened yet, where no note can exist. Two separate defects in one:
+       (a) a FUTURE day has no note to read. That is not a failure and must not
+           be counted as one: todayNote is stamped "future-day" (fd-1.0.0),
+           which is neither true (nothing was read) nor false (nothing failed),
+           so todayNoteFailures stays honest and the row is attempt-once.
+           TODAY and every PAST day are unchanged - the owner's standing
+           requirement that the pulled day's own note is read with bodies OFF
+           holds exactly as before.
+       (b) one row could stall the whole batch. Every day-note read is now
+           bounded by its own absolute deadline and refuses with a named
+           reason, so the slowest row costs DN_ROW_DEADLINE_MS, never the day.
+       Codes only - no name, DOB or MRN reaches any reason string. */
+    var DN_ROW_DEADLINE_MS = 45000;
+    function tnDayApplicable(day) {
+      var d = normDate(day || "") || "";
+      if (!d) return { ok: false, future: false, reason: "no-day-on-row" };
+      if (dayNoteFuture(d)) return { ok: false, future: true, reason: "future-day" }; /* fd-1.0.0 */
+      return { ok: true, future: false, reason: "" };
+    }
+    function tnBoundedRead(vp, p, day) {
+      var at = Date.now() + DN_ROW_DEADLINE_MS;
+      return boundedUntil(
+        Promise.resolve().then(function () { return vp.runForPatient(p, function () {}, { onlyDate: String(day) }); }),
+        at, "pulled-day-note-deadline-exceeded");
+    }
+    /* records the per-row cost of the day-note leg so "the day-note leg is
+       what makes the pull slow" is a measurement, never an opinion. */
+    function tnStamp(entry, ms, outcome) {
+      if (!entry) return;
+      entry.todayNoteMs = Number(ms || 0);
+      receipt.todayNoteMsTotal = Number(receipt.todayNoteMsTotal || 0) + Number(ms || 0);
+      receipt.todayNoteAttempts = Number(receipt.todayNoteAttempts || 0) + 1;
+      if (Number(ms || 0) > Number(receipt.todayNoteMsMax || 0)) receipt.todayNoteMsMax = Number(ms || 0);
+      if (outcome === "skipped") {
+        receipt.todayNoteSkipped = Number(receipt.todayNoteSkipped || 0) + 1;
+        if (entry.todayNoteSkipped === "future-day") receipt.todayNoteSkippedFutureDay = Number(receipt.todayNoteSkippedFutureDay || 0) + 1; /* fd-1.0.0 */
+      }
+    }
+    /* ===== end dnf-1.0.0 ===== */
     /* si-2.0.0 INCREMENTAL VERIFIED HISTORY (owner 2026-07-23: "43 minutes for
        a pull is way too slow"). The expensive stage is re-reading every
        encounter BODY for patients whose bodies this engine already read,
@@ -3859,6 +4030,7 @@
         entry.stageMs.parseSave += Date.now() - t0;
         entry.one.chartReason = String(parseErr && parseErr.message || parseErr || "chart-parse-failed").slice(0, 200);
         if (parseErr && parseErr.mlsEchoes) entry.one.chartEchoes = parseErr.mlsEchoes;
+        if (parseErr && parseErr.mlsFind) entry.one.findDiag = parseErr.mlsFind; /* fdx-1.0.0 */
       });
       pipelineParses.push(entry);
     }
@@ -3897,6 +4069,7 @@
       } else {
         one.chartReason = String(outcome.e && outcome.e.message || outcome.e || "chart-parse-failed").slice(0, 200);
         if (outcome.e && outcome.e.mlsEchoes) one.chartEchoes = outcome.e.mlsEchoes;
+        if (outcome.e && outcome.e.mlsFind) one.findDiag = outcome.e.mlsFind; /* fdx-1.0.0 */
         if (/timeout|deadline/i.test(one.chartReason)) { stopAfterTimeout = true; receipt.timedOut = true; }
         else if (/athena-session-expired/.test(one.chartReason)) { stopAfterTimeout = true; receipt.sessionExpired = true; } /* sx-1.1 */
       }
@@ -4002,6 +4175,10 @@
             if (__parseT0) { stageMs.parseSave += Date.now() - __parseT0; } else { stageMs.chart += Date.now() - __chartT0; }
             one.chartReason = String(chartErr && chartErr.message || chartErr || "chart-read-failed").slice(0, 200);
             if (chartErr && chartErr.mlsEchoes) one.chartEchoes = chartErr.mlsEchoes;
+            /* fdx-1.0.0: keep the extension's own PHI-free open verdict, so a
+               chart that never opened can be told apart from one athena has
+               no record of. Codes/counts only - never a name or a DOB. */
+            if (chartErr && chartErr.mlsFind) one.findDiag = chartErr.mlsFind;
             if (/timeout|deadline/i.test(one.chartReason)) {
               /* si-1.8.1: only a proven-alive runner earns a fresh attempt. */
               if (chartAttempt < 2 && transientRunnerRecoveries < 2 && Date.now() + 300000 < batchDeadlineAt && (await runnerAnsweredProbe())) {
@@ -4282,10 +4459,21 @@
            chart read (rd null) leaves todayNote null for the tail pass and the
            sweep, exactly as before. */
         if (!stopAfterTimeout && pullVisitBodies !== true && one.visitsSkipped === true && rd && !inlineDayNoteFuse) {
-          var dnDay = normDate((row && (row.scheduleDate || row.date)) || "") || "";
+          var dnDay = batchRowDay(row); /* dnd-1.0.0 */
+          var dnGate = tnDayApplicable(dnDay); /* dnf-1.0.0 */
           var dnVp = safe(function () { return window.__mlsVisitSavePref; }, null);
-          var dnP = dnDay ? safe(function () { return findStorePatient(one.patientId); }, null) : null;
-          if (!(dnVp && typeof dnVp.runForPatient === "function" && dnP)) { one.todayNote = false; one.todayNoteReason = dnDay ? "reader-unavailable" : "no-day-on-row"; }
+          var dnP = dnGate.ok ? safe(function () { return findStorePatient(one.patientId); }, null) : null;
+          if (dnGate.future) {
+            /* fd-1.0.0: nothing exists to read on a day that has not happened.
+               NOT a failure - the string is neither true nor false, so
+               todayNoteFailures (which counts === false) stays honest and the
+               row is attempt-once for the tail pass (todayNote != null). */
+            one.todayNote = "future-day";
+            one.todayNoteReason = "future-day";
+            one.todayNoteSkipped = "future-day";
+            tnStamp(one, 0, "skipped");
+          }
+          else if (!(dnVp && typeof dnVp.runForPatient === "function" && dnP)) { one.todayNote = false; one.todayNoteReason = dnGate.ok ? "reader-unavailable" : dnGate.reason; }
           else {
             if (todayNoteExtOk === null) {
               /* one pong per batch decides scoped-read capability; the pong
@@ -4301,12 +4489,15 @@
             else {
               try { ppCurrent(String(one.name || "").split(" ")[0] + " \u2014 saving the pulled day's note"); } catch (eDnCur) {}
               safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
+              var dnT0 = Date.now(); /* dnf-1.0.0: measure it, never guess */
               try {
-                var dnRes = await dnVp.runForPatient(dnP, function () {}, { onlyDate: dnDay });
+                var dnRes = await tnBoundedRead(dnVp, dnP, dnDay); /* dnf-1.0.0 */
                 one.todayNote = !!(dnRes && (dnRes.ok === true || typeof dnRes === "number" || dnRes.visits != null));
+                tnStamp(one, Date.now() - dnT0, one.todayNote ? "read" : "refused");
                 if (!one.todayNote) one.todayNoteReason = String((dnRes && dnRes.reason) || "scoped-read-unverified").slice(0, 80);
               } catch (eDnRun) {
                 one.todayNote = false; one.todayNoteReason = String((eDnRun && eDnRun.message) || eDnRun).slice(0, 80);
+                tnStamp(one, Date.now() - dnT0, "refused");
                 /* timeout-class failures mean the runner may still be driving
                    the tab: trip the fuse so no later INLINE attempt races the
                    next chart open; the tail pass (post-batch) inherits them. */
@@ -4321,7 +4512,7 @@
           /* qol-1.3 parity: an unread pulled-day note is VISIBLE on the row -
              pushed after the row's own settle so the day-note verdict wins the
              latest-state tally, exactly as the tail pass's emit did. */
-          if (one.todayNote !== true && typeof ppSettle === "function" && one.name) { try { ppSettle(one.name, false, "pulled-day-note-unread " + String(one.todayNoteReason || "").slice(0, 60), false, { pid: one.patientId }); } catch (eDnPp) {} }
+          if (one.todayNote !== true && one.todayNote !== "future-day" && typeof ppSettle === "function" && one.name) { try { ppSettle(one.name, false, "pulled-day-note-unread " + String(one.todayNoteReason || "").slice(0, 60), false, { pid: one.patientId }); } catch (eDnPp) {} } /* dnf-1.0.0 */
         }
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
@@ -4356,6 +4547,7 @@
             if (__dParseT0) { pEntry.stageMs.parseSave += Date.now() - __dParseT0; } else { pEntry.stageMs.chart += Date.now() - __dChartT0; }
             pOne.chartReason = String(pRetryErr && pRetryErr.message || pRetryErr || "chart-read-failed").slice(0, 200);
             if (pRetryErr && pRetryErr.mlsEchoes) pOne.chartEchoes = pRetryErr.mlsEchoes;
+            if (pRetryErr && pRetryErr.mlsFind) pOne.findDiag = pRetryErr.mlsFind; /* fdx-1.0.0 */
             if (/timeout|deadline/i.test(pOne.chartReason)) receipt.timedOut = true;
             else if (/athena-session-expired/.test(pOne.chartReason)) receipt.sessionExpired = true; /* sx-1.1 */
           }
@@ -4367,7 +4559,7 @@
         pOne.complete = !!(pOne.identityVerified && pOne.dobVerified === true && pOne.organized && pOne.organizationComplete && pOne.visitsComplete);
         if (!pOne.complete) {
           pOne.reason = pOne.chartReason || pOne.visitsReason || "history-partial";
-          receipt.retry.push(frozenRetryEntry(pEntry.row, pEntry.target, pOne.reason));
+          receipt.retry.push(frozenRetryEntry(pEntry.row, pEntry.target, pOne.reason, pOne)); /* fdx-1.0.0 */
         }
         ppResolve(pOne.__ppRow, pOne.complete === true, pOne.complete === true ? "" : (pOne.reason || ""));
       }
@@ -4402,8 +4594,8 @@
     }
     function tnBatchDay() {
       var day = "";
-      for (var di = 0; di < rows.length && !day; di++) day = normDate((rows[di] && (rows[di].scheduleDate || rows[di].date)) || "");
-      return day;
+      for (var di = 0; di < rows.length && !day; di++) day = batchRowDay(rows[di]); /* dnd-1.0.0 */
+      return day || batchScopeDay;
     }
     /* Re-publish the day's today-note truth after the deferred round so a
        FULLY RECOVERED day stops reporting a partial note lane: the receipt
@@ -4446,7 +4638,7 @@
             entry.todayNote = false; entry.todayNoteReason = "deferred-reader-unavailable";
             return Promise.resolve(false);
           }
-          return Promise.resolve().then(function () { return vp.runForPatient(p, function () {}, { onlyDate: String(day) }); }).then(function (res) {
+          return tnBoundedRead(vp, p, String(day)).then(function (res) { /* dnf-1.0.0 */
             var ok = !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
             entry.todayNote = ok;
             entry.todayNoteReason = ok ? "" : String((res && res.reason) || "scoped-read-unverified").slice(0, 80);
@@ -4485,6 +4677,9 @@
           ppSettle(fp.name || "", fp.complete === true, fp.complete === true ? "" : ((fp.reason || "incomplete") + historyDiagSuffix(fp)), false, { surfaceResets: fp.surfaceResets, chartSurface: fp.chartSurface, pid: fp.patientId, axe: fp.axEntry, chartSaved: fp.organized === true && fp.dobVerified === true && !fp.storageFailure && fp.visitsReason !== "clinical-field-coverage-unproven" });
         });
       } catch (eTerm) {}
+      /* dnd-1.0.0: the receipt states the day it read, so a later Retry round
+         rebuilt from receipt.retry can stay on that day without guessing. */
+      receipt.day = batchScopeDay;
       receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
       /* An empty verified provider day has no patient history targets and is
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
@@ -4518,11 +4713,47 @@
          chart and a read that missed the content look identical. */
       receipt.contentVerified = receipt.storeCensus.measured === true && receipt.contentGap === 0;
       receipt.complete = receipt.exactIdentityVerified && receipt.retry.length === 0 && receipt.processed === rows.length && receipt.patients.every(function (p) { return p && p.complete === true; });
-      receipt.reason = receipt.complete ? "complete" : "history-partial";
+      /* stp-2.0.0: a stopped batch names itself. "history-partial" invited the
+         auto-convergence lane to treat the doctor's Stop as a transient
+         straggler and start the whole thing again. */
+      receipt.reason = receipt.complete ? "complete" : (receipt.stoppedByUser === true ? "stopped-by-user" : "history-partial");
       /* qol-2.2 D4: the OFF lane's failure channel was write-only - todayNoteReason
          reached no aggregate, no day-end line, no error report. Verdict-neutral
          by design (L3677); recomputed idempotently on both finalize calls. */
       safe(function () { var tnF = 0, tnR = {}; (receipt.patients || []).forEach(function (p) { if (p && p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; } }); receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR; });
+      /* ===== fdx-1.0.0 (chart-open find verdict census) =====
+         The owner's 13-of-15 failure printed ONE sentence for FOUR different
+         extension outcomes. Count them by the extension's own code so the next
+         report says which one it was. noMatchingPatient is the count of rows
+         that hit background.js:12596 - the collapsed sentence - broken out by
+         findReason. Codes and counts only; PHI-free by construction. */
+      safe(function () {
+        var fR = {}, fV = {}, nmp = 0, seen = 0;
+        (receipt.patients || []).forEach(function (p) {
+          var fd = p && p.findDiag;
+          if (!fd) return;
+          seen++;
+          var code = String(fd.findReason || fd.reason || "unreported").slice(0, 40) || "unreported";
+          fR[code] = (fR[code] || 0) + 1;
+          var via = String(fd.via || fd.route || "").slice(0, 40);
+          if (via) fV[via] = (fV[via] || 0) + 1;
+          if (/^(no-results|no-name-match|blank-error|rows-not-rendered)$/.test(code)) nmp++;
+        });
+        receipt.findReasons = fR;
+        receipt.findVia = fV;
+        receipt.findDiagRows = seen;
+        receipt.noMatchingPatient = nmp;
+        /* An honest, ACTIONABLE sentence for the one find outcome that is not
+           about the patient at all: rows-not-rendered means athena printed
+           "N results found" and then never hydrated the row links - the shape
+           a background/non-painting athena tab produces. Never claim this for
+           no-results/no-name-match, which are real athena answers. */
+        if (Number(fR["rows-not-rendered"] || 0) >= 2 && Number(fR["rows-not-rendered"] || 0) >= nmp / 2) {
+          receipt.findHint = "athenaOne found the search results but never finished drawing their rows on " +
+            Number(fR["rows-not-rendered"] || 0) + " chart" + (Number(fR["rows-not-rendered"] || 0) === 1 ? "" : "s") +
+            ". That is the athena tab, not the patient: click the athenaOne tab once so it paints, then retry.";
+        }
+      });
       /* dn-1.0 TERMINAL TRUTH: the pull panel's DONE card (mls-connect
          __mlsPullProgress) reads this stamp. Outer batch only - a sub-batch
          stamping day-level truth is the b752 subset trap. finalizeVerdict may
@@ -4544,8 +4775,9 @@
         if (sweepDepth) return;
         var day = "";
         for (var di = 0; di < rows.length && !day; di++) {
-          day = normDate((rows[di] && (rows[di].scheduleDate || rows[di].date)) || "");
+          day = batchRowDay(rows[di]); /* dnd-1.0.0 */
         }
+        if (!day) day = batchScopeDay;
         if (day) recordHistoryVerdict(day, receipt, rows.length);
       });
     }
@@ -4558,7 +4790,29 @@
        10 ok, then 11 straight tab-unreachable). cv.run's own 240s timeout
        bounds each read; failures land on todayNoteReason and never change
        the pull verdict. */
-    if (pullVisitBodies !== true) {
+    /* ===== stp-2.0.0 (STOP means stop) =====
+       Owner 2026-08-17: "a couple issues like when STOPPING". A cooperative
+       stop broke the CHART loop and then ran, in order: this whole today-note
+       tail pass (one Athena read per visits-skipped row), the automatic
+       convergence sweep, and finally a deferred today-note round - minutes of
+       further Athena driving after the doctor pressed Stop, with the lease
+       still held. Stop now ends every remaining Athena leg. Everything already
+       read stays saved and the receipt says exactly what was and was not done. */
+    var __stpStopped = receipt.stoppedByUser === true || safe(function () { return window.__mlsPullStopRequested === true; }, false);
+    if (__stpStopped) {
+      receipt.stoppedByUser = true;
+      safe(function () {
+        var tnSkipped = 0;
+        (receipt.patients || []).forEach(function (p) {
+          if (p && p.visitsSkipped === true && p.todayNote == null) { p.todayNote = false; p.todayNoteReason = "stopped-by-user"; tnSkipped++; }
+        });
+        receipt.todayNoteStoppedRows = tnSkipped;
+      });
+      /* a stop must not leave a deferred round armed against a lease it will
+         never see freed for this pull's rows. */
+      safe(tnDropDeferredQueue);
+    }
+    if (pullVisitBodies !== true && !__stpStopped) {
       /* qol-1.5: this block read the UNDECLARED todayNoteExtOk (and called an
          undefined safeAsync) OUTSIDE any try/catch - the first visits-skipped
          patient threw ReferenceError, the day verdict and sweep never ran, and
@@ -4572,12 +4826,12 @@
          capture succeeded performs ZERO second-pass re-opens. */
       try {
       var todayNoteDayById = {};
-      try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) todayNoteDayById[pid] = normDate((r && (r.scheduleDate || r.date)) || "") || ""; }); } catch (eMap) {}
+      try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) todayNoteDayById[pid] = batchRowDay(r); }); } catch (eMap) {} /* dnd-1.0.0 */
       var vpToday = safe(function () { return window.__mlsVisitSavePref; }, null);
       /* qol-2.2 D3: rows settle before this pass, so the card read 100% and
          sat there grinding. ppCurrent is never number-parsed (safe from the
          si-1.9.4 bar regex), so narrate the pass live. */
-      var tnTotal = 0; try { for (var tnc = 0; tnc < receipt.patients.length; tnc++) { if (receipt.patients[tnc] && receipt.patients[tnc].visitsSkipped === true && receipt.patients[tnc].todayNote == null) tnTotal++; } } catch (eTnc) {} var tnIdx = 0;
+      var tnTotal = 0; try { for (var tnc = 0; tnc < receipt.patients.length; tnc++) { if (receipt.patients[tnc] && receipt.patients[tnc].visitsSkipped === true && receipt.patients[tnc].todayNote == null && tnDayApplicable(todayNoteDayById[String(receipt.patients[tnc].patientId || "")] || "").ok) tnTotal++; } } catch (eTnc) {} var tnIdx = 0; /* dnf-1.0.0 */
       for (var tn = 0; tn < receipt.patients.length; tn++) {
         var oneTn = receipt.patients[tn];
         if (!oneTn || oneTn.visitsSkipped !== true || oneTn.todayNote != null) continue; /* dn-1.0: attempt-once - an inline verdict (success OR refusal, incl. identity-mismatch) is final; only never-attempted patients reach this tail */
@@ -4585,8 +4839,10 @@
         safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
         var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
         var tnId = String(oneTn.patientId || "");
-        var tnP = (tnDay && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
-        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnDay ? "reader-unavailable" : "no-day-on-row"; if (typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + oneTn.todayNoteReason, false, { pid: oneTn.patientId }); } catch (ePpA) {} } continue; }
+        var tnGate = tnDayApplicable(tnDay); /* dnf-1.0.0 */
+        if (tnGate.future) { oneTn.todayNote = "future-day"; oneTn.todayNoteReason = "future-day"; oneTn.todayNoteSkipped = "future-day"; tnStamp(oneTn, 0, "skipped"); continue; } /* fd-1.0.0 */
+        var tnP = (tnGate.ok && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
+        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnGate.ok ? "reader-unavailable" : tnGate.reason; if (typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + oneTn.todayNoteReason, false, { pid: oneTn.patientId }); } catch (ePpA) {} } continue; }
         if (todayNoteExtOk === null) {
           /* 2026-07-28 invariant fix: an extension that predates the
              day-scoped reader ignores onlyDate and returns EVERY body -
@@ -4600,11 +4856,13 @@
           }, false);
         }
         if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; if (typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread extension-predates-scoped-read", false, { pid: oneTn.patientId }); } catch (ePpB) {} } continue; }
+        var tnT0 = Date.now(); /* dnf-1.0.0 */
         try {
-          var tnRes = await vpToday.runForPatient(tnP, function () {}, { onlyDate: tnDay });
+          var tnRes = await tnBoundedRead(vpToday, tnP, tnDay); /* dnf-1.0.0 */
           oneTn.todayNote = !!(tnRes && (tnRes.ok === true || typeof tnRes === "number" || tnRes.visits != null));
+          tnStamp(oneTn, Date.now() - tnT0, oneTn.todayNote ? "read" : "refused");
           if (!oneTn.todayNote) oneTn.todayNoteReason = String((tnRes && tnRes.reason) || "scoped-read-unverified").slice(0, 80);
-        } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); }
+        } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); tnStamp(oneTn, Date.now() - tnT0, "refused"); }
         /* p1-todaynote-deferred-retry-1.0.0: same deferral in the tail pass -
            this pass also runs inside the pull, so it loses the same race. */
         if (oneTn.todayNote !== true && tnIsDeferrable(oneTn.todayNoteReason)) tnDeferRow(oneTn, tnDay);
@@ -4627,7 +4885,7 @@
        attempt is a full fresh open+verify+read — no identity gate is
        loosened, and a patient still refusing keeps an honest retry entry. */
     var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
-    if (!sweepDepth) try {
+    if (!sweepDepth && !__stpStopped) try {   /* stp-2.0.0 */
       receipt.sweepPasses = 0;
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
@@ -4637,9 +4895,9 @@
            its place; with zero finished there is no progress to hold, so the
            count-free wording leaves the bar untouched. */
         if (onStatus) onStatus((rows.length > sweepable.length ? (rows.length - sweepable.length) + " of " + rows.length + " charts finished — re-checking " : "Re-checking ") + sweepable.length + " in-use chart" + (sweepable.length === 1 ? "" : "s") + " (automatic pass " + sweepPass + ")...", "");
-        var swept = buildRetryRows(sweepable);
+        var swept = buildRetryRows(sweepable, batchScopeDay); /* dnd-1.0.0 */
         var sub = null;
-        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, { depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math.max(0, rows.length - swept.rows.length), progressTotal: rows.length }); } catch (eSweep) { break; }
+        try { sub = await runHistoryBatch(swept.rows, swept.unresolved, onStatus, { depth: 1, deadlineCapAt: batchDeadlineAt, progressBase: Math.max(0, rows.length - swept.rows.length), progressTotal: rows.length, scopeDay: batchScopeDay }); } catch (eSweep) { break; }
         receipt.sweepPasses = sweepPass;
         if (!sub || !Array.isArray(sub.patients)) break;
         var recoveredIds = {};
@@ -4791,7 +5049,23 @@
       attempt: item.attempt, settleDay: isFn(item.settleDay) ? item.settleDay : null, attempts: 0 });
     return true;
   }
+  /* stp-2.0.0: STOP drops the deferred today-note queue and disarms its timer.
+     Every dropped row keeps an honest reason on the receipt via settleDay, so
+     a stopped day never reports the notes as read and never re-drives Athena
+     after the doctor pressed Stop. */
+  function tnDropDeferredQueue(reason) {
+    if (_tnDefer.timer != null) { safe(function () { clearTimeout(_tnDefer.timer); }); _tnDefer.timer = null; }
+    _tnDefer.waits = 0;
+    if (!_tnDefer.queue.length) return 0;
+    var dropped = _tnDefer.queue.splice(0, _tnDefer.queue.length);
+    var seen = [];
+    dropped.forEach(function (d) { if (d.settleDay && seen.indexOf(d.settleDay) < 0) seen.push(d.settleDay); });
+    seen.forEach(function (fn) { safe(function () { fn({ attempted: 0, recovered: 0, remaining: dropped.length, reason: String(reason || "stopped-by-user") }); }); });
+    return dropped.length;
+  }
   function tnScheduleDeferredRound() {
+    /* stp-2.0.0: never arm a round the doctor already stopped. */
+    if (safe(function () { return window.__mlsPullStopRequested === true; }, false)) { tnDropDeferredQueue("stopped-by-user"); return false; }
     if (!_tnDefer.queue.length || _tnDefer.timer != null || _tnDefer.running) return false;
     _tnDefer.timer = setTimeout(function () { _tnDefer.timer = null; safe(runDeferredTodayNoteRound); }, TN_DEFER_DELAY_MS);
     return true;
@@ -4935,8 +5209,12 @@
      patient; any drift refuses. Downstream gets the stored separator forms
      (_athenaHistoryTargetSnapshot rejects bare tokens). Shared by the manual
      retry button and the si-1.9.0 automatic end-of-batch re-sweep. */
-  function buildRetryRows(retryEntries) {
+  function buildRetryRows(retryEntries, scopeDay) {
     var seen = {}, rows = [], unresolved = [];
+    /* dnd-1.0.0: the day travels with the rebuilt row. scopeDay is the pull's
+       own day and is used only when an older retry entry carries none, so a
+       receipt written before this change still reaches the day-note leg. */
+    scopeDay = normDate(scopeDay || "") || "";
     (Array.isArray(retryEntries) ? retryEntries : []).forEach(function (item) {
       var patientId = String(item && item.patientId || "");
       if (!patientId || seen[patientId]) return;
@@ -4962,6 +5240,7 @@
          target (identity-target-unresolved x N). Equality with the stored
          patient was just proven above; hand downstream the stored form. */
       var storedDob = String(patient.dob || ""), storedMrn = String(patient.mrn || patient.athenaId || "");
+      var rowDay = normDate((item && item.scheduleDate) || "") || scopeDay;
       rows.push({
         patient_external_id: patientId,
         _mlsTargetPatientId: patientId,
@@ -4970,7 +5249,11 @@
         name: String(patient.name || ""),
         dob: frozenDob ? storedDob : "",
         mrn: frozenMrn ? storedMrn : "",
-        athenaId: frozenMrn ? storedMrn : ""
+        athenaId: frozenMrn ? storedMrn : "",
+        /* dnd-1.0.0: without these two fields the rebuilt row reached the
+           day-note leg with no day and every row settled no-day-on-row. */
+        date: rowDay,
+        scheduleDate: rowDay
       });
     });
     return { rows: rows, unresolved: unresolved };
@@ -4999,7 +5282,12 @@
   function retryFailedHistory(source, onStatus) {
     var history = source && source.historyReceipt ? source.historyReceipt : (source || {});
     var retry = Array.isArray(history.retry) ? history.retry : [];
-    var built = buildRetryRows(retry);
+    /* dnd-1.0.0: the retry round is scoped to the SAME day the pull read. The
+       receipt now states its own day; the pull result's target and schedule
+       receipt are the fallbacks for a receipt written before this change. */
+    var retryScopeDay = normDate(history.day || (source && source.target) ||
+      (source && source.scheduleReceipt && source.scheduleReceipt.schedDate) || "") || "";
+    var built = buildRetryRows(retry, retryScopeDay);
     var rows = built.rows, unresolved = built.unresolved;
     if (!retry.length) {
       var alreadyComplete = history && history.complete === true && history.exactIdentityVerified === true && Number(history.failures || 0) === 0;
@@ -5024,7 +5312,8 @@
       return withPatientBatch("history-retry", function () {
         __historyRetryForeground = true;
         __presenceBatchAnnounced = false;
-        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}).then(
+        window.__mlsPullStopRequested = false; /* stp-2.0.0: an explicit retry is a NEW intent, never the stopped one */
+        return runHistoryBatch(rows, unresolved, isFn(onStatus) ? onStatus : function () {}, { scopeDay: retryScopeDay }).then(
           function (v) { __historyRetryForeground = false; return v; },
           function (e) { __historyRetryForeground = false; throw e; });
       });
@@ -5312,7 +5601,30 @@
            contract. Save the exact schedule first with no patient-binding
            dependency and disclose the skipped history; ordinary verified
            pulls retain the full-history default unchanged. */
+        /* ===== bob-1.0.0 (best of both worlds) =====
+           OWNER, 2026-08-17 (verbatim): "1p pulls way faster but doesn't
+           include history so if you can do best of both worlds that would be
+           great." This line is the whole mechanism. On the provider-unknown
+           appointment-census path 1p set includeHistory = false and NEVER put
+           it back, so every per-patient chart read was silently dropped: fast,
+           and nothing saved.
+
+           The reason the census path lowered it is real and stays intact: the
+           census import must run with requirePatientBinding FALSE, because a
+           row whose patient cannot be bound must not fail the exact appointment
+           census, and history must not be part of the census COMPLETION
+           contract when provider attribution is unavailable.
+
+           So the request is DEFERRED, not dropped. Phase 1 (schedule + patient
+           landing) is byte-for-byte what it was - the fast part stays fast, the
+           binding stays optional, the census contract is unchanged. Phase 2
+           runs the ordinary history batch over the SAME res.historyTargets the
+           import produced, with its own honest progress, and its result is
+           reported separately from the census verdict. Nothing is loosened:
+           every identity gate, the store census, and the day-note lane run
+           exactly as they do on an attributed day. */
         var p1CensusHistoryRequested = p1CensusDecision.ok && includeHistory;
+        var p1CensusHistoryDeferred = p1CensusHistoryRequested; /* bob-1.0.0: run it in phase 2 */
         if (p1CensusDecision.ok) includeHistory = false;
         if(!verifiedEmptyDay&&!p1CensusDecision.ok&&!p1DetectedSelected.ok&&!(currentProviderRosterReceipt&&currentProviderRosterReceipt.complete===true&&currentProviderRosterReceipt.partial!==true)){
           onStatus("Athena's full provider roster was not verified. Nothing was imported; keep the complete Day schedule open and retry.","err");
@@ -5355,7 +5667,21 @@
         /* b346: the text-parse fallback can call an async parser; a hung parser
            used to leave the pull at "Finding patients..." forever. Bound it to
            an absolute deadline so this stage always terminates. */
-        var parsedP = exactRows.length
+        /* ===== ed-1.0.0 (a verified-empty day never calls the AI parser) =====
+           LIVE REPRO 2026-08-17 on PRODUCTION, Mon 2026-08-31, owner's report
+           "grid still settling attempt 3 of 3": a day athena proved EMPTY
+           (r.receipt.authoritativeEmpty===true, complete, 0 rows, empty text -
+           already proven internally consistent by authoritativeEmptyContract
+           above) still fell through to _parseScheduleText, which is an AI call
+           (aiCallRaw -> /api/complete). A slow model blew the 25s bound ->
+           schedule-parse-timeout -> retry.schedule:true -> the day strip's
+           automatic re-pull ran it three times. There is nothing for a parser
+           to find on a proven-empty day: resolve [] and let the unchanged
+           empty-day success path ("Athena verified that <date> has no
+           appointments") do its job. A non-empty text-only day is untouched. */
+        var parsedP = verifiedEmptyDay
+          ? Promise.resolve([])
+          : exactRows.length
           ? Promise.resolve(exactRows)
           : boundedUntil(
               Promise.resolve(safe(function () { return isFn(window._parseScheduleText) ? window._parseScheduleText(r.text) : []; }, [])),
@@ -5567,13 +5893,59 @@
             if (p1AppointmentCensusComplete && calendarReceipt.complete) {
               onStatus("The exact appointment census is saved for " + date + ". Provider is intentionally blank because Athena exposed no row-to-provider link; provider grouping is not being reported as complete.", "ok");
             }
+            /* bob-1.0.0 PHASE 2: the census path defers history, it does not
+               drop it. The schedule is already saved and visible at this point
+               (phase 1 above), so this is additive work with its own progress
+               line - "Reading history N of M" comes from runHistoryBatch's own
+               onStatus, unchanged. */
+            var p1CensusHistoryTargets = (p1CensusHistoryDeferred ? (res.historyTargets || []) : []);
+            if (p1CensusHistoryDeferred) {
+              onStatus(p1CensusHistoryTargets.length
+                ? ("The schedule for " + date + " is saved. Reading chart history for " + p1CensusHistoryTargets.length + " patient" + (p1CensusHistoryTargets.length === 1 ? "" : "s") + " now - provider stays blank, nothing about the census changes.")
+                : ("The schedule for " + date + " is saved. No patient on this day carries the DOB or MRN proof a chart read requires, so no history was attempted."), "");
+            }
             var historyReceipt = includeHistory
-              ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus)
-              : { requested: 0, processed: 0, complete: true, exactIdentityVerified: true, skipped: true, reason: p1CensusHistoryRequested ? "provider-attribution-unavailable" : "not-requested", patients: [], retry: [], failures: 0 };
+              ? await runHistoryBatch(res.historyTargets || [], res.historyUnresolved || [], onStatus, { scopeDay: date })
+              : (p1CensusHistoryDeferred && p1CensusHistoryTargets.length
+                ? await runHistoryBatch(p1CensusHistoryTargets, res.historyUnresolved || [], onStatus, { scopeDay: date })
+                : { requested: 0, processed: 0, complete: true, exactIdentityVerified: true, skipped: true, reason: p1CensusHistoryDeferred ? "provider-attribution-unavailable" : "not-requested", censusNoProvableTargets: p1CensusHistoryDeferred === true, patients: [], retry: [], failures: 0 });
+            /* bob-1.0.0: phase 2 ran, so say so on the receipt. The census's
+               OWN completion verdict is deliberately not derived from it. */
+            if (p1CensusHistoryDeferred) {
+              historyReceipt.censusPhaseTwo = true;
+              historyReceipt.censusHistoryTargets = p1CensusHistoryTargets.length;
+            }
             var providerComplete = !p1AppointmentCensusComplete && (selectedProvider.mode !== "selected" || !!(res.providerReceipt && res.providerReceipt.complete));
             var scheduleScopeComplete = p1AppointmentCensusComplete || providerComplete;
             var identityBootstrapComplete = !includeHistory || !!(res.identityBootstrapReceipt && res.identityBootstrapReceipt.complete === true);
-            var historyComplete = !includeHistory || !!(historyReceipt.complete && historyReceipt.exactIdentityVerified === true);
+            /* ===== scv-1.0.0 (the verdict is a STORE CENSUS, not a counter) =====
+               Skeptic verdict 3, proven by tests/pull-verdict-is-a-store-census
+               .test.js: requested/processed/failures are arithmetically
+               incapable of contradicting the walk that produced them, so a pull
+               that left the store BYTE-IDENTICAL still reported history N/N,
+               complete. The counters stay necessary; they stop being
+               sufficient. A day that requested history must ALSO have a
+               MEASURED census before it may call itself complete, and a
+               measured census that shows not one of the day's targets holding
+               content is a day that did not land - never "verified complete".
+               A patient with a genuinely empty Athena chart still passes: the
+               bar is "SOME target holds content and the census was taken",
+               not contentGap===0, so an honestly empty chart cannot be
+               converted into a false failure. */
+            var __scvCensus = historyReceipt.storeCensus || null;
+            var __scvTargets = Number((__scvCensus && __scvCensus.targets) || 0);
+            var __scvMeasured = !!(__scvCensus && __scvCensus.measured === true);
+            var __scvHeld = Number((__scvCensus && __scvCensus.withContent) || 0);
+            var __scvStoreOk = !includeHistory || __scvTargets === 0 || (__scvMeasured && __scvHeld > 0);
+            var __scvReason = __scvStoreOk ? "" : (__scvMeasured ? "history-store-empty" : "history-store-unmeasured");
+            historyReceipt.storeVerdict = { ok: __scvStoreOk, reason: __scvReason, measured: __scvMeasured,
+              targets: __scvTargets, withContent: __scvHeld,
+              contentVerified: historyReceipt.contentVerified === true,
+              contentGap: Number(historyReceipt.contentGap || 0),
+              changed: Number((historyReceipt.storeDelta && historyReceipt.storeDelta.changed) || 0),
+              changeMeasured: !!(historyReceipt.storeDelta && historyReceipt.storeDelta.measured === true) };
+            /* ===== end scv-1.0.0 ===== */
+            var historyComplete = !includeHistory || !!(historyReceipt.complete && historyReceipt.exactIdentityVerified === true && __scvStoreOk);
             var __metadataFailure = p1MetadataFailure();
             if (!__metadataFailure && Number(opts.__p1MetadataStartSerial || 0) < p1MetadataFailureSerial) {
               __metadataFailure = { v: 1, at: Date.now(), reason: "metadata-persist-failed", error: "A p1 local metadata write failed during this pull." };
@@ -5587,12 +5959,16 @@
             res.ok = complete; res.complete = complete;
             res.includeHistory = p1CensusHistoryRequested || includeHistory;
             res.historyRequested = p1CensusHistoryRequested || includeHistory;
-            res.historySkippedReason = p1CensusHistoryRequested ? "provider-attribution-unavailable" : "";
+            /* bob-1.0.0: history is no longer skipped on the census path, so
+               the field only fills when phase 2 genuinely had nothing to read. */
+            res.historySkippedReason = (p1CensusHistoryDeferred && historyReceipt.skipped === true)
+              ? String(historyReceipt.reason || "provider-attribution-unavailable") : "";
+            res.censusHistoryPhaseTwo = p1CensusHistoryDeferred === true && historyReceipt.skipped !== true;
             res.appointmentCensusOnly = p1AppointmentCensusComplete;
             res.providerAttributionComplete = providerComplete;
             res.reason = complete
-              ? (p1AppointmentCensusComplete ? "complete-appointment-census-only" : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only"))))
-              : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : "history-partial"))));
+              ? (p1AppointmentCensusComplete ? (res.censusHistoryPhaseTwo ? "complete-appointment-census-with-history" : "complete-appointment-census-only") : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only")))) /* bob-1.0.0 */
+              : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : (!__scvStoreOk && historyReceipt.complete === true ? __scvReason : "history-partial")))));
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
@@ -5700,7 +6076,8 @@
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read (" + __ppWhy("no-chart-frame-candidate") + "), so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
               (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly, but MLS could not verify the latest save on this device. Keep this tab open, check available storage, then retry those charts." : "") +
               (function () { /* srr-1.2: name the failing set AT DAY END - a month run whose failures are invisible until completion cannot be stopped on sight (supervisor 2026-08-08) */ try { var fl = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true; }).slice(0, 8).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + __ppWhy(String(p.reason || "unread")).slice(0, 40) + ")"; }); return fl.length ? " Charts needing retry: " + fl.join("; ") + "." : ""; } catch (eFl) { return ""; } })() + (__chartOnly ? " " + __chartOnly + " of the incomplete chart" + (__chartOnly === 1 ? "" : "s") + " DID save the six-card chart summary \u2014 only the visit notes are incomplete; Retry re-reads just those." : "") + contentNotice(historyReceipt) + __redoNote + __tnNote, "err");
-            else if (!includeHistory) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; " + (p1CensusHistoryRequested ? "chart history was intentionally skipped because provider attribution is unavailable for this appointment census." : "history was not requested.") + freshnessNotice(r) + __p1ScopeNotice, "ok");
+            else if (!includeHistory && !res.censusHistoryPhaseTwo) onStatus("Schedule-only complete: " + scheduleSummary + " appointments accounted for; " + (p1CensusHistoryDeferred ? "chart history was intentionally skipped because provider attribution is unavailable for this appointment census." : "history was not requested.") + freshnessNotice(r) + __p1ScopeNotice, "ok"); /* bob-1.0.0: unchanged wording when phase 2 had nothing provable to read */
+            else if (!includeHistory) onStatus("Appointment census + history: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + historyFailures + ". Provider stays blank for this census; the chart reads are reported on their own." + freshnessNotice(r) + __p1ScopeNotice + contentNotice(historyReceipt) + __tnNote, historyFailures ? "err" : "ok"); /* bob-1.0.0 */
             else onStatus("Verified complete: schedule " + scheduleSummary + "; history " + historySummary + "; failures 0." + freshnessNotice(r) + __p1ScopeNotice + contentNotice(historyReceipt) + __redoNote + __tnNote, "ok");
             return res;
           });
@@ -6933,7 +7310,18 @@
     pull: pull,
     /* cv-1.0.0: the ONE guarded day lane every visible pull owner calls. */
     dayPull: dayPull,
-    stopPull: function () { window.__mlsPullStopRequested = true; return { requested: true }; }, /* stp-1.0.0 */
+    /* stp-2.0.0: Stop is one act with three consequences - the chart loop
+       aborts cooperatively (stp-1.0.0), no further Athena leg starts, and the
+       deferred today-note queue is dropped rather than left armed. The lease
+       and every mutex still release through runManagedAthenaOperation's normal
+       settle path, so nothing stays latched "already running". */
+    stopPull: function () {
+      window.__mlsPullStopRequested = true;
+      var droppedNotes = 0;
+      try { droppedNotes = tnDropDeferredQueue("stopped-by-user"); } catch (eStp) {}
+      return { requested: true, deferredTodayNotesDropped: droppedNotes };
+    },
+    _dropDeferredTodayNotes: tnDropDeferredQueue,
     _warmUpDay: warmUpDay,
     /* p1-todaynote-deferred-retry-1.0.0: read-only view of the deferred
        today-note queue, plus a manual drain for diagnostics. Never starts a
@@ -6961,6 +7349,8 @@
     _scopeProviderRows: scopeProviderRows,
     _hydrateMissingScheduleProof: hydrateMissingScheduleProof,
     _authoritativeEmptyContract: authoritativeEmptyContract,
+    _repairAuthoritativeStore: repairAuthoritativeStore, /* p1-authority-repair-1.0.0 */
+    _loadAuthoritativeStore: loadAuthoritativeStore,
     _patientIdentity: patientIdentity,
     _appointmentIdentity: appointmentIdentity,
     _findPatient: findPatient,
@@ -6983,6 +7373,7 @@
     _clearLedgerDone: clearDone,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
+    _buildRetryRows: buildRetryRows,
     retryFailedHistory: retryFailedHistory,
     _boundedUntil: boundedUntil,
     _deadlineScheduler: absoluteDeadlines,

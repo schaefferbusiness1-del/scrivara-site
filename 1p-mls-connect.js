@@ -4921,7 +4921,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var sb = document.getElementById('mlsPullProgStop');
     if (sb) sb.onclick = function () {
       try { if (window.__mlsSI && typeof window.__mlsSI.stopPull === 'function') window.__mlsSI.stopPull(); else window.__mlsPullStopRequested = true; } catch (e) { window.__mlsPullStopRequested = true; }
-      sb.disabled = true; sb.textContent = 'Stopping after this chart&';
+      sb.disabled = true; sb.textContent = 'Stopping after this chart…';
     };
     return p;
   }
@@ -16977,8 +16977,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var _drTransient = function (err) {
         var m = S((err && (err.message || err)) || '');
         if (!m) return false;                                   /* no reason captured — do not spend more calls blindly */
-        if (/^s*(?:HTTP[_ ])?(?:429|5dd)/i.test(m)) return true;
-        if (/(?:429|500|502|503|504)/.test(m) && /upstream|gateway|timeout|timed out|server error|temporarily|unavailable|rate|overload/i.test(m)) return true;
+        /* U0 (2026-08-17): shipped as /^s*(?:HTTP[_ ])?(?:429|5dd)<0x08>/ -
+           same lost-backslash transport, and \b had become a literal
+           BACKSPACE byte. A bare "HTTP 503" with no keyword was NOT retried. */
+        if (/^\s*(?:HTTP[_ ])?(?:429|5\d\d)\b/i.test(m)) return true;
+        if (/\b(?:429|500|502|503|504)\b/.test(m) && /upstream|gateway|timeout|timed out|server error|temporarily|unavailable|rate|overload/i.test(m)) return true;
         if (/failed to fetch|network ?error|load failed|connection|ECONN|socket hang up/i.test(m)) return true;
         return false;
       };
@@ -48066,6 +48069,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if ((x = m.match(/^Schedule-only complete: (\d+)\/(\d+) appointments accounted for;/))) return counts('schedule-complete', x, ['accounted', 'attempted']);
     if ((x = m.match(/^Verified complete: schedule (\d+)\/(\d+); history (\d+)\/(\d+); failures (\d+)\./))) return counts('pull-complete', x, ['scheduleAccounted', 'scheduleAttempted', 'historyStored', 'historyTargets', 'failures']);
     if ((x = m.match(/^Incomplete: schedule (\d+)\/(\d+); history (\d+)\/(\d+); failures (\d+)\./))) return counts('pull-incomplete', x, ['scheduleAccounted', 'scheduleAttempted', 'historyStored', 'historyTargets', 'failures']);
+    /* cvc-1.0.0: the continuous finishing pass is part of the same pull, so it
+       belongs in the report - counts only. */
+    if ((x = m.match(/^Finishing (\d+) charts? that need a second read\.$/))) return counts('converge-start', x, ['charts']);
+    if ((x = m.match(/^Finishing (\d+) charts? that need a second read \u2014 (\d+) of (\d+)\u2026$/))) return counts('converge-progress', x, ['charts', 'current', 'total']);
     if (/^Athena's full provider roster was not verified\./.test(m)) return { code: 'provider-roster-incomplete' };
     if (/^Athena's provider roster receipt was not bound\./.test(m)) return { code: 'provider-roster-unbound' };
     if (/^Athena's schedule was only partly readable\./.test(m)) return { code: 'schedule-incomplete' };
@@ -48175,7 +48182,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     'import-in-flight': 1,
     'appointment-create-http': 1,
     'appointment-create-network': 1,
-    'appointment-create-dispatch-failed': 1
+    'appointment-create-dispatch-failed': 1,
+    /* fdx-1.0.0: the FOUR extension outcomes background.js:12596 collapses
+       into one sentence ("athenaOne patient search found no matching
+       patient."). Allowlisting them by name is what lets the copyable report
+       say which one it was without a single patient identifier. */
+    'no-results': 1,
+    'no-name-match': 1,
+    'blank-error': 1,
+    'rows-not-rendered': 1,
+    'ambiguous': 1,
+    'dob-mismatch': 1,
+    'unreported': 1,
+    'future-day': 1,
+    'stopped-by-user': 1
   };
   function dsSafeReasonCounts(raw) {
     var out = {};
@@ -48240,7 +48260,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return cr;
         })(),
         identityBootstrap: ib ? { complete: ib.complete === true, attempted: ib.attempted, alreadyProven: ib.alreadyProven, requested: ib.requested, resolved: ib.resolved, failed: ib.failed, reasons: ib.reasons || {} } : null,
-        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''), retryReasons: dsReasonHistogram(hr.retry), todayNoteFailures: Number(hr.todayNoteFailures || 0), todayNoteReasons: (function () { var oTn = {}; try { Object.keys(hr.todayNoteReasons || {}).forEach(function (kTn) { oTn[String(kTn).slice(0, 80)] = Number(hr.todayNoteReasons[kTn] || 0); }); } catch (eTn) {} return oTn; })(),
+        historyReceipt: hr ? { requested: hr.requested, processed: hr.processed, complete: hr.complete === true, exactIdentityVerified: hr.exactIdentityVerified === true, failures: hr.failures, timedOut: hr.timedOut === true, reason: String(hr.reason || ''),
+          /* stp-2.0.0 */ stoppedByUser: hr.stoppedByUser === true, todayNoteStoppedRows: Number(hr.todayNoteStoppedRows || 0),
+          /* fdx-1.0.0: WHY the chart never opened, by the extension's own code. */
+          findReasons: dsSafeReasonCounts(hr.findReasons), findVia: dsSafeReasonCounts(hr.findVia),
+          noMatchingPatient: Number(hr.noMatchingPatient || 0), findDiagRows: Number(hr.findDiagRows || 0),
+          findHint: String(hr.findHint || '').slice(0, 240),
+          /* dnf-1.0.0: the measured cost of the day-note leg - the step that
+             held the owner's 2026-08-17 pull at 2 of 14 for 75+ seconds. */
+          todayNoteMsTotal: Number(hr.todayNoteMsTotal || 0), todayNoteMsMax: Number(hr.todayNoteMsMax || 0),
+          todayNoteAttempts: Number(hr.todayNoteAttempts || 0), todayNoteSkipped: Number(hr.todayNoteSkipped || 0),
+          /* scv-1.0.0: the STORE CENSUS is the completeness claim, not the counters. */
+          storeVerdict: dsPick(hr.storeVerdict, ['ok', 'reason', 'measured', 'targets', 'withContent', 'contentVerified', 'contentGap', 'changed', 'changeMeasured']),
+          storeCensus: dsPick(hr.storeCensus, ['measured', 'rows', 'targets', 'resolved', 'unresolved', 'neverAttempted', 'withContent', 'withoutContent', 'athenaSourced', 'gap']),
+          storeDelta: dsPick(hr.storeDelta, ['measured', 'compared', 'changed', 'unchanged']),
+          contentVerified: hr.contentVerified === true, contentGap: Number(hr.contentGap || 0),
+          day: String(hr.day || ''), retryReasons: dsReasonHistogram(hr.retry), todayNoteFailures: Number(hr.todayNoteFailures || 0), todayNoteReasons: (function () { var oTn = {}; try { Object.keys(hr.todayNoteReasons || {}).forEach(function (kTn) { oTn[String(kTn).slice(0, 80)] = Number(hr.todayNoteReasons[kTn] || 0); }); } catch (eTn) {} return oTn; })(),
           /* mdx-1.1.0: the sub-cause evidence behind bodies/index refusals -
              reason + histograms + counters only, never patient identifiers. */
           retryDiag: (function () { try { return (hr.retry || []).slice(0, 10).map(function (r) { return r && r.diag ? { reason: String(r.reason || '').slice(0, 80), hist: r.diag.hist || null, enumDiag: r.diag.enumDiag || null, receipt: r.diag.receipt || null } : null; }).filter(function (x0) { return !!x0; }); } catch (e) { return []; } })() } : null
@@ -48475,8 +48510,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return items.length;
   }
 
-  function retryFailedHistories() {
-    if (DS.pulling || DS.retrying || !DS.lastResult) return;
+  function retryFailedHistories(cvOpts) {
+    /* ===== cvc-1.0.0 (ONE continuous pull, never done-then-again) =====
+       Owner 2026-08-17: "it's pretty fast then says done but then for some
+       reason just goes again." MEASURED CAUSE: the pull painted its terminal
+       DONE verdict and hid the bar, and one second later dsAutoConvergeBodies
+       started this same retry flow with its OWN bar reading "Retry 0/15" - two
+       runs on screen for one click. cvOpts lets the convergence lane borrow
+       this flow WITHOUT its own verdict or its own bar: same control, same
+       engine, one continuous progress line owned by the caller. */
+    cvOpts = cvOpts || {};
+    if (DS.pulling || DS.retrying || !DS.lastResult) { if (typeof cvOpts.onFinish === 'function') { try { cvOpts.onFinish(null, new Error('retry-not-startable')); } catch (eCv0) {} } return; }
     var sessionSerial = DS.sessionSerial;
     var importer = window.MLSScheduleImporter || window.__mlsSI;
     var retryBtn = $('mlsDsRetryHistoryBtn'), pullBtn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
@@ -48488,7 +48532,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     DS.retryStartedAt = Date.now();
     if (retryBtn) retryBtn.disabled = true;
     if (pullBtn) pullBtn.disabled = true;
-    if (stat) { stat.style.display = 'block'; stat.textContent = 'Retrying only the incomplete patient histories...'; }
+    if (stat && !cvOpts.label) { stat.style.display = 'block'; stat.textContent = 'Retrying only the incomplete patient histories...'; }
     /* Owner 2026-07-23 ("retry does not show me it's working"): the retry now
        paints the SAME #mlsDsPullBar the pull uses (deliberate self-contained
        copy, same as the relay lane) — real X/N + elapsed, not just a line. */
@@ -48508,9 +48552,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (mm && Number(mm[2]) > 0) {
           var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
           bar.style.display = 'block'; fill.style.width = pct + '%';
-          fill.textContent = 'Retry ' + mm[1] + '/' + mm[2] + (DS.retryStartedAt ? ' · ' + Math.floor((Date.now() - DS.retryStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - DS.retryStartedAt) % 60000) / 1000) + 's' : '');
+          /* cvc-1.0.0: the convergence lane keeps the pull's own clock and
+             wording so the bar never restarts under the doctor's eyes. */
+          var cvSince = cvOpts.startedAt || DS.retryStartedAt;
+          fill.textContent = (cvOpts.label || 'Retry ') + mm[1] + '/' + mm[2] + (cvSince ? ' · ' + Math.floor((Date.now() - cvSince) / 60000) + 'm ' + Math.floor(((Date.now() - cvSince) % 60000) / 1000) + 's' : '');
         } else if (bar.style.display !== 'block') {
-          bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Retry starting…';
+          bar.style.display = 'block'; fill.style.width = '3%'; fill.textContent = cvOpts.label ? (cvOpts.label + 'starting…') : 'Retry starting…';
         }
       } catch (e) {}
     };
@@ -48519,8 +48566,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     function finish(receipt, err) {
       if (sessionSerial !== DS.sessionSerial) return;
       if (closed) return; closed = true; DS.retrying = false;
-      try { var rBar = document.getElementById('mlsDsPullBar'); if (rBar) rBar.style.display = 'none'; } catch (eBar) {}
-      if (pullBtn) pullBtn.disabled = false;
+      /* cvc-1.0.0: while the convergence lane owns the screen, the bar and the
+         Pull button stay exactly as the pull left them - the verdict comes
+         once, from the caller, when the whole thing is really over. */
+      if (!cvOpts.keepBar) { try { var rBar = document.getElementById('mlsDsPullBar'); if (rBar) rBar.style.display = 'none'; } catch (eBar) {} }
+      if (pullBtn && !cvOpts.keepBar) pullBtn.disabled = false;
+      if (typeof cvOpts.onFinish === 'function') { syncRetryControl(err ? source : (receipt && receipt.complete === true && (!receipt.retry || !receipt.retry.length) ? null : { reason: 'history-partial', historyReceipt: receipt })); try { cvOpts.onFinish(receipt, err || null); } catch (eCv1) {} return; }
       if (err) {
         syncRetryControl(source);
         if (stat) { stat.style.display = 'block'; stat.textContent = 'The history retry did not finish. The incomplete patients are still ready to retry.'; }
@@ -48542,7 +48593,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast('History is still incomplete for ' + remaining + ' patient' + (remaining === 1 ? '' : 's') + '.', 'err'); } catch (e2) {}
     }
     try {
-      var p = importer.retryFailedHistory(source, function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (stat && m) stat.textContent = String(m); } catch (e) {} paintRetryProgress(m); });
+      var p = importer.retryFailedHistory(source, function (m) {
+        if (sessionSerial !== DS.sessionSerial) return;
+        try {
+          if (stat && m) {
+            /* cvc-1.0.0: one sentence for the whole finishing pass, counting
+               the charts the doctor can see on the bar. */
+            var cvSay = String(m);
+            if (cvOpts.label) {
+              var cvN = cvSay.match(/(\d+)\s+of\s+(\d+)/);
+              var cvTot = cvN ? Number(cvN[2]) : Number(cvOpts.total || 0);
+              cvSay = cvTot > 0
+                ? ('Finishing ' + cvTot + ' chart' + (cvTot === 1 ? '' : 's') + ' that need a second read — ' + (cvN ? cvN[1] : '0') + ' of ' + cvTot + '…')
+                : ('Finishing the charts that need a second read…');
+            }
+            stat.textContent = cvSay;
+          }
+        } catch (e) {}
+        paintRetryProgress(m);
+      });
       if (p && typeof p.then === 'function') p.then(function (receipt) { finish(receipt, null); }, function (err) { finish(null, err || new Error('history-retry-failed')); });
       else finish(null, new Error('history-retry-unverified'));
     } catch (e3) { finish(null, e3); }
@@ -48561,30 +48630,58 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      page keeps pacing even while hidden. No focus change, no windows, no
      yank — the doctor's screen is never touched. */
   var DS_BODIES_REASON = /visit|encounter-index|bodies/i;
-  function dsAutoConvergeBodies(sessionSerial) {
-    var rounds = 0;
+  /* cvc-1.0.0: does the convergence lane get to run at all? Answering this
+     BEFORE the verdict is painted is the whole fix - the pull can then either
+     finish, or say honestly that it is still finishing, but never both. The
+     vetoes are exactly the ones again() applies, so the prediction and the
+     behaviour cannot drift. */
+  function dsConvergeEligible(result) {
+    try { if (window.__mlsPullStopRequested === true) return false; } catch (eS) {}      /* stp-2.0.0: Stop means stop */
+    try { if (result && result.historyReceipt && result.historyReceipt.stoppedByUser === true) return false; } catch (eS2) {}
+    try { if (String((result && result.reason) || '') === 'stopped-by-user') return false; } catch (eS3) {}
+    try { var pres = !!(result && result.historyReceipt && result.historyReceipt.presenceRequested === true);
+      if (document.visibilityState === 'hidden' && !pres) return false; } catch (eV0) {}
+    var items = retryItems(result);
+    if (!items.length) return false;
+    for (var i = 0; i < items.length; i++) {
+      var why = String((items[i] && items[i].reason) || '');
+      if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user/i.test(why)) return false;
+    }
+    return true;
+  }
+  function dsAutoConvergeBodies(sessionSerial, onSettled) {
+    var rounds = 0, settledOnce = false, lastReceipt = null;
+    function settle() { if (settledOnce) return; settledOnce = true; if (typeof onSettled === 'function') { try { onSettled({ rounds: rounds, receipt: lastReceipt }); } catch (eCvS) {} } }
     function sleepW(ms) { return (window.__mlsBgSleep ? window.__mlsBgSleep(ms) : new Promise(function (r) { setTimeout(r, ms); })); }
     function again() {
-      if (sessionSerial !== DS.sessionSerial || DS.pulling || DS.retrying) return;
+      if (sessionSerial !== DS.sessionSerial) { settle(); return; }
+      try { if (window.__mlsPullStopRequested === true) { settle(); return; } } catch (eStp) {} /* stp-2.0.0 */
+      if (DS.pulling || DS.retrying) { settle(); return; }
       /* a HIDDEN tab never self-starts an automatic round: a forgotten
          background tab quietly re-running reads is exactly the two-engines
          hazard the cross-tab shield exists to stop (live 2026-07-28) */
-      try { var __cvPresence = !!(DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.presenceRequested === true); if (document.visibilityState === 'hidden' && !__cvPresence) return; } catch (eV) {} /* cv-1.2: a presence-assisted batch ends with athenaOne front BY DESIGN, so 'hidden' there is the assist's own doing, not a forgotten background tab - the rounds it runs re-post with foregroundOk and the cross-tab shield still forbids second engines (live 2026-08-04: 11 stragglers sat behind this veto) */
+      try { var __cvPresence = !!(DS.lastResult && DS.lastResult.historyReceipt && DS.lastResult.historyReceipt.presenceRequested === true); if (document.visibilityState === 'hidden' && !__cvPresence) { settle(); return; } } catch (eV) {} /* cv-1.2: a presence-assisted batch ends with athenaOne front BY DESIGN, so 'hidden' there is the assist's own doing, not a forgotten background tab - the rounds it runs re-post with foregroundOk and the cross-tab shield still forbids second engines (live 2026-08-04: 11 stragglers sat behind this veto) */
       var items = retryItems(DS.lastResult);
-      if (!items.length || rounds >= 2) return;
+      if (!items.length || rounds >= 2) { settle(); return; }
       for (var i = 0; i < items.length; i++) {
         var why = String((items[i] && items[i].reason) || '');
-        if (why && /sign-?in|session|identity|schedule|wrong-day|permission/i.test(why)) return; /* cv-1.1 (live 2026-08-04): only credential/identity/schedule classes are the doctor's to see FIRST - every other history-phase straggler earns the same bounded automatic rounds the retry button runs. A find-patient-open deadline sat waiting for a human click while the proven heal was one retry away. DS_BODIES_REASON above stays as the extraction anchor two suites slice from. */
+        if (why && /sign-?in|session|identity|schedule|wrong-day|permission|stopped-by-user/i.test(why)) { settle(); return; } /* cv-1.1 (live 2026-08-04): only credential/identity/schedule classes are the doctor's to see FIRST - every other history-phase straggler earns the same bounded automatic rounds the retry button runs. A find-patient-open deadline sat waiting for a human click while the proven heal was one retry away. DS_BODIES_REASON above stays as the extraction anchor two suites slice from. */
       }
       rounds++;
-      try { var st = $('mlsDsStatus'); if (st) { st.style.display = 'block'; st.textContent = 'Finishing the last visit notes automatically (round ' + rounds + ' of 2)…'; } } catch (e) {}
-      retryFailedHistories();
+      /* cvc-1.0.0: ONE sentence that counts the real work left, in the same
+         place the pull was already speaking. No "done", no restart. */
+      var cvTotal = items.length;
+      try { var st = $('mlsDsStatus'); if (st) { st.style.display = 'block'; st.textContent = 'Finishing ' + cvTotal + ' chart' + (cvTotal === 1 ? '' : 's') + ' that need a second read — 0 of ' + cvTotal + '…'; } } catch (e) {}
+      retryFailedHistories({
+        label: 'Finishing ', keepBar: true, startedAt: DS.pullStartedAt || Date.now(),
+        onFinish: function (receipt) { lastReceipt = receipt || lastReceipt; sleepW(1500).then(again); }
+      });
       var waited = 0;
       (function tick() {
-        if (sessionSerial !== DS.sessionSerial) return;
-        if (!DS.retrying) { sleepW(1500).then(again); return; }
+        if (sessionSerial !== DS.sessionSerial) { settle(); return; }
+        if (!DS.retrying) return;   /* onFinish owns the hand-off */
         waited += 4000;
-        if (waited > 40 * 60000) return; /* never spin behind a wedged retry */
+        if (waited > 40 * 60000) { settle(); return; } /* never spin behind a wedged retry */
         sleepW(4000).then(tick);
       })();
     }
@@ -48925,7 +49022,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              yet corroborated, nav race), re-run the SAME full fail-closed
              pull automatically - twice, with settle time - before surfacing
              the refusal. No gate is weakened; only the clicking is ours. */
-          var transientRefusal = !!(!terminalAttribution && result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
+          /* ed-1.0.0 + stp-2.0.0: two refusals may NEVER start an automatic
+             re-pull. (1) A Stop is the doctor's instruction, not a transient
+             grid state. (2) schedule-parse-timeout on a receipt athena already
+             proved EMPTY - the live "grid still settling attempt 3 of 3" the
+             owner reported on 2026-08-17 (Mon 2026-08-31, production): the AI
+             text parser was called on a proven-empty day, timed out, and the
+             timeout was re-read as a settling grid three times over. The engine
+             guard above stops that at the source; this refuses to re-pull on it
+             even if some other path ever produces the pair again. */
+          var __stoppedByUser = false;
+          try { __stoppedByUser = window.__mlsPullStopRequested === true || String((result && result.reason) || '') === 'stopped-by-user' || !!(result && result.historyReceipt && result.historyReceipt.stoppedByUser === true); } catch (eStp2) {}
+          var __emptyDayParseTimeout = !!(result && String(result.reason || '') === 'schedule-parse-timeout' && result.scheduleReceipt && result.scheduleReceipt.authoritativeEmpty === true);
+          var transientRefusal = !!(!terminalAttribution && !__stoppedByUser && !__emptyDayParseTimeout && result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
           if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial && pullSerial === DS.pullSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
@@ -49014,10 +49123,49 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             DS.autoRePull = 0;
             DS.providerRosterRetryReceipt = null;
           } else if (result && result.ok === true) DS.autoRePull = 0;
-          done(outcome.ok, outcome.message, retryCount > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
-          /* first-attempt completeness (cv-1.1): every retryable straggler converges
-             automatically; identity/schedule refusals surface untouched */
-          if (retryCount > 0) dsAutoConvergeBodies(sessionSerial);
+          /* ===== cvc-1.0.0 =====
+             The verdict is painted ONCE, at the real end. When the automatic
+             convergence lane is going to run, the pull says so and keeps its
+             bar; when it settles, THIS callback paints the final verdict from
+             the receipt the convergence lane left behind. The old order -
+             done() then a fresh "Retry 0/N" bar a second later - is exactly the
+             "says done but then just goes again" the owner reported. */
+          var willConverge = retryCount > 0 && dsConvergeEligible(result);
+          if (!willConverge) {
+            done(outcome.ok, outcome.message, retryCount > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
+            return;
+          }
+          var cvItems = retryItems(result).length;
+          /* the pull's own screen ownership passes to the convergence lane:
+             DS.pulling must clear (the retry flow refuses to start under it)
+             while __autoRetrying keeps api.isBusy() true, so nothing else may
+             start a second engine and the Pull button stays disabled. */
+          DS.pulling = false;
+          DS.__autoRetrying = true;
+          try {
+            var cvStat = $('mlsDsStatus');
+            var cvLine = 'Finishing ' + cvItems + ' chart' + (cvItems === 1 ? '' : 's') + ' that need a second read — 0 of ' + cvItems + '…';
+            if (cvStat) { cvStat.style.display = 'block'; cvStat.textContent = cvLine; }
+            dsStatusLog(cvLine);
+          } catch (eCvP) {}
+          dsAutoConvergeBodies(sessionSerial, function (cv) {
+            if (sessionSerial !== DS.sessionSerial) return;
+            DS.__autoRetrying = false;
+            /* The convergence receipt covers only the RETRIED SUBSET, so it may
+               never upgrade the DAY's verdict (the b752 subset trap). The day
+               keeps the verdict its own full pull earned; the automatic second
+               read gets one honest sentence of its own. */
+            var remaining = retryItems(DS.lastResult).length;
+            var cvRounds = Number((cv && cv.rounds) || 0);
+            var cvNote = '';
+            if (cvRounds > 0) {
+              cvNote = remaining === 0
+                ? (' Every one of the ' + cvItems + ' chart' + (cvItems === 1 ? '' : 's') + ' that needed a second read finished on the automatic pass.')
+                : (' ' + remaining + ' of ' + cvItems + ' still need attention after ' + cvRounds + ' automatic pass' + (cvRounds === 1 ? '' : 'es') + ' — use Retry failed histories.');
+            }
+            var finalRetry = syncRetryControl(DS.lastResult);
+            done(outcome.ok, outcome.message + cvNote, finalRetry > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
+          });
         },
                function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
       } else {
@@ -52894,7 +53042,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function paintBar(anchor, msg) {
     try {
       var b = barEl(anchor), fill = b.firstElementChild;
-      var mm = String(msg || '').match(/(d+)s+ofs+(d+)/);
+      /* U0 (2026-08-17): this literal shipped with its backslashes lost - the
+         backslashes were lost in authoring (the whole literal had been through
+         a JS STRING, where \s->s, \d->d and \b->0x08), so it matched the
+         literal letters d/s and the hero bar mounted at 3% "Starting..." and
+         never moved. It is valid JS, so no gate caught it; production's three
+         painters (mls-connect.js:46768/46912/46997) carry the backslashes. */
+      var mm = String(msg || '').match(/(\d+)\s+of\s+(\d+)/);
       if (mm && Number(mm[2]) > 0) {
         var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
         var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));

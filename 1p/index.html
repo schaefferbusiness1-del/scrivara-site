@@ -22603,7 +22603,31 @@ function _assistReadChart(patientRef, onStatus){
       if(Number(e.data.deadlineAt||0)!==deadlineAt||Date.now()>=deadlineAt) return;
       if(got) return; got=true; cleanup();
       var r=e.data.resp||{};
-      if(!r.ok || !r.text){ reject(new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'))); return; }
+      /* ===== p1-find-diag-1.0.0 (PHI-free chart-open evidence) =====
+         Owner 2026-08-17, "Pull Thursday the 27th": 13 of 15 rows failed with
+         the SAME sentence, "athenaOne patient search found no matching
+         patient." That sentence is background.js:12596 collapsing FOUR
+         distinct extension outcomes - no-results, no-name-match, blank-error,
+         rows-not-rendered - into one string, and this reject() threw away the
+         `findReason` the response already carries, so the site could not tell
+         "athena has no such patient" from "the results grid never painted".
+         Attach the extension's own PHI-free verdict fields to the Error the
+         same way mlsEchoes already rides one. Codes and counts only: no name,
+         no DOB, no MRN, no chart text. */
+      if(!r.ok || !r.text){
+        var __fdErr=new Error((r.sessionLikelyExpired===true?'athena-session-expired: ':'')+(r.error||'Couldn’t read the chart from your Athena tab.'));
+        try{ __fdErr.mlsFind={
+          findReason:String(r.findReason||(r.diag&&r.diag.findReason)||'').slice(0,40),
+          via:String(r.via||(r.diag&&r.diag.route)||'').slice(0,40),
+          route:String((r.diag&&r.diag.route)||'').slice(0,40),
+          candidates:Number(r.candidates||0)||0,
+          opened:r.opened===true,
+          reason:String(r.reason||'').slice(0,40),
+          sessionLikelyExpired:r.sessionLikelyExpired===true
+        }; }catch(_fdE){}
+        reject(__fdErr); return;
+      }
+      /* ===== end p1-find-diag-1.0.0 ===== */
       var observed={chartName:r.chartName||'',chartDob:r.chartDob||'',chartMrn:r.chartMrn||''};
       var proofOk=false;
       if(candidateRead){
