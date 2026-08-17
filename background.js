@@ -2315,7 +2315,7 @@ function mlsAthenaTeachWatcherFn(config) {
           else if (!probeFailure) probeFailure = athProbe && athProbe.ok ? { ok: false, blocked: true, reason: 'context-unverified' } : (athProbe || { ok: false, blocked: true, reason: 'context-unverified' });
         }
         if (verifiedTabCount > 1) return { ok: false, blocked: true, reason: 'ambiguous-athena-tabs', error: 'The same verified encounter matched in more than one signed-in Athena tab. Close the duplicate encounter tab, then retry. Nothing was changed.' };
-        if (!tab || !probe) return probeFailure || { ok: false, blocked: true, reason: 'context-unverified' };
+        if (!tab || !probe) return Object.assign({}, probeFailure || { ok: false, blocked: true, reason: 'context-unverified' }, { diag: { athenaTabs: athCandidates.length, verifiedTabs: verifiedTabCount, firstReason: String((probeFailure && probeFailure.reason) || 'context-unverified') } }); /* 3.0.63: PHI-free counts ride the refusal (read-only probe path; no gate changes) */
         if (action === 'sign_encounter') {
           proofRecord = matchingNoteWriteProof(noteWriteProofId, sender.tab.id, tab.id, p, previewHash, noteHash, canonicalNotePayload, null);
           if (!proofRecord) return { ok: false, blocked: true, reason: noteWriteProofFailure(noteWriteProofId), error: 'Write and verify this exact reviewed note in this encounter before signing.' };
@@ -3737,6 +3737,10 @@ async function mlsAthenaGotoDate(target, probe, requestGuard) {
         if (isTargetToday) return todayTab();
         return null;
       }
+      /* 3.0.63: a .calendar-nav with NO day tabs (never-painted background dashboard) is not a
+         usable control - report it so the caller runs its Home-reset ladder instead of clicking
+         nothing and failing "no selected day". A capability probe still advertises the strip. */
+      if (!probe && !rawTabs().length) { out.found = false; out.reason = 'weekstrip-empty'; out.error = 'weekstrip: the calendar strip is present but shows no day tabs (Day view not rendered)'; return out; }
       out.found = true; out.via = 'weekstrip';
       if (probe) return out;
       var tab0 = findTab();
@@ -4402,9 +4406,15 @@ function mlsAthSessionProbeFn() {
     var exactAthenaLogin = visible && hasPassword
       && /(?:^|\s)(?:log in|sign in) to athena(?:one)?(?:\s|$)/.test(combined)
       && /(?:^|\s)(?:username|user id|email)(?:\s|$)/.test(combined);
+    /* 3.0.63: a never-painted background dashboard keeps .calendar-nav with NO day tabs; every
+       date navigation on it ends "no selected day". Count rendered day tabs so the picker can
+       prefer a tab whose Day view is actually painted. Read-only. */
+    var calTabs = 0;
+    try { var cnavP = document.querySelector('.calendar-nav'); if (cnavP) { var cnEls = cnavP.querySelectorAll('*'); for (var ci = 0; ci < cnEls.length; ci++) { var ct = String(cnEls[ci].textContent || '').replace(/\s+/g, ' ').trim(); if (/^(sun|mon|tue|wed|thu|fri|sat)\s+\d{1,2}\/\d{1,2}$/i.test(ct) || /^today$/i.test(ct)) calTabs++; } } } catch (eCalTabs) {}
     return {
       p: 1,
       cal: !!document.querySelector('.calendar-nav'),
+      calTabs: calTabs,
       fs: !!document.querySelector('frameset,frame,iframe'),
       timedOut: !!timedOut,
       login: !!exactAthenaLogin,
@@ -4435,6 +4445,7 @@ function mlsAthPing(tabId, ms) { /* READ-ONLY all-frame probe; one exact expired
       frames: fr.length,
       cal: !signedOut && fr.some(function (f) { return f.cal; }),
       fs: !signedOut && fr.some(function (f) { return f.fs; })
+      , calTabs: signedOut ? 0 : fr.reduce(function (m, f) { return Math.max(m, Number((f && f.calTabs) || 0)); }, 0)
     };
   }).catch(function () { return { alive: false, reachable: false, signedOut: false, timedOut: false, login: false, frames: 0 }; });
 }
@@ -4461,7 +4472,13 @@ async function mlsPickAthenaTab(all, opts) {
       if (qt && mlsAthTabHost(qt) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(qt)) {
         var qpHealth = await mlsAthPing(qt.id, opts.noPing ? 1000 : 1500);
         if (qpHealth.alive && !qpHealth.signedOut) return qt;
-        if (qpHealth.signedOut) mlsAthRejectSignedOut(qt.id);
+        if (qpHealth.signedOut) { mlsAthRejectSignedOut(qt.id); return null; }
+        /* 3.0.63 (measured live 2026-08-17): a MISSED ping (unreachable, not signed out) during a
+           heavy athena render ended a pull with terminal no-athena-tab while the leased tab was
+           signed in. Re-ping ONCE with a longer budget before failing closed. A tab that misses
+           both pings still fails CLOSED (null) - the lease never hops and never keeps a dead tab
+           (tests/athena-tab-lease-over-pin.test.js). */
+        if (!qt.discarded) { var qpHealth2 = await mlsAthPing(qt.id, 3000); if (qpHealth2.alive && !qpHealth2.signedOut) return qt; if (qpHealth2.signedOut) mlsAthRejectSignedOut(qt.id); }
       }
       return null;
     }
@@ -4503,7 +4520,21 @@ async function mlsPickAthenaTab(all, opts) {
     }));
     checked.forEach(function (x) { if (x.probe && x.probe.signedOut) mlsAthRejectSignedOut(x.tab.id); });
     var usable = checked.filter(function (x) { return x.probe && x.probe.alive && !x.probe.signedOut; });
-    var selectedShell = usable.find(function (x) { return x.probe.cal || x.probe.fs; });
+    /* 3.0.63: a missed ping is not a signed-out tab. Re-ping the unreachable, not-signed-out
+       candidates once with a longer budget before concluding there is no athena tab; if they
+       still do not answer, the picker fails closed exactly as before. */
+    if (!usable.length) {
+      var retryable = checked.filter(function (x) { return x.probe && !x.probe.signedOut && x.probe.reachable === false && !(x.tab && x.tab.discarded); });
+      if (retryable.length) {
+        var rechecked = await Promise.all(retryable.map(async function (x) { return { tab: x.tab, probe: await mlsAthPing(x.tab.id, 3000) }; }));
+        rechecked.forEach(function (x) { if (x.probe && x.probe.signedOut) mlsAthRejectSignedOut(x.tab.id); });
+        usable = rechecked.filter(function (x) { return x.probe && x.probe.alive && !x.probe.signedOut; });
+      }
+    }
+    /* 3.0.63: prefer the tab whose Day view has RENDERED day tabs (calTabs > 0). Measured live:
+       two of three signed-in dashboards had .calendar-nav with no cells and every date
+       navigation on them failed "no selected day" while the third tab was fine. */
+    var selectedShell = usable.find(function (x) { return Number((x.probe && x.probe.calTabs) || 0) > 0; }) || usable.find(function (x) { return x.probe.cal || x.probe.fs; });
     var pick = (selectedShell || usable[0] || {}).tab || null;
     if (!pick) return opts.athenaOnly ? null : mlsPickGenericEmrTab(http);
     C = self.__mlsAthPickCache || (self.__mlsAthPickCache = { tabId: null, at: 0 });
@@ -5623,7 +5654,7 @@ var mlsProv = (function () {
     if (Number.isFinite(__gotoCallerDeadline) && __gotoCallerDeadline > 0) __gotoDeadlineAt = Math.min(__gotoDeadlineAt, __gotoCallerDeadline);
     const __gotoGuard = Object.freeze({ token: __gotoRequestId, deadline: __gotoDeadlineAt });
     const __gotoRawRespond = sendResponse;
-    let __gotoResponded = false, __gotoTimer = null, __gotoQpClaimed = false;
+    let __gotoResponded = false, __gotoTimer = null, __gotoQpClaimed = false, __gotoAthenaTabs = -1; /* 3.0.63: raw athena tab count for the app's one-tab advice */
     function __gotoLeft() { return Math.max(0, __gotoGuard.deadline - Date.now()); }
     function __gotoCleanup(reason, immediate) {
       function start() {
@@ -5644,6 +5675,7 @@ var mlsProv = (function () {
       if (Date.now() >= __gotoGuard.deadline && !/deadline-exceeded/.test(String(payload && payload.reason || ''))) {
         payload = { ok: false, supported: true, reason: 'goto-date-deadline-exceeded', error: 'Date navigation returned after its immutable request deadline. The late result was discarded.' };
       }
+      if (__gotoAthenaTabs >= 0 && payload && typeof payload === 'object' && payload.athenaTabs == null) payload = Object.assign({}, payload, { athenaTabs: __gotoAthenaTabs }); /* 3.0.63 */
       /* A successful date nav intentionally hands the visible Athena lease to
          the immediately-following schedule/history stage. Failures/timeouts
          detach cleanup; they never hold this response open. */
@@ -5689,6 +5721,7 @@ var mlsProv = (function () {
         const allX = await __gotoSettle(chrome.tabs.query({}), 7000, 'Athena tab enumeration');
         if (!allX.ok) { __gotoDeadline('Athena tab enumeration'); return; }
         const all = allX.value || [];
+        try { __gotoAthenaTabs = all.filter(function (t) { return mlsIsAthenaTab(t); }).length; } catch (eCnt) { __gotoAthenaTabs = -1; } /* 3.0.63 */
         const tabX = await __gotoSettle(mlsPickAthenaTab(all, { athenaOnly: true, noPing: !!msg.probe }), msg.probe ? 2000 : 7000, 'Athena tab selection');
         if (!tabX.ok) { __gotoDeadline('Athena tab selection'); return; }
         const tab = tabX.value; /* a capability probe must answer inside its short app budget; the real navigation still uses the verified picker */
@@ -6153,7 +6186,7 @@ var mlsProv = (function () {
     if (Number.isFinite(__schedCallerDeadline) && __schedCallerDeadline > 0) __schedDeadline = Math.min(__schedDeadline, __schedCallerDeadline);
     const __schedGuard = Object.freeze({ token: __schedRequestId, deadline: __schedDeadline });
     const __schedRawRespond = sendResponse;
-    let __schedResponded = false, __schedTimer = null, __schedQpClaimed = false;
+    let __schedResponded = false, __schedTimer = null, __schedQpClaimed = false, __schedAthenaTabs = -1; /* 3.0.63 */
     const __schedLeft = function () { return Math.max(0, __schedGuard.deadline - Date.now()); };
     function __schedCleanup(reason, immediate) {
       function start() {
@@ -6174,6 +6207,7 @@ var mlsProv = (function () {
       if (Date.now() >= __schedGuard.deadline && !/timeout|deadline-exceeded/.test(String(payload && payload.reason || ''))) {
         payload = { ok: false, reason: 'schedule-request-timeout', scheduleVerified: false, error: 'The schedule read returned after its immutable request deadline. The late result was discarded.' };
       }
+      if (__schedAthenaTabs >= 0 && payload && typeof payload === 'object' && payload.athenaTabs == null) payload = Object.assign({}, payload, { athenaTabs: __schedAthenaTabs }); /* 3.0.63 */
       /* A successful schedule read hands the lease to exact-history capture;
          app-end owns the final release. Failed/expired reads clean up now. */
       if (payload && payload.ok === true) { if (self.__mlsDayScheduleQpOwner === __schedGuard.token) self.__mlsDayScheduleQpOwner = ''; }
@@ -6220,6 +6254,7 @@ var mlsProv = (function () {
         const allX = await __schedSettle(chrome.tabs.query({}), 7000, 'Athena tab enumeration');
         if (!allX.ok) { __schedDeadlineResponse('Athena tab enumeration'); return; }
         const all = allX.value || [];
+        try { __schedAthenaTabs = all.filter(function (t) { return mlsIsAthenaTab(t); }).length; } catch (eCnt) { __schedAthenaTabs = -1; } /* 3.0.63 */
         /* v1.90: unified verified picker (heartbeat-preferred, reachability-pinged,
            identity/login excluded); non-athena EMR keyword fallback preserved. */
         const pickedX = await __schedSettle(mlsPickAthenaTab(all, { athenaOnly: true }), 7000, 'Athena tab selection');
@@ -12599,7 +12634,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           }
           if (bootstrapIdentity) {
-            sendResponse({ ok: false, opened: false, reason: (sched && sched.reason) || 'appointment-id-not-found', error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.' });
+            sendResponse({ ok: false, opened: false, reason: (sched && sched.reason) || 'appointment-id-not-found', error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.', diag: (sched && sched.diag) || null }); /* 3.0.63: the driver's PHI-free diag (frame host, rows scanned, scrollers, apptIdBound) now reaches the app so it can say "no schedule grid is showing" vs "N rows scanned, this appointment is not among them" */
             return;
           }
           // === legacy fallback: synthetic global-search (kept for off-schedule patients; may fail on v26.3) ===
@@ -15116,6 +15151,7 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
         var all = await chrome.tabs.query({});
         var picked = null;
         try { picked = await mlsPickAthenaTab(all, { athenaOnly: true }); } catch (ePk) { picked = null; }
+        try { var __rawAthenaAll = 0; for (var pa = 0; pa < all.length; pa++) { if (mlsIsAthenaTab(all[pa])) __rawAthenaAll++; } out.athenaTabs = __rawAthenaAll; } catch (eRawAll) {} /* 3.0.63 */
         if (picked) { out.athenaOpen = true; out.reason = 'presence-verified'; }
         else {
           var rawAthena = 0;

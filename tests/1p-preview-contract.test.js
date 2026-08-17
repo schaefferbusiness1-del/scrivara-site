@@ -27,8 +27,8 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    literal substitutions to the frozen baseline text, so everything else in
    the file is still byte-compared. */
 const P1_CONFIG_RELEASE_SUBS = [
-  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.62'],
-  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', 'b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f']
+  ['MLS_Assist_v3.0.62', 'MLS_Assist_v3.0.63'],
+  ['b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f', '2a62dc2ec6c1b4f60581a9f4237eb88d88ac6a784b5857b712e5579db30943ac']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
@@ -399,8 +399,8 @@ const PROTECTED_EXTENSION = [
   'icon-48.png',
   'icon-128.png',
   'extension-version.json',
-  'MLS_Assist_v3.0.62.zip',
-  'MLS_Assist_v3.0.62.bin'
+  'MLS_Assist_v3.0.63.zip',
+  'MLS_Assist_v3.0.63.bin'
 ];
 const unchangedProduction = spawnSync('git', ['diff', '--quiet', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
   { cwd: root, encoding: 'utf8', windowsHide: true });

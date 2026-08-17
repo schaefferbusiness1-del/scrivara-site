@@ -1,5 +1,5 @@
 {
-  "version": "3.0.62",
+  "version": "3.0.63",
   "minChrome": 116,
-  "notes": "v3.0.62 - Every supervised Athena action now executes after your explicit confirm: write reviewed note, save draft, stage billing codes, Sign & Save, and one exact reviewed order. The previous preview-only policy block on billing, signing and orders is lifted by the owner; the same safety checks still run before every send - exact patient identity and encounter lock, a one-use authorization from your own click, a verified note write before Sign & Save, one action per confirm, and no automatic chaining. Everything from earlier releases remains. Requires Chrome 116+."
+  "notes": "v3.0.63 - Athena tab handling made robust: MLS now prefers the Athena tab whose Day view is actually rendered, re-checks a tab that was slow to answer instead of reporting no Athena tab while you are signed in, and treats a not-yet-rendered week strip as something to recover from rather than a failed day change. Every date, schedule and presence reply now also carries how many Athena tabs are open, so the app can advise keeping one. Reads only; nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+."
 }

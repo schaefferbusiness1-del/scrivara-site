@@ -705,6 +705,7 @@ const tests = [
      as a chart fact; 1,340 of 1,567 records are never-read. The card annotates
      the unverifiable default instead of wearing it. */
   'unverified-default-never-reads-as-fact.test.js',
+  'ext-3063-athena-tab-resilience-contract.test.js',
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
   'settings-cleanup-contract.test.js',
