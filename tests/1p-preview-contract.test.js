@@ -40,7 +40,11 @@ const P1_CONFIG_RELEASE_SUBS = [
    3.0.62 / wsg-2.0.0, owner directive 2026-08-12: every supervised Athena action
    executes after the clinician's own confirm) - the 1p writeflow gained typed
    place_order rows and the Settings card moved to 3.0.62. */
-const P1_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
+/* Advanced by the 1p train of 2026-08-17 (Fable straighten-up lane): mrn-1.0.0
+   (identity loss-prevention + local MRN/DOB backfill, both shells) and
+   avcam-1.0.0 (avatar camera preview measured only after a decoded frame,
+   1p-feat_mls_avatar.js). Production and extension baselines untouched. */
+const P1_BASE_COMMIT = '96527b25cf80ec922f27b039ea602cea68daf2d1';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
