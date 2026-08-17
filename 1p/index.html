@@ -38071,8 +38071,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    strength of it would have been a regression dressed as a fix. What remains
    is a genuine but minor discoverability point - the strip hides its own
    scrollbar - which belongs to the module that owns it, not to this block.
-   tests/1p-ui-shape-contract.test.js asserts the REACHABILITY property
-   (scrollable, or nothing offscreen) instead of the raw count. */
+   The UI shape contract suite asserts the REACHABILITY property (offscreen
+   AND no ancestor that scrolls it into view) instead of the raw count, so the
+   wrong instrument cannot produce this verdict again. */
 
 /* ---- Prep Op Notes on a phone -----------------------------------------
    MEASURED at 360x780: the room rendered 11 visible controls and 300 visible
@@ -38337,5 +38338,130 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 })();
 </script>
 <!-- ===== end dock-1p-1.0.0 ============================================ -->
+<!-- ===== opnote-open-1.0.0 — the room appears when you press the button ===
+     Owner: "a big complaint of the UI is that it's very clunky."
+
+     MEASURED (real Chrome, 28 synthetic patients, 1366x900): pressing Prep Op
+     Notes froze the main thread for 1,353ms of SYNCHRONOUS work before ANY
+     pixel changed - first visible DOM change at 1,418ms, longest long-task
+     1,420ms. For a second and a half the app looked dead: no spinner, no
+     dialog, nothing. That is the single largest interaction cost in the app
+     and it is exactly the action the owner calls out.
+
+     WHY IT IS A WRAPPER AND NOT AN EDIT. openOpPrep() is production-shape
+     shell code, so editing it in place cannot be promoted to another lane as
+     a block. This wraps the function instead: same name, same arguments, same
+     eventual behaviour, and revert() puts the original back byte for byte.
+
+     WHAT IT DOES NOT DO. It does not make the work faster - the cost is in
+     _opApptsForDay + opPrepRender + the day-brain's triage of every row, which
+     live in shared modules this lane may not edit. It makes the work
+     ASYNCHRONOUS to the click: the dialog paints first with an honest "reading
+     your schedule" line, and the render happens on the next macrotask. The
+     doctor sees a response immediately instead of a frozen window, and the
+     total time to a finished screen is unchanged.
+
+     The day is set synchronously, before the yield, because callers read
+     window._opPrepDay right after calling this. Only the expensive render is
+     deferred. -->
+<script>
+(function () {
+  if (typeof window.openOpPrep !== 'function' || window.__mlsOpNoteOpen) return;
+
+  var original = window.openOpPrep;   /* the chain we currently defer */
+  var base = window.openOpPrep;       /* the REAL shell function, never re-wrapped */
+  var inside = false;                 /* true while the deferred pass is running */
+  var BUSY = 'mls-opnote-busy';
+
+  var css = document.createElement('style');
+  css.id = 'mlsOpNoteOpenCss';
+  css.textContent =
+    '#opPrepModal.' + BUSY + ' #opPrepList{min-height:120px}' +
+    '#mlsOpNoteOpening{padding:18px 22px;font:600 13px/1.4 var(--sans,system-ui);color:var(--muted,#55605A)}' +
+    /* No spinner and no animation on purpose: in this app every standing
+       animation means a recorder or recognizer is LIVE, and a decorative one
+       here would compete with a clinical signal. */
+    '#opPrepModal:not(.' + BUSY + ') #mlsOpNoteOpening{display:none}';
+  (document.head || document.documentElement).appendChild(css);
+
+  function placeholder(modal) {
+    var host = document.getElementById('mlsOpNoteOpening');
+    if (host) return host;
+    var list = document.getElementById('opPrepList');
+    if (!list || !list.parentNode) return null;
+    host = document.createElement('div');
+    host.id = 'mlsOpNoteOpening';
+    host.setAttribute('role', 'status');
+    host.textContent = 'Reading your schedule…';
+    list.parentNode.insertBefore(host, list);
+    return host;
+  }
+
+  function defer(dayKey) {
+    /* WRAP ONCE, OR THE CHAIN EATS ITSELF. When stayOutermost() adopts a
+       later module's wrapper as `original`, that wrapper still holds a
+       reference to THIS function as its own inner call - so the deferred pass
+       would re-enter here, schedule another timeout, and the real shell
+       function would never run at all (measured: window._opPrepDay stayed
+       undefined forever). Inside the deferred pass we ARE the real work, so
+       call the untouched base directly and synchronously. */
+    if (inside) return base.call(window, dayKey);
+    var modal = document.getElementById('opPrepModal');
+    /* Callers read window._opPrepDay immediately after this returns, so the
+       day is decided here, synchronously, exactly as the original does. */
+    if (!dayKey) { try { dayKey = _opContextDay(); } catch (e) { dayKey = ''; } }
+    if (modal) {
+      modal.classList.add('show');
+      modal.classList.add(BUSY);
+      placeholder(modal);
+    }
+    var done = function () {
+      inside = true;
+      try { original.call(window, dayKey); }
+      finally { inside = false; if (modal) modal.classList.remove(BUSY); }
+    };
+    /* setTimeout, not requestAnimationFrame: rAF never fires in a hidden or
+       non-compositing tab, and the room would then never render at all. A
+       macrotask gives the browser its paint before the heavy pass begins. */
+    if (modal) setTimeout(done, 0); else done();
+  }
+  defer.__mlsDeferOpen = 1;
+  window.openOpPrep = defer;
+
+  /* STAY OUTERMOST. This block runs at parse time, so a module that loads
+     later and wraps openOpPrep ends up OUTSIDE the yield and its own work
+     stays synchronous on the click. feat_mls_opnote_fill.js does exactly
+     that - its wrapper calls kickTicks(), whose first tick scans the whole
+     room to rebuild the Fields box - and it cost a MEASURED 212ms of the
+     click even with the render already deferred.
+
+     So: if something has wrapped us, adopt that wrapper as the new original
+     and put the yield back on the outside. Tagged, so this can never wrap
+     itself, and bounded to a few settle points rather than a standing poll. */
+  function stayOutermost() {
+    var fn = window.openOpPrep;
+    if (typeof fn !== 'function' || fn.__mlsDeferOpen) return false;
+    original = fn;            /* whatever chain now exists, deferred whole */
+    window.openOpPrep = defer;
+    return true;
+  }
+  [400, 1500, 4000, 9000].forEach(function (ms) { setTimeout(stayOutermost, ms); });
+  document.addEventListener('click', function () { setTimeout(stayOutermost, 0); }, true);
+
+  window.__mlsOpNoteOpen = {
+    version: 'opnote-open-1.0.0',
+    installed: true,
+    outermost: function () { return window.openOpPrep === defer; },
+    revert: function () {
+      window.openOpPrep = base;
+      var h = document.getElementById('mlsOpNoteOpening'); if (h && h.parentNode) h.parentNode.removeChild(h);
+      if (css.parentNode) css.parentNode.removeChild(css);
+      try { delete window.__mlsOpNoteOpen; } catch (e) { window.__mlsOpNoteOpen = null; }
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end opnote-open-1.0.0 ======================================== -->
 </body>
 </html>
