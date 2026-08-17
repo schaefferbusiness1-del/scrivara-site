@@ -35,6 +35,17 @@ function slice(src, begin, end, what) {
   assert(b > a, what + ' end marker missing');
   return src.slice(a, b + end.length);
 }
+function extractFunction(source, name) {
+  const anchor = '\nfunction ' + name + '(';
+  const at = source.indexOf(anchor);
+  assert(at >= 0, name + ' is missing from the shell');
+  let i = source.indexOf('{', at + anchor.length), depth = 0;
+  for (; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') { depth -= 1; if (depth === 0) { i += 1; break; } }
+  }
+  return source.slice(at + 1, i);
+}
 
 /* ======================================================================
  * A. the shipped call sites
@@ -315,6 +326,30 @@ async function capacity() {
   await api.flushNow();
   assert.strictEqual(api.getRoster()[0].name, 'Synthetic Patient 0 (edited)', 'a post-migration edit was lost');
   assert.strictEqual(api.getRoster().length, 3000, 'a post-migration write changed the roster size');
+
+  /* The derived Patients/History roster cache was keyed on the raw
+   * localStorage blob. Post-migration there IS no blob, so an unfixed cache
+   * would be permanently cold and re-sort 3,000 patients on every render.
+   * Executed here rather than argued: identical inputs must return the SAME
+   * cache object, and a real change must invalidate it. */
+  const rosterDecl = SHELL.slice(SHELL.indexOf('var __mlsPtRosterCache={key:null,'),
+    SHELL.indexOf('\n', SHELL.indexOf('var __mlsPtRosterCache={key:null,')));
+  ctx.__mlsPtsBatchByKey = Object.create(null);
+  ctx.__mlsPtsMemo = null;
+  ctx.Map = Map;
+  vm.runInContext(rosterDecl + '\n' + extractFunction(SHELL, '__mlsPtRosterData') +
+    '\nthis.rosterData = __mlsPtRosterData;', ctx);
+  const warm1 = ctx.rosterData(api.getRoster());
+  const warm2 = ctx.rosterData(api.getRoster());
+  assert.strictEqual(warm1, warm2,
+    'the derived roster cache is COLD after migration - every Patients/History render would re-sort the roster');
+  assert.strictEqual(warm1.rows.length, 3000, 'the cached roster lost patients');
+  const bumped = api.getRoster().slice();
+  bumped[1] = Object.assign({}, bumped[1], { name: 'Synthetic Patient 1 (edited)', updated: Date.now() });
+  api.save(bumped, {});
+  await api.flushNow();
+  const warm3 = ctx.rosterData(api.getRoster());
+  assert.notStrictEqual(warm3, warm2, 'the roster cache survived a real change - stale rows would render');
 
   const afterUnits = ls.units();
   assert.strictEqual(ls.getItem(KEY), null, 'the localStorage patients blob survived the migration');
