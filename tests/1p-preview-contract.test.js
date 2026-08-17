@@ -56,7 +56,12 @@ const EXTENSION_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
    mls-connect.js (chk3061 -> chk3062) - exactly what every prior extension
    release moved. The production write contract (feat_mls_writeflow.js:
    note write/save only) did NOT move and is pinned by athena-action-contract. */
-const PRODUCTION_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
+/* Advanced by the AUTHORIZED production hotfix train of 2026-08-17 (b1028,
+   ed-1.0.0: a verified-empty day no longer reaches the AI schedule parser —
+   owner: 'main site fixes come first'). Moves ScribeFlow.html/-staging.html,
+   mls-connect.js, app-version.json build tokens and feat_mls_schedimport_exact.js
+   ONLY; the extension baseline does not move. */
+const PRODUCTION_BASE_COMMIT = '1ba4a812a10996e3f2b259bea70fb015b1297d09';
 
 const P1_FILES = [
   '1pScribeFlow.html',
