@@ -904,7 +904,7 @@ async function testFaultMatrix() {
     const sync = h.install(block);
     h.mountPhoneFrame();
     const ALL = ['never', 'syncing', 'ok', 'offline', 'signedout', 'expired',
-      'account', 'engine', 'server', 'network', 'timeout'];
+      'account', 'engine', 'server', 'network', 'timeout', 'local'];
     const seen = new Set();
     const src = extractBlock(P1, '1p-mls-connect.js');
     for (const s of ALL) {
@@ -995,8 +995,16 @@ async function testLocalSessionIsNotAFailure() {
   const sync = h.install(block);
   h.mountPhoneFrame();
   h.advance(60000); h.fireWorker(); await flush();
-  eq(sync.state().status, 'signedout', 'a local session was given a network verdict');
+  eq(sync.state().status, 'local', 'a local session was given a network verdict');
   eq(h.calls.loadCalendar, 0, 'a local session tried to reach the backend');
+  /* Not "signed out": telling a doctor to sign in when they already have, on a
+     session with no server behind it, is an instruction that goes nowhere. */
+  ok(!/Sign in/.test(h.text()), 'a local session was told to sign in: ' + h.text());
+  ok(/sample session/.test(h.text()) && /no MLS server/.test(h.text()), 'the local line is wrong: ' + h.text());
+  /* and Sync now refuses the same way rather than pretending */
+  await sync.syncNow('manual');
+  eq(h.calls.loadCalendar, 0, 'Sync now reached for a backend that is not there');
+  eq(sync.state().status, 'local', 'Sync now changed the local verdict');
 }
 
 /* ---- the device noun is asked, never assumed ----------------------------- */

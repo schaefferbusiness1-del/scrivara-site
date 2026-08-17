@@ -53842,6 +53842,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (S.status === 'never') return 'Not synced yet on this ' + d + '.';
     if (S.status === 'offline') return 'This ' + d + ' is offline. Nothing can sync until it is back on Wi-Fi or cellular.';
     if (S.status === 'signedout') return 'Signed out. Sign in and this ' + d + ' syncs on its own.';
+    /* A local/demo session has no backend at all. Calling that "signed out"
+       tells a doctor to do something they have already done, and pointing at a
+       sign-in that will not change anything is an instruction that goes
+       nowhere -- a defect class this product already knows by name. */
+    if (S.status === 'local') return 'This is a sample session on this ' + d + '. There is no MLS server behind it to sync with.';
     if (S.status === 'expired') return 'Your MLS session expired on this ' + d + '. Sign in again and syncing resumes by itself.';
     if (S.status === 'account') return 'A different account signed in while this was syncing. Nothing from the other account was shown on this ' + d + '.';
     if (S.status === 'engine') return 'MLS has not finished loading on this ' + d + ' yet.';
@@ -54126,6 +54131,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        always means now, even after five consecutive failures. */
     S.fails = 0;
     S.waiting = 0;
+    if (!hosted()) { setStatus('local', ''); return Promise.resolve(null); }
     if (!tok()) { setStatus(S.hadToken ? 'expired' : 'signedout', ''); return Promise.resolve(null); }
     if (offline()) { setStatus('offline', ''); return Promise.resolve(null); }
     return run(reason || 'manual');
@@ -54137,7 +54143,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var id = identity();
     if (id !== S.id) resetForAccount(id);
     if (!phoneOwnsScreen()) return;
-    if (!hosted()) { setStatus('signedout', 'local'); return; }
+    if (!hosted()) { setStatus('local', ''); return; }
 
     var t = tok();
     if (!t) {
