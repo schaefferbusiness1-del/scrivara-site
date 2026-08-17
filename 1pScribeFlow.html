@@ -22384,6 +22384,21 @@ function _assistReadChart(patientRef, onStatus){
     function releaseLease(){if(leaseTouch){clearInterval(leaseTouch);leaseTouch=null;}if(ownedToken&&leaseMgr&&typeof leaseMgr.release==='function'){try{leaseMgr.release(ownedToken);}catch(_){}ownedToken='';}}
     if(leaseMgr&&ownerToken&&typeof leaseMgr.owns==='function'&&leaseMgr.owns(ownerToken))leaseReady=true;
     else{
+      /* p1-lease-loan-1.0.0: a caller with no token of its own may JOIN the
+         live lease rather than fight it. The today-note leg reaches here
+         through the frozen feat_visits.js, which passes no options at all, so
+         it used to attempt a fresh claim() against the schedule pull that was
+         still holding the lease and be refused - all six rows, every time.
+         A loan is honoured ONLY while the lease manager still reports it as
+         the live owner, so a stale or forged loan grants nothing and this
+         stays fail-closed. The loan is never claimed or released here; the
+         pull that published it owns its whole lifetime. */
+      if(!ownerToken&&leaseMgr&&typeof leaseMgr.owns==='function'){
+        var loanToken=String(window.__mlsP1AthenaLeaseLoan||'');
+        if(loanToken&&leaseMgr.owns(loanToken)){ownerToken=loanToken;leaseReady=true;}
+      }
+    }
+    if(!leaseReady){
       if(!leaseMgr||typeof leaseMgr.claim!=='function'){reject(new Error('pull-in-flight: the preview Athena reader is unavailable. Nothing started.'));return;}
       ownedToken=leaseMgr.claim('p1-chart-read',110000)||'';
       if(!ownedToken){reject(new Error('pull-in-flight: another Athena read or schedule pull is active. Nothing started.'));return;}

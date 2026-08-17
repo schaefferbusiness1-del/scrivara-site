@@ -4667,6 +4667,9 @@
       if(athenaTouch!=null){safe(function(){clearInterval(athenaTouch);});athenaTouch=null;}
       if(athenaToken&&athenaMgr&&isFn(athenaMgr.release))safe(function(){athenaMgr.release(athenaToken);});
       if(siAthenaOwnerToken===athenaToken)siAthenaOwnerToken="";
+      /* Withdraw the loan on every exit path, and only ours: a later pull's
+         loan must survive this one's teardown. */
+      safe(function(){ if(window.__mlsP1AthenaLeaseLoan===athenaToken) window.__mlsP1AthenaLeaseLoan=""; });
       athenaToken="";
     }
     /* b490: cross-tab pull-busy stamp. The update banner's Refresh killed a
@@ -4692,6 +4695,18 @@
         athenaToken=athenaMgr.claim("p1-si-managed",420000)||"";
         if(!athenaToken){pullRunning=false;return Promise.resolve(busy("other-tab"));}
         siAthenaOwnerToken=athenaToken;
+        /* p1-lease-loan-1.0.0 (owner report 2026-08-16, 6/6 today-notes refused).
+           This pull passes siAthenaOwnerToken into its OWN five chart reads, but
+           the today-note leg reaches the reader through feat_visits.js, which is
+           frozen and calls _assistReadChart with no options object at all. With
+           no token it tried a fresh claim(), lost to the lease this very pull was
+           holding, and every row came back "pull-in-flight: another Athena read
+           or schedule pull is active."
+           Publishing the token as a LOAN lets an un-tokened read join the lease
+           instead of fighting it. It is not a bypass: _assistReadChart honours a
+           loan only while leaseMgr.owns(loan) is still true, so a stale loan
+           grants nothing, and releaseAthenaOwner clears it on every exit. */
+        safe(function(){ window.__mlsP1AthenaLeaseLoan = athenaToken; });
         athenaTouch=setInterval(function(){safe(function(){athenaMgr.touch(athenaToken);});},25000);
         operation=Promise.resolve().then(function(){return isFn(athenaMgr.ready)?athenaMgr.ready(athenaToken):true;}).then(function(ok){return ok?start():busy("other-tab");});
       }else if (safe(function () { return !!(navigator && navigator.locks && isFn(navigator.locks.request)); }, false)) {
