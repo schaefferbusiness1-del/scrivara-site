@@ -101,6 +101,13 @@ const tests = [
   '1p-autobind-encounter.test.js',
   '1p-athena-write-unlock-frozen-contract-runtime.test.js',
   '1p-athena-write-unlock-adversarial-runtime.test.js',
+  /* wfdx-1.0.0 / opvs-1.0.0 / athena-probe-only-1.0.0 (owner 2026-08-17: "get
+     this working and not grayed out ... verify that the op notes to Athena
+     works too"). Drives the real 1p review against a fake MLS Assist: bound ->
+     READY, unbound -> honest gray, PHI-free probe receipts and copyable error
+     report, the read-only goto/open/re-check ladder, PROBE ONLY end to end
+     with ONE enforcement point, and the op note -> review hand-off. */
+  '1p-athena-write-readiness-and-probe-only.test.js',
   /* MLS Assist 3.0.62 / wsg-2.0.0 (owner directive 2026-08-12): with the
      capable extension every supervised action - note, billing, save, sign,
      one exact reviewed order - renders READY on /1p; an older extension gets

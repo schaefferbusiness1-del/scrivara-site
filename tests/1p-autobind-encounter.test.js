@@ -70,12 +70,27 @@ ok(/state\.reopenOpts = reopenOptions\(o1, rebuilt\);/.test(bindCall),
 /* ---- 4. FAILS CLOSED on every abandonment path ---- */
 ok(/if \(p1AutoBindOff \|\| !state \|\| state\.closed \|\| state\.running \|\| state\.halted\) return false;/.test(bindCall),
   'auto-bind must not run while closed, running or halted');
-ok(/if \(p1VisitBound\(m\.visit\)\) return false;/.test(bindCall),
-  'auto-bind must not run when the visit is already bound');
+/* 2026-08-17 (wfdx lane): the "already bound" guard used to be
+ * p1VisitBound(m.visit) - an appointment id alone. That is NOT the manifest's
+ * own send predicate (which also needs the provider), so an encounter carrying
+ * an exact imported appointment id but no provider was stuck forever: auto-bind
+ * refused to run and the row stayed blocked. The guard is now the row's real
+ * capability, which is strictly tighter for the case it used to cover AND opens
+ * the case it used to strand. The appointment identity is frozen in exchange:
+ * a candidate set resolving a different id than the manifest already names is
+ * refused before any probe is sent. */
+ok(/if \(row\.capability === 'ready'\) return false;/.test(bindCall),
+  'auto-bind must not run when the review can already send - that is the row capability, not merely an appointment id');
+ok(/var priorAppointmentId = nrmId\(m\.visit && m\.visit\.appointmentId\);/.test(bindCall),
+  'the appointment identity already on the manifest must be captured before probing');
+ok(/if \(priorAppointmentId && nrmId\(set\.appointmentId\) !== priorAppointmentId\) return false;/.test(bindCall),
+  'a candidate set naming a DIFFERENT appointment than the manifest must be refused before any probe');
 ok(/state\.probeGeneration !== gen/.test(bindCall),
   'a superseded probe generation must be discarded - the user moved on');
-ok(/if \(p1VisitBound\(state\.manifest && state\.manifest\.visit\)/.test(bindCall),
-  'a binding that arrived while the probe was in flight must win over the late result');
+ok(/if \(!liveRow \|\| liveRow\.capability === 'ready' \|\| liveRow\.rowHash !== row\.rowHash\) return;/.test(bindCall),
+  'a binding (or any row rebuild) that arrived while the probe was in flight must win over the late result');
+ok(/if \(nrmId\(state\.manifest\.visit && state\.manifest\.visit\.appointmentId\) !== priorAppointmentId\) return;/.test(bindCall),
+  'a late result must never be adopted onto a manifest whose appointment identity moved');
 ok(/p1SamePatient\(patientAtStart, actionPatient\(\{ patient: activePt\(\) \}\)\)/.test(bindCall),
   'a patient switch while probes run must discard every result');
 ok(/currentSource !== source \|\| currentPullResult !== pullResult/.test(bindCall),
