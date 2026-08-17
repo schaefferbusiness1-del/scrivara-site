@@ -258,12 +258,79 @@ function testConvergenceIsOneContinuousPull() {
   ok(/stopped-by-user/.test(MC), 'the convergence vetoes do not know about a stopped pull');
 }
 
-function main() {
+/* ====== (5) bob-1.0.0: the census path RUNS history, it does not drop it === */
+async function testCensusRunsHistoryAsPhaseTwo() {
+  /* OWNER, verbatim 2026-08-17: "1p pulls way faster but doesn't include
+     history so if you can do best of both worlds that would be great."
+     The mechanism was one line - includeHistory = false on the
+     provider-unknown census path, never put back. Phase 1 must stay exactly as
+     fast; phase 2 must actually read. This EXECUTES the real branch with a spy
+     history batch rather than trusting a grep. */
+  ok(/var p1CensusHistoryDeferred = p1CensusHistoryRequested;/.test(SI),
+    'the census path still DROPS the history request instead of deferring it');
+
+  const start = SI.indexOf('            /* bob-1.0.0 PHASE 2: the census path defers history');
+  const end = SI.indexOf("            var providerComplete =", start);
+  ok(start > 0 && end > start, 'the bob-1.0.0 phase-2 branch is missing');
+  const src = SI.slice(start, end);
+
+  async function run(opts) {
+    const calls = [];
+    const said = [];
+    const fn = new Function('includeHistory', 'p1CensusHistoryDeferred', 'res', 'date',
+      'runHistoryBatch', 'onStatus',
+      'return (async function () {' + src + '\nreturn historyReceipt; })();');
+    const receipt = await fn(
+      opts.includeHistory, opts.deferred,
+      { historyTargets: opts.targets, historyUnresolved: [] },
+      '2026-08-17',
+      function (rows, unresolved, onStatus, sweepOpts) {
+        calls.push({ rows: rows.length, scopeDay: sweepOpts && sweepOpts.scopeDay });
+        return Promise.resolve({ requested: rows.length, processed: rows.length, complete: true,
+          exactIdentityVerified: true, patients: [], retry: [], failures: 0 });
+      },
+      function (m) { said.push(String(m || '')); });
+    return { receipt, calls, said };
+  }
+
+  /* the owner's case: a provider-unknown census day WITH provable patients */
+  const censusWithRows = await run({ includeHistory: false, deferred: true, targets: [{}, {}, {}] });
+  eq(censusWithRows.calls.length, 1,
+    'a provider-unknown census day still reads NO chart history - the owner\'s exact complaint');
+  eq(censusWithRows.calls[0].rows, 3, 'phase 2 did not hand the batch the day\'s history targets');
+  eq(censusWithRows.calls[0].scopeDay, '2026-08-17', 'phase 2 lost the pulled day (dnd-1.0.0)');
+  eq(censusWithRows.receipt.censusPhaseTwo, true, 'the receipt does not record that phase 2 ran');
+  eq(censusWithRows.receipt.censusHistoryTargets, 3, 'the receipt does not state what phase 2 was given');
+  ok(censusWithRows.said.some(m => /schedule for 2026-08-17 is saved.*Reading chart history for 3/.test(m)),
+    'phase 2 gave the doctor no honest progress line of its own');
+
+  /* a census day with nothing provable: honest skip, unchanged reason string */
+  const censusNoRows = await run({ includeHistory: false, deferred: true, targets: [] });
+  eq(censusNoRows.calls.length, 0, 'phase 2 started a batch with no provable targets');
+  eq(censusNoRows.receipt.skipped, true, 'a census day with no targets no longer skips honestly');
+  eq(censusNoRows.receipt.reason, 'provider-attribution-unavailable',
+    'the established census skip reason changed for a day that genuinely had nothing to read');
+  eq(censusNoRows.receipt.censusNoProvableTargets, true,
+    'the receipt does not distinguish "nothing provable" from "not requested"');
+
+  /* an ORDINARY attributed day is untouched */
+  const ordinary = await run({ includeHistory: true, deferred: false, targets: [{}, {}] });
+  eq(ordinary.calls.length, 1, 'an ordinary day stopped reading history');
+  eq(ordinary.receipt.censusPhaseTwo, undefined, 'an ordinary day was mislabelled as a census phase 2');
+
+  /* history NOT requested at all: still nothing, still honest */
+  const notRequested = await run({ includeHistory: false, deferred: false, targets: [{}, {}] });
+  eq(notRequested.calls.length, 0, 'a schedule-only pull started reading history');
+  eq(notRequested.receipt.reason, 'not-requested', 'a schedule-only pull lost its honest reason');
+}
+
+async function main() {
   testEmptyDaySkipsTheAiParser();
+  await testCensusRunsHistoryAsPhaseTwo();
   testRegexLiteralsAreIntact();
   testAuthorityStoreRepairs();
   testConvergenceIsOneContinuousPull();
-  console.log('PASS 1p-empty-day-regex-and-authority-repair: ' + checks + ' checks - a verified-empty day never reaches the AI schedule parser (and a text-only day still does); no 1p-only file carries a lost-backslash regex or the control byte one leaves behind, and the calendar hero bar provably paints 44% for "7 of 16"; a top-level-alien authority blob is salvaged per-day or bounded-reset instead of wedging every future pull forever; and the automatic convergence lane is one continuous pull with exactly one verdict');
+  console.log('PASS 1p-empty-day-regex-and-authority-repair: ' + checks + ' checks - a verified-empty day never reaches the AI schedule parser (and a text-only day still does); a provider-unknown appointment-census day now RUNS chart history as a second phase with its own progress instead of silently dropping it, while a census day with nothing provable keeps its established honest skip; no 1p-only file carries a lost-backslash regex or the control byte one leaves behind, and the calendar hero bar provably paints 44% for "7 of 16"; a top-level-alien authority blob is salvaged per-day or bounded-reset instead of wedging every future pull forever; and the automatic convergence lane is one continuous pull with exactly one verdict');
 }
 
-try { main(); } catch (e) { console.error(e); process.exit(1); }
+main().then(() => {}, e => { console.error(e); process.exit(1); });
