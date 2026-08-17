@@ -43330,5 +43330,401 @@ body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:n
 })();
 </script>
 <!-- ===== end visitflow-1.0.0 =========================================== -->
+<!-- ===== dockspace-1.0.0 — the room switcher owns its own layer =========
+     OWNER, 2026-08-17 ~21:55Z: "at different aspect ratios and sizes of screen,
+     the tab selector on the bottom — or it can be at the top or the left or the
+     right depending on its position — things get in the way of it, and it looks
+     awful. Notifications cover it up, or other things like that."
+
+     MEASURED FIRST, real Chrome, 13 viewport sizes x 4 dock positions, real
+     rect intersection against the app's own floating furniture:
+
+       dock at TOP:    the toast covers the dock at 10 of 13 sizes,
+                       ~18,221 px2 of overlap every time
+       dock at BOTTOM: 0 overlaps
+       dock at LEFT / RIGHT: 0 overlaps
+
+     WHY THE TOP CASE AND NOT THE OTHERS, exactly: the toast is placed by
+     mlsNoticeAnchor() (shell :6402), which walks #appHeader, #mlsCtxBar and
+     #patientBar and parks the notice 10px under the lowest of them — about
+     y=99. feat_mls_calm_shell.js parks a top dock at top:88px, 85px tall, so
+     the dock occupies y=88..173 and the toast lands inside it. The anchor
+     function has never known the dock exists. Left/right are clean because the
+     anchor already offsets horizontally for a fixed left rail, and bottom is
+     clean because the toast is a TOP notice.
+
+     THE FIX IS A RESERVED SAFE-AREA, NOT A Z-INDEX WAR. Winning a stacking
+     contest would put the dock ON TOP of the notification — the doctor would
+     still not be able to read the notification, which is not better. Instead
+     the dock publishes the band it occupies as CSS custom properties, and the
+     floating furniture is offset out of that band. Both stay readable.
+
+       <html data-mls-dock-band="top|bottom|left|right">
+       --mls-dock-thickness    the dock's own size across the band
+       --mls-dock-clear-top    y below which content is clear of it
+       --mls-dock-clear-bottom distance from the viewport bottom to clear it
+       --mls-dock-clear-left   x right of which content is clear of it
+       --mls-dock-clear-right  distance from the viewport right to clear it
+
+     All four are 0px unless the dock is really on that side, so every rule
+     below is a no-op in the three positions it does not apply to.
+
+     WHY CSS max() AND NOT A WRAPPER around mlsSyncNoticeAnchor(). The shell
+     recomputes --mls-notice-top on every toast() call, so anything written
+     after it is overwritten on the next notification. max() composes with the
+     shell's own value instead of fighting it: the notice keeps its own
+     header-aware placement and is additionally pushed clear of the dock, and
+     if the dock is not at the top the max() resolves to the shell's value
+     unchanged. No shared function is wrapped and no ordering can break it.
+
+     REFLOW. The dock must never wrap to two rows, never clip an item, and
+     never leave the viewport. On the horizontal bands it is capped to the
+     viewport and SCROLLS rather than wrapping; on the vertical bands the same
+     on the other axis. Scrolling is the only honest answer at 320px: a wrapped
+     row silently doubles the dock's thickness (measured: 63px -> 85px between
+     1440 and 1024), which then eats the clearance every rule here depends on.
+
+     IT NEVER CHANGES THE DOCK'S POSITION OR PREFERENCE. dock-1p-1.1.0 still
+     owns the picker; this block only measures where the dock ended up and
+     keeps everything else out of its way. If the dock is not installed, every
+     variable stays 0px and nothing on the page moves. -->
+<style id="mlsDockSpaceCss">
+:root{
+  --mls-dock-thickness:0px;
+  --mls-dock-clear-top:0px;
+  --mls-dock-clear-bottom:0px;
+  --mls-dock-clear-left:0px;
+  --mls-dock-clear-right:0px;
+}
+
+/* ---- (1) NOTIFICATIONS ------------------------------------------------
+   The measured defect. max() composes with the shell's own anchor. */
+html[data-mls-dock-band="top"] .toast{
+  top:max(var(--mls-notice-top,96px), var(--mls-dock-clear-top)) !important;
+}
+/* A left or right rail: the notice is centred on the viewport, so half of a
+   300px toast can still reach into a 128px rail. Shift the centre into the
+   free area rather than shrinking the toast. */
+html[data-mls-dock-band="left"] .toast{
+  left:max(var(--mls-notice-left,50%), calc(var(--mls-dock-clear-left) + 50%)) !important;
+}
+html[data-mls-dock-band="right"] .toast{
+  left:min(var(--mls-notice-left,50%), calc(100vw - var(--mls-dock-clear-right) - 50%)) !important;
+}
+/* The phone notice shelf is a static in-flow strip; it needs the band as
+   padding, not as a coordinate. */
+html[data-mls-dock-band="top"] #mlsMobileNoticeShelf{ padding-top:var(--mls-dock-thickness) !important; }
+html[data-mls-dock-band="bottom"] #mlsMobileNoticeShelf{ padding-bottom:var(--mls-dock-thickness) !important; }
+
+/* ---- (2) THE STANDING CHIPS ------------------------------------------
+   The mode chip and the date chip sit top-right; a top dock reaches them at
+   narrow widths where it stretches. The Next tag is mine and must obey the
+   same rule as everything else — a tag that covers the dock would be this
+   block's own version of the defect it fixes. */
+html[data-mls-dock-band="top"] #mslChip{
+  top:max(calc(env(safe-area-inset-top,0px) + 62px), var(--mls-dock-clear-top)) !important;
+}
+html[data-mls-dock-band="right"] #mslChip{
+  right:max(calc(env(safe-area-inset-right,0px) + 18px), var(--mls-dock-clear-right)) !important;
+}
+
+/* ---- (3) FLOATING BUTTONS AND THE PULL PANEL -------------------------
+   The pull pill lives bottom-left and the pull panel is a fixed card; both
+   land on a bottom or left dock. */
+html[data-mls-dock-band="bottom"] #mlsPullProgFab,
+html[data-mls-dock-band="bottom"] #mlsDaDock,
+html[data-mls-dock-band="bottom"] #mlsAsstFab,
+html[data-mls-dock-band="bottom"] #mlsVoiceCluster{
+  bottom:calc(var(--mls-dock-clear-bottom) + 8px) !important;
+}
+html[data-mls-dock-band="left"] #mlsPullProgFab,
+html[data-mls-dock-band="left"] #mlsDaDock{
+  left:calc(var(--mls-dock-clear-left) + 8px) !important;
+}
+html[data-mls-dock-band="right"] #mlsAsstFab,
+html[data-mls-dock-band="right"] #mlsVoiceCluster{
+  right:calc(var(--mls-dock-clear-right) + 8px) !important;
+}
+html[data-mls-dock-band="bottom"] #mlsPullProgPanel{ padding-bottom:var(--mls-dock-thickness) !important; }
+html[data-mls-dock-band="top"] #mlsPullProgPanel{ padding-top:var(--mls-dock-thickness) !important; }
+
+/* ---- (4) DIALOG CARDS -------------------------------------------------
+   The scrim SHOULD cover the dock — that is what makes the dock inert while a
+   dialog owns the screen, and taking that away would let a doctor navigate out
+   from under a confirmation. What must not cover it is the dialog CARD, so the
+   card is inset out of the band and the scrim is left alone. */
+html[data-mls-dock-band="top"] .modal-bg.show > .modal{ margin-top:var(--mls-dock-thickness) !important; }
+html[data-mls-dock-band="bottom"] .modal-bg.show > .modal{ margin-bottom:var(--mls-dock-thickness) !important; }
+
+/* ---- (5) THE PAGE ITSELF ---------------------------------------------
+   The calm shell already reserves #appWrap padding per side. This adds the
+   scroll padding it does not: without it, "scroll this control into view"
+   parks the control exactly under the dock. */
+html[data-mls-dock-band="top"]{ scroll-padding-top:var(--mls-dock-clear-top); }
+html[data-mls-dock-band="bottom"]{ scroll-padding-bottom:var(--mls-dock-clear-bottom); }
+html[data-mls-dock-band="left"]{ scroll-padding-left:var(--mls-dock-clear-left); }
+html[data-mls-dock-band="right"]{ scroll-padding-right:var(--mls-dock-clear-right); }
+
+/* ---- (6) REFLOW: ONE ROW, NEVER CLIPPED, ALWAYS INSIDE ---------------
+   Cap to the viewport and scroll on the long axis. flex-wrap:nowrap is the
+   load-bearing declaration: wrapping is what doubled the dock's thickness at
+   the 768-1280 widths, and the thickness is what every clearance above is
+   computed from. Scrollbars are hidden because the dock is six items — the
+   overflow is a safety valve, not a scroll region a doctor should see. */
+#mlsDock{
+  max-width:calc(100vw - 20px) !important;
+  max-height:calc(100vh - 20px) !important;
+  box-sizing:border-box;
+}
+html[data-mls-dock-band="top"] #mlsDock,
+html[data-mls-dock-band="bottom"] #mlsDock{
+  flex-wrap:nowrap !important;
+  overflow-x:auto; overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+html[data-mls-dock-band="left"] #mlsDock,
+html[data-mls-dock-band="right"] #mlsDock{
+  flex-wrap:nowrap !important;
+  overflow-y:auto; overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+#mlsDock::-webkit-scrollbar{ width:0; height:0; }
+/* An item must not be squeezed below a tap target, and must not stretch the
+   row: fixed basis, no shrink, so six items are six items at every width. */
+html[data-mls-dock-band="top"] #mlsDock > button,
+html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
+/* Compact strip on narrow widths: the label stays (an icon-only dock is a
+   guessing game) but it stops setting the item width. */
+@media (max-width:520px){
+  #mlsDock > button{ min-width:52px !important; padding:7px 8px 6px !important; font-size:10.5px !important; }
+}
+@media (max-width:380px){
+  #mlsDock > button{ min-width:46px !important; padding:6px 6px 5px !important; }
+}
+/* Short viewports: a 1024x600 laptop or a landscape phone has no room for a
+   dock that reserves 112px at the top. */
+@media (max-height:700px){
+  html[data-mls-dock-band="top"] #mlsDock,
+  html[data-mls-dock-band="bottom"] #mlsDock{ padding-top:4px !important; padding-bottom:4px !important; }
+  #mlsDock > button{ padding-top:6px !important; padding-bottom:5px !important; }
+}
+</style>
+<script>
+/* dockspace-1.0.0 controller: measure the dock, publish the band. */
+(function () {
+  'use strict';
+  if (window.__mlsDockSpace) return;
+
+  var VERSION = 'dockspace-1.0.0';
+  var GAP = 12;                      /* breathing room outside the dock */
+  var SIDES = ['top', 'bottom', 'left', 'right'];
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function root() { return document.documentElement; }
+  function dock() { return safe(function () { return document.getElementById('mlsDock'); }, null); }
+
+  function shown(e) {
+    if (!e) return false;
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(e); }, null);
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+
+  /* WHICH SIDE, measured rather than believed. body[data-mls-dock] is the
+     PREFERENCE; below 640px the calm shell pins the dock to the bottom
+     regardless of it, so the attribute and the pixels disagree exactly where a
+     doctor is most likely to be on a phone. The geometry is the truth, and the
+     attribute is only the tie-break. */
+  function bandOf(r) {
+    var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+    if (!vw || !vh) return '';
+    var horizontal = r.width >= r.height;
+    if (horizontal) return (r.top + r.height / 2) < vh / 2 ? 'top' : 'bottom';
+    return (r.left + r.width / 2) < vw / 2 ? 'left' : 'right';
+  }
+
+  function clear() {
+    var s = root().style;
+    safe(function () { root().removeAttribute('data-mls-dock-band'); });
+    s.setProperty('--mls-dock-thickness', '0px');
+    for (var i = 0; i < SIDES.length; i++) s.setProperty('--mls-dock-clear-' + SIDES[i], '0px');
+  }
+
+  var _last = '';
+  function sync() {
+    var d = dock();
+    if (!d || !shown(d)) { if (_last !== 'none') { clear(); _last = 'none'; } return null; }
+    var r = safe(function () { return d.getBoundingClientRect(); }, null);
+    if (!r) return null;
+    var band = bandOf(r);
+    if (!band) return null;
+    var vw = window.innerWidth || 0, vh = window.innerHeight || 0;
+    var thickness = (band === 'top' || band === 'bottom') ? r.height : r.width;
+
+    var vals = { top: 0, bottom: 0, left: 0, right: 0 };
+    if (band === 'top') vals.top = Math.round(r.bottom + GAP);
+    else if (band === 'bottom') vals.bottom = Math.round((vh - r.top) + GAP);
+    else if (band === 'left') vals.left = Math.round(r.right + GAP);
+    else vals.right = Math.round((vw - r.left) + GAP);
+
+    var sig = band + '|' + Math.round(thickness) + '|' + vals.top + '|' + vals.bottom + '|' + vals.left + '|' + vals.right;
+    /* An unconditional style write costs a whole-document recalc, so this only
+       writes on change — but "no change" must be checked against the DOM, not
+       only against the last value this function computed. MEASURED: clearing
+       the attribute from outside (a revert, a hot reload, another module) left
+       _last holding the old signature, so sync() returned early and the band
+       was never republished — the clearances silently stayed at 0 and every
+       rule that depends on them became a no-op. Cheap to be sure. */
+    var live = safe(function () { return root().getAttribute('data-mls-dock-band'); }, null);
+    if (sig === _last && live === band) return sig;
+    _last = sig;
+    var s = root().style;
+    safe(function () { root().setAttribute('data-mls-dock-band', band); });
+    s.setProperty('--mls-dock-thickness', Math.round(thickness) + 'px');
+    for (var i = 0; i < SIDES.length; i++) {
+      s.setProperty('--mls-dock-clear-' + SIDES[i], vals[SIDES[i]] + 'px');
+    }
+    return sig;
+  }
+
+  /* Does anything actually cover the dock right now? The suite's assertion, but
+     exposed here so it reads the SAME rects the runtime does rather than a
+     second implementation that can drift. `sel` list is the app's own floating
+     furniture; a modal SCRIM is excluded on purpose (see the CSS note). */
+  var FURNITURE = ['.toast', '#toast', '#mlsMobileNoticeShelf', '#mslChip', '#mlsNgTag',
+    '#mlsPullProgFab', '#mlsPullProgPanel', '#mlsUpdateBar', '#mlsAvChip',
+    '#mlsAsstFab', '#mlsAsstPanel', '#mlsDaDock', '#mlsVoiceCluster',
+    '#mlsTbMenuPanel', '#mlsWdDeck', '.modal-bg.show > .modal'];
+
+  function overlaps() {
+    var d = dock();
+    if (!d || !shown(d)) return { dock: false, hits: [] };
+    var dr = d.getBoundingClientRect();
+    var hits = [];
+    FURNITURE.forEach(function (sel) {
+      var list = safe(function () { return document.querySelectorAll(sel); }, []);
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        if (e === d || d.contains(e) || e.contains(d)) continue;
+        if (!shown(e)) continue;
+        var r = e.getBoundingClientRect();
+        var ix = Math.max(0, Math.min(dr.right, r.right) - Math.max(dr.left, r.left));
+        var iy = Math.max(0, Math.min(dr.bottom, r.bottom) - Math.max(dr.top, r.top));
+        if (ix > 1 && iy > 1) hits.push({ sel: sel, id: e.id || '', area: Math.round(ix * iy) });
+      }
+    });
+    return { dock: true, hits: hits };
+  }
+
+  /* Geometry the suite asserts on: one row, nothing clipped, inside the view. */
+  function geometry() {
+    var d = dock();
+    if (!d || !shown(d)) return { present: false };
+    var dr = d.getBoundingClientRect();
+    var items = [];
+    var kids = safe(function () { return d.children; }, []);
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k.nodeType !== 1) continue;
+      if (k.classList && k.classList.contains('mls-dock-pill')) continue;  /* the sliding indicator, not an item */
+      if (!shown(k)) continue;
+      items.push(k);
+    }
+    var band = root().getAttribute('data-mls-dock-band') || '';
+    var horizontal = dr.width >= dr.height;
+    var across = {};                    /* distinct LINES across the band */
+    var clipped = [];
+    items.forEach(function (k) {
+      var r = k.getBoundingClientRect();
+      /* The item CENTRE, in a generous bucket. Measuring the item's top called
+         a single row two rows: the dock's items are different heights (a 68px
+         icon+label button beside a 46px Ask field), and centred items with
+         different heights have different tops by construction. The centre is
+         what "same row" actually means. */
+      var centre = horizontal ? (r.top + r.height / 2) : (r.left + r.width / 2);
+      across[Math.round(centre / 20)] = 1;
+      /* Clipped means outside the dock's SCROLLABLE content box, not outside
+         its border box: an item parked in the scroll overflow is reachable. */
+      var overflowsBox = horizontal
+        ? (r.top < dr.top - 2 || r.bottom > dr.bottom + 2)
+        : (r.left < dr.left - 2 || r.right > dr.right + 2);
+      if (overflowsBox) clipped.push(k.id || (k.textContent || '').trim().slice(0, 14));
+    });
+    return {
+      present: true, band: band,
+      rect: { x: Math.round(dr.left), y: Math.round(dr.top), w: Math.round(dr.width), h: Math.round(dr.height) },
+      items: items.length,
+      lines: Object.keys(across).length,
+      clipped: clipped,
+      insideViewport: dr.left >= -1 && dr.top >= -1
+        && dr.right <= (window.innerWidth || 0) + 1 && dr.bottom <= (window.innerHeight || 0) + 1,
+      overflowX: Math.max(0, d.scrollWidth - d.clientWidth),
+      overflowY: Math.max(0, d.scrollHeight - d.clientHeight),
+      thickness: parseFloat(getComputedStyle(root()).getPropertyValue('--mls-dock-thickness')) || 0
+    };
+  }
+
+  window.__mlsDockSpace = {
+    version: VERSION,
+    sync: sync,
+    overlaps: overlaps,
+    geometry: geometry,
+    report: function () {
+      var g = geometry(), o = overlaps();
+      return { band: root().getAttribute('data-mls-dock-band') || '', geometry: g, overlaps: o.hits, clean: o.hits.length === 0 };
+    },
+    revert: function () {
+      clear();
+      var css = document.getElementById('mlsDockSpaceCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      return true;
+    }
+  };
+
+  /* setTimeout, never rAF — a non-compositing or backgrounded tab freezes rAF
+     entirely, and the reserved band would then be whatever it was when the tab
+     was last visible. */
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () { queued = false; safe(sync); }, 0);
+  }
+
+  function boot() {
+    refresh();
+    ['resize', 'orientationchange'].forEach(function (n) {
+      safe(function () { window.addEventListener(n, refresh, false); });
+    });
+    safe(function () { window.addEventListener('mls:view-changed', refresh, false); });
+    safe(function () { document.addEventListener('click', refresh, true); });
+    /* The dock is idle-scheduled behind requiresFoundation and can be absent
+       for 40+ seconds after the bundle resolves, so a boot-time observer would
+       have nothing to attach to. Attach when it appears, and keep a bounded
+       re-arm rather than a permanent poll. */
+    var n = 0;
+    var iv = setInterval(function () {
+      var d = dock();
+      if (d && !d.__mlsDsWatched) {
+        d.__mlsDsWatched = true;
+        safe(function () {
+          new MutationObserver(refresh).observe(d, { attributes: true, childList: true, attributeFilter: ['style', 'class'] });
+        });
+      }
+      refresh();
+      if (++n > 60) clearInterval(iv);     /* ~54s, past the dock's worst case */
+    }, 900);
+    safe(function () {
+      new MutationObserver(refresh).observe(document.body, { attributes: true, attributeFilter: ['data-mls-dock', 'class'] });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end dockspace-1.0.0 =========================================== -->
 </body>
 </html>
