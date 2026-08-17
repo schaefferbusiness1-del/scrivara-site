@@ -42,12 +42,16 @@ const BUILD_TOKEN_IN_HEX = /b\d{3}/i;
    invariant on exactly one future build; the count is what protects it then.
    Counted at build b559 on 2026-07-24. */
 const PREEXISTING = {
-  '#b8860b': 5,   // "b886" — darkgoldenrod, one copy each in ScribeFlow.html /
+  '#b8860b': 6,   // "b886" — darkgoldenrod, one copy each in ScribeFlow.html /
                   //          -staging / _test since long before b886;
                   //          git-verified identical on origin/main (b885) at
                   //          the moment the build number caught up to it on
                   //          2026-08-05. The boundary-anchored bumper cannot
                   //          touch it ("b886" is followed by "0b").
+                  //          +1 on 2026-08-16: the /cloned lane, a byte-faithful
+                  //          production clone. Clone count matches ScribeFlow.html
+                  //          exactly; inherited copies, not new design. A build
+                  //          bumper must treat the cloned files like their originals.
   '#2fb986': 2,   // "b986" — a green in ScribeFlow-staging.html and
                   //          ScribeFlow_test.html, present since the commit that
                   //          ADDED staging (7a986898), long before the build number
@@ -63,9 +67,17 @@ const PREEXISTING = {
                   //          (git-verified untouched by the b673 bump)
   '#4B564F': 1,   // "b564"
   '#d8b574': 8,   // "b574"
-  '#b58105': 2,   // "b581"
-  '#5b7186': 26,  // "b718"
-  '#6b7280': 9,   // "b728" — +1 on 2026-08-06: the 3.0.45 full-file candidate
+  '#b58105': 3,   // "b581"
+                  //          +1 on 2026-08-16: the /cloned lane, a byte-faithful
+                  //          production clone. Clone count matches mls-connect.js
+                  //          exactly; inherited copies, not new design. A build
+                  //          bumper must treat the cloned files like their originals.
+  '#5b7186': 30,  // "b718"
+                  //          +4 on 2026-08-16: the /cloned lane, a byte-faithful
+                  //          production clone. Clone count matches ScribeFlow.html + mls-connect.js
+                  //          exactly; inherited copies, not new design. A build
+                  //          bumper must treat the cloned files like their originals.
+  '#6b7280': 10,   // "b728" — +1 on 2026-08-06: the 3.0.45 full-file candidate
                   //          (same review_screen.js copy; verified the delta is
                   //          exactly 1 and lives only in extension-candidates/3.0.45)
                   //          +1 on 2026-08-03: the 3.0.44 full-file candidate
@@ -74,17 +86,41 @@ const PREEXISTING = {
                   //          the first candidate staged with ALL 20 files (the
                   //          release-coherence copy), so review_screen.js's
                   //          copy of this colour now counts twice repo-wide
+                  //          +1 on 2026-08-16: the /cloned lane, a
+                  //          byte-faithful production clone. Verified the clone's
+                  //          count matches mls-connect.js EXACTLY, so these are
+                  //          inherited copies, not new design and not corruption.
+                  //          NOTE: the clone doubles this colour's exposure to a
+                  //          plain-replace build bump - a bumper must treat
+                  //          cloned-mls-connect.js / cloned/index.html the same
+                  //          way it treats their originals.
   '#6B756E': 1,   // "b756"
-  '#B07636': 60,  // "b076" — +3 on 2026-08-06 (the 3.0.45 candidate's
+  '#B07636': 69,  // "b076" — +3 on 2026-08-06 (the 3.0.45 candidate's
                   //          mls-popup.css copy; delta verified to be exactly 3
                   //          and confined to extension-candidates/3.0.45)
                   //          +3 on 2026-08-02 (the 3.0.40 candidate's
                   //          mls-popup.css copy), +3 again on 2026-08-03
                   //          (the 3.0.44 full-file candidate, same copy)
+                  //          +9 on 2026-08-16: the /cloned lane, a
+                  //          byte-faithful production clone. Verified the clone's
+                  //          count matches mls-connect.js EXACTLY, so these are
+                  //          inherited copies, not new design and not corruption.
+                  //          NOTE: the clone doubles this colour's exposure to a
+                  //          plain-replace build bump - a bumper must treat
+                  //          cloned-mls-connect.js / cloned/index.html the same
+                  //          way it treats their originals.
   '#6b7684': 1,   // "b768"
-  '#b9770a': 10,  // "b977" — collided with the live build number on 2026-08-08.
+  '#b9770a': 12,  // "b977" — collided with the live build number on 2026-08-08.
                   //          The bump script rewrote all 6 to #b9780a before a
                   //          diff caught it; the bump now masks hex literals.
+                  //          +2 on 2026-08-16: the /cloned lane, a
+                  //          byte-faithful production clone. Verified the clone's
+                  //          count matches ScribeFlow.html EXACTLY, so these are
+                  //          inherited copies, not new design and not corruption.
+                  //          NOTE: the clone doubles this colour's exposure to a
+                  //          plain-replace build bump - a bumper must treat
+                  //          cloned-mls-connect.js / cloned/index.html the same
+                  //          way it treats their originals.
   '#8b9791': 1,   // "b979" — the write-back walkthrough's muted todo colour,
                   //          byte-identical since its introduction in
                   //          d1aa8a98 on 2026-07-27; the b979 bump did not
@@ -99,7 +135,7 @@ const PREEXISTING = {
                   //          file's first upload; collided with the live build
                   //          number on 2026-07-28 (git-verified untouched by
                   //          any bump: same hex at 51940a2a and da2bf625)
-  '#f5b942': 5,   // "b942" — the checking/warning amber: the connection dot in
+  '#f5b942': 7,   // "b942" — the checking/warning amber: the connection dot in
                   //          mls-connect.js (twice, the inline colour and its
                   //          .mls-b35-dot.chk rule) and the off-today outline in
                   //          feat_mls_fixpack_0701.js. Collided with the live

@@ -4913,7 +4913,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <option value="right">Floating — right edge</option>
         </select>
         <label for="qolDockAutoHide" style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-top:8px">
-          <input type="checkbox" id="qolDockAutoHide" style="width:17px;height:17px;cursor:pointer" onchange="if(typeof applyDockAutoHidePreview==='function')applyDockAutoHidePreview(this.checked)">
+          <input type="checkbox" id="qolDockAutoHide" style="width:17px;height:17px;cursor:pointer" onchange="applyDockAutoHidePreview(this.checked)">
           <span>Auto-hide until hovered, tapped, or focused</span>
         </label>
         <div style="font-size:12px;color:var(--muted);margin-top:4px">It keeps hovering over the page wherever you put it. Changes apply straight away.</div>
