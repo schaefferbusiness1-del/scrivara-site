@@ -114,6 +114,7 @@ const tests = [
   '1p-one-template-upload-and-month-range.test.js',
   '1p-template-mode-adapter-runtime.test.js',
   '1p-rangejobs-runtime.test.js',
+  '1p-rangejobs-harness-runtime.test.js',
   '1p-mobile-encounter-runtime.test.js',
   '1p-coding-review-confirmation-runtime.test.js',
   '1p-avatar-face-async-ownership-runtime.test.js',
