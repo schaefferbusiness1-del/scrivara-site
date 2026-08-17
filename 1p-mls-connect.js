@@ -48498,7 +48498,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        mistake a deliberate stop for a transient straggler). The rows it left
        behind are still the doctor's to retry by hand, so the Retry control
        must still see them. */
-    var RETRYABLE = /^(history-partial|stopped-by-user)$/;
+    /* bob-1.0.0: a census day now runs history as phase 2, and a phase 2 that
+       did not finish names itself 'complete-appointment-census-history-partial'
+       (the CENSUS is complete; the history is not). Those rows are the
+       doctor's to retry too - only 'history-partial' is auto-convergeable. */
+    var RETRYABLE = /^(history-partial|stopped-by-user|complete-appointment-census-history-partial)$/;
     var partial = !!(source && RETRYABLE.test(String(source.reason || ''))) ||
       !!(history && RETRYABLE.test(String(history.reason || '')));
     return partial && history && Array.isArray(history.retry) ? history.retry : [];
