@@ -4857,6 +4857,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/^open-failed$/.test(head)) return 'not on the athenaOne schedule';
     if (/^read-failed$/.test(head)) return 'chart read timed out';
     if (/^pulled-day-note-unread/.test(head)) return 'the note for the pulled day could not be read';
+    /* ===== fdx-1.1.0 / cap-1.0.0 (two verdicts that had no wording) ===== */
+    if (/^find-open-deadline/.test(head)) return 'athenaOne search did not open the chart in time';
+    if (/^summary-pending/.test(head)) return 'saved · summary pending';
+    /* ===== end fdx-1.1.0 / cap-1.0.0 ===== */
     if (/^visit-bodies-incomplete/.test(head)) return 'some visit notes could not be read';
     if (/^no-chart-frame-candidate/.test(head)) return 'the chart never finished loading';
     if (/^visits-time-budget-exceeded/.test(head)) return 'ran out of time reading visits';
@@ -4886,13 +4890,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var good = !!r.ok;
       var raw = String(r.reason == null ? '' : r.reason);
       var pending = !good && (r.pending === true || r.done === false || PP_PENDING.test(raw));
-      var why = good ? (r.axe === 'body-depth' ? 'saved (1 redo)' : 'saved')
+      /* ===== cap-1.0.0 + tny-1.0.0 (two extra truths per row) =====
+         sp = the chart is SAVED and only its AI summary is outstanding, so the
+              row is a success with a follow-up, never a failure.
+         dn = the pulled-day NOTE column. Deliverable 3 (owner 2026-08-17): the
+              day-note leg used to settle the ROW ok:false, so a chart that was
+              read, organised and stored painted "not saved" because a note the
+              visit had not produced yet could not be read. History verdict on
+              the left, note verdict in its own cell. */
+      var why = good ? (r.sp === true ? 'saved · summary pending' : (r.axe === 'body-depth' ? 'saved (1 redo)' : 'saved'))
         : pending ? (/^re-checking/.test(raw) ? 're-checking…' : 'reading…')
         : (r.cs === true ? 'chart saved \u2014 visit notes incomplete' : ppHumanWhy(raw));
       var cls = good ? 'pp-ok' : (pending ? 'pp-wait' : 'pp-bad');
       var glyph = good ? '✓ ' : (pending ? '' : '⚠ ');
       var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 200)) + '"' : '';
-      return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span></div>';
+      var dnRaw = String(r.dn == null ? '' : r.dn), dnCell = '';
+      if (dnRaw && !pending) {
+        var dnWhy = dnRaw === 'read' ? 'note saved'
+          : dnRaw === 'not-yet' ? 'not seen yet'
+          : dnRaw === 'future-day' ? 'day not here yet'
+          : 'note unread';
+        var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day') ? 'pp-wait' : 'pp-bad');
+        var dnTitle = dnRaw.indexOf('unread:') === 0 ? ' title="' + esc(dnRaw.slice(7, 207)) + '"' : '';
+        dnCell = '<span class="' + dnCls + '"' + dnTitle + ' style="opacity:.8">' + esc(dnWhy) + '</span>';
+      }
+      return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span>' + dnCell + '</div>';
+      /* ===== end cap-1.0.0 + tny-1.0.0 ===== */
     }).join('');
   }
   function buildPanel() {
@@ -4970,11 +4993,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* ppt-2.0: "skipped" was the FAILED counter's label - failures called
        skips, counted per settle event. Chart-level truth, no euphemism. */
     var reChecking = Math.max(0, done - ok - failed);
-    setText(p, 'tally', '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
+    /* cap-1.0.0: a saved chart whose AI summary has not landed is counted in
+       "saved" and named separately - never hidden and never a failure. */
+    var pendingLive = 0;
+    try { (S.rows || []).forEach(function (r) { if (r && r.sp === true && r.ok === true) pendingLive++; }); } catch (ePl) {}
+    /* ===== dv3-1.0.0 (say WHAT was saved) =====
+       "0 saved" on a pull that had saved charts is the single line the owner
+       reported watching for 21 minutes. The counter is named for what it
+       counts - histories - and the pulled-day NOTE column gets its own count
+       beside it, never inside the failure count. */
+    var dnUnreadLive = 0;
+    try { (S.rows || []).forEach(function (r) { if (r && String(r.dn || '').indexOf('unread:') === 0) dnUnreadLive++; }); } catch (eDn) {}
+    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' pulled-day note' + (dnUnreadLive === 1 ? '' : 's') + ' not read yet' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
+    /* ===== end dv3-1.0.0 ===== */
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
     setText(p, 'current', String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
-    var sig = done + '|' + ok + '|' + failed + '|' + ((S.rows || []).length);
+    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + ((S.rows || []).length);
     var rowsEl = p.querySelector('[data-pp="rows"]');
     if (rowsEl && p.__ppRowsSig !== sig) {
       p.__ppRowsSig = sig;
@@ -5011,8 +5046,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
       try { var hbD = document.getElementById('mlsPullProgHide'); if (hbD) { hbD.textContent = 'Done'; hbD.onclick = function () { doneDismissed = true; render(); }; } } catch (eHb) {}
     }
-    var doneLine = '\u2713 ' + ok + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '');
-    if (dv && Number(dv.tnFailed || 0) > 0) doneLine += ' \u00B7 \u26A0 ' + dv.tnFailed + ' pulled-day note' + (Number(dv.tnFailed) === 1 ? '' : 's') + ' not read';
+    var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : ''); /* dv3-1.0.0 */
+    /* ===== cap-1.0.0 + tny-1.0.0 (the DONE card says all four things) =====
+       "saved \u00B7 summaries pending N" is the honest wording for a day whose
+       charts landed while the backend AI was unavailable; "not seen yet" is
+       the honest wording for TODAY's appointments that have not happened. Both
+       sit BESIDE the saved count, never inside the failure count. */
+    if (dv && Number(dv.summaryPending || 0) > 0) doneLine += ' \u00B7 ' + dv.summaryPending + ' summar' + (Number(dv.summaryPending) === 1 ? 'y' : 'ies') + ' pending';
+    if (dv && Number(dv.tnNotYet || 0) > 0) doneLine += ' \u00B7 ' + dv.tnNotYet + ' not seen yet';
+    if (dv && Number(dv.tnFailed || 0) > 0) doneLine += ' \u00B7 ' + dv.tnFailed + ' pulled-day note' + (Number(dv.tnFailed) === 1 ? '' : 's') + ' not read yet';
+    /* ===== end cap-1.0.0 + tny-1.0.0 ===== */
     if (dv && dv.complete === true) doneLine += ' \u2014 everything verified';
     setText(p, 'done', String(S.done || 0));
     setText(p, 'total', String(total));
@@ -49277,7 +49320,64 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var __stoppedByUser = false;
           try { __stoppedByUser = window.__mlsPullStopRequested === true || String((result && result.reason) || '') === 'stopped-by-user' || !!(result && result.historyReceipt && result.historyReceipt.stoppedByUser === true); } catch (eStp2) {}
           var __emptyDayParseTimeout = !!(result && String(result.reason || '') === 'schedule-parse-timeout' && result.scheduleReceipt && result.scheduleReceipt.authoritativeEmpty === true);
-          var transientRefusal = !!(!terminalAttribution && !__stoppedByUser && !__emptyDayParseTimeout && result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
+          /* ===== nav-1.0.0 (a landed day is never re-pulled whole) =====
+             MEASURED live 2026-08-17 on the owner's /1p: the FIRST pass read
+             the schedule for TODAY and processed all 16 rows. Afterwards the
+             day strip re-pulled anyway - "The Athena grid was still settling -
+             re-reading automatically (attempt 3 of 3)" then "Athena is still
+             switching days" - and _lastPullResult() settled on
+             {reason:'nav-failed', preflight skipped-already-warm, retry:{}}
+             while the athena tab was alive and merely BACKGROUNDED. The grid
+             was never the problem: a hidden tab will not switch days, and
+             re-running the whole pull cannot fix that.
+
+             Three vetoes, all evidence-based:
+              (b) this day's schedule already LANDED in this session (the
+                  engine's own nav-1.0.0 record, or the very result in hand),
+                  so a nav/wrong-day refusal is a TAB fault - retry only the
+                  rows that failed, never the schedule leg;
+              (c) the day was proved authoritatively EMPTY (ed-1.0.0), so
+                  there is nothing to re-read;
+              and after 2 nav failures the doctor gets ONE honest instruction
+              instead of a third silent lap. */
+          var __navClassRefusal = /^(nav-failed|wrong-day)$/.test(String((result && result.reason) || ''));
+          var __dayAlreadyLanded = false;
+          try {
+            var __landed = (si && typeof si._scheduleLandedFor === 'function') ? si._scheduleLandedFor(day) : null;
+            var __thisReadLanded = !!(result && result.scheduleReceipt && result.scheduleReceipt.complete === true);
+            var __thisReadEmpty = !!(result && result.scheduleReceipt && result.scheduleReceipt.authoritativeEmpty === true);
+            __dayAlreadyLanded = !!(__landed || __thisReadLanded || __thisReadEmpty);
+          } catch (eNavL) {}
+          var __navVetoed = __navClassRefusal && __dayAlreadyLanded;
+          if (__navVetoed) { DS.navFailAfterLanded = (DS.navFailAfterLanded | 0) + 1; }
+          DS.navDiag = (result && result.navDiag) || DS.navDiag || null;
+          /* ===== end nav-1.0.0 (veto) ===== */
+          var transientRefusal = !!(!terminalAttribution && !__stoppedByUser && !__navVetoed && !__emptyDayParseTimeout && result && result.ok !== true && ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(String(result.reason || ''))));
+          if (__navVetoed) {
+            /* only the FAILED ROWS may be retried, and only while the doctor
+               has not been told to fix the tab. Two nav failures on a landed
+               day is the point where more automation is just noise. */
+            var __navMsg = (DS.navFailAfterLanded | 0) >= 2
+              ? 'Athena tab is not switching days — click your athenaOne tab once and press Retry.'
+              : (retryCount > 0
+                ? ('The athenaOne tab did not switch days, but ' + fmtDay(day) + ' was already read. Retrying only the ' + retryCount + ' chart' + (retryCount === 1 ? '' : 's') + ' that did not finish.')
+                : 'The athenaOne tab did not switch days, but this day was already read — nothing needs re-reading.');
+            try { var stNav = $('mlsDsStatus'); if (stNav) { stNav.style.display = 'block'; stNav.textContent = __navMsg; } } catch (eNavS) {}
+            dsStatusLog(__navMsg);
+            if ((DS.navFailAfterLanded | 0) < 2 && retryCount > 0 && dsConvergeEligible(result)) {
+              DS.pulling = false;
+              DS.__autoRetrying = true;
+              dsAutoConvergeBodies(sessionSerial, function () {
+                if (sessionSerial !== DS.sessionSerial) return;
+                DS.__autoRetrying = false;
+                var navRemaining = syncRetryControl(DS.lastResult);
+                done(false, __navMsg, navRemaining > 0, false);
+              });
+              return;
+            }
+            done(false, __navMsg, retryCount > 0, false);
+            return;
+          }
           if (transientRefusal && (DS.autoRePull | 0) < 2 && sessionSerial === DS.sessionSerial && pullSerial === DS.pullSerial) {
             DS.autoRePull = (DS.autoRePull | 0) + 1;
             var waitMs = DS.autoRePull === 1 ? 4000 : 9000;
@@ -49365,7 +49465,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (terminalAttribution) {
             DS.autoRePull = 0;
             DS.providerRosterRetryReceipt = null;
-          } else if (result && result.ok === true) DS.autoRePull = 0;
+          } else if (result && result.ok === true) { DS.autoRePull = 0; DS.navFailAfterLanded = 0; /* nav-1.0.0 */ }
           /* ===== cvc-1.0.0 =====
              The verdict is painted ONCE, at the real end. When the automatic
              convergence lane is going to run, the pull says so and keeps its

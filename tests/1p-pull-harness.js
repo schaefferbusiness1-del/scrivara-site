@@ -58,6 +58,9 @@ function makeHarness(options) {
     name: p.name, dob: p.dob, mrn: p.mrn, athenaId: p.mrn,
     appointmentId: 'appt-' + day + '-' + (i + 1),
     date: day, scheduleDate: day,
+    /* tny-1.0.0 lever: the appointment's own start time. Absent by default so
+       every pre-existing fixture keeps its exact behaviour. */
+    time: options.rowTime ? String(options.rowTime(i) || '') : '',
     reason: 'Synthetic pull harness'
   }));
 
@@ -178,12 +181,98 @@ function makeHarness(options) {
         if (r.mlsFind) err.mlsFind = r.mlsFind;
         return Promise.reject(err);
       }
-      return Promise.resolve({
+      const text = 'Synthetic chart for ' + target.patientId;
+      const rd = {
         ok: true, chartName: target.name, chartDob: target.dob, chartMrn: target.mrn,
-        text: 'Synthetic chart for ' + target.patientId, sections: {}
-      });
+        text: text, sections: {}
+      };
+      /* OPT-IN: a coverage receipt shaped exactly the way verifiedChartCoverage
+         demands. Without it (the default) saveOrganizedHistory refuses at
+         chart-coverage-unproven, which is what every pre-existing fixture
+         relies on - so this option, and nothing else, opens the parse/save
+         lane the cap-1.0.0 suites need. */
+      if (options.chartCoverage === true) {
+        const rid = String((opts && opts.requestId) || '');
+        rd.requestId = rid;
+        rd.coverageReceipt = {
+          kind: 'athena-chart-coverage', complete: true, readerVersion: '2.9.19-chart-r3',
+          identityObserved: true, requestId: rid, capturedAt: now,
+          expectedClinicalFrames: 3, readClinicalFrames: 3, boundClinicalFrames: 3,
+          unboundClinicalFrames: 0, oversizeClinicalFrames: 0, unreadFrames: 0,
+          omittedForCap: 0, truncated: false, textChars: text.length
+        };
+      }
+      return Promise.resolve(rd);
     }
   };
+  /* ---------------------------------------------------------------------
+     OPT-IN SHELL SEAMS for the cap-1.0.0 lane. Every one of these is off by
+     default, so a fixture that does not ask for them behaves exactly as it
+     did before. Synthetic identities only.
+     --------------------------------------------------------------------- */
+  const digits = v => String(v == null ? '' : v).replace(/[^0-9]/g, '');
+  const parseCalls = [];
+  const saveCalls = [];
+  const cardCoverage = new Map();          /* patientId -> the six-card receipt */
+  if (options.identityEcho === true || options.chartCoverage === true) {
+    /* the REAL gate's shape: name must match and DOB or MRN must be echoed. */
+    rt._athenaHistoryProofMatches = (target, observed) => {
+      if (!target || !target.patientId) return false;
+      const p = patients.find(x => String(x.id) === String(target.patientId));
+      if (!p) return false;
+      const seenName = String((observed && (observed.chartName || observed.name)) || '').trim();
+      const seenDob = digits((observed && (observed.chartDob || observed.dob)) || '');
+      const seenMrn = digits((observed && (observed.chartMrn || observed.mrn)) || '');
+      if (seenName && seenName !== String(target.name || '')) return false;
+      if (seenDob && digits(target.dob) && seenDob !== digits(target.dob)) return false;
+      if (seenMrn && digits(target.mrn) && seenMrn !== digits(target.mrn)) return false;
+      return !!((seenDob && digits(target.dob) && seenDob === digits(target.dob)) ||
+        (seenMrn && digits(target.mrn) && seenMrn === digits(target.mrn)));
+    };
+    rt._athenaHistoryVerifiedRef = (target, observed) => {
+      if (!rt._athenaHistoryProofMatches(target, observed)) return null;
+      return Object.freeze({
+        patientId: target.patientId, name: target.name, dob: target.dob, mrn: target.mrn,
+        verifiedName: String((observed && observed.chartName) || ''),
+        verifiedDob: String((observed && observed.chartDob) || ''),
+        verifiedMrn: String((observed && observed.chartMrn) || '')
+      });
+    };
+  }
+  if (options.parseResult) {
+    /* the BACKEND AI seam. Return a chart object, or {__throw, __ai} to
+       reproduce a backend refusal exactly as aiCallRaw now shapes it. */
+    rt._parsePatientChart = (text, o) => {
+      parseCalls.push({ chars: String(text || '').length, requestId: o && o.requestId, at: now });
+      const r = options.parseResult(String(text || ''), parseCalls.length);
+      if (r && r.__throw) {
+        const err = new Error(String(r.__throw));
+        if (r.__ai) err.mlsAi = r.__ai;
+        return Promise.reject(err);
+      }
+      return Promise.resolve(r);
+    };
+    rt._athenaChartProfileCoverage = chart => (chart && chart.__coverageComplete !== false ? { complete: true } : null);
+    rt._athenaChartSnapshotFromChart = chart => (chart ? { problems: chart.problems || '', meds: chart.meds || '', summary: chart.summary || '' } : null);
+    rt._athenaChartSnapshotProof = snap => (snap ? [snap.problems, snap.meds, snap.summary].join('|') : '');
+    rt._patientHistoryCardCoverage = pid => cardCoverage.get(String(pid)) || null;
+    rt._savePatientChart = (saveRef, _row, chart) => {
+      if (!saveRef || !saveRef.patientId || !saveRef.requestId || !chart) return false;
+      const p = patients.find(x => String(x.id) === String(saveRef.patientId));
+      if (!p) return false;
+      saveCalls.push({ patientId: p.id, requestId: saveRef.requestId, at: now });
+      p.problems = chart.problems || '';
+      p.meds = chart.meds || '';
+      p.summary = chart.summary || '';
+      p.athenaChartSnapshot = rt._athenaChartSnapshotFromChart(chart);
+      cardCoverage.set(String(p.id), {
+        complete: true, exactIdentityVerified: true, capturedAt: now,
+        saveRequestId: String(saveRef.requestId),
+        cards: { problems: { populated: true }, meds: { populated: true }, allergies: { populated: true }, vitals: { populated: true }, history: { populated: true } }
+      });
+      return true;
+    };
+  }
   rt.window = rt;
   rt.addEventListener = (_t, fn) => listeners.add(fn);
   rt.removeEventListener = (_t, fn) => listeners.delete(fn);
@@ -211,6 +300,9 @@ function makeHarness(options) {
   return {
     rt, api: rt.__mlsSI, rows, patients, day,
     noteCalls, chartCalls, statusLines, clock, timers, runDueTimers, store,
+    parseCalls, saveCalls, cardCoverage,
+    /* the live progress state the pull panel reads (window.__mlsDayHistoryPull) */
+    ppState: () => (rt.__mlsDayHistoryPull && rt.__mlsDayHistoryPull.state) || null,
     setLeaseBusy(v) { leaseBusy = !!v; },
     onStatus: (m) => { statusLines.push(String(m || '')); }
   };
