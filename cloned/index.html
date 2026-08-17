@@ -24898,11 +24898,26 @@ async function aiCallRaw(sys,user,key,opts){
       if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
       if(r.status===402){
         let msg=''; try{const j=await r.json();msg=(j&&(j.message||j.error))||'';}catch(e){}
-        const e=new Error('no_access '+msg); e.noAccess=true; throw e;
+        const e=new Error('no_access '+msg); e.noAccess=true;
+        /* ===== cap-1.0.0 ===== */ e.mlsAi={status:402,code:'no_access',retryable:false,detail:String(msg||'').slice(0,120)}; /* ===== end cap-1.0.0 ===== */
+        throw e;
       }
       if(!r.ok){
-        let detail=''; try{const j=await r.json();detail=(j&&(j.error||j.message))||'';}catch(e){}
-        throw new Error(r.status+' '+detail);
+        /* ===== cap-1.0.0 (carry the backend's own {error, code, retryable}) =====
+           MEASURED live 2026-08-17: the day pull's chart parse died on
+           "502 Upstream request failed" and the caller had only that STRING to
+           reason about, so a transient backend AI outage was indistinguishable
+           from a real refusal and every affected chart was thrown away. The
+           status, the backend's code and its retryable flag now ride on the
+           Error, which is what lets the pull save the capture and mark the
+           summary pending with a PHI-free class instead of failing the row.
+           No message text changes - only fields are added. */
+        let detail='',code='',retryable=null;
+        try{const j=await r.json();detail=(j&&(j.error||j.message))||'';code=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')retryable=j.retryable;}catch(e){}
+        const eAi=new Error(r.status+' '+detail);
+        eAi.mlsAi={status:r.status,code:String(code||''),retryable:(retryable===null?(r.status>=500||r.status===429):retryable),detail:String(detail||'').slice(0,120)};
+        throw eAi;
+        /* ===== end cap-1.0.0 ===== */
       }
       const d=await r.json();
       return String((d&&d.content)||'').trim();
@@ -24919,9 +24934,13 @@ async function aiCallRaw(sys,user,key,opts){
       const e=new Error('no_access '+msg); e.noAccess=true; throw e;
     }
     if(!res.ok){
-      let detail='';
-      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';}catch(e){}
-      throw new Error(res.status+' '+detail);
+      /* ===== cap-1.0.0 (same fields on the /api/generate lane) ===== */
+      let detail='',gCode='',gRetryable=null;
+      try{const j=await res.json();detail=(j&&(j.error||j.message))||'';gCode=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')gRetryable=j.retryable;}catch(e){}
+      const eGen=new Error(res.status+' '+detail);
+      eGen.mlsAi={status:res.status,code:String(gCode||''),retryable:(gRetryable===null?(res.status>=500||res.status===429):gRetryable),detail:String(detail||'').slice(0,120)};
+      throw eGen;
+      /* ===== end cap-1.0.0 ===== */
     }
     const data=await res.json();
     // Primary contract: {result:<object>} — re-stringify so downstream JSON.parse works.
