@@ -9,7 +9,11 @@ const { spawnSync } = require('child_process');
    the denominator explicit so live/manual proof scripts remain excluded. */
 const AUTOMATED_PROOF_FILES = new Set([
   '1p-avatar-photo-framing-proof.js',
-  '1p-avatar-professional-likeness-proof.js'
+  '1p-avatar-professional-likeness-proof.js',
+  /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
+     ratios against adult anthropometry, cross-checked against the module's own
+     report so the instrument cannot agree with itself. */
+  '1p-avatar-adult-proportions-proof.js'
 ]);
 
 const tests = [
@@ -111,6 +115,19 @@ const tests = [
   '1p-avatar-camera-endurance-runtime.test.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
+  /* 2026-08-17, owner §13/§14/§15/§16 — "the avatar must stop looking preschooly",
+     the animation must stop being robotic, the intake must actually run, and intake
+     plus visit must be ONE encounter record.
+       - adult-proportions-proof MEASURES the drawing (eleven ratios against adult
+         anthropometry, on the real 302px kiosk circle) and cross-checks every one
+         against window.__mlsAvatar.lookProportions, so a report that drifts from the
+         renderer fails. It also pins the fact a transform-string harness could not
+         see: that a blink actually closes the eye.
+       - intake-and-animation EXECUTES the topic vocabulary, the correction detector
+         and the viseme mapper on real sentences, and drives kioskIntakeFile against a
+         fake transcript to prove the check-in reaches the encounter exactly ONCE. */
+  '1p-avatar-adult-proportions-proof.js',
+  '1p-avatar-intake-and-animation-runtime.test.js',
   '1p-one-template-upload-and-month-range.test.js',
   '1p-template-mode-adapter-runtime.test.js',
   '1p-rangejobs-runtime.test.js',

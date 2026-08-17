@@ -2093,12 +2093,16 @@
      round eyes. The three-way distinction the matcher's `eyeSet` knob carries is
      preserved - every value moves by the same proportion, so a close-set doctor is
      still measurably closer-set than a normal one:
-       close 25.5 -> 23   (0.449 -> 0.397)
-       normal 29  -> 25.5 (0.510 -> 0.440)   <- the default, now inside the adult band
-       wide 32.5  -> 28.5 (0.572 -> 0.491)
+       close 25.5 -> 23   (0.449 -> 0.405)
+       normal 29  -> 25.5 (0.510 -> 0.449)   <- the default, now inside the adult band
+       wide 32.5  -> 28.2 (0.572 -> 0.496)
+     28.2 rather than a rounder 28.5 because 28.5 measured 0.501 and the adult band
+     tops out at 0.500. Three hundredths of a unit is not worth arguing about, but
+     widening the ruler to swallow a failure is exactly how this drawing came to be
+     re-cut three times on unfalsifiable verdicts - the number moves, not the band.
      Everything that lines up with an eye is placed from this (lids, brows, spectacle
      lenses, crow's feet), so this one table moves all of them together. ===== */
-  var FACE_EYE_DX = { close: 23, normal: 25.5, wide: 28.5 };
+  var FACE_EYE_DX = { close: 23, normal: 25.5, wide: 28.2 };
   /* ===== end avlook-1.0.0 ===== */
   /* every drawn face needs its OWN gradient and clip ids. Setup renders a preview beside
      the kiosk, the Visit card can render another, and duplicate SVG ids in one document
@@ -3197,7 +3201,15 @@
       /* a real smile reaches the cheeks and dimples; concern drains them */
       /* Keep the idle face composed at the 302px kiosk size. The greeting
          still warms the cheeks, but the resting face no longer reads painted. */
-      var warm = happyNow ? '.24' : caringNow ? '.08' : '.07';
+      /* ===== avanim-1.0.0 — THE COMMENT SAID ZERO AND THE CONTROLLER SAID .07.
+         p1-adult-art-1.0.0 set the markup's idle blush to opacity="0" and wrote that
+         "idle itself now shows none" - but mood() runs on the very first frame and
+         wrote .07 straight back over it, so no shipped face has ever rendered the
+         zero the source claims. Blush on an adult resting face is a doll signal at
+         302px whatever the number; the greeting and the concern states keep theirs,
+         which is where a person's colour actually comes from. ===== */
+      var warm = happyNow ? '.24' : caringNow ? '.08' : '0';
+      /* ===== end avanim-1.0.0 ===== */
       Array.prototype.forEach.call(blush, function (n) { n.style.opacity = warm; });
       if (dimpleL) dimpleL.style.opacity = happyNow ? '1' : '0';
       if (dimpleR) dimpleR.style.opacity = happyNow ? '1' : '0';
@@ -8367,6 +8379,8 @@ function kioskLine(kind, text) {
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
     kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
+    /* avintake-1.0.0: the interview memory goes with the words it was derived from */
+    kiosk.covered = {}; kiosk.asked = {}; kiosk.corrections = 0; kiosk.repeats = 0; kiosk.ackLine = '';
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
     kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
     kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null;
@@ -8468,6 +8482,21 @@ function kioskLine(kind, text) {
     if (kiosk.chartCtx) body.chartContext = kiosk.chartCtx;
     if (answer) { body.answer = answer; body.answerNonce = answerNonce; kiosk.silent = 0; kiosk.finishTries = 0; }
     if (finish) body.finish = true;
+    /* ===== avintake-1.0.0 — WHAT THE PATIENT HAS ALREADY COVERED RIDES WITH THE TURN.
+       The server cannot avoid re-asking something it was never told had been answered,
+       and the client is the only side that sees every word. `coveredTopics` and
+       `missingTopics` are advisory and additive: a server that ignores them behaves
+       exactly as it does today, and one that honours them can spend the turn on a gap
+       instead of a repeat. `correction` is computed from THIS answer, against the rows
+       as they stand BEFORE it is appended. See the lane report for the backend spec. ===== */
+    var turnCorrection = answer ? intakeCorrectionAgainst(kiosk.intake, answer) : null;
+    if (answer) {
+      var coveredNow = intakeCoveredList();
+      if (coveredNow.length) body.coveredTopics = coveredNow;
+      body.missingTopics = intakeMissingList();
+      if (turnCorrection) body.correction = { from: turnCorrection.from, to: turnCorrection.to, at: Date.now() };
+    }
+    /* ===== end avintake-1.0.0 ===== */
     /* p1-listener-1.1.0 - one bounded owner for a refused turn.
        ---------------------------------------------------------
        The recogniser deliberately remains live while the request is in flight.
@@ -8613,7 +8642,22 @@ function kioskLine(kind, text) {
          the first turn, so recording the label first filed question one as
          "Avatar" and every later one as the real name - one speaker under
          two names in a chart-bound transcript. */
-      if (answer) kioskIntakeAdd('Patient', answer);
+      if (answer) {
+        kioskIntakeAdd('Patient', answer);
+        /* ===== avintake-1.0.0 — the correction becomes part of the RECORD, not a
+           nuance the doctor has to spot by reading both answers and guessing which
+           one won. Recorded here, on a SUCCESSFUL turn, for the same reason the
+           patient row is: a refused turn is re-asked and re-answered. ===== */
+        intakeCoverAdd(answer);
+        if (turnCorrection) {
+          kiosk.corrections = (kiosk.corrections | 0) + 1;
+          kioskIntakeAdd('[correction]', 'the patient corrected "' + intakeClip(turnCorrection.from) +
+            '" to "' + intakeClip(turnCorrection.to) + '"');
+          kiosk.ackLine = 'Got it - you said ' + intakeClip(turnCorrection.from) +
+            ', correcting to ' + intakeClip(turnCorrection.to) + '.';
+        }
+        /* ===== end avintake-1.0.0 ===== */
+      }
       /* The patient kept talking while the server handled the preceding clause.
          Do not speak the now-stale follow-up over them. Feed the continuation as
          the next turn first; each consumed buffer gets one new nonce exactly once.
@@ -8640,6 +8684,24 @@ function kioskLine(kind, text) {
         }
         return;
       }
+      /* ===== avintake-1.0.0 — ACKNOWLEDGE, THEN ASK.
+         Placed AFTER the continuation branch on purpose: a queued clause replaces the
+         server's line entirely, so registering that line as "asked" there would arm
+         the repeat guard for a question nobody heard - and an emergency warning must
+         never be prefixed with anything. A repeat is ANNOUNCED rather than dropped:
+         the questions are the doctor's, and silently skipping one is not a decision
+         this file gets to make. Both leads are prepended before the line is recorded,
+         so the transcript says exactly what the patient heard. ===== */
+      if (kiosk.lastSay) {
+        var lead = '';
+        if (kiosk.ackLine) { lead += kiosk.ackLine + ' '; kiosk.ackLine = ''; }
+        if (intakeSeenQuestion(kiosk.lastSay)) {
+          lead += INTAKE_REASK_LEAD;
+          kiosk.repeats = (kiosk.repeats | 0) + 1;
+        }
+        if (lead) kiosk.lastSay = lead + kiosk.lastSay;
+      }
+      /* ===== end avintake-1.0.0 ===== */
       if (kiosk.lastSay) kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
       kioskSetSay(kiosk.lastSay);
       var pg = gid('mlsAvKioskProgress');
@@ -9021,9 +9083,30 @@ function kioskLine(kind, text) {
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
     var iv = gid('mlsAvKioskInterim');
-    kioskLine('status', 'Please hand the screen back to the team. Staff: the button below starts listening to the visit; “End interview” leaves.');
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
     var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    /* ===== avintake-1.0.0 — file the verbatim check-in into the encounter NOW.
+       Wrapped in safe() and its result deliberately ignored for control flow: this is
+       an additive write into the doctor's transcript and it must never be able to
+       stop the kiosk from resting, closing or handing over. Every refusal path inside
+       kioskIntakeFile returns a reason and writes nothing, and the room-capture route
+       still files it later if this one could not (kioskAmbientBlock leads with the
+       check-in whenever intakeFiled is false). The receipt is kept for the staff line
+       and for the QA surface. ===== */
+    kiosk.intakeFileResult = safe(function () { return kioskIntakeFile(); },
+      { ok: false, why: 'the check-in could not be filed on this screen.' });
+    /* the staff line says WHICH of the two happened, in words. "The check-in is in
+       the transcript" and "it is not, and here is why" are different facts and the
+       team acts differently on each; one cheerful sentence covering both is how a
+       missing check-in gets discovered at signing time instead of now. */
+    kioskLine('status', 'Please hand the screen back to the team. ' +
+      ((kiosk.intakeFileResult && kiosk.intakeFileResult.ok)
+        ? 'The check-in is in this visit\'s transcript. '
+        : 'Staff: the check-in is NOT in the transcript yet - ' +
+          clean((kiosk.intakeFileResult && kiosk.intakeFileResult.why) || 'it could not be filed.') +
+          ' Starting the visit recording files it. ') +
+      'Staff: the button below starts listening to the visit; “End interview” leaves.');
+    /* ===== end avintake-1.0.0 ===== */
     kioskRestShow();
   }
   /* THE ONE BUTTON. Owner: "this avatar once its done should say your doctor
@@ -10381,6 +10464,121 @@ function kioskLine(kind, text) {
     if (kiosk.intake.length > 400) return;    /* bounded - an interview is ~20 turns */
     kiosk.intake.push({ who: String(who || 'Avatar'), text: v });
   }
+  /* ===== avintake-1.0.0 (2026-08-17) — THE INTERVIEW GETS A MEMORY.
+     Owner §15: the avatar must ask appropriate questions, "understand corrections",
+     ask "relevant follow-ups" and "avoid repetition". Measured before this block:
+     the client had NO repetition guard of any kind (j.progress.covered was written
+     into a text label and used for nothing), and the one correction detector in the
+     file - applyCorrection, ACT_CUE_RE - is hard-gated OFF during intake by
+     `if (!kiosk.ambient) return;` in ordersDetectSoon, so it only ever served the
+     doctor's spoken orders.
+     The question POLICY lives on the backend (the interview is stateless server-side;
+     the next question arrives as j.say). So this block does the two halves the client
+     is actually able to own honestly:
+       1. it MEASURES what the patient has already covered and ships that upstream, so
+          the server can stop re-asking instead of being asked to guess; and
+       2. it catches a self-correction in the patient's own words, says it back, and
+          writes it into the record as its own row - so a doctor reading the chart can
+          see that "left" superseded "right" rather than finding both and choosing.
+     Nothing here rewrites or drops a doctor-authored question. A repeat is announced,
+     not swallowed: dropping a question the doctor wrote is not the client's call. ===== */
+  var INTAKE_TOPICS = [
+    { id: 'onset', label: 'when it started', re: /\b(start(ed|ing)?|began|begun|since|how long|yesterday|last night|days?|weeks?|months?|years?|sudden(ly)?|gradual(ly)?)\b/i },
+    { id: 'location', label: 'where it is', re: /\b(left|right|both|bilateral|knee|back|shoulder|hip|neck|arm|leg|ankle|wrist|elbow|foot|feet|hand|chest|head|abdomen|stomach|jaw)\b/i },
+    { id: 'severity', label: 'how bad it is', re: /(\b\d{1,2}\s*(?:out of|\/)\s*10\b)|\b(severe|mild|moderate|worst|unbearable|sharp|dull|aching|achy|burning|throbbing|stabbing)\b/i },
+    { id: 'modifiers', label: 'what makes it better or worse', re: /\b(worse|better|relieve[ds]?|relief|aggravat\w*|helps?|helped|ice|heat|rest|when i|makes it)\b/i },
+    { id: 'function', label: 'what it stops them doing', re: /\b(walk\w*|stairs|work\w*|sleep\w*|driv\w*|lift\w*|dress\w*|shower\w*|exercis\w*|stand\w*|sitting|unable|difficult|struggl\w*)\b|\bcan'?t\b/i },
+    /* ⛔ NOT a bare `started|stopped|taking`. The first version of this row carried
+       them and "it started three weeks ago in my left knee" therefore covered
+       `meds` - the guard would have told the server that medications had been
+       discussed and the interview would have skipped the medication question
+       entirely. A false POSITIVE here suppresses a real clinical question, so this
+       row needs a medication noun or an explicit "started/stopped taking". */
+    { id: 'meds', label: 'medication changes', re: /\b(medication\w*|meds?|pills?|tablets?|dose\w*|mg|ibuprofen|tylenol|acetaminophen|naproxen|prednisone|gabapentin|prescri\w*|refill\w*)\b|\b(?:stopped|started|been) taking\b/i },
+    { id: 'allergy', label: 'allergies', re: /\ballerg\w*\b/i },
+    { id: 'goals', label: 'what the patient wants back', re: /\b(goal\w*|hoping|hope|want to|would like|get back to|so i can|able to)\b/i },
+    { id: 'redflag', label: 'red-flag symptoms', re: /\b(numb\w*|tingl\w*|weakness|fever|chills|weight loss|bowel|bladder|chest pain|shortness of breath|faint\w*)\b/i }
+  ];
+  function intakeTopicsIn(text) {
+    var s = String(text == null ? '' : text), out = [], i;
+    for (i = 0; i < INTAKE_TOPICS.length; i++) if (INTAKE_TOPICS[i].re.test(s)) out.push(INTAKE_TOPICS[i].id);
+    return out;
+  }
+  function intakeCoverAdd(text) {
+    if (!kiosk.covered) kiosk.covered = {};
+    var hits = intakeTopicsIn(text), i;
+    for (i = 0; i < hits.length; i++) kiosk.covered[hits[i]] = true;
+    return hits;
+  }
+  function intakeCoveredList() {
+    var have = kiosk.covered || {}, out = [], i;
+    for (i = 0; i < INTAKE_TOPICS.length; i++) if (have[INTAKE_TOPICS[i].id]) out.push(INTAKE_TOPICS[i].id);
+    return out;
+  }
+  function intakeMissingList() {
+    var have = kiosk.covered || {}, out = [], i;
+    for (i = 0; i < INTAKE_TOPICS.length; i++) if (!have[INTAKE_TOPICS[i].id]) out.push(INTAKE_TOPICS[i].id);
+    return out;
+  }
+  /* the same normaliser the echo gate uses, for the same reason: two renderings of
+     one question differ by punctuation and case far more often than by words */
+  function intakeQuestionKey(say) {
+    return String(say == null ? '' : say).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function intakeSeenQuestion(say) {
+    var k = intakeQuestionKey(say);
+    if (!k) return false;
+    if (!kiosk.asked) kiosk.asked = {};
+    if (kiosk.asked[k]) return true;
+    kiosk.asked[k] = true;
+    return false;
+  }
+  var INTAKE_CORRECT_RE = /\b(?:actually|sorry|i meant|i mean|correction|instead|scratch that|no wait)\b/i;
+  var INTAKE_REASK_LEAD = 'Just to be sure I have this right - ';
+  function intakeClip(v) {
+    var s = clean(v);
+    return s.length > 64 ? s.slice(0, 61) + '...' : s;
+  }
+  /* PURE, so the suite can execute it on real sentences instead of grepping for it.
+     Returns null unless there is BOTH a cue and something after it: a bare "sorry"
+     is an apology, not a correction, and treating it as one would put a meaningless
+     "you said X, correcting to nothing" line in a chart. */
+  function intakeCorrectionIn(text) {
+    var s = clean(text);
+    if (!s) return null;
+    var m = INTAKE_CORRECT_RE.exec(s);
+    if (!m) return null;
+    var to = clean(s.slice(m.index + m[0].length).replace(/^[\s,;:.-]+/, ''));
+    /* "it is the right knee, sorry, I meant the left knee" chains two cues, and a
+       regex alternation takes the LEFTMOST match - so without this the corrected
+       value came out as "I meant the left knee" and the avatar would read the cue
+       back to the patient as if it were their own answer. Bounded, so a sentence
+       made of nothing but cues cannot spin. */
+    for (var guard = 0; guard < 3; guard++) {
+      var lead = INTAKE_CORRECT_RE.exec(to);
+      if (!lead || lead.index !== 0) break;
+      to = clean(to.slice(lead[0].length).replace(/^[\s,;:.-]+/, ''));
+    }
+    var from = clean(s.slice(0, m.index).replace(/[\s,;:.-]+$/, ''));
+    if (!to) return null;
+    return { from: from, to: to };
+  }
+  /* when the patient corrects a PREVIOUS answer ("actually it's the left knee") there
+     is nothing before the cue, so the thing being corrected is the last thing they
+     said. Reads the rows BEFORE this answer is appended - reading them after would
+     make from and to the same sentence. */
+  function intakeCorrectionAgainst(rows, text) {
+    var c = intakeCorrectionIn(text);
+    if (!c) return null;
+    if (!c.from) {
+      for (var i = (rows || []).length - 1; i >= 0; i--) {
+        if (rows[i] && rows[i].who === 'Patient' && clean(rows[i].text)) { c.from = clean(rows[i].text); break; }
+      }
+    }
+    if (!c.from) return null;
+    return c;
+  }
+  /* ===== end avintake-1.0.0 ===== */
   function kioskIntakeText() { return intakeTextFrom(kiosk.intake); }
   function intakeTextFrom(rows) {
     rows = rows || [];
@@ -10709,6 +10907,59 @@ function kioskLine(kind, text) {
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
     return receipt;
   }
+  /* ===== avintake-1.0.0 — THE CHECK-IN REACHES THE ENCOUNTER EVEN IF NOBODY RECORDS
+     THE VISIT.  Owner §16: intake and visit must be ONE coherent encounter record.
+     Measured before this: kioskAmbientBlock() was the SOLE writer of kiosk.intake into
+     the transcript, and it only runs from kioskAmbientFile / ambientRecoverFile. So
+     the patient's own words reached the chart only if the doctor happened to tap
+     "Doctor - start listening". Otherwise kiosk.intake died with the overlay in
+     kioskClose()/scrubAvatarSession() and the encounter got the backend's LLM SUMMARY
+     and nothing else - the verbatim half of the encounter simply evaporated.
+     This files it at the moment the interview completes, through the SAME single
+     proven writer the room capture uses (binding snapshot, receipt match, write, then
+     re-prove the block landed in BOTH the mirror and #transcript under the same
+     patient and visit, and roll back byte-for-byte if not). It fails closed on every
+     one of those checks.
+     IT CANNOT PRODUCE A SECOND COPY. On success it sets kiosk.intakeFiled, which is
+     the flag kioskAmbientBlock ALREADY consults to decide whether a resumed capture
+     leads with the check-in - so a room capture started afterwards writes
+     "--- visit, continued ---" with the consent attestation and no replay of the
+     answers. One record, one copy, in order. ===== */
+  function kioskIntakeBlock() {
+    var lines = [];
+    lines.push(AMBIENT_HEAD_CHECKIN);
+    lines.push('[Avatar check-in - the patient\'s own words, chart ' + clean(kiosk.ext) + ']');
+    /* the consent attestation rides with the words it authorised, exactly as it does
+       in kioskAmbientBlock - a record of speech with no record of consent is the one
+       thing that must never be filed */
+    if (kiosk.consentAt) {
+      lines.push('[Recording consent confirmed by practice staff at ' +
+        safe(function () { return new Date(kiosk.consentAt).toLocaleString(); }, String(kiosk.consentAt)) +
+        ', before any microphone was opened]');
+    }
+    if ((kiosk.corrections | 0) > 0) {
+      lines.push('[The patient corrected ' + (kiosk.corrections | 0) +
+        ' answer' + ((kiosk.corrections | 0) === 1 ? '' : 's') +
+        ' during the check-in; each correction is marked in line below and supersedes what it corrects.]');
+    }
+    lines.push(kioskIntakeText());
+    return lines.join('\n');
+  }
+  function kioskIntakeFile() {
+    if (kiosk.intakeFiled) return { ok: false, why: 'the check-in is already in this transcript, so nothing was written again.' };
+    var bound = clean(kiosk.ext);
+    var now = activePtIdSafe();
+    if (!bound) return { ok: false, why: 'the interview was not bound to a chart, so nothing was written.' };
+    if (!now) return { ok: false, why: 'no chart is open, so nothing was written. The check-in belongs to chart ' + bound + '.' };
+    if (now !== bound) return { ok: false, why: 'the open chart (' + now + ') is not the one this check-in belongs to (' + bound + '), so nothing was written.' };
+    if (!(kiosk.intake || []).length) return { ok: false, why: 'no check-in answers were recorded, so nothing was written.' };
+    var receipt = ambientCaptureVisitReceipt(bound);
+    var out = ambientCommitTranscript(bound, kioskIntakeBlock(), receipt, true);
+    if (!out.ok) return out;
+    kiosk.intakeFiled = true;
+    return out;
+  }
+  /* ===== end avintake-1.0.0 ===== */
   /* ---- RECOVERY. What the backup is FOR. A capture survives the page that
      took it, so a reload mid-visit, a discarded tab or a crashed renderer
      costs the doctor one click instead of the consultation. The write obeys
@@ -11406,6 +11657,14 @@ function kioskLine(kind, text) {
     kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null; kiosk.ambFails = 0;
     kiosk.ambStart = 0; kiosk.ambRecAt = 0; kiosk.intake = []; kiosk.avName = '';
+    /* ===== avintake-1.0.0 — the interview's MEMORY resets with the patient.
+       Everything here is derived from one patient's answers. A carried-over covered
+       set would make the next patient's interview skip topics this one answered, and
+       a carried-over asked set would announce their first question as a repeat -
+       exactly the class of leak the two comments above this line already guard. ===== */
+    kiosk.covered = {}; kiosk.asked = {}; kiosk.corrections = 0; kiosk.repeats = 0;
+    kiosk.ackLine = ''; kiosk.intakeFileResult = null;
+    /* ===== end avintake-1.0.0 ===== */
     kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
     kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null; kiosk.preflightRequest = null;
     kiosk.speechFails = 0; kiosk.speechFailAt = 0;
@@ -12307,6 +12566,11 @@ function kioskLine(kind, text) {
     dormant.ambientState = function () { return { running: false, boundPatient: '', startedAt: null,
       capturedChars: 0, filed: false, last: null, backedUp: null, backupTrimmed: false, actions: [] }; };
     dormant.detectActions = function () { return []; };
+    /* avintake-1.0.0 */
+    dormant.intakeState = function () { return { covered: [], missing: [], corrections: 0,
+      repeats: 0, turns: 0, filed: false, fileWhy: 'no authenticated session' }; };
+    dormant.intakeTopics = function () { return []; };
+    dormant.intakeCorrection = function () { return null; };
     dormant.pendingCapture = function () { return null; };
     dormant.fileRecoveredCapture = function () { return { ok: false, why: 'no authenticated session' }; };
     dormant.discardRecoveredCapture = dormant.refreshCount = dormant.importSummary = function () { return false; };
@@ -12420,6 +12684,29 @@ function kioskLine(kind, text) {
         actions: ambientActionsForStore()
       };
     };
+    /* ===== avintake-1.0.0 — PHI-free interview receipt. COUNTS AND TOPIC IDS ONLY:
+       no question text, no answer text, no name. It exists so "the avatar repeated
+       itself" and "the check-in never reached the chart" stop being arguments. ===== */
+    owner.intakeState = function () {
+      if (!owned()) return { covered: [], missing: [], corrections: 0, repeats: 0,
+        turns: 0, filed: false, fileWhy: 'stale session owner' };
+      var res = kiosk.intakeFileResult || null;
+      return {
+        covered: intakeCoveredList(),
+        missing: intakeMissingList(),
+        corrections: kiosk.corrections | 0,
+        repeats: kiosk.repeats | 0,
+        turns: (kiosk.intake || []).length,
+        filed: kiosk.intakeFiled === true,
+        fileWhy: res && res.ok === false ? clean(res.why) : ''
+      };
+    };
+    /* PURE, argument-in/answer-out, so the suite can prove the topic vocabulary and
+       the correction detector on real sentences without a kiosk or a microphone -
+       the same contract detectActions already has. */
+    owner.intakeTopics = function (text) { return owned() ? intakeTopicsIn(text) : []; };
+    owner.intakeCorrection = function (rows, text) { return owned() ? intakeCorrectionAgainst(rows, text) : null; };
+    /* ===== end avintake-1.0.0 ===== */
     /* av-5.6.0 diagnostics. detectActions is PURE — it reads its argument and
        touches nothing — so a proposal set can be proven against any sentence
        without a microphone, a kiosk or a patient. */
