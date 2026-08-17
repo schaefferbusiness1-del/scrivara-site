@@ -39,6 +39,9 @@ const tests = [
      regexes that actually contain backslashes. Drives the real shell in real
      Chrome with a synthetic 28-patient day. */
   '1p-ui-shape-contract.test.js',
+  '1p-nextglow-path-contract.test.js',
+  '1p-visitflow-transcript-contract.test.js',
+  '1p-uimap-dockspace-contract.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */

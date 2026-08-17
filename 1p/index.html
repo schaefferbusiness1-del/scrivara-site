@@ -42613,11 +42613,11 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     },
     {
       id: 'legal', host: '#legalModal,#legalFillModal,#mlsLegalRoom', modal: true,
-      /* SCAFFOLD. The legal/IME lane owns 1p-feat_mls_legalpack.js and is
-         still naming its states; these are its CURRENT controls, and the row
-         degrades to the dialog's own primary if none of them exist, so it can
-         never point at nothing. The lane hands its state names over and this
-         row grows a `states` list per state — no other file changes. */
+      /* SCAFFOLD. The legal/IME lane owns the legal pack module and is still
+         naming its states; these are its CURRENT controls, and the row degrades
+         to the dialog's own primary if none of them exist, so it can never
+         point at nothing. When that lane hands its state names over, this row
+         grows a `states` list per state — no other file changes. */
       states: [{ steps: ['#legalGenBtn', '#legalFillGo', '#legalModal .btn-primary', '#legalFillModal .btn-primary'] }]
     },
     {
@@ -42763,15 +42763,35 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     for (var i = 0; i < sels.length; i++) {
       var h = q(trimmed(sels[i]));
       if (!h) continue;
+      if (!shown(h)) continue;
       if (row.modal) {
-        /* a dialog owns the screen only while it is actually shown */
-        var isShown = safe(function () { return h.classList.contains('show'); }, false);
-        if (!isShown && !shown(h)) continue;
-        if (!shown(h)) continue;
-      } else if (!shown(h)) continue;
+        /* A DIALOG OWNS THE SCREEN ONLY WHILE .show IS ON IT. Measured defect:
+           `shown()` alone was true for #opPrepModal with .show removed — the
+           .modal-bg keeps a box — so the op-note room kept the glow across six
+           later dialogs. Every dialog in this app is a .modal-bg driven by the
+           .show class, so that class IS the open/closed signal; a host that is
+           not a .modal-bg (a full-screen room, a sheet) falls back to being
+           visible, which is the only signal it has. */
+        var isBg = safe(function () { return h.classList.contains('modal-bg'); }, false);
+        if (isBg && !safe(function () { return h.classList.contains('show'); }, false)) continue;
+      }
       return h;
     }
     return null;
+  }
+
+  /* WHICH ROOM IS ACTUALLY OPEN. showView() leaves several view containers
+     displayed at once — feat_mls_studio_merge.js hoists #analysisView inside
+     #studioView, and Orders and Admin were BOTH measured glowing Analysis's
+     "Refresh baseline metrics" because #analysisView still had a box behind
+     them. Container visibility cannot settle that; the app's own currentView
+     can, and it is the same value the shell's own renderers branch on. Used as
+     a PREFERENCE, never as a requirement: if it names a room whose row has no
+     eligible step, the ordered scan below still runs. */
+  function currentRoomId() {
+    return safe(function () {
+      return (typeof window.currentView === 'string') ? window.currentView : '';
+    }, '');
   }
 
   /* Resolve one step definition to { el, why } or null. */
@@ -42788,9 +42808,41 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     return null;
   }
 
+  function tryRow(row) {
+    var host = hostOf(row);
+    if (!host) return null;
+    for (var s = 0; s < row.states.length; s++) {
+      var st = row.states[s];
+      if (typeof st.when === 'function' && !safe(function () { return st.when(host); }, false)) continue;
+      for (var k = 0; k < st.steps.length; k++) {
+        var hit = resolveStep(st.steps[k], host, st.why);
+        if (hit) return { room: row.id, state: s, el: hit.el, why: hit.why || '' };
+      }
+    }
+    return { room: row.id, state: -1, el: null, why: '' };
+  }
+
   function pick() {
-    for (var i = 0; i < PATHS.length; i++) {
-      var row = PATHS[i];
+    /* Dialogs still win outright — one really is on top of everything. Then the
+       room the app SAYS is current, then the ordered scan. */
+    var i, row, got;
+    for (i = 0; i < PATHS.length; i++) {
+      if (!PATHS[i].modal) continue;
+      got = tryRow(PATHS[i]);
+      if (got) return got;
+    }
+    var cur = currentRoomId();
+    if (cur) {
+      for (i = 0; i < PATHS.length; i++) {
+        if (PATHS[i].modal || PATHS[i].id !== cur) continue;
+        got = tryRow(PATHS[i]);
+        if (got && got.el) return got;      /* only when it actually resolved */
+        break;
+      }
+    }
+    for (i = 0; i < PATHS.length; i++) {
+      row = PATHS[i];
+      if (row.modal) continue;
       var host = hostOf(row);
       if (!host) continue;
       for (var s = 0; s < row.states.length; s++) {
@@ -43726,5 +43778,520 @@ html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
 })();
 </script>
 <!-- ===== end dockspace-1.0.0 =========================================== -->
+<!-- ===== uimap-1.0.0 — the confusing places named in the map, fixed ======
+     Owner 2026-08-17: "there are continuity errors and glitches… things that
+     are complex all over the site and bad UI everywhere… map out all bad UI and
+     confusing pages and pages with too many buttons and FIX IT."
+
+     THIS BLOCK IS THE FIX HALF. The measurement half is
+     scratchpad/UI_MAP_2026-08-17.md (+ .json): every room and dialog, its
+     visible controls at rest, nesting depth, duplicate names, dead ends and
+     jargon, ranked by busyness. Only the offenders that can be reached from a
+     /1p shell without editing a shared module are fixed here; the rest are
+     listed in the map with the reason.
+
+     WHAT THE MAP ACTUALLY FOUND, and what it did NOT. The going assumption was
+     "duplicate verbs everywhere". Measured at rest, 1366x900, 12 synthetic
+     patients: duplicate ACCESSIBLE NAMES exist on exactly two screens, and one
+     of those is legitimate (twelve patient rows each carrying one "Record").
+     Most "duplicate verbs" are distinct actions with distinct names — Analysis
+     has "Refresh outcomes and marketing" and "Refresh baseline metrics", Admin
+     has four differently-named refreshes. Naming those a defect and "fixing"
+     them would have been churn. They are not touched. -->
+<style id="mlsUiMapCss">
+/* Nothing here changes layout; these are the two labels below getting room to
+   say what they do without the arrow glyph shrinking. */
+#calendarView .cx-navbtn{ white-space:nowrap; }
+</style>
+<script>
+/* uimap-1.0.0 runtime. */
+(function () {
+  'use strict';
+  if (window.__mlsUiMap) return;
+
+  var VERSION = 'uimap-1.0.0';
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+
+  var api = { version: VERSION, tplHops: 0, namedArrows: 0 };
+
+  /* ==================================================================
+     1. "Templates" TAKES YOU TO TEMPLATES, NOT TO THE OPERATING LIST
+     ==================================================================
+     MEASURED, and the op-note lane measured the same thing from the other
+     side: #templatesModal is ONE node, and feat_mls_opnote_room.js MOVES it
+     into #oprPanelTpls the first time the room's Templates tab is used. From
+     then on, pressing "Templates" anywhere in the app calls openTemplates(),
+     which puts .show on a node that now lives inside the op-note room — so the
+     whole full-screen operating list opens, on its DEFAULT tab, and the doctor
+     who asked for a template library is looking at today's procedures.
+
+     Proof it is real and not theoretical: this is exactly why the UI map's own
+     probe recorded "Templates: not reachable at rest" and then reported the
+     op-note room as the owner of the screen for every dialog it opened
+     afterwards — the room had been left open by the Templates hop.
+
+     That lane's fix was to RELABEL the button so it warns you. This finishes
+     the job: if the hop opens the room, land on the room's Templates tab, so
+     the destination matches the request. The room's own tab button is clicked
+     — no new navigation, no moved node, nothing removed. If the node has not
+     been moved yet, the plain dialog opens exactly as before and this is a
+     no-op.
+
+     Wrapping rather than editing openTemplates(): the function is shell code
+     shared with production's own copy of this file, and a wrapper keeps the
+     whole change inside this block so promotion is a copy and revert() puts
+     the original back byte for byte. */
+  var _openTemplates = null;
+  function wrapTemplates() {
+    var fn = window.openTemplates;
+    if (typeof fn !== 'function' || fn.__mlsUiMapWrapped) return false;
+    _openTemplates = fn;
+    var wrapped = function () {
+      var out = safe(function () { return fn.apply(this, arguments); }.bind(this), undefined);
+      /* Only when the hop really landed in the room. Two macrotasks, not one:
+         the room paints its tabs after openTemplates returns. */
+      setTimeout(function () {
+        safe(function () {
+          var room = el('opPrepModal');
+          if (!room || !room.classList.contains('show')) return;   /* plain dialog: nothing to do */
+          var tab = el('oprTabTpls');
+          if (!tab || tab.getAttribute('aria-selected') === 'true') return;
+          tab.click();
+          api.tplHops++;
+        });
+      }, 0);
+      return out;
+    };
+    wrapped.__mlsUiMapWrapped = true;
+    window.openTemplates = wrapped;
+    return true;
+  }
+
+  /* ==================================================================
+     2. TWO CONTROLS CALLED "◀" AND TWO CALLED "▶"
+     ==================================================================
+     MEASURED on Calendar at rest: duplicate accessible names "◀" and "▶".
+     A glyph is not a label — nothing in it says whether it steps a day, a
+     week or a month, and the calendar's mode is a separate control the doctor
+     may not be looking at. The visible glyph is left exactly as it is (it is
+     the affordance and shrinking or replacing it would be a layout change);
+     only the ACCESSIBLE NAME is written, from the calendar's own current mode,
+     so a screen reader and the duplicate-name contract both get the truth.
+
+     Re-applied on mutation because the calendar re-renders its header whenever
+     the mode or the month changes, and the mode is exactly what the name
+     depends on. */
+  function calendarMode() {
+    var ids = ['calMode_day', 'calMode_week', 'calMode_month'];
+    for (var i = 0; i < ids.length; i++) {
+      var b = el(ids[i]);
+      if (b && safe(function () { return b.classList.contains('on'); }, false)) {
+        return ids[i].split('_')[1];
+      }
+    }
+    return '';
+  }
+  function nameArrows() {
+    var host = safe(function () { return document.getElementById('calendarView'); }, null);
+    if (!host) return 0;
+    var btns = safe(function () { return host.querySelectorAll('.cx-navbtn'); }, []);
+    if (!btns.length) return 0;
+    var unit = calendarMode() || 'period';
+    var n = 0;
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var t = safe(function () { return String(b.textContent || '').trim(); }, '');
+      var back = t.indexOf('◀') >= 0 || t.indexOf('<') === 0;
+      var fwd = t.indexOf('▶') >= 0 || t.indexOf('>') === 0;
+      if (!back && !fwd) continue;
+      var want = (back ? 'Previous ' : 'Next ') + unit;
+      if (b.getAttribute('aria-label') !== want) { b.setAttribute('aria-label', want); n++; }
+      if (b.getAttribute('title') !== want) b.setAttribute('title', want);
+    }
+    api.namedArrows = n;
+    return n;
+  }
+
+  /* ================================================================== */
+
+  api.report = function () {
+    return {
+      version: VERSION,
+      templatesWrapped: !!(window.openTemplates && window.openTemplates.__mlsUiMapWrapped),
+      tplHops: api.tplHops,
+      calendarMode: calendarMode(),
+      arrowNames: safe(function () {
+        var out = [];
+        var b = document.querySelectorAll('#calendarView .cx-navbtn');
+        for (var i = 0; i < b.length; i++) out.push(b[i].getAttribute('aria-label') || '');
+        return out;
+      }, [])
+    };
+  };
+  api.revert = function () {
+    if (_openTemplates) { window.openTemplates = _openTemplates; _openTemplates = null; }
+    safe(function () {
+      var b = document.querySelectorAll('#calendarView .cx-navbtn');
+      for (var i = 0; i < b.length; i++) { b[i].removeAttribute('aria-label'); b[i].removeAttribute('title'); }
+    });
+    var css = el('mlsUiMapCss');
+    if (css && css.parentNode) css.parentNode.removeChild(css);
+    return true;
+  };
+  window.__mlsUiMap = api;
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never rAF — a non-compositing tab never fires rAF and the
+       names would silently never be written. */
+    setTimeout(function () { queued = false; safe(wrapTemplates); safe(nameArrows); }, 0);
+  }
+  function boot() {
+    refresh();
+    safe(function () { window.addEventListener('mls:view-changed', refresh, false); });
+    safe(function () { document.addEventListener('click', refresh, true); });
+    /* openTemplates and #calendarView both exist late (the shell defines the
+       function in a later script, the calendar renders on first visit), so a
+       bounded re-arm rather than one shot at boot. */
+    var n = 0;
+    var iv = setInterval(function () { refresh(); if (++n > 20) clearInterval(iv); }, 900);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end uimap-1.0.0 =============================================== -->
+<!-- ===== pullface-1.0.0 — sync goes quiet, and ONE bar for the whole pull ==
+     OWNER, 2026-08-17 22:33Z, watching a live pull: "I hate this '10 patients
+     syncing to server…' thing — that should be done in the background to make
+     this feel like magic, not foreground. Also that bar is broken: it should
+     move on to pulling history and restart again."
+
+     BOTH ARE PRESENTATION. Neither touches an engine, a receipt, a queue or a
+     count: the queue still drains exactly as it did and every number shown is
+     the number the engine reported.
+
+     ==================================================================
+     A. SYNC IS SILENT UNTIL IT NEEDS HIM
+     ==================================================================
+     _renderBackupBadge() (shell :22388) paints a fixed amber chip at
+     left:16px bottom:84px reading "⏳ N patients syncing to server…" for as
+     long as the queue is non-empty. It is bottom-left foreground furniture
+     during the busiest moment of the day, and it reports WORK IN PROGRESS,
+     which is not something a doctor can act on.
+
+     WHAT REPLACES IT. Nothing, while the queue is draining: a neutral dot in
+     the dock's status area, and that is all. The chip comes back only when the
+     queue is genuinely STUCK — the same count, not falling, for longer than
+     the stall window — because that is the only state where the doctor has
+     something to decide. Its wording is the owner's: "N patients didn't save
+     to your account — retrying". One tap still runs the same retry the amber
+     chip ran, so nothing is lost; the same information also stays permanently
+     available in Settings → Account, which is where a doctor goes to ask.
+
+     WHY A STALL WINDOW AND NOT "IS A PULL RUNNING". A pull can finish and
+     leave a queue behind, and that queue draining quietly is still normal. The
+     honest test is whether the count is FALLING, and that is measured here
+     rather than assumed.
+
+     ==================================================================
+     B. ONE BAR, THREE PHASES, NEVER PARKED AT 100%
+     ==================================================================
+     Every painter in this file computes its width from the CURRENT PHASE's own
+     "N of M": Schedule 24 of 24 is 100%, and then Histories starts again at
+     1 of 24. So the bar fills, sits full while the doctor waits, and then
+     appears to restart — which is exactly what he described.
+
+     There are FIVE copies of that painter (#mlsDsPullBar x4 and #mlsCvHeroBar),
+     each deliberately self-contained so one lane's missing element cannot blank
+     another's bar. Editing five copies invites the fifth to drift, so this is
+     ONE observer over the rendered bars instead: whatever a painter writes, the
+     phase word is read back out of the label it already produces, mapped onto a
+     segment of the WHOLE pull, and the width and text rewritten.
+
+       Schedule        0 → 30%
+       Histories      30 → 80%
+       Today's notes  80 → 99%
+
+     99, not 100, while the pull is still running: 100% is a claim that the work
+     is finished, and the pull holds its lease past the last history. The bar
+     reaches 100% and reads "Done" only when the engine says the run is over.
+     A phase the engine skips (already verified today) is announced in three
+     words and the bar moves on rather than sitting still.
+
+     REVERSIBLE: revert() restores _renderBackupBadge and stops the observer;
+     the next paint from any of the five painters puts the original bar back. -->
+<style id="mlsPullFaceCss">
+/* The quiet indicator. A dot, in the dock's own status area when there is one,
+   and otherwise nothing at all — never a floating chip. */
+#mlsSyncDot{
+  display:none; width:7px; height:7px; border-radius:50%;
+  background:#9BB3A6; margin-left:6px; flex:0 0 auto;
+  vertical-align:middle;
+}
+#mlsSyncDot[data-on="1"]{ display:inline-block; }
+/* The failure chip. Same one-tap retry, but it is a NOTICE, not a progress
+   readout, so it reads like the other things that need an answer. */
+#_backupBadge[data-mls-quiet="1"]{ display:none !important; }
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsPullFace) return;
+
+  var VERSION = 'pullface-1.0.0';
+  var STALL_MS = 45000;      /* not falling for this long = stuck, not busy */
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+
+  var api = {
+    version: VERSION,
+    quietedPaints: 0, stuckShown: 0, barPaints: 0,
+    lastPhase: '', lastPct: -1
+  };
+
+  /* ================================================================
+     A. THE SYNC BADGE
+     ================================================================ */
+  var _origBadge = null;
+  var pendingSeen = { count: -1, since: 0 };
+
+  function pendingCount() {
+    var n = 0;
+    n += safe(function () { return (window._pendingBackupGet ? window._pendingBackupGet() : []).length; }, 0);
+    n += safe(function () { return (window._pendingSyncGet ? window._pendingSyncGet() : []).length; }, 0);
+    return n;
+  }
+  /* Falling = healthy. Flat and non-zero for STALL_MS = the doctor needs to
+     know. Measured from the count itself rather than from "is a pull running",
+     because a queue draining after a pull is still perfectly normal. */
+  function stuck() {
+    var n = pendingCount();
+    var now = Date.now();
+    if (n !== pendingSeen.count) { pendingSeen = { count: n, since: now }; return false; }
+    if (!n) return false;
+    return (now - pendingSeen.since) >= STALL_MS;
+  }
+
+  function syncDot(on) {
+    var d = el('mlsSyncDot');
+    if (!d) {
+      /* The dock's own status area if the dock is up; otherwise do not create
+         floating furniture at all — silence is the requirement. */
+      var host = el('mlsDockStatus') || el('mlsDock');
+      if (!host) return null;
+      d = document.createElement('span');
+      d.id = 'mlsSyncDot';
+      d.setAttribute('role', 'status');
+      d.setAttribute('aria-label', 'Saving to your account');
+      host.appendChild(d);
+    }
+    var want = on ? '1' : '0';
+    if (d.getAttribute('data-on') !== want) d.setAttribute('data-on', want);
+    if (on) d.title = pendingCount() + ' item(s) still saving to your account';
+    return d;
+  }
+
+  /* The chip itself is the shell's node; it is HIDDEN by attribute rather than
+     removed, so the shell's own remove()/re-create path is untouched and one
+     attribute puts it back. */
+  function quietBadge() {
+    var b = el('_backupBadge');
+    var n = pendingCount();
+    if (!n) { syncDot(false); return false; }
+    var isStuck = stuck();
+    syncDot(!isStuck);
+    if (!b) return false;
+    if (isStuck) {
+      if (b.getAttribute('data-mls-quiet') === '1') b.removeAttribute('data-mls-quiet');
+      /* the owner's words, and it says what to do rather than what is happening */
+      var want = '⚠ ' + n + ' item' + (n === 1 ? '' : 's') + ' didn’t save to your account — retrying. Tap for details.';
+      if (b.textContent !== want) { b.textContent = want; api.stuckShown++; }
+      b.style.background = '#fff7e6'; b.style.borderColor = '#f0d9a0'; b.style.color = '#8a5a00';
+      return true;
+    }
+    if (b.getAttribute('data-mls-quiet') !== '1') { b.setAttribute('data-mls-quiet', '1'); api.quietedPaints++; }
+    return false;
+  }
+
+  function wrapBadge() {
+    var fn = window._renderBackupBadge;
+    if (typeof fn !== 'function' || fn.__mlsPullFaceWrapped) return false;
+    _origBadge = fn;
+    var w = function () {
+      var out = safe(function () { return fn.apply(this, arguments); }.bind(this), undefined);
+      safe(quietBadge);
+      return out;
+    };
+    w.__mlsPullFaceWrapped = true;
+    window._renderBackupBadge = w;
+    return true;
+  }
+
+  /* ================================================================
+     B. ONE BAR
+     ================================================================ */
+  var BARS = ['mlsDsPullBar', 'mlsCvHeroBar'];
+  /* start, end of each phase's slice of the WHOLE pull */
+  var SEG = {
+    schedule: [0, 30],
+    history: [30, 80],
+    daynote: [80, 99]
+  };
+  function phaseOf(label) {
+    var s = String(label || '');
+    if (/today.?s note|day note|daynote/i.test(s)) return 'daynote';
+    if (/histor|encounter|chart/i.test(s)) return 'history';
+    if (/schedule|identity|appointment/i.test(s)) return 'schedule';
+    return '';
+  }
+  function phaseWord(p) {
+    return p === 'daynote' ? 'Today’s notes' : (p === 'history' ? 'Histories' : 'Schedule');
+  }
+  /* Is the run still going? The ENGINE's own flag. Deliberately NOT
+     window.__mlsPullProgress: that global is the progress SCREEN's api object,
+     it does not expose state(), and a second block in this same file assigns
+     the boolean `true` to the same name — reading it would have produced a
+     confident wrong answer. __mlsDayHistoryPull.state is what the progress
+     screen itself reads. `null` means "cannot tell", and a null is treated as
+     still-running, because claiming 100% is the failure mode being fixed. */
+  function running() {
+    return safe(function () {
+      var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
+      if (s && typeof s.running === 'boolean') return s.running;
+      return null;
+    }, null);
+  }
+
+  function paintOne(bar) {
+    var fill = bar && bar.firstElementChild;
+    if (!fill) return false;
+    var label = String(fill.textContent || '');
+    if (!label || bar.style.display === 'none') return false;
+    /* Written by us already this tick? Do not re-derive from our own output. */
+    var mm = label.match(/(\d+)\s*\/\s*(\d+)/);
+    var p = phaseOf(label);
+    if (!p || !mm || num(mm[2]) <= 0) return false;
+
+    var seg = SEG[p];
+    var within = Math.max(0, Math.min(1, num(mm[1]) / num(mm[2])));
+    var pct = Math.round(seg[0] + within * (seg[1] - seg[0]));
+    var isRunning = running();
+    /* 100% is a claim the whole pull is finished. Only the engine may make it. */
+    if (isRunning !== false) pct = Math.min(pct, 99);
+    pct = Math.max(3, pct);
+
+    /* Keep whatever elapsed-time tail the painter appended — it is its own
+       clock and rewriting it would restart it under the doctor's eyes. */
+    var tail = '';
+    var dot = label.indexOf('·');
+    if (dot >= 0) tail = label.slice(dot);
+    var text = phaseWord(p) + ' ' + mm[1] + '/' + mm[2] + (tail ? ' ' + tail.trim() : '');
+
+    var w = pct + '%';
+    if (fill.style.width !== w) fill.style.width = w;
+    if (fill.textContent !== text) fill.textContent = text;
+    bar.setAttribute('data-mls-phase', p);
+    bar.setAttribute('data-mls-pct', String(pct));
+    api.lastPhase = p; api.lastPct = pct; api.barPaints++;
+    return true;
+  }
+
+  function paintBars() {
+    var did = false;
+    for (var i = 0; i < BARS.length; i++) {
+      var b = el(BARS[i]);
+      if (b) did = paintOne(b) || did;
+    }
+    return did;
+  }
+
+  /* ================================================================ */
+
+  api.report = function () {
+    var out = { version: VERSION, pending: pendingCount(), stuck: stuck(), bars: [] };
+    var badge = el('_backupBadge');
+    out.badgePresent = !!badge;
+    out.badgeQuiet = !!(badge && badge.getAttribute('data-mls-quiet') === '1');
+    out.badgeVisible = !!(badge && safe(function () {
+      var r = badge.getBoundingClientRect();
+      var cs = getComputedStyle(badge);
+      return r.width > 0 && r.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden';
+    }, false));
+    var dot = el('mlsSyncDot');
+    out.dotOn = !!(dot && dot.getAttribute('data-on') === '1');
+    out.badgeWrapped = !!(window._renderBackupBadge && window._renderBackupBadge.__mlsPullFaceWrapped);
+    for (var i = 0; i < BARS.length; i++) {
+      var b = el(BARS[i]);
+      if (!b) continue;
+      out.bars.push({
+        id: BARS[i],
+        shown: b.style.display !== 'none',
+        phase: b.getAttribute('data-mls-phase') || '',
+        pct: num(b.getAttribute('data-mls-pct')),
+        text: String((b.firstElementChild && b.firstElementChild.textContent) || '')
+      });
+    }
+    out.running = running();
+    return out;
+  };
+  api.paintBars = paintBars;
+  api.quietBadge = quietBadge;
+  api.revert = function () {
+    if (_origBadge) { window._renderBackupBadge = _origBadge; _origBadge = null; }
+    safe(function () {
+      var b = el('_backupBadge'); if (b) b.removeAttribute('data-mls-quiet');
+      var d = el('mlsSyncDot'); if (d && d.parentNode) d.parentNode.removeChild(d);
+    });
+    var css = el('mlsPullFaceCss');
+    if (css && css.parentNode) css.parentNode.removeChild(css);
+    return true;
+  };
+  window.__mlsPullFace = api;
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never rAF: the pull runs with the tab backgrounded all the
+       time, and rAF does not fire there — the bar would freeze mid-phase. */
+    setTimeout(function () { queued = false; safe(wrapBadge); safe(quietBadge); safe(paintBars); }, 0);
+  }
+  function boot() {
+    refresh();
+    /* The bars are repainted by five different painters on their own cadences,
+       so observe the nodes rather than hooking any one of them. */
+    var attach = function () {
+      for (var i = 0; i < BARS.length; i++) {
+        var b = el(BARS[i]);
+        if (!b || b.__mlsPfWatched) continue;
+        b.__mlsPfWatched = true;
+        safe(function () {
+          new MutationObserver(refresh).observe(b, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style'] });
+        });
+      }
+      var badge = el('_backupBadge');
+      if (badge && !badge.__mlsPfWatched) {
+        badge.__mlsPfWatched = true;
+        safe(function () { new MutationObserver(refresh).observe(badge, { childList: true, characterData: true, subtree: true }); });
+      }
+    };
+    attach();
+    /* A pull is minutes long and these nodes are created and destroyed inside
+       it, so this one keeps running for the life of the tab — but it is two
+       getElementById calls and a change-guarded write, not a scan. */
+    setInterval(function () { attach(); refresh(); }, 700);
+    safe(function () { document.addEventListener('click', refresh, true); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end pullface-1.0.0 ============================================ -->
 </body>
 </html>
