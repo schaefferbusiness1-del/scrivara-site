@@ -3647,6 +3647,14 @@
       var text = String(parseText || (rd && rd.text) || "");
       if (!text.trim()) return null;
       if (text.length > CAP_MAX_CHARS) text = text.slice(0, CAP_MAX_CHARS);
+      /* QUOTA, fail-closed: the quota guard stamps __mlsStoreWriteFailed the
+         moment a savePatients echo does not come back. A store that is already
+         refusing writes must not be handed tens of KB of raw chart text per
+         patient - that turns a summariser outage into a storage outage. The
+         capture is simply not taken; the row then fails honestly on the
+         ordinary AI path exactly as it did before cap-1.0.0. */
+      var quotaFail = safe(function () { return window.__mlsStoreWriteFailed || null; }, null);
+      if (quotaFail && Number(quotaFail.at || 0) > 0 && Date.now() - Number(quotaFail.at || 0) < 6 * 3600 * 1000) return null;
       var p = patientById(pid);
       if (!p) return null;
       var capture = {

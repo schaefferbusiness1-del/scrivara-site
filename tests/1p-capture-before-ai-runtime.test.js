@@ -202,6 +202,20 @@ async function testTheGatesStillRefuse() {
     'a refused six-card save was excused as a pending summary');
   eq(Number(sink.summariesPending || 0), 0, 'a store refusal was misread as an AI outage');
   ok(sink.retry.length === 3, 'a refused save did not queue its row for retry');
+
+  /* (c) QUOTA: a store that is already refusing writes gets no raw text. */
+  const h3 = makeHarness({
+    day: DAY, today: DAY, rows: 3,
+    chartCoverage: true,
+    parseResult: () => UPSTREAM_502()
+  });
+  h3.rt.__mlsStoreWriteFailed = { at: h3.clock.now() - 1000, reason: 'quota-exceeded' };
+  const full = await h3.api._runHistoryBatch(h3.rows, [], h3.onStatus);
+  eq(h3.patients.filter(p => p.athenaRawCapture).length, 0,
+    'a store that is already refusing writes was handed raw chart text - a summariser outage must not become a storage outage');
+  eq(Number(full.summariesPending || 0), 0, 'a row with no stored capture was still called summary-pending');
+  eq(full.patients.filter(p => p.complete === true).length, 0,
+    'a row whose capture could not be stored was reported saved');
 }
 
 /* ================================================================== (4) ==
