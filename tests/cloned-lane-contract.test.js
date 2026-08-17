@@ -94,26 +94,65 @@ assert(!clonedShell.includes('cloned-20260816-r1'), '/cloned still carries the r
 assert(!clonedShell.includes('__MLS_P1_PREVIEW'), '/cloned must never publish or reference the 1p preview marker');
 assert(!/\b1p-[\w.-]*\.js\b/.test(clonedShell), '/cloned must never load a 1p-prefixed script');
 
-/* ---- NO promoted /1p features (reset 2026-08-17) ----
- * The owner has not yet said "I'm ready" for any promotion. Until he does,
- * none of the /1p feature markers may appear in the clone. When he approves
- * one, add it as a named, delimited block here (assert it exactly once) AND
- * canonicalize it away below — never let it ride in silently. */
-const P1_ONLY_MARKERS = [
-  '<!-- ===== msl-1.0.0', 'window.__mlsSimpleLayer', 'applyMslModePreview', 'id="qolMslMode"',
-  '<!-- ===== msl-today-1.0.0', 'window.__mlsToday', '<!-- ===== msl-autodraft-1.0.0', 'window.__mlsAutoDraft',
-  'function _opContextDay()', '/* cc-1.1.0', '_ccSteps=', 'data-msl=', 'p1-live-1.0.0', 'window.__MLS_P1'
+/* ---- Promotions: the ONLY way a /1p feature may appear in the clone ----
+ * Owner's pipeline (2026-08-17): build on /1p → test on /1p → everything that
+ * WORKS is added to /cloned → what does not work is fixed until it can be.
+ * A promotion is a named, delimited block copied by
+ * scripts/promote-1p-block-to-cloned.js and recorded in
+ * tests/cloned-promotions.json {name, kind:'block', open, close, sha256,
+ * bytes, from, promotedAt, note}. Each promoted block must appear exactly
+ * once, its bytes must hash to what was promoted, and it is canonicalized
+ * away below so every OTHER byte still proves the clone is a clone. Nothing
+ * rides in silently: any /1p marker outside a manifest block fails here. */
+const crypto = require('crypto');
+const MANIFEST = path.join(root, 'tests', 'cloned-promotions.json');
+const promotions = fs.existsSync(MANIFEST) ? JSON.parse(fs.readFileSync(MANIFEST, 'utf8')).promoted : [];
+assert(Array.isArray(promotions), 'tests/cloned-promotions.json must hold {promoted:[...]}');
+const PROMOTED_TEXT = [];
+const seenNames = new Set();
+for (const p of promotions) {
+  assert(p && p.kind === 'block' && p.name && p.open && p.close && /^[0-9a-f]{64}$/.test(p.sha256 || ''), `malformed promotion entry: ${JSON.stringify(p)}`);
+  assert(!seenNames.has(p.name), `promotion ${p.name} listed twice`); seenNames.add(p.name);
+  const nOpen = clonedShell.split(p.open + ' ').length - 1, nClose = clonedShell.split(p.close + ' ').length - 1;
+  assert.strictEqual(nOpen, 1, `promoted ${p.name}: open marker must appear exactly once in the clone (found ${nOpen})`);
+  assert.strictEqual(nClose, 1, `promoted ${p.name}: close marker must appear exactly once in the clone (found ${nClose})`);
+  const start0 = clonedShell.indexOf(p.open + ' ');
+  const lineStart = clonedShell.lastIndexOf('\n', start0 - 1) + 1;
+  const closeIdx = clonedShell.indexOf(p.close + ' ');
+  assert(closeIdx > start0, `promoted ${p.name}: close marker precedes open marker`);
+  const end = clonedShell.indexOf('\n', closeIdx) + 1;
+  const text = clonedShell.slice(lineStart, end);
+  const digest = crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+  assert.strictEqual(digest, p.sha256, `promoted ${p.name}: the clone's block bytes differ from what was promoted (re-promote deliberately, never edit the clone's copy in place)`);
+  assert(!productionShell.includes(p.open + ' '), `promoted ${p.name} has reached production — the clone must be regenerated from production, not carry a duplicate`);
+  PROMOTED_TEXT.push(text);
+}
+
+/* Anything /1p-shaped that is NOT inside a manifest block is a leak. */
+const withoutPromoted = PROMOTED_TEXT.reduce((acc, t) => acc.replace(t, ''), clonedShell);
+const P1_MARKERS = [
+  'window.__mlsSimpleLayer', 'applyMslModePreview', 'id="qolMslMode"', 'window.__mlsToday', 'window.__mlsAutoDraft',
+  'function _opContextDay()', '/* cc-1.1.0', '_ccSteps=', 'data-msl=', 'p1-live-1.0.0', 'window.__MLS_P1', '__MLS_P1_PREVIEW', '1p-feat_', '1p-mls-connect'
 ];
-for (const marker of P1_ONLY_MARKERS) {
-  assert(!clonedShell.includes(marker), `/cloned carries an unpromoted /1p feature marker: ${JSON.stringify(marker)} — promotions need the owner's go and a named block here`);
+for (const marker of P1_MARKERS) {
+  assert(!withoutPromoted.includes(marker), `/cloned carries a /1p feature marker outside any promoted block: ${JSON.stringify(marker)} — promote it via scripts/promote-1p-block-to-cloned.js or remove it`);
+}
+/* Every delimited-block banner left after stripping promotions must exist in
+   production the same number of times (production has a few of its own). */
+const bannerCounts = (s) => { const m = {}; for (const b of s.match(/<!-- ===== (?:end )?[A-Za-z0-9._-]+/g) || []) m[b] = (m[b] || 0) + 1; return m; };
+const cloneBanners = bannerCounts(withoutPromoted), prodBanners = bannerCounts(productionShell);
+for (const b of Object.keys(cloneBanners)) {
+  assert.strictEqual(cloneBanners[b], prodBanners[b] || 0, `/cloned carries a delimited block outside any promotion: ${JSON.stringify(b)} ×${cloneBanners[b]} (production ×${prodBanners[b] || 0})`);
 }
 
 /* ---- canonicalizeCloned(): the true-clone proof ----
  * Strip EXACTLY the documented route/CSP/service-worker/bundle-loader
- * bootstrap and the remainder must be byte-identical to ScribeFlow.html.
- * NOTHING else is canonicalized: any other byte that differs fails here. */
+ * bootstrap plus the manifest's promoted blocks, and the remainder must be
+ * byte-identical to ScribeFlow.html. NOTHING else is canonicalized. */
 function canonicalizeCloned(value) {
-  return String(value)
+  let v = String(value);
+  for (const t of PROMOTED_TEXT) v = v.replace(t, '');
+  return v
     .replace("base-uri 'self'", "base-uri 'none'")
     .replace(/<!-- cloned-live-1\.0\.0:[\s\S]*?<base href="\/cloned">\r?\n/, '')
     .replace(
@@ -132,10 +171,11 @@ assert.notStrictEqual(canonicalized, clonedShell, 'canonicalizeCloned() must act
 assert.strictEqual(canonicalized, productionShell,
   'cloned/index.html drifted beyond its documented route/CSP/service-worker/bundle-loader bootstrap from ScribeFlow.html — it is no longer a true clone');
 
-/* Belt and braces: the diff must be exactly the five identity hunks and its
-   size delta must be small. A promoted feature would blow this up. */
-const delta = clonedShell.length - productionShell.length;
-assert(delta > 0 && delta < 1500, `cloned/index.html is ${delta} bytes larger than ScribeFlow.html; the lane identity alone is ~1.1KB — something else rode in`);
+/* Belt and braces: beyond the identity hunks (~1.1KB) and the manifest's
+   promoted bytes, nothing may add size. */
+const promotedBytes = PROMOTED_TEXT.reduce((n, t) => n + t.length, 0);
+const delta = clonedShell.length - productionShell.length - promotedBytes;
+assert(delta > 0 && delta < 1500, `cloned/index.html is ${delta} bytes larger than ScribeFlow.html after removing ${promotions.length} promoted block(s); the lane identity alone is ~1.1KB — something else rode in`);
 
 /* ---- cloned-mls-connect.js: same true-clone proof for the bundle ----
  * Only the fallback cache token and the diagnostic build constant may differ.
@@ -165,4 +205,4 @@ assert(!productionShell.includes('__MLS_CLONED') && !productionShell.includes('c
   '/cloned lane marker or loader leaked into the production shell');
 assert(!productionConnect.includes(CLONED_BUILD), '/cloned build token leaked into the production bundle');
 
-console.log(`PASS /cloned lane contract: ${CLONED_BUILD}, cloned/index.html and cloned-mls-connect.js are PRISTINE route/token forks of ScribeFlow.html (${PROD_BUILD}) and mls-connect.js — zero promoted features`);
+console.log(`PASS /cloned lane contract: ${CLONED_BUILD}, cloned/index.html and cloned-mls-connect.js are exact route/token forks of ScribeFlow.html (${PROD_BUILD}) and mls-connect.js; ${promotions.length} promoted block(s)${promotions.length ? ' [' + promotions.map((p) => p.name).join(', ') + ']' : ' — pristine'}`);
