@@ -1451,12 +1451,12 @@
           faceTalkStop(speechFace);
           second.then(function (u2) {
             if (mySeq !== pvSpeakSeq || finished) return;
-            if (u2) ttsPlayUrl(u2, mySeq, finish, speechFace, reportStart); else pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
+            if (u2) ttsPlayUrl(u2, mySeq, finish, speechFace, reportStart, chunks[1]); else pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
           }, function () {
             if (mySeq !== pvSpeakSeq || finished) return;
             pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
           });
-        }, speechFace, reportStart);
+        }, speechFace, reportStart, chunks[0]);
       }, function () {
         if (mySeq !== pvSpeakSeq || finished || started) return;
         started = true;
@@ -1467,7 +1467,7 @@
     ttsFetchUrl(t, voiceOverride, shape).then(function (url) {
       if (mySeq !== pvSpeakSeq || finished || started) return;
       started = true;
-      if (url) { ttsPlayUrl(url, mySeq, finish, speechFace, reportStart); return; }
+      if (url) { ttsPlayUrl(url, mySeq, finish, speechFace, reportStart, t); return; }
       pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
     }, function () {
       if (mySeq !== pvSpeakSeq || finished || started) return;
@@ -1512,7 +1512,8 @@
         if (synthStarted || mySeq !== pvSpeakSeq) return;
         synthStarted = true;
         if (reportStart) safe(reportStart);
-        faceTalkCycle(true, speechFace);
+        /* avanim-1.0.0: the line is right here - the mouth says these words */
+        faceTalkCycle(true, speechFace, text);
       }
       /* Chrome normally emits start; some installed Windows voices only emit
          boundary. Either is proof that audible playback began, and the local
@@ -1992,6 +1993,17 @@
     return '';
   }
   var FACE_MOUTHS = {
+    /* ===== avanim-1.0.0 (2026-08-17) — THE RESTING FACE STOPS SMILING.
+       Owner, §14: remove "constant smiling". baseMouth() returned `smile` for the
+       `idle` state, and `idle` is what the face wears between every turn and for the
+       whole rest period while the patient waits for the doctor - so the resting mouth
+       WAS a smile, permanently, which is the mascot read. `neutral` is the composed
+       adult mouth: corners level with the centre, a 1.2-unit lip roll and nothing
+       else. It is deliberately a DIFFERENT path from `soft` (listening) and from
+       `smile`, which survives as the WARM mouth the greeting mood still reaches for -
+       the warmth moved from the resting face to the moment that earns it. ===== */
+    neutral: 'M79 137 Q100 138.4 121 137 Q100 140.2 79 137',
+    /* ===== end avanim-1.0.0 ===== */
     /* p1-adult-art-1.0.0: a composed resting mouth. Warmth belongs to the
        greeting mood, not a fixed mascot smile on every idle face. */
     smile:   'M78 136 Q100 141 122 136 Q100 144 78 136',
@@ -2072,11 +2084,123 @@
      that has to line up with an eye - the lids, the brows, the spectacle
      lenses, the crow's feet - is placed FROM this rather than repeating 71
      and 129, which is why moving the eyes used to be impossible. */
-  var FACE_EYE_DX = { close: 25.5, normal: 29, wide: 32.5 };
+  /* ===== avlook-1.0.0 (2026-08-17) — MEASURED, NOT ASSERTED.
+     Owner: the avatar "must stop looking preschooly". Measured on the real 302px
+     kiosk with getBoundingClientRect (composes every transform), default oval look:
+       inter-pupillary distance / skull width = 0.510
+     against 0.42-0.48 for an adult front view (IPD 63mm over a 140mm zy-zy face).
+     Wide-set eyes on a wide skull is the second-strongest infant cue there is, after
+     round eyes. The three-way distinction the matcher's `eyeSet` knob carries is
+     preserved - every value moves by the same proportion, so a close-set doctor is
+     still measurably closer-set than a normal one:
+       close 25.5 -> 23   (0.449 -> 0.405)
+       normal 29  -> 25.5 (0.510 -> 0.449)   <- the default, now inside the adult band
+       wide 32.5  -> 28.2 (0.572 -> 0.496)
+     28.2 rather than a rounder 28.5 because 28.5 measured 0.501 and the adult band
+     tops out at 0.500. Three hundredths of a unit is not worth arguing about, but
+     widening the ruler to swallow a failure is exactly how this drawing came to be
+     re-cut three times on unfalsifiable verdicts - the number moves, not the band.
+     Everything that lines up with an eye is placed from this (lids, brows, spectacle
+     lenses, crow's feet), so this one table moves all of them together. ===== */
+  var FACE_EYE_DX = { close: 23, normal: 25.5, wide: 28.2 };
+  /* ===== end avlook-1.0.0 ===== */
   /* every drawn face needs its OWN gradient and clip ids. Setup renders a preview beside
      the kiosk, the Visit card can render another, and duplicate SVG ids in one document
      silently cross-wire: the second face would paint with the first face's skin ramp and
      iris. A counter is enough and stays stable within a render. */
+  /* ===== avlook-1.0.0 — THE PROPORTIONS ARE A NUMBER, NOT AN OPINION.
+     "It looks preschooly" and "it looks better now" are both unfalsifiable, and this
+     drawing has already been re-cut three times on unfalsifiable verdicts (see the two
+     rejected shading passes and the -8 upper-face lift that moved the eye line the
+     wrong way). faceLookProportions(look) reports the ratios that actually decide
+     whether a drawn head reads adult, computed from THE SAME tables faceSvg draws
+     from, so a before/after is arithmetic.
+     `adult` on each row is standard front-view anthropometry: palpebral fissure
+     30x10mm, iris 11.7mm, IPD 63mm, zy-zy 140mm, pupil->subnasale 62mm,
+     pupil->stomion 84mm, pupil->gnathion 130mm, vertex->gnathion 232mm.
+     ⛔ A DIAGNOSTIC THAT AGREES WITH ITSELF PROVES NOTHING. This function derives its
+     numbers from the constants; the Playwright proof re-measures the SAME ratios off
+     the rendered SVG with getBoundingClientRect and asserts the two agree, so a knob
+     that moves the drawing without moving this report (or the reverse) fails the
+     gate. ===== */
+  var FACE_UPPER_LIFT = 2;      /* .fUpperFace translate(0,-FACE_UPPER_LIFT) */
+  var FACE_APERTURE_W = 24;     /* the eye clip path is drawn cx-12 .. cx+12 */
+  var FACE_APERTURE_H = 9.01;   /* 89.79 .. 98.8 - see the aperture path in eye() */
+  var FACE_IRIS_R = 4.6;
+  var FACE_IRIS_CY = 94.1;
+  /* the RESTING mouth's span, which is what an idle face wears: FACE_MOUTHS.neutral is
+     drawn 79 .. 121. (`smile` is 78 .. 122; reporting 44 here made this function
+     disagree with the rendered .fMouth by 0.018 on every shape, and the Playwright
+     cross-check caught it on the first run - which is the whole reason it exists.) */
+  var FACE_MOUTH_SPAN = 42;
+  function faceQuadRange(p0, c, p1) {
+    /* exact min/max of a 1-D quadratic Bezier: the endpoints, plus the vertex when it
+       falls inside the segment. Used for the brow and mouth boxes, which are the only
+       two features whose extent is a curve rather than a coordinate. */
+    var lo = Math.min(p0, p1), hi = Math.max(p0, p1);
+    var den = p0 - 2 * c + p1;
+    if (den !== 0) {
+      var t = (p0 - c) / den;
+      if (t > 0 && t < 1) {
+        var v = (1 - t) * (1 - t) * p0 + 2 * t * (1 - t) * c + t * t * p1;
+        lo = Math.min(lo, v); hi = Math.max(hi, v);
+      }
+    }
+    return [lo, hi];
+  }
+  function faceLookProportions(look) {
+    var lk = faceLookSafe(look || FACE_LOOK);
+    var sh = FACE_SHAPE_PARTS[lk.faceShape] || FACE_SHAPE_PARTS.oval;
+    var FX = sh.rx / 58;
+    var dyN = (sh.ry - 66) * 0.30, dyM = (sh.ry - 66) * 0.62;
+    var nose = FACE_NOSE_PARTS[lk.nose] || FACE_NOSE_PARTS.straight;
+    var browW = FACE_BROW_WEIGHT[lk.brows] || FACE_BROW_WEIGHT.normal;
+    var bTop = browW * 0.62, bBot = browW * 0.31, bIn = browW * 0.40;
+    var crownY = 98 - sh.ry, chinY = 98 + sh.ry, headH = 2 * sh.ry;
+    var headW = 2 * sh.rx * 0.98;                       /* the skull's widest landmark */
+    var eyeCy = FACE_IRIS_CY - FACE_UPPER_LIFT;
+    var ipd = 2 * (FACE_EYE_DX[lk.eyeSet] || FACE_EYE_DX.normal) * FX;
+    var noseBaseY = nose.ny + nose.nr * 0.7 + dyN + NOSE_DROP_CONST;
+    /* the resting mouth, which is what an idle face wears: FACE_MOUTHS.neutral */
+    var mTop = faceQuadRange(137, 138.4, 137)[0];
+    var mBot = faceQuadRange(137, 140.2, 137)[1];
+    var mouthCy = (mTop + mBot) / 2 + dyM;
+    var browTop = faceQuadRange(82 - bIn, 77 - bTop, 83)[0];
+    var browBot = faceQuadRange(83, 77 + bBot, 82 + bIn)[1];
+    var browCy = (browTop + browBot) / 2 - FACE_UPPER_LIFT;
+    function r3(v) { return Math.round(v * 1000) / 1000; }
+    return {
+      version: 'avlook-1.0.0',
+      faceShape: lk.faceShape, eyeSet: lk.eyeSet, brows: lk.brows, nose: lk.nose,
+      units: { headW: r3(headW), headH: r3(headH), crownY: r3(crownY), chinY: r3(chinY),
+        eyeCy: r3(eyeCy), ipd: r3(ipd), apertureW: FACE_APERTURE_W, apertureH: FACE_APERTURE_H,
+        irisD: r3(FACE_IRIS_R * 2), mouthW: r3(FACE_MOUTH_SPAN * FX), mouthCy: r3(mouthCy),
+        noseBaseY: r3(noseBaseY), browCy: r3(browCy) },
+      ratios: {
+        headWoverH: r3(headW / headH),
+        eyeLine: r3((eyeCy - crownY) / headH),
+        cranialOverFacial: r3((eyeCy - crownY) / (chinY - eyeCy)),
+        apertureAspect: r3(FACE_APERTURE_H / FACE_APERTURE_W),
+        irisOverAperture: r3(FACE_IRIS_R * 2 / FACE_APERTURE_W),
+        eyeWoverFaceW: r3(FACE_APERTURE_W / headW),
+        ipdOverFaceW: r3(ipd / headW),
+        browToEye: r3((eyeCy - browCy) / headH),
+        mouthWoverFaceW: r3(FACE_MOUTH_SPAN * FX / headW),
+        lowerFace: r3((chinY - noseBaseY) / (chinY - eyeCy)),
+        mouthLine: r3((mouthCy - noseBaseY) / (chinY - noseBaseY))
+      },
+      adult: {
+        headWoverH: [0.62, 0.80], eyeLine: [0.44, 0.52], cranialOverFacial: [0.78, 1.15],
+        apertureAspect: [0.28, 0.44], irisOverAperture: [0.33, 0.44],
+        eyeWoverFaceW: [0.17, 0.24], ipdOverFaceW: [0.40, 0.50], browToEye: [0.07, 0.13],
+        mouthWoverFaceW: [0.30, 0.42], lowerFace: [0.44, 0.62], mouthLine: [0.24, 0.42]
+      }
+    };
+  }
+  /* the drop lives in faceSvg as a local so the drawing reads in one place; the
+     diagnostic needs the same number, so it is named once here and used by both. */
+  var NOSE_DROP_CONST = 7;
+  /* ===== end avlook-1.0.0 ===== */
   var faceUidSeq = 0;
   function faceSvg(look) {
     look = faceLookSafe(look || FACE_LOOK);
@@ -2094,6 +2218,21 @@
        the nose and the mouth travel. Scaling the whole face instead just
        zooms the drawing and reads as a bigger head, not a longer one. */
     var dyN = (sh.ry - 66) * 0.30, dyM = (sh.ry - 66) * 0.62;
+    /* ===== avlook-1.0.0 — A SHORT NOSE IS A CHILD'S NOSE.
+       Measured, default look: (chin - nose base) / (chin - eye line) = 0.619 against
+       0.46-0.58 for an adult, and (mouth - nose base) / (chin - nose base) = 0.461
+       against 0.26-0.40. Both are the SAME defect read two ways: the nose base sat
+       only 33% of the way from the eye line to the chin where an adult's sits at 48%
+       (pupil->subnasale 62mm of a 130mm pupil->gnathion). A small mid-face under a big
+       cranium is the textbook infant proportion, and it is why the mouth then looked
+       stranded low on the chin even though the mouth itself never moved.
+       Dropping the whole nose group by 7 fixes both at once and leaves the mouth
+       exactly where it is: lowerFace 0.619 -> 0.575, mouthLine 0.461 -> 0.381, and the
+       mouth's own position in the eye-to-chin frame lands on 0.644 against a real
+       0.646. The philtrum, the nostrils and the bridge all ride inside the group, so
+       one number moves the whole feature and nothing can drift apart from it. ===== */
+    var NOSE_DROP = NOSE_DROP_CONST;   /* ONE number, shared with faceLookProportions */
+    /* ===== end avlook-1.0.0 ===== */
     var eyeDx = (FACE_EYE_DX[look.eyeSet] || FACE_EYE_DX.normal) * FX;
     function n2(v) { return String(Math.round(v * 100) / 100); }
     var cxL = Math.round((100 - eyeDx) * 100) / 100, cxR = Math.round((100 + eyeDx) * 100) / 100;
@@ -2143,10 +2282,19 @@
     function eye(cx, side) {
       var apId = 'mlsAvEyeAp' + side + faceUid;
       var irisId = 'mlsAvIris' + side + faceUid;
-      /* the aperture: 24 wide, 13 tall, corners lower than the centre so the lid has a
-         natural lift toward the outer canthus */
-      var ap = 'M' + n2(cx - 12) + ' 94.6 Q' + n2(cx - 6) + ' 87.4 ' + cx + ' 87.6 Q' + n2(cx + 6) + ' 87.9 ' + n2(cx + 12) + ' 94.2 ' +
-               'Q' + n2(cx + 6) + ' 100.8 ' + cx + ' 101 Q' + n2(cx - 6) + ' 100.9 ' + n2(cx - 12) + ' 94.6 Z';
+      /* ===== avlook-1.0.0 — THE APERTURE WAS 0.56 AS TALL AS IT IS WIDE.
+         Measured on the real 302px kiosk: 24.0 wide x 13.4 tall = aspect 0.559.
+         A human palpebral fissure is about 30mm x 10mm = 0.33; anything above ~0.45
+         is a cartoon eye, and this was the single strongest "preschool" signal left
+         on the face after the previous pass shrank the iris. The WIDTH is right
+         (24/116 = 0.207 against the rule of fifths' 0.20) so it does not move - only
+         the height comes down, 13.4 -> 9.0, aspect 0.375. Corners still sit lower
+         than the centre so the lid keeps its lift toward the outer canthus, and the
+         path is still one closed shape clipping one <g>, so every animation hook
+         (fPupil / fLid / fLow) keeps its name and its transform origin. ===== */
+      var ap = 'M' + n2(cx - 12) + ' 94.4 Q' + n2(cx - 6) + ' 89.6 ' + cx + ' 89.8 Q' + n2(cx + 6) + ' 90 ' + n2(cx + 12) + ' 94.1 ' +
+               'Q' + n2(cx + 6) + ' 98.6 ' + cx + ' 98.8 Q' + n2(cx - 6) + ' 98.7 ' + n2(cx - 12) + ' 94.4 Z';
+      /* ===== end avlook-1.0.0 ===== */
       return '<g class="fEye' + side + '" style="transform-box:fill-box;transform-origin:center;transition:transform .12s ease">' +
         '<defs>' +
           '<clipPath id="' + apId + '"><path d="' + ap + '"/></clipPath>' +
@@ -2159,40 +2307,66 @@
         '<g clip-path="url(#' + apId + ')">' +
           /* sclera: warm off-white, never #fff, with the upper half in lid shadow */
           '<rect x="' + n2(cx - 13) + '" y="86" width="26" height="17" fill="#f3efe8"/>' +
-          '<ellipse cx="' + cx + '" cy="88.6" rx="13" ry="4.4" fill="' + faceShade(look.skin, -0.3) + '" opacity=".28"/>' +
+          /* avlook-1.0.0: the lid shadow is a band inside the TOP of the aperture. On
+             the old 13.4-tall aperture it started at 84.2; on a 9.0-tall one that put
+             the whole band above the opening, where it paints nothing. */
+          '<ellipse cx="' + cx + '" cy="90.4" rx="13" ry="3.1" fill="' + faceShade(look.skin, -0.3) + '" opacity=".28"/>' +
           '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
             /* the iris sits high and is CROPPED by the upper lid, as a real one is.
                p1-adult-art-1.0.0: a 5.5-radius iris against a 24-wide aperture filled
                almost a quarter of the whole eye - the single strongest "cartoon child"
                signal on the face. 4.4 (and a pupil to match, 2.15 -> 1.8) reads as an
                adult iris without changing the aperture or any animation hook. */
-            '<circle cx="' + cx + '" cy="94.1" r="4.4" fill="url(#' + irisId + ')"/>' +
-            '<circle cx="' + cx + '" cy="94.1" r="4.4" fill="none" stroke="' + faceShade(look.eyes, -0.55) + '" stroke-width="0.9" opacity=".75"/>' +
+            /* avlook-1.0.0: 4.4 -> 4.6. A real iris is WIDER than the fissure is tall
+               (11.7mm against 10mm) and is cropped top and bottom by the lids - that
+               crop is most of what makes an eye read as set into a face. Against the
+               new 9.0-tall aperture a 9.2 iris is cropped by 0.2 at each lid, and
+               iris/width is 0.383 (real: 11.7/30 = 0.39). */
+            '<circle cx="' + cx + '" cy="94.1" r="4.6" fill="url(#' + irisId + ')"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="4.6" fill="none" stroke="' + faceShade(look.eyes, -0.55) + '" stroke-width="0.9" opacity=".75"/>' +
             '<circle cx="' + cx + '" cy="94.1" r="1.8" fill="#120d09"/>' +
             /* ONE catchlight, not two. A second, fainter highlight at the opposite
                corner is what makes an eye read as glassy/toy rather than photographic -
                a real cornea shows one clear reflected light source. The surviving
                catchlight is scaled and pulled in slightly so it still sits inside the
                smaller iris instead of grazing its new, tighter edge. */
-            '<ellipse cx="' + n2(cx - 1.6) + '" cy="92.2" rx="1.2" ry="0.9" fill="#fff" opacity=".92"/>' +
+            '<ellipse cx="' + n2(cx - 1.6) + '" cy="92.6" rx="1.2" ry="0.85" fill="#fff" opacity=".92"/>' +
           '</g>' +
         /* the LOWER lid: it rises into a smiling-eye arc on a genuine smile -
            the single strongest cue that a face means it. Inside the clip now, so it
            sweeps the aperture instead of painting a slab over the cheek. */
-        '<path class="fLow' + side + '" d="M' + n2(cx - 13) + ' 96 q13 10 26 0 v10 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
+        '<path class="fLow' + side + '" d="M' + n2(cx - 13) + ' 96.4 q13 8 26 0 v10 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
         /* upper lid: a skin-coloured shutter that DROPS for sleepy/caring
            looks and lifts for surprise - real eyelid acting, not just scale */
-        '<path class="fLid' + side + '" d="M' + n2(cx - 13) + ' 94 q13 -11 26 0 v-11 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
+        /* ===== avlook-1.0.0 — ⛔ THE BLINK NEVER CLOSED THE EYE, AND NO PIN SAW IT.
+           The old shutter was `M cx-13 94 q13 -11 26 0 v-11 h-26 z`: its lower edge
+           bowed UPWARD (apex y 86 at the centre, corners at 94), so at scaleY(1) — the
+           value blink() writes — it covered y 83..86 down the middle of an aperture
+           that only STARTS at 87.6. A "blink" therefore closed the two outer corners
+           and left the pupil in plain sight. Every lidBase() value was worse: the
+           shutter's bbox was 11 tall from y 83, so it first touched the aperture at
+           scaleY(0.40), and the largest value in the table was 0.34 — the sleepy,
+           caring and thinking lids were all no-ops. The harness never caught it
+           because it compares TRANSFORM STRINGS between moods, and the strings did
+           differ; nothing measured where the drawn lid actually landed.
+           The shutter is now a top-anchored panel whose lower edge bows DOWN: bbox
+           y 80..99, so scaleY(1) covers the whole 89.8..98.8 aperture (and the outer
+           corners with it), and the aperture's top edge is reached at scaleY(0.516) —
+           which is why applyLids() now works in the 0.52..0.70 band (see avanim). ===== */
+        '<path class="fLid' + side + '" d="M' + n2(cx - 13) + ' 80 h26 v15 q-13 8 -26 0 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.52);transition:transform .22s ease"/>' +
+        /* ===== end avlook-1.0.0 ===== */
         '</g>' +
         /* THE LASH LINE. A human upper lid casts a dark edge over the eye; without it the
            aperture reads as a hole cut in a mask. Drawn OUTSIDE the clip so it survives
            the lid shutters, and tapered - heavier at the outer third, like real lashes. */
-        '<path d="M' + n2(cx - 12.4) + ' 94.4 Q' + n2(cx - 6) + ' 86.9 ' + cx + ' 87.2 Q' + n2(cx + 6) + ' 87.5 ' + n2(cx + 12.4) + ' 94" ' +
+        /* avlook-1.0.0: the lash line IS the upper aperture edge, so it moves with it
+           or it floats above an eye it no longer belongs to. */
+        '<path d="M' + n2(cx - 12.4) + ' 94.2 Q' + n2(cx - 6) + ' 89.1 ' + cx + ' 89.4 Q' + n2(cx + 6) + ' 89.7 ' + n2(cx + 12.4) + ' 93.9" ' +
           'fill="none" stroke="' + faceShade(look.hair, -0.25) + '" stroke-width="1.7" stroke-linecap="round" opacity=".9"/>' +
         /* the lid CREASE above it, and the inner-corner shadow - both are why an eye
            looks set INTO a face rather than printed on one */
-        '<path d="M' + n2(cx - 9.5) + ' 85.2 Q' + cx + ' 81.4 ' + n2(cx + 9.5) + ' 84.8" fill="none" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="1.1" stroke-linecap="round" opacity=".5"/>' +
-        '<path d="M' + n2(cx - 12.6) + ' 94.6 q2.6 1.8 4.4 2.2" fill="none" stroke="' + faceShade(look.skin, -0.4) + '" stroke-width="1.1" stroke-linecap="round" opacity=".45"/>' +
+        '<path d="M' + n2(cx - 9.5) + ' 86.4 Q' + cx + ' 82.8 ' + n2(cx + 9.5) + ' 86" fill="none" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="1.1" stroke-linecap="round" opacity=".5"/>' +
+        '<path d="M' + n2(cx - 12.6) + ' 94.4 q2.6 1.5 4.4 1.9" fill="none" stroke="' + faceShade(look.skin, -0.4) + '" stroke-width="1.1" stroke-linecap="round" opacity=".45"/>' +
         '</g>';
     }
     /* ---- HAIR WITH VOLUME (av-6.0.0) ------------------------------------------------
@@ -2300,12 +2474,17 @@
           ' Q100 ' + n2(129 + dyM) + ' 80 ' + n2(124 + dyM) + ' Z" fill="' + look.hair + '" opacity=".9"/>';
     }
     var glasses = look.glasses
+      /* avlook-1.0.0: the lens was 31x25 at rx 8.5 - a near-round frame built around a
+         near-round eye. With the aperture at 24x9 and the brows 5 units lower, a 25-tall
+         lens now runs into the brow at the top and hangs into the cheek at the bottom.
+         31x17 at rx 6.5, centred on the new aperture (94.3), is both a modern adult
+         frame and the one that actually fits this eye. */
       ? '<g class="fGlasses" fill="none" stroke="#3d4a44" stroke-width="3" opacity=".85">' +
-          '<rect x="' + n2(cxL - 15.5) + '" y="81.5" width="31" height="25" rx="8.5"/>' +
-          '<rect x="' + n2(cxR - 15.5) + '" y="81.5" width="31" height="25" rx="8.5"/>' +
-          '<path d="M' + n2(cxL + 15.5) + ' 92 Q100 89 ' + n2(cxR - 15.5) + ' 92"/>' +
-          '<path d="M' + n2(cxL - 15.5) + ' 90 L' + n2(100 - sh.rx) + ' 94"/>' +
-          '<path d="M' + n2(cxR + 15.5) + ' 90 L' + n2(100 + sh.rx) + ' 94"/>' +
+          '<rect x="' + n2(cxL - 15.5) + '" y="86" width="31" height="17" rx="6.5"/>' +
+          '<rect x="' + n2(cxR - 15.5) + '" y="86" width="31" height="17" rx="6.5"/>' +
+          '<path d="M' + n2(cxL + 15.5) + ' 93 Q100 90 ' + n2(cxR - 15.5) + ' 93"/>' +
+          '<path d="M' + n2(cxL - 15.5) + ' 92 L' + n2(100 - sh.rx) + ' 95"/>' +
+          '<path d="M' + n2(cxR + 15.5) + ' 92 L' + n2(100 + sh.rx) + ' 95"/>' +
         '</g>'
       : '';
     /* ACCESSORIES a doctor plausibly wears. Both default OFF; both are drawn
@@ -2357,14 +2536,18 @@
              the two folds rendered as pale scratches down the chin. A bearded face simply
              does not show them, so they are omitted rather than recoloured. */
           (look.beard === 'beard' ? '' :
-            '<path class="fFoldL" d="M89 ' + n2(110 + dyN) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
-            '<path class="fFoldR" d="M111 ' + n2(110 + dyN) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>') +
+            /* a nasolabial fold starts AT the nose wing, so it rides the same drop the
+               nose group got (avlook-1.0.0) or it starts in mid-cheek */
+            '<path class="fFoldL" d="M89 ' + n2(110 + dyN + NOSE_DROP) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
+            '<path class="fFoldR" d="M111 ' + n2(110 + dyN + NOSE_DROP) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>') +
           /* the eye corners moved up 8 units with the rest of the upper-face cluster
              (see .fUpperFace below) - these must track them or a mature look's crow's
              feet float below the eye they are supposed to belong to. */
           '<g stroke-width="1.1" opacity=".55">' +
-            '<path class="fCrowL" d="M' + n2(cxL - 13.5) + ' 83 l-4 -2.5 M' + n2(cxL - 14) + ' 88.5 l-4.5 1.5"/>' +
-            '<path class="fCrowR" d="M' + n2(cxR + 13.5) + ' 83 l4 -2.5 M' + n2(cxR + 14) + ' 88.5 l4.5 1.5"/>' +
+            /* avlook-1.0.0: the upper-face lift is now 2, not 8, so these follow it
+               down 6 or a mature look's crow's feet float above the eye they belong to */
+            '<path class="fCrowL" d="M' + n2(cxL - 13.5) + ' 89 l-4 -2.5 M' + n2(cxL - 14) + ' 94.5 l-4.5 1.5"/>' +
+            '<path class="fCrowR" d="M' + n2(cxR + 13.5) + ' 89 l4 -2.5 M' + n2(cxR + 14) + ' 94.5 l4.5 1.5"/>' +
           '</g>' +
         '</g>'
       : '';
@@ -2584,23 +2767,46 @@
            widens the mid-face instead of just relocating the same gap), and moves
            nothing that isn't inside this <g>: fCrowL/fCrowR are adjusted separately,
            just above, because they are drawn later from their own literal y. */
-        '<g class="fUpperFace" transform="translate(0,-8)">' +
+        /* ===== avlook-1.0.0 — THE LIFT WENT THE WRONG WAY, AND THE ARITHMETIC SAYS SO.
+           An infant's eye line sits BELOW the head's vertical middle because the
+           cranium is huge; an adult's sits AT it. Before the -8 lift the eye centre
+           was nominal y 94.3 against crown 32 / chin 164 = 0.472 of the head, i.e.
+           already the adult canon. The lift moved it to 0.410, which is above any
+           adult band - it did not remove an infant proportion, it created a different
+           non-adult one (a head with almost no forehead). The real infant signals were
+           never the eye LINE; they were eye SIZE, eye ROUNDNESS, eye SPACING and skull
+           ASPECT, and that pass touched none of the four. Three of them are fixed above
+           (aperture aspect 0.559 -> 0.375, eyeDx 29 -> 25.5, iris cropped by the lids);
+           the fourth is FACE_SHAPE_PARTS and is written up for the lead rather than
+           guessed at, because it re-cuts the neck and the collar with it.
+           -2 keeps a little of the previous pass's tighter forehead and puts the eye
+           line at 0.457, inside 0.44-0.52. ===== */
+        '<g class="fUpperFace" transform="translate(0,-2)">' +
+        /* ===== end avlook-1.0.0 ===== */
         /* BROWS: a filled, tapered shape, not a round-linecap stroke (see bTop/bBot/bIn
            above). Blunt at the inner corner by the nose, a fine point at the outer,
            temple end - a real eyebrow's own growth pattern, and no longer a constant-
            width mark that reads as drawn rather than grown. */
-        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL + 13) + ' ' + n2(77 - bIn) + ' Q' + n2(cxL - 3) + ' ' + n2(72 - bTop) + ' ' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 3) + ' ' + n2(72 + bBot) + ' ' + n2(cxL + 13) + ' ' + n2(77 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
-        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' ' + n2(77 - bIn) + ' Q' + n2(cxR + 3) + ' ' + n2(72 - bTop) + ' ' + n2(cxR + 13) + ' 78 Q' + n2(cxR + 3) + ' ' + n2(72 + bBot) + ' ' + n2(cxR - 13) + ' ' + n2(77 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
+        /* ===== avlook-1.0.0 — THE BROWS CAME DOWN 5.
+           Measured: (eye centre - brow centre) / head height = 0.139, against 0.08-0.12
+           for an adult. High brows sitting a long way off the eye are a permanent mild
+           surprise, and they are the reason the face read as "wide-eyed" even after the
+           iris shrank. 5 units puts the brow about 10 nominal units above the new lash
+           line (~13mm at this scale), which is where an adult brow sits. The taper
+           (bTop/bBot/bIn) and the browW knob are untouched. ===== */
+        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL + 13) + ' ' + n2(82 - bIn) + ' Q' + n2(cxL - 3) + ' ' + n2(77 - bTop) + ' ' + n2(cxL - 13) + ' 83 Q' + n2(cxL - 3) + ' ' + n2(77 + bBot) + ' ' + n2(cxL + 13) + ' ' + n2(82 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
+        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' ' + n2(82 - bIn) + ' Q' + n2(cxR + 3) + ' ' + n2(77 - bTop) + ' ' + n2(cxR + 13) + ' 83 Q' + n2(cxR + 3) + ' ' + n2(77 + bBot) + ' ' + n2(cxR - 13) + ' ' + n2(82 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
         /* the glabellar KNIT - two short creases between the brows. Concern is
            read there before it is read anywhere else on a human face. */
-        '<path class="fKnit" d="M96.5 72 Q97.5 66 96.5 61 M103.5 72 Q102.5 66 103.5 61" stroke="' + shadeKnit + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+        '<path class="fKnit" d="M96.5 77 Q97.5 71 96.5 66 M103.5 77 Q102.5 71 103.5 66" stroke="' + shadeKnit + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+        /* ===== end avlook-1.0.0 ===== */
         eye(cxL, 'L') + eye(cxR, 'R') + glasses +
         '</g>' +
         /* the whole nose sits at half strength: a nose is a shadow, and at 302px full-strength
            strokes plus two dark nostrils read as a squiggle drawn on the face. The nostrils
            take the same treatment — shadeHole at full opacity punched two black dots either
            side of the tip, which is the single most cartoon mark on the face. */
-        '<g class="fNoseSet" transform="translate(0,' + n2(dyN) + ')" opacity=".6">' +
+        '<g class="fNoseSet" transform="translate(0,' + n2(dyN + NOSE_DROP) + ')" opacity=".6">' +
           '<path class="fNose" d="' + nose.d + '" stroke="' + shadeNose + '" stroke-width="' + nose.w + '" stroke-linecap="round" fill="none"/>' +
           '<ellipse class="fNostril fNostrilL" cx="' + n2(100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
           '<ellipse class="fNostril fNostrilR" cx="' + n2(100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
@@ -2610,10 +2816,19 @@
              opacity on top of its own .55, so it stays a suggestion, not a mark. */
           '<path class="fPhiltrum" d="M97.4 118 Q96.7 121.5 97.6 124.5 M102.6 118 Q103.3 121.5 102.4 124.5" stroke="' + shadeNose + '" stroke-width="0.8" stroke-linecap="round" fill="none" opacity=".55"/>' +
         '</g>' +
-        '<g class="fMouthSet" transform="translate(0,' + n2(dyM) + ')">' +
+        /* ===== avlook-1.0.0 — THE MOUTH NOW SCALES WITH THE SKULL.
+           Every mouth path is written in absolute coordinates 78..122, so mouth width
+           over face width came out 0.356 on a round head, 0.387 on an oval one and
+           0.432 on a long one - the same drawn mouth on three different faces, and on
+           the long face it is outside the adult band (0.32-0.40) entirely. FX is the
+           skull's own horizontal fit, already used for the hair, the beard and the
+           blush, so hanging the mouth on it makes the ratio 0.387 on all four shapes.
+           Scaled about x=100 so the mouth stays centred; the y translate is unchanged. ===== */
+        '<g class="fMouthSet" transform="translate(100,' + n2(dyM) + ') scale(' + n2(FX) + ',1) translate(-100,0)">' +
+        /* ===== end avlook-1.0.0 ===== */
         '<g class="fMouthWrap" style="transform-box:fill-box;transform-origin:center top;transition:transform .1s ease">' +
           '<g class="fLips" style="transform-box:fill-box;transform-origin:center;transform:scaleY(' + lips.scale + ');transition:transform .3s ease">' +
-            '<path class="fMouth" d="' + FACE_MOUTHS.smile + '" fill="' + look.lip + '"/>' +
+            '<path class="fMouth" d="' + FACE_MOUTHS.neutral + '" fill="' + look.lip + '"/>' +
             /* THE INSIDE OF THE MOUTH (av-6.0.1). Every shape — including open1/open2/open3
                and the talking cycle — was one path filled with the LIP colour, so the moment
                the avatar spoke its mouth became a flat lip-coloured disc. That is what the
@@ -2623,14 +2838,14 @@
                with a dark shade OF look.lip so it still tracks the doctor's chosen colour.
                On the closed shapes the inset collapses to a thin line, which is exactly what
                a closed mouth is, so one shape table serves both. */
-            '<path class="fMouthIn" d="' + FACE_MOUTHS.smile + '" fill="' + faceShade(look.lip, -0.66) + '" ' +
+            '<path class="fMouthIn" d="' + FACE_MOUTHS.neutral + '" fill="' + faceShade(look.lip, -0.66) + '" ' +
               'style="transform-box:fill-box;transform-origin:center;transform:scale(0.82,0.62)"/>' +
             /* the LINER, not an outline. Stroked at full strength around a shape only ~8
                units tall, the dark liner covered most of the lip fill, so at 302px the
                mouth read as a thin brown SLIT rather than lips — the shape was right and
                the weight was wrong. Thinner and half-transparent lets the lip colour show
                between the lines, which is what makes a mouth look soft. */
-            '<path class="fLipUp" d="' + FACE_MOUTHS.smile + '" fill="none" stroke="' + faceShade(look.lip, -0.34) + '" stroke-width="' + (Math.round(lips.w * 0.62 * 100) / 100) + '" stroke-linejoin="round" opacity=".7"/>' +
+            '<path class="fLipUp" d="' + FACE_MOUTHS.neutral + '" fill="none" stroke="' + faceShade(look.lip, -0.34) + '" stroke-width="' + (Math.round(lips.w * 0.62 * 100) / 100) + '" stroke-linejoin="round" opacity=".7"/>' +
           '</g>' +
           '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
           '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
@@ -2672,6 +2887,8 @@
     /* every fast gesture writes ONE of these and applyRig() composes them, so a
        nod landing inside a concern shake cannot erase the shake */
     var breathT = 0, breathY = 0, nodY = 0, shakeX = 0, shakeR = 0, browGesture = '';
+    /* avanim-1.0.0: the sway is a rig term of its own, never a second writer on .fHead */
+    var swayT = 0, swayX = 0, swayY = 0, swayR = 0;
     /* GESTURE GENERATION. Every gesture is transient and every mood change
        invalidates the ones in flight: without this, the curious brow started
        by "thinking" was still overriding applyBrows() a moment later and the
@@ -2705,58 +2922,133 @@
       });
     }
     function setMouth(shape) {
-      var d = FACE_MOUTHS[shape] || FACE_MOUTHS.smile;
+      var d = FACE_MOUTHS[shape] || FACE_MOUTHS.neutral;
       if (mouth) mouth.setAttribute('d', d);
       /* the lip line is the SAME path - a separately drawn upper lip detaches
          the instant the mouth opens */
       if (lipUp) lipUp.setAttribute('d', d);
       if (mouthIn) mouthIn.setAttribute('d', d);
     }
+    /* ===== avanim-1.0.0 — `idle` NO LONGER RESTS ON A SMILE.
+       This function is the whole "constant smiling" defect: its fallback arm covered
+       BOTH idle and speaking, and returned `smile`. idle is what the face wears
+       between every turn and for the entire rest period while the patient waits for
+       the doctor, so the smile was permanent. Warmth is not deleted - it moves to the
+       states a person would actually have it in: `smile` is now the SPEAKING mouth
+       (only ever seen in the gaps between visemes) and `grin` is still the greeting.
+       The resting face is composed. ===== */
     function baseMouth() {
       return caringNow ? 'concern'
         : happyNow ? 'grin'
         : moodNow === 'listening' ? 'soft'
-        : moodNow === 'thinking' ? 'think' : 'smile';
+        : moodNow === 'thinking' ? 'think'
+        : moodNow === 'speaking' ? 'smile' : 'neutral';
     }
+    /* ===== end avanim-1.0.0 ===== */
     function eyesBase() { return happyNow ? 'scaleY(.62)' : ''; }
     /* the upper lids do real acting: a genuine smile RAISES the cheek and
        narrows the eye (Duchenne), concern drops the lid, thinking half-closes
        one - the difference between a mask and a face. */
+    /* ===== avanim-1.0.0 — THE LID TABLE IS RE-SCALED TO THE SHUTTER THAT REPLACED IT.
+       See the ⛔ block on .fLid in faceSvg: the old shutter first touched the aperture
+       at scaleY(0.40) and the largest value here was 0.34, so NONE of these four
+       numbers ever moved a visible pixel - the sleepy, caring and thinking lids were
+       all no-ops and the blink closed only the outer corners. The new shutter's bbox
+       is 19 tall from y 80; the aperture runs 89.8-98.8, so the top edge is reached at
+       0.516 and full closure at 0.99. The band below therefore reads:
+         0.52 = open (the lid just kisses the lash line)
+         0.63 = thinking, ~20% of the aperture covered
+         0.66 = concern,  ~29%
+         0.70 = a real smile, ~38% (with the lower lid doing the Duchenne half)
+       The ORDER and the meaning of the four states are exactly as before; only the
+       numbers now land on the drawing. ===== */
     function lidBase() {
-      if (happyNow) return 0.34;
-      if (caringNow) return 0.30;
-      if (moodNow === 'thinking') return 0.22;
-      return 0.06;
+      if (happyNow) return 0.70;
+      if (caringNow) return 0.66;
+      if (moodNow === 'thinking') return 0.63;
+      if (moodNow === 'speaking') return 0.55;
+      return 0.52;
     }
     function applyLids() {
       var v = lidBase();
       if (lidL) lidL.style.transform = 'scaleY(' + v + ')';
-      if (lidR) lidR.style.transform = 'scaleY(' + (moodNow === 'thinking' ? Math.min(0.5, v + 0.16) : v) + ')';
-      /* smiling eyes: the lower lid climbs only on a real smile */
-      var low = happyNow ? 1 : caringNow ? 0.30 : 0.02;
+      if (lidR) lidR.style.transform = 'scaleY(' + (moodNow === 'thinking' ? Math.min(0.86, v + 0.11) : v) + ')';
+      /* smiling eyes: the lower lid climbs only on a real smile. Same re-scale - the
+         lower shutter's bbox is 10 tall anchored at its BOTTOM (106.4) and the aperture
+         floor is 98.8, so it first enters the eye at 0.76, and 0.30 was another no-op. */
+      var low = happyNow ? 1 : caringNow ? 0.84 : 0.02;
       if (lowL) lowL.style.transform = 'scaleY(' + low + ')';
       if (lowR) lowR.style.transform = 'scaleY(' + low + ')';
+    }
+    /* ---- BLINK. Two things were mechanical about it: one fixed 120ms closure for
+       every blink, and one cadence for every state. A person blinks faster while
+       talking and markedly less while concentrating, and no two blinks are the same
+       length. Both are jittered now, and both stay on setTimeout (rAF does not fire
+       in a hidden or non-compositing tab, which is exactly where a face parked on a
+       rest screen lives). The 18% double-blink is kept - it was the one part of this
+       that already read as alive. ---- */
+    function blinkGapMs() {
+      /* base cadence per state, then +/-35% of jitter on top so the interval is never
+         the same twice; a periodic blink is the single most robotic thing a drawn face
+         can do and it is visible within about four repeats. */
+      var base = moodNow === 'speaking' ? 2900
+        : moodNow === 'thinking' ? 5200
+        : moodNow === 'listening' ? 4000
+        : 3600;
+      return Math.round(base * (0.65 + Math.random() * 0.7));
     }
     function blink() {
       if (dead) return;
       if (!reduced && lidL && lidR) {
         lidL.style.transform = 'scaleY(1)'; lidR.style.transform = 'scaleY(1)';
-        later(applyLids, 120);
+        later(applyLids, 95 + Math.round(Math.random() * 70));
       }
       /* the occasional double-blink reads as alive, not mechanical */
       var again = Math.random() < 0.18;
-      later(blink, again ? 260 : (2600 + Math.random() * 3200));
+      later(blink, again ? (220 + Math.round(Math.random() * 110)) : blinkGapMs());
     }
+    /* ===== end avanim-1.0.0 ===== */
     /* ---- GAZE. Where the eyes point is a mood, not a random walk: it settles
        on the viewer while speaking, holds steady while listening, and drifts up
        and away while thinking. That contrast is most of what makes a drawn face
        look like it is paying attention. ---- */
-    function setGaze(dx, dy) {
+    /* ===== avanim-1.0.0 — MICRO-SACCADES.
+       wander() moves the pupils once every 0.9-4.4s and NOTHING happened in between,
+       so for seconds at a time the eyes were perfectly, unnaturally still - the "doll"
+       read at 302px. A real eye never holds a fixation: it drifts and flicks by a
+       fraction of a degree several times a second. The gaze is therefore two layers
+       now, composed by applyGaze(): the wander TARGET (unchanged - it is the part that
+       carries mood) plus a sub-pixel jitter on its own faster, jittered timer.
+       The exported ctl.gaze() zeroes the jitter so a commanded gaze is exact. ===== */
+    var gazeX = 0, gazeY = 0, microX = 0, microY = 0;
+    function applyGaze() {
       if (dead) return;
-      var t = 'translate(' + Number(dx).toFixed(2) + 'px,' + Number(dy).toFixed(2) + 'px)';
+      var t = 'translate(' + (gazeX + microX).toFixed(2) + 'px,' + (gazeY + microY).toFixed(2) + 'px)';
       if (pupL) pupL.style.transform = t;
       if (pupR) pupR.style.transform = t;
     }
+    function setGazeTarget(dx, dy) {
+      if (dead) return;
+      gazeX = Number(dx) || 0; gazeY = Number(dy) || 0;
+      applyGaze();
+    }
+    function setGaze(dx, dy) {
+      microX = 0; microY = 0;
+      setGazeTarget(dx, dy);
+    }
+    function microGaze() {
+      if (dead) return;
+      if (!reduced) {
+        /* deliberately sub-pixel at kiosk scale: 0.42 viewBox units is about 0.6 device
+           pixels in a 302px circle. It must be felt, not seen - a visible twitch reads
+           as a glitch, which is the failure mode the owner called "distracting". */
+        microX = (Math.random() - 0.5) * 0.84;
+        microY = (Math.random() - 0.5) * 0.56;
+        applyGaze();
+      }
+      later(microGaze, 240 + Math.round(Math.random() * 620));
+    }
+    /* ===== end avanim-1.0.0 ===== */
     function gazeNext() {
       if (moodNow === 'listening') return [0, 0];
       if (moodNow === 'speaking') return [Math.random() * 0.9 - 0.45, Math.random() * 0.6 - 0.3];
@@ -2774,15 +3066,28 @@
     }
     function wander() {
       if (dead) return;
-      if (!reduced) { var g = gazeNext(); setGaze(g[0], g[1]); } else setGaze(0, 0);
+      /* setGazeTarget, not setGaze: the wander owns the TARGET, the micro layer owns
+         the jitter, and a wander tick must not cancel a saccade in flight (avanim-1.0.0) */
+      if (!reduced) { var g = gazeNext(); setGazeTarget(g[0], g[1]); } else setGaze(0, 0);
       later(wander, gazeDelay());
     }
-    /* ---- THE RIG: breath + nod + shake, composed into one transform ---- */
+    /* ---- THE RIG: breath + sway + nod + shake, composed into one transform ---- */
+    /* ===== avanim-1.0.0 — A SLOW HEAD SWAY.
+       applyHead() writes ONE static transform per mood and nothing ever moved it
+       again, so between gestures the head was nailed in place - the "frozen face" in
+       the owner's list. A seated person's head is never still; it drifts a degree or
+       so over several seconds. The sway is a FOURTH term composed here rather than a
+       second writer on .fHead, because two writers on one transform is how the nod
+       came to erase the concern shake once already (see gestureGen). Three sines with
+       incommensurate periods (~51s, ~84s, ~62s) so the motion never visibly loops -
+       a loop that repeats is worse than no motion at all. Amplitudes are deliberately
+       under one device pixel of translate at kiosk size. ===== */
     function applyRig() {
       if (!rig) return;
       if (reduced) { rig.style.transform = ''; return; }
-      rig.style.transform = 'translate(' + shakeX.toFixed(2) + 'px,' + (breathY + nodY).toFixed(2) + 'px) rotate(' + shakeR.toFixed(2) + 'deg)';
+      rig.style.transform = 'translate(' + (shakeX + swayX).toFixed(2) + 'px,' + (breathY + nodY + swayY).toFixed(2) + 'px) rotate(' + (shakeR + swayR).toFixed(2) + 'deg)';
     }
+    /* ===== end avanim-1.0.0 ===== */
     function breathe() {
       if (dead) return;
       if (!reduced && body) {
@@ -2803,6 +3108,12 @@
         body.style.transform = 'translateY(' + (-p * 1.1).toFixed(2) + 'px) scale(' +
           (1 + p * 0.014).toFixed(4) + ',' + (1 + p * 0.010).toFixed(4) + ')';
         breathY = -p * 0.5;
+        /* avanim-1.0.0: the sway rides the breathing tick rather than opening a fifth
+           timer - one 90ms setTimeout already exists and this is the same clock. */
+        swayT += 0.011;
+        swayX = 0.85 * Math.sin(swayT);
+        swayR = 0.50 * Math.sin(swayT * 0.61 + 1.3);
+        swayY = 0.45 * Math.sin(swayT * 0.83 + 2.1);
         applyRig();
       }
       later(breathe, 90);
@@ -2864,10 +3175,14 @@
     }
     function applyHead() {
       if (!head) return;
+      /* avanim-1.0.0: `speaking` gets its own head angle. Without one a speaking face
+         wore the idle head and the idle lids and only the mouth moved, which is the
+         "mask that talks" read - the four states have to be four faces. */
       head.style.transform = reduced ? '' :
         moodNow === 'listening' ? 'rotate(2.4deg) translateY(1px)' :
         moodNow === 'thinking' ? 'rotate(-2.8deg) translateY(-2px)' :
-        caringNow ? 'rotate(1.6deg) translateY(1.5px)' : '';
+        caringNow ? 'rotate(1.6deg) translateY(1.5px)' :
+        moodNow === 'speaking' ? 'rotate(-0.9deg) translateY(-0.6px)' : '';
     }
     function mood(state, caring, happy) {
       if (dead) return;
@@ -2886,7 +3201,15 @@
       /* a real smile reaches the cheeks and dimples; concern drains them */
       /* Keep the idle face composed at the 302px kiosk size. The greeting
          still warms the cheeks, but the resting face no longer reads painted. */
-      var warm = happyNow ? '.24' : caringNow ? '.08' : '.07';
+      /* ===== avanim-1.0.0 — THE COMMENT SAID ZERO AND THE CONTROLLER SAID .07.
+         p1-adult-art-1.0.0 set the markup's idle blush to opacity="0" and wrote that
+         "idle itself now shows none" - but mood() runs on the very first frame and
+         wrote .07 straight back over it, so no shipped face has ever rendered the
+         zero the source claims. Blush on an adult resting face is a doll signal at
+         302px whatever the number; the greeting and the concern states keep theirs,
+         which is where a person's colour actually comes from. ===== */
+      var warm = happyNow ? '.24' : caringNow ? '.08' : '0';
+      /* ===== end avanim-1.0.0 ===== */
       Array.prototype.forEach.call(blush, function (n) { n.style.opacity = warm; });
       if (dimpleL) dimpleL.style.opacity = happyNow ? '1' : '0';
       if (dimpleR) dimpleR.style.opacity = happyNow ? '1' : '0';
@@ -2912,16 +3235,30 @@
       /* the jaw travels with the voice - the mouth shape alone reads rubbery */
       if (mouthWrap && !reduced) mouthWrap.style.transform = 'translateY(' + (level * 2.6).toFixed(2) + 'px)';
     }
-    function talkCycle(on) {
-      /* browser-speech fallback carries no amplitude - cycle naturally */
+    /* ===== avanim-1.0.0 — the browser-speech / un-wired-TTS mouth now says the WORDS.
+       When the caller knows the line (it always does - it just spoke it), the mouth
+       walks faceVisemes() for that line instead of shuffling six shapes at random.
+       The random walk survives ONLY as the no-text fallback, because a mouth that
+       freezes shut while audio plays is worse than one that flaps. ===== */
+    function talkCycle(on, text) {
       cycling = !!on;
       if (!on) { setMouth(baseMouth()); if (mouthWrap) mouthWrap.style.transform = ''; return; }
+      var seq = faceVisemes(text), at = 0;
       (function step() {
         if (!cycling || dead) return;
+        if (seq.length) {
+          var v = seq[at % seq.length];
+          at++;
+          setMouth(v.shape);
+          if (mouthWrap && !reduced) mouthWrap.style.transform = 'translateY(' + faceVisemeDrop(v.shape).toFixed(2) + 'px)';
+          later(step, v.ms);
+          return;
+        }
         setMouth(['open1', 'open2', 'soft', 'open3', 'o', 'open1'][Math.floor(Math.random() * 6)]);
         later(step, 95 + Math.random() * 70);
       })();
     }
+    /* ===== end avanim-1.0.0 ===== */
     /* A colour-only retint cannot add glasses, a cap, a beard or a different
        hair cut, so a full look change RE-RENDERS and re-binds - then replays the
        current mood so the face never flickers back to neutral. */
@@ -2938,6 +3275,10 @@
       if (ctl) ctl.node = root;
       if (reduced) killTransitions();
       breathY = 0; nodY = 0; shakeX = 0; shakeR = 0; browGesture = ''; gestureGen++;
+      /* avanim-1.0.0: the sway and the gaze layers are rebound with everything else -
+         a re-render leaves fresh nodes, and a stale offset on a stale node is how the
+         head came back from a retint one degree crooked. */
+      swayX = 0; swayY = 0; swayR = 0; microX = 0; microY = 0;
       applyRig();
       mood(keep.state, keep.caring, keep.happy);
     }
@@ -2950,7 +3291,7 @@
     mood('idle');
     blink(); wander();
     /* reduced motion does not merely skip the frames - the loops never start */
-    if (!reduced) { breathe(); nodLoop(); }
+    if (!reduced) { breathe(); nodLoop(); microGaze(); }
     ctl = { mood: mood, talk: talk, talkCycle: talkCycle, retint: retint,
       nod: nod, shake: shake, curious: curious, gaze: setGaze,
       destroy: destroy, node: root };
@@ -4964,6 +5305,68 @@
                     eL: eL && { y: eL.medY, cx: Math.round(eL.cx), sp: eL.spread, n: eL.n },
                     eR: eR && { y: eR.medY, cx: Math.round(eR.cx), sp: eR.spread, n: eR.n } } };
   }
+  /* ===== avanim-1.0.0 — VISEMES, NOT A RANDOM LOOP.
+     Owner, §14: "remove robotic loops ... lip sync". talkCycle picked a shape at
+     random out of six every 95-165ms with no relation whatever to the words, and it
+     is the mouth the patient sees on EVERY browser-speech sentence and on every TTS
+     sentence whose AudioContext wiring failed. Random is not lip sync; it is a mouth
+     flapping.
+     faceVisemes(text) is PURE and returns the shape sequence for a line, so the suite
+     can execute it on a sentence and assert the mouth actually follows the vowels.
+     The mapping is the coarse five-way one that is all a 2D mouth can honestly carry:
+       a          -> open2   (wide)
+       e, i, y    -> open1   (spread)
+       o, u, w    -> o       (rounded)
+       m, b, p    -> neutral (a bilabial CLOSES the mouth - the single most visible
+                              viseme there is, and the one whose absence reads as
+                              "not saying words")
+       f, v       -> soft    (lip to teeth)
+     Consonant clusters carry no viseme of their own; a punctuation mark holds the
+     closed mouth long enough to read as a breath. ===== */
+  function faceVisemeFor(ch) {
+    if (ch === 'a') return 'open2';
+    if (ch === 'o' || ch === 'u' || ch === 'w') return 'o';
+    return 'open1';
+  }
+  function faceVisemes(text) {
+    var s = String(text == null ? '' : text).toLowerCase();
+    var out = [], i, ch, inVowel = false, letters = 0;
+    for (i = 0; i < s.length; i++) {
+      ch = s.charAt(i);
+      if (ch >= 'a' && ch <= 'z') {
+        letters++;
+        if ('aeiouy'.indexOf(ch) >= 0) {
+          if (!inVowel) out.push({ shape: faceVisemeFor(ch), ms: 110 });
+          else if (out.length) out[out.length - 1].ms += 45;   /* a held vowel is one longer viseme, not two */
+          inVowel = true;
+        } else {
+          inVowel = false;
+          if (ch === 'm' || ch === 'b' || ch === 'p') out.push({ shape: 'neutral', ms: 70 });
+          else if (ch === 'f' || ch === 'v') out.push({ shape: 'soft', ms: 70 });
+          else if (ch === 'w') out.push({ shape: 'o', ms: 70 });
+        }
+      } else {
+        if (letters) {
+          var hard = ch === '.' || ch === ',' || ch === '?' || ch === '!' || ch === ';' || ch === ':';
+          out.push({ shape: 'neutral', ms: hard ? 200 : 65 });
+        }
+        letters = 0; inVowel = false;
+      }
+    }
+    if (letters) out.push({ shape: 'neutral', ms: 130 });
+    /* every fifth open vowel opens WIDER. Real speech has stress; a sequence of
+       identical apertures is the same flat read the random loop had, just in order. */
+    for (i = 3; i < out.length; i += 5) if (out[i].shape === 'open1') out[i].shape = 'open2';
+    return out;
+  }
+  /* the jaw travels with the shape - a mouth that changes outline without the jaw
+     moving under it reads rubbery. One table, so the amplitude path and the viseme
+     path cannot disagree about how far a given shape drops. */
+  function faceVisemeDrop(shape) {
+    return shape === 'open3' ? 2.4 : shape === 'open2' ? 1.7 : shape === 'open1' ? 1.05
+      : shape === 'o' ? 1.3 : 0;
+  }
+  /* ===== end avanim-1.0.0 ===== */
   function faceTalkStop(face) {
     /* Invalidate the exact mouth loop before cancelling its frame. A split
        sentence creates a new <audio> element for part two; the last queued RAF
@@ -4974,10 +5377,10 @@
     safe(function () { if (target) { target.talkCycle(false); target.talk(-1); } });
     if (!face || pvTalkFace === face) pvTalkFace = null;
   }
-  function faceTalkCycle(on, face) {
+  function faceTalkCycle(on, face, text) {
     var target = face || pvTalkFace || safe(function () { return kiosk && kiosk.face; }, null);
     if (on && target) pvTalkFace = target;
-    safe(function () { if (target) target.talkCycle(on); });
+    safe(function () { if (target) target.talkCycle(on, text); });
   }
 
   /* ---- NATURAL SPEECH: the backend voice first, the browser as fallback.
@@ -5117,7 +5520,11 @@
       return null;
     });
   }
-  function ttsPlayUrl(url, mySeq, finish, speechFace, reportStart) {
+  /* avanim-1.0.0: `spokenText` is optional and used for one thing only - the viseme
+     sequence when the AudioContext amplitude wiring is unavailable. Trailing and
+     optional so every existing caller (and the extracted-function harness in
+     1p-avatar-speech-connection-runtime) is unaffected. */
+  function ttsPlayUrl(url, mySeq, finish, speechFace, reportStart, spokenText) {
     /* Each audio element exclusively owns its mouth frames. In a two-piece
        sentence, cancel the completed first element's queued frame before part
        two publishes its own. This removes the race where the stale frame saw
@@ -5161,7 +5568,7 @@
       if (mouthStarted || mySeq !== pvSpeakSeq || mouthGeneration !== ttsMouthGeneration) return;
       mouthStarted = true;
       if (reportStart) safe(reportStart);
-      if (wired && ampStart) ampStart(); else faceTalkCycle(true, speechFace);
+      if (wired && ampStart) ampStart(); else faceTalkCycle(true, speechFace, spokenText);
     };
     var p = safe(function () { return a.play(); }, null);
     if (p && p.then) p.then(function () { if (a.onplaying) a.onplaying(); }, function () { finish(); });
@@ -7972,6 +8379,8 @@ function kioskLine(kind, text) {
     kiosk.ambient = false; kiosk.ambRec = null;
     kioskAmbientClear();
     kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
+    /* avintake-1.0.0: the interview memory goes with the words it was derived from */
+    kiosk.covered = {}; kiosk.asked = {}; kiosk.corrections = 0; kiosk.repeats = 0; kiosk.ackLine = '';
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
     kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
     kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null;
@@ -8073,6 +8482,21 @@ function kioskLine(kind, text) {
     if (kiosk.chartCtx) body.chartContext = kiosk.chartCtx;
     if (answer) { body.answer = answer; body.answerNonce = answerNonce; kiosk.silent = 0; kiosk.finishTries = 0; }
     if (finish) body.finish = true;
+    /* ===== avintake-1.0.0 — WHAT THE PATIENT HAS ALREADY COVERED RIDES WITH THE TURN.
+       The server cannot avoid re-asking something it was never told had been answered,
+       and the client is the only side that sees every word. `coveredTopics` and
+       `missingTopics` are advisory and additive: a server that ignores them behaves
+       exactly as it does today, and one that honours them can spend the turn on a gap
+       instead of a repeat. `correction` is computed from THIS answer, against the rows
+       as they stand BEFORE it is appended. See the lane report for the backend spec. ===== */
+    var turnCorrection = answer ? intakeCorrectionAgainst(kiosk.intake, answer) : null;
+    if (answer) {
+      var coveredNow = intakeCoveredList();
+      if (coveredNow.length) body.coveredTopics = coveredNow;
+      body.missingTopics = intakeMissingList();
+      if (turnCorrection) body.correction = { from: turnCorrection.from, to: turnCorrection.to, at: Date.now() };
+    }
+    /* ===== end avintake-1.0.0 ===== */
     /* p1-listener-1.1.0 - one bounded owner for a refused turn.
        ---------------------------------------------------------
        The recogniser deliberately remains live while the request is in flight.
@@ -8218,7 +8642,22 @@ function kioskLine(kind, text) {
          the first turn, so recording the label first filed question one as
          "Avatar" and every later one as the real name - one speaker under
          two names in a chart-bound transcript. */
-      if (answer) kioskIntakeAdd('Patient', answer);
+      if (answer) {
+        kioskIntakeAdd('Patient', answer);
+        /* ===== avintake-1.0.0 — the correction becomes part of the RECORD, not a
+           nuance the doctor has to spot by reading both answers and guessing which
+           one won. Recorded here, on a SUCCESSFUL turn, for the same reason the
+           patient row is: a refused turn is re-asked and re-answered. ===== */
+        intakeCoverAdd(answer);
+        if (turnCorrection) {
+          kiosk.corrections = (kiosk.corrections | 0) + 1;
+          kioskIntakeAdd('[correction]', 'the patient corrected "' + intakeClip(turnCorrection.from) +
+            '" to "' + intakeClip(turnCorrection.to) + '"');
+          kiosk.ackLine = 'Got it - you said ' + intakeClip(turnCorrection.from) +
+            ', correcting to ' + intakeClip(turnCorrection.to) + '.';
+        }
+        /* ===== end avintake-1.0.0 ===== */
+      }
       /* The patient kept talking while the server handled the preceding clause.
          Do not speak the now-stale follow-up over them. Feed the continuation as
          the next turn first; each consumed buffer gets one new nonce exactly once.
@@ -8245,6 +8684,24 @@ function kioskLine(kind, text) {
         }
         return;
       }
+      /* ===== avintake-1.0.0 — ACKNOWLEDGE, THEN ASK.
+         Placed AFTER the continuation branch on purpose: a queued clause replaces the
+         server's line entirely, so registering that line as "asked" there would arm
+         the repeat guard for a question nobody heard - and an emergency warning must
+         never be prefixed with anything. A repeat is ANNOUNCED rather than dropped:
+         the questions are the doctor's, and silently skipping one is not a decision
+         this file gets to make. Both leads are prepended before the line is recorded,
+         so the transcript says exactly what the patient heard. ===== */
+      if (kiosk.lastSay) {
+        var lead = '';
+        if (kiosk.ackLine) { lead += kiosk.ackLine + ' '; kiosk.ackLine = ''; }
+        if (intakeSeenQuestion(kiosk.lastSay)) {
+          lead += INTAKE_REASK_LEAD;
+          kiosk.repeats = (kiosk.repeats | 0) + 1;
+        }
+        if (lead) kiosk.lastSay = lead + kiosk.lastSay;
+      }
+      /* ===== end avintake-1.0.0 ===== */
       if (kiosk.lastSay) kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
       kioskSetSay(kiosk.lastSay);
       var pg = gid('mlsAvKioskProgress');
@@ -8626,9 +9083,30 @@ function kioskLine(kind, text) {
     kioskMood('speaking', 'thank you');
     kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
     var iv = gid('mlsAvKioskInterim');
-    kioskLine('status', 'Please hand the screen back to the team. Staff: the button below starts listening to the visit; “End interview” leaves.');
     var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
     var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    /* ===== avintake-1.0.0 — file the verbatim check-in into the encounter NOW.
+       Wrapped in safe() and its result deliberately ignored for control flow: this is
+       an additive write into the doctor's transcript and it must never be able to
+       stop the kiosk from resting, closing or handing over. Every refusal path inside
+       kioskIntakeFile returns a reason and writes nothing, and the room-capture route
+       still files it later if this one could not (kioskAmbientBlock leads with the
+       check-in whenever intakeFiled is false). The receipt is kept for the staff line
+       and for the QA surface. ===== */
+    kiosk.intakeFileResult = safe(function () { return kioskIntakeFile(); },
+      { ok: false, why: 'the check-in could not be filed on this screen.' });
+    /* the staff line says WHICH of the two happened, in words. "The check-in is in
+       the transcript" and "it is not, and here is why" are different facts and the
+       team acts differently on each; one cheerful sentence covering both is how a
+       missing check-in gets discovered at signing time instead of now. */
+    kioskLine('status', 'Please hand the screen back to the team. ' +
+      ((kiosk.intakeFileResult && kiosk.intakeFileResult.ok)
+        ? 'The check-in is in this visit\'s transcript. '
+        : 'Staff: the check-in is NOT in the transcript yet - ' +
+          clean((kiosk.intakeFileResult && kiosk.intakeFileResult.why) || 'it could not be filed.') +
+          ' Starting the visit recording files it. ') +
+      'Staff: the button below starts listening to the visit; “End interview” leaves.');
+    /* ===== end avintake-1.0.0 ===== */
     kioskRestShow();
   }
   /* THE ONE BUTTON. Owner: "this avatar once its done should say your doctor
@@ -9986,6 +10464,121 @@ function kioskLine(kind, text) {
     if (kiosk.intake.length > 400) return;    /* bounded - an interview is ~20 turns */
     kiosk.intake.push({ who: String(who || 'Avatar'), text: v });
   }
+  /* ===== avintake-1.0.0 (2026-08-17) — THE INTERVIEW GETS A MEMORY.
+     Owner §15: the avatar must ask appropriate questions, "understand corrections",
+     ask "relevant follow-ups" and "avoid repetition". Measured before this block:
+     the client had NO repetition guard of any kind (j.progress.covered was written
+     into a text label and used for nothing), and the one correction detector in the
+     file - applyCorrection, ACT_CUE_RE - is hard-gated OFF during intake by
+     `if (!kiosk.ambient) return;` in ordersDetectSoon, so it only ever served the
+     doctor's spoken orders.
+     The question POLICY lives on the backend (the interview is stateless server-side;
+     the next question arrives as j.say). So this block does the two halves the client
+     is actually able to own honestly:
+       1. it MEASURES what the patient has already covered and ships that upstream, so
+          the server can stop re-asking instead of being asked to guess; and
+       2. it catches a self-correction in the patient's own words, says it back, and
+          writes it into the record as its own row - so a doctor reading the chart can
+          see that "left" superseded "right" rather than finding both and choosing.
+     Nothing here rewrites or drops a doctor-authored question. A repeat is announced,
+     not swallowed: dropping a question the doctor wrote is not the client's call. ===== */
+  var INTAKE_TOPICS = [
+    { id: 'onset', label: 'when it started', re: /\b(start(ed|ing)?|began|begun|since|how long|yesterday|last night|days?|weeks?|months?|years?|sudden(ly)?|gradual(ly)?)\b/i },
+    { id: 'location', label: 'where it is', re: /\b(left|right|both|bilateral|knee|back|shoulder|hip|neck|arm|leg|ankle|wrist|elbow|foot|feet|hand|chest|head|abdomen|stomach|jaw)\b/i },
+    { id: 'severity', label: 'how bad it is', re: /(\b\d{1,2}\s*(?:out of|\/)\s*10\b)|\b(severe|mild|moderate|worst|unbearable|sharp|dull|aching|achy|burning|throbbing|stabbing)\b/i },
+    { id: 'modifiers', label: 'what makes it better or worse', re: /\b(worse|better|relieve[ds]?|relief|aggravat\w*|helps?|helped|ice|heat|rest|when i|makes it)\b/i },
+    { id: 'function', label: 'what it stops them doing', re: /\b(walk\w*|stairs|work\w*|sleep\w*|driv\w*|lift\w*|dress\w*|shower\w*|exercis\w*|stand\w*|sitting|unable|difficult|struggl\w*)\b|\bcan'?t\b/i },
+    /* ⛔ NOT a bare `started|stopped|taking`. The first version of this row carried
+       them and "it started three weeks ago in my left knee" therefore covered
+       `meds` - the guard would have told the server that medications had been
+       discussed and the interview would have skipped the medication question
+       entirely. A false POSITIVE here suppresses a real clinical question, so this
+       row needs a medication noun or an explicit "started/stopped taking". */
+    { id: 'meds', label: 'medication changes', re: /\b(medication\w*|meds?|pills?|tablets?|dose\w*|mg|ibuprofen|tylenol|acetaminophen|naproxen|prednisone|gabapentin|prescri\w*|refill\w*)\b|\b(?:stopped|started|been) taking\b/i },
+    { id: 'allergy', label: 'allergies', re: /\ballerg\w*\b/i },
+    { id: 'goals', label: 'what the patient wants back', re: /\b(goal\w*|hoping|hope|want to|would like|get back to|so i can|able to)\b/i },
+    { id: 'redflag', label: 'red-flag symptoms', re: /\b(numb\w*|tingl\w*|weakness|fever|chills|weight loss|bowel|bladder|chest pain|shortness of breath|faint\w*)\b/i }
+  ];
+  function intakeTopicsIn(text) {
+    var s = String(text == null ? '' : text), out = [], i;
+    for (i = 0; i < INTAKE_TOPICS.length; i++) if (INTAKE_TOPICS[i].re.test(s)) out.push(INTAKE_TOPICS[i].id);
+    return out;
+  }
+  function intakeCoverAdd(text) {
+    if (!kiosk.covered) kiosk.covered = {};
+    var hits = intakeTopicsIn(text), i;
+    for (i = 0; i < hits.length; i++) kiosk.covered[hits[i]] = true;
+    return hits;
+  }
+  function intakeCoveredList() {
+    var have = kiosk.covered || {}, out = [], i;
+    for (i = 0; i < INTAKE_TOPICS.length; i++) if (have[INTAKE_TOPICS[i].id]) out.push(INTAKE_TOPICS[i].id);
+    return out;
+  }
+  function intakeMissingList() {
+    var have = kiosk.covered || {}, out = [], i;
+    for (i = 0; i < INTAKE_TOPICS.length; i++) if (!have[INTAKE_TOPICS[i].id]) out.push(INTAKE_TOPICS[i].id);
+    return out;
+  }
+  /* the same normaliser the echo gate uses, for the same reason: two renderings of
+     one question differ by punctuation and case far more often than by words */
+  function intakeQuestionKey(say) {
+    return String(say == null ? '' : say).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function intakeSeenQuestion(say) {
+    var k = intakeQuestionKey(say);
+    if (!k) return false;
+    if (!kiosk.asked) kiosk.asked = {};
+    if (kiosk.asked[k]) return true;
+    kiosk.asked[k] = true;
+    return false;
+  }
+  var INTAKE_CORRECT_RE = /\b(?:actually|sorry|i meant|i mean|correction|instead|scratch that|no wait)\b/i;
+  var INTAKE_REASK_LEAD = 'Just to be sure I have this right - ';
+  function intakeClip(v) {
+    var s = clean(v);
+    return s.length > 64 ? s.slice(0, 61) + '...' : s;
+  }
+  /* PURE, so the suite can execute it on real sentences instead of grepping for it.
+     Returns null unless there is BOTH a cue and something after it: a bare "sorry"
+     is an apology, not a correction, and treating it as one would put a meaningless
+     "you said X, correcting to nothing" line in a chart. */
+  function intakeCorrectionIn(text) {
+    var s = clean(text);
+    if (!s) return null;
+    var m = INTAKE_CORRECT_RE.exec(s);
+    if (!m) return null;
+    var to = clean(s.slice(m.index + m[0].length).replace(/^[\s,;:.-]+/, ''));
+    /* "it is the right knee, sorry, I meant the left knee" chains two cues, and a
+       regex alternation takes the LEFTMOST match - so without this the corrected
+       value came out as "I meant the left knee" and the avatar would read the cue
+       back to the patient as if it were their own answer. Bounded, so a sentence
+       made of nothing but cues cannot spin. */
+    for (var guard = 0; guard < 3; guard++) {
+      var lead = INTAKE_CORRECT_RE.exec(to);
+      if (!lead || lead.index !== 0) break;
+      to = clean(to.slice(lead[0].length).replace(/^[\s,;:.-]+/, ''));
+    }
+    var from = clean(s.slice(0, m.index).replace(/[\s,;:.-]+$/, ''));
+    if (!to) return null;
+    return { from: from, to: to };
+  }
+  /* when the patient corrects a PREVIOUS answer ("actually it's the left knee") there
+     is nothing before the cue, so the thing being corrected is the last thing they
+     said. Reads the rows BEFORE this answer is appended - reading them after would
+     make from and to the same sentence. */
+  function intakeCorrectionAgainst(rows, text) {
+    var c = intakeCorrectionIn(text);
+    if (!c) return null;
+    if (!c.from) {
+      for (var i = (rows || []).length - 1; i >= 0; i--) {
+        if (rows[i] && rows[i].who === 'Patient' && clean(rows[i].text)) { c.from = clean(rows[i].text); break; }
+      }
+    }
+    if (!c.from) return null;
+    return c;
+  }
+  /* ===== end avintake-1.0.0 ===== */
   function kioskIntakeText() { return intakeTextFrom(kiosk.intake); }
   function intakeTextFrom(rows) {
     rows = rows || [];
@@ -10314,6 +10907,59 @@ function kioskLine(kind, text) {
     safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
     return receipt;
   }
+  /* ===== avintake-1.0.0 — THE CHECK-IN REACHES THE ENCOUNTER EVEN IF NOBODY RECORDS
+     THE VISIT.  Owner §16: intake and visit must be ONE coherent encounter record.
+     Measured before this: kioskAmbientBlock() was the SOLE writer of kiosk.intake into
+     the transcript, and it only runs from kioskAmbientFile / ambientRecoverFile. So
+     the patient's own words reached the chart only if the doctor happened to tap
+     "Doctor - start listening". Otherwise kiosk.intake died with the overlay in
+     kioskClose()/scrubAvatarSession() and the encounter got the backend's LLM SUMMARY
+     and nothing else - the verbatim half of the encounter simply evaporated.
+     This files it at the moment the interview completes, through the SAME single
+     proven writer the room capture uses (binding snapshot, receipt match, write, then
+     re-prove the block landed in BOTH the mirror and #transcript under the same
+     patient and visit, and roll back byte-for-byte if not). It fails closed on every
+     one of those checks.
+     IT CANNOT PRODUCE A SECOND COPY. On success it sets kiosk.intakeFiled, which is
+     the flag kioskAmbientBlock ALREADY consults to decide whether a resumed capture
+     leads with the check-in - so a room capture started afterwards writes
+     "--- visit, continued ---" with the consent attestation and no replay of the
+     answers. One record, one copy, in order. ===== */
+  function kioskIntakeBlock() {
+    var lines = [];
+    lines.push(AMBIENT_HEAD_CHECKIN);
+    lines.push('[Avatar check-in - the patient\'s own words, chart ' + clean(kiosk.ext) + ']');
+    /* the consent attestation rides with the words it authorised, exactly as it does
+       in kioskAmbientBlock - a record of speech with no record of consent is the one
+       thing that must never be filed */
+    if (kiosk.consentAt) {
+      lines.push('[Recording consent confirmed by practice staff at ' +
+        safe(function () { return new Date(kiosk.consentAt).toLocaleString(); }, String(kiosk.consentAt)) +
+        ', before any microphone was opened]');
+    }
+    if ((kiosk.corrections | 0) > 0) {
+      lines.push('[The patient corrected ' + (kiosk.corrections | 0) +
+        ' answer' + ((kiosk.corrections | 0) === 1 ? '' : 's') +
+        ' during the check-in; each correction is marked in line below and supersedes what it corrects.]');
+    }
+    lines.push(kioskIntakeText());
+    return lines.join('\n');
+  }
+  function kioskIntakeFile() {
+    if (kiosk.intakeFiled) return { ok: false, why: 'the check-in is already in this transcript, so nothing was written again.' };
+    var bound = clean(kiosk.ext);
+    var now = activePtIdSafe();
+    if (!bound) return { ok: false, why: 'the interview was not bound to a chart, so nothing was written.' };
+    if (!now) return { ok: false, why: 'no chart is open, so nothing was written. The check-in belongs to chart ' + bound + '.' };
+    if (now !== bound) return { ok: false, why: 'the open chart (' + now + ') is not the one this check-in belongs to (' + bound + '), so nothing was written.' };
+    if (!(kiosk.intake || []).length) return { ok: false, why: 'no check-in answers were recorded, so nothing was written.' };
+    var receipt = ambientCaptureVisitReceipt(bound);
+    var out = ambientCommitTranscript(bound, kioskIntakeBlock(), receipt, true);
+    if (!out.ok) return out;
+    kiosk.intakeFiled = true;
+    return out;
+  }
+  /* ===== end avintake-1.0.0 ===== */
   /* ---- RECOVERY. What the backup is FOR. A capture survives the page that
      took it, so a reload mid-visit, a discarded tab or a crashed renderer
      costs the doctor one click instead of the consultation. The write obeys
@@ -11011,6 +11657,14 @@ function kioskLine(kind, text) {
     kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null;
     kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null; kiosk.ambFails = 0;
     kiosk.ambStart = 0; kiosk.ambRecAt = 0; kiosk.intake = []; kiosk.avName = '';
+    /* ===== avintake-1.0.0 — the interview's MEMORY resets with the patient.
+       Everything here is derived from one patient's answers. A carried-over covered
+       set would make the next patient's interview skip topics this one answered, and
+       a carried-over asked set would announce their first question as a repeat -
+       exactly the class of leak the two comments above this line already guard. ===== */
+    kiosk.covered = {}; kiosk.asked = {}; kiosk.corrections = 0; kiosk.repeats = 0;
+    kiosk.ackLine = ''; kiosk.intakeFileResult = null;
+    /* ===== end avintake-1.0.0 ===== */
     kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
     kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null; kiosk.preflightRequest = null;
     kiosk.speechFails = 0; kiosk.speechFailAt = 0;
@@ -11872,6 +12526,12 @@ function kioskLine(kind, text) {
     if (window.__mlsAvatar === owner) {
       try { delete window.__mlsAvatar; } catch (e) { window.__mlsAvatar = null; }
     }
+    /* avlook-1.0.0: the proportion diagnostic is published by the same owner and
+       retires with it - a global left pointing into a reverted module is exactly the
+       "presence is not provenance" trap. */
+    if (window.__mlsAvLook && window.__mlsAvLook.__owner === owner) {
+      try { delete window.__mlsAvLook; } catch (e) { window.__mlsAvLook = null; }
+    }
     if (currentMicApi && window.__mlsAvP1Mic === currentMicApi) {
       try { delete window.__mlsAvP1Mic; } catch (e2) { window.__mlsAvP1Mic = null; }
     }
@@ -11896,6 +12556,7 @@ function kioskLine(kind, text) {
        paths while no exact authenticated account exists. */
     dormant.open = dormant.close = dormant.openKiosk = dormant.closeKiosk = function () { return false; };
     dormant.faceDemo = function () { return null; };
+    dormant.lookProportions = function () { return null; };   /* avlook-1.0.0 */
     dormant.deriveLookFromPhoto = function () { return false; };
     dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
     dormant.voiceGateStart = function () { return false; };
@@ -11905,6 +12566,11 @@ function kioskLine(kind, text) {
     dormant.ambientState = function () { return { running: false, boundPatient: '', startedAt: null,
       capturedChars: 0, filed: false, last: null, backedUp: null, backupTrimmed: false, actions: [] }; };
     dormant.detectActions = function () { return []; };
+    /* avintake-1.0.0 */
+    dormant.intakeState = function () { return { covered: [], missing: [], corrections: 0,
+      repeats: 0, turns: 0, filed: false, fileWhy: 'no authenticated session' }; };
+    dormant.intakeTopics = function () { return []; };
+    dormant.intakeCorrection = function () { return null; };
     dormant.pendingCapture = function () { return null; };
     dormant.fileRecoveredCapture = function () { return { ok: false, why: 'no authenticated session' }; };
     dormant.discardRecoveredCapture = dormant.refreshCount = dormant.importSummary = function () { return false; };
@@ -11948,6 +12614,19 @@ function kioskLine(kind, text) {
       }
       return controller;
     };
+    /* ===== avlook-1.0.0 — the proportion report, for before/after comparison.
+       Pure and PHI-free: it reads a look object and returns numbers. Also mirrored to
+       window.__mlsAvLook (tagged with its owner so a reverted module takes it with
+       it) because the lead compares these across two builds in a console, not in a
+       test runner. ===== */
+    owner.lookProportions = function (look) {
+      return owned() ? faceLookProportions(look) : null;
+    };
+    safe(function () {
+      owner.lookProportions.__owner = owner;
+      window.__mlsAvLook = owner.lookProportions;
+    });
+    /* ===== end avlook-1.0.0 ===== */
     /* diagnostics: derive a look from a portrait without touching Setup, so
        the matcher can be proven against real pixels. */
     owner.deriveLookFromPhoto = function (dataUrl, then) {
@@ -12005,6 +12684,29 @@ function kioskLine(kind, text) {
         actions: ambientActionsForStore()
       };
     };
+    /* ===== avintake-1.0.0 — PHI-free interview receipt. COUNTS AND TOPIC IDS ONLY:
+       no question text, no answer text, no name. It exists so "the avatar repeated
+       itself" and "the check-in never reached the chart" stop being arguments. ===== */
+    owner.intakeState = function () {
+      if (!owned()) return { covered: [], missing: [], corrections: 0, repeats: 0,
+        turns: 0, filed: false, fileWhy: 'stale session owner' };
+      var res = kiosk.intakeFileResult || null;
+      return {
+        covered: intakeCoveredList(),
+        missing: intakeMissingList(),
+        corrections: kiosk.corrections | 0,
+        repeats: kiosk.repeats | 0,
+        turns: (kiosk.intake || []).length,
+        filed: kiosk.intakeFiled === true,
+        fileWhy: res && res.ok === false ? clean(res.why) : ''
+      };
+    };
+    /* PURE, argument-in/answer-out, so the suite can prove the topic vocabulary and
+       the correction detector on real sentences without a kiosk or a microphone -
+       the same contract detectActions already has. */
+    owner.intakeTopics = function (text) { return owned() ? intakeTopicsIn(text) : []; };
+    owner.intakeCorrection = function (rows, text) { return owned() ? intakeCorrectionAgainst(rows, text) : null; };
+    /* ===== end avintake-1.0.0 ===== */
     /* av-5.6.0 diagnostics. detectActions is PURE — it reads its argument and
        touches nothing — so a proposal set can be proven against any sentence
        without a microphone, a kiosk or a patient. */
