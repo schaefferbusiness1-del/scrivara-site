@@ -546,6 +546,7 @@ const tests = [
   'visit-history-provenance-chip.test.js',
   'upsert-athena-proof-carryforward.test.js',
   'upsert-attested-slice-travels-with-receipt.test.js',
+  'mrn-preserve-and-backfill.test.js',
   'pull-visit-bodies-default-on.test.js',
   'pull-first-attempt-convergence.test.js',
   'cross-tab-pull-shield.test.js',
