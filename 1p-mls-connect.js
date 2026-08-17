@@ -3733,7 +3733,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
-
 /* =========================================================================
  * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.2.0  2026-07-10 (b118)
  *
@@ -53607,6 +53606,657 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
   };
 })();
+
+/* ===== p1-phone-sync-1.0.0 -- THE PHONE RECEIVE LOOP ========================
+ * Owner, 2026-08-17: "the phone UI ... it's already on the real site and it's
+ * pretty good but has the error of like not syncing, so fix that."
+ *
+ * WHAT WAS ACTUALLY MISSING, MEASURED BEFORE THIS WAS WRITTEN
+ * ----------------------------------------------------------
+ * The phone app (feat_mls_phone_ui.js, ph3-1.0.0) has NO RECEIVE LOOP. That is
+ * not an accident of one code path, it is stated as a budget in the module's
+ * own header: "A MOUNTED, IDLE, VISIBLE PHONE HOLDS NO TIMERS AT ALL." The
+ * consequences are all one defect wearing four coats:
+ *
+ *  1. NOTHING re-reads the schedule. `grep -c loadCalendar(` finds 28 call
+ *     sites across the shell and the bundle and NOT ONE of them is periodic.
+ *     So a pull run on the OFFICE COMPUTER -- the normal case, because the
+ *     office computer is the machine that can read athenaOne -- never reaches
+ *     the phone. The phone shows the pre-pull day until the doctor happens to
+ *     open the menu and press Refresh.
+ *  2. Returning to the tab does not resync either. onVisibility() re-renders,
+ *     re-fetches the avatar check-ins and re-reads presence; it does NOT call
+ *     loadCalendar or loadPatientsFromServer. So the one gesture a doctor
+ *     naturally makes -- unlock the phone and look -- repaints stale rows.
+ *  3. The one loop that does exist is the RELAY poller, and it only runs for a
+ *     pull THIS phone started (__mlsRelayLink.pollJob, mls-connect.js ~48506).
+ *     It is a bare setInterval(2500) on the main thread. The office agent was
+ *     moved to a Worker timer for exactly this reason at rl-2.0.1 N3 ("hidden
+ *     past ~270s it collapses to bursts once per minute -- Chrome intensive
+ *     throttling"); the PHONE half was never moved. Lock the phone during a
+ *     pull and the poller stops; the job's server record is in RAM with a
+ *     15-minute TTL, so a long enough absence returns 404 and the phone says
+ *     "That request expired on the server. Pull again." over appointments that
+ *     did land on the server. A success reported as an expiry.
+ *  4. When any of that fails the phone says NOTHING. There is no surface that
+ *     ever states whether this device is current with the server.
+ *
+ * WHAT THIS IS
+ * ------------
+ * One receive loop and one honest status line, both owned here, in the /1p
+ * bundle, so the production phone module is not touched by this lane.
+ *
+ *   - The loop is a WORKER timer (the rl-2.0.1 N3 pattern already proven in
+ *     this file), with setInterval as the fallback for any environment where
+ *     Worker construction is refused. A Worker's timers escape Chrome's
+ *     intensive throttling. It cannot escape a FULLY SUSPENDED page -- iOS
+ *     Safari suspends a backgrounded tab outright and no timer of any kind
+ *     runs -- so `visibilitychange` also forces an immediate catch-up sync.
+ *     Both halves are needed and neither is sufficient; claiming otherwise is
+ *     how "it syncs in the background" becomes a sentence a doctor believes.
+ *   - The sync itself is the app's OWN loadCalendar({fresh:true}). No second
+ *     fetch, no second parser, no second idea of what an appointment is -- and
+ *     its return value is already a receipt ({applied, authoritative, count,
+ *     error, discarded}), so every failure class below is read from the app's
+ *     own verdict rather than guessed from a status code this module invented.
+ *     loadPatientsFromServer() is called ONLY when the day actually gained
+ *     rows; running the full chart re-merge every 20 seconds would be a second
+ *     defect wearing the first one's clothes.
+ *   - ACCOUNT BINDING. The account and session epoch are captured before the
+ *     request and re-checked after it. A response that crosses an account
+ *     boundary is DISCARDED and said out loud; a phone in a clinic is a shared
+ *     device and "last sync 3s ago" belonging to the previous doctor is a lie
+ *     with clinical consequences.
+ *   - RE-AUTH RESUME. Idle logout empties the token. The loop stops fetching,
+ *     says so, and watches; the moment a token exists again it syncs at once
+ *     instead of waiting out the cadence.
+ *   - BACKOFF. 20s, doubling to a 300s ceiling, reset by any success. Pressing
+ *     "Sync now" clears the backoff -- a person asking is not a retry.
+ *
+ * THE BAR IS A SIBLING OF #mlsPh3Body, NOT A CHILD OF IT. ph3's render()
+ * rewrites bodyEl.innerHTML and actEl.innerHTML wholesale; anything drawn
+ * inside either is erased by the next repaint. #mlsPh3Note survives for the
+ * same reason and that is the precedent followed here.
+ *
+ * IT NEVER FORCES A REPAINT OVER A CARET. ph3's api.render() is force=true,
+ * which bypasses its own caret guard -- calling it from a background poll
+ * would destroy the transcript field mid-word, which is ph2's transcript-loss
+ * defect re-introduced from the outside. So a repaint is requested only when
+ * the caret is not in one of ph3's fields; the status bar itself is outside
+ * the repainted region and updates either way.
+ *
+ * Costs a desktop nothing: no timer is created until #mlsPh3 exists.
+ * Reversible: window.__mlsP1PhoneSync.revert(). ES5. ASCII source.
+ * ========================================================================== */
+;(function () {
+  'use strict';
+  if (window.__mlsP1PhoneSync) return;
+
+  var VERSION = 'p1-phone-sync-1.0.0';
+  var BAR_ID = 'mlsP1Sync';
+  var CSS_ID = 'mlsP1SyncCss';
+  var HEARTBEAT_MS = 5000;      /* how often the loop WAKES; not how often it syncs */
+  var VISIBLE_MS = 20000;       /* on screen, nothing pending */
+  var PENDING_MS = 5000;        /* on screen, a relay pull is in flight */
+  var HIDDEN_MS = 60000;        /* off screen, a relay pull is in flight */
+  var HIDDEN_IDLE_MS = 300000;  /* off screen, nothing pending */
+  var MAX_BACKOFF_MS = 300000;
+  var REQ_TIMEOUT_MS = 20000;
+
+  var api = { installed: true, version: VERSION };
+  window.__mlsP1PhoneSync = api;
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function $(id) { return safe(function () { return document.getElementById(id); }, null); }
+
+  /* rl-2.1.0's law, restated: a relaying device is a phone only some of the
+     time. The noun is asked per call so it is right even if the role is set
+     after this module loads. */
+  function noun() {
+    var n = safe(function () {
+      var dr = window.__mlsDeviceRole;
+      return (dr && typeof dr.deviceNoun === 'function') ? String(dr.deviceNoun() || '') : '';
+    }, '');
+    return n || 'phone';
+  }
+  function Noun() { var n = noun(); return n.charAt(0).toUpperCase() + n.slice(1); }
+
+  function tok() { return safe(function () { return typeof window.bkToken === 'function' ? String(window.bkToken() || '') : ''; }, ''); }
+  function hosted() { return safe(function () { return typeof window.backendMode === 'function' ? !!window.backendMode() : false; }, false); }
+  function acct() { return safe(function () { return String(window.__mlsSessionAccount || '').trim().toLowerCase(); }, ''); }
+  function sessionEpoch() { return safe(function () { return Number(window.__mlsSessionEpoch) || 0; }, 0); }
+  /* The account identity of a sync. Deliberately NOT the token: a token can be
+     refreshed inside one session and that is not a new account. The token is
+     compared separately, as a second and independent condition. */
+  function identity() { return acct() + '#' + sessionEpoch(); }
+  function hidden() { return safe(function () { return document.visibilityState === 'hidden'; }, false); }
+  /* navigator.onLine has exactly one reliable answer and it is the negative.
+     `true` is not a promise that MLS is reachable, so it is never reported as
+     "connected" -- that claim is only ever made by a completed sync. */
+  function offline() { return safe(function () { return navigator.onLine === false; }, false); }
+
+  function frame() { return $('mlsPh3'); }
+  function phoneOwnsScreen() { return !!frame(); }
+
+  function relay() { return safe(function () { return window.__mlsRelayLink; }, null); }
+  function relayJob() {
+    var rl = relay();
+    if (!rl || typeof rl.activeJob !== 'function') return null;
+    return safe(function () { return rl.activeJob(); }, null) || null;
+  }
+
+  function curDay() {
+    var ds = safe(function () { return window.__mlsDaySwitch; }, null);
+    if (ds && typeof ds.currentDay === 'function') {
+      var k = safe(function () { return String(ds.currentDay() || ''); }, '');
+      if (k) return k;
+    }
+    return safe(function () { return typeof window._acctTodayKey === 'function' ? String(window._acctTodayKey() || '') : ''; }, '');
+  }
+  /* -1 means "this device cannot see the day at all", which is a different
+     fact from "the day is empty" and must never be reported as one. */
+  function dayCount(key) {
+    if (!key) return -1;
+    var ds = safe(function () { return window.__mlsDaySwitch; }, null);
+    if (ds && typeof ds.rowsFor === 'function') {
+      var r = safe(function () { return ds.rowsFor(key); }, null);
+      if (r && r.length != null) return r.length;
+    }
+    var ap = safe(function () { return window._calAppts; }, null);
+    if (!ap || ap.length == null) return -1;
+    var n = 0;
+    for (var i = 0; i < ap.length; i++) {
+      var a = ap[i];
+      if (!a) continue;
+      var d = String(a.appt_date || a.day_local || a.start_at || a.start_local || '').slice(0, 10);
+      if (d === key) n++;
+    }
+    return n;
+  }
+
+  var S = {
+    status: 'never',
+    detail: '',
+    lastOkAt: 0,
+    lastTryAt: 0,
+    fails: 0,
+    waiting: 0,
+    inflight: false,
+    id: identity(),
+    hadToken: false,
+    syncs: 0,
+    lastCount: -1
+  };
+
+  function resetForAccount(id) {
+    S.status = 'never'; S.detail = ''; S.lastOkAt = 0; S.lastTryAt = 0;
+    S.fails = 0; S.waiting = 0; S.syncs = 0; S.lastCount = -1;
+    S.hadToken = false; S.id = id;
+  }
+
+  function backoffMs() {
+    var n = S.fails > 5 ? 5 : S.fails;
+    var ms = VISIBLE_MS;
+    for (var i = 0; i < n; i++) ms = ms * 2;
+    return ms > MAX_BACKOFF_MS ? MAX_BACKOFF_MS : ms;
+  }
+  function cadenceMs() {
+    if (S.fails > 0) return backoffMs();
+    if (relayJob()) return hidden() ? HIDDEN_MS : PENDING_MS;
+    return hidden() ? HIDDEN_IDLE_MS : VISIBLE_MS;
+  }
+  function nextDueMs() {
+    var wait = cadenceMs() - (Date.now() - S.lastTryAt);
+    return wait > 0 ? wait : 0;
+  }
+
+  function relTime(ms) {
+    var s = Math.round(ms / 1000);
+    if (s < 0) s = 0;
+    if (s < 10) return 'just now';
+    if (s < 60) return s + 's ago';
+    var m = Math.round(s / 60);
+    if (m < 60) return m + ' min ago';
+    var h = Math.round(m / 60);
+    if (h < 24) return h + ' hr ago';
+    return Math.round(h / 24) + ' days ago';
+  }
+  function retryLine() {
+    var s = Math.round(nextDueMs() / 1000);
+    return s <= 1 ? 'Retrying now.' : ('Retrying in ' + s + 's.');
+  }
+  function detailText() {
+    var e = String(S.detail || '');
+    if (e.indexOf('appointments_http_') === 0) return 'HTTP ' + e.slice(18);
+    if (e === 'appointments_invalid_json' || e === 'appointments_invalid_response') return 'an answer this ' + noun() + ' could not read';
+    return e || 'no reason given';
+  }
+
+  /* ONE SENTENCE PER FAILURE CLASS, and every one of them names the next move
+     or says plainly that there is nothing to do. A blank bar over a stale list
+     is the defect this module exists to remove; a bar that says "error" is the
+     same defect in a different colour. */
+  function line() {
+    var d = noun();
+    if (S.status === 'syncing') return 'Syncing...';
+    if (S.status === 'never') return 'Not synced yet on this ' + d + '.';
+    if (S.status === 'offline') return 'This ' + d + ' is offline. Nothing can sync until it is back on Wi-Fi or cellular.';
+    if (S.status === 'signedout') return 'Signed out. Sign in and this ' + d + ' syncs on its own.';
+    /* A local/demo session has no backend at all. Calling that "signed out"
+       tells a doctor to do something they have already done, and pointing at a
+       sign-in that will not change anything is an instruction that goes
+       nowhere -- a defect class this product already knows by name. */
+    if (S.status === 'local') return 'This is a sample session on this ' + d + '. There is no MLS server behind it to sync with.';
+    if (S.status === 'expired') return 'Your MLS session expired on this ' + d + '. Sign in again and syncing resumes by itself.';
+    if (S.status === 'account') return 'A different account signed in while this was syncing. Nothing from the other account was shown on this ' + d + '.';
+    if (S.status === 'engine') return 'MLS has not finished loading on this ' + d + ' yet.';
+    if (S.status === 'server') return 'MLS answered with an error (' + detailText() + '). Nothing on this ' + d + ' was changed. ' + retryLine();
+    if (S.status === 'network') return 'This ' + d + ' could not reach MLS. ' + retryLine();
+    if (S.status === 'timeout') return 'MLS has not answered in ' + Math.round(REQ_TIMEOUT_MS / 1000) + ' seconds. ' + retryLine();
+    if (S.status === 'ok') {
+      if (relayJob()) return 'Your office computer is pulling. This ' + d + ' is watching for the result.';
+      if (S.waiting > 0) return S.waiting + ' new appointment' + (S.waiting === 1 ? '' : 's') + ' arrived. Last sync ' + relTime(Date.now() - S.lastOkAt) + '.';
+      /* A real middle dot, built from its code point so this source file stays
+         pure ASCII and cannot be corrupted by a latin1/utf8 round trip. */
+      return Noun() + ' connected ' + String.fromCharCode(183) + ' last sync ' + relTime(Date.now() - S.lastOkAt);
+    }
+    return '';
+  }
+  /* The dot is the same three-state vocabulary the rest of the product uses:
+     green = this device is current, amber = something is pending or unknown,
+     red = a stated failure. It never shows green on an unproven claim. */
+  function tone() {
+    if (S.status === 'ok') return (S.waiting > 0 || relayJob()) ? 'warn' : 'ok';
+    if (S.status === 'syncing' || S.status === 'never') return 'warn';
+    return 'bad';
+  }
+  function glowing() { return S.waiting > 0 || !!relayJob() || S.status === 'server' || S.status === 'network' || S.status === 'timeout' || S.status === 'expired'; }
+
+  api.line = line;
+  api.state = function () {
+    return {
+      status: S.status, detail: S.detail, line: line(), tone: tone(), glow: glowing(),
+      lastOkAt: S.lastOkAt, lastTryAt: S.lastTryAt, fails: S.fails, waiting: S.waiting,
+      inflight: S.inflight, account: S.id, syncs: S.syncs, count: S.lastCount,
+      cadenceMs: cadenceMs(), nextDueMs: nextDueMs(), timer: api.timerKind()
+    };
+  };
+
+  /* =========================== THE BAR ==================================== */
+  function ensureCss() {
+    if ($(CSS_ID)) return;
+    var st = safe(function () { return document.createElement('style'); }, null);
+    if (!st) return;
+    st.id = CSS_ID;
+    st.textContent = [
+      '#mlsP1Sync{flex:none;display:flex;align-items:center;gap:10px;background:var(--ph3-card,#FFFFFF);',
+      'border-bottom:1px solid var(--ph3-line,#E3E8E4);color:var(--ph3-ink,#12201A);',
+      "font-family:'Public Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;",
+      'padding:8px calc(env(safe-area-inset-right) + 13px) 8px calc(env(safe-area-inset-left) + 13px)}',
+      '#mlsP1Sync .p1s-dot{flex:none;width:9px;height:9px;border-radius:999px;background:#8A5A00}',
+      '#mlsP1Sync.p1s-ok .p1s-dot{background:var(--ph3-green2,#2E6A4B)}',
+      '#mlsP1Sync.p1s-warn .p1s-dot{background:#8A5A00}',
+      '#mlsP1Sync.p1s-bad .p1s-dot{background:var(--ph3-red,#A3231F)}',
+      '#mlsP1Sync .p1s-txt{flex:1;min-width:0;font-weight:600;font-size:12px;line-height:1.35;color:var(--ph3-dim,#67736C)}',
+      '#mlsP1Sync.p1s-bad .p1s-txt{color:var(--ph3-ink,#12201A)}',
+      '#mlsP1Sync .p1s-now{flex:none;min-height:44px;min-width:88px;border:1.5px solid var(--ph3-line,#E3E8E4);',
+      'border-radius:16px;background:var(--ph3-card,#FFFFFF);color:var(--ph3-ink,#12201A);font-family:inherit;',
+      'font-weight:700;font-size:13px;line-height:1.2;cursor:pointer;padding:10px 14px}',
+      '#mlsP1Sync .p1s-now:active{background:var(--ph3-wash,#EDF3EF)}',
+      '#mlsP1Sync .p1s-now[disabled]{opacity:.55;cursor:default}',
+      /* THE GLOW. A pulse is the only motion in this bar and it exists so that a
+         result waiting to be taken in is visible from across a room without
+         reading. prefers-reduced-motion turns the animation off and keeps the
+         colour, because the INFORMATION must not be carried by motion alone. */
+      '#mlsP1Sync .p1s-now.p1s-glow{border-color:#F0B429;background:#FBF2DF;color:#4A3708;',
+      'animation:p1sGlow 1.8s ease-in-out infinite}',
+      '@keyframes p1sGlow{0%,100%{box-shadow:0 0 0 0 rgba(240,180,41,.55)}50%{box-shadow:0 0 0 6px rgba(240,180,41,0)}}',
+      '@media (prefers-reduced-motion:reduce){#mlsP1Sync .p1s-now.p1s-glow{animation:none}}'
+    ].join('');
+    safe(function () { (document.head || document.documentElement).appendChild(st); });
+  }
+
+  function onBarClick(ev) {
+    var t = ev && ev.target;
+    var hit = false;
+    while (t) {
+      if (t.getAttribute && t.getAttribute('data-p1sync') === 'now') { hit = true; break; }
+      t = t.parentNode;
+    }
+    if (!hit) return;
+    safe(function () { ev.preventDefault(); });
+    safe(function () { ev.stopPropagation(); });
+    api.syncNow('manual');
+  }
+
+  var barEl = null;
+  function ensureBar() {
+    var f = frame();
+    if (!f) {
+      var stale = $(BAR_ID);
+      if (stale && stale.parentNode) safe(function () { stale.parentNode.removeChild(stale); });
+      barEl = null;
+      return null;
+    }
+    var bar = $(BAR_ID);
+    if (bar && bar.parentNode === f) { barEl = bar; paint(); return bar; }
+    ensureCss();
+    bar = safe(function () { return document.createElement('div'); }, null);
+    if (!bar) return null;
+    bar.id = BAR_ID;
+    bar.setAttribute('data-p1-sync', VERSION);
+    bar.innerHTML = '<span class="p1s-dot" aria-hidden="true"></span>' +
+      '<span class="p1s-txt" id="mlsP1SyncTxt" role="status" aria-live="polite"></span>' +
+      '<button type="button" class="p1s-now" data-p1sync="now" id="mlsP1SyncNow">Sync now</button>';
+    safe(function () { bar.addEventListener('click', onBarClick); });
+    /* Between the sticky message and the scroller, so it is the first thing
+       under the header that is not an alarm, and so no repaint can erase it. */
+    var body = $('mlsPh3Body');
+    if (body && body.parentNode === f) safe(function () { f.insertBefore(bar, body); });
+    else safe(function () { f.appendChild(bar); });
+    barEl = $(BAR_ID);
+    paint();
+    return barEl;
+  }
+  api.ensureBar = ensureBar;
+
+  /* EVERY WRITE IS GUARDED. This runs on the 5s heartbeat for as long as the
+     phone app is mounted. Assigning className re-serialises and re-sets the
+     attribute even when the value is identical, which invalidates style; and
+     assigning textContent replaces the text node, which is a childList
+     mutation any observer in the document then has to walk. Write only what
+     actually changed. */
+  function paint() {
+    var bar = $(BAR_ID);
+    if (!bar) return;
+    var txt = $('mlsP1SyncTxt');
+    /* textContent, never innerHTML: the office computer's name and the device
+       noun both reach this line from data, and a status bar is not a place to
+       start interpreting markup. */
+    if (txt) { var t = line(); if (txt.textContent !== t) txt.textContent = t; }
+    var cls = 'p1s-' + tone();
+    if (bar.className !== cls) bar.className = cls;
+    var btn = $('mlsP1SyncNow');
+    if (btn) {
+      var bcls = 'p1s-now' + (glowing() ? ' p1s-glow' : '');
+      if (btn.className !== bcls) btn.className = bcls;
+      var dis = !!S.inflight;
+      if (btn.disabled !== dis) btn.disabled = dis;
+      var lbl = S.inflight ? 'Syncing...' : 'Sync now';
+      if (btn.textContent !== lbl) btn.textContent = lbl;
+    }
+  }
+  api.paint = paint;
+
+  function setStatus(status, detail) {
+    S.status = status;
+    S.detail = detail || '';
+    paint();
+  }
+
+  /* A background sync must never destroy the field a finger is in. ph3's own
+     api.render() is force=true and therefore bypasses its caret guard, so the
+     guard is restated here, on this side of the call. */
+  function caretIsPhoneField() {
+    return safe(function () {
+      var a = document.activeElement;
+      return !!(a && (a.id === 'mlsPh3Tx' || a.id === 'mlsPh3Find'));
+    }, false);
+  }
+  function repaintPhone() {
+    safe(function () {
+      var ds = window.__mlsDaySwitch;
+      if (ds && typeof ds.renderList === 'function') ds.renderList();
+    });
+    if (!caretIsPhoneField()) {
+      safe(function () {
+        var ph = window.__mlsPhoneUI;
+        if (ph && typeof ph.render === 'function') ph.render();
+      });
+    }
+    paint();
+  }
+
+  /* ============================ THE SYNC ================================== */
+  var inflightP = null;
+  /* NEWEST WINS. The watchdog releases the loop without abandoning the request,
+     so a request that answers late can land while a NEWER one is in flight. If
+     the stale answer were allowed to write shared state it would clear the new
+     request's in-flight flag and let a third start beside it -- the same class
+     of race loadCalendar itself carries a sequence number for. Only the current
+     generation may write. */
+  var gen = 0;
+  function hydrateCharts(boundId, boundTok) {
+    var f = safe(function () { return typeof window.loadPatientsFromServer === 'function' ? window.loadPatientsFromServer : null; }, null);
+    if (!f) return;
+    safe(function () {
+      Promise.resolve(f({})).then(function () {
+        if (identity() !== boundId || tok() !== boundTok) return;
+        repaintPhone();
+      }, function () {});
+    });
+  }
+
+  function run(reason) {
+    if (S.inflight && inflightP) return inflightP;
+    var cal = safe(function () { return typeof window.loadCalendar === 'function' ? window.loadCalendar : null; }, null);
+    if (!cal) { setStatus('engine', ''); return Promise.resolve(null); }
+
+    var boundId = identity(), boundTok = tok();
+    var key = curDay(), before = dayCount(key);
+    var settled = false, watchdog = null, myGen = ++gen;
+
+    S.inflight = true;
+    S.lastTryAt = Date.now();
+    setStatus('syncing', '');
+
+    function finish(r) {
+      if (settled) return r;
+      settled = true;
+      if (watchdog !== null) { safe(function () { clearTimeout(watchdog); }); watchdog = null; }
+      /* Superseded: this answer arrived after a newer request started (only
+         possible past the watchdog). It is not wrong, it is just no longer
+         anybody's answer -- and writing it would release the newer request's
+         lane. */
+      if (myGen !== gen) return r;
+      S.inflight = false;
+      inflightP = null;
+
+      /* THE ACCOUNT BOUNDARY. Checked here and nowhere else, because here is
+         the only place a response can cross it. */
+      if (identity() !== boundId || tok() !== boundTok) {
+        S.fails = 0;
+        setStatus('account', '');
+        return r;
+      }
+
+      var err = (r && r.error) ? String(r.error) : '';
+      var disc = (r && r.discarded) ? String(r.discarded) : '';
+
+      if (err === 'session_expired') { S.fails = 0; S.hadToken = false; setStatus('expired', err); return r; }
+      if (err === 'calendar_unavailable') { S.fails = 0; setStatus('signedout', err); return r; }
+      if (err) {
+        S.fails++;
+        setStatus(err === 'appointments_unavailable' ? 'network' : 'server', err);
+        return r;
+      }
+      if (disc === 'session_changed') { S.fails = 0; setStatus('account', disc); return r; }
+      if (disc) {
+        /* Superseded by a newer loadCalendar, or invalidated by a local
+           mutation. Neither a success nor a failure: this attempt simply has
+           no verdict, and inventing one either way would be a claim. */
+        setStatus(S.lastOkAt ? 'ok' : 'never', disc);
+        return r;
+      }
+
+      S.fails = 0;
+      S.syncs++;
+      S.lastOkAt = Date.now();
+      var after = dayCount(key);
+      S.lastCount = after;
+      var gained = (before >= 0 && after >= 0 && after > before) ? (after - before) : 0;
+      if (gained > 0) {
+        S.waiting += gained;
+        hydrateCharts(boundId, boundTok);
+      }
+      setStatus('ok', '');
+      repaintPhone();
+      return r;
+    }
+
+    /* The watchdog does NOT abandon the request -- loadCalendar has no abort
+       and a cancelled promise would be a lie about what the network is doing.
+       It releases the loop so a retry can be scheduled, and says the true
+       thing: MLS has not answered yet. A late answer still settles below. */
+    watchdog = safe(function () {
+      return setTimeout(function () {
+        if (settled) return;
+        S.inflight = false;
+        S.fails++;
+        setStatus('timeout', '');
+      }, REQ_TIMEOUT_MS);
+    }, null);
+    if (watchdog === undefined) watchdog = null;
+
+    var p = safe(function () { return Promise.resolve(cal({ fresh: true })); }, null);
+    if (!p) { finish({ error: 'appointments_unavailable' }); return Promise.resolve(null); }
+    inflightP = p.then(finish, function (e) {
+      return finish({ error: 'appointments_unavailable', thrown: String((e && e.message) || e || '') });
+    });
+    return inflightP;
+  }
+
+  api.syncNow = function (reason) {
+    /* A person asking is not a retry: the backoff is cleared so "Sync now"
+       always means now, even after five consecutive failures. */
+    S.fails = 0;
+    S.waiting = 0;
+    if (!hosted()) { setStatus('local', ''); return Promise.resolve(null); }
+    if (!tok()) { setStatus(S.hadToken ? 'expired' : 'signedout', ''); return Promise.resolve(null); }
+    if (offline()) { setStatus('offline', ''); return Promise.resolve(null); }
+    return run(reason || 'manual');
+  };
+
+  /* ============================= THE LOOP ================================= */
+  function tick() {
+    ensureBar();
+    var id = identity();
+    if (id !== S.id) resetForAccount(id);
+    if (!phoneOwnsScreen()) return;
+    if (!hosted()) { setStatus('local', ''); return; }
+
+    var t = tok();
+    if (!t) {
+      setStatus(S.hadToken ? 'expired' : 'signedout', '');
+      return;
+    }
+    if (!S.hadToken) S.hadToken = true;
+    /* RE-AUTH RESUME: a token exists again after a signed-out stretch, so the
+       next sync is due immediately rather than one cadence from now. */
+    if (S.status === 'expired' || S.status === 'signedout') {
+      S.status = 'never'; S.fails = 0; S.lastTryAt = 0;
+    }
+    if (S.inflight) { paint(); return; }
+    if (offline()) { setStatus('offline', ''); return; }
+    if (Date.now() - S.lastTryAt < cadenceMs()) { paint(); return; }
+    run('auto');
+  }
+  api.tick = tick;
+
+  var wk = null, wkUrl = null, iv = null;
+  function startTimer() {
+    if (wk || iv !== null) return;
+    wkUrl = safe(function () {
+      return URL.createObjectURL(new Blob(
+        ['onmessage=function(e){setInterval(function(){postMessage(1)},e.data)}'],
+        { type: 'application/javascript' }));
+    }, null);
+    if (wkUrl) {
+      wk = safe(function () {
+        var w = new Worker(wkUrl);
+        w.onmessage = function () { safe(tick); };
+        w.postMessage(HEARTBEAT_MS);
+        return w;
+      }, null);
+    }
+    if (!wk) {
+      safe(function () { if (wkUrl) { URL.revokeObjectURL(wkUrl); } });
+      wkUrl = null;
+      var h = safe(function () { return setInterval(function () { safe(tick); }, HEARTBEAT_MS); }, null);
+      /* A timer handle of 0 is FALSY. Both handles in this module are compared
+         with !== null for exactly that reason. */
+      iv = (h === undefined || h === null) ? null : h;
+    }
+  }
+  function stopTimer() {
+    safe(function () { if (wk) wk.terminate(); });
+    wk = null;
+    safe(function () { if (wkUrl) URL.revokeObjectURL(wkUrl); });
+    wkUrl = null;
+    if (iv !== null) { safe(function () { clearInterval(iv); }); iv = null; }
+  }
+  api.timerKind = function () { return wk ? 'worker' : (iv !== null ? 'interval' : 'none'); };
+
+  /* A desktop pays NOTHING: no timer is created until the phone frame exists,
+     and it is torn down again the moment the phone app unmounts. */
+  function govern() {
+    if (phoneOwnsScreen()) { startTimer(); ensureBar(); }
+    else { stopTimer(); ensureBar(); }
+  }
+  api.govern = govern;
+
+  function onVisibility() {
+    govern();
+    if (hidden()) return;
+    /* A suspended page runs no timers of any kind, Worker included, so coming
+       back on screen is the one moment a catch-up is guaranteed to be needed.
+       Forcing lastTryAt to 0 makes the next tick due now rather than up to a
+       full cadence later -- which is the difference between "I unlocked my
+       phone and my patients were there" and "I unlocked my phone and waited". */
+    if (phoneOwnsScreen()) { S.lastTryAt = 0; tick(); }
+  }
+
+  var bodyObs = null;
+  function watchBody() {
+    if (bodyObs) return;
+    if (!document.body || typeof MutationObserver !== 'function') return;
+    /* childList on document.body ONLY -- no subtree. ph3 appends its frame as a
+       direct child of body, so this fires on mount and unmount and on almost
+       nothing else. A subtree observer on a document this size would fire on
+       every unrelated repaint the app makes. */
+    bodyObs = safe(function () {
+      var o = new MutationObserver(function () { govern(); });
+      o.observe(document.body, { childList: true });
+      return o;
+    }, null);
+  }
+
+  function boot() {
+    watchBody();
+    govern();
+  }
+  safe(function () { document.addEventListener('visibilitychange', onVisibility); });
+  if (document.body) boot();
+  else safe(function () { document.addEventListener('DOMContentLoaded', boot); });
+  /* One late look, for the ordinary case where ph3 mounts a beat after this
+     module loads and MutationObserver is unavailable. */
+  safe(function () { setTimeout(boot, 1500); });
+
+  api.revert = function () {
+    stopTimer();
+    safe(function () { if (bodyObs) bodyObs.disconnect(); });
+    bodyObs = null;
+    safe(function () { document.removeEventListener('visibilitychange', onVisibility); });
+    var bar = $(BAR_ID);
+    if (bar && bar.parentNode) safe(function () { bar.parentNode.removeChild(bar); });
+    var css = $(CSS_ID);
+    if (css && css.parentNode) safe(function () { css.parentNode.removeChild(css); });
+    barEl = null;
+    api.installed = false;
+    safe(function () { delete window.__mlsP1PhoneSync; });
+  };
+})();
+/* ===== end p1-phone-sync-1.0.0 ===== */
 
 /* ============================================================
  * p1-cal-hero-pull-contract (chp-1.0.0)  [additive / reversible / idempotent]

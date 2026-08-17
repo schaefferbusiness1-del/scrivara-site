@@ -1035,6 +1035,14 @@ const tests = [
      brief attached to the wrong patient is one person's answers in another
      person's room. */
   'phone-checkin-and-quick-history.test.js',
+  /* 2026-08-17, p1-phone-sync-1.0.0. Owner: the phone UI "has the error of like
+     not syncing". Both halves live here: the reproduction (ph3 has NO receive
+     loop, its visibility handler re-reads everything except the schedule, and
+     the relay's phone-side poller is a bare main-thread interval whose
+     suspension turns a completed pull into "that request expired"), and the /1p
+     receive loop that fixes it -- Worker timer, visibility catch-up, account
+     binding, re-auth resume, backoff, and a sentence for every failure class. */
+  '1p-phone-sync-receive-loop-runtime.test.js',
   /* The old product name reached seven surfaces across four lanes. This sweeps
      the reviewed publication inventory rather than a hand-list, and asserts the
      three lowercase infrastructure names are UNTOUCHED — renaming the live API
