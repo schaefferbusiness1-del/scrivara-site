@@ -37694,5 +37694,516 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
 })();
 </script>
 <!-- ===== end msl-autodraft-1.0.0 ====================================== -->
+<!-- ===== mrn-1.0.0 ======================================================
+     IDENTITY LOSS-PREVENTION + LOCAL MRN/DOB BACKFILL
+
+     Measured on the owner's real store 2026-08-16: 1,672 patients, 1,252
+     (75%) carry NO mrn and 43% no dob. The unified write flow computes
+
+         identityBlocked = !patientId || !name || !dob || !mrn
+
+     so "Confirm & Send to Athena" is gray for three of every four charts.
+     NOTHING here weakens that three-factor identity check, the manifest, or
+     the write flow. The cure is DATA, in two halves.
+
+     (a) LOSS PREVENTION. The store's single-row writer protected exactly five
+         Athena-owned fields from a partial or stale incoming record
+         (athenaProfileCoverage, athenaChartSnapshot, athenaChartSummaryBlock,
+         athenaChartImportedAt, visits). mrn and dob were NOT among them, so
+         any caller that materialized a patient object without them — the
+         server hydrate, the schedule import, post-save ingest — could
+         overwrite a stored identity with undefined/''. Identity fields are
+         now PRESERVE-IF-INCOMING-EMPTY.
+
+         A DIFFERENT non-empty value NEVER silently replaces the stored one:
+         the stored value is kept and the disagreement is recorded under
+         identityConflict, because a wrong-MRN write is precisely the
+         wrong-chart failure this codebase has already paid for. Only a
+         deliberate human edit through the patient editor may change or clear
+         a stored identity value.
+
+         Two things make this reliable rather than decorative:
+           - Object aliasing. getPatients() returns arr.slice(), whose
+             ELEMENTS are shared references, so a caller that mutates the
+             stored row in place makes "previous" and "incoming" THE SAME
+             OBJECT and any field comparison sees nothing. When that is
+             detected the per-account identity index below testifies instead.
+           - Bulk writers. The server hydrate replaces whole rows and never
+             touches the single-row writer at all, so the roster writer is
+             guarded too — the same reasoning as the existing newest-proof
+             index that had to cover both paths.
+
+     (b) BACKFILL. mrnBackfillFromLocal(patient) is pure and idempotent and
+         derives mrn/dob ONLY from the SAME patient's own stored record. It is
+         handed one row and reads nothing else, so it cannot inherit another
+         chart's identity by construction. A text candidate is accepted only
+         when that patient's own name appears in the window around it, and two
+         disagreeing candidates REFUSE rather than guess. Every fill leaves an
+         identityFill receipt, so each one is auditable and reversible.
+
+     This block is self-contained and lane-neutral: it patches the store's
+     writers at runtime by feature detection and keeps the originals
+     reachable, so promotion is a byte-copy of this block and nothing else.
+     ================================================================== -->
+<script>
+(function () {
+  'use strict';
+  if (window.__MLS_MRN_VERSION) return;            /* wrap once, ever */
+  var VERSION = 'mrn-1.0.0';
+
+  function fn(name) { var f = window[name]; return (typeof f === 'function') ? f : null; }
+
+  /* The Athena patient id travels under three different field names in this
+     store (the history target snapshot reads mrn||athenaId; the new-patient
+     path writes athenaId + athenaPatientId). All three are identity. */
+  var ID_FIELDS = ['mrn', 'athenaId', 'athenaPatientId'];
+  var ALL_FIELDS = ID_FIELDS.concat(['dob']);
+  var CARRY_FIELDS = ['identityConflict', 'identityFill'];
+
+  /* idKey: the SAME normalization the identity gates use, so this guard can
+     never disagree with the check that decides whether a chart may be
+     written. */
+  function idKey(v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function dobKey(v) {
+    var s = String(v == null ? '' : v).trim(), m;
+    if ((m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) return m[1] + ('0' + m[2]).slice(-2) + ('0' + m[3]).slice(-2);
+    if ((m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/))) {
+      var y = m[3].length === 2 ? ((+m[3] > 40 ? '19' : '20') + m[3]) : m[3];
+      return y + ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2);
+    }
+    return '';
+  }
+  function keyOf(field, value) { return field === 'dob' ? dobKey(value) : idKey(value); }
+
+  /* The acceptance rule the extension's chart reader already uses: at least
+     one digit, no separators beyond . _ -, and NEVER a bare date — a
+     "01/02/1980" sitting next to an MRN label must not become an MRN.
+     Refusing is always the safe direction here. */
+  function validId(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s || s.length < 3 || s.length > 48) return false;
+    if (!/[0-9]/.test(s)) return false;
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s)) return false;
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) return false;
+    if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(s)) return false;
+    return true;
+  }
+  function validDob(v) {
+    var k = dobKey(v); if (k.length !== 8) return false;
+    var y = +k.slice(0, 4), mo = +k.slice(4, 6), d = +k.slice(6, 8);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+    return y >= 1900 && y <= new Date().getFullYear();
+  }
+
+  /* ---- per-account identity index ------------------------------------- */
+  /* Same shape and purpose as the store's newest-proof index: remember the
+     last accepted identity per patient id so the guard holds even when the
+     caller mutated the stored object in place, and so bulk writers that carry
+     no "previous" object can still be checked. It only ever LEARNS a
+     non-empty value; clearing is exclusively the deliberate-edit path's job. */
+  var index = {}, seeded = {};
+  function storeKey() { var u = fn('uns'); if (!u) return ''; try { return String(u('patients') || ''); } catch (e) { return ''; } }
+  /* The store hard-refuses the unresolved-account namespaces; an index keyed
+     there would be a cross-account leak waiting to happen. */
+  function usableKey(k) { return !!k && k.indexOf('::undefined::') < 0 && k.indexOf('::_::') < 0; }
+  function slotOf(key, id) { try { return (index[key] || {})[String(id)] || null; } catch (e) { return null; } }
+  function remember(key, p) {
+    if (!usableKey(key) || !p || p.id == null) return;
+    var box = index[key] || (index[key] = {});
+    var slot = box[String(p.id)] || (box[String(p.id)] = {});
+    for (var i = 0; i < ALL_FIELDS.length; i++) {
+      var v = String(p[ALL_FIELDS[i]] == null ? '' : p[ALL_FIELDS[i]]).trim();
+      if (v) slot[ALL_FIELDS[i]] = v;
+    }
+    slot.at = Date.now();
+  }
+  function forget(key, id, fields) {
+    try { var slot = (index[key] || {})[String(id)]; if (slot) (fields || []).forEach(function (f) { delete slot[f]; }); } catch (e) {}
+  }
+  /* Seeded lazily, from the roster as it stands immediately BEFORE the first
+     guarded write on this account key — exactly the state that needs
+     protecting. Seeding at parse time would key the index to the signed-out
+     namespace. */
+  function seed(key) {
+    if (!usableKey(key) || seeded[key]) return;
+    seeded[key] = 1;
+    var g = fn('getPatients'); if (!g) return;
+    try { (g() || []).forEach(function (r) { remember(key, r); }); } catch (e) {}
+  }
+
+  /* ---- (a) the guard --------------------------------------------------- */
+  var editDepth = 0;
+  /* next is mutated in place, exactly as the store's existing coverage and
+     visit-husk guards do. Returns what it did; never throws. */
+  function preserveIdentity(next, prev, opts) {
+    var res = { filled: [], conflicts: [], allowed: [] };
+    if (!next || typeof next !== 'object') return res;
+    opts = opts || {};
+    var deliberate = editDepth > 0 || next.__mlsIdentityEdit === true;
+    /* Consumed here so a deliberate edit can never persist onto the stored
+       record as a standing override. */
+    try { delete next.__mlsIdentityEdit; } catch (e) { try { next.__mlsIdentityEdit = undefined; } catch (e2) {} }
+    var prevObj = (prev && typeof prev === 'object' && prev !== next) ? prev : null;
+    var idx = (opts.stored && typeof opts.stored === 'object') ? opts.stored : null;
+    /* The audit fields are themselves losable: a partial caller must not
+       erase the receipts that make this mechanism reviewable. */
+    if (prevObj) CARRY_FIELDS.forEach(function (f) { if (next[f] == null && prevObj[f] != null) next[f] = prevObj[f]; });
+    for (var n = 0; n < ALL_FIELDS.length; n++) {
+      var f = ALL_FIELDS[n];
+      var stored = String((prevObj && prevObj[f] != null) ? prevObj[f] : '').trim();
+      if (!stored && idx && idx[f]) stored = String(idx[f] || '').trim();
+      if (!stored) continue;                                  /* nothing to protect */
+      var incoming = String(next[f] == null ? '' : next[f]).trim();
+      if (!incoming) {
+        if (deliberate) { res.allowed.push(f); continue; }     /* a human cleared it */
+        next[f] = stored; res.filled.push(f); continue;        /* PRESERVE-IF-EMPTY */
+      }
+      var sk = keyOf(f, stored), ik = keyOf(f, incoming);
+      if (!sk || !ik || sk === ik) continue;                   /* same value, or unparseable */
+      if (deliberate) { res.allowed.push(f); continue; }
+      /* A DIFFERENT non-empty identity. Keep the stored value and record the
+         disagreement — never merge, never silently adopt. */
+      next[f] = stored;
+      var box = (next.identityConflict && typeof next.identityConflict === 'object') ? next.identityConflict : {};
+      var marks = {}; Object.keys(box).forEach(function (k) { marks[k] = box[k]; });
+      marks[f] = { stored: stored, incoming: incoming.slice(0, 48), at: Date.now() };
+      next.identityConflict = marks;
+      res.conflicts.push(f);
+    }
+    return res;
+  }
+
+  function noteConflicts(id, res) {
+    try {
+      if (res.conflicts.length) (window.__mlsMrnConflictLog = window.__mlsMrnConflictLog || [])
+        .push({ id: String(id).slice(0, 24), fields: res.conflicts.slice(), at: Date.now() });
+    } catch (e) {}
+  }
+
+  /* Single-row path. */
+  function guardOne(next) {
+    if (!next || typeof next !== 'object' || next.id == null) return null;
+    var key = storeKey(); seed(key);
+    var prev = null, find = fn('findPatient');
+    /* If the store hands back the very object the caller is about to write,
+       it cannot testify to the pre-edit value — the index does. */
+    if (find) { try { prev = find(next.id); } catch (e) { prev = null; } }
+    var res = preserveIdentity(next, prev, { stored: slotOf(key, next.id) });
+    if (res.allowed.length) forget(key, next.id, res.allowed);
+    remember(key, next);
+    noteConflicts(next.id, res);
+    return res;
+  }
+
+  /* Bulk roster path — this is the one the server hydrate takes, replacing
+     whole rows without ever reaching the single-row writer. No "previous"
+     object exists here, so the index is the only witness. */
+  function guardBulk(rows) {
+    if (!rows || !rows.length) return null;
+    var key = storeKey(); seed(key);
+    var filled = 0, conflicts = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i]; if (!row || row.id == null) continue;
+      var res = preserveIdentity(row, null, { stored: slotOf(key, row.id) });
+      if (res.allowed.length) forget(key, row.id, res.allowed);
+      remember(key, row);
+      noteConflicts(row.id, res);
+      filled += res.filled.length; conflicts += res.conflicts.length;
+    }
+    return { filled: filled, conflicts: conflicts };
+  }
+
+  /* ---- (b) backfill ---------------------------------------------------- */
+  var MRN_LABEL = '\\b(?:MRN|Medical\\s+Record(?:\\s+(?:Number|No\\.?|#|ID))?|Patient\\s+ID|Chart\\s*(?:#|No\\.?|Number))\\s*(?:is\\s*)?[:#-]?\\s*([A-Za-z0-9][A-Za-z0-9._-]{2,47})\\b';
+  var DOB_LABEL = '\\b(?:DOB|Date\\s+of\\s+Birth|Birth\\s+Date)\\s*(?:is\\s*)?[:#-]?\\s*(\\d{1,4}[\\/\\-.]\\d{1,2}[\\/\\-.]\\d{1,4})\\b';
+  /* Fresh RegExp objects per scan: a shared /g/ literal carries lastIndex
+     between calls and would silently skip hits on the next patient. */
+  function mrnRe() { return new RegExp(MRN_LABEL, 'gi'); }
+  function dobRe() { return new RegExp(DOB_LABEL, 'gi'); }
+  function nameNorm(v) { return String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+
+  /* Every string leaf of this ONE patient's own record that can hold chart
+     text. Bounded by depth, breadth, and (in the caller) total characters. */
+  function textSources(p) {
+    var out = [];
+    function push(tag, v) {
+      if (v == null) return;
+      if (typeof v === 'string') { if (v.trim()) out.push({ tag: tag, text: v }); return; }
+      if (typeof v !== 'object') return;
+      var flat = [];
+      (function walk(node, depth) {
+        if (node == null || depth > 4) return;
+        if (typeof node === 'string') { if (node.trim()) flat.push(node); return; }
+        if (Array.isArray(node)) { for (var i = 0; i < node.length && i < 200; i++) walk(node[i], depth + 1); return; }
+        if (typeof node === 'object') { var ks = Object.keys(node); for (var j = 0; j < ks.length && j < 80; j++) walk(node[ks[j]], depth + 1); }
+      })(v, 0);
+      if (flat.length) out.push({ tag: tag, text: flat.join('\n') });
+    }
+    push('athenaChartSummaryBlock', p.athenaChartSummaryBlock);
+    push('athenaChartSnapshot', p.athenaChartSnapshot);
+    push('historyImportReceipt', p.historyImportReceipt);
+    push('athenaHistoryFactsSnapshot', p.athenaHistoryFactsSnapshot);
+    push('athenaHistorySummary', p.athenaHistorySummary);
+    push('summary', p.summary);
+    try {
+      var vs = Array.isArray(p.visits) ? p.visits : [], vt = [];
+      for (var i = 0; i < vs.length && i < 400; i++) {
+        var v = vs[i]; if (!v) continue;
+        if (typeof v.raw === 'string' && v.raw.trim()) vt.push(v.raw);
+        else if (typeof v.detail === 'string' && v.detail.trim()) vt.push(v.detail);
+        if (typeof v.textHead === 'string' && v.textHead.trim()) vt.push(v.textHead);
+      }
+      if (vt.length) out.push({ tag: 'visits', text: vt.join('\n') });
+    } catch (e) {}
+    return out;
+  }
+
+  /* The proximity proof: a value is only this patient's if this patient's own
+     name sits beside it. A snapshot that names somebody else fails here, and
+     that is what stops a contaminated chart from minting a wrong identity. */
+  function nameNear(text, lo, hi, key, tokens) {
+    var win = nameNorm(text.slice(Math.max(0, lo), hi));
+    if (!win) return false;
+    if (key && win.indexOf(key) >= 0) return true;
+    /* A chart may write "Doe, Jane A." where the record says "Jane Doe":
+       accept only when EVERY name token is present in the window. */
+    if (tokens.length >= 2) {
+      for (var i = 0; i < tokens.length; i++) if (win.indexOf(tokens[i]) < 0) return false;
+      return true;
+    }
+    return false;
+  }
+
+  function mrnBackfillFromLocal(patient) {
+    var out = { source: '', confidence: '', reason: '' };
+    if (!patient || typeof patient !== 'object') { out.reason = 'no-record'; return out; }
+    var needMrn = !String(patient.mrn == null ? '' : patient.mrn).trim();
+    var needDob = !String(patient.dob == null ? '' : patient.dob).trim();
+    if (!needMrn && !needDob) { out.reason = 'already-complete'; return out; }
+    var name = String(patient.name == null ? '' : patient.name).trim();
+    if (!name) { out.reason = 'no-name-to-verify'; return out; }
+
+    /* 1. Fields this same record already carries. An Athena patient id stored
+          under another field name is the same identity restated, not a
+          derivation, so it needs no text-proximity proof. */
+    if (needMrn) {
+      for (var i = 0; i < ID_FIELDS.length; i++) {
+        var f = ID_FIELDS[i]; if (f === 'mrn') continue;
+        var v = String(patient[f] == null ? '' : patient[f]).trim();
+        if (v && validId(v)) { out.mrn = v; out.source = 'field:' + f; out.confidence = 'exact'; needMrn = false; break; }
+      }
+    }
+    if (!needMrn && !needDob) return out;
+
+    /* 2. This same record's own chart text, name-verified. */
+    var key = nameNorm(name);
+    var tokens = key.split(' ').filter(function (t) { return t.length > 1; });
+    var sources = textSources(patient);
+    /* Three bounds, all measured. CAP bounds characters scanned; WIN bounds
+       the name-proximity window; HITS bounds how many labels are EXAMINED per
+       patient, because the proximity check is the expensive part: a
+       pathological body carrying thousands of MRN labels cost 105ms in a
+       single row against 0.3ms for a typical one, and a single row can
+       overshoot the chunk budget from the inside. */
+    var mrnHits = {}, dobHits = {}, scanned = 0, examined = 0, CAP = 200000, WIN = 400, HITS = 400;
+    for (var s = 0; s < sources.length; s++) {
+      if (scanned >= CAP) { out.reason = out.reason || 'scan-cap'; break; }
+      var text = String(sources[s].text || '').slice(0, CAP - scanned);
+      scanned += text.length;
+      var m;
+      if (needMrn) {
+        var re = mrnRe(), found = 0;
+        while ((m = re.exec(text)) !== null) {
+          if (++examined > HITS) { out.reason = out.reason || 'scan-hit-cap'; break; }
+          if (!validId(m[1])) continue;
+          if (!nameNear(text, m.index - WIN, m.index + WIN, key, tokens)) continue;
+          var k = idKey(m[1]);
+          /* A second distinct value has already decided this is a refusal;
+             counting further candidates cannot change the outcome. */
+          if (k && !mrnHits[k]) { mrnHits[k] = { value: m[1], source: sources[s].tag }; if (++found > 1) break; }
+        }
+      }
+      if (needDob) {
+        var reD = dobRe(), foundD = 0;
+        while ((m = reD.exec(text)) !== null) {
+          if (++examined > HITS) { out.reason = out.reason || 'scan-hit-cap'; break; }
+          if (!validDob(m[1])) continue;
+          if (!nameNear(text, m.index - WIN, m.index + WIN, key, tokens)) continue;
+          var kD = dobKey(m[1]);
+          if (kD && !dobHits[kD]) { dobHits[kD] = { value: m[1], source: sources[s].tag }; if (++foundD > 1) break; }
+        }
+      }
+    }
+    if (needMrn) {
+      var mk = Object.keys(mrnHits);
+      if (mk.length === 1) { out.mrn = mrnHits[mk[0]].value; out.source = mrnHits[mk[0]].source; out.confidence = 'name-verified'; }
+      else if (mk.length > 1) out.reason = 'ambiguous-mrn:' + mk.length;
+    }
+    if (needDob) {
+      var dk = Object.keys(dobHits);
+      if (dk.length === 1) {
+        out.dob = dobHits[dk[0]].value; out.dobSource = dobHits[dk[0]].source;
+        if (!out.source) { out.source = dobHits[dk[0]].source; out.confidence = 'name-verified'; }
+      } else if (dk.length > 1) out.reason = (out.reason ? out.reason + ';' : '') + 'ambiguous-dob:' + dk.length;
+    }
+    if (!out.mrn && !out.dob && !out.reason) out.reason = 'no-candidate';
+    return out;
+  }
+
+  /* ---- the sweep: chunked, idempotent, never blocking ------------------ */
+  var sweepState = { running: false, lastSig: '', lastAt: 0, timer: 0, reqTimer: 0 };
+  function signature(rows) {
+    var missing = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r && (!String(r.mrn == null ? '' : r.mrn).trim() || !String(r.dob == null ? '' : r.dob).trim())) missing++;
+    }
+    return rows.length + '|' + missing;
+  }
+  /* setTimeout, never requestAnimationFrame: rAF does not fire in a hidden or
+     non-compositing tab, and a backfill that only runs when someone is
+     looking is not a backfill. Each chunk yields after 25ms. */
+  function sweep(reason, done) {
+    var report = { reason: String(reason || ''), filled: 0, candidates: 0, ambiguous: 0, at: 0, skipped: '' };
+    function bail(why) { report.skipped = why; if (typeof done === 'function') { try { done(report); } catch (e) {} } return report; }
+    if (sweepState.running) return bail('already-running');
+    var get = fn('getPatients'), up = fn('upsertPatient');
+    if (!get || !up) return bail('store-unavailable');
+    var rows = []; try { rows = get() || []; } catch (e) { return bail('store-unavailable'); }
+    var sig = signature(rows);
+    if (sig === sweepState.lastSig) return bail('no-change');
+    sweepState.running = true;
+    var idx = 0, token = null, find = fn('findPatient');
+    try {
+      var api = window.__mlsPatientStoreBatch;
+      if (api && typeof api.begin === 'function') token = api.begin({ cooperative: true, maxChanges: 64, maxDelayMs: 15000 });
+    } catch (e) { token = null; }
+    function finish() {
+      sweepState.running = false;
+      sweepState.lastAt = report.at = Date.now();
+      try { sweepState.lastSig = signature(get() || []); } catch (e) {}
+      if (token) {
+        try { var r = window.__mlsPatientStoreBatch.end(token, 'mrn-backfill'); if (r && typeof r.catch === 'function') r.catch(function () {}); } catch (e) {}
+      }
+      /* PHI-free by construction: counts only — no name, no MRN, no id. */
+      try { console.log('[' + VERSION + '] filled ' + report.filled + ' of ' + report.candidates + ' candidates, ' + report.ambiguous + ' ambiguous'); } catch (e) {}
+      try { window.__mlsMrnLastSweep = report; } catch (e) {}
+      if (typeof done === 'function') { try { done(report); } catch (e) {} }
+    }
+    function chunk() {
+      var t0 = Date.now();
+      while (idx < rows.length) {
+        if (Date.now() - t0 > 25) break;
+        var row = rows[idx++]; if (!row || row.id == null) continue;
+        if (String(row.mrn == null ? '' : row.mrn).trim() && String(row.dob == null ? '' : row.dob).trim()) continue;
+        report.candidates++;
+        var got = null; try { got = mrnBackfillFromLocal(row); } catch (e) { continue; }
+        if (!got) continue;
+        if (/ambiguous/.test(String(got.reason || ''))) report.ambiguous++;
+        var gainMrn = !!got.mrn && !String(row.mrn == null ? '' : row.mrn).trim();
+        var gainDob = !!got.dob && !String(row.dob == null ? '' : row.dob).trim();
+        if (!gainMrn && !gainDob) continue;
+        var write = null; if (find) { try { write = find(row.id); } catch (e) {} }
+        if (!write) write = row;
+        var prior = (write.identityFill && typeof write.identityFill === 'object') ? write.identityFill : {};
+        var marks = {}; Object.keys(prior).forEach(function (k) { marks[k] = prior[k]; });
+        var now = Date.now();
+        if (gainMrn) { write.mrn = got.mrn; marks.mrn = { value: got.mrn, source: got.source, at: now, by: VERSION }; }
+        if (gainDob) { write.dob = got.dob; marks.dob = { value: got.dob, source: got.dobSource || got.source, at: now, by: VERSION }; }
+        write.identityFill = marks;
+        try { up(write); report.filled++; } catch (e) {}
+      }
+      if (idx < rows.length) { sweepState.timer = setTimeout(chunk, 0); return; }
+      finish();
+    }
+    sweepState.timer = setTimeout(chunk, 0);
+    return report;
+  }
+  function sweepRequest(reason, delay) {
+    try { clearTimeout(sweepState.reqTimer); } catch (e) {}
+    sweepState.reqTimer = setTimeout(function () { try { sweep(reason); } catch (e) {} }, Math.max(0, Number(delay == null ? 1500 : delay)));
+  }
+
+  /* Read-only dry run: what WOULD be filled, by source, with no write at all.
+     Returns counts only — safe to read out loud. */
+  function dryRun(limit) {
+    var get = fn('getPatients'); if (!get) return { error: 'store-unavailable' };
+    var rows = []; try { rows = get() || []; } catch (e) { return { error: 'store-unavailable' }; }
+    var t0 = Date.now();
+    var out = { total: rows.length, missingMrn: 0, missingDob: 0, wouldFillMrn: 0, wouldFillDob: 0, ambiguous: 0, bySource: {}, reasons: {}, scanned: 0, ms: 0 };
+    var cap = Number(limit) > 0 ? Number(limit) : rows.length;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]; if (!r) continue;
+      var noMrn = !String(r.mrn == null ? '' : r.mrn).trim(), noDob = !String(r.dob == null ? '' : r.dob).trim();
+      if (noMrn) out.missingMrn++;
+      if (noDob) out.missingDob++;
+      if ((!noMrn && !noDob) || out.scanned >= cap) continue;
+      out.scanned++;
+      var got = null; try { got = mrnBackfillFromLocal(r); } catch (e) { continue; }
+      if (!got) continue;
+      if (got.mrn && noMrn) { out.wouldFillMrn++; out.bySource[got.source] = (out.bySource[got.source] || 0) + 1; }
+      if (got.dob && noDob) { out.wouldFillDob++; var ds = 'dob:' + (got.dobSource || got.source); out.bySource[ds] = (out.bySource[ds] || 0) + 1; }
+      if (/ambiguous/.test(String(got.reason || ''))) out.ambiguous++;
+      if (got.reason) out.reasons[got.reason] = (out.reasons[got.reason] || 0) + 1;
+    }
+    out.ms = Date.now() - t0;
+    return out;
+  }
+
+  /* ---- install: patch the writers, keep the originals reachable -------- */
+  function wrap(name, make) {
+    var orig = fn(name);
+    if (!orig || orig.__mrnWrapped) return !!(orig && orig.__mrnWrapped);
+    var next = make(orig);
+    next.__mrnWrapped = true;
+    next.__mrnOriginal = orig;
+    try { window[name] = next; } catch (e) { return false; }
+    return true;
+  }
+  function install() {
+    var done = 0;
+    done += wrap('upsertPatient', function (orig) {
+      return function (p) { try { guardOne(p); } catch (e) {} return orig.apply(this, arguments); };
+    }) ? 1 : 0;
+    /* The roster writer: the server hydrate and every other bulk path. */
+    done += wrap('savePatients', function (orig) {
+      return function (arr) { try { if (Array.isArray(arr)) guardBulk(arr); } catch (e) {} return orig.apply(this, arguments); };
+    }) ? 1 : 0;
+    /* The patient editor is the ONE deliberate path allowed to change or
+       clear a stored identity. It calls the single-row writer synchronously,
+       so a depth counter around it is an exact, self-closing window. */
+    done += wrap('savePatient', function (orig) {
+      return function () { editDepth++; try { return orig.apply(this, arguments); } finally { editDepth--; } };
+    }) ? 1 : 0;
+    return done;
+  }
+
+  var tries = 0;
+  (function attempt() {
+    var ok = install();
+    if (ok >= 3 || ++tries > 40) return;
+    setTimeout(attempt, 250);
+  })();
+
+  /* Once per boot, then after any pull/import settles. The roster-signature
+     check makes a re-run a cheap no-op, so the record-updated listener cannot
+     turn the sweep's own writes into a loop. */
+  try {
+    setTimeout(function () { sweepRequest('boot', 0); }, 4000);
+    window.addEventListener('mls:patient-record-updated', function () { sweepRequest('record-updated', 5000); });
+  } catch (e) {}
+
+  window.mrnBackfillFromLocal = mrnBackfillFromLocal;
+  window.__mlsMrnSweep = sweep;
+  window.__mlsMrnSweepRequest = sweepRequest;
+  window.__mlsMrnDryRun = dryRun;
+  window.__mlsMrnPreserveIdentity = preserveIdentity;
+  window.__mlsMrnGuardBulk = guardBulk;
+  window.__mlsMrnValidId = validId;
+  window.__mlsMrnIdKey = idKey;
+  window.__MLS_MRN_VERSION = VERSION;
+})();
+</script>
+<!-- ===== end mrn-1.0.0 ================================================== -->
 </body>
 </html>
