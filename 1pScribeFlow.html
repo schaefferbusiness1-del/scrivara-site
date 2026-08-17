@@ -37437,6 +37437,76 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
   document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
 })();
 </script>
+<!-- ===== msl-today-1.0.0 — the date, top right =======================
+     Owner: "WHAT DAY IT IS SHOULD BE DISPLAYED IN THE TOP RIGHT".
+
+     A clinical app that shows a schedule must never leave the doctor guessing
+     which day he is looking at. This reads the PRACTICE day the rest of the
+     app uses (_acctTodayKey, the same seam the day strip and the pull honour),
+     not the machine clock, so it can never disagree with the schedule beside
+     it. It re-reads on an interval and on focus so a tab left open overnight
+     does not still claim yesterday.
+
+     It is a label, not a control: no click target, no z-index above the dock,
+     and it steps aside on narrow screens where the header owns the space. -->
+<style id="mslTodayCss">
+#mslToday{
+  position:fixed; z-index:940;
+  top:calc(env(safe-area-inset-top,0px) + 14px);
+  right:calc(env(safe-area-inset-right,0px) + 18px);
+  display:flex; flex-direction:column; align-items:flex-end; gap:1px;
+  padding:5px 12px; border-radius:var(--r-pill,999px);
+  background:var(--card); border:1px solid var(--line);
+  box-shadow:var(--shadow); pointer-events:none; user-select:none;
+}
+#mslToday .mslTodayDay{ font:800 12.5px/1.15 var(--sans); color:var(--ink); letter-spacing:.2px; }
+#mslToday .mslTodayDate{ font:600 11px/1.15 var(--sans); color:var(--muted); }
+/* The header takes the width back below 900px; the day still shows, tighter. */
+@media (max-width:900px){
+  #mslToday{ padding:3px 9px; top:calc(env(safe-area-inset-top,0px) + 8px); right:calc(env(safe-area-inset-right,0px) + 10px); }
+  #mslToday .mslTodayDate{ display:none; }
+}
+@media print{ #mslToday{ display:none; } }
+</style>
+<script>
+(function () {
+  var ID = 'mslToday';
+  function practiceToday() {
+    /* The same seam the schedule and the pull use. Falling back to the machine
+       clock is correct here and only here: a label that is one day off is
+       better than no label, and every consumer that MATTERS already refuses
+       rather than guessing. */
+    try { if (typeof window._acctTodayKey === 'function') { var k = window._acctTodayKey(); if (/^d{4}-d{2}-d{2}$/.test(k)) { var p = k.split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); } } } catch (e) {}
+    return new Date();
+  }
+  function paint() {
+    var host = document.getElementById(ID);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = ID;
+      host.setAttribute('aria-live', 'polite');
+      host.innerHTML = '<span class="mslTodayDay"></span><span class="mslTodayDate"></span>';
+      (document.body || document.documentElement).appendChild(host);
+    }
+    var d = practiceToday();
+    var day = '', date = '';
+    try { day = d.toLocaleDateString(undefined, { weekday: 'long' }); } catch (e) { day = ''; }
+    try { date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { date = ''; }
+    var a = host.querySelector('.mslTodayDay'), b = host.querySelector('.mslTodayDate');
+    if (a && a.textContent !== day) a.textContent = day;
+    if (b && b.textContent !== date) b.textContent = date;
+  }
+  function boot() { paint(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  /* A tab left open past midnight must not still say yesterday. */
+  setInterval(paint, 60000);
+  window.addEventListener('focus', paint, false);
+  window.__mlsToday = { version: 'msl-today-1.0.0', refresh: paint,
+    revert: function () { var el = document.getElementById(ID); if (el && el.parentNode) el.parentNode.removeChild(el); return true; } };
+})();
+</script>
+<!-- ===== end msl-today-1.0.0 ========================================== -->
 <!-- ===== end msl-1.0.0 ================================================= -->
 <!-- ===== msl-autodraft-1.0.0 ==========================================
      "Prep op notes should auto start on for all patients."
