@@ -27,6 +27,15 @@ const tests = [
   'p1-calendar-single-pull-entrypoint.test.js',
   'p1-calendar-hero-pull-contract.test.js',
   'p1-calendar-peek-opnote-action.test.js',
+  /* p1-lease-loan-1.0.0 (owner report 2026-08-16): schedule pull 6/6, mapped
+     6/6, then all six today-note reads refused "pull-in-flight" because the
+     frozen feat_visits.js calls _assistReadChart with no token at all. The
+     pull now loans its own token; a no-token caller may join a LIVE loan but
+     never claims or releases on it, and the publisher withdraws only its own
+     loan. Runs the real sliced source from both shells plus the schedule
+     pull's own publish/withdraw logic, and proves three of the six
+     properties fail against deliberately broken scratch copies. */
+  'p1-athena-lease-loan-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',
