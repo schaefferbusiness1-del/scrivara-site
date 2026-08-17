@@ -37044,6 +37044,56 @@ html[data-msl="guided"] #opPrepList > div[data-msl-card="shut"] [id^="opPrepPrev
 html[data-msl="calm"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn,
 html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ display:none !important; }
 
+/* ---- SITE-WIDE: the text that explains instead of acting -------------
+   Owner: "hide any extra not important text". These are the standing prose
+   blocks a doctor has read five hundred times - captions, sub-labels, "tap to
+   expand" repeated on twelve tiles, a colour legend, a decorative glyph. They
+   never do anything. They are hidden in calm and guided, and every one of them
+   returns in Everything mode.
+
+   WHAT IS DELIBERATELY ABSENT. Each screen's inventory named nodes that must
+   never be registered: empty hosts whose display is driven by INLINE style
+   from their owning module (#ikForm, #ikDone, #ikCustomSection, #calNewApptBox,
+   #calDayPanel, #previsitLinkRow ...), and nodes another module MEASURES
+   (#calGrid via getClientRects, #profileCard via offsetParent, #analysisView's
+   own inline display). A !important rule here outranks inline style, so
+   registering one of those would silently kill the feature that owns it.
+   Only leaf text is touched below - no host, no container, no control. */
+html[data-msl="calm"] .msl-quiet,
+html[data-msl="guided"] .msl-quiet{ display:none !important; }
+
+/* Intake - the busiest screen in the app (126 controls, 7,410px). */
+html[data-msl="calm"] #ikForm > p:not([class]),
+html[data-msl="guided"] #ikForm > p:not([class]),
+html[data-msl="calm"] #ikSatSection > .ik-sub,
+html[data-msl="guided"] #ikSatSection > .ik-sub{ display:none !important; }
+
+/* Analysis - twelve tiles each repeating the same call to action. */
+html[data-msl="calm"] #analysisView .ax-title > p,
+html[data-msl="guided"] #analysisView .ax-title > p,
+html[data-msl="calm"] #analysisView .ax-tile .ax-cta,
+html[data-msl="guided"] #analysisView .ax-tile .ax-cta,
+html[data-msl="calm"] #analysisView .t7-face-note,
+html[data-msl="guided"] #analysisView .t7-face-note,
+html[data-msl="calm"] #analysisView .anp-glyph,
+html[data-msl="guided"] #analysisView .anp-glyph,
+html[data-msl="calm"] #mlsAnaScopeCaption,
+html[data-msl="guided"] #mlsAnaScopeCaption{ display:none !important; }
+
+/* Patients. */
+html[data-msl="calm"] #docFileInput ~ p.mini,
+html[data-msl="guided"] #docFileInput ~ p.mini,
+html[data-msl="calm"] #insBox p.mini,
+html[data-msl="guided"] #insBox p.mini{ display:none !important; }
+
+/* Calendar. The Booked/Arrived/Roomed/Completed legend is NOT hidden - it is
+   a key to a colour code rather than prose, and a doctor reads it to decode
+   the grid rather than to learn the app. */
+html[data-msl="calm"] #calendarView .card.cx-agenda > p.mini,
+html[data-msl="guided"] #calendarView .card.cx-agenda > p.mini,
+html[data-msl="calm"] #mlsT3Roster .t3r-cap:not(.t3r-census),
+html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !important; }
+
 /* ---- The guided next step ------------------------------------------
    Exactly ONE element carries .msl-next at a time. This is deliberate: in
    this app every existing infinite pulse means "a recorder or recognizer is
@@ -37159,7 +37209,26 @@ html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ 
   var REGISTRY = [
     { sel:'#opPrepDayRow', label:'Change day',               modes:['calm','guided'] },
     { sel:'#oprTplRail',   label:'Your templates',           modes:['calm','guided'] },
-    { sel:'#mlsOnfBar',    label:'Assign templates in bulk', modes:['calm','guided'] }
+    { sel:'#mlsOnfBar',    label:'Assign templates in bulk', modes:['calm','guided'] },
+
+    /* THE TWO BIGGEST SINGLE BLOCKS IN THE APP, measured on the owner's real
+       signed-in session rather than a logged-out shell (which understated
+       every screen by roughly ten times and sent an earlier pass after the
+       wrong targets entirely).
+
+       #mlsEpHistoryBox holds 29,311 characters in THREE text blocks - 66% of
+       everything on the Patients screen, one uninterrupted wall of prior
+       history above the controls.
+
+       #ikOdiWrap is the Oswestry Disability Index: 10 questions x 6 long prose
+       options = 60 radios and 3,170 characters, which is 48% of Intake's
+       controls and 63% of its characters by itself.
+
+       Both get a named disclosure, so neither is lost - and the ODI's own read
+       path, ikOdiScore() via input[name=ikOdiN]:checked, works on display:none
+       nodes, so a patient who opens it and answers is scored exactly as before. */
+    { sel:'#mlsEpHistoryBox', label:'Full prior history',                        modes:['calm','guided'] },
+    { sel:'#ikOdiWrap',       label:'How your pain affects daily life (10 questions)', modes:['guided'] }
   ];
   /* Repeated per card rather than once per screen, so it cannot live in
      REGISTRY (which folds a single node). Folded by CSS instead. */
@@ -37244,14 +37313,48 @@ html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ 
   document.addEventListener('click', onCardClick, false);
 
   /* Exactly one lit next step, chosen from what is actually actionable now. */
+  /* One lit next step, on whichever screen the doctor is actually looking at.
+     Deliberately ONE: in this app every existing infinite pulse means "a
+     recorder or recognizer is LIVE", so a screen full of blinking buttons
+     would compete with a clinical signal. The ring is a standing halo, not a
+     blink, and prefers-reduced-motion stills it without hiding it.
+
+     Each entry is [screen container id, the button that is the next step].
+     A screen with no obvious single next step is simply absent - guessing
+     would teach the doctor to distrust the ring, which is worse than nothing.
+     Op Notes is checked first because it is a full-screen room that covers
+     whatever view is nominally shown behind it. */
+  var NEXT_STEPS = [
+    ['calendarView',  '#mlsCvNxt_calendar'],
+    ['patientsView',  '#profileCard > h2 button.btn-green'],
+    ['analysisView',  '#t7AxRefresh'],
+    ['intakeView',    '#intakeView .ik-submit']
+  ];
+  function eligible(el) {
+    return !!(el && !el.disabled && el.offsetParent !== null &&
+              el.getAttribute('aria-disabled') !== 'true');
+  }
   function markNext(mode) {
     var prev = document.querySelector('.msl-next');
     if (prev) prev.classList.remove('msl-next');
     if (mode !== 'guided') return;
+
+    /* The op-note room is a full-screen takeover; when it is up it owns the
+       next step regardless of which view is underneath. */
     var room = document.getElementById('opPrepModal');
-    if (!room || !room.classList.contains('show')) return;
-    var btn = document.getElementById('opPrepGenAllBtn');
-    if (btn && !btn.disabled && btn.offsetParent !== null) btn.classList.add('msl-next');
+    if (room && room.classList.contains('show')) {
+      var draft = document.getElementById('opPrepGenAllBtn');
+      if (eligible(draft)) draft.classList.add('msl-next');
+      return;
+    }
+    for (var i = 0; i < NEXT_STEPS.length; i++) {
+      var view = document.getElementById(NEXT_STEPS[i][0]);
+      if (!view || view.offsetParent === null) continue;   /* not the shown view */
+      var target = null;
+      try { target = view.querySelector(NEXT_STEPS[i][1]) || document.querySelector(NEXT_STEPS[i][1]); } catch (e) { target = null; }
+      if (eligible(target)) { target.classList.add('msl-next'); return; }
+      return;   /* this IS the shown view; if its step is not actionable, light nothing */
+    }
   }
 
   var queued = false;
