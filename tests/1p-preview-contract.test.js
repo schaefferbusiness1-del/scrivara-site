@@ -342,8 +342,8 @@ const PROTECTED_EXTENSION = [
   'icon-48.png',
   'icon-128.png',
   'extension-version.json',
-  'MLS_Assist_v3.0.61.zip',
-  'MLS_Assist_v3.0.61.bin'
+  'MLS_Assist_v3.0.62.zip',
+  'MLS_Assist_v3.0.62.bin'
 ];
 const unchangedProduction = spawnSync('git', ['diff', '--quiet', PRODUCTION_BASE_COMMIT, '--', ...PROTECTED_PRODUCTION],
   { cwd: root, encoding: 'utf8', windowsHide: true });

@@ -46,10 +46,15 @@ const handlerSource = '/* ATHENA_ACTION_V2_HANDLER_START */' + between(backgroun
 for (const src of [flow, content, background]) assert(src.includes('place_order'), 'place_order review/refusal policy is missing from one hop');
 const clickGate = between(content, '/* ATHENA_ACTION_V2_CLICK_GATE_START */', '/* ATHENA_ACTION_V2_CLICK_GATE_END */');
 assert(/isTrusted\s*!==\s*true/.test(clickGate), 'note-lane mutation gate lost its trusted-click requirement');
-assert(/\^\(write_note\|save_draft\)\$/.test(clickGate), 'trusted-click gate must arm only write_note and save_draft');
+/* wsg-2.0.0 (MLS Assist 3.0.62): the trusted-click gate arms every supervised
+   action from ITS OWN confirm button - place_order included - and advertises
+   athenaFinalActionsV1 so the 1p site turns its order rows into typed rows. */
+assert(/\^\(write_note\|save_draft\|stage_billing\|sign_encounter\|place_order\)\$/.test(clickGate), 'trusted-click gate must arm every supervised action (wsg-2.0.0), place_order included');
+assert(!/\^\(write_note\|save_draft\)\$/.test(clickGate), 'the wsg-1.0.0 note-only arm list must be gone');
 const capabilityObject = /capabilities:\s*\{([^}]*)\}/.exec(content);
 assert(capabilityObject && /supervisedOrderPlacementV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise the supervised-order capability');
 assert(capabilityObject && /destinationTeachingV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise exact destination teaching');
+assert(capabilityObject && /athenaFinalActionsV1:\s*true/.test(capabilityObject[1]), 'wsg-2.0.0 extension must advertise athenaFinalActionsV1 in the pong');
 assert(/arm\.rowHash\s*===\s*orderRowHash/.test(content) && /arm\.clientOrderId\s*===\s*orderClientOrderId/.test(content), 'trusted-click arm is not bound to the exact order row and local order ID');
 assert(/gestureRowHash/.test(content) && /gestureClientOrderId/.test(content), 'worker request loses the trusted-click row binding');
 assert(/rawFields\[key\]\.length\s*>\s*2000/.test(content) && !/fields\[key\]\s*=\s*mlsStr\([^\n]*2000/.test(content), 'content bridge still silently truncates reviewed order details');
@@ -229,27 +234,25 @@ function send(message) {
   liveAthenaTabs = [{ id: 91, url: lockedContext.encounterUrl }];
   probeInjectionTabIds = [];
 
-  /* wsg-1.0.0 CONTRACT CHANGE (owner directive): order placement is
-     PREVIEW-ONLY. Probes still mint read-only tokens with exact row bindings
-     so the review screen can show where an order WOULD go — but EVERY execute
-     attempt, tampered or pristine, is refused by the write-safety gate before
-     token or mutation logic runs. The deep tamper/replay machinery below the
-     gate remains in the source (probe-side row invalidation still runs) but
-     is unreachable for orders while the policy stands. */
+  /* wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): the wsg-1.0.0
+     preview-only refusal for order placement is LIFTED. This block is the
+     ORIGINAL (pre-wsg-1.0.0) supervised single-order contract restored verbatim
+     from 98441b16^: stale-token invalidation, execute-time payload/row/client-id
+     tamper refusals, wrong-patient refusal, action-exact trusted click, ONE
+     verified isolated placement with immutable audit ids, replay refusal, and
+     encounter-only authorization. Every refusal here is a CORRECTNESS gate that
+     survives the policy lift. */
   const rowA = { ...exactOrder, clientOrderId: 'local-order-a' };
   const rowB = { ...exactOrder, clientOrderId: 'local-order-b' };
   const pA = await send({ ...probeMessage, order: rowA, rowHash: 'row-hash-a', clientOrderId: rowA.clientOrderId });
   const pB = await send({ ...probeMessage, order: rowB, rowHash: 'row-hash-b', clientOrderId: rowB.clientOrderId });
   assert(pA.ok && pB.ok, 'independent row probes were not minted');
-  assert(pA.readOnly && pB.readOnly, 'order probes must stay read-only');
   const staleA = await send({
     ...probeMessage, mode: 'execute', actionToken: pA.actionToken, order: rowA, rowHash: 'row-hash-a', clientOrderId: rowA.clientOrderId,
     expectedContext: { ...probeMessage.expectedContext },
     probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-row-a', gestureRowHash: 'row-hash-a', gestureClientOrderId: rowA.clientOrderId
   });
-  assert.strictEqual(staleA.blocked, true, 'order execute was not refused');
-  assert.strictEqual(staleA.reason, 'write-safety-final-action-blocked', 'order execute must be refused by the write-safety policy gate');
-  assert(!staleA.orderPlaced, 'a blocked order execute must never report placement');
+  assert.strictEqual(staleA.reason, 'token-used', 'a newer row probe did not invalidate the older same-manifest order token');
 
   const p1 = await send(probeMessage);
   assert(p1.ok && p1.actionToken && p1.readOnly, 'order probe did not return a read-only one-use token');
@@ -260,24 +263,37 @@ function send(message) {
     probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-click-1',
     gestureRowHash: probeMessage.rowHash, gestureClientOrderId: exactOrder.clientOrderId
   };
-  /* pristine, tampered, wrong-patient, row-swapped, replayed — ALL refused by
-     the same policy gate, and none may report placement */
-  for (const [label, attempt] of [
-    ['pristine', executeBase],
-    ['payload-tampered', { ...executeBase, order: { ...exactOrder, query: 'CT Lumbar spine' } }],
-    ['wrong-patient', { ...executeBase, expectedPatient: { ...patient, patientId: 'different-local-patient' } }],
-    ['row-swapped', { ...executeBase, rowHash: 'different-row-hash', gestureRowHash: 'different-row-hash' }],
-    ['client-id-swapped', { ...executeBase, clientOrderId: 'different-client-order', gestureClientOrderId: 'different-client-order' }],
-    ['gesture-tampered', { ...executeBase, gestureProof: 'trusted-click-wrong-row', gestureRowHash: 'wrong-gesture-row' }]
-  ]) {
-    const refused = await send(attempt);
-    assert.strictEqual(refused.blocked, true, label + ' order execute was not refused');
-    assert.strictEqual(refused.reason, 'write-safety-final-action-blocked', label + ' order execute bypassed the policy gate');
-    assert(!refused.orderPlaced && refused.ok !== true, label + ' order execute reported success');
-  }
-  /* the refusal must not corrupt probe availability for the same manifest */
-  const pAgain = await send(probeMessage);
-  assert(pAgain.ok && pAgain.readOnly, 'blocked executes corrupted subsequent probes');
+  const tampered = await send({ ...executeBase, order: { ...exactOrder, query: 'CT Lumbar spine' } });
+  assert.strictEqual(tampered.reason, 'order-payload-mismatch', 'execute-time order tamper was not rejected');
+  const tamperReplay = await send(executeBase);
+  assert.strictEqual(tamperReplay.reason, 'token-used', 'tampered execute did not consume its token');
+
+  const p2 = await send(probeMessage);
+  const wrongPatient = await send({ ...executeBase, actionToken: p2.actionToken, expectedPatient: { ...patient, patientId: 'different-local-patient' }, gestureProof: 'trusted-click-2' });
+  assert.strictEqual(wrongPatient.reason, 'patient-mismatch', 'wrong local patient binding was accepted');
+
+  const p3 = await send(probeMessage);
+  const rowTamper = await send({ ...executeBase, actionToken: p3.actionToken, rowHash: 'different-row-hash', gestureProof: 'trusted-click-row-tamper', gestureRowHash: 'different-row-hash' });
+  assert.strictEqual(rowTamper.reason, 'order-row-mismatch', 'execute-time row swap was accepted');
+
+  const p4 = await send(probeMessage);
+  const clientTamper = await send({ ...executeBase, actionToken: p4.actionToken, clientOrderId: 'different-client-order', gestureProof: 'trusted-click-client-tamper', gestureClientOrderId: 'different-client-order' });
+  assert.strictEqual(clientTamper.reason, 'order-client-id-mismatch', 'execute-time local order ID swap was accepted');
+
+  const p5 = await send(probeMessage);
+  const gestureTamper = await send({ ...executeBase, actionToken: p5.actionToken, gestureProof: 'trusted-click-wrong-row', gestureRowHash: 'wrong-gesture-row' });
+  assert.strictEqual(gestureTamper.reason, 'fresh-trusted-click-required', 'a trusted click armed for another row was accepted');
+
+  const p6 = await send(probeMessage);
+  const success = await send({ ...executeBase, actionToken: p6.actionToken, gestureProof: 'trusted-click-3' });
+  assert.strictEqual(success.ok, true);
+  assert.strictEqual(success.orderPlaced, true);
+  assert.strictEqual(success.patientId, patient.patientId, 'result lost immutable local patient audit ID');
+  assert.strictEqual(success.clientOrderId, exactOrder.clientOrderId, 'result lost immutable local order audit ID');
+  assert.strictEqual(success.rowHash, probeMessage.rowHash, 'result lost immutable order-row audit hash');
+  assert.strictEqual(success.noAutomaticChaining, 'no-automatic-chaining');
+  const replay = await send({ ...executeBase, actionToken: p6.actionToken, gestureProof: 'trusted-click-4' });
+  assert.strictEqual(replay.reason, 'token-used', 'successful order token was replayable');
 
   const encounterOrder = { ...exactOrder, clientOrderId: 'local-order-encounter-only' };
   const encounterContext = {
@@ -290,14 +306,14 @@ function send(message) {
   };
   const encounterProbe = await send(encounterProbeMessage);
   assert(encounterProbe.ok, 'encounter-only exact context could not be probed');
-  const encounterExecute = await send({
+  const encounterSuccess = await send({
     ...encounterProbeMessage, mode: 'execute', actionToken: encounterProbe.actionToken,
     probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-encounter-only',
     gestureRowHash: encounterProbeMessage.rowHash, gestureClientOrderId: encounterOrder.clientOrderId
   });
-  assert.strictEqual(encounterExecute.reason, 'write-safety-final-action-blocked', 'encounter-only order execute bypassed the policy gate');
+  assert.strictEqual(encounterSuccess.ok, true, 'probe-discovered appointment ID incorrectly invalidated encounter-only authorization');
 
-  console.log('PASS Athena single-order runtime: exact catalog/control, read-only probes with immutable row bindings, and EVERY order execute (pristine or tampered) refused by the write-safety policy gate');
+  console.log('PASS Athena single-order runtime (wsg-2.0.0): exact catalog/control, isolated readback, wrong-patient/tamper/replay gates, immutable audit IDs, and no chaining - the policy refusal is lifted, every correctness gate stands');
 })().catch(err => {
   console.error(err);
   process.exitCode = 1;

@@ -29,7 +29,10 @@ function beforeMutation(source, needle, mutationNeedle) {
 /*
  * This is deliberately a separate, narrow capability from mlsAppWriteV2.
  * Generic AI/autopilot routes remain unable to Save, Sign, bill, or place an
- * order. Only write_note and save_draft can receive a trusted-click arm.
+ * order. wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): every
+ * supervised V2 action (write_note, save_draft, stage_billing, sign_encounter,
+ * place_order) can receive a trusted-click arm from ITS OWN confirm button; the
+ * production site (feat_mls_writeflow.js) still only offers note write/save.
  */
 assert(/mlsAppAthenaActionV2\s*:\s*1/.test(content), 'the typed Athena action must be origin-gated by the content bridge');
 
@@ -99,13 +102,43 @@ const actionEl = {
 };
 capturedClick({ isTrusted: false, target: actionEl });
 assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic click armed an Athena mutation');
-/* wsg-1.0.0 CONTRACT CHANGE (owner directive: billing/orders/sign are
-   PREVIEW-ONLY): even a browser-trusted click on a final/financial action can
-   no longer arm a mutation — only the note lanes (write_note / save_draft)
-   arm. The billing element stays for probe/preview; execute is refused at the
-   bridge, the background gate, the driver, and the interceptor. */
+/* wsg-2.0.0 CONTRACT CHANGE (owner directive 2026-08-12, MLS Assist 3.0.62):
+   the wsg-1.0.0 preview-only rule for billing/orders/sign is LIFTED. A
+   browser-trusted click on the exact confirm button of ANY supervised action
+   arms that one action (single-use, short-lived); a programmatic click still
+   never arms, and a trusted click whose label names a DIFFERENT action still
+   never arms (no cross-arming). Pinned both ways below. */
 capturedClick({ isTrusted: true, target: actionEl });
-assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'trusted click on a preview-only lane (stage_billing) must NOT arm');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'stage_billing', 'wsg-2.0.0: a trusted click on the exact stage_billing confirm must arm stage_billing');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.previewHash, 'preview-123');
+gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
+/* the app's own aria phrase for the billing confirm ("Confirm stage billing in
+   Athena") must arm too - the 8/12 site lane wrote that phrase and 3.0.61's
+   regex demanded "codes", a mismatch that would have refused every billing
+   send with fresh-trusted-click-required. */
+const billingAriaEl = Object.assign({}, actionEl, { textContent: 'Confirm & Send to Athena', getAttribute: name => ({ 'data-mls-athena-action': 'stage_billing', 'data-mls-preview-hash': 'preview-b2', 'aria-label': 'Confirm stage billing in Athena', title: '' })[name] || '' });
+billingAriaEl.closest = selector => selector.includes('data-mls-athena-action') || selector.startsWith('button') ? billingAriaEl : null;
+capturedClick({ isTrusted: true, target: billingAriaEl });
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'stage_billing', 'the app aria phrase "Confirm stage billing in Athena" must arm stage_billing');
+gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
+for (const [action, phrase] of [['sign_encounter', 'Confirm Sign and Save in Athena'], ['place_order', 'Confirm and place one reviewed order in Athena']]) {
+  const el = { textContent: 'Confirm & Send to Athena', value: '', disabled: false, getBoundingClientRect: () => ({ width: 180, height: 40 }),
+    getAttribute: name => ({ 'data-mls-athena-action': action, 'data-mls-preview-hash': 'preview-' + action, 'data-mls-row-hash': action === 'place_order' ? 'row-1' : '', 'data-mls-client-order-id': action === 'place_order' ? 'ord-1' : '', 'aria-label': phrase, title: '' })[name] || '' };
+  el.closest = selector => selector.includes('data-mls-athena-action') || selector.startsWith('button') ? el : null;
+  capturedClick({ isTrusted: false, target: el });
+  assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic click must never arm ' + action);
+  capturedClick({ isTrusted: true, target: el });
+  assert.strictEqual(gateContext._mlsAthenaActionGesture.action, action, 'wsg-2.0.0: a trusted click on the exact ' + action + ' confirm must arm it');
+  if (action === 'place_order') { assert.strictEqual(gateContext._mlsAthenaActionGesture.rowHash, 'row-1'); assert.strictEqual(gateContext._mlsAthenaActionGesture.clientOrderId, 'ord-1'); }
+  gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
+}
+/* no cross-arming: a trusted click whose label says "write reviewed note" but
+   whose data-action says sign_encounter arms NOTHING. */
+const crossEl = { textContent: 'Confirm write reviewed note', value: '', disabled: false, getBoundingClientRect: () => ({ width: 180, height: 40 }),
+  getAttribute: name => ({ 'data-mls-athena-action': 'sign_encounter', 'data-mls-preview-hash': 'preview-x', 'aria-label': '', title: '' })[name] || '' };
+crossEl.closest = selector => selector.includes('data-mls-athena-action') || selector.startsWith('button') ? crossEl : null;
+capturedClick({ isTrusted: true, target: crossEl });
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'a label/action mismatch must never arm (cross-arming)');
 const noteEl = {
   textContent: 'Confirm Write reviewed note',
   value: '',
@@ -153,9 +186,15 @@ const safetyGateAt = handler.indexOf('MLS_WRITE_SAFETY_GATE_START');
 const tokenGateAt = handler.indexOf("if (mode === 'execute')");
 assert(safetyGateAt >= 0 && tokenGateAt > safetyGateAt, 'background final-action refusal must precede token and mutation processing');
 assert(/write-safety-guard-missing/.test(handler), 'background must fail closed if the final-action safety guard is unavailable');
+/* wsg-2.0.0: the bridge no longer refuses any execute action by policy. Pin
+   the LIFT: no policy refusal between the bridge-gate marker and the trusted-
+   click arm check, and the arm check itself still stands for every action. */
 const bridgeSafety = between(content, '/* MLS_WRITE_SAFETY_BRIDGE_GATE', 'var previewHash');
-for (const action of ['stage_billing', 'sign_encounter', 'place_order']) assert(bridgeSafety.includes(action), `${action} is missing from the content execute refusal`);
-assert(/write-safety-final-action-blocked/.test(bridgeSafety), 'content execute refusal lost its stable reason');
+assert(/wsg-2\.0\.0/.test(bridgeSafety), 'content bridge gate must carry the wsg-2.0.0 lift note');
+assert(!/write-safety-final-action-blocked/.test(bridgeSafety), 'wsg-2.0.0: the content bridge must not refuse execute by policy any more');
+assert(!/reply\(/.test(bridgeSafety), 'wsg-2.0.0: nothing may be replied (refused) inside the lifted bridge gate');
+assert(/fresh-trusted-click-required/.test(bridge), 'the trusted-click arm check must still stand for every execute');
+assert(/arm\.action !== athAction/.test(bridge), 'the arm must still be action-exact');
 assert(/mode[^\n]*(probe|execute)/.test(handler), 'handler must have explicit probe and execute modes');
 assert(/ambiguous-athena-tabs/.test(handler), 'ambiguous Athena targets must fail closed');
 /* v2.9.31 multi-tab contract: the write lane no longer demands a single
@@ -351,4 +390,4 @@ const genericWriteDriver = between(background, 'async function mlsUnifiedWriteDr
 assert(/forcedHeld/.test(genericWriteDriver), 'generic write route must keep structured routes held');
 assert(!/sign_encounter|save_draft|stage_billing/.test(genericWriteDriver), 'generic note writer must not gain final-action capabilities');
 
-console.log('PASS Athena action contract: only note write/save can arm; billing/sign/order execute are refused before mutation with dormant defenses preserved');
+console.log('PASS Athena action contract (wsg-2.0.0): every supervised action arms only from its own trusted confirm click, no cross-arming, policy refusals lifted, dormant generic-writer defenses preserved');

@@ -22,7 +22,11 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(guardSource, sandbox, { filename: 'write_safety_guard.js' });
 const safety = sandbox.MLSWriteSafety;
-assert(safety && safety.version === 'wsg-1.1.0', 'write-safety guard did not load');
+assert(safety && safety.version === 'wsg-2.0.0', 'write-safety guard did not load (wsg-2.0.0 = MLS Assist 3.0.62, policy refusal lifted; the test-content policy below is unchanged)');
+assert.strictEqual(Object.keys(safety.BLOCKED_EXECUTE_ACTIONS || { x: 1 }).length, 0, 'wsg-2.0.0: no action may be refused by policy');
+assert.strictEqual(safety.gateActionRequest({ mode: 'execute', action: 'sign_encounter', noteText: '' }), null, 'wsg-2.0.0: sign_encounter execute must pass the policy gate');
+assert.strictEqual(safety.gateActionRequest({ mode: 'execute', action: 'stage_billing', noteText: '' }), null, 'wsg-2.0.0: stage_billing execute must pass the policy gate');
+assert.strictEqual(safety.gateActionRequest({ mode: 'execute', action: 'place_order', noteText: '' }), null, 'wsg-2.0.0: place_order execute must pass the policy gate');
 
 const syntheticPatient = { name: 'Synthetic Preview Patient', mrn: 'SYN-1001' };
 assert.strictEqual(safety.checkTestWritePolicy({ patient: syntheticPatient, noteText: 'Ordinary reviewed draft.' }), null,

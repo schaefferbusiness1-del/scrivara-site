@@ -150,13 +150,20 @@ assert(!/startAthenaAction\(\s*['"](?:stage_billing|sign_encounter|place_order)[
 assert(!/mlsAppSignSave|mlsAppPasteNote|signRunning\s*=\s*true/.test(consoleSignFlow), 'legacy console still contains an independent write/sign fallback');
 assert(!/makeSignBtn\(\)|data-mlswbc-sign/.test(consoleLaunchers), 'legacy console still injects a Sign & Save launcher');
 
-// Keep the UI contract aligned with the existing defense-in-depth transport
-// policy. Probe/review may remain; execute must be refused in both hops.
+// wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): the transport no
+// longer refuses billing / sign / order EXECUTE by policy. The PRODUCTION site
+// above still never offers those actions (its allowlist is unchanged), so the
+// production UI truth contract holds by construction; the extension pins the
+// LIFT explicitly so a stale hop cannot silently re-introduce the refusal the
+// 1p site now relies on being absent.
 for (const source of [contentSource, backgroundSource]) {
-  assert(/write-safety-final-action-blocked/.test(source), 'final-action policy refusal disappeared from an extension hop');
+  assert(!/write-safety-final-action-blocked/.test(source), 'wsg-2.0.0: an extension hop still carries the lifted final-action policy refusal');
+  assert(/wsg-2\.0\.0/.test(source), 'an extension hop lost its wsg-2.0.0 lift note');
   for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
-    assert(source.includes(action), `${action} is missing from the explicit final-action refusal`);
+    assert(source.includes(action), `${action} is missing from the supervised action set`);
   }
 }
+const wsgSource = fs.readFileSync(path.join(root, 'write_safety_guard.js'), 'utf8');
+assert(/var BLOCKED_EXECUTE_ACTIONS = \{\};/.test(wsgSource) && /var VERSION = 'wsg-2\.0\.0';/.test(wsgSource), 'write_safety_guard must be wsg-2.0.0 with an EMPTY blocked-execute map');
 
-console.log('PASS Athena final-action truth: billing, signing, and orders stay visible as exact manual payloads labeled Complete in Athena; only note write/save can confirm');
+console.log('PASS Athena final-action truth: production keeps billing, signing, and orders as exact manual payloads labeled Complete in Athena; the wsg-2.0.0 extension no longer refuses them by policy');

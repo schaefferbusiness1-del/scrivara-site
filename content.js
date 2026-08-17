@@ -79,7 +79,7 @@
   function _mlsActionLabelMatches(action, label) {
     label = String(label || '').replace(/\s+/g, ' ').trim();
     if (action === 'write_note') return /\bconfirm\s+write\s+reviewed\s+note\b/i.test(label);
-    if (action === 'stage_billing') return /\bconfirm\s+stage\s+billing(?:\s+codes?)?(?:\s+in\s+athena)?\b/i.test(label); /* wsg-2.0.0: the app's confirm reads "Confirm stage billing in Athena" - accept both the codes and in-Athena forms */
+    if (action === 'stage_billing') return /\bconfirm\s+stage\s+billing(?:\s+codes?)?(?:\s+in\s+athena)?\b/i.test(label); /* wsg-2.0.0: the app confirm aria reads Confirm stage billing in Athena - accept both the codes and in-Athena forms (no quotes here: test block scanners treat quotes as strings) */
     if (action === 'save_draft') return /\bconfirm\s+save\s+draft(?:\s+in\s+athena)?\b/i.test(label);
     if (action === 'sign_encounter') return /\bconfirm\s+sign\s*(?:&|and)\s*save(?:\s+in\s+athena)?\b/i.test(label);
     if (action === 'place_order') return /\bconfirm\s*(?:&|and)?\s*place\s+(?:one\s+)?(?:reviewed\s+)?order\b/i.test(label);
@@ -645,8 +645,8 @@
       /* MLS_WRITE_SAFETY_BRIDGE_GATE (wsg-2.0.0): the wsg-1.0.0 execute refusal
          for sign/order/billing is LIFTED by owner directive (2026-08-12,
          released 2026-08-17). Every action still needs a fresh trusted-click
-         arm for its own button (below), the background's one-use token, the
-         exact identity + encounter lock, and the driver's own verification. */
+         arm for its own button (below), the one-use background token, the
+         exact identity + encounter lock, and the driver verification. */
       var previewHash = mlsStr(d.previewHash, 160);
       var orderRowHash = mlsStr(d.rowHash, 160);
       var orderClientOrderId = mlsStr(d.clientOrderId || (d.order && d.order.clientOrderId) || (d.payload && d.payload.order && d.payload.order.clientOrderId), 160);

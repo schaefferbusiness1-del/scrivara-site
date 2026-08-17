@@ -213,9 +213,12 @@ finding('dormant billing defense still has explicit preflight and partial-mutati
   assert(!/partialMutation[^]{0,500}Nothing was changed/i.test(showActionConfirm), 'partial mutation must never be described as Nothing was changed');
 });
 
-finding('Sign remains manual even after a verified write_note proof', function () {
-  /* The note proof remains useful as a durable write receipt, but it must
-     never unlock electronic finalization in the MLS UI. */
+finding('Sign stays proof-gated: production keeps it manual, the extension executes it ONLY behind a verified write_note proof (wsg-2.0.0)', function () {
+  /* The note proof is a durable write receipt AND (since wsg-2.0.0 / MLS Assist
+     3.0.62, owner directive 2026-08-12) the prerequisite the extension demands
+     before it will click the exact Sign & Save control. The PRODUCTION site
+     still never offers Sign; the extension's policy refusal is lifted, its
+     correctness gates are not. */
   assert(/noteWriteProofs\s*=\s*Object\.create\(null\)|new\s+Map\s*\(/.test(handler), 'background must own a note-write proof registry');
   assert(/action\s*===\s*['"]write_note['"](?=[^]{0,1800}(?:written|writeVerified))(?=[^]{0,1800}verified)(?=[^]{0,1800}noteWriteProof)/.test(handler), 'proof may be minted only after write_note reports written and verified');
   assert(/probeContextMatches\(\s*(?:executed|result|writeResult)\.context\s*,\s*rec\.locked\s*\)|(?:executed|result|writeResult)\.context\.contextHash\s*===\s*rec\.locked\.contextHash/.test(handler), 'proof minting must re-check the driver result against the token-locked encounter');
@@ -230,10 +233,18 @@ finding('Sign remains manual even after a verified write_note proof', function (
   const manualRefusal = startAthenaAction.indexOf('manual-only-final-action');
   const probeBridge = startAthenaAction.indexOf("mode: 'probe'");
   assert(manualRefusal >= 0 && probeBridge > manualRefusal, 'Sign must be refused before any bridge probe');
+  /* wsg-2.0.0: the policy refusal is GONE from the content bridge and the
+     driver (pinned absent, both), and what remains is the correctness chain:
+     the bridge still demands the action-exact trusted-click arm, the handler
+     still refuses sign without a matching note-write proof, and the driver
+     may click ONLY the exact 'Sign and Save' control (clickOnce carve-out). */
   for (const source of [actionBridge, driver]) {
-    assert(/write-safety-final-action-blocked/.test(source), 'a content/driver hop lost the final-action refusal');
-    assert(/sign_encounter/.test(source), 'Sign is missing from a content/driver refusal policy');
+    assert(!/write-safety-final-action-blocked/.test(source), 'wsg-2.0.0: a content/driver hop still carries the lifted policy refusal');
+    assert(/sign_encounter/.test(source), 'Sign is missing from a content/driver hop');
   }
+  assert(/fresh-trusted-click-required/.test(actionBridge) && /arm\.action !== athAction/.test(actionBridge), 'the bridge must still demand an action-exact trusted-click arm for sign');
+  assert(/sign-prerequisite-mismatch/.test(handler) && /matchingNoteWriteProof\(/.test(handler), 'the handler must still refuse sign without a matching verified note-write proof');
+  assert(/function clickOnce\(el\) \{ if \(wsForbiddenControl\(el\) && !\(action === 'sign_encounter' && exactSign\(el\)\)\) throw/.test(driver), 'clickOnce must refuse every forbidden control except the exact Sign and Save control for sign_encounter');
   assert(/MLS_WRITE_SAFETY_GATE_START/.test(handler) && /gateActionRequest/.test(handler), 'background no longer invokes the write-safety policy before execution');
   assert(/write-safety-guard-missing/.test(handler) && /sign_encounter/.test(handler), 'background no longer fails closed when its safety policy is unavailable');
 });
