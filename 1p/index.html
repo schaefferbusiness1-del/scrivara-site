@@ -4919,6 +4919,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       </div>
 
       <div class="field">
+        <label for="qolMslMode">How much is on screen</label>
+        <select class="sf-select" id="qolMslMode" onchange="applyMslModePreview(this.value)">
+          <option value="guided">Simple &mdash; one step at a time</option>
+          <option value="calm">Normal (default)</option>
+          <option value="full">Everything &mdash; show every control</option>
+        </select>
+        <div class="hint" style="margin-top:6px">Simple keeps the screen to the next thing you need and folds the rest behind labelled buttons. Nothing is ever removed &mdash; everything stays one click away.</div>
+      </div>
+
+      <div class="field">
         <label for="qolDockSide">Navigation bar</label>
         <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
           <option value="bottom">Floating — bottom centre (default)</option>
@@ -37271,6 +37281,7 @@ html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ 
       for (var i = 0; i < REGISTRY.length; i++) foldOne(REGISTRY[i], mode);
       paintCards(mode);
       markNext(mode);
+      syncModeField();
     });
   }
 
@@ -37283,6 +37294,30 @@ html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ 
     root.__mslWatched = true;
     try { new MutationObserver(refresh).observe(root, { childList:true, subtree:true }); } catch (e) {}
   }
+
+  /* The Settings control. Until this existed the three modes were only
+     reachable by typing __mlsSimpleLayer.set() into a console, which meant
+     "Simple" was, for a doctor, not a feature at all. Named like the app's
+     other preview handlers (applyDockSidePreview, applyTextSizePreview) and
+     called directly from the field's onchange, because
+     public-inline-handler-contract resolves every inline handler to a real
+     function and a defensive typeof wrapper reads to it as a call to "if". */
+  window.applyMslModePreview = function (mode) {
+    if (!MODES[mode]) return false;
+    var stored = write(mode);
+    apply(mode);
+    refresh();
+    return stored;
+  };
+  /* Keep the field honest: the mode can also change from code or another tab,
+     and a select showing a stale value is a lie the doctor acts on. */
+  function syncModeField() {
+    var el = document.getElementById('qolMslMode');
+    if (!el) return;
+    var now = read();
+    if (el.value !== now) el.value = now;
+  }
+  window.__mlsSimpleLayerSyncField = syncModeField;
 
   window.__mlsSimpleLayer = {
     version: 'msl-1.0.0',
