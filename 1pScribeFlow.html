@@ -42574,6 +42574,7 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       states: [
         { steps: [
             { sel: '#opPrepGenAllBtn', unblock: '#oprTabTpls',
+              reason: 'Draft every op note this day needs',
               why: 'Assign a template to each procedure first' },
             '#opPrepModal .btn-primary', '#oprBack'
           ] }
@@ -42585,9 +42586,15 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     },
     {
       id: 'settings', host: '#settingsModal', modal: true,
+      /* MEASURED: "Save changes" is DISABLED until something is actually
+         changed, so a single row with one `why` produced a glow on the × that
+         still read "Save what you changed" — the glow was right and the
+         sentence was a lie. Each step carries its own line instead. */
       states: [
-        { steps: ['#settingsModal .btn-primary', '#settingsModal .modal-x'],
-          why: 'Save what you changed' }
+        { steps: [
+            { sel: '#settingsModal .btn-primary', reason: 'Save what you changed' },
+            { sel: '#settingsModal .modal-x', reason: 'Nothing is waiting — close when you are done' }
+          ] }
       ]
     },
     {
@@ -42676,23 +42683,27 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     },
     {
       id: 'history', host: '#historyView',
-      states: [{ steps: ['#mlsCvNxt_history', '#histNewVisitBtn', '#pullChartBtn', '#histSearch'] }]
+      states: [{ steps: ['#mlsCvNxt_history', '#histNewVisitBtn', '#pullChartBtn', '#histSearch'],
+        why: 'Bring this patient’s chart across from Athena' }]
     },
     {
       id: 'recs', host: '#recsView',
-      states: [{ steps: ['#genRecsBtn', '#recsView .btn-primary'] }]
+      states: [{ steps: ['#genRecsBtn', '#recsView .btn-primary'],
+        why: 'Suggestions you review before anything is ordered' }]
     },
     /* studioView BEFORE analysisView, deliberately: feat_mls_studio_merge.js
        hoists #analysisView INSIDE #studioView, so on AI Studio both containers
        are shown and the first match wins. */
     {
       id: 'studio', host: '#studioView',
-      states: [{ steps: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'] }]
+      states: [{ steps: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'],
+        why: 'Ask about this visit or your practice' }]
     },
     {
       id: 'analysis', host: '#analysisView',
       states: [{ steps: ['#t7AxRefresh', '#anaBaselineRefresh', '#anaOutcomesRefresh',
-        '#analysisView .btn-primary', '#analysisView button'] }]
+        '#analysisView .btn-primary', '#analysisView button'],
+        why: 'Re-read the numbers' }]
     },
     {
       id: 'orders', host: '#ordersView',
@@ -42979,5 +42990,331 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 })();
 </script>
 <!-- ===== end nextglow-1.0.0 ============================================ -->
+<!-- ===== visitflow-1.0.0 — the transcript stays, and one record control ===
+     OWNER, 2026-08-17 21:35Z, from his own screenshot of the Visit room while
+     recording: the transcript box ("The visit conversation appears here as you
+     speak…") DISAPPEARS once recording starts, and a huge dark "Start
+     Recording" button sits on screen BELOW the live "● Pause recording" strip.
+     Two record controls saying opposite things, and no transcript.
+
+     BOTH HALVES ARE MEASURED, AND NEITHER WAS A GUESS.
+
+     (1) THE TRANSCRIPT. feat_mls_calm_shell.js:405 ships
+             body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}
+         and :3472 sets that class from the WORD COUNT:
+             t.classList.toggle('mls-empty', /(?:^|\D)0\s*words/i.test(textOf(t)))
+         Calm is the DEFAULT mode. So the box is hidden whenever the count reads
+         zero — which is exactly the moment recording starts and nothing has
+         been recognised yet, and stays hidden through every silence before the
+         first word. Measured on this shell, no patient chosen: the wrapper
+         computes display:none and getBoundingClientRect() is 0x0, so the box
+         the doctor is told to watch is not on the page at all.
+
+         Hiding an empty box is a REASONABLE idea at rest and a wrong one while
+         a recorder is live: the empty box IS the feedback. So this narrows the
+         shared rule instead of deleting it — the box comes back whenever
+         capture is live, whenever a note exists, and whenever the doctor is
+         focused in it, and stays folded at rest exactly as before.
+
+         feat_mls_calm_shell.js is a SHARED module (no 1p- prefix): editing it
+         would ship to production. This is an overlay. Specificity is not
+         decoration — the shared rule is (0,3,1) with !important and is injected
+         at runtime AFTER this stylesheet, so a matching-specificity rule loses
+         on source order. `html body.mls-calm[...]` is (0,3,2) and wins.
+
+     (2) TWO RECORD CONTROLS. 1p-mls-connect.js:6762 already makes the engine's
+         recording controls yield while the flow lane's pill is offered — but
+         the list is only #ez3Stop and #ez3Rec2. The engine's BIG hero buttons
+         are #ez3Rec / #ez3Next / #ez3Nxt / #ez3Now, and none of them is in it.
+         Measured on this shell: with a patient chosen the hero #ez3Rec renders
+         720x82 reading "🎙 Start Recording", and the lane pill renders 48px
+         reading "⏸ Pause recording" — both visible, both driving the same one
+         recorder, saying opposite things. That is the owner's screenshot.
+
+         The yield is extended to the hero ids, with the SAME guard shape the
+         shipped rule uses and for the same reason: it is gated on the lane pill
+         being REALLY offered (`.ez3fl-recbtn:not([hidden])`), so when the pill
+         is hidden — idle with no transcript, which is the state the hero is
+         designed for — the hero survives untouched. It can therefore never hide
+         the last record control on the screen. Phones are excluded outright:
+         there the whole lane is CSS-hidden and :not([hidden]) cannot see that,
+         so the engine hero is the only one left and must stay.
+
+         PROVEN BOTH WAYS, because a fix that removes the last record control
+         would be worse than the defect: the suite asserts >=1 visible record
+         control in every state AND exactly one while recording.
+
+     WHAT THIS DELIBERATELY DOES NOT DO. It does not relabel #ez3Next. That
+     button names the NEXT SCHEDULED patient, and tests/record-verb-names-the-
+     patient-once.test.js pins that on purpose ("the HOME screen Start Recording
+     button must still name the patient"). nextglow-1.0.0 handles the owner's
+     "nothing pre-armed" concern the honest way instead: with no patient chosen
+     the glow is on "Choose patient", never on the pre-armed hero. -->
+<style id="mlsVisitFlowCss">
+/* ---- (1) THE TRANSCRIPT IS PRESENT WHENEVER CAPTURE IS LIVE -----------
+   body.mls-recording is written by the flow lane's own syncTopLane() — the one
+   place in the app that already knows whether capture is live — so this reads
+   the app's signal rather than inventing a second one.
+   Four conditions, any one of which brings the box back:
+     · capture is live                       (body.mls-recording)
+     · the doctor is typing or pasting in it (:focus-within)
+     · a note exists                          (the box is the source text)
+     · the doctor asked for every control     (data-msl="full") */
+html body.mls-recording .ez3fl-transcript.mls-empty,
+html body.mls-calm.mls-recording .ez3fl-transcript.mls-empty,
+html body.mls-calm .ez3fl-transcript.mls-empty:focus-within,
+html[data-msl="full"] body.mls-calm .ez3fl-transcript.mls-empty{
+  display:block !important;
+}
+/* While live it is the thing to look at, so it is not a folded afterthought. */
+html body.mls-recording .ez3fl-transcript{
+  border-color:#78B99D !important;
+  box-shadow:0 0 0 3px rgba(46,106,75,.13) !important;
+}
+/* A live recorder with nothing recognised yet must SAY so, or an empty box
+   reads as a broken microphone. One line, only while live and only while the
+   box is still empty, injected by CSS so it costs no node and cannot desync. */
+html body.mls-recording .ez3fl-transcript.mls-empty .ez3fl-txhead::after{
+  content:'Listening — your words appear here as they are recognised.';
+  flex-basis:100%; order:9;
+  font:600 11.5px/1.35 var(--sans, system-ui, sans-serif);
+  color:#2E6A4B;
+}
+
+/* ---- (2) ONE RECORD CONTROL -------------------------------------------
+   The same shape as the shipped yield at 1p-mls-connect.js:6762, extended to
+   the engine's four BIG hero ids. Gated on the lane pill really being offered,
+   so it can never hide the last record control; phones excluded because the
+   lane is CSS-hidden there and :not([hidden]) cannot see that. */
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Rec,
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Next,
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Nxt,
+body:not(.mls-phone) #mlsEz3Body:has(.ez3fl-record:not([hidden]) .ez3fl-recbtn:not([hidden])) #ez3Now{
+  display:none !important;
+}
+/* :has() is not universal. Without it the rule above simply does not apply and
+   the screen is exactly what it is today — a graceful no-op, never a hidden
+   control. The runtime pass below is the belt to that braces: it mirrors the
+   same predicate in JS so an engine with no :has() still gets one control. */
+</style>
+<script>
+/* visitflow-1.0.0 runtime.
+   Everything above is CSS; this exists for two things CSS cannot do:
+     · engines without :has() (the yield would silently not apply)
+     · telling a test what the machine BELIEVES, rather than inferring it. */
+(function () {
+  'use strict';
+  if (window.__mlsVisitFlow) return;
+
+  var VERSION = 'visitflow-1.0.0';
+  var HERO = ['ez3Rec', 'ez3Next', 'ez3Nxt', 'ez3Now'];
+  var MARK = 'data-mls-vf-yield';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function q(s) { return safe(function () { return document.querySelector(s); }, null); }
+
+  function supportsHas() {
+    return safe(function () { return typeof CSS !== 'undefined' && CSS.supports && CSS.supports('selector(:has(*))'); }, false);
+  }
+  function shown(e) {
+    if (!e) return false;
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(e); }, null);
+    return !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  }
+  function phone() { return safe(function () { return document.body.classList.contains('mls-phone'); }, false); }
+
+  /* The lane pill is REALLY offered — the same fact the shipped CSS reads. */
+  function pillOffered() {
+    var lane = q('.ez3fl-record');
+    if (!lane || lane.hidden) return false;
+    var pill = lane.querySelector('.ez3fl-recbtn');
+    return !!(pill && !pill.hidden && shown(pill));
+  }
+
+  function hide(e) {
+    if (!e || e.getAttribute(MARK) === '1') return false;
+    e.setAttribute(MARK, '1');
+    e.style.setProperty('display', 'none', 'important');
+    return true;
+  }
+  function unhide(e) {
+    if (!e || e.getAttribute(MARK) !== '1') return false;
+    e.removeAttribute(MARK);
+    e.style.removeProperty('display');
+    return true;
+  }
+
+  /* The JS mirror of the CSS yield, for engines with no :has(). Never removes
+     a node and never touches a hero while the pill is NOT offered, so the last
+     record control is safe by the same argument the CSS relies on. */
+  function yieldHeroes() {
+    if (supportsHas()) return 0;      /* CSS already did it */
+    var want = !phone() && pillOffered();
+    var n = 0;
+    for (var i = 0; i < HERO.length; i++) {
+      var h = el(HERO[i]);
+      if (!h) continue;
+      if (want) { hide(h); n++; } else unhide(h);
+    }
+    return n;
+  }
+
+  /* (3) A CONTROL THAT SAYS "Stop recording" WHILE NOTHING IS RECORDING.
+     MEASURED on this shell in the note-drafted state: the flow lane's pill is
+     hidden (a note exists, so there is nothing to resume), which releases the
+     shipped yield — and the engine's #ez3Stop comes back reading
+     "⏸ Stop recording" with no recorder running. The doctor is offered a stop
+     for something that is not happening.
+
+     Handled in JS rather than CSS on purpose: the only honest test is "is
+     capture live", and live() reads the engine's own #captureBtn class AND its
+     label, which no selector can. THE INVARIANT IS EXPLICIT — a stale control
+     is hidden only while at least one OTHER record control is visible, so this
+     can never leave the screen with no way to record or stop. Fully reversible;
+     the moment capture goes live the control is given straight back. */
+  function hideStaleStops() {
+    var ids = ['ez3Stop', 'ez3Rec2'];
+    var i, e;
+    if (live()) {                       /* give everything back, immediately */
+      for (i = 0; i < ids.length; i++) unhide(el(ids[i]));
+      return 0;
+    }
+    /* RESTORE FIRST. The invariant is CONTINUOUS, not a one-time check, and
+       assuming otherwise is a bug I shipped and measured: the control that
+       justified hiding this one (the flow lane's Resume pill) disappears the
+       moment a note exists, and the screen was left with ZERO record controls.
+       So every pass first asks "is anything left?" and hands one back if not. */
+    if (!recordControls().length) {
+      for (i = 0; i < ids.length; i++) if (unhide(el(ids[i]))) return 0;
+      return 0;
+    }
+    var n = 0;
+    for (i = 0; i < ids.length; i++) {
+      e = el(ids[i]);
+      if (!e) continue;
+      if (e.getAttribute(MARK) === '1') { n++; continue; }
+      if (!shown(e)) continue;
+      if (!/stop|pause/i.test(String(e.textContent || ''))) continue;
+      /* count what would be left if this one went */
+      var mine = ids[i];
+      var others = recordControls().filter(function (c) { return c.id !== mine; });
+      if (!others.length) continue;     /* never the last one */
+      if (hide(e)) n++;
+    }
+    return n;
+  }
+
+  function syncControls() { return yieldHeroes() + hideStaleStops(); }
+
+  /* Every VISIBLE control on the visit screen that drives the one recorder.
+     Read off the DOM the doctor sees, so a test cannot be satisfied by a
+     node that exists and is invisible. */
+  function recordControls() {
+    var out = [];
+    var seen = [];
+    var cands = safe(function () {
+      return document.querySelectorAll('#mlsEz3 .ez3fl-recbtn, #mlsEz3 .ez3-big, #ez3Stop, #ez3Rec2, #captureBtn');
+    }, []);
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (seen.indexOf(c) >= 0) continue;
+      seen.push(c);
+      var t = safe(function () { return String(c.textContent || ''); }, '');
+      /* The VERB must lead the label, after any emoji. A bare /record/ over the
+         whole string counted #ez3Gen — "Generate one note / Uses every RECORDED
+         and typed segment" — as a recording control, which would have let a
+         "one control" assertion pass on a screen that had none. */
+      if (!/^[^A-Za-z]*(start|stop|pause|resume|record)\b/i.test(t.trim())) continue;
+      if (!shown(c)) continue;
+      out.push({ id: c.id || '', cls: String(c.className || '').slice(0, 30),
+        text: t.trim().replace(/\s+/g, ' ').slice(0, 44) });
+    }
+    return out;
+  }
+
+  function live() {
+    if (safe(function () { return document.body.classList.contains('mls-recording'); }, false)) return true;
+    var cb = el('captureBtn');
+    if (!cb) return false;
+    if (safe(function () { return cb.classList.contains('recording'); }, false)) return true;
+    return /recording|stop visit|stop recording/i.test(String(cb.textContent || ''));
+  }
+
+  window.__mlsVisitFlow = {
+    version: VERSION,
+    /* What the screen actually offers, for the suite. */
+    report: function () {
+      var tx = q('.ez3fl-transcript');
+      var box = el('ez3flTranscript');
+      var ctrls = recordControls();
+      return {
+        recording: live(),
+        pillOffered: pillOffered(),
+        hasSupport: supportsHas(),
+        transcriptPresent: !!box,
+        transcriptVisible: shown(box),
+        transcriptWrapVisible: shown(tx),
+        transcriptMarkedEmpty: !!(tx && safe(function () { return tx.classList.contains('mls-empty'); }, false)),
+        recordControls: ctrls,
+        recordCount: ctrls.length,
+        recordingLabels: ctrls.filter(function (c) { return /pause|stop/i.test(c.text); }).length,
+        startLabels: ctrls.filter(function (c) { return /start/i.test(c.text); }).length
+      };
+    },
+    sync: syncControls,
+    revert: function () {
+      var all = HERO.concat(['ez3Stop', 'ez3Rec2']);
+      for (var i = 0; i < all.length; i++) unhide(el(all[i]));
+      var css = el('mlsVisitFlowCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      return true;
+    }
+  };
+
+  /* setTimeout, never rAF: a non-compositing tab freezes rAF, and this must
+     still be correct when the doctor comes back to the tab. */
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () { queued = false; safe(syncControls); }, 0);
+  }
+  function boot() {
+    refresh();
+    ['click', 'input', 'change'].forEach(function (n) {
+      safe(function () { document.addEventListener(n, refresh, true); });
+    });
+    safe(function () { window.addEventListener('mls:view-changed', refresh, false); });
+    /* The engine rebuilds #ez3Wrap from an HTML string on its own cadence, so
+       a one-shot pass would be undone. Bounded observer on the body host. */
+    safe(function () {
+      var host = el('mlsEz3Body');
+      if (host && !host.__mlsVfWatched) {
+        host.__mlsVfWatched = true;
+        new MutationObserver(refresh).observe(host, { childList: true, subtree: true });
+      }
+    });
+    /* the host may not exist yet; bounded re-arm, then events alone */
+    var n = 0;
+    var iv = setInterval(function () {
+      safe(function () {
+        var host = el('mlsEz3Body');
+        if (host && !host.__mlsVfWatched) {
+          host.__mlsVfWatched = true;
+          new MutationObserver(refresh).observe(host, { childList: true, subtree: true });
+        }
+      });
+      refresh();
+      if (++n > 20) clearInterval(iv);
+    }, 900);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end visitflow-1.0.0 =========================================== -->
 </body>
 </html>
