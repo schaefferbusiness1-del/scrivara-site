@@ -19142,10 +19142,32 @@ function _opEnsureDayBrain(){
   }catch(e){}
   return !!(window.__mlsOpNoteDayBrain&&window.__mlsOpNoteDayBrain.installed===true);
 }
+/* OWNER 2026-08-16: "when u click draft op notes on a day it should draft the
+   op notes for the day the visit screen is on or the calendar is on, not just
+   any day to start."
+
+   This used to open on TOMORROW unconditionally, so a doctor looking at
+   Thursday on the calendar pressed Prep op notes and got Friday. The room now
+   follows whichever day surface he is actually looking at, and only falls back
+   to today - never to a day he never chose.
+
+   Order matters: the SHOWN view wins, because that is the day on screen. If
+   neither day surface is visible, the Visit strip's day is still the app's
+   working day, and today is the last resort. */
+function _opContextDay(){
+  var shown=function(id){ try{ var v=document.getElementById(id); return !!(v && v.offsetParent!==null); }catch(e){ return false; } };
+  var ok=function(k){ return /^d{4}-d{2}-d{2}$/.test(String(k||'')) ? String(k) : ''; };
+  var cal=function(){ try{ return ok(window._calSelDay); }catch(e){ return ''; } };
+  var strip=function(){ try{ var ds=window.__mlsDaySwitch; return (ds && typeof ds.currentDay==='function') ? ok(ds.currentDay()) : ''; }catch(e){ return ''; } };
+  var today=function(){ try{ return ok(typeof window._acctTodayKey==='function' ? window._acctTodayKey() : ''); }catch(e){ return ''; } };
+  if(shown('calendarView')){ var c=cal(); if(c) return c; }
+  if(shown('visitView')){ var v=strip(); if(v) return v; }
+  return cal() || strip() || today() || _opDayKey(new Date());
+}
 function openOpPrep(dayKey){
   _opEnsureDayBrain();
   window._opPrepMode='all';
-  if(!dayKey){ var d=new Date(); d.setDate(d.getDate()+1); dayKey=_opDayKey(d); }   // default = tomorrow
+  if(!dayKey){ dayKey=_opContextDay(); }
   window._opPrepDay=dayKey;
   window._opPrep=_opApptsForDay(dayKey).map(function(a){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId, a, dayKey); });
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
