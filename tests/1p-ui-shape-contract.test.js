@@ -300,6 +300,85 @@ for (const name of SHELLS) {
     'the Calendar is showing 2026-08-27 and _opContextDay returned something else — Prep Op Notes will draft the wrong day');
 }
 
+/* -- 8b2: EVERY INLINE SCRIPT MUST PARSE ------------------------------
+ * A stray `*​/` inside a block comment is valid-looking text that kills the
+ * whole IIFE, and the symptom is not an error - it is a feature that quietly
+ * does not exist. MEASURED while writing this lane: a duplicated comment
+ * terminator in opnote-day-1.0.0 made the day board render 0 cards of 28, and
+ * every runtime assertion read that as "the board is broken" rather than "the
+ * block did not parse". One cheap check, ahead of every runtime measurement.
+ */
+for (const name of SHELLS) {
+  const src = read(name);
+  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+  let m, n = 0;
+  while ((m = re.exec(src))) {
+    n++;
+    try { new Function(m[1]); }                 /* eslint-disable-line no-new-func */
+    catch (e) {
+      assert.fail(`${name}: inline script #${n} does not parse — ${e.message}`);
+    }
+  }
+  ok(n > 10, `${name}: only ${n} inline scripts found; the scan is not reaching them`);
+}
+
+/* -- 8c: the NEW blocks' escape-bearing literals, EXECUTED ------------
+ * Grep proves a backslash is present; only running the literal proves it
+ * behaves. The four /1p regexes that shipped dead were all present in the
+ * diff. Every literal this lane added is run against real strings here.
+ */
+{
+  const src = read('1pScribeFlow.html');
+  const vm = require('vm');
+
+  /* the vocabulary block, evaluated in a sandbox standing in for the page */
+  const vBody = src.slice(src.indexOf('<!-- ===== opnote-vocab-1.0.0'),
+    src.indexOf('<!-- ===== end opnote-vocab-1.0.0'));
+  const vScript = vBody.slice(vBody.indexOf('<script>') + 8, vBody.lastIndexOf('</script>'));
+  const ctx = {
+    window: {},
+    document: { readyState: 'complete', addEventListener: () => {}, getElementById: () => null },
+    setTimeout: () => 0, clearTimeout: () => {}, console
+  };
+  ctx.window.document = ctx.document;
+  ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(vScript, ctx);
+  const ev = ctx.window.__mlsOpNoteVocab.evidence;
+  /* an operation is recognised ... */
+  for (const t of ['Right knee arthroscopy with partial medial meniscectomy',
+    'Left rotator cuff repair', 'Carpal tunnel release, right',
+    'Open reduction internal fixation, distal radius', 'Laparoscopic cholecystectomy',
+    'Total knee arthroplasty, left', 'Screening colonoscopy']) {
+    eq(ev(t), 'operation', `the extended vocabulary does not recognise "${t}" as an operation`);
+  }
+  /* ... and a clinic visit, a lab draw, or a bare region is not */
+  for (const t of ['Post-op check, knee arthroscopy', 'Routine follow-up', 'Pre-op clearance visit',
+    'Medication management', 'Phlebotomy', 'Colostomy care teaching', 'Anatomy review',
+    'Right knee pain', '']) {
+    eq(ev(t), '', `the extended vocabulary claims "${t}" is an operation — the safety filter is weakened`);
+  }
+
+  /* the day board's blank counter */
+  const dBody = src.slice(src.indexOf('<!-- ===== opnote-day-1.0.0'),
+    src.indexOf('<!-- ===== end opnote-day-1.0.0'));
+  const blankLit = /var m = note\.match\((\/[^\n]*?\/gi)\);/.exec(dBody);
+  ok(blankLit, 'the day board lost its [[key]] blank counter');
+  const blankRe = eval(blankLit[1]);          /* eslint-disable-line no-eval */
+  eq(('FINDINGS: [[findings]] and [[dose_mg]]'.match(blankRe) || []).length, 2,
+    `the blank counter does not match [[key]] placeholders — literal was ${blankLit[1]}`);
+  eq('no blanks here'.match(blankRe), null, 'the blank counter matches text with no placeholders');
+
+  /* the dock's side guard */
+  const kBody = src.slice(src.indexOf('<!-- ===== dock-1p-1.1.0'),
+    src.indexOf('<!-- ===== end dock-1p-1.1.0'));
+  const sideLit = /var SIDE_RE = (\/[^\n]*?\/);/.exec(kBody);
+  ok(sideLit, 'the dock block lost its side guard');
+  const sideRe = eval(sideLit[1]);            /* eslint-disable-line no-eval */
+  eq(sideRe.test('left'), true, 'the dock side guard rejects a valid side');
+  eq(sideRe.test('sideways'), false, 'the dock side guard accepts a value that is not a side');
+}
+
 /* ============================================================ PART 2: runtime */
 
 const WIDTHS = [360, 768, 1366, 1920];

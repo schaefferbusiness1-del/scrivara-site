@@ -39669,12 +39669,28 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     editor.insertBefore(host, list);
     return host;
   }
+  /* The app's own bulk save (feat_mls_opnote_fill's "Save all drafted", which
+     finalizes every drafted note into its patient's History and reaches
+     nothing else). Present only once that module has rendered its bar; when it
+     has not, the primary action SAYS it will take you to the first note
+     instead, because a button labelled "Save 24 notes" that only scrolls is
+     exactly the kind of lie this block exists to remove.
+
+     PRESENCE, NOT VISIBILITY: in Simple the whole Fields bar is folded behind
+     "More", and its handler runs whether or not the button is on screen. The
+     doctor is pressing THIS button; the app's own action is what happens. */
+  function bulkSave() { return el('mlsOnfSaveAll'); }
   function runPrimary() {
     var st = dayState(), i;
     if (st === 'draft') { var b = el('opPrepGenAllBtn'); if (b) b.click(); return; }
     if (st === 'stop')  { var s = el('tpfStop'); if (s) s.click(); return; }
     if (st === 'review') { i = firstOfKind('review'); if (i >= 0) selectRow(i); return; }
-    if (st === 'save')  { i = firstOfKind('ready');  if (i >= 0) selectRow(i); return; }
+    if (st === 'save') {
+      var sa = bulkSave();
+      if (sa) { sa.click(); setTimeout(refresh, 200); return; }
+      i = firstOfKind('ready'); if (i >= 0) selectRow(i);
+      return;
+    }
   }
   function dayLabel() {
     var r = rows();
@@ -39697,7 +39713,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
     var r = rows(), t = tally(), cur = currentIndex(), i;
     var st = dayState();
-    var sig = level() + '|' + (moreOpen ? '1' : '0') + '|' + st + '|' + cur + '|' + dayLabel() + '|';
+    var sig = level() + '|' + (moreOpen ? '1' : '0') + '|' + st + '|' + cur + '|' +
+      (bulkSave() ? 'B' : 'b') + '|' + dayLabel() + '|';
     var parts = [];
     for (i = 0; i < r.length; i++) {
       var s = statusOf(r[i], i);
@@ -39726,7 +39743,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         go.textContent = '👁 Review ' + t.review + ' note' + (t.review === 1 ? '' : 's');
       } else if (st === 'save') {
         go.hidden = false;
-        go.textContent = '💾 Save ' + t.ready + ' note' + (t.ready === 1 ? '' : 's') + ' to the charts';
+        go.textContent = bulkSave()
+          ? ('💾 Save ' + t.ready + ' note' + (t.ready === 1 ? '' : 's') + ' to the charts')
+          : ('💾 Go to the first note to save');
       } else {
         go.hidden = true;
         go.textContent = '';
