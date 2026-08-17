@@ -14,6 +14,19 @@ function ok(value, message) { assert.ok(value, message); checks++; }
 function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }
 function deep(actual, expected, message) { assert.deepStrictEqual(actual, expected, message); checks++; }
 
+/* the avintake-1.0.0 block, verbatim: the topic vocabulary, the repeat guard and the
+   correction detector that kioskTurn now calls. Sliced rather than re-declared so this
+   harness executes the shipped code. */
+function sliceBetween(first, last) {
+  const a = SOURCE.indexOf(first), b = SOURCE.indexOf(last, a);
+  assert(a >= 0 && b > a, 'missing source boundary: ' + first);
+  return SOURCE.slice(a, b);
+}
+const INTAKE_BLOCK = sliceBetween(
+  '/* ===== avintake-1.0.0 (2026-08-17) — THE INTERVIEW GETS A MEMORY.',
+  '/* ===== end avintake-1.0.0 ===== */\n  function kioskIntakeText'
+);
+
 function extractFunction(name) {
   const marker = 'function ' + name + '(';
   const start = SOURCE.indexOf(marker);
@@ -179,6 +192,12 @@ function extractFunction(name) {
     function kioskTypingFallback() {}
     function kioskRetryAnswer() {}
     function kioskStopBounded() {}
+    /* avintake-1.0.0 (2026-08-17): kioskTurn now consults the interview's covered-topic
+       ledger, its repeat guard and its correction detector. The REAL block is injected
+       below rather than stubbed - a stub looser than the real thing hides the call, and
+       these are pure functions over kiosk and clean, both of which this harness already
+       provides. (No back-ticks in this comment: it lives inside a template literal.) */
+    ${INTAKE_BLOCK}
     function gid(id) { return id === 'mlsAvKioskProgress' ? { textContent: '' } : null; }
     function pvSpeakShaped(text, then, shape, onStart) { state.speech = { text:text, finish:then, shape:shape, start:onStart }; }
     function api() { return Promise.resolve({ ok:true, json:{ ok:true, say:'How are you feeling today?', done:false,

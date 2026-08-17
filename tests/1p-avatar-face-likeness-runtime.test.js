@@ -196,6 +196,13 @@ const stylizeBlock = between(source, 'function stylizeCanvas', 'function stylize
 ok(!/getImageData|putImageData|levels\s*=|step2/.test(stylizeBlock), 'patient portrait is still recoloured/posterized');
 ok(/toDataURL\('image\/png'\)/.test(stylizeBlock) && /\[0\.98, 0\.96, 0\.94, 0\.92\]/.test(stylizeBlock),
   'natural portrait does not prefer lossless pixels with a high-quality bounded fallback');
-ok(source.includes('class="fHairTexture"') && source.includes('width="31" height="25"'), 'optional animated face still has flat helmet hair or oversized glasses');
+/* avlook-1.0.0 (2026-08-17): the lens was pinned at 31x25 when the eye aperture was
+   24x13 - a near-round frame around a near-round eye. The aperture is now 24x9 and the
+   brows sit 5 units lower, so a 25-tall lens runs into the brow at the top and hangs
+   into the cheek at the bottom. 31x17 is both the modern adult frame and the one that
+   fits this eye; the pin moves with the drawing, and the intent it guards (a lens that
+   is not oversized) is unchanged. Proven by measurement in
+   tests/1p-avatar-adult-proportions-proof.js, which renders the glasses look. */
+ok(source.includes('class="fHairTexture"') && source.includes('width="31" height="17"'), 'optional animated face still has flat helmet hair or oversized glasses');
 
 console.log('PASS 1p avatar face likeness: ' + passed + ' assertions');

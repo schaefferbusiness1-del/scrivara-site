@@ -486,6 +486,12 @@ function makeTurnFailureHarness() {
     function kioskSetSay(v) { state.says.push(String(v || '')); }
     function kioskSetIdentity() {}
     function kioskIntakeAdd() {}
+    /* avintake-1.0.0 (2026-08-17): kioskTurn consults the interview's covered-topic
+       ledger, its repeat guard and its correction detector. The REAL block is injected
+       rather than stubbed - a stub looser than the real thing hides the call - and it
+       is pure over kiosk and clean, both of which this harness already has.
+       (No back-ticks in this comment: it lives inside a template literal.) */
+    ${between('  /* ===== avintake-1.0.0 (2026-08-17) — THE INTERVIEW GETS A MEMORY.', '  function kioskIntakeText')}
     function kioskChartContext() { return null; }
     function kioskArmWatchdog() { state.watchdogArms++; }
     function kioskFinish() {}
