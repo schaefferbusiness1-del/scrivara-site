@@ -86,6 +86,14 @@ const tests = [
      the shipped hero path and the shared module's own installer in three
      laptop timezones, with a positive control that reproduces the old 4:00 AM. */
   '1p-appointment-clock-one-convention.test.js',
+  /* advint-1.0.0: the Settings dialog carried "Developer mode" twice, a
+     "Developer API key" card heading, an "Advanced: Developer API key" fold and
+     "Paste a JSON export below - shape: {...}" in the open, one click from the
+     doctor. Gathered behind ONE closed disclosure in physician language. Pins
+     BOTH halves: the vocabulary is behind the fold, AND the four #extDl* ids
+     the shipped refresher reads, the "<!-- Developer API key + MLS Assist"
+     between() boundary comment, and every control/handler are untouched. */
+  '1p-advanced-integrations-disclosure.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
   '1p-pull-resume-skip-and-cost-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
