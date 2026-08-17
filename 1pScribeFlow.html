@@ -39232,5 +39232,489 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 })();
 </script>
 <!-- ===== end opnote-open-1.0.0 ======================================== -->
+<!-- ===== visitowner-1.0.0 — one visit belongs to one patient ===========
+     Owner, 2026-08-17: "once you generate a note and switch patients it keeps
+     the generated note."
+
+     MEASURED on this shell before this block (real Chrome, two synthetic
+     patients, the generator's own offline branch, switch by selectPatient):
+     newVisit() clears the transcript and the note box, but FIVE per-visit
+     surfaces survive the switch holding the first patient's clinical text —
+       #handoutBody (the after-visit summary textarea, 94 chars of Ada's)
+       #emrTable    (739 chars: her chief complaint, diagnoses, meds, orders)
+       #codeCard    (666 chars: her ICD-10 and CPT chips)
+       lastEMR      (the whole structured EMR object)
+       lastAIDraft  (the full 1,681-char AI draft)
+     (a sixth is read from the code, not measured: newVisit nulls currentRecs
+     but never calls renderRecommendations, so #recsContent keeps the previous
+     patient's suggestions until something else repaints it)
+     and the consequence is not cosmetic: with the SECOND patient active,
+     noteRecordFromState() returned
+       patient "Bo Sample" / patientId syn-B
+       cc      "Persistent cough x 2 weeks, worse at night"   <- Ada's
+       emr.cc  the same                                        <- Ada's
+       handout "AFTER-VISIT SUMMARY for Ada Sample: ..."       <- Ada's
+     — a record stamped for one patient carrying another patient's chart data,
+     which is what saveDraft/saveCurrentNote/signNote persist, what
+     saveNoteToBackend mirrors, and what buildFHIRBundle() exports.
+
+     FOUR PARTS, all additive:
+       1. RESIDUE. newVisit() is the app's own "this editor is now empty"
+          resolver. Wrap it so the surfaces it forgot are emptied too, using
+          the app's own renderers where they exist. Every caller of newVisit
+          benefits, not only the switch.
+       2. A PER-PATIENT DRAFT SLOT. Clearing must not mean losing. The existing
+          recovery slot (uns('visitDraft')) is ONE slot for the whole account,
+          so a switch overwrites it. This block stashes the outgoing patient's
+          editor under THEIR id before the active id changes, and restores it
+          — into an empty editor only — when that patient is opened again.
+       3. AN OWNER GATE ON EVERY WRITE. The immutable Athena binding already
+          refuses a bound editor whose patient changed; this closes the case
+          where there is no binding yet, and covers save/sign/copy/send with
+          one predicate. It refuses, says so, and records a PHI-free counter.
+
+       4. NO PATIENT UNTIL ONE IS CHOSEN. Owner, same day: "when you first log
+          into the app the top patient banner should be blank. no patient."
+          MEASURED: uns('activePt') lives in localStorage, so a NEW tab boots
+          with the last patient still selected — activePt "syn-A" while
+          activePtChosenThisSession() is false. The shell already records the
+          deliberate act in sessionStorage; this block acts on it, and adds the
+          day, so a restored selection survives a same-tab reload on the same
+          day and nothing else.
+
+     Placed in a delimited block rather than edited into newVisit() so that
+     promoting it to another lane is a copy, and revert() puts every wrapped
+     global back byte for byte. No regex literals: an escape lost in transport
+     is invisible in a diff and still parses. -->
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsVisitOwner) return;
+
+  var VERSION = 'visitowner-1.0.0';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return document.getElementById(id); }
+  function str(v) { return (v === null || v === undefined) ? '' : String(v); }
+  /* String.prototype.trim, never a regex: a backslash lost in transport turns
+     /^\s+|\s+$/ into a literal that still parses and silently never matches. */
+  function trim(v) { var s = str(v); return s.trim ? s.trim() : s; }
+  function activeId() { return safe(function () { return str(typeof getActivePtId === 'function' ? getActivePtId() : ''); }, ''); }
+  function nameOf(id) { return safe(function () { var p = (typeof findPatient === 'function') ? findPatient(str(id)) : null; return (p && p.name) ? String(p.name) : ''; }, ''); }
+  function say(msg, kind) { safe(function () { if (typeof toast === 'function') toast(msg, kind || ''); }); }
+
+  /* ==================================================================
+     1. RESIDUE — what newVisit() leaves behind
+     ================================================================== */
+
+  /* Nodes a generator writes text into. Each is rewritten wholesale by its own
+     renderer (populateEMR, renderCoding, renderOpt, showExtra, ...) the next
+     time there is content, so emptying it loses nothing.
+
+     THE TRAP, hit once while building this: blanking a CONTAINER deletes the
+     id-bearing children other code addresses. #revEstBox was on this list and
+     it holds #revEstTotal / #revEstBreak, so the next renderRevenueEstimate()
+     threw "Cannot set properties of null" and killed generateNote() mid-way.
+     Hence: the leaves themselves, and a structural refusal below to blank any
+     node that still has element children. */
+  var TEXT_LEAVES = [
+    'emr_cc', 'emr_dx', 'emr_meds', 'emr_orders', 'emr_fu', 'emr_em', 'emr_icd', 'emr_cpt',
+    'code_em', 'code_em_just',
+    'opt_em', 'opt_em_just', 'opt_method', 'opt_mdm', 'opt_reference',
+    'revEstTotal', 'revEstBreak', 'signLine'
+  ];
+  /* Panels whose renderer assigns innerHTML for the whole panel, so no child of
+     theirs is ever addressed by id from outside. The code/opt chip strips live
+     here rather than above precisely because they DO have element children
+     (each code is its own span) and the leaf rule would skip them. */
+  var HTML_PANELS = [
+    'code_icd', 'code_cpt', 'opt_icd', 'opt_cpt', 'opt_evidence', 'opt_gaps',
+    'avsBody', 'refBody', 'imeBody', 'billBody', 'teachBody', 'redflagBody', 'ddxBody',
+    'surgPlanBody', 'mipsBody', 'chartSumBody', 'mmeResult', 'dsOut', 'revToolsOut'
+  ];
+  var VALUE_LEAVES = ['handoutBody', 'fhirBody', 'paLetter', 'procNoteBody', 'paDenialText'];
+
+  function clearVisitResidue() {
+    for (var i = 0; i < TEXT_LEAVES.length; i++) {
+      var t = el(TEXT_LEAVES[i]);
+      /* children.length > 0 means this is a container, not a leaf: refuse. */
+      if (t && !(t.children && t.children.length) && (t.textContent || t.innerHTML)) t.textContent = '';
+    }
+    for (var h = 0; h < HTML_PANELS.length; h++) {
+      var pnl = el(HTML_PANELS[h]);
+      if (pnl && pnl.innerHTML) pnl.innerHTML = '';
+    }
+    for (var j = 0; j < VALUE_LEAVES.length; j++) {
+      var v = el(VALUE_LEAVES[j]);
+      if (v && v.value) v.value = '';
+    }
+    /* module state newVisit() does not touch. lastEMR feeds
+       noteRecordFromState().cc and .emr, noteDiagnosisText() and
+       buildFHIRBundle(); lastAIDraft is the "Teach MLS" baseline. */
+    safe(function () { if (typeof lastEMR !== 'undefined') lastEMR = null; });
+    safe(function () { if (typeof lastAIDraft !== 'undefined') lastAIDraft = ''; });
+    safe(function () { if (typeof currentChartSummary !== 'undefined') currentChartSummary = ''; });
+    safe(function () { var c = el('chartSumCard'); if (c) c.style.display = 'none'; });
+    /* currentRecs is nulled by newVisit but nothing repaints the panel, so the
+       previous patient's recommendations stay on the Recommendations screen.
+       Call the app's own renderer, which reads currentRecs and paints the
+       correct empty state. */
+    safe(function () { if (typeof renderRecommendations === 'function') renderRecommendations(); });
+    safe(function () { if (typeof renderVisitOrders === 'function') renderVisitOrders(); });
+    api.cleared++;
+  }
+
+  /* ==================================================================
+     2. PER-PATIENT DRAFT SLOT
+     ================================================================== */
+
+  var MAX_PATIENTS = 6;        /* newest kept; a stash is a convenience, not a record */
+  var MAX_CHARS = 240000;      /* one entry; sessionStorage is finite */
+
+  function stashKey() {
+    return safe(function () { return (typeof uns === 'function') ? uns('visitDraftByPt') : 'mls_visitDraftByPt'; }, 'mls_visitDraftByPt');
+  }
+  function readStash() {
+    return safe(function () {
+      var raw = sessionStorage.getItem(stashKey());
+      var o = raw ? JSON.parse(raw) : null;
+      return (o && typeof o === 'object') ? o : {};
+    }, {});
+  }
+  function writeStash(map) { safe(function () { sessionStorage.setItem(stashKey(), JSON.stringify(map)); }); }
+
+  function editorState() {
+    var t = safe(function () { return str((el('transcript') || {}).value); }, '');
+    var n = safe(function () { return str((el('noteBox') || {}).value); }, '');
+    var s = safe(function () { return str(typeof currentSoap !== 'undefined' ? currentSoap : ''); }, '');
+    var i = safe(function () { return str(typeof currentInsurance !== 'undefined' ? currentInsurance : ''); }, '');
+    return { t: t, box: n, soap: s, ins: i, any: !!(trim(t) || trim(n) || trim(s) || trim(i)) };
+  }
+  function editorIsSigned() {
+    return safe(function () { var l = el('signLine'); return !!(l && l.style.display !== 'none'); }, false);
+  }
+
+  function snapshotEditor(ownerId) {
+    var e = editorState();
+    if (!e.any) return null;
+    var b = safe(function () { return (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null; }, null);
+    return {
+      ptId: str(ownerId),
+      ptName: nameOf(ownerId),
+      t: e.t, box: e.box, soap: e.soap, ins: e.ins,
+      fmt: safe(function () { return str(typeof currentFormat !== 'undefined' ? currentFormat : 'soap') || 'soap'; }, 'soap'),
+      coding: safe(function () { return (typeof currentCoding !== 'undefined') ? (currentCoding || null) : null; }, null),
+      emr: safe(function () { return (typeof lastEMR !== 'undefined') ? (lastEMR || null) : null; }, null),
+      aiDraft: safe(function () { return str(typeof lastAIDraft !== 'undefined' ? lastAIDraft : ''); }, ''),
+      handout: safe(function () { return str((el('handoutBody') || {}).value) || str(typeof currentHandout !== 'undefined' ? currentHandout : ''); }, ''),
+      context: safe(function () { return str((el('contextBox') || {}).value); }, ''),
+      comment: safe(function () { return str((el('visitComment') || {}).value); }, ''),
+      label: safe(function () { return str((el('patientLabel') || {}).value); }, ''),
+      noteId: safe(function () { return str(typeof currentNoteId !== 'undefined' ? currentNoteId : ''); }, ''),
+      compromised: safe(function () { return (typeof currentVisitAthenaCompromised !== 'undefined') && currentVisitAthenaCompromised === true; }, false),
+      binding: b ? {
+        patient: b.patient || null, source: str(b.source), historical: b.historical === true,
+        identityConflict: b.identityConflict === true, routeBlocked: b.routeBlocked === true,
+        visitContext: b.visitContext || null, noteTimestamp: b.noteTimestamp || null,
+        displayDate: str(b.displayDate), displayProvider: str(b.displayProvider)
+      } : null,
+      ts: Date.now()
+    };
+  }
+
+  /* Runs while the OUTGOING patient is still the active one. */
+  function stashBeforeSwitch(previousId, nextId) {
+    var prev = str(previousId);
+    if (!prev || prev === str(nextId)) return;
+    api.lastOwner = prev;
+    window.__mlsVisitEditorOwnerId = prev;   /* the guard's fallback when no binding exists */
+    if (editorIsSigned()) return;            /* already persisted by signNote() */
+    var snap = snapshotEditor(prev);
+    if (!snap) return;
+    var body = safe(function () { return JSON.stringify(snap); }, '');
+    if (!body || body.length > MAX_CHARS) return;
+    var map = readStash();
+    map[prev] = snap;
+    var ids = Object.keys(map);
+    if (ids.length > MAX_PATIENTS) {
+      ids.sort(function (a, b) { return (map[b].ts || 0) - (map[a].ts || 0); });
+      for (var k = MAX_PATIENTS; k < ids.length; k++) delete map[ids[k]];
+    }
+    writeStash(map);
+    api.stashed++;
+  }
+
+  /* Runs after the switch has landed and after newVisit() has emptied the
+     editor. Restores ONLY into an empty editor, and ONLY the entry whose own
+     recorded ptId matches the patient now open (a mismatched entry is dropped
+     rather than shown — fail closed, never the wrong chart). */
+  function restoreFor(id) {
+    var want = str(id);
+    if (!want || activeId() !== want) return false;
+    var map = readStash();
+    var d = map[want];
+    if (!d) return false;
+    if (str(d.ptId) !== want) { delete map[want]; writeStash(map); return false; }
+    if (editorState().any) return false;
+
+    safe(function () { if (typeof currentNoteId !== 'undefined') currentNoteId = d.noteId || null; });
+    safe(function () { var tx = el('transcript'); if (tx) tx.value = d.t || ''; });
+    safe(function () { if (typeof finalText !== 'undefined') finalText = d.t || ''; });
+    safe(function () { if (typeof currentSoap !== 'undefined') currentSoap = d.soap || ''; });
+    safe(function () { if (typeof currentInsurance !== 'undefined') currentInsurance = d.ins || ''; });
+    safe(function () { if (typeof currentFormat !== 'undefined') currentFormat = d.fmt || 'soap'; });
+    safe(function () { if (typeof currentCoding !== 'undefined') currentCoding = d.coding || null; });
+    safe(function () { if (typeof lastEMR !== 'undefined') lastEMR = d.emr || null; });
+    safe(function () { if (typeof lastAIDraft !== 'undefined') lastAIDraft = d.aiDraft || ''; });
+    safe(function () { if (typeof currentHandout !== 'undefined') currentHandout = d.handout || ''; });
+    safe(function () { var hb = el('handoutBody'); if (hb) hb.value = d.handout || ''; if (d.handout) { var hc = el('handoutCard'); if (hc) hc.style.display = 'block'; } });
+    safe(function () { var cb = el('contextBox'); if (cb) cb.value = d.context || ''; });
+    safe(function () { var vc = el('visitComment'); if (vc) vc.value = d.comment || ''; });
+    safe(function () { var pl = el('patientLabel'); if (pl) pl.value = d.label || nameOf(want); });
+
+    /* Rebuild an immutable binding for THIS patient, the same way the existing
+       single-slot recovery does; a stash with no binding stays quarantined. */
+    safe(function () {
+      if (typeof _athenaFreezeVisitBinding !== 'function' || typeof _athenaSetVisitBinding !== 'function') return;
+      var rb = d.binding, rebuilt;
+      if (rb && rb.patient) {
+        rebuilt = _athenaFreezeVisitBinding(rb.patient, {
+          source: 'restored-patient-draft', historical: rb.historical === true,
+          identityConflict: rb.identityConflict === true, routeBlocked: rb.routeBlocked === true,
+          visitContext: rb.visitContext || null, noteTimestamp: rb.noteTimestamp || d.ts || null,
+          displayDate: rb.displayDate || '', displayProvider: rb.displayProvider || ''
+        });
+      } else {
+        rebuilt = _athenaFreezeVisitBinding({ name: d.label || nameOf(want) }, { source: 'restored-patient-draft', routeBlocked: true, noteTimestamp: d.ts || null });
+      }
+      _athenaSetVisitBinding(rebuilt, true);
+      if (d.compromised === true || !(rb && rb.patient)) {
+        if (typeof currentVisitAthenaCompromised !== 'undefined') currentVisitAthenaCompromised = true;
+      }
+    });
+
+    safe(function () { if (typeof syncFormatToggle === 'function') syncFormatToggle(); });
+    var shown = (safe(function () { return (typeof currentFormat !== 'undefined' && currentFormat === 'insurance'); }, false)) ? (d.ins || '') : (d.soap || '');
+    if (shown) {
+      safe(function () { if (typeof showNote === 'function') showNote(shown); });
+      safe(function () { if (typeof renderCoding === 'function') renderCoding(d.coding || null); });
+      safe(function () { if (d.emr && typeof populateEMR === 'function') populateEMR(d.emr, d.coding || null); });
+    }
+    window.__mlsVisitEditorOwnerId = want;
+    delete map[want];
+    writeStash(map);
+    safe(function () { if (typeof _markVisitDirty === 'function') _markVisitDirty(); });
+    api.restored++;
+    say('Brought back the unsaved visit you had open for ' + (nameOf(want) || d.ptName || 'this patient') + '.', 'ok');
+    return true;
+  }
+
+  /* ==================================================================
+     3. OWNER GATE ON EVERY WRITE
+     ================================================================== */
+
+  function editorOwnerId() {
+    var fromBinding = safe(function () {
+      var b = (typeof currentVisitAthenaBinding !== 'undefined') ? currentVisitAthenaBinding : null;
+      return (b && b.patient) ? str(b.patient.patientId) : '';
+    }, '');
+    if (fromBinding) return fromBinding;
+    return str(window.__mlsVisitEditorOwnerId);
+  }
+
+  var ACTION_TEXT = {
+    saveDraft: 'save this draft',
+    saveCurrentNote: 'save this note',
+    signNote: 'sign this note',
+    copyForEMR: 'copy it for the chart',
+    sendToEMRviaAssist: 'send it to the chart',
+    pushEntireVisitToAthena: 'send this visit to Athena'
+  };
+
+  function ownerAllows(fnName) {
+    var owner = editorOwnerId(), active = activeId();
+    if (!owner || !active || owner === active) return true;
+    if (!editorState().any) return true;   /* nothing to misroute */
+    /* PHI-free: the action and the time, never a name, DOB, MRN or record id. */
+    api.blocked.push({ action: str(fnName), at: Date.now() });
+    if (api.blocked.length > 50) api.blocked.shift();
+    say('This note was written for a different patient than the one open now, so MLS will not '
+      + (ACTION_TEXT[fnName] || 'continue')
+      + '. Open that patient to finish their note, or start a New visit for '
+      + (nameOf(active) || 'the patient on screen') + '. Nothing was saved or sent.', 'err');
+    return false;
+  }
+
+  /* ==================================================================
+     4. NO PATIENT UNTIL ONE IS CHOSEN
+     ================================================================== */
+
+  function ssKey(k) { return safe(function () { return (typeof uns === 'function') ? uns(k) : ('mls_' + k); }, 'mls_' + k); }
+  function todayKey() { return safe(function () { return (typeof _acctTodayKey === 'function') ? str(_acctTodayKey()) : ''; }, ''); }
+  function chosenDay() { return safe(function () { return str(sessionStorage.getItem(ssKey('activePtChosenDay'))); }, ''); }
+  function markChosenDay() { safe(function () { var d = todayKey(); if (d) sessionStorage.setItem(ssKey('activePtChosenDay'), d); }); }
+
+  /* A selection may survive only if the shell recorded it as DELIBERATE in this
+     tab's session AND it was made today. Anything else - a new tab, a new
+     browser session, a sign-out and back in, yesterday's leftover - starts with
+     no patient, because a banner nobody chose is a banner nobody checked. */
+  function restoredSelectionIsAllowed() {
+    var chosen = safe(function () { return (typeof activePtChosenThisSession === 'function') && activePtChosenThisSession() === true; }, false);
+    if (!chosen) return false;
+    var t = todayKey();
+    if (!t) return true;                    /* cannot date it: a deliberate choice stands */
+    var d = chosenDay();
+    if (!d) return false;                   /* deliberate but undated: fail closed to no patient */
+    return d === t;
+  }
+
+  function enforceEmptyBanner(reason) {
+    var id = activeId();
+    if (!id) return false;
+    if (restoredSelectionIsAllowed()) return false;
+    /* Never take a chart away from work in progress. If sessionStorage is
+       unavailable the "chosen" marker can never be written, and without this
+       line a later pass would deselect a patient the doctor is recording. */
+    if (editorState().any) return false;
+    safe(function () { localStorage.removeItem(ssKey('activePt')); });
+    safe(function () { sessionStorage.removeItem(ssKey('activePtChosen')); });
+    safe(function () { sessionStorage.removeItem(ssKey('activePtChosenDay')); });
+    safe(function () { if (typeof renderPatientBar === 'function') renderPatientBar(); });
+    safe(function () { if (typeof renderProfile === 'function') renderProfile(); });
+    safe(function () { if (typeof updateNavCounts === 'function') updateNavCounts(); });
+    safe(function () { if (typeof renderPatients === 'function' && typeof currentView !== 'undefined' && currentView === 'patients') renderPatients(); });
+    /* the app's own canonical announcement, so every module that caches the
+       active patient repaints instead of holding a chart nobody opened */
+    safe(function () { window.dispatchEvent(new CustomEvent('mls:active-patient-changed', { detail: { previousId: id, patientId: '' } })); });
+    api.bootCleared++;
+    api.lastBootReason = str(reason);
+    return true;
+  }
+
+  /* Signing out ends the session that made the choice. The key is namespaced by
+     account and uns() has already moved on by the time the boundary fires, so
+     sweep by shape rather than by name. */
+  function forgetChosenMarkers() {
+    safe(function () {
+      var keys = [];
+      for (var i = 0; i < sessionStorage.length; i++) {
+        var k = sessionStorage.key(i);
+        if (k && (k.lastIndexOf('activePtChosen') === k.length - 'activePtChosen'.length
+          || k.lastIndexOf('activePtChosenDay') === k.length - 'activePtChosenDay'.length)) keys.push(k);
+      }
+      for (var j = 0; j < keys.length; j++) sessionStorage.removeItem(keys[j]);
+    });
+  }
+
+  /* ==================================================================
+     WIRING
+     ================================================================== */
+
+  var originals = {};
+  var bootTimers = [];
+  function wrapOnce(name, make) {
+    var fn = window[name];
+    if (typeof fn !== 'function' || fn.__mlsVisitOwnerWrapped) return false;
+    originals[name] = fn;
+    var w = make(fn);
+    w.__mlsVisitOwnerWrapped = true;
+    window[name] = w;
+    return true;
+  }
+
+  var api = {
+    version: VERSION, installed: true,
+    cleared: 0, stashed: 0, restored: 0, blocked: [], lastOwner: '',
+    bootCleared: 0, lastBootReason: '',
+    clearVisitResidue: clearVisitResidue,
+    stashBeforeSwitch: stashBeforeSwitch,
+    restoreFor: restoreFor,
+    editorOwnerId: editorOwnerId,
+    ownerAllows: ownerAllows,
+    enforceEmptyBanner: enforceEmptyBanner,
+    restoredSelectionIsAllowed: restoredSelectionIsAllowed,
+    markChosenDay: markChosenDay,
+    stash: function () {
+      var m = readStash(), out = {};
+      Object.keys(m).forEach(function (k) { out[k] = { ptId: m[k].ptId, chars: (m[k].soap || '').length + (m[k].t || '').length, ts: m[k].ts }; });
+      return out;
+    },
+    revert: function () {
+      Object.keys(originals).forEach(function (n) { window[n] = originals[n]; });
+      originals = {};
+      window.removeEventListener('mls:active-patient-changed', onSwitched);
+      window.removeEventListener('mls:session-boundary', onSessionBoundary);
+      for (var b = 0; b < bootTimers.length; b++) clearTimeout(bootTimers[b]);
+      bootTimers = [];
+      try { delete window.__mlsVisitOwner; } catch (e) { window.__mlsVisitOwner = null; }
+      return true;
+    }
+  };
+  window.__mlsVisitOwner = api;
+
+  /* newVisit() is the app's own "this editor is now empty" resolver — every
+     reset path (the switch fix, New visit, the calendar's start-a-visit) goes
+     through it, so the residue clear belongs here rather than in one caller. */
+  wrapOnce('newVisit', function (orig) {
+    return function () {
+      var r = orig.apply(this, arguments);
+      safe(clearVisitResidue);
+      window.__mlsVisitEditorOwnerId = activeId();
+      return r;
+    };
+  });
+
+  /* setActivePtId() calls this BEFORE it writes the new id, on every switch
+     path in the app, and it is the only pre-switch hook that does not add a
+     third wrapper to the two switch choke points two modules already wrap. */
+  wrapOnce('_athenaHandleActivePatientChange', function (orig) {
+    return function (previousId, nextId) {
+      safe(function () { stashBeforeSwitch(previousId, nextId); });
+      return orig.apply(this, arguments);
+    };
+  });
+
+  Object.keys(ACTION_TEXT).forEach(function (name) {
+    wrapOnce(name, function (orig) {
+      return function () {
+        if (!ownerAllows(name)) return false;
+        return orig.apply(this, arguments);
+      };
+    });
+  });
+
+  function onSwitched(ev) {
+    var next = safe(function () { return str(ev && ev.detail && ev.detail.patientId); }, '') || activeId();
+    if (!next) return;
+    /* This switch was a deliberate act; date it, so a same-tab reload later
+       today restores it and a reload tomorrow does not. */
+    markChosenDay();
+    /* The switch fix runs its preserve-then-newVisit sequence synchronously in
+       the same task as this event, so a restore must wait for the next one. A
+       timer, never requestAnimationFrame: rAF does not fire in a tab that is
+       not compositing, and this must work in a background tab. */
+    setTimeout(function () { safe(function () { restoreFor(next); }); }, 0);
+  }
+  window.addEventListener('mls:active-patient-changed', onSwitched);
+
+  function onSessionBoundary(ev) {
+    var d = safe(function () { return (ev && ev.detail) || {}; }, {});
+    var endsSession = (str(d.reason) === 'logout') || (str(d.nextAccount) === '');
+    if (endsSession) forgetChosenMarkers();
+    /* uns() adopts the new account inside the same call that dispatches this,
+       so read it on the next task. */
+    bootTimers.push(setTimeout(function () { safe(function () { enforceEmptyBanner(endsSession ? 'sign-out' : 'sign-in'); }); }, 0));
+  }
+  window.addEventListener('mls:session-boundary', onSessionBoundary);
+
+  /* Boot passes for the paths that do not announce a session boundary (local
+     mode, a restored tab). Idempotent: each pass re-asks the predicate, so one
+     that lands after the doctor has picked someone changes nothing. */
+  [0, 1200, 3000].forEach(function (ms) {
+    bootTimers.push(setTimeout(function () { safe(function () { enforceEmptyBanner('boot'); }); }, ms));
+  });
+})();
+</script>
+<!-- ===== end visitowner-1.0.0 ========================================= -->
 </body>
 </html>

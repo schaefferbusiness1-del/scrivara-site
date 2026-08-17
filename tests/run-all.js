@@ -153,6 +153,11 @@ const tests = [
      surfaced in another. Pins the mint contract, the write refusal while the
      email is unresolved, and the read-only stranded-key tracer. */
   '1p-uns-namespace-guard-runtime.test.js',
+  /* one visit belongs to one patient: generating for A and switching to B left
+     A's EMR block, ICD/CPT chips, patient handout and lastEMR in place, so
+     noteRecordFromState() stamped B's id onto A's chart data. Carries its own
+     causal control against origin/main's shell bytes. */
+  '1p-visit-owner-isolation-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
