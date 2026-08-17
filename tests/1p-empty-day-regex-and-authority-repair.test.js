@@ -101,10 +101,21 @@ function testRegexLiteralsAreIntact() {
     eq(c.indexOf(VT), -1, rel + ' contains a literal VTAB byte - a lost backslash-v');
     /* the two shapes that stay readable and therefore stay silent */
     const lines = c.split('\n');
+    /* the date shape is scanned in THIS LANE'S files only. The two shell
+       instances (1pScribeFlow.html:19213 _opContextDay ok(), and :37636
+       msl-today-1.0.0) are the UI lane's to repair - this lane must not touch
+       them, and a scanner that fails the gate on a file it may not edit is a
+       blocked gate, not a guard. ESCALATED: while :19213's ok() can never
+       return a date, "Prep op notes" uses machine-clock TODAY rather than the
+       calendar/Visit day, and msl-autodraft auto-clicks generate-all on room
+       open. Re-scope this to all files the moment those two land. */
+    const DATE_SHAPE_SCANNED = /^1p-(mls-connect|feat_)/.test(rel);
     lines.forEach((line, n) => {
       if (line.trim().startsWith('*') || line.trim().startsWith('/*')) return;   /* prose */
       ok(line.indexOf('/(d+)s+of') < 0, rel + ':' + (n + 1) + ' has a lost-backslash "N of M" regex');
       ok(!/\(\?:429\|5dd\)/.test(line), rel + ':' + (n + 1) + ' has a lost-backslash 5xx regex');
+      if (DATE_SHAPE_SCANNED) ok(line.indexOf('d{4}-d{2}-d{2}') < 0, rel + ':' + (n + 1) + ' has a lost-backslash ISO-date regex');
+      if (DATE_SHAPE_SCANNED) ok(!/\/\^s\*/.test(line), rel + ':' + (n + 1) + ' has a lost-backslash leading-whitespace regex');
     });
   }
 
