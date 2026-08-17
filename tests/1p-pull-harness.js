@@ -31,6 +31,7 @@ function makeHarness(options) {
   const listeners = new Set();
   const elements = new Map();
   const timers = [];
+  const intervals = [];
   let timerSeq = 0;
   let leaseBusy = options.leaseBusy === true;
   /* the fake clock sits at NOON EASTERN on the account day under test, so
@@ -42,6 +43,7 @@ function makeHarness(options) {
   const noteCalls = [];
   const chartCalls = [];
   const statusLines = [];
+  let callSeq = 0;               /* shared monotonic order for chart + note reads */
 
   /* the owner's shape: SCHEDULE-BORN rows - name + DOB only, no MRN, no
      snapshot, no visits. Synthetic identities. */
@@ -115,7 +117,13 @@ function makeHarness(options) {
       return t.id;
     },
     clearTimeout(id) { const t = timers.find(x => x.id === id); if (t) t.canceled = true; },
-    setInterval: () => ++timerSeq, clearInterval: () => {},
+    /* p1-resume-honesty-1.0.0: intervals are RECORDED, never auto-fired. The
+       old resume driver armed a 1 s countdown that started a pull by itself,
+       so a suite has to be able to fire that countdown on purpose to prove it
+       is gone. Behaviour for existing fixtures is unchanged: nothing fires
+       unless a suite calls fireIntervals(). */
+    setInterval(fn, ms) { const iv = { id: ++timerSeq, fn, ms: Number(ms) || 0, live: true }; intervals.push(iv); return iv.id; },
+    clearInterval(id) { const iv = intervals.find(x => x.id === id); if (iv) iv.live = false; },
     CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; },
     location: { pathname: '/1pScribeFlow.html', origin: 'https://local.invalid' },
     navigator: { userAgent: 'harness' },
@@ -152,7 +160,12 @@ function makeHarness(options) {
     },
     __mlsVisitSavePref: {
       runForPatient(p, _onStatus, opts) {
-        const call = { patientId: p && p.id, onlyDate: opts && opts.onlyDate, at: now };
+        /* `seq` is a MONOTONIC call counter shared with the chart reads. The
+           fake clock only advances when a timer fires, so `at` cannot order
+           two calls inside one turn - and "did this note read happen in the
+           same visit as its chart open, or in a second pass?" is exactly an
+           ORDERING question. */
+        const call = { patientId: p && p.id, onlyDate: opts && opts.onlyDate, at: now, seq: ++callSeq };
         noteCalls.push(call);
         const delay = Number(options.noteDelayMs || 0);
         if (delay) now += delay;                       /* measured per-row cost */
@@ -160,6 +173,7 @@ function makeHarness(options) {
           ? options.noteResult(p && p.id, opts && opts.onlyDate, noteCalls.length)
           : { ok: true, visits: 1 };
         if (answer && answer.__never) return new Promise(() => {}); /* never answers */
+        if (answer && answer.__throw) return Promise.reject(new Error(String(answer.__throw)));
         return Promise.resolve(answer);
       }
     },
@@ -173,7 +187,7 @@ function makeHarness(options) {
       });
     },
     _assistReadChart(target, _say, opts) {
-      chartCalls.push({ patientId: target && target.patientId, requestId: opts && opts.requestId, at: now });
+      chartCalls.push({ patientId: target && target.patientId, requestId: opts && opts.requestId, at: now, seq: ++callSeq });
       const r = options.chartResult ? options.chartResult(target, chartCalls.length) : null;
       if (r && r.__never) return new Promise(() => {});
       if (r && r.__throw) {
@@ -284,7 +298,11 @@ function makeHarness(options) {
     });
   };
 
-  vm.runInNewContext(fs.readFileSync(IMPORTER, 'utf8'), rt, { filename: '1p-feat_mls_schedimport_exact.js', timeout: 20000 });
+  /* options.importerPath boots a DIFFERENT copy of the importer in the same
+     world - the only way to run a causal control against origin/main's engine
+     with an identical fixture. */
+  vm.runInNewContext(fs.readFileSync(options.importerPath || IMPORTER, 'utf8'), rt,
+    { filename: String(options.importerPath || '1p-feat_mls_schedimport_exact.js'), timeout: 20000 });
 
   function runDueTimers(max) {
     let ran = 0;
@@ -297,9 +315,19 @@ function makeHarness(options) {
     return ran;
   }
 
+  /* fire every armed interval `times` times, in arming order. Returns how
+     many callbacks ran, so "the countdown is gone" is a NUMBER. */
+  function fireIntervals(times) {
+    let ran = 0;
+    for (let n = 0; n < (times == null ? 1 : times); n++) {
+      intervals.slice().forEach(iv => { if (iv.live) { ran++; try { iv.fn(); } catch (e) {} } });
+    }
+    return ran;
+  }
+
   return {
     rt, api: rt.__mlsSI, rows, patients, day,
-    noteCalls, chartCalls, statusLines, clock, timers, runDueTimers, store,
+    noteCalls, chartCalls, statusLines, clock, timers, intervals, fireIntervals, runDueTimers, store,
     parseCalls, saveCalls, cardCoverage,
     /* the live progress state the pull panel reads (window.__mlsDayHistoryPull) */
     ppState: () => (rt.__mlsDayHistoryPull && rt.__mlsDayHistoryPull.state) || null,
@@ -344,6 +372,8 @@ function makeMonthHarness(options) {
   const listeners = new Map();
   const posted = [];
   const gotoDates = [];
+  const presenceCalls = [];      /* p1-athena-presence-1.0.0 */
+  const healthCalls = [];        /* p1-onetab-nav-1.0.0 (athena tab count)    */
   const scheduleReads = [];
   const chartCalls = [];
   const noteCalls = [];
@@ -662,11 +692,45 @@ function makeMonthHarness(options) {
   rt.postMessage = msg => {
     posted.push(clone(msg));
     if (msg.type === 'mlsPing') queueMicrotask(() => emit('mlsPong', { ok: true, version: options.extVersion || '3.0.62' }, msg.id || ''));
-    if (msg.type === 'mlsAppGotoDate') queueMicrotask(() => {
-      currentDay = msg.date; gotoDates.push(msg.date);
-      emit('mlsAppGotoDateResult', { id: msg.id, requestId: msg.id, ok: true, schedDate: msg.date }, msg.id);
+    /* ===== p1-athena-presence-1.0.0 seam =====
+       The lease-free presence verb, answered EXACTLY as content.js relays it:
+       type mlsAthenaPresenceResult, resp with NO requestId. Absent
+       options.presenceResult it answers presence-verified (an athena that is
+       there), which is the pre-existing world for every older fixture.
+       Returning null from the hook means "never answers" - the probe must then
+       fall through on its own timeout. */
+    if (msg.type === 'mlsAthenaPresence') queueMicrotask(() => {
+      presenceCalls.push({ at: nowValue });
+      const answer = options.presenceResult
+        ? options.presenceResult(presenceCalls.length)
+        : { ok: true, athenaOpen: true, certain: true, reason: 'presence-verified' };
+      if (answer === null) return;
+      Array.from(listeners.get('message') || []).forEach(fn => fn({ data: { source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: clone(answer) } }));
     });
-    if (msg.type === 'mlsAppPullSchedule') queueMicrotask(() => emit('mlsAppScheduleResult', scheduleResponse(currentDay, msg.id), msg.id));
+    /* the PHI-free athena tab count (background.js mlsExtHealthRequest) */
+    if (msg.type === 'mlsExtHealth') queueMicrotask(() => {
+      healthCalls.push({ at: nowValue });
+      const tabs = options.athenaTabs == null ? 1 : Number(options.athenaTabs);
+      emit('mlsExtHealthResult', { ok: true, requestId: msg.id, athena: { tabs: tabs, discarded: 0 } }, msg.id);
+    });
+    if (msg.type === 'mlsAppGotoDate') queueMicrotask(() => {
+      gotoDates.push(msg.date);
+      /* options.gotoResult(day, attemptNumber) overrides the answer so a suite
+         can reproduce a no-athena-tab / empty-week-strip goto exactly. */
+      const override = options.gotoResult ? options.gotoResult(msg.date, gotoDates.length) : null;
+      if (!override) {
+        currentDay = msg.date;
+        emit('mlsAppGotoDateResult', { id: msg.id, requestId: msg.id, ok: true, schedDate: msg.date }, msg.id);
+        return;
+      }
+      if (override.ok !== false) currentDay = msg.date;
+      emit('mlsAppGotoDateResult', Object.assign({ id: msg.id, requestId: msg.id }, clone(override)), msg.id);
+    });
+    if (msg.type === 'mlsAppPullSchedule') queueMicrotask(() => {
+      const base = scheduleResponse(currentDay, msg.id);
+      const override = options.scheduleResult ? options.scheduleResult(base, currentDay, scheduleReads.length) : null;
+      emit('mlsAppScheduleResult', override ? Object.assign({ id: msg.id, requestId: msg.id }, clone(override)) : base, msg.id);
+    });
     if (msg.type === 'mlsAppReadAllVisits') queueMicrotask(() => {
       Array.from(listeners.get('message') || []).forEach(fn => fn({ data: {
         source: 'mls-ext', type: 'mlsAppAllVisitsResult', id: msg.id, requestId: msg.requestId, ok: true,
@@ -678,11 +742,13 @@ function makeMonthHarness(options) {
   };
 
   vm.createContext(rt);
-  vm.runInContext(fs.readFileSync(IMPORTER, 'utf8'), rt, { filename: '1p-feat_mls_schedimport_exact.js', timeout: 20000 });
+  vm.runInContext(fs.readFileSync(options.importerPath || IMPORTER, 'utf8'), rt,
+    { filename: String(options.importerPath || '1p-feat_mls_schedimport_exact.js'), timeout: 20000 });
 
   const api = {
     rt, api: rt.__mlsSI, store, world, patients, provider, today, account,
     posted, gotoDates, scheduleReads, chartCalls, noteCalls, statusLines, historyRefs,
+    presenceCalls, healthCalls,
     rowDays, incompleteDays, scheduleErrorDays, chartFail,
     onStatus: (m, k) => { statusLines.push(String(m || '')); void k; },
     runInContext(source, filename) { return vm.runInContext(source, rt, { filename: filename || 'inline', timeout: 20000 }); },
