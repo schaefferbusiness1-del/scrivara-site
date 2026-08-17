@@ -26978,7 +26978,12 @@ function _athenaOrderPlacementControl(order){
   var candidate=_athenaOrderPlacementCandidate(order);
   if(!candidate.eligible)return '<span style="font-size:11.5px;color:var(--muted);font-weight:700" title="'+esc(candidate.reason)+'">'+esc(candidate.badge)+'</span>';
   var encoded=encodeURIComponent(String(order.id||''));
-  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="Review this frozen proposal, then complete the exact order directly in Athena. MLS does not place it.">Review for Athena</button>';
+  /* Owner directive 2026-08-12 (MLS Assist 3.0.62+): a complete, accepted,
+     catalog-bound order is placed by MLS after one explicit confirm in the
+     Athena review. With an older MLS Assist the review still opens, but the
+     order row says the extension must be updated and stays manual. */
+  var _opCapable=false;try{_opCapable=!!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.athenaFinalActionsV1===true&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(_eCap){}
+  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="'+(_opCapable?'Open the Athena review for this frozen proposal. One Confirm &amp; Send places exactly this catalog item in the verified encounter and verifies it by read-back.':'Review this frozen proposal in the Athena review. Update MLS Assist (3.0.62 or newer) to let MLS place it after your confirm; until then complete the exact order in Athena.')+'">'+(_opCapable?'Send to Athena':'Review for Athena')+'</button>';
 }
 /* Compact orders list shown ON the Visit page (Orders combined into Visit). */
 function renderVisitOrders(){
@@ -27300,7 +27305,10 @@ function copyOrders(){
     .then(()=>toast('Orders copied.','ok'))
     .catch(()=>toast('Could not copy.','err'));
 }
-/* Open one immutable order payload for review. Placement stays in Athena. */
+/* Open one immutable order payload in the Athena review. With MLS Assist
+   3.0.62+ (athenaFinalActionsV1 + supervisedOrderPlacementV2) the review's
+   place_order row is READY and one Confirm & Send places exactly that catalog
+   item; with an older extension the row stays manual and says so. */
 function reviewAndPlaceOrderInAthena(orderId,btn){
   var matches=(Array.isArray(currentOrders)?currentOrders:[]).filter(function(item){return item&&String(item.id)===String(orderId);});
   if(matches.length!==1){toast('MLS could not freeze exactly one order. Nothing was sent to Athena.','err');return null;}
@@ -27313,7 +27321,10 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
     toast('The Athena review is still loading. Nothing was sent; wait a moment and try again.','err');
     return null;
   }
-  var consequence='Complete in Athena. Review this frozen '+candidate.order.type+' proposal, then select and place the exact catalog item directly in Athena. MLS does not place, prescribe, or submit it.';
+  var _rpCapable=false;try{_rpCapable=!!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.athenaFinalActionsV1===true&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(_eRp){}
+  var consequence=_rpCapable
+    ?('Review this frozen '+candidate.order.type+' proposal. After your one-click confirm, MLS selects exactly this catalog item in the verified Athena encounter, places only it, and verifies it by an isolated read-back. It does not prescribe, sign, or bill.')
+    :('Review this frozen '+candidate.order.type+' proposal. Your installed MLS Assist still enforces the previous write-safety policy; update it (3.0.62 or newer) to let MLS place this exact catalog item after your confirm. Until then, place it directly in Athena.');
   var drafts=Object.freeze([candidate.order]);
   var orderPlan=Object.freeze({kind:'orders',body:consequence,consequence:consequence,orderDrafts:drafts,orderSuggestions:Object.freeze([])});
   var reviewPatient=Object.freeze({name:String(binding.patient.name||''),dob:String(binding.patient.dob||''),mrn:String(binding.patient.mrn||''),patientId:String(binding.patient.patientId||'')});
@@ -27323,7 +27334,7 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
     noteTimestamp:binding.noteTimestamp||null,requireExpectedVisit:binding.historical===true,visitBindingId:String(binding.id||''),
     receiptSessionId:'order-review-'+String(binding.id||'current')+'-'+candidate.order.clientOrderId
   });
-  if(manifest)toast('Order review opened. Complete the exact order in Athena; MLS did not place anything.','');
+  if(manifest)toast(_rpCapable?'Order review opened. Nothing is placed until you press Confirm & Send on the READY order row.':'Order review opened. Update MLS Assist to place it from here; nothing was placed.','');
   return manifest||null;
 }
 /* Keep the overview as a route/manual-review surface. */

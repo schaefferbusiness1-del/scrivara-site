@@ -1,4 +1,13 @@
-/* MLS Assist — write-safety guard (wsg-1.1.0).
+/* MLS Assist — write-safety guard (wsg-2.0.0).
+ *
+ * wsg-2.0.0 (owner directive 2026-08-12, released 2026-08-17): the wsg-1.x
+ * "preview-only" EXECUTE refusal for sign_encounter / stage_billing /
+ * place_order is LIFTED. BLOCKED_EXECUTE_ACTIONS is empty; every supervised V2
+ * action executes behind the same correctness gates (exact identity + encounter
+ * lock, one-use token, fresh trusted click, verified prior note write before
+ * sign, one action per confirm, no automatic chaining). The forbidden-control
+ * matchers, the production test-content policy and the identity helpers are
+ * unchanged.
  *
  * ONE module, THREE homes:
  *   1. Service worker (background.js `importScripts`) — action-policy gate,
@@ -23,7 +32,7 @@
 (function (root) {
   'use strict';
   if (root.MLSWriteSafety && root.MLSWriteSafety.version) return; // idempotent
-  var VERSION = 'wsg-1.1.0';
+  var VERSION = 'wsg-2.0.0';
 
   /* ------------------------------------------------------------------ *
    * Shared normalizers (mirror the V2 driver's conventions).           *
@@ -163,12 +172,13 @@
   /* ------------------------------------------------------------------ *
    * 2. ACTION POLICY — what the supervised V2 contract may EXECUTE      *
    * ------------------------------------------------------------------ */
-  /* Order / prescription / referral / billing / sign lanes are PREVIEW-ONLY:
-     probe (read-only) stays available so the review screen can show exactly
-     where content would go; execute is refused here, again inside the driver,
-     and the synthetic-click interceptor is the final backstop. */
-  var BLOCKED_EXECUTE_ACTIONS = { sign_encounter: 1, place_order: 1, stage_billing: 1 };
-  var BLOCK_MESSAGE = 'This action is preview-only by write-safety policy. Review it on the review screen, then perform the final step yourself in athenaOne. Nothing was changed.';
+  /* wsg-2.0.0: NO action is refused by policy any more. The owner (sole owner
+     of MLS, directive 2026-08-12) lifted the wsg-1.x preview-only rule for the
+     sign / order / billing lanes; probe stays read-only, execute proceeds to
+     the driver's own supervised verification. The map is kept (empty) so the
+     gate keeps one shape and a future policy can be re-pinned in one place. */
+  var BLOCKED_EXECUTE_ACTIONS = {};
+  var BLOCK_MESSAGE = 'This action is blocked by write-safety policy. Nothing was changed.';
 
   /* ------------------------------------------------------------------ *
    * 3. PRODUCTION TEST/STAGING POLICY                                   *

@@ -212,11 +212,12 @@ async function mlsAthenaActionV2DriverFn(req) {
     var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
     if (!ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
     /* MLS_WRITE_SAFETY_DRIVER_GUARD_START (wsg-1.0.0)  self-contained in-page
-       defense in depth. The driver refuses to EXECUTE final/financial actions
-       and clickOnce refuses ANY control whose own label or machine name marks a
-       final/irrevocable action (sign, sign off, submit, send, approve, finalize,
-       place order, prescribe, transmit, post charges, file claim...). This list
-       mirrors write_safety_guard.js FORBIDDEN_LABEL_SOURCES / _ATTR_FRAGMENTS. */
+       defense in depth. wsg-2.0.0: the driver EXECUTES every supervised action
+       (the execute refusal below is lifted), while clickOnce still refuses ANY
+       control whose own label or machine name marks a final/irrevocable action
+       (submit, send, approve, finalize, prescribe, transmit, post charges, file
+       claim...) except the exact 'Sign and Save' control for sign_encounter.
+       This list mirrors write_safety_guard.js FORBIDDEN_LABEL_SOURCES / _ATTR_FRAGMENTS. */
     var WS_FORBIDDEN_LABELS = [/\bsign\b/, /\bsigns?\s+and\s+saves?\b/, /\bco\s?sign\b/, /\battest\b/, /\bsubmit\b/, /\bsend\b/, /\bapprove\b/, /\bfinali[sz]e\b/, /\bplace\s+orders?\b/, /\badd\s+orders?\b/, /\bprescribe\b/, /\be\s?(?:rx|prescribe|prescription)\b/, /\btransmit\b/, /\bpost\s+charges?\b/, /\bfile\s+claims?\b/, /\bsubmit\s+claims?\b/, /\bbill\s+(?:now|patient|insurance)\b/, /\bclose\s+encounter\b/, /\bdelete\s+(?:chart|patient|encounter)\b/];
     var WS_FORBIDDEN_ATTRS = ['signoff','sign-off','sign_off','signandsave','sign-and-save','sign_and_save','signsave','signencounter','sign-encounter','sign_encounter','placeorder','place-order','place_order','submitorder','submit-order','submit_order','sendorder','send-order','send_order','approveorder','approve-order','prescribe','e-rx','erx-send','sendrx','send-rx','transmitrx','transmit-rx','sendtopharmacy','send-to-pharmacy','finalizenote','finalize-note','finalize_note','postcharge','post-charge','post_charge','submitclaim','submit-claim','fileclaim','file-claim','closeencounter','close-encounter','mls-forbidden'];
     function wsForbiddenControl(el) {
@@ -229,9 +230,15 @@ async function mlsAthenaActionV2DriverFn(req) {
       for (var wsK = 0; wsK < WS_FORBIDDEN_ATTRS.length; wsK++) if (wsHay.indexOf(WS_FORBIDDEN_ATTRS[wsK]) >= 0) return true;
       return false;
     }
-    if (mode === 'execute' && (action === 'sign_encounter' || action === 'place_order' || action === 'stage_billing')) {
-      return { ok: false, blocked: true, reason: 'write-safety-final-action-blocked', error: 'This action is preview-only by write-safety policy. Perform the final step yourself in athenaOne. Nothing was changed.' };
-    }
+    /* wsg-2.0.0 (owner directive 2026-08-12, released 2026-08-17): the policy
+       refusal that used to sit here ("preview-only ... perform the final step
+       yourself in athenaOne") is LIFTED. sign_encounter, stage_billing and
+       place_order execute through the SAME supervised path as write_note and
+       save_draft: exact identity + encounter lock, one-use token, fresh trusted
+       click, verified prior note write before sign, one action per confirm,
+       no automatic chaining. clickOnce keeps refusing every OTHER final or
+       irrevocable control - only the exact 'Sign and Save' control may be
+       clicked, and only by sign_encounter. */
     /* MLS_WRITE_SAFETY_DRIVER_GUARD_END */
 
     function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
@@ -1469,7 +1476,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     /* STAGE_BILLING_END */
     /* ATHENA_ACTION_V2_STAGE_BILLING_END */
 
-    function clickOnce(el) { if (wsForbiddenControl(el)) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
+    function clickOnce(el) { if (wsForbiddenControl(el) && !(action === 'sign_encounter' && exactSign(el))) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
 
     /* ATHENA_ACTION_V2_SAVE_DRAFT_START */
     /* SAVE_DRAFT_START */
@@ -2236,9 +2243,9 @@ function mlsAthenaTeachWatcherFn(config) {
       var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
       if (!/^(probe|execute)$/.test(mode) || !ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
       /* MLS_WRITE_SAFETY_GATE_START (wsg-1.1.0)  sign/order/billing lanes are
-         PREVIEW-ONLY: probe stays available for the review screen; execute is
-         refused here, again inside the driver, and the athenanet synthetic-click
-         interceptor is the final backstop. Test/staging note content is refused
+         EXECUTABLE (wsg-2.0.0, owner directive): gateActionRequest no longer
+         refuses any execute action by policy; the driver executes them behind
+         the same supervised checks. Test/staging note content is still refused
          in production; it belongs in an explicitly configured Preview sandbox.
          Fail closed for every execute action if the guard is absent. */
       if (self.MLSWriteSafety) {

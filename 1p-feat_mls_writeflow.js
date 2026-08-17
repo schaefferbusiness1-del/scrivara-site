@@ -118,40 +118,42 @@
      bridge would reject. The moment a capable extension is installed these
      rows go ready with zero further site change. */
   function athenaFinalActionsReady() { try { return !!(window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.athenaFinalActionsV1 === true); } catch (e) { return false; } }
-  var FINAL_ACTION_EXT_BLOCK = 'Your installed MLS Assist still enforces the previous write-safety policy and will refuse this action. Update MLS Assist to enable it.';
+  var FINAL_ACTION_EXT_BLOCK = 'Your installed MLS Assist still enforces the previous write-safety policy and will refuse this action. Update MLS Assist (Settings > Get the extension, v3.0.62 or newer) to enable it.';
 
   /* ---------------- explicit Athena actions ------------------------------ */
-  /* Owner directive 2026-08-12: reviewed note write, Save Draft, billing
-     staging, and Sign & Save are all confirmable MLS actions. Every action
+  /* Owner directive 2026-08-12 (extension released 2026-08-17 as MLS Assist
+     3.0.62): reviewed note write, Save Draft, billing staging, Sign & Save AND
+     one exact reviewed order are ALL confirmable MLS actions. Every action
      still runs one-at-a-time behind the same read-only probe, identity lock,
-     one-use token, and explicit per-action clinician confirm. Orders and
-     prescriptions stay review-only pending the supervised-order contract. */
+     one-use token, and explicit per-action clinician confirm. The texts below
+     are the FALLBACK rendered only while the installed extension does not yet
+     advertise athenaFinalActionsV1 (an older MLS Assist): they say so and name
+     the cure instead of promising a send the bridge would refuse. */
   var ATHENA_ACTIONS = {
     write_note: {
       label: 'Write reviewed note',
       consequence: 'Writes only the exact reviewed unsigned note text into the verified Athena encounter editor. It does not Save, Sign, bill, submit a claim, place an order, or prescribe. Review the result before choosing another action.'
     },
     stage_billing: {
-      label: 'Review billing for Athena',
-      consequence: 'Review the exact suggested E/M and CPT/HCPCS payload here, then complete coding in Athena. MLS does not stage billing, submit a claim, or alter the billing slate.'
+      label: 'Stage billing in Athena (update MLS Assist)',
+      consequence: 'Your installed MLS Assist still enforces the previous write-safety policy, so this stays review-only until you update it. Review the exact suggested E/M and CPT/HCPCS payload here; with MLS Assist 3.0.62 or newer this row stages the codes into the verified encounter\'s billing slate after your one-click confirm.'
     },
     save_draft: {
       label: 'Save draft in Athena',
       consequence: 'After verifying that this exact reviewed note is in the exact encounter editor, clicks that encounter\'s verified Save / Save Draft control. It does not sign the note, submit billing, or place an order.'
     },
     sign_encounter: {
-      label: 'Sign & Save in Athena',
-      consequence: 'Electronic signature is a final clinician action. Review the unsigned note here, then complete Sign & Save directly in Athena; MLS never clicks it.'
+      label: 'Sign & Save in Athena (update MLS Assist)',
+      consequence: 'Your installed MLS Assist still enforces the previous write-safety policy, so this stays review-only until you update it. With MLS Assist 3.0.62 or newer, after MLS verifies this exact reviewed note was written to this exact encounter, your one-click confirm clicks that encounter\'s verified Sign & Save control.'
     },
     place_order: {
-      label: 'Review proposed order',
-      consequence: 'Review this frozen proposed order here, then select and place the exact catalog item directly in Athena. MLS does not place, prescribe, or submit orders.'
+      label: 'Place reviewed order in Athena (update MLS Assist)',
+      consequence: 'Your installed MLS Assist still enforces the previous write-safety policy, so this stays review-only until you update it. With MLS Assist 3.0.62 or newer, your one-click confirm selects exactly this catalog item in the verified encounter\'s Orders workspace and places only it, verified by an isolated read-back.'
     }
   };
-  var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true };
-  /* Capable-mode row text: rendered ONLY when the installed extension adverts
-     athenaFinalActionsV1. Until then every rendered surface stays byte-for-byte
-     what b1018 rendered (a flag on a shared surface defaults to SHIPPED). */
+  var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };
+  /* Capable-mode row text: rendered when the installed extension adverts
+     athenaFinalActionsV1 (MLS Assist 3.0.62+). */
   var ATHENA_FINAL_READY = {
     stage_billing: {
       label: 'Stage billing in Athena',
@@ -160,6 +162,10 @@
     sign_encounter: {
       label: 'Sign & Save in Athena',
       consequence: 'After MLS verifies this exact reviewed note was written to this exact encounter, your one-click confirm clicks that encounter\'s verified Sign & Save control. Nothing is signed without your explicit confirmation, and no billing or order runs with it.'
+    },
+    place_order: {
+      label: 'Place reviewed order in Athena',
+      consequence: 'After your one-click confirm, MLS selects exactly this catalog-bound reviewed order in the verified encounter\'s Orders workspace, fills only its reviewed fields, places only it, and verifies the result by an isolated read-back. It does not prescribe, sign, or bill; medication and injection orders stay manual because no typed adapter exists for them.'
     }
   };
   var athenaActionRunning = false;
@@ -730,7 +736,7 @@
       actionSay(opts, 'This payload is review-only here. Complete it directly in Athena; MLS keeps the exact payload visible for you.', '');
       return Promise.resolve({ ok: false, error: 'manual-only-final-action' });
     }
-    if ((action === 'stage_billing' || action === 'sign_encounter') && !athenaFinalActionsReady()) {
+    if ((action === 'stage_billing' || action === 'sign_encounter' || action === 'place_order') && !athenaFinalActionsReady()) {
       actionSay(opts, FINAL_ACTION_EXT_BLOCK + ' Nothing was changed.', 'err');
       return Promise.resolve({ ok: false, error: 'final-action-capability-required' });
     }
@@ -824,7 +830,11 @@
     write_note: 'Confirm write reviewed note',
     save_draft: 'Confirm save draft in Athena',
     stage_billing: 'Confirm stage billing in Athena',
-    sign_encounter: 'Confirm Sign and Save in Athena'
+    sign_encounter: 'Confirm Sign and Save in Athena',
+    /* MLS Assist arms place_order ONLY from a trusted click whose label reads
+       "confirm [and] place [one] [reviewed] order" (content.js
+       _mlsActionLabelMatches) - keep this phrase exact. */
+    place_order: 'Confirm and place one reviewed order in Athena'
   };
 
   function deepFreeze(value) {
@@ -981,10 +991,24 @@
       payload.complete = complete;
       var fullySpecified = complete && !!payload.order;
       var highRisk = /^(medication|injection)$/.test(payload.orderType);
+      if (fullySpecified && athenaFinalActionsReady() && supervisedOrderPlacementReady()) {
+        /* Owner directive 2026-08-12 (MLS Assist 3.0.62+): one complete,
+           clinician-accepted, catalog-bound imaging/PT/referral/DME order is a
+           typed place_order row - the extension's supervised single-order
+           contract (exact catalog item, isolated read-back, one confirm) does
+           the placing. It blocks only for real correctness gaps: unbound
+           identity/encounter (commonBlock) - never for policy. */
+        addRow({ id: 'order-draft-' + planIndex + '-' + index, action: 'place_order', kind: 'orders', label: ATHENA_FINAL_READY.place_order.label + ': ' + payload.order.displayLabel,
+          destination: payload.proposedDestination, capability: commonBlock ? 'blocked' : 'ready', source: payload.sourceLabel, reviewStatus: payload.reviewStatus,
+          reason: commonBlock || '', consequence: ATHENA_FINAL_READY.place_order.consequence,
+          payload: payload, order: UNIFIED_ORDER.orders + index / 1000 });
+        return;
+      }
+      var staleExt = fullySpecified && !(athenaFinalActionsReady() && supervisedOrderPlacementReady());
       addRow({ id: 'order-draft-' + planIndex + '-' + index, action: '', kind: 'orders', label: fullySpecified ? ATHENA_ACTIONS.place_order.label + ': ' + payload.order.displayLabel : payload.orderTypeLabel,
         destination: payload.proposedDestination, capability: fullySpecified || highRisk ? 'manual' : 'blocked', source: payload.sourceLabel, reviewStatus: payload.reviewStatus,
-        reason: fullySpecified ? 'Complete in Athena. MLS keeps this immutable reviewed payload visible, but never selects or places an order.' : (highRisk ? 'Complete in Athena. Medication and procedure orders always stay in the clinician\'s hands.' : (payload.orderEligibilityMessage || 'This reviewed draft is incomplete or lacks an exact catalog binding. Complete it in Athena.')),
-        consequence: fullySpecified ? ATHENA_ACTIONS.place_order.consequence : (highRisk ? 'This high-risk order remains visible for manual Athena entry; MLS will not prescribe, inject, submit, or place it.' : 'Nothing is sent or executed for this incomplete or unbound draft.'),
+        reason: staleExt ? FINAL_ACTION_EXT_BLOCK + ' MLS keeps this immutable reviewed payload visible for manual entry until then.' : (highRisk ? 'Complete in Athena. Medication and injection orders have no typed MLS adapter, so they stay in the clinician\'s hands.' : (payload.orderEligibilityMessage || 'This reviewed draft is incomplete or lacks an exact catalog binding. Complete it in Athena.')),
+        consequence: fullySpecified ? ATHENA_ACTIONS.place_order.consequence : (highRisk ? 'This medication or injection order remains visible for manual Athena entry; no typed adapter exists, so MLS will not prescribe, inject, submit, or place it.' : 'Nothing is sent or executed for this incomplete or unbound draft.'),
         payload: payload, order: UNIFIED_ORDER.orders + index / 1000 });
     });
     suggestions.forEach(function (item, index) {
@@ -1053,9 +1077,10 @@
     var commonBlock = identityBlocked
       ? 'An immutable local patient ID plus the exact Athena name, DOB, and MRN are required. Nothing can be written.'
       : (exactVisitBlocked ? 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.' : liveVisitBlock);
-    /* Orders are always review-only, so missing bridge capabilities never turn
-       them into a hidden or misleading executable state. */
-    var orderCommonBlock = '';
+    /* Typed place_order rows (MLS Assist 3.0.62+) share the note rows'
+       identity/encounter block; without a capable extension the order rows
+       fall back to manual and the block is irrelevant to them. */
+    var orderCommonBlock = commonBlock;
     var rows = [];
     function addRow(spec) {
       var payload = stableClone(spec.payload || {});
@@ -1092,7 +1117,7 @@
           payload: { billing: billing, reviewText: billingReview }, order: UNIFIED_ORDER.stage_billing });
       } else {
         addRow({ id: 'stage-billing', action: '', kind: 'billing', label: ATHENA_ACTIONS.stage_billing.label, destination: 'Athena encounter > Billing / Charges slate',
-          capability: 'manual', reason: 'Complete in Athena. MLS does not stage billing or submit claims.' + billingDetail, consequence: ATHENA_ACTIONS.stage_billing.consequence,
+          capability: 'manual', reason: FINAL_ACTION_EXT_BLOCK + billingDetail, consequence: ATHENA_ACTIONS.stage_billing.consequence,
           payload: { billing: billing, reviewText: billingReview }, order: UNIFIED_ORDER.stage_billing });
       }
     }
@@ -1128,7 +1153,7 @@
       } else {
         addRow({ id: 'sign-encounter', action: '', kind: 'sign', label: ATHENA_ACTIONS.sign_encounter.label, destination: 'Athena encounter > Sign & Save control',
           capability: 'manual',
-          reason: 'Complete in Athena. Electronic signature and encounter finalization always stay in the clinician\'s hands; this row never becomes an MLS action.',
+          reason: FINAL_ACTION_EXT_BLOCK + ' Until then, complete Sign & Save directly in Athena.',
           consequence: ATHENA_ACTIONS.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
       }
     }
@@ -1575,7 +1600,7 @@
     }).join('');
     return '<section data-mls-orders-summary="1" style="border:1px solid #cfded5;border-radius:11px;padding:10px 12px;margin-top:9px;background:#f7fbf9">' +
       '<div style="display:flex;gap:8px;align-items:center"><b style="font-size:14px;color:#204034">Orders proposed for Athena</b><span style="margin-left:auto;font-size:11px;color:#52675c">' + orderRows.length + ' item' + (orderRows.length === 1 ? '' : 's') + '</span></div>' +
-      '<div style="font-size:11.5px;color:#52675c;margin:3px 0 5px">Review each frozen proposal here, then complete the exact order in Athena. MLS never selects a catalog item, places an order, prescribes, or submits anything.</div>' + items + '</section>';
+      '<div style="font-size:11.5px;color:#52675c;margin:3px 0 5px">' + (athenaFinalActionsReady() && supervisedOrderPlacementReady() ? 'Review each frozen proposal here. A complete, accepted, catalog-bound imaging / PT / referral / DME order is a READY row: one Confirm &amp; Send places exactly that catalog item and verifies it by read-back. Medication and injection orders stay yours in Athena (no typed adapter). MLS never prescribes or submits anything.' : 'Review each frozen proposal here, then complete the exact order in Athena. Your installed MLS Assist still enforces the previous write-safety policy; with MLS Assist 3.0.62 or newer, complete catalog-bound orders become one-confirm MLS actions.') + '</div>' + items + '</section>';
   }
   /* oa-1.0.0: record acceptance of one suggestion row, then rebuild the review
      from a plan where that item is an accepted reviewed draft. The app hook is
@@ -1761,7 +1786,7 @@
       rowsHtml +
       '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> being verified read-only now.</div>' +
       '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Checking the exact chart read-only &mdash; nothing is sent yet.</div>' +
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; orders, prescriptions, and claim submission stay yours in Athena.' : 'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.') + '</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.') + '</div>' +
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
       '<div style="display:flex;gap:9px;position:sticky;bottom:-20px;background:#fff;padding:12px 0 2px"><button type="button" id="mlsAthenaUnifiedCancel" style="border:1px solid #d8ddd9;background:#fff;border-radius:10px;padding:11px 16px;font-weight:750;cursor:pointer">Cancel</button><button type="button" id="mlsAthenaUnifiedGo" disabled aria-disabled="true" style="flex:1;border:0;background:#204034;color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:850;cursor:pointer">Confirm &amp; Send to Athena</button></div>';
