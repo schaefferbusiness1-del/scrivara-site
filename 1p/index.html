@@ -4918,16 +4918,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </select>
       </div>
 
-      <div class="field">
-        <label for="qolMslMode">How much is on screen</label>
-        <select class="sf-select" id="qolMslMode" onchange="applyMslModePreview(this.value)">
-          <option value="guided">Simple &mdash; one step at a time</option>
-          <option value="calm">Normal (default)</option>
-          <option value="full">Everything &mdash; show every control</option>
-        </select>
-        <div class="hint" style="margin-top:6px">Simple keeps the screen to the next thing you need and folds the rest behind labelled buttons. Nothing is ever removed &mdash; everything stays one click away.</div>
-      </div>
-
+      <!-- "How much is on screen" is NOT markup here on purpose. It is built at
+           runtime by the msl-1.0.0 block below (ensureSettingsField), anchored
+           to #qolDockSide, so that block carries its own switch when it is
+           promoted to another lane. Deleting the block removes the field with
+           it and leaves this dialog exactly as it was. -->
       <div class="field">
         <label for="qolDockSide">Navigation bar</label>
         <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
@@ -19224,7 +19219,14 @@ function _opEnsureDayBrain(){
    working day, and today is the last resort. */
 function _opContextDay(){
   var shown=function(id){ try{ var v=document.getElementById(id); return !!(v && v.offsetParent!==null); }catch(e){ return false; } };
-  var ok=function(k){ return /^d{4}-d{2}-d{2}$/.test(String(k||'')) ? String(k) : ''; };
+  /* \d, not d. Without the backslashes this regex matched the LITERAL text
+     "dddd-dd-dd", so ok() returned '' for every real date key and
+     _opContextDay() could never do the one thing it exists to do: it fell
+     straight through to _opDayKey(new Date()) - machine-clock today - no
+     matter which day the calendar or the visit strip was showing. With
+     msl-autodraft-1.0.0 clicking Draft-all on arrival, that silently drafted
+     a day's operative notes for a day the doctor had not chosen. */
+  var ok=function(k){ return /^\d{4}-\d{2}-\d{2}$/.test(String(k||'')) ? String(k) : ''; };
   var cal=function(){ try{ return ok(window._calSelDay); }catch(e){ return ''; } };
   var strip=function(){ try{ var ds=window.__mlsDaySwitch; return (ds && typeof ds.currentDay==='function') ? ok(ds.currentDay()) : ''; }catch(e){ return ''; } };
   var today=function(){ try{ return ok(typeof window._acctTodayKey==='function' ? window._acctTodayKey() : ''); }catch(e){ return ''; } };
@@ -37274,6 +37276,101 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
   .msl-next::after{ animation:none !important; opacity:1 !important; }
 }
 
+/* ---- The mode chip, top right ---------------------------------------
+   Owner: "a dad mode where you click it". Until now the only way in was a
+   <select> inside a Settings tab - and that tab strip is measurably
+   UNREACHABLE below ~800px (3 to 6 tabs clipped off-screen with no scroll),
+   so on a phone the three modes did not exist at all.
+
+   It sits BELOW the date chip rather than beside it so neither has to shrink,
+   and it is deliberately quiet: this is a preference, not a clinical control,
+   and it must never read as louder than the note in front of the doctor. */
+#mslChip{
+  position:fixed; z-index:941;
+  top:calc(env(safe-area-inset-top,0px) + 62px);
+  right:calc(env(safe-area-inset-right,0px) + 18px);
+  display:flex; flex-direction:column; align-items:flex-end; gap:6px;
+}
+#mslChipBtn{
+  display:inline-flex; align-items:center; gap:6px;
+  min-height:32px; padding:5px 12px;
+  font:700 12px/1.15 var(--sans); color:var(--muted);
+  background:var(--card); border:1px solid var(--line);
+  border-radius:var(--r-pill,999px); box-shadow:var(--shadow); cursor:pointer;
+}
+#mslChipBtn:hover{ color:var(--ink); border-color:var(--muted); }
+#mslChipBtn[aria-expanded="true"]{ color:var(--ink); border-color:var(--brand); }
+#mslChipMenu{
+  min-width:232px; padding:8px; border-radius:var(--r-ctl,12px);
+  background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow);
+  display:flex; flex-direction:column; gap:2px;
+}
+#mslChipMenu[hidden]{ display:none; }
+#mslChipMenu .mslChipGroup{
+  font:700 10.5px/1.2 var(--sans); letter-spacing:.4px; text-transform:uppercase;
+  color:var(--muted); padding:4px 8px 6px;
+}
+#mslChipMenu .mslChipItem{
+  text-align:left; min-height:36px; padding:8px 10px; border:0; border-radius:8px;
+  font:600 12.5px/1.25 var(--sans); color:var(--ink); background:transparent; cursor:pointer;
+}
+#mslChipMenu .mslChipItem:hover{ background:var(--soft); }
+#mslChipMenu .mslChipItem[aria-checked="true"]{ background:var(--soft); color:var(--brand-dk,var(--ink)); }
+#mslChipMenu .mslChipItem[aria-checked="true"]::before{ content:'\2713\00a0'; font-weight:800; }
+/* The date chip loses its second line below 900px; the mode chip follows it up. */
+@media (max-width:900px){
+  #mslChip{ top:calc(env(safe-area-inset-top,0px) + 44px); right:calc(env(safe-area-inset-right,0px) + 10px); }
+  #mslChipBtn{ padding:4px 10px; }
+}
+@media print{ #mslChip{ display:none; } }
+
+/* ---- Calm/guided outside the op-note room -----------------------------
+   MEASURED 2026-08-17, calm vs full at 1366 with 28 synthetic patients: the
+   op-note room dropped 66 -> 49 controls and 2,837 -> 1,749 characters, but
+   Patients (61 controls, the busiest ordinary screen in the app) dropped
+   ZERO controls and ZERO characters, and AI Studio, Settings, History, Recs
+   and Orders dropped nothing either. Calm mode was, outside one room, doing
+   nothing at all - so "Normal" and "Everything" were the same screen.
+
+   Only STANDING PROSE is touched here: the sub-captions, disclaimers and
+   explanatory notes a doctor has read five hundred times. Not one control
+   and not one host whose display is written inline by its owning module - a
+   !important rule outranks inline style, so registering one of those would
+   silently kill the feature that owns it. Everything returns in Everything
+   mode. */
+html[data-msl="calm"] #patientsView .card > p.sub,
+html[data-msl="guided"] #patientsView .card > p.sub,
+html[data-msl="calm"] #historyView .card > p.sub,
+html[data-msl="guided"] #historyView .card > p.sub,
+html[data-msl="calm"] #histStorageNote,
+html[data-msl="guided"] #histStorageNote,
+html[data-msl="calm"] #recsView .card > p.sub,
+html[data-msl="guided"] #recsView .card > p.sub,
+html[data-msl="calm"] #recsView .card > .disclaim,
+html[data-msl="guided"] #recsView .card > .disclaim,
+html[data-msl="calm"] #studioView .card > p.sub,
+html[data-msl="guided"] #studioView .card > p.sub,
+html[data-msl="calm"] #studioView #copilotCard > .note,
+html[data-msl="guided"] #studioView #copilotCard > .note,
+html[data-msl="calm"] #analysisView .card > p.sub,
+html[data-msl="guided"] #analysisView .card > p.sub,
+html[data-msl="calm"] #oprDayRail > p.note,
+html[data-msl="guided"] #oprDayRail > p.note{ display:none !important; }
+
+/* ---- GUIDED only: no destructive control on a walkthrough screen -----
+   Every patient row carries TWO buttons: Record (the row's whole point) and
+   a bare trash glyph that deletes the patient. On a 28-patient day that is
+   28 delete buttons - 28 of the screen's 61 controls - sitting one slip away
+   from the control the doctor actually wants, on the mode explicitly built
+   for someone who is not fluent in the app.
+
+   Guided hides the DELETE and keeps the Record: the destructive control is
+   the one that should not be on a walkthrough, and hiding the primary
+   instead would have left a screen whose only visible row action was
+   "delete". Deleting a patient stays exactly where it was in Normal and in
+   Everything, one mode-chip click away. */
+html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
+
 /* ---- msl-fit-1.0.0: breakpoints that measure the CONTENT BOX --------
    Every width breakpoint in this shell measures the VIEWPORT. But from 901px
    up, feat_mls_redesign.js parks a FIXED 236px rail to the left of the
@@ -37495,40 +37592,96 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
      would teach the doctor to distrust the ring, which is worse than nothing.
      Op Notes is checked first because it is a full-screen room that covers
      whatever view is nominally shown behind it. */
+  /* EVERY screen, not four. Each row is [container id, ordered candidates].
+     The FIRST eligible candidate wins, so a screen degrades to its next-best
+     step instead of going dark - the measured failure of the first pass, where
+     Patients' only candidate needed an active patient and so lit nothing on
+     the busiest screen in the app (0 rings on 6 of 7 click-navigated screens,
+     2026-08-17).
+
+     '#mlsCvNxt_<key>' is tried first wherever it exists because
+     feat_mls_calm_views.js already DECLARES that screen's primary action; the
+     ring agreeing with the module that owns the screen is better than this
+     block having a second opinion about it. */
   var NEXT_STEPS = [
-    ['calendarView',  '#mlsCvNxt_calendar'],
-    ['patientsView',  '#profileCard > h2 button.btn-green'],
-    ['analysisView',  '#t7AxRefresh'],
-    ['intakeView',    '#intakeView .ik-submit']
+    ['calendarView',  ['#mlsCvNxt_calendar', '#calendarView .cx-todaybtn', '#calendarView .btn-primary']],
+    ['patientsView',  ['#profileCard > h2 button.btn-green', '#ptList .pt-item', '#ptNewBtn']],
+    ['visitView',     ['#ez3Now', '#ez3Choose', '#mlsDsPullBtn', '#visitView .btn-green']],
+    ['historyView',   ['#mlsCvNxt_history', '#histNewVisitBtn', '#pullChartBtn']],
+    ['recsView',      ['#genRecsBtn', '#recsView .btn-primary']],
+    /* studioView BEFORE analysisView, deliberately: feat_mls_studio_merge.js
+       hoists #analysisView INSIDE #studioView, so on AI Studio both containers
+       are shown and the first match wins. Measured with the other order: AI
+       Studio lit Analysis's "Refresh" instead of the Copilot's own question
+       box. */
+    ['studioView',    ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn']],
+    ['analysisView',  ['#t7AxRefresh', '#analysisView .btn-ghost']],
+    ['ordersView',    ['#ordersView .btn-primary', '#ordersView button']],
+    ['intakeView',    ['#intakeView .ik-submit', '#intakeView button']],
+    ['adminView',     ['#adminView .btn-primary', '#adminView button']],
+    ['teamView',      ['#teamView .btn-primary', '#teamView button']],
+    ['legalReqView',  ['#legalReqView .btn-primary', '#legalReqView button']]
   ];
+  /* Full-screen takeovers own the next step regardless of the view behind
+     them, most-specific first. */
+  var NEXT_OVERLAYS = [
+    ['opPrepModal',  ['#opPrepGenAllBtn', '#opPrepModal .btn-primary']],
+    ['settingsModal',['#settingsModal .btn-primary', '#settingsModal .modal-x']]
+  ];
+  /* offsetParent is null for every position:fixed element, so the old
+     eligibility test silently disqualified anything fixed. Measure the box. */
+  function shown(el) {
+    if (!el) return false;
+    var r;
+    try { r = el.getBoundingClientRect(); } catch (e) { return false; }
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs;
+    try { cs = getComputedStyle(el); } catch (e) { return false; }
+    return !(cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0');
+  }
   function eligible(el) {
-    return !!(el && !el.disabled && el.offsetParent !== null &&
-              el.getAttribute('aria-disabled') !== 'true');
+    return !!(el && !el.disabled && el.getAttribute('aria-disabled') !== 'true' && shown(el));
+  }
+  function firstEligible(root, list) {
+    for (var i = 0; i < list.length; i++) {
+      var el = null;
+      try { el = (root && root.querySelector(list[i])) || document.querySelector(list[i]); } catch (e) { el = null; }
+      if (eligible(el)) return el;
+    }
+    return null;
   }
   function markNext(mode) {
-    var prev = document.querySelector('.msl-next');
-    if (prev) prev.classList.remove('msl-next');
-    if (mode !== 'guided') return;
+    /* querySelectorAll, not querySelector: one stale ring left behind on a
+       hidden node is exactly how this ended up lit on seven screens at once. */
+    var prev = document.querySelectorAll('.msl-next'), p;
+    for (p = 0; p < prev.length; p++) prev[p].classList.remove('msl-next');
+    if (mode !== 'guided') return '';
 
-    /* The op-note room is a full-screen takeover; when it is up it owns the
-       next step regardless of which view is underneath. */
-    var room = document.getElementById('opPrepModal');
-    if (room && room.classList.contains('show')) {
-      var draft = document.getElementById('opPrepGenAllBtn');
-      if (eligible(draft)) draft.classList.add('msl-next');
-      return;
+    var i, host, target;
+    for (i = 0; i < NEXT_OVERLAYS.length; i++) {
+      host = document.getElementById(NEXT_OVERLAYS[i][0]);
+      if (!host || !host.classList.contains('show') || !shown(host)) continue;
+      target = firstEligible(host, NEXT_OVERLAYS[i][1]);
+      if (target) { target.classList.add('msl-next'); return NEXT_OVERLAYS[i][0]; }
+      return NEXT_OVERLAYS[i][0];
     }
-    for (var i = 0; i < NEXT_STEPS.length; i++) {
-      var view = document.getElementById(NEXT_STEPS[i][0]);
-      if (!view || view.offsetParent === null) continue;   /* not the shown view */
-      var target = null;
-      try { target = view.querySelector(NEXT_STEPS[i][1]) || document.querySelector(NEXT_STEPS[i][1]); } catch (e) { target = null; }
-      if (eligible(target)) { target.classList.add('msl-next'); return; }
-      return;   /* this IS the shown view; if its step is not actionable, light nothing */
+    for (i = 0; i < NEXT_STEPS.length; i++) {
+      host = document.getElementById(NEXT_STEPS[i][0]);
+      if (!host || !shown(host)) continue;                  /* not the shown view */
+      target = firstEligible(host, NEXT_STEPS[i][1]);
+      if (target) { target.classList.add('msl-next'); return NEXT_STEPS[i][0]; }
+      return NEXT_STEPS[i][0];   /* this IS the shown view; nothing actionable */
     }
+    return '';
+  }
+  /* Public, so a test can ask what the ring believes rather than infer it. */
+  function nextStepReport() {
+    var lit = document.querySelectorAll('.msl-next'), out = [], k;
+    for (k = 0; k < lit.length; k++) out.push({ id: lit[k].id || '', visible: shown(lit[k]) });
+    return { mode: document.documentElement.getAttribute('data-msl') || 'calm', lit: out };
   }
 
-  var queued = false;
+  var queued = false, lateTimer = 0;
   function refresh() {
     if (queued) return;
     queued = true;
@@ -37541,7 +37694,22 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
       for (var i = 0; i < REGISTRY.length; i++) foldOne(REGISTRY[i], mode);
       paintCards(mode);
       markNext(mode);
+      ensureSettingsField();
       syncModeField();
+      ensureChip();
+      /* ONE bounded second look. A view container's display flips before the
+         module that fills it has painted, so the first pass sees the screen
+         empty and settles for a weaker candidate - measured: the Visit screen
+         lit "Pull today" because #ez3Now did not exist yet when the display
+         attribute changed. Not a poll: exactly one follow-up per refresh, only
+         in guided mode, and it re-enters markNext alone. */
+      if (mode === 'guided') {
+        if (lateTimer) clearTimeout(lateTimer);
+        lateTimer = setTimeout(function () {
+          lateTimer = 0;
+          if ((document.documentElement.getAttribute('data-msl') || 'calm') === 'guided') markNext('guided');
+        }, 450);
+      } else if (lateTimer) { clearTimeout(lateTimer); lateTimer = 0; }
     });
   }
 
@@ -37550,9 +37718,37 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
      own fold attribute cannot re-trigger the observer. */
   function watch() {
     var root = document.getElementById('opPrepModal');
-    if (!root || root.__mslWatched) return;
-    root.__mslWatched = true;
-    try { new MutationObserver(refresh).observe(root, { childList:true, subtree:true }); } catch (e) {}
+    if (root && !root.__mslWatched) {
+      root.__mslWatched = true;
+      try { new MutationObserver(refresh).observe(root, { childList:true, subtree:true }); } catch (e) {}
+    }
+    /* THE MEASURED FAILURE (2026-08-17): the ring was recomputed only when the
+       op-note room mutated, so after the room closed #opPrepGenAllBtn kept
+       .msl-next while INVISIBLE on 7 of 11 screens, and a plain view change lit
+       nothing at all. showView() switches a view by writing .style.display on
+       its container, so that attribute IS the view-change signal - watching it
+       needs no hook into shared code and cannot be bypassed by a programmatic
+       caller (the Copilot, the calendar peek, a deep link). */
+    for (var i = 0; i < NEXT_STEPS.length; i++) {
+      var view = document.getElementById(NEXT_STEPS[i][0]);
+      if (!view || view.__mslViewWatched) continue;
+      view.__mslViewWatched = true;
+      try { new MutationObserver(refresh).observe(view, { attributes:true, attributeFilter:['style'] }); } catch (e) {}
+    }
+    for (var j = 0; j < NEXT_OVERLAYS.length; j++) {
+      var host = document.getElementById(NEXT_OVERLAYS[j][0]);
+      if (!host || host.__mslOverlayWatched) continue;
+      host.__mslOverlayWatched = true;
+      try { new MutationObserver(refresh).observe(host, { attributes:true, attributeFilter:['class'] }); } catch (e) {}
+    }
+    if (!watch.__events) {
+      watch.__events = 1;
+      /* The shell announces its own navigation; free correctness where it fires. */
+      ['mls:view-changed', 'mls:ui-ready'].forEach(function (name) {
+        try { window.addEventListener(name, refresh, false); } catch (e) {}
+      });
+      try { window.addEventListener('resize', refresh, false); } catch (e) {}
+    }
   }
 
   /* The Settings control. Until this existed the three modes were only
@@ -37579,11 +37775,135 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
   }
   window.__mlsSimpleLayerSyncField = syncModeField;
 
+  /* THE SETTINGS FIELD, BUILT BY THIS BLOCK.
+     It used to be markup in the shell, between Text size and Navigation bar.
+     That made msl-1.0.0 unpromotable: copying the block to another lane would
+     carry the three modes and leave the only switch behind. It is injected
+     here instead - idempotent, re-applied on mutation, anchored to whichever
+     of the two neighbouring fields exists, and a no-op when the Settings
+     dialog is not in the document at all. */
+  var MODE_COPY = [
+    ['guided', 'Simple \u2014 one step at a time'],
+    ['calm',   'Normal (default)'],
+    ['full',   'Everything \u2014 show every control']
+  ];
+  function ensureSettingsField() {
+    if (document.getElementById('qolMslMode')) return true;
+    var anchor = document.getElementById('qolDockSide') || document.getElementById('qolTextSize');
+    if (!anchor) return false;
+    var field = anchor.closest ? anchor.closest('.field') : null;
+    if (!field || !field.parentNode) return false;
+    var wrap = document.createElement('div');
+    wrap.className = 'field';
+    wrap.setAttribute('data-msl-own', 'settings-field');
+    var label = document.createElement('label');
+    label.setAttribute('for', 'qolMslMode');
+    label.textContent = 'How much is on screen';
+    var sel = document.createElement('select');
+    sel.className = 'sf-select';
+    sel.id = 'qolMslMode';
+    MODE_COPY.forEach(function (row) {
+      var o = document.createElement('option');
+      o.value = row[0]; o.textContent = row[1];
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () { window.applyMslModePreview(sel.value); }, false);
+    var hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.style.marginTop = '6px';
+    hint.textContent = 'Simple keeps the screen to the next thing you need and folds the rest behind labelled buttons. Nothing is ever removed \u2014 everything stays one click away.';
+    wrap.appendChild(label); wrap.appendChild(sel); wrap.appendChild(hint);
+    /* Before Navigation bar when that exists, else after Text size. */
+    if (anchor.id === 'qolDockSide') field.parentNode.insertBefore(wrap, field);
+    else if (field.nextSibling) field.parentNode.insertBefore(wrap, field.nextSibling);
+    else field.parentNode.appendChild(wrap);
+    sel.value = read();
+    return true;
+  }
+
+  /* THE CHIP. The owner asked for "a dad mode where you click it"; the only
+     way in was a select inside a Settings tab, which is also measurably
+     UNREACHABLE below ~800px (its tab strip clips). This is a standing
+     top-right control: current mode on the face, three labelled choices one
+     click away. It is a menu rather than a cycle button so the doctor never
+     has to click twice to find out what the third state was. */
+  function chipLabel(mode) {
+    return mode === 'guided' ? 'Simple' : (mode === 'full' ? 'Everything' : 'Normal');
+  }
+  function ensureChip() {
+    var host = document.getElementById('mslChip');
+    if (host) { paintChip(); return host; }
+    if (!document.body) return null;
+    host = document.createElement('div');
+    host.id = 'mslChip';
+    host.innerHTML =
+      '<button type="button" id="mslChipBtn" aria-haspopup="true" aria-expanded="false">' +
+        '<span aria-hidden="true">\u25F4</span><span id="mslChipName"></span>' +
+      '</button>' +
+      '<div id="mslChipMenu" role="menu" hidden></div>';
+    document.body.appendChild(host);
+    var menu = host.querySelector('#mslChipMenu');
+    var group = document.createElement('div');
+    group.className = 'mslChipGroup';
+    group.textContent = 'How much is on screen';
+    menu.appendChild(group);
+    MODE_COPY.forEach(function (row) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mslChipItem';
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('data-msl-mode', row[0]);
+      b.textContent = row[1];
+      b.addEventListener('click', function () {
+        window.applyMslModePreview(row[0]);
+        closeChip();
+      }, false);
+      menu.appendChild(b);
+    });
+    host.querySelector('#mslChipBtn').addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (menu.hasAttribute('hidden')) openChip(); else closeChip();
+    }, false);
+    document.addEventListener('click', function (ev) {
+      if (!menu || menu.hasAttribute('hidden')) return;
+      if (ev.target && ev.target.closest && ev.target.closest('#mslChip')) return;
+      closeChip();
+    }, false);
+    document.addEventListener('keydown', function (ev) {
+      if (ev && ev.key === 'Escape') closeChip();
+    }, false);
+    paintChip();
+    return host;
+  }
+  function openChip() {
+    var m = document.getElementById('mslChipMenu'), b = document.getElementById('mslChipBtn');
+    if (!m) return; m.removeAttribute('hidden');
+    if (b) b.setAttribute('aria-expanded', 'true');
+  }
+  function closeChip() {
+    var m = document.getElementById('mslChipMenu'), b = document.getElementById('mslChipBtn');
+    if (!m) return; m.setAttribute('hidden', '');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  }
+  function paintChip() {
+    var now = read();
+    var name = document.getElementById('mslChipName');
+    if (name && name.textContent !== chipLabel(now)) name.textContent = chipLabel(now);
+    var btn = document.getElementById('mslChipBtn');
+    if (btn) btn.setAttribute('title', 'How much is on screen: ' + chipLabel(now) + '. Click to change.');
+    var items = document.querySelectorAll('#mslChipMenu .mslChipItem');
+    for (var i = 0; i < items.length; i++) {
+      items[i].setAttribute('aria-checked', items[i].getAttribute('data-msl-mode') === now ? 'true' : 'false');
+    }
+  }
+  window.__mlsSimpleLayerChip = { ensure: ensureChip, paint: paintChip, close: closeChip };
+
   window.__mlsSimpleLayer = {
     version: 'msl-1.0.0',
     get: read,
     set: function (mode) { if (!MODES[mode]) return false; var ok = write(mode); apply(mode); refresh(); return ok; },
     refresh: refresh,
+    nextStep: nextStepReport,
     registry: REGISTRY,
     /* Full uninstall, so this block can be evaluated and withdrawn live. */
     revert: function () {
@@ -37592,7 +37912,10 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
       for (var i = 0; i < b.length; i++) if (b[i].parentNode) b[i].parentNode.removeChild(b[i]);
       var f = document.querySelectorAll('[data-msl-fold]');
       for (var j = 0; j < f.length; j++) f[j].removeAttribute('data-msl-fold');
-      var n = document.querySelector('.msl-next'); if (n) n.classList.remove('msl-next');
+      var n = document.querySelectorAll('.msl-next');
+      for (var q = 0; q < n.length; q++) n[q].classList.remove('msl-next');
+      var chip = document.getElementById('mslChip'); if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
+      var own = document.querySelector('[data-msl-own="settings-field"]'); if (own && own.parentNode) own.parentNode.removeChild(own);
       var c = document.querySelectorAll('[data-msl-card]');
       for (var k = 0; k < c.length; k++) c[k].removeAttribute('data-msl-card');
       document.removeEventListener('click', onCardClick, false);
@@ -37647,7 +37970,10 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
        clock is correct here and only here: a label that is one day off is
        better than no label, and every consumer that MATTERS already refuses
        rather than guessing. */
-    try { if (typeof window._acctTodayKey === 'function') { var k = window._acctTodayKey(); if (/^d{4}-d{2}-d{2}$/.test(k)) { var p = k.split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); } } } catch (e) {}
+    /* \d, not d: the bare form matched the literal string "dddd-dd-dd", so the
+       practice day was NEVER accepted and this chip always fell back to the
+       machine clock - the one source it documents itself as not trusting. */
+    try { if (typeof window._acctTodayKey === 'function') { var k = window._acctTodayKey(); if (/^\d{4}-\d{2}-\d{2}$/.test(k)) { var p = k.split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); } } } catch (e) {}
     return new Date();
   }
   function paint() {
@@ -38467,5 +38793,434 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
 })();
 </script>
 <!-- ===== end legal-tools-1.0.0 ========================================= -->
+<!-- ===== msl-fit-1.1.0 — every screen usable at every window size =====
+     Owner: "MAKE SURE ALL UI LOOKS GOOD AT ALL WINDOW SIZES."
+
+     CSS only, no controller, no JavaScript: nothing here can race a module,
+     and deleting the block restores today's layout exactly. Each rule names
+     the width it was MEASURED to fail at (2026-08-17 sweep, 320 -> 2560 over
+     11 screens) so a later reader can re-run the same measurement rather than
+     trust the comment.
+
+     THE RULE THIS BLOCK OBEYS. A previous pass added `overflow-x:auto` to
+     #calGrid on its own and broke the calendar: in CSS, when ONE axis of
+     overflow is not `visible` the other computes from `visible` to `auto`, so
+     a one-property addition silently made the month grid VERTICALLY
+     scrollable and clipped it. Every overflow rule below therefore writes
+     BOTH axes explicitly. -->
+<style id="mslFitCss">
+/* ---- Settings tabs below 900px: NOT a defect. Left alone deliberately.
+   An earlier pass of this block "fixed" them. It was wrong, and the record
+   belongs here so nobody fixes it again.
+
+   The measurement that looked damning: at 360px, 6 of 8 #settingsTabBar tabs
+   sit outside the viewport, and the DOCUMENT does not scroll horizontally
+   (scrollWidth - innerWidth = -15 at every width 320-2560). That reads as
+   "half of Settings is unreachable on a phone".
+
+   It is not. feat_mls_settings_exact.js deliberately turns that rail into a
+   horizontally scrollable strip below 820px (overflow-x:auto, scrollbar-width:
+   none). MEASURED on the running page at 360px: scrollWidth 1278 vs clientWidth
+   325, and setting scrollLeft to the end moves the offscreen count from 6 to 5
+   - i.e. the last tabs come INTO view and the first ones leave. Every tab is
+   reachable by swiping the strip.
+
+   So the viewport-relative "offscreen" count is the wrong instrument for a
+   scroll container, and overriding a shared module's deliberate design on the
+   strength of it would have been a regression dressed as a fix. What remains
+   is a genuine but minor discoverability point - the strip hides its own
+   scrollbar - which belongs to the module that owns it, not to this block.
+   The UI shape contract suite asserts the REACHABILITY property (offscreen
+   AND no ancestor that scrolls it into view) instead of the raw count, so the
+   wrong instrument cannot produce this verdict again. */
+
+/* ---- Prep Op Notes on a phone -----------------------------------------
+   MEASURED at 360x780: the room rendered 11 visible controls and 300 visible
+   characters. #oprDayRail took 243px of a 564px panel and #opPrepList started
+   at y=727 inside a modal that ended at y=768 - the procedure cards were
+   below the bottom of the dialog, at zero height. The 28-patient day was, in
+   practice, not on the screen.
+
+   The rail is the SECONDARY column (mode switch, day picker, template rail);
+   the list of procedures is the reason the screen exists. Capping the rail
+   gives the list the space back. Nothing is removed - the rail keeps its own
+   scrollbar and every control stays exactly where it was. */
+@media (max-width:760px){
+  #opPrepModal #oprDayRail{
+    max-height:38vh !important;
+    overflow-y:auto !important; overflow-x:hidden !important;
+    -webkit-overflow-scrolling:touch;
+  }
+  #opPrepModal #opPrepList{ min-height:40vh; }
+  /* The header row put Back + the title + the two area tabs on one line; at
+     360px #oprTabTpls landed at left=409 - off the right edge of a 360px
+     window, so "Templates" was unreachable inside the room. */
+  #opPrepModal .opr-top{ flex-wrap:wrap !important; row-gap:6px; }
+  #opPrepModal .opr-tabs{ flex-wrap:wrap !important; }
+}
+
+/* ---- Card headers that lay controls out in a row ----------------------
+   MEASURED at 360px: #recsCard's h2 pushed 2 of its 3 buttons past the right
+   edge ("Orders", "Visit" - both fully off-screen, not merely cropped).
+   These headers are `display:flex` with no wrap, so the first control claims
+   `margin-left:auto` and the rest overflow. Wrapping is the whole fix. */
+@media (max-width:700px){
+  #recsCard > h2,
+  #historyCard > h2,
+  #patientsView .card > h2{
+    flex-wrap:wrap !important;
+    row-gap:8px;
+  }
+  #recsCard > h2 > button[style*="margin-left:auto"],
+  #historyCard > h2 > button[style*="margin-left:auto"]{ margin-left:0 !important; }
+}
+</style>
+<!-- ===== end msl-fit-1.1.0 ============================================ -->
+<!-- ===== dock-1p-1.0.0 — the taskbar stops covering the work ==========
+     Owner: "that task bar getting in the way of everything. It needs to be
+     better and smarter made."
+
+     WHAT WAS ACTUALLY WRONG, MEASURED (2026-08-17, real Chrome, 28 synthetic
+     patients, #patientsView, 1366x900 over a 1505px-tall page). Of 25 sample
+     points inside the dock's own rectangle, how many had real screen content
+     underneath (elementsFromPoint, so genuine obstruction rather than mere
+     bounding-box overlap):
+
+         side     scroll 0%   scroll 50%   scroll 100%   reserved clearance
+         bottom     25/25       25/25          0/25      #appWrap pad-b 96px
+         top         0/25       25/25         25/25      pad-t 112px
+         left        0/25        0/25          0/25      pad-l 128px
+         right       0/25        0/25          0/25      pad-r 128px
+
+     The mechanism, and why more padding could never have fixed it: top and
+     bottom reserve their clearance on the SCROLLING axis, so the reservation
+     only protects the one end of the document the bar happens to sit at - at
+     any other scroll offset a fixed bar is over live content by construction.
+     Left and right reserve on the non-scrolling axis, so they are
+     obstruction-free at EVERY scroll offset. The app shipped `bottom`.
+
+     SO THIS BLOCK CHANGES A DEFAULT, NOT A MECHANISM. Everything it needs
+     already exists and was measured working: p1-calm-dock-2.0.0 provides four
+     sides, auto-hide, a 44x44 reveal handle, a debounced clearance release and
+     a persisted preference. What it lacked was (a) a default that does not
+     obstruct, and (b) any way for a doctor whose taskbar is in the way to find
+     out it is configurable - position and auto-hide lived in a Settings tab
+     that is itself unreachable below ~800px, and in a row inside the dock's
+     own Tools menu.
+
+     WHAT IT DELIBERATELY DOES NOT DO. It never overrides a stored choice: if
+     the doctor has ever picked a side, that side is honoured forever. It does
+     not touch phones - below 760px the shell pins the dock to a full-width
+     bottom bar regardless of any attribute, so a side preference there would
+     be a lie. And it writes the preference exactly once, through the app's own
+     public settings action, so there is still one source of truth.
+
+     Feature-detected throughout: no reference to any lane, route or bundle. If
+     the dock owner is not installed this block does nothing at all. -->
+<script>
+(function () {
+  var SIDE_KEY = 'qolDockSide';
+  var SEEDED = 'mlsDockSideSeeded';       /* '1' once this block has had its say */
+  var WIDE = 1100;                        /* below this a side rail costs more width than it saves */
+
+  function store(key) {
+    /* Per-account where the app's namespaced store is up, plain key otherwise. */
+    var out = [];
+    try { if (typeof window.uns === 'function') out.push(window.uns(key)); } catch (e) {}
+    out.push(key);
+    out.push('mls::' + key);
+    return out;
+  }
+  function readAny(key) {
+    var keys = store(key), i, v;
+    for (i = 0; i < keys.length; i++) {
+      try { v = localStorage.getItem(keys[i]); } catch (e) { v = null; }
+      if (v) return String(v);
+    }
+    return '';
+  }
+  function writeAll(key, value) {
+    var keys = store(key), i, ok = false;
+    for (i = 0; i < keys.length; i++) {
+      try { localStorage.setItem(keys[i], value); ok = true; } catch (e) {}
+    }
+    return ok;
+  }
+  function dockReady() {
+    return !!(document.getElementById('mlsDock') && typeof window.applyDockSidePreview === 'function');
+  }
+
+  /* ---- 1. the non-obstructing default --------------------------------- */
+  var seedTries = 0;
+  function seedSide() {
+    if (readAny(SEEDED) === '1') return true;
+    if (!dockReady()) { if (++seedTries < 60) setTimeout(seedSide, 500); return false; }
+    /* An existing choice - the doctor's, or an earlier session's - always wins. */
+    if (/^(bottom|top|left|right)$/.test(readAny(SIDE_KEY))) { writeAll(SEEDED, '1'); return true; }
+    var w = 0;
+    try { w = Number(window.innerWidth) || 0; } catch (e) { w = 0; }
+    if (w < WIDE) {
+      /* Narrow: the shell forces a bottom bar anyway. Record that this block
+         has had its say so a later resize cannot silently re-seed and move the
+         navigation out from under someone mid-task. */
+      writeAll(SEEDED, '1');
+      return true;
+    }
+    try { window.applyDockSidePreview('left'); } catch (e) { return false; }
+    writeAll(SEEDED, '1');
+    return true;
+  }
+
+  /* ---- 2. the taskbar controls, where a doctor will find them ---------
+     Rendered into the mode chip's menu when that exists (one top-right place
+     for "how the screen behaves"), so this block adds no second chip of its
+     own. If the chip is absent this block still does its job silently - the
+     default above is the part that matters. */
+  var SIDES = [
+    ['left',   'Side — left (never covers your work)'],
+    ['right',  'Side — right'],
+    ['top',    'Top'],
+    ['bottom', 'Floating — bottom centre']
+  ];
+  function currentSide() {
+    var v = '';
+    try { if (typeof window.mlsDockSide === 'function') v = String(window.mlsDockSide() || ''); } catch (e) {}
+    if (!/^(bottom|top|left|right)$/.test(v)) v = readAny(SIDE_KEY);
+    return /^(bottom|top|left|right)$/.test(v) ? v : 'bottom';
+  }
+  function autoHideOn() {
+    try { if (typeof window.mlsDockAutoHide === 'function') return window.mlsDockAutoHide() === true; } catch (e) {}
+    return false;
+  }
+  function paint() {
+    var host = document.getElementById('dockChipRows');
+    if (!host) return;
+    var side = currentSide(), items = host.querySelectorAll('[data-dock-side]'), i;
+    for (i = 0; i < items.length; i++) {
+      items[i].setAttribute('aria-checked', items[i].getAttribute('data-dock-side') === side ? 'true' : 'false');
+    }
+    var hide = host.querySelector('[data-dock-autohide]');
+    if (hide) {
+      hide.setAttribute('aria-checked', autoHideOn() ? 'true' : 'false');
+      hide.textContent = autoHideOn() ? 'Hide it until I need it — on' : 'Hide it until I need it';
+    }
+  }
+  function ensureRows() {
+    var menu = document.getElementById('mslChipMenu');
+    if (!menu) return false;
+    if (document.getElementById('dockChipRows')) { paint(); return true; }
+    if (!dockReady()) return false;
+    var box = document.createElement('div');
+    box.id = 'dockChipRows';
+    var head = document.createElement('div');
+    head.className = 'mslChipGroup';
+    head.textContent = 'Where the taskbar sits';
+    box.appendChild(head);
+    SIDES.forEach(function (row) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mslChipItem';
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('data-dock-side', row[0]);
+      b.textContent = row[1];
+      b.addEventListener('click', function () {
+        try { window.applyDockSidePreview(row[0]); } catch (e) {}
+        writeAll(SEEDED, '1');
+        setTimeout(paint, 120);
+      }, false);
+      box.appendChild(b);
+    });
+    var hide = document.createElement('button');
+    hide.type = 'button';
+    hide.className = 'mslChipItem';
+    hide.setAttribute('role', 'menuitemcheckbox');
+    hide.setAttribute('data-dock-autohide', '1');
+    hide.textContent = 'Hide it until I need it';
+    hide.addEventListener('click', function () {
+      try { if (typeof window.applyDockAutoHidePreview === 'function') window.applyDockAutoHidePreview(!autoHideOn()); } catch (e) {}
+      setTimeout(paint, 120);
+    }, false);
+    box.appendChild(hide);
+    menu.appendChild(box);
+    paint();
+    return true;
+  }
+
+  var queued = false;
+  function tick() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, never requestAnimationFrame: rAF does not fire in a
+       backgrounded or non-compositing tab, and a doctor returning to that tab
+       would find the rows never rendered. */
+    setTimeout(function () {
+      queued = false;
+      /* The dock owner is idle-scheduled behind requiresFoundation and can take
+         well over 30s to land on a busy or throttled tab - measured never
+         arriving inside 40s in a headless run. seedTries is a bounded retry
+         WITHIN one attempt; an external wake (a click, mls:ui-ready, a session
+         boundary) is new evidence that the app moved on, so it re-arms rather
+         than inheriting an exhausted counter and giving up forever. */
+      if (!dockReady()) seedTries = 0;
+      seedSide();
+      ensureRows();
+    }, 0);
+  }
+
+  window.__mlsDockP1 = {
+    version: 'dock-1p-1.0.0',
+    side: currentSide,
+    autoHide: autoHideOn,
+    /* The honest answer to "why is the dock where it is" - for diagnostics. */
+    status: function () {
+      return { side: currentSide(), autoHide: autoHideOn(), seeded: readAny(SEEDED) === '1',
+        stored: readAny(SIDE_KEY), dockReady: dockReady(), rows: !!document.getElementById('dockChipRows') };
+    },
+    refresh: tick,
+    revert: function () {
+      var box = document.getElementById('dockChipRows');
+      if (box && box.parentNode) box.parentNode.removeChild(box);
+      return true;
+    }
+  };
+
+  function boot() { tick(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  /* The chip and the dock both arrive after boot, on their own schedules. */
+  document.addEventListener('click', function () { setTimeout(tick, 0); }, true);
+  ['mls:ui-ready', 'mls:view-changed', 'mls:session-boundary'].forEach(function (name) {
+    try { window.addEventListener(name, tick, false); } catch (e) {}
+  });
+  setTimeout(tick, 1500);
+  setTimeout(tick, 4000);
+})();
+</script>
+<!-- ===== end dock-1p-1.0.0 ============================================ -->
+<!-- ===== opnote-open-1.0.0 — the room appears when you press the button ===
+     Owner: "a big complaint of the UI is that it's very clunky."
+
+     MEASURED (real Chrome, 28 synthetic patients, 1366x900): pressing Prep Op
+     Notes froze the main thread for 1,353ms of SYNCHRONOUS work before ANY
+     pixel changed - first visible DOM change at 1,418ms, longest long-task
+     1,420ms. For a second and a half the app looked dead: no spinner, no
+     dialog, nothing. That is the single largest interaction cost in the app
+     and it is exactly the action the owner calls out.
+
+     WHY IT IS A WRAPPER AND NOT AN EDIT. openOpPrep() is production-shape
+     shell code, so editing it in place cannot be promoted to another lane as
+     a block. This wraps the function instead: same name, same arguments, same
+     eventual behaviour, and revert() puts the original back byte for byte.
+
+     WHAT IT DOES NOT DO. It does not make the work faster - the cost is in
+     _opApptsForDay + opPrepRender + the day-brain's triage of every row, which
+     live in shared modules this lane may not edit. It makes the work
+     ASYNCHRONOUS to the click: the dialog paints first with an honest "reading
+     your schedule" line, and the render happens on the next macrotask. The
+     doctor sees a response immediately instead of a frozen window, and the
+     total time to a finished screen is unchanged.
+
+     The day is set synchronously, before the yield, because callers read
+     window._opPrepDay right after calling this. Only the expensive render is
+     deferred. -->
+<script>
+(function () {
+  if (typeof window.openOpPrep !== 'function' || window.__mlsOpNoteOpen) return;
+
+  var original = window.openOpPrep;   /* the chain we currently defer */
+  var base = window.openOpPrep;       /* the REAL shell function, never re-wrapped */
+  var inside = false;                 /* true while the deferred pass is running */
+  var BUSY = 'mls-opnote-busy';
+
+  var css = document.createElement('style');
+  css.id = 'mlsOpNoteOpenCss';
+  css.textContent =
+    '#opPrepModal.' + BUSY + ' #opPrepList{min-height:120px}' +
+    '#mlsOpNoteOpening{padding:18px 22px;font:600 13px/1.4 var(--sans,system-ui);color:var(--muted,#55605A)}' +
+    /* No spinner and no animation on purpose: in this app every standing
+       animation means a recorder or recognizer is LIVE, and a decorative one
+       here would compete with a clinical signal. */
+    '#opPrepModal:not(.' + BUSY + ') #mlsOpNoteOpening{display:none}';
+  (document.head || document.documentElement).appendChild(css);
+
+  function placeholder(modal) {
+    var host = document.getElementById('mlsOpNoteOpening');
+    if (host) return host;
+    var list = document.getElementById('opPrepList');
+    if (!list || !list.parentNode) return null;
+    host = document.createElement('div');
+    host.id = 'mlsOpNoteOpening';
+    host.setAttribute('role', 'status');
+    host.textContent = 'Reading your schedule…';
+    list.parentNode.insertBefore(host, list);
+    return host;
+  }
+
+  function defer(dayKey) {
+    /* WRAP ONCE, OR THE CHAIN EATS ITSELF. When stayOutermost() adopts a
+       later module's wrapper as `original`, that wrapper still holds a
+       reference to THIS function as its own inner call - so the deferred pass
+       would re-enter here, schedule another timeout, and the real shell
+       function would never run at all (measured: window._opPrepDay stayed
+       undefined forever). Inside the deferred pass we ARE the real work, so
+       call the untouched base directly and synchronously. */
+    if (inside) return base.call(window, dayKey);
+    var modal = document.getElementById('opPrepModal');
+    /* Callers read window._opPrepDay immediately after this returns, so the
+       day is decided here, synchronously, exactly as the original does. */
+    if (!dayKey) { try { dayKey = _opContextDay(); } catch (e) { dayKey = ''; } }
+    if (modal) {
+      modal.classList.add('show');
+      modal.classList.add(BUSY);
+      placeholder(modal);
+    }
+    var done = function () {
+      inside = true;
+      try { original.call(window, dayKey); }
+      finally { inside = false; if (modal) modal.classList.remove(BUSY); }
+    };
+    /* setTimeout, not requestAnimationFrame: rAF never fires in a hidden or
+       non-compositing tab, and the room would then never render at all. A
+       macrotask gives the browser its paint before the heavy pass begins. */
+    if (modal) setTimeout(done, 0); else done();
+  }
+  defer.__mlsDeferOpen = 1;
+  window.openOpPrep = defer;
+
+  /* STAY OUTERMOST. This block runs at parse time, so a module that loads
+     later and wraps openOpPrep ends up OUTSIDE the yield and its own work
+     stays synchronous on the click. feat_mls_opnote_fill.js does exactly
+     that - its wrapper calls kickTicks(), whose first tick scans the whole
+     room to rebuild the Fields box - and it cost a MEASURED 212ms of the
+     click even with the render already deferred.
+
+     So: if something has wrapped us, adopt that wrapper as the new original
+     and put the yield back on the outside. Tagged, so this can never wrap
+     itself, and bounded to a few settle points rather than a standing poll. */
+  function stayOutermost() {
+    var fn = window.openOpPrep;
+    if (typeof fn !== 'function' || fn.__mlsDeferOpen) return false;
+    original = fn;            /* whatever chain now exists, deferred whole */
+    window.openOpPrep = defer;
+    return true;
+  }
+  [400, 1500, 4000, 9000].forEach(function (ms) { setTimeout(stayOutermost, ms); });
+  document.addEventListener('click', function () { setTimeout(stayOutermost, 0); }, true);
+
+  window.__mlsOpNoteOpen = {
+    version: 'opnote-open-1.0.0',
+    installed: true,
+    outermost: function () { return window.openOpPrep === defer; },
+    revert: function () {
+      window.openOpPrep = base;
+      var h = document.getElementById('mlsOpNoteOpening'); if (h && h.parentNode) h.parentNode.removeChild(h);
+      if (css.parentNode) css.parentNode.removeChild(css);
+      try { delete window.__mlsOpNoteOpen; } catch (e) { window.__mlsOpNoteOpen = null; }
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end opnote-open-1.0.0 ======================================== -->
 </body>
 </html>

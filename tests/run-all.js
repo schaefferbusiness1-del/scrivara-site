@@ -27,6 +27,14 @@ const tests = [
   'p1-calendar-single-pull-entrypoint.test.js',
   'p1-calendar-hero-pull-contract.test.js',
   'p1-calendar-peek-opnote-action.test.js',
+  /* The owner's standing UI complaints as machine-checkable properties: one
+     lit next step per screen (and none outside guided mode), the three modes
+     reachable without opening Settings, no horizontal overflow 320->2560, at
+     most one Pull per screen, no developer language, no control stranded
+     outside the viewport, the drafted day always on screen, and date-key
+     regexes that actually contain backslashes. Drives the real shell in real
+     Chrome with a synthetic 28-patient day. */
+  '1p-ui-shape-contract.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
