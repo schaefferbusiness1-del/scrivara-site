@@ -6274,6 +6274,36 @@ window.__mlsP1MarketingIdentity=function(){
     epoch:epoch,isAdmin:!!(bkUser&&bkUser.isAdmin),isHead:!!(bkUser&&bkUser.isHead),
     isLawyer:!!(bkUser&&(bkUser.isLawyer||role==='lawyer'))});
 };
+/* ===== diag-account-1.0.0 — the copyable pull report must name WHO ran it =====
+   §11 gap: dsDiagReport carried no user, no plan, no practice, so a report
+   pasted into support could not be tied to an account. bkUser is a top-level
+   `let` and therefore NOT a window property, so an additive asset cannot read
+   it. This is the ONE accessor that hands out the non-PHI ACCOUNT receipt that
+   a doctor's own error report needs: account/plan/role only. It never returns a
+   patient field, a token, a password, a 2FA secret, or the doctor's name. */
+window.__mlsDiagAccountReceipt=function(){
+  const blank={email:'',userId:'',role:'',isAdmin:false,isHead:false,practice:'',plan:'',hasAccess:false,backend:false};
+  try{
+    const email=sfNormalizeSessionAccount((bkUser&&bkUser.email)||(session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
+    const role=String((bkUser&&bkUser.role)||((bkUser&&bkUser.isAdmin)?'admin':((bkUser&&bkUser.isHead)?'head':''))).trim().toLowerCase();
+    return {
+      email:email,
+      userId:(bkUser&&bkUser.id!=null)?String(bkUser.id):'',
+      role:role,
+      isAdmin:!!(bkUser&&bkUser.isAdmin),
+      isHead:!!(bkUser&&bkUser.isHead),
+      /* "practice" is the doctor's POSITION in one, not a practice name: a
+         practice name is customer-identifying and this report is copied into
+         email by hand. head-of-practice vs member is what routes a support
+         question, and it is all the report needs. */
+      practice:(bkUser&&bkUser.isHead)?'head-of-practice':(role?('member:'+role):''),
+      plan:(bkUser&&bkUser.premium)?'premium':((bkUser&&bkUser.lite)?'lite':(bkUser?'standard':'')),
+      hasAccess:!!(bkUser&&bkUser.hasAccess),
+      backend:!!(typeof backendMode==='function'&&backendMode())
+    };
+  }catch(e){ return blank; }
+};
+/* ===== end diag-account-1.0.0 ===== */
 function sfP1ReleaseMarketingIdentity(user){
   const account=sfNormalizeSessionAccount(window.__mlsSessionAccount||'');
   const email=sfNormalizeSessionAccount((user&&user.email)||'');
@@ -14425,25 +14455,156 @@ function _acctNowParts(d){
 function _acctDateKeyOf(d){ var p=_acctNowParts(d||new Date()); return p.year+'-'+_calPad(p.month)+'-'+_calPad(p.day); }
 function _acctTodayKey(){ return _acctDateKeyOf(new Date()); }
 function _acctNowMinutes(){ var p=_acctNowParts(new Date()); return p.hour*60+p.minute; }
-/* Minutes-since-midnight of an appointment IN the account time zone (from a UTC ISO start_at). */
-function _apptMinsTz(iso){
-  try{ var d=new Date(iso); if(isNaN(d.getTime())) return null;
-    var ps=_mlsTzFmt('apptHM',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_acctTz()}).formatToParts(d);
-    var hh=0,mm=0; ps.forEach(function(p){ if(p.type==='hour')hh=parseInt(p.value,10); if(p.type==='minute')mm=parseInt(p.value,10); });
-    if(hh===24) hh=0; return hh*60+mm;
-  }catch(e){ return null; }
-}
+/* ===== apptclock-1.0.0 — ONE time convention for every appointment surface =====
+ *
+ * MEASURED SPLIT (readiness §23/§27, one 360px screen, ONE appointment): the
+ * Visit hero read "4:00 AM" while the day-chip rail read "8:00 AM". Three
+ * conventions were fighting over the same string:
+ *
+ *   1. feat_mls_assistant_exact.js:151 (SHARED — not this lane's file to edit)
+ *      does `new Date(s + "Z")` for an offset-less ISO. That DECLARES a naive
+ *      wall clock to be UTC and then renders it in Eastern, moving an 8 AM
+ *      clinic appointment to 4 AM. It then installs itself over the app's
+ *      _fmtApptTime/_apptMinsTz/_apptHHMMTz/_calDateOf hooks.
+ *   2. this shell parsed the same string with `new Date(s)`, which ES2015+
+ *      reads as BROWSER-local — so the answer changed with the laptop.
+ *   3. 1p-mls-connect.js's startIso() built the instant the same browser-local
+ *      way and then persisted it with .toISOString() — a wrong UTC instant
+ *      written to the server, not just a wrong label.
+ *
+ * THE ONE RULE, and it is now the only one anywhere:
+ *   - a string that CARRIES a zone (trailing Z, or +HH:MM / -HH:MM) is an
+ *     instant: parse it exactly as written;
+ *   - a string with NO zone is a WALL CLOCK in the PRACTICE's timezone
+ *     (_acctTz(), default America/New_York). We never append "Z" to it, and we
+ *     never let the browser's own timezone decide what it means.
+ *
+ * WHY THIS BLOCK CLAIMS THE GLOBALS. Every appointment surface in the product —
+ * the hero (_renderTodayPatients -> _apptDisplayTime), the rail, the picker,
+ * the calendar feed, day-progress, the agenda popover — reads the time through
+ * window._fmtApptTime / _apptMinsTz / _apptHHMMTz. They agree only if ONE
+ * implementation owns those three names. The shared assistant module installs
+ * rule 1 over them when it loads, and this lane may not edit that file, so the
+ * three are defined here as NON-WRITABLE. Its installEstHooks() is strict-mode
+ * and self-wrapped in try/catch, so its first assignment throws, it installs
+ * none of its four hooks, and _hooksInstalled stays false — which also makes
+ * its teardown restore path (feat_mls_assistant_exact.js:1313) inert. Because
+ * it can no longer install _calDateOf either, this block installs that fourth
+ * hook with the module's own semantics on the one rule, stamped __prf so
+ * 1p-mls-connect.js's installF1 wrapper leaves it exactly as alone as it does
+ * today.
+ */
+var _apptClockNaive=/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/;
+var _apptClockZoned=/(?:[Zz]|[+-]\d{2}:?\d{2})$/;
+var _apptClockMeridian=/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/;
+var _apptClockBare=/(\d{1,2}):(\d{2})/;
+var _apptClockDayKey=/^(\d{4})-(\d{2})-(\d{2})$/;
+window.__mlsApptClock=(function(){
+  function tz(){ try{ return _acctTz(); }catch(e){ return 'America/New_York'; } }
+  /* the wall-clock fields a zone shows at a given instant */
+  function partsAt(ms,zone){
+    var o={};
+    _mlsTzFmt('apptClockParts',{timeZone:zone,hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      .formatToParts(new Date(ms)).forEach(function(p){ o[p.type]=p.value; });
+    var h=parseInt(o.hour,10); if(h===24) h=0;
+    return {y:parseInt(o.year,10),mo:parseInt(o.month,10),d:parseInt(o.day,10),h:h,mi:parseInt(o.minute,10),s:parseInt(o.second,10)||0};
+  }
+  /* how far ahead of UTC the zone is at that instant, in ms */
+  function offsetAt(ms,zone){
+    var whole=Math.floor(ms/1000)*1000;
+    var p=partsAt(whole,zone);
+    return Date.UTC(p.y,p.mo-1,p.d,p.h,p.mi,p.s)-whole;
+  }
+  /* the instant at which the practice clock reads exactly these fields. Two
+     passes, because the offset that converts the guess may not be the offset
+     in force at the answer (the DST changeover hours). */
+  function fromWallClock(y,mo,d,h,mi,s){
+    var zone=tz();
+    var guess=Date.UTC(y,mo-1,d,h,mi,s||0);
+    if(!isFinite(guess)) return null;
+    var off=offsetAt(guess,zone);
+    var t=guess-off;
+    var off2=offsetAt(t,zone);
+    if(off2!==off) t=guess-off2;
+    var out=new Date(t);
+    return isNaN(out.getTime())?null:out;
+  }
+  function instant(v){
+    var s=String(v==null?'':v).trim(); if(!s) return null;
+    var m=_apptClockNaive.exec(s); if(!m) return null;
+    if(_apptClockZoned.test(s)){ var d=new Date(s); return isNaN(d.getTime())?null:d; }
+    return fromWallClock(parseInt(m[1],10),parseInt(m[2],10),parseInt(m[3],10),parseInt(m[4],10),parseInt(m[5],10),parseInt(m[6]||'0',10));
+  }
+  function fmtTime(v){
+    var s=String(v==null?'':v).trim(); if(!s) return '';
+    var d=instant(s);
+    if(d){ try{ return _mlsTzFmt('apptClock12',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:tz()}).format(d); }catch(e){} }
+    /* b242 is preserved: an EXPLICIT meridian is authoritative — "4:00 PM" must
+       never re-render as 4:00 AM. The hh<12 default below is meridian-less input
+       only. */
+    var mx=_apptClockMeridian.exec(s);
+    if(mx&&!d){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
+    var b=_apptClockBare.exec(s); if(!b) return '';
+    var hh=parseInt(b[1],10); if(hh>23) return '';
+    var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12;
+    return h12+':'+b[2]+' '+ap;
+  }
+  function mins(v){
+    var s=String(v==null?'':v).trim(); if(!s) return null;
+    var d=instant(s);
+    if(d){ var p=partsAt(d.getTime(),tz()); return p.h*60+p.mi; }
+    var mx=_apptClockMeridian.exec(s);
+    if(mx){ var hx=parseInt(mx[1],10)%12; if(/[Pp]/.test(mx[3])) hx+=12; var mix=parseInt(mx[2],10); if(hx>23||mix>59) return null; return hx*60+mix; }
+    var b=_apptClockBare.exec(s); if(!b) return null;
+    var hh=parseInt(b[1],10), mi=parseInt(b[2],10); if(hh>23||mi>59) return null;
+    return hh*60+mi;
+  }
+  function hhmm(v){
+    var m=mins(v); if(m==null) return '';
+    return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2);
+  }
+  function dateKey(v){
+    var d=instant(v); if(!d) return String(v==null?'':v).slice(0,10);
+    var p=partsAt(d.getTime(),tz());
+    return p.y+'-'+('0'+p.mo).slice(-2)+'-'+('0'+p.d).slice(-2);
+  }
+  /* the WRITE side of the same rule: a practice wall clock becomes a true UTC
+     instant, so an appointment booked at 8 AM in the office is 8 AM in the
+     office no matter which laptop created it. */
+  function wallClockIso(dayKey,h,mi){
+    var m=_apptClockDayKey.exec(String(dayKey||'')); if(!m) return null;
+    var hh=Number(h), mm=Number(mi);
+    if(!isFinite(hh)||!isFinite(mm)||hh<0||hh>23||mm<0||mm>59) return null;
+    var d=fromWallClock(parseInt(m[1],10),parseInt(m[2],10),parseInt(m[3],10),hh,mm,0);
+    return d?d.toISOString():null;
+  }
+  return {version:'apptclock-1.0.0',tz:tz,instant:instant,fmtTime:fmtTime,mins:mins,
+    hhmm:hhmm,dateKey:dateKey,wallClockIso:wallClockIso,fromWallClock:fromWallClock};
+})();
+/* Minutes-since-midnight of an appointment IN the account time zone. */
+function _apptMinsTz(iso){ try{ return window.__mlsApptClock.mins(iso); }catch(e){ return null; } }
 /* 24-hour "HH:MM" in the account TZ — for <input type=time> + internal logic. */
-function _apptHHMMTz(v){ v=String(v||''); if(!v) return ''; if(/T/.test(v)){ var m=_apptMinsTz(v); if(m==null) return ''; return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2); } var x=v.match(/(\d{1,2}):(\d{2})/); return x?(('0'+x[1]).slice(-2)+':'+x[2]):''; }
-/* Friendly 12-hour "9:00 AM" — accepts a UTC ISO start_at (→account TZ) OR a bare local "HH:MM". */
+function _apptHHMMTz(v){ try{ return window.__mlsApptClock.hhmm(v); }catch(e){ return ''; } }
+/* Friendly 12-hour "9:00 AM" — accepts an ISO start_at (→practice TZ) OR a bare "HH:MM". */
 function _fmtApptTime(v){
   v=String(v||''); if(!v) return '';
-  if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return _mlsTzFmt('appt12',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}).format(d); }catch(e){} }
-  /* b242: an EXPLICIT meridian in the input is authoritative — "4:00 PM" must never
-     re-format as 4:00 AM (the hh<12 default below is only for meridian-less input). */
-  var mx=v.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(mx){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
-  var m=v.match(/(\d{1,2}):(\d{2})/); if(!m) return v; var hh=parseInt(m[1],10); var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12; return h12+':'+m[2]+' '+ap;
+  /* the raw string is the last resort, exactly as before: a schedule cell that
+     says "TBD" must keep saying "TBD" rather than going blank. */
+  try{ return window.__mlsApptClock.fmtTime(v)||v; }catch(e){ return v; }
 }
+/* The fourth hook the shared module can no longer install (see the block header). */
+function _calDateOf(a){
+  try{
+    if(a&&a.appt_date) return String(a.appt_date).slice(0,10);
+    if(a&&a.start_at) return window.__mlsApptClock.dateKey(a.start_at);
+  }catch(e){}
+  return '';
+}
+try{ _calDateOf.__prf=1; }catch(e){}
+['_fmtApptTime','_apptMinsTz','_apptHHMMTz','_calDateOf'].forEach(function(_ac){
+  try{ Object.defineProperty(window,_ac,{value:window[_ac],writable:false,enumerable:true,configurable:false}); }catch(e){}
+});
+/* ===== end apptclock-1.0.0 ===== */
 /* One display-time truth for every site schedule surface. start_at is the
    authoritative instant and is always rendered in the saved practice timezone;
    start_local is the next-best account wall clock. time_display/time are legacy
@@ -14452,7 +14613,9 @@ function _fmtApptTime(v){
 function _apptDisplayTime(a){
   a=a||{};
   try{
-    if(a.start_at){ var d=new Date(a.start_at); if(!isNaN(d.getTime())){ var z=_fmtApptTime(a.start_at); if(z) return z; } }
+    /* apptclock-1.0.0: the validity check must use the SAME parser as the
+       render, or a string the renderer cannot read still reaches the label. */
+    if(a.start_at && window.__mlsApptClock.instant(a.start_at)){ var z=_fmtApptTime(a.start_at); if(z) return z; }
     if(a.start_local && /(?:^|T|\s)\d{1,2}:\d{2}/.test(String(a.start_local))){ var l=_fmtApptTime(a.start_local); if(l) return l; }
     if(a.time_display){ var td=_fmtApptTime(a.time_display); if(td) return td; }
     if(a.time){ var t=_fmtApptTime(a.time); if(t) return t; }
@@ -14462,7 +14625,10 @@ function _apptDisplayTime(a){
 function _apptScheduleId(a){ a=a||{}; return String(a.appointment_id||a.appt_id||a.athena_appointment_id||a.id||'').trim(); }
 function _apptScheduleDate(a, fallback){
   a=a||{}; var k=String(a.day_local||a.appt_date||a.date||'').slice(0,10); if(k) return k;
-  try{ if(a.start_at && typeof _acctDateKeyOf==='function'){ var d=new Date(a.start_at); if(!isNaN(d.getTime())) return _acctDateKeyOf(d); } }catch(e){}
+  /* apptclock-1.0.0: one rule for the day key too — new Date(naiveIso) read the
+     browser's timezone, so an evening appointment landed on a different day on
+     a laptop in another state. */
+  try{ if(a.start_at){ var dk=window.__mlsApptClock.dateKey(a.start_at); if(_apptClockDayKey.test(dk)) return dk; } }catch(e){}
   return String(fallback||'').slice(0,10);
 }
 /* Resolve only an exact appointment identity. A unique full-name+practice-date

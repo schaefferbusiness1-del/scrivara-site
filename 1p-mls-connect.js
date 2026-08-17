@@ -44422,7 +44422,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m=t.match(/^([01]?\d|2[0-3]):([0-5]\d)\s*(a|p)?/i); if(!m) return null;
     var h=parseInt(m[1],10), mi=parseInt(m[2],10), ap=(m[3]||'').toLowerCase();
     if(ap==='p'&&h<12) h+=12; if(ap==='a'&&h===12) h=0;
-    return safe(function(){ return new Date(iso+'T'+('0'+h).slice(-2)+':'+('0'+mi).slice(-2)+':00').toISOString(); }, null);
+    /* apptclock-1.0.0 (readiness §23/§27): this WROTE the split it was later
+       blamed for reading. `new Date(iso+'T'+hh+':'+mm+':00')` is an offset-less
+       string, which ES2015+ parses in the BROWSER's timezone; .toISOString()
+       then persisted that as a UTC instant. An appointment created from a
+       laptop one timezone away was stored hours off and every surface rendered
+       the wrong hour faithfully. The ONE resolver reads the same wall clock as
+       the PRACTICE's, which is what the row on the athenaOne grid meant. */
+    return safe(function(){
+      var clock=window.__mlsApptClock;
+      if(clock&&typeof clock.wallClockIso==='function'){
+        var z=clock.wallClockIso(iso,h,mi);
+        if(z) return z;
+      }
+      return null;
+    }, null);
   }
 
   /* ---- create a linked MLS calendar entry (deduped; today/future only) ---- */
@@ -48125,7 +48139,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
   var DS_AUTO_RETRY = {}; /* private identity; public pullDay(true) is still manual */
   var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
-    pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null };
+    pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null,
+    /* dsdiag-1.1.0: minted at every pull entry, quoted by the copyable report */
+    pullId: '', pullStartedAt: 0 };
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -48470,7 +48486,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     'dob-mismatch': 1,
     'unreported': 1,
     'future-day': 1,
-    'stopped-by-user': 1
+    'stopped-by-user': 1,
+    /* dsdiag-1.1.0: the STORAGE outcomes. A pull that read athenaOne perfectly
+       and then could not keep what it read is a pull failure the old report
+       could not describe - every storage reason collapsed to 'unverified'. */
+    'store-not-migrated': 1,
+    'store-not-ready': 1,
+    'store-account-changed': 1,
+    'store-degraded': 1,
+    'store-write-failed': 1,
+    'quota-exceeded': 1,
+    'durability-denied': 1,
+    'durability-unverifiable': 1
   };
   function dsSafeReasonCounts(raw) {
     var out = {};
@@ -48483,6 +48510,116 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
     return out;
   }
+  /* ===== dsdiag-1.1.0 — a copyable pull report that can be ACTED ON =====
+   * §11 gap, measured: dsDiagReport had 0 hits for pullId, user, practice and
+   * storage. Two reports from two doctors on the same day were
+   * indistinguishable, and a pull that lost its rows to a full patient store
+   * looked identical to one that read nothing. Four receipts close that:
+   *   pullId   - one id minted per RUN, so a doctor can quote it and two
+   *              reports from the same account can be ordered.
+   *   user     - account/plan/role from the shell's own non-PHI accessor.
+   *              Deliberate: the doctor copies this report himself. NEVER a
+   *              patient field.
+   *   storage  - the patient store's own receipt (mode, durability, journal,
+   *              degraded) so "it pulled but nothing stayed" is legible.
+   *   client   - extension + web build + browser/OS, because half of the
+   *              reports that reach support are version skew.
+   * Every value is read defensively: a report that throws is a report the
+   * doctor cannot send. */
+  function dsNewPullId() {
+    var rand = '';
+    try { rand = Math.random().toString(36).slice(2, 8); } catch (e) { rand = 'xxxxxx'; }
+    return 'pull-' + Date.now().toString(36) + '-' + rand;
+  }
+  function dsAccountReceipt() {
+    try {
+      var fn = window.__mlsDiagAccountReceipt;
+      if (typeof fn !== 'function') return { available: false, why: 'accessor-missing' };
+      var a = fn() || {};
+      return {
+        available: true,
+        email: String(a.email || ''),
+        userId: String(a.userId || ''),
+        role: String(a.role || ''),
+        practice: String(a.practice || ''),
+        plan: String(a.plan || ''),
+        isAdmin: a.isAdmin === true,
+        isHead: a.isHead === true,
+        hasAccess: a.hasAccess === true,
+        backend: a.backend === true
+      };
+    } catch (e) { return { available: false, why: 'accessor-threw' }; }
+  }
+  function dsStorageReceipt() {
+    var out = { available: false, why: '' };
+    try {
+      var store = window.__mlsPtsStore;
+      if (!store || typeof store.receipt !== 'function') { out.why = 'store-missing'; return out; }
+      var r = store.receipt() || {};
+      var d = r.durable || {};
+      out = {
+        available: true,
+        version: String(r.version || ''),
+        /* 'ls' here is the measured cause of the ~1,400-patient ceiling: the
+           IndexedDB store exists but the account never migrated onto it. */
+        mode: String(r.mode || ''),
+        hydrated: r.hydrated === true,
+        rows: (typeof r.rows === 'number') ? r.rows : null,
+        gen: Number(r.gen || 0),
+        confirmedGen: Number(r.confirmedGen || 0),
+        journalUnits: Number(r.journalUnits || 0),
+        journalHardMax: Number(r.journalHardMax || 0),
+        journalOverHighWater: r.journalOverHighWater === true,
+        writebackInflight: r.wbInflight === true || r.wbInflight === 1,
+        writebackQueued: r.wbQueued === true || r.wbQueued === 1,
+        writebackFailures: Number(r.wbFailures || 0),
+        durabilityRequested: d.requested === true,
+        durabilityPersisted: (d.persisted === true) ? true : ((d.persisted === false) ? false : null),
+        durabilityWhy: String(d.why || '').slice(0, 120),
+        degraded: r.degraded === true,
+        degradedWhy: String(r.degradedWhy || '').slice(0, 160),
+        lastError: String(r.lastError || '').slice(0, 200)
+      };
+      /* maskKey() already masks the account inside the store's own receipt; we
+         do not copy `key` or `tab` across at all, so no namespace string and no
+         per-tab identifier leaves this function. */
+      return out;
+    } catch (e) { return { available: false, why: 'receipt-threw' }; }
+  }
+  function dsClientReceipt() {
+    var ua = '';
+    try { ua = String(navigator.userAgent || ''); } catch (e) { ua = ''; }
+    function pick(list) {
+      for (var i = 0; i < list.length; i++) { if (ua.indexOf(list[i][0]) >= 0) return list[i][1]; }
+      return 'other';
+    }
+    var browser = 'other';
+    if (ua.indexOf('Edg/') >= 0) browser = 'edge';
+    else if (ua.indexOf('OPR/') >= 0) browser = 'opera';
+    else if (ua.indexOf('Chrome/') >= 0) browser = 'chrome';
+    else if (ua.indexOf('Firefox/') >= 0) browser = 'firefox';
+    else if (ua.indexOf('Safari/') >= 0) browser = 'safari';
+    var version = '';
+    try {
+      var token = { chrome: 'Chrome/', edge: 'Edg/', opera: 'OPR/', firefox: 'Firefox/', safari: 'Version/' }[browser];
+      if (token) {
+        var at = ua.indexOf(token);
+        if (at >= 0) version = ua.slice(at + token.length).split(' ')[0].split('.')[0];
+      }
+    } catch (e2) { version = ''; }
+    return {
+      /* the WEB build and the EXTENSION build, side by side: the single most
+         common real cause of "the pull broke" is these two disagreeing. */
+      webBuild: (function () { try { return String(window.__MLS_AV || ''); } catch (e3) { return ''; } })(),
+      extVersion: (function () { try { return String(window.__mlsExtReportedVersion || ''); } catch (e4) { return ''; } })(),
+      browser: browser,
+      browserMajor: String(version || ''),
+      os: pick([['Windows NT 10', 'windows-10/11'], ['Windows', 'windows'], ['Mac OS X', 'macos'],
+        ['CrOS', 'chromeos'], ['Android', 'android'], ['iPhone', 'ios'], ['iPad', 'ipados'], ['Linux', 'linux']]),
+      online: (function () { try { return navigator.onLine !== false; } catch (e5) { return null; } })()
+    };
+  }
+  /* ===== end dsdiag-1.1.0 ===== */
   function dsDiagReport() {
     var si = window.__mlsSI, res = null;
     try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
@@ -48494,6 +48631,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       build: (function () { try { return String(window.__MLS_AV || ''); } catch (e) { return ''; } }),
       at: new Date().toISOString(),
       day: DS.day,
+      /* dsdiag-1.1.0 */
+      pullId: String(DS.pullId || ''),
+      pullStartedAt: DS.pullStartedAt ? new Date(Number(DS.pullStartedAt)).toISOString() : '',
+      user: dsAccountReceipt(),
+      storage: dsStorageReceipt(),
+      client: dsClientReceipt(),
       env: {
         ua: (function () { try { return String(navigator.userAgent).slice(0, 220); } catch (e) { return ''; } })(),
         tz: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } })(),
@@ -49129,7 +49272,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        relay: the office computer runs the pull, this device shows live status
        and syncs the result. Same UI, zero extra steps. */
     if (window.__mlsRelayLink && window.__mlsRelayLink.shouldRelay && window.__mlsRelayLink.shouldRelay()) {
-      DS.pulling = true; DS.pullStartedAt = Date.now();
+      DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
       var rday = DS.day;
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
@@ -49182,7 +49325,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast('The Athena day-pull engine is not available on this build.', 'err'); } catch (e) {}
       return;
     }
-    DS.pulling = true; DS.pullStartedAt = Date.now();
+    DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
     var day = DS.day;
     var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }

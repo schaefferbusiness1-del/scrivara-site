@@ -73,6 +73,19 @@ const tests = [
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-daynote-column-and-not-yet-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
+  /* dsdiag-1.1.0 (readiness §11): the copyable pull report carried no pull id,
+     no user, no practice/plan and no storage receipt, so two doctors' reports
+     were indistinguishable and a pull that lost its rows to a full store read
+     exactly like a pull that read nothing. Executes the real report builder
+     and asserts the four receipts are present AND carry no patient identifier,
+     no storage namespace key and no per-tab id. */
+  '1p-diag-report-receipts.test.js',
+  /* apptclock-1.0.0 (readiness §23/§27): the Visit hero said "4:00 AM" and the
+     day-chip rail said "8:00 AM" for the SAME appointment, because three files
+     disagreed about what an offset-less ISO means. Runs the shipped resolver,
+     the shipped hero path and the shared module's own installer in three
+     laptop timezones, with a positive control that reproduces the old 4:00 AM. */
+  '1p-appointment-clock-one-convention.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
   '1p-pull-resume-skip-and-cost-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
