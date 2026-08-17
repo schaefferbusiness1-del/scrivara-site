@@ -93,18 +93,48 @@
     return false;
   }
 
+  /* ===== athena-probe-only-1.0.0 (1p PREVIEW ONLY) =========================
+     A supervised end-to-end rehearsal. When PROBE ONLY is on, the whole flow
+     still runs — manifest, read-only check, READY row, the Confirm click — but
+     every Athena request leaves the page with mode:'probe'. The switch lives in
+     ONE place (the bridge, below) so a call site that forgot about it still
+     cannot execute; the callers additionally opt in explicitly so the receipt
+     text is honest instead of reporting a failed write.
+       window.__mlsAthenaProbeOnly = true            (this tab only)
+       localStorage.setItem('mlsAthenaProbeOnly','1') (survives reload)
+     ======================================================================== */
+  function probeOnlyActive() {
+    try { if (window.__mlsAthenaProbeOnly === true) return true; } catch (e) {}
+    try { if (window.localStorage && window.localStorage.getItem('mlsAthenaProbeOnly') === '1') return true; } catch (e2) {}
+    return false;
+  }
+  var PROBE_ONLY_BANNER = 'PROBE ONLY — nothing will be written to Athena. Every request leaves this page as a read-only check.';
+
   /* ---------------------- bridge (same pattern as b111) -------------------- */
+  /* wfdx-1.0.0: mlsAppGotoDate and mlsExtHealth both echo the request id at the
+     top level of their reply, so correlate them too — two diagnostics in flight
+     can no longer resolve each other's promise. */
+  var BRIDGE_CORRELATED = { mlsAppAthenaActionV2: 1, mlsAppGotoDate: 1, mlsExtHealth: 1 };
   function bridge(type, payload, respType, timeout) {
     if (syntheticLocalRuntime() && /^mlsAppAthenaAction/.test(S(type))) {
       return Promise.resolve({ ok: false, blocked: true, reason: 'synthetic-local-only', error: 'The local synthetic demo never connects to live Athena data or actions.' });
     }
     return new Promise(function (resolve) {
       var done = false;
-      var correlated = type === 'mlsAppAthenaActionV2';
-      var requestId = correlated ? ('wf2-' + Date.now() + '-' + Math.random().toString(36).slice(2)) : '';
+      var correlated = BRIDGE_CORRELATED[S(type)] === 1;
+      var requestId = correlated ? ((type === 'mlsAppAthenaActionV2' ? 'wf2-' : 'wfdx-') + Date.now() + '-' + Math.random().toString(36).slice(2)) : '';
       function h(ev) { var d = ev && ev.data; if (!d || d.source !== 'mls-ext' || d.type !== respType || (correlated && S(d.requestId) !== requestId)) return; if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve(d.resp || d); }
       try { window.addEventListener('message', h, false); } catch (e) {}
-      try { var m = { type: type, source: 'mls-app', from: 'mls-app' }; for (var k in (payload || {})) m[k] = payload[k]; if (correlated) m.requestId = requestId; window.postMessage(m, '*'); } catch (e) {}
+      try {
+        var m = { type: type, source: 'mls-app', from: 'mls-app' }; for (var k in (payload || {})) m[k] = payload[k]; if (correlated) m.requestId = requestId;
+        /* The one enforcement point: in PROBE ONLY no execute request can leave
+           this page, whichever call site built it. The one-use action token is
+           dropped with it — a probe never needs one. */
+        if (S(m.type) === 'mlsAppAthenaActionV2' && S(m.mode) === 'execute' && probeOnlyActive()) {
+          m.mode = 'probe'; m.actionToken = ''; m.__mlsProbeOnly = true;
+        }
+        window.postMessage(m, '*');
+      } catch (e) {}
       setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); }, timeout || 150000);
     });
   }
@@ -286,6 +316,16 @@
       return { visitDate: athenaVisitDate(suppliedDate), provider: suppliedProvider, appointmentId: suppliedAppointment, encounterId: suppliedEncounter, encounterUrl: suppliedEncounterUrl };
     }
 
+    /* opvs-1.0.0 (2026-08-17): a HISTORICAL review that names no date must not
+       fall through to the nearest-appointment inference below, because that
+       inference's reference point is a CLOCK READ (Date.now() when the record
+       carries no timestamp). A saved op note with no visit metadata therefore
+       bound itself to whichever appointment for this patient sits closest to
+       TODAY and rendered READY under requireExpectedVisit - the exact "note in
+       the wrong historical encounter" outcome that flag exists to prevent.
+       With no supplied day there is nothing to anchor to: return null and let
+       the manifest say which fields are missing. */
+    if (opts.requireExpectedVisit === true && !suppliedDate) return null;
     var src = opts.patient || activePt() || {};
     var pid = S(src.patientId || src.id || src.patient_external_id || '').trim();
     var all = calendarRows().filter(Boolean);
@@ -729,6 +769,184 @@
       setTimeout(function () { fin({ ok: false, reason: 'open-timeout', error: 'Opening the patient in Athena timed out.' }); }, 155000);
     });
   }
+  /* ========================================================================
+     wfdx-1.0.0 (1p PREVIEW ONLY) -- PHI-free write-readiness diagnostics.
+
+     Measured against MLS Assist 3.0.62: an mlsAppAthenaActionV2 probe refusal
+     is uniformly { ok:false, blocked:true, reason:<code> } with, at most, one
+     English sentence. It carries NO tab count, NO observed day, NO "was the
+     appointment id on the grid", NO "did the grid paint". So the review could
+     only repeat the extension's sentence, and the doctor was left guessing.
+
+     Two read-only verbs the page is already allowed to call supply the missing
+     facts, and the page composes them itself:
+       mlsExtHealth    -> { version, athena: { tabs, discarded } }
+       mlsAppGotoDate  -> { ok, supported, schedDate }  (schedDate is the day
+                          athenaOne is REALLY showing when the nav disagrees)
+
+     Everything retained here is a code, a count, a boolean or a date key.
+     Extension `error` sentences are NEVER retained: several of them embed the
+     patient's name ("Found 3 possible matches for <name>"). They are mapped to
+     a fixed class code instead.
+     ======================================================================== */
+  var WFDX_MAX_RECEIPTS = 16;
+  var wfdx = { receipts: [], env: null, envAt: 0, observedDay: '', observedDayAt: 0, openedAt: 0, reviewId: '' };
+  /* Reason codes MLS Assist 3.0.62 can return on the three verbs this review
+     drives, plus this page's own. Anything else is reported as 'unlisted' so a
+     future (or malformed) string can never carry free text into the report. */
+  var WFDX_KNOWN_REASONS = {};
+  ('unknown-action preview-hash-mismatch taught-destination-expired taught-destination-invalid ' +
+   'taught-destination-binding-mismatch taught-destination-required taught-destination-frame-mismatch ' +
+   'taught-destination-selector-mismatch taught-destination-control-mismatch taught-destination-label-mismatch ' +
+   'taught-destination-fingerprint-mismatch local-patient-id-required patient-mismatch order-row-mismatch ' +
+   'context-mismatch context-unverified context-verified billing-context-verified order-workspace-context-verified ' +
+   'high-risk-order-blocked unsupported-order-type unsupported-order-fields order-field-too-long ' +
+   'order-payload-incomplete catalog-identity-required unsupported-order-source order-client-id-mismatch ' +
+   'note-content-required unsafe-note-policy billing-near-match-rejected billing-duplicate-rejected ' +
+   'token-sender-mismatch no-athena-tab ambiguous-athena-tabs verified-note-write-required note-write-proof-used ' +
+   'note-write-proof-expired sign-prerequisite-mismatch outcome-uncertain write-safety-guard-missing ' +
+   'synthetic-local-only open-deadline-exceeded appointment-id-missing appointment-id-not-found ' +
+   'appointment-id-ambiguous appointment-navigation-unverified appointment-navigation-snapshot-unavailable ' +
+   'schedule-date-missing-after-recovery schedule-date-restore-failed name-not-found ambiguous no-results ' +
+   'no-name-match blank-error rows-not-rendered dob-mismatch numeric-only-field-refused open-timeout ' +
+   'search-deadline-exceeded goto-date-relay-deadline-exceeded goto-date-deadline-exceeded athena-navigation-busy ' +
+   'extension-error worker-unreachable no-response bridge-error loopback-synthetic-only').split(' ').forEach(function (code) { WFDX_KNOWN_REASONS[code] = 1; });
+  function wfdxReason(value) {
+    var raw = S(value).trim();
+    if (!raw) return '';
+    return WFDX_KNOWN_REASONS[raw] === 1 ? raw : 'unlisted';
+  }
+  var WFDX_ERROR_CLASSES = [
+    [/no name fallback was attempted/i, 'appointment-row-open-refused'],
+    [/could not identify one exact patient encounter frame/i, 'no-encounter-frame'],
+    [/more than one signed-in athena tab/i, 'ambiguous-athena-tabs'],
+    [/open one signed-in athena tab|no athenaone tab open|open your signed-in athenaone/i, 'no-athena-tab'],
+    [/week strip shows|is showing .* instead of/i, 'day-view-wrong-day'],
+    [/calendar view could not be reached/i, 'day-view-unreachable'],
+    [/refusing to open any of them/i, 'name-search-ambiguous'],
+    [/dob on file does not match/i, 'name-search-dob-mismatch'],
+    [/found no matching patient/i, 'name-search-no-match'],
+    [/timed out|deadline/i, 'timeout'],
+    [/write and verify this exact reviewed note/i, 'note-write-proof-missing']
+  ];
+  function wfdxErrorClass(value) {
+    var raw = S(value);
+    if (!raw) return '';
+    for (var i = 0; i < WFDX_ERROR_CLASSES.length; i++) if (WFDX_ERROR_CLASSES[i][0].test(raw)) return WFDX_ERROR_CLASSES[i][1];
+    return 'unclassified';
+  }
+  function wfdxCount(value) {
+    var n = Number(value);
+    return isFinite(n) && n >= 0 && Math.floor(n) === n ? n : -1;
+  }
+  var WFDX_VIA = { 'appointment-id': 'the exact appointment row', 'schedule-click': 'the schedule row',
+    findpatient: 'athenaOne patient search', 'findpatient-dob-override': 'athenaOne patient search',
+    search: 'athenaOne patient search', 'patient search': 'athenaOne patient search' };
+  function wfdxVia(value) { return WFDX_VIA[S(value).trim()] || 'athenaOne'; }
+  function wfdxDayKey(value) {
+    var day = visitDay(value);
+    return /^\d{4}-\d{2}-\d{2}$/.test(S(day)) ? day : '';
+  }
+  function wfdxReset(manifest) {
+    wfdx.receipts = []; wfdx.observedDay = ''; wfdx.observedDayAt = 0; wfdx.openedAt = Date.now();
+    wfdx.reviewId = S(manifest && manifest.manifestHash);
+  }
+  /* One receipt per bridge round trip. `verb` and `stage` are ours; every other
+     field is a code, count, boolean or date key. */
+  function wfdxNote(entry) {
+    entry = entry || {};
+    var receipt = {
+      at: new Date().toISOString(), verb: S(entry.verb).slice(0, 28), stage: S(entry.stage).slice(0, 28),
+      mode: S(entry.mode).slice(0, 12), action: S(entry.action).slice(0, 24), rowId: S(entry.rowId).slice(0, 24),
+      ok: entry.ok === true, timeout: entry.timeout === true,
+      reason: wfdxReason(entry.reason), errorClass: wfdxErrorClass(entry.error),
+      appointmentIdPresent: entry.appointmentIdPresent === true,
+      encounterBound: entry.encounterBound === true,
+      identityLock: S(entry.identityLock || 'not-attempted').slice(0, 24),
+      athenaTabs: wfdxCount(entry.athenaTabs === undefined ? (wfdx.env && wfdx.env.tabs) : entry.athenaTabs),
+      observedDay: wfdxDayKey(entry.observedDay || wfdx.observedDay),
+      expectedDay: wfdxDayKey(entry.expectedDay)
+    };
+    wfdx.receipts.push(receipt);
+    while (wfdx.receipts.length > WFDX_MAX_RECEIPTS) wfdx.receipts.shift();
+    return receipt;
+  }
+  function wfdxProbeReceipt(state, row, probe, stage) {
+    var manifest = (state && state.manifest) || {}, visit = manifest.visit || {};
+    var reason = S(probe && probe.reason), lock = 'not-attempted';
+    if (probe && probe.__timeout === true) lock = 'no-response';
+    else if (probe && probe.ok === true) lock = 'verified';
+    else if (reason === 'patient-mismatch') lock = 'mismatch';
+    else if (probe && probe.ok === false) lock = 'refused';
+    return wfdxNote({
+      verb: 'mlsAppAthenaActionV2', stage: stage || 'probe', mode: 'probe',
+      action: S(row && row.action), rowId: S(row && row.id),
+      ok: !!(probe && probe.ok === true), timeout: !!(probe && probe.__timeout === true),
+      reason: reason, error: probe && (probe.error || probe.message),
+      appointmentIdPresent: !!S(visit.appointmentId).trim(),
+      encounterBound: !!(S(visit.encounterId).trim() && S(visit.encounterUrl).trim()),
+      identityLock: lock, expectedDay: visit.visitDate
+    });
+  }
+  /* mlsExtHealth: operational metadata only (version, athenaOne tab count and
+     how many Chrome has unloaded). Never reads a chart. */
+  function wfdxHealth(force) {
+    if (!force && wfdx.env && (Date.now() - wfdx.envAt) < 15000) return Promise.resolve(wfdx.env);
+    return bridge('mlsExtHealth', {}, 'mlsExtHealthResult', 6000).then(function (resp) {
+      var out = { ok: false, tabs: -1, discarded: -1, version: '' };
+      if (resp && resp.ok === true) {
+        out.ok = true;
+        out.version = S(resp.versionName || resp.version).split('+')[0].slice(0, 24);
+        if (resp.athena && typeof resp.athena === 'object') { out.tabs = wfdxCount(resp.athena.tabs); out.discarded = wfdxCount(resp.athena.discarded); }
+      }
+      wfdx.env = out; wfdx.envAt = Date.now();
+      return out;
+    }, function () { var out = { ok: false, tabs: -1, discarded: -1, version: '' }; wfdx.env = out; wfdx.envAt = Date.now(); return out; });
+  }
+  /* The plain-English "what should I click" line. Never names the patient. */
+  function wfdxEnvLine(manifest, env) {
+    var bits = [], visit = (manifest && manifest.visit) || {}, day = wfdxDayKey(visit.visitDate);
+    if (env && env.ok) {
+      if (env.version) bits.push('MLS Assist ' + env.version);
+      if (env.tabs === 0) bits.push('no athenaOne tab is open - open athenaOne and sign in');
+      else if (env.tabs === 1) bits.push('1 athenaOne tab open');
+      else if (env.tabs > 1) bits.push(env.tabs + ' athenaOne tabs open - close the extras and keep one');
+      if (env.discarded > 0) bits.push(env.discarded + ' athenaOne tab unloaded by Chrome - click it once so it can paint');
+    } else bits.push('MLS Assist did not answer the health check');
+    bits.push(day ? ('expected day ' + day) : 'this review has no expected day');
+    bits.push(S(visit.appointmentId).trim() ? 'appointment id is bound' : 'no appointment id is bound to this encounter');
+    if (wfdx.observedDay) bits.push('athenaOne Day view is on ' + wfdx.observedDay + (day && wfdx.observedDay !== day ? ' - not ' + day : ''));
+    return bits.join(' · ');
+  }
+  function wfdxReport(manifest) {
+    var visit = (manifest && manifest.visit) || {};
+    return {
+      kind: 'mls-athena-review-error-report', at: new Date().toISOString(),
+      build: (function () { try { return S(window.__MLS_AV); } catch (e) { return ''; } })(),
+      writeflow: VERSION,
+      env: {
+        ua: (function () { try { return S(navigator.userAgent).slice(0, 220); } catch (e) { return ''; } })(),
+        tz: (function () { try { return S(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (e) { return ''; } })(),
+        extension: wfdx.env ? { ok: wfdx.env.ok, version: wfdx.env.version, athenaTabs: wfdx.env.tabs, athenaTabsUnloaded: wfdx.env.discarded } : null,
+        capabilities: {
+          athenaFinalActionsV1: athenaFinalActionsReady(),
+          supervisedOrderPlacementV2: supervisedOrderPlacementReady()
+        },
+        probeOnly: probeOnlyActive()
+      },
+      review: {
+        manifestHash: S(manifest && manifest.manifestHash), previewHash: S(manifest && manifest.previewHash),
+        expectedDay: wfdxDayKey(visit.visitDate), observedDay: wfdx.observedDay,
+        appointmentIdPresent: !!S(visit.appointmentId).trim(), providerPresent: !!S(visit.provider).trim(),
+        encounterBound: !!(S(visit.encounterId).trim() && S(visit.encounterUrl).trim()),
+        identityComplete: !!(manifest && manifest.patient && S(manifest.patient.patientId).trim() && S(manifest.patient.name).trim() && S(manifest.patient.dob).trim() && S(manifest.patient.mrn).trim()),
+        rows: (manifest && manifest.rows ? manifest.rows : []).map(function (row) { return { id: row.id, action: row.action, capability: row.capability }; })
+      },
+      receipts: wfdx.receipts.slice()
+    };
+  }
+  function wfdxCopyText(text, btn, idleLabel) { unifiedCopyText(text, btn, idleLabel); }
+
   function startAthenaAction(action, opts) {
     opts = opts || {};
     if (!ATHENA_ACTIONS[action]) { actionSay(opts, 'Unsupported Athena action. Nothing was changed.', 'err'); return Promise.resolve({ ok: false, error: 'unsupported-action' }); }
@@ -1352,6 +1570,114 @@
       btn.addEventListener('click', function () { try { btn.remove(); } catch (e2) {} probeUnifiedRow(state, rowId); });
       el.appendChild(btn);
     } catch (e3) {}
+    /* wfdx-1.0.0: the recheck button is transient (the next status repaint wipes
+       it). The diagnostics and the two fix buttons live in their own persistent
+       strip below, so a refused check always leaves the doctor something to
+       click and something to read. */
+    wfdxShowFixStrip(state, rowId);
+  }
+  /* ---- wfdx-1.0.0 fix strip: what is wrong, and the one button that fixes it -- */
+  function wfdxFixHost() { try { return document.getElementById('mlsAthenaUnifiedFix'); } catch (e) { return null; } }
+  function wfdxDiagHost() { try { return document.getElementById('mlsAthenaUnifiedDiag'); } catch (e) { return null; } }
+  function wfdxPaintDiag(state) {
+    var host = wfdxDiagHost(); if (!host || !state || state.closed) return;
+    host.style.display = 'block';
+    host.textContent = wfdxEnvLine(state.manifest, wfdx.env);
+  }
+  function wfdxButton(label, title, onClick) {
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = label; btn.title = S(title);
+    btn.style.cssText = 'border:1px solid #cfe0d7;background:#fff;color:#204034;border-radius:8px;padding:7px 12px;font:750 12px inherit;cursor:pointer';
+    btn.addEventListener('click', function () { onClick(btn); });
+    return btn;
+  }
+  /* Everything this strip can do is READ-ONLY: navigate athenaOne's own Day
+     view to the encounter's date (mlsAppGotoDate), click that exact appointment
+     row (mlsAppSearchOpenPatient), and re-run the read-only check. Nothing here
+     writes, saves, signs, bills or orders. */
+  function wfdxShowFixStrip(state, rowId) {
+    var host = wfdxFixHost(); if (!host || !state || state.closed) return;
+    host.innerHTML = '';
+    var manifest = state.manifest, visit = manifest.visit || {}, day = wfdxDayKey(visit.visitDate);
+    if (day && S(rowId).trim()) {
+      host.appendChild(wfdxButton('Open this patient’s encounter in athenaOne',
+        'Read-only: sends athenaOne’s Day view to ' + day + ', clicks this exact appointment row, then re-runs the read-only check. Nothing is written.',
+        function (btn) { wfdxOpenEncounter(state, rowId, btn, false); }));
+    }
+    host.appendChild(wfdxButton('Copy error report',
+      'Copies a patient-free technical report of this review: verbs, refusal codes, athenaOne tab count, the day athenaOne is on, and whether an appointment id is bound.',
+      function (btn) { wfdxCopyText(JSON.stringify(wfdxReport(state.manifest), null, 1), btn, 'Copy error report'); }));
+    wfdxHealth(false).then(function () { wfdxPaintDiag(state); });
+  }
+  function wfdxOfferNameRoute(state, rowId) {
+    var host = wfdxFixHost(); if (!host || !state || state.closed) return;
+    if (host.querySelector('[data-mls-open-by-name]')) return;
+    var btn = wfdxButton('Open by name instead',
+      'Read-only: asks athenaOne’s own patient search for this chart. The search refuses an ambiguous or DOB-mismatched result, and the write check still re-verifies name, DOB and MRN before anything can be confirmed.',
+      function (b) { wfdxOpenEncounter(state, rowId, b, true); });
+    btn.setAttribute('data-mls-open-by-name', '1');
+    host.appendChild(btn);
+  }
+  /* Compose the read-only ladder MLS Assist 3.0.62 exposes:
+       mlsAppGotoDate {date}  ->  mlsAppSearchOpenPatient  ->  probe
+     3.0.62 opens an appointment row on WHATEVER day is already painted; it has
+     no date parameter of its own, and with bootstrapIdentity it refuses every
+     name fallback. Driving the Day view first is therefore the missing step,
+     and it is the step the doctor was silently being asked to do by hand. */
+  function wfdxOpenEncounter(state, rowId, btn, byName) {
+    if (!state || state.closed || state.running) return;
+    var generation = state.probeGeneration, manifest = state.manifest, visit = manifest.visit || {};
+    var day = wfdxDayKey(visit.visitDate);
+    if (btn) { btn.disabled = true; btn.textContent = byName ? 'Searching athenaOne…' : 'Opening in athenaOne…'; }
+    function done(message, kind) {
+      if (btn) { btn.disabled = false; btn.textContent = byName ? 'Open by name instead' : 'Open this patient’s encounter in athenaOne'; }
+      if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+      if (message) unifiedStatus(state, message, kind || 'err');
+      wfdxPaintDiag(state);
+    }
+    var openContext = byName ? { visitDate: visit.visitDate, provider: visit.provider, appointmentId: '' } : visit;
+    var navigate = (!byName && day)
+      ? bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000)
+      : Promise.resolve({ ok: true, skipped: true });
+    unifiedStatus(state, byName
+      ? 'Asking athenaOne’s patient search for this chart read-only — nothing is written…'
+      : ('Sending athenaOne’s Day view to ' + day + ' and opening this exact appointment read-only — nothing is written…'), '');
+    navigate.then(function (nav) {
+      nav = nav || {};
+      if (nav.skipped !== true) {
+        var observed = wfdxDayKey(nav.schedDate);
+        if (observed) { wfdx.observedDay = observed; wfdx.observedDayAt = Date.now(); }
+        wfdxNote({ verb: 'mlsAppGotoDate', stage: 'fix-open', ok: nav.ok === true, timeout: nav.__timeout === true,
+          reason: nav.reason, error: nav.error, expectedDay: day, observedDay: observed,
+          appointmentIdPresent: !!S(visit.appointmentId).trim() });
+        if (nav.ok !== true) {
+          done('athenaOne could not be sent to ' + day + '.' +
+            (observed && observed !== day ? ' Its Day view is on ' + observed + '.' : '') +
+            ' Open athenaOne’s Day view on ' + day + ' yourself, then press Check Athena again. Nothing was changed.', 'err');
+          wfdxOfferNameRoute(state, rowId);
+          return;
+        }
+        wfdx.observedDay = day; wfdx.observedDayAt = Date.now();
+      }
+      return searchOpenTarget(manifest.patient, openContext).then(function (openRes) {
+        openRes = openRes || {};
+        wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: byName ? 'fix-open-by-name' : 'fix-open', ok: openRes.ok === true,
+          reason: openRes.reason || openRes.findReason, error: openRes.error, expectedDay: day,
+          appointmentIdPresent: !!S(openContext.appointmentId).trim() });
+        if (openRes.ok !== true) {
+          var why = wfdxErrorClass(openRes.error) === 'appointment-row-open-refused'
+            ? 'athenaOne is on ' + day + ' but this exact appointment row was not on the painted grid.'
+            : 'athenaOne refused the open (' + (wfdxReason(openRes.reason || openRes.findReason) || 'no reason given') + ').';
+          done(why + ' Nothing was changed.', 'err');
+          if (!byName) wfdxOfferNameRoute(state, rowId);
+          return;
+        }
+        done('', '');
+        if (state.closed || unifiedAthenaState !== state) return;
+        unifiedStatus(state, 'The chart is open in athenaOne (via ' + wfdxVia(openRes.via) + '). Re-checking the exact encounter read-only…', '');
+        setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, rowId); }, 1500);
+      });
+    }, function () { done('The read-only open could not be started. Nothing was changed.', 'err'); });
   }
   function validatedUnifiedProbe(patient, probe) {
     var ctx = probe && probe.context || {};
@@ -1422,6 +1748,7 @@
     }, 'mlsAppAthenaActionV2Result', probeTimeoutMs).then(function (probe) {
       try { clearTimeout(interimTimer); } catch (eInterim) {}
       if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+      wfdxProbeReceipt(state, row, probe, 'row-check');
       if (!probe || !probe.ok) {
         var probeReason = S(probe && probe.reason);
         /* wf2-2.2.0 (owner 2026-07-22, seamless write): when the destination is
@@ -1436,9 +1763,20 @@
           unifiedStatus(state, S(state.manifest.patient.name) + ' is not open in Athena. MLS is finding and opening the exact chart now — identity is verified before it opens, and nothing is written without your Confirm & write click...', '');
           searchOpenTarget(state.manifest.patient, state.manifest.visit).then(function (openRes) {
             if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
+            wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'auto-open', ok: !!(openRes && openRes.ok === true),
+              reason: openRes && (openRes.reason || openRes.findReason), error: openRes && openRes.error,
+              expectedDay: state.manifest.visit.visitDate,
+              appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
             if (!openRes || openRes.ok !== true) {
-              unifiedStatus(state, 'MLS could not open ' + S(state.manifest.patient.name) + ' in Athena on its own' + ((openRes && (openRes.error || openRes.reason)) ? ': ' + S(openRes.error || openRes.reason) : '') + '. Open the chart in athenaOne, then press Check Athena again. Nothing was changed.', 'err');
+              /* wfdx-1.0.0: 3.0.62 runs the appointment-row route ONLY when the
+                 app supplies an appointment id + schedule date, and it clicks
+                 whatever day athenaOne already has painted — it cannot change
+                 the day and it refuses every name fallback. So the honest next
+                 step is not "go open the chart"; it is one read-only button
+                 that sends the Day view to the right date and clicks the row. */
+              unifiedStatus(state, 'MLS could not open ' + S(state.manifest.patient.name) + ' in Athena on its own' + ((openRes && (openRes.error || openRes.reason)) ? ': ' + S(openRes.error || openRes.reason) : '') + '. Use the read-only button below, or open the chart in athenaOne and press Check Athena again. Nothing was changed.', 'err');
               unifiedRecheckButton(state, row.id);
+              if (wfdxErrorClass(openRes && openRes.error) === 'appointment-row-open-refused') wfdxOfferNameRoute(state, row.id);
               return;
             }
             unifiedStatus(state, S(state.manifest.patient.name) + ' is open in Athena (via ' + S(openRes.via || 'patient search') + '). Re-checking the exact destination...', '');
@@ -1462,7 +1800,12 @@
         return;
       }
       var lock = validatedUnifiedProbe(state.manifest.patient, probe);
-      if (!lock.ok) { unifiedStatus(state, lock.error, 'err'); unifiedRecheckButton(state, row.id); return; }
+      if (!lock.ok) {
+        wfdxNote({ verb: 'mlsAppAthenaActionV2', stage: 'identity-lock', mode: 'probe', action: row.action, rowId: row.id,
+          ok: false, reason: 'patient-mismatch', identityLock: 'mismatch', expectedDay: state.manifest.visit.visitDate,
+          appointmentIdPresent: !!S(state.manifest.visit.appointmentId).trim() });
+        unifiedStatus(state, lock.error, 'err'); unifiedRecheckButton(state, row.id); return;
+      }
       var exactWrite = row.action === 'sign_encounter' ? findVerifiedWrite(lock.patient, state.manifest.previewHash, proofOpts, row.payload, lock.context) : null;
       if (row.action === 'sign_encounter' && (!exactWrite || !exactWrite.noteWriteProof)) { unifiedStatus(state, 'The verified note proof does not match this exact Athena encounter. Sign & Save remains blocked.', 'err'); unifiedRecheckButton(state, row.id); return; }
       var probedClientOrderId = row.action === 'place_order' ? S(probe.clientOrderId).trim() : '';
@@ -1470,12 +1813,15 @@
       state.probe = deepFreeze({ rowId: row.id, rowHash: row.rowHash, clientOrderId: probedClientOrderId, manifestHash: state.manifest.manifestHash, token: lock.token, patient: lock.patient, context: lock.context, control: lock.control, rawContext: lock.rawContext, verifiedWrite: exactWrite, taughtDestination: stableClone(taughtDestination), taughtDestinationHash: hashPreview(taughtDestination || {}) });
       renderUnifiedContext(state, lock);
       if (go) {
-        go.disabled = false; go.setAttribute('aria-disabled', 'false'); go.textContent = row.action === 'save_draft' ? 'Confirm & Save draft in Athena' : 'Confirm & Send to Athena'; go.setAttribute('data-mls-athena-action', row.action);
+        go.disabled = false; go.setAttribute('aria-disabled', 'false');
+        go.textContent = probeOnlyActive() ? 'Confirm (PROBE ONLY — nothing is written)' : (row.action === 'save_draft' ? 'Confirm & Save draft in Athena' : 'Confirm & Send to Athena');
+        go.setAttribute('data-mls-athena-action', row.action);
         go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', UNIFIED_ARIA[row.action]); go.title = UNIFIED_ARIA[row.action] + '. Runs only this selected action.';
         if (row.action === 'place_order') { go.setAttribute('data-mls-row-hash', row.rowHash); go.setAttribute('data-mls-client-order-id', probedClientOrderId); }
       }
       setUnifiedReadyTick(row.id);
-      unifiedStatus(state, 'Ready — the exact chart is verified. One click on Confirm & Send runs only ' + row.label + '. Nothing else.', '');
+      try { var fixHost = wfdxFixHost(); if (fixHost) fixHost.innerHTML = ''; } catch (eFix) {}
+      unifiedStatus(state, (probeOnlyActive() ? 'PROBE ONLY — ' : '') + 'Ready — the exact chart is verified. One click on Confirm & Send runs only ' + row.label + '.' + (probeOnlyActive() ? ' In PROBE ONLY it is rehearsed read-only and nothing is written.' : ' Nothing else.'), '');
     });
   }
   function receiptStateForRow(state, row) {
@@ -1491,7 +1837,7 @@
        failure for a review where nothing had happened yet. The receipt is an
        outcome record: it appears only once there IS an outcome. */
     if (!Object.keys(state.receipts).length) { host.innerHTML = ''; return; }
-    var colors = { verified: '#205c43', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c' };
+    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c' };
     host.innerHTML = '<div style="border:1px solid #e2e8f2;background:#fff;border-radius:10px;padding:10px 12px"><div style="font-weight:800;color:#204034;margin-bottom:6px">What happened</div>' + state.manifest.rows.map(function (row) {
       var r = receiptStateForRow(state, row), label = S(r.status).toUpperCase();
       return '<div style="border-top:1px solid #e2e8f2;padding:7px 0"><b>' + esc(row.label) + '</b><span style="float:right;color:' + (colors[r.status] || '#52675c') + ';font-weight:800">' + esc(label) + '</span><div style="clear:both;color:#52675c;font-size:12px">' + esc(r.message) + '</div></div>';
@@ -1539,6 +1885,42 @@
     var radios = document.querySelectorAll('#mlsAthenaUnifiedConfirm input[name="mlsAthenaUnifiedAction"]');
     for (var ri = 0; ri < radios.length; ri++) radios[ri].disabled = true;
     var bridgeExecutePatient = bridgePatient(probe.patient);
+    /* athena-probe-only-1.0.0: the owner's supervised rehearsal. The whole path
+       runs — same manifest, same verified probe, same single human confirm —
+       but the request goes out as mode:'probe'. Nothing is written, so the
+       result is recorded as a rehearsal, the manifest is NOT halted, and the
+       row is re-checked so he can run it again. */
+    if (probeOnlyActive()) {
+      bridge('mlsAppAthenaActionV2', {
+        mode: 'probe', action: row.action, patient: bridgeExecutePatient, expectedPatient: bridgeExecutePatient,
+        previewHash: state.manifest.previewHash, manifestHash: state.manifest.manifestHash, payload: row.payload,
+        noteText: row.payload.noteText || '', sections: row.payload.sections || [], notePolicy: 'empty_only',
+        noteWriteProof: probe.verifiedWrite ? probe.verifiedWrite.noteWriteProof : '', billing: row.payload.billing || null,
+        order: row.payload.order || null, rowHash: row.rowHash,
+        clientOrderId: row.action === 'place_order' ? S(row.payload.order && row.payload.order.clientOrderId).trim() : '',
+        taughtDestination: currentTaughtDestination, expectedContext: probe.context
+      }, 'mlsAppAthenaActionV2Result', 150000).then(function (resp) {
+        if (state.closed || unifiedAthenaState !== state) return;
+        resp = resp || {};
+        state.running = false;
+        wfdxProbeReceipt(state, row, resp, 'probe-only-confirm');
+        state.receipts[row.id] = deepFreeze({ rowId: row.id, action: row.action, status: 'rehearsed',
+          message: 'PROBE ONLY: the full path ran and MLS sent a read-only check instead of ' + row.label + '. Athena ' +
+            (resp.ok === true ? 'verified the exact encounter again' : 'refused the read-only check (' + (wfdxReason(resp.reason) || 'no reason given') + ')') +
+            '. Nothing was written, saved, signed, billed or ordered.',
+          patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(),
+          manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context),
+          completedAt: new Date().toISOString() });
+        state.probe = null;
+        renderUnifiedReceipts(state);
+        if (cancel) cancel.disabled = false; if (close) close.disabled = false;
+        for (var rp = 0; rp < radios.length; rp++) radios[rp].disabled = false;
+        setUnifiedReadyTick(null);
+        unifiedStatus(state, state.receipts[row.id].message, resp.ok === true ? 'ok' : 'err');
+        setTimeout(function () { if (!state.closed && unifiedAthenaState === state) probeUnifiedRow(state, row.id); }, 400);
+      });
+      return;
+    }
     bridge('mlsAppAthenaActionV2', {
       mode: 'execute', action: row.action, actionToken: probe.token, patient: bridgeExecutePatient, expectedPatient: bridgeExecutePatient,
       previewHash: state.manifest.previewHash, manifestHash: state.manifest.manifestHash, payload: row.payload, noteText: row.payload.noteText || '', sections: row.payload.sections || [],
@@ -1781,11 +2163,17 @@
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'mlsAthenaUnifiedTitle'); ov.setAttribute('aria-describedby', 'mlsAthenaUnifiedSafety');
     var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;overflow:auto;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);padding:20px 22px;font:13px/1.5 system-ui';
     card.innerHTML =
+      (probeOnlyActive() ? '<div id="mlsAthenaProbeOnlyBanner" style="margin:0 0 12px;padding:10px 12px;border:2px solid #8b2525;background:#fdf2f2;color:#8b2525;border-radius:10px;font-weight:850">' + esc(PROBE_ONLY_BANNER) + '</div>' : '') +
       '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div><div style="color:#52675c;margin-top:3px">' + esc(S(manifest.patient.name) || 'This note') + ' &middot; one click writes exactly what you see below. ' + (athenaFinalActionsReady() ? 'Reviewed note write, Save Draft, billing staging, and Sign &amp; Save each run only after your explicit one-click confirm; orders and prescriptions stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.') + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
       unifiedNoteHeroHtml(manifest) +
       rowsHtml +
       '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> being verified read-only now.</div>' +
       '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:8px;color:#6d5010">Checking the exact chart read-only &mdash; nothing is sent yet.</div>' +
+      /* wfdx-1.0.0: a PHI-free one-liner (extension version, athenaOne tab
+         count, expected day, whether an appointment id is bound, and the day
+         athenaOne is really on) plus the read-only buttons that fix it. */
+      '<div id="mlsAthenaUnifiedDiag" style="display:none;margin-top:6px;font-size:11.5px;color:#52675c;overflow-wrap:anywhere"></div>' +
+      '<div id="mlsAthenaUnifiedFix" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>' +
       '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.') + '</div>' +
       unifiedIdentityHtml(manifest) +
       '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
@@ -1827,7 +2215,10 @@
     renderUnifiedReceipts(state);
     if (chosen) {
       for (var ri = 0; ri < radios.length; ri++) if (radios[ri].value === chosen.id) radios[ri].checked = true;
+      try { wfdxShowFixStrip(state, chosen.id); } catch (eStrip) {}
       probeUnifiedRow(state, chosen.id);
+    } else {
+      try { wfdxShowFixStrip(state, ''); } catch (eStrip2) {}
     }
     setTimeout(function () {
       if (!state.closed && unifiedAthenaState === state && unifiedVisibleFocusTarget(close)) {
@@ -2018,7 +2409,6 @@
   function p1AutoBindEncounter(state) {
     if (p1AutoBindOff || !state || state.closed || state.running || state.halted) return false;
     var m = state.manifest; if (!m || !m.rows) return false;
-    if (p1VisitBound(m.visit)) return false;                       /* already bound */
     var p = m.patient || {};
     /* never bind against a chart we cannot positively identify */
     if (!S(p.name).trim() || !S(p.dob).trim() || !S(p.mrn).trim()) return false;
@@ -2028,6 +2418,18 @@
       if (r && r.payload && (r.action === 'write_note' || r.id === 'write-note')) { row = r; break; }
     }
     if (!row) return false;
+    /* 2026-08-17 (wfdx lane): the old gate was p1VisitBound(m.visit) -- "an
+       appointment id is present, therefore this review is bound". That is not
+       the manifest's own predicate: the note row also needs the PROVIDER, and
+       an encounter carrying an exact imported appointment id but no provider
+       (an op note saved from the Prep room, or any provider-unknown census day)
+       fell into the hole between the two -- auto-bind refused to run because an
+       id existed, while the row stayed blocked because no provider did. Use the
+       row's real capability instead, and keep the appointment identity frozen:
+       a candidate set that resolves a DIFFERENT appointment id than the one
+       already on the manifest is refused outright. */
+    if (row.capability === 'ready') return false;                  /* already sendable */
+    var priorAppointmentId = nrmId(m.visit && m.visit.appointmentId);
     var source = null, pullResult = null, sourceAt = 0;
     try {
       source = window.__mlsSI && typeof window.__mlsSI._lastResp === 'function' ? window.__mlsSI._lastResp() : null;
@@ -2036,6 +2438,7 @@
     } catch (eSource) {}
     var set = p1AutoBindCandidates(m, source, pullResult, Date.now(), sourceAt);
     if (!set.ok || !set.candidates.length) return false;
+    if (priorAppointmentId && nrmId(set.appointmentId) !== priorAppointmentId) return false;
     var gen = state.probeGeneration, patientAtStart = stableClone(m.patient), bp = bridgePatient(m.patient), payload = row.payload || {};
     unifiedStatus(state, 'Checking the exact Athena appointment against ' + set.candidates.length + ' same-day provider header' + (set.candidates.length === 1 ? '' : 's') + ' read-only \u2014 nothing is sent.', '');
     var probeDeadlineAt = Date.now() + 60000;
@@ -2086,7 +2489,10 @@
     probeSequence.then(function () {
       try {
         if (sequenceAborted || p1AutoBindOff || athenaActionRunning || !state || state.closed || state.running || state.halted || state.probeGeneration !== gen) return;
-        if (p1VisitBound(state.manifest && state.manifest.visit) || !p1SamePatient(patientAtStart, state.manifest && state.manifest.patient) ||
+        var liveRow = state.manifest && unifiedRow(state.manifest, row.id);
+        if (!liveRow || liveRow.capability === 'ready' || liveRow.rowHash !== row.rowHash) return;
+        if (nrmId(state.manifest.visit && state.manifest.visit.appointmentId) !== priorAppointmentId) return;
+        if (!p1SamePatient(patientAtStart, state.manifest && state.manifest.patient) ||
             !p1SamePatient(patientAtStart, actionPatient({ patient: activePt() }))) return;
         var currentSource = null, currentPullResult = null, currentSourceAt = 0;
         try {
@@ -2145,6 +2551,7 @@
     } catch (e0) {}
     if (unifiedAthenaState) closeUnifiedConfirmation();
     var manifest = buildUnifiedManifest(opts);
+    wfdxReset(manifest);
     var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, receipts: {}, running: false, halted: false, closed: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
     unifiedAthenaState = state;
@@ -2567,6 +2974,12 @@
     previewHash: hashPreview, normalizeBilling: normalizeBilling,
     canonicalSectionKey: canonicalSectionKey, destinations: DESTINATION,
     inspectSections: gatherSections,
+    /* wfdx-1.0.0 / athena-probe-only-1.0.0 test + support seam (read-only) */
+    diagnostics: { report: function () { return wfdxReport(unifiedAthenaState && unifiedAthenaState.manifest); },
+      receipts: function () { return wfdx.receipts.slice(); }, envLine: function () { return wfdxEnvLine(unifiedAthenaState && unifiedAthenaState.manifest, wfdx.env); },
+      reason: wfdxReason, errorClass: wfdxErrorClass, health: wfdxHealth,
+      probeOnly: probeOnlyActive, probeOnlyBanner: PROBE_ONLY_BANNER,
+      state: function () { return unifiedAthenaState; } },
     revert: revert
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
