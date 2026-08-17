@@ -8196,7 +8196,75 @@ async function adminRevokeCode(id){
 /* =========================================================
    PER-USER STORAGE (settings + notes namespaced by email)
    ========================================================= */
-function uns(suffix){ return 'sf_u::'+(session?session.email:'_')+'::'+suffix; }
+/* ===== uns-namespace-guard-1.0.0 =====
+   `uns()` used to test the session OBJECT, not the email. A session that exists
+   but whose email has not resolved yet ({}, {email:undefined}, {email:''})
+   minted the LITERAL namespace 'sf_u::undefined::' / 'sf_u::::', and real
+   settings/notes landed there — one account's data became reachable from
+   another. The patient store already hard-refuses that class
+   (MLS_PTS_STORE_NO_NAMESPACE); every OTHER store did not.
+   Contract:
+     - a non-empty STRING email  -> 'sf_u::<email>::<suffix>'
+     - anything else             -> 'sf_u::_::<suffix>'  (never 'undefined')
+     - a WRITE through an unresolved namespace key is REFUSED (returns false,
+       one console warning, no toast). READS still fall back so existing data
+       stays reachable.
+   Existing stranded data is NEVER deleted or moved here — window.__mlsNamespaceAudit()
+   is a read-only tracer that lists the stranded KEYS and their sizes (never the
+   values, so it carries no PHI) alongside the current account. */
+function unsEmail(){
+  var e;
+  try{ e=(typeof session!=='undefined'&&session)?session.email:''; }catch(_s){ e=''; }
+  if(typeof e!=='string') return '';
+  e=e.trim();
+  return e?e:'';
+}
+function unsResolved(){ return !!unsEmail(); }
+function uns(suffix){ return 'sf_u::'+(unsEmail()||'_')+'::'+suffix; }
+/* '' covers the sf_u:::: shape a {email:''} session used to mint. */
+var UNS_UNRESOLVED_KEY_RE=/^sf_u::(?:_|undefined|)::/;
+var _unsWriteRefusalWarned=false;
+function unsWriteRefused(key){
+  if(!UNS_UNRESOLVED_KEY_RE.test(String(key))) return false;
+  if(!_unsWriteRefusalWarned){
+    _unsWriteRefusalWarned=true;
+    try{console.warn('[uns] Refusing every write to the unresolved account namespace ('+String(key).slice(0,40)+'...) until the session email resolves. Run window.__mlsNamespaceAudit() to trace what is already stranded there.');}catch(_c){}
+  }
+  return true;
+}
+(function installUnsWriteGuard(){
+  try{
+    if(typeof Storage==='undefined'||!Storage||!Storage.prototype) return;
+    if(Storage.prototype.__mlsUnsGuard) return;
+    var native=Storage.prototype.setItem;
+    if(typeof native!=='function') return;
+    Storage.prototype.setItem=function(k,v){
+      if(unsWriteRefused(k)) return false;
+      return native.call(this,k,v);
+    };
+    Storage.prototype.__mlsUnsGuard=true;
+  }catch(_g){}
+})();
+window.__mlsNamespaceAudit=function(){
+  var out={currentEmail:unsEmail(),resolved:unsResolved(),writeGuard:false,keys:[],namespaces:{},totalBytes:0};
+  try{ out.writeGuard=!!(typeof Storage!=='undefined'&&Storage&&Storage.prototype&&Storage.prototype.__mlsUnsGuard); }catch(_w){}
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(!k||!UNS_UNRESOLVED_KEY_RE.test(k)) continue;
+      var raw=''; try{ raw=localStorage.getItem(k)||''; }catch(_r){ raw=''; }
+      var cut=k.indexOf('::',6);
+      var ns=cut>=0?k.slice(6,cut):'';
+      var bytes=(k.length+raw.length)*2; /* UTF-16 code units, what the quota charges */
+      out.keys.push({key:k,namespace:ns,suffix:cut>=0?k.slice(cut+2):'',bytes:bytes});
+      out.namespaces[ns]=(out.namespaces[ns]||0)+bytes;
+      out.totalBytes+=bytes;
+    }
+  }catch(_e){}
+  out.keys.sort(function(a,b){ return b.bytes-a.bytes||(a.key<b.key?-1:1); });
+  return out;
+};
+/* ===== end uns-namespace-guard-1.0.0 ===== */
 function getKey(){ return localStorage.getItem(uns('apikey'))||''; }
 /* AI is available if we're in hosted backend mode OR a per-device key is set. */
 function hasAI(){ return backendMode() || !!getKey(); }
@@ -38230,5 +38298,150 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
 })();
 </script>
 <!-- ===== end mrn-1.0.0 ================================================== -->
+<!-- ===== legal-tools-1.0.0 =============================================
+     A Legal / IME workspace row in the dock's Tools menu.
+
+     WHY AN OVERLAY AND NOT A SPEC. The Tools menu is built by the SHARED
+     feat_mls_calm_shell.js. toolsSections() does not scan the DOM for opt-in
+     rows: it walks a hardcoded TOOLS_GROUPS spec list and resolves each spec
+     either by document.getElementById(spec.id) or by matching a FIXED label
+     regex inside a fixed `within` container. No spec in that list can produce
+     the label "Legal / IME workspace", and the one legal-shaped spec,
+     { id: 'nav_legalreq' }, is the LEGACY networked legal-requests page
+     (showView('legalreq')) - a different product surface that must keep its
+     own route. So the row cannot be declared; it is injected into the menu the
+     shared code has already rendered, additively, every time that menu is
+     built. Nothing in the shared file is patched or replaced.
+
+     The row is offered ONLY while the legal workspace module is actually
+     installed, so an absent module is an absent row rather than a control that
+     does nothing.
+     ================================================================== -->
+<style id="mlsLegalToolsStyle">
+#mlsToolsMenu .r[data-mls-legal-tools]{cursor:pointer}
+</style>
+<script>
+(function(){
+  'use strict';
+  var VERSION='legal-tools-1.0.0';
+  var W=window,D=document;
+  var MENU_ID='mlsToolsMenu';
+  var ROW_ATTR='data-mls-legal-tools';
+  var LABEL='Legal / IME workspace';
+  var ICON='⚖️';
+  var GROUP='Practice';
+  function safe(fn){ try{ return fn(); }catch(e){ return undefined; } }
+  function isFn(f){ return typeof f==='function'; }
+  /* Resolved by capability, never by asset path, so the block copies between
+     lanes unchanged. */
+  function workspace(){
+    var names=['__mlsLegalWorkspace','__mlsP1LegalPack','__mlsLegalPack'];
+    for(var i=0;i<names.length;i++){
+      var a=safe(function(){ return W[names[i]]; });
+      if(a&&a.installed===true&&isFn(a.open)) return a;
+    }
+    return null;
+  }
+  function menuEl(){ return safe(function(){ return D.getElementById(MENU_ID); })||null; }
+  function closeMenu(m){
+    /* MEASURED TRAP: the shared openTools() keeps a PRIVATE toolsClose handle
+       and toggles on it - its next call begins
+       "if (toolsClose) { toolsClose(); return; }". Detaching the menu node
+       here would leave that handle set over an already-detached menu, so the
+       next press of the dock Tools button is swallowed closing nothing and
+       the menu only reopens on a SECOND press. Toggle it shut through the
+       shell's own exported go() instead: that runs the real close(), which
+       removes the node, detaches the document away-listener, and releases
+       the handle. Node removal stays only as a last resort, so the workspace
+       is never opened behind a menu that refused to close. */
+    var shell = safe(function(){ return W.__mlsCalmShell; });
+    if(shell && isFn(shell.go)){
+      safe(function(){ shell.go('tools'); });
+      if(!menuEl()) return true;
+    }
+    safe(function(){ var n = m || menuEl(); if(n && n.parentNode) n.parentNode.removeChild(n); });
+    return !menuEl();
+  }
+  function openWorkspace(){
+    var api=workspace();
+    if(!api) return false;
+    return safe(function(){ api.open(); return true; })===true;
+  }
+  function buildRow(){
+    var row=D.createElement('div');
+    row.className='r';
+    row.setAttribute('role','menuitem');
+    row.setAttribute('tabindex','0');
+    row.setAttribute(ROW_ATTR,VERSION);
+    var ic=D.createElement('span'); ic.className='ri'; ic.setAttribute('aria-hidden','true'); ic.textContent=ICON;
+    var nm=D.createElement('span'); nm.className='rn'; nm.textContent=LABEL;
+    row.appendChild(ic); row.appendChild(nm);
+    function fire(ev){
+      if(ev&&isFn(ev.preventDefault)) ev.preventDefault();
+      closeMenu(menuEl());
+      openWorkspace();
+    }
+    row.addEventListener('click',fire);
+    row.addEventListener('keydown',function(ev){
+      var k=ev&&ev.key;
+      if(k==='Enter'||k===' '||k==='Spacebar') fire(ev);
+    });
+    return row;
+  }
+  /* Idempotent: one row per rendered menu, however many times this runs. */
+  var injecting=false;
+  function inject(m){
+    /* A mutation observer callback that runs while this function is still
+       building its row would re-enter and build another. One in flight. */
+    if(injecting) return false;
+    m=m||menuEl();
+    if(!m) return false;
+    if(!workspace()) return false;
+    if(safe(function(){ return m.querySelector('['+ROW_ATTR+']'); })) return false;
+    var grp=safe(function(){ return m.querySelector('.grp[aria-label="'+GROUP+'"]'); })||null;
+    if(!grp){
+      grp=D.createElement('div');
+      grp.className='grp';
+      grp.setAttribute('role','group');
+      grp.setAttribute('aria-label',GROUP);
+      var gh=D.createElement('div'); gh.className='gh'; gh.setAttribute('aria-hidden','true'); gh.textContent=GROUP;
+      grp.appendChild(gh);
+      m.appendChild(grp);
+    }
+    injecting=true;
+    try{ grp.appendChild(buildRow()); } finally { injecting=false; }
+    return true;
+  }
+  var observer=null;
+  function watch(){
+    if(observer||typeof MutationObserver!=='function') return;
+    var host=D.body||D.documentElement;
+    if(!host) return;
+    observer=new MutationObserver(function(){ safe(function(){ inject(); }); });
+    safe(function(){ observer.observe(host,{childList:true}); });
+  }
+  W.__mlsLegalToolsRow={
+    version:VERSION,
+    label:LABEL,
+    icon:ICON,
+    group:GROUP,
+    /* read-only: is the row currently rendered in the open menu */
+    present:function(){ return !!safe(function(){ var m=menuEl(); return m&&m.querySelector('['+ROW_ATTR+']'); }); },
+    available:function(){ return !!workspace(); },
+    inject:inject,
+    open:openWorkspace,
+    revert:function(){ if(observer){ safe(function(){ observer.disconnect(); }); observer=null; } var m=menuEl(); var r=m&&safe(function(){ return m.querySelector('['+ROW_ATTR+']'); }); if(r&&r.parentNode) r.parentNode.removeChild(r); return true; }
+  };
+  function boot(){ watch(); safe(function(){ inject(); }); }
+  if(D.readyState==='loading') D.addEventListener('DOMContentLoaded',boot);
+  else boot();
+  /* The menu is created inside a click handler, so a capture-phase listener
+     that re-checks on the next turn covers browsers/tabs where the observer
+     has not yet flushed. setTimeout, never rAF - rAF does not fire in a
+     hidden or non-compositing tab. */
+  D.addEventListener('click',function(){ setTimeout(function(){ safe(function(){ inject(); }); },0); },true);
+})();
+</script>
+<!-- ===== end legal-tools-1.0.0 ========================================= -->
 </body>
 </html>

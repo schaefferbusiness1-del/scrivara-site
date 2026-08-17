@@ -7,7 +7,8 @@
      - exact currently-active patient only; no patient search or retargeting
      - read-only chart chronology; no patient/chart/Athena writes
      - browser-local PDF, DOCX and text extraction; raw file bytes are never uploaded
-     - 13-section AI draft through the app's existing aiCallRaw only
+     - 14-section AI draft (13 chronology sections + OPINIONS) through the
+       app's existing aiCallRaw only, closed by a locally written attestation
      - copy, download and print are the only exits
 
    There is no intake, public PHI form, payment, lawyer messaging, signing,
@@ -510,6 +511,95 @@
     return accepted;
   }
 
+  /* ===== p1-legal-letterhead-1.0.0 =========================================
+     An IME report that leaves the practice must say WHOSE practice it is and
+     WHAT standard its opinions are held to. Both were missing: the draft
+     opened with a bare "MEDICAL-LEGAL / IME WORKSPACE DRAFT" line, and no
+     section stated the certainty standard or carried a signature attestation.
+
+     Every letterhead value comes from a field the app ALREADY stores through
+     its own Settings getters - nothing is invented and nothing is asked for
+     twice. An unset field prints as a bracketed instruction, never as a
+     plausible-looking blank or a guess. getName() (the login/account display
+     name) is deliberately NOT a fallback for the provider identity: an account
+     name must never scope a clinical document.
+     The one field the app has no home for is a contact email, so the workspace
+     carries its own small Letterhead input, persisted per user under uns().
+     ====================================================================== */
+  function lhSafe(fn) { try { return fn(); } catch (e) { return undefined; } }
+  var LETTERHEAD_EMAIL_KEY = 'legalLetterheadEmail';
+  var CERTAINTY_STANDARD = 'to a reasonable degree of medical certainty';
+  var UNSET = function (what) { return '[' + what + ' is not configured - set it in Settings before this report is signed]'; };
+  function settingText(fn) {
+    return clean(lhSafe(function () { return isFn(window[fn]) ? String(window[fn]() || '') : ''; }) || '');
+  }
+  /* The OPEN workspace field outranks storage, so an email typed and not yet
+     committed still prints on the draft the doctor presses Generate on. */
+  function letterheadEmail() {
+    var field = byId('mlsP1LegalLetterheadEmail');
+    var typed = field ? clean(field.value) : '';
+    if (typed) return typed;
+    return clean(lhSafe(function () {
+      if (!isFn(window.uns)) return '';
+      return localStorage.getItem(window.uns(LETTERHEAD_EMAIL_KEY)) || '';
+    }) || '');
+  }
+  function saveLetterheadEmail(value) {
+    return lhSafe(function () {
+      if (!isFn(window.uns)) return false;
+      /* The namespace guard refuses writes while the account is unresolved;
+         a refusal must be reported, never swallowed. */
+      return localStorage.setItem(window.uns(LETTERHEAD_EMAIL_KEY), clean(value)) !== false;
+    }) === true;
+  }
+  function letterhead(emailOverride) {
+    return {
+      emailOverridden: emailOverride != null,
+      practice: settingText('getPracticeName'),
+      provider: settingText('getProviderName'),
+      credentials: settingText('getProviderCred'),
+      npi: settingText('getNpi'),
+      address: settingText('getClinicAddress'),
+      phone: settingText('getClinicPhone'),
+      email: emailOverride != null ? clean(emailOverride) : letterheadEmail()
+    };
+  }
+  function signatureName(lh) {
+    if (!lh.provider) return UNSET('The evaluating provider name');
+    return lh.credentials ? (lh.provider + ', ' + lh.credentials) : lh.provider;
+  }
+  /* The block printed at the top of the report, the .txt download and print. */
+  function letterheadBlock(emailOverride) {
+    var lh = letterhead(emailOverride), lines = [];
+    lines.push(lh.practice || UNSET('The practice name'));
+    lines.push(signatureName(lh));
+    if (lh.npi) lines.push('NPI ' + lh.npi);
+    lines.push(lh.address || UNSET('The practice address'));
+    var contact = [];
+    if (lh.phone) contact.push('Tel ' + lh.phone);
+    if (lh.email) contact.push(lh.email);
+    lines.push(contact.length ? contact.join('  ·  ') : UNSET('A practice phone or email'));
+    lines.push('---------------------------------------------------------------');
+    return lines.join('\n');
+  }
+  /* Deterministic, never AI-written: a closing attestation must say exactly
+     what it says. It states the certainty standard ONCE for the whole report,
+     names what the opinions rest on, says they may change on new records, and
+     leaves a signature line the clinician has to sign. */
+  function attestationBlock() {
+    var lh = letterhead();
+    return 'XV. ATTESTATION\n' +
+      'The opinions in this report are held ' + CERTAINTY_STANDARD + ' (more likely than not), and rest solely ' +
+      'on the records reviewed and the examination documented above. They are subject to revision if additional ' +
+      'records, imaging, or examination findings are provided. This is an UNSIGNED DRAFT prepared for clinician ' +
+      'review: nothing in it is a medical-legal opinion until the evaluating provider has verified every statement ' +
+      'and signed below.\n\n' +
+      'Signature: __________________________________________    Date: ______________\n' +
+      signatureName(lh) + '\n' +
+      (lh.practice || UNSET('The practice name'));
+  }
+  /* ===== end p1-legal-letterhead-1.0.0 ===== */
+
   var SECTIONS = [
     ['I. PATIENT INTRODUCTION', 'Identify the patient and evaluation context using documented facts only.'],
     ['II. DATE OF INJURY AND MECHANISM', 'State the documented onset/injury date and mechanism; identify conflicts.'],
@@ -523,7 +613,17 @@
     ['X. CAUSATION ANALYSIS', 'Analyze causation only to the extent supported; mark undeterminable issues.'],
     ['XI. MEDICAL NECESSITY OF CARE', 'Discuss documented care without inventing utilization facts.'],
     ['XII. FUTURE TREATMENT', 'Distinguish documented recommendations from bracketed draft placeholders.'],
-    ['XIII. SUMMARY AND CONCLUSION', 'Summarize the record and clearly label limits of the available evidence.']
+    ['XIII. SUMMARY AND CONCLUSION', 'Summarize the record and clearly label limits of the available evidence.'],
+    /* p1-legal-letterhead-1.0.0: the standard IME opinions section. Every
+       opinion must be STATED to the certainty standard and must carry its own
+       one-line basis, so a reader can see what each opinion rests on. An
+       opinion the record cannot support must be declared undeterminable
+       rather than softened into a hedge that still reads as an opinion. */
+    ['XIV. OPINIONS', 'State each opinion as a separate numbered item, each one worded "' + CERTAINTY_STANDARD +
+      '" (or "to a reasonable degree of medical probability"), immediately followed by a single-line "Basis:" naming the ' +
+      'documented records, dates, studies or findings that opinion rests on. Offer an opinion ONLY where the supplied ' +
+      'record supports one; where it does not, write the item as "Undeterminable on the record reviewed" with the same ' +
+      'one-line basis explaining what is missing. Never state a certainty for a fact that is bracketed or undocumented.']
   ];
   function draftSystem(header, instruction) {
     return 'Draft only ONE section of a physician-reviewed medical-legal / IME workspace. ' +
@@ -598,7 +698,10 @@
     var binding = state.bound, contextReceipt = draftContext(), context = contextReceipt.text;
     var run = { id: ++state.runSeq, session: state.session, binding: binding,
       controller: makeAbortController(), callControllers: [], wholeTimer: null };
-    var output = ['MEDICAL-LEGAL / IME WORKSPACE DRAFT', 'Patient: ' + (binding.name || '[not documented]'),
+    /* p1-legal-letterhead-1.0.0: the practice letterhead is the FIRST thing on
+       the report, before the draft banner, exactly as it would be on paper. */
+    var output = [letterheadBlock(),
+      'MEDICAL-LEGAL / IME WORKSPACE DRAFT', 'Patient: ' + (binding.name || '[not documented]'),
       'Date: ' + new Date().toLocaleDateString(), 'UNSIGNED DRAFT - verify every statement before use'];
     if (contextReceipt.truncated) output.push('IMPORTANT SOURCE-LIMIT NOTICE: Only the first ' + contextReceipt.includedChars.toLocaleString() +
       ' of ' + contextReceipt.originalChars.toLocaleString() + ' compiled context characters were supplied to AI. Verify every section against the full chronology and every original local record; later records may be absent from this draft.');
@@ -623,11 +726,15 @@
     });
     return chain.then(function () {
       if (!runOwned(run)) throw abortError('stale-run', 'Draft run is no longer current.');
+      /* p1-legal-letterhead-1.0.0: the attestation is written here, not by the
+         model - a closing certainty statement and a signature line must say
+         exactly what they say, every time. */
+      output.push(attestationBlock());
       state.draft = output.join('\n\n');
       var box = byId('mlsP1LegalDraft');
       if (box) { box.value = state.draft; box.hidden = false; }
       enableExports(true); finishOwnedRun(run);
-      setStatus('Draft ready: 13 of 13 sections.' + (contextReceipt.truncated ?
+      setStatus('Draft ready: ' + SECTIONS.length + ' of ' + SECTIONS.length + ' sections.' + (contextReceipt.truncated ?
         ' SOURCE-LIMIT WARNING: the compiled context exceeded the preview limit, so later records may be absent. Verify against the full chronology and every original local record.' : '') +
         ' It remains unsigned and local until you explicitly copy, download, or print it.', contextReceipt.truncated);
       toast('1p Legal / IME draft ready for clinician review.', 'ok');
@@ -705,12 +812,12 @@
   }
   function shellHtml(binding) {
     return '<div class="p1l-shell">' +
-      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>Exact active chart, local files, and a 13-section clinician-review draft. No signing, delivery, chart filing, Athena writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
+      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>Exact active chart, local files, and a ' + SECTIONS.length + '-section clinician-review draft on your practice letterhead. No signing, delivery, chart filing, Athena writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
       '<div id="mlsP1LegalBanner" class="p1l-bind">Bound to ' + esc(binding.name || '[name unavailable]') + ' · DOB ' + esc(binding.dob || '[not documented]') + (binding.mrn ? ' · MRN ' + esc(binding.mrn) : '') + '</div>' +
       '<div class="p1l-grid">' +
       '<section class="p1l-card wide"><h2>Read-only categorized chronology</h2><p>Compiled from a frozen snapshot of the patient active when this workspace opened. Provider filters affect preview/export only.</p><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalCompile">Compile history</button><button type="button" id="mlsP1LegalChronCopy" disabled>Copy chronology</button><button type="button" id="mlsP1LegalChronDownload" disabled>Download .txt</button><button type="button" id="mlsP1LegalChronPrint" disabled>Print</button></div><div id="mlsP1LegalProviders" class="p1l-actions" aria-label="Filter chronology by provider"></div><div id="mlsP1LegalChronology"></div></section>' +
       '<section class="p1l-card"><h2>Local records</h2><p id="mlsP1LegalFileHelp">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p><button type="button" class="p1l-drop" id="mlsP1LegalDrop" aria-describedby="mlsP1LegalFileHelp">Choose or drop local files</button><input id="mlsP1LegalFile" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.html,text/*" hidden><div id="mlsP1LegalSources" aria-live="polite"></div></section>' +
-      '<section class="p1l-card"><h2>Draft inputs</h2><label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label><label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate 13-section draft</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div><div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div><div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div></section>' +
+      '<section class="p1l-card"><h2>Draft inputs</h2><label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label><label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label><fieldset id="mlsP1LegalLetterhead" style="margin-top:12px;border:1px solid #d7ddd8;border-radius:10px;padding:10px 12px"><legend style="font-weight:750;font-size:13px;padding:0 4px">Letterhead</legend><p style="margin:2px 0 8px">Printed at the top of the report and above the signature line. Practice name, provider name, credentials, NPI, address and phone come from Settings; change them there.</p><pre id="mlsP1LegalLetterheadPreview" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#fafbf8;border:1px solid #e4e8e4;border-radius:8px;padding:8px;margin:0 0 8px"></pre><label>Contact email for the letterhead <input id="mlsP1LegalLetterheadEmail" type="email" autocomplete="off" placeholder="Optional; saved for this account on this device"></label></fieldset><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate ' + SECTIONS.length + '-section draft</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div><div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div><div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div></section>' +
       '<section class="p1l-card wide"><h2 id="mlsP1LegalDraftLabel">Unsigned clinician-review draft</h2><div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div><textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea></section>' +
       '</div></div>';
   }
@@ -812,7 +919,27 @@
     input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
     drop.addEventListener('dragover', function (event) { event.preventDefault(); });
     drop.addEventListener('drop', function (event) { event.preventDefault(); if (event.dataTransfer) addFiles(event.dataTransfer.files); });
+    /* p1-legal-letterhead-1.0.0: show what will print, and take the one field
+       Settings has no home for. A refused save is SAID, never swallowed. */
+    var lhEmail = byId('mlsP1LegalLetterheadEmail');
+    if (lhEmail) {
+      lhEmail.value = letterheadEmail();
+      lhEmail.addEventListener('input', function () { renderLetterheadPreview(); });
+      lhEmail.addEventListener('change', function () {
+        if (saveLetterheadEmail(lhEmail.value)) renderLetterheadPreview();
+        else setStatus('The letterhead email could not be saved for this account. It will still print on this draft.', true);
+      });
+    }
+    renderLetterheadPreview();
     updateControls();
+  }
+  function renderLetterheadPreview() {
+    var node = byId('mlsP1LegalLetterheadPreview');
+    if (!node) return false;
+    /* the block already prefers the live field, so this previews exactly
+       what Generate will print */
+    node.textContent = letterheadBlock();
+    return true;
   }
   function dialogFocusable(root) {
     if (!root || !isFn(root.querySelectorAll)) return [];
@@ -899,6 +1026,13 @@
     cancel: function () { return apiCurrent() ? cancelGeneration() : false; },
     addFiles: function (files) { return apiCurrent() ? addFiles(files) : 0; },
     sections: SECTIONS.slice(),
+    /* p1-legal-letterhead-1.0.0: what the report will print at the top and
+       above the signature line, and the certainty standard it states. Read
+       only - no patient data, no PHI. */
+    letterhead: function () { return apiCurrent() ? letterhead() : null; },
+    letterheadBlock: function () { return apiCurrent() ? letterheadBlock() : ''; },
+    attestationBlock: function () { return apiCurrent() ? attestationBlock() : ''; },
+    certaintyStandard: CERTAINTY_STANDARD,
     state: function () { return { open: apiCurrent() && state.open, patientBound: apiCurrent() && !!state.bound, generating: apiCurrent() && state.generating,
       sourceCount: state.sources.length, pendingFileCount: pendingImportCount(), activeReaderCount: state.importActive,
       sectionCount: SECTIONS.length }; },

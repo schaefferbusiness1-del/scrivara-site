@@ -51,15 +51,31 @@ const tests = [
      pull's own publish/withdraw logic, and proves three of the six
      properties fail against deliberately broken scratch copies. */
   'p1-athena-lease-loan-runtime.test.js',
+  /* p1-todaynote-deferred-retry-1.0.0: the other half of the same report. The
+     loan removed the CAUSE of "pull-in-flight"; the retry fuse only knew
+     timeout-class reasons, so all six refusals were attempt-once and terminal.
+     pull-in-flight is now a deferred class with exactly one re-run after the
+     pull releases the lease, bounded and setTimeout-only. */
+  '1p-todaynote-deferred-retry-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',
   '1p-study-provenance-runtime.test.js',
   '1p-provider-roster-session-loader-runtime.test.js',
+  /* p1-roster-settle-preflight-1.0.0 (owner report 2026-08-16): the day-pull
+     pre-flight sampled the roster receipt in the same turn its schedule read
+     returned, so a roster that completed 300 ms later was published as
+     rosterComplete:false and carried into providerReceipt.rosterVerified. */
+  '1p-roster-settle-preflight-runtime.test.js',
   '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
   '1p-legal-ime-workspace-runtime.test.js',
   '1p-legal-loader-runtime.test.js',
+  /* legal-tools-1.0.0: the Legal / IME workspace had exactly one route (the
+     #ptLawyerBtn door inside Patients). The dock's Tools menu is built by the
+     SHARED calm shell from a hardcoded spec list that cannot declare this row,
+     so the /1p shells overlay it into the rendered menu. */
+  '1p-legal-tools-row-runtime.test.js',
   '1p-marketing-identity-runtime.test.js',
   '1p-marketing-loader-runtime.test.js',
   '1p-marketing-workspace-runtime.test.js',
@@ -100,6 +116,11 @@ const tests = [
   'p1-appointment-census-display-authority.test.js',
   '1p-pull-storage-runtime.test.js',
   '1p-quota-notification-runtime.test.js',
+  /* uns() tested the session OBJECT, not the email, so an unresolved email
+     minted the literal 'sf_u::undefined::' namespace and one account's notes
+     surfaced in another. Pins the mint contract, the write refusal while the
+     email is unresolved, and the read-only stranded-key tracer. */
+  '1p-uns-namespace-guard-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
