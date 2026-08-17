@@ -108,6 +108,10 @@ function makeHarness(options) {
     _calMode: 'day', _calRefDate: DAY, _calSelDay: '', _calAppts: [], _calProviders: [], _calMe: null,
     backendMode: () => false, bkToken: () => '', bkBase: () => 'https://local.invalid',
     uns: key => 'p1-defer-test::' + key,
+    /* fd-1.0.0 (2026-08-17): the day-note leg now skips days AFTER the
+       account's today, so this fixture must state that DAY is today - it is
+       testing the deferral lane, not the future-day lane. */
+    _acctTodayKey: () => DAY,
     _normDate: v => String(v || '').slice(0, 10),
     _normTime: v => String(v || ''),
     getPatients: () => patients,

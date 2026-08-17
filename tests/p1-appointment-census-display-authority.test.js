@@ -495,17 +495,58 @@ for (const mode of ['corrupt', 'nested-corrupt', 'throw']) {
     calendarReceipt: { complete: true, attempted: COUNT },
     resolvedAppointments: mappings
   });
-  assert.strictEqual(refused.published, false,
-    `fresh ${mode} provider-authority publisher overwrote unreadable state`);
-  assert.strictEqual(refused.reason,
-    mode === 'throw' ? 'authority-store-read-failed' : 'authority-store-invalid');
-  assert.strictEqual(fresh.__authorityFaultState.authorityWriteAttempts, 0,
-    `fresh ${mode} provider-authority publisher attempted a destructive rewrite`);
-  assert.strictEqual(
-    fresh.__authorityFaultState.backing.get(authoritativeKey),
-    fresh.__authorityFaultState.faultRaw,
-    `fresh ${mode} provider-authority publisher changed corrupt bytes`
-  );
+  /* ===== p1-authority-repair-1.0.0 (2026-08-17) - a DELIBERATE change to
+     this contract, for the 'corrupt' mode only.
+
+     What this loop proved, and still proves for 'nested-corrupt' and 'throw':
+     a publisher may never overwrite bytes it could not validate. That is the
+     right rule when the failure is per-DAY (nested-corrupt: the day is
+     quarantined, every other date still publishes and the blob self-heals) or
+     when the read itself faulted (throw: we know nothing about the bytes).
+
+     What it ALSO froze, wrongly: the WHOLE-STORE refusal. 'corrupt' mode is
+     {"v":1,"days":"a string"} - days is not an object, so
+     sanitizeAuthoritativeStore returns null outright, loadAuthoritativeStore
+     reports authority-store-invalid, and because writeAuthoritativeStore
+     sanitises BEFORE writing there was NO removeItem for this key anywhere in
+     the file. The bytes could therefore never be replaced by anything: one
+     alien blob wedged every future pull on every date, PERMANENTLY. That is
+     the owner's live "snapshotPublished:false / authority-store-invalid",
+     and a fail-closed rule that can never re-open is not fail-closed, it is
+     failed.
+
+     The repair is the smallest thing that closes it and it destroys nothing
+     attributable: it first tries to SALVAGE (re-shape to the only legal top
+     level and re-run the same per-day validator, keeping every day that
+     validates), and only resets when NO day can be attributed to anything -
+     which is exactly this fixture, where days is a bare string. The
+     per-day and read-failure refusals below are untouched. */
+  if (mode === 'corrupt') {
+    assert.strictEqual(refused.published, true,
+      'a top-level-alien authority blob still wedges every future publish forever');
+    assert(refused.authorityRepair && refused.authorityRepair.ok === true,
+      'the publish did not record the bounded repair it performed');
+    assert.strictEqual(refused.authorityRepair.action, 'reset-unreadable',
+      'the repair did something other than the bounded reset on unattributable bytes');
+    assert.strictEqual(refused.authorityRepair.salvagedDays, 0,
+      'the repair claimed to salvage days from a store whose days is a bare string');
+    assert.notStrictEqual(
+      fresh.__authorityFaultState.backing.get(authoritativeKey),
+      fresh.__authorityFaultState.faultRaw,
+      'the corrupt bytes survived a successful repair');
+  } else {
+    assert.strictEqual(refused.published, false,
+      `fresh ${mode} provider-authority publisher overwrote unreadable state`);
+    assert.strictEqual(refused.reason,
+      mode === 'throw' ? 'authority-store-read-failed' : 'authority-store-invalid');
+    assert.strictEqual(fresh.__authorityFaultState.authorityWriteAttempts, 0,
+      `fresh ${mode} provider-authority publisher attempted a destructive rewrite`);
+    assert.strictEqual(
+      fresh.__authorityFaultState.backing.get(authoritativeKey),
+      fresh.__authorityFaultState.faultRaw,
+      `fresh ${mode} provider-authority publisher changed corrupt bytes`
+    );
+  }
 }
 
 const legacyStart = p1ConnectSource.indexOf('(function () {', legacyMarker);
@@ -1023,15 +1064,18 @@ assert.strictEqual(badStatusAfterHeal.reason, 'no-snapshot',
   'the healed store did not treat the retired bad day as an ordinary unowned day');
 
 /* Alien whole-blob shapes (days is a string, not an object -- 'corrupt'
-   mode) are already fully proven refused-outright by the existing loop at
-   ~line 458: it asserts available/exact/false, storeUnavailable/true,
-   scope 'authority-unavailable', reason 'authority-store-invalid', AND
-   (further down, ~line 489) that _publishAuthoritativeSnapshot() also
-   refuses to write to it with authorityWriteAttempts staying 0 and the
-   corrupt bytes left untouched. That is the same whole-blob structural
-   guard this fix leaves unchanged (v !== 1 / days not an object / extra
-   top-level keys / > 90 days still return null outright). Not duplicated
-   here. */
+   mode) are proven by the loop at ~line 458: READS still refuse outright
+   (available/exact false, storeUnavailable true, scope
+   'authority-unavailable', reason 'authority-store-invalid'), and the
+   structural guard itself is unchanged (v !== 1 / days not an object /
+   extra top-level keys / > 90 days still return null).
+   p1-authority-repair-1.0.0 (2026-08-17) changed exactly one thing there:
+   the PUBLISH path now runs a bounded repair first, because without it that
+   state was permanent - there is no removeItem for this key and
+   writeAuthoritativeStore sanitises before writing, so an alien blob wedged
+   every future pull on every date forever. Salvage keeps every day that
+   validates on its own; the reset fires only when no day can be attributed
+   to anything. See the mode === 'corrupt' branch above. */
 
 console.log('PASS p1 authority-quarantine: one malformed day is dropped on its own, clean days on other dates stay exact, and the next publish to any other date self-heals the blob');
 
