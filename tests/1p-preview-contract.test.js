@@ -53,7 +53,12 @@ const P1_CONFIG_RELEASE_SUBS = [
    ends every phase), fdx-1.0.0 (find diagnostics), scv-1.0.0 (store-census bar), ed-1.0.0 in the
    fork, rsk-1.0.0 (skip verified-today), cost breakdown, p1-authority-repair-1.0.0, cvc-1.0.0 (one
    continuous pull), U0 regex repairs. Production and extension baselines untouched. */
-const P1_BASE_COMMIT = '9bb89357e50abff8cb0a5661fb4bb2b4fc599a52';
+/* Advanced by the 1p train of 2026-08-17 (Fable straighten-up, batch 4 — the UI lane): msl-1.0.0 ring on
+   every screen + mode chip + prose folding, msl-today regex fix, msl-fit-1.1.0, dock-1p-1.0.0 (side rail
+   default, never covers content), opnote-open-1.0.0 (Prep Op Notes opens in 15 ms), _opContextDay ok()
+   regex fix (no more wrong-day auto-draft), harness account for the uns guard. Production and
+   extension baselines untouched. */
+const P1_BASE_COMMIT = 'a126c1edcc199bf0e2985f41b40def1c6bd5cdd6';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
