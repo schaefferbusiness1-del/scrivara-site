@@ -1201,6 +1201,25 @@ async function runtime() {
             `the ${side} taskbar covers real content at ${pct}% scroll (${row.hits}/${row.n} sample points) — including its own affordance, which must sit in the reserved band`);
         }
       }
+      /* (e) AND THE ONE FULL-SCREEN SCREEN THE RESERVATION MISSED.
+         #opPrepModal.opr-room is width:100vw / height:100dvh and its .modal
+         ignores #appWrap, so the padding that protects every ordinary view
+         protected the op-note room not at all. MEASURED before the fix: 25/25
+         of the dock's own sample points had room CONTENT underneath with a
+         left rail chosen. The probe targets the room's content nodes, not
+         .modal — a correctly reserved padding band is not an obstruction, and
+         probing the padded element itself would score one as a hit. */
+      for (const side of ['left', 'right', 'top', 'bottom']) {
+        await page.evaluate((s) => window.__mlsDock1p.side(s), side);
+        await page.waitForTimeout(600);
+        await page.evaluate(() => window.__uiContract.openRoom());
+        await page.waitForTimeout(800);
+        const room = await page.evaluate(() => window.__mlsDock1p.roomObstruction());
+        ok(room && room.n > 0, `the room obstruction probe sampled nothing for ${side}: ${JSON.stringify(room)}`);
+        eq(room.hits, 0,
+          `the ${side} taskbar covers the op-note room's content (${room.hits}/${room.n} sample points) — the room is the one screen #appWrap's reserved padding does not reach`);
+        await page.evaluate(() => { document.querySelectorAll('.modal-bg.show').forEach((x) => x.classList.remove('show')); });
+      }
       await page.evaluate(() => { window.scrollTo(0, 0); window.__mlsDock1p.side('left'); });
       await page.waitForTimeout(500);
     }

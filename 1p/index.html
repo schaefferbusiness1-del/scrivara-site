@@ -39999,7 +39999,35 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   border:1px solid var(--line); background:var(--soft); color:var(--ink);
 }
 #mlsDockNudge button.primary{ background:var(--brand,#2E6A4B); border-color:var(--brand,#2E6A4B); color:#fff; }
+/* ---- THE ROOM THE RESERVATION MISSED --------------------------------
+   MEASURED 2026-08-17, 25-point elementsFromPoint over the dock's own rect
+   with a side rail chosen and the op-note room open: 25/25 of those points
+   had room content underneath. #opPrepModal.opr-room is `width:100vw;
+   height:100dvh` and its `.modal` ignores #appWrap entirely — so the padding
+   the shell reserves on #appWrap for the dock protects every ordinary view
+   and protects the ONE full-screen screen not at all. The shell already
+   reserves the bottom case (`--opr-dock-clear` on #oprEditor/#oprPanelTpls);
+   left, right and top had nothing.
+
+   The clearance is measured from the dock rather than hard-coded, because the
+   dock's width is its own business and a constant here would be wrong the
+   first time it changed. place() writes the two variables; the fallbacks are
+   the shell's own 128px reservation, so the rule is still right if the
+   measurement has not run yet. Scoped to a chosen SIDE, and the phone
+   breakpoint forces `bottom`, so a narrow screen never sees these. */
+html body[data-mls-dock="left"] #opPrepModal.opr-room > .modal{
+  padding-left:var(--mls-room-clear-l,132px);
+}
+html body[data-mls-dock="right"] #opPrepModal.opr-room > .modal{
+  padding-right:var(--mls-room-clear-r,132px);
+}
+html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
+  padding-top:var(--mls-room-clear-t,116px);
+}
 @media (max-width:760px){
+  html body[data-mls-dock] #opPrepModal.opr-room > .modal{
+    padding-left:0; padding-right:0; padding-top:0;
+  }
   #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge{ display:none !important; }
 }
 @media print{ #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge{ display:none !important; } }
@@ -40312,6 +40340,22 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     nub.style.left = Math.round(left) + 'px';
     nub.style.top = Math.round(top) + 'px';
 
+    /* THE ROOM'S CLEARANCE, measured from the dock AND from this affordance
+       (the nub sits inside the dock's band, so the wider of the two is what
+       the room must clear). Written only on change: a no-op custom-property
+       write still re-commits the document's styles. */
+    var root = document.documentElement, want;
+    if (side === 'left') {
+      want = Math.ceil(Math.max(r.right, left + W) + 12) + 'px';
+      if (root.style.getPropertyValue('--mls-room-clear-l') !== want) root.style.setProperty('--mls-room-clear-l', want);
+    } else if (side === 'right') {
+      want = Math.ceil(vw - Math.min(r.left, left) + 12) + 'px';
+      if (root.style.getPropertyValue('--mls-room-clear-r') !== want) root.style.setProperty('--mls-room-clear-r', want);
+    } else if (side === 'top') {
+      want = Math.ceil(Math.max(r.bottom, top + H) + 12) + 'px';
+      if (root.style.getPropertyValue('--mls-room-clear-t') !== want) root.style.setProperty('--mls-room-clear-t', want);
+    }
+
     var menu = el('mlsDockNubMenu');
     if (menu && !menu.hasAttribute('hidden')) {
       var mr;
@@ -40392,6 +40436,47 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      The diagnostic the 1.0.0 table was built from, made public so a test can
      re-measure rather than trust the comment. Real obstruction
      (elementsFromPoint), not bounding-box overlap. */
+  /* THE OP-NOTE ROOM NEEDS ITS OWN TARGET, and the reason is an instrument
+     trap: the room's clearance is reserved as PADDING on nodes inside the
+     dialog, so probing `.modal` counts a correctly-reserved padding band as a
+     hit (elementsFromPoint returns the padded element, not its content). The
+     honest question is whether the dock covers the room's real CONTENT, so
+     these are the targets. */
+  var ROOM_CONTENT = '#opPrepList, #mlsOpDayGrid, #oprDayRail, .opr-top, #oprEditor > .row';
+  function roomObstruction() {
+    var dock = el('mlsDock');
+    var modal = el('opPrepModal');
+    if (!dock || !modal || !modal.classList.contains('show')) return { n: 0, hits: 0, why: 'room not open' };
+    var hosts = [];
+    try { hosts = Array.prototype.slice.call(modal.querySelectorAll(ROOM_CONTENT)); } catch (e) { hosts = []; }
+    if (!hosts.length) return { n: 0, hits: 0, why: 'no room content' };
+    var r;
+    try { r = dock.getBoundingClientRect(); } catch (e2) { return { n: 0, hits: 0, why: 'no rect' }; }
+    if (r.width <= 0 || r.height <= 0) return { n: 0, hits: 0, why: 'dock not shown' };
+    var hits = 0, n = 0, ix, iy, k, h;
+    for (ix = 0; ix < 5; ix++) {
+      for (iy = 0; iy < 5; iy++) {
+        var x = r.left + (r.width * (ix + 0.5)) / 5;
+        var y = r.top + (r.height * (iy + 0.5)) / 5;
+        n++;
+        var stack = [];
+        try { stack = document.elementsFromPoint(x, y) || []; } catch (e3) { stack = []; }
+        var hit = false;
+        for (k = 0; k < stack.length && !hit; k++) {
+          var node = stack[k];
+          if (dock.contains(node)) continue;
+          if (node.id === 'mlsDockNub' || node.id === 'mlsDockNubMenu' || node.id === 'mlsDockNudge') continue;
+          for (h = 0; h < hosts.length; h++) {
+            /* the host ITSELF is the padded box in the bottom case, so only a
+               node strictly INSIDE it counts as covered content */
+            if (hosts[h] !== node && hosts[h].contains(node)) { hit = true; break; }
+          }
+        }
+        if (hit) hits++;
+      }
+    }
+    return { n: n, hits: hits, side: currentSide() };
+  }
   function obstruction(sel) {
     var dock = el('mlsDock');
     var host = null;
@@ -40450,6 +40535,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     side: function (next) { return (next === undefined || next === null) ? currentSide() : setSide(next); },
     autoHide: function (next) { return (next === undefined || next === null) ? autoHideOn() : setAutoHide(next); },
     obstruction: obstruction,
+    roomObstruction: roomObstruction,
     /* The honest answer to "why is the dock where it is" - for diagnostics. */
     status: function () {
       return { side: currentSide(), autoHide: autoHideOn(), seeded: readAny(SEEDED) === '1',
@@ -40461,6 +40547,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     revert: function () {
       ['dockChipRows', 'mlsDockNub', 'mlsDockNubMenu', 'mlsDockNudge'].forEach(function (id) {
         var n = el(id); if (n && n.parentNode) n.parentNode.removeChild(n);
+      });
+      ['--mls-room-clear-l', '--mls-room-clear-r', '--mls-room-clear-t'].forEach(function (v) {
+        try { document.documentElement.style.removeProperty(v); } catch (e) {}
       });
       return true;
     }
