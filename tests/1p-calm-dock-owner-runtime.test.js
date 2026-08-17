@@ -32,6 +32,26 @@ function withinViewport(rect, viewport, label) {
   ok(rect.left >= -1 && rect.top >= -1 && rect.right <= viewport.width + 1 && rect.bottom <= viewport.height + 1,
     `${label} escaped ${viewport.width}x${viewport.height}: ${JSON.stringify(rect)}`);
 }
+/* defect-4: the four widgets' own base (untransformed) fixed position, exactly
+   as declared in the fixture's <style> (mirroring 1pScribeFlow.html). Used to
+   compute the offset the guard's CSS is expected to add, so the assertion
+   proves the mechanism fired rather than relying on incidental overlap at
+   whatever size the fixture happens to be. */
+const WIDGET_BASE = {
+  patientFace: { left: 18, bottom: 18, width: 50, height: 50 },
+  backupBadge: { left: 16, bottom: 84, width: 140, height: 34 },
+  getPhoneCard: { right: 16, bottom: 16, width: 200, height: 80 },
+  fab: { right: 24, bottom: 96, width: 54, height: 54 }
+};
+function baseRect(name, viewport) {
+  const b = WIDGET_BASE[name];
+  const left = b.left != null ? b.left : viewport.width - b.right - b.width;
+  const top = viewport.height - b.bottom - b.height;
+  return { left, top, right: left + b.width, bottom: top + b.height };
+}
+function approx(actual, expected, tol, label) {
+  ok(Math.abs(actual - expected) <= tol, `${label}: expected ~${expected}, got ${actual}`);
+}
 
 ok(!/1p-feat_mls_classic_bridge/.test(connect), 'preview still references the retired Classic bridge');
 ok(/mls-p1-dock-ready/.test(guard) && /failed-render-timeout/.test(guard),
@@ -73,7 +93,10 @@ const calmAsset = String.raw`(function(){
     var saved=SIDES[sideValue]?sideValue:side();
     if(saved==='bottom')document.body.removeAttribute('data-mls-dock');else document.body.setAttribute('data-mls-dock',saved);
     if(!dock)return saved;
-    var actual=innerWidth<=640?'bottom':saved,w=Math.max(120,Math.min(520,innerWidth-16)),h=64;
+    /* Mirrors feat_mls_calm_shell.js's own unconditional-of-attribute
+       @media(max-width:760px) rule (not 640) -- the guard's narrowDock() must
+       agree with this exact threshold or defect-3's 641-760 band reopens. */
+    var actual=innerWidth<=760?'bottom':saved,w=Math.max(120,Math.min(520,innerWidth-16)),h=64;
     var base='position:fixed;display:flex;align-items:center;gap:4px;visibility:visible;opacity:1;box-sizing:border-box;z-index:920;padding:6px;';
     if(actual==='bottom')rectStyle(dock,base+'left:50%;right:auto;top:auto;bottom:18px;width:'+w+'px;height:'+h+'px;transform:translateX(-50%);flex-direction:row');
     else if(actual==='top')rectStyle(dock,base+'left:50%;right:auto;top:124px;bottom:auto;width:'+w+'px;height:'+h+'px;transform:translateX(-50%);flex-direction:row');
@@ -109,10 +132,19 @@ function html(params) {
     #appWrap{position:relative;margin-top:120px;min-height:650px;padding:28px;background:#fff}
     body[data-mls-dock="left"] #appWrap{padding-left:148px!important}body[data-mls-dock="right"] #appWrap{padding-right:148px!important}
     body[data-mls-dock="top"] #appWrap{padding-top:110px!important}
+    /* defect-2 fixture parity: production reserves this unconditionally once
+       .mls-calm is active (feat_mls_calm_shell.js line 221), regardless of side. */
+    body.mls-calm{padding-bottom:96px}
     #primaryAction{display:block;width:240px;height:64px}
     #mlsDock button{min-width:64px;height:44px}#mlsDockAskWrap{position:relative;width:92px;height:36px}
     #mlsDockAsk{width:92px;height:36px}#mlsAskResults{display:none;position:absolute;right:0;bottom:46px;width:250px;height:120px;background:#fff;border:1px solid #bbb}
     #mlsToolsMenu .grp{display:block}#mlsToolsMenu .r{min-height:44px;padding:8px}
+    /* defect-4 fixture parity: the four fixed corner widgets, at their real
+       production base position/z-index (see 1pScribeFlow.html). */
+    #_patientFace{position:fixed;left:18px;bottom:18px;z-index:9500;width:50px;height:50px;background:#2E6A4B}
+    #_backupBadge{position:fixed;left:16px;bottom:84px;z-index:9000;width:140px;height:34px;background:#fff7e6}
+    #mlsGetPhoneCard{position:fixed;right:16px;bottom:16px;z-index:99996;width:200px;height:80px;background:#F6FBF8}
+    #mlsFab{position:fixed;right:24px;bottom:96px;z-index:99980;width:54px;height:54px;background:#1F63C9}
   </style><script>
     ${p1 ? "window.__MLS_P1_PREVIEW={enabled:true,route:'/1p/'};" : ''}
     window.__MLS_AV='${mode}';window.__calmMode='${mode}';window.__acct='a';
@@ -120,9 +152,12 @@ function html(params) {
     window.uns=function(k){return 'account-'+window.__acct+':'+k;};
     try{localStorage.setItem('mlsCalmShell','0');localStorage.setItem('mls::qolDockSide','${device}');localStorage.setItem('account-a:qolDockSide','${side}');localStorage.setItem('account-a:p1DockPinnedV1','${pin}');}catch(e){}
   </script></head><body><header id="appHeader">Header</header><div id="mlsCtxBar">Patient context</div>
-  <nav id="mlsRdNav">Old left rail</nav><main id="appWrap"><section id="appScreen"><button id="primaryAction">Primary action</button>
-  <label for="qolDockSide">Navigation bar position</label><select id="qolDockSide" onchange="applyDockSidePreview(this.value)">
+  <nav id="mlsRdNav">Old left rail</nav>
+  <div id="_patientFace"></div><div id="_backupBadge"></div><div id="mlsGetPhoneCard"></div><button id="mlsFab" type="button"></button>
+  <main id="appWrap"><section id="appScreen"><button id="primaryAction">Primary action</button>
+  <label for="qolDockSide">Navigation bar</label><select id="qolDockSide" onchange="applyDockSidePreview(this.value)">
   <option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
+  <label for="qolDockAutoHide">Auto-hide</label><input type="checkbox" id="qolDockAutoHide" onchange="if(typeof applyDockAutoHidePreview==='function')applyDockAutoHidePreview(this.checked)">
   </section></main><script src="/guard.js"></script></body></html>`;
 }
 
@@ -181,7 +216,18 @@ async function snapshot(page) {
       dockVisibility: dock ? getComputedStyle(dock).visibility : 'absent',
       handleDisplay: handle ? getComputedStyle(handle).display : 'absent',
       dock: rect('mlsDock'), handle: rect('mlsP1DockHandle'), header: rect('appHeader'),
-      context: rect('mlsCtxBar'), primary: rect('primaryAction'), menu: rect('mlsToolsMenu'), results: rect('mlsAskResults')
+      context: rect('mlsCtxBar'), primary: rect('primaryAction'), menu: rect('mlsToolsMenu'), results: rect('mlsAskResults'),
+      /* defect-2 */
+      clearanceReleased: document.body.classList.contains('mls-p1-dock-clearance-released'),
+      wrapPaddingLeft: (() => { const w = document.getElementById('appWrap'); return w ? getComputedStyle(w).paddingLeft : null; })(),
+      wrapPaddingRight: (() => { const w = document.getElementById('appWrap'); return w ? getComputedStyle(w).paddingRight : null; })(),
+      bodyPaddingBottom: getComputedStyle(document.body).paddingBottom,
+      /* defect-4 */
+      patientFace: rect('_patientFace'), backupBadge: rect('_backupBadge'),
+      getPhoneCard: rect('mlsGetPhoneCard'), fab: rect('mlsFab'),
+      /* defect-1 */
+      autoHideChecked: (() => { const c = document.getElementById('qolDockAutoHide'); return c ? c.checked : null; })(),
+      autoHideGetter: (typeof window.mlsDockAutoHide === 'function') ? window.mlsDockAutoHide() : null
     };
   });
 }
@@ -236,6 +282,44 @@ function assertGeometry(result, side, viewport, label) {
       assertGeometry(result, side, opened.viewport, side);
       eq(opened.errors.length, 0, `${side}: page errors: ${opened.errors.join(' | ')}`);
 
+      /* defect-4: verify the offset MECHANISM fired (widget rect moved off its
+         own declared base by the expected amount), not just that this
+         fixture's incidental dimensions happen not to collide -- at this
+         viewport a vertical left/right rail never reaches these corners even
+         with no offset at all, so a plain noOverlap check here would pass
+         whether or not the fix exists. */
+      {
+        const vp = opened.viewport;
+        const base = { patientFace: baseRect('patientFace', vp), backupBadge: baseRect('backupBadge', vp),
+          getPhoneCard: baseRect('getPhoneCard', vp), fab: baseRect('fab', vp) };
+        if (side === 'bottom') {
+          ['patientFace', 'backupBadge', 'getPhoneCard', 'fab'].forEach((w) => {
+            approx(result[w].top, base[w].top - 96, 1.5, `${side}: ${w} top did not shift clear of the bottom dock`);
+          });
+        } else if (side === 'top') {
+          ['patientFace', 'backupBadge', 'getPhoneCard', 'fab'].forEach((w) => {
+            approx(result[w].top, base[w].top, 1.5, `${side}: ${w} moved even though the top dock never reaches these corners`);
+          });
+        } else if (side === 'left') {
+          approx(result.patientFace.left, base.patientFace.left + 140, 1.5, `${side}: patient face chip did not clear the left rail`);
+          approx(result.backupBadge.left, base.backupBadge.left + 140, 1.5, `${side}: backup badge did not clear the left rail`);
+          approx(result.getPhoneCard.left, base.getPhoneCard.left, 1.5, `${side}: phone card moved though the left rail cannot reach it`);
+          approx(result.fab.left, base.fab.left, 1.5, `${side}: FAB moved though the left rail cannot reach it`);
+        } else if (side === 'right') {
+          approx(result.getPhoneCard.left, base.getPhoneCard.left - 140, 1.5, `${side}: phone card did not clear the right rail`);
+          approx(result.fab.left, base.fab.left - 140, 1.5, `${side}: FAB did not clear the right rail`);
+          approx(result.patientFace.left, base.patientFace.left, 1.5, `${side}: patient face chip moved though the right rail cannot reach it`);
+          approx(result.backupBadge.left, base.backupBadge.left, 1.5, `${side}: backup badge moved though the right rail cannot reach it`);
+        }
+        /* Whatever the mechanism did, the end state must still be a real,
+           non-overlapping layout -- belt-and-suspenders over the precise
+           per-side deltas above. */
+        ok(noOverlap(result.dock, result.patientFace), `${side}: dock overlapped the patient face chip`);
+        ok(noOverlap(result.dock, result.backupBadge), `${side}: dock overlapped the backup retry badge`);
+        ok(noOverlap(result.dock, result.getPhoneCard), `${side}: dock overlapped the phone-app card`);
+        ok(noOverlap(result.dock, result.fab), `${side}: dock overlapped the quick-action FAB`);
+      }
+
       /* Tools and Ask must stay in the viewport for every orientation. */
       await opened.page.click('#mlsDock button[data-dest="tools"]');
       await opened.page.waitForSelector('#mlsToolsMenu #mlsP1DockMode');
@@ -269,17 +353,47 @@ function assertGeometry(result, side, viewport, label) {
       withinViewport(result.handle, opened.viewport, 'collapsed reveal handle');
       ok(noOverlap(result.handle, result.header) && noOverlap(result.handle, result.context) && noOverlap(result.handle, result.primary),
         'collapsed handle obstructs header, patient context, or primary action');
+      /* defect-2 trap (a): a mere collapse -- the moment the compact class
+         lands -- must NOT yet release the reserved clearance. Release is
+         debounced (650ms) precisely so a hover peek never reflows the page. */
+      eq(result.clearanceReleased, false, 'clearance released the instant the dock collapsed, before any settle debounce');
+      eq(result.wrapPaddingLeft, '148px', 'reserved clearance dropped before a genuine settled collapse');
 
       /* The reveal target intentionally disappears as pointerenter reveals the
          dock. Move a real pointer to its measured centre instead of asking
          Playwright's locator hover to keep that target visible afterward. */
       await opened.page.mouse.move(result.handle.left + result.handle.width / 2, result.handle.top + result.handle.height / 2);
       await opened.page.waitForFunction(() => !document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 1200 });
+      /* defect-2: restoring clearance on reveal is synchronous -- no debounce --
+         so this quick peek (well under the 650ms release debounce) never even
+         had clearance to restore, and the reserved padding never moved at all. */
+      result = await snapshot(opened.page);
+      eq(result.clearanceReleased, false, 'a transient peek released clearance it should never have had');
+      eq(result.wrapPaddingLeft, '148px', 'a transient peek disturbed the reserved clearance');
       await opened.page.hover('#primaryAction');
       await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 2200 });
+      /* Now let the collapse genuinely settle past the release debounce, still
+         untouched. This is the one deliberate reflow the doctor pays for. */
+      await opened.page.waitForTimeout(750);
+      result = await snapshot(opened.page);
+      eq(result.clearanceReleased, true, 'clearance was never released for a genuinely settled, untouched collapse');
+      eq(result.wrapPaddingLeft, '0px', 'reserved left clearance was not given back while the dock sat collapsed');
+      /* defect-2 trap (b): with clearance genuinely released, a reconcile pass
+         (any lifecycle event re-runs markReady()) must not read the missing
+         padding as broken geometry and fail back to the legacy rail. */
+      await opened.page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      await opened.page.waitForTimeout(150);
+      result = await snapshot(opened.page);
+      eq(result.rail, 'none', 'a reconcile pass while clearance was released fell back to the legacy rail');
+      eq(result.collapsed, true, 'a reconcile pass while clearance was released disturbed the collapsed state');
 
       await opened.page.focus('#mlsP1DockHandle');
       await opened.page.waitForFunction(() => !document.body.classList.contains('mls-p1-dock-collapsed'));
+      /* defect-2: restore is synchronous with reveal -- no waiting beyond the
+         collapsed-class removal above -- so clearance must already be back. */
+      result = await snapshot(opened.page);
+      eq(result.clearanceReleased, false, 'clearance stayed released after the dock was revealed');
+      eq(result.wrapPaddingLeft, '148px', 'reserved clearance was not restored when the dock was revealed');
       await opened.page.focus('#primaryAction');
       await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 2200 });
 
@@ -352,6 +466,65 @@ function assertGeometry(result, side, viewport, label) {
       assertGeometry(result, 'bottom', viewport, 'phone responsive fallback');
       ok(result.dock.width <= viewport.width + 1, 'phone dock overflows the viewport');
       eq(opened.errors.length, 0, 'phone layout raised page errors: ' + opened.errors.join(' | '));
+      await opened.context.close();
+    }
+
+    /* defect-3: the 641-760 band. Below 641 the old threshold already forced
+       bottom; at/above 760 the shell's own phone media query forces bottom on
+       its own. In between, a non-bottom saved preference used to make the
+       guard believe the dock was still a left/right/top rail while the shell
+       had already unconditionally pinned it to the bottom -- dockGeometry()
+       then measured a short, wide bar against a tall/narrow belief, failed its
+       own size check forever, and the dock never reached ready. */
+    for (const width of [700, 760]) {
+      const viewport = { width, height: 800 };
+      const opened = await open(browser, base, { side: 'left', device: 'top', pin: 0, viewport });
+      await ready(opened.page);
+      await opened.page.waitForTimeout(400);
+      const result = await snapshot(opened.page);
+      eq(result.state, 'ready', `${width}px: dock never reached ready in the 641-760 band`);
+      eq(result.rail, 'none', `${width}px: fell back to the legacy rail in the 641-760 band`);
+      eq(result.accountSide, 'left', `${width}px: band fallback overwrote the saved desktop side`);
+      eq(result.attr, 'left', `${width}px: band fallback discarded the saved side attribute`);
+      eq(result.collapsed, false, `${width}px: band width hid navigation behind auto-hide`);
+      assertGeometry(result, 'bottom', viewport, `${width}px band fallback`);
+      eq(opened.errors.length, 0, `${width}px: band layout raised page errors: ${opened.errors.join(' | ')}`);
+      await opened.context.close();
+    }
+
+    /* defect-1: one Settings control group governs auto-hide, and the
+       Tools-menu row survives as a shortcut into the exact same stored
+       preference/setter -- never a second, independently-tracked truth. */
+    {
+      const opened = await open(browser, base, { side: 'bottom', pin: 1 });
+      await ready(opened.page);
+      let result = await snapshot(opened.page);
+      eq(result.pin, '1', 'fixture did not start pinned open');
+      eq(result.autoHideChecked, false, 'Settings auto-hide checkbox did not reflect the pinned-open starting state');
+      eq(result.autoHideGetter, false, 'public mlsDockAutoHide() getter disagreed with the pinned-open starting state');
+
+      /* Settings entry point: check the box, exactly as saveSettings()/the
+         onchange handler does in 1pScribeFlow.html and 1p/index.html. */
+      await opened.page.check('#qolDockAutoHide');
+      await opened.page.waitForFunction(() => document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 3500 });
+      result = await snapshot(opened.page);
+      eq(result.pin, '0', 'Settings auto-hide checkbox did not persist the same p1DockPinnedV1 key the Tools-menu row uses');
+      eq(result.autoHideGetter, true, 'public getter disagreed with the Settings checkbox after it was checked');
+      eq(result.collapsed, true, 'checking Settings auto-hide did not actually engage auto-hide');
+
+      /* Tools-menu shortcut entry point: flip it back off. Reveal first --
+         the dock is collapsed and its own Tools button is what un-pins it. */
+      await opened.page.mouse.move(result.handle.left + result.handle.width / 2, result.handle.top + result.handle.height / 2);
+      await opened.page.waitForFunction(() => !document.body.classList.contains('mls-p1-dock-collapsed'), null, { timeout: 1200 });
+      await opened.page.click('#mlsDock button[data-dest="tools"]');
+      await opened.page.waitForSelector('#mlsP1DockMode');
+      await opened.page.click('#mlsP1DockMode');
+      await opened.page.mouse.click(opened.viewport.width - 4, opened.viewport.height / 2);
+      await opened.page.waitForSelector('#mlsToolsMenu', { state: 'detached' });
+      result = await snapshot(opened.page);
+      eq(result.pin, '1', 'Tools-menu shortcut did not write the same key the Settings checkbox reads');
+      eq(result.autoHideGetter, false, 'public getter disagreed with the Tools-menu shortcut after it re-pinned open');
+      eq(result.collapsed, false, 'Tools-menu shortcut did not actually cancel auto-hide');
       await opened.context.close();
     }
 

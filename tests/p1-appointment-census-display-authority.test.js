@@ -793,4 +793,246 @@ assert.deepStrictEqual(allOnlyClearedIds.sort(), allOnlyExact.map(row => row.id)
 assert(!allOnlyClearedIds.includes(allOnlyStale.id),
   'all-provider exact display resurrected a stale same-provider Athena row');
 
+/* =========================================================================
+ * p1-authority-quarantine-1.0.0 proof (owner report 2026-08-16)
+ *
+ * sanitizeAuthoritativeStore() used to be whole-store all-or-nothing: one
+ * malformed day anywhere in the up-to-45-day blob returned null from the
+ * WHOLE function, so loadAuthoritativeStore() failed closed for every date
+ * in the blob (not just the bad one), publishAuthoritativeSnapshot() refused
+ * every date with "authority-store-invalid", and because
+ * writeAuthoritativeStore() also sanitizes before writing, the bad bytes
+ * could never be overwritten -- a single poisoned day permanently wedged
+ * every future pull for the entire account.
+ *
+ * The fix quarantines the malformed day by itself: it is dropped from the
+ * returned store and named in report.dropped/loaded.quarantined, while every
+ * other day in the same blob stays usable, and the next successful publish
+ * to ANY other date rewrites the blob without the bad day (self-heal).
+ *
+ * The existing 'corrupt'/'nested-corrupt'/'throw' loop above (~line 458)
+ * already proves the malformed-day and alien-blob cases in isolation, each
+ * with nothing else in the store. It does NOT prove the coexistence case:
+ * a blob holding a malformed day ALONGSIDE genuinely clean days on other
+ * dates, which is exactly the shape of the bug report (a 45-day rolling
+ * blob where only one day goes bad). That coexistence is what this section
+ * proves, using bytes written by the real publisher for the good days
+ * rather than hand-authored JSON.
+ *
+ * It ALSO reuses that same loop's 'corrupt' mode (days is a string -- an
+ * alien blob shape) to confirm the whole-blob structural guard is untouched
+ * by this fix; see the note below instead of duplicating those assertions.
+ * ========================================================================= */
+
+const QDAY_GOOD_1 = '2026-09-01';
+const QDAY_GOOD_2 = '2026-09-02';
+const QDAY_BAD = '2026-09-03';
+const QDAY_HEAL = '2026-09-04';
+const quarantineAuthoritativeKey = 'p1-quarantine-proof-test::' + AUTHORITATIVE_SUFFIX;
+const quarantineBacking = new Map();
+let quarantineWriteAttempts = 0;
+
+const qGoodRow1 = { id: 'quarantine-good-1-appt', athena_appointment_id: 'athena-quarantine-good-1', name: 'Quarantine Good One', appt_date: QDAY_GOOD_1, start_at: `${QDAY_GOOD_1}T09:00:00.000Z`, provider: '' };
+const qGoodRow2 = { id: 'quarantine-good-2-appt', athena_appointment_id: 'athena-quarantine-good-2', name: 'Quarantine Good Two', appt_date: QDAY_GOOD_2, start_at: `${QDAY_GOOD_2}T09:00:00.000Z`, provider: '' };
+const qHealRow = { id: 'quarantine-heal-appt', athena_appointment_id: 'athena-quarantine-heal', name: 'Quarantine Heal', appt_date: QDAY_HEAL, start_at: `${QDAY_HEAL}T09:00:00.000Z`, provider: '' };
+
+function bootQuarantineImporter(backing) {
+  const freshBody = fakeNode('body');
+  const freshHead = fakeNode('head');
+  const freshDocumentElement = fakeNode('html');
+  const fresh = Object.assign({}, freshContextTemplate, {
+    uns: suffix => `p1-quarantine-proof-test::${suffix}`,
+    _calAppts: [qGoodRow1, qGoodRow2, qHealRow].map(row => Object.assign({}, row)),
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    localStorage: {
+      getItem(key) {
+        key = String(key);
+        return backing.has(key) ? backing.get(key) : null;
+      },
+      setItem(key, value) {
+        key = String(key);
+        if (key === quarantineAuthoritativeKey) quarantineWriteAttempts++;
+        backing.set(key, String(value));
+      },
+      removeItem(key) { backing.delete(String(key)); }
+    },
+    document: {
+      readyState: 'complete', body: freshBody, head: freshHead,
+      documentElement: freshDocumentElement,
+      createElement: fakeNode,
+      getElementById: () => null,
+      querySelector: () => null, querySelectorAll: () => [],
+      addEventListener() {}, removeEventListener() {}
+    },
+    _renderTodayPatients(rows) { fresh._heroTodayList = (rows || []).map(row => Object.assign({}, row)); }
+  });
+  fresh.window = fresh;
+  vm.runInNewContext(importerSource, fresh, {
+    filename: '1p-feat_mls_schedimport_exact.quarantine-proof.js', timeout: 3000
+  });
+  return fresh;
+}
+
+/* Publish the two "good" days through the REAL publisher so their stored
+   bytes are guaranteed to satisfy cleanSnapshot/cleanDay -- no hand-written
+   JSON to debug against the sanitizer's exact field/shape rules. */
+const quarantineWriterCtx = bootQuarantineImporter(quarantineBacking);
+const publishedGood1 = quarantineWriterCtx.__mlsSI._publishAuthoritativeSnapshot({
+  date: QDAY_GOOD_1, provider: 'all',
+  scheduleReceipt: { complete: true, authoritativeEmpty: false },
+  returnedAppointments: [qGoodRow1],
+  providerReceipt: { complete: true, reason: 'all-providers' },
+  calendarReceipt: { complete: true, attempted: 1 },
+  resolvedAppointments: [{ sourceIdentity: 'quarantine-good-1-source', backendAppointmentId: qGoodRow1.id }]
+});
+assert.strictEqual(publishedGood1.published, true,
+  'setup: could not publish the first genuinely clean quarantine-proof day through the real API');
+const publishedGood2 = quarantineWriterCtx.__mlsSI._publishAuthoritativeSnapshot({
+  date: QDAY_GOOD_2, provider: 'all',
+  scheduleReceipt: { complete: true, authoritativeEmpty: false },
+  returnedAppointments: [qGoodRow2],
+  providerReceipt: { complete: true, reason: 'all-providers' },
+  calendarReceipt: { complete: true, attempted: 1 },
+  resolvedAppointments: [{ sourceIdentity: 'quarantine-good-2-source', backendAppointmentId: qGoodRow2.id }]
+});
+assert.strictEqual(publishedGood2.published, true,
+  'setup: could not publish the second genuinely clean quarantine-proof day through the real API');
+
+/* Hand-inject exactly ONE malformed day into those real bytes, using the
+   same malformed shape as the file's existing nested-corrupt fixture
+   (backendIds is a string, not an array). This models the actual bug
+   report: bit-rot/a bad write touches one day inside an otherwise-healthy
+   rolling blob. Writing straight into the backing Map (not through
+   localStorage.setItem) is deliberate -- it bypasses the sanitizer, exactly
+   like the file's own pre-existing 'nested-corrupt' fixture does. */
+const wedgeParsed = JSON.parse(quarantineBacking.get(quarantineAuthoritativeKey));
+assert.deepStrictEqual(Object.keys(wedgeParsed.days).sort(), [QDAY_GOOD_1, QDAY_GOOD_2].sort(),
+  'setup: quarantine-proof store did not contain exactly the two published clean days before injecting the bad one');
+wedgeParsed.days[QDAY_BAD] = {
+  all: { v: 1, date: QDAY_BAD, mode: 'all', providerKey: '', backendIds: 'malformed-not-an-array', sourceCount: 1, updated: Date.now() },
+  providers: {}, active: { mode: 'all', key: '' }
+};
+quarantineBacking.set(quarantineAuthoritativeKey, JSON.stringify(wedgeParsed));
+
+/* Reload: boot a completely fresh importer VM against the wedged bytes,
+   exactly as a real browser tab reload would read them off disk. This
+   mirrors bootFreshImporterWithAuthorityRead's own "a hard reload has no
+   process-local hint" reasoning above. */
+quarantineWriteAttempts = 0;
+const quarantineReaderCtx = bootQuarantineImporter(quarantineBacking);
+
+/* --- 1. THE GOOD DAYS SURVIVE ------------------------------------------
+   Before the fix, sanitizeAuthoritativeStore() returned null for the WHOLE
+   blob the instant it hit QDAY_BAD, so loadAuthoritativeStore() failed
+   closed for QDAY_GOOD_1/QDAY_GOOD_2 too, even though neither was ever
+   malformed. That is the permanent wedge -- this is the assertion that
+   proves it is gone. */
+const good1Status = quarantineReaderCtx.__mlsSI.authoritativeStatusForDay(QDAY_GOOD_1, 'all');
+assert(!good1Status.storeUnavailable,
+  'OLD BUG: a malformed day elsewhere in the blob fail-closed a genuinely clean day (good day 1) too');
+assert.strictEqual(good1Status.available, true,
+  'OLD BUG: whole-store nulling reported a clean day unavailable solely because another day in the same blob was malformed');
+assert.strictEqual(good1Status.exact, true,
+  'quarantine-proof good day 1 did not come back exact once hydrated');
+const good1Rows = quarantineReaderCtx.__mlsSI.authoritativeRowsForDay(QDAY_GOOD_1, 'all');
+assert(good1Rows && good1Rows.length === 1 && good1Rows[0].id === qGoodRow1.id,
+  'quarantine-proof good day 1 did not return its exact row once the malformed day was quarantined');
+
+const good2Status = quarantineReaderCtx.__mlsSI.authoritativeStatusForDay(QDAY_GOOD_2, 'all');
+assert(!good2Status.storeUnavailable,
+  'OLD BUG: a malformed day elsewhere in the blob fail-closed a genuinely clean day (good day 2) too');
+assert.strictEqual(good2Status.available, true,
+  'OLD BUG: whole-store nulling reported a second clean day unavailable solely because another day in the same blob was malformed');
+
+/* --- 2. THE BAD DAY STILL FAILS CLOSED, WITH THE SAME REASON -----------
+   In isolation these particular checks also held under the old whole-store
+   behaviour (every day, including the bad one, read as
+   "authority-store-invalid"), so they alone do not distinguish old from
+   new. What they confirm is that quarantining the bad day did not loosen
+   ITS OWN fail-closed guarantee while fixing the good days above --
+   reverting the fix fails at assertion #1 first, before ever reaching this
+   block, in the same run. */
+const badStatus = quarantineReaderCtx.__mlsSI.authoritativeStatusForDay(QDAY_BAD, 'all');
+assert.strictEqual(badStatus.storeUnavailable, true,
+  'quarantined bad day stopped owning itself fail-closed');
+assert.strictEqual(badStatus.scope, 'authority-unavailable',
+  'quarantined bad day no longer reports the fail-closed authority-unavailable scope');
+assert.strictEqual(badStatus.reason, 'authority-store-invalid',
+  'quarantined bad day changed its fail-closed reason string');
+assert.strictEqual(quarantineReaderCtx.__mlsSI.authoritativeRowsForDay(QDAY_BAD, 'all'), null,
+  'quarantined bad day returned an unverified row slice instead of null');
+
+/* --- 3. PUBLISHING TO THE BAD DAY IS STILL REFUSED, AND WRITES NOTHING -
+   Same caveat as #2: in isolation this also held under the old behaviour.
+   It proves the quarantine mechanism did not turn into "publish over
+   whatever is there" for the one date it cannot verify. */
+const bytesBeforeBadPublish = quarantineBacking.get(quarantineAuthoritativeKey);
+quarantineWriteAttempts = 0;
+const badPublish = quarantineReaderCtx.__mlsSI._publishAuthoritativeSnapshot({
+  date: QDAY_BAD, provider: 'all',
+  scheduleReceipt: { complete: true, authoritativeEmpty: false },
+  returnedAppointments: [{ id: 'quarantine-bad-replacement', appt_date: QDAY_BAD, start_at: `${QDAY_BAD}T09:00:00.000Z`, provider: '' }],
+  providerReceipt: { complete: true, reason: 'all-providers' },
+  calendarReceipt: { complete: true, attempted: 1 },
+  resolvedAppointments: [{ sourceIdentity: 'quarantine-bad-replacement-source', backendAppointmentId: 'quarantine-bad-replacement' }]
+});
+assert.strictEqual(badPublish.published, false,
+  'publishing to the quarantined bad day was reported as published');
+assert.strictEqual(badPublish.reason, 'authority-store-invalid',
+  'publishing to the quarantined bad day returned the wrong refusal reason');
+assert.strictEqual(quarantineWriteAttempts, 0,
+  'publishing to the quarantined bad day attempted a destructive write');
+assert.strictEqual(quarantineBacking.get(quarantineAuthoritativeKey), bytesBeforeBadPublish,
+  'publishing to the quarantined bad day changed the stored bytes');
+
+/* --- 4. SELF-HEAL -- the assertion that most distinguishes new from old.
+   Under the old whole-store behaviour, loadAuthoritativeStore() failed for
+   EVERY date once QDAY_BAD existed anywhere in the blob, so
+   publishAuthoritativeSnapshot(QDAY_HEAL) -- a totally different, clean
+   date -- would ALSO have been refused with "authority-store-invalid".
+   That is the permanent wedge described in the bug report: no date could
+   ever be published again until the whole key was manually cleared. Under
+   the fix, publishing to any other date succeeds, and because the write
+   path always re-serializes the already-sanitized (bad-day-dropped) store,
+   that single write heals the blob. */
+const healPublish = quarantineReaderCtx.__mlsSI._publishAuthoritativeSnapshot({
+  date: QDAY_HEAL, provider: 'all',
+  scheduleReceipt: { complete: true, authoritativeEmpty: false },
+  returnedAppointments: [qHealRow],
+  providerReceipt: { complete: true, reason: 'all-providers' },
+  calendarReceipt: { complete: true, attempted: 1 },
+  resolvedAppointments: [{ sourceIdentity: 'quarantine-heal-source', backendAppointmentId: qHealRow.id }]
+});
+assert.strictEqual(healPublish.published, true,
+  'OLD BUG: publishing to a clean, unrelated date was refused just because a DIFFERENT day in the blob was malformed -- the permanent wedge');
+
+const healedParsed = JSON.parse(quarantineBacking.get(quarantineAuthoritativeKey));
+assert(!Object.prototype.hasOwnProperty.call(healedParsed.days, QDAY_BAD),
+  'OLD BUG: the malformed day survived a successful write to a different date -- the store never heals, the wedge is permanent');
+assert(Object.prototype.hasOwnProperty.call(healedParsed.days, QDAY_GOOD_1),
+  'self-heal write lost the first genuinely clean day');
+assert(Object.prototype.hasOwnProperty.call(healedParsed.days, QDAY_GOOD_2),
+  'self-heal write lost the second genuinely clean day');
+assert(Object.prototype.hasOwnProperty.call(healedParsed.days, QDAY_HEAL),
+  'self-heal write did not persist the newly published day');
+
+const badStatusAfterHeal = quarantineReaderCtx.__mlsSI.authoritativeStatusForDay(QDAY_BAD, 'all');
+assert(!badStatusAfterHeal.storeUnavailable,
+  'the healed store still reports the retired bad day as store-unavailable instead of simply absent');
+assert.strictEqual(badStatusAfterHeal.reason, 'no-snapshot',
+  'the healed store did not treat the retired bad day as an ordinary unowned day');
+
+/* Alien whole-blob shapes (days is a string, not an object -- 'corrupt'
+   mode) are already fully proven refused-outright by the existing loop at
+   ~line 458: it asserts available/exact/false, storeUnavailable/true,
+   scope 'authority-unavailable', reason 'authority-store-invalid', AND
+   (further down, ~line 489) that _publishAuthoritativeSnapshot() also
+   refuses to write to it with authorityWriteAttempts staying 0 and the
+   corrupt bytes left untouched. That is the same whole-blob structural
+   guard this fix leaves unchanged (v !== 1 / days not an object / extra
+   top-level keys / > 90 days still return null outright). Not duplicated
+   here. */
+
+console.log('PASS p1 authority-quarantine: one malformed day is dropped on its own, clean days on other dates stay exact, and the next publish to any other date self-heals the blob');
+
 console.log('PASS p1 appointment-census display authority: exact IDs survive reload, stale Athena rows stay retired, manual rows remain, provider/practice authority stays false');

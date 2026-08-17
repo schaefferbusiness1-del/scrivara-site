@@ -15,6 +15,18 @@ const AUTOMATED_PROOF_FILES = new Set([
 const tests = [
   'public-publication-boundary.test.js',
   '1p-preview-contract.test.js',
+  /* The /cloned lane: a byte-faithful production clone that /1p features are
+     promoted into one at a time. Runs beside the 1p contract because both
+     answer the same question — did this lane drift from the surface it
+     claims to mirror. */
+  'cloned-lane-contract.test.js',
+  /* The /1p Calendar repair of 2026-08-16: one pull entry point instead of
+     four, the hero carrying the same caller contract the Visit strip has,
+     and a per-appointment op-note action that fails closed rather than
+     opening the room for whoever happened to be the active patient. */
+  'p1-calendar-single-pull-entrypoint.test.js',
+  'p1-calendar-hero-pull-contract.test.js',
+  'p1-calendar-peek-opnote-action.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',

@@ -57,7 +57,12 @@ function gitSha(file) {
     const cards = looks.map((look, i) => {
       const card = document.createElement('section'); card.style.cssText = 'display:inline-grid;gap:8px;margin:14px;vertical-align:top;width:302px';
       const title = document.createElement('strong'); title.textContent = 'Synthetic professional look ' + (i + 1); title.style.cssText = 'font:600 14px system-ui;color:#204034';
-      const stage = document.createElement('div'); stage.style.cssText = 'width:302px;height:302px;background:#fff;border-radius:20px;overflow:hidden';
+      /* border-radius:999px, not a soft-rounded square: the real kiosk
+         (#mlsAvKioskFace) is a true circle with overflow:hidden. Judging this contact
+         sheet in a rounded square already misled a prior review once (see
+         1p-feat_mls_avatar.js ~2411-2426) - the crown, ears and shoulders that a
+         square shows uncropped are exactly what the real circular mask cuts away. */
+      const stage = document.createElement('div'); stage.style.cssText = 'width:302px;height:302px;background:#fff;border-radius:999px;overflow:hidden';
       card.append(title, stage); root.appendChild(card);
       const ctl = owner.faceDemo(stage, look);
       ctl.mood('idle', false, false);

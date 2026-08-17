@@ -654,10 +654,18 @@
         '<div class="t3e-b"><button type="button" class="t3e-all">View default schedule</button><button type="button" class="t3e-rf">Refresh</button></div>';
       el.querySelector('.t3e-all').onclick = function () { Cal.setScope('', ''); };
     } else {
+      /* defect-1 (2026-08-16): this box used to grow its OWN "Pull from
+         athenaOne" button (.t3e-pull) - a second, easy-to-miss pull entry
+         point beside the calendar's real primary (#mlsCvNxt_calendar, built
+         by feat_mls_calm_views.js). Two controls that do the same thing is
+         worse than one: this now only points at the hero instead of
+         duplicating it. Text only, never a button - feat_athena_clarity.js
+         prefix-matches any BUTTON whose label starts "pull from athena" and
+         would weld a per-patient chart-pull explanation onto a whole-day
+         schedule pull; a plain <div> is never scanned by that matcher. */
       el.innerHTML = '<div class="t3e-t">No appointments ' + (opt.mode === 'day' ? 'on ' + esc(label) : esc(label)) + '.</div>' +
-        '<div class="t3e-s">' + (opt.mode === 'day' ? 'A quiet day. Pull the schedule from athenaOne if patients are missing.' : 'Pull the schedule from athenaOne if patients are missing.') + '</div>' +
-        '<div class="t3e-b">' + (isFn(window.pullScheduleViaAssist) ? '<button type="button" class="t3e-pull">Pull from athenaOne</button>' : '') + '<button type="button" class="t3e-rf">Refresh</button></div>';
-      var pb = el.querySelector('.t3e-pull'); if (pb) pb.onclick = function () { safe(function () { window.pullScheduleViaAssist(); }); };
+        '<div class="t3e-s">' + (opt.mode === 'day' ? 'A quiet day, or the schedule has not been pulled yet — use the Pull button above.' : 'Missing patients? Use the Pull button above to read the schedule from athenaOne.') + '</div>' +
+        '<div class="t3e-b"><button type="button" class="t3e-rf">Refresh</button></div>';
     }
     el.querySelector('.t3e-rf').onclick = function () { safe(function () { if (isFn(window.loadCalendar)) window.loadCalendar(); }); };
     grid.insertBefore(el, grid.firstChild);

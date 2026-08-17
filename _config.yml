@@ -163,6 +163,15 @@ include:
   # Jekyll treats those broadly enough to reopen unrelated legal/test files.
   - "1p/legal/index.html"
   - "1p/marketing/index.html"
+
+  # 2026-08-16 — the /cloned live route (owner-only for now). A byte-faithful
+  # clone of ScribeFlow.html that will receive individual features promoted
+  # from /1p one at a time, and eventually become the main site. Same shape
+  # as the 1p live route above: it registers NO service worker, so it can
+  # never cache anything or disturb the main app.
+  # Exact nested path. Do not include a bare "cloned" directory basename here:
+  # Jekyll treats those broadly enough to reopen unrelated files.
+  - "cloned/index.html"
   - "terms.html"
 
   # Minimum reviewed phone-recorder runtime. The recorder HTML is above; these

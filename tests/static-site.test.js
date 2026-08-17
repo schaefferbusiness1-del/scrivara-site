@@ -73,12 +73,15 @@ const missingAssets = [];
 const seenAssetChecks = new Set();
 for (const file of htmlFiles) {
   const html = fs.readFileSync(file, 'utf8');
-  /* The dedicated live preview is physically nested for GitHub Pages, but its
-     reviewed file-like <base href="/1p"> makes relative app assets resolve at
-     the site root. Model that exact one-page contract rather than reporting
-     valid root assets as missing from 1p/. */
+  /* The dedicated live preview and the /cloned live route are both physically
+     nested for GitHub Pages, but each one's reviewed file-like <base href>
+     makes relative app assets resolve at the site root. Model that exact
+     one-page contract rather than reporting valid root assets as missing
+     from 1p/ or cloned/. */
   const relHtml = path.relative(root, file).split(path.sep).join('/');
-  const p1RootAssetBase = relHtml === '1p/index.html' && /<base\s+href=["']\/1p["']\s*>/i.test(html);
+  const rootAssetBase =
+    (relHtml === '1p/index.html' && /<base\s+href=["']\/1p["']\s*>/i.test(html)) ||
+    (relHtml === 'cloned/index.html' && /<base\s+href=["']\/cloned["']\s*>/i.test(html));
   const re = /\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
   let m;
   while ((m = re.exec(html))) {
@@ -88,7 +91,7 @@ for (const file of htmlFiles) {
     if (!/\.(?:js|css|html?|png|jpe?g|gif|svg|ico|json|webmanifest)$/i.test(clean)) continue;
     const target = raw.startsWith('/')
       ? path.resolve(root, clean.replace(/^\/+/, ''))
-      : path.resolve(p1RootAssetBase ? root : path.dirname(file), clean);
+      : path.resolve(rootAssetBase ? root : path.dirname(file), clean);
     const key = `${file}\0${target}`;
     if (seenAssetChecks.has(key)) continue;
     seenAssetChecks.add(key);

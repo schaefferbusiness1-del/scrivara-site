@@ -373,11 +373,30 @@ const p1ConfigBlock = [
   '  - "1p/marketing/index.html"',
   ''
 ].join('\n');
+/* The /cloned lane (2026-08-16) is a second authorized traversal block in the
+   same shared file: a byte-faithful production clone that features graduate
+   into from /1p. It is allowed here by exactly the same rule as the 1p block
+   — one reviewed, literal set of lines — so everything else in _config.yml is
+   still byte-compared against the frozen baseline. tests/cloned-lane-contract
+   .test.js is what proves the route itself is a true clone. */
+const clonedConfigBlock = [
+  '',
+  '',
+  '  # 2026-08-16 — the /cloned live route (owner-only for now). A byte-faithful',
+  '  # clone of ScribeFlow.html that will receive individual features promoted',
+  '  # from /1p one at a time, and eventually become the main site. Same shape',
+  '  # as the 1p live route above: it registers NO service worker, so it can',
+  '  # never cache anything or disturb the main app.',
+  '  # Exact nested path. Do not include a bare "cloned" directory basename here:',
+  '  # Jekyll treats those broadly enough to reopen unrelated files.',
+  '  - "cloned/index.html"'
+].join('\n');
 const currentConfig = read('_config.yml').replace(/\r\n/g, '\n');
 assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).length, 1, 'exact FREE Legal showcase include must appear once');
 assert.strictEqual((currentConfig.match(/  - "1p\/marketing\/index\.html"/g) || []).length, 1, 'exact FREE Marketing showcase include must appear once');
-assert.strictEqual(currentConfig.replace(p1ConfigBlock, ''), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'),
-  '_config.yml changed beyond the exact reviewed 1p showcase traversal block');
+assert.strictEqual((currentConfig.match(/  - "cloned\/index\.html"/g) || []).length, 1, 'exact /cloned live-route include must appear once');
+assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, ''), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'),
+  '_config.yml changed beyond the exact reviewed 1p showcase and /cloned traversal blocks');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');

@@ -2161,12 +2161,20 @@
           '<rect x="' + n2(cx - 13) + '" y="86" width="26" height="17" fill="#f3efe8"/>' +
           '<ellipse cx="' + cx + '" cy="88.6" rx="13" ry="4.4" fill="' + faceShade(look.skin, -0.3) + '" opacity=".28"/>' +
           '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
-            /* the iris sits high and is CROPPED by the upper lid, as a real one is */
-            '<circle cx="' + cx + '" cy="94.1" r="5.5" fill="url(#' + irisId + ')"/>' +
-            '<circle cx="' + cx + '" cy="94.1" r="5.5" fill="none" stroke="' + faceShade(look.eyes, -0.55) + '" stroke-width="0.9" opacity=".75"/>' +
-            '<circle cx="' + cx + '" cy="94.1" r="2.15" fill="#120d09"/>' +
-            '<ellipse cx="' + n2(cx - 1.9) + '" cy="91.9" rx="1.5" ry="1.1" fill="#fff" opacity=".92"/>' +
-            '<ellipse cx="' + n2(cx + 2.2) + '" cy="96.4" rx="1.1" ry="0.7" fill="#fff" opacity=".3"/>' +
+            /* the iris sits high and is CROPPED by the upper lid, as a real one is.
+               p1-adult-art-1.0.0: a 5.5-radius iris against a 24-wide aperture filled
+               almost a quarter of the whole eye - the single strongest "cartoon child"
+               signal on the face. 4.4 (and a pupil to match, 2.15 -> 1.8) reads as an
+               adult iris without changing the aperture or any animation hook. */
+            '<circle cx="' + cx + '" cy="94.1" r="4.4" fill="url(#' + irisId + ')"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="4.4" fill="none" stroke="' + faceShade(look.eyes, -0.55) + '" stroke-width="0.9" opacity=".75"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="1.8" fill="#120d09"/>' +
+            /* ONE catchlight, not two. A second, fainter highlight at the opposite
+               corner is what makes an eye read as glassy/toy rather than photographic -
+               a real cornea shows one clear reflected light source. The surviving
+               catchlight is scaled and pulled in slightly so it still sits inside the
+               smaller iris instead of grazing its new, tighter edge. */
+            '<ellipse cx="' + n2(cx - 1.6) + '" cy="92.2" rx="1.2" ry="0.9" fill="#fff" opacity=".92"/>' +
           '</g>' +
         /* the LOWER lid: it rises into a smiling-eye arc on a genuine smile -
            the single strongest cue that a face means it. Inside the clip now, so it
@@ -2351,9 +2359,12 @@
           (look.beard === 'beard' ? '' :
             '<path class="fFoldL" d="M89 ' + n2(110 + dyN) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
             '<path class="fFoldR" d="M111 ' + n2(110 + dyN) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>') +
+          /* the eye corners moved up 8 units with the rest of the upper-face cluster
+             (see .fUpperFace below) - these must track them or a mature look's crow's
+             feet float below the eye they are supposed to belong to. */
           '<g stroke-width="1.1" opacity=".55">' +
-            '<path class="fCrowL" d="M' + n2(cxL - 13.5) + ' 91 l-4 -2.5 M' + n2(cxL - 14) + ' 96.5 l-4.5 1.5"/>' +
-            '<path class="fCrowR" d="M' + n2(cxR + 13.5) + ' 91 l4 -2.5 M' + n2(cxR + 14) + ' 96.5 l4.5 1.5"/>' +
+            '<path class="fCrowL" d="M' + n2(cxL - 13.5) + ' 83 l-4 -2.5 M' + n2(cxL - 14) + ' 88.5 l-4.5 1.5"/>' +
+            '<path class="fCrowR" d="M' + n2(cxR + 13.5) + ' 83 l4 -2.5 M' + n2(cxR + 14) + ' 88.5 l4.5 1.5"/>' +
           '</g>' +
         '</g>'
       : '';
@@ -2361,6 +2372,15 @@
     var nose = FACE_NOSE_PARTS[look.nose] || FACE_NOSE_PARTS.straight;
     var lips = FACE_LIP_PARTS[look.lips] || FACE_LIP_PARTS.normal;
     var noseRy = (nose.nr * 0.7).toFixed(2);
+    /* BROW WEIGHT, NOT BROW STROKE (p1-adult-art-1.0.0). A round-linecap stroke is a
+       constant-width line - the single most "drawn with a marker" mark on the face. A
+       real eyebrow is thickest and roundest at the inner corner (by the bridge of the
+       nose) and tapers to a fine point at the outer, temple end, because that is how the
+       hair actually grows. bTop/bBot bow the two edges of a closed, FILLED shape around
+       that taper; bIn is the half-thickness of the blunt inner end. Scaled off the same
+       browW the thin/normal/thick knob already drove, so the weight choice still means
+       something. */
+    var bTop = browW * 0.62, bBot = browW * 0.31, bIn = browW * 0.40;
     return '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" data-mood="idle" style="width:100%;height:100%;display:block">' +
       /* ---- THE PAINT (av-6.0.0) ------------------------------------------------------
          Skin, hair and garment all ramp instead of filling flat. The skin ramp is
@@ -2543,14 +2563,39 @@
            fades out at its own edge instead of ending on one, so there is no rim to notice.
            The class and the transition are unchanged, so the mood code that raises the flush
            on a warm greeting still drives exactly this, from a quieter floor. */
-        '<ellipse class="fBlush" cx="' + n2(100 - 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity=".07" style="transition:opacity .4s ease"/>' +
-        '<ellipse class="fBlush" cx="' + n2(100 + 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity=".07" style="transition:opacity .4s ease"/>' +
-        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 1) + ' 72 ' + n2(cxL + 13) + ' 77" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
-        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' 77 Q' + n2(cxR + 1) + ' 72 ' + n2(cxR + 13) + ' 78" stroke="' + browPaint + '" stroke-width="' + browW + '" stroke-linecap="round" fill="none"/></g>' +
+        /* idle blush at 0 (p1-adult-art-1.0.0). Even the .07 "barely there" floor from
+           the previous pass still reads as a doll's cheeks on an adult face at kiosk
+           size - blush is a child signal full stop, not a dial to turn down. The class,
+           gradient and opacity transition are unchanged, so a warm-greeting mood still
+           has somewhere to raise the flush FROM; idle itself now shows none. */
+        '<ellipse class="fBlush" cx="' + n2(100 - 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity="0" style="transition:opacity .4s ease"/>' +
+        '<ellipse class="fBlush" cx="' + n2(100 + 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity="0" style="transition:opacity .4s ease"/>' +
+        /* ---- THE UPPER-FACE CLUSTER MOVES UP 8 UNITS (p1-adult-art-1.0.0) ---------------
+           Owner: the drawing "still looks like a children's cartoon". Brows, eyes and
+           glasses were measured at y ~72-101 against a skull that runs crown-to-chin
+           32-164 - a lot of bare, round, unbroken forehead above them and comparatively
+           little of the head doing anything below. A large cranium with low, small
+           features huddled in the lower-middle is the textbook infant proportion; an
+           adult's eye line sits close to the head's own vertical middle. Rather than
+           touch sh.rx/sh.ry (the matcher's own shape units, shared with the jaw, neck
+           and hairline), the whole upper-face cluster - both brows, the glabellar knit,
+           both eyes and the glasses - is lifted 8 units as one group. That shrinks the
+           bare forehead, leaves the nose and mouth exactly where they were (which
+           widens the mid-face instead of just relocating the same gap), and moves
+           nothing that isn't inside this <g>: fCrowL/fCrowR are adjusted separately,
+           just above, because they are drawn later from their own literal y. */
+        '<g class="fUpperFace" transform="translate(0,-8)">' +
+        /* BROWS: a filled, tapered shape, not a round-linecap stroke (see bTop/bBot/bIn
+           above). Blunt at the inner corner by the nose, a fine point at the outer,
+           temple end - a real eyebrow's own growth pattern, and no longer a constant-
+           width mark that reads as drawn rather than grown. */
+        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL + 13) + ' ' + n2(77 - bIn) + ' Q' + n2(cxL - 3) + ' ' + n2(72 - bTop) + ' ' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 3) + ' ' + n2(72 + bBot) + ' ' + n2(cxL + 13) + ' ' + n2(77 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
+        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' ' + n2(77 - bIn) + ' Q' + n2(cxR + 3) + ' ' + n2(72 - bTop) + ' ' + n2(cxR + 13) + ' 78 Q' + n2(cxR + 3) + ' ' + n2(72 + bBot) + ' ' + n2(cxR - 13) + ' ' + n2(77 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
         /* the glabellar KNIT - two short creases between the brows. Concern is
            read there before it is read anywhere else on a human face. */
         '<path class="fKnit" d="M96.5 72 Q97.5 66 96.5 61 M103.5 72 Q102.5 66 103.5 61" stroke="' + shadeKnit + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
         eye(cxL, 'L') + eye(cxR, 'R') + glasses +
+        '</g>' +
         /* the whole nose sits at half strength: a nose is a shadow, and at 302px full-strength
            strokes plus two dark nostrils read as a squiggle drawn on the face. The nostrils
            take the same treatment — shadeHole at full opacity punched two black dots either
@@ -2559,6 +2604,11 @@
           '<path class="fNose" d="' + nose.d + '" stroke="' + shadeNose + '" stroke-width="' + nose.w + '" stroke-linecap="round" fill="none"/>' +
           '<ellipse class="fNostril fNostrilL" cx="' + n2(100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
           '<ellipse class="fNostril fNostrilR" cx="' + n2(100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
+          /* THE PHILTRUM. Two faint parallel grooves between the nose and the upper
+             lip - a flat, featureless span there is a large part of why the old face
+             read as a mask rather than as structure. Inherits the group's own .6
+             opacity on top of its own .55, so it stays a suggestion, not a mark. */
+          '<path class="fPhiltrum" d="M97.4 118 Q96.7 121.5 97.6 124.5 M102.6 118 Q103.3 121.5 102.4 124.5" stroke="' + shadeNose + '" stroke-width="0.8" stroke-linecap="round" fill="none" opacity=".55"/>' +
         '</g>' +
         '<g class="fMouthSet" transform="translate(0,' + n2(dyM) + ')">' +
         '<g class="fMouthWrap" style="transform-box:fill-box;transform-origin:center top;transition:transform .1s ease">' +
@@ -2584,6 +2634,11 @@
           '</g>' +
           '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
           '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+          /* THE LOWER-LIP SHADOW - the crease where the lower lip meets the chin. A
+             mouth with nothing beneath it reads as a decal stuck on a flat plane; this
+             is what tucks it into the face. Static (outside .fLips) so it does not
+             fight the open-mouth talking cycle's own scale. */
+          '<path class="fLipShadow" d="M84 146.5 Q100 150.5 116 146.5" stroke="' + shadeSoft + '" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".32"/>' +
         '</g>' +
         '</g>' +
         ageLines +

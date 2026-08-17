@@ -1643,12 +1643,24 @@
   function authoritativeKey() {
     return safe(function () { return isFn(window.uns) ? window.uns(AUTHORITATIVE_SNAPSHOT_SUFFIX) : ""; }, "");
   }
-  function sanitizeAuthoritativeStore(value) {
+  function sanitizeAuthoritativeStore(value, report) {
     if (!value || value.v !== 1 || !value.days || typeof value.days !== "object" || Array.isArray(value.days)) return null;
     if (Object.keys(value).some(function (key) { return key !== "v" && key !== "days"; })) return null;
     var dayKeys = Object.keys(value.days);
     if (dayKeys.length > 90) return null;
-    var clean = { v: 1, days: {} }, invalid = false;
+    /* p1-authority-quarantine-1.0.0 (owner report 2026-08-16): this used to be
+       whole-store all-or-nothing — one malformed day anywhere in the 45-day
+       blob returned null, every consumer went fail-closed, and
+       publishAuthoritativeSnapshot refused with "authority-store-invalid".
+       Because writeAuthoritativeStore also sanitizes before writing, the bad
+       bytes could never be replaced, so a single poisoned day wedged EVERY
+       future pull permanently. A day that cannot be validated is now
+       quarantined on its own: it is dropped from the returned store and named
+       in report.dropped, so it still fails closed for its own date while the
+       other days stay usable and the next clean write rewrites the blob
+       without it. The whole-blob checks above are unchanged — a store whose
+       shape is alien is still refused outright. */
+    var clean = { v: 1, days: {} }, dropped = [];
     function cleanSnapshot(raw, day, expectedMode, expectedKey) {
       if (!raw || raw.v !== 1 || normDate(raw.date) !== day || raw.date !== day || raw.mode !== expectedMode) return null;
       var allowed = { v: 1, date: 1, mode: 1, providerKey: 1, backendIds: 1, sourceCount: 1, updated: 1 };
@@ -1664,59 +1676,84 @@
       }
       return { v: 1, date: day, mode: expectedMode, providerKey: providerKeyRaw, backendIds: ids, sourceCount: count, updated: updated };
     }
-    dayKeys.forEach(function (rawDay) {
-      if (invalid) return;
+    /* Validate ONE day in isolation. Returns the cleaned entry, or null when
+       this day alone cannot be trusted. It must never reach outside its own
+       day, so every refusal below is local. */
+    function cleanDay(rawDay) {
       var day = normDate(rawDay), entry = value.days[rawDay];
-      if (!day || day !== rawDay || !entry || typeof entry !== "object" || Array.isArray(entry)) { invalid = true; return; }
-      if (Object.keys(entry).some(function (key) { return key !== "all" && key !== "providers" && key !== "active"; })) { invalid = true; return; }
+      if (!day || day !== rawDay || !entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      if (Object.keys(entry).some(function (key) { return key !== "all" && key !== "providers" && key !== "active"; })) return null;
       var providers = entry.providers;
-      if (!providers || typeof providers !== "object" || Array.isArray(providers) || Object.keys(providers).length > 250) { invalid = true; return; }
-      var cleanEntry = { all: null, providers: {} };
+      if (!providers || typeof providers !== "object" || Array.isArray(providers) || Object.keys(providers).length > 250) return null;
+      var cleanEntry = { all: null, providers: {} }, bad = false;
       if (entry.all != null) {
         cleanEntry.all = cleanSnapshot(entry.all, day, "all", "");
-        if (!cleanEntry.all) { invalid = true; return; }
+        if (!cleanEntry.all) return null;
       }
       Object.keys(providers).forEach(function (key) {
-        if (invalid) return;
-        if (!key || key.length > 240 || /[\x00-\x1f\x7f]/.test(key)) { invalid = true; return; }
+        if (bad) return;
+        if (!key || key.length > 240 || /[\x00-\x1f\x7f]/.test(key)) { bad = true; return; }
         var snap = cleanSnapshot(providers[key], day, "selected", key);
-        if (!snap) { invalid = true; return; }
+        if (!snap) { bad = true; return; }
         cleanEntry.providers[key] = snap;
       });
-      if (invalid) return;
+      if (bad) return null;
       if (entry.active != null) {
         var active = entry.active;
-        if (!active || typeof active !== "object" || Array.isArray(active) || Object.keys(active).some(function (key) { return key !== "mode" && key !== "key"; })) { invalid = true; return; }
+        if (!active || typeof active !== "object" || Array.isArray(active) || Object.keys(active).some(function (key) { return key !== "mode" && key !== "key"; })) return null;
         var mode = String(active.mode || ""), key = String(active.key || "");
         if (mode === "all") {
-          if (key || !cleanEntry.all) { invalid = true; return; }
+          if (key || !cleanEntry.all) return null;
           cleanEntry.active = { mode: "all", key: "" };
         } else if (mode === "provider") {
-          if (!key || !cleanEntry.providers[key]) { invalid = true; return; }
+          if (!key || !cleanEntry.providers[key]) return null;
           cleanEntry.active = { mode: "provider", key: key };
-        } else { invalid = true; return; }
+        } else return null;
       }
-      clean.days[day] = cleanEntry;
+      return { day: day, entry: cleanEntry };
+    }
+    dayKeys.forEach(function (rawDay) {
+      var ok = cleanDay(rawDay);
+      if (!ok) { dropped.push(String(rawDay)); return; }
+      clean.days[ok.day] = ok.entry;
     });
-    return invalid ? null : clean;
+    if (report && typeof report === "object") report.dropped = dropped.slice();
+    return clean;
   }
   function loadAuthoritativeStore() {
     var k = authoritativeKey();
     if (!k) return { ok: false, reason: "authority-store-key-unavailable", store: null };
     try {
       var raw = localStorage.getItem(k);
-      if (!raw) return { ok: true, reason: "empty", store: { v: 1, days: {} } };
-      var x = sanitizeAuthoritativeStore(JSON.parse(raw));
+      if (!raw) return { ok: true, reason: "empty", store: { v: 1, days: {} }, quarantined: [] };
+      var report = {};
+      var x = sanitizeAuthoritativeStore(JSON.parse(raw), report);
       if (!x) {
-        return { ok: false, reason: "authority-store-invalid", store: null };
+        return { ok: false, reason: "authority-store-invalid", store: null, quarantined: [] };
       }
-      return { ok: true, reason: "ok", store: x };
+      /* Days named here failed validation on their own and are absent from
+         the returned store. Callers must keep serving those exact dates
+         fail-closed; every other date is verified and usable. */
+      var quarantined = (report.dropped || []).slice();
+      return { ok: true, reason: quarantined.length ? "ok-quarantined" : "ok", store: x, quarantined: quarantined };
     } catch (eReadAuthorityStore) {
       /* Never let a fresh tab reinterpret unreadable provider authority as an
          empty store. Consumers must stay fail-closed and publishers must not
          overwrite bytes they could not validate. */
       return { ok: false, reason: "authority-store-read-failed", store: null };
     }
+  }
+  /* True when this exact date was dropped by the sanitizer and is therefore
+     absent from the loaded store. Distinguishes "we could not verify this
+     day" from "nothing was ever pulled for this day", which look identical
+     once the day is missing. */
+  function isQuarantinedDay(loaded, day) {
+    var d = normDate(day) || String(day || "");
+    if (!d || !loaded || !loaded.quarantined || !loaded.quarantined.length) return false;
+    for (var i = 0; i < loaded.quarantined.length; i++) {
+      if (String(loaded.quarantined[i]) === d) return true;
+    }
+    return false;
   }
   function writeAuthoritativeStore(x) {
     x = sanitizeAuthoritativeStore(x);
@@ -1951,6 +1988,10 @@
   function selectedSnapshot(day, rawProvider) {
     var loaded = loadAuthoritativeStore();
     if (!loaded.ok) return { _storeUnavailable: true, _storeReason: loaded.reason };
+    /* A quarantined date owns itself fail-closed exactly as an unreadable
+       whole store used to, and reports the same reason, so a consumer can
+       never mistake an unverifiable day for an unowned one. */
+    if (isQuarantinedDay(loaded, day)) return { _storeUnavailable: true, _storeReason: "authority-store-invalid" };
     var store = loaded.store, entry = store.days[String(day || "")] || null;
     if (!entry) return null;
     var req = providerRequest(rawProvider);
@@ -2010,6 +2051,14 @@
        last verified in-memory snapshot by reference before persistence. */
     var loadedAuthority = loadAuthoritativeStore();
     if (!loadedAuthority.ok) { out.reason = loadedAuthority.reason; return out; }
+    /* Refuse to publish over a date whose own stored bytes could not be
+       validated, and do not attempt the write: those bytes may belong to
+       another lane and this publisher is not the thing that gets to decide
+       they are worthless. Every OTHER date still publishes normally, and
+       that write rewrites the blob without the quarantined day — which is
+       how a poisoned store heals instead of wedging forever. */
+    if (isQuarantinedDay(loadedAuthority, date)) { out.reason = "authority-store-invalid"; return out; }
+    out.quarantinedDays = (loadedAuthority.quarantined || []).length;
     var store = safe(function () { return JSON.parse(JSON.stringify(loadedAuthority.store)); }, null);
     if (!store || !store.days) { out.reason = "snapshot-copy-failed"; return out; }
     var entry = store.days[date] || { all: null, providers: {} };

@@ -4919,13 +4919,17 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       </div>
 
       <div class="field">
-        <label for="qolDockSide">Navigation bar position</label>
+        <label for="qolDockSide">Navigation bar</label>
         <select class="sf-select" id="qolDockSide" onchange="applyDockSidePreview(this.value)">
           <option value="bottom">Floating — bottom centre (default)</option>
           <option value="top">Floating — top centre</option>
           <option value="left">Floating — left edge</option>
           <option value="right">Floating — right edge</option>
         </select>
+        <label for="qolDockAutoHide" style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="qolDockAutoHide" style="width:17px;height:17px;cursor:pointer" onchange="if(typeof applyDockAutoHidePreview==='function')applyDockAutoHidePreview(this.checked)">
+          <span>Auto-hide until hovered, tapped, or focused</span>
+        </label>
         <div style="font-size:12px;color:var(--muted);margin-top:4px">It keeps hovering over the page wherever you put it. Changes apply straight away.</div>
       </div>
 
@@ -8856,6 +8860,7 @@ function openSettings(){
   const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
   const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
   const qds=document.getElementById('qolDockSide'); if(qds) qds.value=(typeof window.mlsDockSide==='function'?window.mlsDockSide():'bottom');
+  const qah=document.getElementById('qolDockAutoHide'); if(qah) qah.checked=(typeof window.mlsDockAutoHide==='function'?window.mlsDockAutoHide():false);
   const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) qcl.checked=getQolConfirmLogout();
   const _qpl=document.getElementById('qolPtLayout'); if(_qpl) _qpl.value=getQolPtLayout();
@@ -8927,6 +8932,7 @@ function closeSettings(){
     const qt=document.getElementById('qolTheme'); if(qt) qt.value=getQolTheme();
     const qts=document.getElementById('qolTextSize'); if(qts) qts.value=getQolTextSize();
     const qds=document.getElementById('qolDockSide'); if(qds) qds.value=(typeof window.mlsDockSide==='function'?window.mlsDockSide():'bottom');
+    const qah=document.getElementById('qolDockAutoHide'); if(qah) qah.checked=(typeof window.mlsDockAutoHide==='function'?window.mlsDockAutoHide():false);
     const qc=document.getElementById('qolCompact'); if(qc) qc.checked=getQolCompact();
     const qpl=document.getElementById('qolPtLayout'); if(qpl) qpl.value=getQolPtLayout();
     const qgp=document.getElementById('qolGroupProc'); if(qgp) qgp.checked=getQolGroupProc();
@@ -8993,6 +8999,7 @@ function saveSettings(){
   const qt=document.getElementById('qolTheme'); if(qt) localStorage.setItem(uns('qolTheme'),qt.value);
   const qts=document.getElementById('qolTextSize'); if(qts) localStorage.setItem(uns('qolTextSize'),qts.value);
   const qds=document.getElementById('qolDockSide'); if(qds && typeof window.applyDockSidePreview==='function') window.applyDockSidePreview(qds.value);
+  const qah=document.getElementById('qolDockAutoHide'); if(qah && typeof window.applyDockAutoHidePreview==='function') window.applyDockAutoHidePreview(qah.checked);
   const qc=document.getElementById('qolCompact'); if(qc) localStorage.setItem(uns('qolCompact'),qc.checked?'1':'0');
   const qcl=document.getElementById('qolConfirmLogout'); if(qcl) localStorage.setItem(uns('qolConfirmLogout'),qcl.checked?'1':'0');
   const _qpl=document.getElementById('qolPtLayout'); if(_qpl) localStorage.setItem(uns('qolPtLayout'),_qpl.value);
@@ -14533,6 +14540,7 @@ function calApptPeek(id, ev){
       +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
       +'<button onclick="calPullChartFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📥 Pull chart</button>'
       +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
+      +'<button onclick="calDraftOpNoteFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📝 Draft op note</button>'
     +'</div>';
   document.body.appendChild(pop);
   var x=window.innerWidth/2, y=160; try{ if(ev){ x=ev.clientX; y=ev.clientY; } }catch(e){}
@@ -14758,6 +14766,24 @@ function calPullChartFor(id){
   try{ toast('Opening '+(nm||'patient')+' and reading their Athena chart…',''); }catch(e){}
   // Resolve/create the patient + pull — pullPatientChartViaAssist sets them active for us.
   try{ pullPatientChartViaAssist(null, { patientId:(a.patient_external_id||''), name:nm, dob:(a.dob||''), reason:(a.reason||'') }); }catch(e){}
+}
+// DEFECT 3 (calendar peek -> op note): draft THIS appointment's patient, never
+// whichever patient happens to be active elsewhere in the app. openOpPrepForPatient
+// falls back to activePatient() when passed a falsy id, so a resolve failure must
+// stop here rather than pass null through — an op note opened for the wrong
+// patient is a patient-safety failure, not a convenience shortcut. Fails closed
+// with a plain explanation instead of silently guessing.
+function calDraftOpNoteFor(id){
+  var a=((window._calAppts||(typeof _calAppts!=='undefined'?_calAppts:[]))||[]).find(function(x){ return String(x.id)===String(id); });
+  if(!a){ try{ toast('Could not find that appointment.','err'); }catch(e){} return; }
+  try{ var pk=document.getElementById('calApptPeek'); if(pk) pk.remove(); }catch(e){}
+  var pid=null; try{ pid=_calResolveLocalPatient(a); }catch(e){ pid=null; }
+  if(pid===null||typeof pid==='undefined'){
+    var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):'')||a.name||'this appointment';
+    try{ toast('Could not match '+nm+' to one chart in MLS, so no op note was opened. Pull or open the correct patient chart first, then draft their op note.','err'); }catch(e){}
+    return;
+  }
+  try{ openOpPrepForPatient(pid); }catch(e){}
 }
 // Open the day panel and expand a specific appointment's details (used by month/week chips).
 function calChipOpen(id, key){ if(key) calOpenDay(key); setTimeout(function(){ var box=document.getElementById('calApptEdit_'+id); if(box && !box.innerHTML){ calApptInfo(id); } var el=document.getElementById('calApptEdit_'+id); if(el && el.scrollIntoView){ try{ el.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){} } }, 60); }
@@ -19159,7 +19185,13 @@ document.addEventListener('click',function(e){
 /* Smart entry: a patient is selected → prep THAT patient's op note; otherwise prep all scheduled procedures. */
 function openOpPrepSmart(){
   var ap=null; try{ ap=(typeof activePatient==='function')?activePatient():null; }catch(e){}
-  if(ap && ap.id){ openOpPrepForPatient(ap.id); } else { openOpPrep(); }
+  /* OWNER 2026-08-16: 'prep op notes should auto start on for all patients'.
+     This used to drop into single-patient mode whenever any patient happened
+     to be active, so the doctor landed on one card and had to notice the
+     mode switch to see the day. The whole day is the default now; that one
+     patient is still one click away on the 'This patient' button, which
+     openOpPrepForPatient still serves. */
+  openOpPrep();
 }
 /* Switch the op-prep modal between "this patient" and "all scheduled patients" without closing it. */
 function opPrepSetMode(mode){
@@ -36886,5 +36918,461 @@ function _ptGroupSort(mode){
   };
 })();
 </script>
+<!-- ===== msl-1.0.0 — MLS Simple Layer =================================
+     ONE delimited block. Everything between this marker and the closing
+     msl-1.0.0 marker is the whole feature, so promoting it to another lane
+     is a copy rather than a hunt through a diff, and removing it restores
+     today's screen exactly.
+
+     WHY IT IS A SELECTOR REGISTRY AND NOT MARKUP TAGS. Most of what makes
+     Prep Op Notes busy is injected at runtime by six shared modules that
+     this lane may not edit (feat_mls_opnote_prep/fill/daybrain/room/
+     integrity, feat_mls_fixpack_0701). Editing them would ship a UI change
+     to the production site. So the tiers are declared here, by selector,
+     and applied to whatever those modules render.
+
+     THE LAW: nothing is ever removed. A section that hides anything always
+     renders its own disclosure, so every hidden control stays exactly one
+     obvious click away. Reaching a control may take one more click in a
+     calmer mode; it must never become impossible.
+
+     THREE MODES, on <html data-msl="...">:
+       full    every control visible - today's screen, the escape hatch
+       calm    DEFAULT - secondary chrome folds behind named disclosures
+       guided  "simple walkthrough" - calm, plus one lit next step
+
+     The attribute lives on <html> rather than <body> so it is set before
+     first paint and cannot flash the busy layout. -->
+<style id="mslCss">
+/* Base: the disclosure button MLS inserts wherever it folds something away.
+   Styled from the shell's own tokens so it inherits light/dark for free. */
+.msl-more{
+  display:inline-flex; align-items:center; gap:6px;
+  margin:6px 0 2px; padding:5px 11px;
+  font:600 12px/1.2 var(--sans); color:var(--muted);
+  background:var(--soft); border:1px solid var(--line);
+  border-radius:var(--r-pill,999px); cursor:pointer;
+}
+.msl-more:hover{ color:var(--ink); border-color:var(--muted); }
+.msl-more[aria-expanded="true"]{ color:var(--ink); background:var(--field-bg); }
+.msl-more .msl-caret{ transition:transform var(--mls-dur-1,120ms) var(--mls-ease-out,ease); }
+.msl-more[aria-expanded="true"] .msl-caret{ transform:rotate(90deg); }
+
+/* A folded region. Hidden by the attribute, never by inline style, so the
+   owning module can still measure and write into it. */
+[data-msl-fold="closed"]{ display:none !important; }
+
+/* ---- CALM + GUIDED: fold the secondary chrome ----------------------
+   Every rule carries !important because feat_mls_opnote_room.js injects a
+   second stylesheet at runtime whose own rules are !important; a plain rule
+   here loses to it. */
+html[data-msl="calm"] .msl-hide,
+html[data-msl="guided"] .msl-hide{ display:none !important; }
+
+/* Prep Op Notes: the standing prose above the mode switch explains what the
+   screen is. It is onboarding, not a control, and it costs 110px of the
+   sidebar on every visit. */
+html[data-msl="calm"] #oprDayRail > p.note,
+html[data-msl="guided"] #oprDayRail > p.note{ display:none !important; }
+
+/* ---- GUIDED only ---------------------------------------------------- */
+/* One patient at a time. The room already supports this exact mode via
+   .opr-solo, so guided mode asks for the behaviour that already exists
+   rather than inventing a second one. */
+html[data-msl="guided"] #opPrepList:not(.opr-solo) > div:nth-child(n+2){ display:none !important; }
+
+/* The primary action is the biggest thing on the screen. */
+html[data-msl="guided"] #opPrepGenAllBtn{
+  font-size:15px !important; padding:12px 20px !important; border-radius:var(--r-ctl,10px) !important;
+}
+
+/* ---- ONE CARD AT A TIME --------------------------------------------
+   The real complaint. feat_mls_opnote_room.js has a markSolo() that shows a
+   single card, but that module is NOT installed on /1p, so a 28-patient day
+   renders 28 full cards: measured 503 visible controls and 58,809 visible
+   characters on the owner's own screen.
+
+   This collapses every card to its procedure header and opens one. It does
+   NOT depend on the room module, and it is an accordion rather than a filter
+   so all 28 stay on screen, in order, one click from being read. */
+html[data-msl="calm"] #opPrepList > div[data-msl-card],
+html[data-msl="guided"] #opPrepList > div[data-msl-card]{ cursor:pointer; }
+html[data-msl="calm"] #opPrepList > div[data-msl-card="shut"] > *:not([id^="opPrepPrev_"]),
+html[data-msl="guided"] #opPrepList > div[data-msl-card="shut"] > *:not([id^="opPrepPrev_"]){ display:none !important; }
+/* A shut card is a header, so it should read like one. */
+html[data-msl="calm"] #opPrepList > div[data-msl-card="shut"],
+html[data-msl="guided"] #opPrepList > div[data-msl-card="shut"]{ margin-bottom:6px !important; }
+html[data-msl="calm"] #opPrepList > div[data-msl-card="shut"] [id^="opPrepPrev_"] > div,
+html[data-msl="guided"] #opPrepList > div[data-msl-card="shut"] [id^="opPrepPrev_"] > div{ padding:7px 12px !important; }
+
+/* The per-card pre-signing checklist: seven ticks on every card is the
+   single largest repeated block. One line, opened with the card. */
+html[data-msl="calm"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn,
+html[data-msl="guided"] #opPrepList > div[data-msl-card="open"] .mls-opnp-warn{ display:none !important; }
+
+/* ---- The guided next step ------------------------------------------
+   Exactly ONE element carries .msl-next at a time. This is deliberate: in
+   this app every existing infinite pulse means "a recorder or recognizer is
+   LIVE", so a decorative blink would collide with a clinical signal. This is
+   a soft standing ring, not a blink, and it is bounded to one target. */
+.msl-next{ position:relative; }
+.msl-next::after{
+  content:''; position:absolute; inset:-4px; border-radius:inherit; pointer-events:none;
+  box-shadow:0 0 0 2px var(--brand), 0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent);
+  animation:mslNextRing 2.4s var(--mls-ease-inout,ease-in-out) infinite;
+}
+@keyframes mslNextRing{
+  0%,100%{ opacity:.45; }
+  50%    { opacity:1; }
+}
+/* The shell's blanket reduce-motion rule at :2684 already neutralizes the
+   animation. This makes the still state deliberate rather than incidental:
+   the ring stays fully visible, so the guidance survives without motion. */
+@media (prefers-reduced-motion: reduce){
+  .msl-next::after{ animation:none !important; opacity:1 !important; }
+}
+
+/* ---- Responsive: the laptop case ------------------------------------
+   The room's two-column grid is 290px of rail plus the editor. Below 1100px
+   of VIEWPORT the editor is already narrow, and the shipped shell only
+   collapses this at 900px. Calm and guided modes drop the rail earlier and
+   surface it as a disclosure instead, so a 1366x768 laptop gets a usable
+   editor rather than a squeezed one. */
+@media (max-width:1100px){
+  html[data-msl="calm"] #oprPanelProcs,
+  html[data-msl="guided"] #oprPanelProcs{ grid-template-columns:minmax(0,1fr) !important; }
+  html[data-msl="calm"] #oprDayRail,
+  html[data-msl="guided"] #oprDayRail{ max-height:none !important; }
+}
+</style>
+<script>
+/* msl-1.0.0 controller.
+   Sets the mode attribute before first paint, folds the registered regions,
+   and keeps doing so after the shared modules re-render. */
+(function () {
+  var KEY = 'mslMode';
+  var MODES = { full:1, calm:1, guided:1 };
+
+  function read() {
+    /* Per-account when the shell's namespaced store is up; the plain key is
+       the pre-login fallback so the very first paint is already calm. */
+    var v = '';
+    try { if (typeof window.uns === 'function') v = localStorage.getItem(window.uns(KEY)) || ''; } catch (e) {}
+    if (!v) { try { v = localStorage.getItem(KEY) || ''; } catch (e) {} }
+    return MODES[v] ? v : 'calm';
+  }
+  function write(mode) {
+    if (!MODES[mode]) return false;
+    var ok = false;
+    try { if (typeof window.uns === 'function') { localStorage.setItem(window.uns(KEY), mode); ok = true; } } catch (e) {}
+    try { localStorage.setItem(KEY, mode); ok = true; } catch (e) {}
+    return ok;
+  }
+  function apply(mode) {
+    try { document.documentElement.setAttribute('data-msl', mode); } catch (e) {}
+  }
+  apply(read());
+
+  /* THE REGISTRY. One row per folded region:
+       sel    - the container to fold (first match inside root)
+       label  - what the disclosure button says. Name the CONTENT, never
+                "more" alone: the doctor must know what is behind it.
+       modes  - which modes fold it
+     A row whose selector matches nothing is simply skipped, so a shared
+     module that stops rendering a block cannot break this. */
+  /* Selectors verified against the owner's signed-in /1p on 2026-08-16, not
+     inferred from source line numbers. The three that were guessed wrong
+     matched nothing and silently did nothing:
+       .opnp-confirm -> .mls-opnp-warn  (per card, id mlsOpnpWarn_<i>)
+       .opf-bulkbar  -> #mlsOnfBar
+       .opdb-otherwrap -> the daybrain fold button #opdbFold and .opdb-sub
+     The room module's own widgets (.oprr-*) are deliberately absent here:
+     __mlsOpNoteRoom is not installed on /1p, so those blocks never render. */
+  var REGISTRY = [
+    { sel:'#opPrepDayRow', label:'Change day',               modes:['calm','guided'] },
+    { sel:'#oprTplRail',   label:'Your templates',           modes:['calm','guided'] },
+    { sel:'#mlsOnfBar',    label:'Assign templates in bulk', modes:['calm','guided'] }
+  ];
+  /* Repeated per card rather than once per screen, so it cannot live in
+     REGISTRY (which folds a single node). Folded by CSS instead. */
+
+  function foldOne(row, mode) {
+    var target;
+    try { target = document.querySelector(row.sel); } catch (e) { return; }
+    if (!target || !target.parentNode) return;
+
+    var active = row.modes.indexOf(mode) >= 0;
+    var btn = target.previousElementSibling;
+    var mine = btn && btn.classList && btn.classList.contains('msl-more') && btn.getAttribute('data-msl-for') === row.sel;
+
+    if (!active) {
+      /* Full mode: retire the disclosure and give the region back. */
+      if (mine) btn.parentNode.removeChild(btn);
+      target.removeAttribute('data-msl-fold');
+      return;
+    }
+    if (!mine) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'msl-more';
+      btn.setAttribute('data-msl-for', row.sel);
+      btn.setAttribute('aria-expanded', 'false');
+      btn.innerHTML = '<span class="msl-caret" aria-hidden="true">&#9656;</span><span></span>';
+      btn.lastChild.textContent = row.label;
+      btn.addEventListener('click', function () {
+        var open = target.getAttribute('data-msl-fold') !== 'closed';
+        target.setAttribute('data-msl-fold', open ? 'closed' : 'open');
+        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      });
+      target.parentNode.insertBefore(btn, target);
+      /* Start closed, but only the first time MLS folds this region - a
+         doctor who opened it stays opened across the module's re-renders. */
+      target.setAttribute('data-msl-fold', 'closed');
+    }
+    /* Keep the button's ARIA honest if something else moved the region. */
+    btn.setAttribute('aria-expanded', target.getAttribute('data-msl-fold') === 'closed' ? 'false' : 'true');
+    if (!target.hasAttribute('data-msl-fold')) target.setAttribute('data-msl-fold', 'closed');
+  }
+
+  /* Card accordion. Keeps the doctor's chosen card open across the constant
+     re-renders by remembering the index rather than the node, because the
+     shared modules rebuild these nodes from scratch on every draft. */
+  var openCard = 0;
+  function cards() {
+    var list = document.getElementById('opPrepList');
+    if (!list) return [];
+    var out = [];
+    for (var i = 0; i < list.children.length; i++) {
+      var c = list.children[i];
+      if (c.nodeType === 1 && c.tagName === 'DIV') out.push(c);
+    }
+    return out;
+  }
+  function paintCards(mode) {
+    var list = cards();
+    if (mode === 'full') {
+      for (var i = 0; i < list.length; i++) list[i].removeAttribute('data-msl-card');
+      return;
+    }
+    if (openCard >= list.length) openCard = 0;
+    for (var j = 0; j < list.length; j++) {
+      list[j].setAttribute('data-msl-card', j === openCard ? 'open' : 'shut');
+    }
+  }
+  function onCardClick(ev) {
+    var mode = document.documentElement.getAttribute('data-msl') || 'calm';
+    if (mode === 'full') return;
+    var list = document.getElementById('opPrepList');
+    if (!list || !ev.target || !ev.target.closest) return;
+    var card = ev.target.closest('#opPrepList > div');
+    if (!card || card.parentNode !== list) return;
+    /* Never swallow a real control: only the header area toggles. */
+    if (ev.target.closest('input,select,textarea,button,a,[contenteditable="true"]')) return;
+    var all = cards(), idx = all.indexOf(card);
+    if (idx < 0) return;
+    openCard = idx;
+    paintCards(mode);
+  }
+  document.addEventListener('click', onCardClick, false);
+
+  /* Exactly one lit next step, chosen from what is actually actionable now. */
+  function markNext(mode) {
+    var prev = document.querySelector('.msl-next');
+    if (prev) prev.classList.remove('msl-next');
+    if (mode !== 'guided') return;
+    var room = document.getElementById('opPrepModal');
+    if (!room || !room.classList.contains('show')) return;
+    var btn = document.getElementById('opPrepGenAllBtn');
+    if (btn && !btn.disabled && btn.offsetParent !== null) btn.classList.add('msl-next');
+  }
+
+  var queued = false;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    /* setTimeout, not requestAnimationFrame: a backgrounded or
+       non-compositing tab freezes rAF entirely, and a doctor returning to
+       that tab would find the folds never applied. */
+    setTimeout(function () {
+      queued = false;
+      var mode = document.documentElement.getAttribute('data-msl') || 'calm';
+      for (var i = 0; i < REGISTRY.length; i++) foldOne(REGISTRY[i], mode);
+      paintCards(mode);
+      markNext(mode);
+    });
+  }
+
+  /* The shared modules rebuild this screen on every draft, so re-apply on
+     mutation rather than once at boot. Attribute changes are ignored so our
+     own fold attribute cannot re-trigger the observer. */
+  function watch() {
+    var root = document.getElementById('opPrepModal');
+    if (!root || root.__mslWatched) return;
+    root.__mslWatched = true;
+    try { new MutationObserver(refresh).observe(root, { childList:true, subtree:true }); } catch (e) {}
+  }
+
+  window.__mlsSimpleLayer = {
+    version: 'msl-1.0.0',
+    get: read,
+    set: function (mode) { if (!MODES[mode]) return false; var ok = write(mode); apply(mode); refresh(); return ok; },
+    refresh: refresh,
+    registry: REGISTRY,
+    /* Full uninstall, so this block can be evaluated and withdrawn live. */
+    revert: function () {
+      try { document.documentElement.removeAttribute('data-msl'); } catch (e) {}
+      var b = document.querySelectorAll('.msl-more');
+      for (var i = 0; i < b.length; i++) if (b[i].parentNode) b[i].parentNode.removeChild(b[i]);
+      var f = document.querySelectorAll('[data-msl-fold]');
+      for (var j = 0; j < f.length; j++) f[j].removeAttribute('data-msl-fold');
+      var n = document.querySelector('.msl-next'); if (n) n.classList.remove('msl-next');
+      var c = document.querySelectorAll('[data-msl-card]');
+      for (var k = 0; k < c.length; k++) c[k].removeAttribute('data-msl-card');
+      document.removeEventListener('click', onCardClick, false);
+      return true;
+    }
+  };
+
+  function boot() { watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  /* Opening the room is the moment the registry matters; the observer only
+     exists once the node does. */
+  document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
+})();
+</script>
+<!-- ===== end msl-1.0.0 ================================================= -->
+<!-- ===== msl-autodraft-1.0.0 ==========================================
+     "Prep op notes should auto start on for all patients."
+
+     Opening the room now starts drafting by itself, so the doctor arrives at
+     finished drafts instead of a screen with 24 empty cards and a button.
+
+     WHAT IT DELIBERATELY DOES NOT DO. It does not draft every scheduled
+     patient. feat_mls_opnote_daybrain.js triages the day into needs / done /
+     held, and "held" exists because unfiltered drafting once wrote operative
+     notes for follow-ups and cancelled slots. This reuses the SAME triaged
+     set that the Draft-all button already uses - for a 27-patient day that is
+     the 24 who need a note, and the other 3 stay one click away.
+
+     It drives the existing #opPrepGenAllBtn rather than reimplementing
+     drafting, so it inherits the 1p runner's per-patient retry, live progress
+     bar, per-patient ledger, honest summary, and - the part that matters for
+     an automatic action - its Stop button.
+
+     Drafts save to each patient's History only. Nothing here can reach
+     Athena; that path is a separate, human-confirmed click. -->
+<script>
+(function () {
+  var KEY = 'mslAutoDraft';          /* '0' = off. Absent = ON. */
+  var MAX_WAIT_MS = 15000;           /* stop waiting for the safety module */
+  var started = Object.create(null); /* one automatic run per day+mode */
+
+  function prefOn() {
+    var v = null;
+    try { if (typeof window.uns === 'function') v = localStorage.getItem(window.uns(KEY)); } catch (e) {}
+    if (v == null) { try { v = localStorage.getItem(KEY); } catch (e) {} }
+    /* An absent key means ON. Only an explicit '0', which only a human
+       clicking the toggle ever writes, means off. */
+    return String(v) !== '0';
+  }
+  function setPref(on) {
+    var v = on ? '1' : '0';
+    try { if (typeof window.uns === 'function') localStorage.setItem(window.uns(KEY), v); } catch (e) {}
+    try { localStorage.setItem(KEY, v); } catch (e) {}
+    return prefOn() === !!on;
+  }
+
+  function roomOpen() {
+    var m = document.getElementById('opPrepModal');
+    return !!(m && m.classList.contains('show'));
+  }
+  /* Ready means: the safety module is installed, the button is really
+     clickable, at least one row still needs a note, and the doctor has
+     templates for it to draft FROM. Any of these missing is a reason to
+     wait, never a reason to draft anyway. */
+  function notReadyReason() {
+    if (!roomOpen()) return 'room-closed';
+    var brain = window.__mlsOpNoteDayBrain;
+    if (!(brain && brain.installed === true)) return 'safety-module-loading';
+    var btn = document.getElementById('opPrepGenAllBtn');
+    if (!btn || btn.disabled || btn.offsetParent === null) return 'button-unavailable';
+    var rows = window._opPrep || [];
+    if (!rows.length) return 'no-rows';
+    var needs = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r || r.gen) continue;
+      var t = r._opdbTriage;
+      if (t && t.verdict && t.verdict !== 'needs') continue;
+      needs++;
+    }
+    if (!needs) return 'nothing-needs-drafting';
+    var tpls = [];
+    try { tpls = (typeof getTemplates === 'function' ? getTemplates() : []) || []; } catch (e) {}
+    if (!tpls.length) return 'no-templates';
+    return '';
+  }
+
+  function sessionKey() {
+    return String(window._opPrepMode || '') + '|' + String(window._opPrepDay || '') + '|' + String(window._opPrepPatientId || '');
+  }
+
+  var waitingSince = 0, timer = 0;
+  function tick() {
+    timer = 0;
+    if (!prefOn() || !roomOpen()) { waitingSince = 0; return; }
+    var key = sessionKey();
+    if (started[key]) return;
+
+    var reason = notReadyReason();
+    if (reason) {
+      /* Only a loading safety module is worth waiting for. Every other
+         reason is a settled "there is nothing to do here". */
+      if (reason !== 'safety-module-loading') return;
+      if (!waitingSince) waitingSince = Date.now();
+      if (Date.now() - waitingSince > MAX_WAIT_MS) return;
+      timer = setTimeout(tick, 400);
+      return;
+    }
+    waitingSince = 0;
+    started[key] = 1;
+    var btn = document.getElementById('opPrepGenAllBtn');
+    if (!btn) return;
+    /* The 1p Draft-all runner listens in capture phase on document, so a
+       click here enters exactly the same path as the doctor's own click -
+       including its Stop button, which is what makes an automatic run
+       safe to start. */
+    try { btn.click(); } catch (e) { started[key] = 0; return; }
+    try { if (typeof window.toast === 'function') window.toast('Drafting the op notes that need one. Stop any time.', ''); } catch (e) {}
+  }
+  function schedule() { if (!timer) timer = setTimeout(tick, 250); }
+
+  /* The room is opened by several callers and re-rendered constantly, so
+     watch for it becoming visible rather than hooking one entry point. */
+  function watch() {
+    var m = document.getElementById('opPrepModal');
+    if (!m || m.__mslAutoWatched) return;
+    m.__mslAutoWatched = true;
+    try { new MutationObserver(schedule).observe(m, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
+    try { new MutationObserver(schedule).observe(m, { childList: true, subtree: true }); } catch (e) {}
+  }
+
+  window.__mlsAutoDraft = {
+    version: 'msl-autodraft-1.0.0',
+    enabled: prefOn,
+    setEnabled: setPref,
+    /* Why a run did or did not start - the honest answer, for diagnostics. */
+    status: function () { return { on: prefOn(), reason: notReadyReason() || 'ready', ranThisSession: !!started[sessionKey()] }; },
+    revert: function () { if (timer) clearTimeout(timer); timer = 0; started = Object.create(null); return true; }
+  };
+
+  function boot() { watch(); schedule(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
+})();
+</script>
+<!-- ===== end msl-autodraft-1.0.0 ====================================== -->
 </body>
 </html>

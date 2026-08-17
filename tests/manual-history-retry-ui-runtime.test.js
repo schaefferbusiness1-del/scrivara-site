@@ -69,9 +69,16 @@ let resolvePull;
 let resolveRetry;
 let retryCalls = 0;
 let retrySource = null;
+/* The day strip's target day comes from todayKey(), which prefers the practice
+   time-zone seam window._acctTodayKey and only falls back to the machine clock.
+   Pinning that seam makes this suite deterministic: it previously asserted the
+   literal date it was authored on (2026-08-15) and so began failing the moment
+   the calendar advanced, which is a clock dependency rather than a defect. */
+const PINNED_TODAY = '2026-08-15';
 const context = {
   console, Date, Math, JSON, Object, String, Number, Array, RegExp, Promise, Error,
   document,
+  _acctTodayKey() { return PINNED_TODAY; },
   addEventListener() {}, removeEventListener() {},
   setInterval() { return 1; }, clearInterval() {},
   setTimeout() { return 1; }, clearTimeout() {},
@@ -121,7 +128,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.notStrictEqual(retrySource, partialPull, 'manual retry reused the caller-owned pull result instead of its settled ownership copy');
   assert.strictEqual(retrySource.historyReceipt, partialPull.historyReceipt, 'manual retry ownership copy lost the exact settled history receipt');
   assert.strictEqual(retrySource.reason, partialPull.reason, 'manual retry ownership copy changed the settled failure reason');
-  assert.strictEqual(retrySource.target, '2026-08-15', 'manual retry ownership copy omitted the selected-day target');
+  assert.strictEqual(retrySource.target, PINNED_TODAY, 'manual retry ownership copy omitted the selected-day target');
   assert.strictEqual(retryButton.disabled, true, 'retry control was not disabled while its request was in flight');
   assert.strictEqual(pullButton.disabled, true, 'full pull remained clickable during a history-only retry');
   assert(/incomplete histories/i.test(status.textContent), 'live aggregate retry status was not shown');
