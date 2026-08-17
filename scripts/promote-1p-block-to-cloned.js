@@ -100,6 +100,15 @@ const preceding = src.slice(Math.max(0, loc.start - CTX), loc.start);
 let insertAt = -1, how = '';
 if (following && cloned.split(following).length - 1 === 1) { insertAt = cloned.indexOf(following); how = 'before the same following context'; }
 else if (preceding && cloned.split(preceding).length - 1 === 1) { insertAt = cloned.indexOf(preceding) + preceding.length; how = 'after the same preceding context'; }
+/* End-of-body chain: if everything AFTER the block in the source is only other
+   delimited blocks and then </body></html>, the block belongs at the end of the
+   clone's body regardless of which neighbours were promoted. */
+if (insertAt < 0) {
+  const tail = src.slice(loc.end);
+  const tailWithoutBlocks = tail.replace(/<!-- ===== (?!end )([A-Za-z0-9._-]+) [\s\S]*?<!-- ===== end \1 [^\n]*\n/g, '');
+  const bodyClose = '</body>\n</html>\n';
+  if (tailWithoutBlocks === bodyClose && cloned.endsWith(bodyClose)) { insertAt = cloned.length - bodyClose.length; how = 'at the end of the body (end-of-body block chain)'; }
+}
 if (insertAt < 0) throw new Error(`could not locate a unique neighbourhood for ${blockName} in ${TARGET}; promote its predecessor block first, or place by hand and add the manifest entry`);
 
 const out = cloned.slice(0, insertAt) + loc.text + cloned.slice(insertAt);
