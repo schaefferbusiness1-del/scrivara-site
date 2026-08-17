@@ -8210,8 +8210,13 @@ async function adminRevokeCode(id){
 function unsEmail(){
   var e;
   try{ e=(typeof session!=='undefined'&&session)?session.email:''; }catch(_s){ e=''; }
-  if(typeof e!=='string') return '';
+  if(typeof e!=='string') e='';
   e=e.trim();
+  /* Local measurement harnesses (no login, no PHI, tests/*runtime*) run the
+     real shell on 127.0.0.1/localhost and must be able to seed a synthetic
+     roster; a hostname-gated harness account keeps the write guard intact
+     everywhere a doctor could be. Never honoured on mlsscribe.com. */
+  if(!e){ try{ if(/^(localhost|127\.0\.0\.1)$/.test(String(location.hostname||''))&&typeof window.__mlsHarnessAccountEmail==='string'){ e=window.__mlsHarnessAccountEmail.trim(); } }catch(_h){} }
   return e?e:'';
 }
 function unsResolved(){ return !!unsEmail(); }

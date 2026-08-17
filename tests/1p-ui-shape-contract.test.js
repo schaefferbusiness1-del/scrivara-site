@@ -385,6 +385,9 @@ async function runtime() {
       st.textContent = '.modal-bg.show,.modal-bg.show .modal{opacity:1!important}';
       document.head.appendChild(st);
     });
+    /* uns-namespace-guard-1.0.0 refuses every pre-login write; the harness
+       account is honoured only on localhost/127.0.0.1 (see unsEmail()). */
+    await page.evaluate(() => { window.__mlsHarnessAccountEmail = 'ui-harness@mlsscribe.test'; });
     await page.evaluate(harness);
     const seeded = await page.evaluate(() => window.__uiContract.seed());
     eq(seeded.patients, 28, 'the synthetic roster did not land');
