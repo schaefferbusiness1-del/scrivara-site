@@ -160,6 +160,13 @@ const tests = [
      production Day view renders. This is the 1p twin of the production suite
      below and names those row shapes so the regression cannot return. */
   '1p-provider-day-render-runtime.test.js',
+  /* the /1p regression audit was token-presence only, so it could not see a
+     production function that carries no release token. This diffs the FUNCTION
+     SET of every production file against its 1p fork and fails when a
+     production function with call sites has neither a fork counterpart nor a
+     verified supersession record. */
+  '1p-fork-parity-contract.test.js',
+  '1p-pull-attempt-receipt-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
   'production-default-view-pull-runtime.test.js',
   'day-switch-current-pull-result-runtime.test.js',

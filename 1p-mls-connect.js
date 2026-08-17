@@ -48212,7 +48212,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
   var DS_AUTO_RETRY = {}; /* private identity; public pullDay(true) is still manual */
-  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
+  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, sessionSerial: 0,
     pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null };
 
   function rowSortMinute(a) {
@@ -48390,6 +48390,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        change invalidates that chain even before its bounded retry notices the
        frozen-date mismatch. */
     DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
+    DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
     syncStrip(); renderList();
     try {
       window.dispatchEvent(new CustomEvent('mls:visit-day-changed', {
@@ -48572,8 +48573,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return out;
   }
   function dsDiagReport() {
-    var si = window.__mlsSI, res = null;
-    try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
+    /* oar-1.0.0: the button owns the exact receipt returned to THIS DaySwitch
+       attempt. The importer's engine-global last result may belong to an
+       automatic resume for another date, so it is only a legacy fallback when
+       this surface has not received an attempt result of its own. */
+    var si = window.__mlsSI, res = DS.lastAttemptResult || null;
+    if (!res) try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
     if (!res && DS.lastResult) res = DS.lastResult;
     var hr = res && res.historyReceipt || null;
     var ib = res && res.identityBootstrapReceipt || null;
@@ -48853,6 +48858,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.classifyPullResult = pullOutcome;
   api._safeReasonCounts = dsSafeReasonCounts;
+
+  /* ===== oar-1.0.0 (ported from production mls-connect.js:46708-46718)
+     THIS surface owns the receipt returned to THIS DaySwitch attempt. Without
+     it the fork's error report read the importer's engine-global
+     _lastPullResult(), which may belong to an automatic resume for ANOTHER
+     date - so a doctor's copied diagnostic could describe a pull they never
+     clicked, and a promise that resolved to nothing at all produced no
+     attempt record whatsoever. */
+  function ownAttemptResult(result, day, fallbackReason, fallbackError) {
+    var source = result && typeof result === 'object' ? result : null, owned = {};
+    if (source) Object.keys(source).forEach(function (key) { owned[key] = source[key]; });
+    owned.ok = !!(source && source.ok === true);
+    owned.complete = !!(source && source.complete === true);
+    if (!owned.reason) owned.reason = fallbackReason || 'unverified-result';
+    if (!owned.target) owned.target = String(day || DS.day || '');
+    if (!owned.error && fallbackError) owned.error = String(fallbackError);
+    DS.lastAttemptResult = owned;
+    return owned;
+  }
+  /* ===== end oar-1.0.0 */
 
   function retryItems(source) {
     var history = source && source.historyReceipt ? source.historyReceipt : source;
@@ -49203,6 +49228,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (eF) {}
     var sessionSerial = DS.sessionSerial, pullSerial = DS.pullSerial;
+    DS.lastAttemptResult = null;                          /* oar-1.0.0: a new attempt owns its own receipt */
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
     if (!automaticRetry) {
@@ -49254,6 +49280,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
           DS.pulling = false;
+          ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || '') }, rday);
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
@@ -49378,6 +49405,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : si.pull({ date: day, onStatus: dsOnStatus });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
+          /* oar-1.0.0: own this attempt's receipt BEFORE anything reads it, so
+             a promise that resolves to nothing still leaves an honest record. */
+          result = ownAttemptResult(result, day, 'unverified-result', 'The Athena pull returned no verifiable result.');
           var attributionCoverage = dsBoundAttributionCoverage(si, result, day);
           DS.providerAttributionCoverage = attributionCoverage;
           if (attributionCoverage && result && result.providerRosterReceipt) {
@@ -49598,11 +49628,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             done(outcome.ok, outcome.message + cvNote, finalRetry > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
           });
         },
-               function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
+               function (err) {
+                 var errText = (err && err.message) || 'check the Athena tab and try again.';
+                 ownAttemptResult(null, day, 'pull-exception', errText);
+                 done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + errText);
+               });
       } else {
+        ownAttemptResult(null, day, 'no-receipt', 'The Athena pull engine did not return a verifiable completion receipt.');
         done(false, 'The Athena pull engine did not return a verifiable completion receipt. Reload MLS and try again.');
       }
-    } catch (e) { done(false, 'The pull could not start - make sure athenaOne is open, then try again.'); }
+    } catch (e) {
+      ownAttemptResult(null, day, 'pull-start-failed', (e && e.message) || 'The Athena pull could not start.');
+      done(false, 'The pull could not start - make sure athenaOne is open, then try again.');
+    }
   }
 
   function removeDoctorDayControls() {
@@ -49727,6 +49765,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var k = String(ev && ev.detail && ev.detail.day || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k === DS.day) return;
       DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
+    DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
       DS.day = k; DS.followToday = (k === todayKey());
       syncStrip();
     } catch (e) {}
@@ -49741,7 +49780,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++; DS.pullSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
+    DS.lastResult = null; DS.lastAttemptResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
     DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.pullProviderScope = null;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
