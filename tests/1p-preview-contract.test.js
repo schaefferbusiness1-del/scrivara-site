@@ -47,7 +47,13 @@ const P1_CONFIG_RELEASE_SUBS = [
 /* Advanced by the 1p train of 2026-08-17 (Fable straighten-up, batch 2): uns-namespace-guard-1.0.0,
    p1-roster-settle-preflight-1.0.0, p1-todaynote-deferred-retry-1.0.0, legal-tools-1.0.0,
    p1-legal-letterhead-1.0.0. Production and extension baselines untouched. */
-const P1_BASE_COMMIT = '1f9e90b1127bf05bd525bae91a8c1bdf9dfa4508';
+/* Advanced by the 1p train of 2026-08-17 (Fable straighten-up, batch 3 — the pull lane): dnd-1.0.0
+   (retry rows keep their schedule day), fd-1.0.0 (future-day note leg not applicable), dnf-1.0.0
+   (bounded day-note read), bob-1.0.0 (census path defers history, never drops it), stp-2.0.0 (STOP
+   ends every phase), fdx-1.0.0 (find diagnostics), scv-1.0.0 (store-census bar), ed-1.0.0 in the
+   fork, rsk-1.0.0 (skip verified-today), cost breakdown, p1-authority-repair-1.0.0, cvc-1.0.0 (one
+   continuous pull), U0 regex repairs. Production and extension baselines untouched. */
+const P1_BASE_COMMIT = '9bb89357e50abff8cb0a5661fb4bb2b4fc599a52';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
