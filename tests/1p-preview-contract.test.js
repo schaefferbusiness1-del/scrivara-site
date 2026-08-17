@@ -19,15 +19,40 @@ const root = path.resolve(__dirname, '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 const EXPECTED_BUILD = 'p1-20260815-launch-r1';
 const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
+/* The extension release train of 2026-08-17 (MLS Assist 3.0.62, wsg-2.0.0)
+   moved exactly TWO literals in _config.yml - the released-package include
+   name (MLS_Assist_v3.0.61 -> v3.0.62: zip, bin and the download comment) and
+   its SHA-256 comment - the same lines every extension release moves
+   (scripts/sweep-3062.js). The config comparison below applies those two
+   literal substitutions to the frozen baseline text, so everything else in
+   the file is still byte-compared. */
+const P1_CONFIG_RELEASE_SUBS = [
+  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.62'],
+  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', '56710c442e7feb67398ffa533fb199bbf89feed10e7fe9baf9671b5877eb24b1']
+];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
    mobile encounter safety, study provenance, and P1 presentation controls.
    This constant freezes 1p against a PRODUCTION train, which is why a 1p train
    is the only thing allowed to move it, and why the production and extension
    baselines below are deliberately NOT moved by it. */
-const P1_BASE_COMMIT = '65ac767dc87b09fbce624b08f2389925b269d60a';
-const EXTENSION_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
-const PRODUCTION_BASE_COMMIT = 'd038c1ce20e70fe57895af2a6ceec5be9f7d0c58';
+/* Advanced by the AUTHORIZED extension release train of 2026-08-17 (MLS Assist
+   3.0.62 / wsg-2.0.0, owner directive 2026-08-12: every supervised Athena action
+   executes after the clinician's own confirm) - the 1p writeflow gained typed
+   place_order rows and the Settings card moved to 3.0.62. */
+const P1_BASE_COMMIT = '304a00bf8c0780fee3664b78212599e23ea5b316';
+/* Advanced by the SAME authorized extension release train (3.0.62): the four
+   write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
+   7bac5591..., zip 56710c44... - documented in scripts/sweep-3062.js and the
+   2026-08-17 evidence artifact. */
+const EXTENSION_BASE_COMMIT = '304a00bf8c0780fee3664b78212599e23ea5b316';
+/* Advanced by the SAME extension release train, for the pin lines ONLY: the
+   production Settings card version strings + release notes (ScribeFlow.html,
+   ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
+   mls-connect.js (chk3061 -> chk3062) - exactly what every prior extension
+   release moved. The production write contract (feat_mls_writeflow.js:
+   note write/save only) did NOT move and is pinned by athena-action-contract. */
+const PRODUCTION_BASE_COMMIT = '304a00bf8c0780fee3664b78212599e23ea5b316';
 
 const P1_FILES = [
   '1pScribeFlow.html',
@@ -304,7 +329,7 @@ assert(versionBlock.includes('if(canCheck()){') && versionBlock.includes('setTim
   '1p version-check scheduling must stay behind the backend availability predicate');
 
 /* This train's hard boundary: none of the production app loaders, shared
-   importer/service worker, or audited 3.0.61 extension release bytes may move.
+   importer/service worker, or audited 3.0.62 extension release bytes may move.
    Compare through Git so text filters do not make Windows line endings look
    like a mutation. A future authorized production/extension train must choose
    and document a new baseline instead of weakening this check. */
@@ -395,8 +420,9 @@ const currentConfig = read('_config.yml').replace(/\r\n/g, '\n');
 assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).length, 1, 'exact FREE Legal showcase include must appear once');
 assert.strictEqual((currentConfig.match(/  - "1p\/marketing\/index\.html"/g) || []).length, 1, 'exact FREE Marketing showcase include must appear once');
 assert.strictEqual((currentConfig.match(/  - "cloned\/index\.html"/g) || []).length, 1, 'exact /cloned live-route include must appear once');
-assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, ''), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'),
-  '_config.yml changed beyond the exact reviewed 1p showcase and /cloned traversal blocks');
+const baseConfigText = P1_CONFIG_RELEASE_SUBS.reduce((text, [from, to]) => text.split(from).join(to), String(baseConfigResult.stdout).replace(/\r\n/g, '\n'));
+assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, ''), baseConfigText,
+  '_config.yml changed beyond the exact reviewed 1p showcase and /cloned traversal blocks (and the two 3.0.62 release literals)');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');
