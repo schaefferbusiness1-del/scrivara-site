@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 'use strict';
+/* ⛔ STAND-DOWN (2026-08-17b): /cloned is no longer a pristine production clone.
+ * It is DERIVED FROM /1p by scripts/derive-cloned-from-1p.js (the release
+ * candidate carrying every /1p feature). Running this script would silently
+ * reset the clone to production and the contract would fail. It stays only for
+ * the day /cloned has BECOME main and the lane needs re-founding from the new
+ * production. It refuses to write unless --i-know-this-resets-to-production. */
+if (!process.argv.includes('--check') && !process.argv.includes('--i-know-this-resets-to-production')) {
+  console.error('regenerate-cloned-lane.js: REFUSED. /cloned is derived from /1p now — use scripts/derive-cloned-from-1p.js. Pass --i-know-this-resets-to-production only after /cloned has become main.');
+  process.exit(3);
+}
 /*
  * Regenerate the /cloned lane as a PRISTINE byte-clone of production.
  *
