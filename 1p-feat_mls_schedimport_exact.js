@@ -1366,7 +1366,33 @@
     }
     return censusListHasContent(p.bmi);
   }
-  var CENSUS_FIELDS = ["problems", "meds", "allergies", "vitals", "history", "visits", "summary"];
+  /* ===== cap-1.0.0 (a captured chart is content, even before the AI runs) =====
+     MEASURED on the owner's /1p 2026-08-17 (build p1-20260815-launch-r1, ext
+     3.0.62, TODAY, bodies OFF, 16 rows): 9 rows read their chart out of athena
+     successfully and then died on "502 Upstream request failed" - the BACKEND
+     AI (aiCallRaw -> /api/complete, called by _parsePatientChart) was down
+     because the OpenAI credit balance had gone negative. The store gained
+     NOTHING for those nine patients: the whole capture was thrown away because
+     a summariser was unavailable, and every one of them was reported as a
+     failed history.
+
+     The raw capture is the expensive, irreplaceable half (it needs athena, the
+     tab, the lease and 15-30 s per chart); the AI post-processing is cheap and
+     retryable and needs neither. So the capture is PERSISTED FIRST, under the
+     same identity proof the six-card save uses, and the census counts it -
+     otherwise a day that captured every chart but could not summarise one of
+     them reads as a day that stored nothing (the scv-1.0.0 bar).
+     A capture is only counted when it carries this pull's own verified
+     identity echo AND real characters, so an empty or unbound capture can
+     never manufacture content. */
+  function censusRawCaptureHasContent(p) {
+    var c = p && p.athenaRawCapture;
+    if (!c || typeof c !== "object") return false;
+    if (c.identityVerified !== true) return false;
+    return Number(c.chars || 0) > 0 && !!String(c.text || "").trim();
+  }
+  /* ===== end cap-1.0.0 (census predicate) ===== */
+  var CENSUS_FIELDS = ["problems", "meds", "allergies", "vitals", "history", "visits", "summary", "rawCapture"];
   /* b754: allergies are counted in the BREAKDOWN but must never, alone, mark a
      record as captured. mergeOwned preserves a prior allergy value whenever the
      fresh read is empty, and athenaOne prints that section as the literal string
@@ -1374,12 +1400,13 @@
      that stored nothing, and on a SIGNED-OUT session. A field the broken path
      does not produce cannot be evidence that the path worked. This is the same
      exclusion the chart-import gate already makes, applied one level up. */
-  var CENSUS_CONTENT_FIELDS = ["problems", "meds", "vitals", "history", "visits", "summary"];
+  var CENSUS_CONTENT_FIELDS = ["problems", "meds", "vitals", "history", "visits", "summary", "rawCapture"];
   function censusPatientContent(p) {
     return {
       problems: censusListHasContent(p && p.problems),
       meds: censusListHasContent(p && p.meds),
       allergies: censusListHasContent(p && p.allergies),
+      rawCapture: censusRawCaptureHasContent(p), /* cap-1.0.0 */
       vitals: censusVitalsHaveContent(p),
       history: censusHistoryHasContent(p && p.history),
       visits: censusVisitsHaveContent(p),
@@ -1427,8 +1454,13 @@
       vchars += body.length;
       if (v.indexOnly !== true && body.trim()) bodies++;
     }
+    /* cap-1.0.0: a pull that captured raw chart text CHANGED the store, so the
+       fingerprint must move - otherwise storeDelta.changed reports 0 on the
+       very run whose capture is the thing being measured. Character COUNT
+       only, in keeping with the "size, never timestamps" rule above. */
     return [censusLen(p.problems), censusLen(p.meds), censusLen(p.allergies), censusLen(p.history),
-      censusLen(p.vitals), censusLen(p.bmi), arr.length, bodies, vchars, censusLen(p.summary)].join("|");
+      censusLen(p.vitals), censusLen(p.bmi), arr.length, bodies, vchars, censusLen(p.summary),
+      Number((p.athenaRawCapture && p.athenaRawCapture.chars) || 0)].join("|");
   }
   /* Descriptive only, and never a cause. An unchanged record can be perfectly
      legitimate - nothing new in Athena since the last pull - so this never
@@ -1458,7 +1490,8 @@
     var out = {
       measured: false, rows: rows.length, targets: 0, resolved: 0, unresolved: 0, neverAttempted: 0,
       withContent: 0, withoutContent: 0, stampOnlySummary: 0, athenaSourced: 0, gap: 0,
-      fields: { problems: 0, meds: 0, allergies: 0, vitals: 0, history: 0, visits: 0, summary: 0 },
+      captureOnly: 0, /* cap-1.0.0: captured, not yet summarised - counted, never hidden */
+      fields: { problems: 0, meds: 0, allergies: 0, vitals: 0, history: 0, visits: 0, summary: 0, rawCapture: 0 },
       emptyPatientIds: [], prints: {}
     };
     return safe(function () {
@@ -1481,7 +1514,21 @@
         for (var ci = 0; ci < CENSUS_CONTENT_FIELDS.length; ci++) {
           if (c[CENSUS_CONTENT_FIELDS[ci]]) { any = true; break; }
         }
-        if (any) { out.withContent++; continue; }
+        if (any) {
+          out.withContent++;
+          /* cap-1.0.0: a record whose ONLY content is this pull's raw capture
+             is captured-but-unsummarised. It counts as content (the chart is
+             saved and cannot be lost), and it is reported separately so the
+             day never claims a summarised chart it does not have. */
+          if (c.rawCapture) {
+            var summarised = false;
+            for (var qi = 0; qi < CENSUS_CONTENT_FIELDS.length; qi++) {
+              if (CENSUS_CONTENT_FIELDS[qi] !== "rawCapture" && c[CENSUS_CONTENT_FIELDS[qi]]) { summarised = true; break; }
+            }
+            if (!summarised) out.captureOnly++;
+          }
+          continue;
+        }
         out.withoutContent++;
         if (out.emptyPatientIds.length < 40) out.emptyPatientIds.push(pid);
         /* no content AND a non-empty summary can only mean stamp lines. */
@@ -3475,6 +3522,65 @@
     } catch (eSuffix) {}
     return "";
   }
+  /* ===== fdx-1.1.0 (the find-open deadline gets a name and a retry) =====
+     MEASURED live 2026-08-17 on the owner's /1p: 2 of 16 rows died on
+     background.js failOpenDeadline('find-patient open') - the extension's own
+     absolute deadline for OPENING the chart from athena's patient search. The
+     row printed the extension's English sentence, which (a) told the doctor
+     nothing actionable and (b) matched no clause of SWEEPABLE_REASON, so the
+     automatic end-of-batch sweep skipped exactly the two rows a second attempt
+     heals most often. fdx-1.0.0 already records the extension's PHI-free
+     verdict on one.findDiag; this turns that verdict into the row's reason
+     code so both surfaces can act on it. Codes only. */
+  function fdxRowReason(one) {
+    var fd = one && one.findDiag;
+    if (!fd) return "";
+    if (String(fd.reason || "") === "open-deadline-exceeded") return "find-open-deadline";
+    return "";
+  }
+  function fdxStampRoute(one) {
+    var fd = one && one.findDiag;
+    if (!fd) return;
+    var route = String(fd.via || fd.route || "").slice(0, 40);
+    if (route) one.findRoute = route;
+    if (fd.findReason) one.findReason = String(fd.findReason).slice(0, 40);
+  }
+  /* ===== end fdx-1.1.0 ===== */
+  /* ===== nav-1.0.0 (a landed schedule is a fact the re-pull must respect) =====
+     The whole-pull automatic re-pull exists for ONE situation: athena's grid
+     was still painting when the schedule was read. Once a day's schedule has
+     been read complete (or proved authoritatively empty), that situation is
+     over for that day, and a later nav-failed - which is a TAB problem, not a
+     grid problem - must not restart the schedule leg. This is the record that
+     makes the veto a measurement rather than a guess. Survives a reload via
+     the same account-scoped local index every other pull receipt uses. */
+  var navLandedMem = {};
+  function navLandedKey(day) { return safe(function () { return isFn(window.uns) ? window.uns("p1NavScheduleLandedV1::" + String(day || "")) : ("p1NavScheduleLandedV1::" + String(day || "")); }, "p1NavScheduleLandedV1::" + String(day || "")); }
+  function navMarkScheduleLanded(day, info) {
+    var d = normDate(day || "") || "";
+    if (!d) return null;
+    var rec = {
+      v: 1, day: d, at: Date.now(),
+      rows: Number((info && info.rows) || 0),
+      empty: !!(info && info.empty),
+      complete: !!(info && info.complete)
+    };
+    navLandedMem[d] = rec;
+    safe(function () { window.localStorage.setItem(navLandedKey(d), JSON.stringify(rec)); });
+    return rec;
+  }
+  /* A landing is only usable while it is FRESH (12 h). An overnight record can
+     never veto tomorrow morning's first real pull of the same weekday key. */
+  var NAV_LANDED_MAX_AGE_MS = 12 * 3600 * 1000;
+  function navScheduleLanded(day) {
+    var d = normDate(day || "") || "";
+    if (!d) return null;
+    var rec = navLandedMem[d] || safe(function () { var raw = window.localStorage.getItem(navLandedKey(d)); return raw ? JSON.parse(raw) : null; }, null);
+    if (!rec || rec.complete !== true) return null;
+    if (!(Number(rec.at) > 0) || Date.now() - Number(rec.at) > NAV_LANDED_MAX_AGE_MS) return null;
+    return rec;
+  }
+  /* ===== end nav-1.0.0 (landed record) ===== */
   function verifiedChartCoverage(rd, readStartedAt) {
     rd = rd || {};
     var receipt = rd.coverageReceipt || null;
@@ -3487,6 +3593,92 @@
     if (!(expected >= 1) || read !== expected || Number(receipt.boundClinicalFrames) !== expected || Number(receipt.unboundClinicalFrames || 0) !== 0 || Number(receipt.oversizeClinicalFrames || 0) !== 0 || Number(receipt.unreadFrames || 0) !== 0 || Number(receipt.omittedForCap || 0) !== 0 || receipt.truncated === true || textChars !== String(rd.text || "").length) return null;
     return receipt;
   }
+  /* ===== cap-1.0.0 (the capture is saved before, and independent of, the AI) =====
+     THE ORDER IS THE WHOLE FIX. Before this block the sequence was
+       chart read -> AI parse -> identity ref -> store,
+     so a dead backend AI destroyed a completed, identity-verified athena read:
+     measured live 2026-08-17 on the owner's /1p, 9 of 16 rows "502 Upstream
+     request failed", store unchanged, all nine reported as FAILED histories.
+     The sequence is now
+       chart read -> identity ref -> STORE THE RAW CAPTURE -> AI parse -> store,
+     and the AI half is a retryable follow-up over text that is already saved.
+
+     Nothing is loosened. The capture is written only under the SAME verified
+     identity echo (_athenaHistoryVerifiedRef: name + DOB/MRN proof against the
+     frozen target) that gates the six-card save, only under a proven coverage
+     receipt, and the write is read back before it is believed. No clinical
+     text is invented, edited or deleted - the capture is the reader's own
+     characters, stored verbatim. */
+  var CAP_MAX_CHARS = 90000; /* the parse refuses above this, so nothing beyond it is usable */
+  /* PHI-free reason class for a failed AI step. The new backend answers
+     {error, code, retryable}; aiCallRaw carries those onto the Error as
+     err.mlsAi. Codes and status numbers only - never the model's text. */
+  function capAiFailure(err) {
+    var msg = String((err && err.message) || err || "");
+    if (/deadline|timeout/i.test(msg)) return null;            /* a timeout still stops the batch */
+    if (/^clinical-field-coverage-unproven$/.test(msg)) return { code: "ai-empty-parse", retryable: true, status: 0 };
+    var ai = err && err.mlsAi;
+    if (ai && typeof ai === "object") {
+      return {
+        code: String(ai.code || ("ai-http-" + (Number(ai.status) || 0))).slice(0, 40),
+        retryable: ai.retryable !== false,
+        status: Number(ai.status) || 0
+      };
+    }
+    /* pre-cap builds of the shell throw "<status> <detail>" with no fields */
+    var m = /^([45]\d\d)\b/.exec(msg);
+    if (m) return { code: "ai-http-" + m[1], retryable: true, status: Number(m[1]) };
+    if (/failed to fetch|networkerror|load failed/i.test(msg)) return { code: "ai-network", retryable: true, status: 0 };
+    return null;
+  }
+  function capBindRef(saveRef, requestId) {
+    if (!saveRef || !requestId) return saveRef;
+    var boundRef = {};
+    for (var brk in saveRef) if (Object.prototype.hasOwnProperty.call(saveRef, brk)) boundRef[brk] = saveRef[brk];
+    boundRef.requestId = String(requestId);
+    return boundRef;
+  }
+  /* Persist the raw capture + the identity receipt, then PROVE it by reading
+     the record back. Returns the stored capture or null; never throws. */
+  function capPersistRawCapture(target, row, rd, parseText, coverage, requestId) {
+    return safe(function () {
+      var pid = String((target && target.patientId) || "");
+      if (!pid) return null;
+      var text = String(parseText || (rd && rd.text) || "");
+      if (!text.trim()) return null;
+      if (text.length > CAP_MAX_CHARS) text = text.slice(0, CAP_MAX_CHARS);
+      var p = patientById(pid);
+      if (!p) return null;
+      var capture = {
+        v: 1, at: Date.now(), requestId: String(requestId || ""),
+        day: normDate((row && (row.scheduleDate || row.date)) || (target && target.scheduleDate) || ""),
+        appointmentId: String((target && target.appointmentId) || ""),
+        chars: text.length, text: text,
+        readerVersion: String((coverage && coverage.readerVersion) || ""),
+        frames: Number((coverage && coverage.readClinicalFrames) || 0),
+        identityVerified: true,
+        /* the echo the identity gate accepted, kept so the retry can rebuild
+           the exact same verified ref without re-opening the chart */
+        echo: {
+          chartName: String((rd && rd.chartName) || ""),
+          chartDob: String((rd && rd.chartDob) || ""),
+          chartMrn: String((rd && rd.chartMrn) || "")
+        },
+        summaryPending: true, summaryCode: "", summaryAttempts: 0, summaryAt: 0
+      };
+      p.athenaRawCapture = capture;
+      if (isFn(window.upsertPatient)) window.upsertPatient(p);
+      else if (isFn(window.savePatients)) window.savePatients(window.getPatients() || []);
+      safe(function () { if (isFn(window._pendingSyncAdd)) window._pendingSyncAdd(pid); });
+      /* PRESENCE IS NOT PROVENANCE: read the store back and require THIS
+         operation's request id, or the capture is not saved. */
+      var back = patientById(pid);
+      var stored = back && back.athenaRawCapture;
+      if (!stored || String(stored.requestId || "") !== String(requestId || "") || Number(stored.chars || 0) !== text.length) return null;
+      return stored;
+    }, null);
+  }
+  /* ===== end cap-1.0.0 (capture persistence) ===== */
   function saveOrganizedHistory(target, row, rd, readStartedAt, deadlineAt, requestId) {
     var coverage = verifiedChartCoverage(rd, readStartedAt);
     if (!coverage) return Promise.reject(new Error("chart-coverage-unproven"));
@@ -3497,6 +3689,14 @@
        every gate, by the one shared combiner. This is the lane the day pull uses. */
     var parseText = safe(function () { return window._athenaChartTextForParse ? window._athenaChartTextForParse(rd) : String(rd.text || ""); }, null);
     if (typeof parseText !== "string" || !parseText) parseText = String(rd.text || "");
+    /* ===== cap-1.0.0 (persist first) =====
+       The identity echo is proven HERE, above the AI call, and the capture is
+       written under it. When the echo cannot be proven nothing is written and
+       the flow falls through unchanged, so the original refusal order (and its
+       error text) survives exactly as before. */
+    var capEarlyRef = safe(function () { return window._athenaHistoryVerifiedRef(target, rd); }, null);
+    var capStored = capEarlyRef ? capPersistRawCapture(target, row, rd, parseText, coverage, requestId) : null;
+    /* ===== end cap-1.0.0 (persist first) ===== */
     var parsePromise = Promise.resolve(safe(function () { return window._parsePatientChart(parseText, { signal: aborter && aborter.signal, deadlineAt: deadlineAt, requestId: requestId }); }, null));
     return boundedUntil(parsePromise, deadlineAt, "chart-parse-deadline-exceeded", function () { if (aborter) aborter.abort(); }).then(function (chart) {
       var parsedCoverage=safe(function(){return isFn(window._athenaChartProfileCoverage)?window._athenaChartProfileCoverage(chart):null;},null);
@@ -3580,8 +3780,149 @@
         }
       }
       return verifyWithSettle(0);
+    }).then(function (organizedResult) {
+      /* ===== cap-1.0.0 (the summary landed) =====
+         The six cards are stored, so the capture is no longer pending. The raw
+         text itself is KEPT: it is the only local copy of what athena showed,
+         and a later re-summarise must never need the tab again. */
+      capClearPending(target && target.patientId);
+      return organizedResult;
+    }, function (aiErr) {
+      /* ===== cap-1.0.0 (the AI half failed - the capture did not) ===== */
+      var cls = capStored ? capAiFailure(aiErr) : null;
+      if (!cls) throw aiErr;
+      capMarkPending(target && target.patientId, cls);
+      var pendErr = new Error("summary-pending: " + cls.code);
+      pendErr.mlsCapture = {
+        saved: true, pending: true, code: cls.code, retryable: cls.retryable !== false,
+        status: Number(cls.status || 0), chars: Number(capStored.chars || 0),
+        detail: String((aiErr && aiErr.message) || "").slice(0, 120)
+      };
+      throw pendErr;
     });
   }
+  /* ===== cap-1.0.0 (pending bookkeeping on the stored capture) ===== */
+  function capMarkPending(patientId, cls) {
+    safe(function () {
+      var p = patientById(patientId);
+      if (!p || !p.athenaRawCapture) return;
+      p.athenaRawCapture.summaryPending = true;
+      p.athenaRawCapture.summaryCode = String((cls && cls.code) || "ai-unavailable").slice(0, 40);
+      p.athenaRawCapture.summaryRetryable = !(cls && cls.retryable === false);
+      p.athenaRawCapture.summaryAttempts = Number(p.athenaRawCapture.summaryAttempts || 0) + 1;
+      p.athenaRawCapture.summaryAt = Date.now();
+      if (isFn(window.upsertPatient)) window.upsertPatient(p);
+    });
+  }
+  function capClearPending(patientId) {
+    safe(function () {
+      var p = patientById(patientId);
+      if (!p || !p.athenaRawCapture || p.athenaRawCapture.summaryPending !== true) return;
+      p.athenaRawCapture.summaryPending = false;
+      p.athenaRawCapture.summaryCode = "";
+      p.athenaRawCapture.summaryAt = Date.now();
+      /* QUOTA: the raw text exists to survive an AI outage. Once the six cards
+         are stored it has done its job, so the TEXT is released and only the
+         PHI-free receipt (chars, when, request id, identity echo) is kept - a
+         pull cannot grow the store by ~90 KB per patient per day. The store
+         hit its ceiling once already; it will not be this that does it again. */
+      p.athenaRawCapture.text = "";
+      p.athenaRawCapture.released = true;
+      if (isFn(window.upsertPatient)) window.upsertPatient(p);
+    });
+  }
+  /* Re-run ONLY the AI half, over text that is already stored. No athena, no
+     tab, no lease - which is why this can be retried in the background and
+     again on the next pull. Every identity gate still runs: the verified ref
+     is rebuilt from the frozen target and the SAME echo the capture was
+     written under, so a drifted local record refuses exactly as it would on a
+     fresh read. */
+  function capResummarizeStored(patientId, deadlineMs) {
+    var p = patientById(patientId);
+    var cap = p && p.athenaRawCapture;
+    if (!cap || cap.summaryPending !== true) return Promise.resolve({ ok: false, reason: "not-pending" });
+    if (!String(cap.text || "").trim()) return Promise.resolve({ ok: false, reason: "no-stored-capture" });
+    var target = {
+      patientId: String(p.id), name: String(p.name || ""), dob: String(p.dob || ""),
+      mrn: String(p.mrn || p.athenaId || ""),
+      appointmentId: String(cap.appointmentId || ""), scheduleDate: String(cap.day || "")
+    };
+    var echo = cap.echo || {};
+    var saveRef = safe(function () { return window._athenaHistoryVerifiedRef(target, echo); }, null);
+    if (!saveRef) return Promise.resolve({ ok: false, reason: "identity-echo-unproven" });
+    var requestId = "cap-resum-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    var readStartedAt = Date.now();
+    var deadlineAt = Date.now() + (Number(deadlineMs) > 0 ? Number(deadlineMs) : 120000);
+    var parsePromise = Promise.resolve(safe(function () { return window._parsePatientChart(String(cap.text), { deadlineAt: deadlineAt, requestId: requestId }); }, null));
+    return boundedUntil(parsePromise, deadlineAt, "chart-parse-deadline-exceeded").then(function (chart) {
+      var parsedCoverage = safe(function () { return isFn(window._athenaChartProfileCoverage) ? window._athenaChartProfileCoverage(chart) : null; }, null);
+      if (!chart || !parsedCoverage || parsedCoverage.complete !== true) throw new Error("clinical-field-coverage-unproven");
+      var bound = capBindRef(saveRef, requestId);
+      if (!safe(function () { return window._savePatientChart(bound, { name: target.name, dob: target.dob, mrn: target.mrn }, chart) === true; }, false)) throw new Error("chart-identity-save-refused");
+      var storedCoverage = safe(function () { return isFn(window._patientHistoryCardCoverage) ? window._patientHistoryCardCoverage(target.patientId) : null; }, null);
+      if (!storedCoverage || storedCoverage.complete !== true || storedCoverage.exactIdentityVerified !== true) throw new Error("clinical-field-save-unproven");
+      if (String(storedCoverage.saveRequestId || "") !== requestId) throw new Error("six-card-save-request-unproven");
+      capClearPending(target.patientId);
+      return { ok: true, patientId: target.patientId, requestId: requestId };
+    }, function (e) {
+      var cls = capAiFailure(e);
+      if (cls) capMarkPending(target.patientId, cls);
+      return { ok: false, reason: String((e && e.message) || e || "resummarize-failed").slice(0, 120), code: cls ? cls.code : "" };
+    });
+  }
+  /* Every patient this batch captured but could not summarise, read back from
+     the STORE (never from a counter) so a reload or a second pull still finds
+     them. */
+  function capPendingPatientIds(rows) {
+    return safe(function () {
+      var out = [], seen = {};
+      (Array.isArray(rows) ? rows : []).forEach(function (r) {
+        var pid = String(rowLocalPatientId(r) || (r && r._mlsTargetPatientId) || "");
+        if (!pid || seen[pid]) return;
+        seen[pid] = 1;
+        var p = patientById(pid);
+        if (p && p.athenaRawCapture && p.athenaRawCapture.summaryPending === true && p.athenaRawCapture.summaryRetryable !== false) out.push(pid);
+      });
+      return out;
+    }, []);
+  }
+  /* BOUNDED background retry: setTimeout only (rAF never fires in a hidden
+     tab), exponential-ish backoff, at most CAP_RETRY_MAX rounds, one armed
+     chain per page. It touches no athena surface at all, so it is safe to run
+     after the pull has released everything. */
+  var CAP_RETRY_MAX = 3;
+  var CAP_RETRY_BACKOFF_MS = [20000, 60000, 180000];
+  var capRetryArmed = false;
+  function capArmBackgroundRetry(patientIds, onDone) {
+    var ids = (Array.isArray(patientIds) ? patientIds : []).slice(0, 60);
+    if (!ids.length) { if (isFn(onDone)) safe(function () { onDone({ armed: false, rounds: 0, recovered: 0 }); }); return false; }
+    if (capRetryArmed) { if (isFn(onDone)) safe(function () { onDone({ armed: false, rounds: 0, recovered: 0, reason: "already-armed" }); }); return false; }
+    capRetryArmed = true;
+    var round = 0, recovered = 0;
+    function finish(reason) {
+      capRetryArmed = false;
+      safe(function () { window.__mlsP1CapRetry = { at: Date.now(), rounds: round, recovered: recovered, remaining: capPendingPatientIds(ids.map(function (id) { return { patient_external_id: id }; })).length, reason: String(reason || "done") }; });
+      if (isFn(onDone)) safe(function () { onDone({ armed: true, rounds: round, recovered: recovered, reason: String(reason || "done") }); });
+    }
+    function runRound() {
+      round++;
+      var live = capPendingPatientIds(ids.map(function (id) { return { patient_external_id: id }; }));
+      if (!live.length) { finish("all-summarised"); return; }
+      var i = 0;
+      (function next() {
+        if (i >= live.length) {
+          if (round >= CAP_RETRY_MAX) { finish("retry-budget-spent"); return; }
+          setTimeout(runRound, CAP_RETRY_BACKOFF_MS[Math.min(round, CAP_RETRY_BACKOFF_MS.length - 1)]);
+          return;
+        }
+        var pid = live[i++];
+        capResummarizeStored(pid, 120000).then(function (r) { if (r && r.ok) recovered++; next(); }, function () { next(); });
+      })();
+    }
+    setTimeout(runRound, CAP_RETRY_BACKOFF_MS[0]);
+    return true;
+  }
+  /* ===== end cap-1.0.0 (retry lane) ===== */
   function saveVerifiedVisits(target, r) {
     var identity = r && r.identity || {};
     var observed = { chartName: identity.name || r.chartName || "", chartDob: identity.dob || r.chartDob || "", chartMrn: identity.mrn || identity.athenaId || r.chartMrn || "" };
@@ -3746,8 +4087,8 @@
     function ppTally(s){ try{ /* ppt-2.0 (owner 2026-08-09, watching day 9: "2 saved · 19 skipped"): the tally counted settle EVENTS, so a chart that failed three re-check passes then cleared counted 3 into "skipped" and 1 into "saved" forever. CHART-LEVEL truth: latest state per chart key wins; done = distinct charts seen (monotonic - the bar never moves backward, si-1.9.4). */ var latest={}; for(var ti=0;ti<s.rows.length;ti++){ var tr=s.rows[ti]; latest[tr.k||tr.name]=tr; } var tks=Object.keys(latest); var tok=0,tfail=0,tcs=0; for(var tj=0;tj<tks.length;tj++){ var tl=latest[tks[tj]]; if(tl.ok===true) tok++; else if(tl.pending!==true){ tfail++; if(tl.cs===true) tcs++; } } s.ok=tok; s.failed=tfail; s.chartOnly=tcs; s.done=tks.length; if((s.total||0)<tks.length) s.total=tks.length; }catch(e){} }
     function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
-    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
-    function ppResolve(rowRef,ok,reason){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); ppTally(s); }
+    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
+    function ppResolve(rowRef,ok,reason,extra){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); if(extra){ if(extra.sp===true) rowRef.sp=true; /* cap-1.0.0 */ if(extra.chartSaved===true) rowRef.cs=true; if(extra.dn) rowRef.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ } ppTally(s); }
     function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
     var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
     var sweepDeadlineCapAt = Number(sweepOpts && sweepOpts.deadlineCapAt || 0);
@@ -3818,9 +4159,100 @@
       if (outcome === "skipped") {
         receipt.todayNoteSkipped = Number(receipt.todayNoteSkipped || 0) + 1;
         if (entry.todayNoteSkipped === "future-day") receipt.todayNoteSkippedFutureDay = Number(receipt.todayNoteSkippedFutureDay || 0) + 1; /* fd-1.0.0 */
+        if (entry.todayNoteSkipped === "not-yet-seen") receipt.todayNoteSkippedNotYet = Number(receipt.todayNoteSkippedNotYet || 0) + 1; /* tny-1.0.0 */
       }
     }
     /* ===== end dnf-1.0.0 ===== */
+    /* ===== tny-1.0.0 (TODAY's not-yet-seen appointments are not failures) =====
+       fd-1.0.0 proved the shape for a FUTURE day: no encounter exists, so
+       nothing was read and nothing failed. TODAY has the same hole in the
+       middle of it. MEASURED live 2026-08-17 on the owner's /1p at 13:52 ET:
+       16 rows, dayVerdict tnFailed 12, nine of them "Safety stop - Athena
+       returned an encounter index without verified full detail" - which is
+       what feat_visits.js throws (line 2355) when the scoped read finds NO
+       verified encounter body for that date. A 3 pm patient at 1:52 pm has no
+       note because the visit has not happened; calling that a failure both
+       lies to the doctor and spends DN_ROW_DEADLINE_MS (45 s) per row proving
+       it.
+
+       Two independent detectors, both fail-CLOSED toward reading:
+        (a) TIME - the appointment's own start time is later than now in the
+            ACCOUNT zone. Deterministic, costs zero, and skips the read.
+        (b) RECEIPT - the reader came back with the "index has no verified
+            encounter for that date" refusal. Only on TODAY, and only for that
+            exact refusal class; every other refusal stays a real failure.
+       A row with no time and no such refusal is read exactly as before, and a
+       PAST day is untouched: a missing note on a finished day is a real gap. */
+    var TNY_NO_ENCOUNTER = /(encounter index without verified full detail|no encounter (?:body|note)?\s*(?:was\s*)?found|no-encounter-for-date|encounter-index-empty|index-empty|no-visits-for-date)/i;
+    /* minutes past midnight for an appointment row, or -1 when unknown */
+    function tnRowMinutes(row) {
+      var raw = String((row && (row.time || row.start_local || row.time_display || row.startTime)) || "");
+      var hhmm = normTime(raw) || "";
+      var m = /^([0-9]{2}):([0-9]{2})$/.exec(hhmm);
+      if (!m) return -1;
+      return (Number(m[1]) * 60) + Number(m[2]);
+    }
+    /* minutes past midnight RIGHT NOW in the account zone. Never the browser
+       zone: a clinician one timezone over would otherwise mark the whole
+       morning as not-yet-seen (or none of it). */
+    function tnNowMinutes() {
+      return safe(function () {
+        var parts = new Intl.DateTimeFormat("en-US", { timeZone: EST_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+        var hh = "", mm = "";
+        parts.forEach(function (p) { if (p.type === "hour") hh = p.value; else if (p.type === "minute") mm = p.value; });
+        if (!/^[0-9]{1,2}$/.test(hh) || !/^[0-9]{2}$/.test(mm)) return -1;
+        return (Number(hh) % 24) * 60 + Number(mm);
+      }, -1);
+    }
+    /* has this appointment's slot arrived? A past day is always yes; an
+       unknown time is treated as yes so a row can never be parked forever. */
+    function tnApptPassed(day, row) {
+      var d = normDate(day || "") || "";
+      if (!d) return true;
+      var t = acctTodayKey();
+      if (!t || d !== t) return true;               /* past day (future is fd-1.0.0) */
+      var mins = tnRowMinutes(row);
+      if (mins < 0) return true;                    /* no time on the row */
+      var now = tnNowMinutes();
+      if (now < 0) return true;                     /* cannot prove it - read it */
+      return now >= mins;
+    }
+    function tnStampNotYet(entry, from) {
+      if (!entry) return;
+      entry.todayNote = "not-yet";
+      entry.todayNoteReason = "not-yet-seen";
+      entry.todayNoteSkipped = "not-yet-seen";
+      entry.todayNoteNotYetFrom = String(from || "time");
+      tnStamp(entry, 0, "skipped");
+    }
+    /* the DAY-NOTE COLUMN. Deliberately separate from the row's history
+       verdict: read / not-yet / unread-with-reason, never a row failure. */
+    function tnColumn(entry) {
+      if (!entry) return "";
+      if (entry.todayNote === true) return "read";
+      if (entry.todayNote === "not-yet") return "not-yet";
+      if (entry.todayNote === "future-day") return "future-day";
+      if (entry.todayNote === false) return "unread:" + String(entry.todayNoteReason || "unknown").slice(0, 60);
+      return "";
+    }
+    /* DELIVERABLE 3 (owner 2026-08-17): the day-note leg may NOT fail the row.
+       Before this, every unread note pushed ppSettle(..., ok:false, ...) AFTER
+       the row's own settle, and latest-state-wins made the day-note verdict the
+       row's visible verdict - 12 "not saved" rows on a day whose charts were
+       read. The row keeps its HISTORY verdict; the note rides in r.dn. */
+    function tnEmitDayNoteColumn(entry) {
+      if (!entry || !entry.name || typeof ppSettle !== "function") return;
+      var col = tnColumn(entry);
+      if (!col) return;
+      safe(function () {
+        ppSettle(entry.name, entry.complete === true,
+          entry.complete === true ? (entry.summaryPending === true ? "saved · summary pending" : "") : ((entry.reason || "") + historyDiagSuffix(entry)),
+          false,
+          { pid: entry.patientId, sp: entry.summaryPending === true, dn: col,
+            chartSaved: ((entry.organized === true && entry.dobVerified === true) || entry.captureSaved === true) && !entry.storageFailure });
+      });
+    }
+    /* ===== end tny-1.0.0 ===== */
     /* ===== rsk-1.0.0 (a re-run does not re-read what it already proved) =====
        Two requirements, one mechanism. (a) STOP: "a re-run must resume/skip
        verified rows" - after a stopped pull the doctor presses Pull again and
@@ -4061,6 +4493,37 @@
     var todayNoteExtOk = null;
     var safeAsync = async function (fn, fb) { try { return await fn(); } catch (eSa) { return fb; } };
     var inlineDayNoteFuse = "";
+    /* ===== cap-1.0.0 (one place decides what a summary-pending row looks like) =====
+       The AI half failed but the capture is STORED. The row is saved with a
+       pending summary and a PHI-free code; it is NOT a failed history, it does
+       not enter receipt.retry, and it never earns a fresh athena chart open
+       (the tab has nothing to add - the backend AI is what is missing). */
+    function capApplyPending(one, err) {
+      var cap = err && err.mlsCapture;
+      if (!cap || cap.saved !== true) return false;
+      one.captureSaved = true;
+      one.summaryPending = true;
+      one.summaryCode = String(cap.code || "ai-unavailable").slice(0, 40);
+      one.summaryRetryable = cap.retryable !== false;
+      one.captureChars = Number(cap.chars || 0);
+      one.chartReason = "";
+      one.reason = "";
+      receipt.summariesPending = Number(receipt.summariesPending || 0) + 1;
+      safe(function () {
+        receipt.summaryPendingCodes = receipt.summaryPendingCodes || {};
+        receipt.summaryPendingCodes[one.summaryCode] = Number(receipt.summaryPendingCodes[one.summaryCode] || 0) + 1;
+      });
+      return true;
+    }
+    /* the row's HISTORY verdict. A captured chart whose summary is pending is
+       a saved row - the capture is on disk, counted by the store census, and
+       the summary lands on its own retry lane. */
+    function capRowComplete(one) {
+      if (!one || one.identityVerified !== true) return false;
+      if (one.captureSaved === true && one.summaryPending === true) return one.visitsComplete === true;
+      return !!(one.dobVerified === true && one.organized && one.organizationComplete && one.visitsComplete);
+    }
+    /* ===== end cap-1.0.0 (row verdict) ===== */
     function launchPipelinedParse(entry, parseArgs) {
       entry.one.parsePipelined = true;
       var t0 = Date.now();
@@ -4069,14 +4532,37 @@
         entry.one.chartCoverage = organizedResult.chartCoverage; entry.one.profileCoverage = organizedResult.profileCoverage; entry.one.clinicalFieldCount = organizedResult.clinicalFieldCount; entry.one.dobVerified = organizedResult.dobVerified === true;
         entry.one.organized = !!(entry.one.profileCoverage && entry.one.profileCoverage.complete === true);
         entry.one.chartReason = "";
+        ppProvisionalSaved(entry.one); /* dv3-1.0.0 */
       }, function (parseErr) {
         entry.stageMs.parseSave += Date.now() - t0;
+        if (capApplyPending(entry.one, parseErr)) { ppProvisionalSaved(entry.one); return; } /* cap-1.0.0 */
         entry.one.chartReason = String(parseErr && parseErr.message || parseErr || "chart-parse-failed").slice(0, 200);
         if (parseErr && parseErr.mlsEchoes) entry.one.chartEchoes = parseErr.mlsEchoes;
         if (parseErr && parseErr.mlsFind) entry.one.findDiag = parseErr.mlsFind; /* fdx-1.0.0 */
       });
       pipelineParses.push(entry);
     }
+    /* ===== dv3-1.0.0 (a saved chart says SAVED while the pull is still running) =====
+       MEASURED live 2026-08-17, 23 rows, notes OFF, 21 minutes in: "13 done,
+       0 saved, 8 not saved, 5 re-checking" on a pull whose charts WERE landing.
+       Two causes, both here. (1) The day-note leg pushed its own ok:false settle
+       AFTER the row's, and latest-state-wins made an unread note the row's
+       verdict - that is the 8. (2) A PIPELINED row settled "finishing…" and was
+       only resolved at end-of-batch finalization, so a chart proven saved 20
+       minutes ago still read as in-flight - that is the 5, and it is why ok was
+       0. A pipelined parse RESOLVES per row, so the row can say saved the
+       moment its own save is proven. Only the UPGRADE is provisional here: a
+       row that has not proven its save stays pending exactly as before, and
+       finalization still owns receipt.retry and receipt.complete. */
+    function ppProvisionalSaved(one) {
+      if (!one || !one.__ppRow) return;
+      var savedNow = one.organized === true || (one.captureSaved === true && one.summaryPending === true);
+      if (!savedNow) return;
+      safe(function () {
+        ppResolve(one.__ppRow, true, one.summaryPending === true ? "saved · summary pending" : "", { sp: one.summaryPending === true, chartSaved: true, dn: tnColumn(one) });
+      });
+    }
+    /* ===== end dv3-1.0.0 ===== */
     async function collectOverlapParse(overlap, one, stageMs, patientDeadlineAt) {
       /* Settle the overlapped parse; on a non-timeout failure give it ONE
          bounded sequential re-run (same rd - the chart was verified when it
@@ -4084,6 +4570,13 @@
       if (!overlap) return;
       var outcome = await overlap.settled;
       stageMs.parseSave += Date.now() - overlap.t0;
+      /* cap-1.0.0: a summary-pending outcome never buys a fresh chart open.
+         The capture is already saved and re-reading the same chart cannot
+         revive a backend AI that is down - it only costs an athena read. */
+      if (!outcome.ok && outcome.e && outcome.e.mlsCapture && outcome.e.mlsCapture.saved === true) {
+        capApplyPending(one, outcome.e);
+        return;
+      }
       if (!outcome.ok && !/timeout|deadline/i.test(String(outcome.e && outcome.e.message || "")) && Date.now() + 300000 < batchDeadlineAt) {
         /* si-1.7.2 semantics preserved: the single bounded retry is a FULL
            fresh open+verify+parse (never a bare re-parse of a possibly stale
@@ -4110,6 +4603,7 @@
         one.organized = !!(one.profileCoverage && one.profileCoverage.complete === true);
         one.chartReason = "";
       } else {
+        if (capApplyPending(one, outcome.e)) return; /* cap-1.0.0 */
         one.chartReason = String(outcome.e && outcome.e.message || outcome.e || "chart-parse-failed").slice(0, 200);
         if (outcome.e && outcome.e.mlsEchoes) one.chartEchoes = outcome.e.mlsEchoes;
         if (outcome.e && outcome.e.mlsFind) one.findDiag = outcome.e.mlsFind; /* fdx-1.0.0 */
@@ -4490,13 +4984,14 @@
         if(one.visitsSkipped!==true&&one.visitsVerifiedCarry!==true&&one.organized&&one.visitsComplete&&Number(one.clinicalFieldCount||0)===0&&Number(one.parsedVisits||0)===0&&one.authoritativeEmpty!==true){one.organizationComplete=false;one.visitsReason="clinical-field-coverage-unproven";}
         one.stageMs = { chartMs: stageMs.chart, parseSaveMs: stageMs.parseSave, visitsMs: stageMs.visits, visitSaveMs: stageMs.visitSave, totalMs: Date.now() - patientReadStartedAt };
         if (one.parsePipelined !== true) {
-          one.complete = !!(one.identityVerified && one.dobVerified===true && one.organized && one.organizationComplete && one.visitsComplete);
+          one.complete = capRowComplete(one); /* cap-1.0.0 */
           if (!one.complete) {
-            one.reason = one.chartReason || one.visitsReason || "history-partial";
+            fdxStampRoute(one); /* fdx-1.1.0 */
+            one.reason = fdxRowReason(one) || one.chartReason || one.visitsReason || "history-partial";
             receipt.retry.push(frozenRetryEntry(row, target, one.reason, one));
           }
         }
-        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? "" : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true, { surfaceResets: one.surfaceResets, chartSurface: one.chartSurface, pid: one.patientId, axe: one.axEntry, chartSaved: one.organized === true && one.dobVerified === true && !one.storageFailure && one.visitsReason !== "clinical-field-coverage-unproven" });
+        one.__ppRow = ppSettle(row.name, one.parsePipelined === true ? false : one.complete === true, one.parsePipelined === true ? "finishing…" : (one.complete === true ? (one.summaryPending === true ? "saved · summary pending" : "") : ((one.reason || "") && (one.reason + historyDiagSuffix(one)))), one.parsePipelined === true, { surfaceResets: one.surfaceResets, chartSurface: one.chartSurface, pid: one.patientId, axe: one.axEntry, sp: one.summaryPending === true, chartSaved: ((one.organized === true && one.dobVerified === true) || one.captureSaved === true) && !one.storageFailure && one.visitsReason !== "clinical-field-coverage-unproven" });
         receipt.patients.push(one); receipt.processed++;
         /* dn-1.0 FOLD-IN (owner 2026-08-11: it "should save the days visit note
            when its already on that person"): with visit bodies OFF the pulled
@@ -4531,6 +5026,9 @@
             one.todayNoteSkipped = "future-day";
             tnStamp(one, 0, "skipped");
           }
+          /* tny-1.0.0: TODAY, but this patient's slot has not arrived yet.
+             Nothing to read, nothing failed, and the 45 s bound is not spent. */
+          else if (dnGate.ok && !tnApptPassed(dnDay, row)) { tnStampNotYet(one, "time"); }
           else if (!(dnVp && typeof dnVp.runForPatient === "function" && dnP)) { one.todayNote = false; one.todayNoteReason = dnGate.ok ? "reader-unavailable" : dnGate.reason; }
           else {
             if (todayNoteExtOk === null) {
@@ -4561,16 +5059,31 @@
                    next chart open; the tail pass (post-batch) inherits them. */
                 if (/timeout|deadline|responding|unreachable|no-ext/i.test(one.todayNoteReason)) { inlineDayNoteFuse = one.todayNoteReason; receipt.todayNoteInlineFuse = inlineDayNoteFuse; }
               }
+              /* tny-1.0.0: the reader answered "there is no verified encounter
+                 for that date". On TODAY that is a visit that has not happened
+                 yet, not a failed read. */
+              if (one.todayNote === false && dnDay === acctTodayKey() && TNY_NO_ENCOUNTER.test(String(one.todayNoteReason || ""))) tnStampNotYet(one, "receipt");
               /* p1-todaynote-deferred-retry-1.0.0: a pull-in-flight refusal
                  lost to the lease this pull is still holding. Defer, do not
                  fail: the row is re-run once the lease is released. */
-              if (one.todayNote !== true && tnIsDeferrable(one.todayNoteReason)) tnDeferRow(one, dnDay);
+              if (one.todayNote !== true && one.todayNote !== "not-yet" && tnIsDeferrable(one.todayNoteReason)) tnDeferRow(one, dnDay);
             }
           }
           /* qol-1.3 parity: an unread pulled-day note is VISIBLE on the row -
              pushed after the row's own settle so the day-note verdict wins the
-             latest-state tally, exactly as the tail pass's emit did. */
-          if (one.todayNote !== true && one.todayNote !== "future-day" && typeof ppSettle === "function" && one.name) { try { ppSettle(one.name, false, "pulled-day-note-unread " + String(one.todayNoteReason || "").slice(0, 60), false, { pid: one.patientId }); } catch (eDnPp) {} } /* dnf-1.0.0 */
+             latest-state tally, exactly as the tail pass's emit did.
+             tny-1.0.0 + deliverable 3 (owner 2026-08-17): this settle used to
+             be `ok:false`, which is how the DAY-NOTE leg silently FAILED THE
+             ROW - a chart that was read, organized and stored still painted
+             "not saved" on the panel because a note the visit had not produced
+             yet could not be read. The history verdict is the row's verdict;
+             the day-note outcome rides along as its own column (r.dn). */
+          /* dv3-1.0.0: a PIPELINED row's ok/failed verdict belongs to its own
+             parse (and to finalization); the day note may only WRITE THE NOTE
+             CELL on the row that already exists. Mutating the cell can never
+             move the saved/failed tally - which is the whole defect. */
+          if (one.parsePipelined === true) { if (one.__ppRow) safe(function () { var c = tnColumn(one); if (c) one.__ppRow.dn = c; }); }
+          else tnEmitDayNoteColumn(one);
         }
         if (stopAfterTimeout) {
           for (var j = i + 1; j < rows.length; j++) receipt.retry.push(frozenRetryEntry(rows[j], null, "deferred-after-timeout"));
@@ -4585,7 +5098,11 @@
       for (var pf = 0; pf < pipelineParses.length; pf++) {
         safe(function () { window.__mlsPullBusyAt = Date.now(); }); /* si-1.7.9: finalization saves are still merge-unsafe */
         var pEntry = pipelineParses[pf], pOne = pEntry.one;
-        if (!pOne.organized && !/timeout|deadline/i.test(String(pOne.chartReason || "")) && Date.now() + 300000 < batchDeadlineAt) {
+        /* cap-1.0.0: a row whose chart is CAPTURED and whose only gap is the
+           AI summary never buys a second athena chart open here either. This
+           is the measured 9-row case: nine extra full chart re-reads against a
+           backend that was returning 502 to every one of them. */
+        if (!pOne.organized && pOne.summaryPending !== true && !/timeout|deadline/i.test(String(pOne.chartReason || "")) && Date.now() + 300000 < batchDeadlineAt) {
           pOne.chartRetried = true; pOne.parseDeferredRetried = true;
           var pRetryDeadlineAt = Math.min(batchDeadlineAt, Date.now() + (sweepDepth ? 4 : 6) * 60 * 1000);
           var pRetryReadStartedAt = Date.now();
@@ -4603,23 +5120,26 @@
             pOne.chartReason = "";
           } catch (pRetryErr) {
             if (__dParseT0) { pEntry.stageMs.parseSave += Date.now() - __dParseT0; } else { pEntry.stageMs.chart += Date.now() - __dChartT0; }
+            if (!capApplyPending(pOne, pRetryErr)) { /* cap-1.0.0 */
             pOne.chartReason = String(pRetryErr && pRetryErr.message || pRetryErr || "chart-read-failed").slice(0, 200);
             if (pRetryErr && pRetryErr.mlsEchoes) pOne.chartEchoes = pRetryErr.mlsEchoes;
             if (pRetryErr && pRetryErr.mlsFind) pOne.findDiag = pRetryErr.mlsFind; /* fdx-1.0.0 */
             if (/timeout|deadline/i.test(pOne.chartReason)) receipt.timedOut = true;
             else if (/athena-session-expired/.test(pOne.chartReason)) receipt.sessionExpired = true; /* sx-1.1 */
+            }
           }
         }
         pOne.organizationComplete = pOne.organized;
         /* Pipelined totalMs is SELF time (chart + parse + visits stages), not
            wall time to finalization — wall time would double-count overlap. */
         pOne.stageMs = { chartMs: pEntry.stageMs.chart, parseSaveMs: pEntry.stageMs.parseSave, visitsMs: pEntry.stageMs.visits, visitSaveMs: pEntry.stageMs.visitSave, totalMs: pEntry.stageMs.chart + pEntry.stageMs.parseSave + pEntry.stageMs.visits };
-        pOne.complete = !!(pOne.identityVerified && pOne.dobVerified === true && pOne.organized && pOne.organizationComplete && pOne.visitsComplete);
+        pOne.complete = capRowComplete(pOne); /* cap-1.0.0 */
         if (!pOne.complete) {
-          pOne.reason = pOne.chartReason || pOne.visitsReason || "history-partial";
+          fdxStampRoute(pOne); /* fdx-1.1.0 */
+          pOne.reason = fdxRowReason(pOne) || pOne.chartReason || pOne.visitsReason || "history-partial";
           receipt.retry.push(frozenRetryEntry(pEntry.row, pEntry.target, pOne.reason, pOne)); /* fdx-1.0.0 */
         }
-        ppResolve(pOne.__ppRow, pOne.complete === true, pOne.complete === true ? "" : (pOne.reason || ""));
+        ppResolve(pOne.__ppRow, pOne.complete === true, pOne.complete === true ? (pOne.summaryPending === true ? "saved · summary pending" : "") : (pOne.reason || ""), { sp: pOne.summaryPending === true, dn: tnColumn(pOne) /* tny-1.0.0 */, chartSaved: pOne.captureSaved === true || (pOne.organized === true && pOne.dobVerified === true) });
       }
       batchBodyCompleted = true;
     } finally {
@@ -4642,13 +5162,26 @@
        ordinary reader and the ordinary identity gates - nothing is bypassed
        and no clinical text is invented. */
     function tnRecomputeAggregate() {
-      safe(function () {
-        var tnF = 0, tnR = {};
-        (receipt.patients || []).forEach(function (p) {
-          if (p && p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; }
-        });
-        receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR;
+      safe(function () { tnAggregate(); });
+    }
+    /* tny-1.0.0: ONE census of the day-note column, used by both recompute
+       sites so the DONE card, the receipt and the ledger cannot disagree.
+       not-yet and future-day are counted as their own outcomes and are NEVER
+       failures - a failure is a note that should exist and could not be read. */
+    function tnAggregate() {
+      var tnF = 0, tnR = {}, tnRead = 0, tnNotYet = 0, tnFuture = 0;
+      (receipt.patients || []).forEach(function (p) {
+        if (!p) return;
+        if (p.todayNote === true) { tnRead++; return; }
+        if (p.todayNote === "not-yet") { tnNotYet++; return; }
+        if (p.todayNote === "future-day") { tnFuture++; return; }
+        if (p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; }
       });
+      receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR;
+      receipt.todayNoteRead = tnRead;
+      receipt.todayNoteNotYet = tnNotYet;
+      receipt.todayNoteFutureDay = tnFuture;
+      return { failed: tnF, read: tnRead, notYet: tnNotYet, future: tnFuture, reasons: tnR };
     }
     function tnBatchDay() {
       var day = "";
@@ -4677,6 +5210,9 @@
         if (!sDv || !sDv.dayVerdict) return;
         sDv.dayVerdict.tnFailed = Number(receipt.todayNoteFailures || 0);
         sDv.dayVerdict.tnReasons = receipt.todayNoteReasons || {};
+        sDv.dayVerdict.tnRead = Number(receipt.todayNoteRead || 0);       /* tny-1.0.0 */
+        sDv.dayVerdict.tnNotYet = Number(receipt.todayNoteNotYet || 0);   /* tny-1.0.0 */
+        sDv.dayVerdict.tnFuture = Number(receipt.todayNoteFutureDay || 0); /* fd-1.0.0 */
         sDv.dayVerdict.tnDeferredRecovered = Number((summary && summary.recovered) || 0);
         sDv.dayVerdict.at = Date.now();
       });
@@ -4700,9 +5236,14 @@
             var ok = !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
             entry.todayNote = ok;
             entry.todayNoteReason = ok ? "" : String((res && res.reason) || "scoped-read-unverified").slice(0, 80);
-            if (typeof ppSettle === "function" && entry.name) {
-              safe(function () { ppSettle(entry.name, ok, ok ? "pulled-day-note-read-deferred" : ("pulled-day-note-unread " + String(entry.todayNoteReason || "").slice(0, 60)), false, { pid: pid }); });
-            }
+            /* tny-1.0.0: the same not-yet classification applies to the
+               deferred round - it runs after the pull, still on TODAY. */
+            if (!ok && String(day) === acctTodayKey() && TNY_NO_ENCOUNTER.test(String(entry.todayNoteReason || ""))) tnStampNotYet(entry, "receipt");
+            /* deliverable 3: the deferred day-note verdict updates the NOTE
+               column only. It used to settle the whole row ok/failed, so a
+               recovered note could green a failed history and a refused note
+               could fail a saved one. */
+            tnEmitDayNoteColumn(entry);
             return ok;
           }, function (err) {
             entry.todayNote = false;
@@ -4732,7 +5273,7 @@
       try {
         (receipt.patients || []).forEach(function (fp) {
           if (!fp) return;
-          ppSettle(fp.name || "", fp.complete === true, fp.complete === true ? "" : ((fp.reason || "incomplete") + historyDiagSuffix(fp)), false, { surfaceResets: fp.surfaceResets, chartSurface: fp.chartSurface, pid: fp.patientId, axe: fp.axEntry, chartSaved: fp.organized === true && fp.dobVerified === true && !fp.storageFailure && fp.visitsReason !== "clinical-field-coverage-unproven" });
+          ppSettle(fp.name || "", fp.complete === true, fp.complete === true ? (fp.summaryPending === true ? "saved · summary pending" : "") : ((fp.reason || "incomplete") + historyDiagSuffix(fp)), false, { surfaceResets: fp.surfaceResets, chartSurface: fp.chartSurface, pid: fp.patientId, axe: fp.axEntry, sp: fp.summaryPending === true /* cap-1.0.0 */, dn: tnColumn(fp) /* tny-1.0.0 */, chartSaved: ((fp.organized === true && fp.dobVerified === true) || fp.captureSaved === true) && !fp.storageFailure && fp.visitsReason !== "clinical-field-coverage-unproven" });
         });
       } catch (eTerm) {}
       /* dnd-1.0.0: the receipt states the day it read, so a later Retry round
@@ -4801,7 +5342,19 @@
       /* qol-2.2 D4: the OFF lane's failure channel was write-only - todayNoteReason
          reached no aggregate, no day-end line, no error report. Verdict-neutral
          by design (L3677); recomputed idempotently on both finalize calls. */
-      safe(function () { var tnF = 0, tnR = {}; (receipt.patients || []).forEach(function (p) { if (p && p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; } }); receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR; });
+      safe(function () { tnAggregate(); }); /* tny-1.0.0: one census, both sites */
+      /* ===== cap-1.0.0 (the receipt says "saved · summaries pending N") ===== */
+      safe(function () {
+        var sp = 0, codes = {}, saved = 0;
+        (receipt.patients || []).forEach(function (p) {
+          if (!p) return;
+          if (p.captureSaved === true) saved++;
+          if (p.summaryPending === true) { sp++; var kc = String(p.summaryCode || "ai-unavailable").slice(0, 40); codes[kc] = (codes[kc] || 0) + 1; }
+        });
+        receipt.summariesPending = sp;
+        receipt.summaryPendingCodes = codes;
+        receipt.capturesSaved = saved;
+      });
       /* ===== fdx-1.0.0 (chart-open find verdict census) =====
          The owner's 13-of-15 failure printed ONE sentence for FOUR different
          extension outcomes. Count them by the extension's own code so the next
@@ -4824,6 +5377,10 @@
         receipt.findVia = fV;
         receipt.findDiagRows = seen;
         receipt.noMatchingPatient = nmp;
+        /* fdx-1.1.0: the find-OPEN deadline counted separately from the four
+           no-matching-patient outcomes - it is a timing refusal, not an answer
+           about the patient, and it is the one the sweep now re-tries. */
+        receipt.findOpenDeadlineRows = (receipt.patients || []).filter(function (p) { return p && String(p.reason || "") === "find-open-deadline"; }).length;
         /* An honest, ACTIONABLE sentence for the one find outcome that is not
            about the patient at all: rows-not-rendered means athena printed
            "N results found" and then never hydrated the row links - the shape
@@ -4839,7 +5396,7 @@
          __mlsPullProgress) reads this stamp. Outer batch only - a sub-batch
          stamping day-level truth is the b752 subset trap. finalizeVerdict may
          run twice by design; the LAST call wins, which is the post-sweep truth. */
-      safe(function () { if (sweepDepth) return; var sDv = ppState(); if (!sDv) return; sDv.dayVerdict = { ok: Number(sDv.ok || 0), failed: Number(sDv.failed || 0), chartOnly: Number(sDv.chartOnly || 0), total: Number(sDv.total || 0), complete: receipt.complete === true, tnFailed: Number(receipt.todayNoteFailures || 0), tnReasons: receipt.todayNoteReasons || {}, at: Date.now() }; });
+      safe(function () { if (sweepDepth) return; var sDv = ppState(); if (!sDv) return; sDv.dayVerdict = { ok: Number(sDv.ok || 0), failed: Number(sDv.failed || 0), chartOnly: Number(sDv.chartOnly || 0), total: Number(sDv.total || 0), complete: receipt.complete === true, tnFailed: Number(receipt.todayNoteFailures || 0), tnReasons: receipt.todayNoteReasons || {}, tnRead: Number(receipt.todayNoteRead || 0) /* tny-1.0.0 */, tnNotYet: Number(receipt.todayNoteNotYet || 0) /* tny-1.0.0 */, tnFuture: Number(receipt.todayNoteFutureDay || 0) /* fd-1.0.0 */, summaryPending: Number(receipt.summariesPending || 0) /* cap-1.0.0 */, capturesSaved: Number(receipt.capturesSaved || 0) /* cap-1.0.0 */, at: Date.now() }; });
       /* b751: persist it. finalizeVerdict runs at every exit and may run twice
          (before and after the end-of-batch re-sweep); the write is keyed by day
          so the LAST call wins, which is the post-sweep truth we want. */
@@ -4906,8 +5463,8 @@
          attempt-once and is never re-run here, so a day where every inline
          capture succeeded performs ZERO second-pass re-opens. */
       try {
-      var todayNoteDayById = {};
-      try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) todayNoteDayById[pid] = batchRowDay(r); }); } catch (eMap) {} /* dnd-1.0.0 */
+      var todayNoteDayById = {}, todayNoteRowById = {}; /* tny-1.0.0: the ROW carries the appointment time */
+      try { rows.forEach(function (r) { var pid = String((r && (r._mlsTargetPatientId || r.patient_external_id)) || ""); if (pid) { todayNoteDayById[pid] = batchRowDay(r); todayNoteRowById[pid] = r; } }); } catch (eMap) {} /* dnd-1.0.0 */
       var vpToday = safe(function () { return window.__mlsVisitSavePref; }, null);
       /* qol-2.2 D3: rows settle before this pass, so the card read 100% and
          sat there grinding. ppCurrent is never number-parsed (safe from the
@@ -4915,15 +5472,23 @@
       var tnTotal = 0; try { for (var tnc = 0; tnc < receipt.patients.length; tnc++) { if (receipt.patients[tnc] && receipt.patients[tnc].visitsSkipped === true && receipt.patients[tnc].todayNote == null && tnDayApplicable(todayNoteDayById[String(receipt.patients[tnc].patientId || "")] || "").ok) tnTotal++; } } catch (eTnc) {} var tnIdx = 0; /* dnf-1.0.0 */
       for (var tn = 0; tn < receipt.patients.length; tn++) {
         var oneTn = receipt.patients[tn];
-        if (!oneTn || oneTn.visitsSkipped !== true || oneTn.todayNote != null) continue; /* dn-1.0: attempt-once - an inline verdict (success OR refusal, incl. identity-mismatch) is final; only never-attempted patients reach this tail */
+        if (!oneTn || oneTn.visitsSkipped !== true) continue;
+        var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
+        var tnRow = todayNoteRowById[String(oneTn.patientId || "")] || null;
+        /* dn-1.0: attempt-once - an inline verdict (success OR refusal, incl.
+           identity-mismatch) is final; only never-attempted patients reach
+           this tail. tny-1.0.0 adds exactly ONE re-entry: a row parked as
+           not-yet whose appointment slot has since passed. */
+        if (oneTn.todayNote != null && !(oneTn.todayNote === "not-yet" && tnApptPassed(tnDay, tnRow))) continue;
         tnIdx++; try { ppCurrent("all charts read \u2014 saving the pulled day's note (" + tnIdx + " of " + tnTotal + ") \u2014 " + String(oneTn.name || "").split(" ")[0]); } catch (ePpCur) {}
         safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
-        var tnDay = todayNoteDayById[String(oneTn.patientId || "")] || "";
         var tnId = String(oneTn.patientId || "");
         var tnGate = tnDayApplicable(tnDay); /* dnf-1.0.0 */
         if (tnGate.future) { oneTn.todayNote = "future-day"; oneTn.todayNoteReason = "future-day"; oneTn.todayNoteSkipped = "future-day"; tnStamp(oneTn, 0, "skipped"); continue; } /* fd-1.0.0 */
+        /* tny-1.0.0: TODAY and the slot has not arrived - skip, do not fail. */
+        if (tnGate.ok && !tnApptPassed(tnDay, tnRow)) { tnStampNotYet(oneTn, "time"); continue; }
         var tnP = (tnGate.ok && tnId) ? safe(function () { return findStorePatient(tnId); }, null) : null;
-        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnGate.ok ? "reader-unavailable" : tnGate.reason; if (typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + oneTn.todayNoteReason, false, { pid: oneTn.patientId }); } catch (ePpA) {} } continue; }
+        if (!(vpToday && typeof vpToday.runForPatient === "function" && tnP)) { oneTn.todayNote = false; oneTn.todayNoteReason = tnGate.ok ? "reader-unavailable" : tnGate.reason; tnEmitDayNoteColumn(oneTn); continue; }
         if (todayNoteExtOk === null) {
           /* 2026-07-28 invariant fix: an extension that predates the
              day-scoped reader ignores onlyDate and returns EVERY body -
@@ -4936,7 +5501,7 @@
             return (Number(m[1]) > 3) || (Number(m[1]) === 3 && (Number(m[2]) > 0 || Number(m[3]) >= 30));
           }, false);
         }
-        if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; if (typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread extension-predates-scoped-read", false, { pid: oneTn.patientId }); } catch (ePpB) {} } continue; }
+        if (!todayNoteExtOk) { oneTn.todayNote = false; oneTn.todayNoteReason = "extension-predates-scoped-read"; tnEmitDayNoteColumn(oneTn); continue; }
         var tnT0 = Date.now(); /* dnf-1.0.0 */
         try {
           var tnRes = await tnBoundedRead(vpToday, tnP, tnDay); /* dnf-1.0.0 */
@@ -4944,12 +5509,15 @@
           tnStamp(oneTn, Date.now() - tnT0, oneTn.todayNote ? "read" : "refused");
           if (!oneTn.todayNote) oneTn.todayNoteReason = String((tnRes && tnRes.reason) || "scoped-read-unverified").slice(0, 80);
         } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); tnStamp(oneTn, Date.now() - tnT0, "refused"); }
+        /* tny-1.0.0: an index with no verified encounter for TODAY's date is a
+           visit that has not happened yet, not a failed read. */
+        if (oneTn.todayNote === false && tnDay === acctTodayKey() && TNY_NO_ENCOUNTER.test(String(oneTn.todayNoteReason || ""))) tnStampNotYet(oneTn, "receipt");
         /* p1-todaynote-deferred-retry-1.0.0: same deferral in the tail pass -
            this pass also runs inside the pull, so it loses the same race. */
-        if (oneTn.todayNote !== true && tnIsDeferrable(oneTn.todayNoteReason)) tnDeferRow(oneTn, tnDay);
-        /* qol-1.3: this failure used to be invisible - the row stayed "saved"
-           while the one note the owner says matters most was never read. */
-        if (oneTn.todayNote !== true && typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + String(oneTn.todayNoteReason || "").slice(0, 60), false, { pid: oneTn.patientId }); } catch (ePpC) {} }
+        if (oneTn.todayNote !== true && oneTn.todayNote !== "not-yet" && tnIsDeferrable(oneTn.todayNoteReason)) tnDeferRow(oneTn, tnDay);
+        /* qol-1.3 / deliverable 3: the day-note outcome is VISIBLE, but as its
+           own column - it can no longer flip a saved history row to failed. */
+        tnEmitDayNoteColumn(oneTn);
       }
       } catch (eTodayNotePass) { try { if (receipt) receipt.todayNotePassError = String((eTodayNotePass && eTodayNotePass.message) || eTodayNotePass).slice(0, 120); } catch (eR2) {} }
       try { ppCurrent("finishing \u2014 recording the day verdict"); } catch (ePpFin) {}
@@ -4965,7 +5533,12 @@
        reasons only, >=5 min of the FROZEN batch budget required, and every
        attempt is a full fresh open+verify+read — no identity gate is
        loosened, and a patient still refusing keeps an honest retry entry. */
-    var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
+    /* fdx-1.1.0: find-open-deadline joins the sweepable set. It is a TIMING
+       refusal from athena's patient search, never an identity or permission
+       refusal, so the same bounded automatic re-read every other timing class
+       already earns applies - and "once the batch is idle" is exactly when
+       this sweep runs. */
+    var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|find-open-deadline|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
     if (!sweepDepth && !__stpStopped) try {   /* stp-2.0.0 */
       receipt.sweepPasses = 0;
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
@@ -5014,6 +5587,45 @@
          elapsed reset, the pts pull shield never drops mid-pull). */
       safe(ppEnd);
     }
+    /* ===== cap-1.0.0 (fill the pending summaries) =====
+       Two lanes, both athena-free, so neither can cost a chart open or fight
+       the lease:
+        (1) ONE immediate pass right here over every pending capture belonging
+            to this batch's rows - which is also the "again on the next pull"
+            leg, because a capture left pending by an earlier pull is still
+            pending in the store when the next pull's batch reaches this line;
+        (2) a bounded background retry (setTimeout only - rAF never fires in a
+            hidden tab), <= 3 rounds with backoff, for whatever is still
+            pending after (1).
+       A sub-batch (sweep/retry round) does neither: the outer batch owns it. */
+    if (!sweepDepth) {
+      var capPend = capPendingPatientIds(rows);
+      if (capPend.length) {
+        receipt.summaryFillAttempted = capPend.length;
+        var capFilled = 0;
+        for (var cfi = 0; cfi < capPend.length; cfi++) {
+          var capOne = await capResummarizeStored(capPend[cfi], 120000).catch(function () { return { ok: false }; });
+          if (capOne && capOne.ok) {
+            capFilled++;
+            safe(function () {
+              var pid = String(capPend[cfi]);
+              for (var ri = 0; ri < receipt.patients.length; ri++) {
+                if (String(receipt.patients[ri] && receipt.patients[ri].patientId || "") === pid) {
+                  receipt.patients[ri].summaryPending = false;
+                  receipt.patients[ri].summaryFilled = true;
+                  break;
+                }
+              }
+            });
+          }
+        }
+        receipt.summaryFilled = capFilled;
+        finalizeVerdict();
+        var capStillPending = capPendingPatientIds(rows);
+        receipt.summaryBackgroundArmed = capArmBackgroundRetry(capStillPending);
+      }
+    }
+    /* ===== end cap-1.0.0 (fill the pending summaries) ===== */
     safe(function () { if (isFn(window.renderHistory)) window.renderHistory(); });
     safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
     safe(function () { if (isFn(window.loadPatients)) window.loadPatients(); });
@@ -5571,10 +6183,44 @@
          manual pull succeeds. Escalate the settle waits (2.5s/5s/8s) so the
          first click absorbs that render lag instead of asking the clinician
          to click again. */
+      /* ===== nav-1.0.0 (the nav refusal keeps its evidence) =====
+         MEASURED live 2026-08-17 on the owner's /1p: after a COMPLETED first
+         pass the day strip re-pulled and _lastPullResult() came back
+         {reason:'nav-failed', target:'2026-08-17', retry:{}} - a bare verdict
+         with nothing on it to reason about, while the athena tab was alive
+         (22K chars, no re-login) and merely HIDDEN/backgrounded. The
+         extension's own goto answer already carries the reason, the day it
+         believes it is on, and the tab shape it saw; none of that reached the
+         receipt. Codes, counts, a truncated URL PATH and a date - never a
+         name, DOB, MRN or any chart text. */
+      var navAttempts = 0;
+      function navDiagOf(nav, attempts) {
+        return safe(function () {
+          var d = (nav && nav.diag) || null;
+          return {
+            v: 1,
+            ok: !!(nav && nav.ok !== false),
+            supported: !(nav && nav.supported === false),
+            reason: String((nav && nav.reason) || "").slice(0, 40),
+            via: String((nav && nav.via) || "").slice(0, 40),
+            observedDay: normDate(nav && nav.schedDate) || "",
+            requestedDay: String(date || ""),
+            attempts: Number(attempts || 0),
+            sessionLikelyExpired: !!(nav && nav.sessionLikelyExpired),
+            controlVisible: (nav && nav.controlVisible) === true,
+            tabPath: String((d && d.tabPath) || "").slice(0, 40),
+            initFrames: Number((d && d.initFrames) || 0),
+            initFound: !!(d && d.initFound),
+            rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0)
+          };
+        }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0) });
+      }
+      /* ===== end nav-1.0.0 (diag) ===== */
       function gotoDateSettled() {
         var settleWaits = [2500, 5000, 8000];
         function attempt(round) {
           return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
+            navAttempts = round + 1; /* nav-1.0.0 */
             var day0 = normDate(nav && nav.schedDate);
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
             if (!bad || round >= settleWaits.length) return nav;
@@ -5590,11 +6236,11 @@
         var navDay = normDate(nav && nav.schedDate);
         if (nav && nav.ok === false) {
           onStatus((nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
-          return fail("nav-failed", { error: nav && nav.error || "", navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired) });
+          return fail("nav-failed", { error: nav && nav.error || "", navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired), navDiag: navDiagOf(nav, navAttempts) /* nav-1.0.0 */ });
         }
         if (navDay && navDay !== date) {
           onStatus("Athena opened " + navDay + " instead of " + date + ". Nothing was imported.", "err");
-          return fail("wrong-day", { observedDay: navDay });
+          return fail("wrong-day", { observedDay: navDay, navDiag: navDiagOf(nav, navAttempts) /* nav-1.0.0 */ });
         }
         onStatus("Reading your athenaOne Day schedule...", "");
         /* Batch-bound receipt provenance (si-1.6.3): freeze THIS pull's schedule
@@ -5735,6 +6381,18 @@
           onStatus("Athena verified every appointment on " + date + ", but did not expose which provider owns each row. Importing the exact appointment census with provider left blank - no provider will be guessed.", "");
         }
         lastResp = r; lastRespAt = Date.now();
+        /* nav-1.0.0 (c): THIS DAY'S SCHEDULE HAS LANDED. Everything past this
+           line is per-patient work; re-navigating athena to the same day can
+           add nothing to the schedule and is exactly what the "attempt N of 3"
+           loop kept doing. A verified-EMPTY day counts as landed too - ed-1.0.0
+           already proved there is nothing there. Recorded PHI-free (a date, a
+           count and a timestamp) so the connect lane can veto a whole-pull
+           re-run without guessing. */
+        navMarkScheduleLanded(readDay, {
+          rows: Number((r.appts && r.appts.length) || 0),
+          empty: r.receipt.authoritativeEmpty === true,
+          complete: r.receipt.complete === true
+        });
         safe(function () { window.__schedRaw = {
           text: r.text || "", url: r.url || "", frames: r.frames, appts: r.appts || [], schedDate: readDay,
           providers: r.providers || [], providerRoster: r.providerRoster || [], providerRosterReceipt: r.providerRosterReceipt || null,
@@ -7471,6 +8129,11 @@
     _boundedUntil: boundedUntil,
     _deadlineScheduler: absoluteDeadlines,
     _lastPullResult: function () { return lastPullResult; },
+    /* nav-1.0.0: the connect lane asks this before it may restart a whole
+       pull. cap-1.0.0: the summary lane is drivable from a test/console. */
+    _scheduleLandedFor: function (day) { return navScheduleLanded(day); },
+    _capResummarize: function (patientId, ms) { return capResummarizeStored(patientId, ms); },
+    _capPendingFor: function (rows) { return capPendingPatientIds(rows); },
     _lastResp: function () { return lastResp; },
     _lastRespAt: function () { return lastRespAt; },
     isBusy: function () { return !!(pullRunning || monthPullRunning || historyBatchRunning); },

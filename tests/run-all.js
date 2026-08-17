@@ -66,6 +66,7 @@ const tests = [
      pull releases the lease, bounded and setTimeout-only. */
   '1p-todaynote-deferred-retry-runtime.test.js',
   '1p-day-note-day-and-future-runtime.test.js',
+  '1p-daynote-column-and-not-yet-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
   '1p-pull-resume-skip-and-cost-runtime.test.js',
