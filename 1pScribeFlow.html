@@ -8182,7 +8182,75 @@ async function adminRevokeCode(id){
 /* =========================================================
    PER-USER STORAGE (settings + notes namespaced by email)
    ========================================================= */
-function uns(suffix){ return 'sf_u::'+(session?session.email:'_')+'::'+suffix; }
+/* ===== uns-namespace-guard-1.0.0 =====
+   `uns()` used to test the session OBJECT, not the email. A session that exists
+   but whose email has not resolved yet ({}, {email:undefined}, {email:''})
+   minted the LITERAL namespace 'sf_u::undefined::' / 'sf_u::::', and real
+   settings/notes landed there — one account's data became reachable from
+   another. The patient store already hard-refuses that class
+   (MLS_PTS_STORE_NO_NAMESPACE); every OTHER store did not.
+   Contract:
+     - a non-empty STRING email  -> 'sf_u::<email>::<suffix>'
+     - anything else             -> 'sf_u::_::<suffix>'  (never 'undefined')
+     - a WRITE through an unresolved namespace key is REFUSED (returns false,
+       one console warning, no toast). READS still fall back so existing data
+       stays reachable.
+   Existing stranded data is NEVER deleted or moved here — window.__mlsNamespaceAudit()
+   is a read-only tracer that lists the stranded KEYS and their sizes (never the
+   values, so it carries no PHI) alongside the current account. */
+function unsEmail(){
+  var e;
+  try{ e=(typeof session!=='undefined'&&session)?session.email:''; }catch(_s){ e=''; }
+  if(typeof e!=='string') return '';
+  e=e.trim();
+  return e?e:'';
+}
+function unsResolved(){ return !!unsEmail(); }
+function uns(suffix){ return 'sf_u::'+(unsEmail()||'_')+'::'+suffix; }
+/* '' covers the sf_u:::: shape a {email:''} session used to mint. */
+var UNS_UNRESOLVED_KEY_RE=/^sf_u::(?:_|undefined|)::/;
+var _unsWriteRefusalWarned=false;
+function unsWriteRefused(key){
+  if(!UNS_UNRESOLVED_KEY_RE.test(String(key))) return false;
+  if(!_unsWriteRefusalWarned){
+    _unsWriteRefusalWarned=true;
+    try{console.warn('[uns] Refusing every write to the unresolved account namespace ('+String(key).slice(0,40)+'...) until the session email resolves. Run window.__mlsNamespaceAudit() to trace what is already stranded there.');}catch(_c){}
+  }
+  return true;
+}
+(function installUnsWriteGuard(){
+  try{
+    if(typeof Storage==='undefined'||!Storage||!Storage.prototype) return;
+    if(Storage.prototype.__mlsUnsGuard) return;
+    var native=Storage.prototype.setItem;
+    if(typeof native!=='function') return;
+    Storage.prototype.setItem=function(k,v){
+      if(unsWriteRefused(k)) return false;
+      return native.call(this,k,v);
+    };
+    Storage.prototype.__mlsUnsGuard=true;
+  }catch(_g){}
+})();
+window.__mlsNamespaceAudit=function(){
+  var out={currentEmail:unsEmail(),resolved:unsResolved(),writeGuard:false,keys:[],namespaces:{},totalBytes:0};
+  try{ out.writeGuard=!!(typeof Storage!=='undefined'&&Storage&&Storage.prototype&&Storage.prototype.__mlsUnsGuard); }catch(_w){}
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(!k||!UNS_UNRESOLVED_KEY_RE.test(k)) continue;
+      var raw=''; try{ raw=localStorage.getItem(k)||''; }catch(_r){ raw=''; }
+      var cut=k.indexOf('::',6);
+      var ns=cut>=0?k.slice(6,cut):'';
+      var bytes=(k.length+raw.length)*2; /* UTF-16 code units, what the quota charges */
+      out.keys.push({key:k,namespace:ns,suffix:cut>=0?k.slice(cut+2):'',bytes:bytes});
+      out.namespaces[ns]=(out.namespaces[ns]||0)+bytes;
+      out.totalBytes+=bytes;
+    }
+  }catch(_e){}
+  out.keys.sort(function(a,b){ return b.bytes-a.bytes||(a.key<b.key?-1:1); });
+  return out;
+};
+/* ===== end uns-namespace-guard-1.0.0 ===== */
 function getKey(){ return localStorage.getItem(uns('apikey'))||''; }
 /* AI is available if we're in hosted backend mode OR a per-device key is set. */
 function hasAI(){ return backendMode() || !!getKey(); }

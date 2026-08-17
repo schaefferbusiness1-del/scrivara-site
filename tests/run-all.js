@@ -84,6 +84,11 @@ const tests = [
   'p1-appointment-census-display-authority.test.js',
   '1p-pull-storage-runtime.test.js',
   '1p-quota-notification-runtime.test.js',
+  /* uns() tested the session OBJECT, not the email, so an unresolved email
+     minted the literal 'sf_u::undefined::' namespace and one account's notes
+     surfaced in another. Pins the mint contract, the write refusal while the
+     email is unresolved, and the read-only stranded-key tracer. */
+  '1p-uns-namespace-guard-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
