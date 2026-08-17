@@ -20087,6 +20087,62 @@ function opPrepApply(i){
   row.note=note; opPrepRender();
   try{ toast('Filled in — review the note, then save it.','ok'); }catch(e){}
 }
+/* ===== opvs-1.0.0 (2026-08-17) =============================================
+   An op note saved from the Prep Op Notes room reached History with NO visit
+   metadata at all: no date, no provider, no appointment id, no timestamp.
+   _athenaBindingForSavedRecord then rebuilt it as a HISTORICAL visit whose
+   visitContext was entirely empty, so the Athena review blocked every row with
+   "The exact visit needs its date, provider, and appointment ID" - for a note
+   whose surgery day was sitting on the prep row the whole time, and whose
+   nearest-appointment fallback would otherwise have inferred an encounter near
+   TODAY rather than the operative day.
+
+   Stamp only what is evidenced:
+     visitDate      the prep row's own day key (the day it was prepped for)
+     provider       the scheduled provider on THAT calendar row, else nothing
+     appointmentId  the real Athena appointment id, only when the day's
+                    schedule-import ledger maps this patient's single calendar
+                    row for that day to exactly one id
+     visitTimestamp the appointment start, else noon of the operative day
+   Never guesses a provider (b820) and never presents a backend calendar-row id
+   as an Athena appointment id (wf2-1.9.0). Missing evidence leaves the field
+   empty and the review still says exactly what is missing.
+   ========================================================================= */
+function _opVisitStamp(row,patient){
+  var out={visitDate:'',provider:'',appointmentId:'',visitTimestamp:null};
+  try{
+    var day=String((row&&row.dateKey)||'').slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(day)) return out;
+    out.visitDate=day;
+    var pid=String((patient&&patient.id)||(row&&row.patientId)||'').trim();
+    var dayRows=((window._calAppts||[])||[]).filter(function(a){
+      if(!a||!pid) return false;
+      var aday=String(a.appt_date||a.day_local||String(a.start_at||'').slice(0,10)).slice(0,10);
+      if(aday!==day) return false;
+      return String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||'').trim()===pid;
+    });
+    if(dayRows.length===1){
+      var a=dayRows[0];
+      out.provider=String(a.providerName||a.provider_name||a.provider||'').trim();
+      var t=Date.parse(a.start_at||''); if(isFinite(t)&&t>0) out.visitTimestamp=t;
+      if(typeof window.uns==='function'){
+        var raw=null; try{ raw=localStorage.getItem(window.uns('schedImportIndexV1::'+day)); }catch(eLs){ raw=null; }
+        var parsed=raw?JSON.parse(raw):null, ledger=(parsed&&parsed.rows)||null, hits=[];
+        if(ledger&&typeof ledger==='object'&&!Array.isArray(ledger)){
+          Object.keys(ledger).forEach(function(k){
+            var m=/^appointment-id:(\d+)$/.exec(k), e=ledger[k];
+            if(!m||!e) return;
+            if(String(e.patientId||'').trim()===pid&&String(e.backendAppointmentId||'').trim()===String(a.id||'').trim()&&String(e.appt_date||'').slice(0,10)===day) hits.push(m[1]);
+          });
+        }
+        if(hits.length===1) out.appointmentId=hits[0];
+      }
+    }
+    if(!out.provider) out.provider=String((row&&row.appt&&(row.appt.providerName||row.appt.provider_name))||'').trim();
+    if(!out.visitTimestamp){ var noon=Date.parse(day+'T12:00:00'); if(isFinite(noon)&&noon>0) out.visitTimestamp=noon; }
+  }catch(e){}
+  return out;
+}
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
@@ -20102,8 +20158,12 @@ function opPrepSave(i){
     var ns=getNotes();
     var cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+(isComplete?' (op note)':' (op-note draft)');
     var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;   // finalize the SAME draft we auto-saved (no duplicate)
-    if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); if(!ex.source) ex.source='manual-ai'; }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete }; ns.unshift(n); row._noteId=n.id; }
+    var vs=_opVisitStamp(row,p);   /* opvs-1.0.0: the operative day/provider/appointment this note belongs to */
+    if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); if(!ex.source) ex.source='manual-ai';
+      /* fill only from evidence; never blank a value the record already has */
+      if(vs.visitDate) ex.visitDate=vs.visitDate; if(vs.provider) ex.provider=vs.provider;
+      if(vs.appointmentId) ex.appointmentId=vs.appointmentId; if(vs.visitTimestamp) ex.visitTimestamp=vs.visitTimestamp; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete, visitDate:vs.visitDate, provider:vs.provider, appointmentId:vs.appointmentId, visitTimestamp:vs.visitTimestamp }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
     /* opsv-1.0.0 (owner 2026-07-24: "every save must be verified"): PROVE the
        write before claiming it. The notes store is plain JSON sharing the ~5MB
