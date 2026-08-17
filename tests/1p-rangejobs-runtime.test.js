@@ -166,11 +166,21 @@ async function flush(rounds = 8) {
 }
 
 async function testContinuousCheckpointAndPhiFreeManifest() {
-  let pending;
+  let pending, monthCalls = 0;
   const r = runtime({
     pullMonth(opts) {
-      pending = opts;
-      return new Promise(resolve => { pending.resolve = resolve; });
+      monthCalls += 1;
+      if (monthCalls === 1) {
+        pending = opts;
+        return new Promise(resolve => { pending.resolve = resolve; });
+      }
+      /* p1-range-continue-1.0.0: the range comes BACK for the one unproved
+         day. It still fails, so the day walks to its attempt cap. */
+      const days = opts.dates.map(date => {
+        const out = { date, ok: false, complete: false, reason: 'wrong-day' };
+        opts.onDayCheckpoint(out); return out;
+      });
+      return Promise.resolve({ ok: false, complete: false, reason: 'month-partial', days, retry: { dates: opts.dates.slice() } });
     }
   });
   const job = r.api.startMonth('2026-10', {
@@ -198,7 +208,11 @@ async function testContinuousCheckpointAndPhiFreeManifest() {
     days: pending.dates.map(date => ({ date, ok: date !== '2026-10-02', complete: date !== '2026-10-02', reason: date === '2026-10-02' ? 'wrong-day' : 'complete' }))
   });
   const result = await job;
-  assert.strictEqual(result.status, 'waiting-retry', 'partial month did not stop in an explicit retry state');
+  assert.strictEqual(result.status, 'needs-attention', 'a day that failed to its attempt cap did not settle as needs-attention');
+  assert.strictEqual(r.manifest().months['2026-10'].days['2026-10-02'].attempts, 3, 'the per-day attempt cap did not hold at 3');
+  assert.deepStrictEqual(r.manifest().summary.attention, [{ date: '2026-10-02', reason: 'wrong-day' }],
+    'the receipt does not list the capped day with its own reason');
+  assert.strictEqual(monthCalls, 3, 'the range did not come back for the unproved day exactly to the cap');
   const raw = r.store.get(r.manifestKey());
   assert(!raw.includes('Dr Secret Person') && !raw.includes('Secret Person, MD') && !/"name"|"raw"/.test(raw), 'provider display identity leaked into durable metadata');
   assert.deepStrictEqual(JSON.parse(raw).provider, { mode: 'selected', id: 'provider-7', stableKey: 'stable-provider-7' }, 'manifest did not retain only strong provider identity');
@@ -379,9 +393,19 @@ async function testOctoberRetryNeverRestartsJanuary() {
     }
   });
   const first = await r.api.startYear(2026, { provider: 'all' });
-  assert.strictEqual(first.status, 'waiting-retry', 'October failure did not remain retryable');
-  assert.strictEqual(firstCalls.at(-1).month, '2026-10', 'year job continued past an incomplete October');
+  /* p1-range-continue-1.0.0 (lead ruling 2026-08-17): October failing must
+     NOT stop November and December - the range finishes them, comes back to
+     October, and settles that ONE day after its attempt cap. */
+  assert.deepStrictEqual(firstCalls.slice(0, 12).map(row => row.month), [
+    '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06',
+    '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'
+  ], 'an incomplete October stopped the year instead of continuing to November');
+  assert.deepStrictEqual(firstCalls.slice(12).map(row => row.month), ['2026-10', '2026-10'],
+    'the range did not come back to the retryable month at the end');
+  assert.strictEqual(first.status, 'needs-attention', 'a bounded, settled year did not settle');
   assert.strictEqual(r.manifest().months['2026-01'].status, 'complete', 'January completion was not durable');
+  assert.strictEqual(r.manifest().months['2026-12'].status, 'complete', 'December never ran because October failed');
+  assert.strictEqual(r.manifest().summary.needsAttention, 1, 'the year receipt miscounted days needing attention');
 
   const retryCalls = [];
   r.importer.pullMonth = opts => {
@@ -391,7 +415,7 @@ async function testOctoberRetryNeverRestartsJanuary() {
   };
   const done = await r.api.resume();
   assert.strictEqual(done.complete, true, 'year did not finish after the failed day recovered');
-  assert.deepStrictEqual(retryCalls.map(row => row.month), ['2026-10', '2026-11', '2026-12'], 'resume restarted completed months or skipped later elapsed months');
+  assert.deepStrictEqual(retryCalls.map(row => row.month), ['2026-10'], 'resume restarted months the first run had already completed');
   assert.deepStrictEqual(retryCalls[0].dates, ['2026-10-05'], 'October retry restarted already-completed October days');
   assert(!retryCalls.some(row => row.month === '2026-01'), 'January restarted after an October failure');
 }
@@ -452,12 +476,16 @@ function rangeUiFixtureHtml() {
     #workspace{width:100%;padding:12px}.ez3-prov,.ez3-card{width:100%;max-width:760px;margin:0 auto 12px}
     .ez3-card{padding:14px;border:1px solid #cad8d0;border-radius:12px;background:#fff}.ph{font-weight:700;margin-bottom:8px}
     button,select{font:inherit;min-height:38px;max-width:100%}.ez3-sm{padding:8px 12px;border:1px solid #94aa9e;border-radius:8px;background:#fff}.pri{background:#2e6a4b;color:#fff}
+    /* the real panel bounds its own log; without this the fixture's log grows
+       over the controls and a click lands on a status line instead */
+    #ez3PullLog{max-height:60px;overflow:auto;font-size:11px}
+    .ez3-row2{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:2;margin-top:10px}
   </style></head><body><main id="workspace"></main><script>
   (function(){
     'use strict';
     var params=new URLSearchParams(location.search),account=params.get('account')||'doctor-ui-a@example.invalid';
     var nativeSet=Storage.prototype.setItem;
-    window.__rangeFixture={calls:[],stopCalls:0,failWrites:false,cardBuilds:0,account:account};
+    window.__rangeFixture={calls:[],stopCalls:0,failWrites:false,cardBuilds:0,account:account,autoMonth:false,autoDays:0,monthDates:[]};
     Storage.prototype.setItem=function(key,value){
       if(window.__rangeFixture.failWrites&&String(key).endsWith('p1RangeJobV1'))throw new DOMException('Synthetic quota','QuotaExceededError');
       return nativeSet.call(this,key,value);
@@ -481,6 +509,26 @@ function rangeUiFixtureHtml() {
         var found=resolveProvider(raw);return found?{ok:true,provider:found}:{ok:false,reason:'provider-unverified'};
       },
       pullMonth:function(opts){
+        window.__rangeFixture.monthDates.push(opts.dates.slice());
+        if(window.__rangeFixture.autoMonth===true){
+          /* a slow, verified-empty month so a Pause can land mid-run */
+          var dates=opts.dates.slice(),days=[],retry=[];
+          return new Promise(function(resolve){
+            function step(i){
+              if(i>=dates.length){resolve({ok:!retry.length,complete:!retry.length,reason:retry.length?'month-partial':'complete',days:days,retry:{dates:retry}});return;}
+              if(opts.shouldStop&&opts.shouldStop()===true){
+                for(var k=i;k<dates.length;k++){var s={date:dates[k],ok:false,complete:false,reason:'stopped-by-user'};days.push(s);retry.push(dates[k]);opts.onDayCheckpoint(s);}
+                resolve({ok:false,complete:false,reason:'stopped-by-user',stoppedByUser:true,days:days,retry:{dates:retry}});return;
+              }
+              if(opts.onStatus)opts.onStatus('Month pull '+(i+1)+'/'+dates.length+': '+dates[i],'');
+              var one={date:dates[i],ok:true,complete:true,reason:'provider-empty'};
+              days.push(one);opts.onDayCheckpoint(one);
+              window.__rangeFixture.autoDays++;
+              setTimeout(function(){step(i+1);},70);
+            }
+            step(0);
+          });
+        }
         var resolvePromise,row={opts:opts,settled:false};
         row.promise=new Promise(function(resolve){resolvePromise=resolve;});
         row.resolve=function(result){if(row.settled)return false;row.settled=true;resolvePromise(result);return true;};
@@ -507,6 +555,32 @@ function rangeUiFixtureHtml() {
         '<button type="button" class="ez3-sm pri" id="ez3PullStart">Start month pull</button></div></section>';
       return true;
     };
+    /* ---- the REAL Staff Prep pull panel, minus the app around it --------
+       mountPullPanel() renders exactly the ids the shipped
+       p1-durable-month-1.0.0 block touches; /durable.js then EXECUTES that
+       block (plus the shipped pCounts button rules and the shipped click
+       wiring) lifted verbatim out of 1p-mls-connect.js. */
+    window.mountPullPanel=function(month){
+      document.getElementById('workspace').innerHTML='<section id="staffPrep">'+
+        '<div class="ez3-prov"><select id="ez3Prov"><option value="pv:stable-provider-7" selected>Dr Synthetic Provider</option></select></div>'+
+        '<div class="ez3-card ez3-pull">'+
+        '<div class="ph" id="monthPullTitle">Pull a month from Athena</div>'+
+        '<div class="prow"><label>Month</label><input type="month" id="ez3sMonth" value="'+(month||'2026-02')+'"></div>'+
+        '<div class="barwrap"><div class="bar" id="ez3PullBar"></div></div>'+
+        '<div id="ez3PullBarLbl"></div>'+
+        '<div class="counts"><b id="ez3cFound">0</b><b id="ez3cSaved">0</b><b id="ez3cDup">0</b><b id="ez3cFail">0</b></div>'+
+        '<div class="nowl" id="ez3PullNow"></div><div class="nowl2" id="ez3PullNow2"></div>'+
+        '<div class="plog" id="ez3PullLog"></div>'+
+        '<div class="ez3-row2">'+
+          '<button type="button" id="ez3PullStart">Start month pull</button>'+
+          '<button type="button" id="ez3PullResume" style="display:none">Resume month pull</button>'+
+          '<button type="button" id="ez3PullPause" style="display:none">Pause</button>'+
+          '<button type="button" id="ez3PullRetry" style="display:none">Retry failed days</button>'+
+          '<button type="button" id="ez3PullCancel" style="display:none">Cancel</button>'+
+        '</div></div></section>';
+      if(window.__wirePullPanel)window.__wirePullPanel();
+      return true;
+    };
     window.switchFixtureAccount=function(next,extra){
       var previous=window.__rangeFixture.account;window.__rangeFixture.account=next;window.__mlsSessionAccount=next;window.session={email:next};window.__mlsSessionEpoch++;
       nativeSet.call(localStorage,window.uns('acctTz'),'America/New_York');
@@ -514,7 +588,83 @@ function rangeUiFixtureHtml() {
       window.dispatchEvent(new CustomEvent('mls:session-boundary',{detail:detail}));
     };
   })();
-  </script><script src="/range.js"></script></body></html>`;
+  </script><script src="/range.js"></script><script src="/durable.js"></script></body></html>`;
+}
+
+/* ===== the shipped durable-month block, lifted verbatim from the ACTIVE
+   Staff Prep workspace of 1p-mls-connect.js and given only the tiny host it
+   calls. If a refactor renames or drops any of these three pieces the
+   extraction fails loudly instead of the test quietly proving nothing. ==== */
+function durableMonthBundle() {
+  const cut = (startMark, endMark, from) => {
+    const a = p1Connect.indexOf(startMark, from || 0);
+    assert(a >= 0, 'durable-month extraction: missing ' + startMark);
+    const b = p1Connect.indexOf(endMark, a);
+    assert(b > a, 'durable-month extraction: unclosed ' + startMark);
+    return p1Connect.slice(a, b + endMark.length);
+  };
+  const helpers = cut('/* ===== p1-durable-month-1.0.0 (the month pull IS the durable job) =====',
+    '/* ===== end p1-durable-month-1.0.0 ===== */');
+  const buttons = cut('/* ===== p1-durable-month-1.0.0 (controls follow the SAVED job) =====',
+    '/* ===== end p1-durable-month-1.0.0 ===== */');
+  const wireStart = p1Connect.indexOf("    on('ez3PullResume', function () { if (!p1RangeResume()) startMonthPull(true); });");
+  const wireEnd = p1Connect.indexOf("    on('ez3sPullToday'", wireStart);
+  assert(wireStart >= 0 && wireEnd > wireStart, 'durable-month extraction: the Pause/Resume/Cancel wiring is missing');
+  const wiring = p1Connect.slice(wireStart, wireEnd);
+  assert(helpers.includes('function p1RangeAdopt()') && helpers.includes('function p1RangeStartMonth('),
+    'the durable-month helpers no longer carry adopt/start');
+  assert(buttons.includes("$('ez3PullResume')") && buttons.includes("$('ez3PullPause')"),
+    'the shipped button rules no longer drive Resume/Pause');
+  return `(function(){
+    'use strict';
+    var P = null;
+    function $(id){ return document.getElementById(id); }
+    function isFn(v){ return typeof v === 'function'; }
+    function safe(fn, d){ try { return fn(); } catch (e) { return d; } }
+    function pSet(id, txt){ var e = $(id); if (e) e.textContent = String(txt == null ? '' : txt); }
+    function plog(msg){ var l = $('ez3PullLog'); if (l) { var d = document.createElement('div'); d.textContent = String(msg); l.appendChild(d); } }
+    function render(){}
+    function cancelPullRun(){ window.__panel.legacyCancels++; }
+    function startMonthPull(retryOnly){ window.__panel.legacyStarts.push(!!retryOnly); }
+    function pullMonthRange(ym){
+      var m = /^(\\d{4})-(\\d{2})$/.exec(String(ym || ''));
+      if (!m) return null;
+      var last = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate(), keys = [];
+      for (var d = 1; d <= last; d++) keys.push(ym + '-' + (d < 10 ? '0' : '') + d);
+      return { ym: ym, from: keys[0], to: keys[keys.length - 1], keys: keys, label: ym };
+    }
+    function freshPull(range, provider){
+      return { range: range, provider: provider || 'all', keysToRun: range.keys.slice(), running: false,
+        cancelled: false, dayStatus: {}, found: 0, saved: 0, dups: 0, failedRows: 0, emptyDays: [],
+        failedDays: [], providersSeen: {}, extNav: false, existing: null, log: [] };
+    }
+    function pCounts(){
+      if (!P) return;
+      var done = 0; P.range.keys.forEach(function (k) { var st = P.dayStatus[k]; if (st && /^(done|empty|failed)$/.test(st.status)) done++; });
+      pSet('ez3cFail', String(P.failedDays.length));
+      var bar = $('ez3PullBar'); if (bar) bar.style.width = Math.round(done * 100 / Math.max(1, P.range.keys.length)) + '%';
+      pSet('ez3PullBarLbl', done + ' of ' + P.range.keys.length + ' days' + (P.emptyDays.length ? (' \\u00b7 ' + P.emptyDays.length + ' empty') : ''));
+${buttons.split('\n').map(l => '      ' + l).join('\n')}
+    }
+${helpers.split('\n').map(l => '    ' + l).join('\n')}
+    function on(id, fn){ var e = $(id); if (e) e.onclick = fn; }
+    window.__panel = { legacyCancels: 0, legacyStarts: [],
+      state: function(){ return P ? { running: P.running, owned: P.p1Owned === true, failedDays: P.failedDays.slice(), month: P.range && P.range.ym } : null; },
+      adopt: function(){ return !!p1RangeAdopt(); },
+      paint: function(){ return !!p1RangePaint(); },
+      startMonth: function(){
+        var month = $('ez3sMonth') ? $('ez3sMonth').value : '';
+        var gate = { ok: true, provider: { id: 'provider-7', stableKey: 'stable-provider-7', name: 'Dr Synthetic Provider' } };
+        return p1RangeStartMonth(month, pullMonthRange(month), gate);
+      } };
+    window.__wirePullPanel = function(){
+      p1RangeAdopt();
+      on('ez3PullStart', function(){ window.__panel.startMonth(); });
+      on('ez3PullRetry', function(){ startMonthPull(true); });
+${wiring.split('\n').map(l => '  ' + l).join('\n')}
+      pCounts();
+    };
+  })();`;
 }
 
 function serveRangeUiFixture() {
@@ -526,6 +676,10 @@ function serveRangeUiFixture() {
         res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
         return res.end(source);
       }
+      if (pathname === '/durable.js') {
+        res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+        return res.end(durableMonthBundle());
+      }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.end(rangeUiFixtureHtml());
     });
@@ -536,6 +690,138 @@ function serveRangeUiFixture() {
 async function settleBrowserJob(page, index) {
   await page.evaluate(value => window.__fixtureSettleStopped(value), index);
   await page.waitForTimeout(60);
+}
+
+/* ==========================================================================
+ * p1-durable-month-1.0.0 (lead ruling 2026-08-17): the doctor-facing MONTH
+ * pull must BE the durable job. Real Chrome, the shipped panel bytes, the
+ * real range engine: Start creates a job, Pause stops it and keeps the
+ * checkpoint, a full page RELOAD shows that job with ONE click, and Resume
+ * continues without re-pulling a proved day.
+ * ======================================================================== */
+async function testDurableMonthPanel() {
+  const server = await serveRangeUiFixture();
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  let failure = null;
+  try {
+    const context = await browser.newContext({ viewport: { width: 980, height: 800 } });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(String(error && error.message || error)));
+    await page.goto(base + '/?account=doctor-month@example.invalid', { waitUntil: 'load' });
+    await page.waitForFunction(() => window.__mlsP1RangeJobs && window.__mlsP1RangeJobs.installed === true && window.__panel);
+    await page.evaluate(() => { window.__rangeFixture.autoMonth = true; window.mountPullPanel('2026-02'); });
+
+    /* the panel opens clean: Start only */
+    const fresh = await page.evaluate(() => ({
+      start: getComputedStyle(document.getElementById('ez3PullStart')).display,
+      resume: getComputedStyle(document.getElementById('ez3PullResume')).display,
+      pause: getComputedStyle(document.getElementById('ez3PullPause')).display,
+      saved: localStorage.getItem(window.uns('p1RangeJobV1'))
+    }));
+    assert.notStrictEqual(fresh.start, 'none', 'the clean panel hid Start month pull');
+    assert.strictEqual(fresh.resume, 'none', 'the clean panel offered Resume with nothing saved');
+    assert.strictEqual(fresh.saved, null, 'a range manifest existed before the doctor pressed anything');
+
+    /* 1. Start creates a DURABLE JOB, not a bare pullMonth */
+    await page.click('#ez3PullStart');
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem(window.uns('p1RangeJobV1'));
+      return !!raw && JSON.parse(raw).kind === 'month';
+    });
+    await page.waitForFunction(() => window.__rangeFixture.autoDays >= 4);
+    const started = await page.evaluate(() => {
+      const job = JSON.parse(localStorage.getItem(window.uns('p1RangeJobV1')));
+      return { kind: job.kind, target: job.target, provider: job.provider, options: job.options,
+        legacyStarts: window.__panel.legacyStarts.length,
+        pause: getComputedStyle(document.getElementById('ez3PullPause')).display,
+        start: getComputedStyle(document.getElementById('ez3PullStart')).display,
+        bar: document.getElementById('ez3PullBarLbl').textContent };
+    });
+    assert.strictEqual(started.kind, 'month', 'Start month pull did not create a durable MONTH job');
+    assert.strictEqual(started.target, '2026-02', 'the durable job did not take the picked month');
+    assert.deepStrictEqual(started.provider, { mode: 'selected', id: 'provider-7', stableKey: 'stable-provider-7' },
+      'the durable job did not freeze the verified provider identity');
+    assert.deepStrictEqual(started.options, { includeHistory: true, fullNotes: false },
+      'the durable job weakened history or turned full notes on by itself');
+    assert.strictEqual(started.legacyStarts, 0, 'the panel fell through to the old in-tab month pull');
+    assert.notStrictEqual(started.pause, 'none', 'a running durable job did not offer Pause');
+    assert.strictEqual(started.start, 'none', 'Start stayed available while a job was running');
+    assert(/of 28 days/.test(started.bar), 'the panel bar is not counting the durable job days: ' + started.bar);
+
+    /* 2. Pause stops it and keeps every verified day */
+    await page.click('#ez3PullPause');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('p1RangeJobV1'))).status === 'paused');
+    const paused = await page.evaluate(() => {
+      const job = JSON.parse(localStorage.getItem(window.uns('p1RangeJobV1')));
+      return { status: job.status, complete: job.summary.complete, days: job.summary.days,
+        stopCalls: window.__rangeFixture.stopCalls,
+        resume: getComputedStyle(document.getElementById('ez3PullResume')).display,
+        start: getComputedStyle(document.getElementById('ez3PullStart')).display };
+    });
+    assert.strictEqual(paused.status, 'paused', 'Pause did not checkpoint the durable job');
+    assert(paused.complete >= 4, 'Pause lost the days already verified (kept ' + paused.complete + ')');
+    assert.strictEqual(paused.days, 28, 'the paused job forgot the size of the month');
+    assert(paused.stopCalls > 0, 'Pause did not ask the importer to stop');
+    assert.notStrictEqual(paused.resume, 'none', 'a paused job did not offer Resume');
+    assert.strictEqual(paused.start, 'none', 'a paused job still offered a fresh Start over its checkpoint');
+    const provedBeforeReload = await page.evaluate(() => {
+      const job = JSON.parse(localStorage.getItem(window.uns('p1RangeJobV1')));
+      const days = job.months['2026-02'].days;
+      return Object.keys(days).filter(d => days[d].status === 'complete');
+    });
+
+    /* 3. a full RELOAD shows the unfinished job with ONE click */
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.__mlsP1RangeJobs && window.__mlsP1RangeJobs.installed === true && window.__panel);
+    await page.evaluate(() => { window.__rangeFixture.autoMonth = true; window.mountPullPanel('2026-02'); });
+    const reloaded = await page.evaluate(() => ({
+      resume: getComputedStyle(document.getElementById('ez3PullResume')).display,
+      start: getComputedStyle(document.getElementById('ez3PullStart')).display,
+      bar: document.getElementById('ez3PullBarLbl').textContent,
+      month: window.__panel.state() && window.__panel.state().month,
+      monthCalls: window.__rangeFixture.monthDates.length
+    }));
+    assert.strictEqual(reloaded.monthCalls, 0, 'the reload restarted Athena work on its own');
+    assert.notStrictEqual(reloaded.resume, 'none', 'a reload hid the unfinished job behind no control at all');
+    assert.strictEqual(reloaded.start, 'none', 'a reload offered a fresh Start that would abandon the checkpoint');
+    assert.strictEqual(reloaded.month, '2026-02', 'the reload did not adopt the saved month');
+    assert(/of 28 days/.test(reloaded.bar) && !/^0 of/.test(reloaded.bar),
+      'the reload showed no saved progress: ' + reloaded.bar);
+
+    /* 4. ONE click resumes, and no proved day is pulled again */
+    await page.click('#ez3PullResume');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('p1RangeJobV1'))).status === 'complete', null, { timeout: 20000 });
+    const finished = await page.evaluate(() => {
+      const job = JSON.parse(localStorage.getItem(window.uns('p1RangeJobV1')));
+      return { status: job.status, summary: job.summary, run: job.run,
+        asked: window.__rangeFixture.monthDates.slice(),
+        receipt: document.getElementById('ez3PullNow2').textContent,
+        now: document.getElementById('ez3PullNow').textContent };
+    });
+    assert.strictEqual(finished.status, 'complete', 'Resume did not finish the month');
+    assert.strictEqual(finished.summary.complete, 28, 'the resumed month did not account for every day');
+    assert.strictEqual(finished.summary.empty, 28, 'the receipt lost the verified-empty count');
+    assert.strictEqual(finished.run.skippedComplete, provedBeforeReload.length,
+      'the receipt does not report the days Resume skipped as already verified');
+    assert.strictEqual(finished.asked.length, 1, 'Resume ran more than one month request');
+    provedBeforeReload.forEach(day => {
+      assert(!finished.asked[0].includes(day), 'Resume re-pulled ' + day + ', already proved before the reload');
+    });
+    assert(/days done/.test(finished.receipt) && /verified empty/.test(finished.receipt) &&
+      /skipped as already verified/.test(finished.receipt),
+      'the panel does not show the completion receipt: ' + finished.receipt);
+    assert(/complete/i.test(finished.now), 'the panel never said the month finished: ' + finished.now);
+    assert.strictEqual(pageErrors.length, 0, 'the durable month panel raised browser errors: ' + pageErrors.join(' | '));
+    await context.close();
+  } catch (error) {
+    failure = error;
+  } finally {
+    await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+  if (failure) throw failure;
 }
 
 async function testDoctorFacingYearPullUi() {
@@ -824,8 +1110,9 @@ async function testDoctorFacingYearPullUi() {
   await testPauseResumeAndCancel();
   await testOctoberRetryNeverRestartsJanuary();
   await testLockAccountAndPersistenceRefusals();
+  await testDurableMonthPanel();
   await testDoctorFacingYearPullUi();
-  console.log('PASS /p1 durable range jobs + Staff Prep Year controls: PHI-free checkpoints, selected/all provider, bounded year choice, truthful progress, rapid-Start guard, reload, pause/resume/cancel, errors, phone layout, session wall, and exact revert');
+  console.log('PASS /p1 durable range jobs + Staff Prep Month/Year controls: PHI-free checkpoints, a per-day attempt cap that settles a stuck day as needs-attention instead of blocking later months, selected/all provider, bounded year choice, truthful progress, rapid-Start guard, reload, pause/resume/cancel, errors, phone layout, session wall, exact revert — and the doctor-facing MONTH pull now IS that durable job: Start creates a manifest with the frozen provider, Pause keeps every verified day, a full page reload shows the unfinished job with ONE click, and Resume finishes it without re-pulling a proved day');
 })().catch(error => {
   console.error(error && error.stack || error);
   process.exitCode = 1;

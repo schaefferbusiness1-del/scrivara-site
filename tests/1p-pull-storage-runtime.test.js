@@ -248,16 +248,41 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
   assert.strictEqual(release.ok, false, 'owner read failure was reported as released');
   assert.strictEqual(month.store.has(readOwner), true, 'read-failure cleanup guessed and deleted owner state');
 
-  /* The range checkpoint contains exactly four PHI-free fields and is non-breaking. */
-  const checkpointStart = source.indexOf('function p1MonthDayCheckpoint');
+  /* The range checkpoint contains exactly five PHI-free fields and is
+     non-breaking. p1-month-signout-1.0.0 added the fifth: ONE boolean saying
+     whether the bounded session probe proved athenaOne signed out, so a
+     durable range caller can tell a sign-in problem from an unread grid. It
+     is a boolean by construction - no error text, no identity, ever. */
+  const checkpointStart = source.indexOf('function p1MonthDaySignedOut');
   const checkpointEnd = source.indexOf('/* One exact month route', checkpointStart);
+  assert(checkpointStart >= 0 && checkpointEnd > checkpointStart, 'the month day-checkpoint block could not be isolated');
   ctx = baseContext(new Map());
   const checkpoint = runBlock('function safe(fn,d){try{return fn();}catch(e){return d;}} function isFn(f){return typeof f === "function";}\n' + source.slice(checkpointStart, checkpointEnd), ctx, 'p1MonthDayCheckpoint');
   let delivered = null;
   const returned = checkpoint(value => { delivered = value; throw new Error('caller failure'); }, '2026-03-08', { ok: true, complete: true, reason: 'complete', patientName: 'Never Expose', error: 'secret' });
-  assert.deepStrictEqual(Object.keys(returned).sort(), ['complete', 'date', 'ok', 'reason'], 'checkpoint exposed fields outside its PHI-free contract');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(delivered)), { date: '2026-03-08', ok: true, complete: true, reason: 'complete' }, 'checkpoint content was not minimal and exact');
+  assert.deepStrictEqual(Object.keys(returned).sort(), ['complete', 'date', 'ok', 'reason', 'sessionExpired'], 'checkpoint exposed fields outside its PHI-free contract');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(delivered)), { date: '2026-03-08', ok: true, complete: true, reason: 'complete', sessionExpired: false }, 'checkpoint content was not minimal and exact');
   assert.strictEqual(checkpoint(null, 'bad-date', { reason: 'Patient Name' }).reason, 'unclassified', 'unsafe checkpoint reason was not collapsed');
+
+  /* the probe crosses as a boolean, from every place the day receipt can prove
+     it, and the receipt itself never rides along */
+  const signedOutCases = [
+    { schedSessionLikelyExpired: true },
+    { navSessionLikelyExpired: true },
+    { athenaSignedOutSuspected: true },
+    { historyReceipt: { sessionExpired: true } },
+    { error: 'athenaOne showed its sign-in page' }
+  ];
+  signedOutCases.forEach((receipt, index) => {
+    const out = checkpoint(null, '2026-03-09', { ok: false, complete: false, reason: 'no-read', receipt: receipt });
+    assert.strictEqual(out.sessionExpired, true, 'sign-out evidence #' + index + ' did not reach the checkpoint');
+    assert.deepStrictEqual(Object.keys(out).sort(), ['complete', 'date', 'ok', 'reason', 'sessionExpired'], 'a sign-out checkpoint grew extra fields');
+    assert(!/sign-in page|athenaOne showed/.test(JSON.stringify(out)), 'the sign-out checkpoint carried the raw error text');
+  });
+  const ambiguous = checkpoint(null, '2026-03-10', { ok: false, complete: false, reason: 'no-read', receipt: { error: 'The athenaOne schedule grid did not answer.' } });
+  assert.strictEqual(ambiguous.sessionExpired, false, 'an unreadable grid with no probe was reported as a sign-out');
+  assert.strictEqual(checkpoint(null, '2026-03-11', { ok: false, complete: false, reason: 'no-athena-tab' }).sessionExpired, true,
+    'no-athena-tab is a sign-out by definition and did not say so');
 
   console.log('PASS p1 pull/storage runtime: Web Lock lifecycle, settled fallback ownership, token heartbeats, frozen account scope, sticky capacity failures, truthful cleanup, DST dates, and PHI-free day checkpoints');
 })().catch(error => { console.error(error); process.exitCode = 1; });
