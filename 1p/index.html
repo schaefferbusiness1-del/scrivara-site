@@ -40091,6 +40091,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       var ctl = window.__mlsP1CalmDock;
       if (ctl && typeof ctl.reconcile === 'function') ctl.reconcile();
     } catch (e) {}
+    /* The calm shell recomputes the top dock's clearance on resize; this is
+       the app's own seam and it is fired only from an explicit choice, never
+       from a scroll or a repaint. */
     try { window.dispatchEvent(new Event('resize')); } catch (e2) {}
     setTimeout(place, 0);
     setTimeout(place, 240);
@@ -40474,8 +40477,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   ['mls:ui-ready', 'mls:view-changed', 'mls:session-boundary'].forEach(function (name) {
     try { window.addEventListener(name, tick, false); } catch (e) {}
   });
-  try { window.addEventListener('resize', function () { setTimeout(place, 0); }, { passive: true }); } catch (e) {}
-  try { window.addEventListener('scroll', function () { setTimeout(place, 0); }, { passive: true }); } catch (e) {}
+  /* COALESCED. place() reads the dock's rect and writes two inline positions;
+     scheduling that from every scroll event would queue thousands of layout
+     round-trips during one flick - a taskbar fix that made the app janky
+     would be the whole complaint again, one level down. One pending pass at a
+     time, and setTimeout rather than rAF because rAF does not fire in a
+     non-compositing tab. */
+  var placeQueued = false;
+  function placeSoon() {
+    if (placeQueued) return;
+    placeQueued = true;
+    setTimeout(function () { placeQueued = false; place(); }, 0);
+  }
+  try { window.addEventListener('resize', placeSoon, { passive: true }); } catch (e) {}
+  try { window.addEventListener('scroll', placeSoon, { passive: true }); } catch (e) {}
   setTimeout(tick, 1500);
   setTimeout(tick, 4000);
 })();
