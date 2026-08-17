@@ -245,6 +245,9 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert.strictEqual(probeReceipt.appointmentIdPresent, true);
     assert.strictEqual(probeReceipt.encounterBound, true);
     assert.strictEqual(probeReceipt.expectedDay, DAY, 'the receipt did not record the expected day');
+    assert.strictEqual(probeReceipt.identityLock, 'refused', 'the receipt did not record the identity-lock result');
+    assert.strictEqual(typeof probeReceipt.athenaTabs, 'number', 'the receipt did not carry an athenaOne tab count field');
+    assert.strictEqual(probeReceipt.mode, 'probe', 'a receipt recorded a non-probe request');
     const openReceipt = receipts.filter(r => r.verb === 'mlsAppSearchOpenPatient')[0];
     assert(openReceipt, 'no appointment-open receipt was recorded');
     assert.strictEqual(openReceipt.reason, 'appointment-id-not-found');
