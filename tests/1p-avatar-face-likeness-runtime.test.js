@@ -149,11 +149,19 @@ ok(source.includes("refusePrefix: 'Not used. '"), 'an uploaded picture is accept
 const helpers = new Function(between(source, 'function faceValidPhoto', 'function makePhotoFace') +
   '\nreturn {valid:faceValidPhoto,onLoad:faceModeOnLoad,after:faceModeAfterCapture};')();
 const photo = 'data:image/jpeg;base64,AAAA';
-eq(helpers.onLoad(undefined, photo), 'photo', 'legacy saved portrait reloads as the generic character');
-eq(helpers.onLoad('photo', photo), 'photo', 'saved photo-mode selection is lost on reload');
-eq(helpers.onLoad('drawn', photo), 'drawn', 'deliberate saved Animated choice is overwritten on reload');
-eq(helpers.after('drawn', false), 'photo', 'new capture does not default to closest-likeness photo mode');
-eq(helpers.after('drawn', true), 'drawn', 'deliberate in-session Animated choice is ignored');
+/* p1-avatar-primary-1.0.0 (owner, 2026-08-16): "WHY DOES IT AUTO SWITCH TO
+   FACE STYLE MY PHOTO ONCE I TAKE A PICTURE ... ONLY HAVE IT IN SETTINGS
+   AVATAR IS THE PRIMARY". The animated character is the patient-facing face.
+   A portrait is an INPUT to it, never a silent replacement for it, so neither
+   saving a portrait nor merely owning one may change what patients see. The
+   photograph appears only when the doctor picks it in Settings — and that
+   explicit choice must still survive both a reload and a new capture. */
+eq(helpers.onLoad(undefined, photo), 'drawn', 'merely owning a portrait silently switched the patient-facing face to the photo');
+eq(helpers.onLoad('photo', photo), 'photo', 'an explicit Settings choice of the photo was lost on reload');
+eq(helpers.onLoad('drawn', photo), 'drawn', 'a deliberate saved Animated choice was overwritten on reload');
+eq(helpers.after('drawn', false), 'drawn', 'taking a picture silently switched the patient-facing face to the photo');
+eq(helpers.after('photo', false), 'photo', 'taking a picture threw away an explicit photo choice');
+eq(helpers.after('drawn', true), 'drawn', 'a deliberate in-session Animated choice was ignored');
 
 let nextTimer = 0;
 const clearedTimers = [];

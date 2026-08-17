@@ -27,6 +27,10 @@ const tests = [
   'p1-calendar-single-pull-entrypoint.test.js',
   'p1-calendar-hero-pull-contract.test.js',
   'p1-calendar-peek-opnote-action.test.js',
+  /* A black camera feed and a dim room are different faults with different
+     remedies; two luminance thresholds decided which the doctor was told
+     about, and only this keeps them equal. */
+  'p1-avatar-dead-feed-threshold.test.js',
   /* p1-lease-loan-1.0.0 (owner report 2026-08-16): schedule pull 6/6, mapped
      6/6, then all six today-note reads refused "pull-in-flight" because the
      frozen feat_visits.js calls _assistReadChart with no token at all. The

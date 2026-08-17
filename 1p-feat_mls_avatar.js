@@ -2966,11 +2966,26 @@
   function faceValidPhoto(dataUrl) {
     return !!(dataUrl && String(dataUrl).indexOf('data:image/') === 0);
   }
+  /* p1-avatar-primary-1.0.0 (owner, 2026-08-16): "WHY DOES IT AUTO SWITCH TO
+     FACE STYLE MY PHOTO ONCE I TAKE A PICTURE ... ONLY HAVE IT IN SETTINGS
+     AVATAR IS THE PRIMARY".
+
+     Both of these used to switch the patient-facing face to the photograph on
+     their own. Saving a portrait flipped the mode, and so did merely having
+     one on the next load. The doctor never asked for that, and the face
+     patients see is not a thing this code gets to decide implicitly - a
+     portrait is an INPUT to the animated character, not a replacement for it.
+
+     The animated character is now the default in both paths. The photograph
+     is shown only when the doctor has explicitly chosen it in Settings, which
+     is the one place that choice lives. */
   function faceModeOnLoad(savedMode, savedImage) {
-    return savedMode === 'photo' || savedMode === 'drawn' ? savedMode : (faceValidPhoto(savedImage) ? 'photo' : 'drawn');
+    return savedMode === 'photo' || savedMode === 'drawn' ? savedMode : 'drawn';
   }
   function faceModeAfterCapture(currentMode, wasTouched) {
-    return wasTouched ? (currentMode === 'photo' ? 'photo' : 'drawn') : 'photo';
+    /* Capturing a portrait never changes what patients see. Whatever mode is
+       active stays active - including an explicit 'photo' the doctor chose. */
+    return currentMode === 'photo' ? 'photo' : 'drawn';
   }
   function makePhotoFace(mount, dataUrl, altText) {
     if (!mount || !faceValidPhoto(dataUrl)) return null;
@@ -5431,7 +5446,20 @@
        grade matcher confidence; it must never veto saving a real portrait. */
     var faceRatio = r.grid ? Math.max(0, Math.min(1, Number(r.faceW || 0) / Number(r.grid))) : 0;
     var why = '';
-    if (q.exposure < 45) why = 'The picture is too dark — turn a light on, or face a window.';
+    /* p1-camera-endurance-1.0.1 (owner, 2026-08-16, second report of the same
+       symptom). A dead feed and a dim room are NOT the same fault and must not
+       give the same advice. This file already documents the discrimination at
+       faceLiveLoopStart: "a real dark room reads 5-40, a dead surface reads a
+       flat 0". But this hint tested only exposure < 45, so a black feed was
+       reported as a lighting problem — and it fires every tick, immediately,
+       while the dead-feed handler deliberately waits 1.5s and stays silent on
+       its first report to let a silent re-attach work. The result is that the
+       owner sat looking at a black picture being told to turn a light on.
+       DEAD_FEED_EXPOSURE is the same constant the live loop uses; keeping one
+       number is the point, because two that drift reproduce exactly this. */
+    var DEAD_FEED_EXPOSURE = 0.8;   /* keep equal to faceLiveLoopStart's DARK_EXPOSURE — pinned by tests/p1-avatar-dead-feed-threshold.test.js */
+    if (q.exposure <= DEAD_FEED_EXPOSURE) why = 'The camera picture went black — restart the camera. This is not a lighting problem.';
+    else if (q.exposure < 45) why = 'The picture is too dark — turn a light on, or face a window.';
     else if (q.exposure > 225) why = 'The picture is washed out — move the bright light behind you out of shot.';
     else if (!hasFace) why = (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
     else if (q.sharp < 2.2) why = 'The picture is blurred — hold still, and give the camera a moment to focus.';
@@ -5612,7 +5640,7 @@
        and counts the reports, so the camera UI can try a silent re-attach on
        the first one and only speak up if that did not bring the picture
        back — a report that fired once could never tell those two apart. */
-    var DARK_TICKS = 12, DARK_EXPOSURE = 0.8;
+    var DARK_TICKS = 12, DARK_EXPOSURE = 0.8;   /* keep equal to faceCaptureVerdict's DEAD_FEED_EXPOSURE — pinned by tests/p1-avatar-dead-feed-threshold.test.js */
     var darkRun = 0, darkReports = 0;
     function next() { faceLiveRaf = requestAnimationFrame(tick); }
     function tick(ts) {
