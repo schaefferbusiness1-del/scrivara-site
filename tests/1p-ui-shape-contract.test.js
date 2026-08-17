@@ -20,6 +20,8 @@
  *   9. No two visible controls on Analysis at 360 carry the same name.
  *  10. The Analysis scope chip is at least 12px — and did not grow its row.
  *  11. The op-note room's typed controls are 40px tap targets at 360.
+ *  12. The ONE appointment clock still owns the four TZ hooks after the shared
+ *      assistant module has actually loaded on the page.
  *
  * PART 1 is static (both twins, no browser). PART 2 drives the real shell in
  * real Chrome with a synthetic 28-patient day - no login, no network, no PHI.
@@ -599,6 +601,34 @@ async function runtime() {
         }
       }
     }
+
+    /* -- 12: the ONE appointment clock survives the REAL load order --------
+     * The vm proof in 1p-appointment-clock-one-convention shows the mechanism;
+     * only this page has actually loaded feat_mls_assistant_exact.js, whose
+     * installEstHooks() assigns over all four TZ hooks. If the shell's
+     * defineProperty claim silently failed here — different property
+     * attributes, a different engine — the hero would go back to 4:00 AM with
+     * every unit test still green. */
+    const clock = await page.evaluate(() => {
+      const asstLoaded = !!document.querySelector('script[data-mls-asset="feat_mls_assistant_exact.js"]');
+      return {
+        asstLoaded: asstLoaded,
+        resolver: !!(window.__mlsApptClock && window.__mlsApptClock.version),
+        estForced: typeof window.__mlsEstForced,
+        naive: window._fmtApptTime('2026-08-17T08:00:00'),
+        zoned: window._fmtApptTime('2026-08-17T12:00:00Z'),
+        mins: window._apptMinsTz('2026-08-17T08:00:00'),
+        hero: window._apptDisplayTime({ start_at: '2026-08-17T08:00:00', start_local: '08:00' })
+      };
+    });
+    ok(clock.asstLoaded, 'feat_mls_assistant_exact.js never loaded, so this measurement proves nothing about the load order');
+    ok(clock.resolver, 'the one appointment-clock resolver is not on the page');
+    eq(clock.estForced, 'undefined',
+      'the shared assistant module installed its forced-Eastern hooks over the resolver in a real browser');
+    eq(clock.naive, '8:00 AM', `an 8 AM offset-less appointment rendered as ${clock.naive} in a real browser`);
+    eq(clock.zoned, '8:00 AM', `the same instant written with an explicit Z rendered as ${clock.zoned}`);
+    eq(clock.mins, 480, `minutes-since-midnight came back ${clock.mins}`);
+    eq(clock.hero, clock.naive, `the hero and the shared hook disagree in a real browser: ${clock.hero} vs ${clock.naive}`);
 
     /* -- 9: Analysis at 360 must not offer two identically-named controls --
      * MEASURED before anarefresh-1.0.0: #anaOutcomes and #anaBaseline each
