@@ -19356,7 +19356,26 @@ function opPrepRender(){
     }
   }catch(e){ _keep=null; }
   var rows=window._opPrep||[];
-  var hdr=document.getElementById('opPrepHdr'); if(hdr) hdr.textContent = (window._opPrepMode==='patient') ? ('💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient')) : '💉 Prep op notes';
+  /* THE DAY BELONGS IN THE TITLE (owner, 2026-08-16: "WTF WHERE IS THE BIG
+     DATE THING IN OP NOTES"). Folding #opPrepDayRow behind "Change day" also
+     hid #opPrepDayLbl, which was the only place the day appeared - so the
+     doctor could not tell which day he was drafting. That was a real
+     regression from the simplification.
+     Putting it in the h3 is better than restoring it to the sidebar: the day
+     is now the most prominent thing after the screen name, it is always
+     visible in every mode, and #opPrepHdr is already this dialog's
+     aria-labelledby target, so it is announced on open too. */
+  var hdr=document.getElementById('opPrepHdr');
+  if(hdr){
+    if(window._opPrepMode==='patient'){
+      hdr.textContent='💉 Op note — '+((rows[0]&&rows[0].appt.name)||'patient');
+    } else {
+      var _hdDay='';
+      try{ _hdDay=String((rows[0]&&rows[0].dateStr)||''); }catch(e){}
+      if(!_hdDay){ try{ var _lbl=document.getElementById('opPrepDayLbl'); _hdDay=_lbl?String(_lbl.textContent||''):''; }catch(e){} }
+      hdr.textContent = _hdDay ? ('💉 Op notes — '+_hdDay) : '💉 Prep op notes';
+    }
+  }
   // Reflect which mode is active in the switcher (blue = on).
   try{ var _mp=document.getElementById('opPrepModePatient'), _ma=document.getElementById('opPrepModeAll'); var _on='background:#204034;color:#fff;border-color:#204034;font-weight:700', _off='background:var(--card);color:var(--ink);border-color:var(--line);font-weight:600';
     /* 2026-07-29: the active mode was carried by background+colour+font-weight
@@ -37180,11 +37199,24 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
     grid-template-columns:minmax(0,1fr) !important;
   }
 }
-/* #calGrid has no CSS rule of its own anywhere and no overflow wrapper, so a
-   week view narrower than its seven columns is CLIPPED rather than
-   scrollable - unreachable, not just ugly. Scroll it in its own box; the page
-   body must never scroll sideways. */
-#calGrid{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+/* #calGrid had no CSS rule of its own anywhere and no overflow wrapper, so a
+   week view narrower than its seven columns was CLIPPED rather than scrollable
+   - unreachable, not merely ugly.
+
+   ⚠️ THIS RULE WAS WRONG AT DESKTOP WIDTH AND BROKE THE CALENDAR (owner,
+   2026-08-16: "WHY DOES THE CALENDAR NOT LOAD"). It was applied
+   unconditionally. In CSS, when ONE axis of overflow is not 'visible' the
+   other computes from 'visible' to 'auto' — so 'overflow-x:auto' alone
+   silently made the month grid VERTICALLY scrollable too, clipping a
+   1,012px-tall month inside its own box. The calendar was in fact loading
+   perfectly; it just looked truncated.
+
+   The clipping this was meant to cure only happens where the seven columns
+   stop fitting, so the rule is scoped there. At desktop width the grid keeps
+   its original overflow and nothing is clipped in either direction. */
+@media (max-width:900px){
+  #calGrid{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+}
 
 /* ---- Responsive: the laptop case ------------------------------------
    The room's two-column grid is 290px of rail plus the editor. Below 1100px
