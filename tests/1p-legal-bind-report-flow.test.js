@@ -235,6 +235,28 @@ function makeRuntime(options = {}) {
     eq(r.ids.mlsP1LegalGenerate.disabled, true, 'Generate is reachable with no patient bound');
     eq(r.ids.mlsP1LegalCompile.disabled, true, 'Compile is reachable with no patient bound');
     eq(r.api.state().stage, 'unbound', 'the state receipt disagrees with the room root');
+    /* Step 2 must not complete before step 1: a "report-picked" state with no
+       patient would aim the next-step glow at a correctly-disabled Generate. */
+    eq(r.api.pickReport('ime'), false, 'a report type was picked with no patient bound');
+    eq(r.stage(), 'unbound', 'picking a report while unbound advanced the published flow state');
+    eq(r.api.state().reportType, '', 'picking a report while unbound recorded a report type');
+    ok(/Bind a patient first/i.test(r.ids.mlsP1LegalStatus.textContent), 'the refusal did not say which step comes first');
+  }
+
+  /* Re-binding to the patient ALREADY active is a real Change - the app emits
+     no switch event, so this is the path that would silently keep a stale
+     snapshot if the re-bind were driven off the event alone. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.pickReport('ime');
+    r.patients[0].visits.push({ date: '2025-05-05', type: 'Office visit', provider: 'M Synthetic', detail: 'Added before the no-op Change.' });
+    eq(r.api.snapshotDrifted(), true, 'the fixture did not actually move the chart under the snapshot');
+    eq(r.api.bindTo('A'), true, 'a Change back to the already-active patient failed');
+    eq(r.window.getActivePtId(), 'A', 'the no-op Change moved the active patient');
+    eq(r.api.snapshotDrifted(), false, 'a Change to the already-active patient did not re-freeze the snapshot');
+    eq(r.api.state().reportType, '', 'the no-op Change kept the previous report type');
+    eq(r.stage(), 'bound', 'the no-op Change did not return the flow to the bound step');
+    ok(r.api.chronologyText().includes('Added before the no-op Change.'), 'the re-freeze did not pick up the new entry');
   }
 
   /* Add a patient from the roster: search, pick, bind, and the whole flow. */

@@ -862,6 +862,14 @@
     var report = reportTypeFor(key);
     if (!report) return false;
     if (state.run || state.generating) { setStatus('Cancel the current draft run before changing the report type.', true); return false; }
+    /* p1-legal-flow-2.0.0: step 2 cannot complete before step 1. Allowing it
+       would publish data-mls-legal-state="report-picked" with no patient, and
+       the next-step glow would then point at a Generate button that is
+       correctly disabled - a state that lies about what to do next. */
+    if (!state.bound) {
+      setStatus('Bind a patient first (step 1), then pick the report. Nothing was changed.', true);
+      return false;
+    }
     state.reportType = report.key;
     state.draft = '';
     var box = byId('mlsP1LegalDraft'); if (box) { box.value = ''; box.hidden = true; }
