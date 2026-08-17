@@ -124,6 +124,14 @@ const tests = [
      SHARED calm shell from a hardcoded spec list that cannot declare this row,
      so the /1p shells overlay it into the rendered menu. */
   '1p-legal-tools-row-runtime.test.js',
+  /* p1-legal-bind-2.0.0 / p1-legal-reports-2.0.0 / p1-legal-restore-2.0.0
+     (owner 2026-08-17: "It really needs to be able to add a patient to it - or
+     grab a patient from Athena and then add it - and you can pick the report").
+     Executes the four-step flow the room publishes as data-mls-legal-state,
+     the roster/Change re-bind and re-freeze, the read-only EMR delegation
+     (op-table allowlist plus a postMessage spy that must stay empty), and each
+     production legalpack function ported back into the fork. */
+  '1p-legal-bind-report-flow.test.js',
   '1p-marketing-identity-runtime.test.js',
   '1p-marketing-loader-runtime.test.js',
   '1p-marketing-workspace-runtime.test.js',

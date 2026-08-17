@@ -60,7 +60,16 @@
     importSeq: 0,
     draft: '',
     generating: false,
-    priorFocus: null
+    priorFocus: null,
+    /* ===== p1-legal-flow-2.0.0 state ===== */
+    stage: 'unbound',      /* unbound | bound | report-picked | generated | exported */
+    reportType: '',        /* key into REPORT_TYPES; '' until the clinician picks */
+    snapshot: null,        /* the frozen chart snapshot the chronology was built from */
+    snapshotSig: '',       /* signature of that snapshot, re-measured to detect drift */
+    snapshotAt: 0,
+    rebindIntent: null,    /* {patientId, at} - an IN-WORKSPACE Change, not an external switch */
+    athenaOp: '',          /* the read op currently running, '' when idle */
+    athenaNote: ''         /* last honest receipt from an Athena read */
   };
 
   function isFn(value) { return typeof value === 'function'; }
@@ -268,6 +277,10 @@
     state.sources = [];
     state.draft = '';
     state.open = false;
+    state.stage = 'unbound';
+    state.reportType = '';
+    state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0;
+    state.rebindIntent = null; state.athenaOp = ''; state.athenaNote = '';
     renderNoPatient('The active patient changed. This preview closed the prior workspace and discarded every in-progress result. Open Legal / IME again for the patient now on screen.');
     return true;
   }
@@ -282,10 +295,134 @@
     ['document', 'Uploaded chart records'],
     ['outside', 'Outside records']
   ];
+  var CATEGORY_ICONS = {
+    visit: '\uD83E\uDE7A', procedure: '\uD83D\uDD2A', imaging: '\uD83E\uDDBB', diagnosis: '\uD83E\uDDEC',
+    plan: '\uD83D\uDCCB', followup: '\uD83D\uDCC5', document: '\uD83D\uDCCE', outside: '\uD83C\uDFE5'
+  };
   var RE_PROCEDURE = /\b(operative|procedure|surgery|surgical|injection|epidural|arthroscop|fusion|discectomy|laminectomy|ablation|rfa|block)\b/i;
   var RE_IMAGING = /\b(mri|x-?ray|radiograph|ct\b|ultrasound|emg|ncs\b|dexa|imaging|diagnostic stud)/i;
   var RE_OUTSIDE = /\b(outside|external|records from|hospital records|emergency department|transferred)\b/i;
   var RE_FOLLOW = /\b(follow[ -]?up|f\/u|return in|return to|recheck|re-evaluate|next visit)\b/i;
+
+  /* ===== p1-legal-restore-2.0.0 ===========================================
+     Behaviour the /1p fork LOST when it was written from scratch instead of
+     forked from the shipped production pack. Each item below is a measured
+     production behaviour (feat_mls_legalpack.js) that the fork did not have,
+     restored here without weakening any 1p authority boundary. The fork's own
+     additions (exact-binding ownership, local-only file reading, letterhead,
+     IME certainty framing) are untouched.
+
+       1. provOfVisit    - an imported chart row usually carries NO `provider`
+                           field; the clinician's name is inside the raw text
+                           line "MM-DD-YYYY, Provider, Cred, Specialty". The
+                           fork read only the explicit field, so every imported
+                           row collapsed into one "Unattributed" chip and the
+                           provider filter had nothing to filter.
+       2. normProv       - "M Schaeffer" and "M Schaeffer, DO" were two chips.
+       3. classifiable   - that same raw athenaOne line ends in the provider's
+                           SPECIALTY. "Orthopedic Surgery" made RE_PROCEDURE
+                           match, so ordinary office visits were filed as
+                           operative notes. Strip those lines before matching.
+       4. RE_OPMARK      - a note that MENTIONS a prior injection is still a
+                           visit. Only an explicit operative/procedure-note
+                           marker promotes a note to `procedure`.
+       5. planOf         - the fork's inline PLAN regex stopped at the first
+                           ALL-CAPS heading only; production also stops at a
+                           following S:/O:/A: block, which is how dictated
+                           SOAP notes are actually shaped.
+       6. icdOf          - diagnoses were regex-scraped from prose only. The
+                           structured `note.coding` object the app already
+                           stores was ignored entirely.
+       7. calendar follow-ups - a scheduled FUTURE appointment is a documented
+                           follow-up and belongs in a legal chronology.
+       8. visit aiSummary - stored AI summaries were dropped silently.
+       9. activeFilterNote - the fork filtered the EXPORT by provider without
+                           saying so anywhere in the exported document. A
+                           records-request compilation that silently omits a
+                           provider is the single most dangerous thing this
+                           tool can produce.
+     ====================================================================== */
+  /* explicit op/procedure-NOTE markers - much stricter than RE_PROCEDURE */
+  var RE_OPMARK = /\b(operative\s+(?:report|note)|procedure\s+note|procedure\s*(?:\(s\))?\s+performed|description\s+of\s+(?:the\s+)?procedure|operation\s+performed)\b/i;
+  var RE_ATHENA_ROW = /^\s*\d{2}-\d{2}-\d{4}/;
+  var RE_SLASH_ROW = /^\s*\d{1,2}\/\d{1,2}\/\d{2,4}/;
+
+  /* Provider of an imported row: explicit field first, else the raw athenaOne
+     line "<type>\n<MM-DD-YYYY[ h:mm AM]>, <Provider>, <Cred>, <Specialty>". */
+  function provOfVisit(row) {
+    try {
+      var explicit = providerOf(row);
+      if (explicit) return explicit;
+      var raw = String((row && (row.raw || row.detail)) || '');
+      var lines = raw.split(/\r?\n/);
+      for (var i = 0; i < lines.length && i < 4; i++) {
+        var ln = lines[i];
+        if (RE_ATHENA_ROW.test(ln) || RE_SLASH_ROW.test(ln)) {
+          var parts = ln.split(',');
+          if (parts.length >= 2) {
+            var cand = clean(parts[1]);
+            if (cand && !/^\d/.test(cand)) return cand;
+          }
+        }
+      }
+    } catch (e) {}
+    return '';
+  }
+  /* Group providers without credential suffixes so one clinician is ONE chip. */
+  function normProv(value) {
+    return clean(String(value == null ? '' : value)
+      .replace(/\s*,?\s*(MD|DO|PA-?C?|NP|CRNP|DPT|PT|RN|FNP|APRN)\.?\s*$/i, ''));
+  }
+  /* Strip athenaOne "MM-DD-YYYY, Provider, Cred, Specialty" lines so a
+     provider's SPECIALTY never mis-classifies the row. */
+  function classifiable(type, body) {
+    var lines = String(body || '').split(/\r?\n/).filter(function (ln) {
+      return !((RE_ATHENA_ROW.test(ln) || RE_SLASH_ROW.test(ln)) && ln.indexOf(',') >= 0);
+    });
+    return String(type || '') + '\n' + lines.join('\n');
+  }
+  /* PLAN section of a SOAP-style note ('' when the note has none). */
+  function planOf(text) {
+    try {
+      var m = String(text || '').match(/(?:^|\n)\s*(?:P\s*[:\-]|PLAN\s*[:\-]?)\s*\n?([\s\S]*?)(?=\n\s*(?:[A-Z][A-Z /&-]{3,}:|S\s*:|O\s*:|A\s*:)|$)/);
+      if (!m || !clean(m[1])) return '';
+      return m[1].trim();
+    } catch (e) { return ''; }
+  }
+  function fuLinesOf(text) {
+    var out = [];
+    try {
+      String(text || '').split(/\r?\n/).forEach(function (ln) { if (RE_FOLLOW.test(ln)) out.push(ln.trim()); });
+    } catch (e) {}
+    return out;
+  }
+  /* Structured ICD-10 coding the app already stores, then prose as a fallback. */
+  function icdOf(coding) {
+    var out = [];
+    try {
+      if (!coding) return out;
+      var arr = Array.isArray(coding.icd) ? coding.icd : (Array.isArray(coding.icd10) ? coding.icd10 : null);
+      if (arr) {
+        arr.forEach(function (c) {
+          var t = typeof c === 'string' ? c : (clean(c && c.code) + ((c && c.desc) ? ' - ' + clean(c.desc) : ''));
+          if (clean(t)) out.push(clean(t));
+        });
+        return out;
+      }
+      var txt = typeof coding === 'string' ? coding : '';
+      (String(txt).match(/\b[A-TV-Z]\d{2}(?:\.\d{1,4})?\b[^\n]*/g) || []).forEach(function (l) { out.push(l.trim()); });
+    } catch (e) {}
+    return out;
+  }
+  /* The honest export banner for an active provider filter. */
+  function activeFilterNote() {
+    if (!state.model || !state.providerFilter) return '';
+    var off = state.model.providers.filter(function (p) { return state.providerFilter[p] === false; });
+    if (!off.length) return '';
+    return 'PROVIDER FILTER ACTIVE - EXCLUDED FROM THIS COMPILATION: ' + off.join(', ') +
+      '. This compilation is therefore PARTIAL; request an unfiltered copy for a complete record.';
+  }
+  /* ===== end p1-legal-restore-2.0.0 ===== */
 
   function visitsFor(patient) {
     try {
@@ -310,7 +447,9 @@
     return !rowPatientId || rowPatientId === binding.patientId;
   }
   function addItem(items, item) {
-    item.provider = providerOf(item) || clean(item.provider) || 'Unattributed';
+    /* p1-legal-restore-2.0.0: normProv collapses "M Schaeffer" and
+       "M Schaeffer, DO" into ONE provider chip. */
+    item.provider = normProv(item.provider) || 'Unattributed';
     item.body = String(item.body || '').trim();
     item.title = clean(item.title) || 'Record entry';
     item.date = ymd(item.date);
@@ -325,28 +464,47 @@
       if (!rowMatchesBinding(row, binding)) return;
       var type = clean(row.type || row.procedure || row.title) || 'Visit';
       var body = String(row.detail || row.raw || row.text || '').trim();
-      var blob = type + '\n' + body;
-      var category = RE_OUTSIDE.test(blob) ? 'outside' : (RE_IMAGING.test(type) ? 'imaging' : (RE_PROCEDURE.test(type) ? 'procedure' : 'visit'));
+      /* p1-legal-restore-2.0.0: classifiable() drops the athenaOne
+         "MM-DD-YYYY, Provider, Cred, Specialty" line so a provider's SPECIALTY
+         cannot file an office visit as an operative note. The TYPE decides
+         imaging/procedure; only an explicit op-note MARKER promotes prose. */
+      var blob = classifiable(type, body);
+      var category = RE_OUTSIDE.test(blob) ? 'outside'
+        : (RE_IMAGING.test(type) ? 'imaging'
+        : (RE_PROCEDURE.test(type) || RE_OPMARK.test(blob) ? 'procedure' : 'visit'));
+      var summary = clean(row.aiSummary);
       addItem(items, { date: row.date || row.updated, category: category, title: type,
-        provider: providerOf(row), source: clean(row.source) || 'Stored visit', body: body });
+        provider: provOfVisit(row), source: clean(row.source) || 'Stored visit',
+        body: body + (summary ? ((body ? '\n\n' : '') + 'AI summary (AI-generated - verify): ' + summary) : '') });
     });
     notesFor(patientSnapshot).forEach(function (note) {
       if (!rowMatchesBinding(note, binding) || note.isDraft) return;
       var body = String(note.soap || note.text || '').trim();
       var when = note.updated || note.created;
-      addItem(items, { date: when, category: RE_PROCEDURE.test(body.slice(0, 900)) ? 'procedure' : 'visit',
-        title: 'Visit note' + (note.signed ? ' (signed)' : ' (unsigned)'), provider: providerOf(note), source: 'MLS visit note', body: body });
-      var plan = /(?:^|\n)\s*(?:PLAN|P)\s*[:\-]?\s*([\s\S]*?)(?=\n\s*[A-Z][A-Z /&-]{3,}:|$)/i.exec(body);
-      if (plan && clean(plan[1])) addItem(items, { date: when, category: 'plan', title: 'Documented treatment plan', provider: providerOf(note), source: 'MLS visit note', body: plan[1] });
-      body.split(/\r?\n/).forEach(function (line) {
-        if (RE_FOLLOW.test(line)) addItem(items, { date: when, category: 'followup', title: 'Documented follow-up', provider: providerOf(note), source: 'MLS visit note', body: line });
+      var isOp = RE_OPMARK.test(body.slice(0, 900));
+      addItem(items, { date: when, category: isOp ? 'procedure' : 'visit',
+        title: (isOp ? 'Procedure / operative note' : 'Visit note') + (note.signed ? ' (signed)' : ' (unsigned)'),
+        provider: provOfVisit(note), source: 'MLS visit note', body: body });
+      var plan = planOf(body);
+      if (plan) addItem(items, { date: when, category: 'plan', title: 'Documented treatment plan', provider: provOfVisit(note), source: 'MLS visit note (Plan section)', body: plan });
+      fuLinesOf(plan || body).forEach(function (line) {
+        addItem(items, { date: when, category: 'followup', title: 'Documented follow-up', provider: provOfVisit(note), source: 'MLS visit note', body: line });
       });
-      (body.match(/\b[A-TV-Z]\d{2}(?:\.\d{1,4})?\b[^\n]*/g) || []).forEach(function (line) {
-        addItem(items, { date: when, category: 'diagnosis', title: clean(line), provider: providerOf(note), source: 'Documented diagnosis', body: line });
-      });
+      /* structured coding first (p1-legal-restore-2.0.0), prose as a fallback */
+      var coded = icdOf(note.coding);
+      if (coded.length) {
+        coded.forEach(function (dx) {
+          addItem(items, { date: when, category: 'diagnosis', title: clean(dx.split(' - ')[0]) || 'Diagnosis',
+            provider: provOfVisit(note), source: 'Visit coding (ICD-10)', body: dx });
+        });
+      } else {
+        (body.match(/\b[A-TV-Z]\d{2}(?:\.\d{1,4})?\b[^\n]*/g) || []).forEach(function (line) {
+          addItem(items, { date: when, category: 'diagnosis', title: clean(line), provider: provOfVisit(note), source: 'Documented diagnosis', body: line });
+        });
+      }
       if (RE_IMAGING.test(body)) {
         var imaging = body.split(/\r?\n/).filter(function (line) { return RE_IMAGING.test(line); }).slice(0, 12);
-        if (imaging.length) addItem(items, { date: when, category: 'imaging', title: 'Imaging referenced in note', provider: providerOf(note), source: 'MLS visit note', body: imaging.join('\n') });
+        if (imaging.length) addItem(items, { date: when, category: 'imaging', title: 'Imaging referenced in note', provider: provOfVisit(note), source: 'MLS visit note', body: imaging.join('\n') });
       }
     });
     String(patientSnapshot.problems || '').split(/\r?\n|;/).map(clean).filter(Boolean).forEach(function (problem) {
@@ -357,9 +515,24 @@
       var name = clean(doc.name) || 'Chart document';
       var text = String(doc.text || doc.aiSummary || '').trim();
       addItem(items, { date: doc.date || doc.updated, category: RE_OUTSIDE.test(name + '\n' + text.slice(0, 1800)) ? 'outside' : 'document',
-        title: name, provider: 'Unattributed', source: 'Stored chart document',
+        title: name + (doc.kind === 'image' ? ' (image)' : ''), provider: 'Unattributed', source: 'Stored chart document',
         body: text ? text.slice(0, 20000) + (text.length > 20000 ? '\n[truncated for preview display]' : '') : '(no extractable text stored)' });
     });
+    /* p1-legal-restore-2.0.0: a SCHEDULED FUTURE appointment is a documented
+       follow-up. Matched on the exact bound name only; an unnamed or
+       non-matching calendar row is never attributed to this patient. */
+    try {
+      var boundName = clean(binding.name).toLowerCase();
+      var today = todayYmd();
+      (window._calAppts || []).forEach(function (appt) {
+        var apptName = clean(appt && appt.name).toLowerCase();
+        if (!apptName || !boundName || apptName !== boundName) return;
+        var when = ymd(appt.appt_date || String(appt.start_at || '').slice(0, 10));
+        if (!when || when <= today) return;
+        addItem(items, { date: when, category: 'followup', title: 'Scheduled appointment',
+          provider: provOfVisit(appt), source: 'MLS calendar', body: clean(appt.reason) || 'Scheduled visit' });
+      });
+    } catch (e) {}
     items.sort(function (a, b) {
       if (!a.date && !b.date) return 0;
       if (!a.date) return 1; if (!b.date) return -1;
@@ -381,7 +554,14 @@
     }
     var lines = ['READ-ONLY MEDICAL-LEGAL CHRONOLOGY', 'Patient: ' + (state.bound.name || '[name unavailable]'),
       'DOB: ' + (state.bound.dob || '[not documented]') + (state.bound.mrn ? ' | MRN: ' + state.bound.mrn : ''),
-      'Preview draft source; handle as PHI.', ''];
+      'Compiled: ' + new Date().toLocaleString(),
+      'Preview draft source; handle as PHI.'];
+    /* p1-legal-restore-2.0.0: an export whose provider filter silently drops a
+       clinician is a partial record presented as a whole one. Say it, at the
+       top, in the exported bytes - not only in the on-screen chips. */
+    var note = activeFilterNote();
+    if (note) lines.push('', note);
+    lines.push('');
     var items = filteredItems();
     CATEGORIES.forEach(function (category) {
       var rows = items.filter(function (item) { return item.category === category[0]; });
@@ -396,6 +576,7 @@
       lines.push('');
     });
     lines.push('Compiled locally from the exact active chart snapshot. No data was written or delivered.');
+    lines.push('Nothing here is invented; anything missing from the chart is shown as missing.');
     return lines.join('\n');
   }
 
@@ -625,6 +806,74 @@
       'record supports one; where it does not, write the item as "Undeterminable on the record reviewed" with the same ' +
       'one-line basis explaining what is missing. Never state a certainty for a fact that is bracketed or undocumented.']
   ];
+  /* ===== p1-legal-reports-2.0.0 ===========================================
+     "You can pick the report and all that stuff" (owner, 2026-08-17). The pack
+     could produce exactly one document. Every type below is built by the SAME
+     section engine, the same letterhead and the same attestation - only the
+     section list differs - so a new type cannot invent a new authority.
+     `chronology` runs ZERO AI calls: it is a deterministic export of the
+     compiled record, which is what a records request actually asks for.
+     ====================================================================== */
+  var COUNSEL_SECTION = ['XIII-A. ANSWERS TO THE QUESTIONS ASKED',
+    'Restate and answer EACH supplied question separately and in order, grounding every answer in the documented record. ' +
+    'Where the record cannot answer a question, write that it is undeterminable on the record reviewed and say what is missing. ' +
+    'Never answer a question from assumption.'];
+  var RECORDS_SECTIONS = [
+    ['I. RECORDS REVIEWED', 'List every record source supplied - chart entries by date range, and each local file by name - and state plainly what was NOT available.'],
+    ['II. CHRONOLOGY OF CARE', 'Summarize the documented course of care chronologically with dates and providers, without interpretation.'],
+    ['III. DIAGNOSES DOCUMENTED', 'List the documented diagnoses with their dates and the source that documents each one.'],
+    ['IV. TREATMENT AND RESPONSE', 'Summarize documented treatment and the documented response to it.'],
+    ['V. SUMMARY OF THE RECORD', 'Summarize what the record establishes and state clearly where the record is silent. Offer no opinions in this report type.']
+  ];
+  var REPORT_TYPES = [
+    { key: 'ime', label: 'IME / independent medical evaluation',
+      blurb: 'Full 14-section evaluation ending in numbered OPINIONS, each stated to the certainty standard with its own one-line basis.',
+      counsel: true, ai: true },
+    { key: 'narrative', label: 'Medical-legal narrative',
+      blurb: 'The 13-section treating-physician narrative: presentation, imaging, treatment, causation, necessity and future care. No numbered opinions section.',
+      counsel: true, ai: true },
+    { key: 'records', label: 'Records review summary',
+      blurb: 'A short five-section summary of what the records establish. States no opinions at all.',
+      counsel: false, ai: true },
+    { key: 'chronology', label: 'Records chronology only',
+      blurb: 'The compiled categorized chronology on your letterhead. Deterministic - no AI is called and no text is generated.',
+      counsel: false, ai: false }
+  ];
+  function reportTypeFor(key) {
+    for (var i = 0; i < REPORT_TYPES.length; i++) if (REPORT_TYPES[i].key === key) return REPORT_TYPES[i];
+    return null;
+  }
+  /* The default is the IME set, so an API caller that never picks a type gets
+     exactly the document this workspace has always produced. */
+  function sectionsFor(key) {
+    if (key === 'narrative') return SECTIONS.slice(0, 13);
+    if (key === 'records') return RECORDS_SECTIONS.slice();
+    if (key === 'chronology') return [];
+    return SECTIONS.slice();
+  }
+  function runSections(key) {
+    var report = reportTypeFor(key) || reportTypeFor('ime');
+    var list = sectionsFor(report.key);
+    var questions = String((byId('mlsP1LegalQuestions') || {}).value || '').trim();
+    if (report.counsel && questions) list = list.concat([COUNSEL_SECTION]);
+    return list;
+  }
+  function pickReportType(key) {
+    var report = reportTypeFor(key);
+    if (!report) return false;
+    if (state.run || state.generating) { setStatus('Cancel the current draft run before changing the report type.', true); return false; }
+    state.reportType = report.key;
+    state.draft = '';
+    var box = byId('mlsP1LegalDraft'); if (box) { box.value = ''; box.hidden = true; }
+    enableExports(false);
+    renderReportTypes();
+    setStage('report-picked');
+    updateControls();
+    setStatus('Report type: ' + report.label + '. ' + report.blurb, false);
+    return true;
+  }
+  /* ===== end p1-legal-reports-2.0.0 ===== */
+
   function draftSystem(header, instruction) {
     return 'Draft only ONE section of a physician-reviewed medical-legal / IME workspace. ' +
       'Output professional plain text only, without markdown and without repeating the heading. Section: ' + header + '. ' + instruction + ' ' +
@@ -694,14 +943,38 @@
       updateControls(); return Promise.resolve(false);
     }
     if (!state.bound || !bindingCurrent(state.bound)) { abortForPatientChange(); return Promise.resolve(false); }
+    /* p1-legal-reports-2.0.0: an API caller that never picked a type still gets
+       exactly the IME document this workspace has always produced, and the
+       state now SAYS which type was used rather than leaving it blank. */
+    if (!state.reportType) { state.reportType = 'ime'; renderReportTypes(); }
+    var report = reportTypeFor(state.reportType) || reportTypeFor('ime');
+    var sections = runSections(report.key);
+    var binding = state.bound;
+    /* The deterministic type calls no model at all. */
+    if (!report.ai) {
+      var chronOnly = chronologyText();
+      if (!chronOnly) { abortForPatientChange(); return Promise.resolve(false); }
+      state.draft = [letterheadBlock(), report.label.toUpperCase(),
+        'Patient: ' + (binding.name || '[not documented]'),
+        'Date: ' + new Date().toLocaleDateString(),
+        'UNSIGNED DRAFT - verify every statement before use',
+        chronOnly, attestationBlock()].join('\n\n');
+      var chronBox = byId('mlsP1LegalDraft');
+      if (chronBox) { chronBox.value = state.draft; chronBox.hidden = false; }
+      enableExports(true); setStage('generated'); updateControls();
+      setStatus('Records chronology compiled on your letterhead. No AI was called and no text was generated — every line came from the compiled record.', false);
+      toast('1p Legal / IME chronology ready for clinician review.', 'ok');
+      return Promise.resolve(true);
+    }
     if (!isFn(window.aiCallRaw)) { setStatus('AI drafting is unavailable in this MLS session. Nothing was sent.', true); return Promise.resolve(false); }
-    var binding = state.bound, contextReceipt = draftContext(), context = contextReceipt.text;
+    var contextReceipt = draftContext(), context = contextReceipt.text;
     var run = { id: ++state.runSeq, session: state.session, binding: binding,
       controller: makeAbortController(), callControllers: [], wholeTimer: null };
     /* p1-legal-letterhead-1.0.0: the practice letterhead is the FIRST thing on
        the report, before the draft banner, exactly as it would be on paper. */
     var output = [letterheadBlock(),
-      'MEDICAL-LEGAL / IME WORKSPACE DRAFT', 'Patient: ' + (binding.name || '[not documented]'),
+      'MEDICAL-LEGAL / IME WORKSPACE DRAFT', 'Report type: ' + report.label,
+      'Patient: ' + (binding.name || '[not documented]'),
       'Date: ' + new Date().toLocaleDateString(), 'UNSIGNED DRAFT - verify every statement before use'];
     if (contextReceipt.truncated) output.push('IMPORTANT SOURCE-LIMIT NOTICE: Only the first ' + contextReceipt.includedChars.toLocaleString() +
       ' of ' + contextReceipt.originalChars.toLocaleString() + ' compiled context characters were supplied to AI. Verify every section against the full chronology and every original local record; later records may be absent from this draft.');
@@ -713,10 +986,10 @@
       setStatus('Drafting stopped at the eight-minute preview limit. No partial draft was exported; the inputs remain editable.', true);
     }, AI_RUN_TIMEOUT_MS);
     var chain = Promise.resolve();
-    SECTIONS.forEach(function (section, index) {
+    sections.forEach(function (section, index) {
       chain = chain.then(function () {
         if (!runOwned(run)) throw abortError('stale-run', 'Draft run is no longer current.');
-        setStatus('Drafting section ' + (index + 1) + ' of ' + SECTIONS.length + ': ' + section[0], false);
+        setStatus('Drafting section ' + (index + 1) + ' of ' + sections.length + ': ' + section[0], false);
         return callAiForRun(run, section, index, context);
       }).then(function (part) {
         if (!runOwned(run)) throw abortError('stale-run', 'Draft run is no longer current.');
@@ -733,8 +1006,8 @@
       state.draft = output.join('\n\n');
       var box = byId('mlsP1LegalDraft');
       if (box) { box.value = state.draft; box.hidden = false; }
-      enableExports(true); finishOwnedRun(run);
-      setStatus('Draft ready: ' + SECTIONS.length + ' of ' + SECTIONS.length + ' sections.' + (contextReceipt.truncated ?
+      enableExports(true); finishOwnedRun(run); setStage('generated');
+      setStatus('Draft ready: ' + sections.length + ' of ' + sections.length + ' sections.' + (contextReceipt.truncated ?
         ' SOURCE-LIMIT WARNING: the compiled context exceeded the preview limit, so later records may be absent. Verify against the full chronology and every original local record.' : '') +
         ' It remains unsigned and local until you explicitly copy, download, or print it.', contextReceipt.truncated);
       toast('1p Legal / IME draft ready for clinician review.', 'ok');
@@ -749,6 +1022,219 @@
       return false;
     });
   }
+
+  /* ===== p1-legal-bind-2.0.0 ==============================================
+     "It really needs to be able to add a patient to it - or grab a patient
+     from Athena and then add it" (owner, 2026-08-17).
+
+     Before this block the workspace could only ever show whoever happened to
+     be the app's active patient, and an active-patient change CLOSED it. That
+     is why it felt like it could not "add a patient": there was no way in.
+
+     The fix does NOT weaken the exact-binding model, which is the whole
+     safety architecture here. Instead:
+       - a bind is REQUESTED through the app's own single switch choke point
+         (openPatient / setActivePtId). The app remains the one owner of which
+         chart is active, so the workspace can never disagree with the rest of
+         MLS about who is on screen.
+       - the workspace records an INTENT before it asks. When the resulting
+         mls:active-patient-changed event names the patient it asked for, that
+         is an intentional re-bind: abort every run, discard every prior
+         result, capture a FRESH binding and re-freeze the snapshot. Any OTHER
+         patient change is still the external event it always was and still
+         fails closed exactly as before.
+       - "Grab from Athena" is a read-only DELEGATION. This module owns no
+         transport: it builds no message envelope, posts nothing, and knows no
+         verb strings. It calls two named read entry points the app already
+         ships, and its op table is the allowlist - a key that is not in it
+         reaches no delegate at all.
+     ====================================================================== */
+  var STAGES = ['unbound', 'bound', 'report-picked', 'generated', 'exported'];
+  function setStage(stage) {
+    if (STAGES.indexOf(stage) < 0) return false;
+    state.stage = stage;
+    var root = byId(ROOT_ID);
+    if (root && isFn(root.setAttribute)) root.setAttribute('data-mls-legal-state', stage);
+    return true;
+  }
+
+  function rosterPatients() {
+    try { return isFn(window.getPatients) ? (window.getPatients() || []) : []; } catch (e) { return []; }
+  }
+  function patientById(id) {
+    var wanted = clean(id), list = rosterPatients();
+    for (var i = 0; i < list.length; i++) if (clean(list[i] && list[i].id) === wanted) return list[i];
+    return null;
+  }
+  /* Roster search over the three identity fields a legal request is keyed on. */
+  function rosterMatches(query, limit) {
+    var q = clean(query).toLowerCase();
+    if (q.length < 2) return [];
+    var out = [];
+    rosterPatients().forEach(function (p) {
+      if (out.length >= (limit || 12)) return;
+      var hay = (clean(p && p.name) + ' ' + clean(p && p.dob) + ' ' + clean(p && p.mrn)).toLowerCase();
+      if (hay.indexOf(q) >= 0) out.push(p);
+    });
+    return out;
+  }
+  /* A frozen snapshot is only honest while it still matches the chart. */
+  function snapshotSignature(patient) {
+    if (!patient) return '';
+    var parts = [];
+    [visitsFor(patient), notesFor(patient), documentsFor(patient)].forEach(function (list) {
+      parts.push((list || []).length);
+      (list || []).forEach(function (row) {
+        parts.push(clean(row && (row.updated || row.created || row.date)) + ':' + String((row && (row.soap || row.detail || row.raw || row.text || '')) || '').length);
+      });
+    });
+    parts.push(clean(patient.problems).length);
+    return parts.join('|');
+  }
+  function snapshotDrifted() {
+    if (!state.snapshotSig || !state.bound) return false;
+    var live = activePatientNow();
+    if (!live || clean(live.id) !== state.bound.patientId) return false;
+    return snapshotSignature(live) !== state.snapshotSig;
+  }
+
+  /* Adopt whatever the app now says is active as this workspace's binding.
+     Everything from the prior binding is discarded, never carried across. */
+  function adoptBinding(reason) {
+    var binding = captureBinding();
+    abortCurrentRun(reason || 'rebind');
+    cancelAllImports();
+    state.session++;
+    state.rebindIntent = null;
+    state.generating = false;
+    state.model = null; state.providerFilter = null; state.sources = []; state.draft = '';
+    state.reportType = '';
+    state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0;
+    state.bound = binding || null;
+    state.open = true;
+    renderBinding(); renderReportTypes(); renderSources(); enableExports(false);
+    var box = byId('mlsP1LegalDraft'); if (box) { box.value = ''; box.hidden = true; }
+    var chron = byId('mlsP1LegalChronology'); if (chron) chron.innerHTML = '';
+    var provs = byId('mlsP1LegalProviders'); if (provs) provs.innerHTML = '';
+    ['mlsP1LegalChronCopy', 'mlsP1LegalChronDownload', 'mlsP1LegalChronPrint'].forEach(function (id) {
+      var n = byId(id); if (n) n.disabled = true;
+    });
+    if (!binding) {
+      setStage('unbound');
+      renderSnapshotNotice(); updateControls();
+      setStatus('No patient is bound. Add a patient from this account, or grab one from Athena.', true);
+      return false;
+    }
+    setStage('bound');
+    /* Re-freeze: a Change must re-take the snapshot, never inherit the old one. */
+    compileHistory();
+    updateControls();
+    setStatus('Bound to ' + (binding.name || '[name unavailable]') + '. The chronology was re-compiled from a fresh snapshot. Pick a report type next.', false);
+    return true;
+  }
+
+  /* Ask the app to make `id` the active patient, then adopt it. */
+  function requestBind(id) {
+    var wanted = clean(id);
+    if (!wanted) return false;
+    if (state.run || state.generating) { setStatus('Cancel the current draft run before changing patient.', true); return false; }
+    if (state.athenaOp) { setStatus('Wait for the current read to finish before changing patient.', true); return false; }
+    var p = patientById(wanted);
+    if (!p) { setStatus('That patient is not in this account’s roster. Nothing was changed.', true); return false; }
+    if (activeIdNow() === wanted) { return adoptBinding('picked'); }
+    var switcher = isFn(window.openPatient) ? window.openPatient : (isFn(window.setActivePtId) ? window.setActivePtId : null);
+    if (!switcher) {
+      setStatus('This build exposes no patient switcher, so this workspace cannot change the active chart. Open the patient from the patient list, then reopen Legal / IME.', true);
+      return false;
+    }
+    state.rebindIntent = { patientId: wanted, at: Date.now() };
+    try { switcher(wanted); } catch (e) {
+      state.rebindIntent = null;
+      setStatus('The app refused to open that chart: ' + (clean(e && e.message) || 'unknown reason') + '. Nothing was changed.', true);
+      return false;
+    }
+    /* Some builds switch without emitting the event; adopt directly when the
+       app already agrees, and leave the intent for the event otherwise. */
+    if (state.rebindIntent && activeIdNow() === wanted) return adoptBinding('picked');
+    return true;
+  }
+
+  /* --- read-only delegation to the reads the app already ships ------------
+     This table IS the allowlist. There is no default branch, no verb string
+     and no transport in this module, so nothing outside these two entries can
+     be asked for, and neither entry writes anything to the EMR. */
+  var ATHENA_READ_OPS = {
+    day: {
+      label: 'Pull a day of the schedule',
+      blurb: 'Reads one day of your signed-in schedule and its chart histories through the app’s existing read-only pull. Patients not yet in MLS arrive with name, DOB and MRN, then appear in the list above.',
+      needs: 'the schedule reader',
+      resolve: function () {
+        var si = window.__mlsSI;
+        return (si && isFn(si.dayPull)) ? function (opts) { return si.dayPull(opts); } : null;
+      },
+      args: function (input, onStatus) {
+        return { date: clean(input && input.date) || todayYmd(), includeHistory: true, onStatus: onStatus };
+      }
+    },
+    chart: {
+      label: 'Re-read the bound patient’s chart',
+      blurb: 'Re-reads the chart of the patient bound above through the app’s existing read-only chart reader, then re-compiles this workspace from the refreshed record.',
+      needs: 'the chart reader',
+      resolve: function () {
+        return isFn(window.pullPatientChartViaAssist) ? function (opts) { return window.pullPatientChartViaAssist(null, opts); } : null;
+      },
+      args: function () {
+        return { patientId: state.bound ? state.bound.patientId : '' };
+      }
+    }
+  };
+  function readOpKeys() { return Object.keys(ATHENA_READ_OPS); }
+  function readOpAvailable(key) {
+    if (!Object.prototype.hasOwnProperty.call(ATHENA_READ_OPS, key)) return false;
+    try { return !!ATHENA_READ_OPS[key].resolve(); } catch (e) { return false; }
+  }
+  /* One gateway. A key that is not an own property of the table above never
+     resolves a delegate, so no unlisted operation can be invoked from here. */
+  function runReadOp(key, input) {
+    if (!Object.prototype.hasOwnProperty.call(ATHENA_READ_OPS, key)) {
+      setStatus('This workspace can only run its two read-only lookups. "' + clean(key) + '" is not one of them, so nothing ran.', true);
+      return Promise.resolve(false);
+    }
+    var op = ATHENA_READ_OPS[key];
+    if (state.athenaOp) { setStatus('A read is already running. Wait for it to finish.', true); return Promise.resolve(false); }
+    if (state.run || state.generating) { setStatus('Cancel the current draft run before reading from the EMR.', true); return Promise.resolve(false); }
+    if (key === 'chart' && !(state.bound && bindingCurrent(state.bound))) {
+      setStatus('Bind a patient before re-reading a chart. Nothing ran.', true); return Promise.resolve(false);
+    }
+    var run;
+    try { run = op.resolve(); } catch (e) { run = null; }
+    if (!run) {
+      state.athenaNote = op.label + ' is unavailable in this session: ' + op.needs + ' is not loaded. Nothing ran and nothing was faked.';
+      setStatus(state.athenaNote, true); renderReadOps();
+      return Promise.resolve(false);
+    }
+    state.athenaOp = key; state.athenaNote = ''; renderReadOps(); updateControls();
+    setStatus(op.label + ' — reading. This reads only; nothing is written to the EMR.', false);
+    var onStatus = function (message) { setStatus(op.label + ' — ' + clean(message), false); };
+    function settle(okText, errText, error) {
+      state.athenaOp = '';
+      state.athenaNote = error ? (errText + ' ' + (clean(error && error.message) || 'the read did not complete')) : okText;
+      renderReadOps(); renderRoster(); updateControls();
+      setStatus(state.athenaNote, !!error);
+      return !error;
+    }
+    var work;
+    try { work = run(op.args(input || {}, onStatus)); } catch (e) {
+      return Promise.resolve(settle('', 'The read could not start:', e));
+    }
+    return Promise.resolve(work).then(function () {
+      if (key === 'chart' && state.bound && bindingCurrent(state.bound)) compileHistory();
+      return settle(op.label + ' finished. The patient list above was refreshed from this account’s roster.', '', null);
+    }, function (error) {
+      return settle('', 'The read stopped:', error || new Error('the read did not complete'));
+    });
+  }
+  /* ===== end p1-legal-bind-2.0.0 ===== */
 
   function downloadText(filename, text) {
     try {
@@ -802,7 +1288,31 @@
     '#' + ROOT_ID + ' .p1l-item{border-left:3px solid #c7d9ce;padding:7px 9px;margin:7px 0;background:#fafbf9}',
     '#' + ROOT_ID + ' .p1l-item pre{white-space:pre-wrap;max-height:180px;overflow:auto;font:12px/1.45 ui-monospace,monospace}',
     '#' + ROOT_ID + ' .p1l-status{min-height:22px;font-weight:650;color:#2e6a4b}',
-    '@media(max-width:820px){#' + ROOT_ID + ' .p1l-grid{grid-template-columns:1fr}#' + ROOT_ID + ' .p1l-card.wide{grid-column:auto}#' + ROOT_ID + ' .p1l-shell{padding:18px 13px 70px}}'
+    /* ===== p1-legal-flow-2.0.0 ===== */
+    '#' + ROOT_ID + ' .p1l-step{display:inline-flex;align-items:center;gap:7px;font:750 12px/1 "Public Sans",system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#5c7a68;margin:0 0 6px}',
+    '#' + ROOT_ID + ' .p1l-step i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:50%;background:#e4efe7;color:#2e6a4b;font-size:12px}',
+    '#' + ROOT_ID + ' .p1l-card[data-mls-legal-done="true"] .p1l-step i{background:#2e6a4b;color:#fff}',
+    '#' + ROOT_ID + ' .p1l-bindcard{background:#eef6f0;border:1px solid #bdd4c5}',
+    '#' + ROOT_ID + ' .p1l-bindhead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}',
+    '#' + ROOT_ID + ' .p1l-bindname{font:750 25px/1.2 Georgia,serif;margin:0;color:#183a2f;word-break:break-word}',
+    '#' + ROOT_ID + ' .p1l-chips{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0 0}',
+    '#' + ROOT_ID + ' .p1l-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #c3d6c9;border-radius:999px;padding:5px 12px;font:650 14px/1.2 "Public Sans",system-ui,sans-serif;color:#204034}',
+    '#' + ROOT_ID + ' .p1l-chip b{font-weight:750;color:#5c7a68;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase}',
+    '#' + ROOT_ID + ' .p1l-chip.missing{color:#8a5a1a;border-color:#e2cfa4;background:#fffaf0}',
+    '#' + ROOT_ID + ' .p1l-change{min-height:44px;font-size:15px;padding:0 18px;background:#2e6a4b;color:#fff;border-color:#2e6a4b}',
+    '#' + ROOT_ID + ' .p1l-explain{font-size:14.5px;line-height:1.5;color:#3f5a4c;margin:6px 0 10px;max-width:64ch}',
+    '#' + ROOT_ID + ' .p1l-picker{border:1px solid #d7ddd8;border-radius:12px;background:#fff;margin:8px 0 0;padding:6px}',
+    '#' + ROOT_ID + ' .p1l-pick{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:9px;padding:9px 11px;font:650 14px/1.35 "Public Sans",system-ui,sans-serif;min-height:auto}',
+    '#' + ROOT_ID + ' .p1l-pick:hover{background:#eef6f0}',
+    '#' + ROOT_ID + ' .p1l-pick small{display:block;font-weight:400;color:#5c7a68;margin-top:2px}',
+    '#' + ROOT_ID + ' .p1l-report{display:block;width:100%;text-align:left;margin:6px 0;padding:11px 13px;border-radius:12px;font-size:15px;line-height:1.35}',
+    '#' + ROOT_ID + ' .p1l-report[aria-pressed="true"]{background:#2e6a4b;color:#fff;border-color:#2e6a4b}',
+    '#' + ROOT_ID + ' .p1l-report small{display:block;font-weight:400;font-size:13px;margin-top:3px;opacity:.86}',
+    '#' + ROOT_ID + ' .p1l-freeze{font-size:13px;color:#5c7a68;margin:8px 0 0}',
+    '#' + ROOT_ID + ' .p1l-freeze.stale{color:#8a5a1a;background:#fff8e8;border:1px solid #ead6a8;border-radius:10px;padding:9px 11px}',
+    '#' + ROOT_ID + ' .p1l-readop{border-top:1px solid #e8e9e5;padding:9px 0;font-size:13px}',
+    '#' + ROOT_ID + ' .p1l-readop b{display:block;font-size:14px;color:#204034}',
+    '@media(max-width:820px){#' + ROOT_ID + ' .p1l-grid{grid-template-columns:1fr}#' + ROOT_ID + ' .p1l-card.wide{grid-column:auto}#' + ROOT_ID + ' .p1l-shell{padding:18px 13px 70px}#' + ROOT_ID + ' .p1l-bindname{font-size:21px}}'
   ].join('\n');
 
   function ensureStyle() {
@@ -810,15 +1320,24 @@
     var style = document.createElement('style'); style.id = STYLE_ID; style.textContent = CSS;
     (document.head || document.documentElement).appendChild(style);
   }
-  function shellHtml(binding) {
+  function shellHtml() {
+    /* p1-legal-flow-2.0.0: the same cards, in the order the work is actually
+       done, each one labelled with its step number. Nothing was removed. */
     return '<div class="p1l-shell">' +
-      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>Exact active chart, local files, and a ' + SECTIONS.length + '-section clinician-review draft on your practice letterhead. No signing, delivery, chart filing, Athena writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
-      '<div id="mlsP1LegalBanner" class="p1l-bind">Bound to ' + esc(binding.name || '[name unavailable]') + ' · DOB ' + esc(binding.dob || '[not documented]') + (binding.mrn ? ' · MRN ' + esc(binding.mrn) : '') + '</div>' +
+      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>Bind a patient, pick a report, generate, export. Exact chart, local files, and a clinician-review draft on your practice letterhead. No signing, delivery, chart filing, Athena writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
+      '<section class="p1l-card p1l-bindcard" data-mls-legal-step="bind"><div class="p1l-step"><i>1</i>Patient</div>' +
+      '<div id="mlsP1LegalBanner" class="p1l-bindhead"></div>' +
+      '<div id="mlsP1LegalRoster"></div>' +
+      '<div id="mlsP1LegalReadOps"></div>' +
+      '</section>' +
+      '<section class="p1l-card" data-mls-legal-step="report"><div class="p1l-step"><i>2</i>Report type</div>' +
+      '<p class="p1l-explain">Pick what this workspace should produce. Every type prints on the same letterhead and closes with the same signature attestation; only the sections differ.</p>' +
+      '<div id="mlsP1LegalReportTypes"></div></section>' +
       '<div class="p1l-grid">' +
-      '<section class="p1l-card wide"><h2>Read-only categorized chronology</h2><p>Compiled from a frozen snapshot of the patient active when this workspace opened. Provider filters affect preview/export only.</p><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalCompile">Compile history</button><button type="button" id="mlsP1LegalChronCopy" disabled>Copy chronology</button><button type="button" id="mlsP1LegalChronDownload" disabled>Download .txt</button><button type="button" id="mlsP1LegalChronPrint" disabled>Print</button></div><div id="mlsP1LegalProviders" class="p1l-actions" aria-label="Filter chronology by provider"></div><div id="mlsP1LegalChronology"></div></section>' +
-      '<section class="p1l-card"><h2>Local records</h2><p id="mlsP1LegalFileHelp">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p><button type="button" class="p1l-drop" id="mlsP1LegalDrop" aria-describedby="mlsP1LegalFileHelp">Choose or drop local files</button><input id="mlsP1LegalFile" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.html,text/*" hidden><div id="mlsP1LegalSources" aria-live="polite"></div></section>' +
-      '<section class="p1l-card"><h2>Draft inputs</h2><label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label><label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label><fieldset id="mlsP1LegalLetterhead" style="margin-top:12px;border:1px solid #d7ddd8;border-radius:10px;padding:10px 12px"><legend style="font-weight:750;font-size:13px;padding:0 4px">Letterhead</legend><p style="margin:2px 0 8px">Printed at the top of the report and above the signature line. Practice name, provider name, credentials, NPI, address and phone come from Settings; change them there.</p><pre id="mlsP1LegalLetterheadPreview" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#fafbf8;border:1px solid #e4e8e4;border-radius:8px;padding:8px;margin:0 0 8px"></pre><label>Contact email for the letterhead <input id="mlsP1LegalLetterheadEmail" type="email" autocomplete="off" placeholder="Optional; saved for this account on this device"></label></fieldset><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate ' + SECTIONS.length + '-section draft</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div><div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div><div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div></section>' +
-      '<section class="p1l-card wide"><h2 id="mlsP1LegalDraftLabel">Unsigned clinician-review draft</h2><div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div><textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea></section>' +
+      '<section class="p1l-card wide" data-mls-legal-step="inputs"><h2>Chronology (read-only)</h2><p class="p1l-explain">Built from the patient as of when you opened this workspace — a frozen snapshot, so a chart edit made elsewhere cannot change a report you are part-way through. Provider filters change only the preview and export; they never change the chart.</p><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalCompile">Compile history</button><button type="button" id="mlsP1LegalChronCopy" disabled>Copy chronology</button><button type="button" id="mlsP1LegalChronDownload" disabled>Download .txt</button><button type="button" id="mlsP1LegalChronPrint" disabled>Print</button></div><div id="mlsP1LegalFreeze" class="p1l-freeze" role="status" aria-live="polite"></div><div id="mlsP1LegalProviders" class="p1l-actions" aria-label="Filter chronology by provider"></div><div id="mlsP1LegalChronology"></div></section>' +
+      '<section class="p1l-card" data-mls-legal-step="inputs"><h2>Local records</h2><p id="mlsP1LegalFileHelp">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p><button type="button" class="p1l-drop" id="mlsP1LegalDrop" aria-describedby="mlsP1LegalFileHelp">Choose or drop local files</button><input id="mlsP1LegalFile" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.html,text/*" hidden><div id="mlsP1LegalSources" aria-live="polite"></div></section>' +
+      '<section class="p1l-card" data-mls-legal-step="generate"><div class="p1l-step"><i>3</i>Generate</div><label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label><label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label><fieldset id="mlsP1LegalLetterhead" style="margin-top:12px;border:1px solid #d7ddd8;border-radius:10px;padding:10px 12px"><legend style="font-weight:750;font-size:13px;padding:0 4px">Letterhead</legend><p style="margin:2px 0 8px">Printed at the top of the report and above the signature line. Practice name, provider name, credentials, NPI, address and phone come from Settings; change them there.</p><pre id="mlsP1LegalLetterheadPreview" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#fafbf8;border:1px solid #e4e8e4;border-radius:8px;padding:8px;margin:0 0 8px"></pre><label>Contact email for the letterhead <input id="mlsP1LegalLetterheadEmail" type="email" autocomplete="off" placeholder="Optional; saved for this account on this device"></label></fieldset><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate report</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div><div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div><div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div></section>' +
+      '<section class="p1l-card wide" data-mls-legal-step="export"><div class="p1l-step"><i>4</i>Export</div><h2 id="mlsP1LegalDraftLabel">Unsigned clinician-review draft</h2><div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div><textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea></section>' +
       '</div></div>';
   }
   function renderNoPatient(message) {
@@ -831,11 +1350,29 @@
     if (node) { node.textContent = String(message || ''); node.style.color = error ? '#9a3d29' : '#2e6a4b'; }
   }
   function updateControls() {
-    var pending = pendingImportCount(), running = !!state.run || state.generating;
-    var generate = byId('mlsP1LegalGenerate'); if (generate) generate.disabled = running || pending > 0;
+    var pending = pendingImportCount(), running = !!state.run || state.generating, reading = !!state.athenaOp;
+    /* p1-legal-flow-2.0.0: Generate is only reachable once a patient is bound
+       AND a report type is picked, so the next step is the only live control. */
+    var generate = byId('mlsP1LegalGenerate');
+    if (generate) {
+      generate.disabled = running || reading || pending > 0 || !state.bound || !state.reportType;
+      var report = reportTypeFor(state.reportType);
+      if (isFn(generate.setAttribute)) {
+        generate.setAttribute('title', !state.bound ? 'Bind a patient first (step 1).'
+          : (!state.reportType ? 'Pick a report type first (step 2).'
+          : ('Generate the ' + report.label + '.')));
+      }
+      generate.textContent = report ? ('Generate ' + report.label) : 'Generate report';
+    }
     var cancel = byId('mlsP1LegalCancel'); if (cancel) cancel.disabled = !running;
-    var drop = byId('mlsP1LegalDrop'); if (drop) drop.disabled = running;
-    var input = byId('mlsP1LegalFile'); if (input) input.disabled = running;
+    var drop = byId('mlsP1LegalDrop'); if (drop) drop.disabled = running || reading;
+    var input = byId('mlsP1LegalFile'); if (input) input.disabled = running || reading;
+    var compile = byId('mlsP1LegalCompile'); if (compile) compile.disabled = !state.bound || running || reading;
+    var root = byId(ROOT_ID);
+    if (root && isFn(root.setAttribute)) {
+      root.setAttribute('data-mls-legal-report', state.reportType || '');
+      root.setAttribute('data-mls-legal-bound', state.bound ? 'true' : 'false');
+    }
   }
   function enableExports(on) {
     ['mlsP1LegalDraftCopy', 'mlsP1LegalDraftDownload', 'mlsP1LegalDraftPrint'].forEach(function (id) { var node = byId(id); if (node) node.disabled = !on; });
@@ -856,6 +1393,126 @@
       button.addEventListener('click', function () { state.sources.splice(+button.getAttribute('data-remove-source'), 1); renderSources(); updateControls(); });
     });
   }
+  /* ===== p1-legal-flow-2.0.0 renderers ===================================== */
+  function chip(label, value, missingText) {
+    var have = clean(value);
+    return '<span class="p1l-chip' + (have ? '' : ' missing') + '"><b>' + esc(label) + '</b>' +
+      esc(have || missingText) + '</span>';
+  }
+  function renderBinding() {
+    var node = byId('mlsP1LegalBanner'); if (!node) return false;
+    if (!state.bound) {
+      node.innerHTML = '<div><h2 class="p1l-bindname">No patient bound</h2>' +
+        '<p class="p1l-explain">Nothing can be compiled or drafted yet. Add a patient from this account below, or grab one from the EMR, and this workspace binds to that exact chart.</p></div>';
+      return true;
+    }
+    node.innerHTML = '<div><h2 class="p1l-bindname">Bound to ' + esc(state.bound.name || '[name unavailable]') + '</h2>' +
+      '<div class="p1l-chips">' + chip('DOB', state.bound.dob, 'not documented') +
+      chip('MRN', state.bound.mrn, 'not documented') + '</div></div>' +
+      '<button type="button" class="p1l-change" id="mlsP1LegalChange">Change</button>';
+    var change = byId('mlsP1LegalChange');
+    if (change && isFn(change.addEventListener)) change.addEventListener('click', function () {
+      var box = byId('mlsP1LegalRosterSearch');
+      setStatus('Search this account’s patients below, or grab one from the EMR, to re-bind this workspace.', false);
+      if (box && isFn(box.focus)) box.focus();
+    });
+    return true;
+  }
+  function renderRosterResults(query) {
+    var node = byId('mlsP1LegalRosterResults'); if (!node) return 0;
+    var q = clean(query);
+    if (q.length < 2) { node.innerHTML = ''; return 0; }
+    var hits = rosterMatches(q, 12);
+    if (!hits.length) {
+      node.innerHTML = '<p class="p1l-explain">No patient in this account matches “' + esc(q) + '”. Grab them from the EMR below, or check the spelling — nothing is guessed.</p>';
+      return 0;
+    }
+    node.innerHTML = '<div class="p1l-picker" role="listbox">' + hits.map(function (p) {
+      return '<button type="button" class="p1l-pick" role="option" data-bind-id="' + esc(clean(p.id)) + '">' +
+        esc(clean(p.name) || '(unnamed record)') +
+        '<small>' + esc([clean(p.dob) ? 'DOB ' + clean(p.dob) : 'DOB not on file',
+          clean(p.mrn) ? 'MRN ' + clean(p.mrn) : 'MRN not on file'].join(' · ')) + '</small></button>';
+    }).join('') + '</div>';
+    Array.prototype.forEach.call(node.querySelectorAll('button[data-bind-id]'), function (button) {
+      button.addEventListener('click', function () { requestBind(button.getAttribute('data-bind-id')); });
+    });
+    return hits.length;
+  }
+  function renderRoster() {
+    var node = byId('mlsP1LegalRoster'); if (!node) return false;
+    var prior = byId('mlsP1LegalRosterSearch');
+    var typed = prior ? clean(prior.value) : '';
+    var total = rosterPatients().length;
+    node.innerHTML = '<label style="display:block;margin-top:12px" for="mlsP1LegalRosterSearch">' +
+      (state.bound ? 'Change to another patient' : 'Add a patient') +
+      ' <input id="mlsP1LegalRosterSearch" type="text" autocomplete="off" placeholder="Search this account by name, DOB or MRN — ' + total + ' on file"></label>' +
+      '<div id="mlsP1LegalRosterResults" aria-live="polite"></div>';
+    var box = byId('mlsP1LegalRosterSearch');
+    if (box) {
+      box.value = typed;
+      box.addEventListener('input', function () { renderRosterResults(box.value); });
+    }
+    if (typed) renderRosterResults(typed);
+    return true;
+  }
+  function renderReadOps() {
+    var node = byId('mlsP1LegalReadOps'); if (!node) return false;
+    var priorDate = byId('mlsP1LegalReadDay');
+    var typedDate = priorDate ? clean(priorDate.value) : '';
+    var busy = !!state.athenaOp;
+    node.innerHTML = '<div style="margin-top:14px"><b style="font-size:14px">Grab from the EMR (read-only)</b>' +
+      '<p class="p1l-explain">These run the reads MLS already ships. They read the signed-in EMR tab and bring the record into this account; nothing is ever written back to the EMR by this workspace.</p>' +
+      readOpKeys().map(function (key) {
+        var op = ATHENA_READ_OPS[key], available = readOpAvailable(key);
+        var running = state.athenaOp === key;
+        return '<div class="p1l-readop"><b>' + esc(op.label) + '</b>' + esc(op.blurb) +
+          (key === 'day' ? '<label style="display:block;margin-top:7px">Day to read <input id="mlsP1LegalReadDay" type="text" placeholder="YYYY-MM-DD; blank reads today"></label>' : '') +
+          '<div class="p1l-actions"><button type="button" data-read-op="' + esc(key) + '"' +
+          (available && !busy ? '' : ' disabled') + '>' + (running ? 'Reading…' : esc(op.label)) + '</button>' +
+          (available ? '' : '<span style="color:#8a5a1a;font-size:12.5px;align-self:center">Unavailable in this session — ' + esc(op.needs) + ' is not loaded.</span>') +
+          '</div></div>';
+      }).join('') +
+      (state.athenaNote ? '<p class="p1l-explain">' + esc(state.athenaNote) + '</p>' : '') + '</div>';
+    var dateBox = byId('mlsP1LegalReadDay'); if (dateBox) dateBox.value = typedDate;
+    Array.prototype.forEach.call(node.querySelectorAll('button[data-read-op]'), function (button) {
+      button.addEventListener('click', function () {
+        var box = byId('mlsP1LegalReadDay');
+        runReadOp(button.getAttribute('data-read-op'), { date: box ? clean(box.value) : '' });
+      });
+    });
+    return true;
+  }
+  function renderReportTypes() {
+    var node = byId('mlsP1LegalReportTypes'); if (!node) return false;
+    node.innerHTML = REPORT_TYPES.map(function (report) {
+      var on = state.reportType === report.key;
+      var count = sectionsFor(report.key).length;
+      return '<button type="button" class="p1l-report" aria-pressed="' + (on ? 'true' : 'false') +
+        '" data-report-type="' + esc(report.key) + '">' + esc(report.label) +
+        '<small>' + esc(report.blurb) + ' ' + (report.ai ? (count + ' AI-drafted sections.') : 'No AI sections.') + '</small></button>';
+    }).join('');
+    Array.prototype.forEach.call(node.querySelectorAll('button[data-report-type]'), function (button) {
+      button.addEventListener('click', function () { pickReportType(button.getAttribute('data-report-type')); });
+    });
+    return true;
+  }
+  function renderSnapshotNotice() {
+    var node = byId('mlsP1LegalFreeze'); if (!node) return false;
+    if (!state.bound) { node.textContent = 'No patient bound, so nothing is compiled.'; node.className = 'p1l-freeze'; return true; }
+    if (!state.model) { node.textContent = 'Not compiled yet — press Compile history.'; node.className = 'p1l-freeze'; return true; }
+    var when = state.snapshotAt ? new Date(state.snapshotAt).toLocaleTimeString() : 'this session';
+    if (snapshotDrifted()) {
+      node.className = 'p1l-freeze stale';
+      node.textContent = 'This chart has changed since the snapshot was frozen at ' + when +
+        '. This workspace is still showing the frozen record; press Compile history to re-freeze it and include the new entries.';
+      return true;
+    }
+    node.className = 'p1l-freeze';
+    node.textContent = 'Frozen at ' + when + ' — ' + state.model.items.length + ' documented entries. Re-checked against the chart just now: unchanged.';
+    return true;
+  }
+  /* ===== end p1-legal-flow-2.0.0 renderers ===== */
+
   function renderProviders() {
     var node = byId('mlsP1LegalProviders'); if (!node || !state.model) return;
     if (!state.bound || !bindingCurrent(state.bound)) { abortForPatientChange(); return; }
@@ -867,12 +1524,21 @@
     Array.prototype.forEach.call(node.querySelectorAll('button[data-provider]'), function (chip) {
       chip.addEventListener('click', function () {
         var p = chip.getAttribute('data-provider'), on = state.providerFilter[p] === false;
-        state.providerFilter[p] = on;
+        filterProvider(p, on);
         chip.setAttribute('aria-pressed', on ? 'true' : 'false');
         chip.className = 'p1l-filter' + (on ? '' : ' off');
-        renderChronology();
       });
     });
+  }
+  /* The single provider-filter mutation. The chip above and the public API
+     both go through it, so what a test drives is what a click does. */
+  function filterProvider(provider, on) {
+    if (!state.model) return false;
+    if (!state.providerFilter) { state.providerFilter = {}; state.model.providers.forEach(function (p) { state.providerFilter[p] = true; }); }
+    if (state.model.providers.indexOf(provider) < 0) return false;
+    state.providerFilter[provider] = !!on;
+    renderChronology();
+    return true;
   }
   function renderChronology() {
     var node = byId('mlsP1LegalChronology'); if (!node || !state.model) return;
@@ -880,7 +1546,7 @@
     var items = filteredItems(), html = '';
     CATEGORIES.forEach(function (category) {
       var rows = items.filter(function (item) { return item.category === category[0]; });
-      html += '<div class="p1l-section"><b>' + esc(category[1]) + ' (' + rows.length + ')</b>';
+      html += '<div class="p1l-section"><b>' + esc((CATEGORY_ICONS[category[0]] || '') + ' ' + category[1]) + ' (' + rows.length + ')</b>';
       if (!rows.length) html += '<p>(none documented)</p>';
       rows.forEach(function (item) {
         html += '<div class="p1l-item"><b>' + esc(niceDate(item.date)) + ' · ' + esc(item.title) + '</b><div>' + esc(item.provider) + ' · ' + esc(item.source) + '</div>' + (item.body && item.body !== item.title ? '<pre>' + esc(item.body) + '</pre>' : '') + '</div>';
@@ -890,35 +1556,65 @@
     node.innerHTML = html;
   }
   function compileHistory() {
-    if (!state.bound || !bindingCurrent(state.bound)) { abortForPatientChange(); return false; }
+    if (!state.bound) {
+      setStatus('Bind a patient before compiling a chronology. Nothing was compiled.', true);
+      renderSnapshotNotice();
+      return false;
+    }
+    if (!bindingCurrent(state.bound)) { abortForPatientChange(); return false; }
     var patient = clone(activePatientNow());
     if (!patient || clean(patient.id) !== state.bound.patientId) { abortForPatientChange(); return false; }
     state.model = buildModel(patient, state.bound); state.providerFilter = null;
-    renderProviders(); renderChronology();
+    /* p1-legal-flow-2.0.0: freezing is what makes the chronology trustworthy,
+       so record WHAT was frozen and WHEN, and re-measure it later rather than
+       assuming the chart stood still. */
+    state.snapshot = patient;
+    state.snapshotSig = snapshotSignature(patient);
+    state.snapshotAt = Date.now();
+    renderProviders(); renderChronology(); renderSnapshotNotice();
     ['mlsP1LegalChronCopy', 'mlsP1LegalChronDownload', 'mlsP1LegalChronPrint'].forEach(function (id) { var node = byId(id); if (node) node.disabled = false; });
     setStatus('Read-only chronology compiled from ' + state.model.items.length + ' documented entries.', false);
     return true;
   }
   function wire() {
+    /* Null-safe: the shell renders every control, but a caller may drive this
+       module against a partial DOM. A missing node must be a missing control,
+       never a thrown boot. */
+    function on(id, event, handler) {
+      var node = byId(id);
+      if (node && isFn(node.addEventListener)) node.addEventListener(event, handler);
+      return node;
+    }
     function exportIfCurrent(getText, action) {
       if (!state.bound || !bindingCurrent(state.bound)) { abortForPatientChange(); return; }
       action(getText());
     }
-    byId('mlsP1LegalClose').addEventListener('click', closeOverlay);
-    byId('mlsP1LegalCompile').addEventListener('click', compileHistory);
-    byId('mlsP1LegalChronCopy').addEventListener('click', function () { exportIfCurrent(chronologyText, function (text) { copyText(text, 'Chronology'); }); });
-    byId('mlsP1LegalChronDownload').addEventListener('click', function () { exportIfCurrent(chronologyText, function (text) { downloadText('MLS_1p_Legal_Chronology_' + todayYmd() + '.txt', text); }); });
-    byId('mlsP1LegalChronPrint').addEventListener('click', function () { exportIfCurrent(chronologyText, function (text) { printText('Read-only medical-legal chronology', text); }); });
-    byId('mlsP1LegalGenerate').addEventListener('click', function () { if (!state.model && !compileHistory()) return; generateDraft(); });
-    byId('mlsP1LegalCancel').addEventListener('click', function () { cancelGeneration('Generation canceled. Any late response is blocked; the current inputs remain editable.'); });
-    byId('mlsP1LegalDraftCopy').addEventListener('click', function () { exportIfCurrent(function () { return (byId('mlsP1LegalDraft') || {}).value || state.draft; }, function (text) { copyText(text, 'Draft'); }); });
-    byId('mlsP1LegalDraftDownload').addEventListener('click', function () { exportIfCurrent(function () { return (byId('mlsP1LegalDraft') || {}).value || state.draft; }, function (text) { downloadText('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.txt', text); }); });
-    byId('mlsP1LegalDraftPrint').addEventListener('click', function () { exportIfCurrent(function () { return (byId('mlsP1LegalDraft') || {}).value || state.draft; }, function (text) { printText('Medical-Legal / IME DRAFT', text); }); });
+    function exportDraft(action) {
+      exportIfCurrent(function () { return (byId('mlsP1LegalDraft') || {}).value || state.draft; }, function (text) {
+        action(text);
+        /* p1-legal-flow-2.0.0: the flow ends when the report actually leaves. */
+        if (state.stage === 'generated') setStage('exported');
+      });
+    }
+    on('mlsP1LegalClose', 'click', closeOverlay);
+    on('mlsP1LegalCompile', 'click', compileHistory);
+    on('mlsP1LegalChronCopy', 'click', function () { exportIfCurrent(chronologyText, function (text) { copyText(text, 'Chronology'); }); });
+    on('mlsP1LegalChronDownload', 'click', function () { exportIfCurrent(chronologyText, function (text) { downloadText('MLS_1p_Legal_Chronology_' + todayYmd() + '.txt', text); }); });
+    on('mlsP1LegalChronPrint', 'click', function () { exportIfCurrent(chronologyText, function (text) { printText('Read-only medical-legal chronology', text); }); });
+    on('mlsP1LegalGenerate', 'click', function () { if (!state.model && !compileHistory()) return; generateDraft(); });
+    on('mlsP1LegalCancel', 'click', function () { cancelGeneration('Generation canceled. Any late response is blocked; the current inputs remain editable.'); });
+    on('mlsP1LegalDraftCopy', 'click', function () { exportDraft(function (text) { copyText(text, 'Draft'); }); });
+    on('mlsP1LegalDraftDownload', 'click', function () { exportDraft(function (text) { downloadText('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.txt', text); }); });
+    on('mlsP1LegalDraftPrint', 'click', function () { exportDraft(function (text) { printText('Medical-Legal / IME DRAFT', text); }); });
     var drop = byId('mlsP1LegalDrop'), input = byId('mlsP1LegalFile');
-    drop.addEventListener('click', function () { input.click(); });
-    input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
-    drop.addEventListener('dragover', function (event) { event.preventDefault(); });
-    drop.addEventListener('drop', function (event) { event.preventDefault(); if (event.dataTransfer) addFiles(event.dataTransfer.files); });
+    if (drop && input) {
+      drop.addEventListener('click', function () { input.click(); });
+      input.addEventListener('change', function () { addFiles(input.files); input.value = ''; });
+      drop.addEventListener('dragover', function (event) { event.preventDefault(); });
+      drop.addEventListener('drop', function (event) { event.preventDefault(); if (event.dataTransfer) addFiles(event.dataTransfer.files); });
+    }
+    /* p1-legal-flow-2.0.0: step 1 (patient) and step 2 (report type). */
+    renderBinding(); renderRoster(); renderReadOps(); renderReportTypes(); renderSnapshotNotice();
     /* p1-legal-letterhead-1.0.0: show what will print, and take the one field
        Settings has no home for. A refused save is SAID, never swallowed. */
     var lhEmail = byId('mlsP1LegalLetterheadEmail');
@@ -964,6 +1660,9 @@
     abortCurrentRun('closed'); cancelAllImports(); state.session++;
     state.open = false; state.generating = false; state.bound = null;
     state.model = null; state.providerFilter = null; state.sources = []; state.draft = '';
+    state.stage = 'unbound'; state.reportType = '';
+    state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0;
+    state.rebindIntent = null; state.athenaOp = ''; state.athenaNote = '';
     var root = byId(ROOT_ID); if (root && root.parentNode) root.parentNode.removeChild(root);
     state.priorFocus = null;
     if (restoreFocus && prior && isFn(prior.focus)) { try { prior.focus(); } catch (e) {} }
@@ -976,15 +1675,25 @@
       toast('The free Legal / IME preview is available only to signed-in clinical users. Nothing was opened.', 'err');
       return false;
     }
+    /* p1-legal-bind-2.0.0: an unbound open is now a legitimate state - it is
+       how a clinician ADDS a patient. It is not a silent one: the workspace
+       says plainly that nothing is bound and offers the two ways in. */
     var binding = captureBinding();
-    if (!binding) { toast('Open exactly one active patient before Legal / IME. Nothing was opened.', 'err'); return false; }
     var existingRoot = byId(ROOT_ID), active = document.activeElement;
     var prior = existingRoot && isFn(existingRoot.contains) && existingRoot.contains(active) ? state.priorFocus : active;
     closeOverlayInternal(false); ensureStyle();
-    state.open = true; state.bound = binding; state.sources = []; state.draft = ''; state.priorFocus = prior;
-    var root = document.createElement('div'); root.id = ROOT_ID; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'mlsP1LegalTitle'); root.innerHTML = shellHtml(binding);
+    state.open = true; state.bound = binding || null; state.sources = []; state.draft = '';
+    state.reportType = ''; state.priorFocus = prior;
+    state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0; state.rebindIntent = null;
+    state.athenaOp = ''; state.athenaNote = '';
+    var root = document.createElement('div'); root.id = ROOT_ID; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'mlsP1LegalTitle'); root.innerHTML = shellHtml();
     root.addEventListener('keydown', onDialogKeydown);
-    (document.body || document.documentElement).appendChild(root); wire(); compileHistory();
+    (document.body || document.documentElement).appendChild(root);
+    setStage(binding ? 'bound' : 'unbound');
+    wire();
+    if (binding) compileHistory();
+    else setStatus('No patient bound — add a patient from this account, or grab one from the EMR.', true);
+    updateControls();
     var close = byId('mlsP1LegalClose'); if (close && isFn(close.focus)) close.focus();
     return true;
   }
@@ -995,7 +1704,18 @@
     queryOpenPending = false;
     return openOverlay();
   }
-  function onPatientChange() { abortForPatientChange(); syncDoor(); tryPendingQueryOpen(); }
+  function onPatientChange() {
+    /* p1-legal-bind-2.0.0: a change this workspace ASKED for is a re-bind; any
+       other change is the external event it has always been and still fails
+       closed. The intent is consumed either way, so a stale intent can never
+       adopt a later, unrelated patient. */
+    if (state.open && state.rebindIntent) {
+      var wanted = state.rebindIntent.patientId;
+      state.rebindIntent = null;
+      if (activeIdNow() === wanted) { adoptBinding('changed'); syncDoor(); return; }
+    }
+    abortForPatientChange(); syncDoor(); tryPendingQueryOpen();
+  }
   function onSessionBoundary() {
     /* Account identity is an unconditional lifetime boundary, even when both
        accounts are clinicians. Never let account B inherit account A's PHI. */
@@ -1033,9 +1753,39 @@
     letterheadBlock: function () { return apiCurrent() ? letterheadBlock() : ''; },
     attestationBlock: function () { return apiCurrent() ? attestationBlock() : ''; },
     certaintyStandard: CERTAINTY_STANDARD,
+    /* ===== p1-legal-flow-2.0.0 / p1-legal-bind-2.0.0 public surface =====
+       Read-only receipts and the four flow verbs. No PHI leaves through any
+       of these except the roster row the clinician is already looking at. */
+    stages: STAGES.slice(),
+    reportTypes: REPORT_TYPES.map(function (r) {
+      return { key: r.key, label: r.label, blurb: r.blurb, ai: r.ai, sectionCount: sectionsFor(r.key).length };
+    }),
+    sectionsFor: function (key) { return apiCurrent() ? sectionsFor(key) : []; },
+    runSections: function (key) { return apiCurrent() ? runSections(key) : []; },
+    pickReport: function (key) { return apiCurrent() ? pickReportType(key) : false; },
+    roster: function (query) {
+      return apiCurrent() ? rosterMatches(query, 12).map(function (p) { return { id: clean(p.id), name: clean(p.name), dob: clean(p.dob), mrn: clean(p.mrn) }; }) : [];
+    },
+    bindTo: function (id) { return apiCurrent() ? requestBind(id) : false; },
+    filterProvider: function (provider, on) { return apiCurrent() ? filterProvider(provider, on) : false; },
+    readOps: function () {
+      return apiCurrent() ? readOpKeys().map(function (key) {
+        return { key: key, label: ATHENA_READ_OPS[key].label, available: readOpAvailable(key) };
+      }) : [];
+    },
+    runReadOp: function (key, input) { return apiCurrent() ? runReadOp(key, input) : Promise.resolve(false); },
+    snapshotDrifted: function () { return apiCurrent() && snapshotDrifted(); },
+    /* p1-legal-restore-2.0.0: the restored production extractors, exposed so
+       each one is EXECUTED by a test rather than grepped for. */
+    restored: {
+      provOfVisit: provOfVisit, normProv: normProv, classifiable: classifiable,
+      planOf: planOf, fuLinesOf: fuLinesOf, icdOf: icdOf, activeFilterNote: activeFilterNote
+    },
     state: function () { return { open: apiCurrent() && state.open, patientBound: apiCurrent() && !!state.bound, generating: apiCurrent() && state.generating,
       sourceCount: state.sources.length, pendingFileCount: pendingImportCount(), activeReaderCount: state.importActive,
-      sectionCount: SECTIONS.length }; },
+      sectionCount: SECTIONS.length,
+      stage: apiCurrent() ? state.stage : 'unbound', reportType: apiCurrent() ? state.reportType : '',
+      reading: apiCurrent() ? state.athenaOp : '' }; },
     revert: function () {
       if (!apiCurrent()) { apiLive = false; return false; }
       apiLive = false;

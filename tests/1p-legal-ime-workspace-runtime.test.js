@@ -192,8 +192,11 @@ function installUi(runtime) {
   /* p1-legal-letterhead-1.0.0 added XIV. OPINIONS as the 14th AI section. The
      XV. ATTESTATION block is written locally and is NOT an AI section. */
   eq(r.api.sections.length, 14, 'draft does not have exactly 14 fixed sections (13 chronology + XIV. OPINIONS)');
+  /* p1-legal-flow-2.0.0 added the flow receipt (stage / reportType / reading).
+     A closed workspace must report the unbound start of that flow. */
   deep(r.api.state(), { open: false, patientBound: false, generating: false, sourceCount: 0,
-    pendingFileCount: 0, activeReaderCount: 0, sectionCount: 14 }, 'initial receipt is not PHI-free and closed');
+    pendingFileCount: 0, activeReaderCount: 0, sectionCount: 14,
+    stage: 'unbound', reportType: '', reading: '' }, 'initial receipt is not PHI-free and closed');
   r.api.revert();
   eq(r.window.__mlsP1LegalPack, undefined, 'revert left the workspace API installed');
 }
@@ -755,7 +758,28 @@ function installUi(runtime) {
   ok(!/\bfetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket/.test(executableSource), 'workspace contains a direct network transport');
   ok(!/\/api\/legal|\/api\/vision|_tplReadAnyFile/.test(executableSource), 'workspace reaches a held legal/vision/universal-upload path');
   ok(!/upsertPatient|savePatients|_savePatientChart|signLegalReport|sendToLegal|legalBody|currentLegal|showView\(['"]legalreq/.test(executableSource), 'workspace contains chart/sign/delivery handoff');
-  ok(!/chrome\.runtime|MLS_ASSIST|athena/i.test(executableSource.replace(/Athena writing|Athena bridge|chart\/Athena writes?|Athena/g, '')), 'workspace contains extension/Athena behavior');
+  /* p1-legal-bind-2.0.0 CHANGED THIS BOUNDARY DELIBERATELY, on the owner's
+     2026-08-17 instruction that the workspace must be able to grab a patient
+     from the EMR. A blanket "the word athena does not appear" scan is the
+     wrong instrument for that: it proves a word is absent, not that no write
+     can leave. The boundary that actually holds is
+       (a) this module owns NO transport - it mints no message envelope, posts
+           nothing, and listens to no message channel, so it cannot address
+           the extension at all; it can only call read entry points the app
+           already ships;
+       (b) no write/execute verb or action name appears anywhere in it;
+       (c) its read-op table IS the allowlist - EXECUTED, together with a
+           postMessage spy that must observe zero traffic, in
+           tests/1p-legal-bind-report-flow.test.js. */
+  ok(!/chrome\.runtime|MLS_ASSIST|postMessage|addEventListener\(\s*['"]message['"]/.test(executableSource),
+    'workspace mints its own extension transport instead of delegating to the app readers');
+  ok(!/source\s*:\s*['"]mls-app['"]|['"]mls-ext['"]/.test(source),
+    'workspace builds an extension message envelope of its own');
+  ['mlsAppPasteNote', 'mlsAppAthenaActionV2', 'mlsAppSignAndSave', 'mlsAppPushVisit', 'mlsAppVerifiedWrite',
+    'mlsAppWriteV2', 'mlsAppReviewScreen', 'mlsAppPrepProcTemplate', 'place_order', 'sign_encounter',
+    'stage_billing', 'write_note', 'save_draft'].forEach(verb => {
+    ok(source.indexOf(verb) < 0, 'workspace names the write/execute verb ' + verb);
+  });
   ok(/navigator\.clipboard\.writeText/.test(source) && /URL\.createObjectURL/.test(source) && /win\.print\(\)/.test(source), 'copy/download/print exits are incomplete');
   ok(/<button type="button" class="p1l-drop"/.test(source), 'local file chooser is not a native keyboard button');
   ok(/<button type="button" class="p1l-filter/.test(source) && /aria-pressed=/.test(source), 'provider filters lack native keyboard/pressed semantics');

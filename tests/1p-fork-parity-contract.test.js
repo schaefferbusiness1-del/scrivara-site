@@ -120,11 +120,21 @@ const BASELINE_ABSENCES = {
   'feat_athena_provider_roster.js': ['operationFromReceipt', 'picker', 'renderDropdown', 'setLastResp'],
   'feat_fullhistory_pdf.js': [],
   'feat_mls_avatar.js': ['applyVision', 'commitEdit', 'faceHiSave'],
+  /* 2026-08-17 legal restoration lane: eight of the thirty baseline absences
+     were CLOSED by porting the production function itself (p1-legal-restore-2.0.0
+     in 1p-feat_mls_legalpack.js) - activeFilterNote, classifiable, fuLinesOf,
+     icdOf, normProv, patientById, planOf, provOfVisit. They are pruned here so
+     a later deletion fails loudly as a regression instead of being re-absorbed
+     as an expected absence. The twenty-two below are UI/plumbing names the
+     fork replaced with its own named mechanism (rosterPatients/renderRoster/
+     requestBind for the picker, draftContext for buildCaseContext, shellHtml
+     for buildHost, letterheadBlock for providerIdentityBlock, readLocalFile
+     for readAnyFile, and so on). */
   'feat_mls_legalpack.js': [
-    'activeFilterNote', 'allPatients', 'buildCaseContext', 'buildHost', 'classifiable',
-    'currentNarrative', 'docsOf', 'download', 'filterModel', 'fuLinesOf', 'hide', 'icdOf',
-    'mount', 'mountLegacyLegalTool', 'normProv', 'notesOf', 'patientById', 'pickPatient',
-    'planOf', 'provOfVisit', 'providerIdentityBlock', 'providerName', 'readAnyFile',
+    'allPatients', 'buildCaseContext', 'buildHost',
+    'currentNarrative', 'docsOf', 'download', 'filterModel', 'hide',
+    'mount', 'mountLegacyLegalTool', 'notesOf', 'pickPatient',
+    'providerIdentityBlock', 'providerName', 'readAnyFile',
     'renderProvChips', 'say', 'step', 'sysFor', 'visitsOf', 'wireDrop', 'wireSearch'
   ],
   'feat_mls_schedimport_exact.js': [
