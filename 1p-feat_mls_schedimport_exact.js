@@ -1595,6 +1595,9 @@
         todayNoteFailures: Number(receipt.todayNoteFailures || 0),
         todayNoteReasons: (function () { var oTn = {}; try { Object.keys(receipt.todayNoteReasons || {}).slice(0, 20).forEach(function (kTn) { oTn[String(kTn).slice(0, 80)] = Number(receipt.todayNoteReasons[kTn] || 0); }); } catch (eTn) {} return oTn; })(),
         todayNoteRefused: (function () { var oTr = {}; try { (receipt.patients || []).forEach(function (pTr) { if (pTr && pTr.todayNote === false && pTr.patientId) oTr[String(pTr.patientId)] = String(pTr.todayNoteReason || "unknown").slice(0, 80); }); } catch (eTr) {} return oTr; })(),
+        /* p1-todaynote-deferred-retry-1.0.0: how many rows lost the lease race
+           and what the ONE deferred round made of them. Counts only. */
+        todayNoteDeferred: (function () { var d = receipt.todayNoteDeferred; if (!d || typeof d !== "object") return null; return { queued: Number(d.queued || 0), attempted: Number(d.attempted || 0), recovered: Number(d.recovered || 0), remaining: Number(d.remaining || 0), reason: String(d.reason || "").slice(0, 40) }; })(),
         census: ledgerCensus
       };
       writeIndex(day, x);
@@ -4309,6 +4312,10 @@
                    next chart open; the tail pass (post-batch) inherits them. */
                 if (/timeout|deadline|responding|unreachable|no-ext/i.test(one.todayNoteReason)) { inlineDayNoteFuse = one.todayNoteReason; receipt.todayNoteInlineFuse = inlineDayNoteFuse; }
               }
+              /* p1-todaynote-deferred-retry-1.0.0: a pull-in-flight refusal
+                 lost to the lease this pull is still holding. Defer, do not
+                 fail: the row is re-run once the lease is released. */
+              if (one.todayNote !== true && tnIsDeferrable(one.todayNoteReason)) tnDeferRow(one, dnDay);
             }
           }
           /* qol-1.3 parity: an unread pulled-day note is VISIBLE on the row -
@@ -4378,6 +4385,94 @@
          never leave the panel running forever. */
       if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);
     }
+    /* ===== p1-todaynote-deferred-retry-1.0.0 (batch half) =====
+       A today-note read refused with "pull-in-flight" lost to the lease THIS
+       pull was holding. That is a deferral, not a verdict: queue the row and
+       let it run once, after the pull releases. Everything below reuses the
+       ordinary reader and the ordinary identity gates - nothing is bypassed
+       and no clinical text is invented. */
+    function tnRecomputeAggregate() {
+      safe(function () {
+        var tnF = 0, tnR = {};
+        (receipt.patients || []).forEach(function (p) {
+          if (p && p.todayNote === false) { tnF++; var kR = String(p.todayNoteReason || "unknown").slice(0, 80); tnR[kR] = (tnR[kR] || 0) + 1; }
+        });
+        receipt.todayNoteFailures = tnF; receipt.todayNoteReasons = tnR;
+      });
+    }
+    function tnBatchDay() {
+      var day = "";
+      for (var di = 0; di < rows.length && !day; di++) day = normDate((rows[di] && (rows[di].scheduleDate || rows[di].date)) || "");
+      return day;
+    }
+    /* Re-publish the day's today-note truth after the deferred round so a
+       FULLY RECOVERED day stops reporting a partial note lane: the receipt
+       aggregate, the DONE card's dayVerdict stamp, and the persisted day
+       ledger all move together. Verdict-neutral for the pull result itself,
+       exactly as the inline lane is. */
+    function tnSettleDay(summary) {
+      tnRecomputeAggregate();
+      safe(function () {
+        receipt.todayNoteDeferred = {
+          queued: Number((receipt.todayNoteDeferred && receipt.todayNoteDeferred.queued) || 0),
+          attempted: Number((summary && summary.attempted) || 0),
+          recovered: Number((summary && summary.recovered) || 0),
+          remaining: Number(receipt.todayNoteFailures || 0),
+          reason: String((summary && summary.reason) || "deferred-round"),
+          at: Date.now()
+        };
+      });
+      safe(function () {
+        var sDv = ppState();
+        if (!sDv || !sDv.dayVerdict) return;
+        sDv.dayVerdict.tnFailed = Number(receipt.todayNoteFailures || 0);
+        sDv.dayVerdict.tnReasons = receipt.todayNoteReasons || {};
+        sDv.dayVerdict.tnDeferredRecovered = Number((summary && summary.recovered) || 0);
+        sDv.dayVerdict.at = Date.now();
+      });
+      safe(function () { var day = tnBatchDay(); if (day) recordHistoryVerdict(day, receipt, rows.length); });
+    }
+    function tnDeferRow(entry, day) {
+      if (!entry || !day || sweepDepth) return false;
+      var pid = String(entry.patientId || "");
+      if (!pid) return false;
+      var queued = tnQueueDeferred({
+        patientId: pid, name: String(entry.name || ""), day: String(day),
+        settleDay: tnSettleDay,
+        attempt: function () {
+          var vp = safe(function () { return window.__mlsVisitSavePref; }, null);
+          var p = safe(function () { return findStorePatient(pid); }, null);
+          if (!(vp && isFn(vp.runForPatient) && p)) {
+            entry.todayNote = false; entry.todayNoteReason = "deferred-reader-unavailable";
+            return Promise.resolve(false);
+          }
+          return Promise.resolve().then(function () { return vp.runForPatient(p, function () {}, { onlyDate: String(day) }); }).then(function (res) {
+            var ok = !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
+            entry.todayNote = ok;
+            entry.todayNoteReason = ok ? "" : String((res && res.reason) || "scoped-read-unverified").slice(0, 80);
+            if (typeof ppSettle === "function" && entry.name) {
+              safe(function () { ppSettle(entry.name, ok, ok ? "pulled-day-note-read-deferred" : ("pulled-day-note-unread " + String(entry.todayNoteReason || "").slice(0, 60)), false, { pid: pid }); });
+            }
+            return ok;
+          }, function (err) {
+            entry.todayNote = false;
+            entry.todayNoteReason = String((err && err.message) || err || "deferred-read-failed").slice(0, 80);
+            return false;
+          });
+        }
+      });
+      if (queued) {
+        /* the row stays FALSE until the deferred attempt says otherwise - a
+           queued row is never reported as read. */
+        entry.todayNoteDeferred = true;
+        safe(function () {
+          receipt.todayNoteDeferred = receipt.todayNoteDeferred || { queued: 0, attempted: 0, recovered: 0, remaining: 0, reason: "queued", at: Date.now() };
+          receipt.todayNoteDeferred.queued = Number(receipt.todayNoteDeferred.queued || 0) + 1;
+        });
+      }
+      return queued;
+    }
+    /* ===== end p1-todaynote-deferred-retry-1.0.0 (batch half) ===== */
     function finalizeVerdict() {
       /* ppt-2.1 (supervisor 2026-08-09): every row must be TERMINAL when the
          pull ends - a row still reading "re-checking" at close is unresolved
@@ -4510,6 +4605,9 @@
           oneTn.todayNote = !!(tnRes && (tnRes.ok === true || typeof tnRes === "number" || tnRes.visits != null));
           if (!oneTn.todayNote) oneTn.todayNoteReason = String((tnRes && tnRes.reason) || "scoped-read-unverified").slice(0, 80);
         } catch (eTn2) { oneTn.todayNote = false; oneTn.todayNoteReason = String((eTn2 && eTn2.message) || eTn2).slice(0, 80); }
+        /* p1-todaynote-deferred-retry-1.0.0: same deferral in the tail pass -
+           this pass also runs inside the pull, so it loses the same race. */
+        if (oneTn.todayNote !== true && tnIsDeferrable(oneTn.todayNoteReason)) tnDeferRow(oneTn, tnDay);
         /* qol-1.3: this failure used to be invisible - the row stayed "saved"
            while the one note the owner says matters most was never read. */
         if (oneTn.todayNote !== true && typeof ppSettle === "function" && oneTn.name) { try { ppSettle(oneTn.name, false, "pulled-day-note-unread " + String(oneTn.todayNoteReason || "").slice(0, 60), false, { pid: oneTn.patientId }); } catch (ePpC) {} }
@@ -4655,6 +4753,90 @@
     }
     return out;
   }
+  /* ===== p1-todaynote-deferred-retry-1.0.0 =====
+     Owner report 2026-08-16 (day 2026-08-21, ext 3.0.61): schedule 6/6, roster
+     complete, history 6/6 processed - and todayNoteFailures:6, every one of
+     them "pull-in-flight: another Athena read or schedule pull is active.
+     Nothing started." The today-note reads were launched WHILE the day pull
+     still held the Athena lease. p1-lease-loan-1.0.0 removed the cause; this
+     removes the CONSEQUENCE, which the loan commit left open: the fuse only
+     recognised timeout-class reasons, so a pull-in-flight refusal was
+     attempt-once and terminal for all six rows.
+
+     pull-in-flight is now a DEFERRED class, not a failure: the row is queued
+     and re-run exactly ONCE after the pull's own completion, when the lease it
+     lost to is free. Bounded and setTimeout-only (rAF never fires in a hidden
+     tab): one attempt per row, at most TN_DEFER_LEASE_WAITS re-arms while the
+     lease is still held, and the queue is dropped when it cannot be drained.
+     Nothing here claims or releases a lease, and no clinical text is written
+     that the normal reader would not have written. */
+  var TN_DEFER_DELAY_MS = 1200;
+  var TN_DEFER_LEASE_WAITS = 5;
+  var _tnDefer = { queue: [], timer: null, running: false, waits: 0 };
+  function tnIsDeferrable(reason) {
+    return /pull-in-flight/i.test(String(reason || ""));
+  }
+  function tnAthenaFree() {
+    if (pullRunning) return false;
+    var mgr = safe(function () { return window.__mlsP1AthenaReadLease; }, null);
+    if (mgr && isFn(mgr.busy)) return !safe(function () { return !!mgr.busy(); }, true);
+    return !safe(function () { return !!window.__mlsSchedulePullLease; }, false);
+  }
+  function tnQueueDeferred(item) {
+    if (!item || !item.patientId || !isFn(item.attempt)) return false;
+    for (var i = 0; i < _tnDefer.queue.length; i++) {
+      if (_tnDefer.queue[i].patientId === String(item.patientId) && _tnDefer.queue[i].day === String(item.day || "")) return false;
+    }
+    _tnDefer.queue.push({ patientId: String(item.patientId), name: String(item.name || ""), day: String(item.day || ""),
+      attempt: item.attempt, settleDay: isFn(item.settleDay) ? item.settleDay : null, attempts: 0 });
+    return true;
+  }
+  function tnScheduleDeferredRound() {
+    if (!_tnDefer.queue.length || _tnDefer.timer != null || _tnDefer.running) return false;
+    _tnDefer.timer = setTimeout(function () { _tnDefer.timer = null; safe(runDeferredTodayNoteRound); }, TN_DEFER_DELAY_MS);
+    return true;
+  }
+  function runDeferredTodayNoteRound() {
+    if (_tnDefer.running || !_tnDefer.queue.length) return Promise.resolve(null);
+    if (!tnAthenaFree()) {
+      /* still held: re-arm a BOUNDED number of times, never a busy loop. */
+      if (_tnDefer.waits >= TN_DEFER_LEASE_WAITS) {
+        var dropped = _tnDefer.queue.splice(0, _tnDefer.queue.length);
+        _tnDefer.waits = 0;
+        var seenDrop = [];
+        dropped.forEach(function (d) { if (d.settleDay && seenDrop.indexOf(d.settleDay) < 0) seenDrop.push(d.settleDay); });
+        seenDrop.forEach(function (fn) { safe(function () { fn({ attempted: 0, recovered: 0, remaining: dropped.length, reason: "lease-still-held" }); }); });
+        return Promise.resolve({ attempted: 0, recovered: 0, dropped: dropped.length, reason: "lease-still-held" });
+      }
+      _tnDefer.waits++;
+      _tnDefer.timer = setTimeout(function () { _tnDefer.timer = null; safe(runDeferredTodayNoteRound); }, TN_DEFER_DELAY_MS);
+      return Promise.resolve(null);
+    }
+    _tnDefer.waits = 0;
+    _tnDefer.running = true;
+    var batch = _tnDefer.queue.splice(0, _tnDefer.queue.length);
+    var recovered = 0, attempted = 0;
+    var chain = Promise.resolve();
+    batch.forEach(function (item) {
+      chain = chain.then(function () {
+        if (item.attempts >= 1) return null;      /* exactly ONE deferred attempt per row */
+        item.attempts++;
+        attempted++;
+        return Promise.resolve().then(function () { return item.attempt(); }).then(function (ok) {
+          if (ok === true) recovered++;
+        }, function () {});
+      });
+    });
+    return chain.then(function () {
+      var settled = [];
+      batch.forEach(function (d) { if (d.settleDay && settled.indexOf(d.settleDay) < 0) settled.push(d.settleDay); });
+      var summary = { attempted: attempted, recovered: recovered, remaining: attempted - recovered, reason: "deferred-round" };
+      settled.forEach(function (fn) { safe(function () { fn(summary); }); });
+      _tnDefer.running = false;
+      return summary;
+    }, function () { _tnDefer.running = false; return null; });
+  }
+  /* ===== end p1-todaynote-deferred-retry-1.0.0 ===== */
   function runManagedAthenaOperation(task, busyFactory) {
     function busy(scope) {
       return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
@@ -4730,6 +4912,9 @@
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
+      /* p1-todaynote-deferred-retry-1.0.0: the lease this pull held is now
+         released, so the rows that lost to it get their one retry round. */
+      safe(tnScheduleDeferredRound);
       return value;
     }, function (error) {
       pullRunning = false;
@@ -4740,6 +4925,7 @@
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
+      safe(tnScheduleDeferredRound);
       throw error;
     });
   }
@@ -6749,6 +6935,15 @@
     dayPull: dayPull,
     stopPull: function () { window.__mlsPullStopRequested = true; return { requested: true }; }, /* stp-1.0.0 */
     _warmUpDay: warmUpDay,
+    /* p1-todaynote-deferred-retry-1.0.0: read-only view of the deferred
+       today-note queue, plus a manual drain for diagnostics. Never starts a
+       pull and never claims a lease. */
+    _todayNoteDeferred: function () {
+      return { queued: _tnDefer.queue.length, running: _tnDefer.running === true, waits: Number(_tnDefer.waits || 0),
+        armed: _tnDefer.timer != null, athenaFree: tnAthenaFree(),
+        rows: _tnDefer.queue.map(function (q) { return { patientId: q.patientId, day: q.day, attempts: Number(q.attempts || 0) }; }) };
+    },
+    _runDeferredTodayNotes: runDeferredTodayNoteRound,
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },

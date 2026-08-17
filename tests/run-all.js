@@ -40,6 +40,12 @@ const tests = [
      pull's own publish/withdraw logic, and proves three of the six
      properties fail against deliberately broken scratch copies. */
   'p1-athena-lease-loan-runtime.test.js',
+  /* p1-todaynote-deferred-retry-1.0.0: the other half of the same report. The
+     loan removed the CAUSE of "pull-in-flight"; the retry fuse only knew
+     timeout-class reasons, so all six refusals were attempt-once and terminal.
+     pull-in-flight is now a deferred class with exactly one re-run after the
+     pull releases the lease, bounded and setTimeout-only. */
+  '1p-todaynote-deferred-retry-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',
