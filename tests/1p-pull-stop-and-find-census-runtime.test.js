@@ -230,8 +230,10 @@ async function testVerdictIsAStoreCensus() {
     'a store holding no content still claims contentVerified');
 
   /* the pull-level gate: history may not be called complete on that census. */
-  ok(/var __scvStoreOk = !includeHistory \|\| __scvTargets === 0 \|\| \(__scvMeasured && __scvHeld > 0\);/.test(SI),
+  ok(/var __scvStoreOk = !__scvRan \|\| __scvTargets === 0 \|\| \(__scvMeasured && __scvHeld > 0\);/.test(SI),
     'the pull verdict does not gate on the store census (scv-1.0.0)');
+  ok(/var __scvRan = includeHistory \|\| \(p1CensusHistoryDeferred === true && historyReceipt\.skipped !== true\);/.test(SI),
+    'a bob-1.0.0 phase-2 history read escapes the store-census bar');
   ok(/historyComplete = !includeHistory \|\| !!\(historyReceipt\.complete && historyReceipt\.exactIdentityVerified === true && __scvStoreOk\)/.test(SI),
     'historyComplete still trusts the walk counters alone');
   ok(/history-store-empty/.test(SI) && /history-store-unmeasured/.test(SI),

@@ -33,7 +33,10 @@ function makeHarness(options) {
   const timers = [];
   let timerSeq = 0;
   let leaseBusy = options.leaseBusy === true;
-  let now = options.startAt || 1755400000000;
+  /* the fake clock sits at NOON EASTERN on the account day under test, so
+     accountDayFromInstant(now) === the account today the fixture declares.
+     A clock in a different year silently defeats every same-day gate. */
+  let now = options.startAt || (Date.parse(String(options.today || day) + "T16:00:00Z"));
   const AUTO_FIRE_MAX_MS = options.autoFireMaxMs == null ? 30000 : options.autoFireMaxMs;
 
   const noteCalls = [];

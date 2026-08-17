@@ -3821,6 +3821,49 @@
       }
     }
     /* ===== end dnf-1.0.0 ===== */
+    /* ===== rsk-1.0.0 (a re-run does not re-read what it already proved) =====
+       Two requirements, one mechanism. (a) STOP: "a re-run must resume/skip
+       verified rows" - after a stopped pull the doctor presses Pull again and
+       the rows that already landed must not be read from scratch. (b) SPEED,
+       measured not claimed: a chart this same account day already read,
+       verified and STORED WITH CONTENT is the one read that is provably
+       redundant.
+
+       The bar is deliberately high and every clause is evidence, not a marker:
+         - the DAY LEDGER records this patient as "ok" for THIS day (written by
+           recordHistoryVerdict, i.e. a completed row of a real batch);
+         - that verdict was written on the SAME account day and within 12 h;
+         - the ledger says the day's content census was MEASURED and the day
+           was contentVerified (no gap) - the scv-1.0.0 bar, not a counter;
+         - the stored record STILL holds clinical content right now; and
+         - the frozen target's DOB/MRN still equal the stored patient's.
+       Any one of those missing means a full fresh read. Nothing is loosened:
+       a skipped row is recorded as skipped, never as a fresh verified read,
+       and window.__mlsP1SkipVerifiedToday = false turns it off for a live A/B. */
+    function rskEnabled() {
+      return safe(function () { return window.__mlsP1SkipVerifiedToday !== false; }, true);
+    }
+    function rskAlreadyVerifiedToday(day, target) {
+      if (!rskEnabled() || !day || !target || !target.patientId) return null;
+      return safe(function () {
+        var x = readIndex(day), h = x && x.history;
+        if (!h || h.contentMeasured !== true || h.contentVerified !== true) return null;
+        var at = Number(h.at || 0);
+        if (!(at > 0) || Date.now() - at > 12 * 3600 * 1000) return null;
+        if (accountDayFromInstant(at) !== acctTodayKey()) return null;
+        var pid = String(target.patientId);
+        if (String((h.perPatient || {})[pid] || "") !== "ok") return null;
+        var p = findStorePatient(pid);
+        if (!p) return null;
+        if (normDob(target.dob) && normDob(p.dob) !== normDob(target.dob)) return null;
+        if (normMrn(target.mrn) && rowMrn(p) !== normMrn(target.mrn)) return null;
+        var c = censusPatientContent(p), any = false;
+        for (var ci = 0; ci < CENSUS_CONTENT_FIELDS.length; ci++) if (c[CENSUS_CONTENT_FIELDS[ci]]) { any = true; break; }
+        if (!any) return null;
+        return { at: at, day: String(day) };
+      }, null);
+    }
+    /* ===== end rsk-1.0.0 ===== */
     /* si-2.0.0 INCREMENTAL VERIFIED HISTORY (owner 2026-07-23: "43 minutes for
        a pull is way too slow"). The expensive stage is re-reading every
        encounter BODY for patients whose bodies this engine already read,
@@ -4108,6 +4151,21 @@
         one.patientId = String(target.patientId || one.patientId);
         one.identityVerified = true;
         one.identityProof = target.mrn ? "mrn" : (target.dob ? "dob" : "");
+        /* rsk-1.0.0: a row this same account day already proved and STORED is
+           complete without a second Athena read. Recorded as skipped so no
+           surface can mistake it for a fresh read. */
+        var rskProof = rskAlreadyVerifiedToday(batchRowDay(row), target);
+        if (rskProof) {
+          one.dobVerified = true; one.organized = true; one.organizationComplete = true;
+          one.visitsComplete = true; one.visitsSkipped = pullVisitBodies !== true;
+          one.complete = true;
+          one.chartSkippedVerifiedToday = rskProof.at;
+          one.stageMs = { chartMs: 0, parseSaveMs: 0, visitsMs: 0, visitSaveMs: 0, totalMs: 0 };
+          receipt.chartsSkippedVerifiedToday = Number(receipt.chartsSkippedVerifiedToday || 0) + 1;
+          one.__ppRow = ppSettle(row.name, true, "", false, { pid: one.patientId, chartSaved: true });
+          receipt.patients.push(one); receipt.processed++;
+          continue;
+        }
         var patientRequestId = batchRequestId + "-p" + (i + 1);
         /* si-1.9.1: sweep attempts get a tighter window — one glacial chart
            must not eat the whole remaining sweep budget. */
@@ -4696,6 +4754,29 @@
          where the walk counters had at least said 2/6), and a day whose rows ALL
          failed identity resolution hands this batch zero rows - which scored a
          vacuous 0 of 0 with measured true. */
+      /* rsk-1.0.0 / dnf-1.0.0: WHERE THE TIME GOES, measured per row and
+         aggregated here so "the day-note leg is the slow step" is a number.
+         chart = extension open+verify+read, parseSave = organize+persist,
+         visits = encounter bodies (zero with bodies OFF), todayNote = the
+         pulled day's own scoped note. Counts and milliseconds only. */
+      safe(function () {
+        var t = { chartMs: 0, parseSaveMs: 0, visitsMs: 0, visitSaveMs: 0, todayNoteMs: 0, rows: 0, maxChartMs: 0 };
+        (receipt.patients || []).forEach(function (p) {
+          if (!p) return;
+          t.rows++;
+          var sm = p.stageMs || {};
+          t.chartMs += Number(sm.chartMs || 0);
+          t.parseSaveMs += Number(sm.parseSaveMs || 0);
+          t.visitsMs += Number(sm.visitsMs || 0);
+          t.visitSaveMs += Number(sm.visitSaveMs || 0);
+          t.todayNoteMs += Number(p.todayNoteMs || 0);
+          if (Number(sm.chartMs || 0) > t.maxChartMs) t.maxChartMs = Number(sm.chartMs || 0);
+        });
+        t.perRowChartMs = t.rows ? Math.round(t.chartMs / t.rows) : 0;
+        t.perRowTodayNoteMs = t.rows ? Math.round(t.todayNoteMs / t.rows) : 0;
+        t.skippedVerifiedToday = Number(receipt.chartsSkippedVerifiedToday || 0);
+        receipt.costBreakdown = t;
+      });
       receipt.storeCensus = storedContentCensus(rows, unresolved);
       receipt.storeDelta = censusDelta(receipt.storeCensusBefore, receipt.storeCensus);
       receipt.storedContent = Number(receipt.storeCensus.withContent || 0);
@@ -5936,7 +6017,11 @@
             var __scvTargets = Number((__scvCensus && __scvCensus.targets) || 0);
             var __scvMeasured = !!(__scvCensus && __scvCensus.measured === true);
             var __scvHeld = Number((__scvCensus && __scvCensus.withContent) || 0);
-            var __scvStoreOk = !includeHistory || __scvTargets === 0 || (__scvMeasured && __scvHeld > 0);
+            /* bob-1.0.0: history RAN if the caller asked for it OR if the census
+               path deferred it into phase 2 and phase 2 actually read rows. A
+               phase-2 read must face the same store bar as any other. */
+            var __scvRan = includeHistory || (p1CensusHistoryDeferred === true && historyReceipt.skipped !== true);
+            var __scvStoreOk = !__scvRan || __scvTargets === 0 || (__scvMeasured && __scvHeld > 0);
             var __scvReason = __scvStoreOk ? "" : (__scvMeasured ? "history-store-empty" : "history-store-unmeasured");
             historyReceipt.storeVerdict = { ok: __scvStoreOk, reason: __scvReason, measured: __scvMeasured,
               targets: __scvTargets, withContent: __scvHeld,
@@ -5964,10 +6049,18 @@
             res.historySkippedReason = (p1CensusHistoryDeferred && historyReceipt.skipped === true)
               ? String(historyReceipt.reason || "provider-attribution-unavailable") : "";
             res.censusHistoryPhaseTwo = p1CensusHistoryDeferred === true && historyReceipt.skipped !== true;
+            /* bob-1.0.0: phase 2 reports its OWN verdict beside the census one.
+               The census completion contract is unchanged by design - provider
+               attribution is genuinely unavailable there - but a phase-2 that
+               did not land must never hide behind the census green. */
+            res.historyPhaseTwoComplete = res.censusHistoryPhaseTwo
+              ? !!(historyReceipt.complete === true && historyReceipt.exactIdentityVerified === true && __scvStoreOk)
+              : null;
+            res.historyPhaseTwoFailures = res.censusHistoryPhaseTwo ? Number(historyReceipt.failures || 0) : 0;
             res.appointmentCensusOnly = p1AppointmentCensusComplete;
             res.providerAttributionComplete = providerComplete;
             res.reason = complete
-              ? (p1AppointmentCensusComplete ? (res.censusHistoryPhaseTwo ? "complete-appointment-census-with-history" : "complete-appointment-census-only") : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only")))) /* bob-1.0.0 */
+              ? (p1AppointmentCensusComplete ? ((res.censusHistoryPhaseTwo && res.historyPhaseTwoComplete === true) ? "complete-appointment-census-with-history" : (res.censusHistoryPhaseTwo ? "complete-appointment-census-history-partial" : "complete-appointment-census-only")) : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only")))) /* bob-1.0.0 */
               : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : (!__scvStoreOk && historyReceipt.complete === true ? __scvReason : "history-partial")))));
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;

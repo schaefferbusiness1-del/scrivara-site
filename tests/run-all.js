@@ -60,6 +60,7 @@ const tests = [
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
+  '1p-pull-resume-skip-and-cost-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',
