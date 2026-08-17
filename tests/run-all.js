@@ -155,6 +155,11 @@ const tests = [
   '1p-uns-namespace-guard-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
+  /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so
+     /1p hid object-provider, rendering_provider_id and doctor_user_id rows the
+     production Day view renders. This is the 1p twin of the production suite
+     below and names those row shapes so the regression cannot return. */
+  '1p-provider-day-render-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
   'production-default-view-pull-runtime.test.js',
   'day-switch-current-pull-result-runtime.test.js',
