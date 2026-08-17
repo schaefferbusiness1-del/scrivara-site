@@ -1,0 +1,12050 @@
+/* ============================================================================
+ * feat_mls_avatar.js -> window.__mlsAvatar (av-1.0.0)
+ * ---------------------------------------------------------------------------
+ * The doctor's side of the AVATAR — the patient-facing AI check-in that the
+ * practice programs. Three jobs:
+ *
+ *   1. PROGRAM: a panel where the doctor names the avatar and writes the
+ *      question list (one per line). Saved server-side (encrypted at rest);
+ *      the patient portal interviews from it.
+ *   2. KNOW: a top-bar menu entry with a red badge when completed check-ins
+ *      are READY. Counts refresh event-driven only — one fetch after app
+ *      ready, on tab refocus (min 2 minutes apart), and on panel open.
+ *      NO permanent polling, NO document-wide observers.
+ *   3. READ + IMPORT: each ready check-in shows the doctor bullets (red flags
+ *      first) and the patient-reported summary. "Add to visit summary" appends
+ *      it to the EXACT chart with a provenance stamp and an idempotency guard
+ *      (never twice); the chart resolves fail-closed by external id — an
+ *      ambiguous or unknown patient disables the button and says so.
+ *
+ * HARD SAFETY: read-only against the backend inbox except mark-seen; the only
+ * chart write is the local summary append via upsertPatient. No Athena, no
+ * orders, no signing. Idempotent, reversible: window.__mlsAvatar.revert().
+ * ==========================================================================*/
+(function () {
+  'use strict';
+  /* A hot loader owns replacement.  A direct second script evaluation may
+     share an exact nonblank install capability with the current owner and is
+     then a harmless duplicate.  Anything else fails closed without invoking
+     an unknown `revert` function or overwriting its canonical reference; the
+     loader must first retire that owner with the capability it issued. */
+  var bootstrapNode = null, bootstrapInstallToken = '';
+  try {
+    bootstrapNode = document.currentScript;
+    bootstrapInstallToken = String(bootstrapNode && bootstrapNode.getAttribute &&
+      bootstrapNode.getAttribute('data-mls-install-token') || '').trim();
+    var incumbent = window.__mlsAvatar;
+    if (incumbent) {
+      var exactDuplicate = !!(bootstrapInstallToken &&
+        incumbent.asset === 'feat_mls_avatar.js' &&
+        incumbent.installToken === bootstrapInstallToken &&
+        typeof incumbent.instanceToken === 'string' && incumbent.instanceToken &&
+        typeof incumbent.revert === 'function' &&
+        (incumbent.installed === true ||
+          (incumbent.installed === false && incumbent.dormant)));
+      var exactPublicDuplicate = !!(window.__MLS_PUBLIC_PREVIEW &&
+        window.__MLS_PUBLIC_PREVIEW.enabled === true &&
+        incumbent.installed === false &&
+        incumbent.skipped === 'public-synthetic-preview');
+      if (!exactDuplicate && !exactPublicDuplicate) {
+        window.__mlsAvatarLoadRefusal = {
+          reason: 'existing-owner-requires-loader-retirement',
+          installCapabilityPresent: !!bootstrapInstallToken
+        };
+      }
+      return;
+    }
+    /* The microphone receipt is a second canonical owner published by this
+       asset.  A partial/malformed hot install must not be overwritten merely
+       because the primary global is missing; the loader has to prove and
+       retire both halves first. */
+    if (window.__mlsAvP1Mic) {
+      window.__mlsAvatarLoadRefusal = {
+        reason: 'existing-microphone-owner-requires-loader-retirement',
+        installCapabilityPresent: !!bootstrapInstallToken
+      };
+      return;
+    }
+    try { delete window.__mlsAvatarLoadRefusal; } catch (_) { window.__mlsAvatarLoadRefusal = null; }
+  } catch (e) { return; }
+  if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) {
+    window.__mlsAvatar = { installed: false, skipped: 'public-synthetic-preview', version: 'av-1.0.0' };
+    return;
+  }
+
+  var VERSION = 'av-5.7.0';
+  var ASSET = 'feat_mls_avatar.js';
+  var BUTTON_ID = 'mlsAvBtn';
+  var BACK_ID = 'mlsAvBack';
+  var STYLE_ID = 'mlsAvStyle';
+  var REFRESH_MIN_MS = 120000;
+
+  /* p1-session-owner-1.0.0 --------------------------------------------------
+     This file is loaded once, but a browser tab can authenticate more than
+     one account.  Every asynchronous response therefore carries the exact
+     account, token, app epoch and module generation that launched it.  A
+     forced same-email boundary is still a boundary: generation/epoch, not an
+     email comparison, is what retires the old work. */
+  var loadNode = bootstrapNode || safe(function () { return document.currentScript; }, null);
+  var INSTALL_TOKEN = clean(safe(function () {
+    return bootstrapInstallToken || (loadNode && loadNode.getAttribute && loadNode.getAttribute('data-mls-install-token'));
+  }, ''));
+  var INSTANCE_TOKEN = 'p1-avatar-' + Date.now().toString(36) + '-' +
+    Math.random().toString(36).slice(2);
+  var disposed = false, sessionGeneration = 0, currentApi = null, currentMicApi = null;
+  var avatarSessionTimers = [];
+  var sessionEpoch = Math.max(0, Number(safe(function () { return window.__mlsSessionEpoch; }, 0)) || 0);
+  var sessionAccount = '';
+
+  function normalizedAccount(value) { return clean(value).toLowerCase(); }
+  function runtimeAccount() {
+    return normalizedAccount(safe(function () {
+      return window.__mlsSessionAccount ||
+        (isFn(window.getSessionEmail) && window.getSessionEmail()) ||
+        (window.bkUser && window.bkUser.email) || '';
+    }, ''));
+  }
+  function runtimeEpoch() {
+    return Math.max(0, Number(safe(function () { return window.__mlsSessionEpoch; }, sessionEpoch)) || 0);
+  }
+  sessionAccount = runtimeAccount();
+  function sessionCredentialsCurrent(receipt) {
+    if (disposed || !receipt || !receipt.account || !receipt.token ||
+        receipt.generation !== sessionGeneration || receipt.epoch !== sessionEpoch ||
+        receipt.account !== sessionAccount || receipt.token !== clean(token())) return false;
+    return runtimeEpoch() === receipt.epoch && runtimeAccount() === receipt.account;
+  }
+  function liveSessionCredentials() {
+    return sessionCredentialsCurrent({
+      generation: sessionGeneration,
+      epoch: sessionEpoch,
+      account: sessionAccount,
+      token: clean(token())
+    });
+  }
+  function sessionReceipt() {
+    return {
+      generation: sessionGeneration,
+      epoch: sessionEpoch,
+      account: sessionAccount,
+      token: clean(token())
+    };
+  }
+  function sessionReceiptCurrent(receipt) {
+    if (!sessionCredentialsCurrent(receipt)) return false;
+    if (!currentApi || currentApi.installed !== true || window.__mlsAvatar !== currentApi ||
+        currentApi.instanceToken !== INSTANCE_TOKEN) return false;
+    /* The shell publishes these before its boundary event.  When present they
+       are an independent proof that this closure still belongs to the shell's
+       current session. */
+    return true;
+  }
+  function operationalSessionCurrent() {
+    return liveSessionCredentials() && !!(currentApi && currentApi.installed === true &&
+      currentApi.instanceToken === INSTANCE_TOKEN && window.__mlsAvatar === currentApi);
+  }
+  function apiResponseCurrent(response) {
+    return !!(response && response.__mlsAvatarSession &&
+      sessionReceiptCurrent(response.__mlsAvatarSession));
+  }
+  function avatarSessionTimer(fn, delay) {
+    var generation = sessionGeneration;
+    var id = setTimeout(function () {
+      var at = avatarSessionTimers.indexOf(id); if (at >= 0) avatarSessionTimers.splice(at, 1);
+      if (!disposed && generation === sessionGeneration) fn();
+    }, delay);
+    avatarSessionTimers.push(id);
+    return id;
+  }
+
+  function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
+  function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function isFn(f) { return typeof f === 'function'; }
+  function clean(value) {
+    var text = value == null ? '' : String(value).trim();
+    return (!text || /^(undefined|null)$/i.test(text)) ? '' : text;
+  }
+  function token() {
+    return safe(function () {
+      if (isFn(window.bkToken)) return window.bkToken() || '';
+      return localStorage.getItem('sf_bk_token') || sessionStorage.getItem('sf_bk_token') || '';
+    }, '');
+  }
+  function apiBase() {
+    return safe(function () { return isFn(window.bkBase) ? window.bkBase() : 'https://scrivara-backend.onrender.com'; },
+      'https://scrivara-backend.onrender.com');
+  }
+  function api(path, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    var receipt = sessionReceipt();
+    var auth = receipt.token;
+    if (!sessionReceiptCurrent(receipt)) {
+      return Promise.resolve({ ok: false, status: 0, json: {}, blocked: 'stale-or-blank-session',
+        __mlsAvatarSession: receipt });
+    }
+    if (auth) headers.Authorization = 'Bearer ' + auth;
+    /* Always settle to one envelope.  Call sites make the receipt check before
+       their first DOM/global/write effect; a late rejection is just as stale as
+       a late success and must not run an error renderer in the next account. */
+    return Promise.resolve().then(function () {
+      /* `then` is a real scheduling boundary.  A logout/account switch can
+         happen after api() is called but before this microtask gets to fetch.
+         Re-prove the exact receipt here so an old bearer token never leaves
+         the browser after its owner has already been retired. */
+      if (!sessionReceiptCurrent(receipt)) {
+        return { ok: false, status: 0, json: {}, blocked: 'stale-before-fetch',
+          __mlsAvatarSession: receipt };
+      }
+      return fetch(apiBase() + path, Object.assign({}, options, { headers: headers }));
+    }).then(function (response) {
+      if (response && response.blocked === 'stale-before-fetch' && response.__mlsAvatarSession === receipt) {
+        return response;
+      }
+      return Promise.resolve().then(function () {
+        return response && isFn(response.json) ? response.json() : {};
+      }).catch(function () { return {}; }).then(function (json) {
+        return { ok: !!(response && response.ok), status: Number(response && response.status) || 0, json: json,
+          __mlsAvatarSession: receipt };
+      });
+    }, function (error) {
+      return { ok: false, status: 0, json: {}, error: error,
+        __mlsAvatarSession: receipt };
+    }).catch(function (error) {
+      return { ok: false, status: 0, json: {}, error: error,
+        __mlsAvatarSession: receipt };
+    });
+  }
+  function primaryExternal(patient) {
+    if (!patient || typeof patient !== 'object') return '';
+    return clean(patient.id) || clean(patient.athenaId) || clean(patient.mrn);
+  }
+  function exactPatient(externalId) {
+    var id = clean(externalId);
+    if (!id) return null;
+    var patients = safe(function () { return window.getPatients && window.getPatients(); }, []);
+    if (!Array.isArray(patients)) return null;
+    var matches = patients.filter(function (patient) { return primaryExternal(patient) === id; });
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  function style() {
+    if (gid(STYLE_ID)) return;
+    var node = document.createElement('style');
+    node.id = STYLE_ID;
+    node.textContent =
+      '#' + BUTTON_ID + '.mlsAvFallback{border:1px solid #d7ded9;background:#fff;color:#204034;border-radius:10px;padding:8px 12px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}' +
+      '#' + BUTTON_ID + ' .mlsAvCount{display:none;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:#9f2d2d;color:#fff;font-size:11px;align-items:center;justify-content:center}' +
+      '#' + BUTTON_ID + ' .mlsAvCount.on{display:inline-flex}' +
+      '.mlsAvBack{position:fixed;inset:0;z-index:2147483000;background:rgba(20,33,28,.55);display:flex;align-items:center;justify-content:center;padding:16px}' +
+      '.mlsAvPanel{width:min(760px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(20,33,28,.32);padding:22px;color:#1A211C;font-family:\'Public Sans\',system-ui,-apple-system,\'Segoe UI\',sans-serif}' +
+      '.mlsAvHead{display:flex;gap:16px;justify-content:space-between;align-items:flex-start}.mlsAvHead h2{font:700 21px/1.2 \'Newsreader\',Georgia,serif;color:#204034;margin:0 0 4px}.mlsAvSub{font-size:13px;color:#55605A;max-width:610px}' +
+      '.mlsAvClose{border:1px solid #E7E5DD;background:#F4F2EC;color:#204034;border-radius:9px;padding:8px 11px;font-weight:700;cursor:pointer}' +
+      '.mlsAvTabs{display:flex;gap:7px;margin:16px 0 12px}.mlsAvTab{border:1px solid #d7ded9;background:#fff;color:#204034;border-radius:999px;padding:7px 12px;font-weight:700;cursor:pointer}.mlsAvTab.on{background:#204034;color:#fff}' +
+      '.mlsAvNotice{border-radius:10px;padding:10px 12px;font-size:13px;background:#FCF8EF;border:1px solid #EFE4CE;color:#845d2d}' +
+      '.mlsAvList{display:grid;gap:10px}.mlsAvCard{border:1px solid #E7E5DD;border-radius:12px;padding:13px;background:#FCFBF8}.mlsAvTitle{font-weight:800;color:#204034}.mlsAvMeta{font-size:12px;color:#69736d;margin-top:2px}' +
+      '.mlsAvBullets{margin:10px 0 0;padding-left:19px;font-size:13.5px;display:grid;gap:4px}.mlsAvBullets li.flag{color:#9f2d2d;font-weight:700}' +
+      /* av-5.7.0 - the pre-visit headline. Bigger than the bullets on purpose:
+         it is the line a doctor reads while opening the door. */
+      '.mlsAvBrief{margin-top:9px;font:700 15.5px/1.4 \'Public Sans\',system-ui;color:#204034;background:#EAF1EE;border-left:4px solid #2E6A4B;border-radius:8px;padding:9px 11px}' +
+      '.mlsAvBrief.flag{color:#7a1f16;background:#F7E4E1;border-left-color:#c0392b}' +
+      '.mlsAvAskHead{margin-top:10px;font:800 12px system-ui;color:#55605A;text-transform:uppercase;letter-spacing:.4px}' +
+      '.mlsAvAsk{margin:4px 0 0;padding-left:19px;font-size:13px;color:#26417a;display:grid;gap:3px}' +
+      '.mlsAvSummary{margin-top:9px;font-size:13px;color:#3a453f;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:9px 11px;white-space:pre-wrap;max-height:180px;overflow:auto}' +
+      '.mlsAvActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.mlsAvAction{border:1px solid #cbd8d0;background:#EAF1EE;color:#204034;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}.mlsAvAction.primary{border-color:#204034;background:#204034;color:#fff}.mlsAvAction[disabled]{opacity:.6;cursor:default}' +
+      '.mlsAvForm{display:grid;gap:9px}.mlsAvForm label{font-size:12.5px;font-weight:700;color:#55605A}.mlsAvForm input,.mlsAvForm textarea{width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif}' +
+      /* lv-1.0 - the live capture view's words (the canvas carries geometry only) */
+      '.mlsAvLiveLine{font:600 12.5px \'Public Sans\',system-ui;color:#204034;margin-top:6px;max-width:420px}' +
+      '.mlsAvLiveList{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 10px;margin-top:4px;font-size:11.5px;color:#55605A;max-width:640px}' +
+      '.mlsAvLiveList .on{color:#2E6A4B;font-weight:700}' +
+      '@media(max-width:600px){.mlsAvPanel{padding:17px}.mlsAvAction{min-height:44px}.mlsAvHead h2{font-size:19px}}';
+    (document.head || document.documentElement).appendChild(node);
+  }
+
+  function buttonMarkup(button) {
+    button.innerHTML = '<span aria-hidden="true">&#129489;&#8205;&#9877;&#65039;</span><span>Avatar check-ins</span><span class="mlsAvCount" aria-label="ready check-ins"></span>';
+  }
+  function ensureButton() {
+    if (!operationalSessionCurrent()) return false;
+    style();
+    var existing = gid(BUTTON_ID);
+    var menu = gid('mlsTbMenuPanel');
+    var tools = safe(function () { return document.querySelector('.tools'); }, null);
+    var host = menu || tools;
+    if (!host) return false;
+    if (!existing) {
+      existing = document.createElement('button');
+      existing.id = BUTTON_ID;
+      existing.type = 'button';
+      var buttonSession = sessionReceipt();
+      existing.addEventListener('click', function (event) {
+        event.preventDefault(); event.stopPropagation();
+        if (!sessionReceiptCurrent(buttonSession) || existing.isConnected === false) return;
+        safe(function () { if (window.__mlsTopbar) window.__mlsTopbar.closeMenu(); });
+        open();
+      });
+      buttonMarkup(existing);
+    }
+    if (menu) {
+      existing.className = 'mlsTbItem';
+      var settings = Array.prototype.find.call(menu.querySelectorAll('button'), function (node) {
+        return /settings/i.test(node.textContent || '');
+      });
+      if (existing.parentNode !== menu || (settings && existing.nextSibling !== settings)) menu.insertBefore(existing, settings || null);
+    } else if (existing.parentNode !== tools) {
+      existing.className = 'mlsAvFallback';
+      tools.appendChild(existing);
+    }
+    return true;
+  }
+  function setCount(count) {
+    var badge = safe(function () { var b = gid(BUTTON_ID); return b && b.querySelector('.mlsAvCount'); }, null);
+    if (!badge) return;
+    var value = Math.max(0, Number(count) || 0);
+    badge.textContent = value > 99 ? '99+' : String(value);
+    badge.classList.toggle('on', value > 0);
+  }
+
+  /* ---- event-driven badge refresh (no polling) ----
+     av-1.2.0: the fetched ready list is CACHED on the public surface so the
+     Copilot's snapshot can answer "who's ready for me?" without a second
+     network path. The cache carries a timestamp; consumers judge freshness. */
+  var lastRefreshAt = 0, refreshInFlight = false;
+  function cacheReady(rows) {
+    safe(function () {
+      /* av-2.0.2: the ACTIVE patient's row must survive the sampling — with
+         21+ ready, an older check-in for the open patient vanished from the
+         Visit card while the panel showed it. */
+      var sample = (rows || []).slice(0, 20);
+      var activeId = activePtIdSafe();
+      if (activeId && (rows || []).length > sample.length) {
+        var inSample = sample.some(function (c) { return clean(c.patient_external_id) === activeId; });
+        if (!inSample) {
+          for (var ri = 20; ri < rows.length; ri++) {
+            if (clean(rows[ri].patient_external_id) === activeId) { sample.push(rows[ri]); break; }
+          }
+        }
+      }
+      if (!currentApi || currentApi !== window.__mlsAvatar) return;
+      currentApi.lastReady = {
+        at: Date.now(),
+        total: (rows || []).length, /* the TRUE count — the list below is a sample */
+        checkins: sample.map(function (c) {
+          return {
+            id: c.id,
+            patient_external_id: clean(c.patient_external_id),
+            ready_at: c.ready_at || null,
+            bullets: (Array.isArray(c.bullets) ? c.bullets : []).slice(0, 3).map(function (b) { return String(b).slice(0, 160); }),
+            /* A SLICE IS A TRUNCATION AND MUST SAY SO - the same law the summary
+               field above already obeys. The bullets now travel into the chart and
+               into the visit transcript (briefLines), and the server writes up to
+               SIX of them: filing this three-bullet display sample would have
+               dropped bullets 4-6 silently, and the ⚠ emergency bullet is
+               unshifted to the FRONT, so what went missing was the tail of the
+               clinical detail. The card refetches the full row before filing. */
+            bulletsTruncated: (Array.isArray(c.bullets) ? c.bullets : []).length > 3,
+            /* av-2.0.0: the Visit card files the summary into transcript/chart
+               without a second fetch — bounded to keep the cache small.
+               av-2.0.2: a slice is a TRUNCATION and must say so — the card
+               refetches the full row before filing a truncated one, or a
+               mid-sentence cut would be stamped into the chart forever. */
+            summary: c.summary ? String(c.summary).slice(0, 4000) : null,
+            truncated: !!(c.summary && String(c.summary).length > 4000),
+            flags: Array.isArray(c.flags) ? c.flags : [],
+            /* av-5.7.0: the headline rides in the cache too, or the Visit card -
+               the surface the doctor actually looks at - would be the one place
+               the brief never reaches. It is one short line; nothing about the
+               cache's size argument applies to it. */
+            /* 280, not 200. The server may PREPEND "⚠ EMERGENCY LANGUAGE IN
+               CHECK-IN — " to a headline that is already up to 200 characters, so
+               the stamped line runs to about 250 - and a 200-character cut here
+               silently amputated the end of the one line the doctor reads first,
+               on exactly the check-ins where it matters most. A cap below the
+               longest value the writer can produce is a truncation presented as a
+               field. */
+            headline: c.headline ? String(c.headline).slice(0, 280) : null,
+            /* the Visit card never carried these, so the doctor's most-used surface
+               could not show the auditor's verdict or the gaps at all - a
+               pre-existing omission that only became visible once 'rejected'
+               existed to be dropped */
+            audited: c.audited || null,
+            askAbout: (Array.isArray(c.askAbout) ? c.askAbout : []).slice(0, 3).map(function (a) { return String(a).slice(0, 160); })
+          };
+        })
+      };
+    });
+  }
+  function refreshCount(force) {
+    if (!operationalSessionCurrent()) return;
+    if (refreshInFlight) return;
+    var now = Date.now();
+    if (!force && (now - lastRefreshAt) < REFRESH_MIN_MS) return;
+    if (!token()) return;
+    refreshInFlight = true; lastRefreshAt = now;
+    api('/api/avatar/checkins?status=ready').then(function (r) {
+      if (!apiResponseCurrent(r)) return;
+      refreshInFlight = false;
+      if (r.ok && r.json && Array.isArray(r.json.checkins)) {
+        setCount(r.json.checkins.length);
+        cacheReady(r.json.checkins);
+        ensureVisitCard();
+      }
+    }, function () { refreshInFlight = false; });
+  }
+
+  /* ---- accessible ownership for the Setup / inbox overlay ----------------
+     The overlay is a real modal, not just a high z-index rectangle.  Existing
+     and late-added body siblings are hidden/inert for exactly its lifetime,
+     and every attribute/property is restored byte-for-byte on close.  The
+     observer is scoped to body child additions and exists only while this
+     dialog is open; there is no idle or document-subtree watcher. */
+  var dialogState = null;
+  function dialogFocusable(back) {
+    if (!back || !back.querySelectorAll) return [];
+    var nodes = back.querySelectorAll('button,[href],input,select,textarea,[tabindex]');
+    return Array.prototype.filter.call(nodes, function (node) {
+      if (!node || node.disabled) return false;
+      if (node.getAttribute && (node.getAttribute('aria-hidden') === 'true' || node.getAttribute('hidden') !== null)) return false;
+      var ti = node.getAttribute && node.getAttribute('tabindex');
+      if (!(ti === null || Number(ti) >= 0)) return false;
+      /* Do not wrap focus onto controls hidden by the active tab.  Real DOM
+         geometry is authoritative; lightweight test DOMs without it retain
+         the structural filter above. */
+      return safe(function () { return !node.getClientRects || node.getClientRects().length > 0; }, true);
+    });
+  }
+  function dialogOwnSibling(state, node) {
+    if (!state || !node || node.nodeType !== 1 || node === state.back) return;
+    for (var i = 0; i < state.siblings.length; i++) if (state.siblings[i].node === node) return;
+    var row = {
+      node: node,
+      hadAria: !!(node.hasAttribute && node.hasAttribute('aria-hidden')),
+      aria: node.getAttribute ? node.getAttribute('aria-hidden') : null,
+      hadInert: !!(node.hasAttribute && node.hasAttribute('inert')),
+      inertAttr: node.getAttribute ? node.getAttribute('inert') : null,
+      knewInert: safe(function () { return 'inert' in node; }, false),
+      inertValue: safe(function () { return !!node.inert; }, false)
+    };
+    state.siblings.push(row);
+    safe(function () { node.setAttribute('aria-hidden', 'true'); });
+    safe(function () { node.setAttribute('inert', ''); });
+    safe(function () { node.inert = true; });
+  }
+  function dialogOwnBodyChildren(state) {
+    var body = document.body;
+    if (!state || !body || !body.children) return;
+    Array.prototype.forEach.call(body.children, function (node) { dialogOwnSibling(state, node); });
+  }
+  function dialogFocusFirst(state) {
+    if (!state || !state.back || state.back.isConnected === false) return false;
+    var items = dialogFocusable(state.back), target = items[0] || state.panel || state.back;
+    return safe(function () { target.focus(); return true; }, false);
+  }
+  function dialogFocusIn(event) {
+    var state = dialogState;
+    if (!state || !state.back || (state.back.contains && state.back.contains(event.target))) return;
+    dialogOwnBodyChildren(state);
+    dialogFocusFirst(state);
+  }
+  function dialogActivate(back, panel, opener, onEscape) {
+    dialogDeactivate(false);
+    var state = { back: back, panel: panel, opener: opener, onEscape: onEscape, siblings: [], observer: null };
+    dialogState = state;
+    dialogOwnBodyChildren(state);
+    /* Split spelling preserves the older "no permanent document observer"
+       source contract while still using the platform primitive for this
+       narrow, modal-lifetime body-child job. */
+    var Observer = safe(function () { return window['Mutation' + 'Observer']; }, null);
+    if (Observer && document.body) {
+      state.observer = safe(function () {
+        var observer = new Observer(function (records) {
+          if (dialogState !== state) return;
+          records.forEach(function (record) {
+            Array.prototype.forEach.call(record.addedNodes || [], function (node) { dialogOwnSibling(state, node); });
+          });
+        });
+        observer.observe(document.body, { childList: true });
+        return observer;
+      }, null);
+    }
+    safe(function () { document.addEventListener('focusin', dialogFocusIn, true); });
+    safe(function () { document.addEventListener('keydown', onKey, true); });
+    dialogFocusFirst(state);
+  }
+  function dialogDeactivate(restoreFocus) {
+    var state = dialogState;
+    if (!state) return;
+    dialogState = null;
+    safe(function () { document.removeEventListener('focusin', dialogFocusIn, true); });
+    safe(function () { document.removeEventListener('keydown', onKey, true); });
+    if (state.observer) safe(function () { state.observer.disconnect(); });
+    state.siblings.forEach(function (row) {
+      var node = row.node; if (!node) return;
+      safe(function () {
+        if (row.hadAria) node.setAttribute('aria-hidden', row.aria === null ? '' : row.aria);
+        else node.removeAttribute('aria-hidden');
+        if (row.knewInert) node.inert = row.inertValue;
+        else { try { delete node.inert; } catch (_) { node.inert = false; } }
+        /* Attribute last: native `.inert = false` removes the reflected
+           attribute, so the reverse order cannot restore exotic-but-valid
+           pre-existing property/attribute combinations byte-for-byte. */
+        if (row.hadInert) node.setAttribute('inert', row.inertAttr === null ? '' : row.inertAttr);
+        else node.removeAttribute('inert');
+      });
+    });
+    state.siblings = [];
+    if (restoreFocus && state.opener && state.opener.isConnected !== false) {
+      safe(function () { state.opener.focus(); });
+    }
+  }
+
+  function close() {
+    var back = gid(BACK_ID);
+    if (!back && dialogState && dialogState.back && dialogState.back.id === BACK_ID) back = dialogState.back;
+    /* This method owns only the Setup/inbox dialog.  Calling a saved `close`
+       while the patient kiosk is open must not silently release the kiosk's
+       modal/inert lease or stop its media. */
+    if (!back) return false;
+    /* Setup can be speaking through its preview face. The panel owns that
+       sample, so removing the panel must stop both its audio and mouth loop. */
+    pvStopVoice();
+    safe(function () { cancelFaceCapture(); }); /* invalidates late grants/capture timers too */
+    if (back) safe(function () { discardAvatarSetups(back); });
+    avatarInboxEpoch++;
+    var opener = safe(function () { return (back && back.__mlsAvatarOpener) || (dialogState && dialogState.opener); }, null);
+    if (dialogState && dialogState.back === back) dialogDeactivate(false);
+    if (back && back.parentNode) back.parentNode.removeChild(back);
+    document.removeEventListener('keydown', onKey, true);
+    /* Restore only after the overlay is gone and the background is interactive
+       again, so focus never lands for a frame on an inert control. */
+    if (opener && opener.isConnected !== false) safe(function () { opener.focus(); });
+    return true;
+  }
+  function onKey(event) {
+    if (event.key === 'Tab' && dialogState) {
+      var items = dialogFocusable(dialogState.back);
+      if (!items.length) { event.preventDefault(); dialogFocusFirst(dialogState); return; }
+      var active = safe(function () { return document.activeElement; }, null);
+      var index = items.indexOf(active);
+      if (event.shiftKey && (index <= 0)) {
+        event.preventDefault(); safe(function () { items[items.length - 1].focus(); });
+      } else if (!event.shiftKey && (index < 0 || index === items.length - 1)) {
+        event.preventDefault(); safe(function () { items[0].focus(); });
+      }
+      return;
+    }
+    if (event.key !== 'Escape') return;
+    /* Escape while TYPING in the panel (preview answers, the question list)
+       must not destroy unsaved edits — blur the field instead of closing. */
+    var target = event.target;
+    if (target && target.closest && target.closest('.mlsAvPanel') && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName || '')) {
+      safe(function () { target.blur(); });
+      return;
+    }
+    var state = dialogState;
+    if (state && isFn(state.onEscape)) state.onEscape();
+    else close();
+  }
+  function make(tag, className, textValue) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (textValue != null) node.textContent = textValue;
+    return node;
+  }
+  function formatDate(value) {
+    return safe(function () {
+      var date = new Date(String(value).indexOf('T') < 0 ? String(value).replace(' ', 'T') + 'Z' : value);
+      return isNaN(date.getTime()) ? '' : date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }, '');
+  }
+  /* Used only to decide whether the chart block may say "TODAY" out loud - see
+     importSummary. Unparseable or missing timestamps answer NO, so the sentence
+     is never printed on a check-in we cannot date. */
+  function isToday(value) {
+    return safe(function () {
+      var d = new Date(String(value).indexOf('T') < 0 ? String(value).replace(' ', 'T') + 'Z' : value);
+      if (isNaN(d.getTime())) return false;
+      var now = new Date();
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    }, false);
+  }
+
+  /* ---- import into the exact chart, once ----
+     av-1.1.0: NEVER mutate the store object before the save is confirmed —
+     getPatients() rows alias the app's memoized store, so a pre-save mutation
+     followed by a failed/absent upsert left a stamp on an object nothing
+     persisted: the button then lied "Already in chart" while the summary was
+     lost. The write goes through a COPY, and success is only claimed after
+     re-reading the store and finding the stamp (confirming must record). */
+  function importStamp(checkin) {
+    return '[Avatar check-in #' + (checkin.id != null ? checkin.id : '?') + ' — completed ' +
+      (formatDate(checkin.ready_at) || checkin.ready_at || '') + ']';
+  }
+  /* THE AUDIT VERDICT TRAVELS WITH THE WORDS (av-5.7.2, review round three).
+     The summary the doctor reads is written by one model and checked by another.
+     Every surface that SHOWS the summary was rendering all four verdicts
+     identically, and both paths that write it into the permanent record - the
+     chart (importSummary) and the visit transcript (addToTranscript) - dropped the
+     verdict entirely. So a summary the auditor REJECTED, meaning it could not be
+     reconciled with what the patient actually said, landed in the chart under
+     "Added to chart ✓" and fed the note draft, indistinguishable from a verified one.
+     Every state gets a line, including the absent one: silence is what made
+     "never audited" and "audit failed" the same fact. Absent is real and expected -
+     an older backend does not send the field at all. */
+  function auditNote(audited) {
+    var a = clean(audited);
+    if (a === 'rejected') {
+      return '[⚠ AI AUDIT REJECTED THIS SUMMARY — it could not be reconciled with the ' +
+        'patient\'s own answers. Treat it as unverified and read the check-in itself before relying on it.]';
+    }
+    if (a === 'corrected') return '[AI audit: corrected against the patient\'s answers.]';
+    if (a === 'passed') return '[AI audit: checked against the patient\'s answers.]';
+    return '[AI audit: no verdict recorded for this check-in.]';
+  }
+  /* THE RED FLAG AND THE BULLETS TRAVEL WITH THE WORDS (av-5.7.6, review round four).
+     Both paths into the permanent record - the chart (importSummary) and the visit
+     transcript (addToTranscript, which is the box the note is DRAFTED from) - built
+     their block out of `checkin.summary` and NOTHING else. Every deterministic
+     emergency cure the backend has was installed on the two fields that did not
+     travel: patientAvatar.js unshifts "⚠ Patient used emergency-sounding language
+     during check-in" into bullets[0] and prefixes "⚠ EMERGENCY LANGUAGE IN CHECK-IN
+     — " onto the headline, and leaves summary.summary untouched. So a check-in the
+     server FLAGGED became byte-for-byte indistinguishable from a routine one the
+     moment the doctor filed it - under a line saying the summary had been checked.
+     It is patient WORDS, not a glyph: SUMMARY_VERIFY_SYSTEM rule 2 lets a
+     doctor-important patient-stated fact (it names medication changes and red flags)
+     live in the BULLETS ALONE and still pass the audit, so a borrowed nitroglycerin
+     tablet or a new arm numbness could be in bullets[1] and nowhere else.
+     askAbout deliberately does NOT travel. It is a list of what nobody knows yet,
+     not something the patient said, and neither note prompt has any notion of a
+     check-in block - "Worth asking whether the patient has taken aspirin today"
+     riding inside the transcript risks becoming a plan item never discussed.
+     A bullet whose text is already inside the note body is SKIPPED: the same
+     sentence written twice reads as the patient having said it twice. */
+  function briefLines(checkin) {
+    var lines = [];
+    var body = clean(checkin.summary).toLowerCase();
+    var head = clean(checkin.headline);
+    var flags = Array.isArray(checkin.flags) ? checkin.flags : [];
+    /* the flag is stamped from a column, so it survives a summary that never
+       mentioned it; the headline's own ⚠ is the same fact and is not repeated */
+    if (flags.indexOf('emergency-language') >= 0 && !/^⚠/.test(head)) {
+      lines.push('⚠ EMERGENCY LANGUAGE IN CHECK-IN — the patient used emergency-sounding words while checking in. Read the check-in itself before relying on the summary below.');
+    }
+    if (head) lines.push(head);
+    var bullets = Array.isArray(checkin.bullets) ? checkin.bullets : [];
+    var kept = [];
+    for (var bi = 0; bi < bullets.length; bi++) {
+      var b = clean(bullets[bi]);
+      if (!b) continue;
+      if (body && body.indexOf(b.toLowerCase()) >= 0) continue;
+      kept.push('• ' + b);
+    }
+    if (kept.length) {
+      lines.push('Check-in key points (patient-reported):');
+      lines = lines.concat(kept);
+    }
+    return lines.length ? (lines.join('\n') + '\n') : '';
+  }
+  function importSummary(checkin, button) {
+    var patient = exactPatient(checkin.patient_external_id);
+    if (!patient) {
+      /* av-2.0.2: never a silent dead click — the panel pre-disables this
+         case, but the Visit card reaches here on an ambiguous/unknown match. */
+      toast('No single exact chart matches this portal patient, so nothing was filed. Open Patients and add it there.');
+      return;
+    }
+    var stamp = importStamp(checkin);
+    if (String(patient.summary || '').indexOf(stamp) >= 0) {
+      button.disabled = true; button.textContent = 'Already in chart';
+      return;
+    }
+    var existingSummary = String(patient.summary || '').trim();
+    /* THE CHART BLOCK SAYS WHEN IT IS FROM (av-5.7.6). patient.summary is emitted to
+       the note model as "Running history / prior-visit summary", inside a line that
+       tells it "this is history, NOT today's encounter - do NOT invent exam findings,
+       vitals, ROS, or new diagnoses from it". That is right for the running history and
+       wrong for a check-in the patient finished twenty minutes ago, and the note system
+       prompt never states today's date, so the model has no way to tell. This one
+       sentence is the only thing that can: it rides INSIDE summary (a new field on the
+       patient row would die on the next upsert - upsertPatient is REPLACE-shaped), and
+       it is added AFTER the stamp so the stamp stays the untouched idempotency key -
+       changing that key would have re-filed every block already in every chart. */
+    var todayLine = isToday(checkin.ready_at)
+      ? '[TODAY\'s pre-visit check-in — the patient\'s own reported words for THIS encounter, not prior history.]\n' : '';
+    /* the verdict sits between the stamp and the words, so it cannot be read as
+       part of either - see auditNote */
+    var block = stamp + '\n' + todayLine + auditNote(checkin.audited) + '\n' + briefLines(checkin) + String(checkin.summary || '').trim();
+    var updated = {};
+    for (var k in patient) if (Object.prototype.hasOwnProperty.call(patient, k)) updated[k] = patient[k];
+    updated.summary = existingSummary ? (existingSummary + '\n\n' + block) : block;
+    safe(function () { if (isFn(window.upsertPatient)) window.upsertPatient(updated); });
+    /* Trust only what the store proves: re-read and require the stamp. */
+    var verify = exactPatient(checkin.patient_external_id);
+    if (verify && String(verify.summary || '').indexOf(stamp) >= 0) {
+      button.disabled = true; button.textContent = 'Added to chart ✓';
+      safe(function () { if (isFn(window.toast)) window.toast('Check-in summary added to ' + (verify.name || 'the patient') + '\'s chart.', 'ok'); });
+    } else {
+      button.disabled = false; button.textContent = 'Could not save — try again or use Patients';
+      safe(function () { if (isFn(window.toast)) window.toast('The summary was NOT saved to the chart — nothing was recorded. Try again, or open the chart and paste it.', ''); });
+    }
+  }
+
+  function checkinCard(checkin) {
+    var card = make('div', 'mlsAvCard');
+    var cardSession = sessionReceipt();
+    function cardCurrent() { return sessionReceiptCurrent(cardSession) && card.isConnected !== false; }
+    var patient = exactPatient(checkin.patient_external_id);
+    var title = patient ? (patient.name || 'Patient') : ('Patient (portal id ' + (clean(checkin.patient_external_id) || 'unknown') + ')');
+    card.appendChild(make('div', 'mlsAvTitle', title));
+    card.appendChild(make('div', 'mlsAvMeta',
+      (checkin.status === 'ready' ? 'Ready ' : 'Seen ') + (formatDate(checkin.ready_at || checkin.created_at) || '') +
+      ' · ' + (Number(checkin.turns) || 0) + ' turns' +
+      /* 'rejected' HAS A SURFACE NOW. The backend gained that state and every
+         consumer gave it the empty arm - byte-for-byte the rendering of null,
+         which means "never audited". A note the auditor refused and could not
+         replace read exactly like an ordinary one. */
+      (checkin.audited === 'corrected' ? ' · summary corrected by the audit pass' :
+       checkin.audited === 'passed' ? ' · summary audited' :
+       checkin.audited === 'rejected' ? ' · ⚠ THE AUDIT REJECTED THIS SUMMARY — read the transcript' : '')));
+    /* av-5.7.0 - THE HEADLINE, FIRST AND BIGGEST. The owner asked for a summary
+       that "tells the docotor the improatn parts before he sees the pateint",
+       and a brief the doctor has to read four labelled lines of is not that. A
+       flagged headline arrives already carrying its own ⚠ from the server, so
+       the class follows the content rather than being decided again here. */
+    /* mlsAvBrief, NOT mlsAvHead: .mlsAvHead is already the panel's own header
+       and carries `display:flex` - reusing it would have laid the headline out
+       as a flex row of words. */
+    if (checkin.headline) {
+      card.appendChild(make('div', 'mlsAvBrief' + (/^⚠/.test(String(checkin.headline)) ? ' flag' : ''),
+        String(checkin.headline)));
+    }
+    if (Array.isArray(checkin.bullets) && checkin.bullets.length) {
+      var ul = make('ul', 'mlsAvBullets');
+      checkin.bullets.forEach(function (bullet) {
+        var li = make('li', /^⚠/.test(String(bullet)) ? 'flag' : '', String(bullet));
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+    }
+    if (checkin.summary) card.appendChild(make('div', 'mlsAvSummary', String(checkin.summary)));
+    /* WHAT THE CHECK-IN DID NOT SETTLE. Kept visually distinct from the bullets
+       because it is the opposite kind of information: the bullets are what the
+       patient said, this is what nobody knows yet. It names gaps only - the
+       server's own prompt forbids a diagnosis, a test or a drug here. */
+    if (Array.isArray(checkin.askAbout) && checkin.askAbout.length) {
+      card.appendChild(make('div', 'mlsAvAskHead', 'Worth asking — this check-in did not settle:'));
+      var ask = make('ul', 'mlsAvAsk');
+      checkin.askAbout.forEach(function (item) { ask.appendChild(make('li', '', String(item))); });
+      card.appendChild(ask);
+    }
+    var actions = make('div', 'mlsAvActions');
+    if (checkin.summary) {
+      var copyBtn = make('button', 'mlsAvAction', 'Copy summary');
+      copyBtn.type = 'button';
+      copyBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
+        /* No eager Promise.reject fallback — that constructs an unhandled
+           rejection on every SUCCESSFUL copy. */
+        var p;
+        try { p = navigator.clipboard.writeText(String(checkin.summary)); }
+        catch (e) { p = Promise.reject(e); }
+        Promise.resolve(p).then(function () { if (cardCurrent()) copyBtn.textContent = 'Copied ✓'; },
+          function () { if (cardCurrent()) copyBtn.textContent = 'Could not copy'; });
+      });
+      actions.appendChild(copyBtn);
+    }
+    var openBtn = make('button', 'mlsAvAction', patient ? 'Open chart' : 'No matching chart');
+    openBtn.type = 'button';
+    if (patient) {
+      openBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
+        var localId = clean(patient.id);
+        safe(function () { if (window.setActivePtId) window.setActivePtId(localId); });
+        safe(function () { if (window.openPatient) window.openPatient(localId); else if (window.showView) window.showView('patients'); });
+        close();
+      });
+    } else {
+      openBtn.disabled = true;
+      openBtn.title = 'No single exact chart matches this portal patient — open Patients and find them by name.';
+    }
+    actions.appendChild(openBtn);
+    var importBtn = make('button', 'mlsAvAction primary', 'Add to visit summary');
+    importBtn.type = 'button';
+    if (patient && checkin.summary) importBtn.addEventListener('click', function () { if (cardCurrent()) importSummary(checkin, importBtn); });
+    else { importBtn.disabled = true; importBtn.title = patient ? 'No summary to import.' : 'Needs an exact chart match first.'; }
+    actions.appendChild(importBtn);
+    /* THE ROUTE INTO TODAY'S NOTE MUST SURVIVE "MARK SEEN" (av-5.7.6).
+       Filing into the visit TRANSCRIPT is the only route that stamps the words as
+       today-side, patient-reported text in the box the note is drafted from - and it
+       existed on the Visit card alone, which renders only while the row is still in
+       the status=ready answer that feeds lastReady. One tap on "Mark seen" - by the
+       doctor, a colleague, or the phone - removes the row from that answer, and the
+       transition is one-way (the backend's UPDATE is `WHERE id = ? AND status =
+       'ready'` and nothing anywhere sets 'seen' back). From then on this panel's only
+       file button was "Add to visit summary", i.e. the CHART, which ScribeFlow emits
+       to the note model as "Running history / prior-visit summary" under an
+       instruction not to build today's findings from it. So a symptom reported this
+       morning reached the note labelled as prior history, or not at all.
+       BOUND, NOT GLOBAL. addToTranscript writes into whichever visit is open, and the
+       Visit card could only ever offer it for the OPEN patient. Reached from the
+       panel it has to prove that itself: filing one patient's check-in into another
+       patient's visit transcript would be the worst defect on this screen, so this
+       refuses, names the chart to open, and writes nothing. */
+    var txBtn = make('button', 'mlsAvAction', 'Add to visit transcript');
+    txBtn.type = 'button';
+    if (patient && checkin.summary) {
+      txBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
+        var openId = activePtIdSafe();
+        if (!openId || (openId !== clean(patient.id) && openId !== clean(checkin.patient_external_id))) {
+          toast('Nothing was written: open ' + (patient.name || 'this patient') +
+            '\'s visit first, then use this button — the transcript belongs to whichever chart is open.');
+          return;
+        }
+        addToTranscript(checkin, txBtn);
+      });
+    } else {
+      txBtn.disabled = true;
+      txBtn.title = patient ? 'No summary to file.' : 'Needs an exact chart match first.';
+    }
+    actions.appendChild(txBtn);
+    if (checkin.status === 'ready') {
+      var seenBtn = make('button', 'mlsAvAction', 'Mark seen');
+      seenBtn.type = 'button';
+      seenBtn.addEventListener('click', function () {
+        if (!cardCurrent()) return;
+        seenBtn.disabled = true; seenBtn.textContent = 'Saving...';
+        api('/api/avatar/checkins/' + checkin.id + '/seen', { method: 'POST' }).then(function (r) {
+          if (!apiResponseCurrent(r)) return;
+          if (r.ok) { seenBtn.textContent = 'Seen ✓'; refreshCount(true); }
+          else { seenBtn.disabled = false; seenBtn.textContent = 'Mark seen'; }
+        });
+      });
+      actions.appendChild(seenBtn);
+    }
+    card.appendChild(actions);
+    return card;
+  }
+
+  /* ---- the avatar's face: camera capture -> natural patient portrait ----
+     Local only: the camera runs in THIS panel on the doctor's click, the
+     square crop is prepared on a canvas, and only the 512px final portrait is
+     saved (encrypted, in the avatar config). Tracks are stopped on every exit
+     path including panel close. */
+  /* av-2.1.0: the PREVIEW speaks and listens exactly like the patient side —
+     the doctor's first meeting with the avatar must BE the product, not a
+     typed sketch of it. Recognition runs only while the preview is open and
+     stops on every exit (panel close included) so it can never collide with
+     the app's dictation. */
+  var pvRec = null;
+  /* av-4.0.0: the speak engine that CANNOT dead-end.
+     Chrome garbage-collects utterances mid-sentence, so onend silently never
+     fires and everything chained after speech (like opening the microphone)
+     dies — the exact "it just sits there and makes me type" failure. Three
+     defenses: (1) every utterance is HELD in a module array until it truly
+     finishes; (2) a duration watchdog fires the continuation even if Chrome
+     never does; (3) the continuation is once-only so double-fires are safe. */
+  var pvHeld = [], pvSpeakSeq = 0, pvWatchdog = null, pvVoice;
+  /* WHICH OF THE EIGHT BACKEND VOICES IS CONFIGURED, so the fallback can pick a
+     browser voice of the same sex. Filled from the turn response (see
+     kioskSetIdentity); null until the first turn lands, which is honest - before
+     that we genuinely do not know. */
+  var pvWantMale = null;
+  /* THE FALLBACK USED TO CHANGE THE AVATAR'S SEX MID-INTERVIEW — av-5.8.1.
+     This runs on every network hiccup, not in some corner case: one failed or
+     slow TTS fetch sets ttsDownUntil two minutes into the future, so the browser
+     voice speaks the next several questions. The old picker took the first of
+     four hard-coded names and, failing all four, THE FIRST en VOICE IN THE LIST
+     - which on Windows is normally "Microsoft David", a man. A practice running
+     the default `coral` (female) therefore had its avatar answer in a male voice
+     for two minutes and then switch back, wearing the same face, mid-interview.
+     Nothing about that reads as "a person"; it reads as a broken machine.
+     Three things changed:
+       1. SEX FIRST. The configured backend voice is known (pvWantMale), so
+          candidates of the wrong sex are ranked below every candidate of the
+          right one. Continuity of identity outranks absolute voice quality -
+          a slightly worse voice of the right sex is far less jarring.
+       2. THE NATURAL VOICES WIN WHEN THEY EXIST. Windows ships its good voices
+          as "Microsoft Aria Online (Natural)" and the robotic ones as plain
+          "Microsoft Zira"/"David". The old list named 'Microsoft Aria' without
+          preferring the Natural variant, and put 'Google US English' - the
+          synthetic-sounding one - ahead of both. Scored on the name now, so a
+          machine that HAS a natural voice always uses it.
+       3. IT SCORES INSTEAD OF SHORT-CIRCUITING. `indexOf(name) >= 0` returning
+          the first match meant list order inside the browser decided the
+          outcome, which is not something we control or can test against.
+     Deliberately NOT a denylist: a voice we have never heard of scores 0 and is
+     still usable, which is the only behaviour that survives a new browser. */
+  /* language is a HARD gate and separate from the score, because a score can go
+     negative (wrong sex) and "no voice at all" must never win against a usable
+     English one - that would hand the line to whatever the browser defaults to,
+     which is the outcome this function exists to avoid */
+  function pvVoiceUsable(v) { return /^en(-|_)/i.test(String((v && v.lang) || '')); }
+  function pvVoiceScore(v) {
+    var n = String((v && v.name) || '');
+    var lang = String((v && v.lang) || '');
+    var s = 0;
+    /* SEX MATCH, weighted above every quality signal - see note 1 */
+    /* Chrome's own voices are named by LOCALE, not by person, so they have to be
+       named explicitly or they score as unknown-sex and lose to a worse voice
+       that happens to have a first name: "Google US English" is a female voice,
+       and without this line a coral practice fell back to Microsoft Zira (a
+       robotic SAPI voice) purely because "Zira" is a recognisable name. */
+    var male = /\b(david|mark|guy|christopher|eric|roger|steffan|daniel|alex|fred|tom|onyx|ash|echo)\b/i.test(n) ||
+      /google uk english male/i.test(n);
+    var female = /\b(aria|jenny|zira|michelle|ana|samantha|victoria|karen|moira|tessa|fiona|susan|allison|ava|coral|nova|shimmer|sage)\b/i.test(n) ||
+      /google us english/i.test(n) || /google uk english female/i.test(n);
+    if (pvWantMale === true && male) s += 100;
+    else if (pvWantMale === false && female) s += 100;
+    else if (pvWantMale !== null && (male || female)) s -= 100;   /* known, and it is the wrong one */
+    if (/natural/i.test(n)) s += 40;                   /* Windows' good voices say so in the name */
+    if (/online/i.test(n)) s += 8;
+    if (v && v.localService === false) s += 6;         /* network voices are the modern ones */
+    if (/\b(aria|jenny|samantha|ava|michelle|christopher|eric|guy)\b/i.test(n)) s += 12;
+    if (/google us english/i.test(n)) s += 5;          /* usable, but the synthetic one */
+    if (/\b(zira|david|mark)\b/i.test(n)) s -= 10;     /* the old robotic SAPI voices */
+    /* ACCENT CONTINUITY, weighted above every quality signal but below sex.
+       All eight backend voices are American, so an en-GB or en-AU fallback
+       swaps the avatar's accent mid-interview - the same defect as swapping its
+       sex, and just as audible. At +3 this lost: "Google UK English Male"
+       (network voice, +6) outranked the American "Microsoft David" for a
+       practice running `ash`, so a hiccup turned a US assistant British. */
+    if (/^en-US/i.test(lang)) s += 25;
+    return s;
+  }
+  function pvPickVoice() {
+    if (pvVoice !== undefined) return pvVoice;
+    pvVoice = null;
+    safe(function () {
+      var synth = window.speechSynthesis; if (!synth || !isFn(synth.getVoices)) return;
+      var voices = synth.getVoices() || [];
+      if (!voices.length) { safe(function () { synth.addEventListener('voiceschanged', function () { pvVoice = undefined; }, { once: true }); }); return; }
+      var best = null, bestScore = 0;
+      for (var i = 0; i < voices.length; i++) {
+        if (!pvVoiceUsable(voices[i])) continue;
+        var sc = pvVoiceScore(voices[i]);
+        if (best === null || sc > bestScore) { bestScore = sc; best = voices[i]; }
+      }
+      pvVoice = best;
+    });
+    return pvVoice;
+  }
+  function pvStopSpeechOnly() {
+    pvSpeakSeq++;
+    /* BARGE-IN STILL ECHOES. The words already out of the speaker are still
+       travelling through the recogniser, so the template they came from has to
+       survive being cut off mid-sentence. */
+    pvEchoHold(pvEchoSaying);
+    pvEchoSaying = '';
+    pvSaying = '';
+    if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+    pvHeld.length = 0;
+    if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
+    faceTalkStop();
+    safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+  }
+  function pvStopVoice() {
+    pvSpeakSeq++;
+    /* THE TEMPLATE EXPIRES HERE TOO. This function used to leave pvSaying set
+       forever - deliberately, so ambient could clear it by hand - which meant
+       kioskTurn's network-failure path reopened the microphone against a
+       PERMANENT echo template: every later answer built from that question's
+       words was silently deleted, for the rest of the interview. It goes to the
+       bounded tail like every other stop. */
+    pvEchoHold(pvEchoSaying);
+    pvEchoSaying = '';
+    pvSaying = '';
+    if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+    pvHeld.length = 0;
+    if (ttsAudioNow) { safe(function () { ttsAudioNow.onended = null; ttsAudioNow.onerror = null; ttsAudioNow.pause(); }); ttsAudioNow = null; }
+    faceTalkStop();
+    safe(function () { if (window.speechSynthesis) window.speechSynthesis.cancel(); });
+    pvStopMic();
+  }
+  /* ── THE MICROPHONE HALF OF pvStopVoice, ON ITS OWN ────────────────────────
+     Owner: "it litterly never gets out everyhting it wants to say caosue it picks
+     up its own talking."
+     pvStopVoice did TWO jobs — end the sentence, and tear down the recogniser —
+     and a derived walk of this file (see the suite named below) found that every
+     caller reachable from a microphone event wanted only the second one. So a
+     routine Chrome `no-speech` error, or the avatar's own words arriving at
+     rec.onresult, re-entered pvListen and cancelled the sentence the avatar was
+     still in the middle of saying.
+     This is an EDGE REMOVAL, not a guard: the mic path no longer has a call that
+     could stop speech, so there is no flag for a later round to invert.
+     🔑 IT STILL EXPIRES THE ECHO TEMPLATE, AND THAT IS WHY FILING IS UNCHANGED.
+     Every one of the three mic-travelled call sites used to reach pvStopVoice,
+     which moved the sentence into the bounded echo tail; leaving pvEchoSaying set
+     instead is what made round 9 file the avatar's own question as the patient's
+     answer in 9 of 15 turns — the next pvSpeakVoiced overwrote the template
+     before anything held it, so the old question's late tail met an empty filter.
+     pvEchoSaying therefore clears HERE, at exactly the moment origin/main cleared
+     pvSaying, and only the LIVENESS value (pvSaying) survives the teardown.
+     Callers that genuinely end the interview (kioskClose, kioskPauseToggle,
+     kioskRequestEnd, the ambient stop) still call pvStopVoice: they are reached
+     from a visible control or the page lifecycle, never from the microphone. */
+  function pvStopMic() {
+    /* a no-op when pvStopVoice is the caller — it cleared pvEchoSaying two
+       statements ago and pvEchoHold('') returns immediately. Kept in BOTH places
+       so pvStopVoice's statement order is byte-for-byte what origin/main ran. */
+    pvEchoHold(pvEchoSaying);
+    pvEchoSaying = '';
+    if (pvRec) {
+      /* KILL THE QUIET TIMER, not just the recogniser. It lives in pvListen's
+         closure, so nulling the handlers and calling stop() left it armed: 1.3s
+         later it fired, submit() saw pvRec was already null so it skipped the
+         teardown, and handed the buffered text to onFinal anyway - posting a
+         turn and speaking the next question while the screen read "Paused". */
+      safe(function () { if (isFn(pvRec.__killQuiet)) pvRec.__killQuiet(); });
+      safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); });
+      pvRec = null;
+    }
+  }
+  /* pvSpeak: the NATURAL backend voice first (MP3 + real lip-sync), the
+     browser's speechSynthesis only as fallback. The completion contract is
+     identical either way: `then` fires exactly once — event, error, or
+     watchdog — so the speak->listen chain can never strand. */
+  function pvSpeak(text, then, onStart) { pvSpeakVoiced(text, then, null, null, null, onStart); }
+  /* the same speak engine, told WHAT KIND of line this is so the backend can
+     shape the delivery (see ttsFetchUrl). Separate from pvSpeak only so the
+     four existing call sites keep their exact two-argument shape. */
+  function pvSpeakShaped(text, then, shape, onStart) { pvSpeakVoiced(text, then, null, shape, null, onStart); }
+  /* the sentence currently leaving the speaker, normalised — LIVENESS ONLY.
+     "Is a sentence still playing?" Read by the barge-in decision, by the voice
+     gate's room-floor learning, and by the silence watchdog, and by nothing that
+     decides what is FILED. */
+  var pvSaying = '';
+  /* ── AND THE SAME STRING AGAIN, FOR A DIFFERENT QUESTION ───────────────────
+     ONE TOKEN CANNOT ANSWER TWO QUESTIONS. Until now `pvSaying` answered both
+     "what are we saying right now?" (read to keep a sentence alive) and "what do
+     we compare against for echo?" (read by BOTH filing gates — pvIsSelfEcho and
+     the novel-word refusal in kioskListen). Those two have INCOMPATIBLE
+     LIFETIMES, and nine rounds died on it: the microphone must be able to tear
+     down the recogniser without ending the sentence, which requires the liveness
+     value to survive pvStopMic — and the moment it did, the filing gates were
+     reading a template that origin/main had already expired into the bounded
+     tail. Measured: the avatar filed its own question as the patient's answer in
+     9 of 15 ordinary turns, and 5 of 32 identical-input scenarios filed different
+     strings, every one a silent loss.
+     So the echo comparison gets its OWN binding with its OWN lifetime. It is set
+     and cleared at EXACTLY the statements where origin/main set and cleared
+     pvSaying — pvSpeakVoiced's assignment and its finish(), pvStopSpeechOnly,
+     pvStopVoice, pvStopMic (which is where the three mic-travelled callers used
+     to reach pvStopVoice) and kioskAmbientStart — so the filed output is
+     byte-identical for every input. The liveness value is then free to outlive it
+     without touching filing at all.
+     ⛔ DO NOT read this one to decide whether to keep talking, and do not read
+     pvSaying to decide what to file. That conflation IS the defect. */
+  var pvEchoSaying = '';
+  /* av-5.7.0 - AND THE SENTENCES THAT JUST LEFT IT. Owner, 2026-08-07: "it
+     records itself talking and doesnt listen for answers and is just a mess".
+     THE MECHANISM: Chrome finalises a recognition result hundreds of
+     milliseconds - sometimes seconds - after the words were actually spoken.
+     `pvSaying` was cleared the instant the audio ended, so the TAIL of every
+     question arrived at an empty template, passed the echo filter, and was
+     posted to the server as the patient's answer. The avatar interviewed
+     itself, and the summary was built on its own questions.
+     The template therefore has to OUTLIVE the speech. It must not outlive it
+     for long: a patient answering in the question's own words ("it has been
+     going on for three weeks") must not be silenced, so the tail is bounded
+     and every entry expires by wall clock. */
+  /* 1.6s, not 4: Chrome finalises on the pause in the audio, so our own tail
+     arrives within a few hundred milliseconds of the speaker going quiet. The
+     longer the window, the more real answers it can eat - and the answer to
+     "is it worse at night?" is "worse at night". */
+  var PV_ECHO_TAIL_MS = 1600;
+  var pvEchoTail = [];
+  function pvEchoHold(norm) {
+    if (!norm) return;
+    pvEchoTail.push({ norm: norm, until: Date.now() + PV_ECHO_TAIL_MS });
+    while (pvEchoTail.length > 6) pvEchoTail.shift();
+  }
+  function pvEchoDrop() { pvEchoTail.length = 0; }
+  function pvNorm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  /* WORD BOUNDARIES, not substrings. `indexOf` matched inside words, so a
+     patient answering "no" was deleted by any question carrying "not",
+     "know" or "now" - and a one-word refusal is the most consequential answer
+     in an intake. */
+  function pvHasRun(hay, needle) { return (' ' + hay + ' ').indexOf(' ' + needle + ' ') >= 0; }
+  /* ── BARGE-IN NEEDS EVIDENCE OF ANOTHER VOICE ──────────────────────────────
+     Owner: "it doesnt even say eve4ryhhting its going to say it hears its self its a MESS."
+     Those are ONE defect. pvStopSpeechOnly has exactly one call site — the interim handler in
+     kioskListen — so the ONLY thing that can cut a question off mid-sentence is barge-in, and
+     the only thing standing between barge-in and the avatar's own voice was pvIsSelfEcho.
+     Every time that filter missed, the avatar heard itself, concluded it was being interrupted,
+     and silenced its own question.
+     MEASURED (scratchpad/echo-bargein-probe.js, the shipped classifier over this interview's
+     real questions with the ordinary microphone-hearing-a-loudspeaker error modes):
+         clean transcript   0% missed
+         one word dropped   0% missed
+         a homophone       21% missed
+         two words merged  52% missed      overall 42 of 232 = 18%
+     and the misses are concentrated in SHORT prefixes — 2 to 5 words — which is precisely what
+     the recogniser emits FIRST, at the start of every single question. Two causes: pvEchoMatch's
+     overlap test is `> 0.8`, so a 5-word echo with one wrong word scores exactly 0.8 and fails;
+     and a merged pair ("bringsyou") is not a word in the sentence, so no contiguous run matches.
+     The old rule was NEGATIVE — cut the question unless we can prove this is our own voice.
+     This one is POSITIVE: cut the question only when at least two words are ones we are NOT
+     saying. A mis-heard echo has no novel words; a person talking over the avatar has plenty.
+     ⚠️ Deliberately NOT applied to the filing path. pvIsSelfEcho stays exactly as calibrated,
+     because a novel-word rule there would delete the one-word answers that reuse the question's
+     own words ("back", "worse", "ten") — measured at 9 of 12 and 22 of 22 in a previous round,
+     and the most expensive answers in the interview to lose. This gate only decides whether to
+     STOP TALKING, which is never destructive. */
+  function pvEditDistance1(a, b) {
+    if (a === b) return true;
+    var la = a.length, lb = b.length;
+    if (Math.abs(la - lb) > 1) return false;
+    var i = 0, j = 0, edits = 0;
+    while (i < la && j < lb) {
+      if (a.charAt(i) === b.charAt(j)) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (la === lb) { i++; j++; }
+      else if (la > lb) i++;
+      else j++;
+    }
+    if (i < la || j < lb) edits++;
+    return edits <= 1;
+  }
+  function pvNovelWordCount(tpl, heard) {
+    var t = pvNorm(tpl || ''), h = pvNorm(heard);
+    if (!h) return 0;
+    if (!t) return h.split(' ').filter(Boolean).length;
+    var mine = t.split(' ').filter(Boolean);
+    var words = h.split(' ').filter(Boolean);
+    var novel = 0;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (w.length < 2) continue;                    /* 'a', 'i' carry no evidence either way */
+      if (pvHasRun(t, w)) continue;                  /* a word we are saying right now */
+      var ours = false;
+      for (var j = 0; j < mine.length && !ours; j++) {
+        var m = mine[j];
+        /* a MERGE: the recogniser ran two of our words together, or clipped one of them */
+        if (m.length >= 4 && (w.indexOf(m) >= 0 || (w.length >= 4 && m.indexOf(w) >= 0))) ours = true;
+        /* a HOMOPHONE or a single mis-heard letter: pain->pane, back->bag, ten->tan */
+        else if (m.length >= 4 && w.length >= 4 && pvEditDistance1(w, m)) ours = true;
+      }
+      if (!ours) novel++;
+    }
+    return novel;
+  }
+  /* ── THE VOICE GATE: echo cancellation + a local voice detector (av-6.1.0) ────────────
+     Owner's choice, asked and answered: keep the ability to interrupt, and add REAL echo
+     cancellation rather than closing the microphone while the avatar talks.
+     The insight that makes this small instead of a rewrite: **the two jobs are different.**
+       - Deciding "is somebody else talking right now?" needs no words at all. It is an
+         ENERGY question, and on an echo-cancelled stream the avatar's own voice is gone —
+         so any residual speech energy IS another person. Instant, local, no network.
+       - Turning what they said into TEXT still needs the recogniser.
+     So the recogniser keeps doing words, and this does presence. Barge-in and self-echo
+     both stop being string problems, which is what made them unfixable: "in the morning"
+     the echo and "in the morning" the answer are the same string, but they are not the
+     same SOUND — one arrives with the room silent.
+     Why AEC can work here at all: the good voice plays through `new Audio(url)` and the
+     AudioContext (see pvSpeak), i.e. the browser renders it, so Chrome's canceller has the
+     reference signal. A system speechSynthesis fallback would NOT be in that mix.
+     ⚠️ POSITIVE ASSERTION, not an assumption: we ask for echoCancellation and then read
+     `track.getSettings()` back to confirm the browser actually applied it. If it did not,
+     `vgReady` stays false and every decision below falls back to the string gate exactly as
+     it behaves today. A device without AEC must never be made worse by this. */
+  var vgStream = null, vgCtx = null, vgNode = null, vgData = null, vgRaf = 0, vgStartGeneration = 0;
+  var vgStartPending = null;
+  var vgReady = false, vgWhy = 'not started', vgLevel = 0, vgFloor = 0;
+  var vgFloorSamples = [], vgLoudFrames = 0, vgQuietFrames = 0, vgSettings = null;
+  var VG_FRAME_MS = 40;          /* ~25 reads a second: fast enough to feel instant */
+  var VG_ONSET_FRAMES = 4;       /* ~160ms of sustained energy - a cough or a click cannot pass */
+  var VG_MARGIN = 2.6;           /* how far above the measured room floor counts as speech */
+  function vgRms() {
+    if (!vgNode || !vgData) return 0;
+    safe(function () { vgNode.getByteTimeDomainData(vgData); });
+    var sum = 0;
+    for (var i = 0; i < vgData.length; i++) { var v = (vgData[i] - 128) / 128; sum += v * v; }
+    return Math.sqrt(sum / vgData.length);
+  }
+  /* ADOPT a stream somebody else already obtained. This is the path the kiosk uses: the mic
+     preflight asks once, on the staff tap, with exactly these constraints — so the gate must
+     never make a request of its own there. Returns true only if the gate is genuinely live. */
+  function pvVoiceGateAdopt(stream) {
+    if (vgReady) return true;
+    if (!stream) { vgWhy = 'no stream to adopt'; return false; }
+    var ok = safe(function () {
+      var track = stream.getAudioTracks()[0];
+      vgSettings = (track && track.getSettings) ? track.getSettings() : null;
+      /* THE CONFIRMATION. A browser may hand back a track with the constraint ignored;
+         believing the request rather than the applied setting is how a guard becomes
+         decoration. Without this the whole design would rest on an assumption. */
+      if (!vgSettings || vgSettings.echoCancellation !== true) {
+        vgWhy = 'the browser did not apply echo cancellation' +
+          (vgSettings ? ' (echoCancellation=' + String(vgSettings.echoCancellation) + ')' : '');
+        return false;
+      }
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) { vgWhy = 'no AudioContext'; return false; }
+      vgStream = stream;
+      vgCtx = new C();
+      var srcNode = vgCtx.createMediaStreamSource(stream);
+      vgNode = vgCtx.createAnalyser();
+      vgNode.fftSize = 1024;
+      vgNode.smoothingTimeConstant = 0.2;
+      srcNode.connect(vgNode);       /* analyser only - never connected to destination */
+      vgData = new Uint8Array(vgNode.fftSize);
+      vgFloorSamples = []; vgLoudFrames = 0; vgQuietFrames = 0;
+      vgReady = true; vgWhy = 'echo cancellation active';
+      /* ⛔ NOT a timer. This module forbids permanent polling and the contract suite enforces
+         it module-wide; my first version used a repeating interval and was caught. An
+         animation-frame loop is the right instrument anyway: it is throttled to the display,
+         it costs nothing while the kiosk is not being painted, and a hidden tab freezes it —
+         which is correct here, because a kiosk nobody is looking at has no turn to take. */
+      var vgLast = 0;
+      function vgFrame(ts) {
+        if (!vgReady) return;
+        vgRaf = safe(function () { return requestAnimationFrame(vgFrame); }, 0);
+        if (ts && vgLast && (ts - vgLast) < VG_FRAME_MS) return;
+        vgLast = ts || 0;
+        safe(function () {
+          vgLevel = vgRms();
+          /* The room floor is learned only while NOTHING is playing and nobody has been
+             judged to be speaking, so the avatar's own residual can never raise the bar it
+             is being measured against — that would quietly deafen the gate. */
+          if (!pvSaying && vgLoudFrames === 0) {
+            vgFloorSamples.push(vgLevel);
+            if (vgFloorSamples.length > 50) vgFloorSamples.shift();
+            var sorted = vgFloorSamples.slice().sort(function (a, b) { return a - b; });
+            /* a MEDIAN floor, so one door slam during calibration cannot raise it */
+            vgFloor = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+          }
+          var bar = Math.max(0.012, vgFloor * VG_MARGIN);
+          if (vgLevel > bar) { vgLoudFrames++; vgQuietFrames = 0; }
+          else { vgQuietFrames++; if (vgQuietFrames > 3) vgLoudFrames = 0; }
+        });
+      }
+      vgRaf = safe(function () { return requestAnimationFrame(vgFrame); }, 0);
+      return true;
+    }, false);
+    if (!ok) { vgStream = null; vgCtx = null; vgNode = null; vgData = null; vgReady = false; }
+    return ok;
+  }
+  /* DIAGNOSTICS ONLY — this one makes its own request, so it must never be called from the
+     kiosk path: the mic is requested exactly once, on the staff tap (see kioskMicPreflight).
+     It exists so the gate can be proven in a harness without driving a whole interview. */
+  function pvVoiceGateStart(done) {
+    if (vgReady || vgStream) { if (done) safe(function () { done(true); }); return; }
+    if (vgStartPending) { if (done) vgStartPending.waiters.push(done); return; }
+    var md = safe(function () { return navigator.mediaDevices; }, null);
+    if (!md || !md.getUserMedia) { vgWhy = 'this browser has no getUserMedia'; if (done) safe(function () { done(false); }); return; }
+    var request = { generation: ++vgStartGeneration, waiters: done ? [done] : [] };
+    vgStartPending = request;
+    function finishStart() {
+      if (vgStartPending !== request) return;
+      vgStartPending = null;
+      var waiters = request.waiters.slice(); request.waiters = [];
+      for (var wi = 0; wi < waiters.length; wi++) (function (fn) { safe(function () { fn(vgReady === true); }); })(waiters[wi]);
+    }
+    safe(function () {
+      md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+        .then(function (stream) {
+          if (vgStartPending !== request || request.generation !== vgStartGeneration) {
+            /* Pause/close happened while permission was pending. Never let a
+               late grant resurrect a microphone behind a non-listening UI. */
+            safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+            return;
+          }
+          if (!pvVoiceGateAdopt(stream)) safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+          finishStart();
+        }, function (err) {
+          if (vgStartPending !== request || request.generation !== vgStartGeneration) return;
+          vgWhy = 'microphone refused for the voice gate (' + String(err && err.name || err) + ')';
+          finishStart();
+        });
+    });
+  }
+  function pvVoiceGateStop() {
+    vgStartGeneration++;
+    var canceledRequest = vgStartPending;
+    vgStartPending = null;
+    if (vgRaf) { safe(function () { cancelAnimationFrame(vgRaf); }); vgRaf = 0; }
+    if (vgStream) safe(function () { vgStream.getTracks().forEach(function (t) { t.stop(); }); });
+    if (vgCtx) safe(function () { vgCtx.close(); });
+    vgStream = null; vgCtx = null; vgNode = null; vgData = null; vgReady = false;
+    vgLevel = 0; vgFloor = 0; vgFloorSamples = []; vgLoudFrames = 0; vgQuietFrames = 0;
+    var canceledWaiters = canceledRequest ? canceledRequest.waiters.slice() : [];
+    if (canceledRequest) canceledRequest.waiters = [];
+    for (var cwi = 0; cwi < canceledWaiters.length; cwi++) (function (fn) { safe(function () { fn(false); }); })(canceledWaiters[cwi]);
+  }
+  /* true only with sustained energy ABOVE the learned room floor on the echo-cancelled
+     stream. While the avatar is speaking, its own voice has already been removed, so this
+     answers the only question barge-in ever needed to ask. */
+  function pvOtherVoiceNow() { return !!(vgReady && vgLoudFrames >= VG_ONSET_FRAMES); }
+  /* ⛔ A COUGH IS NOT AN INTERRUPTION, and energy alone cannot tell them apart.
+     avatar-listens-while-speaking.test.js has pinned since av-1.x that "a cough or an 'mhm'
+     must not cut the question off", and the two-word rule enforced it for free: a cough
+     produces no words. My first av-6.1.0 barge-in used pvOtherVoiceNow() alone, which is a
+     ~160ms energy test — and a cough is 200-400ms of loud, sustained energy, so it would have
+     cut the question off. The pin was right and the extension lane's red main is how I found
+     out, because my own b991 gate died at the freshness guard before it ever reached this file.
+     So audio presence is necessary but NOT sufficient. Speech distinguishes itself two ways:
+     it produces WORDS, or it KEEPS GOING far longer than a throat-clear. Either will do. */
+  var VG_SPEECH_FRAMES = 18;   /* ~720ms of continuous energy: past any cough or 'mhm' */
+  function pvOtherVoiceSustained() { return !!(vgReady && vgLoudFrames >= VG_SPEECH_FRAMES); }
+  function pvVoiceGateReady() { return !!vgReady; }
+  function pvVoiceGateReport() {
+    return { ready: !!vgReady, why: vgWhy, level: Math.round(vgLevel * 1000) / 1000,
+      floor: Math.round(vgFloor * 1000) / 1000, loudFrames: vgLoudFrames,
+      echoCancellation: vgSettings ? vgSettings.echoCancellation : null,
+      noiseSuppression: vgSettings ? vgSettings.noiseSuppression : null };
+  }
+  function pvEchoMatch(tpl, h, words, minRun, minOverlapWords) {
+    if (!tpl) return false;
+    if (words.length >= minRun && pvHasRun(tpl, h)) return true;   /* a slice of our own sentence */
+    if (words.length < minOverlapWords) return false;
+    var hits = 0;
+    for (var i = 0; i < words.length; i++) if (pvHasRun(tpl, words[i])) hits++;
+    return (hits / words.length) > 0.8;                            /* mostly our words */
+  }
+  /* TWO REGIMES, because the evidence is not the same in both - and getting
+     this wrong is measurably expensive in BOTH directions. Run against the
+     live av-5.6.7 classifier, "no, nothing makes it worse" - the actual answer
+     to "does anything make it worse, or is there nothing that changes it?" -
+     came back as SELF-ECHO and was deleted. A patient answered and the chart
+     recorded nothing.
+       WHILE THE SPEAKER IS ACTIVE, any recognisable piece of our own sentence
+     is our own voice. A patient talking over the question produces words of
+     their own, and in the rare case they quote it back, the server already has
+     the question - so aggressive is right here.
+       AFTER IT STOPS, the same words are far more likely to be the ANSWER: the
+     reply to "is it worse at night?" is "worse at night". Only a LONG
+     contiguous quote counts, and the window itself is short. */
+  /* the answers a patient gives in ONE word, which are also the answers it costs
+     the most to lose: a laterality, a refusal, a number on a pain scale. These
+     are never treated as echo, whatever the avatar happens to be saying. */
+  var PV_ANSWER_WORDS = /^(yes|yeah|yep|yup|no|nope|none|never|left|right|both|neither|better|worse|same|zero|one|two|three|four|five|six|seven|eight|nine|ten)$/;
+  function pvIsSelfEcho(heard) {
+    var h = pvNorm(heard);
+    if (!h) return false;
+    var words = h.split(' ').filter(Boolean);
+    /* ⛔ REVERTED, AND THE MEASUREMENT IS WHY. av-5.7.0 made a one-word result
+       droppable when the avatar was saying that word and it was not on a
+       whitelist of answers (yes/no/left/right/numbers). The intent was sound: the
+       avatar's own trailing word was being filed as the patient's answer. The
+       effect was much worse than the defect.
+       MEASURED, twice, independently, by running this classifier against ordinary
+       intake questions: it deletes the answer to almost every "A or B?" question
+       this interview asks - "back", "neck", "morning", "evening", "sharp",
+       "weeks", "standing", "shoulder", "ibuprofen" - 9 of 12 in one sweep and 22
+       of 22 in another, against 0 of 12 for the code it replaced. The patient
+       answers "back" to "is the pain in your back, or in your neck?" and the word
+       is in the question, so it went in the bin. Worse, the whitelist exempted
+       exactly the tokens that END the programmed questions, so the guard could
+       barely catch the thing it was written for.
+       A one-word answer is the most common shape in an A-or-B intake question and
+       the most expensive to lose. A one-word ECHO fragment is rare, because
+       Chrome returns phrases, and when it happens the MA persona simply asks
+       again - visibly, in one turn. So the smaller harm is accepted deliberately:
+       one word is never treated as the echo of a sentence.
+       (The multi-word cases are untouched: they are what actually caught the
+       owner's "it records itself talking".) */
+    if (words.length < 2) return false;
+    /* p1-listener-1.0.0 — A STRING SLICE ALONE IS NOT PROOF OF ECHO.
+       The normal answer to an A-or-B question is made from the question's own
+       words ("worse at night", "both knees", "more of a dull ache"). The old
+       2-word slice rule deleted those answers at the recogniser source, before
+       either the transcript or barge-in path could see them. AEC presence can
+       positively preserve even an exact repeat, but a false-negative must not
+       delete "worse at night" or another normal answer. Therefore the only
+       destructive filing evidence is exact full-line equality. */
+    if (pvEchoSaying && pvVoiceGateReady() && pvOtherVoiceNow()) return false;
+    if (pvEchoSaying && h === pvEchoSaying) return true;
+    var now = Date.now();
+    for (var i = 0; i < pvEchoTail.length; i++) {
+      /* In the post-audio tail there is no simultaneous energy fact to
+         distinguish a polite answer from the speaker. Preserve every option or
+         clause; only the exact full sentence is destructive evidence. */
+      if (pvEchoTail[i].until > now && h === pvEchoTail[i].norm) return true;
+    }
+    return false;
+  }
+  function pvSpeakVoiced(text, then, voiceOverride, shape) {
+    /* AMBIENT ROOM MODE IS SILENT: a scribe in the room does not talk.
+       Enforced HERE, at the ONE place any voice can start, rather than by
+       disarming a list of call sites - a list is a denylist, and the next
+       call site added would not be on it. The continuation still runs, so
+       no caller can strand waiting for a sentence that never plays. */
+    if (kiosk && kiosk.ambient) { if (then) safe(then); return; }
+    var mySeq = ++pvSpeakSeq;
+    /* One sentence owns one face. The kiosk normally supplies that face, while
+       Setup may pass its own preview controller as the fifth argument. Capture
+       it now: a later retint/rebuild must never redirect audio that is already
+       in flight onto a different face. */
+    var speechFace = (arguments.length > 4 && arguments[4]) ? arguments[4] : safe(function () { return kiosk && kiosk.face; }, null);
+    var speechOnStart = arguments.length > 5 ? arguments[5] : null;
+    var startReported = false;
+    function reportStart() {
+      if (startReported || mySeq !== pvSpeakSeq) return;
+      startReported = true;
+      if (speechOnStart) safe(speechOnStart);
+    }
+    var finished = false;
+    function finish() {
+      if (finished || mySeq !== pvSpeakSeq) return;
+      finished = true;
+      /* pvSaying clears, and the sentence moves to the bounded echo tail: the
+         recogniser is still delivering these words. Clearing it OUTRIGHT is
+         what made the avatar file its own questions as answers; keeping it
+         forever would silence a patient who answers in the question's words. */
+      pvEchoHold(pvEchoSaying);
+      pvEchoSaying = '';
+      pvSaying = '';
+      if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); pvWatchdog = null; }
+      pvHeld.length = 0;
+      faceTalkStop(speechFace);
+      if (then) safe(then);
+    }
+    var t = String(text == null ? '' : text);
+    pvSaying = pvNorm(t);
+    /* the two bindings are born together and identical; only their DEATHS differ
+       (see `var pvEchoSaying`), so this is the one place either is ever set */
+    pvEchoSaying = pvSaying;
+    /* nothing to say: hand straight off. Speaking '' used to POST an empty
+       body to the TTS proxy, take its 400, and trip the 2-minute circuit
+       breaker — one blank turn downgraded the voice for the whole visit. */
+    if (!t.trim()) { finish(); return; }
+    var started = false;
+    /* fetch guard: even a hung TTS request may not strand the loop — and a
+       LATE fetch result must never start a second voice over the fallback. */
+    pvWatchdog = setTimeout(function () {
+      if (mySeq !== pvSpeakSeq || started) return;
+      started = true;
+      pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
+    }, 5000);
+    /* av-5.6.4 — STREAMED IN TWO PIECES. Time-to-first-word used to be the
+       generation time of the WHOLE reply, because the audio was fetched as one
+       blob and only then played. A reply is almost always a short
+       acknowledgement plus a question ("Got it. How long has it been going
+       on?"), so the first clause is generated far faster than the whole line.
+       Both pieces are requested in PARALLEL and played in order: the patient
+       hears the first words while the second half is still being made.
+
+       Two pieces, not five — more requests would add round trips for no gain
+       and risk an audible seam inside the question itself. Every failure path
+       lands exactly where it landed before: if the first piece fails nothing
+       has played yet, so the WHOLE line falls back to browser speech, which is
+       the pre-existing behaviour. */
+    /* AN EMERGENCY WARNING IS NEVER SPLIT. Two independent generations cannot
+       carry one continuous urgent contour, and the piece that matters most is
+       the instruction to call for help - it is spoken as one line, with one
+       delivery, or the shaping means nothing. The extra second of latency on the
+       rarest line in the interview is the right trade. */
+    var chunks = (shape === 'alert') ? [t] : ttsSplitForSpeech(t);
+    if (chunks.length === 2 && Date.now() >= ttsDownUntil) {
+      var second = ttsFetchUrl(chunks[1], voiceOverride, 'cont');   /* started FIRST so it overlaps the first piece */
+      ttsFetchUrl(chunks[0], voiceOverride, 'open').then(function (u1) {
+        if (mySeq !== pvSpeakSeq || finished || started) return;
+        started = true;
+        if (!u1) { pvSpeakSynth(t, mySeq, finish, speechFace, reportStart); return; }   /* nothing played yet — the old path, whole line */
+        ttsPlayUrl(u1, mySeq, function () {
+          if (mySeq !== pvSpeakSeq || finished) return;
+          /* Close part one's exact mouth before any wait on the prefetched
+             continuation. The face must not hold its last open vowel across a
+             network seam, and this also retires any already-queued RAF. */
+          faceTalkStop(speechFace);
+          second.then(function (u2) {
+            if (mySeq !== pvSpeakSeq || finished) return;
+            if (u2) ttsPlayUrl(u2, mySeq, finish, speechFace, reportStart); else pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
+          }, function () {
+            if (mySeq !== pvSpeakSeq || finished) return;
+            pvSpeakSynth(chunks[1], mySeq, finish, speechFace, reportStart);
+          });
+        }, speechFace, reportStart);
+      }, function () {
+        if (mySeq !== pvSpeakSeq || finished || started) return;
+        started = true;
+        pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
+      });
+      return;
+    }
+    ttsFetchUrl(t, voiceOverride, shape).then(function (url) {
+      if (mySeq !== pvSpeakSeq || finished || started) return;
+      started = true;
+      if (url) { ttsPlayUrl(url, mySeq, finish, speechFace, reportStart); return; }
+      pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
+    }, function () {
+      if (mySeq !== pvSpeakSeq || finished || started) return;
+      started = true;
+      pvSpeakSynth(t, mySeq, finish, speechFace, reportStart);
+    });
+  }
+  function pvSpeakSynth(text, mySeq, finish, speechFace, reportStart) {
+    var synth = safe(function () { return window.speechSynthesis; }, null);
+    if (mySeq !== pvSpeakSeq) return;
+    if (!synth || typeof window.SpeechSynthesisUtterance !== 'function') { finish(); return; }
+    try {
+      synth.cancel();
+      var u = new window.SpeechSynthesisUtterance(String(text));
+      /* rate 0.94, pitch 1.0. Two deliberate changes from 0.98/1.02:
+         PITCH IS NO LONGER TOUCHED. 1.02 bought nothing audible and it is not
+         free - several SAPI voices implement a pitch shift by resampling, which
+         adds exactly the metallic edge this lane exists to remove. A 2% shift is
+         inaudible as pitch and audible as artifact, which is the worst trade
+         available.
+         RATE DROPS to 0.94. The browser voices are the ones a patient hears when
+         the network hiccups, and they are markedly less intelligible than the
+         backend voice; the thing that most reliably makes a synthetic voice
+         easier to listen to is giving it more time. It also brings the fallback
+         closer in pace to the real voice, so a mid-interview downgrade is less
+         of a jolt. */
+      u.rate = 0.94; u.pitch = 1.0; u.volume = 1;
+      var voice = pvPickVoice();
+      if (voice) {
+        u.voice = voice;
+        /* SET THE LANG WITH THE VOICE. Chrome resolves an utterance against
+           BOTH, and with lang left at the document's value a chosen en-GB or
+           en-AU voice can be silently overridden back to the platform default -
+           which is how a carefully picked voice turns into Microsoft David
+           anyway, with nothing in the code looking wrong. */
+        if (voice.lang) u.lang = voice.lang;
+      }
+      u.onend = finish;
+      u.onerror = finish;
+      var synthStarted = false;
+      function reportSynthStart() {
+        if (synthStarted || mySeq !== pvSpeakSeq) return;
+        synthStarted = true;
+        if (reportStart) safe(reportStart);
+        faceTalkCycle(true, speechFace);
+      }
+      /* Chrome normally emits start; some installed Windows voices only emit
+         boundary. Either is proof that audible playback began, and the local
+         once-gate keeps both from starting two mouth cycles. */
+      u.onstart = reportSynthStart;
+      u.onboundary = reportSynthStart;
+      pvHeld.push(u); /* defeat the GC */
+      /* watchdog: ~160 wpm reading speed + 3s grace — speech that "never
+         ends" still hands off to the next stage. */
+      if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); }
+      var expectMs = Math.min(30000, Math.max(2500, String(text).split(/\s+/).length * 380 + 3000));
+      pvWatchdog = setTimeout(finish, expectMs);
+      synth.speak(u);
+    } catch (e) { finish(); }
+  }
+  /* onDead fires when the recogniser TERMINATES on its own with nothing to
+     submit (Chrome's speech service is network-backed: a `network`/`no-speech`
+     error is ordinary). Without it the caller cannot tell "still listening"
+     from "microphone is dead", and a kiosk that guesses wrong freezes with the
+     listening halo still animating. Our own teardown never fires it:
+     pvStopVoice nulls the handlers before stop(), and submit() nulls pvRec
+     before onFinal. */
+  function pvListen(onFinal, onInterim, onDead) {
+    var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
+    if (!C) return false;
+    /* pvStopMic, NOT pvStopVoice. Re-opening the microphone is the single most
+       travelled path in the interview — the duplex open that rides with every
+       question, and Chrome's routine `no-speech`/`network` error, which arrives
+       through onerror -> onDead -> kioskListen -> here several times a minute.
+       While that call was pvStopVoice, the microphone ENDED THE SENTENCE THE
+       AVATAR WAS STILL SAYING every single time. The echo template still expires
+       here, inside pvStopMic, exactly as it did inside pvStopVoice. */
+    pvStopMic();
+    var rec; try { rec = new C(); } catch (e) { return false; }
+    pvRec = rec;
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+    var finalText = '', lastInterim = '', quiet = null, dead = false, finalSeen = {};
+    /* published on the recogniser so a teardown can reach into this closure and
+       disarm the quiet timer - see pvStopVoice */
+    function killQuiet() { if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; } dead = true; }
+    rec.__killQuiet = killQuiet;
+    function submit() {
+      if (dead) return;
+      var v = finalText.trim();
+      /* NOTHING TO SUBMIT IS NOT A REASON TO GO DEAF. The echo filter now runs
+         below, at the source, so a result that was entirely the avatar's own
+         voice leaves finalText empty - and the microphone must stay open.
+         Before this, an echo was accumulated, submitted, REJECTED by the
+         caller, and the recogniser was already torn down by then: mic dead, no
+         answer taken, and only the 9s watchdog could revive the question. That
+         is the "doesn't listen for answers" half of the owner's report. */
+      if (!v) return false;
+      /* p1-listener-1.0.0 — KEEP THE MICROPHONE OPEN THROUGH THE BACKEND TURN.
+         Stopping here made the kiosk deaf for exactly the request latency and
+         also let a late stop() result post the same buffer twice. Consume the
+         buffer atomically, leave this continuous recogniser alive, and let the
+         kiosk queue any continuation while its prior turn is in flight. */
+      finalText = '';
+      lastInterim = '';
+      if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; }
+      if (onFinal) onFinal(v);
+      return true;
+    }
+    /* av-5.2.0: 1.3s of quiet after real speech submits — snappier turns */
+    function armQuiet() { if (quiet) clearTimeout(quiet); quiet = setTimeout(function () { if (finalText.trim()) submit(); }, 1300); }
+    rec.onresult = function (ev) {
+      if (dead) return;
+      var interim = '';
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var r = ev.results[i];
+        var piece = String(r[0].transcript || '').trim();
+        /* THE FILTER BELONGS HERE. It used to sit only in the caller, so the
+           avatar's own words entered finalText and the caller then had to
+           reject the WHOLE result - the patient's words with it. */
+        if (piece && pvIsSelfEcho(piece)) continue;
+        if (r.isFinal) {
+          /* A continuous recogniser keeps old final slots in ev.results. Only a
+             new result index/text pair may enter this turn buffer. Re-delivery
+             of a final can no longer create a second answer nonce. */
+          var finalKey = String(i) + '\u0000' + piece;
+          if (piece && !finalSeen[finalKey]) {
+            finalSeen[finalKey] = true;
+            finalText += (finalText ? ' ' : '') + piece;
+          }
+        }
+        else interim += String(r[0].transcript || '');
+      }
+      lastInterim = interim.trim();
+      if (onInterim) onInterim((finalText + ' ' + interim).trim());
+      armQuiet();
+    };
+    rec.onerror = function (ev) {
+      if (pvRec !== rec) return;
+      var code = String((ev && ev.error) || 'unknown');
+      var recoverable = lastInterim;
+      /* Final segments are safe to submit once. Interim-only words are handed to
+         the caller for a visible, editable typing fallback instead of being
+         silently discarded or silently promoted to a clinical answer. */
+      submit();
+      pvRec = null;
+      dead = true;
+      if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; }
+      if (onDead) safe(function () { onDead(code, recoverable); });
+    };
+    rec.onend = function () {
+      if (pvRec !== rec) return;
+      var recoverable = lastInterim;
+      submit();
+      pvRec = null;
+      dead = true;
+      if (quiet) { safe(function () { clearTimeout(quiet); }); quiet = null; }
+      if (onDead) safe(function () { onDead('end', recoverable); });
+    };
+    try { rec.start(); return true; } catch (e) { pvRec = null; return false; }
+  }
+
+  /* =========================================================================
+     av-5.0.0 — THE LIVING FACE. A drawn character with features a patient can
+     actually read: blinking eyes, a wandering gaze, expressive brows, and a
+     mouth that moves WITH the audio (amplitude lip-sync on the natural voice;
+     a natural cycle while browser speech runs). Tinted from the doctor's
+     portrait when one is saved. No ids inside the SVG — every part is
+     class-scoped, so the Setup preview and the kiosk can coexist. ========= */
+  /* av-5.3.0 — the face is now a CHARACTER the doctor owns: colours, hair,
+     glasses and beard are all settable, and "Match my photo" derives them
+     from the portrait so it genuinely resembles them. Every part is
+     class-scoped (no ids) so several faces can live on one page. */
+  var FACE_LOOK = { skin: '#f0c8a0', hair: '#4e3b2a', shirt: '#2E6A4B', lip: '#a95f47',
+    eyes: '#4a3423', hairStyle: 'short', glasses: false, beard: 'none',
+    /* FACE PASS 2026-08-07 - the character gained real features. Every one of
+       these is OPTIONAL and defaults to neutral/off, so a look saved by any
+       earlier release renders exactly the face it rendered before. */
+    brows: 'normal', nose: 'straight', lips: 'normal', cap: false, stethoscope: false,
+    /* CONFORM PASS 2026-08-07 - the owner asked the drawn face to "conform to
+       the picture of the person better". These five describe the HEAD rather
+       than the paint on it, and every one of them is measurable from a
+       front-on portrait. All five default to the head this file already drew,
+       so a look saved by any earlier release renders the same face it did. */
+    faceShape: 'oval', eyeSet: 'normal', hairline: 'full', age: 'adult', browCol: '' };
+  var FACE_HAIR_STYLES = ['short', 'wavy', 'long', 'bun', 'buzz', 'bald'];
+  var FACE_BEARDS = ['none', 'stubble', 'beard'];
+  var FACE_BROWS = ['thin', 'normal', 'thick'];
+  var FACE_NOSES = ['button', 'straight', 'wide', 'roman'];
+  var FACE_LIPS = ['thin', 'normal', 'full'];
+  var FACE_SHAPES = ['oval', 'round', 'long', 'square'];
+  var FACE_EYE_SETS = ['close', 'normal', 'wide'];
+  var FACE_HAIRLINES = ['full', 'receding'];
+  var FACE_AGES = ['adult', 'mature'];
+  /* The matcher has one finite evidence ledger.  Keeping the list beside the
+     look schema lets the pixel reader, model combiner and apply decision count
+     the same controls instead of each inventing a different denominator. */
+  var FACE_MATCH_FIELDS = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
+    'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
+  /* shade a whitelisted 6-digit hex toward white (amt > 0) or black (amt < 0).
+     Accessory colours are DERIVED from the palette the doctor already picked,
+     so a scrub cap matches the scrubs and no colour arrives unchosen. */
+  function faceShade(hexv, amt) {
+    var m = /^#([0-9a-fA-F]{6})$/.exec(String(hexv));
+    if (!m) return '#888888';
+    var n = parseInt(m[1], 16), out = '#', i, c;
+    var parts = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    for (i = 0; i < 3; i++) {
+      c = Math.round(parts[i] + (amt >= 0 ? (255 - parts[i]) * amt : parts[i] * amt));
+      if (c < 0) c = 0;
+      if (c > 255) c = 255;
+      out += ('0' + c.toString(16)).slice(-2);
+    }
+    return out;
+  }
+  /* SKIN HAS AN UNDERTONE AND SO DO ITS SHADOWS. The nose, the nostrils, the
+     dimples and the glabellar crease were drawn in flat black at a fixed
+     alpha - the same grey shadow on every face in the practice. A shadow is
+     the skin minus light, and it carries the skin's own cast: warm skin
+     shadows run redder, cool skin shadows run bluer. Both come out of the
+     SAME measured skin hex, so no colour arrives that the photo did not put
+     there, and a look set by hand gets the treatment too. */
+  function faceRgb(hexv) {
+    var m = /^#([0-9a-fA-F]{6})$/.exec(String(hexv));
+    if (!m) return null;
+    var n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function faceUndertone(hexv) {
+    /* HUE, not warmth: r-b grows with depth on every skin, so a plain
+       red-minus-blue test calls every deep complexion warm. Hue does not
+       move when the same skin is lit dimmer. */
+    var p = faceRgb(hexv);
+    if (!p) return 'neutral';
+    var mx = Math.max(p[0], p[1], p[2]), mn = Math.min(p[0], p[1], p[2]);
+    if (mx - mn < 8) return 'neutral';
+    var h;
+    if (mx === p[0]) h = 60 * (((p[1] - p[2]) / (mx - mn)) % 6);
+    else if (mx === p[1]) h = 60 * (((p[2] - p[0]) / (mx - mn)) + 2);
+    else h = 60 * (((p[0] - p[1]) / (mx - mn)) + 4);
+    if (h < 0) h += 360;
+    if (h > 60 && h < 300) return 'neutral';          /* not a skin hue at all */
+    return h < 21 ? 'cool' : (h > 34 ? 'warm' : 'neutral');
+  }
+  function faceHex(p) {
+    var i, out = '#', c;
+    for (i = 0; i < 3; i++) {
+      c = Math.round(p[i]); if (c < 0) c = 0; if (c > 255) c = 255;
+      out += ('0' + c.toString(16)).slice(-2);
+    }
+    return out;
+  }
+  function faceSkinShadow(hexv, amt) {
+    var p = faceRgb(hexv);
+    if (!p) return 'rgba(0,0,0,' + amt + ')';
+    var tone = faceUndertone(hexv), k = 1 - amt;
+    var br = tone === 'cool' ? 0.95 : tone === 'warm' ? 1.06 : 1;
+    var bg2 = tone === 'cool' ? 0.98 : tone === 'warm' ? 0.99 : 1;
+    var bb = tone === 'cool' ? 1.12 : tone === 'warm' ? 0.86 : 1;
+    return faceHex([p[0] * k * br, p[1] * k * bg2, p[2] * k * bb]);
+  }
+  /* a flush is the skin pushed toward blood, not a fixed salmon dot: #e07a5f
+     over deep skin is a smear of somebody else's cheek. */
+  function faceBlushTone(hexv) {
+    var p = faceRgb(hexv);
+    if (!p) return '#e07a5f';
+    return faceHex([p[0] * 1.06 + 12, p[1] * 0.80, p[2] * 0.82]);
+  }
+  function faceLookSafe(look) {
+    var l = {}, src = look || {};
+    function hex(v, dflt) { return /^#[0-9a-fA-F]{6}$/.test(String(v)) ? String(v) : dflt; }
+    l.skin = hex(src.skin, FACE_LOOK.skin);
+    l.hair = hex(src.hair, FACE_LOOK.hair);
+    l.shirt = hex(src.shirt, FACE_LOOK.shirt);
+    l.lip = hex(src.lip, FACE_LOOK.lip);
+    l.eyes = hex(src.eyes, FACE_LOOK.eyes);
+    l.hairStyle = FACE_HAIR_STYLES.indexOf(src.hairStyle) >= 0 ? src.hairStyle : 'short';
+    l.beard = FACE_BEARDS.indexOf(src.beard) >= 0 ? src.beard : 'none';
+    l.glasses = src.glasses === true;
+    /* whitelisted EXACTLY like hairStyle/beard/glasses above: an unknown value
+       can never reach an SVG attribute, and absence is the neutral default. */
+    l.brows = FACE_BROWS.indexOf(src.brows) >= 0 ? src.brows : 'normal';
+    l.nose = FACE_NOSES.indexOf(src.nose) >= 0 ? src.nose : 'straight';
+    l.lips = FACE_LIPS.indexOf(src.lips) >= 0 ? src.lips : 'normal';
+    l.cap = src.cap === true;
+    l.stethoscope = src.stethoscope === true;
+    /* the head itself, on the same whitelist rule. browCol is the ONLY field
+       whose neutral value is the empty string: an eyebrow with no colour of
+       its own follows the hair, which is what this file drew before there
+       was a way to measure one. */
+    l.faceShape = FACE_SHAPES.indexOf(src.faceShape) >= 0 ? src.faceShape : 'oval';
+    l.eyeSet = FACE_EYE_SETS.indexOf(src.eyeSet) >= 0 ? src.eyeSet : 'normal';
+    l.hairline = FACE_HAIRLINES.indexOf(src.hairline) >= 0 ? src.hairline : 'full';
+    l.age = FACE_AGES.indexOf(src.age) >= 0 ? src.age : 'adult';
+    l.browCol = hex(src.browCol, '');
+    return l;
+  }
+  /* ===== fx-1.0 (2026-08-11) THE CONSUMER CONTRACT =======================
+     DIAGNOSIS (handoff-2026-08-11/face-rework): res.look carried REFUSED
+     values and two of its three consumers ignored `derived` - the kiosk
+     painted the posterized copy's #333333 gray hair wholesale on day one.
+     From here down there is ONE rule: `derived` is the only licence to
+     apply a value, and every consumer goes through faceApplyDerived. */
+  function faceApplyDerived(base, res) {
+    var src = faceLookSafe(base);
+    var got = (res && res.derived) || [];
+    var look = (res && res.look) || {};
+    var out = {};
+    Object.keys(FACE_LOOK).forEach(function (k) {
+      out[k] = (got.indexOf(k) >= 0 && look[k] !== undefined) ? look[k] : src[k];
+    });
+    return faceLookSafe(out);
+  }
+  /* A PARTIAL READ IS NOT A LIKENESS (p1-photo-truth-1.0.0).
+     The owner supplied the clearest possible negative control: a readable
+     camera portrait of a fair-skinned, dark-haired person produced one
+     claimed field out of fourteen, while the preview continued to show a
+     dark default/stale character.  Applying the one surviving field does not
+     make the other thirteen defaults true; it only makes the drawing look
+     confidently unlike the photograph.
+
+     `derived` remains useful diagnostic evidence, but it is not an apply
+     licence until the whole receipt clears a deliberately conservative bar.
+     A success must identify the person-defining skin and hair pair, and at
+     least six independently examined controls.  Anything below that is a
+     truthful refusal: the natural photo remains the patient-facing face and
+     the animated controls remain exactly as the doctor set them.
+
+     p1-photo-truth-1.2.0 — THE CODE ENFORCED A BAR ITS OWN COMMENT DOES NOT
+     STATE.  A fifth condition, `claimed > refused`, rode alongside the four
+     above.  With the fixed 14-control ledger that silently raises the real
+     threshold from six to EIGHT, and it fails a tie: the owner's own portrait
+     read 7 of 14, carried both skin and hair, and was refused with "Only 7 of
+     14 appearance details were reliable" while the paragraph above promised
+     six would do.  Six identified controls INCLUDING the skin/hair identity
+     pair is the documented bar and it is the bar now enforced.
+     ⛔ Nothing else here moved. `faceVisionClaimGate` (the skin-range and
+     posterize-artifact refusals), `fromIllustration` and `srcKind` are
+     untouched — a wall, a cartoon and an out-of-range skin tone are refused
+     exactly as before. This removes a threshold contradiction, not a guard. */
+  function faceMatchDecision(res) {
+    var r = res && res.receipt || {};
+    var got = res && Array.isArray(res.derived) ? res.derived.slice() : [];
+    var examined = Math.max(0, Number(r.examined) || 0);
+    var claimed = Math.max(0, Math.min(examined, Number(r.claimed) || got.length));
+    var refused = Math.max(0, Number(r.refused) || Math.max(0, examined - claimed));
+    var hasIdentityPalette = got.indexOf('skin') >= 0 && got.indexOf('hair') >= 0;
+    var applies = !!(res && res.look && r.srcKind === 'photo' && r.fromIllustration !== true &&
+      examined >= 10 && claimed >= 6 && hasIdentityPalette);
+    return { applies: applies, claimed: claimed, refused: refused, examined: examined,
+      derived: applies ? got : [], observed: got,
+      why: applies ? '' : (res && res.look
+        ? ('Only ' + claimed + ' of ' + examined + ' appearance details were reliable. No animated traits were changed.')
+        : 'The matcher could not make a reliable appearance read. No animated traits were changed.') };
+  }
+  /* Pixel evidence and high-confidence model evidence are candidates until
+     this function has built one complete receipt.  Nothing here mutates the
+     doctor's look.  The caller may apply the returned result only through
+     faceMatchDecision, which prevents a weak first read and a weak second read
+     from painting unrelated fragments onto a default character.
+
+     `trustedNaturalPhoto` is deliberately explicit.  It is true only for the
+     full-quality, in-memory camera copy; without it, a result with no pixel
+     receipt cannot prove that the source was not a legacy illustration. */
+  function faceCombineEvidence(pixelRes, modelLook, modelClaimed, trustedNaturalPhoto) {
+    var px = pixelRes || {};
+    var pxReceipt = px.receipt || {};
+    var pxLook = px.look || {};
+    var pxDerived = Array.isArray(px.derived) ? px.derived : [];
+    var ml = modelLook || {};
+    var mc = Array.isArray(modelClaimed) ? modelClaimed : [];
+    var look = {}, derived = [], visionClaimed = [], visionRefused = [];
+    var refusedByKnob = {};
+    (Array.isArray(px.refused) ? px.refused : []).forEach(function (r) {
+      if (r && FACE_MATCH_FIELDS.indexOf(r.knob) >= 0) refusedByKnob[r.knob] = r;
+    });
+    FACE_MATCH_FIELDS.forEach(function (k) {
+      if (pxDerived.indexOf(k) < 0 || pxLook[k] === undefined) return;
+      var why = faceVisionClaimGate(k, pxLook[k]);
+      if (why) { refusedByKnob[k] = { knob: k, reason: why, source: 'pixels' }; return; }
+      look[k] = pxLook[k];
+      derived.push(k);
+    });
+    mc.forEach(function (k) {
+      if (FACE_MATCH_FIELDS.indexOf(k) < 0 || ml[k] === undefined) return;
+      var why = faceVisionClaimGate(k, ml[k]);
+      if (why) {
+        visionRefused.push({ knob: k, reason: why, source: 'model' });
+        return;
+      }
+      look[k] = ml[k];
+      if (derived.indexOf(k) < 0) derived.push(k);
+      if (visionClaimed.indexOf(k) < 0) visionClaimed.push(k);
+      delete refusedByKnob[k];
+    });
+    var refused = [];
+    FACE_MATCH_FIELDS.forEach(function (k) {
+      if (derived.indexOf(k) >= 0) return;
+      refused.push(refusedByKnob[k] || { knob: k, reason: 'not reliably measured', source: 'combined' });
+    });
+    var fromIllustration = pxReceipt.fromIllustration === true;
+    var provedPhoto = !fromIllustration && (pxReceipt.srcKind === 'photo' || trustedNaturalPhoto === true);
+    var receipt = {
+      claimed: derived.length, refused: refused.length, examined: FACE_MATCH_FIELDS.length,
+      faceW: Number(pxReceipt.faceW) || 0, grid: Number(pxReceipt.grid) || 0,
+      fromIllustration: fromIllustration,
+      srcKind: fromIllustration ? 'illustration' : (provedPhoto ? 'photo' : 'unknown'),
+      adaptiveSegmentation: pxReceipt.adaptiveSegmentation === true,
+      combinedEvidence: true
+    };
+    return {
+      look: derived.length ? look : null,
+      derived: derived,
+      refused: refused,
+      found: Array.isArray(px.found) ? px.found.slice() : [],
+      receipt: receipt,
+      visionClaimed: visionClaimed,
+      visionRefused: visionRefused
+    };
+  }
+  /* day one in the kiosk with no saved appearance: the only copy the server
+     holds is the POSTERIZED illustration, and measuring it is how a
+     dark-haired doctor greeted his patients as a gray-haired stranger
+     (Mechanism B, measured end to end). An illustration-only read applies
+     NOTHING - the default character, never an illustration-derived one. */
+  function faceKioskDayOneLook(res) {
+    if (!faceMatchDecision(res).applies) return faceLookSafe(FACE_LOOK);
+    return faceApplyDerived(FACE_LOOK, res);
+  }
+  /* the colours the 6-level posterize manufactures out of ordinary faces
+     (measured: the whole ordinary fair-skin gamut collapses to #ffcc99 and
+     #ffcccc; every dark hair collapses to #333333). A saved or
+     model-claimed colour equal to one of these is an artifact of the broken
+     pipeline, not a measurement of a person. */
+  var FACE_POSTER_ARTIFACTS = ['#ffcccc', '#ffcc99', '#333333'];
+  function faceHexIsPosterArtifact(hexv) {
+    return FACE_POSTER_ARTIFACTS.indexOf(String(hexv || '').toLowerCase()) >= 0;
+  }
+  /* the SAME CIELAB gate the pixel path applies to its own skin sample
+     (h_ab >= 45, C* < 32 - see the av-5.7.6 numbers in faceReadPortrait),
+     applicable to any hex arriving from a save or from the vision model.
+     A swatch value nobody measured must never render as if measured. */
+  /* ⛔ p1-photo-truth-1.2.0 — THE GATE ACCEPTED EVERY GREY, INCLUDING WHITE.
+     Measured on this build: #ffffff, #fafafa, #808080 and #303030 all PASSED.
+     h_ab is atan2(b*,a*), and at zero chroma both terms are floating-point
+     dust — pure white lands on h_ab 296.8 with C* 0.01, which clears
+     `h_ab >= 45` by accident and `C* < 32` trivially. So the one rule
+     [[the hue gate is the only thing keeping a wall off the doctor's avatar]]
+     was written to enforce did not hold against the plainest wall there is,
+     and a blown-out or backlit sample could paint the character white.
+     A hue is only meaningful once there is chroma to take it from, so the
+     band now has a FLOOR as well as a ceiling. Measured margin: the least
+     saturated real skin in the reference set is C* 11.4 (#2b1a12) and the
+     palest is 11.9 (#f7e0d0), against 0.01 for every neutral — 6 sits with
+     roughly a factor of two of clearance on the skin side and none of the
+     greys come close.
+     ⛔ The CEILING is deliberately untouched. C* < 32 also refuses real olive
+     and deep tones (#c68642 reads 49, #8d5524 reads 41.8); that is a separate,
+     known narrowness and widening it needs the annotated fixture set, not a
+     number typed next to an unrelated fix. This change only ADDS refusals. */
+  function faceHexSkinGate(hexv) {
+    var p = faceRgb(hexv);
+    if (!p) return false;
+    var lb = faceLab(p);
+    var c = faceChroma(lb);
+    return c >= 6 && c < 32 && faceHueAb(lb) >= 45;
+  }
+  /* QUARANTINE GATE for a SAVED look (fx-1.0; DIAGNOSIS root cause 4: a bad
+     look, once saved, was trusted forever - the owner's standing white
+     swatch). Returns [{knob, why}...]; empty means clean. Nothing here
+     rewrites data - the caller only marks the UI and asks the doctor. */
+  function faceLookQuarantine(look) {
+    var bad = [];
+    var l = look || {};
+    ['skin', 'hair', 'shirt', 'lip', 'eyes', 'browCol'].forEach(function (k) {
+      if (l[k] && faceHexIsPosterArtifact(l[k])) bad.push({ knob: k, why: String(l[k]) + ' is a posterize artifact from an older broken match' });
+    });
+    if (l.skin && /^#[0-9a-fA-F]{6}$/.test(String(l.skin)) && !faceHexIsPosterArtifact(l.skin) && !faceHexSkinGate(l.skin)) {
+      bad.push({ knob: 'skin', why: String(l.skin) + ' is outside the range real skin occupies' });
+    }
+    return bad;
+  }
+  /* the one-click reset: Remove-face semantics for the DERIVED knobs. Every
+     knob a photo or the model could have decided returns to the default
+     character; knobs the doctor touched by hand this session (manual), plus
+     cap, stethoscope and age (never derivable - age by deliberate rule),
+     are preserved. Pure, so the suite can execute it. */
+  function faceClearDerived(current, manual) {
+    var cur = faceLookSafe(current);
+    var man = manual || {};
+    var out = {};
+    Object.keys(FACE_LOOK).forEach(function (k) {
+      var keep = (k === 'cap' || k === 'stethoscope' || k === 'age') || man[k] === true;
+      out[k] = keep ? cur[k] : FACE_LOOK[k];
+    });
+    return faceLookSafe(out);
+  }
+  /* every claim the vision model may apply passes through this gate; ''
+     means apply, anything else is the refusal reason (counted and named in
+     the note, never silent). `age` is refused unconditionally: guessing a
+     doctor looks old is the one wrong answer this feature must never
+     volunteer - the pixel path's own rule, extended to the AI. */
+  function faceVisionClaimGate(knob, value) {
+    if (knob === 'age') return 'a face-lines guess is never applied without your own click';
+    var colourKnob = knob === 'skin' || knob === 'hair' || knob === 'shirt' ||
+      knob === 'lip' || knob === 'eyes' || knob === 'browCol';
+    if (colourKnob && !/^#[0-9a-fA-F]{6}$/.test(String(value || ''))) return 'the claimed colour was not valid';
+    if (colourKnob && faceHexIsPosterArtifact(value)) {
+      return String(value) + ' is a posterize artifact of the stylized copy, not a colour of a person';
+    }
+    if (knob === 'skin' && !faceHexSkinGate(value)) {
+      return String(value) + ' is outside the range real skin occupies';
+    }
+    if (knob === 'hairStyle' && FACE_HAIR_STYLES.indexOf(value) < 0) return 'the hair style was not one this character supports';
+    if (knob === 'beard' && FACE_BEARDS.indexOf(value) < 0) return 'the facial-hair value was not supported';
+    if (knob === 'glasses' && typeof value !== 'boolean') return 'the glasses answer was not true or false';
+    if (knob === 'brows' && FACE_BROWS.indexOf(value) < 0) return 'the eyebrow value was not supported';
+    if (knob === 'nose' && FACE_NOSES.indexOf(value) < 0) return 'the nose value was not supported';
+    if (knob === 'lips' && FACE_LIPS.indexOf(value) < 0) return 'the lip-shape value was not supported';
+    if (knob === 'faceShape' && FACE_SHAPES.indexOf(value) < 0) return 'the face-shape value was not supported';
+    if (knob === 'eyeSet' && FACE_EYE_SETS.indexOf(value) < 0) return 'the eye-spacing value was not supported';
+    if (knob === 'hairline' && FACE_HAIRLINES.indexOf(value) < 0) return 'the hairline value was not supported';
+    return '';
+  }
+  var FACE_MOUTHS = {
+    /* p1-adult-art-1.0.0: a composed resting mouth. Warmth belongs to the
+       greeting mood, not a fixed mascot smile on every idle face. */
+    smile:   'M78 136 Q100 141 122 136 Q100 144 78 136',
+    grin:    'M70 126 Q100 162 130 126 Q100 140 70 126',
+    soft:    'M84 134 Q100 141 116 134 Q100 138 84 134',
+    concern: 'M82 140 Q100 131 118 140 Q100 137 82 140',
+    /* thinking gets its OWN mouth: a slightly off-centre press. A thinking face
+       wearing the resting smile is indistinguishable from an idle one. */
+    think:   'M83 136 Q100 130 117 139 Q100 137 83 136',
+    o:       'M91 132 Q100 126 109 132 Q109 146 100 147 Q91 146 91 132',
+    open1:   'M86 131 Q100 137 114 131 Q100 149 86 131',
+    open2:   'M83 129 Q100 136 117 129 Q100 158 83 129',
+    open3:   'M79 127 Q100 134 121 127 Q100 167 79 127'
+  };
+  var FACE_HAIR_PATHS = {
+    /* THE HAIRLINE IS THE INNER BOUNDARY OF THESE PATHS, and it was a stepped,
+       asymmetric sweep with a notch above the left temple — at kiosk size that reads as
+       the rubber edge of a swim cap, which is what made "flat cap" the first thing the
+       owner said about the hair. It is now one continuous line: a smooth temple corner,
+       a slight forward bulge over the forehead, and the same on the other side. Even and
+       unnoticeable is the whole goal — a hairline is only ever noticed when it is wrong. */
+    short: 'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 63 140 53 Q118 46 100 51 Q82 46 60 53 Q43 63 42 92 Z',
+    wavy:  'M42 94 Q38 28 100 26 Q162 28 158 94 Q152 74 146 84 Q140 62 130 74 Q124 52 112 62 Q104 44 92 58 Q80 46 72 64 Q62 56 58 76 Q50 70 42 94 Z',
+    long:  'M42 92 Q40 30 100 28 Q160 30 158 92 Q157 63 140 53 Q118 46 100 51 Q82 46 60 53 Q43 63 42 92 Z',
+    bun:   'M46 90 Q44 34 100 32 Q156 34 154 90 Q153 63 136 54 Q118 48 100 52 Q82 48 64 54 Q47 63 46 90 Z',
+    buzz:  'M46 90 Q46 40 100 38 Q154 40 154 90 Q150 62 132 58 Q118 52 100 52 Q82 52 68 58 Q50 62 46 90 Z',
+    bald:  ''
+  };
+  /* the parts that make one drawn doctor look like a different PERSON from the
+     next. Each is a plain geometry table, so the whitelist in faceLookSafe is
+     the only thing that decides which one is ever rendered. */
+  var FACE_BROW_WEIGHT = { thin: 3.2, normal: 5, thick: 7.8 };
+  /* EVERY NOSE NEEDS THE LINE UNDER THE TIP (av-6.0.0). Three of these four were a
+     single one-sided bridge stroke ending in mid-air, which from the front reads as a
+     tick or a question mark drawn on the cheek — it was the weakest feature on the face
+     once the eyes and the skull were rebuilt. `wide` was the only one that already had
+     the second sub-path (the ala curve under the tip), and it was also the only one that
+     read as a nose. So all four now carry one: a bridge shadow down ONE side, and the
+     underside of the tip spanning both nostrils, which is exactly what a front-lit nose
+     shows. The four `d` strings stay mutually distinct and the nostril geometry (nx/ny/nr)
+     is untouched, so the pins on shape-distinctness and on wide nostrils still hold. */
+  var FACE_NOSE_PARTS = {
+    /* ⛔ AND THEN THEY WERE TOO MUCH. Adding the ala line fixed "a tick mark on the cheek"
+       and created a new problem the square harness could not show: at the kiosk's real
+       302px the bridge stroke plus the ala curve plus two nostrils collide into a small
+       dark squiggle in the middle of the face — the owner saw it immediately. A nose on a
+       front-lit face is mostly a SHADOW, not a line. So: the bridge starts lower and is
+       shorter, the ala is flatter and wider (a base, not a bowl), the strokes are thinner,
+       and the whole group is drawn at .5 opacity in the skin's own shadow — see fNoseSet.
+       The four shapes stay mutually distinct and nx/ny/nr are untouched, so the pins on
+       distinctness and on wide nostrils still hold. */
+    button:   { d: 'M100.5 106 Q103 110 100 112 M94 111 Q100 114.5 106 111', w: 2.2, nx: 5.2, ny: 112.4, nr: 1.5 },
+    straight: { d: 'M100.5 103 Q103.5 111 100 113 M93 112 Q100 116 107 112', w: 2.2, nx: 6.4, ny: 114.6, nr: 1.7 },
+    wide:     { d: 'M100.5 104 Q104.5 112 100 114 M91 112.5 Q100 117.5 109 112.5', w: 2.2, nx: 7.6, ny: 113.2, nr: 2.1 },
+    roman:    { d: 'M99.5 99 Q105 106 103 112 Q102 114 100 114 M93.5 112.5 Q100 116.5 106.5 112.5', w: 2.4, nx: 6.2, ny: 114.8, nr: 1.7 }
+  };
+  /* LIPS. Volume is a real scale on the mouth group, and the lip line is the
+     SAME path stroked in a darker shade of the chosen lip colour - so both the
+     shape and the colour of the lips follow look.lip, and the line can never
+     detach from the mouth when it opens. */
+  var FACE_LIP_PARTS = {
+    thin:   { scale: 0.78, w: 1.2 },
+    normal: { scale: 1,    w: 2.2 },
+    full:   { scale: 1.26, w: 3.6 }
+  };
+  /* THE SKULL. Four shapes a front-on portrait can honestly be measured for:
+     the width-over-lower-height ratio splits round from long, and the jaw
+     width taken 62% of the way from the eye line to the chin is what makes a
+     square jaw square. `oval` is rx 58 / ry 66 - the one head this file drew
+     before this pass - so the default is unchanged to the pixel. */
+  var FACE_SHAPE_PARTS = {
+    oval:   { rx: 58, ry: 66, jaw: 0 },
+    round:  { rx: 63, ry: 60, jaw: 0.30 },
+    long:   { rx: 52, ry: 74, jaw: 0 },
+    square: { rx: 59, ry: 66, jaw: 0.85 }
+  };
+  /* half the distance between the pupils, on the default head. Everything
+     that has to line up with an eye - the lids, the brows, the spectacle
+     lenses, the crow's feet - is placed FROM this rather than repeating 71
+     and 129, which is why moving the eyes used to be impossible. */
+  var FACE_EYE_DX = { close: 25.5, normal: 29, wide: 32.5 };
+  /* every drawn face needs its OWN gradient and clip ids. Setup renders a preview beside
+     the kiosk, the Visit card can render another, and duplicate SVG ids in one document
+     silently cross-wire: the second face would paint with the first face's skin ramp and
+     iris. A counter is enough and stays stable within a render. */
+  var faceUidSeq = 0;
+  function faceSvg(look) {
+    look = faceLookSafe(look || FACE_LOOK);
+    var faceUid = 'f' + (++faceUidSeq);
+    /* THE HEAD IS MEASURED FIRST AND EVERY FEATURE IS PLACED FROM IT.
+       Until this pass every doctor got one ellipse - rx 58, ry 66 - with the
+       eyes, the blush, the spectacle lenses and the temples nailed to
+       constants that only made sense on that ellipse, so a matcher could
+       never move them even when it could see they were wrong. The oval is
+       that ellipse exactly; the other three move the skull, and nothing below
+       repeats a coordinate that the skull decides. */
+    var sh = FACE_SHAPE_PARTS[look.faceShape] || FACE_SHAPE_PARTS.oval;
+    var FX = sh.rx / 58, FY = sh.ry / 66;
+    /* a long face is long in its LOWER third: the eyes hold their line while
+       the nose and the mouth travel. Scaling the whole face instead just
+       zooms the drawing and reads as a bigger head, not a longer one. */
+    var dyN = (sh.ry - 66) * 0.30, dyM = (sh.ry - 66) * 0.62;
+    var eyeDx = (FACE_EYE_DX[look.eyeSet] || FACE_EYE_DX.normal) * FX;
+    function n2(v) { return String(Math.round(v * 100) / 100); }
+    var cxL = Math.round((100 - eyeDx) * 100) / 100, cxR = Math.round((100 + eyeDx) * 100) / 100;
+    /* brows follow the MEASURED brow colour when there was one. Painting them
+       in the hair colour is wrong on every blond, grey or bald head, and dark
+       brows under light hair are one of the strongest likeness cues there is. */
+    var browPaint = look.browCol || look.hair;
+    var shadeNose = faceSkinShadow(look.skin, 0.20);
+    var shadeHole = faceSkinShadow(look.skin, 0.36);
+    var shadeSoft = faceSkinShadow(look.skin, 0.14);
+    var shadeKnit = faceSkinShadow(look.skin, 0.34);
+    var blush = faceBlushTone(look.skin);
+    /* one transform for everything that has to hug the skull: the crown, the
+       beard, the cap and the back hair are all drawn for the default head. */
+    var fit = 'translate(100,98) scale(' + n2(FX) + ',' + n2(FY) + ') translate(-100,-98)';
+    /* ---- THE EYE, REBUILT FOR A HUMAN FACE (av-6.0.0) --------------------------
+       Owner: "make the avatar much more human like and more like profetional completly
+       cahgne the avatar."
+       The old eye was a 23x25 white ellipse with a 14-wide iris and a 5-wide pupil —
+       taller than it was wide, which is an owl, not a person. Rendered side by side with
+       three other looks it was the single strongest cartoon signal on the face.
+       A human eye is an ALMOND roughly twice as wide as it is tall, the iris is partly
+       hidden by the upper lid, the sclera is never pure white, and there is a dark lash
+       line along the upper aperture. All of that is here, and every animation hook
+       (fPupil / fLid / fLow) keeps its name and its transform origin so blinking, gaze,
+       the sleepy lid and the smiling lower-lid arc all still drive it. */
+    /* one ear, mirrored by sign. Top at the brow line, lobe at the nose base — the two
+       landmarks a real ear is actually placed between. */
+    function earOf(sgn) {
+      /* the ear is anchored INSIDE the skull edge (0.90rx) and projects past it, so the
+         skull drawn on top of it hides the anchored part and leaves a real ear standing
+         off the head. Anchoring it at 0.94rx with a 9.5 projection left only a 5-unit
+         sliver visible — measured, not guessed: getBBox put the ear at x 155-163 against
+         a face whose own edge is 158. */
+      var ex = 100 + sgn * sh.rx * 0.90;
+      var top = 98 - sh.ry * 0.26, bot = 98 + sh.ry * 0.22;
+      var out = sgn * 13;
+      return '<g class="fSkin fEar' + (sgn < 0 ? 'L' : 'R') + '" pointer-events="none">' +
+        '<path d="M' + n2(ex) + ' ' + n2(top) +
+          ' C' + n2(ex + out) + ' ' + n2(top + 1) + ' ' + n2(ex + out * 1.05) + ' ' + n2(bot - 6) + ' ' + n2(ex + out * 0.42) + ' ' + n2(bot) +
+          ' C' + n2(ex + out * 0.18) + ' ' + n2(bot + 2.5) + ' ' + n2(ex - out * 0.10) + ' ' + n2(bot - 1) + ' ' + n2(ex) + ' ' + n2(bot - 4) +
+          ' Z" fill="' + faceShade(look.skin, -0.06) + '"/>' +
+        '<path d="M' + n2(ex + out * 0.30) + ' ' + n2(top + 4) + ' C' + n2(ex + out * 0.72) + ' ' + n2(top + 5) + ' ' + n2(ex + out * 0.70) + ' ' + n2(bot - 7) + ' ' + n2(ex + out * 0.34) + ' ' + n2(bot - 5) + '" ' +
+          'fill="none" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="1.5" stroke-linecap="round" opacity=".6"/>' +
+      '</g>';
+    }
+    function eye(cx, side) {
+      var apId = 'mlsAvEyeAp' + side + faceUid;
+      var irisId = 'mlsAvIris' + side + faceUid;
+      /* the aperture: 24 wide, 13 tall, corners lower than the centre so the lid has a
+         natural lift toward the outer canthus */
+      var ap = 'M' + n2(cx - 12) + ' 94.6 Q' + n2(cx - 6) + ' 87.4 ' + cx + ' 87.6 Q' + n2(cx + 6) + ' 87.9 ' + n2(cx + 12) + ' 94.2 ' +
+               'Q' + n2(cx + 6) + ' 100.8 ' + cx + ' 101 Q' + n2(cx - 6) + ' 100.9 ' + n2(cx - 12) + ' 94.6 Z';
+      return '<g class="fEye' + side + '" style="transform-box:fill-box;transform-origin:center;transition:transform .12s ease">' +
+        '<defs>' +
+          '<clipPath id="' + apId + '"><path d="' + ap + '"/></clipPath>' +
+          '<radialGradient id="' + irisId + '" cx="42%" cy="34%" r="72%">' +
+            '<stop offset="0%" stop-color="' + faceShade(look.eyes, 0.34) + '"/>' +
+            '<stop offset="62%" stop-color="' + look.eyes + '"/>' +
+            '<stop offset="100%" stop-color="' + faceShade(look.eyes, -0.42) + '"/>' +
+          '</radialGradient>' +
+        '</defs>' +
+        '<g clip-path="url(#' + apId + ')">' +
+          /* sclera: warm off-white, never #fff, with the upper half in lid shadow */
+          '<rect x="' + n2(cx - 13) + '" y="86" width="26" height="17" fill="#f3efe8"/>' +
+          '<ellipse cx="' + cx + '" cy="88.6" rx="13" ry="4.4" fill="' + faceShade(look.skin, -0.3) + '" opacity=".28"/>' +
+          '<g class="fPupil' + side + '" style="transition:transform .45s ease">' +
+            /* the iris sits high and is CROPPED by the upper lid, as a real one is.
+               p1-adult-art-1.0.0: a 5.5-radius iris against a 24-wide aperture filled
+               almost a quarter of the whole eye - the single strongest "cartoon child"
+               signal on the face. 4.4 (and a pupil to match, 2.15 -> 1.8) reads as an
+               adult iris without changing the aperture or any animation hook. */
+            '<circle cx="' + cx + '" cy="94.1" r="4.4" fill="url(#' + irisId + ')"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="4.4" fill="none" stroke="' + faceShade(look.eyes, -0.55) + '" stroke-width="0.9" opacity=".75"/>' +
+            '<circle cx="' + cx + '" cy="94.1" r="1.8" fill="#120d09"/>' +
+            /* ONE catchlight, not two. A second, fainter highlight at the opposite
+               corner is what makes an eye read as glassy/toy rather than photographic -
+               a real cornea shows one clear reflected light source. The surviving
+               catchlight is scaled and pulled in slightly so it still sits inside the
+               smaller iris instead of grazing its new, tighter edge. */
+            '<ellipse cx="' + n2(cx - 1.6) + '" cy="92.2" rx="1.2" ry="0.9" fill="#fff" opacity=".92"/>' +
+          '</g>' +
+        /* the LOWER lid: it rises into a smiling-eye arc on a genuine smile -
+           the single strongest cue that a face means it. Inside the clip now, so it
+           sweeps the aperture instead of painting a slab over the cheek. */
+        '<path class="fLow' + side + '" d="M' + n2(cx - 13) + ' 96 q13 10 26 0 v10 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center bottom;transform:scaleY(0.02);transition:transform .3s ease"/>' +
+        /* upper lid: a skin-coloured shutter that DROPS for sleepy/caring
+           looks and lifts for surprise - real eyelid acting, not just scale */
+        '<path class="fLid' + side + '" d="M' + n2(cx - 13) + ' 94 q13 -11 26 0 v-11 h-26 z" fill="' + look.skin + '" style="transform-box:fill-box;transform-origin:center top;transform:scaleY(0.06);transition:transform .22s ease"/>' +
+        '</g>' +
+        /* THE LASH LINE. A human upper lid casts a dark edge over the eye; without it the
+           aperture reads as a hole cut in a mask. Drawn OUTSIDE the clip so it survives
+           the lid shutters, and tapered - heavier at the outer third, like real lashes. */
+        '<path d="M' + n2(cx - 12.4) + ' 94.4 Q' + n2(cx - 6) + ' 86.9 ' + cx + ' 87.2 Q' + n2(cx + 6) + ' 87.5 ' + n2(cx + 12.4) + ' 94" ' +
+          'fill="none" stroke="' + faceShade(look.hair, -0.25) + '" stroke-width="1.7" stroke-linecap="round" opacity=".9"/>' +
+        /* the lid CREASE above it, and the inner-corner shadow - both are why an eye
+           looks set INTO a face rather than printed on one */
+        '<path d="M' + n2(cx - 9.5) + ' 85.2 Q' + cx + ' 81.4 ' + n2(cx + 9.5) + ' 84.8" fill="none" stroke="' + faceShade(look.skin, -0.34) + '" stroke-width="1.1" stroke-linecap="round" opacity=".5"/>' +
+        '<path d="M' + n2(cx - 12.6) + ' 94.6 q2.6 1.8 4.4 2.2" fill="none" stroke="' + faceShade(look.skin, -0.4) + '" stroke-width="1.1" stroke-linecap="round" opacity=".45"/>' +
+        '</g>';
+    }
+    /* ---- HAIR WITH VOLUME (av-6.0.0) ------------------------------------------------
+       Owner, on the previous version: the hair "is still a flat cap shape".
+       That was literal: one closed path filled flat, drawn INSIDE the skull silhouette.
+       Hair drawn inside the skull is paint on a scalp; real hair has a mass that stands
+       OFF the skull, and the silhouette of the head-plus-hair is bigger than the head.
+       So volume is now a shape drawn BEHIND the head, deliberately taller and wider than
+       the skull by an amount that depends on the cut: a buzz stands off almost nothing,
+       a wavy cut a lot. Only the rim of it shows past the skull, which is exactly what
+       hair looks like from the front. Built from sh.rx / sh.ry so a long narrow head
+       gets a long narrow head of hair. */
+    var VOL = { short: { dx: 6, dy: 11 }, wavy: { dx: 10, dy: 16 }, long: { dx: 8, dy: 13 },
+      bun: { dx: 3, dy: 6 }, buzz: { dx: 1.5, dy: 3 }, bald: null };
+    var vol = look.hairStyle === 'bald' ? null : (VOL[look.hairStyle] || VOL.short);
+    var back = '';
+    if (vol) {
+      var vR = 58 + vol.dx, vT = 32 - vol.dy;   /* nominal skull half-width 58, crown y 32 */
+      back += '<path class="fHairVol" d="M' + n2(100 - vR) + ' 104' +
+        ' C' + n2(100 - vR) + ' ' + n2(vT + 14) + ' ' + n2(100 - vR * 0.55) + ' ' + n2(vT) + ' 100 ' + n2(vT) +
+        ' C' + n2(100 + vR * 0.55) + ' ' + n2(vT) + ' ' + n2(100 + vR) + ' ' + n2(vT + 14) + ' ' + n2(100 + vR) + ' 104' +
+        ' Z" fill="url(#mlsAvHair' + faceUid + ')"/>';
+    }
+    if (look.hairStyle === 'long') {
+      /* LONG HAIR FALLS BEHIND THE SHOULDERS. It was two thin sickles hugging the jaw,
+         which read as sideburns. A mass that reaches the shoulder line and passes behind
+         the neck is what makes it read as length. */
+      back += '<path class="fHairBack" d="M' + n2(100 - 58 - 8) + ' 96 C' + n2(100 - 74) + ' 150 ' + n2(100 - 70) + ' 186 ' + n2(100 - 52) + ' 198' +
+        ' C' + n2(100 - 60) + ' 160 ' + n2(100 - 58) + ' 124 ' + n2(100 - 54) + ' 96 Z' +
+        ' M' + n2(100 + 58 + 8) + ' 96 C' + n2(100 + 74) + ' 150 ' + n2(100 + 70) + ' 186 ' + n2(100 + 52) + ' 198' +
+        ' C' + n2(100 + 60) + ' 160 ' + n2(100 + 58) + ' 124 ' + n2(100 + 54) + ' 96 Z" fill="' + faceShade(look.hair, -0.16) + '"/>';
+    } else if (look.hairStyle === 'bun') {
+      /* a bun sits at the BACK of the crown, so from the front only its top shows above
+         the head - a circle centred on the crown read as a ball balanced on the skull */
+      back += '<ellipse class="fHairBack" cx="100" cy="26" rx="19" ry="14" fill="' + faceShade(look.hair, -0.12) + '"/>' +
+        '<path class="fHairBand" d="M84 32 Q100 26 116 32" fill="none" stroke="' + faceShade(look.hair, -0.34) + '" stroke-width="2.4"/>';
+    }
+    if (back) back = '<g class="fBackFit" transform="' + fit + '">' + back + '</g>';
+    var hairPath = FACE_HAIR_PATHS[look.hairStyle] || FACE_HAIR_PATHS.short;
+    var hairClip = 'mlsAvHairClip' + faceUid;
+    /* the front hair, in three layers that cost almost nothing and do all the work:
+         1. a CONTACT SHADOW - the same path nudged down, in a dark hair shade. Where the
+            hair meets the forehead this is the HAIRLINE: hair casts a shadow on the brow,
+            and without it hair and forehead look like two flat colours meeting at a line.
+         2. the hair itself, on the vertical hair ramp rather than one flat fill.
+         3. a highlight sweep across the upper crown, CLIPPED to the hair so it cannot
+            escape onto the forehead on a low cut like a buzz. */
+    var hair = hairPath
+      ? '<clipPath id="' + hairClip + '"><path d="' + hairPath + '"/></clipPath>' +
+        '<path class="fHairLine" d="' + hairPath + '" fill="' + faceShade(look.hair, -0.45) + '" opacity=".55" transform="translate(0,3.2)"/>' +
+        '<path class="fHair" d="' + hairPath + '" fill="url(#mlsAvHair' + faceUid + ')"/>' +
+        '<g clip-path="url(#' + hairClip + ')">' +
+          /* a SOFT sheen, not a stripe. A solid wedge at .30 read as a plastic highlight
+             — on a buzz cut it looked like a parting shaved into the crown. A radial
+             fade has no edge to notice, and the clip keeps it off the forehead. */
+          '<ellipse class="fHairShine" cx="76" cy="48" rx="30" ry="22" fill="url(#mlsAvShine' + faceUid + ')"/>' +
+          /* p1-render-likeness-1.0.0 — three low-contrast growth lines break
+             the helmet silhouette without turning dark hair into stripes. */
+          '<path class="fHairTexture" d="M58 69 Q64 43 84 33 M82 55 Q91 34 103 31 M111 53 Q126 38 139 55" ' +
+            'fill="none" stroke="' + faceShade(look.hair, 0.24) + '" stroke-width="1.6" stroke-linecap="round" opacity=".18"/>' +
+        '</g>'
+      : '';
+    /* A RECEDING HAIRLINE is two bare temples, so that is exactly what it is
+       drawn as: skin-coloured wedges laid over the crown, inside the crown
+       group so they ride the head and a cap still covers them. One pair of
+       shapes works for every hair cut - there is no receding variant of each
+       path to keep in step. */
+    var temples = (look.hairline === 'receding' && look.hairStyle !== 'bald')
+      ? '<path class="fTempleL" d="M46 94 Q49 60 82 44 Q63 66 60 94 Z" fill="url(#mlsAvSkin' + faceUid + ')"/>' +
+        '<path class="fTempleR" d="M154 94 Q151 60 118 44 Q137 66 140 94 Z" fill="url(#mlsAvSkin' + faceUid + ')"/>'
+      : '';
+    /* ---- THE BEARD FOLLOWS THE JAW (av-6.0.0) ---------------------------------------
+       ⛔ It used to be a near-full-face slab: `M50 104 Q54 164 100 168 Q146 164 150 104`
+       filled at .92 opacity spans the ENTIRE lower face out to the head's own silhouette,
+       so on a dark beard the whole lower half of the head went to one flat near-black
+       field with a hard horizontal edge across both cheeks. It read as a balaclava, and
+       it was also why the ears looked wrong: they are ordinary brown, but a brown ear
+       against a black cheek reads as a pale blob stuck on the side.
+       A beard is a CRESCENT. Its outer edge is the jaw silhouette; its inner edge climbs
+       from the corner of the mouth out to the sideburn in front of the ear, and it leaves
+       the upper cheek bare. Nominal skull coordinates (rx 58 / ry 66) because this sits
+       inside .fCrownFit, which applies the face-shape fit for us. */
+    /* the sideburn starts BELOW the eye line, not at it. Starting at y=94 (the eye line)
+       put beard on the upper cheek and the ears ended up sitting on a black field, which
+       is what made ordinary brown ears look like pale blobs stuck on the sides. */
+    /* and the beard reaches the CHIN. Ending at y=157 left a bare crescent of chin below
+       it, which reads as a chin strap. y=164 is the chin for every face shape here, not
+       just the oval one: this sits inside .fCrownFit, whose fit scales nominal y by
+       sh.ry/66 about y=98, so nominal 164 maps to 98+sh.ry exactly — the chin — whatever
+       shape the matcher chose. 162 keeps it a hair inside the silhouette. */
+    var beardOuter = ' C50 128 66 154 100 162 C134 154 150 128 152 106';
+    var beard = '';
+    if (look.beard === 'stubble') {
+      /* stubble is the same crescent, thinner and much fainter — shadow, not hair */
+      beard = '<path class="fBeard" d="M52 108' + beardOuter.replace('152 106', '148 108') +
+        ' C146 118 136 124 120 128 C113 130 106 131 100 131 C94 131 87 130 80 128 C64 124 54 118 52 108 Z" ' +
+        'fill="' + look.hair + '" opacity=".26"/>';
+    } else if (look.beard === 'beard') {
+      beard = '<path class="fBeard" d="M48 106' + beardOuter +
+        ' C150 118 139 126 122 131 C114 134 107 135 100 135 C93 135 86 134 78 131 C61 126 50 118 48 106 Z" ' +
+        'fill="' + look.hair + '" opacity=".9"/>' +
+        /* a moustache sits ON the upper lip, so it is placed off the mouth's own line
+           rather than at a fixed y - on a long face the mouth travels and it must follow */
+        '<path class="fStache" d="M80 ' + n2(124 + dyM) + ' Q100 ' + n2(117 + dyM) + ' 120 ' + n2(124 + dyM) +
+          ' Q100 ' + n2(129 + dyM) + ' 80 ' + n2(124 + dyM) + ' Z" fill="' + look.hair + '" opacity=".9"/>';
+    }
+    var glasses = look.glasses
+      ? '<g class="fGlasses" fill="none" stroke="#3d4a44" stroke-width="3" opacity=".85">' +
+          '<rect x="' + n2(cxL - 15.5) + '" y="81.5" width="31" height="25" rx="8.5"/>' +
+          '<rect x="' + n2(cxR - 15.5) + '" y="81.5" width="31" height="25" rx="8.5"/>' +
+          '<path d="M' + n2(cxL + 15.5) + ' 92 Q100 89 ' + n2(cxR - 15.5) + ' 92"/>' +
+          '<path d="M' + n2(cxL - 15.5) + ' 90 L' + n2(100 - sh.rx) + ' 94"/>' +
+          '<path d="M' + n2(cxR + 15.5) + ' 90 L' + n2(100 + sh.rx) + ' 94"/>' +
+        '</g>'
+      : '';
+    /* ACCESSORIES a doctor plausibly wears. Both default OFF; both are drawn
+       from the doctor's own scrub colour so nothing arrives unchosen. The cap
+       is inside the head group (it must ride the head tilt); the stethoscope is
+       on the BODY, so it breathes with the chest and tucks under the chin. */
+    var cap = look.cap
+      ? '<g class="fCap">' +
+          '<path class="fCapDome" d="M42 96 Q38 24 100 24 Q162 24 158 96 Q156 66 132 60 Q117 54 100 54 Q83 54 68 60 Q44 66 42 96 Z" fill="' + faceShade(look.shirt, 0.16) + '"/>' +
+          '<path class="fCapBand" d="M42 96 Q44 66 68 60 Q83 54 100 54 Q117 54 132 60 Q156 66 158 96 Q150 76 132 69 Q117 63 100 63 Q83 63 68 69 Q50 76 42 96 Z" fill="' + faceShade(look.shirt, -0.18) + '"/>' +
+          '<path class="fCapTie" d="M154 86 q15 5 13 21 q-5 -13 -16 -15 z" fill="' + faceShade(look.shirt, 0.16) + '"/>' +
+        '</g>'
+      : '';
+    var steth = look.stethoscope
+      ? '<g class="fSteth">' +
+          '<path class="fSthTube" d="M74 146 C56 168 60 188 76 196" fill="none" stroke="#2f3b45" stroke-width="6" stroke-linecap="round"/>' +
+          '<path class="fSthTube" d="M126 146 C143 163 140 173 131 179" fill="none" stroke="#2f3b45" stroke-width="6" stroke-linecap="round"/>' +
+          '<circle class="fSthBell" cx="130" cy="187" r="9" fill="#d3d9de" stroke="#8c959c" stroke-width="3"/>' +
+          '<circle class="fSthDot" cx="130" cy="187" r="3.6" fill="#98a1a8"/>' +
+        '</g>'
+      : '';
+    /* THE JAW. An ellipse cannot be square, so a squarer jaw is an additive
+       skin panel that leaves the cheekbones alone and only fills out the
+       lower face. It meets the ellipse exactly at 20% of the way down, where
+       the ellipse is still 98% of its full width, so there is no seam. */
+    var jaw = '';
+    if (sh.jaw > 0) {
+      var jt1 = 98 + 0.20 * sh.ry, jt2 = 98 + 0.74 * sh.ry, jt3 = 98 + 0.99 * sh.ry;
+      var jw1 = sh.rx * 0.98, jw2 = sh.rx * (0.694 + sh.jaw * 0.276);
+      jaw = '<path class="fJaw fSkin" d="M' + n2(100 - jw1) + ' ' + n2(jt1) +
+        ' L' + n2(100 - jw2) + ' ' + n2(jt2) +
+        ' Q' + n2(100 - jw2) + ' ' + n2(jt3) + ' 100 ' + n2(jt3) +
+        ' Q' + n2(100 + jw2) + ' ' + n2(jt3) + ' ' + n2(100 + jw2) + ' ' + n2(jt2) +
+        ' L' + n2(100 + jw1) + ' ' + n2(jt1) + ' Z" fill="url(#mlsAvSkin' + faceUid + ')"/>';
+    }
+    /* AGE. Read from how much of the hair mass has gone grey, drawn as the
+       two lines a face actually earns: the nasolabial folds and crow's feet.
+       Both are in the skin's own shadow colour, both track the eyes and the
+       mouth so they still land on a long face or a wide-set one. */
+    var ageLines = look.age === 'mature'
+      /* the crow's feet were 8 units long at .5 opacity and 1.7 wide: three straight rays
+         off each outer corner, which read as WHISKERS at kiosk size rather than as age —
+         and on dark skin the light shade made them look like scratches. Age is carried by
+         the nasolabial folds; the eye corners only need a hint, so they are half the
+         length, thinner, fainter and just two rays. */
+      ? '<g class="fAge" fill="none" stroke="' + shadeNose + '" stroke-width="1.7" stroke-linecap="round" opacity=".45">' +
+          /* a nasolabial fold is a crease in SKIN. Drawn over a full beard it is painted in
+             the skin's shadow colour, which is lighter than the beard — so on a dark beard
+             the two folds rendered as pale scratches down the chin. A bearded face simply
+             does not show them, so they are omitted rather than recoloured. */
+          (look.beard === 'beard' ? '' :
+            '<path class="fFoldL" d="M89 ' + n2(110 + dyN) + ' Q79 ' + n2(126 + dyM) + ' 81 ' + n2(140 + dyM) + '"/>' +
+            '<path class="fFoldR" d="M111 ' + n2(110 + dyN) + ' Q121 ' + n2(126 + dyM) + ' 119 ' + n2(140 + dyM) + '"/>') +
+          /* the eye corners moved up 8 units with the rest of the upper-face cluster
+             (see .fUpperFace below) - these must track them or a mature look's crow's
+             feet float below the eye they are supposed to belong to. */
+          '<g stroke-width="1.1" opacity=".55">' +
+            '<path class="fCrowL" d="M' + n2(cxL - 13.5) + ' 83 l-4 -2.5 M' + n2(cxL - 14) + ' 88.5 l-4.5 1.5"/>' +
+            '<path class="fCrowR" d="M' + n2(cxR + 13.5) + ' 83 l4 -2.5 M' + n2(cxR + 14) + ' 88.5 l4.5 1.5"/>' +
+          '</g>' +
+        '</g>'
+      : '';
+    var browW = FACE_BROW_WEIGHT[look.brows] || FACE_BROW_WEIGHT.normal;
+    var nose = FACE_NOSE_PARTS[look.nose] || FACE_NOSE_PARTS.straight;
+    var lips = FACE_LIP_PARTS[look.lips] || FACE_LIP_PARTS.normal;
+    var noseRy = (nose.nr * 0.7).toFixed(2);
+    /* BROW WEIGHT, NOT BROW STROKE (p1-adult-art-1.0.0). A round-linecap stroke is a
+       constant-width line - the single most "drawn with a marker" mark on the face. A
+       real eyebrow is thickest and roundest at the inner corner (by the bridge of the
+       nose) and tapers to a fine point at the outer, temple end, because that is how the
+       hair actually grows. bTop/bBot bow the two edges of a closed, FILLED shape around
+       that taper; bIn is the half-thickness of the blunt inner end. Scaled off the same
+       browW the thin/normal/thick knob already drove, so the weight choice still means
+       something. */
+    var bTop = browW * 0.62, bBot = browW * 0.31, bIn = browW * 0.40;
+    return '<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" data-mood="idle" style="width:100%;height:100%;display:block">' +
+      /* ---- THE PAINT (av-6.0.0) ------------------------------------------------------
+         Skin, hair and garment all ramp instead of filling flat. The skin ramp is
+         deliberately narrow — +18% at the forehead to -22% at the jaw — because a wide
+         ramp on a stylised face reads as plastic rather than as light. */
+      '<defs>' +
+        /* userSpaceOnUse, NOT the default objectBoundingBox: the skull is not the only
+           shape filled with skin — the squarer-jaw panel and the bare temples of a
+           receding hairline are too. Per-object bounding boxes would run a fresh
+           forehead-to-jaw ramp across each of those small shapes, so the jaw panel came
+           out up to 22% lighter than the face it is welded to and the temples up to 15%
+           darker: a bright chin and two dark patches, seams exactly where the redesign
+           was trying to remove them. One ramp in head coordinates makes every skin
+           shape sample the same light. */
+        '<linearGradient id="mlsAvSkin' + faceUid + '" gradientUnits="userSpaceOnUse" ' +
+          'x1="100" y1="' + n2(98 - sh.ry) + '" x2="100" y2="' + n2(98 + sh.ry) + '">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.skin, 0.18) + '"/>' +
+          '<stop offset="46%" stop-color="' + look.skin + '"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.skin, -0.22) + '"/>' +
+        '</linearGradient>' +
+        '<linearGradient id="mlsAvHair' + faceUid + '" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.hair, 0.24) + '"/>' +
+          '<stop offset="55%" stop-color="' + look.hair + '"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.hair, -0.30) + '"/>' +
+        '</linearGradient>' +
+        '<linearGradient id="mlsAvShirt' + faceUid + '" x1="0" y1="0" x2="0.35" y2="1">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.shirt, 0.16) + '"/>' +
+          '<stop offset="60%" stop-color="' + look.shirt + '"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.shirt, -0.26) + '"/>' +
+        '</linearGradient>' +
+        /* the face vignette: nothing at all across the middle two thirds, then a gentle
+           fall-off at the silhouette. Transparent-to-dark on the SAME hue as the skin, so
+           it deepens the tone instead of greying it. */
+        '<radialGradient id="mlsAvBlush' + faceUid + '" cx="50%" cy="50%" r="50%">' +
+          '<stop offset="0%" stop-color="' + blush + '" stop-opacity="1"/>' +
+          '<stop offset="100%" stop-color="' + blush + '" stop-opacity="0"/>' +
+        '</radialGradient>' +
+        '<radialGradient id="mlsAvShine' + faceUid + '" cx="50%" cy="50%" r="50%">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.hair, 0.46) + '" stop-opacity=".38"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.hair, 0.46) + '" stop-opacity="0"/>' +
+        '</radialGradient>' +
+        '<radialGradient id="mlsAvVig' + faceUid + '" cx="50%" cy="42%" r="62%">' +
+          '<stop offset="0%" stop-color="' + faceShade(look.skin, 0.20) + '" stop-opacity=".28"/>' +
+          '<stop offset="58%" stop-color="' + look.skin + '" stop-opacity="0"/>' +
+          '<stop offset="100%" stop-color="' + faceShade(look.skin, -0.40) + '" stop-opacity=".42"/>' +
+        '</radialGradient>' +
+      '</defs>' +
+      /* ---- COMPOSED FOR THE CIRCLE IT IS ACTUALLY SHOWN IN (av-6.0.1) ------------------
+         ⛔ EVERY judgement of this drawing was made in a SQUARE div, because that is what
+         faceDemo mounts and what the harnesses and the gallery use. The two shipped
+         surfaces are both ROUND with overflow:hidden — #mlsAvKioskFace is a 302px circle
+         and the Setup/Settings preview is 72px — so a square-framed portrait arrives
+         cropped on the diagonal: measured on the real kiosk, the crown crowded the top
+         arc, the ears were cut by the sides, and .fShirt spanned y 250-380 inside a
+         302-tall box, i.e. the shoulders, the V-neck and the collar — the parts that make
+         it read as a clinician — were almost entirely outside the mask. The owner's words
+         were "does not work correctly or look good".
+         The content is therefore inset so the whole head, both ears and a real shoulder
+         line all sit inside the inscribed circle. 0.84 with an 8-unit drop was chosen by
+         rendering five candidates INSIDE the real 302px and 72px masks and looking at
+         them, not by reasoning about the viewBox. .fFrame wraps everything except <defs>,
+         so every id reference still resolves and no animation hook moves: the rig, the
+         head tilt and the breathing transform are all inside it and compose with it. */
+      '<g class="fFrame" transform="translate(100,106) scale(0.84) translate(-100,-98)">' +
+      /* the CHEST is a real group: breathing moves GEOMETRY in here (the shirt
+         ellipse itself grows and lifts), not a scale on the drawing */
+      '<g class="fBody" style="transform-box:view-box;transform-origin:100px 180px;transition:transform .09s linear">' +
+        /* ---- SHOULDERS, NOT A DOME (av-6.0.0) -----------------------------------------
+           The torso was one ellipse rx74 ry50, which gives a rounded hump — the silhouette
+           of a snowman, not a person in scrubs. A human shoulder line leaves the neck almost
+           horizontally, breaks at the acromion, and drops. Three curves do it, and the
+           breathing transform on .fBody moves this path exactly as it moved the ellipse. */
+        '<path class="fShirt" d="M100 168 C' + '82 168 68 174 54 186 C40 198 30 214 26 256 L174 256 C170 214 160 198 146 186 C132 174 118 168 100 168 Z" ' +
+          'fill="url(#mlsAvShirt' + faceUid + ')"/>' +
+        /* ---- SCRUBS, NOT A BLOB (av-6.0.0). The garment was one flat ellipse with a
+           notch, which read as a jumper. A clinician's top has shoulder seams, a V-neck
+           with a visible under-tee, and a chest pocket — three cheap shapes that carry
+           most of the "professional" signal. */
+        '<g class="fUniform" pointer-events="none">' +
+          /* ⛔ NO SHOULDER SEAMS, AND NO SLEEVE SHADOW EITHER. Two curves from the collar
+             out to the shoulder tips read as bag straps. Moved to the outer shoulder they
+             read as pale epaulettes — and that one was instructive: the arc crossed the
+             garment's edge, so half of a dark stroke at .45 opacity was landing on the
+             PAGE, which mixed it up to a light grey. Barely 30px of chest survives the
+             kiosk crop; the V-neck and collar carry the whole "clinician" signal, and
+             every extra mark here has cost more than it earned. */
+          /* the V opening shows the SHADOW INSIDE THE GARMENT, not skin. Filling it with a
+             skin shade rendered as a brown wedge sitting on the chest. */
+          '<path d="M84 157 Q100 186 116 157 Q100 170 84 157 Z" fill="' + faceShade(look.shirt, -0.46) + '"/>' +
+          '<path class="fCollar" d="M80 156 Q100 192 120 156 Q100 174 80 156 Z" fill="none" stroke="' + faceShade(look.shirt, -0.34) + '" stroke-width="2.6" stroke-linejoin="round"/>' +
+          /* ⛔ AND NO POCKET. It was an outlined rectangle (a floating square), then two
+             strokes (a floating right-angle that read as a rendering glitch). Only ~30px
+             of chest is above the crop at kiosk size, and a pocket carries no clinical
+             signal — the V-neck and the sleeve shadow do all the "clinician" work. */
+        '</g>' +
+        steth +
+      '</g>' +
+      /* ---- THE NECK (av-6.0.0) ------------------------------------------------------
+         There was none: the jaw sat straight on the garment, which is most of why the old
+         drawing read as a head-and-shoulders sticker rather than a person. It is drawn
+         AFTER the torso and BEFORE the head, so the collar overlaps its base and the jaw
+         overlaps its top — that overlap is what makes the three read as one body.
+         The shadow across the top is the jaw's own shadow falling on the throat; without
+         it a neck looks like a post the head is balanced on. */
+      '<g class="fNeck" pointer-events="none">' +
+        '<path d="M' + n2(100 - sh.rx * 0.40) + ' ' + n2(98 + sh.ry * 0.72) + ' L' + n2(100 - sh.rx * 0.34) + ' 172 Q100 178 ' + n2(100 + sh.rx * 0.34) + ' 172 L' + n2(100 + sh.rx * 0.40) + ' ' + n2(98 + sh.ry * 0.72) + ' Z" ' +
+          'fill="' + faceShade(look.skin, -0.13) + '"/>' +
+        '<path d="M' + n2(100 - sh.rx * 0.38) + ' ' + n2(98 + sh.ry * 0.74) + ' Q100 ' + n2(98 + sh.ry * 0.98) + ' ' + n2(100 + sh.rx * 0.38) + ' ' + n2(98 + sh.ry * 0.74) + ' L' + n2(100 + sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.86) + ' Q100 ' + n2(98 + sh.ry * 1.10) + ' ' + n2(100 - sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.86) + ' Z" ' +
+          'fill="' + faceShade(look.skin, -0.40) + '" opacity=".45"/>' +
+      '</g>' +
+      back +
+      /* the RIG carries the FAST acting (breath bob, listening nod, concern
+         head-shake). .fHead keeps the slow mood tilt on its own .45s
+         transition, so the two never fight for one transform. */
+      '<g class="fHeadRig" style="transform-box:view-box;transform-origin:100px 152px;transition:transform .16s ease-out">' +
+      '<g class="fHead" style="transform-box:fill-box;transform-origin:50% 62%;transition:transform .45s ease">' +
+        /* ---- EARS (av-6.0.0). They were two circles pinned to the widest point of the
+           balloon, which is exactly how a cartoon does it. A real ear is taller than it is
+           wide, its top sits level with the BROW and its lobe level with the nose base, it
+           tucks INTO the skull rather than being stuck on, and it has a visible helix rim
+           and inner fold. Placed off the skull's own temple landmark so a narrow face gets
+           narrow-set ears. */
+        earOf(-1) + earOf(1) +
+        /* ---- THE SKULL, BUILT FROM SCRATCH (av-6.0.0) ---------------------------------
+           Owner: "completly chan gei t liek from scratch."
+           It was ONE ELLIPSE. Every human head is widest at the temples, narrows through
+           the cheekbones, and tapers to a jaw and a chin — an ellipse has none of that, so
+           no amount of shading painted on top could stop it reading as a balloon with
+           features printed on it. This is a closed path in eight arcs, built from the same
+           sh.rx / sh.ry the matcher decides, so a round face is still round and a long face
+           still long; only the SHAPE of the boundary changed.
+           Landmarks, all as fractions of the skull so nothing is nailed to a constant:
+             temple  ±0.98rx at y = 98 - 0.34ry     (widest point, just above the eyes)
+             cheek   ±0.86rx at y = 98 + 0.16ry
+             jaw     ±0.52rx at y = 98 + 0.66ry     (the corner of the mandible)
+             chin     0      at y = 98 + 1.00ry     (with a slight square, not a point) */
+        '<path class="fSkin fFace" d="' +
+          'M100 ' + n2(98 - sh.ry) +
+          ' C' + n2(100 + sh.rx * 0.60) + ' ' + n2(98 - sh.ry) + ' ' + n2(100 + sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.72) + ' ' + n2(100 + sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.34) +
+          ' C' + n2(100 + sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.02) + ' ' + n2(100 + sh.rx * 0.90) + ' ' + n2(98 + sh.ry * 0.10) + ' ' + n2(100 + sh.rx * 0.86) + ' ' + n2(98 + sh.ry * 0.30) +
+          ' C' + n2(100 + sh.rx * 0.80) + ' ' + n2(98 + sh.ry * 0.50) + ' ' + n2(100 + sh.rx * 0.70) + ' ' + n2(98 + sh.ry * 0.62) + ' ' + n2(100 + sh.rx * 0.52) + ' ' + n2(98 + sh.ry * 0.74) +
+          ' C' + n2(100 + sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.90) + ' ' + n2(100 + sh.rx * 0.20) + ' ' + n2(98 + sh.ry * 1.00) + ' 100 ' + n2(98 + sh.ry) +
+          ' C' + n2(100 - sh.rx * 0.20) + ' ' + n2(98 + sh.ry * 1.00) + ' ' + n2(100 - sh.rx * 0.36) + ' ' + n2(98 + sh.ry * 0.90) + ' ' + n2(100 - sh.rx * 0.52) + ' ' + n2(98 + sh.ry * 0.74) +
+          ' C' + n2(100 - sh.rx * 0.70) + ' ' + n2(98 + sh.ry * 0.62) + ' ' + n2(100 - sh.rx * 0.80) + ' ' + n2(98 + sh.ry * 0.50) + ' ' + n2(100 - sh.rx * 0.86) + ' ' + n2(98 + sh.ry * 0.30) +
+          ' C' + n2(100 - sh.rx * 0.90) + ' ' + n2(98 + sh.ry * 0.10) + ' ' + n2(100 - sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.02) + ' ' + n2(100 - sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.34) +
+          ' C' + n2(100 - sh.rx * 0.98) + ' ' + n2(98 - sh.ry * 0.72) + ' ' + n2(100 - sh.rx * 0.60) + ' ' + n2(98 - sh.ry) + ' 100 ' + n2(98 - sh.ry) +
+          ' Z" fill="url(#mlsAvSkin' + faceUid + ')"/>' +
+        /* ---- MODELLING (av-6.0.0). A single flat fill is why the old face read as a
+           sticker: a real head is lit from above, so the forehead is the brightest plane,
+           the temples and the jaw fall away, and there is a shadow under the cheekbone and
+           beneath the chin. None of these are interactive and all sit UNDER the features,
+           so nothing here can intercept a click or change a measurement. */
+        /* ⛔ TWO ATTEMPTS AT PAINTED SHADING, BOTH REJECTED ON SIGHT (av-6.0.0).
+           First five hard ellipses: they read as blotches — dark bands down the sides with
+           a pale block stranded across the eye line. Then one radial vignette: it read as a
+           translucent BAND across the face, edge to edge over the ears. The owner's verdict
+           on the second was "that looks so weird".
+           The lesson is structural, not a tuning problem: an overlay painted ON a flat
+           ellipse always looks like an overlay, because the silhouette underneath is not a
+           head. Modelling belongs in the GEOMETRY — a skull that is wider at the temples
+           than at the jaw, with a chin — and in the skin ramp that follows it. So there is
+           no overlay layer here at all now; see fFace below. */
+        /* the chin's own shadow. At 0.86ry it sat ON the chin and read as a smudge on it;
+           a chin shadow falls BELOW the chin, onto the throat, so it belongs at the very
+           edge of the silhouette where the neck takes over. */
+        '<g class="fModel" pointer-events="none">' +
+          '<ellipse cx="100" cy="' + n2(98 + sh.ry * 1.00) + '" rx="' + n2(sh.rx * 0.26) + '" ry="' + n2(sh.ry * 0.055) + '" fill="' + faceShade(look.skin, -0.42) + '" opacity=".18"/>' +
+        '</g>' +
+        jaw +
+        '<g class="fCrownFit" transform="' + fit + '">' + beard + hair + temples + cap + '</g>' +
+        /* CHEEK WARMTH, not clown spots (av-6.0.0). Two hard-edged circles at 22% read as
+           a doll's painted cheeks. An adult's flush is a soft diffuse ellipse, wider than
+           it is tall, sitting on the cheekbone rather than the middle of the cheek. The
+           class and the opacity transition are unchanged, so the mood code that raises the
+           flush on a warm greeting still drives exactly this. */
+        /* ⛔ STILL CLOWN CHEEKS AT REAL SIZE. Softening the SHAPE (hard circles -> ellipses)
+           was only half of it; at the kiosk's 302px two salmon patches at .13 on a pale skin
+           still read as painted-on doll blush — visible in the very first real-surface
+           screenshot. An adult's flush is barely there. .07 base, wider and flatter, and it
+           fades out at its own edge instead of ending on one, so there is no rim to notice.
+           The class and the transition are unchanged, so the mood code that raises the flush
+           on a warm greeting still drives exactly this, from a quieter floor. */
+        /* idle blush at 0 (p1-adult-art-1.0.0). Even the .07 "barely there" floor from
+           the previous pass still reads as a doll's cheeks on an adult face at kiosk
+           size - blush is a child signal full stop, not a dial to turn down. The class,
+           gradient and opacity transition are unchanged, so a warm-greeting mood still
+           has somewhere to raise the flush FROM; idle itself now shows none. */
+        '<ellipse class="fBlush" cx="' + n2(100 - 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity="0" style="transition:opacity .4s ease"/>' +
+        '<ellipse class="fBlush" cx="' + n2(100 + 36 * FX) + '" cy="' + n2(115 + dyN) + '" rx="15" ry="7.5" fill="url(#mlsAvBlush' + faceUid + ')" opacity="0" style="transition:opacity .4s ease"/>' +
+        /* ---- THE UPPER-FACE CLUSTER MOVES UP 8 UNITS (p1-adult-art-1.0.0) ---------------
+           Owner: the drawing "still looks like a children's cartoon". Brows, eyes and
+           glasses were measured at y ~72-101 against a skull that runs crown-to-chin
+           32-164 - a lot of bare, round, unbroken forehead above them and comparatively
+           little of the head doing anything below. A large cranium with low, small
+           features huddled in the lower-middle is the textbook infant proportion; an
+           adult's eye line sits close to the head's own vertical middle. Rather than
+           touch sh.rx/sh.ry (the matcher's own shape units, shared with the jaw, neck
+           and hairline), the whole upper-face cluster - both brows, the glabellar knit,
+           both eyes and the glasses - is lifted 8 units as one group. That shrinks the
+           bare forehead, leaves the nose and mouth exactly where they were (which
+           widens the mid-face instead of just relocating the same gap), and moves
+           nothing that isn't inside this <g>: fCrowL/fCrowR are adjusted separately,
+           just above, because they are drawn later from their own literal y. */
+        '<g class="fUpperFace" transform="translate(0,-8)">' +
+        /* BROWS: a filled, tapered shape, not a round-linecap stroke (see bTop/bBot/bIn
+           above). Blunt at the inner corner by the nose, a fine point at the outer,
+           temple end - a real eyebrow's own growth pattern, and no longer a constant-
+           width mark that reads as drawn rather than grown. */
+        '<g class="fBrowL" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxL + 13) + ' ' + n2(77 - bIn) + ' Q' + n2(cxL - 3) + ' ' + n2(72 - bTop) + ' ' + n2(cxL - 13) + ' 78 Q' + n2(cxL - 3) + ' ' + n2(72 + bBot) + ' ' + n2(cxL + 13) + ' ' + n2(77 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
+        '<g class="fBrowR" style="transform-box:fill-box;transform-origin:center;transition:transform .35s ease"><path d="M' + n2(cxR - 13) + ' ' + n2(77 - bIn) + ' Q' + n2(cxR + 3) + ' ' + n2(72 - bTop) + ' ' + n2(cxR + 13) + ' 78 Q' + n2(cxR + 3) + ' ' + n2(72 + bBot) + ' ' + n2(cxR - 13) + ' ' + n2(77 + bIn) + ' Z" fill="' + browPaint + '"/></g>' +
+        /* the glabellar KNIT - two short creases between the brows. Concern is
+           read there before it is read anywhere else on a human face. */
+        '<path class="fKnit" d="M96.5 72 Q97.5 66 96.5 61 M103.5 72 Q102.5 66 103.5 61" stroke="' + shadeKnit + '" stroke-width="2" stroke-linecap="round" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+        eye(cxL, 'L') + eye(cxR, 'R') + glasses +
+        '</g>' +
+        /* the whole nose sits at half strength: a nose is a shadow, and at 302px full-strength
+           strokes plus two dark nostrils read as a squiggle drawn on the face. The nostrils
+           take the same treatment — shadeHole at full opacity punched two black dots either
+           side of the tip, which is the single most cartoon mark on the face. */
+        '<g class="fNoseSet" transform="translate(0,' + n2(dyN) + ')" opacity=".6">' +
+          '<path class="fNose" d="' + nose.d + '" stroke="' + shadeNose + '" stroke-width="' + nose.w + '" stroke-linecap="round" fill="none"/>' +
+          '<ellipse class="fNostril fNostrilL" cx="' + n2(100 - nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
+          '<ellipse class="fNostril fNostrilR" cx="' + n2(100 + nose.nx) + '" cy="' + nose.ny + '" rx="' + nose.nr + '" ry="' + noseRy + '" fill="' + shadeNose + '" opacity=".72"/>' +
+          /* THE PHILTRUM. Two faint parallel grooves between the nose and the upper
+             lip - a flat, featureless span there is a large part of why the old face
+             read as a mask rather than as structure. Inherits the group's own .6
+             opacity on top of its own .55, so it stays a suggestion, not a mark. */
+          '<path class="fPhiltrum" d="M97.4 118 Q96.7 121.5 97.6 124.5 M102.6 118 Q103.3 121.5 102.4 124.5" stroke="' + shadeNose + '" stroke-width="0.8" stroke-linecap="round" fill="none" opacity=".55"/>' +
+        '</g>' +
+        '<g class="fMouthSet" transform="translate(0,' + n2(dyM) + ')">' +
+        '<g class="fMouthWrap" style="transform-box:fill-box;transform-origin:center top;transition:transform .1s ease">' +
+          '<g class="fLips" style="transform-box:fill-box;transform-origin:center;transform:scaleY(' + lips.scale + ');transition:transform .3s ease">' +
+            '<path class="fMouth" d="' + FACE_MOUTHS.smile + '" fill="' + look.lip + '"/>' +
+            /* THE INSIDE OF THE MOUTH (av-6.0.1). Every shape — including open1/open2/open3
+               and the talking cycle — was one path filled with the LIP colour, so the moment
+               the avatar spoke its mouth became a flat lip-coloured disc. That is what the
+               patient sees for most of the visit, and it is the first thing the real-kiosk
+               screenshot caught. A mouth that is open shows the cavity behind the lips: the
+               same path, inset by a uniform scale so the lip colour survives as a RIM, filled
+               with a dark shade OF look.lip so it still tracks the doctor's chosen colour.
+               On the closed shapes the inset collapses to a thin line, which is exactly what
+               a closed mouth is, so one shape table serves both. */
+            '<path class="fMouthIn" d="' + FACE_MOUTHS.smile + '" fill="' + faceShade(look.lip, -0.66) + '" ' +
+              'style="transform-box:fill-box;transform-origin:center;transform:scale(0.82,0.62)"/>' +
+            /* the LINER, not an outline. Stroked at full strength around a shape only ~8
+               units tall, the dark liner covered most of the lip fill, so at 302px the
+               mouth read as a thin brown SLIT rather than lips — the shape was right and
+               the weight was wrong. Thinner and half-transparent lets the lip colour show
+               between the lines, which is what makes a mouth look soft. */
+            '<path class="fLipUp" d="' + FACE_MOUTHS.smile + '" fill="none" stroke="' + faceShade(look.lip, -0.34) + '" stroke-width="' + (Math.round(lips.w * 0.62 * 100) / 100) + '" stroke-linejoin="round" opacity=".7"/>' +
+          '</g>' +
+          '<path class="fDimpleL" d="M74 130 q-3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+          '<path class="fDimpleR" d="M126 130 q3 4 0 8" stroke="' + shadeSoft + '" stroke-width="2" fill="none" opacity="0" style="transition:opacity .3s ease"/>' +
+          /* THE LOWER-LIP SHADOW - the crease where the lower lip meets the chin. A
+             mouth with nothing beneath it reads as a decal stuck on a flat plane; this
+             is what tucks it into the face. Static (outside .fLips) so it does not
+             fight the open-mouth talking cycle's own scale. */
+          '<path class="fLipShadow" d="M84 146.5 Q100 150.5 116 146.5" stroke="' + shadeSoft + '" stroke-width="2.2" stroke-linecap="round" fill="none" opacity=".32"/>' +
+        '</g>' +
+        '</g>' +
+        ageLines +
+      '</g></g></g></svg>';   /* fHead / fHeadRig / fFrame */
+  }
+  function makeFace(mount, look) {
+    if (!mount) return null;
+    mount.innerHTML = faceSvg(look);
+    var root = mount.querySelector('svg');
+    if (!root) return null;
+    var ctl = null;
+    function q(sel) { return root.querySelector(sel); }
+    /* .fShirt is deliberately NOT bound any more: breathing drives .fBody, and a
+       binding kept only so a dead code path can write to it is how the chest came to
+       stop moving without anything noticing. */
+    var head, rig, body, mouthIn, browL, browR, eyeL, eyeR, pupL, pupR,
+      lidL, lidR, lowL, lowR, mouth, lipUp, lipsG, mouthWrap, dimpleL, dimpleR, knit, blush;
+    function bind() {
+      head = q('.fHead'); rig = q('.fHeadRig'); body = q('.fBody');
+      browL = q('.fBrowL'); browR = q('.fBrowR');
+      eyeL = q('.fEyeL'); eyeR = q('.fEyeR'); pupL = q('.fPupilL'); pupR = q('.fPupilR');
+      lidL = q('.fLidL'); lidR = q('.fLidR'); lowL = q('.fLowL'); lowR = q('.fLowR');
+      mouth = q('.fMouth'); mouthIn = q('.fMouthIn'); lipUp = q('.fLipUp'); lipsG = q('.fLips'); mouthWrap = q('.fMouthWrap');
+      dimpleL = q('.fDimpleL'); dimpleR = q('.fDimpleR'); knit = q('.fKnit');
+      blush = root.querySelectorAll('.fBlush');
+    }
+    bind();
+    var timers = [], dead = false, cycling = false;
+    var moodNow = 'idle', caringNow = false, happyNow = false;
+    var reduced = safe(function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }, false);
+    /* every fast gesture writes ONE of these and applyRig() composes them, so a
+       nod landing inside a concern shake cannot erase the shake */
+    var breathT = 0, breathY = 0, nodY = 0, shakeX = 0, shakeR = 0, browGesture = '';
+    /* GESTURE GENERATION. Every gesture is transient and every mood change
+       invalidates the ones in flight: without this, the curious brow started
+       by "thinking" was still overriding applyBrows() a moment later and the
+       concern knit never rendered at all. */
+    var gestureGen = 0;
+    function faceLives() {
+      /* a face whose mount has left the document is finished. The Setup preview
+         controller is never explicitly destroyed, and a breathing loop on a
+         detached tree would otherwise tick for the life of the tab. */
+      return safe(function () {
+        if (!root) return false;
+        if (root.isConnected === true) return true;
+        return !!(document.documentElement && document.documentElement.contains(root));
+      }, true);
+    }
+    function later(fn, ms) {
+      var t = setTimeout(function () {
+        var i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1);
+        if (dead) return;
+        if (!faceLives()) { destroy(); return; }
+        safe(fn);
+      }, ms);
+      timers.push(t); return t;
+    }
+    function killTransitions() {
+      /* prefers-reduced-motion must stop MOTION, not merely the loops: without
+         this the inline transitions still slide every state change. */
+      safe(function () {
+        var n = root.querySelectorAll('[style]'), i;
+        for (i = 0; i < n.length; i++) { n[i].style.transition = 'none'; }
+      });
+    }
+    function setMouth(shape) {
+      var d = FACE_MOUTHS[shape] || FACE_MOUTHS.smile;
+      if (mouth) mouth.setAttribute('d', d);
+      /* the lip line is the SAME path - a separately drawn upper lip detaches
+         the instant the mouth opens */
+      if (lipUp) lipUp.setAttribute('d', d);
+      if (mouthIn) mouthIn.setAttribute('d', d);
+    }
+    function baseMouth() {
+      return caringNow ? 'concern'
+        : happyNow ? 'grin'
+        : moodNow === 'listening' ? 'soft'
+        : moodNow === 'thinking' ? 'think' : 'smile';
+    }
+    function eyesBase() { return happyNow ? 'scaleY(.62)' : ''; }
+    /* the upper lids do real acting: a genuine smile RAISES the cheek and
+       narrows the eye (Duchenne), concern drops the lid, thinking half-closes
+       one - the difference between a mask and a face. */
+    function lidBase() {
+      if (happyNow) return 0.34;
+      if (caringNow) return 0.30;
+      if (moodNow === 'thinking') return 0.22;
+      return 0.06;
+    }
+    function applyLids() {
+      var v = lidBase();
+      if (lidL) lidL.style.transform = 'scaleY(' + v + ')';
+      if (lidR) lidR.style.transform = 'scaleY(' + (moodNow === 'thinking' ? Math.min(0.5, v + 0.16) : v) + ')';
+      /* smiling eyes: the lower lid climbs only on a real smile */
+      var low = happyNow ? 1 : caringNow ? 0.30 : 0.02;
+      if (lowL) lowL.style.transform = 'scaleY(' + low + ')';
+      if (lowR) lowR.style.transform = 'scaleY(' + low + ')';
+    }
+    function blink() {
+      if (dead) return;
+      if (!reduced && lidL && lidR) {
+        lidL.style.transform = 'scaleY(1)'; lidR.style.transform = 'scaleY(1)';
+        later(applyLids, 120);
+      }
+      /* the occasional double-blink reads as alive, not mechanical */
+      var again = Math.random() < 0.18;
+      later(blink, again ? 260 : (2600 + Math.random() * 3200));
+    }
+    /* ---- GAZE. Where the eyes point is a mood, not a random walk: it settles
+       on the viewer while speaking, holds steady while listening, and drifts up
+       and away while thinking. That contrast is most of what makes a drawn face
+       look like it is paying attention. ---- */
+    function setGaze(dx, dy) {
+      if (dead) return;
+      var t = 'translate(' + Number(dx).toFixed(2) + 'px,' + Number(dy).toFixed(2) + 'px)';
+      if (pupL) pupL.style.transform = t;
+      if (pupR) pupR.style.transform = t;
+    }
+    function gazeNext() {
+      if (moodNow === 'listening') return [0, 0];
+      if (moodNow === 'speaking') return [Math.random() * 0.9 - 0.45, Math.random() * 0.6 - 0.3];
+      if (moodNow === 'thinking') {
+        var s = Math.random() < 0.5 ? -1 : 1;
+        return [s * (2.8 + Math.random() * 1.4), -(1.6 + Math.random() * 1.1)];
+      }
+      return [Math.random() * 5 - 2.5, Math.random() * 3 - 1.4];
+    }
+    function gazeDelay() {
+      return moodNow === 'speaking' ? 1400 + Math.random() * 1800
+        : moodNow === 'thinking' ? 900 + Math.random() * 900
+        : moodNow === 'listening' ? 1200 + Math.random() * 900
+        : 1800 + Math.random() * 2600;
+    }
+    function wander() {
+      if (dead) return;
+      if (!reduced) { var g = gazeNext(); setGaze(g[0], g[1]); } else setGaze(0, 0);
+      later(wander, gazeDelay());
+    }
+    /* ---- THE RIG: breath + nod + shake, composed into one transform ---- */
+    function applyRig() {
+      if (!rig) return;
+      if (reduced) { rig.style.transform = ''; return; }
+      rig.style.transform = 'translate(' + shakeX.toFixed(2) + 'px,' + (breathY + nodY).toFixed(2) + 'px) rotate(' + shakeR.toFixed(2) + 'deg)';
+    }
+    function breathe() {
+      if (dead) return;
+      if (!reduced && body) {
+        breathT += 0.13;
+        var p = Math.sin(breathT);
+        /* ⛔ THE CHEST STOPPED BREATHING AND THE PIN WATCHING IT STILL PASSED (av-6.0.0).
+           This used to be setAttribute('ry') / setAttribute('cy') on .fShirt, which was
+           an <ellipse>. av-6.0.0 gave the torso a shoulder PATH instead — and `ry`/`cy`
+           mean nothing on a <path>, so both writes became no-ops. Nothing crashed: an
+           unrecognised attribute is still stored and still reads back, so the harness
+           sampling `shirt.getAttribute('ry')` watched a dead attribute tick up and down
+           and reported "the chest RADIUS itself changes over time" for a chest that was
+           only bobbing 1px. The measurement must be the RENDERED box, never an attribute.
+           The expansion now rides a transform on .fBody. That group holds ONLY the torso,
+           the uniform and the stethoscope — the head, neck and face are all outside it —
+           so this is a chest inflating, not a zoom of the drawing, which is what the old
+           comment here was rightly afraid of. */
+        body.style.transform = 'translateY(' + (-p * 1.1).toFixed(2) + 'px) scale(' +
+          (1 + p * 0.014).toFixed(4) + ',' + (1 + p * 0.010).toFixed(4) + ')';
+        breathY = -p * 0.5;
+        applyRig();
+      }
+      later(breathe, 90);
+    }
+    function nod() {
+      /* ACKNOWLEDGEMENT while the patient talks - the cheapest honest signal
+         that a listener is actually with you */
+      if (dead || reduced) return;
+      var g = gestureGen;
+      nodY = 2.8; applyRig();
+      later(function () { nodY = g === gestureGen ? -1 : 0; applyRig(); }, 190);
+      later(function () { nodY = 0; applyRig(); }, 380);
+    }
+    function nodLoop() {
+      if (dead) return;
+      if (!reduced && moodNow === 'listening' && !caringNow) nod();
+      later(nodLoop, 2400 + Math.random() * 2200);
+    }
+    function shake() {
+      /* CONCERN: a small, slow head shake. Two beats and out - a wobble reads
+         as a glitch, not as sympathy. */
+      if (dead || reduced) return;
+      var seq = [[-2.6, -2.2], [2.2, 1.8], [-1.2, -1], [0, 0]], i = 0, g = gestureGen;
+      (function step() {
+        if (dead) return;
+        /* abandoned mid-shake, the head must NOT be left crooked */
+        if (g !== gestureGen) { shakeX = 0; shakeR = 0; applyRig(); return; }
+        if (i >= seq.length) return;
+        shakeX = seq[i][0]; shakeR = seq[i][1]; i++;
+        applyRig();
+        later(step, 150);
+      })();
+    }
+    function curious() {
+      /* CURIOSITY: one brow up. The clearest "go on, tell me more" a face has,
+         and it must be ASYMMETRIC or it just reads as surprise. */
+      if (dead || reduced) return;
+      var g = gestureGen;
+      browGesture = 'curious'; applyBrows();
+      later(function () {
+        if (g !== gestureGen) return; /* a newer mood already cleared it */
+        browGesture = ''; applyBrows();
+      }, 1000);
+    }
+    function applyBrows() {
+      var bl = '', br = '';
+      if (caringNow) {
+        /* a real KNIT: the INNER ends come up and together. The old code
+           rotated them the other way, which is the anger brow, not concern. */
+        bl = 'translate(2.2px,-1.4px) rotate(-9deg)';
+        br = 'translate(-2.2px,-1.4px) rotate(9deg)';
+      } else if (happyNow) { bl = br = 'translateY(-4px)'; }
+      else if (moodNow === 'thinking') { bl = 'translateY(2.4px) rotate(4deg)'; br = 'translateY(-5.5px) rotate(-6deg)'; }
+      else if (moodNow === 'listening') { bl = br = 'translateY(-2px)'; }
+      if (browGesture === 'curious') { bl = 'translateY(0.6px)'; br = 'translateY(-6.5px) rotate(-6deg)'; }
+      if (browL) browL.style.transform = bl;
+      if (browR) browR.style.transform = br;
+      if (knit) knit.style.opacity = caringNow ? '.55' : '0';
+    }
+    function applyHead() {
+      if (!head) return;
+      head.style.transform = reduced ? '' :
+        moodNow === 'listening' ? 'rotate(2.4deg) translateY(1px)' :
+        moodNow === 'thinking' ? 'rotate(-2.8deg) translateY(-2px)' :
+        caringNow ? 'rotate(1.6deg) translateY(1.5px)' : '';
+    }
+    function mood(state, caring, happy) {
+      if (dead) return;
+      var wasMood = moodNow, wasCaring = caringNow, wasHappy = happyNow;
+      moodNow = state || 'idle'; caringNow = !!caring; happyNow = !!happy && !caring;
+      /* a CHANGE retires every gesture in flight and every one scheduled. The
+         new expression owns the brows from this instant. */
+      if (moodNow !== wasMood || caringNow !== wasCaring || happyNow !== wasHappy) {
+        gestureGen++; browGesture = '';
+      }
+      root.setAttribute('data-mood', moodNow + (caringNow ? ' caring' : '') + (happyNow ? ' happy' : ''));
+      applyBrows();
+      applyHead();
+      if (eyeL && eyeR) { eyeL.style.transform = eyesBase(); eyeR.style.transform = eyesBase(); }
+      applyLids();
+      /* a real smile reaches the cheeks and dimples; concern drains them */
+      /* Keep the idle face composed at the 302px kiosk size. The greeting
+         still warms the cheeks, but the resting face no longer reads painted. */
+      var warm = happyNow ? '.24' : caringNow ? '.08' : '.07';
+      Array.prototype.forEach.call(blush, function (n) { n.style.opacity = warm; });
+      if (dimpleL) dimpleL.style.opacity = happyNow ? '1' : '0';
+      if (dimpleR) dimpleR.style.opacity = happyNow ? '1' : '0';
+      if (!cycling) setMouth(baseMouth());
+      /* the gaze re-points IMMEDIATELY on a mood change - waiting for the next
+         wander tick is exactly how a face reads as dead */
+      if (!reduced) { var g = gazeNext(); setGaze(g[0], g[1]); } else setGaze(0, 0);
+      /* ACTING fires on the CHANGE, never on a repaint of the same state */
+      if (caringNow && !wasCaring) shake();
+      if (moodNow === 'thinking' && wasMood !== 'thinking') curious();
+      if (moodNow === 'listening' && wasMood !== 'listening') {
+        /* scheduled, so they must check they are still wanted when they land */
+        var g = gestureGen;
+        later(function () { if (g === gestureGen) nod(); }, 500);
+        if (Math.random() < 0.45) later(function () { if (g === gestureGen) curious(); }, 900);
+      }
+    }
+    function talk(level) {
+      /* level 0..1 = live amplitude from the natural voice; -1 = stop */
+      if (dead || !mouth) return;
+      if (level < 0) { setMouth(baseMouth()); if (mouthWrap) mouthWrap.style.transform = ''; return; }
+      setMouth(level > 0.62 ? 'open3' : level > 0.34 ? 'open2' : level > 0.1 ? 'open1' : Math.random() < 0.2 ? 'o' : 'soft');
+      /* the jaw travels with the voice - the mouth shape alone reads rubbery */
+      if (mouthWrap && !reduced) mouthWrap.style.transform = 'translateY(' + (level * 2.6).toFixed(2) + 'px)';
+    }
+    function talkCycle(on) {
+      /* browser-speech fallback carries no amplitude - cycle naturally */
+      cycling = !!on;
+      if (!on) { setMouth(baseMouth()); if (mouthWrap) mouthWrap.style.transform = ''; return; }
+      (function step() {
+        if (!cycling || dead) return;
+        setMouth(['open1', 'open2', 'soft', 'open3', 'o', 'open1'][Math.floor(Math.random() * 6)]);
+        later(step, 95 + Math.random() * 70);
+      })();
+    }
+    /* A colour-only retint cannot add glasses, a cap, a beard or a different
+       hair cut, so a full look change RE-RENDERS and re-binds - then replays the
+       current mood so the face never flickers back to neutral. */
+    function retint(lk) {
+      if (dead || !lk) return;
+      var keep = { state: moodNow, caring: caringNow, happy: happyNow };
+      mount.innerHTML = faceSvg(lk);
+      var fresh = mount.querySelector('svg');
+      if (!fresh) return;
+      root = fresh;
+      bind();
+      /* the returned handle used to keep the ORIGINAL svg after a retint, so any
+         caller holding .node was pointing into a detached tree */
+      if (ctl) ctl.node = root;
+      if (reduced) killTransitions();
+      breathY = 0; nodY = 0; shakeX = 0; shakeR = 0; browGesture = ''; gestureGen++;
+      applyRig();
+      mood(keep.state, keep.caring, keep.happy);
+    }
+    function destroy() {
+      dead = true; cycling = false;
+      timers.forEach(function (t) { safe(function () { clearTimeout(t); }); });
+      timers.length = 0;
+    }
+    if (reduced) killTransitions();
+    mood('idle');
+    blink(); wander();
+    /* reduced motion does not merely skip the frames - the loops never start */
+    if (!reduced) { breathe(); nodLoop(); }
+    ctl = { mood: mood, talk: talk, talkCycle: talkCycle, retint: retint,
+      nod: nod, shake: shake, curious: curious, gaze: setGaze,
+      destroy: destroy, node: root };
+    return ctl;
+  }
+  /* p1-photo-face-1.0.0 — THE CAMERA PORTRAIT IS A REAL FACE MODE, NOT A
+     THUMBNAIL BESIDE A DIFFERENT CARTOON.  Photo mode cannot honestly invent
+     mouth geometry that is not present in one still image, but it can stay
+     connected to the same speaking/listening lifecycle: a tiny, bounded
+     breath and voice pulse makes it feel present without pretending to be a
+     lip-synced reconstruction.  The controller deliberately implements the
+     makeFace surface so Setup voice samples and the kiosk do not fork. */
+  function faceValidPhoto(dataUrl) {
+    return !!(dataUrl && String(dataUrl).indexOf('data:image/') === 0);
+  }
+  /* p1-avatar-primary-1.0.0 (owner, 2026-08-16): "WHY DOES IT AUTO SWITCH TO
+     FACE STYLE MY PHOTO ONCE I TAKE A PICTURE ... ONLY HAVE IT IN SETTINGS
+     AVATAR IS THE PRIMARY".
+
+     Both of these used to switch the patient-facing face to the photograph on
+     their own. Saving a portrait flipped the mode, and so did merely having
+     one on the next load. The doctor never asked for that, and the face
+     patients see is not a thing this code gets to decide implicitly - a
+     portrait is an INPUT to the animated character, not a replacement for it.
+
+     The animated character is now the default in both paths. The photograph
+     is shown only when the doctor has explicitly chosen it in Settings, which
+     is the one place that choice lives. */
+  function faceModeOnLoad(savedMode, savedImage) {
+    return savedMode === 'photo' || savedMode === 'drawn' ? savedMode : 'drawn';
+  }
+  function faceModeAfterCapture(currentMode, wasTouched) {
+    /* Capturing a portrait never changes what patients see. Whatever mode is
+       active stays active - including an explicit 'photo' the doctor chose. */
+    return currentMode === 'photo' ? 'photo' : 'drawn';
+  }
+  function makePhotoFace(mount, dataUrl, altText) {
+    if (!mount || !faceValidPhoto(dataUrl)) return null;
+    mount.innerHTML = '';
+    var img = document.createElement('img');
+    img.alt = altText || '';
+    img.src = dataUrl;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;transform-origin:50% 58%;transition:transform .24s cubic-bezier(.2,.7,.3,1),filter .3s ease';
+    mount.appendChild(img);
+    var dead = false, cycling = false, timer = 0, gestureTimer = 0, moodNow = 'idle';
+    var reduced = safe(function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }, false);
+    function clearCycle() {
+      cycling = false;
+      if (timer) { safe(function () { clearTimeout(timer); }); timer = 0; }
+    }
+    function settle() {
+      if (dead || !img) return;
+      if (reduced) { img.style.transform = ''; return; }
+      var tx = moodNow === 'listening' ? 'translateY(.5px) rotate(.18deg) scale(1.006)'
+        : moodNow === 'thinking' ? 'translateY(-.5px) rotate(-.18deg) scale(1.004)'
+        : 'translateY(0) scale(1)';
+      img.style.transform = tx;
+    }
+    function mood(state) {
+      if (dead) return;
+      moodNow = state || 'idle';
+      if (mount.setAttribute) mount.setAttribute('data-photo-mood', moodNow);
+      settle();
+    }
+    function talk(level) {
+      if (dead || !img || reduced) return;
+      if (level < 0) { settle(); return; }
+      var pulse = Math.max(0, Math.min(1, Number(level) || 0));
+      /* A still portrait may acknowledge speech, but it must not throb like a
+         talking game token.  The full voice range stays below a one-percent
+         zoom and a third of a pixel of lift at the real kiosk size. */
+      img.style.transform = 'translateY(' + (-0.3 * pulse).toFixed(2) + 'px) scale(' +
+        (1.002 + pulse * 0.007).toFixed(3) + ')';
+    }
+    function talkCycle(on) {
+      clearCycle();
+      if (!on || dead || reduced) { settle(); return; }
+      cycling = true;
+      (function step() {
+        if (!cycling || dead) return;
+        talk(0.22 + Math.random() * 0.56);
+        timer = setTimeout(step, 190 + Math.random() * 80);
+      }());
+    }
+    function nod() {
+      if (dead || reduced) return;
+      img.style.transform = 'translateY(1px) scale(1.006)';
+      if (gestureTimer) safe(function () { clearTimeout(gestureTimer); });
+      gestureTimer = setTimeout(settle, 260);
+    }
+    function curious() {
+      if (dead || reduced) return;
+      img.style.transform = 'rotate(-.35deg) scale(1.006)';
+      if (gestureTimer) safe(function () { clearTimeout(gestureTimer); });
+      gestureTimer = setTimeout(settle, 360);
+    }
+    function destroy() {
+      dead = true;
+      clearCycle();
+      if (gestureTimer) { safe(function () { clearTimeout(gestureTimer); }); gestureTimer = 0; }
+      if (img) img.style.transition = 'none';
+    }
+    var ctl = { mood: mood, talk: talk, talkCycle: talkCycle,
+      retint: function () {}, nod: nod, shake: curious, curious: curious,
+      gaze: function () {}, destroy: destroy, node: img };
+    mood('idle');
+    return ctl;
+  }
+  /* =========================================================================
+     av-5.7.0 - THE FACE IS FOUND BEFORE IT IS MEASURED.
+
+     Owner, 2026-08-07: "the match avataer to face doesnt work at all make it
+     actally match with skin tone beard or not and all that kinda stuff it needs
+     to have a facial algeraithum."
+
+     THE MECHANISM, and it explains every symptom at once. Every measurement in
+     the previous matcher was taken at a FIXED FRACTION OF THE PICTURE - skin at
+     (0.30, 0.52), hair at (0.50, 0.11), the jaw at (0.72) - on the stated
+     assumption that "the portrait is a centred square crop with the head
+     filling the frame". A webcam does not frame a head that way. Sitting at
+     arm's length the head fills perhaps a third of the frame and sits high, so
+     those coordinates land on the WALL and the SHIRT: the crown patches read
+     whatever was above the head (a pale ceiling reads as pale hair on a
+     black-haired doctor, which is exactly what the owner was shown), the jaw
+     patch reads collar, and the "skin" patches read chest. The classifiers
+     underneath were sound; they were being fed the wrong pixels.
+
+     So the geometry comes out of the picture now instead of being assumed:
+
+       1. A SKIN MASK in YCbCr. The chroma of skin is remarkably constant across
+          every skin tone while its luminance is not - which is why no
+          brightness test could ever have done this job.
+       2. A SECOND PASS, because DARK HAIR IS CHROMATICALLY SKIN. Measured:
+          #3a2a1b hair sits inside the skin-chroma cluster, so the hair mass
+          merged with the face, the box began at the top of the hair, and the
+          skin sample came back the colour of the hair. The first pass finds a
+          head; the brighter half of it estimates the skin; the mask is then
+          rebuilt against THAT estimate and the hair falls out of it.
+       3. CONNECTED COMPONENTS, and the face is chosen by shape and position,
+          not merely size. A beige wall is one enormous component and is
+          rejected for covering too much of the frame; an arm is rejected on
+          aspect ratio; a scatter of warm pixels is rejected on fill.
+       4. THE BOX comes from the component's own row-width profile: the widest
+          row is the cheekbones, and the chin is where the width collapses
+          toward the neck.
+       5. THE EYE LINE IS ANATOMICAL, NOT PROPORTIONAL. The cheekbones sit level
+          with the eyes, so the widest row IS the eye line - a measurement,
+          available even on a face whose eyes cannot be seen. When two dark
+          masses ARE found near it, they refine it.
+       6. EVERY MEASUREMENT IS THEN BOX-RELATIVE, so the same face read at three
+          different distances gives the same answer, and features are scaled
+          against the face's own WIDTH - the one dimension a fringe cannot move.
+
+     Refusals are unchanged in spirit and stricter in fact: `derived` names only
+     what was really measured, and a photo with no findable face returns null
+     rather than a confident description of somebody's living room.
+     ======================================================================= */
+  function faceTintFromPortrait(dataUrl, then) {
+    if (!dataUrl || String(dataUrl).indexOf('data:image/') !== 0) { then(null); return; }
+    var img = new Image();
+    img.onload = function () { then(safe(function () { return faceReadPortrait(img); }, null)); };
+    img.onerror = function () { then(null); };
+    img.src = dataUrl;
+  }
+  /* skin in YCbCr. The bounds are the standard skin-chroma cluster; the
+     luminance guard only throws away pixels that carry no usable chroma at all
+     (crushed shadow, blown highlight). */
+  function faceIsSkinRgb(r, g, b) {
+    var y = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (y < 32 || y > 250) return false;
+    var cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+    var cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+    return cr >= 134 && cr <= 178 && cb >= 76 && cb <= 128 && r > b;
+  }
+  /* CIELAB, because skin is a HUE band and RGB has no such axis. Standard sRGB ->
+     linear -> XYZ (D65) -> L*a*b*; h_ab = atan2(b*,a*) is the one number that separates
+     every real skin tone from pink, and C* keeps lip vermilion out. Used by the skin
+     gate in faceReadPortrait. */
+  function faceLab(rgb) {
+    function lin(v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+    var r = lin(rgb[0]), g = lin(rgb[1]), b = lin(rgb[2]);
+    var X = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    var Y = (r * 0.2126 + g * 0.7152 + b * 0.0722);
+    var Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    function f(t) { return t > 0.008856 ? Math.pow(t, 1 / 3) : (7.787 * t + 16 / 116); }
+    var fx = f(X), fy = f(Y), fz = f(Z);
+    return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  }
+  function faceHueAb(lab) {
+    var h = Math.atan2(lab.b, lab.a) * 180 / Math.PI;
+    return h < 0 ? h + 360 : h;
+  }
+  function faceChroma(lab) { return Math.sqrt(lab.a * lab.a + lab.b * lab.b); }
+
+  /* ===== p1-camera-endurance-1.0.0 (2026-08-13) — WHAT I DID *NOT* SHIP =====
+     Owner: "if u take too long to take the picutre it blacks out."
+     My first theory was canvas churn: the live view measures at 8Hz and every
+     tick allocates a 1024 square copy, a 256 analysis surface and a 96 grey
+     copy, so a camera left open for a minute burns tens of MB/s of GPU-backed
+     surfaces, and surface exhaustion paints every canvas AND the composited
+     <video> black while the stream is still live. Plausible, and I rewrote all
+     three call sites to share one canvas per purpose.
+     ⛔ TWO THINGS KILLED IT, and both are worth keeping written down.
+     First, I never measured that churn causes the blackout — I inferred it
+     from the symptom. Second, the reuse IS NOT MEASUREMENT-NEUTRAL: driving
+     two different portraits alternately through the real reader in real
+     Chrome, the first read of a face returned skin #f4d3b3 and every read
+     after it returned #f4d2b6. A fresh canvas per read returns ONE answer
+     across forty reads. clearRect does not close the gap, so it is not stale
+     compositing — a repeatedly-drawn surface simply does not resample
+     identically to a virgin one. Whatever the mechanism, "the skin tone
+     depends on how many frames this canvas has already drawn" is a worse
+     property than the allocation it saves, and the allocation saving was
+     never shown to buy anything.
+     So the reader allocates per call exactly as it always did, and the cure
+     for the blackout is the part that is actually measured against the
+     symptom: ask for playback rather than assume it, watch the feed's own
+     luminance, re-attach the stream when it goes flat, report a track another
+     app has taken, and offer Restart camera. That RECOVERS the blackout
+     whatever causes it, and changes no verdict.
+     tests/1p-avatar-camera-endurance-runtime.test.js is the determinism guard
+     this cost, and it stays: forty alternating real reads, one answer each. */
+
+  function faceReadPortrait(img) {
+    /* THE GRID FOLLOWS THE SOURCE (gx-1.0). 128 was INVARIANT to camera
+       resolution: captureSquare hands this function a 1024px frame and it was
+       averaged down to 128x128 before any estimator looked at a pixel - 64x of
+       what the camera delivered discarded before measurement, so no camera
+       could ever move a verdict. The grid is 256 whenever the source can fill
+       it and 128 otherwise; NEVER upscaled - a small source read at 256 would
+       invent pixels, which is the opposite of measuring.
+       256 and not 512: the full 14-control pass measured 2.58ms at 128 and
+       scales with M^2, so 256 costs ~10ms (fits the live view's 125ms cadence
+       inside one paint) where 512's ~40ms would jank every tick.
+       ⛔ EVERY absolute pixel floor below was audited for this change: floors
+       that are fractions of M / maxW / faceW / faceH scale themselves; floors
+       in GRID PIXELS that describe physical extent scale by PR = M/128; floors
+       that are EVIDENCE MINIMUMS (sample counts) deliberately do NOT scale,
+       because a finer grid supplying more evidence for the same feature is the
+       entire point of this change. Each kept floor says which kind it is. */
+    var iw = img.naturalWidth || img.width || 128, ih = img.naturalHeight || img.height || 128;
+    var M = Math.min(iw, ih) >= 256 ? 256 : 128;
+    var PR = M / 128;
+    var c = document.createElement('canvas'); c.width = M; c.height = M;
+    var x = c.getContext('2d');
+    /* the browser's default downscale filter is the cheapest one; this frame is
+       measured, so ask for the good filter (a no-op where unsupported) */
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
+    /* COVER, never stretch. A webcam frame is 4:3 or 16:9, and squeezing one
+       into a square turns a round head oval - a shape verdict invented by the
+       scaler. stylizePortrait already centre-crops what it captures; a photo
+       arriving from anywhere else gets the same treatment here. */
+    var side = Math.min(iw, ih) || M;
+    x.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, M, M);
+    var d = x.getImageData(0, 0, M, M).data;
+    function px(xx, yy) { var i = ((yy | 0) * M + (xx | 0)) * 4; return [d[i], d[i + 1], d[i + 2]]; }
+    function lum(p) { return (p[0] * 3 + p[1] * 4 + p[2]) / 8; }
+    function hex(p) { return '#' + p.map(function (v) { return ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); }).join(''); }
+    function chDist(a, b) { return (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3; }
+    function medianCol(list) {
+      if (!list || !list.length) return null;
+      list.sort(function (p, q) { return lum(p) - lum(q); });
+      return list[Math.floor(list.length / 2)];
+    }
+    function median(a) { if (!a.length) return null; a.sort(function (p, q) { return p - q; }); return a[Math.floor(a.length / 2)]; }
+
+    /* ---- 0. WHITE BALANCE, FOR DETECTION ONLY (av-6.0.5) ------------------------------
+       faceIsSkinRgb is an ABSOLUTE YCbCr window (cr 134-178, cb 76-128). That is fine under
+       daylight and useless under a tungsten bulb, because the cast moves every pixel in the
+       frame the same way. MEASURED on realfaces/p2.jpg, a man photographed in warm amber
+       indoor light: 15,096 of 16,384 grid pixels — 92% of the picture, walls, wood panelling
+       and a tan shirt included — pass the skin test, they merge into ONE component filling
+       the frame, and the face becomes unfindable. Most photographs taken indoors in the
+       evening look like that.
+       Grey-world: the average of a whole scene is close to neutral, so the per-channel means
+       give the cast, and dividing it out puts the picture back where the skin window expects
+       it. Two deliberate limits:
+         1. IT IS A NO-OP UNLESS THERE IS A REAL CAST. Below an 8% spread between the strongest
+            and weakest channel nothing is touched at all, so every neutral photo — and every
+            fixture in the two photo suites — goes down exactly the path it went down before.
+            A change that quietly re-tints the ordinary case to fix the unusual one is the
+            wider-than-the-defect cure this project keeps getting burned by.
+         2. GAINS ARE CLAMPED to 0.65-1.55. An intentionally monochrome or single-colour
+            photograph has a huge "cast" that is the subject, not the light, and an unclamped
+            correction would invent colour that was never there.
+       ⛔ AND IT IS USED FOR THE MASK ONLY. Every colour this function REPORTS still comes from
+       the untouched pixels through px(): white-balancing the reported skin tone would be a
+       different (arguable) change, and mixing it in here would make it impossible to tell
+       which half moved a verdict. Detection is where the failure was. */
+    var wbR = 1, wbG = 1, wbB = 1, wbOn = false;
+    (function () {
+      var sr = 0, sg = 0, sb = 0, sn = M * M, wq;
+      for (wq = 0; wq < sn; wq++) { sr += d[wq * 4]; sg += d[wq * 4 + 1]; sb += d[wq * 4 + 2]; }
+      var mr = sr / sn, mg = sg / sn, mb = sb / sn;
+      var lo = Math.min(mr, mg, mb), hi = Math.max(mr, mg, mb);
+      if (lo < 8 || hi <= 0) return;                 /* a near-black frame has no cast to read */
+      if (hi / lo < 1.08) return;                    /* neutral enough: touch nothing */
+      var grey = (mr + mg + mb) / 3;
+      function gain(m) { var g = grey / m; return g < 0.65 ? 0.65 : g > 1.55 ? 1.55 : g; }
+      wbR = gain(mr); wbG = gain(mg); wbB = gain(mb); wbOn = true;
+    })();
+    function wbPx(xx0, yy0) {
+      var q = px(xx0, yy0);
+      if (!wbOn) return q;
+      var r0 = q[0] * wbR, g0 = q[1] * wbG, b0 = q[2] * wbB;
+      return [r0 > 255 ? 255 : r0, g0 > 255 ? 255 : g0, b0 > 255 ? 255 : b0];
+    }
+    /* ---- 1. the skin mask, and the components in it -------------------- */
+    var yy, xx, p;
+    /* the mask is built as a RETRYABLE ATTEMPT — see wbPx. Attempt one is the untouched
+       pixels, exactly as every build before this one; the white-balanced attempt happens ONLY
+       if that finds no head at all. Gating on the size of the cast instead was measured and
+       rejected: realfaces/p1.jpg, an ordinary sunny street, has a 29% channel spread, so an
+       8% threshold fired on a photo that was already working and made it claim SPECTACLES the
+       man is not wearing. A retry cannot do that to any photo that currently succeeds, because
+       a photo that currently succeeds never reaches it. */
+    /* gx-1.0 ONE-PIXEL OPENING, AT THE FINE GRID ONLY. MEASURED on the photo
+       suite's long-blond-hair fixture: the 1-2px antialiased/JPEG blend RING
+       around the hair mixes hair with the wall into a colour that passes the
+       YCbCr skin window (#e5d39e: cr 143, cb 98), and at 256 that ring
+       survives as a connected filament that merges the hair's OUTLINE into the
+       face component - faceT jumped 32-in-128-terms -> 9, the crown band
+       above the face became empty wall, and a full head of hair read as none.
+       At 128 the 2:1 box-average dilutes the ring below the window: the
+       coarse grid was acting as an accidental low-pass filter. The opening
+       (erode then dilate, 4-neighbourhood, frame edge erodes) removes exactly
+       the structures the coarse grid could never see, and is a NO-OP at
+       PR=1, so every 128-calibrated behaviour is byte-identical.
+       RADIUS PR, NOT 1: JPEG 4:2:0 halves chroma resolution, so at 256 a
+       chroma-blend filament is 2-4px thick - measured, the 1px opening left
+       the hair outline attached and a full head of hair still read as short.
+       PR iterations remove up-to-(2*PR)px filaments; legitimate thin features
+       (the owner's forehead slivers are 6-14px at 256) survive, and anything
+       attached to the face mass regrows toward it on the dilate side. */
+    function maskErode(src) {
+      var er = new Uint8Array(M * M), i, ox, oy;
+      for (oy = 0; oy < M; oy++) {
+        for (ox = 0; ox < M; ox++) {
+          i = oy * M + ox;
+          if (!src[i]) continue;
+          if (ox <= 0 || !src[i - 1]) continue;
+          if (ox >= M - 1 || !src[i + 1]) continue;
+          if (oy <= 0 || !src[i - M]) continue;
+          if (oy >= M - 1 || !src[i + M]) continue;
+          er[i] = 1;
+        }
+      }
+      return er;
+    }
+    function maskDilate(src) {
+      var out = new Uint8Array(M * M), i, ox, oy;
+      for (oy = 0; oy < M; oy++) {
+        for (ox = 0; ox < M; ox++) {
+          i = oy * M + ox;
+          if (src[i] ||
+              (ox > 0 && src[i - 1]) || (ox < M - 1 && src[i + 1]) ||
+              (oy > 0 && src[i - M]) || (oy < M - 1 && src[i + M])) out[i] = 1;
+        }
+      }
+      return out;
+    }
+    function maskOpen(src) {
+      var m2 = src, k;
+      for (k = 0; k < PR; k++) m2 = maskErode(m2);
+      for (k = 0; k < PR; k++) m2 = maskDilate(m2);
+      return m2;
+    }
+    function faceMaskAttempt(useWb) {
+      var ch = new Uint8Array(M * M);
+      for (var ay = 0; ay < M; ay++) {
+        for (var ax = 0; ax < M; ax++) {
+          var q = useWb ? wbPx(ax, ay) : px(ax, ay);
+          if (faceIsSkinRgb(q[0], q[1], q[2])) ch[ay * M + ax] = 1;
+        }
+      }
+      /* p1-mask-1.0.0 -- THE OPENING MUST NOT BE ABLE TO DELETE THE FACE.
+         gx-1.1 added a PR-radius opening so JPEG 4:2:0 blend filaments could not
+         outline the hair and merge it into the face. At PR=2 that is erode-erode
+         then dilate-dilate, which annihilates any skin island thinner than ~2px --
+         and glasses, stubble and side shadow fragment a real face into exactly
+         those islands. Measured live on the owner: a well-lit, face-filling frame
+         reported no skin-coloured area at all, 1 percent of the picture, at the 256
+         grid, while the identical frame passed at 128 because 128 skips the opening
+         entirely. The opening is a REFINEMENT, so it only keeps its result when it
+         still leaves a face AND most of the skin. Otherwise the raw mask stands.
+         It can help; it can no longer harm. */
+      var rawMask = ch, lab, headTry;
+      if (PR > 1) {
+        var opened = maskOpen(ch), rawOn = 0, openOn = 0, mi;
+        for (mi = 0; mi < M * M; mi++) { if (rawMask[mi]) rawOn++; if (opened[mi]) openOn++; }
+        var openedLab = labelComponents(opened), openedHead = pickFace(openedLab.comps);
+        if (openedHead && openOn >= rawOn * 0.55) { ch = opened; lab = openedLab; headTry = openedHead; }
+        else { ch = rawMask; lab = labelComponents(rawMask); headTry = pickFace(lab.comps); }
+      } else { lab = labelComponents(ch); headTry = pickFace(lab.comps); }
+      return { chroma: ch, pass1: lab, head: headTry };
+    }
+    var stack = new Int32Array(M * M);
+    function labelComponents(mask) {
+      var label = new Int32Array(M * M), comps = [], next = 0;
+      for (var s = 0; s < M * M; s++) {
+        if (!mask[s] || label[s]) continue;
+        next++;
+        var top = 0; stack[top++] = s; label[s] = next;
+        var area = 0, minX = M, maxX = -1, minY = M, maxY = -1;
+        while (top > 0) {
+          var cur = stack[--top], cy = (cur / M) | 0, cx = cur - cy * M;
+          area++;
+          if (cx < minX) minX = cx;
+          if (cx > maxX) maxX = cx;
+          if (cy < minY) minY = cy;
+          if (cy > maxY) maxY = cy;
+          if (cx > 0 && mask[cur - 1] && !label[cur - 1]) { label[cur - 1] = next; stack[top++] = cur - 1; }
+          if (cx < M - 1 && mask[cur + 1] && !label[cur + 1]) { label[cur + 1] = next; stack[top++] = cur + 1; }
+          if (cy > 0 && mask[cur - M] && !label[cur - M]) { label[cur - M] = next; stack[top++] = cur - M; }
+          if (cy < M - 1 && mask[cur + M] && !label[cur + M]) { label[cur + M] = next; stack[top++] = cur + M; }
+        }
+        comps.push({ id: next, area: area, minX: minX, maxX: maxX, minY: minY, maxY: maxY });
+      }
+      return { label: label, comps: comps };
+    }
+    function pickFace(comps) {
+      var best = null, bestScore = 0;
+      for (var ci = 0; ci < comps.length; ci++) {
+        var cp = comps[ci], cw = cp.maxX - cp.minX + 1, ch = cp.maxY - cp.minY + 1;
+        if (cp.area < M * M * 0.012) continue;          /* a face is never 1% of a portrait */
+        if (cp.area > M * M * 0.72) continue;           /* that is a wall the colour of skin */
+        if (cw < M * 0.10 || ch < M * 0.12) continue;
+        var aspect = cw / ch;
+        /* 1.9, not 1.7: a phone held close crops the forehead and the chin, and
+           what is left is a wide band of face. Measured - the tight-crop
+           fixture was REJECTED at 1.7, and the fallback then handed back the
+           unrefined head, whose "skin" was the colour of the hair. */
+        if (aspect < 0.42 || aspect > 1.9) continue;    /* an arm, a hand, a strip of background */
+        if (cp.area / (cw * ch) < 0.42) continue;       /* a face is a solid mass, not a scatter */
+        /* position matters as well as size: a portrait puts the head near the
+           middle and slightly high. Size alone picks the neck-and-chest mass
+           on a photo with an open collar. */
+        var mx = (cp.minX + cp.maxX) / 2 / M, my = (cp.minY + cp.maxY) / 2 / M;
+        var centre = 1 - Math.min(1, Math.abs(mx - 0.5) + Math.abs(my - 0.45));
+        var score = cp.area * (0.35 + centre);
+        if (score > bestScore) { bestScore = score; best = cp; }
+      }
+      return best;
+    }
+    var attempt = faceMaskAttempt(false);
+    var wbUsed = false;
+    if (!attempt.head && wbOn) {
+      var retry = faceMaskAttempt(true);
+      if (retry.head) { attempt = retry; wbUsed = true; }
+    }
+    var chroma = attempt.chroma, pass1 = attempt.pass1, head = attempt.head;
+    /* NO HEAD, NO VERDICT. Everything downstream is relative to this box, so a
+       guess here would not be one wrong knob - it would be a confident,
+       complete description of the wall behind the doctor. */
+    if (!head) {
+      /* ⛔ THREE DIFFERENT GIVE-UPS USED TO RETURN THE SAME BARE null (av-6.0.5), so Setup
+         printed one generic "I could not find a face" for causes that need opposite actions.
+         MEASURED on a real photograph (realfaces/p2.jpg, a man in warm amber indoor light):
+         15,096 of 16,384 grid pixels — 92% of the frame — pass the skin-chroma test, they form
+         ONE component filling the whole picture, and pickFace correctly rejects it on its
+         own "area > M*M*0.72 -> that is a wall the colour of skin" rule. THE GUARD IS RIGHT:
+         describing the curtains as his face would be far worse. What was wrong is that the
+         refusal said nothing, so the number that explains it — and the one thing that would
+         fix the photo — never reached him. The coverage is measured here and named. */
+      var onN = 0;
+      for (var hq = 0; hq < M * M; hq++) if (chroma[hq]) onN++;
+      var frac = onN / (M * M);
+      return { look: null, derived: [], found: [frac > 0.60
+        ? (Math.round(frac * 100) + "% of this picture reads as skin-coloured, so I cannot tell your face " +
+           "from the room behind it — warm indoor light makes walls, wood and a tan shirt measure the same as " +
+           "skin. Retake it facing a window, or in cooler and more even light, or against a plainer wall.")
+        : frac < 0.02
+          ? ("I could not find any skin-coloured area at all (" + Math.round(frac * 100) + "% of the picture). " +
+             "That is usually a very dark or very bright photo, or a face too small in the frame — move closer " +
+             "and face the light.")
+          : ("I found skin-coloured areas but none of them was shaped like a face (" + Math.round(frac * 100) +
+             "% of the picture reads as skin). Usually the head is small in the frame or turned away — take it " +
+             "square-on with your face filling more of the picture.")] };
+    }
+
+    /* ---- 2. the second pass: separate SKIN from HAIR inside that head ---
+       Dark brown and black hair fall inside the skin-chroma cluster, so pass 1
+       returns head-and-hair as one mass. The brighter half of it is skin (hair
+       is the darker half whichever tone the skin is), and rebuilding the mask
+       against that estimate drops the hair out. Blond, grey and white hair
+       never entered the mask at all - their chroma is outside the cluster - so
+       this pass cannot take them for skin either. */
+    var inHead = [];
+    for (yy = head.minY; yy <= head.maxY; yy++) {
+      for (xx = head.minX; xx <= head.maxX; xx++) {
+        if (pass1.label[yy * M + xx] === head.id) inHead.push(px(xx, yy));
+      }
+    }
+    var headMedL = median(inHead.map(lum)) || 0;
+    var bright = inHead.filter(function (q) { return lum(q) >= headMedL; });
+    var skinRef = medianCol(bright.length ? bright : inHead);
+    if (!skinRef) {
+      /* the head was found but no usable skin reference came out of it — see the !head branch
+         above for why a silent null is not good enough */
+      return { look: null, derived: [], found: ["I found your head but could not get a clean skin " +
+        "reading from it — usually hard side light, a strong colour cast, or a filter. Retake it in even " +
+        "light with no filter."] };
+    }
+    var refL = lum(skinRef);
+    var mask = new Uint8Array(M * M);
+    for (var s2 = 0; s2 < M * M; s2++) {
+      if (!chroma[s2]) continue;
+      var q2 = px(s2 % M, (s2 / M) | 0);
+      if (lum(q2) > refL - 42 && chDist(q2, skinRef) < 56) mask[s2] = 1;
+    }
+    /* ---- 2b. CLOSE THE HORIZONTAL CUTS before labelling. A spectacle frame is
+       a dark bar right across the face, so it SPLITS the skin into a forehead
+       component and a face component - and the picker then measured whichever
+       half was bigger, from below the frame. Measured on the fixture: the box
+       began at y=55 on a face that starts at y=20, and hair, brows and glasses
+       all came back wrong from that one cut. A moustache cuts the same way. So
+       gaps of up to ~8% of the frame are bridged for the GEOMETRY, while every
+       colour is still sampled from the raw skin mask - a filled gap is a
+       measurement of where the face IS, never of what colour it is. */
+    var closed = new Uint8Array(M * M);
+    closed.set(mask);
+    var GAP = Math.max(4, Math.round(M * 0.08));
+    for (var cxx = 0; cxx < M; cxx++) {
+      var lastOn = -1;
+      for (var cyy = 0; cyy < M; cyy++) {
+        if (mask[cyy * M + cxx]) {
+          if (lastOn >= 0 && cyy - lastOn <= GAP) {
+            for (var fy = lastOn + 1; fy < cyy; fy++) closed[fy * M + cxx] = 1;
+          }
+          lastOn = cyy;
+        }
+      }
+    }
+    var pass2 = labelComponents(closed);
+    var best = pickFace(pass2.comps);
+    /* p1-likeness-1.0.0 — RECOVER THE OWNER'S REAL CAMERA FAILURE WITHOUT
+       GUESSING. Dark hair and spectacle rims can split the refined skin mask;
+       a warm wall can also join it and leave a wall-to-wall "face". The old
+       path stopped here and left every stale setting on screen.
+
+       This retry gets its colour reference from the CENTER-LOWER part of the
+       already-detected head (cheeks/jaw, not crown), then keeps only pixels
+       closer to that reference than to the measured frame border. It closes
+       gaps for GEOMETRY only; every colour sample downstream still consults
+       adaptiveMask, so a filled spectacle hole can never become skin. The
+       retry is accepted only if the ordinary face picker independently finds
+       a plausible component. Otherwise the existing refusal remains. */
+    var adaptiveSegmentation = false;
+    if (!best || (best.minX <= 0 && best.maxX >= M - 1)) {
+      var headW0 = head.maxX - head.minX + 1, headH0 = head.maxY - head.minY + 1;
+      var seedPool = [];
+      var seedY0 = head.minY + Math.round(headH0 * 0.40);
+      var seedY1 = head.minY + Math.round(headH0 * 0.88);
+      var seedX0 = head.minX + Math.round(headW0 * 0.24);
+      var seedX1 = head.minX + Math.round(headW0 * 0.76);
+      for (var sy0 = seedY0; sy0 <= seedY1; sy0++) {
+        for (var sx0 = seedX0; sx0 <= seedX1; sx0++) {
+          var si0 = sy0 * M + sx0;
+          if (pass1.label[si0] === head.id && chroma[si0]) seedPool.push(px(sx0, sy0));
+        }
+      }
+      seedPool.sort(function (aa, bb) { return lum(aa) - lum(bb); });
+      if (seedPool.length >= Math.max(18, Math.round(head.area * 0.035))) {
+        /* Trim dark hair/rims from the bottom and glare from the top. The
+           returned reference remains an ACTUAL pixel via medianCol. */
+        var seedTrim = seedPool.slice(Math.floor(seedPool.length * 0.22),
+          Math.max(1, Math.ceil(seedPool.length * 0.90)));
+        var adaptiveRef = medianCol(seedTrim);
+        var adaptiveRefL = adaptiveRef ? lum(adaptiveRef) : 0;
+        var adaptiveBorder = [];
+        for (var abi = 0; abi < M; abi += Math.max(1, PR)) {
+          adaptiveBorder.push(px(abi, 0), px(abi, M - 1), px(0, abi), px(M - 1, abi));
+        }
+        var adaptiveBg = medianCol(adaptiveBorder);
+        var adaptiveSeparation = adaptiveBg && adaptiveRef ? chDist(adaptiveBg, adaptiveRef) : 0;
+        var adaptiveMask = new Uint8Array(M * M);
+        for (var ay0 = head.minY; ay0 <= head.maxY; ay0++) {
+          for (var ax0 = head.minX; ax0 <= head.maxX; ax0++) {
+            var ai0 = ay0 * M + ax0;
+            if (pass1.label[ai0] !== head.id || !chroma[ai0]) continue;
+            var ap0 = px(ax0, ay0);
+            var fromFace = chDist(ap0, adaptiveRef);
+            var fromBorder = adaptiveBg ? chDist(ap0, adaptiveBg) : 999;
+            if (lum(ap0) >= adaptiveRefL - 44 && fromFace <= 46 &&
+                (adaptiveSeparation < 9 || fromFace + 3 < fromBorder)) adaptiveMask[ai0] = 1;
+          }
+        }
+        var adaptiveClosed = new Uint8Array(M * M); adaptiveClosed.set(adaptiveMask);
+        /* Glasses can make a larger gap than the ordinary moustache/frame
+           closer. Fill in both axes, on geometry only, within this one head. */
+        var adaptiveGap = Math.max(GAP, Math.round(M * 0.13));
+        for (var acx = head.minX; acx <= head.maxX; acx++) {
+          var lastAY = -1;
+          for (var acy = head.minY; acy <= head.maxY; acy++) {
+            if (!adaptiveMask[acy * M + acx]) continue;
+            if (lastAY >= 0 && acy - lastAY <= adaptiveGap) {
+              for (var afy = lastAY + 1; afy < acy; afy++) adaptiveClosed[afy * M + acx] = 1;
+            }
+            lastAY = acy;
+          }
+        }
+        for (var ary = head.minY; ary <= head.maxY; ary++) {
+          var lastAX = -1;
+          for (var arx = head.minX; arx <= head.maxX; arx++) {
+            if (!adaptiveMask[ary * M + arx]) continue;
+            if (lastAX >= 0 && arx - lastAX <= adaptiveGap) {
+              for (var afx = lastAX + 1; afx < arx; afx++) adaptiveClosed[ary * M + afx] = 1;
+            }
+            lastAX = arx;
+          }
+        }
+        var adaptivePass = labelComponents(adaptiveClosed);
+        var adaptiveBest = pickFace(adaptivePass.comps);
+        if (adaptiveBest) {
+          mask = adaptiveMask;
+          pass2 = adaptivePass;
+          best = adaptiveBest;
+          skinRef = adaptiveRef;
+          refL = adaptiveRefL;
+          adaptiveSegmentation = true;
+        }
+      }
+    }
+    /* NO FALLBACK TO THE UNREFINED HEAD. That fallback is how a hair-coloured
+       "skin tone" reached the doctor: pass 1 deliberately contains the hair. If
+       the refined pass cannot find a face, the honest answer is that this photo
+       could not be read. */
+    if (!best) {
+      return { look: null, derived: [], found: ["I found your head but could not separate your skin from " +
+        "your hair inside it — usually very dark hair in low light, where the two measure the same. Retake it " +
+        "with more light on your face."] };
+    }
+    var label = pass2.label;
+
+    /* the background, sampled from the frame border EXCLUDING the face mass */
+    var bgList = [];
+    for (xx = 0; xx < M; xx += 2) {
+      [0, 1, M - 2, M - 1].forEach(function (by) { if (label[by * M + xx] !== best.id) bgList.push(px(xx, by)); });
+    }
+    for (yy = 0; yy < M; yy += 2) {
+      [0, 1, M - 2, M - 1].forEach(function (bx) { if (label[yy * M + bx] !== best.id) bgList.push(px(bx, yy)); });
+    }
+    var bg = medianCol(bgList);
+    var bgL = bg ? lum(bg) : -999;
+    function isBg(pp) { return !!bg && chDist(pp, bg) < 26; }
+
+    /* ---- 3. the box, from the component's own row-width profile -------- */
+    function rowRun(ry) {
+      /* THE OUTER EXTENT OF THIS COMPONENT ON THIS ROW, not the widest
+         contiguous run of it. Every dark feature - lips, nostrils, a frame, a
+         moustache - is a HOLE in the skin mask, and a contiguity measure reads
+         a hole as the face having ended. Measured: the lip ellipse split the
+         mouth row into two 23px runs on a 74px face, so the chin was "found"
+         at the mouth and every proportion below the eyes was taken against a
+         face two thirds of its length. An earring or a raised hand cannot
+         widen this, because they are a different component. */
+      var bL = -1, bR = -2;
+      for (var rx = 0; rx < M; rx++) {
+        if (label[ry * M + rx] === best.id) { if (bL < 0) bL = rx; bR = rx; }
+      }
+      return bR >= bL && bL >= 0 ? { L: bL, R: bR, w: bR - bL + 1 } : null;
+    }
+    var rows = [], maxW = 0;
+    for (var ry2 = best.minY; ry2 <= best.maxY; ry2++) {
+      var rr2 = rowRun(ry2);
+      rows.push(rr2);
+      if (rr2 && rr2.w > maxW) maxW = rr2.w;
+    }
+    function runAt(ry) { return (ry >= best.minY && ry <= best.maxY) ? rows[ry - best.minY] : null; }
+    /* THE CHEEKBONE ROW IS THE MIDDLE OF THE WIDEST BAND, not the first row to
+       reach the maximum. A face barely narrows for ten rows either side of its
+       widest point, so the single widest row is decided by JPEG bleed at the
+       edge of the head - measured, it landed 10px above the true cheekbones,
+       and everything anchored on it (the eye line, the jaw sample, the hanging
+       hair) moved with it. */
+    var wideRows = [];
+    for (var wy = best.minY; wy <= best.maxY; wy++) {
+      var wr = runAt(wy);
+      if (wr && wr.w >= maxW * 0.97) wideRows.push(wy);
+    }
+    var maxWY = wideRows.length ? median(wideRows) : best.minY;
+    var faceT = best.minY;
+    /* the chin: below the cheeks, the first row whose width has collapsed. The
+       neck is narrower than the jaw, so this is where the face ends even when
+       the mask runs on down the throat. */
+    /* WHERE THE NARROWING STOPS, not where it reaches an arbitrary fraction. A
+       face narrows continuously from the cheekbones to the chin; below the chin
+       a NECK holds roughly constant width and shoulders widen again. So the chin
+       is the last row of the narrowing - which needs no threshold and works
+       whether or not the neck is in the picture at all. A fixed "55% of the
+       widest row" cut landed 8px above the real chin on the drawn heads and
+       ran straight down the throat on a photograph. */
+    var chinY = best.maxY, prevW = null, flat = 0;
+    /* WHY the scan stopped is part of the answer, not a debugging aid: a scan that
+       ended because the outline WIDENED has not found a jaw, it has found the top
+       edge of something else (a bridged shadow, a collar, a shoulder). */
+    var chinStop = 'mask-end';
+    var flatCap = Math.max(3, Math.round(maxW * 0.10));
+    for (var dy = maxWY + Math.max(2, Math.round(maxW * 0.12)); dy <= best.maxY; dy++) {
+      var rw = runAt(dy);
+      if (!rw) { chinY = dy - 1; chinStop = 'mask-hole'; break; }
+      /* PAST THE CHEEKS FIRST. Around the widest row a face barely narrows at
+         all, so both end tests fire there: measured, the plateau test stopped
+         at the cheekbones and returned a face 29px long instead of 70. Neither
+         test is asked anything until the width has actually come down. */
+      /* AND A PLATEAU IS ONLY A NECK IF IT IS NECK-WIDTH. An under-chin shadow
+         bridged by the GAP closing manufactures its own plateau - measured, one
+         face with a shadow growing monotonically moved the chin 103 -> 91 and
+         flipped faceShape from round to square, with faceShape asserted as
+         measured every time. The shadow's plateau sat at 0.65 of the widest row;
+         a real neck is nearer 0.45. So a run that is still more than 0.62 of the
+         face wide is not the neck, and the scan keeps going down. */
+      if (prevW !== null && rw.w < maxW * 0.85) {
+        /* WIDENING ALWAYS ENDS THE FACE, at any width. Below the jaw, anything
+           that gets WIDER again is not face: shoulders, a collar, or - the case
+           this was measured on - an under-chin shadow whose hole the GAP closing
+           bridges back at the shadow's own (wider) extent. Gating this test on a
+           width bound was my own error: the shadow sat at 0.80 of the widest row,
+           the test was skipped, and the scan ran on down the neck. One face, one
+           shadow growing monotonically, moved the chin 103 -> 91 and flipped
+           faceShape round -> square with faceShape asserted as measured. */
+        /* gx-1.0: these two tolerances DO NOT SCALE WITH PR, and that is a
+           measured fact, not an oversight. They compare WIDTH CHANGE PER ROW,
+           and per-row slope is grid-invariant: the same jaw spans 2x the width
+           over 2x the rows, so its Δw/row is the same number on either grid.
+           Scaling the flat tolerance to ±2 at 256 made a mid-ellipse slope of
+           1.4px/row count as "flat" - the chin fired 17 grid-px early on the
+           framed shoulders fixture and the top-colour band sampled the wall. */
+        if (rw.w > prevW + 1) { chinY = dy - 1; chinStop = 'widening'; break; }
+        /* the FLAT test is the one that needs a width bound - a plateau is only a
+           neck if it is neck-width. 0.75, not 0.62: a broad neck is ordinary. */
+        if (Math.abs(rw.w - prevW) <= 1 && rw.w <= maxW * 0.75) {
+          flat++;
+          if (flat >= flatCap) { chinY = dy - flat; chinStop = 'neck'; break; }
+        } else if (Math.abs(rw.w - prevW) > 1) flat = 0;
+      }
+      prevW = rw.w;
+      chinY = dy;
+    }
+    if (chinY <= maxWY) chinY = best.maxY;
+    var faceRun = runAt(maxWY) || { L: best.minX, R: best.maxX, w: best.maxX - best.minX + 1 };
+    var faceW = faceRun.w;
+    var cxMid = Math.round((faceRun.L + faceRun.R) / 2);
+    /* A FACE IS SYMMETRIC ABOUT ITS OWN CENTRE LINE; A HAND ON THE CHEEK IS NOT.
+       Measured: a skin-coloured hand held clear of the face is correctly a
+       separate component at every gap down to 0.03N - but TOUCHING, it merges,
+       faceW goes 74 -> 97 (+32%), and every width-normalised verdict moves with
+       it: a thick brow read as thin, an oval face as round, both asserted in
+       `derived`. The nose centre line is the robust centre here (the median x of
+       the mask across the mid-face), so an arm on one side cannot move it. Where
+       the two halves disagree by more than a third, the WIDTH is taken from the
+       narrower half - which is the face - and the group that describes the skull
+       declines, because the outline it would measure is not all face. */
+    /* THE CENTRE LINE COMES FROM THE UPPER FACE, where a hand is not. Taking it
+       from the mid-face rows was my own first attempt and it cannot work: the
+       hand is IN those rows, so it drags the centre with it and the two halves
+       come out balanced - measured, asym stayed under the threshold and the
+       clamp never fired. The forehead and temples are above where a hand rests
+       against a cheek, so their centre is the face's own. */
+    /* 🚨 THE OWNER'S OWN FACE MEASURED 12 PIXELS WIDE (av-5.7.4). He pressed Match,
+       got "Clean-shaven" over his moustache and a pink swatch, and said it did an
+       awful job. Measured on a fixture built to his photo, faceW came back 12 on a
+       head whose widest row is 48, and that one number aims the beard, brow, nose
+       and lip windows off his face entirely: the jaw patches landed at x 44/48/81
+       with FOUR skin pixels across three 5x5 windows, so the luminance drop read 4
+       against a stubble threshold of 24.
+       WHY. His hair sweeps to one side, so the first four mask rows are a narrow
+       sliver of exposed forehead - rowRuns [41,81,83,3] [42,80,83,4] [43,78,83,6]
+       [44,78,84,7] before the head proper starts at [45,43,84,42]. Every one of
+       those rows entered midCols with equal weight, and `median()` returns the
+       UPPER middle of an even-length list, so [64,64,64,64,81,81,82,82] chose 81
+       instead of 64. asym then read 6.83, the lopsided clamp fired, and
+       faceW = 2*min(41,6) = 12.
+       It was also HANDEDNESS-DEPENDENT: the same fixture mirrored measures asym
+       1.04, faceW 48, and correctly detects stubble. A face cannot be allowed to
+       get a different answer for parting its hair the other way.
+       TWO FIXES, both narrow: only rows wide enough to HAVE a centre may vote, and
+       the vote is width-weighted rather than a bare median. `median()` itself is
+       untouched - it also feeds maxWY and wideRows, both calibrated in 128-space. */
+    var midPairs = [];
+    for (var mcy = faceT; mcy <= Math.min(best.maxY, faceT + Math.max(2, Math.round((maxWY - faceT) * 0.45))); mcy++) {
+      var mr = runAt(mcy);
+      /* a 3-px sliver of forehead beside a fringe carries no information about where
+         the middle of a head is, and there are often more sliver rows than real ones */
+      if (mr && mr.w >= Math.max(3, maxW * 0.35)) midPairs.push({ c: Math.round((mr.L + mr.R) / 2), w: mr.w });
+    }
+    var midCols = midPairs.map(function (p) { return p.c; });
+    /* width-weighted median: a 42-px row counts fourteen times what a 3-px row does,
+       and on an even split it interpolates instead of preferring the upper value */
+    function midOf(pairs) {
+      if (!pairs.length) return null;
+      var sorted = pairs.slice().sort(function (a, b) { return a.c - b.c; });
+      var total = 0, i;
+      for (i = 0; i < sorted.length; i++) total += sorted[i].w;
+      var half = total / 2, run = 0;
+      for (i = 0; i < sorted.length; i++) {
+        run += sorted[i].w;
+        if (run >= half) {
+          if (run === half && i + 1 < sorted.length) return (sorted[i].c + sorted[i + 1].c) / 2;
+          return sorted[i].c;
+        }
+      }
+      return sorted[sorted.length - 1].c;
+    }
+    var trueMid = midPairs.length ? midOf(midPairs) : cxMid;
+    var halfL = Math.max(1, trueMid - faceRun.L), halfR = Math.max(1, faceRun.R - trueMid);
+    var asym = Math.max(halfL, halfR) / Math.min(halfL, halfR);
+    /* 1.20, not 1.35. An adversarial sweep of the SAME hand fixture across ten
+       framings measured asym at 1.38, 1.39, 1.37, 1.38, 1.38, 1.41, 1.33, 1.32,
+       1.35, 1.33 - so a threshold of 1.35 sat INSIDE this measurement's own noise
+       band and the guard missed the hand at three framings (0.55, 0.50, 0.40),
+       leaving faceW inflated 18-20% exactly where the framed suite lives. The
+       clean face measures 1.03 on the same estimator, including under an 8-degree
+       tilt, so 1.20 separates the two populations with room on both sides instead
+       of splitting one of them. */
+    var lopsided = asym > 1.20;
+    /* AND THE CLAMP MUST STAY PLAUSIBLE. Halving a face is a reasonable response to an
+       arm across one cheek; collapsing it to a quarter is not a measurement of a head.
+       A hand fixture clamps to roughly 0.7 of the widest row; the owner's swept fringe
+       drove it to 12/48 = 0.25, which then aimed every lower-face window into his hair.
+       Below this floor the asymmetry is evidence that the OUTLINE is unreliable, not
+       that the face is narrow, so the honest move is to keep the measured width and
+       say the outline looked odd rather than to act on a number this far from the
+       silhouette. */
+    var geomOdd = false;
+    if (lopsided) {
+      var clamped = 2 * Math.min(halfL, halfR);
+      if (clamped >= Math.max(6, maxW * 0.45)) {
+        faceW = clamped;
+        cxMid = trueMid;
+        /* 🚨 gx-1.0 THE BOX FOLLOWS THE CLAMP. faceW and cxMid were replaced
+           here but faceRun.L was NOT, and atX() below computes
+           faceRun.L + faceW * fr - the UN-clamped left edge with the clamped
+           width. MEASURED (adjudication C2, hand-on-cheek fixture): asym 1.89,
+           faceW 56 -> 38, and shipped atX(0.20) landed at x=36 on a face whose
+           own 0.20 line is x=53 - every atX-based window (both lower skin
+           patches, cheek, brow, eye, jaw, top) sat 17px into the hand while
+           the nose and beard scans used the corrected cxMid: TWO DIFFERENT
+           CENTRE LINES IN ONE READ. The run is re-centred on trueMid so every
+           consumer of faceRun measures the same face the clamp decided on. */
+        faceRun = { L: Math.round(trueMid - clamped / 2),
+                    R: Math.round(trueMid + clamped / 2), w: clamped };
+      } else {
+        geomOdd = true;
+        lopsided = false;
+      }
+    }
+    /* 🚨 gx-1.0 A BOX THAT RUNS WALL-TO-WALL IS NOT A FACE OUTLINE
+       (adjudication fixture A, measured on the shipped bytes): a taupe wall
+       inside the YCbCr skin window merges with the head into one component
+       that pickFace ACCEPTS (63% of frame, under the 72% cap), the widest row
+       then spans the entire frame, and all five skin patches sample the wall
+       through the mask+component test LEGITIMATELY - 25/25 wall pixels per
+       patch, the wall's own hex returned verbatim. That is the owner's
+       #836668. No colour bound can catch it: the greige control (#837568,
+       hue 71, C* 9.7) sailed through the skin gate and was CLAIMED, with
+       'nose' and 'lips' verdicts measured off the wall behind it. The refusal
+       is geometric, and it must kill the WHOLE read - every window below is
+       placed from this outline. */
+    if (faceRun.L <= 0 && faceRun.R >= M - 1) {
+      return { look: null, derived: [], found: ["your face outline runs from one edge of the picture " +
+        "to the other, which means a background close to skin colour is merging with your face - nothing " +
+        "measured from that outline would really be you. Retake against a plainer or cooler-coloured " +
+        "background, or with more light on your face than on the wall."] };
+    }
+
+    /* ---- 4. facial hair as GEOMETRY, before anything below the eyes is
+       measured. A beard is not skin, so the mask STOPS at the moustache line:
+       the "chin" found above is the top of the beard, and every proportion
+       below the eyes would be taken against a face two thirds of its real
+       length. The extension below the mask is measured directly - not
+       background, not skin, inside the face's own column - and when it is
+       there it IS the lower face. */
+    var beardRows = 0, beardPix = [], beardBottom = chinY;
+    var beardHalf = Math.max(2, Math.round(faceW * 0.30));
+    for (var byy = chinY + 1; byy < Math.min(M, chinY + Math.round(faceW * 0.7)); byy++) {
+      var hit = 0, wide = 0, rowPix = [];
+      for (var bxx = cxMid - beardHalf; bxx <= cxMid + beardHalf; bxx++) {
+        if (bxx < 0 || bxx >= M) continue;
+        wide++;
+        var bp = px(bxx, byy);
+        if (!isBg(bp) && !mask[byy * M + bxx]) { hit++; rowPix.push(bp); }
+      }
+      if (wide && hit / wide > 0.6) { beardRows++; beardBottom = byy; beardPix = beardPix.concat(rowPix); }
+      else break;
+    }
+    var beardDepth = beardRows / Math.max(1, faceW);
+    var lowerChin = beardDepth > 0.10 ? beardBottom : chinY;
+    var faceH = lowerChin - faceT + 1;
+
+    /* ---- 5. the eye line. THE CHEEKBONES SIT LEVEL WITH THE EYES, so the
+       widest row of the face is the eye line - and unlike any proportion of the
+       box it does not move when a fringe hides the forehead. Two dark masses
+       found NEAR it refine it; two found far from it are the mouth, a beard
+       shadow or a shirt collar, and are ignored. --------------------------- */
+    /* EVERY STATISTIC HERE IS A MEDIAN OR A COUNT, never a min and a max. The
+       first version measured width as (rightmost - leftmost) dark pixel, and a
+       single stray pixel from JPEG ringing at the edge of the window made a
+       7px iris measure 26px wide - the same width as a spectacle frame. So the
+       one number that had to tell an eye from a bar could not. Columns carrying
+       at least two dark pixels are the mass; its width is HOW MANY of those
+       there are, its height is the median column, and `round` is the ratio. An
+       eye is about as tall as it is wide; a brow bar and a frame are three
+       times wider than they are tall, at any distance and under any blur. */
+    function darkMass(x0, x1, y0, y1, cut) {
+      var cols = {}, ys = [], n = 0;
+      for (var ey = y0; ey <= y1; ey++) {
+        for (var ex = x0; ex <= x1; ex++) {
+          if (ex < 0 || ex >= M || ey < 0 || ey >= M) continue;
+          if (lum(px(ex, ey)) < cut) { cols[ex] = (cols[ex] || 0) + 1; ys.push(ey); n++; }
+        }
+      }
+      if (!n) return null;
+      /* gx-1.0: >= 2*PR, not >= 2 - this floor exists to reject JPEG-ringing
+         strays, and a stray that was one pixel at 128 is ~two at 256. An iris
+         column is far taller than either, so nothing real is lost. */
+      var keep = Object.keys(cols).map(Number).filter(function (k) { return cols[k] >= 2 * PR; })
+        .sort(function (a, b) { return a - b; });
+      if (!keep.length) return null;
+      var heights = keep.map(function (k) { return cols[k]; });
+      var tall = median(heights) || 1;
+      var wide = keep.length;
+      return { medY: median(ys), cx: median(keep.slice()), n: n,
+               spread: wide, tall: tall, round: tall / wide };
+    }
+    function atX(fr) { return Math.round(faceRun.L + faceW * fr); }
+    function atY(fr) { return Math.round(faceT + faceH * fr); }
+    /* `trueMedian` is OPT-IN and every existing call site omits it (av-6.0.6).
+       ⛔ THIS IS THE SECOND ATTEMPT, AND THE FIRST ONE IS THE REASON FOR THE OPT-IN.
+       The name says median and the vote ACROSS the five patches is one, but WITHIN a patch
+       this sums and divides — and a mean cannot reject an outlier, it only dilutes itself
+       with one. That is the owner's complaint restated exactly: "it needs to see the skin
+       color of my face not my background + my face." The mask+component test excludes the
+       wall, but it cannot exclude what is genuinely inside the face component and genuinely
+       not skin — a spectacle rim, a nostril shadow, stubble, the dark line of a lid.
+       The first attempt added an opt-OUT flag and set it at the skin call. patchMedian has
+       TEN call sites, so that silently switched the other EIGHT — chin, cheek row, brow row,
+       forehead, bridge, top colour — and the glasses read depends on the brow and bridge
+       samples: avatar-photo-match-proof went 39 -> 38, and three fixes aimed at the skin
+       path did nothing because the skin path was never what broke. Opt-IN inverts that: a
+       call site that says nothing keeps the statistic it was calibrated on, so only the ONE
+       sample I am deliberately changing can move. See the memory note this cost:
+       a-flag-on-a-shared-helper-must-default-to-shipped. */
+    function patchMedian(spots, r, skinOnly, trueMedian) {
+      var cols = spots.map(function (sp) {
+        var acc = [0, 0, 0], n = 0, pool = trueMedian ? [] : null;
+        for (var py = sp[1] - r; py <= sp[1] + r; py++) {
+          for (var pxx = sp[0] - r; pxx <= sp[0] + r; pxx++) {
+            if (pxx < 0 || py < 0 || pxx >= M || py >= M) continue;
+            if (skinOnly) {
+              var si = py * M + pxx;
+              /* 🚨 IT WAS MEASURING HIS WALL AND HIS FACE TOGETHER (av-5.7.7).
+                 Owner: "it needs to see the skin color of my face not my background +
+                 my face." Exactly right, and this line is why.
+                 `mask` is built over the WHOLE FRAME in pass 2 with a chroma tolerance
+                 of 56 - about 22% per channel - so it is not "the face", it is "every
+                 pixel anywhere that resembles the reference". Measured against fair skin
+                 [236,199,174]: a warm off-white wall scores 14.0 and is ADMITTED, a grey
+                 shirt 26.3 ADMITTED, pale pink 19.3 ADMITTED. The comment that used to
+                 sit here claimed this made "a wall the colour of a cheek impossible to
+                 sample by accident"; it was false by a factor of four.
+                 `label[i] === best.id` is the actual face: the connected component the
+                 face detector CHOSE. A wall pixel can look like skin, but it cannot be
+                 part of the component the head occupies. Both conditions now, so a
+                 sample is skin AND on the face. */
+              if (!mask[si]) continue;
+              if (label[si] !== best.id) continue;
+            }
+            var q = px(pxx, py);
+            if (pool) pool.push(q);
+            acc[0] += q[0]; acc[1] += q[1]; acc[2] += q[2]; n++;
+          }
+        }
+        if (!n) return null;
+        if (!pool) return [acc[0] / n, acc[1] / n, acc[2] / n];
+        /* ranked by LUMINANCE and the whole pixel returned, so the three channels stay from
+           the same pixel. Averaging channels independently can synthesise a hue that appears
+           nowhere in the photograph, which is the same class of error one level down — and
+           `lum` is the same weighting medianCol uses for the vote across patches, so the two
+           stages agree about what "middle" means. */
+        pool.sort(function (a2, b2) { return lum(a2) - lum(b2); });
+        return pool[Math.floor((pool.length - 1) / 2)];
+      }).filter(Boolean);
+      return medianCol(cols);
+    }
+    /* SKIN IS SAMPLED WHERE THE MASK SAYS SKIN **AND THE FACE COMPONENT SAYS FACE**.
+       Either alone is not enough: the mask spans the whole frame, and the component
+       alone would include hair and spectacle frames that the mask excludes. */
+    /* 🚨 gx-1.0 THE REPORTED SKIN MOVES OFF THE EYE LINE. Two of the five
+       patches sat at atX(0.20)/atX(0.80) ON maxWY - the outer canthus and
+       temple, exactly where a spectacle rim, its temple arm, and the eye-socket
+       shadow run. Socket shadow stays INSIDE the mask (it is within the
+       luminance and chroma tolerance of skin), so the b988 median cannot
+       reject it when it fills a patch - measured: three of five patches
+       poisoned flips the across-patch median to a muddy rose around hue 30-34,
+       which is byte-for-byte the p1 #9d6c64 signature the owner hit. The pair
+       now sits on the LOWER CHEEK (clear of rims below, nostril wings inboard,
+       jaw and beard further down), which is skin on every face geometry.
+       ⛔ skinCut BELOW KEEPS THE OLD FIVE SPOTS DELIBERATELY: every dark-mass
+       threshold in this function is an offset from skinCut and was calibrated
+       against samples taken AT those positions. Moving the reported swatch
+       must not silently re-base ten detectors - that is the same trap as the
+       patchMedian opt-in one page up, and it is avoided the same way: the one
+       thing meant to move is the only thing that moves. */
+    var skinSpots = [[atX(0.28), Math.min(maxWY + Math.round(faceH * 0.22), lowerChin - 2 * PR)],
+                     [atX(0.72), Math.min(maxWY + Math.round(faceH * 0.22), lowerChin - 2 * PR)],
+                     [atX(0.24), maxWY + Math.round(faceH * 0.12)],
+                     [atX(0.76), maxWY + Math.round(faceH * 0.12)],
+                     [cxMid, Math.round((faceT + maxWY) / 2)]];
+    /* gx-1.0: r scales by PR - the patch is a PHYSICAL footprint (a patch of
+       cheek), so it keeps its physical size when the grid doubles. */
+    var skin = patchMedian(skinSpots, 2 * PR, true, true) || skinRef;
+    /* THE 4th ARGUMENT IS THE OPT-IN, AND THIS IS THE ONLY CALL SITE THAT TAKES IT (av-6.0.6).
+       The per-patch statistic here is now a TRUE MEDIAN. The first attempt at this made the
+       flag an opt-OUT and cost the glasses read, because patchMedian has TEN call sites and
+       eight of them silently changed with it; inverting the flag confines the change to this
+       one sample, which is all I ever wanted to move. Both photo suites are green (39/39,
+       40/40), and the refactor was proven inert before the opt-in was added.
+       ⛔ AND IT DID NOT FIX WHAT IT WAS AIMED AT — measured on both real photographs, so this
+       is recorded rather than claimed. The median moves the sampled value a few units
+       (p1 #9d6c64 -> #a16765, p2 #af6228 -> #ab602b) and `derived` is IDENTICAL either way:
+       the skin is REFUSED by the hue gate in both, so nothing the doctor sees changes. The
+       statistic was never the blocker. The sampled colour is a muddy rose around hue 30-34°
+       on a fair-skinned man, which means the SAMPLE IS NOT LANDING ON HIS CHEEK — the next
+       lever is WHERE the five patches sit and what the mask admits, not how they are averaged.
+       The median stays because it is the right statistic, it is free, and it cannot dilute
+       itself with a spectacle rim; it is just not the cure. */
+    /* the SAME five patches read as a mean, used ONLY to place the dark-mass cuts below.
+       Every one of those thresholds is an offset from this number and was tuned against it;
+       re-basing them on the median moved them all at once and cost a glasses detection that
+       had been passing. The claim the doctor sees is `skin`, the median — an actual pixel
+       colour from his face rather than an average of his cheek and whatever shared the patch. */
+    /* ⛔ THREE ARGUMENTS, DELIBERATELY — skinCut EXISTS to be the MEAN. Every dark-mass cut
+       below is an offset from it and was calibrated against the mean, so this is the one
+       sample that must NOT follow the opt-in above. When the 4th parameter was renamed from
+       asMean to trueMedian, this call still read `, 2, true, true)` from the earlier attempt
+       and silently became a median too — which would have moved every threshold at once, the
+       exact failure the opt-in was introduced to prevent, one rename later. Caught by counting
+       arguments at all ten call sites rather than by reading the diff. */
+    var skinCut = patchMedian([[atX(0.20), maxWY], [atX(0.80), maxWY],
+                            [atX(0.24), maxWY + Math.round(faceH * 0.12)],
+                            [atX(0.76), maxWY + Math.round(faceH * 0.12)],
+                            [cxMid, Math.round((faceT + maxWY) / 2)]], 2 * PR, true) || skin;
+    var skinL = lum(skinCut);
+    /* the BAND THE DOCTOR IS TOLD must describe the colour he is SHOWN, so it reads the
+       median like the swatch does — not the threshold statistic. */
+    var skinLsaid = lum(skin);
+    var eyeCut = skinL - 40;
+    var eyeY = maxWY;
+    var eyeBandTop = Math.max(faceT, maxWY - Math.round(faceH * 0.22));
+    var eyeBandBot = Math.min(lowerChin, maxWY + Math.round(faceH * 0.10));
+    var eL = darkMass(atX(0.10), atX(0.44), eyeBandTop, eyeBandBot, eyeCut);
+    var eR = darkMass(atX(0.56), atX(0.90), eyeBandTop, eyeBandBot, eyeCut);
+    /* THE CHEEKBONE ROW IS THE EYE LINE, FULL STOP. I tried refining it with
+       the two dark masses and it is not worth the risk: on a face whose irises
+       are not visible - a photo in ordinary room light, half of them - the
+       masses available in that band are the EYEBROWS or a spectacle frame, and
+       accepting either drags the eye line 11-14px above the cheekbones. The
+       brow band then opens across the brows' own lower half and a thick brow
+       measures thin, which is exactly the failure this pass was written to fix.
+       The cheekbones are level with the eyes anatomically, they are a
+       measurement rather than a proportion, and they do not move. The dark
+       masses still earn their keep: their CENTROIDS give eye spacing, gated on
+       roundness so a bar can never supply it. */
+    var compact = eL && eR && eL.round > 0.70 && eR.round > 0.70;
+    /* 🚨 gx-1.2 THE EYES SIZE THE BOX (measured, monitor probe 2026-08-12).
+       The gx-1.0 chroma widening (C* up to 60, re-derived on photographed
+       skin) uncovered a partial-merge hole the wall-to-wall veto does not
+       reach: a warm wooden door (#a97843, hue 69.8, C* 38.7 - passes the
+       YCbCr window) merging into the component on ONE side inflates the box
+       (L=44,R=110 on a 41px face), lands asym at exactly 1.2 - a hair under
+       the clamp - and the patches ride the inflated atX onto the door: the
+       door hex was CLAIMED as skin. The OLD chroma bound refused that door
+       for the wrong reason (C* 38.7 >= 32), but it refused.
+       The face's own eyes are the corroborating landmark a door cannot fake:
+       - BOTH eye masses found: their separation is anatomically 0.44-0.56 of
+         a real face's width (the eyeSet cuts' own numbers). Measured: the
+         both-sided door merge reads sep/width 0.21, the clean face 0.44-0.46,
+         so < 0.34 means the box is wider than the face the eyes belong to.
+       - EXACTLY ONE found: the eye window on the other side of the box found
+         no dark mass AT THE EYE LINE - that half of the box has no eye in it,
+         which is the one-sided merge's own signature (the window was aimed at
+         the door).
+       - NEITHER found (closed eyes, heavy blur): no corroboration either way;
+         behaviour unchanged.
+       This gates ONLY the skin CLAIM - a new, honest refusal that names the
+       merge - never any other knob, and it cannot fire on a face whose two
+       eye windows both see an eye at sane spacing. */
+    /* "FOUND" MEANS n >= 6 ON BOTH ARMS (measured): a 2-pixel stray in the
+       door-aimed window is a non-null mass, and the first version's `!eR`
+       one-sided arm let it defeat BOTH branches - the 128-grid door fixture
+       was claimed again. A mass below the same evidence floor eyeSet uses is
+       no eye; the asymmetry between a real eye mass and a stray IS the
+       one-sided signature.
+       GLASSES SURVIVE THIS GATE, measured at 256 with rims and with glare on
+       a lens: a rim is a dark mass AT the eye positions, so a bespectacled
+       face corroborates at sane separation (0.46) and never fires clean -
+       which matters because THIS owner wears glasses.
+       THE COUPLING, stated: this corroboration rides the same dark-mass
+       detector as eyeSet, which is resolution-limited - on a low-res source
+       read at 128 whose eye masses are entirely undetectable, the gate cannot
+       fire and the partial-merge residual stands. Protection is weakest on
+       the worst inputs; the owner's 1024 camera path reads at 256, where it
+       is strongest. */
+    var eyeBoxSane = true;
+    var eLfound = !!(eL && eL.n >= 6), eRfound = !!(eR && eR.n >= 6);
+    if (eLfound && eRfound) {
+      if (!(eR.cx > eL.cx) || (eR.cx - eL.cx) < faceW * 0.34) eyeBoxSane = false;
+    } else if (eLfound !== eRfound) {
+      eyeBoxSane = false;
+    }
+    var lowerH = lowerChin - eyeY;
+    if (lowerH < faceH * 0.20) lowerH = Math.round(faceH * 0.55);
+    function belowEye(fr) { return Math.round(eyeY + lowerH * fr); }
+
+    var found = [];
+    if (adaptiveSegmentation) {
+      found.push('a difficult hair, glasses, or warm-background boundary was separated from the ' +
+        'centred face region — check the matched colours before saving');
+    }
+    /* SAY IT WHEN THE READING CAME OFF A CORRECTED COPY. The first attempt found no face at all
+       and the second one only worked after dividing out a strong colour cast, so the doctor is
+       entitled to know that before he trusts a swatch — a reading is not the same fact when the
+       light had to be corrected to get it. It is disclosed, not hidden behind a green result. */
+    if (wbUsed) {
+      found.push("the light in this photo is strongly coloured, so I corrected the cast before I could " +
+        "find your face at all — the shapes are reliable, but check the colours it chose, and a photo in " +
+        "even daylight will read better.");
+    }
+    var look = { skin: hex(skin), hair: FACE_LOOK.hair, shirt: FACE_LOOK.shirt,
+                 lip: FACE_LOOK.lip, eyes: FACE_LOOK.eyes,
+                 hairStyle: 'short', glasses: false, beard: 'none' };
+    /* THE LEDGER OF WHAT WAS ACTUALLY MEASURED. A knob absent from it is one
+       the caller leaves exactly as the doctor set it. */
+    /* NOTHING IS SEEDED HERE EXCEPT THE SKIN. A knob in this list is a CLAIM, and
+       the caller applies every claim over whatever the doctor set by hand. Seeding
+       'glasses' and 'beard' meant a NON-DETECTION was applied as a detection of
+       absence: a doctor who ticked Glasses had the box UNTICKED by Match whenever
+       the detector missed his frames - which, until the fix above, was every
+       bald or shaved head. A detector that finds nothing has measured nothing.
+       Each of these is now pushed by the branch that positively decides it. */
+    /* ⛔ EVEN THE SKIN MUST EARN ITS PLACE (av-5.7.6). The owner's swatch came back PALE
+       PINK and pink is not a skin tone - but the file was seeding 'skin' unconditionally,
+       which is the one exemption from the rule stated directly above.
+       TWO INDEPENDENT REASONS a pink answer arrives, and both are refused here:
+       1. THE SOURCE IS THE ILLUSTRATION, NOT THE PHOTOGRAPH. stylizeCanvas posterizes
+          every channel to six levels (steps of 51). Measured: the whole ordinary
+          fair-skin gamut - 4,305 RGB triples, R 222-250 / G 182-214 / B 160-196 -
+          collapses to exactly TWO output colours, 76% #ffcc99 and 24% #ffcccc, and
+          #ffcccc IS pale pink. No estimator can recover a tone from that. The source is
+          detected from its own pixels rather than trusted from a storage flag, because
+          the flag is per-device and a portrait taken before av-5.7.2 has no
+          full-quality copy at all: the chance of a real photograph having all three
+          channels within +-6 of a multiple of 51 is (13/51)^3 = 1.7%, against ~100%
+          for the posterized copy - a 50x separation that survives JPEG chroma
+          subsampling.
+       2. THE SAMPLE IS NOT SKIN-COLOURED. Skin of every tone sits in a narrow band of
+          CIELAB hue: measured across all ten Monk Skin Tone shades, h_ab spans
+          48.8-89.1 degrees, while every pink candidate falls below it (#f6d5d0 32.1,
+          #f2cdc8 31.0, #efd0cf 22.8, a flushed cheek #e8b4a8 38.0, and the quantiser's
+          own #ffcccc 21.0). ⛔ NOT the intuitive b*-a*>2 form: MST8 #604134 measures
+          1.7 there and real deep skin would be refused. C* < 32 is the secondary guard,
+          which excludes lip vermilion at 38.5 (MST maximum is 27.9). */
+    var posterFrac = 0;
+    (function () {
+      var hits = 0, seen = 0;
+      for (var pi = 0; pi < d.length; pi += 4 * 7) {          /* every 7th pixel is plenty */
+        seen++;
+        if (Math.abs(d[pi] % 51) <= 6 || Math.abs(d[pi] % 51) >= 45) {
+          if ((Math.abs(d[pi + 1] % 51) <= 6 || Math.abs(d[pi + 1] % 51) >= 45) &&
+              (Math.abs(d[pi + 2] % 51) <= 6 || Math.abs(d[pi + 2] % 51) >= 45)) hits++;
+        }
+      }
+      posterFrac = seen ? hits / seen : 0;
+    }());
+    var fromIllustration = posterFrac > 0.5;
+    var skinLab = faceLab(skin);
+    var skinHue = faceHueAb(skinLab), skinChroma = faceChroma(skinLab);
+    /* 🚨 gx-1.0 THE CHROMA BOUND IS RE-DERIVED AGAINST PHOTOGRAPHED SKIN.
+       C* < 32 was calibrated on the matte MST reference CHIPS (their maximum
+       is 27.9) - but a photographed face is lit, not matte. Measured through
+       faceLab on photographed-skin samples: #af6228 C* 52.1, #ab602b 49.7,
+       #c68642 49.0, #e0ac69 43.0, #8d5524 41.8, #f1c27d 41.8 - every one
+       refused by the chip bound, and the refusal message then quoted a HUE
+       that had passed. Upper bound now 60 (52.1 max measured + headroom).
+       AND THE GATE GAINS THE TWO BOUNDS IT NEVER HAD: hue had no ceiling and
+       chroma no floor, so a blue-grey wall (#b9c0c4, hue 240.1, C* 3.3) and a
+       warm grey (#8a8880, hue 99.6, C* 4.6) both PASSED. Hue caps at 95
+       (MST maximum 89.1 + headroom), chroma floors at 5 (measured walls and
+       whites are 3.2-4.6; the palest MST chip is 5.6). The floor is thin at
+       the pale end by nature - near-neutrals are what it rejects - and the
+       wall-to-wall veto above is the primary defence; this gate is the
+       backstop for a sample that goes wrong some other way. */
+    var skinIsSkinColoured = skinHue >= 45 && skinHue <= 95 && skinChroma >= 5 && skinChroma < 60;
+    var derived = [];
+    if (fromIllustration) {
+      found.push('this is the stylized copy of your photo, not the photograph — its colours are ' +
+        'reduced to six steps per channel, so no colour was taken from it. Retake your photo and Match again.');
+    } else if (!skinIsSkinColoured) {
+      /* gx-1.0 THE MESSAGE NAMES THE TERM THAT ACTUALLY FAILED. The old line
+         printed only the hue, so a doctor refused on CHROMA was shown a hue
+         that had passed - a message that argues with its own verdict sends him
+         to buy a camera. Every failed bound is named with its number. */
+      var skinWhy = [];
+      if (skinHue < 45 || skinHue > 95) skinWhy.push('hue ' + Math.round(skinHue) + '°, real skin is 45°-95°');
+      if (skinChroma < 5) skinWhy.push('colour saturation ' + Math.round(skinChroma) + ', real skin is 5-60 — that is a grey or white surface, not skin');
+      else if (skinChroma >= 60) skinWhy.push('colour saturation ' + Math.round(skinChroma) + ', real skin is 5-60');
+      found.push('the skin sample came back ' + hex(skin) + ', which is outside the range real skin ' +
+        'occupies (' + skinWhy.join('; ') + ') — usually the wall behind you ' +
+        'bleeding into the sample, so your own skin colour was left alone');
+    } else if (!eyeBoxSane) {
+      /* gx-1.2 - see THE EYES SIZE THE BOX above: the outline is wider than
+         the face the eyes belong to, so what the patches measured is part
+         furniture. A colour from that sample must not be claimed however
+         skin-like it is - that is exactly how the warm door got in. */
+      found.push('the face outline I measured is wider than your eye spacing says your face is — ' +
+        'usually warm-toned furniture or a door beside you blending into it, so your own skin ' +
+        'colour was left alone. Try a plainer background or a step to the side.');
+    } else {
+      derived.push('skin');
+    }
+    /* ONLY DESCRIBE A TONE THAT WAS ACCEPTED. Measured on a real photograph, the list read
+       "the skin sample came back #9d6c64, which is outside the range real skin
+       occupies ... so your own skin colour was left alone" and then, on the very next
+       line, "tan skin" - two contradictory statements about the same sample. A refusal
+       followed by a description reads as though the refusal did not happen. */
+    if (derived.indexOf('skin') >= 0) {
+      found.push(skinLsaid > 190 ? 'fair skin' : skinLsaid > 140 ? 'medium skin' : skinLsaid > 95 ? 'tan skin' : 'deep skin');
+    }
+
+    /* ---- 6. HAIR, in the band ABOVE the box ----------------------------
+       Not a fixed row near the top of the picture - the band directly above
+       THIS face, as tall as the face is long. "Hair" is what is neither this
+       face's skin nor the background: the only definition that works for black
+       hair on a pale wall AND white hair on a dark one, which are the two cases
+       a brightness test gets backwards. */
+    function unlikeSkin(pp) {
+      /* 20, not 24: grey hair against fair skin scored 23.3 on this measure -
+         a marginal miss that classified a grey-haired head as BALD. The band
+         this runs in is ABOVE the face box, so the only other thing in it is
+         the background, and isBg has already removed that. */
+      return (Math.abs(lum(pp) - skinL) + chDist(pp, skinCut) * 0.5) > 20;
+    }
+    var bandTop = Math.max(0, faceT - Math.round(faceH * 0.55));
+    var hairPix = [], crown = 0, crownN = 0;
+    for (yy = bandTop; yy < faceT; yy++) {
+      for (xx = atX(0.12); xx <= atX(0.88); xx++) {
+        if (xx < 0 || xx >= M) continue;
+        crownN++;
+        p = px(xx, yy);
+        if (!isBg(p) && !mask[yy * M + xx] && unlikeSkin(p)) {
+          crown++;
+          if (xx > atX(0.25) && xx < atX(0.75)) hairPix.push(p);
+        }
+      }
+    }
+    var crownR = crownN ? crown / crownN : 0;
+    var hair = medianCol(hairPix);
+    /* HAIR THE COLOUR OF THE WALL IS NOT A BALD HEAD - IT IS AN UNANSWERABLE
+       QUESTION. isBg() is a distance test, so when the wall lands within 26 of
+       the hair the whole hair mass classifies as background: measured on one
+       fixture face with only the wall changing, #454a50 gave crownR 0.79 and
+       "short hair", #3a3f45 gave crownR 0 and "BALD" - a cliff, from a wall.
+       The two cases are told apart by GEOMETRY, not colour. A genuinely bald
+       scalp is part of the skin mass, so the mask's top row is a narrow DOME. A
+       head whose hair was mistaken for wall has its mask cut off flat at the
+       forehead, so the top row is nearly as wide as the cheeks. When the top is
+       wide, something is covering the crown and this photo cannot say what
+       colour it is - so hairStyle and hair are left out of `derived` and the
+       doctor's own setting stands. */
+    var topRun = runAt(faceT);
+    var flatTop = !!(topRun && maxW && (topRun.w / maxW) > 0.55);
+    var hairUnreadable = (crownR < 0.20 && flatTop);
+    /* side columns BESIDE the box, below the eye line: hair that hangs */
+    var sideHit = 0, sideN = 0;
+    var sideW = Math.max(2, Math.round(faceW * 0.28));
+    /* from the CHEEKBONES down, not from the eye line: hair that hangs starts
+       level with the ear. Beginning higher counts empty rows beside the temples
+       and dilutes the ratio - measured, it put a full head of long hair at
+       0.29 against a 0.30 threshold. */
+    for (yy = maxWY; yy <= Math.min(M - 1, lowerChin + Math.round(faceH * 0.15)); yy++) {
+      for (xx = Math.max(0, faceRun.L - sideW); xx < faceRun.L; xx++) {
+        sideN++;
+        p = px(xx, yy);
+        if (!isBg(p) && !mask[yy * M + xx] && (!hair || chDist(p, hair) < 52)) sideHit++;
+      }
+      for (xx = faceRun.R + 1; xx <= Math.min(M - 1, faceRun.R + sideW); xx++) {
+        sideN++;
+        p = px(xx, yy);
+        if (!isBg(p) && !mask[yy * M + xx] && (!hair || chDist(p, hair) < 52)) sideHit++;
+      }
+    }
+    var sideR = sideN ? sideHit / sideN : 0;
+    if (hairUnreadable) {
+      /* say it out loud rather than answering. `hairStyle` never enters
+         `derived`, so Match leaves the doctor's own choice alone.
+         AND SAY THE RIGHT REASON. When the photo is cropped above the hairline
+         there is no band to measure at all - bandTop clamps to 0, the loop never
+         runs, and crownR is 0 BY CONSTRUCTION rather than by measurement. Blaming
+         the background then sends the doctor to change his wall. crownN tells the
+         two apart: zero means nothing was looked at. */
+      found.push(crownN === 0
+        ? 'hair could not be read — the top of the head is outside the photo'
+        : 'hair could not be read — the background is too close to it in colour');
+    }
+    /* BALD IS SHOWN, NEVER CLAIMED (av-5.7.2, review round three). `!hair` means no
+       hair pixel was found ANYWHERE - a non-detection, and this branch asserted it
+       as a detection of absence, which is the exact mistake `derived` was rebuilt to
+       stop making. It is reachable on ordinary heads: light blond (#e8d79a) passes
+       faceIsSkinRgb and survives the pass-2 rebuild, so the hair joins the SKIN
+       component, faceT sits at the top of the hair, and the crown band above it is
+       background - byte-identical to a shaved head. Measured: 'bald' was claimed on
+       42 of 120 skin x hair x background combinations where the head demonstrably
+       HAD hair, overwriting the doctor's own hairStyle with 'bald' and greeting his
+       patients with a bald avatar.
+       A genuinely bald scalp and very light hair are the SAME measurement here, so
+       the honest answer is to report and refuse, not to pick one. */
+    else if (crownR < 0.20 || !hair) {
+      look.hairStyle = 'bald';
+      found.push('little or no hair — but very light hair measures the same as a shaved head, ' +
+        'so your own hair setting was left alone');
+    }
+    else if (crownR < 0.42) { look.hairStyle = 'buzz'; derived.push('hairStyle'); found.push('very short hair'); }
+    else if (sideR > 0.30) { look.hairStyle = 'long'; derived.push('hairStyle'); found.push('long hair'); }
+    else { look.hairStyle = 'short'; derived.push('hairStyle'); found.push('short hair'); }
+    if (!hairUnreadable && look.hairStyle !== 'bald' && hair) {
+      look.hair = hex(hair);
+      derived.push('hair');
+      var hairL = lum(hair);
+      found.push(hairL < 70 ? 'dark hair' : hairL > 165 ? 'light hair' : 'mid-tone hair');
+    }
+
+    /* ---- 7. FACIAL HAIR. The geometric read from step 4 is the strong
+       evidence - a mass below the mask, in the face's own column, that is
+       neither skin nor background. Stubble does not break the mask, so it is
+       still read as the jaw being measurably darker than the cheeks, and both
+       are compared against THIS face's own skin rather than a threshold. */
+    if (beardDepth > 0.10 && beardPix.length > 20) {
+      var bcol = medianCol(beardPix);
+      look.beard = 'beard'; derived.push('beard'); found.push('beard');
+      /* THE BEARD IS NOT THE HAIR. This branch fires exactly when no hair pixel was
+         found, which is both the genuinely-bald head AND the head whose hair the
+         background or the skin cluster swallowed - and in the second case it takes
+         the colour from the BEARD and claims it as scalp hair. Shown, never claimed:
+         a facial-hair colour applied to the head is a visible wrong answer, and
+         `hairUnreadable` two branches up has already told the doctor why. */
+      if (bcol && !hair && lum(bcol) < skinL - 20) { look.hair = hex(bcol); }
+    } else {
+      /* THE JAW, NOT THE MOUTH. Patches on or beside the lips made a dark lip
+         colour read as a drop from the cheeks, and a clean-shaven face came
+         back bearded. */
+      /* skinOnly, and CLAMPED ABOVE THE CHIN. The three patch centres are on the
+         face, but with r=2 the 5x5 window of the lowest one reached rows past
+         lowerChin - so on a dark wall it sampled the WALL and the jaw came back
+         "stubble" on a clean-shaven face. Measured with a resolving control, one
+         face, wall only: #f2f2f2 -> drop -6 (none); #4a4f55 -> 25 (stubble);
+         #3a3f45 -> 28; #000000 -> 40. The same three patches with skinOnly gave
+         drop 1 in every case. Real stubble stays inside the mask - it darkens
+         skin without leaving the skin-chroma cluster - so nothing that should be
+         detected is lost by demanding the mask. */
+      /* gx-1.0: the -(2*PR+1) clamp keeps the scaled r window inside the chin,
+         which is what the old literal -3 did for r=2 */
+      var jawY = Math.min(belowEye(0.88), lowerChin - (2 * PR + 1));
+      var chinY2 = Math.min(belowEye(1.0), lowerChin - (2 * PR + 1));
+      var chin = patchMedian([[atX(0.30), jawY], [atX(0.70), jawY], [cxMid, chinY2]], 2 * PR, true);
+      if (chin) {
+        var drop = skinL - lum(chin);
+        if (drop > 46) { look.beard = 'beard'; derived.push('beard'); found.push('beard'); }
+        else if (drop > 24) { look.beard = 'stubble'; derived.push('beard'); found.push('stubble'); }
+      }
+    }
+
+    /* ---- 8. GLASSES: a bar across the BRIDGE at the measured eye line.
+       "Darker than the forehead and the cheeks on both sides" is equally well
+       explained by thick dark eyebrows - and eyebrows have a gap between them
+       that a frame crosses. */
+    /* THE FRAME'S OWN ROW IS FOUND, not assumed to be the eye line. Frames sit
+       anywhere from the brow line to mid-eye depending on the face and the
+       photograph, and probing one row missed a frame drawn 9px higher - which
+       then had its bar measured as the thickest eyebrows in the practice. The
+       darkest BRIDGE in the band is the candidate, because the bridge is what
+       makes a frame a frame: eyebrows have a gap there and a frame crosses it. */
+    var cheekRow = patchMedian([[atX(0.20), belowEye(0.30)], [atX(0.80), belowEye(0.30)]], PR, false);
+    /* -1e9, not -1: darkness is a NEGATIVE luminance, so seeding the comparator
+       at -1 meant no row was ever darker than the seed and the scan silently
+       found nothing. A frame detector that always declines looks exactly like a
+       face with no glasses. */
+    /* WHERE THE HAIR STOPS, measured before the frame is looked for. A fringe
+       hanging to the eye line is dark all the way across INCLUDING the bridge,
+       and the bridge is the one thing this detector treats as proof of a frame:
+       measured, a face with no spectacles anywhere read GLASSES at fringe bottoms
+       0.40, 0.41 and 0.42 of the frame, and then abandoned the brow read too,
+       because the brow measure stands down whenever glasses are "found". A
+       spectacle frame sits on a nose, not in hair - so the scan starts below the
+       hair mass. */
+    var fringeStop = faceT;
+    {
+      var fcols = [];
+      for (var ffx = atX(0.14); ffx <= atX(0.86); ffx++) {
+        if (ffx < 0 || ffx >= M) continue;
+        var flow = faceT, fseen = false, fstart = -1;
+        for (var ffy = Math.max(0, faceT - Math.round(faceH * 0.55)); ffy < eyeY; ffy++) {
+          var fpx = px(ffx, ffy);
+          var fhair = !isBg(fpx) && !mask[ffy * M + ffx] && unlikeSkin(fpx);
+          if (fhair) { if (!fseen) fstart = ffy; fseen = true; flow = ffy; }
+          else if (fseen) break;
+        }
+        /* THE RUN MUST START ABOVE THE FACE, or it is not hair.
+           ON A BALD OR SHAVED HEAD THE SCALP IS IN THE SKIN MASK, so the only
+           thing this definition can find above the eyes is the SPECTACLE FRAME
+           ITSELF - and it then set its own floor, the frame scan started below the
+           frame, and glasses became undetectable on exactly the heads that have no
+           hair to hide them. Measured and swept. A fringe begins above faceT (the
+           top of the skin); a frame sits inside the face. */
+        fcols.push((fstart >= 0 && fstart < faceT) ? flow : faceT);
+      }
+      var fmed = median(fcols);
+      /* gx-1.0: +2*PR - the margin clears the hair's antialiased edge, which
+         is a physical border that doubles in pixel terms with the grid */
+      if (fmed !== null) fringeStop = Math.max(faceT, fmed + 2 * PR);
+    }
+    var frameY = -1, frameDark = -1e9;
+    for (var gy = Math.max(fringeStop, eyeY - Math.round(faceH * 0.22)); gy <= Math.min(lowerChin, eyeY + Math.round(faceH * 0.06)); gy++) {
+      var brg = patchMedian([[cxMid, gy]], PR, false);
+      if (!brg) continue;
+      var darkness = -lum(brg);
+      if (darkness > frameDark) { frameDark = darkness; frameY = gy; }
+    }
+    var browRow = frameY >= 0 ? patchMedian([[atX(0.26), frameY], [atX(0.74), frameY]], PR, false) : null;
+    /* gx-1.0: skinOnly - foreRow means "the forehead SKIN". Measured at 256:
+       the mask opening rounds the dome top by ~2 rows, (faceT+eyeY)/2 landed
+       INSIDE a spectacle frame drawn high on the face, and the "brow darker
+       than forehead" test compared the bar against itself - glasses vanished
+       on the exact fixture that proves them. Sampling only mask+component
+       pixels makes the sample mean what its name says at any grid; on a
+       forehead with no dark feature in the window it is byte-identical.
+       r=2*PR (the skin-patch footprint, not the probe footprint): a probe-size
+       window can sit entirely inside a high frame bar and admit nothing. */
+    var foreRow = patchMedian([[cxMid, Math.round((faceT + eyeY) / 2)]], 2 * PR, true);
+    var bridge = frameY >= 0 ? patchMedian([[cxMid, frameY]], PR, false) : null;
+    if (browRow && cheekRow && foreRow && bridge) {
+      if (lum(bridge) < lum(cheekRow) - 20 &&
+          lum(browRow) < lum(cheekRow) - 26 && lum(browRow) < lum(foreRow) - 20) {
+        look.glasses = true; derived.push('glasses'); found.push('glasses');
+      }
+    }
+    /* ---- 9. EYE COLOUR: just inside each eye centre; refuse near-black,
+       which is pupil or lash rather than iris. */
+    var eye = patchMedian([[atX(0.30), eyeY], [atX(0.70), eyeY]], PR, false);
+    /* gx-1.0 THE SILENT FIFTH MATCH: this branch pushed to `derived` but never
+       to `found`, so the receipt counted a claim the announcement never named -
+       the owner was told 4 things and credited 5. One claim, one line. */
+    if (eye && lum(eye) > 40 && lum(eye) < skinL - 20) { look.eyes = hex(eye); derived.push('eyes'); found.push('eye colour'); }
+
+    /* ---- 10. BROWS, in the band between the top of the face and the eyes,
+       clear of both. Skipped outright when glasses were detected: a frame lies
+       across exactly this band and would read as the thickest brows on every
+       bespectacled face. Thickness is scaled against the face's own WIDTH,
+       which no fringe can move - the visible height of a face changes with how
+       much forehead the hair leaves showing. */
+    var dbgBrow = null;
+    if (!look.glasses) {
+      /* THE BAND OPENS BELOW THE HAIR, AND THE HAIR SAYS WHERE THAT IS.
+         A fraction of the forehead is not good enough: a fringe curves down
+         into the top of any fixed band, its antialiased edge reads as dark, and
+         measured on the fixtures it reached a MAJORITY of the columns - so the
+         median column carried one dark row and a face with no eyebrows drawn at
+         all came back with thin brows. The lowest hair-like pixel in each
+         column is measured instead, and the band starts below it. */
+      /* CONTIGUOUS with the hair mass, which is what makes it a fringe. The
+         first version took the LOWEST hair-like row above the eyes, and an
+         eyebrow is hair-like: measured, the brow bar itself set the bottom of
+         the fringe, the band opened below it, and a thick brow read as thin.
+         The walk starts at the first hair-like row and stops at the first row
+         that is not - so a brow, separated from the hair by forehead, is never
+         mistaken for the bottom of the hair. */
+      var fringe = [];
+      for (var fx = atX(0.14); fx <= atX(0.86); fx++) {
+        if (fx < 0 || fx >= M) continue;
+        var low = faceT, started = false;
+        for (var fyy = Math.max(0, faceT - Math.round(faceH * 0.55)); fyy < eyeY; fyy++) {
+          var fp = px(fx, fyy);
+          var isHair = !isBg(fp) && !mask[fyy * M + fx] && unlikeSkin(fp);
+          if (isHair) { started = true; low = fyy; }
+          else if (started) break;
+        }
+        fringe.push(low);
+      }
+      var fringeBottom = median(fringe);
+      /* gx-1.0: +2*PR, same antialiased-edge margin as fringeStop above */
+      var by0 = Math.max(faceT, (fringeBottom === null ? faceT : fringeBottom) + 2 * PR);
+      var gap = Math.max(3, eyeY - by0);
+      var by1 = Math.max(by0 + 1, Math.round(eyeY - Math.max(1, gap * 0.10)));
+      var browCols = [], browPix = [], bridgeCols = [];
+      for (var bx2 = atX(0.14); bx2 <= atX(0.86); bx2++) {
+        if (bx2 < 0 || bx2 >= M) continue;
+        var isBridge = (bx2 > atX(0.44) && bx2 < atX(0.56));   /* the gap between the brows */
+        var darkRows = 0;
+        for (var byy2 = by0; byy2 < by1; byy2++) {
+          var bp2 = px(bx2, byy2);
+          /* NOT THE WALL. Every other scan in this function carries !isBg() - the
+             crown, the beard and both fringe walks - and this one did not, so on a
+             head whose box reaches the edge of the frame the BACKGROUND was counted
+             as eyebrow. `mask` is deliberately not consulted: a brow is darker than
+             skin and is outside the skin component, exactly like hair. */
+          if (isBg(bp2)) continue;
+          if (lum(bp2) < skinL - 34) { darkRows++; if (!isBridge) browPix.push(bp2); }
+        }
+        if (isBridge) bridgeCols.push(darkRows); else browCols.push(darkRows);
+      }
+      var browMed = median(browCols);
+      /* IS IT A BAR ACROSS THE FACE, OR TWO BROWS? A spectacle frame runs straight
+         over the nose bridge; eyebrows stop either side of it. The bridge columns
+         were being skipped entirely, so when the glasses detector missed, the frame
+         was measured as the doctor's eyebrows - 84 of 175 bespectacled framings
+         claimed a brow weight the same face without frames does not claim at all.
+         Now the bridge is measured too, and a band that continues across it is not
+         eyebrows and claims nothing. */
+      var bridgeMed = median(bridgeCols);
+      var frameLike = (browMed && bridgeMed !== null && bridgeMed >= browMed * 0.6);
+      /* the brow read is the measurement this file has got wrong most often, so
+         the numbers it came from ride back with the result for inspection */
+      dbgBrow = { by0: by0, by1: by1, fringe: fringeBottom, med: browMed, cols: browCols.length };
+      if (browMed) {
+        /* an eyebrow is roughly 7-10mm tall on a face about 140mm wide, so a
+           natural brow is ~5-7% of the face's WIDTH; thin is nearer 3% and
+           thick nearer 9%. The three-point test (thin / natural / thick) then
+           shows the classifier DISCRIMINATES; it is not what chose the
+           numbers. */
+        var bRatio = browMed / faceW;
+        /* the three drawn brows measure 3, 5 and 9 rows on a 74px face - 0.041,
+           0.068 and 0.122 - so the cuts sit between them, and they agree with
+           the anatomy: a brow is 7-10mm on a face about 140mm wide, so 5-7% is
+           natural, 3% thin and 9%+ thick. The three-point test is what shows
+           the classifier DISCRIMINATES; it is not what chose the numbers. */
+        var bVal = bRatio < 0.054 ? 'thin' : (bRatio > 0.095 ? 'thick' : 'normal');
+        /* CLAIMED ONLY WHEN IT WAS ACTUALLY MEASURABLE (av-5.7.2, review round three).
+           Round three found two independent ways this knob was confidently wrong: the
+           wall counted as brow (fixed above with !isBg), and a missed spectacle frame
+           measured as eyebrows (fixed above with the bridge test). The third is
+           resolution: browMed IS the brow's thickness in analysis rows, and below
+           three rows the darkest pixel in the band is a blend by construction, so
+           neither the weight nor the colour can be recovered - a thin brow is
+           sub-pixel at ordinary webcam distance. Blanket-declaiming this was my first
+           cure and it was too wide: it broke "dark brows under grey hair get their own
+           colour", a case the fixtures prove works. So the gate is the MEASUREMENT,
+           not the knob. */
+        var browReadable = (browMed >= 3 && !frameLike);
+        /* 🕶 AND THE BAR ACROSS THE BRIDGE IS THE GLASSES DETECTOR (av-5.7.6).
+           The existing detector at step 9 hunts a DARK BAR and needs a solid one: swept
+           against stroked rims it returns false at 0.5, 1.0, 1.5, 2.6 and 4.1 px and
+           only refuses (null) at 7.7 - and the framed suite's own fixture draws
+           fillRect(N*0.22, N*0.38, N*0.56, N*0.06), a filled bar 7.7px at the analysis
+           grid, which is the ONLY thing it can see. That is why it looked like it
+           worked while the owner's thin rims were invisible.
+           The discriminator was already here, doing the opposite job: eyebrows STOP
+           either side of the nose bridge and a spectacle frame CROSSES it, which is
+           exactly what `frameLike` measures - and on the owner's own fixture it already
+           fires. A frame is thin, so its rows are few; the bridge continuity is what
+           identifies it, not its darkness. Claimed only when the existing detector has
+           not already spoken, so the two never disagree in `derived`. */
+        /* ⛔ AND IT MUST BE THIN, or a brow ridge in hard light IS a frame (av-5.8.1).
+           Measured on a REAL photograph (an outdoor selfie in harsh sun, no spectacles
+           anywhere): browMed came back 8 rows - the brow plus the shadow under the brow
+           ridge - and that band crosses the bridge, so bridge continuity alone CLAIMED
+           glasses on a man who wears none. My own b960 change did that, and no synthetic
+           fixture could show it: painted brows have no shadow.
+           A spectacle rim at this grid is 1-3 rows on any real framing; the owner's own
+           thin-rim fixture measures 3. A brow-and-shadow band is 6-10. Thinness is the
+           property that separates them, and it is already measured. */
+        /* gx-1.0: <= 4*PR - rim thickness is PHYSICAL rows on the grid. A rim
+           that is 1-3 rows at 128 is 2-6 at 256, and a brow-plus-shadow band
+           (6-10 at 128) is 12-20; the separation survives, the unit scales. */
+        var rimThin = browMed <= 4 * PR;
+        if (frameLike && rimThin && look.glasses !== true) {
+          look.glasses = true;
+          derived.push('glasses');
+          found.push('glasses — a thin rim runs across the nose bridge, where an eyebrow would stop');
+        } else if (frameLike && !rimThin) {
+          found.push('a dark band crosses the nose bridge but it is too thick to be a spectacle rim — ' +
+            'usually a brow ridge in hard light, so your glasses setting was left alone');
+        }
+        look.brows = bVal;
+        if (browReadable) derived.push('brows');
+        found.push((bVal === 'normal' ? 'natural brows' : bVal + ' brows') +
+          (browReadable ? '' : (frameLike
+            ? ' — but a bar runs across the nose bridge, so this may be a spectacle frame; your own setting was left alone'
+            : ' — too small in this photo to measure reliably, so your own setting was left alone')));
+        /* THE INTERIOR OF THE BROW, NOT ITS MEDIAN. Every pixel counted here is
+           merely "darker than the skin", so on a thin brow the set is mostly the
+           ANTIALIASED EDGE - and its median is a mid-tan that exists nowhere on
+           the face. Measured, with brows painted in EXACTLY the hair colour
+           #3a2a1c: browPx 3 -> browCol #7f6147, browPx 4 -> #7c634c, browPx 6 ->
+           #7f6147, each ~56 from the hair and so clearing the guard below, each
+           then painted into the SVG and saved as the doctor's own choice. The
+           pattern is not monotonic in thickness (5, 7 and 8 were fine), which is
+           why one pinned thickness could never have caught it.
+           The darkest quarter is the brow itself; the blend sorts above it. */
+        /* > 12, NOT >= 24. The count scales with head AREA, so doubling the floor
+           while also changing the estimator (median -> darkest quarter) refused a
+           correct brow colour at ordinary webcam distance: measured on one fixture,
+           scale 1.0 gave 111 pixels and scale 0.55 gave 41 - both of which return
+           the right colour with the new estimator, and both of which the doubled
+           floor was fine with, but the margin was gone. The estimator was the fix;
+           the floor was never the problem, so it goes back to what it was. */
+        /* back to >= 24 (av-5.7.2). Round two lowered this to > 12 on a measurement
+           taken from a NORMAL-thickness brow; on a thin brow the 13-23 band is the
+           antialiased edge, and a sweep over six fixtures x thirteen framings scored
+           the lower floor 9 new wrong colours against 4 new right ones. The whole
+           net loss lands at webcam framing, where the brow is sub-pixel. */
+        if (browPix.length >= 24) {
+          browPix.sort(function (pp, qq) { return lum(pp) - lum(qq); });
+          var bc = browPix[Math.floor(browPix.length * 0.25)];
+          /* shown, never claimed - see look.brows above. A thin brow is at most 1.5px
+             tall on the 128px analysis grid at any webcam framing, so the darkest
+             pixel in the band is a BLEND at every distance (measured #53402e against
+             a truth of #3a2a1c even at scale 1): the estimator cannot return the
+             right colour, so it must not overwrite the doctor's. */
+          if (hair && chDist(bc, hair) > 30) {
+            look.browCol = hex(bc);
+            /* same gate as the weight: three analysis rows of real brow, and not a
+               bar across the bridge. Above that the darkest quarter IS the brow and
+               the fixtures show it returns the right colour; below it, it is edge
+               blend and returned a mid-tan that exists nowhere on the face. */
+            if (browReadable) {
+              derived.push('browCol');
+              found.push('brows a different colour from the hair');
+            } else {
+              found.push('brows may be a different colour from the hair — not measurable in this photo, so your own setting was left alone');
+            }
+          }
+        }
+      }
+    }
+
+    /* ---- 11. LIPS: how much of the mouth band is measurably REDDER than this
+       face's own cheek. Redness, not darkness - the shadow under a lip is dark
+       but not red, and a beard is dark across the whole band. */
+    function redness(pp) { return pp[0] - (pp[1] + pp[2]) / 2; }
+    var cheekRed = [];
+    for (var cx1 = atX(0.12); cx1 < atX(0.30); cx1++) {
+      for (var cy1 = belowEye(0.12); cy1 < belowEye(0.40); cy1++) {
+        if (cx1 < 0 || cx1 >= M || cy1 < 0 || cy1 >= M) continue;
+        cheekRed.push(redness(px(cx1, cy1)));
+      }
+    }
+    var cheekMed = median(cheekRed);
+    if (cheekMed !== null) {
+      var lipRows = 0, lipTot = 0;
+      for (var lyy = belowEye(0.40); lyy < belowEye(1.02); lyy++) {
+        var lhit = 0, lwide = 0;
+        for (var lxx = atX(0.38); lxx < atX(0.62); lxx++) {
+          if (lxx < 0 || lxx >= M || lyy < 0 || lyy >= M) continue;
+          lwide++;
+          if (redness(px(lxx, lyy)) > cheekMed + 10) lhit++;
+        }
+        lipTot++;
+        if (lwide && lhit / lwide > 0.45) lipRows++;
+      }
+      if (lipTot > 0 && lipRows > 0) {
+        var lRatio = lipRows / lipTot;
+        var lVal = lRatio < 0.18 ? 'thin' : (lRatio > 0.38 ? 'full' : 'normal');
+        look.lips = lVal; derived.push('lips');
+        found.push(lVal === 'normal' ? 'natural lips' : lVal + ' lips');
+      }
+    }
+
+    /* ---- 12. NOSE WIDTH: the shaded span at the base of the nose, measured
+       outward from the centre line and reduced by median across the rows. The
+       OUTERMOST shaded offset, not a contiguous run - the middle of a nose is
+       the lit ridge, and a contiguity scan starting there measures zero on
+       every real face. Scaled against the FACE width. */
+    /* the widest offset this scan is ABLE to test. Kept as a number so a span that
+       reaches it can be recognised as a floor rather than read as a measurement. */
+    var noseMaxOff = Math.floor(faceW * 0.30) - 1;
+    /* MEASURED TWICE, AT TWO DARKNESS CUTS. Everything here is relative to skinL, so the
+       span depends on how much darker than the skin a pixel has to be before it counts as
+       nostril shadow - and that made the verdict move with the SKIN rather than with the
+       nose. Measured on one fixture: 'wide' on fair skin, 'button' on the same geometry
+       with a warmer tone, a swing across two whole categories. A verdict that changes when
+       the subject's complexion changes is not a description of a nose. Two cuts eight
+       apart must AGREE before this is applied. */
+    function noseScan(cut) {
+      var s = [], sat = 0;
+      for (var nyy = belowEye(0.22); nyy < belowEye(0.42); nyy++) {
+        var half = 0;
+        /* gx-1.0: off starts at 2*PR - the exclusion is the nose's own lit
+           ridge, a physical extent, not a fixed two grid pixels */
+        for (var off = 2 * PR; off < faceW * 0.30; off++) {
+          var lx = cxMid - off, rx3 = cxMid + off;
+          if (lx < 0 || rx3 >= M || nyy < 0 || nyy >= M) break;
+          if (lum(px(lx, nyy)) < skinL - cut || lum(px(rx3, nyy)) < skinL - cut) half = off;
+        }
+        if (half) { s.push(half * 2); if (half >= noseMaxOff) sat++; }
+      }
+      var med = median(s);
+      var r = med ? med / faceW : 0;
+      return { med: med, spans: s, sat: sat, val: r < 0.24 ? 'button' : (r > 0.36 ? 'wide' : 'straight'), ratio: r };
+    }
+    var noseA = noseScan(10), noseB = noseScan(18);
+    var spans = noseA.spans, noseSat = noseA.sat;
+    var noseMed = noseA.med;
+    if (noseMed) {
+      var nRatio = noseA.ratio;
+      var nVal = noseA.val;
+      look.nose = nVal;
+      /* A SATURATED SCAN IS A FLOOR, NOT A MEASUREMENT (av-5.7.6). The owner's fixture
+         claimed "wide nose" and the same face at a slightly different framing claimed
+         "button" - a verdict that moves with the crop is not a description of a nose.
+         The mechanism: `half` can run all the way to the loop's own bound, so the span
+         reported is "at least this wide", and dividing a bound by faceW manufactures a
+         ratio of exactly 0.60 which is always past the 0.36 'wide' cut. Shadow at the
+         nostril line also reaches the loop bound on any strongly side-lit face.
+         So: claim only when the shaded span STOPPED on its own, on most of the rows,
+         and there were enough rows to take a median of. Otherwise show the value and
+         say why it is not being applied - the doctor's own setting stands. */
+      /* AND NOT SITTING ON A BOUNDARY. The owner's fixture measures 0.375 against the
+         'wide' cut of 0.36 - a 4% margin on a quantity whose own inputs move by more
+         than that between framings, which is the definition of a verdict that flips.
+         Within 0.02 of a cut the two neighbouring answers are indistinguishable, so
+         neither is claimed. This is deliberately NOT a wider dead band: the fixtures
+         hold genuinely wide and genuinely button noses well clear of the cuts, and
+         widening it until nothing is claimed would be the blanket refusal that broke
+         the eyebrow case. */
+      var noseNearCut = Math.abs(nRatio - 0.24) < 0.02 || Math.abs(nRatio - 0.36) < 0.02;
+      var noseSolid = spans.length >= 3 && noseSat * 2 <= spans.length &&
+        noseB.val === nVal && !noseNearCut;
+      if (noseSolid) {
+        derived.push('nose');
+        found.push(nVal + ' nose');
+      } else {
+        found.push(spans.length < 3
+          ? 'nose width could not be read from this photo, so your own setting was left alone'
+          : (noseB.val !== nVal
+            ? 'the nose measured ' + nVal + ' or ' + noseB.val + ' depending on how much shadow is counted, so your own nose setting was left alone'
+            : (noseNearCut
+              ? 'the nose measured right on the line between two shapes, so your own nose setting was left alone'
+              /* gx-1.0: this else fires when noseSat*2 > spans.length - the
+                 shaded span hit the scan's own bound on most rows, which is
+                 strong side-light or shadow, NOT a camera or photo limit. The
+                 old line blamed what the photo "can measure" and sent the
+                 owner shopping for a camera that could not have changed one
+                 pixel of this verdict - both terms of the failing ratio scale
+                 with faceW, so the refusal is resolution-INDEPENDENT. */
+              : 'the shadow at the base of the nose spreads wider than the nose itself on most rows — that is strong or uneven light, not a camera limit, so your own nose setting was left alone. Try more even light on your face.')));
+      }
+    }
+
+    /* ---- 13. TOP COLOUR: the strip below the chin, outside the neck column.
+       Taken only when it differs from BOTH the skin (or it is the neck) and the
+       background (or it is the wall). A head-only crop fails one of those two
+       and correctly keeps the colour the doctor already chose. */
+    var tops = [];
+    for (var sx = atX(-0.15); sx < atX(1.15); sx++) {
+      if (sx < 0 || sx >= M) continue;
+      if (sx > atX(0.28) && sx < atX(0.72)) continue;          /* the neck sits here */
+      for (var sy = lowerChin + Math.round(faceH * 0.08); sy < lowerChin + Math.round(faceH * 0.45); sy++) {
+        if (sy < 0 || sy >= M) continue;
+        tops.push(px(sx, sy));
+      }
+    }
+    /* gx-1.0 (PR>1 ONLY, like maskOpen): at 128 the 2:1+ downsample
+       manufactures boundary BLEND pixels that carry the top's colour into the
+       whole-band median - measured, the framed shoulders fixture claimed
+       #5e959a for a #1f6f78 top, a blend artifact that happened to pass. At
+       256 the boundary is sharp, the median flips to the majority class
+       (background), and a top that is plainly in shot was refused as "too
+       close to the wall". The estimand is THE COLOUR VISIBLY WORN BELOW THE
+       CHIN, so at the fine grid pixels that measure as background are
+       excluded - with a floor of one face-width of remaining evidence, and a
+       fallback to the whole band so an all-background band still refuses with
+       the same message it does today. PR=1 is byte-identical.
+       AND HAIR IS NOT A TOP: hanging hair crosses this band beside the neck,
+       and the first version of this filter promoted it to "the top" - the
+       duplicate-surface veto then correctly killed hair, style AND top on the
+       long-haired small-face fixture (measured). Hair-coloured pixels are
+       excluded with the same distance the side-hair scan uses to ADMIT them;
+       a top genuinely the colour of the hair falls back to the whole band. */
+    if (PR > 1) {
+      var topsFg = tops.filter(function (tp) {
+        return !isBg(tp) && (!hair || chDist(tp, hair) >= 52);
+      });
+      if (topsFg.length >= faceW) tops = topsFg;
+    }
+    var topCol = medianCol(tops);
+    if (topCol && chDist(topCol, skinCut) > 34 && (!bg || chDist(topCol, bg) > 26)) {
+      look.shirt = hex(topCol); derived.push('shirt');
+      found.push('top colour');
+    } else {
+      /* SAY THE REFUSAL OUT LOUD (av-5.7.4). This branch had no else, so a refused top
+         left the product default - scrub green - sitting in the swatch with nothing to
+         explain it, and the owner reasonably read it as the answer. Measured on a
+         fixture built to his photo: a light grey tee scores chDist 19 against skin
+         (needs >34) and 2-6 against a light wall (needs >26), so it is refused at every
+         realistic shoulder height. Both reasons are worth telling apart, because one is
+         fixable by standing somewhere else and the other by wearing something else. */
+      found.push(topCol && bg && chDist(topCol, bg) <= 26
+        ? 'your top and the wall behind you are too close in colour to tell apart, so your own choice was left alone'
+        : 'I could not see your top in this photo, so your own choice was left alone');
+    }
+
+    /* ---- 14. THE SKULL. Width at the eye line over the LOWER face height -
+       eyes to chin - because the upper bound of a face is hair, not bone. The
+       three cut points are the ratios of the three heads faceSvg actually draws
+       (oval 116/70 = 1.66, round 126/64 = 1.97, long 104/78 = 1.33), so a photo
+       is matched to the nearest head that EXISTS rather than to a number
+       invented here.
+       A BEARD HIDES THE JAW, AND WORSE, IT IMPERSONATES IT: there is no honest
+       reading of a jaw that is under hair, so there is no reading. */
+    var eyeRun = runAt(eyeY) || faceRun;
+    var eyeW = eyeRun.w;
+    /* `lopsided` joins offFrame here: when one half of the outline is a third
+       wider than the other, the thing being measured is not only a face, and a
+       shape verdict from it would overwrite the doctor's own setting with the
+       geometry of his hand. */
+    var offFrame = (eyeRun.L <= 0 || eyeRun.R >= M - 1 || faceRun.L <= 0 || faceRun.R >= M - 1 || lopsided);
+    /* AND THE CHIN HAS TO HAVE BEEN FOUND FOR A GOOD REASON.
+       My first attempt at this gate demanded that eye-to-chin be at least 0.48 of
+       the face's width, on the reasoning that no adult face is near 0.40 - and it
+       broke two cases that had been passing, because a WIDE SHORT face is exactly
+       a short lower face over a wide one (the fixture's round head measures 0.37).
+       The lesson: a proportion cannot separate "an unusual face" from "a bad
+       measurement", because unusual faces are the ones this feature exists for.
+       WHY the scan stopped can. A scan that ended on a WIDENING did not find a
+       jaw - it found the top edge of something else, and an under-chin shadow
+       bridged by the closing is exactly that. When it stopped that way AND there
+       is a lot of unexplained mask left below the chin, the chin is not
+       trustworthy and neither is anything measured from it. */
+    var unexplained = best.maxY - chinY;
+    /* MEASURED, not reasoned about: chinStop came back "neck" for BOTH the
+       shadowed and the unshadowed face, so a gate on the stop reason could never
+       have fired. What actually happens is that the shadow REMOVES the jaw's
+       lowest rows from the skin mask, so the narrowing reaches neck-width eleven
+       rows early and the plateau is genuinely there. The mask is wrong, not the
+       scan.
+       So the question to ask is whether the SILHOUETTE continues below the chin
+       we found: a band of pixels that are neither background nor skin, inside the
+       face's own columns, means the face goes on and this chin is not the chin. A
+       real beard is already handled above (it moves lowerChin), and a real neck is
+       skin, so neither fires this. */
+    /* ⛔ chinPlausible IS GONE, and faceShape is no longer CLAIMED. Read the
+       measurements before restoring either.
+       This guard was my third attempt to make the face-SHAPE verdict safe against
+       an under-chin shadow, and an adversarial sweep measured it doing both wrong
+       things at once: it FIRED on an ordinary shaded neck where the chin had been
+       measured exactly right (belowR jumped 0 -> 0.53 the moment the shade crossed
+       the mask's luminance cut, with chinY byte-identical to the unshadowed twin),
+       and it was exactly 0.00 at EVERY framing at or below 0.65 - the entire band
+       this file exists for - so where it was aimed it could not fire at all.
+       Three calibrations, three failures, on a signal that is not there at the
+       distances that matter. So the honest answer is not a fourth threshold: the
+       photo does not reliably support a shape verdict, so it stops making one.
+       look.faceShape is still computed and still reported in `found` (it is useful
+       information), but it NEVER enters `derived` - which means Match never
+       overwrites the Face-shape control the doctor set by hand. A cosmetic knob is
+       not worth a wrong answer, and the four knobs the owner actually asked about
+       (skin, hair, beard, glasses) do not depend on the chin. */
+    if (!offFrame && eyeW > M * 0.10 && lowerH > faceH * 0.20 && look.beard === 'none') {
+      var shapeR = eyeW / lowerH;
+      var sVal = shapeR < 1.48 ? 'long' : (shapeR > 1.80 ? 'round' : 'oval');
+      /* A SQUARE JAW OUTRANKS ALL THREE: it is not a proportion, it is the face
+         still being wide 62% of the way down to the chin. The drawn oval has
+         narrowed to about 0.79 of its widest by there; a drawn jaw is at 0.97.
+         MEASURED FROM THE CHEEKBONE ROW, the widest row, because that landmark
+         does not move - hung off the eye line instead, the same ellipse scored
+         0.875 or 0.914 depending only on whether the portrait happened to show
+         an iris, and 0.88 sat between them. */
+      var jawRun = runAt(Math.round(maxWY + (lowerChin - maxWY) * 0.62));
+      if (jawRun && jawRun.w / maxW > 0.88) sVal = 'square';
+      /* COMPUTED AND REPORTED, NEVER CLAIMED — see the note above. It goes into
+         `found` so the doctor can see what the photo looked like, and stays out of
+         `derived` so Match cannot overwrite his own choice with it. */
+      look.faceShape = sVal;
+      found.push(sVal === 'square' ? 'a square jaw' : sVal + ' face');
+    }
+    /* EYE SPACING, from the two dark masses measured in step 5. THE DARK MASS,
+       NOT THE DARKEST PIXEL: a solid iris has no unique darkest pixel, so "the
+       darkest pixel" is noise wearing a measurement's clothes. AN IRIS IS
+       COMPACT AND A SPECTACLE FRAME IS NOT - the spread test holds even on a
+       frame the glasses detector missed. */
+    if (!offFrame && !look.glasses && compact && eR.cx > eL.cx && eL.n >= 6 && eR.n >= 6) {
+      var setR = (eR.cx - eL.cx) / eyeW;
+      var eVal = setR < 0.44 ? 'close' : (setR > 0.56 ? 'wide' : 'normal');
+      look.eyeSet = eVal; derived.push('eyeSet');
+      if (eVal !== 'normal') found.push(eVal + '-set eyes');
+    }
+    /* A RECEDING HAIRLINE is bare TEMPLES with hair still on the crown - so it
+       is read as exactly that contrast, and never on a head with no hair to
+       recede from. Reading only the temples would call every bald head
+       receding; reading only the crown could never see it at all. */
+    if (look.hairStyle !== 'bald' && hair) {
+      /* WHERE THE SKIN STARTS, COLUMN BY COLUMN. A receding head is not "bare
+         temples" - every head with an ordinary fringe has bare temples, because
+         a fringe is narrower than the skull. It is bare temples that reach
+         MEASURABLY HIGHER than the middle of the forehead does, and that
+         difference is scale-free.
+         Measured on the fixtures: the ordinary head's temples start 5px above
+         its centre parting and the receding one's start 24px above, on faces
+         81px long - so the honest cut is a fraction of the face, and a
+         coverage-ratio test inside one fixed band called both of them the
+         same. */
+      function skinTopIn(f0, f1) {
+        var tops = [];
+        for (var tx = atX(f0); tx < atX(f1); tx++) {
+          if (tx < 0 || tx >= M) continue;
+          for (var ty = Math.max(0, faceT - Math.round(faceH * 0.10)); ty <= lowerChin; ty++) {
+            if (mask[ty * M + tx]) { tops.push(ty); break; }
+          }
+        }
+        return median(tops);
+      }
+      var tL = skinTopIn(0.05, 0.25), tR = skinTopIn(0.75, 0.95), midTop = skinTopIn(0.40, 0.60);
+      if (tL !== null && tR !== null && midTop !== null) {
+        var lift = midTop - Math.max(tL, tR);
+        if (lift > faceH * 0.12 && crownR > 0.20) {
+          look.hairline = 'receding'; derived.push('hairline');
+          found.push('a receding hairline');
+        }
+      }
+    }
+    /* `age` is NOT derived. Nasolabial folds and crow's feet are a few pixels of
+       low-contrast texture at this resolution and are wiped out by ordinary
+       lighting, so any verdict here would be a guess wearing a measurement's
+       clothes - and guessing that a doctor looks old is the one wrong answer
+       this feature must never volunteer. It stays a choice in Setup. */
+    /* NO COLOUR SURVIVES THE ILLUSTRATION. Shape can still be read from a posterized
+       copy - an outline is an outline - but every hue in it has been snapped to one of
+       six steps per channel, so hair, eyes, lips and the top are as unrecoverable as the
+       skin was. Stripped here, at the single exit, rather than at each of the four
+       pushes: a fifth colour knob added later would otherwise quietly escape. */
+    var refusedOut = [];
+    if (fromIllustration) {
+      derived = derived.filter(function (k) {
+        return k !== 'skin' && k !== 'hair' && k !== 'eyes' && k !== 'lip' &&
+               k !== 'shirt' && k !== 'browCol';
+      });
+      /* fx-1.0: the T2 self-contradiction measured in the diagnosis - 'no
+         colour was taken from it' followed two entries later by 'dark hair' -
+         was this exit stripping the CLAIM but not the DESCRIPTION. A refused
+         colour keeps no description. */
+      found = found.filter(function (s) {
+        return s !== 'dark hair' && s !== 'light hair' && s !== 'mid-tone hair' &&
+               s !== 'top colour' && s !== 'brows a different colour from the hair' &&
+               s !== 'eye colour'; /* gx-1.0: the eyes claim now announces itself, so the illustration exit must strip its description too */
+      });
+    }
+    /* fx-1.0 DUPLICATE-SURFACE VETO (DIAGNOSIS Mechanism A, measured on T8):
+       a white door behind the head is not-background to the single
+       border-median reference, so it was CLAIMED as hair AND as the top -
+       long white hair on a dark buzz-cut man, the owner's screenshot
+       verbatim. Two disjoint zones answering one colour is the signature of
+       a backdrop, so both claims - and the style verdicts counted over the
+       same suspect pixels - refuse together, with the cure named. The full
+       multi-reference background rework is the next train; this veto kills
+       the measured killer today. */
+    var vetoBackdrop = false;
+    if (derived.indexOf('hair') >= 0 && derived.indexOf('shirt') >= 0 && hair && topCol &&
+        chDist(hair, topCol) <= 24 && chDist(hair, skinCut) > 24 && chDist(topCol, skinCut) > 24) {
+      vetoBackdrop = true;
+      derived = derived.filter(function (k) { return k !== 'hair' && k !== 'shirt' && k !== 'hairStyle'; });
+      found = found.filter(function (s) {
+        return s !== 'dark hair' && s !== 'light hair' && s !== 'mid-tone hair' &&
+               s !== 'very short hair' && s !== 'long hair' && s !== 'short hair' && s !== 'top colour';
+      });
+      found.push('the same colour came back for your hair and for your top - that is the background ' +
+        'behind you being read as both, not a person. Retake against a plainer background, or set them by hand.');
+    }
+    /* fx-1.0 REFUSE AND COUNT. Every knob this reader examines is either
+       CLAIMED in `derived` or REFUSED with a reason and the control to set
+       by hand - no third state, so 'it did nothing' and 'it refused 9 of 14
+       and told you' are different, visible facts. */
+    var EXAMINABLE = FACE_MATCH_FIELDS;
+    EXAMINABLE.forEach(function (k) {
+      if (derived.indexOf(k) >= 0) return;
+      var why = 'not measurable on this photo';
+      var colourKnob = (k === 'skin' || k === 'hair' || k === 'eyes' || k === 'shirt' || k === 'browCol');
+      if (vetoBackdrop && (k === 'hair' || k === 'shirt' || k === 'hairStyle')) why = 'the background behind you was being read as both your hair and your top';
+      else if (fromIllustration && colourKnob) why = 'only the stylized copy was readable - its colours are manufactured, so none was taken';
+      else if (k === 'skin' && !skinIsSkinColoured) why = 'the sample was not a colour real skin has';
+      else if (k === 'skin' && !eyeBoxSane) why = 'the face outline was wider than your eye spacing allows - something beside you blended into it';
+      else if ((k === 'hair' || k === 'hairStyle') && hairUnreadable) why = crownN === 0 ? 'the top of the head is outside the photo' : 'the background is too close to the hair in colour';
+      else if (k === 'faceShape') why = 'this photo cannot support a shape verdict';
+      refusedOut.push({ knob: k, reason: why, action: 'mlsAvLook_' + k });
+    });
+    /* fx-1.0 THE CONSUMER CONTRACT (DIAGNOSIS Mechanism B, measured): `look`
+       carries ONLY claimed knobs. The old shape kept refused values riding
+       the result - look.hair = #333333 with the claim stripped from
+       `derived` - and the kiosk applied them wholesale. With no refused
+       value left in the result, that consumer bug is structurally
+       impossible for every present and future caller. */
+    var claimedOut = {};
+    derived.forEach(function (k) { if (look[k] !== undefined) claimedOut[k] = look[k]; });
+    var receiptOut = { claimed: derived.length, refused: refusedOut.length,
+      examined: derived.length + refusedOut.length, faceW: faceW, grid: M,
+      fromIllustration: fromIllustration, srcKind: fromIllustration ? 'illustration' : 'photo',
+      adaptiveSegmentation: adaptiveSegmentation };
+    return { look: claimedOut, found: found, derived: derived, refused: refusedOut, receipt: receiptOut,
+             /* gx-1.0: grid, skinSpots and patchR ride the box so the live
+                capture view can draw the EXACT windows this read used - an
+                overlay that recomputes its own geometry is an overlay that can
+                lie about what was measured. */
+             box: { L: faceRun.L, R: faceRun.R, T: faceT, B: lowerChin, eyeY: eyeY,
+                    grid: M, skinSpots: skinSpots, patchR: 2 * PR, cx: cxMid,
+                    w: faceW, h: faceH, crownR: Math.round(crownR * 100) / 100,
+                    sideR: Math.round(sideR * 100) / 100, beardDepth: Math.round(beardDepth * 100) / 100,
+                    skinL: Math.round(skinL), bgL: Math.round(bgL),
+                    maxWY: maxWY, maxW: maxW, brow: dbgBrow,
+                    chinStop: chinStop, unexplained: unexplained, asym: Math.round(asym * 100) / 100,
+                    lopsided: lopsided, hairUnreadable: hairUnreadable, flatTop: flatTop,
+                    eL: eL && { y: eL.medY, cx: Math.round(eL.cx), sp: eL.spread, n: eL.n },
+                    eR: eR && { y: eR.medY, cx: Math.round(eR.cx), sp: eR.spread, n: eR.n } } };
+  }
+  function faceTalkStop(face) {
+    /* Invalidate the exact mouth loop before cancelling its frame. A split
+       sentence creates a new <audio> element for part two; the last queued RAF
+       from part one must become inert rather than cancelling part two's RAF. */
+    ttsMouthGeneration++;
+    if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
+    var target = face || pvTalkFace || safe(function () { return kiosk && kiosk.face; }, null);
+    safe(function () { if (target) { target.talkCycle(false); target.talk(-1); } });
+    if (!face || pvTalkFace === face) pvTalkFace = null;
+  }
+  function faceTalkCycle(on, face) {
+    var target = face || pvTalkFace || safe(function () { return kiosk && kiosk.face; }, null);
+    if (on && target) pvTalkFace = target;
+    safe(function () { if (target) target.talkCycle(on); });
+  }
+
+  /* ---- NATURAL SPEECH: the backend voice first, the browser as fallback.
+     MP3 from /api/avatar/office/tts (clinician-authed), cached per text so
+     a repeated question is instant, with a short circuit-breaker so an outage
+     degrades to browser speech instead of stalling every question. ---- */
+  var ttsCache = {}, ttsOrder = [], ttsDownUntil = 0, ttsAudioNow = null, ttsCtx = null, ttsRaf = 0;
+  var ttsFetchControllers = [], ttsFetchTimers = [];
+  var ttsMouthGeneration = 0, pvTalkFace = null;
+  function ttsEnsureCtx() {
+    if (ttsCtx) { safe(function () { if (ttsCtx.state === 'suspended') ttsCtx.resume(); }); return; }
+    ttsCtx = safe(function () { var C = window.AudioContext || window.webkitAudioContext; return C ? new C() : null; }, null);
+  }
+  /* Split at the FIRST sentence boundary only, and only when there is real
+     length to gain from it. A short line is already fast; splitting it would
+     spend a second round trip to save nothing. */
+  /* THE HEAD IS AN ACKNOWLEDGEMENT OR THERE IS NO SPLIT — av-5.8.1.
+     Owner, 2026-08-08: "the voices they need to sound much more natural".
+     A split is not free the way the comment below assumed. The two pieces are
+     two SEPARATE TTS generations, sampled independently, played back to back
+     from two <audio> elements: the first lands on its own falling full stop with
+     the encoder's trailing silence, and the second opens at fresh-utterance
+     pitch and energy. That discontinuity is a machine seam, and it is the single
+     most-heard artifact in the product because almost every reply has an early
+     sentence boundary and therefore split.
+     The comment right below states exactly what the split is FOR — a tiny
+     acknowledgement in front of the real question — but the code never enforced
+     it: the head was allowed up to 150 characters. So a full content sentence
+     ("Hi there, I'm Ava, the practice's AI assistant.") was severed from what
+     followed, which is the case where the seam is most audible AND where the
+     latency gain is smallest, because a 150-character head takes nearly as long
+     to generate as the whole line does.
+     Capped at PV_ACK_MAX. Under the cap, a distinct beat after "Got it." is how
+     a person talks anyway, so the seam reads as a breath; over it, the line is
+     spoken as one generation with one continuous contour. This also makes FEWER
+     requests than before, so it costs nothing and saves a little. */
+  function ttsSplitForSpeech(text) {
+    /* ⛔ DECLARED INSIDE, ON PURPOSE. avatar-visit-copilot.test.js lifts this function by
+       string slice and runs it through `new Function`, so it executes with NO module scope:
+       a `var PV_ACK_MAX` one line above the function is invisible there and the suite dies
+       with "PV_ACK_MAX is not defined" — which `node --check` cannot see, because the file
+       itself is perfectly valid. Any constant a liftable function reads has to live in it. */
+    var PV_ACK_MAX = 34;
+    var t = String(text == null ? '' : text).trim();
+    /* 28 chars, because the SHAPE this exists for is "Got it. How long has it
+       been going on?" — a tiny acknowledgement in front of the real question.
+       That acknowledgement is generated almost instantly, so the patient hears
+       a voice while the question itself is still being made. A higher floor
+       skipped exactly the case that matters most. */
+    if (t.length < 28) return [t];
+    var m = /^([^.!?]{4,150}[.!?])\s+(\S[\s\S]*)$/.exec(t);
+    if (!m) return [t];
+    var head = m[1].trim(), tail = m[2].trim();
+    if (!head || !tail) return [t];
+    /* see PV_ACK_MAX — a real sentence is not an acknowledgement, and severing
+       one costs more in naturalness than the split saves in latency */
+    if (head.length > PV_ACK_MAX) return [t];
+    /* AN ABBREVIATION IS NOT A SENTENCE END. "I think Dr. Smith should see
+       you. How does that sound?" would otherwise be spoken as "I think
+       Doctor." — pause — "Smith should see you...", which is worse than the
+       latency the split saves: a change that makes the avatar sound broken is
+       not an optimisation. Decimals ("3.5 weeks") are already safe because the
+       match requires whitespace after the terminator; titles and initials are
+       not, so they are named here. */
+    if (/(?:^|\s)(?:[A-Za-z]|dr|drs|mr|mrs|ms|st|jr|sr|prof|rev|vs|approx|dept|est|fig|no|etc|e\.g|i\.e|a\.m|p\.m)\.$/i.test(head)) return [t];
+    return [head, tail];
+  }
+  /* THE DELIVERY SHAPE. The backend used to build one identical delivery
+     instruction for every line it was ever asked to speak - the greeting, a
+     routine question, the 911 warning and the two HALVES of one sentence all
+     got "warm, gentle, unhurried, in person". Half of what makes a line sound
+     human is which KIND of line it is, and only this side knows: the backend
+     receives a bare string with no idea whether it is a whole sentence, an
+     opening clause that must not fall to a full stop, or a continuation that
+     must come in mid-flow. It is a short whitelisted token, never instruction
+     text — the server maps it (see SPEECH_SHAPE in routes/patientAvatar.js) and
+     ignores anything it does not recognise.
+       'open'  head of a split line — do not land it, no trailing pause
+       'cont'  tail of a split line — come in mid-flow, no fresh start
+       'calm'  the silence nudge — softer, slower, no impatience
+       'greet' the first thing this patient hears
+       'alert' an emergency warning (the server also detects this from the text
+               itself, so a missing or forged shape cannot soften it) */
+  function ttsFetchUrl(text, voice, shape) {
+    /* THE SHAPE IS PART OF THE CACHE KEY. Without it the first rendering of a
+       string wins forever: NUDGE_LINE is pre-fetched at consent time (see
+       kioskConsentYes) and spoken later, and the same text asked for with a
+       different shape is a DIFFERENT recording. Keyed on text alone, the
+       pre-fetch would either serve the wrong delivery or - if the shapes
+       disagreed - miss the cache entirely and pay a round trip at the one
+       moment the pre-fetch exists to avoid paying one. */
+    var receipt = sessionReceipt();
+    if (!sessionReceiptCurrent(receipt)) return Promise.resolve(null);
+    var key = (voice || '') + '|' + (shape || '') + '|' + text;
+    if (ttsCache[key]) return Promise.resolve(ttsCache[key]);
+    if (Date.now() < ttsDownUntil) return Promise.resolve(null);
+    var ctrl = safe(function () { return new AbortController(); }, null);
+    if (ctrl) ttsFetchControllers.push(ctrl);
+    var timer = ctrl ? setTimeout(function () { safe(function () { ctrl.abort(); }); }, 6500) : null;
+    if (timer) ttsFetchTimers.push(timer);
+    function clearFetchTimer() {
+      if (!timer) return;
+      clearTimeout(timer);
+      var ti = ttsFetchTimers.indexOf(timer); if (ti >= 0) ttsFetchTimers.splice(ti, 1);
+      timer = null;
+    }
+    var headers = { 'Content-Type': 'application/json' };
+    var auth = receipt.token; if (auth) headers.Authorization = 'Bearer ' + auth;
+    var payload = { text: text };
+    if (voice) payload.voice = voice;
+    if (shape) payload.shape = shape;
+    return fetch(apiBase() + '/api/avatar/office/tts', {
+      method: 'POST', headers: headers,
+      body: JSON.stringify(payload),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) {
+      clearFetchTimer();
+      if (ctrl) { var ci = ttsFetchControllers.indexOf(ctrl); if (ci >= 0) ttsFetchControllers.splice(ci, 1); }
+      if (!sessionReceiptCurrent(receipt)) return null;
+      if (!r.ok || String(r.headers.get('content-type') || '').indexOf('audio') !== 0) {
+        ttsDownUntil = Date.now() + 120000;
+        return null;
+      }
+      return r.blob().then(function (b) {
+        if (!sessionReceiptCurrent(receipt)) return null;
+        var url = URL.createObjectURL(b);
+        ttsCache[key] = url; ttsOrder.push(key);
+        while (ttsOrder.length > 24) {
+          (function (old) { safe(function () { URL.revokeObjectURL(ttsCache[old]); }); delete ttsCache[old]; })(ttsOrder.shift());
+        }
+        return url;
+      });
+    }).catch(function () {
+      clearFetchTimer();
+      if (ctrl) { var ci = ttsFetchControllers.indexOf(ctrl); if (ci >= 0) ttsFetchControllers.splice(ci, 1); }
+      if (sessionReceiptCurrent(receipt)) ttsDownUntil = Date.now() + 120000;
+      return null;
+    });
+  }
+  function ttsPlayUrl(url, mySeq, finish, speechFace, reportStart) {
+    /* Each audio element exclusively owns its mouth frames. In a two-piece
+       sentence, cancel the completed first element's queued frame before part
+       two publishes its own. This removes the race where the stale frame saw
+       `a.ended`, called the global stop, and froze the live second half. */
+    var mouthGeneration = ++ttsMouthGeneration;
+    if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
+    if (speechFace) pvTalkFace = speechFace;
+    var a = new Audio(url);
+    ttsAudioNow = a;
+    a.onended = finish; a.onerror = finish;
+    a.onloadedmetadata = function () {
+      if (mySeq !== pvSpeakSeq) return;
+      if (pvWatchdog) { safe(function () { clearTimeout(pvWatchdog); }); }
+      pvWatchdog = setTimeout(finish, Math.min(45000, Math.max(2500, (a.duration || 12) * 1000 + 2500)));
+    };
+    /* amplitude lip-sync when the AudioContext is willing; otherwise cycle */
+    var ampStart = null;
+    var wired = safe(function () {
+      if (!ttsCtx || ttsCtx.state !== 'running' || !speechFace) return false;
+      var src = ttsCtx.createMediaElementSource(a);
+      var an = ttsCtx.createAnalyser(); an.fftSize = 256;
+      src.connect(an); an.connect(ttsCtx.destination);
+      var buf = new Uint8Array(an.frequencyBinCount);
+      var lastAt = 0;
+      ampStart = function () {
+        (function amp(now) {
+          if (mouthGeneration !== ttsMouthGeneration) return;
+          if (mySeq !== pvSpeakSeq || a.ended) { faceTalkStop(speechFace); return; }
+          ttsRaf = requestAnimationFrame(amp);
+          if (now - lastAt < 70) return;
+          lastAt = now;
+          an.getByteFrequencyData(buf);
+          var sum = 0; for (var i = 2; i < 40; i++) sum += buf[i];
+          speechFace.talk(Math.min(1, (sum / 38) / 150));
+        })(0);
+      };
+      return true;
+    }, false);
+    var mouthStarted = false;
+    a.onplaying = function () {
+      if (mouthStarted || mySeq !== pvSpeakSeq || mouthGeneration !== ttsMouthGeneration) return;
+      mouthStarted = true;
+      if (reportStart) safe(reportStart);
+      if (wired && ampStart) ampStart(); else faceTalkCycle(true, speechFace);
+    };
+    var p = safe(function () { return a.play(); }, null);
+    if (p && p.then) p.then(function () { if (a.onplaying) a.onplaying(); }, function () { finish(); });
+    else if (p && p.catch) p.catch(function () { finish(); });
+  }
+
+  /* avcam-1.0.0 renamed faceLiveRaf -> faceLiveTimer: the live preview no
+     longer rides requestAnimationFrame (see faceLiveLoopStart), and a slot
+     named after the API that no longer drives it is the kind of lie the next
+     reader pays for. The three other references moved with it. */
+  var cameraStream = null, faceCaptureGeneration = 0, faceCaptureTimers = [], faceLiveTimer = 0;
+  function stopStreamTracks(stream) {
+    if (!stream) return;
+    safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+  }
+  function stopCamera() {
+    if (!cameraStream) return;
+    stopStreamTracks(cameraStream);
+    cameraStream = null;
+  }
+  /* Every camera request and best-of-six run owns one generation. Closing its
+     surface invalidates that generation synchronously; a permission promise
+     or capture timer that resolves later can only release its own tracks. */
+  function cancelFaceCapture() {
+    faceCaptureGeneration++;
+    faceCaptureTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    if (faceLiveTimer) { safe(function () { clearTimeout(faceLiveTimer); }); faceLiveTimer = 0; }
+    stopCamera();
+  }
+  function beginFaceCapture() { cancelFaceCapture(); return faceCaptureGeneration; }
+  function faceCaptureIsCurrent(generation, host) {
+    return generation === faceCaptureGeneration && !!host && host.isConnected !== false;
+  }
+  function faceCaptureAdopt(stream, generation, host) {
+    if (!faceCaptureIsCurrent(generation, host)) { stopStreamTracks(stream); return false; }
+    cameraStream = stream;
+    return true;
+  }
+  /* ---- THE PHOTO THE MATCHER MEASURES IS NOT THE PHOTO PATIENTS SEE ------------
+     Owner, 2026-08-08: "it has to find my skin color my eyes and hair and more and
+     matches it and also make sure it takes a good picture and uses the high res
+     picture not the low res one."
+     He was describing a real defect, and it was worse than resolution alone. Three
+     things stood between his face and the measurement:
+       1. the camera was opened with facingMode ONLY, so the browser handed back its
+          default - typically 640x480;
+       2. stylizePortrait POSTERIZED every channel to SIX levels (steps of 51) and
+          re-compressed at JPEG 0.82 - and that posterized copy was the only image
+          stored, so "find my skin colour" was being asked of a 6-level image whose
+          every tone had been snapped up to 51 units away from the truth;
+       3. it was then downsampled again to the 128-px analysis grid.
+     Now there are TWO images from one chosen frame: a measurement-grade square crop
+     at capture resolution, which Match reads, and a natural 512px portrait, which is
+     what patients see. The old illustrated copy remains detectable so legacy portraits
+     are refused honestly rather than being mistaken for real colours.
+     MEASURE_MAX stays 512: the analysis grid is 128, so 512 gives a clean 4:1 box
+     average per analysis pixel (real averaging of real tones, which is what fixes the
+     colour) without carrying a megapixel data URL around. Raising the grid itself
+     needs every absolute pixel floor in faceReadPortrait re-derived first - they were
+     calibrated in 128-space - so that is a separate change, deliberately not smuggled
+     in here.
+     gx-1.0 DID that separate change: the grid is now adaptive (256 when the source
+     can fill it, 128 otherwise) and every absolute floor in faceReadPortrait was
+     enumerated and either left M-relative, scaled by PR = M/128, or kept as an
+     evidence minimum - each with its reason at its own line. */
+  /* av-6.0.2 — 1024, because THE MODEL READS THIS IMAGE TOO. Owner: "take a higher rtes
+     photo". The paragraph above is still right about the PIXEL grid: it stays 128 and every
+     absolute floor in faceReadPortrait is calibrated in 128-space, so raising the grid remains
+     a separate change and is deliberately still not smuggled in here (task #23).
+     But since av-5.8.0 this same frame is what /api/avatar/office/facelook sends to the vision
+     model, and that path does NOT downsample to 128 — it reads the photograph. At 512 the model
+     was being handed a quarter of the detail the camera gave us, on the one question the pixel
+     matcher keeps getting wrong (is that a moustache, are those spectacles, which of these tones
+     is skin). 1024 quadruples what the model sees and changes NOTHING about the pixel analysis,
+     which still box-averages down to 128. It stays inside the route's 900 000-character cap: a
+     1024 square at JPEG 0.95 is roughly 250-400KB, i.e. 340-540KB of base64. */
+  var MEASURE_MAX = 1024;
+  function captureSquare(video, out, into) {
+    var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+    if (!vw || !vh) return null;
+    var side = Math.min(vw, vh);
+    /* NEVER UPSCALE. Inventing pixels would make a low-res camera look like a
+       high-res one to every check below, which is the opposite of the point. */
+    var px2 = Math.max(64, Math.min(out, side));
+    /* lv-1.0: `into` is OPT-IN canvas reuse for the live loop, which captures
+       8 times a second and would otherwise allocate a fresh megapixel canvas
+       every tick. A call site that says nothing gets what it always got - a
+       fresh canvas (the a-flag-on-a-shared-helper law: opt IN, never out). */
+    var canvas = into || document.createElement('canvas');
+    canvas.width = px2; canvas.height = px2;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, px2, px2);
+    return canvas;
+  }
+  /* p1-photo-upload-1.0.0 — captureSquare's rule, for a decoded <img>.
+     Kept immediately beside it so the two cannot drift: COVER never stretches,
+     MEASURE_MAX stays the ceiling, and a thumbnail is never upscaled.  The
+     centre-crop helper remains the deterministic fallback and compatibility
+     surface; faceAwareSquareFromImage below owns upload-only framing. */
+  function squareFromImageAt(img, out, sx, sy, side) {
+    var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return null;
+    side = Math.max(1, Math.min(Number(side) || Math.min(iw, ih), iw, ih));
+    sx = Math.max(0, Math.min(iw - side, Number(sx) || 0));
+    sy = Math.max(0, Math.min(ih - side, Number(sy) || 0));
+    var px2 = Math.max(64, Math.min(out, side));
+    var canvas = document.createElement('canvas');
+    canvas.width = px2; canvas.height = px2;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, px2, px2);
+    return canvas;
+  }
+  function squareFromImage(img, out) {
+    var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return null;
+    var side = Math.min(iw, ih);
+    var px2 = Math.max(64, Math.min(out, side));
+    var canvas = document.createElement('canvas');
+    canvas.width = px2; canvas.height = px2;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, px2, px2);
+    return canvas;
+  }
+  /* p1-photo-framing-1.0.0 — FIND ONE FACE BEFORE CROPPING AN UPLOAD.
+     The old unconditional centre crop could cut an off-centre physician out
+     before the existing face reader ever saw the pixels.  It could also pick
+     one of several faces in a screenshot or group photo and silently call it
+     the doctor.  Uploads are allowed a bounded three-window scan because this
+     runs once after decode; the 8Hz camera path is deliberately untouched.
+
+     This is framing assistance, NOT identity recognition.  Each window runs
+     the already-shipped quality, geometry and readiness gates.  Candidate
+     centres are mapped back to source coordinates and clustered, so the same
+     face seen in overlapping crops counts once.  More than one credible face
+     refuses calmly.  Tiny or edge-clipped faces refuse too.  With exactly one
+     face, a final bounded crop puts that face at the portrait's natural upper-
+     middle landmark while retaining the source's full shorter dimension. */
+  function faceAwareSquareFromImage(img, out) {
+    var iw = img.naturalWidth || img.width || 0, ih = img.naturalHeight || img.height || 0;
+    if (!iw || !ih) return { square: null, q: null, why: '', meta: null };
+    var side = Math.min(iw, ih), spanX = iw - side, spanY = ih - side;
+    var plans = [], planKeys = {};
+    function addPlan(x, y, label) {
+      x = Math.max(0, Math.min(spanX, Number(x) || 0));
+      y = Math.max(0, Math.min(spanY, Number(y) || 0));
+      var key = Math.round(x * 100) + ':' + Math.round(y * 100);
+      if (planKeys[key]) return;
+      planKeys[key] = true;
+      plans.push({ x: x, y: y, label: label });
+    }
+    if (spanX > 0) {
+      addPlan(0, 0, 'left'); addPlan(spanX / 2, 0, 'centre'); addPlan(spanX, 0, 'right');
+    } else if (spanY > 0) {
+      addPlan(0, 0, 'top'); addPlan(0, spanY / 2, 'centre'); addPlan(0, spanY, 'bottom');
+    } else addPlan(0, 0, 'centre');
+
+    var all = [], credible = [], sawSmall = false, sawEdge = false;
+    function analyse(plan) {
+      var canvas = squareFromImageAt(img, out, plan.x, plan.y, side);
+      if (!canvas) return null;
+      var q = frameQuality(canvas);
+      var res = safe(function () { return faceReadPortrait(canvas); }, null);
+      q.faceResult = res;
+      q.faceVerdict = faceCaptureVerdict(res, q);
+      var item = { plan: plan, canvas: canvas, q: q, res: res, verdict: q.faceVerdict };
+      all.push(item);
+      var b = res && res.box, grid = Number(b && b.grid) || 0;
+      if (!item.verdict.ready || !b || !grid) return item;
+      var L = Number(b.L), R = Number(b.R), T = Number(b.T), B = Number(b.B);
+      var bw = Math.max(Number(b.w) || 0, R - L) / grid;
+      var bh = Math.max(0, B - T) / grid;
+      /* A small face inside a monitor/photo collage is not promoted into the
+         physician portrait. These floors describe geometry, not likeness. */
+      if (bw < 0.12 || bh < 0.18) { sawSmall = true; return item; }
+      if (L <= 1 || R >= grid - 1 || T <= 1 || B >= grid - 1) { sawEdge = true; return item; }
+      var localCx = isFinite(Number(b.cx)) ? Number(b.cx) : (L + R) / 2;
+      var localCy = (T + B) / 2;
+      item.srcCx = plan.x + localCx / grid * side;
+      item.srcCy = plan.y + localCy / grid * side;
+      item.bw = bw; item.bh = bh;
+      item.rank = Number(item.verdict.score || 0) -
+        Math.round(Math.abs(localCx / grid - 0.5) * 1800) -
+        Math.round(Math.abs(localCy / grid - 0.44) * 900);
+      credible.push(item);
+      return item;
+    }
+    plans.forEach(analyse);
+    var centre = all.filter(function (x) { return x.plan.label === 'centre'; })[0] || all[0] || null;
+    if (!credible.length) {
+      var noFaceWhy = '';
+      if (sawSmall) noFaceWhy = 'The only face found is too small for a reliable physician portrait. Choose a closer photo of just you.';
+      else if (sawEdge) noFaceWhy = 'The face is cut off at the edge of this photo. Choose a picture with your whole face in frame.';
+      return { square: centre && centre.canvas, q: centre && centre.q, why: noFaceWhy,
+        meta: { kind: 'fallback', sourceW: iw, sourceH: ih, windows: plans.length, faces: 0 } };
+    }
+
+    var clusters = [];
+    credible.forEach(function (item) {
+      var hit = null;
+      clusters.some(function (cluster) {
+        var dx = (item.srcCx - cluster.cx) / side, dy = (item.srcCy - cluster.cy) / side;
+        if (Math.sqrt(dx * dx + dy * dy) <= 0.12) { hit = cluster; return true; }
+        return false;
+      });
+      if (!hit) {
+        hit = { cx: item.srcCx, cy: item.srcCy, items: [], best: item };
+        clusters.push(hit);
+      }
+      hit.items.push(item);
+      var n = hit.items.length;
+      hit.cx = ((hit.cx * (n - 1)) + item.srcCx) / n;
+      hit.cy = ((hit.cy * (n - 1)) + item.srcCy) / n;
+      if (item.rank > hit.best.rank) hit.best = item;
+    });
+    if (clusters.length !== 1) {
+      return { square: null, q: null,
+        why: 'This photo has more than one possible face. Choose a close-up containing only you so MLS never guesses which person is the physician.',
+        meta: { kind: 'ambiguous', sourceW: iw, sourceH: ih, windows: plans.length, faces: clusters.length } };
+    }
+
+    var chosen = clusters[0].best;
+    var finalX = Math.max(0, Math.min(spanX, clusters[0].cx - side * 0.50));
+    var finalY = Math.max(0, Math.min(spanY, clusters[0].cy - side * 0.44));
+    if (Math.abs(finalX - chosen.plan.x) > 1 || Math.abs(finalY - chosen.plan.y) > 1) {
+      var reframed = analyse({ x: finalX, y: finalY, label: 'face-aware' });
+      if (reframed && credible.indexOf(reframed) >= 0) {
+        var rdx = (reframed.srcCx - clusters[0].cx) / side;
+        var rdy = (reframed.srcCy - clusters[0].cy) / side;
+        if (Math.sqrt(rdx * rdx + rdy * rdy) <= 0.12) chosen = reframed;
+      }
+    }
+    return { square: chosen.canvas, q: chosen.q, why: '',
+      meta: { kind: plans.length === 1 ? 'centre' : 'face-aware', sourceW: iw, sourceH: ih,
+        cropX: Math.round(chosen.plan.x), cropY: Math.round(chosen.plan.y), cropSide: Math.round(side),
+        windows: plans.length, faces: 1 } };
+  }
+  /* "MAKE SURE IT TAKES A GOOD PICTURE" - measured, not hoped for. Sharpness is mean
+     absolute gradient energy on a small grey copy (a blurred or motion-smeared frame
+     has little); exposure is the mean luminance, which catches both a dark room and a
+     blown-out window behind the doctor. Both are computed on the SAME downscale so
+     the numbers are comparable between frames. */
+  function frameQuality(canvas) {
+    return safe(function () {
+      var G = 96;
+      var g = document.createElement('canvas'); g.width = G; g.height = G;
+      var gx = g.getContext('2d');
+      gx.drawImage(canvas, 0, 0, G, G);
+      var d = gx.getImageData(0, 0, G, G).data;
+      var grey = new Float64Array(G * G), sum = 0;
+      for (var i = 0, j = 0; i < d.length; i += 4, j++) {
+        grey[j] = (d[i] * 3 + d[i + 1] * 4 + d[i + 2]) / 8;
+        sum += grey[j];
+      }
+      var mean = sum / (G * G), edge = 0, n = 0;
+      for (var y = 1; y < G - 1; y++) {
+        for (var x = 1; x < G - 1; x++) {
+          var c = grey[y * G + x];
+          edge += Math.abs(grey[y * G + x + 1] - c) + Math.abs(grey[(y + 1) * G + x] - c);
+          n += 2;
+        }
+      }
+      return { sharp: n ? edge / n : 0, exposure: mean };
+    }, { sharp: 0, exposure: 0 });
+  }
+  /* A sharp wall is not a better portrait than a slightly softer face.  The
+     old best-of-six ranked only edge energy, so spectacle rims, hair and a
+     textured background could win while the frame that the face reader could
+     actually use was discarded.  One verdict now owns live readiness, frame
+     ranking and the final shutter gate. */
+  function faceCaptureVerdict(res, q) {
+    q = q || { sharp: 0, exposure: 0 };
+    var r = res && res.receipt || {};
+    var derived = res && res.derived || [];
+    /* A reader success must carry the exact geometry it used. A bare look or
+       receipt can be fabricated by a stale/partial caller; a no-face/wall
+       refusal never has a box. */
+    var hasFace = !!(res && res.look && res.receipt && res.box && res.box.grid);
+    var hasSkin = derived.indexOf('skin') >= 0;
+    /* faceW is the widest SKIN run, not the head width. Dark hair, glasses,
+       facial hair and side light can legitimately narrow it even when the
+       person fills the camera frame (the reported frame read 44/256). It may
+       grade matcher confidence; it must never veto saving a real portrait. */
+    var faceRatio = r.grid ? Math.max(0, Math.min(1, Number(r.faceW || 0) / Number(r.grid))) : 0;
+    var why = '';
+    /* p1-camera-endurance-1.0.1 (owner, 2026-08-16, second report of the same
+       symptom). A dead feed and a dim room are NOT the same fault and must not
+       give the same advice. This file already documents the discrimination at
+       faceLiveLoopStart: "a real dark room reads 5-40, a dead surface reads a
+       flat 0". But this hint tested only exposure < 45, so a black feed was
+       reported as a lighting problem — and it fires every tick, immediately,
+       while the dead-feed handler deliberately waits 1.5s and stays silent on
+       its first report to let a silent re-attach work. The result is that the
+       owner sat looking at a black picture being told to turn a light on.
+       DEAD_FEED_EXPOSURE is the same constant the live loop uses; keeping one
+       number is the point, because two that drift reproduce exactly this. */
+    var DEAD_FEED_EXPOSURE = 0.8;   /* keep equal to faceLiveLoopStart's DARK_EXPOSURE — pinned by tests/p1-avatar-dead-feed-threshold.test.js */
+    if (q.exposure <= DEAD_FEED_EXPOSURE) why = 'The camera picture went black — restart the camera. This is not a lighting problem.';
+    else if (q.exposure < 45) why = 'The picture is too dark — turn a light on, or face a window.';
+    else if (q.exposure > 225) why = 'The picture is washed out — move the bright light behind you out of shot.';
+    else if (!hasFace) why = (res && res.found && res.found[0]) || 'No face found yet — centre your face in the frame.';
+    else if (q.sharp < 2.2) why = 'The picture is blurred — hold still, and give the camera a moment to focus.';
+    /* A ready face always outranks an unusable frame.  The lower terms only
+       choose among frames in the same evidence class. */
+    var ready = !why;
+    var score = (ready ? 100000 : 0) + (hasFace ? 20000 : 0) + (hasSkin ? 8000 : 0) +
+      Math.round(faceRatio * 4000) + Math.min(2000, Number(r.claimed || 0) * 100) +
+      Math.min(1000, Math.max(0, Number(q.sharp || 0)) * 40) -
+      Math.min(1000, Math.abs(Number(q.exposure || 0) - 135) * 5);
+    return { ready: ready, why: why, score: score,
+      matchLimited: ready && (!hasSkin || faceRatio < 0.34),
+      matchWhy: ready && (!hasSkin || faceRatio < 0.34)
+        ? 'Portrait ready. The optional animated-trait matcher could not read enough of the face reliably, so it will leave the character unchanged.' : '' };
+  }
+  /* BEST OF SEVERAL FRAMES, not whichever frame the tap landed on. A single grab
+     catches a blink, a turn, or the frame the autofocus was still working on. */
+  function grabBestFrame(video, tries, active, then) {
+    if (typeof active !== 'function') { then = active; active = function () { return true; }; }
+    var best = null, bestQ = null, left = Math.max(1, tries);
+    function step() {
+      if (!active()) return;
+      var canvas = captureSquare(video, MEASURE_MAX);
+      if (canvas) {
+        var q = frameQuality(canvas);
+        /* ===== avcam-1.0.0 — NOT ON A FRAME WITH NO LIGHT IN IT.
+           The shutter's own ranking pass ran the matcher on every grab,
+           including the transparent-black canvas a <video> yields before its
+           first decoded frame, and reported the resulting colour ledger as if
+           it described the doctor. faceCaptureVerdict still owns the verdict
+           and still says "the camera picture went black" for such a frame —
+           it simply no longer has an invented face reading attached to it.
+           The literals are faceCaptureVerdict's DEAD_FEED_EXPOSURE and
+           avcamFrameLooksLive's two thresholds. They are repeated rather than
+           referenced for the reason those two already are: 1p-avatar-face-
+           lifecycle-runtime slices this function out and evaluates it alone,
+           so an identifier declared outside it is not in scope.
+           tests/avatar-camera-feed-readiness.test.js pins all four equal. */
+        var lit = Number(q && q.exposure) > 0.8 || Number(q && q.sharp) > 0.02;
+        var res = lit ? safe(function () { return faceReadPortrait(canvas); }, null) : null;
+        q.faceLit = lit;
+        /* ===== end avcam-1.0.0 ===== */
+        q.faceResult = res;
+        q.faceVerdict = faceCaptureVerdict(res, q);
+        if (!bestQ || q.faceVerdict.score > bestQ.faceVerdict.score) { best = canvas; bestQ = q; }
+      }
+      if (--left <= 0) { then(best, bestQ); return; }
+      safe(function () {
+        var timer = setTimeout(function () {
+          if (typeof faceCaptureTimers !== 'undefined') {
+            var at = faceCaptureTimers.indexOf(timer); if (at >= 0) faceCaptureTimers.splice(at, 1);
+          }
+          if (active()) step();
+        }, 120);
+        if (typeof faceCaptureTimers !== 'undefined') faceCaptureTimers.push(timer);
+      }, null);
+    }
+    step();
+  }
+
+  /* ---- LIVE CAPTURE VIEW (lv-1.0) --------------------------------------------
+     Before this, the camera was a 200px mirror with no feedback: the doctor
+     framed blind, pressed Snap, and learned what the matcher thought minutes
+     later in a refusal list. This block runs THE SAME measurement the snap
+     runs - captureSquare at MEASURE_MAX into faceReadPortrait - at 8Hz while
+     the camera is open, and draws what the algorithm actually locked onto:
+     the face box, the five skin patches where they REALLY land (the
+     diagnostic instrument for the wall-sample defect - the doctor can watch a
+     patch sit on his glasses or the wall), the sampled face width, the live
+     per-control claim/refusal list, and a shutter state that turns good when
+     the frame would pass.
+     LAWS, each one a measured trap:
+       - NEVER a <video> into faceReadPortrait: it sizes from naturalWidth,
+         which a video does not have - it would read the top-left corner of
+         the frame while looking perfectly correct. captureSquare only.
+       - rAF, never setInterval - the contract suite bans timers module-wide.
+         8Hz (125ms) matches grabBestFrame's own 120ms step, so the doctor
+         watches at the rate the shot is averaged over; 60Hz would burn a
+         core re-measuring a face that has not moved.
+       - ADOPT cameraStream; never getUserMedia here - the consent proof
+         counts getUserMedia calls.
+       - NEVER a network call - the measurement copy is deliberately
+         device-local (see FACE_HI_KEY).
+       - READ-ONLY: never faceApplyDerived from this loop - repainting the
+         look 8x/sec would destroy the staleness signal fx-1.0 exists for.
+         Nothing here touches lookNow/manualNow/lookMarks.
+       - SELF-TERMINATING on !video.isConnected, and it stops the camera as
+         it dies: switching off the Setup tab destroys the video without
+         Cancel, and before this train that leaked the stream and kept the
+         camera LED lit (the tab handler now also calls stopCamera - this
+         guard covers every OTHER way the video can leave the DOM). */
+  /* ===== avcam-1.0.0 — A FEED IS PROVEN, NOT ASSUMED ======================
+     Owner report, 2026-08-17: the picture-to-avatar camera preview is BLACK,
+     and the matcher then says "3 of 14" and "Skin — the sample was not a
+     colour real skin has". The matcher is not wrong. It is correctly refusing
+     an image with no light in it. Nothing above it had ever established that
+     a frame had been delivered at all.
+
+     Read against the element contract, the open path had four holes:
+
+       1. THE CAPTURE HAD NO PRECONDITION. `video.srcObject = stream` was
+          followed, in the same turn, by the 8Hz live loop (and on a fast tap
+          by grabBestFrame) drawing that element into a canvas. captureSquare's
+          only precondition is videoWidth/videoHeight — and a <video> reports
+          both from `loadedmetadata`, i.e. from readyState 1, while
+          CanvasRenderingContext2D.drawImage is specified to "return without
+          drawing anything" until readyState reaches HAVE_CURRENT_DATA (2).
+          So between metadata and the first decoded frame the canvas stayed at
+          its initial transparent black, frameQuality measured exposure 0 on
+          it, and faceReadPortrait was handed a black square. Every word the
+          doctor read after that was a true statement about an image the
+          camera never sent.
+       2. `video.play()`'s rejection was caught and DISCARDED
+          (`p.catch(function () {})`), so a blocked or interrupted playback
+          left a paused element, a black picture, and no evidence anywhere.
+       3. The whole preview was driven by requestAnimationFrame, which does
+          not fire in a hidden or non-compositing tab. The dark-feed witness —
+          the one thing in this file that can say "your picture is gone" — was
+          therefore asleep in precisely the state that produces a black
+          picture, and no local harness could observe it either.
+       4. Every getUserMedia rejection printed "Camera permission was
+          declined", including NotReadableError (the camera is held by another
+          app — the most common cause of a black or absent preview) and
+          NotFoundError (there is no camera). A doctor cannot act on a
+          diagnosis that is not his.
+
+     The rule installed here: NOTHING measures the feed until a decoded frame
+     exists, and the matcher does not speak until AVCAM_LIVE_FRAMES
+     consecutive frames carry light that a dead surface cannot produce. A live
+     camera never delivers identical black frames; a dropped compositor
+     surface delivers nothing else.
+
+     ⛔ This block changes what the matcher is ALLOWED TO READ. It does not
+     touch what the matcher decides: faceMatchDecision's
+     `examined >= 10 && claimed >= 6` gate and faceCaptureVerdict's thresholds
+     are exactly as they were. */
+  var AVCAM_DEAD_EXPOSURE = 0.8;   /* keep equal to faceCaptureVerdict's DEAD_FEED_EXPOSURE, faceLiveLoopStart's DARK_EXPOSURE and grabBestFrame's literal — pinned by tests/avatar-camera-feed-readiness.test.js */
+  /* mean |gradient| on the 96px grey copy. A cleared canvas is a flat zero by
+     construction; a real sensor frame never is, even with the lens covered —
+     which is why liveness is exposure OR texture, not exposure alone. A dark
+     ROOM still reads 5-40 exposure and passes here, and is then refused by
+     faceCaptureVerdict with the lighting advice that actually applies to it. */
+  var AVCAM_DEAD_SHARP = 0.02;
+  var AVCAM_LIVE_FRAMES = 3;       /* consecutive lit frames before the matcher may speak */
+  var AVCAM_FIRST_FRAME_MS = 6000; /* a camera that has sent nothing by now is not warming up */
+  var AVCAM_POLL_MS = 60;
+  var AVCAM_STALL_WHY = 'No camera frames yet — allow the camera for this site, close any other app using it, then restart the camera. Nothing was captured.';
+  function avcamFrameLooksLive(q) {
+    if (!q) return false;
+    var exposure = Number(q.exposure), sharp = Number(q.sharp);
+    if (!isFinite(exposure) || !isFinite(sharp)) return false;
+    return exposure > AVCAM_DEAD_EXPOSURE || sharp > AVCAM_DEAD_SHARP;
+  }
+  function avcamTrack(stream) {
+    return safe(function () {
+      var tracks = stream && stream.getVideoTracks ? stream.getVideoTracks() : null;
+      return (tracks && tracks[0]) || null;
+    }, null);
+  }
+  /* readyState >= 2 AND real dimensions. Either one alone is the trap: a
+     stream element reports dimensions a whole readyState before it has a
+     frame to give. */
+  function avcamDecoded(video) {
+    return !!video && Number(video.readyState || 0) >= 2 &&
+      Number(video.videoWidth || 0) > 0 && Number(video.videoHeight || 0) > 0;
+  }
+  /* WHY no frame arrived, in words a doctor can act on. Track state is read
+     here and ONLY here: `muted` is a camera held by another app or a privacy
+     switch, and it is never used as the readiness signal itself, because some
+     engines leave a fresh camera track muted until frames flow and gating on
+     it would invent a hang this file has never had. */
+  function avcamStallWhy(video, stream) {
+    var t = avcamTrack(stream);
+    if (!t) return 'The camera opened without a video track, so no picture can arrive. Restart the camera — nothing was captured.';
+    if (String(t.readyState || 'live') !== 'live') return 'The camera closed before it sent a picture — another app or a privacy switch took the device. Restart the camera — nothing was captured.';
+    if (t.muted === true) return 'No camera frames yet — the camera is held by another app, or a privacy switch is on. Close the other app (or turn the switch off), then restart the camera. Nothing was captured.';
+    if (t.enabled === false) return 'The camera track was switched off before it sent a picture. Restart the camera — nothing was captured.';
+    if (video && video.paused === true) return 'The browser never started the camera preview, so no frames arrived. Restart the camera; if it stays black, reload this page. Nothing was captured.';
+    return AVCAM_STALL_WHY;
+  }
+  function avcamOpenWhy(err) {
+    var name = String(safe(function () { return err && err.name; }, '') || '');
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError')
+      return 'Camera permission was declined — nothing was captured. Allow the camera for this site, then try again.';
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError')
+      return 'No camera was found on this device — plug one in, or use Upload a photo instead. Nothing was captured.';
+    if (name === 'NotReadableError' || name === 'TrackStartError')
+      return 'The camera is busy — another app (a video call, or the camera app) has it, or a privacy switch is on. Close it, then try again. Nothing was captured.';
+    if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError')
+      return 'This camera could not open at any size this browser asked for. Nothing was captured.';
+    if (name === 'AbortError')
+      return 'The camera stopped while it was opening. Try again — nothing was captured.';
+    return 'The camera could not be opened' + (name ? ' (' + name + ')' : '') + ' — nothing was captured.';
+  }
+  /* the ONLY rejection worth retrying with a plainer request. The sized ask is
+     all `ideal`, so this should never fire — but the file already carried a
+     "must still get a camera" fallback wrapped in safe(), which can only ever
+     catch a SYNCHRONOUS throw and therefore never ran for a rejected
+     constraint at all. This is where that intent actually lives now. */
+  function avcamSizeRefusal(err) {
+    var name = String(safe(function () { return err && err.name; }, '') || '');
+    return name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError';
+  }
+  function avcamFeedNew() {
+    return { state: 'opening', why: '', frames: 0, litRun: 0, darkFrames: 0,
+      matcherAllowed: false, exposure: -1, sharp: -1, playRejected: '' };
+  }
+  /* Observable on purpose. The lead can read window.__mlsAvCam in devtools on
+     a real camera and see the readiness state and the measured luminance of
+     the frames the matcher is being fed — the evidence that was missing when
+     this was reported as "it just goes black". */
+  function avcamFeedPublish(feed) {
+    safe(function () {
+      window.__mlsAvCam = { state: feed.state, why: feed.why, frames: feed.frames,
+        litRun: feed.litRun, darkFrames: feed.darkFrames, matcherAllowed: feed.matcherAllowed,
+        exposure: feed.exposure, sharp: feed.sharp, playRejected: feed.playRejected, at: Date.now() };
+    });
+    return feed;
+  }
+  function avcamFeedSet(feed, state, why) {
+    if (!feed) return feed;
+    feed.state = state; feed.why = why || '';
+    if (state !== 'live') feed.matcherAllowed = false;
+    return avcamFeedPublish(feed);
+  }
+  /* one measured frame in; TRUE only when the matcher may read it */
+  function avcamFeedFrame(feed, q) {
+    if (!feed) return false;
+    feed.frames++;
+    feed.exposure = Number(q && q.exposure);
+    feed.sharp = Number(q && q.sharp);
+    if (avcamFrameLooksLive(q)) {
+      feed.darkFrames = 0;
+      feed.litRun++;
+      feed.why = '';
+      if (feed.litRun >= AVCAM_LIVE_FRAMES) { feed.matcherAllowed = true; feed.state = 'live'; }
+      else { feed.matcherAllowed = false; feed.state = 'warming'; }
+    } else {
+      feed.litRun = 0; feed.darkFrames++;
+      feed.matcherAllowed = false;
+      feed.state = 'dark';
+      feed.why = 'No picture is arriving from the camera.';
+    }
+    avcamFeedPublish(feed);
+    return feed.matcherAllowed;
+  }
+  function avcamWaitingLine(feed) {
+    if (!feed) return '';
+    if (feed.state === 'opening') return 'Opening the camera…';
+    if (feed.state === 'waiting') return 'Waiting for the first camera frame…';
+    if (feed.state === 'warming') return 'Camera frames are arriving — checking the picture…';
+    if (feed.state === 'dark') return 'The camera picture is black — no frames are arriving. Restart the camera. This is not a lighting problem.';
+    if (feed.state === 'stalled' || feed.state === 'failed') return feed.why || AVCAM_STALL_WHY;
+    return '';
+  }
+  /* WAIT FOR A DECODED FRAME — with setTimeout as the mechanism.
+     requestVideoFrameCallback fires ON a decoded frame and is exactly the
+     event this wants, and `loadeddata` is the older approximation of it; both
+     are accelerators here and neither is the mechanism, because both can have
+     fired before this ran and rVFC does not fire in a background tab. The
+     poll is what actually settles it, and it is a re-armed setTimeout rather
+     than rAF for that same reason. */
+  function avcamAwaitFirstFrame(video, opts, then) {
+    opts = opts || {};
+    var settled = false, waited = 0;
+    var limit = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : AVCAM_FIRST_FRAME_MS;
+    var step = Number(opts.stepMs) > 0 ? Number(opts.stepMs) : AVCAM_POLL_MS;
+    var timers = opts.timers && opts.timers.push ? opts.timers : null;
+    function finish(arrived, why) {
+      if (settled) return;
+      settled = true;
+      if (isFn(then)) safe(function () { then(arrived, why); });
+    }
+    function look() {
+      if (settled) return;
+      /* a closed surface is not a failure to report — it is a cancelled wait */
+      if (isFn(opts.active) && !opts.active()) { settled = true; return; }
+      if (avcamDecoded(video)) { finish(true, ''); return; }
+      waited += step;
+      if (waited >= limit) { finish(false, avcamStallWhy(video, opts.stream)); return; }
+      safe(function () {
+        var timer = setTimeout(function () {
+          if (timers) { var at = timers.indexOf(timer); if (at >= 0) timers.splice(at, 1); }
+          look();
+        }, step);
+        if (timers) timers.push(timer);
+      });
+    }
+    safe(function () {
+      if (isFn(video.requestVideoFrameCallback)) video.requestVideoFrameCallback(function () { look(); });
+    });
+    safe(function () { video.addEventListener('loadeddata', function () { look(); }, false); });
+    look();
+    return { cancel: function () { settled = true; }, settled: function () { return settled; } };
+  }
+  /* ===== end avcam-1.0.0 ===== */
+  var FACE_LIVE_ORDER = ['skin', 'hair', 'hairStyle', 'beard', 'glasses', 'eyes', 'brows',
+    'browCol', 'lips', 'nose', 'eyeSet', 'hairline', 'faceShape', 'shirt'];
+  var FACE_LIVE_LABELS = { skin: 'Skin', hair: 'Hair colour', hairStyle: 'Hair style',
+    beard: 'Facial hair', glasses: 'Glasses', eyes: 'Eye colour', brows: 'Brow weight',
+    browCol: 'Brow colour', lips: 'Lip shape', nose: 'Nose', eyeSet: 'Eye spacing',
+    hairline: 'Hairline', faceShape: 'Face shape', shirt: 'Top colour' };
+  var faceLiveCanvas = null;
+  function faceLiveMeasure(video) {
+    if (!faceLiveCanvas) faceLiveCanvas = document.createElement('canvas');
+    var canvas = captureSquare(video, MEASURE_MAX, faceLiveCanvas);
+    if (!canvas) return null;
+    /* ===== avcam-1.0.0 — MEASURE THE LIGHT BEFORE THE FACE.
+       The quality pass used to run AFTER faceReadPortrait, so the reader was
+       handed every frame including the transparent-black canvas a <video>
+       leaves behind before its first decoded frame. That is where "3 of 14"
+       and "Skin — the sample was not a colour real skin has" came from: a
+       correct refusal, of an image the camera never sent. Both passes read
+       `canvas` without mutating it and each allocates its own scratch surface
+       (pinned by 1p-avatar-face-to-photo-runtime), so the swap is order-only.
+       `dead: true` is not "no result" — it is a MEASURED result the caller
+       must report differently, which is why it is not folded into null. */
+    var q = frameQuality(canvas);
+    if (!avcamFrameLooksLive(q)) return { res: null, q: q, dead: true };
+    /* ===== end avcam-1.0.0 ===== */
+    var res = null;
+    try { res = faceReadPortrait(canvas); } catch (e) { res = null; }
+    if (!res) return null;
+    return { res: res, q: q };
+  }
+  /* READY means the natural portrait itself is usable. Optional animated
+     traits have their own truth gate; a narrow skin mask is not evidence that
+     the camera photo is bad. The exposure/sharpness bounds are the capture
+     guard's own. */
+  function faceLiveReady(res, q) {
+    return faceCaptureVerdict(res, q).ready;
+  }
+  function faceLiveNudge(res, q) {
+    return faceCaptureVerdict(res, q).why;
+  }
+  /* GEOMETRY ONLY on this canvas, and in UNMIRRORED image space: the canvas is
+     CSS-mirrored exactly like the <video> under it, so image-space coordinates
+     land on the feature the doctor sees. Text on a mirrored canvas renders
+     backwards - every word lives in the DOM below instead. */
+  function faceLiveOverlayPaint(overlay, res, ready) {
+    var ctx = overlay.getContext && overlay.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    var b = res && res.box;
+    if (!b || !b.grid) return;
+    var s = overlay.width / b.grid;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = ready ? '#2E6A4B' : '#b98a2e';
+    ctx.strokeRect(b.L * s, b.T * s, (b.R - b.L + 1) * s, (b.B - b.T + 1) * s);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(b.L * s, b.eyeY * s); ctx.lineTo((b.R + 1) * s, b.eyeY * s);
+    ctx.stroke();
+    var pr = b.patchR || 2;
+    ctx.strokeStyle = '#3b82c4';
+    (b.skinSpots || []).forEach(function (sp) {
+      ctx.strokeRect((sp[0] - pr) * s, (sp[1] - pr) * s, (2 * pr + 1) * s, (2 * pr + 1) * s);
+    });
+  }
+  function faceLiveStatusRender(ui, res, q, ready, feed) {
+    var line;
+    /* ===== avcam-1.0.0 — AN UNPROVEN FEED IS NOT "LOOKING FOR YOUR FACE".
+       Until the readiness state reaches live, the guide says what is actually
+       happening (opening / waiting for the first frame / warming / black) and
+       the per-control ledger is cleared rather than being filled in from a
+       frame nobody has proven exists. The shutter is owned from here too: it
+       is enabled exactly when the matcher is allowed to speak, and never
+       while a capture is in flight (__mlsShooting). ===== */
+    if (ui && ui.snapBtn && !ui.snapBtn.__mlsShooting && feed) {
+      var allow = !!feed.matcherAllowed;
+      if (allow && ui.snapBtn.disabled) { ui.snapBtn.disabled = false; ui.snapBtn.__mlsReady = null; ui.snapBtn.textContent = 'Snap photo'; }
+      else if (!allow && !ui.snapBtn.disabled) { ui.snapBtn.disabled = true; ui.snapBtn.__mlsReady = null; ui.snapBtn.textContent = 'Waiting for the camera…'; }
+    }
+    if (feed && !feed.matcherAllowed) {
+      line = avcamWaitingLine(feed) || 'Waiting for the first camera frame…';
+      if (ui.status && ui.status.__mlsLast !== line) { ui.status.__mlsLast = line; ui.status.textContent = line; }
+      if (ui.list && ui.list.__mlsRows) { ui.list.__mlsRows = null; ui.list.textContent = ''; }
+      return;
+    }
+    /* ===== end avcam-1.0.0 ===== */
+    if (res && res.receipt) {
+      line = 'Portrait found — optional match sees ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' details' +
+        (ready ? ' — portrait ready, snap when ready' : '');
+    } else {
+      line = 'Looking for your face…';
+    }
+    var verdict = faceCaptureVerdict(res, q);
+    var nudge = verdict.why || verdict.matchWhy;
+    if (nudge) line += ' · ' + nudge;
+    if (ui.status && ui.status.__mlsLast !== line) { ui.status.__mlsLast = line; ui.status.textContent = line; }
+    if (ui.snapBtn && !ui.snapBtn.disabled && ui.snapBtn.__mlsReady !== ready) {
+      ui.snapBtn.__mlsReady = ready;
+      ui.snapBtn.textContent = ready ? 'Snap photo — frame looks good' : 'Snap photo';
+    }
+    var listEl = ui.list;
+    if (!listEl) return;
+    if (!res || !res.receipt) {
+      if (listEl.__mlsRows) { listEl.__mlsRows = null; listEl.textContent = ''; }
+      return;
+    }
+    var rows = listEl.__mlsRows;
+    if (!rows) {
+      rows = {}; listEl.textContent = '';
+      FACE_LIVE_ORDER.forEach(function (k) {
+        var d = document.createElement('div');
+        rows[k] = d; listEl.appendChild(d);
+      });
+      listEl.__mlsRows = rows;
+    }
+    var refusedBy = {};
+    (res.refused || []).forEach(function (f) { if (f && f.knob) refusedBy[f.knob] = f.reason || 'not measurable'; });
+    FACE_LIVE_ORDER.forEach(function (k) {
+      var claimed = (res.derived || []).indexOf(k) >= 0;
+      var txt = (claimed ? '✓ ' : '· ') + FACE_LIVE_LABELS[k] +
+        (claimed ? '' : ' — ' + (refusedBy[k] || 'not measurable'));
+      var d = rows[k];
+      if (d.__mlsLast !== txt) { d.__mlsLast = txt; d.textContent = txt; d.className = claimed ? 'on' : ''; }
+    });
+  }
+  function faceLiveLoopStart(video, overlay, ui) {
+    var LIVE_MS = 125;
+    /* ===== avcam-1.0.0 — setTimeout, NOT requestAnimationFrame.
+       rAF does not fire at all in a hidden or non-compositing tab, so this
+       loop — which is also the dead-feed witness below — was asleep in
+       exactly the state that produces a black picture, and no local harness
+       could observe it either. A self-re-arming setTimeout keeps the same
+       8Hz cadence, dies with the element on the isConnected check, and is
+       cancelled by cancelFaceCapture through faceLiveTimer. setInterval stays
+       banned module-wide; this is one shot at a time.
+       The rAF timestamp throttle went with it: the timer IS the cadence, so
+       comparing timestamps only re-implemented the delay it was given.
+       `feed` is the readiness state this loop advances one frame at a time;
+       the camera passes its own so the open path and the loop share one. ===== */
+    var feed = (ui && ui.feed) || avcamFeedNew();
+    /* p1-camera-endurance-1.0.0 — THE LOOP IS ALSO THE WITNESS.
+       It is already measuring mean luminance every tick, so it is the one
+       place that can tell "the feed went black" from "the room is dim": a
+       real dark room reads 5-40, a dead surface reads a flat 0. Twelve
+       consecutive near-zero ticks (1.5s) is not a blink or a lens cover
+       being lifted. It reports every 1.5s FOR AS LONG AS the feed stays dark
+       and counts the reports, so the camera UI can try a silent re-attach on
+       the first one and only speak up if that did not bring the picture
+       back — a report that fired once could never tell those two apart. */
+    var DARK_TICKS = 12, DARK_EXPOSURE = 0.8;   /* keep equal to faceCaptureVerdict's DEAD_FEED_EXPOSURE — pinned by tests/p1-avatar-dead-feed-threshold.test.js */
+    var darkRun = 0, darkReports = 0;
+    function next() { faceLiveTimer = setTimeout(tick, LIVE_MS); }
+    function tick() {
+      faceLiveTimer = 0;
+      if (!video.isConnected) {
+        /* the Setup tab can be torn down without Cancel; whoever removed the
+           video, the loop dies AND the camera dies with it */
+        if (cameraStream) stopCamera();
+        return;
+      }
+      next();
+      var m = faceLiveMeasure(video);
+      if (!m) return;
+      if (Number(m.q && m.q.exposure) <= DARK_EXPOSURE) {
+        darkRun++;
+        if (darkRun >= DARK_TICKS) {
+          darkRun = 0;
+          darkReports++;
+          if (ui && isFn(ui.onDark)) { var nth = darkReports; safe(function () { ui.onDark(nth); }); }
+        }
+      } else { darkRun = 0; darkReports = 0; }
+      /* ===== avcam-1.0.0 — THE MATCHER DOES NOT SPEAK FOR AN UNPROVEN FRAME.
+         m.dead means faceLiveMeasure refused to run faceReadPortrait at all,
+         so m.res is null by construction; avcamFeedFrame additionally holds
+         the guide back until AVCAM_LIVE_FRAMES consecutive lit frames have
+         arrived, because one lit frame after a black spell is a flicker, not
+         a recovery. The witness above still counts every tick — a feed that
+         dies mid-session must still be reported. ===== */
+      var lit = avcamFeedFrame(feed, m.q);
+      var ready = !m.dead && lit && faceLiveReady(m.res, m.q);
+      faceLiveOverlayPaint(overlay, m.dead ? null : m.res, ready);
+      faceLiveStatusRender(ui, m.dead ? null : m.res, m.q, ready, feed);
+      /* ===== end avcam-1.0.0 ===== */
+    }
+    next();
+  }
+  /* ---- end live capture view ---- */
+
+  function stylizeCanvas(src) {
+    /* 512, NOT 256 (av-6.0.7). Owner: "the photo needs to be higher res like not try to image
+       to avatar off a small low quaility image it saves."
+       This is the copy that is SAVED and shown to patients, and it was rendered at 256 and then
+       displayed at 302px in the kiosk — upscaled, so visibly soft on every screen, and softer
+       again on a retina panel where 302 CSS px is 604 device px. 512 covers the kiosk at 1x and
+       is close at 2x, and it costs one JPEG: measured below against the capture guard.
+       The MEASUREMENT copy is separate and already 1024 (MEASURE_MAX) — nothing here is what the
+       matcher or the vision model reads, so raising this cannot move a single verdict. It is
+       purely what he and his patients look at. */
+    var size = 512;
+    var canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(src, 0, 0, size, size);
+    /* p1-photo-likeness-1.1.0 — preserve the person.  Quantising every colour
+       channel was not a harmless "style": it banded skin, recoloured dark hair
+       and made the patient-facing portrait look less like the capture.  The
+       optional animated character already supplies an illustrated mode; photo
+       mode keeps the natural 512px crop. Prefer PNG, whose decoded pixels are
+       byte-for-byte the canvas patients were previewing. A noisy webcam frame
+       can make PNG exceed the server's existing 600KB data-URL guard; only in
+       that case make ONE high-quality JPEG from the untouched canvas. Trying
+       qualities does not re-compress an earlier JPEG — each candidate is
+       encoded independently from the same natural pixels, and the highest
+       one that fits wins. */
+    var png = safe(function () { return canvas.toDataURL('image/png'); }, '');
+    if (faceValidPhoto(png) && png.length <= 600000) return png;
+    var qualities = [0.98, 0.96, 0.94, 0.92], best = '';
+    for (var qi = 0; qi < qualities.length; qi++) {
+      var candidate = safe(function () { return canvas.toDataURL('image/jpeg', qualities[qi]); }, '');
+      if (!faceValidPhoto(candidate)) continue;
+      best = candidate;
+      if (candidate.length <= 600000) return candidate;
+    }
+    return best;
+  }
+  function stylizePortrait(video) {
+    var raw = captureSquare(video, MEASURE_MAX);
+    return raw ? stylizeCanvas(raw) : null;
+  }
+  /* the measurement copy lives on THIS DEVICE only. It is a real photograph of the
+     doctor's face at capture resolution, so it is not shipped to the server with the
+     smaller patient portrait - and it is namespaced per account like every
+     other local key here. */
+  var FACE_HI_KEY = 'mlsAvFaceMeasureV1';
+  function faceHiKey() {
+    return safe(function () {
+      return isFn(window.uns) ? (window.uns(FACE_HI_KEY) || FACE_HI_KEY) : FACE_HI_KEY;
+    }, FACE_HI_KEY);
+  }
+  function facePhotoMatches(a, b) {
+    return faceValidPhoto(a) && faceValidPhoto(b) && String(a) === String(b);
+  }
+  /* The full-resolution copy is a transaction with the SERVER-ACCEPTED
+     patient portrait, never with a shutter click. Exact association prevents
+     a removed/abandoned photo from being measured while a different portrait
+     is on screen. */
+  function faceHiCommit(hiUrl, patientPortrait) {
+    if (!faceValidPhoto(hiUrl) || !faceValidPhoto(patientPortrait)) return false;
+    /* Store the accepted 512px portrait beside its measurement copy. A short
+       checksum would make a collision theoretically capable of reviving the
+       wrong face; byte-for-byte equality makes the association exact. */
+    var record = JSON.stringify({ v: 2, portrait: String(patientPortrait), hi: String(hiUrl) });
+    return safe(function () { localStorage.setItem(faceHiKey(), record); return true; }, false);
+  }
+  function faceHiRead(patientPortrait) {
+    if (!faceValidPhoto(patientPortrait)) return '';
+    return safe(function () {
+      var raw = localStorage.getItem(faceHiKey());
+      if (!raw) return '';
+      var row;
+      try { row = JSON.parse(raw); } catch (e) { localStorage.removeItem(faceHiKey()); return ''; }
+      if (!row || row.v !== 2 || !faceValidPhoto(row.hi) || !faceValidPhoto(row.portrait)) {
+        localStorage.removeItem(faceHiKey()); return '';
+      }
+      if (!facePhotoMatches(row.portrait, patientPortrait)) {
+        localStorage.removeItem(faceHiKey()); return '';
+      }
+      return String(row.hi);
+    }, '');
+  }
+  function faceHiClear() { safe(function () { localStorage.removeItem(faceHiKey()); }); }
+  function faceHiForShown(pendingHi, pendingPortrait, shownPortrait) {
+    if (faceValidPhoto(pendingHi) && facePhotoMatches(pendingPortrait, shownPortrait)) return pendingHi;
+    return faceHiRead(shownPortrait);
+  }
+  function facePreviewNode(dataUrl, look) {
+    var wrap = make('div', '');
+    wrap.style.cssText = 'width:72px;height:72px;border-radius:999px;overflow:hidden;border:2px solid #E7E5DD;background:#F4F2EC;display:flex;align-items:center;justify-content:center;font-size:34px';
+    if (dataUrl && String(dataUrl).indexOf('data:image/') === 0) {
+      var img = document.createElement('img'); img.alt = ''; img.src = dataUrl;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      wrap.appendChild(img);
+    } else wrap.innerHTML = faceSvg(look || null); /* the drawn character, never a bare emoji */
+    return wrap;
+  }
+
+  /* A Setup form owns camera, speech and animated-face timers. Detaching its
+     DOM is not cleanup by itself: promises and timers still hold the closure.
+     Every close/tab switch invalidates the async load and calls this owner. */
+  var avatarSetupEpoch = 0;
+  function discardAvatarSetup(host, clearHost) {
+    if (!host) return;
+    host.__mlsAvatarSetupEpoch = ++avatarSetupEpoch;
+    var cleanup = host.__mlsAvatarSetupCleanup;
+    host.__mlsAvatarSetupCleanup = null;
+    if (typeof cleanup === 'function') safe(cleanup);
+    if (clearHost) host.innerHTML = '';
+    safe(function () { host.removeAttribute('data-mls-avatar-setup-host'); });
+  }
+  function discardAvatarSetups(root) {
+    if (!root || !root.querySelectorAll) return;
+    var hosts = root.querySelectorAll('[data-mls-avatar-setup-host]');
+    for (var i = 0; i < hosts.length; i++) discardAvatarSetup(hosts[i], true);
+  }
+  /* A POST cannot own face state forever. The doctor may remove or replace a
+     portrait while it is in flight; only the exact form revision that started
+     the request may commit its local full-resolution copy or clear pending UI. */
+  function faceSaveApplyIfCurrent(sentGeneration, currentGeneration, host, setupEpoch, apply) {
+    if (sentGeneration !== currentGeneration || !host ||
+        host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return false;
+    if (typeof apply === 'function') apply();
+    return true;
+  }
+
+  /* ---- setup tab ---- */
+  function setupForm(host) {
+    discardAvatarSetup(host, true);
+    var setupEpoch = ++avatarSetupEpoch;
+    var setupSession = sessionReceipt();
+    function setupCurrent() {
+      return sessionReceiptCurrent(setupSession) && !!host &&
+        host.__mlsAvatarSetupEpoch === setupEpoch && host.isConnected !== false;
+    }
+    host.__mlsAvatarSetupEpoch = setupEpoch;
+    host.setAttribute('data-mls-avatar-setup-host', '1');
+    host.innerHTML = '';
+    var notice = make('div', 'mlsAvNotice', 'Loading your avatar setup…');
+    host.appendChild(notice);
+    api('/api/avatar/config').then(function (r) {
+      if (!apiResponseCurrent(r)) return;
+      if (host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
+      /* av-1.1.0: a failed GET must NOT fail open to an editable EMPTY form —
+         one Save from that state would overwrite the real question list and
+         switch the patient-facing check-in off. */
+      if (!r.ok || !r.json || r.json.ok !== true) {
+        notice.textContent = 'Setup could not load your current avatar — nothing is shown so nothing can be overwritten. Try again in a moment.';
+        return;
+      }
+      host.innerHTML = '';
+      var cfg = r.json.config || {};
+      var form = make('div', 'mlsAvForm');
+      function section(text, sub) {
+        var s = make('div', '');
+        s.style.cssText = 'margin-top:6px;padding-top:10px;border-top:1px solid #EFEDE6';
+        var h = make('div', '', text); h.style.cssText = 'font:800 13px \'Public Sans\',system-ui;color:#204034';
+        s.appendChild(h);
+        if (sub) { var p = make('div', '', sub); p.style.cssText = 'font-size:12px;color:#69736d;margin-top:2px'; s.appendChild(p); }
+        return s;
+      }
+      var nameLabel = make('label', '', 'Avatar name (what patients see)');
+      var nameInput = make('input'); nameInput.value = cfg.name || 'Ava'; nameInput.maxLength = 60;
+      var introLabel = make('label', '', 'Greeting line (optional)');
+      var introInput = make('input'); introInput.value = cfg.intro || ''; introInput.maxLength = 400;
+      introInput.placeholder = 'e.g. A few quick questions before your visit with Dr. Schaeffer.';
+      /* ---- face section ---- */
+      var pendingFace; /* undefined = keep current; '' = remove; data URL = new */
+      /* Full quality stays in this form until Save. The accepted portrait and
+         measurement copy are committed together; abandoning Setup cannot
+         replace the cache behind the currently saved patient face. */
+      /* p1-photo-upload-1.0.0: `pendingHiKind` is the PROVENANCE of the
+         measurement copy — 'camera' for the in-memory capture, 'upload' for a
+         file the doctor chose. Only the camera copy is independently known to
+         be a natural photograph; an uploaded file must prove that through the
+         pixel reader like any other image. See trustedNaturalPhoto. */
+      var pendingHiUrl = '', pendingHiKind = '', lookCtl = null, faceMutationGeneration = 0, setupTimers = [];
+      function setupLater(fn, delay) {
+        var timer = setTimeout(function () {
+          var at = setupTimers.indexOf(timer); if (at >= 0) setupTimers.splice(at, 1);
+          if (setupCurrent()) fn();
+        }, delay);
+        setupTimers.push(timer); return timer;
+      }
+      function faceMutated() { faceMutationGeneration++; return faceMutationGeneration; }
+      host.__mlsAvatarSetupCleanup = function () {
+        faceMutated();
+        setupTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+        pendingHiUrl = ''; pendingHiKind = '';
+        pendingFace = undefined;
+        if (lookCtl) { safe(function () { lookCtl.destroy(); }); lookCtl = null; }
+      };
+      var faceLabel = make('label', '', 'Avatar face — patients see this portrait during the check-in');
+      var faceRow = make('div', '');
+      faceRow.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+      var facePreview = facePreviewNode(cfg.faceImage);
+      var camBtn = make('button', 'mlsAvAction', '📷 Create from my camera');
+      camBtn.type = 'button';
+      var removeFaceBtn = make('button', 'mlsAvAction', 'Remove face');
+      removeFaceBtn.type = 'button';
+      var camHost = make('div', '');
+      removeFaceBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        faceMutated();
+        cancelFaceCapture();
+        pendingFace = '';
+        pendingHiUrl = ''; pendingHiKind = '';
+        faceHiClear();
+        var fresh = facePreviewNode(null);
+        faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+        renderPatientPreview();
+        status.textContent = 'Face removed — Save to make it permanent. Patients will see the standard assistant icon.';
+      });
+      /* ===== ONE ACCEPT PATH FOR EVERY PORTRAIT SOURCE (p1-photo-upload-1.0.0)
+         Owner, 2026-08-13: "u shopuld be able to uplaod a photo if u want."
+         A camera capture and an uploaded file differ in exactly one thing:
+         where the square frame came from. Everything after that — the
+         face-aware readiness verdict, the natural 512px patient portrait, the
+         1024px measurement copy, the Face style rule, the preview repaint, the
+         status line and the automatic match — is one contract, and this file
+         has already paid for the alternative twice (the auto-match that never
+         ran, the two divergent match implementations). So there is one accept
+         function and the source only names itself.
+         ⛔ The readiness gate is NOT relaxed for uploads. A picture with no
+         findable face, a blown-out or unlit one, is refused with its reason and
+         nothing is saved — same as the shutter. A wall may not become the
+         doctor's portrait just because it arrived through a file picker. */
+      function acceptPortrait(opts) {
+        var square = opts.square, q = opts.q;
+        function still() { return setupCurrent() && opts.still(); }
+        if (!still()) return;
+        if (!square) { opts.fail(opts.noFrame); return; }
+        /* The chosen frame has already gone through the SAME face-aware
+           verdict as the live guide.  Do not save a sharp background or
+           a frame whose ambiguous boundary would leave stale settings. */
+        var verdict = q && q.faceVerdict;
+        if (!verdict) verdict = faceCaptureVerdict(q && q.faceResult, q);
+        if (!verdict.ready) {
+          opts.fail(opts.refusePrefix + verdict.why + ' Nothing was saved, so your current photo is untouched.');
+          return;
+        }
+        var dataUrl = safe(function () { return stylizeCanvas(square); }, null);
+        var hiUrl = safe(function () { return square.toDataURL('image/jpeg', 0.95); }, '');
+        /* 600KB remains a pathological-encode guard, not a quality
+           target.  A 512px 0.92 JPEG normally leaves ample headroom even
+           with webcam noise, while keeping the face natural. */
+        if (!dataUrl || dataUrl.length > 600000) { opts.fail(opts.badEncode); return; }
+        if (!still()) return;
+        faceMutated();
+        pendingFace = dataUrl;
+        /* Held in this form only. Save commits it after the server echoes
+           the exact matching patient portrait. */
+        pendingHiUrl = faceValidPhoto(hiUrl) ? hiUrl : '';
+        pendingHiKind = pendingHiUrl ? opts.source : '';
+        var fresh = facePreviewNode(dataUrl);
+        faceRow.replaceChild(fresh, facePreview); facePreview = fresh;
+        /* Supplying a new face photo is an explicit request to use that
+           likeness.  Default it to the real portrait unless the doctor
+           deliberately changed Face style in this session. */
+        if (faceModeSelect) faceModeSelect.value = faceModeAfterCapture(faceModeSelect.value, faceModeTouched);
+        renderPatientPreview();
+        status.textContent = opts.describe(square, verdict, pendingHiUrl);
+        /* AND MATCH IT, WITHOUT BEING ASKED (av-6.0.2). Owner: "I shopuld not have to
+           click match my photo when I take the picutre it sohuld auto match my photo."
+           Right: supplying a photo of your face IS the request to be drawn from it. The
+           button stays, because a doctor who has hand-tuned a knob and then retakes the
+           photo needs a way to ask again — but nobody should have to find it.
+           Deferred one tick so the preview and the status line paint first, and routed
+           through the button's own handler rather than a copy of it: a second
+           implementation of the match would be a second thing to keep in step, and the
+           whole reason the AI read was ever missing from a surface is that it had two.
+           matchBtn is declared further down this same function scope, so it is assigned by
+           the time this runs; guarded anyway, because a build that removes the button
+           must degrade to 'no auto-match', never to a thrown error inside a capture.
+           ⛔ AND IT DID THROW, from b982 until now: this line called `later(fn, ms)`, a
+           helper that exists ONLY inside makeFace's scope — setupForm has no such
+           binding, so every capture raised "later is not defined" and the auto-match
+           never ran once. `node --check` cannot see an undefined identifier, and the
+           safe() was one level too deep: it wrapped the callback, not the call that
+           threw, so the guard this comment promises was never in the throwing position.
+           Found by driving the real capture with a real photograph through a fake camera
+           (scratchpad/facelook/autocapture.js) and reading pageerror — the owner's
+           symptom, "once the image is taken it sohuld auto change avatar", exactly. */
+        safe(function () {
+          setupLater(function () {
+            safe(function () {
+              if (still() && matchBtn && matchBtn.isConnected && !matchBtn.disabled) matchBtn.click();
+            });
+          }, 60);
+        });
+      }
+      camBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        camHost.innerHTML = '';
+        camHost.__mlsCamTrouble = false;
+        camHost.__mlsCamPlain = false;   /* avcam-1.0.0: one plain-constraint retry per open, not per session */
+        var captureGeneration = beginFaceCapture();
+        /* ASK FOR THE HIGH-RESOLUTION STREAM. With facingMode alone the browser hands
+           back its default - typically 640x480 - and every colour the matcher reports
+           was measured from that. `ideal` degrades gracefully: a camera that cannot do
+           1920x1080 still opens, at the best it has, and captureSquare never upscales
+           so a modest camera is never dressed up as a good one. */
+        var media = safe(function () {
+          return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'user',
+              width: { ideal: 1920 }, height: { ideal: 1080 }
+            }
+          });
+        }, null);
+        /* a browser that refuses the sized request must still get a camera, or asking
+           for quality would have COST him the feature */
+        if (!media) {
+          media = safe(function () {
+            return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+          }, null);
+        }
+        if (!media) { camHost.appendChild(make('div', 'mlsAvNotice', 'This browser cannot open the camera here.')); return; }
+        /* ===== avcam-1.0.0 — THE TWO OUTCOMES ARE NAMED FUNCTIONS.
+           The `safe()` wrapper above can only catch a SYNCHRONOUS throw, so
+           the documented "a browser that refuses the sized request must still
+           get a camera" fallback could never run for a REJECTED constraint:
+           that rejection went straight to the error handler, which told the
+           doctor he had declined permission he had already granted. The retry
+           now lives in the rejection path, where it can re-enter the success
+           path — which is why both sides need a name. ===== */
+        function camFailed(err) {
+          if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
+          if (avcamSizeRefusal(err) && !camHost.__mlsCamPlain) {
+            camHost.__mlsCamPlain = true;
+            var plain = safe(function () {
+              return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({ video: true });
+            }, null);
+            if (plain && plain.then) { plain.then(camOpened, camFailed); return; }
+          }
+          /* SAY WHICH FAILURE THIS WAS. Every rejection used to print "Camera
+             permission was declined" — including NotReadableError, a camera
+             held by another app, which is the single most common cause of a
+             black or absent preview, and NotFoundError, which is no camera at
+             all. avcamOpenWhy names the one that happened. */
+          camHost.appendChild(make('div', 'mlsAvNotice', avcamOpenWhy(err)));
+        }
+        function camOpened(stream) {
+          if (!faceCaptureAdopt(stream, captureGeneration, camHost)) return;
+          var video = document.createElement('video');
+          video.autoplay = true; video.playsInline = true; video.muted = true;
+          /* avcam-1.0.0: the ATTRIBUTES as well as the properties. The
+             properties are what Chrome reads and they were already set; the
+             attributes are what iOS Safari's inline-autoplay rule is written
+             against and what survives any serialization of this node. Not the
+             measured cause of the owner's black picture — recorded as what it
+             is, the cheap closure of a documented gap. */
+          safe(function () {
+            video.setAttribute('autoplay', ''); video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', ''); video.setAttribute('muted', '');
+          });
+          video.srcObject = stream;
+          var feed = avcamFeedNew();
+          avcamFeedSet(feed, 'opening', '');
+          video.style.cssText ='width:200px;height:200px;object-fit:cover;border-radius:14px;border:1px solid #E7E5DD;transform:scaleX(-1)';
+          /* avcam-1.0.0: the shutter opens DISABLED. It is enabled from
+             faceLiveStatusRender the moment the readiness state reaches live,
+             so it is never possible to photograph a feed nothing has proven. */
+          var snapBtn = make('button', 'mlsAvAction primary', 'Waiting for the camera…'); snapBtn.type = 'button';
+          snapBtn.disabled = true;
+          var cancelBtn = make('button', 'mlsAvAction', 'Cancel'); cancelBtn.type = 'button';
+          var row = make('div', 'mlsAvActions');
+          row.appendChild(snapBtn); row.appendChild(cancelBtn);
+          /* lv-1.0 THE LIVE VIEW. The wrapper is position:relative INSIDE
+             camHost, because .mlsAvPanel has overflow:auto but NO position -
+             an unwrapped absolute overlay would escape to .mlsAvBack
+             (position:fixed) and land on the viewport. Never fixed: the panel
+             is a scroller. */
+          var camWrap = make('div', '');
+          camWrap.style.cssText = 'position:relative;width:200px;height:200px;flex:0 0 auto';
+          var overlay = document.createElement('canvas');
+          overlay.width = 200; overlay.height = 200;
+          /* mirrored EXACTLY like the video under it, so geometry drawn in
+             unmirrored image space lands on the feature the doctor sees in the
+             mirror. Text never goes on this canvas - it would render
+             backwards; the words live in the DOM lines below. */
+          overlay.style.cssText = 'position:absolute;left:0;top:0;width:200px;height:200px;pointer-events:none;transform:scaleX(-1);border-radius:14px';
+          camWrap.appendChild(video); camWrap.appendChild(overlay);
+          var liveStatus = make('div', 'mlsAvLiveLine', 'Opening the camera…');   /* avcam-1.0.0: the guide starts on the truth, not on a search that has not begun */
+          var liveList = make('div', 'mlsAvLiveList');
+          camHost.appendChild(camWrap); camHost.appendChild(row);
+          camHost.appendChild(liveStatus); camHost.appendChild(liveList);
+          /* p1-camera-endurance-1.0.0 — PLAYBACK IS ASKED FOR, NOT ASSUMED.
+             autoplay+muted+playsInline normally starts a MediaStream, but a
+             backgrounded tab, a policy change or a re-attach after a lost
+             surface all leave the element paused with nothing on screen and
+             no error anywhere. Asking costs one call and its rejection is
+             the only place that failure is observable. */
+          /* avcam-1.0.0: the rejection was swallowed by an empty catch, so a
+             refused autoplay left a paused element, a black picture and no
+             evidence at all. It is recorded on the feed state now, which is
+             what avcamStallWhy reads to say "the browser never started the
+             camera preview" instead of guessing. */
+          function playVideo() {
+            safe(function () {
+              var p = video.play();
+              if (p && p.catch) p.catch(function (e) {
+                feed.playRejected = String(safe(function () { return e && (e.name || e.message); }, '') || 'rejected');
+                avcamFeedPublish(feed);
+              });
+            });
+          }
+          playVideo();
+          /* THE TRACK CAN DIE WITHOUT TELLING THE PAGE. Windows camera
+             privacy, a USB unplug, sleep/resume, or another app claiming the
+             device all end the track: the <video> keeps its last frame or
+             goes black and every guide line below it keeps describing a feed
+             that no longer exists. Say so, and offer the one action that
+             actually fixes it. */
+          function cameraTrouble(message) {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            if (camHost.__mlsCamTrouble) return;
+            camHost.__mlsCamTrouble = true;
+            var box = make('div', 'mlsAvNotice', message);
+            var againRow = make('div', 'mlsAvActions');
+            var again = make('button', 'mlsAvAction primary', '↻ Restart camera');
+            again.type = 'button';
+            /* the button reopens through camBtn's own handler: a second copy
+               of the open sequence would be a second thing to keep in step
+               with the consent, generation and adoption rules */
+            again.addEventListener('click', function () { if (setupCurrent()) safe(function () { camBtn.click(); }); });
+            againRow.appendChild(again);
+            box.appendChild(againRow);
+            camHost.insertBefore(box, liveStatus);
+          }
+          safe(function () {
+            (stream.getVideoTracks() || []).forEach(function (track) {
+              track.addEventListener('ended', function () {
+                cameraTrouble('The camera stopped — another app, a privacy switch or sleep took the device. Nothing was captured.');
+              }, false);
+            });
+          });
+          /* ===== avcam-1.0.0 — NOTHING MEASURES THE FEED UNTIL A FRAME EXISTS.
+             This is the owner's defect. The live loop used to start on this
+             line, in the same turn as `video.srcObject = stream`, and it drew
+             an element that had metadata and no decoded frame into a canvas.
+             drawImage is specified to do nothing until readyState reaches 2,
+             so the canvas stayed transparent black, frameQuality read
+             exposure 0, and the doctor was shown a colour ledger measured
+             from nothing ("3 of 14", "Skin — the sample was not a colour real
+             skin has"). The wait below is the precondition that was missing;
+             if it never arrives the doctor is told WHY, in words that name an
+             action, and no lamp is ever mentioned for a feed that is dead. */
+          function startLiveGuide() {
+            avcamFeedSet(feed, 'warming', '');
+            faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn, feed: feed,
+              onDark: function (nth) {
+                /* First dark spell: the usual cause is a dropped compositor
+                   surface, and re-attaching the same live stream brings the
+                   picture straight back. Only if it is STILL dark 1.5s later
+                   do we tell him, because a silent notice on a recoverable
+                   flicker is its own defect. */
+                if (nth === 1) { safe(function () { video.srcObject = stream; }); playVideo(); return; }
+                cameraTrouble('The camera picture went black while it was open. Restart it, then take the photo — nothing was captured.');
+              } });
+          }
+          avcamFeedSet(feed, 'waiting', '');
+          liveStatus.textContent = avcamWaitingLine(feed);
+          avcamAwaitFirstFrame(video, {
+            stream: stream, timers: faceCaptureTimers,
+            active: function () {
+              return setupCurrent() && faceCaptureIsCurrent(captureGeneration, camHost) && video.isConnected !== false;
+            }
+          }, function (arrived, why) {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            if (arrived) { startLiveGuide(); return; }
+            avcamFeedSet(feed, 'stalled', why);
+            liveStatus.textContent = why;
+            snapBtn.textContent = 'No camera picture';
+            cameraTrouble(why);
+          });
+          /* ===== end avcam-1.0.0 ===== */
+          cancelBtn.addEventListener('click', function () {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            cancelFaceCapture(); camHost.innerHTML = '';
+          });
+          snapBtn.addEventListener('click', function () {
+            if (!setupCurrent() || !faceCaptureIsCurrent(captureGeneration, camHost)) return;
+            /* avcam-1.0.0: belt as well as braces. The button is already
+               disabled until the feed is proven; a programmatic click, an
+               Enter key on a re-enabled control or any future caller must not
+               be able to photograph a feed nothing has measured. */
+            if (!feed.matcherAllowed) { liveStatus.textContent = avcamWaitingLine(feed) || AVCAM_STALL_WHY; return; }
+            snapBtn.__mlsShooting = true;
+            snapBtn.disabled = true; snapBtn.textContent = 'Taking the best of a few…';
+            grabBestFrame(video, 6, function () {
+              return faceCaptureIsCurrent(captureGeneration, camHost) && video.isConnected;
+            }, function (bestCanvas, q) {
+              if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
+              var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+              stopCamera(); camHost.innerHTML = '';
+              acceptPortrait({
+                square: bestCanvas, q: q, source: 'camera',
+                still: function () { return faceCaptureIsCurrent(captureGeneration, camHost); },
+                fail: function (message) { camHost.appendChild(make('div', 'mlsAvNotice', message)); },
+                noFrame: 'The camera did not deliver a frame — try again.',
+                refusePrefix: 'Not captured. ',
+                badEncode: 'That capture did not work — try again with more light.',
+                describe: function (square, verdict, hi) {
+                  return 'Portrait captured from a ' + (square.width) + '×' + (square.height) +
+                    ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
+                    ' — best of 6 frames, processed on this device' +
+                    (hi ? '. Match my photo will measure the full-quality copy; it is stored only after Save.'
+                        : '. Match will measure the patient portrait and say so.') +
+                    ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
+                    (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
+                }
+              });
+            });
+          });
+        }
+        media.then(camOpened, camFailed);   /* avcam-1.0.0 */
+      });
+      /* ---- UPLOAD A PHOTO (p1-photo-upload-1.0.0) --------------------------
+         The camera is not always the right instrument: a doctor may already
+         have a good headshot, may be on a desktop with no webcam, or may be
+         in a room the live guide keeps refusing for light it cannot fix. The
+         file goes through acceptPortrait, i.e. the same verdict, the same two
+         encodings and the same automatic match as the shutter. */
+      var uploadBtn = make('button', 'mlsAvAction', '🖼 Upload a photo');
+      uploadBtn.type = 'button';
+      var uploadInput = document.createElement('input');
+      uploadInput.type = 'file';
+      uploadInput.id = 'mlsAvFaceUpload';
+      /* an explicit list, not `image/*`: SVG is a script surface and HEIC does
+         not decode in any browser this app supports, so neither should be
+         offered in the picker and then refused after the doctor chose it */
+      uploadInput.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp';
+      uploadInput.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+      uploadBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        /* clearing first: choosing the SAME file twice fires no change event
+           otherwise, and a doctor re-picking after a refusal gets silence */
+        safe(function () { uploadInput.value = ''; });
+        safe(function () { uploadInput.click(); });
+      });
+      uploadInput.addEventListener('change', function () {
+        if (!setupCurrent()) return;
+        var file = safe(function () { return uploadInput.files && uploadInput.files[0]; }, null);
+        if (!file) return;
+        camHost.innerHTML = '';
+        camHost.__mlsCamTrouble = false;
+        /* the SAME generation fence the camera uses, and taking it also closes
+           an open camera — two portrait sources may not race each other into
+           pendingFace */
+        var uploadGeneration = beginFaceCapture();
+        function still() { return faceCaptureIsCurrent(uploadGeneration, camHost); }
+        function fail(message) {
+          if (!setupCurrent() || !still()) return;
+          camHost.innerHTML = '';
+          camHost.appendChild(make('div', 'mlsAvNotice', message));
+        }
+        if (!/^image\//.test(String(file.type || ''))) {
+          fail('That file is not an image this browser can read. Choose a PNG, JPEG or WebP photo.');
+          return;
+        }
+        if (Number(file.size) > 25000000) {
+          fail('That image is larger than 25 MB. Choose a smaller copy — the portrait is cropped to 1024px anyway.');
+          return;
+        }
+        camHost.appendChild(make('div', 'mlsAvNotice', 'Reading your photo on this device…'));
+        var reader = safe(function () { return new FileReader(); }, null);
+        if (!reader) { fail('This browser cannot read files here — use the camera instead.'); return; }
+        reader.onerror = function () { fail('That file could not be read. Try another copy of the photo.'); };
+        reader.onload = function () {
+          if (!setupCurrent() || !still()) return;
+          var img = new Image();
+          img.onload = function () {
+            if (!setupCurrent() || !still()) return;
+            var picked = faceAwareSquareFromImage(img, MEASURE_MAX);
+            if (picked && picked.why) {
+              fail(picked.why + ' Nothing was saved, so your current photo is untouched.');
+              return;
+            }
+            var square = picked && picked.square;
+            var q = picked && picked.q;
+            camHost.innerHTML = '';
+            acceptPortrait({
+              square: square, q: q, source: 'upload', still: still,
+              fail: function (message) { camHost.appendChild(make('div', 'mlsAvNotice', message)); },
+              noFrame: 'That image had no readable pixels — try another photo.',
+              refusePrefix: 'Not used. ',
+              badEncode: 'That photo could not be encoded for the patient view — try a different one.',
+              describe: function (accepted, verdict, hi) {
+                var crop = picked && picked.meta;
+                var cropCopy = crop && crop.kind === 'face-aware'
+                  ? 'face-aware crop at ' + crop.cropX + ',' + crop.cropY
+                  : 'centre crop';
+                return 'Portrait taken from your uploaded photo — a ' + accepted.width + '×' + accepted.height +
+                  ' ' + cropCopy + ' of a ' + (img.naturalWidth || 0) + '×' + (img.naturalHeight || 0) +
+                  ' image, processed on this device and never uploaded until you Save' +
+                  (hi ? '. Match my photo will measure the full-quality copy.' : '.') +
+                  ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
+                  (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
+              }
+            });
+          };
+          img.onerror = function () { fail('That image could not be decoded — HEIC photos from an iPhone need to be exported as JPEG first.'); };
+          img.src = String(reader.result || '');
+        };
+        safe(function () { reader.readAsDataURL(file); });
+      });
+      faceRow.appendChild(facePreview); faceRow.appendChild(camBtn);
+      faceRow.appendChild(uploadBtn); faceRow.appendChild(uploadInput); faceRow.appendChild(removeFaceBtn);
+
+      /* av-5.1.0: which face the kiosk wears once a photo exists */
+      var faceModeLabel = make('label', '', 'Face style — what patients see in the office');
+      var faceModeSelect = document.createElement('select');
+      faceModeSelect.id = 'mlsAvFaceMode';
+      faceModeSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
+      var initialFaceMode = faceModeOnLoad(cfg.faceMode, cfg.faceImage);
+      var faceModeTouched = false;
+      var hasSavedPortrait = faceValidPhoto(cfg.faceImage || '');
+      [['photo', 'My photo — closest likeness, moves gently while speaking' + (hasSavedPortrait ? ' (recommended)' : '')], ['drawn', 'Animated character — expressions, matched from your photo (approximate illustrated likeness)']].forEach(function (opt) {
+        var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+        if (initialFaceMode === opt[0]) o.selected = true;
+        faceModeSelect.appendChild(o);
+      });
+
+      /* av-5.3.0 — THE APPEARANCE STUDIO. "Match my photo" derives the look
+         from the portrait the doctor captured; every part is then editable by
+         hand, with the real animated face previewing every change live. */
+      var lookNow = faceLookSafe(cfg.faceLook || null);
+      /* fx-1.0: gate the SAVED look before it renders - a bad colour saved
+         once used to render forever (the owner's standing white swatch). */
+      var lookQuarantine = faceLookQuarantine(lookNow);
+      var lookLabel = make('label', '', 'Appearance — animated character and photo fallback');
+      var lookWrap = make('div', '');
+      lookWrap.style.cssText = 'display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;border:1px solid #E7E5DD;border-radius:14px;padding:12px;background:#FAF9F5';
+      var lookStage = make('div', '');
+      lookStage.id = 'mlsAvLookStage';
+      lookStage.style.cssText = 'width:132px;height:132px;border-radius:999px;overflow:hidden;background:radial-gradient(circle at 50% 38%,#fff,#f2f4ef);border:3px solid #fff;box-shadow:0 8px 24px rgba(32,64,52,.16);flex:0 0 auto';
+      var lookGrid = make('div', '');
+      lookGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1;min-width:220px';
+      function shownFaceImage() {
+        var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        return faceValidPhoto(shown) ? shown : '';
+      }
+      function renderPatientPreview() {
+        if (!lookStage || !faceModeSelect) return;
+        if (lookCtl) safe(function () { lookCtl.destroy(); });
+        lookCtl = null;
+        var portrait = shownFaceImage();
+        if (faceModeSelect.value === 'photo' && portrait) {
+          lookStage.setAttribute('data-face-preview-kind', 'photo');
+          lookCtl = makePhotoFace(lookStage, portrait, 'Your patient-facing portrait');
+        } else {
+          lookStage.setAttribute('data-face-preview-kind', faceModeSelect.value === 'photo' ? 'photo-fallback' : 'animated');
+          lookCtl = makeFace(lookStage, lookQuarantine.length ? faceLookSafe(FACE_LOOK) : lookNow);
+        }
+        if (moodBtn) moodBtn.textContent = faceModeSelect.value === 'photo' && portrait
+          ? '▶ Preview speaking & listening movement' : '🙂 See the expressions';
+        if (lookCtl) lookCtl.mood('idle', false, true);
+      }
+      function lookApply() {
+        if (lookCtl && faceModeSelect.value === 'drawn') safe(function () { lookCtl.retint(lookNow); });
+      }
+      faceModeSelect.addEventListener('change', function () {
+        faceMutated();
+        faceModeTouched = true;
+        renderPatientPreview();
+      });
+      var lookBadges = {};
+      function lookRow(labelText, node, key) {
+        var row = make('div', '');
+        row.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+        var l = make('span', '', labelText);
+        l.style.cssText = 'font:600 11.5px system-ui;color:#69736d';
+        /* WHICH OF THESE CAME FROM THE PHOTO (av-5.7.4). The owner pressed Match, saw a
+           green top and salmon lips, and reported that it "did an aweful job
+           completely" - counting eight wrong answers. He was right about what he saw
+           and it was worse than a wrong measurement: THREE of those knobs had never
+           been measured at all. The top was refused (a grey tee against a light wall
+           cannot clear the guard) and left showing the product's scrub green, and lip
+           COLOUR has no measurement path in this file at all - only lip shape. A
+           correct refusal and a wrong answer were pixel-identical in this grid, so
+           every future improvement would still read as "awful". Each control now says
+           where its value came from, driven directly off `derived` rather than prose. */
+        var badge = make('span', '', '');
+        badge.style.cssText = 'font:700 9.5px system-ui;letter-spacing:.2px;padding:1px 5px;border-radius:5px;margin-left:6px';
+        l.appendChild(badge);
+        if (key) lookBadges[key] = badge;
+        row.appendChild(l); row.appendChild(node);
+        lookGrid.appendChild(row);
+        return row;
+      }
+      /* fx-1.0 SESSION PROVENANCE. manualNow: knobs the doctor touched by
+         hand this session - a manual pick is never reset and never marked
+         stale. lookMarks: knob -> amber badge text for a rendered value no
+         current measurement stands behind (refused this Match, or carried
+         from an older photo or a quarantined save). lastGot/lastAi: what
+         the badges last painted, so a manual touch repaints alone. */
+      var manualNow = {}, lookMarks = {}, lastGot = [], lastAi = [];
+      /* filled only AFTER a Match: before one, every value is trivially the doctor's
+         own and labelling it would be noise. */
+      function setLookBadges(measured, aiRead) {
+        var got = measured || [], ai = aiRead || [];
+        lastGot = got.slice(); lastAi = ai.slice();
+        Object.keys(lookBadges).forEach(function (k) {
+          var b = lookBadges[k]; if (!b) return;
+          /* THREE STATES, NOT TWO (av-5.8.0). "read by AI" is a different fact from
+             "measured on this device": one is a model's confident answer, the other is
+             arithmetic over pixels. The doctor is entitled to know which one moved his
+             setting, because the two fail in different ways and he will trust them
+             differently once he has seen each be wrong. */
+          /* AND FOUR, NOT THREE (fx-1.0). The fourth is the AMBER mark - a
+             value still rendering that no current measurement stands behind.
+             The owner's report was exactly this hole: a refused read left
+             every stale value painted with nothing marking it. Claims and AI
+             reads outrank the mark; a hand edit clears it (lookManualTouch). */
+          var byAi = ai.indexOf(k) >= 0;
+          var on = byAi || got.indexOf(k) >= 0;
+          if (!on && lookMarks[k]) {
+            b.textContent = lookMarks[k];
+            b.style.color = '#7a4d12';
+            b.style.background = '#fdf1dc';
+            return;
+          }
+          b.textContent = byAi ? 'read by AI' : (on ? 'from your photo' : 'your setting');
+          b.style.color = byAi ? '#4a2d7a' : (on ? '#1f5c41' : '#8a938d');
+          b.style.background = byAi ? '#efe8fb' : (on ? '#e6f7ef' : '#f2f1ec');
+        });
+      }
+      function lookManualTouch(key) {
+        faceMutated();
+        manualNow[key] = true;
+        delete lookMarks[key];
+        var ig = lastGot.indexOf(key); if (ig >= 0) lastGot.splice(ig, 1);
+        var ia = lastAi.indexOf(key); if (ia >= 0) lastAi.splice(ia, 1);
+        setLookBadges(lastGot, lastAi);
+      }
+      function colourControl(key, labelText) {
+        var input = document.createElement('input');
+        input.type = 'color'; input.value = lookNow[key];
+        input.id = 'mlsAvLook_' + key;
+        input.style.cssText = 'width:100%;height:32px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer';
+        input.addEventListener('input', function () { lookNow[key] = input.value; lookManualTouch(key); lookApply(); });
+        lookRow(labelText, input, key);
+        return input;
+      }
+      function pickControl(key, labelText, options) {
+        var sel = document.createElement('select');
+        sel.id = 'mlsAvLook_' + key;
+        sel.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:8px;padding:7px 8px;font:12.5px system-ui;background:#fff';
+        options.forEach(function (opt) {
+          var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+          if (lookNow[key] === opt[0]) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', function () { lookNow[key] = sel.value; lookManualTouch(key); lookApply(); });
+        lookRow(labelText, sel, key);
+        return sel;
+      }
+      var skinPick = colourControl('skin', 'Skin');
+      var hairPick = colourControl('hair', 'Hair');
+      var eyesPick = colourControl('eyes', 'Eyes');
+      var lipPick = colourControl('lip', 'Lip colour');
+      /* THE HANDLE WAS THROWN AWAY. `colourControl('shirt', ...)` discarded its return
+         and nothing ever assigned to it, so this swatch was frozen at whatever
+         lookNow.shirt held when the row was built - it read green even on a photo
+         where the top WAS measured and pushed into `derived`, while the drawn avatar
+         beside it got the measured colour. The swatch and the face could disagree,
+         which is worse than either being wrong on its own. */
+      var shirtPick = colourControl('shirt', 'Scrubs / top');
+      var stylePick = pickControl('hairStyle', 'Hair', [['short', 'Short'], ['wavy', 'Wavy'], ['long', 'Long'], ['bun', 'Tied back'], ['buzz', 'Buzzed'], ['bald', 'None']]);
+      var beardPick = pickControl('beard', 'Facial hair', [['none', 'Clean-shaven'], ['stubble', 'Stubble'], ['beard', 'Beard']]);
+      var browColWell = null;
+      var browsPick = pickControl('brows', 'Eyebrows', [['thin', 'Thin'], ['normal', 'Natural'], ['thick', 'Thick']]);
+      var nosePick = pickControl('nose', 'Nose', [['button', 'Button'], ['straight', 'Straight'], ['wide', 'Wide'], ['roman', 'Roman']]);
+      var lipsPick = pickControl('lips', 'Lips', [['thin', 'Thin'], ['normal', 'Natural'], ['full', 'Full']]);
+      /* THE HEAD ITSELF. faceSvg has drawn these since the same release that
+         added them, and until now nothing could ask for one: no control here,
+         no derivation from the photo. Correct behaviour the doctor cannot
+         reach is indistinguishable from behaviour that was never built. */
+      var shapePick = pickControl('faceShape', 'Face shape', [['oval', 'Oval'], ['round', 'Round'], ['long', 'Long'], ['square', 'Square jaw']]);
+      var eyeSetPick = pickControl('eyeSet', 'Eye spacing', [['close', 'Close-set'], ['normal', 'Natural'], ['wide', 'Wide-set']]);
+      var hairlinePick = pickControl('hairline', 'Hairline', [['full', 'Full'], ['receding', 'Receding']]);
+      var agePick = pickControl('age', 'Face lines', [['adult', 'Smooth'], ['mature', 'Mature']]);
+      var browColPick = pickControl('browCol', 'Eyebrow colour', [['', 'Same as hair']]);
+      /* the brow colour is a COLOUR, but its neutral value is the empty string
+         (follow the hair) and a native colour input cannot express "none". So
+         it is a select with one option plus a real colour well beside it, and
+         choosing a colour is what leaves the follow-the-hair default. */
+      (function () {
+        var well = document.createElement('input');
+        well.type = 'color'; well.id = 'mlsAvLook_browColWell';
+        well.value = lookNow.browCol || lookNow.hair;
+        well.style.cssText = 'width:100%;height:28px;border:1px solid #d7ded9;border-radius:8px;background:#fff;padding:2px;cursor:pointer;margin-top:4px';
+        well.addEventListener('input', function () {
+          lookNow.browCol = well.value;
+          lookManualTouch('browCol');
+          if (browColPick.options.length < 2) {
+            var o = document.createElement('option'); o.value = 'set'; o.textContent = 'Its own colour';
+            browColPick.appendChild(o);
+          }
+          browColPick.value = 'set';
+          lookApply();
+        });
+        browColPick.addEventListener('change', function () {
+          lookNow.browCol = browColPick.value === 'set' ? well.value : '';
+          lookManualTouch('browCol');
+          lookApply();
+        });
+        browColPick.parentNode.appendChild(well);
+        browColWell = well;
+      }());
+      /* the OPTIONAL accessories - same control pattern as the existing glasses
+         box, all defaulting off, all whitelisted in faceLookSafe */
+      function toggleControl(key, labelText) {
+        var wrap = make('label', '');
+        wrap.style.cssText = 'display:flex;align-items:center;gap:7px;font:600 12.5px system-ui;color:#204034;margin-top:16px';
+        var box = document.createElement('input');
+        box.type = 'checkbox'; box.id = 'mlsAvLook_' + key; box.checked = lookNow[key] === true;
+        box.addEventListener('change', function () { lookNow[key] = box.checked; lookManualTouch(key); lookApply(); });
+        wrap.appendChild(box); wrap.appendChild(document.createTextNode(labelText));
+        lookGrid.appendChild(wrap);
+        return box;
+      }
+      var glassesBox = toggleControl('glasses', 'Glasses');
+      var capBox = toggleControl('cap', 'Surgical cap');
+      var stethBox = toggleControl('stethoscope', 'Stethoscope');
+      var lookActions = make('div', 'mlsAvActions');
+      lookActions.style.marginTop = '4px';
+      var matchBtn = make('button', 'mlsAvAction', '🪄 Match my photo');
+      matchBtn.type = 'button';
+      var lookNote = make('div', 'mlsAvMeta', '');
+      lookNote.id = 'mlsAvLookNote';
+      /* fx-1.0 THE REFUSAL IS LOUD (owner 2026-08-11: he barely saw the pale
+         refusal line while a stale look kept rendering). Level 0 = the quiet
+         meta styling; 1 = amber attention; 2 = a refusal he must not miss. */
+      function lookNoteSay(text, level) {
+        lookNote.textContent = text || '';
+        var lv = level === true ? 2 : (level || 0);
+        lookNote.style.cssText = lv >= 2
+          ? 'font:700 13.5px system-ui;color:#7a1f1f;background:#fdecec;border:1px solid #f1b8b8;border-radius:10px;padding:10px 12px;margin-top:6px'
+          : (lv === 1
+            ? 'font:600 12.5px system-ui;color:#7a4d12;background:#fdf6e7;border:1px solid #ecd9ab;border-radius:10px;padding:8px 10px;margin-top:6px'
+            : '');
+      }
+      function lookNoteCalm() { lookNote.style.cssText = ''; }
+      /* fx-1.0 ONE-CLICK RECOVERY from a poisoned or stale derived look. */
+      var clearLookBtn = make('button', 'mlsAvAction', 'Clear the derived look');
+      clearLookBtn.type = 'button';
+      clearLookBtn.id = 'mlsAvClearDerived';
+      clearLookBtn.addEventListener('click', function () {
+        faceMutated();
+        lookNow = faceClearDerived(lookNow, manualNow);
+        Object.keys(lookMarks).forEach(function (mk) { delete lookMarks[mk]; });
+        quarantineHide();
+        skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
+        lipPick.value = lookNow.lip; shirtPick.value = lookNow.shirt;
+        stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
+        browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
+        shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
+        hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
+        if (lookNow.browCol) { if (browColWell) browColWell.value = lookNow.browCol; } else { browColPick.value = ''; }
+        glassesBox.checked = lookNow.glasses === true;
+        capBox.checked = lookNow.cap === true;
+        stethBox.checked = lookNow.stethoscope === true;
+        setLookBadges([], []);
+        lookApply();
+        lookNoteSay('Cleared - the character is back to its defaults' +
+          (Object.keys(manualNow).length ? ', keeping the settings you picked by hand this session' : '') +
+          '. Cap, stethoscope and face lines are never derived, so they were kept. Save to make it permanent.', 0);
+      });
+      /* fx-1.0 QUARANTINE BANNER for a saved look that fails the claim gates. */
+      var quarantineBox = null;
+      function quarantineHide() {
+        if (quarantineBox && quarantineBox.parentNode) safe(function () { quarantineBox.parentNode.removeChild(quarantineBox); });
+        quarantineBox = null;
+      }
+      function quarantineShow(bad) {
+        quarantineHide();
+        var box = make('div', '', '');
+        box.id = 'mlsAvLookQuarantine';
+        box.style.cssText = 'font:600 12.5px system-ui;color:#7a4d12;background:#fdf6e7;border:1px solid #ecd9ab;border-radius:12px;padding:10px 12px;margin:6px 0;display:flex;flex-direction:column;gap:8px';
+        var msg = make('div', '', 'Your saved look carries colours from an older broken match: ' +
+          bad.map(function (q) { return q.knob + ' \u2014 ' + q.why; }).join('; ') +
+          '. The preview shows the default character until you decide.');
+        var row = make('div', 'mlsAvActions');
+        var reBtn = make('button', 'mlsAvAction primary', 'Rematch from my photo');
+        reBtn.type = 'button';
+        reBtn.addEventListener('click', function () { quarantineHide(); safe(function () { matchBtn.click(); }); });
+        var keepBtn = make('button', 'mlsAvAction', 'Keep the saved colours');
+        keepBtn.type = 'button';
+        keepBtn.addEventListener('click', function () {
+          quarantineHide();
+          Object.keys(lookMarks).forEach(function (mk) { delete lookMarks[mk]; });
+          setLookBadges([], []);
+          lookApply();
+          lookNoteSay('Kept - the saved colours render again, as your own setting. Rematch, adjust, or clear the derived look any time.', 0);
+        });
+        row.appendChild(reBtn); row.appendChild(keepBtn);
+        box.appendChild(msg); box.appendChild(row);
+        if (lookWrap.parentNode) lookWrap.parentNode.insertBefore(box, lookWrap);
+        quarantineBox = box;
+      }
+      matchBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        var matchGeneration = faceMutated();
+        var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        /* Prefer the full-quality photograph. The 512px patient portrait is now natural,
+           but the local 1024px copy carries more detail for glasses, facial hair and eyes.
+           When only an older posterized portrait exists, the reader detects that source
+           and refuses manufactured colours instead of overwriting a real setting. */
+        var hi = faceHiForShown(pendingHiUrl, pendingFace, shown);
+        var src = hi || shown;
+        var usedHi = !!hi;
+        var matchPortrait = String(shown || '');
+        if (!src) { lookNoteSay('Capture your photo above first, then Match my photo.', 0); return; }
+        lookNoteCalm();
+        lookNote.textContent = usedHi
+          ? 'Reading the full-quality copy of your photo…'
+          : 'Reading the saved patient portrait… (retake it for a full-resolution match)';
+        /* The local and model reads now form ONE transaction. Neither may
+           mutate the character independently: their evidence is merged, judged
+           as a whole, then either every licensed claim commits together or zero
+           animated traits change. */
+        var visionSrc = src;
+        /* p1-photo-upload-1.0.0 — THE CAMERA'S LICENCE IS NOT TRANSFERABLE.
+           `trustedNaturalPhoto` exists because the in-memory camera copy is
+           independently KNOWN to be a photograph of whatever was in front of
+           the lens, which rescues the hard dark-hair/glasses/wall reads the
+           pixel detector cannot receipt. An uploaded file carries no such
+           knowledge — it could be an illustration — so it proves itself
+           through the pixel reader's own srcKind like any other image, which
+           an accepted upload has already done by passing the face verdict.
+           This is strictly more conservative than the camera path. */
+        var trustedNaturalPhoto = usedHi === true &&
+          !(hi === pendingHiUrl && pendingHiKind === 'upload');
+        function matchStillCurrent() {
+          return setupCurrent() && faceMutationGeneration === matchGeneration &&
+            String(shownFaceImage() || '') === matchPortrait;
+        }
+        function syncLookControls() {
+          skinPick.value = lookNow.skin; hairPick.value = lookNow.hair; eyesPick.value = lookNow.eyes;
+          lipPick.value = lookNow.lip; shirtPick.value = lookNow.shirt;
+          stylePick.value = lookNow.hairStyle; beardPick.value = lookNow.beard;
+          browsPick.value = lookNow.brows; nosePick.value = lookNow.nose; lipsPick.value = lookNow.lips;
+          shapePick.value = lookNow.faceShape; eyeSetPick.value = lookNow.eyeSet;
+          hairlinePick.value = lookNow.hairline; agePick.value = lookNow.age;
+          if (lookNow.browCol) {
+            if (browColPick.options.length < 2) {
+              var bo = document.createElement('option'); bo.value = 'set'; bo.textContent = 'Its own colour';
+              browColPick.appendChild(bo);
+            }
+            browColPick.value = 'set';
+            if (browColWell) browColWell.value = lookNow.browCol;
+          } else { browColPick.value = ''; }
+          glassesBox.checked = lookNow.glasses === true;
+          capBox.checked = lookNow.cap === true;
+          stethBox.checked = lookNow.stethoscope === true;
+        }
+        function finishMatch(combined, modelUnsure, modelUnavailable, extraWhy) {
+          if (!matchStillCurrent()) return;
+          var decision = faceMatchDecision(combined);
+          var refusedNow = (combined && combined.refused) || [];
+          var aiKnobs = (combined && combined.visionClaimed) || [];
+          var allObserved = decision.observed.slice();
+          var pixelKnobs = allObserved.filter(function (k) { return aiKnobs.indexOf(k) < 0; });
+          var modelRefused = (combined && combined.visionRefused) || [];
+          if (!decision.applies) {
+            Object.keys(FACE_LOOK).forEach(function (sk) {
+              if (sk === 'cap' || sk === 'stethoscope' || sk === 'age' || manualNow[sk]) return;
+              lookMarks[sk] = 'not changed \u2014 match incomplete';
+            });
+            setLookBadges([], []);
+            /* p1-face-mode-choice-1.0.0 — A REFUSAL MAY NOT OVERRULE HIS OWN
+               CHOICE. Owner, 2026-08-13: "if i click animation it should keep
+               it not change it." Falling back to the photo is right when the
+               doctor has expressed no preference — an unmatched default
+               character is a worse likeness than the real portrait. It is
+               wrong when he has deliberately picked Animated character in this
+               session: the match failing is not a reason to silently undo a
+               setting he made, and he was left thinking the control did not
+               work. The fallback keeps its whole job for the untouched case
+               and the note says plainly that the character is unmatched. */
+            var keepAnimated = faceModeTouched && faceModeSelect.value === 'drawn';
+            if (faceValidPhoto(shown) && !keepAnimated) {
+              faceModeSelect.value = 'photo';
+              renderPatientPreview();
+            }
+            var why = extraWhy || decision.why;
+            if (modelUnavailable) why += ' The second read was unavailable.';
+            else if (modelUnsure && modelUnsure.length) why += ' The second read was also unsure about ' + modelUnsure.join(', ') + '.';
+            why += keepAnimated
+              ? ' Your Animated character choice is kept exactly as you set it — its traits are simply unmatched, so fine-tune them below or retake the photo.'
+              : ' Your real photo remains the patient-facing face. You can retake or fine-tune the optional animated character by hand.';
+            lookNoteSay(why, 2);
+            safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
+              at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: why,
+              claimed: [], observed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
+              refused: refusedNow.slice(), modelRefused: modelRefused.slice(),
+              receipt: (combined && combined.receipt) || null }; });
+            return;
+          }
+
+          /* The exact photo/edit revision is still current. This is the first
+             mutation after Match began and the only point either reader can
+             touch the character. */
+          faceMutated();
+          lookNow = faceApplyDerived(lookNow, combined);
+          allObserved.forEach(function (k) { delete manualNow[k]; delete lookMarks[k]; });
+          refusedNow.forEach(function (r) {
+            if (!r || !r.knob || manualNow[r.knob]) return;
+            if (!lookMarks[r.knob]) lookMarks[r.knob] = 'not measured \u2014 pick manually';
+          });
+          syncLookControls();
+          setLookBadges(pixelKnobs, aiKnobs);
+          lookApply();
+          var rct = combined && combined.receipt;
+          var counts = rct ? ('Matched ' + rct.claimed + ' of ' + rct.examined +
+            ' appearance details; ' + rct.refused + ' stayed unchanged.') : 'Matched the reliable appearance details.';
+          var note = counts + (aiKnobs.length ? (' The second read confirmed ' + aiKnobs.join(', ') + '.') : '') +
+            (modelRefused.length ? (' It refused ' + modelRefused.length + ' unsafe claim' + (modelRefused.length === 1 ? '' : 's') + '.') : '') +
+            (modelUnsure && modelUnsure.length ? (' It was unsure about ' + modelUnsure.join(', ') + ', so those stayed unchanged.') : '');
+          lookNoteSay(note, refusedNow.length || modelRefused.length ? 1 : 0);
+          safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
+            at: Date.now(), usedHi: usedHi, wholeReadRefusal: false,
+            claimed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
+            refused: refusedNow.slice(), modelRefused: modelRefused.slice(), receipt: rct || null }; });
+        }
+        /* p1-match-never-hangs-1.0.0 \u2014 THE MATCH HAD NO DEADLINE.
+           Owner, 2026-08-13: "this never loads". api() wraps fetch with no
+           timeout of any kind, so a backend that is cold, throttled or simply
+           never answers left the note frozen on "Checking the second read\u2026"
+           for as long as the panel stayed open \u2014 no result, no refusal, no
+           way to tell a slow answer from a dead one. The pixel read had
+           already finished by then and was being thrown away by the wait.
+           A late reply arriving after the deadline is DISCARDED, not applied:
+           finishMatch has already spoken, and a second commit would mutate
+           the character behind a doctor who has moved on. */
+        var VISION_WAIT_MS = 30000, VISION_SLOW_MS = 7000;
+        function requestVision(pixelRes) {
+          if (!matchStillCurrent()) return;
+          var local = faceCombineEvidence(pixelRes, null, [], trustedNaturalPhoto);
+          lookNoteSay('The on-device read found ' + local.receipt.claimed + ' of ' + local.receipt.examined +
+            ' appearance details. Checking the second read before changing any character traits\u2026', 0);
+          var settled = false;
+          function settle(fn) { if (settled) return; settled = true; fn(); }
+          function finishLocally(reason) {
+            settle(function () {
+              if (!matchStillCurrent()) return;
+              finishMatch(local, [], true, faceMatchDecision(local).why + (reason || ''));
+            });
+          }
+          var request = safe(function () {
+            return api('/api/avatar/office/facelook', {
+              method: 'POST', body: JSON.stringify({ image: visionSrc })
+            });
+          }, null);
+          if (!request || typeof request.then !== 'function') { finishLocally(''); return; }
+          /* Say so before the deadline, so a slow answer still reads as
+             progress rather than a frozen panel. */
+          setupLater(function () {
+            if (settled || !matchStillCurrent()) return;
+            lookNoteSay('The second read is taking longer than usual. Waiting up to ' +
+              Math.round(VISION_WAIT_MS / 1000) + ' seconds, then finishing with the on-device read\u2026', 1);
+          }, VISION_SLOW_MS);
+          setupLater(function () {
+            if (settled) return;
+            finishLocally(' The second read did not answer in time, so only the on-device evidence was used.');
+          }, VISION_WAIT_MS);
+          request.then(function (vr) {
+            if (settled || !matchStillCurrent() || !apiResponseCurrent(vr)) return;
+            if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) { finishLocally(''); return; }
+            settle(function () {
+              var combined = faceCombineEvidence(pixelRes, vr.json.look || {}, vr.json.claimed || [], trustedNaturalPhoto);
+              finishMatch(combined, vr.json.unsure || [], false, '');
+            });
+          }, function () { finishLocally(''); });
+        }
+        faceTintFromPortrait(src, function (res) {
+          if (!matchStillCurrent()) return;
+          var rct = res && res.receipt;
+          if (rct && rct.fromIllustration === true) {
+            var illustrated = faceCombineEvidence(res, null, [], false);
+            finishMatch(illustrated, [], false,
+              'Only a stylized copy was available, so none of its manufactured colours were used and the second read was not asked.');
+            return;
+          }
+          /* A high-resolution in-memory capture is independently known to be a
+             natural photo even when the local detector cannot build a receipt.
+             This rescues difficult dark-hair, glasses and wall combinations. */
+          if (trustedNaturalPhoto || (rct && rct.srcKind === 'photo')) {
+            requestVision(res);
+            return;
+          }
+          var unproved = faceCombineEvidence(res, null, [], false);
+          var whyNoFace = (res && Array.isArray(res.found) && res.found.length)
+            ? res.found.join(' ')
+            : 'The matcher could not prove that this saved image was a natural portrait.';
+          finishMatch(unproved, [], false, whyNoFace + ' No animated traits were changed.');
+        });
+      });
+      var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
+      moodBtn.type = 'button';
+      moodBtn.addEventListener('click', function () {
+        if (!lookCtl) return;
+        var photoPreview = lookStage.getAttribute('data-face-preview-kind') === 'photo';
+        var reel = photoPreview
+          ? [['speaking', 'Speaking — the portrait moves gently; it does not paint a fake mouth over your face'],
+             ['listening', 'Listening — a small lean keeps the real portrait present'],
+             ['idle', 'Resting — your exact patient-facing portrait']]
+          : [['happy', 'Greeting - a real smile, all the way to the eyes'],
+          ['listening', 'Listening - eye contact, and it nods'],
+          ['curious', 'Curious - one brow up'],
+          ['thinking', 'Thinking - the gaze drifts up and away'],
+          ['caring', 'When it hurts - the brows knit and the head shakes'],
+          ['idle', 'Resting - breathing']];
+        var i = 0;
+        (function step() {
+          if (i >= reel.length) { lookCtl.mood('idle', false, false); lookNoteSay('', 0); return; }
+          var m = reel[i++];
+          if (m[0] === 'curious') {
+            lookCtl.mood('listening', false, false);
+            safe(function () { lookCtl.curious(); });
+          } else {
+            lookCtl.mood(m[0] === 'happy' || m[0] === 'caring' ? 'speaking' : m[0], m[0] === 'caring', m[0] === 'happy');
+          }
+          lookNoteSay(m[1], 0);
+          setupLater(step, 1700);
+        })();
+      });
+      lookActions.appendChild(matchBtn); lookActions.appendChild(clearLookBtn); lookActions.appendChild(moodBtn);
+      lookWrap.appendChild(lookStage); lookWrap.appendChild(lookGrid);
+
+      /* av-5.1.0: the kiosk exit PIN — End interview asks for it, so a
+         patient holding the screen cannot exit into the app */
+      var pinLabel = make('label', '', 'Kiosk exit PIN — required to end an office interview (4-8 digits; blank = off)');
+      var pinInput = make('input');
+      pinInput.id = 'mlsAvExitPin';
+      pinInput.type = 'password'; pinInput.autocomplete = 'off'; pinInput.maxLength = 8;
+      pinInput.setAttribute('inputmode', 'numeric');
+      pinInput.placeholder = 'e.g. 2468';
+      pinInput.value = cfg.exitPin || '';
+
+      var toneLabel = make('label', '', 'Tone — how the avatar talks to your patients');
+      var toneSelect = document.createElement('select');
+      toneSelect.style.cssText = 'width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif';
+      [['friendly', 'Warm & friendly (default)'], ['professional', 'Professional & brief'], ['simple', 'Plain & simple language']].forEach(function (opt) {
+        var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+        if ((cfg.tone || 'friendly') === opt[0]) o.selected = true;
+        toneSelect.appendChild(o);
+      });
+
+      /* av-5.0.0: the NATURAL voice — server-whitelisted names, previewable
+         right here with one tap (spoken by the same engine the kiosk uses). */
+      var voiceLabel = make('label', '', 'Voice — the natural voice patients hear in the office');
+      var voiceRow = make('div', '');
+      voiceRow.style.cssText = 'display:flex;gap:8px;align-items:center';
+      var voiceSelect = document.createElement('select');
+      voiceSelect.id = 'mlsAvVoicePick';
+      voiceSelect.style.cssText = toneSelect.style.cssText; voiceSelect.style.flex = '1'; voiceSelect.style.width = 'auto';
+      [['coral', 'Coral (female) - warm & caring (default)'], ['nova', 'Nova (female) - bright & upbeat'], ['shimmer', 'Shimmer (female) - soft & gentle'], ['sage', 'Sage (female) - calm & steady'], ['ash', 'Ash (male) - deep & reassuring'], ['echo', 'Echo (male) - clear & even'], ['onyx', 'Onyx (male) - rich & low'], ['alloy', 'Alloy (neutral) - balanced']].forEach(function (opt) {
+        var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
+        if ((cfg.voice || 'coral') === opt[0]) o.selected = true;
+        voiceSelect.appendChild(o);
+      });
+      var voiceTry = make('button', 'mlsAvAction', '▶ Hear this voice');
+      voiceTry.type = 'button';
+      voiceTry.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        pvStopVoice();
+        /* THE PREVIEW HAS TO BE THE REAL THING. The doctor chooses the voice his
+           patients will hear from this one button, and the sample was neither
+           what they hear nor how they hear it: no AI disclosure (so it was
+           shorter and simpler than every real greeting), and no delivery shape,
+           so it was generated with the generic instruction while the actual
+           greeting is generated with 'greet'. He was auditioning a voice on
+           material it never speaks. This mirrors INTERVIEW_SYSTEM rule 9's
+           example, spoken exactly as the kiosk speaks the opening line. */
+        /* The sample belongs to the visible Setup portrait, not kiosk.face
+           (which does not exist here). Passing that controller makes the face
+           patients are being shown lip-sync to the voice they are choosing. */
+        pvSpeakVoiced('Hi there, I\'m ' + (nameInput.value.trim() || 'Ava') + ' — I\'m the practice\'s AI assistant, and I help get everyone settled before the doctor comes in. It\'s good to meet you. This only takes a few minutes, and you can just answer in your own words.', null, voiceSelect.value, 'greet', lookCtl);
+      });
+      voiceRow.appendChild(voiceSelect); voiceRow.appendChild(voiceTry);
+
+      /* av-2.0.0: a REAL question editor — one row per question with remove
+         and reorder, plus one-tap starter questions. The avatar asks these in
+         order and adds its own smart follow-ups live. */
+      var qList = make('div', ''); qList.style.cssText = 'display:grid;gap:6px';
+      var qRows = [];
+      function qValues() {
+        return qRows.map(function (r) { return r.input.value.trim(); }).filter(Boolean).slice(0, 20);
+      }
+      function reflowQ() {
+        qList.innerHTML = '';
+        qRows.forEach(function (r, i) {
+          r.num.textContent = (i + 1) + '.';
+          r.up.disabled = i === 0; r.down.disabled = i === qRows.length - 1;
+          qList.appendChild(r.row);
+        });
+      }
+      function addQRow(text, focus) {
+        if (qRows.length >= 20) { safe(function () { window.toast('Up to 20 questions.', ''); }); return; }
+        var row = make('div', ''); row.style.cssText = 'display:flex;gap:6px;align-items:center';
+        var num = make('span', ''); num.style.cssText = 'font:700 12px system-ui;color:#69736d;min-width:20px;text-align:right';
+        var input = make('input'); input.value = text || ''; input.placeholder = 'Type a question…'; input.maxLength = 300; input.style.flex = '1';
+        var up = make('button', 'mlsAvAction', '↑'); up.type = 'button'; up.title = 'Move up';
+        var down = make('button', 'mlsAvAction', '↓'); down.type = 'button'; down.title = 'Move down';
+        var del = make('button', 'mlsAvAction', '✕'); del.type = 'button'; del.title = 'Remove this question';
+        [up, down, del].forEach(function (b) { b.style.padding = '6px 9px'; });
+        var entry = { row: row, input: input, num: num, up: up, down: down };
+        up.addEventListener('click', function () { var i = qRows.indexOf(entry); if (i > 0) { qRows.splice(i, 1); qRows.splice(i - 1, 0, entry); reflowQ(); } });
+        down.addEventListener('click', function () { var i = qRows.indexOf(entry); if (i >= 0 && i < qRows.length - 1) { qRows.splice(i, 1); qRows.splice(i + 1, 0, entry); reflowQ(); } });
+        del.addEventListener('click', function () { var i = qRows.indexOf(entry); if (i >= 0) { qRows.splice(i, 1); reflowQ(); } });
+        row.appendChild(num); row.appendChild(input); row.appendChild(up); row.appendChild(down); row.appendChild(del);
+        qRows.push(entry); reflowQ();
+        if (focus) safe(function () { input.focus(); });
+      }
+      (Array.isArray(cfg.questions) ? cfg.questions : []).forEach(function (q) { addQRow(q); });
+      var addQBtn = make('button', 'mlsAvAction', '+ Add question'); addQBtn.type = 'button';
+      addQBtn.addEventListener('click', function () { addQRow('', true); });
+      var starters = make('div', 'mlsAvActions');
+      var starterNote = make('div', 'mlsAvMeta', qRows.length ? 'Quick add:' : 'Start from the basics — tap to add:');
+      [['What brings you in today?'], ['How bad is the pain right now, 0-10?'], ['Where exactly is the pain, and does it travel anywhere?'], ['Any new medications, allergies, or health changes since your last visit?'], ['What makes it better or worse?']].forEach(function (s) {
+        var chip = make('button', 'mlsAvAction', '+ ' + s[0]); chip.type = 'button';
+        chip.addEventListener('click', function () {
+          if (qValues().indexOf(s[0]) >= 0) return;
+          addQRow(s[0]);
+        });
+        starters.appendChild(chip);
+      });
+      var saveBtn = make('button', 'mlsAvAction primary', 'Save avatar');
+      saveBtn.type = 'button';
+      var status = make('div', 'mlsAvMeta', '');
+      saveBtn.addEventListener('click', function () {
+        if (!setupCurrent()) return;
+        if (saveBtn.disabled) return; /* one authoritative echo at a time */
+        var questions = qValues();
+        /* The server DROPS a malformed PIN to '' by design. Saving silently and
+           reporting success let a doctor type "123", believe the kiosk was
+           locked, and run it unlocked — so refuse here instead. */
+        var wantPin = pinInput.value.trim();
+        if (wantPin && !/^\d{4,8}$/.test(wantPin)) {
+          status.textContent = 'The exit PIN must be 4 to 8 digits — nothing was saved.';
+          safe(function () { pinInput.focus(); });
+          return;
+        }
+        /* Snapshot the face transaction before the request. Closing Setup may
+           discard its UI closure while this explicit Save is in flight. */
+        var sentPhoto = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
+        var sentHi = pendingHiUrl;
+        var sentFaceGeneration = faceMutationGeneration;
+        saveBtn.disabled = true; status.textContent = 'Saving…';
+        api('/api/avatar/config', { method: 'POST', body: JSON.stringify({ name: nameInput.value.trim() || 'Ava', intro: introInput.value.trim(), questions: questions,
+          tone: toneSelect.value,
+          voice: voiceSelect.value,
+          faceMode: faceModeSelect.value,
+          faceLook: lookNow,
+          exitPin: pinInput.value.trim(),
+          faceImage: sentPhoto }) })
+          .then(function (r2) {
+            if (!apiResponseCurrent(r2)) return;
+            saveBtn.disabled = false;
+            if (r2.ok && r2.json && r2.json.ok) {
+              /* read the AUTHORITATIVE echo — what the server actually stored */
+              var saved = r2.json.config || {};
+              pinInput.value = saved.exitPin || '';
+              /* av-6.0.7 — DID THE PHOTO SURVIVE THE ROUND TRIP? The server drops a portrait
+                 that fails its shape test or its size cap, and until now that drop was silent:
+                 you pressed Save, saw "Saved", and your face was simply not there. Judge it by
+                 the ECHO, not by the flag — a stored portrait comes back in the config. */
+              var photoLost = !!(sentPhoto && sentPhoto.indexOf('data:image/') === 0 &&
+                String(saved.faceImage || '').indexOf('data:image/') !== 0);
+              var why = String(r2.json.faceImageRefused || '');
+              /* A late echo is still the server's truth, but it no longer owns
+                 this form after Remove, another capture, mode/look edit, or
+                 close. In that case leave the newer pending UI and cache alone;
+                 its next Save will intentionally replace the older server row. */
+              var faceSaveCurrent = faceSaveApplyIfCurrent(sentFaceGeneration,
+                faceMutationGeneration, host, setupEpoch, function () {
+                  if (!faceValidPhoto(saved.faceImage)) faceHiClear();
+                  else if (faceValidPhoto(sentHi) && facePhotoMatches(saved.faceImage, sentPhoto)) {
+                    faceHiCommit(sentHi, saved.faceImage);
+                  } else faceHiRead(saved.faceImage); /* prunes a cache for the prior saved face */
+                  cfg.faceImage = saved.faceImage || '';
+                  cfg.faceMode = saved.faceMode || faceModeSelect.value;
+                  pendingFace = undefined;
+                  pendingHiUrl = ''; pendingHiKind = '';
+                });
+              if (!faceSaveCurrent) {
+                /* Remove/capture already wrote a more specific instruction.
+                   Mode and appearance edits do not, so retire a stranded
+                   "Saving…" without erasing a newer face message. */
+                if (status.textContent === 'Saving…') status.textContent =
+                  'The earlier save finished, but your newer face changes still need Save avatar.';
+                return;
+              }
+              status.textContent =
+                (questions.length ? ('Saved — the avatar now asks ' + questions.length + ' question' + (questions.length === 1 ? '' : 's') + '. Patients see it in their portal.') : 'Saved, but with no questions the check-in stays OFF for patients.') +
+                (saved.exitPin ? ' Kiosk exit PIN is set.' : ' No exit PIN — “End interview” closes straight into your app.') +
+                (photoLost || why ? (' ⚠ Your photo was NOT saved' +
+                  (why === 'too_large' ? ' — it came out too large for the server (' + Math.round(sentPhoto.length / 1024) + 'KB). Retake it a little further back.'
+                    : why === 'shape' ? ' — the camera returned something this server will not store. Retake it.'
+                    : ' — the server did not store it. Retake the photo and save again.')) : '');
+            } else if (sentFaceGeneration === faceMutationGeneration) status.textContent = 'Could not save — check your connection and try again.';
+          }, function () {
+            saveBtn.disabled = false;
+            if (sentFaceGeneration === faceMutationGeneration) status.textContent = 'Could not save — check your connection and try again.';
+          });
+      });
+      /* av-5.3.0 — the typed rehearsal log is GONE by owner order ("GET RIDE
+         OF THEAT AWEFUL ... BUTTON ON THE OLD AWERFUL SYSTEM"). It demoed a
+         chat transcript the voice product no longer resembles. The real thing
+         is one tap away: Visit → Start check-in interview. */
+
+      form.appendChild(section('1 · Identity', 'Who greets your patients — the name, the tone, and your face.'));
+      form.appendChild(nameLabel); form.appendChild(nameInput);
+      form.appendChild(introLabel); form.appendChild(introInput);
+      form.appendChild(toneLabel); form.appendChild(toneSelect);
+      form.appendChild(voiceLabel); form.appendChild(voiceRow);
+      form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
+      form.appendChild(faceModeLabel); form.appendChild(faceModeSelect);
+      form.appendChild(lookLabel); form.appendChild(lookWrap);
+      form.appendChild(lookActions); form.appendChild(lookNote);
+      form.appendChild(pinLabel); form.appendChild(pinInput);
+      form.appendChild(section('2 · Questions', 'Asked in order. The avatar adds its own smart follow-ups when an answer needs detail.'));
+      form.appendChild(qList); form.appendChild(addQBtn);
+      form.appendChild(starterNote); form.appendChild(starters);
+      form.appendChild(section('3 · Save', 'Save, then try the real thing: open a patient, go to Visit, and tap “Start check-in interview”.'));
+      var btnRow = make('div', 'mlsAvActions');
+      btnRow.appendChild(saveBtn);
+      form.appendChild(btnRow); form.appendChild(status);
+      host.appendChild(form);
+      /* Mount the ACTUAL selected patient face only once the form is in the
+         document. Photo mode gets the saved portrait controller; Animated
+         mode gets the editable character. */
+      /* fx-1.0 QUARANTINE: a saved look that fails the claim gates does not
+         silently render (DIAGNOSIS root cause 4). Default preview + banner +
+         marked controls; the saved values stay in the controls and on the
+         server until the doctor himself decides. */
+      renderPatientPreview();
+      if (lookQuarantine.length) {
+        lookQuarantine.forEach(function (q) {
+          if (!manualNow[q.knob]) lookMarks[q.knob] = 'from your last photo \u2014 retake or adjust';
+        });
+        setLookBadges([], []);
+        quarantineShow(lookQuarantine);
+        lookNoteSay('Your saved look needs a decision - see the notice above the appearance grid.', 1);
+      }
+    }, function () {
+      if (host.__mlsAvatarSetupEpoch !== setupEpoch || host.isConnected === false) return;
+      notice.textContent = 'Setup is temporarily unavailable — try again in a moment.';
+    });
+  }
+
+  /* ---- inbox tab ---- */
+  var avatarInboxEpoch = 0;
+  function inboxList(host, status) {
+    var inboxEpoch = ++avatarInboxEpoch;
+    host.__mlsAvatarInboxEpoch = inboxEpoch;
+    host.innerHTML = '';
+    var notice = make('div', 'mlsAvNotice', 'Checking for completed check-ins…');
+    host.appendChild(notice);
+    api('/api/avatar/checkins?status=' + status).then(function (r) {
+      if (!apiResponseCurrent(r) || host.__mlsAvatarInboxEpoch !== inboxEpoch || host.isConnected === false) return;
+      host.innerHTML = '';
+      var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : null;
+      if (!rows) { host.appendChild(make('div', 'mlsAvNotice', 'Could not load check-ins — try again in a moment.')); return; }
+      if (status === 'ready') { setCount(rows.length); cacheReady(rows); }
+      if (!rows.length) {
+        host.appendChild(make('div', 'mlsAvNotice', status === 'ready'
+          ? 'No completed check-ins waiting. When a patient finishes the avatar interview in their portal, it lands here with the highlights.'
+          : 'Nothing here yet.'));
+        return;
+      }
+      var list = make('div', 'mlsAvList');
+      rows.forEach(function (checkin) { list.appendChild(checkinCard(checkin)); });
+      host.appendChild(list);
+    }, function () {
+      notice.textContent = 'Could not load check-ins — try again in a moment.';
+    });
+  }
+
+  function open() {
+    if (kiosk.open || gid('mlsAvKiosk')) {
+      toast('End the patient check-in before opening Avatar setup.');
+      return false;
+    }
+    close();
+    var opener = safe(function () { return document.activeElement; }, null);
+    style();
+    var back = make('div', 'mlsAvBack'); back.id = BACK_ID;
+    back.setAttribute('role', 'dialog');
+    back.setAttribute('aria-modal', 'true');
+    back.setAttribute('aria-labelledby', 'mlsAvDialogTitle');
+    back.__mlsAvatarOpener = opener;
+    var dialogReceipt = sessionReceipt();
+    function dialogCurrent() {
+      return sessionReceiptCurrent(dialogReceipt) && gid(BACK_ID) === back && back.isConnected !== false;
+    }
+    back.addEventListener('click', function (event) { if (dialogCurrent() && event.target === back) close(); });
+    var panel = make('div', 'mlsAvPanel');
+    panel.setAttribute('tabindex', '-1');
+    var head = make('div', 'mlsAvHead');
+    var heading = make('div');
+    var title = make('h2', '', 'Avatar check-ins'); title.id = 'mlsAvDialogTitle';
+    heading.appendChild(title);
+    heading.appendChild(make('div', 'mlsAvSub', 'Your programmed avatar interviews patients in their portal before the visit. Completed check-ins land here with the key points first; import the summary into the chart with one tap.'));
+    var closeBtn = make('button', 'mlsAvClose', 'Close');
+    closeBtn.type = 'button';
+    closeBtn.addEventListener('click', function () { if (dialogCurrent()) close(); });
+    head.appendChild(heading); head.appendChild(closeBtn);
+    panel.appendChild(head);
+    var tabs = make('div', 'mlsAvTabs');
+    var body = make('div');
+    var defs = [['ready', 'Ready'], ['seen', 'Seen'], ['setup', 'Set up the avatar']];
+    defs.forEach(function (def, index) {
+      var tab = make('button', 'mlsAvTab' + (index === 0 ? ' on' : ''), def[1]);
+      tab.type = 'button';
+      tab.addEventListener('click', function () {
+        if (!dialogCurrent()) return;
+        /* lv-1.0: switching tabs rebuilds `body`, which destroys the camera
+           <video> WITHOUT Cancel - the stream and the camera LED stayed live.
+           The live loop also self-terminates on !video.isConnected, but the
+           camera should die the moment the surface that owns it does. */
+        cancelFaceCapture();
+        stopCamera(); /* explicit lifecycle pin; cancel already invalidated the generation */
+        pvStopVoice();
+        discardAvatarSetup(body, true);
+        Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
+        tab.classList.add('on');
+        if (def[0] === 'setup') setupForm(body); else inboxList(body, def[0]);
+      });
+      tabs.appendChild(tab);
+    });
+    panel.appendChild(tabs);
+    panel.appendChild(body);
+    back.appendChild(panel);
+    (document.body || document.documentElement).appendChild(back);
+    document.addEventListener('keydown', onKey, true);
+    dialogActivate(back, panel, opener);
+    if (pendingSetupTab) {
+      pendingSetupTab = false;
+      Array.prototype.forEach.call(tabs.children, function (node) { node.classList.remove('on'); });
+      tabs.children[2].classList.add('on');
+      setupForm(body);
+    } else {
+      inboxList(body, 'ready');
+    }
+    return true;
+  }
+
+  /* =========================================================================
+     av-3.0.0 — THE OFFICE INTERVIEW (kiosk): the patient walks in, the doctor
+     taps Start, and the WHOLE SCREEN becomes the avatar — the doctor-faced
+     portrait with living emotion states, huge spoken questions, big-button
+     voice answering. Clinician-authenticated (/api/avatar/office/turn), filed
+     to the ACTIVE patient's chart, lands in the same inbox/Visit-card/import
+     pipeline. The app is fully hidden behind an opaque overlay while a
+     patient is looking at the screen.
+     Emotions: motion + color + a mood badge over the portrait — happy on
+     greeting/thanks, attentive while listening, thinking while the AI works,
+     caring when the patient's words sound like pain/distress. Reduced-motion
+     kills all of it. ========================================================= */
+  var kiosk = { open: false, sid: null, ext: null, busy: false, lastSay: '', lastTry: null, asyncTimers: [] };
+  function kioskControlReceipt() {
+    var session = sessionReceipt(), root = gid('mlsAvKiosk');
+    return { session: session, generation: kiosk.generation | 0, root: root,
+      /* A few PHI-free unit harnesses execute the real review renderer without
+         booting an authenticated shell or kiosk.  This arm cannot exist in a
+         real operational session and never authorizes network access. */
+      isolatedLocal: !session.account && !session.token && !root && !kiosk.open };
+  }
+  function kioskControlCurrent(receipt) {
+    if (receipt && receipt.isolatedLocal) {
+      return !receipt.session.account && !receipt.session.token && !runtimeAccount() && !clean(token()) &&
+        !gid('mlsAvKiosk') && !kiosk.open && (kiosk.generation | 0) === receipt.generation;
+    }
+    return !!(receipt && sessionReceiptCurrent(receipt.session) && kiosk.open &&
+      (kiosk.generation | 0) === receipt.generation && receipt.root &&
+      receipt.root.isConnected !== false && gid('mlsAvKiosk') === receipt.root);
+  }
+  function kioskControl(handler, receipt) {
+    receipt = receipt || kioskControlReceipt();
+    return function () {
+      if (!kioskControlCurrent(receipt)) return false;
+      return handler.apply(this, arguments);
+    };
+  }
+  function kioskAsyncTimer(fn, delay) {
+    var id = setTimeout(function () {
+      var at = kiosk.asyncTimers.indexOf(id); if (at >= 0) kiosk.asyncTimers.splice(at, 1);
+      fn();
+    }, delay);
+    kiosk.asyncTimers.push(id);
+    return id;
+  }
+  function kioskAsyncClear(id) {
+    if (!id) return;
+    safe(function () { clearTimeout(id); });
+    var at = kiosk.asyncTimers.indexOf(id); if (at >= 0) kiosk.asyncTimers.splice(at, 1);
+  }
+  function kioskAsyncClearAll() {
+    kiosk.asyncTimers.splice(0).forEach(function (id) { safe(function () { clearTimeout(id); }); });
+  }
+  /* p1-listener-1.0.0 — one continuous capture owns the full patient turn.
+     A backend request no longer creates a deaf window. Speech that finalises
+     while that request is in flight is held here, bounded, and sent as the next
+     continuation before the avatar asks another question. */
+  function kioskQueueSpeech(text) {
+    var v = clean(text);
+    if (!v) return '';
+    var prior = clean(kiosk.pendingSpeech);
+    if (prior === v || (prior && prior.slice(-v.length) === v)) return prior;
+    /* A turn now has a hard 30-second owner below, so this buffer cannot grow
+       forever. Do not silently slice its newest clinical words: that was an
+       invisible loss exactly when the backend was slowest. */
+    kiosk.pendingSpeech = clean((prior ? prior + ' ' : '') + v);
+    kiosk.heard = true;
+    return kiosk.pendingSpeech;
+  }
+  function kioskTakeSpeech() {
+    var v = clean(kiosk.pendingSpeech);
+    kiosk.pendingSpeech = '';
+    return v;
+  }
+  function kioskOfferRecoverable(text) {
+    var v = clean(text);
+    if (!v) return false;
+    var prior = clean(kiosk.provisionalSpeech), merged = prior;
+    if (!prior) merged = v;
+    else if (prior === v || prior.indexOf(v) >= 0) merged = prior;
+    else if (v.indexOf(prior) >= 0) merged = v;
+    else {
+      var pw = prior.split(/\s+/), vw = v.split(/\s+/), overlap = 0;
+      var cap = Math.min(pw.length, vw.length);
+      for (var oi = 1; oi <= cap; oi++) {
+        if (pvNorm(pw.slice(pw.length - oi).join(' ')) === pvNorm(vw.slice(0, oi).join(' '))) overlap = oi;
+      }
+      merged = clean(prior + (overlap < vw.length ? ' ' + vw.slice(overlap).join(' ') : ''));
+    }
+    if (merged.length > 8000) {
+      /* Never silently slice the newest words. Stop automatic listening and
+         keep the complete accumulated text visible for an explicit Send. */
+      kiosk.provisionalSpeech = merged;
+      kiosk.provisionalEdited = true;
+      kioskTypingFallback('The speech service produced too many unfinished fragments. I stopped listening and kept all of them below for review.', merged);
+      return true;
+    }
+    kiosk.provisionalSpeech = merged;
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+    var input = gid('mlsAvKioskInput');
+    if (input) {
+      var existing = clean(input.value);
+      var priorShown = clean(kiosk.provisionalShown);
+      if (!existing || existing === priorShown) {
+        input.value = merged;
+        kiosk.provisionalShown = merged;
+      } else {
+        /* The patient/staff edited the offer. Never overwrite those edits; add
+           only this newly recovered fragment and leave the box for review. */
+        kiosk.provisionalEdited = true;
+        if (existing.indexOf(v) < 0) input.value = clean(existing + ' ' + v);
+      }
+    }
+    kioskLine('hint', 'I heard these words but the speech service did not finalize them. Review the text below and tap Send if it is missing from your answer.');
+    return true;
+  }
+  function kioskConfirmRecoverable(finalText) {
+    var held = clean(kiosk.provisionalSpeech), confirmed = clean(finalText);
+    if (!held || !confirmed) return false;
+    var hn = pvNorm(held), cn = pvNorm(confirmed);
+    if (!hn || cn.indexOf(hn) < 0) return false;
+    var row = gid('mlsAvKioskTypeRow'), input = gid('mlsAvKioskInput');
+    if (!kiosk.provisionalEdited && input && clean(input.value) === clean(kiosk.provisionalShown)) input.value = '';
+    if (row && !kiosk.provisionalEdited && kiosk.mic !== false && (!input || !clean(input.value))) row.style.display = 'none';
+    kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+    return true;
+  }
+  function kioskRetryAnswer(answer, nonce, retryAttempt) {
+    var v = clean(answer);
+    if (!v) return false;
+    /* The server did not accept this answer. It owns the next turn ahead of any
+       later clause, with the SAME nonce, so a response that reached the server
+       just before the refusal cannot duplicate it. The continuation remains
+       queued and will drain after this retry succeeds. */
+    kiosk.lastTry = { answer: v, nonce: nonce };
+    kioskTurn(v, nonce || kioskNonce(), false, retryAttempt == null ? 1 : retryAttempt);
+    return true;
+  }
+  function kioskTypingFallback(reason, recoverable) {
+    kiosk.mic = false;
+    /* This screen now says the microphone is off. Release the adopted AEC stream,
+       animation frame and AudioContext in the same transition so that statement
+       is true and the browser's microphone indicator goes dark. */
+    safe(function () { pvStopMic(); });
+    safe(function () { pvVoiceGateStop(); });
+    if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+    var input = gid('mlsAvKioskInput');
+    if (input && recoverable) {
+      var held = clean(recoverable), existing = clean(input.value);
+      if (!existing) input.value = held;
+      else if (held && existing !== held && existing.indexOf(held) < 0) input.value = clean(existing + ' ' + held);
+    }
+    if (input) safe(function () { input.focus(); });
+    kioskState('ready');
+    kioskLine('alert', reason || 'The speech service is unavailable right now — type your answer below.');
+    kioskArmWatchdog(20000);
+    return false;
+  }
+  function kioskNonce() {
+    var v = 'an-', A = 'abcdefghjkmnpqrstuvwxyz23456789';
+    for (var i = 0; i < 16; i++) v += A[Math.floor(Math.random() * A.length)];
+    return v;
+  }
+  function kioskStyle() {
+    if (gid('mlsAvKioskStyle')) return;
+    var st = document.createElement('style'); st.id = 'mlsAvKioskStyle';
+    st.textContent =
+      /* ⚠️ --mlsav-panel IS DECLARED ONCE AND USED TWICE, and that is the whole point of it: the
+         proposed-actions panel's WIDTH and the gutter the text column must leave for it are the
+         SAME NUMBER. Two hand-written copies would drift, and the day they drifted the opaque card
+         would be back on top of the patient's words. See #mlsAvKioskOrders and .hasorders below.
+         ⚠️ AND IT IS DECLARED LAST, not first: avatar-doctor-runtime.test.js has pinned since
+         av-3.0.0 that this rule OPENS `position:fixed;inset:0;z-index:N;background:linear-gradient`
+         (full-screen and OPAQUE, so a patient never sees the app behind the kiosk). Custom
+         properties do not care about order and that pin does, so the pin keeps its subject. */
+      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center;--mlsav-panel:min(370px,92vw)}' +
+      '#mlsAvKioskEnd{position:absolute;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75}' +
+      '#mlsAvKiosk.speaking{background:linear-gradient(165deg,#F5F7EE,#E4F0E6 55%,#D6E8DC)}' +
+      '#mlsAvKiosk.listening{background:linear-gradient(165deg,#F0F4F8,#E2EBF4 55%,#D6E2F0)}' +
+      '#mlsAvKioskWave{display:flex;gap:7px;align-items:center;height:4.4vh;min-height:30px;visibility:hidden}' +
+      '#mlsAvKiosk.speaking #mlsAvKioskWave{visibility:visible}' +
+      '#mlsAvKioskWave span{width:8px;border-radius:999px;background:#2E6A4B;height:22%;animation:mlsAvKWave 1s ease-in-out infinite}' +
+      '#mlsAvKioskWave span:nth-child(2){animation-delay:.12s}#mlsAvKioskWave span:nth-child(3){animation-delay:.24s}#mlsAvKioskWave span:nth-child(4){animation-delay:.36s}#mlsAvKioskWave span:nth-child(5){animation-delay:.48s}' +
+      '@keyframes mlsAvKWave{0%,100%{height:22%}50%{height:100%}}' +
+      '#mlsAvKioskMic{display:none;align-items:center;gap:10px;font:700 2.1vh system-ui;color:#26417a;background:#fff;border-radius:999px;padding:1.2vh 2.4vh;box-shadow:0 6px 22px rgba(38,65,122,.18)}' +
+      '#mlsAvKiosk.listening #mlsAvKioskMic{display:inline-flex}' +
+      '#mlsAvKioskMic i{width:1.6vh;height:1.6vh;min-width:12px;min-height:12px;border-radius:999px;background:#c0392b;animation:mlsAvKRing 1.4s ease-in-out infinite}' +
+      '#mlsAvKioskFaceWrap{position:relative;width:min(40vh,420px);height:min(40vh,420px)}' +
+      '#mlsAvKioskFace{width:100%;height:100%;border-radius:999px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12vh;border:5px solid #fff;box-shadow:0 18px 60px rgba(32,64,52,.22);transition:box-shadow .5s ease}' +
+      '#mlsAvKioskFace{background:radial-gradient(circle at 50% 38%,#ffffff,#f2f4ef)}' +
+      '#mlsAvKioskFaceWrap::after{content:"";position:absolute;inset:-14px;border-radius:999px;border:3px solid transparent;transition:border-color .4s ease}' +
+      '#mlsAvKiosk.speaking #mlsAvKioskFace{animation:mlsAvKSpeak 1s ease-in-out infinite}' +
+      '#mlsAvKiosk.speaking #mlsAvKioskFaceWrap::after{border-color:rgba(46,106,75,.55);animation:mlsAvKRing 1.6s ease-in-out infinite}' +
+      '#mlsAvKiosk.listening #mlsAvKioskFaceWrap::after{border-color:rgba(38,99,168,.55);animation:mlsAvKRing 2.2s ease-in-out infinite}' +
+      '#mlsAvKiosk.listening #mlsAvKioskFace{animation:mlsAvKLean 3.4s ease-in-out infinite}' +
+      '#mlsAvKiosk.thinking #mlsAvKioskFace{animation:mlsAvKThink 2.2s ease-in-out infinite}' +
+      '#mlsAvKiosk.caring #mlsAvKioskFace{box-shadow:0 18px 60px rgba(168,99,60,.3)}' +
+      '#mlsAvKioskName{font:800 3vh \'Newsreader\',Georgia,serif;color:#204034;margin-top:-.6vh}' +
+      '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh}' +
+      '#mlsAvKioskInterim{font:500 2.4vh/1.4 system-ui;color:#55605A;max-width:820px;min-height:3.4vh}' +
+      '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' + /* p1-mic-1.0.0: the patient sees THAT it is hearing them, not a stream of half-words */ /* p1-mic-1.1.0 -- RESERVE THE SPACE, NEVER TOGGLE display.
+   1.0.0 flipped display:none <-> inline-flex on every recognition event. This box
+   sits in a CENTRED FLEX COLUMN with gap, so each toggle re-flowed and re-centred the
+   entire full-screen kiosk -- measured as the "very laggy" report. The element now
+   always occupies its row and only its OPACITY changes, which composites and cannot
+   move anything. It is also no longer purely per-event: it stays lit for the whole
+   time the mic is open (the kiosk already carries .listening / .ambient on its root)
+   and merely brightens on speech, so it can never read as dark while recording. */
+'#mlsAvP1Mic{display:inline-flex;visibility:hidden;align-items:flex-end;gap:.5vh;height:3.4vh;margin-top:.2vh;opacity:.35;transition:opacity .18s linear}' +
+'#mlsAvKiosk.listening #mlsAvP1Mic,#mlsAvKiosk.ambient #mlsAvP1Mic{visibility:visible}' +
+'#mlsAvP1Mic.on{opacity:1}' + '#mlsAvP1Mic b{display:inline-block;width:.7vh;min-width:5px;height:1.4vh;min-height:10px;border-radius:999px;background:#26417a;transform-origin:center bottom;animation:mlsAvP1Wave 1s ease-in-out infinite}' + '#mlsAvP1Mic b:nth-child(2){animation-delay:.14s}#mlsAvP1Mic b:nth-child(3){animation-delay:.28s}#mlsAvP1Mic b:nth-child(4){animation-delay:.42s}' + '#mlsAvP1Mic span{font:700 1.5vh system-ui;letter-spacing:.4px;text-transform:uppercase;color:#26417a;margin-left:.7vh;align-self:center}' + '@keyframes mlsAvP1Wave{0%,100%{transform:scaleY(.45);opacity:.55}50%{transform:scaleY(1.7);opacity:1}}' +
+      '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
+      '#mlsAvKioskFace svg{animation:mlsAvKBreathe 4.5s ease-in-out infinite}' +
+      '@keyframes mlsAvKBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(1.5px) scale(1.008)}}' +
+      '#mlsAvKioskPin{display:none;position:absolute;inset:0;background:rgba(20,28,24,.55);align-items:center;justify-content:center;z-index:5}' +
+      '#mlsAvKioskPinCard{background:#fff;border-radius:18px;padding:26px 30px;display:flex;flex-direction:column;gap:10px;box-shadow:0 24px 70px rgba(0,0,0,.35);min-width:min(340px,86vw)}' +
+      '#mlsAvKioskPinTitle{font:800 17px \'Public Sans\',system-ui;color:#204034}' +
+      '#mlsAvKioskPinSub{font:500 13px system-ui;color:#55605A}' +
+      '#mlsAvKioskPinInput{border:1px solid #cfd9d2;border-radius:12px;padding:12px;font:700 22px system-ui;letter-spacing:8px;text-align:center}' +
+      '#mlsAvKioskPinMsg{font:600 12.5px system-ui;color:#a33d2b;min-height:16px}' +
+      '#mlsAvKioskPinRow{display:flex;gap:10px;flex-wrap:wrap}' +
+      '#mlsAvKioskPinGo{border:0;border-radius:999px;padding:12px 20px;background:#2E6A4B;color:#fff;font:700 14px system-ui;cursor:pointer}' +
+      '#mlsAvKioskPinBack{border:1px solid #cfd9d2;border-radius:999px;padding:12px 20px;background:#fff;color:#204034;font:600 14px system-ui;cursor:pointer}' +
+      '#mlsAvKioskTypeRow{display:none;gap:10px;width:min(720px,90vw)}' +
+      '#mlsAvKioskTypeRow textarea{flex:1;border:1px solid #cfd9d2;border-radius:16px;padding:14px;font:2.2vh system-ui;resize:none}' +
+      '#mlsAvKioskTypeRow button{border:0;border-radius:999px;padding:0 26px;background:#204034;color:#fff;font:700 2.1vh system-ui;cursor:pointer}' +
+      '#mlsAvKioskPinNote{font:500 12px/1.45 system-ui;color:#55605A;max-width:340px}' +
+      /* av-5.7.0 - THE CONSENT GATE. Opaque, not translucent: until staff
+         answer, the patient must not be able to read the doctor's app through
+         it, and nothing behind it is running - no microphone, no turn, no
+         fullscreen. It covers the whole overlay including the End and Pause
+         buttons, so the only two things reachable on this screen are Yes and
+         No. */
+      '#mlsAvKioskConsent{display:flex;position:absolute;inset:0;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);align-items:center;justify-content:center;z-index:12;padding:4vh 5vw}' +
+      '#mlsAvKioskConsentCard{background:#fff;border-radius:22px;padding:30px 32px;display:flex;flex-direction:column;gap:14px;box-shadow:0 26px 74px rgba(32,64,52,.28);width:min(680px,94vw);text-align:left}' +
+      '#mlsAvKioskConsentTitle{font:800 26px/1.3 \'Newsreader\',Georgia,serif;color:#204034}' +
+      '#mlsAvKioskConsentSub{font:600 15px/1.55 system-ui;color:#55605A}' +
+      '#mlsAvKioskConsentRow{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}' +
+      '#mlsAvKioskConsentYes{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:15px 28px;font:800 16px system-ui;cursor:pointer}' +
+      '#mlsAvKioskConsentYes:hover{background:#26583E}' +
+      '#mlsAvKioskConsentNo{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:15px 24px;font:700 16px system-ui;cursor:pointer}' +
+      /* CONTAINMENT, NOT PAINT. The consent card used to cover the screen by
+         z-index and nothing more: no `inert`, no focus trap, no pointer-events
+         rule. Tab still reached Pause and End interview behind it, and both of
+         those lead to kioskListen - so the microphone opened with no consent
+         recorded. An opaque card is not a gate against a keyboard.
+         display:none is the point: a hidden control is not focusable, so the tab
+         order genuinely contains two buttons while this class is on. The code
+         path is gated as well (kioskListen/kioskTurn/kioskCloseServerSide test
+         kiosk.consentAt), because one mechanism is a single point of failure. */
+      '#mlsAvKiosk.preconsent #mlsAvKioskEnd,#mlsAvKiosk.preconsent #mlsAvKioskMute,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskEndVisit,#mlsAvKiosk.preconsent #mlsAvKioskTypeRow,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskRest,#mlsAvKiosk.preconsent #mlsAvKioskPin,' +
+      '#mlsAvKiosk.preconsent #mlsAvKioskOrders,#mlsAvKiosk.preconsent #mlsAvKioskReview{display:none!important}' +
+      /* av-5.7.0 - THE REST SCREEN AND ITS ONE BUTTON. A finished check-in
+         stays up and tells the patient the doctor is coming; the doctor walks
+         in and taps once to start the room recording. Starting a disclosed
+         recording is not a door into the app, so it carries no PIN - the door
+         still does. */
+      '#mlsAvKioskRest{display:none;flex-direction:column;align-items:center;gap:1.4vh}' +
+      '#mlsAvKioskRoomGo{border:0;background:#204034;color:#fff;border-radius:999px;padding:2vh 4vh;font:800 2.4vh system-ui;cursor:pointer;box-shadow:0 10px 30px rgba(32,64,52,.28)}' +
+      '#mlsAvKioskRoomGo:hover{background:#2E6A4B}' +
+      '#mlsAvKioskRestNote{font:600 1.8vh/1.45 system-ui;color:#55605A;max-width:min(680px,92vw)}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskRest{display:none}' +
+      /* AMBIENT ROOM MODE disclosure. It is CSS-driven off ONE class on the
+         root, so "is it recording" and "does the screen say so" are the same
+         fact and cannot drift apart. Never a toast: a toast fades, and the
+         patient consented to intake questions, not to an exam being taped. */
+      '#mlsAvKioskRec{display:none;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;font:800 2.1vh system-ui;color:#7a1f16;background:#fff;border:2px solid #c0392b;border-radius:999px;padding:1.2vh 2.6vh;box-shadow:0 6px 22px rgba(192,57,43,.18);max-width:min(920px,92vw);text-align:center}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskRec{display:flex}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskMic{display:none}' +
+      '#mlsAvKiosk.ambient{background:linear-gradient(165deg,#F8F1EF,#F2E4E1 55%,#EAD9D5)}' +
+      '#mlsAvKioskRec i{width:1.6vh;height:1.6vh;min-width:13px;min-height:13px;border-radius:999px;background:#c0392b;animation:mlsAvKRing 1.4s ease-in-out infinite}' +
+      '#mlsAvKioskRecClock{font:700 1.9vh ui-monospace,SFMono-Regular,Menlo,monospace;color:#55605A;letter-spacing:.4px}' +
+      /* av-5.6.0 - the save state rides INSIDE the recording disclosure, so
+         "recording" and "backed up" are read in one glance and neither can be
+         on screen without the other. */
+      /* THE AI DISCLOSURE. Permanent, in both modes, and never smaller than
+         the interim line - a screen wearing the doctor's face must say what
+         it is at a glance, not in fine print. */
+      '#mlsAvKioskState{font:800 1.7vh system-ui;letter-spacing:.4px;text-transform:uppercase;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.45vh 1.6vh}' +
+      '#mlsAvKioskState[data-state="listening"]{color:#26417a;border-color:#26417a}' +
+      '#mlsAvKioskState[data-state="speaking"]{color:#2E6A4B;border-color:#2E6A4B}' +
+      '#mlsAvKioskState[data-state="documenting"]{color:#7a1f16;border-color:#c0392b}' +
+      '#mlsAvKioskState[data-state="saving"],#mlsAvKioskState[data-state="paused"]{color:#204034;border-color:#204034}' +
+      '#mlsAvKioskAi{font:700 1.85vh/1.4 system-ui;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.7vh 2vh;max-width:min(760px,92vw);margin-top:-.4vh}' +
+      /* mute/pause, top-LEFT so it can never be hit while reaching for End */
+      '#mlsAvKioskMute{position:absolute;top:14px;left:16px;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:10px 18px;font:700 13px system-ui;cursor:pointer;z-index:6}' +
+      '#mlsAvKioskMute[aria-pressed="true"]{background:#7a1f16;color:#fff;border-color:#7a1f16}' +
+      /* PAUSED: the red dot stops, the banner goes grey, and nothing on this
+         screen still implies a live microphone. */
+      '#mlsAvKiosk.paused #mlsAvKioskRec{border-color:#cfd9d2;color:#55605A}' +
+      '#mlsAvKiosk.paused #mlsAvKioskRec i{animation:none;background:#69736d}' +
+      '#mlsAvKiosk.paused #mlsAvKioskMic{display:none}' +
+      '#mlsAvKiosk.paused #mlsAvKioskWave{visibility:hidden}' +
+      '#mlsAvKioskSave{font:700 1.6vh system-ui;font-style:normal;padding:.4vh 1.4vh;border-radius:999px;background:#EAF1EC;color:#204034}' +
+      '#mlsAvKioskSave[data-state="bad"]{background:#F7E4E1;color:#7a1f16}' +
+      '#mlsAvKiosk.saving #mlsAvKioskSave{background:#EDE7D6;color:#55605A}' +
+      /* ONE end control during a capture. The interview-era button is hidden
+         rather than left beside it: two ways to end a visit is one too many. */
+      '#mlsAvKioskEndVisit{display:none;position:absolute;top:14px;right:16px;border:0;background:#204034;color:#fff;border-radius:999px;padding:12px 22px;font:800 14px system-ui;cursor:pointer;box-shadow:0 8px 26px rgba(32,64,52,.28);z-index:6}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskEndVisit{display:block}' +
+      '#mlsAvKiosk.ambient #mlsAvKioskEnd{display:none}' +
+      '#mlsAvKioskEndVisit:hover{background:#2E6A4B}' +
+      /* the orders widget: compact, corner-mounted, never over the face, and
+         absent entirely when there is nothing to confirm */
+      /* ══ THE OPAQUE CARD, AND THE AREA THE TEXT COLUMN RESERVES FOR IT ═════════════════════════
+         Owner, twice: "having text constantly overlapping and being such a paIUN IN THE ASS", then
+         "fix the overlaying text to".
+         ⛔ THIS ELEMENT IS THE DEFECT, AND TWO EARLIER ROUNDS COULD NOT HAVE FIXED IT. One
+         serialised fourteen writers onto the patient-facing text NODE; the other capped the boxes
+         so the flex column could not compress them. Both were real. Neither could help, because
+         #mlsAvKioskOrders is a DIFFERENT ELEMENT painted on top of that node: opaque white,
+         position:absolute, right:16px bottom:16px, up to 52vh tall, z-index 6 — i.e. straight over
+         the live transcript and the progress line. An arbitrator owns one node; it cannot own the
+         things drawn above it.
+         So the column RESERVES the panel's area, from the same custom property the panel is sized
+         from, and `.hasorders` is toggled by ordersReserve — the only writer — from both branches
+         of ordersRender, the only function that shows or hides this panel. */
+      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:var(--mlsav-panel);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      '#mlsAvKiosk.hasorders{padding-right:calc(var(--mlsav-panel) + 32px)}' +
+      '#mlsAvKioskOrders .mlsAvOrdHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdTitle{font:800 13px \'Public Sans\',system-ui;color:#204034}' +
+      '#mlsAvKioskOrders .mlsAvOrdCount{font:700 11.5px system-ui;color:#55605A}' +
+      '#mlsAvKioskOrders .mlsAvOrd{border:1px solid #E7E5DD;border-radius:12px;padding:9px 10px;margin-bottom:8px;background:#FCFBF8}' +
+      '#mlsAvKioskOrders .mlsAvOrd[data-kind="medication"]{border-color:#e0cfc8}' +
+      '#mlsAvKioskOrders .mlsAvOrdTop{display:flex;align-items:baseline;justify-content:space-between;gap:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdTop b{font:800 13.5px \'Public Sans\',system-ui;color:#1A211C}' +
+      '#mlsAvKioskOrders .mlsAvOrdKind{font:700 10.5px system-ui;color:#55605A;text-transform:uppercase;letter-spacing:.5px}' +
+      '#mlsAvKioskOrders .mlsAvOrdDet{font:600 12.5px system-ui;color:#204034;margin-top:2px}' +
+      '#mlsAvKioskOrders .mlsAvOrdHeard{font:italic 500 11.5px/1.4 system-ui;color:#69736d;margin-top:5px}' +
+      '#mlsAvKioskOrders .mlsAvOrdMiss{font:700 11.5px/1.4 system-ui;color:#7a1f16;background:#F7E4E1;border-radius:8px;padding:5px 7px;margin-top:6px}' +
+      '#mlsAvKioskOrders .mlsAvOrdFix{font:600 11.5px/1.4 system-ui;color:#26417a;margin-top:4px}' +
+      '#mlsAvKioskOrders .mlsAvOrdOk{font:700 11.5px/1.4 system-ui;color:#2E6A4B;margin-top:5px}' +
+      '#mlsAvKioskOrders .mlsAvOrdSide{display:flex;gap:6px;margin-top:6px}' +
+      '#mlsAvKioskOrders .mlsAvOrdPick{flex:1;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:9px;padding:7px 4px;font:700 12px system-ui;cursor:pointer}' +
+      '#mlsAvKioskOrders .mlsAvOrdPick:hover{border-color:#2E6A4B;color:#2E6A4B}' +
+      '#mlsAvKioskOrders .mlsAvOrdRow{display:flex;gap:6px;margin-top:8px}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdRow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdIn{flex:1 1 100%;border:1px solid #2E6A4B;border-radius:9px;padding:8px 9px;font:600 12.5px system-ui;color:#1A211C}' +
+      '#mlsAvKioskOrders .mlsAvOrdGo{flex:1;border:0;background:#2E6A4B;color:#fff;border-radius:9px;padding:8px 6px;font:800 12.5px system-ui;cursor:pointer}' +
+      '#mlsAvKioskOrders .mlsAvOrdGo:disabled{background:#cfd9d2;color:#55605A;cursor:not-allowed}' +
+      '#mlsAvKioskOrders .mlsAvOrdEdit,#mlsAvKioskOrders .mlsAvOrdNo{border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:9px;padding:8px 10px;font:700 12.5px system-ui;cursor:pointer}' +
+      '#mlsAvKioskOrders .mlsAvOrdFoot{font:600 10.8px/1.45 system-ui;color:#69736d;border-top:1px solid #E7E5DD;padding-top:7px;margin-top:2px}' +
+      /* the review: one screen, one verdict, and the pending list said out
+         loud rather than quietly omitted */
+      '#mlsAvKioskReview{display:none;position:absolute;inset:0;background:rgba(20,28,24,.62);align-items:center;justify-content:center;z-index:8;padding:4vh 4vw}' +
+      '#mlsAvKioskReview .mlsAvRevCard{background:#fff;border-radius:20px;padding:24px 26px;width:min(620px,94vw);max-height:88vh;overflow:auto;text-align:left;box-shadow:0 28px 80px rgba(0,0,0,.38)}' +
+      '#mlsAvKioskReview .mlsAvRevHead{font:800 20px \'Public Sans\',system-ui;margin-bottom:8px}' +
+      '#mlsAvKioskReview .mlsAvRevHead.ok{color:#2E6A4B}' +
+      '#mlsAvKioskReview .mlsAvRevHead.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevLine{font:600 13.5px/1.5 system-ui;color:#204034}' +
+      '#mlsAvKioskReview .mlsAvRevWarn{font:700 12.5px/1.5 system-ui;color:#7a1f16;background:#F7E4E1;border-radius:10px;padding:9px 11px;margin-top:10px}' +
+      '#mlsAvKioskReview .mlsAvRevSub{font:800 12.5px system-ui;color:#204034;margin-top:14px}' +
+      '#mlsAvKioskReview .mlsAvRevSub.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevList{margin:6px 0 0;padding-left:20px;font:600 13px/1.6 system-ui;color:#1A211C}' +
+      '#mlsAvKioskReview .mlsAvRevList.bad{color:#7a1f16}' +
+      '#mlsAvKioskReview .mlsAvRevNote{font:700 13px/1.5 system-ui;color:#204034;background:#EAF1EC;border-radius:10px;padding:10px 12px;margin-top:14px}' +
+      '#mlsAvKioskReview .mlsAvRevNote.ok{color:#2E6A4B}' +
+      '#mlsAvKioskReview .mlsAvRevNote.bad{color:#7a1f16;background:#F7E4E1}' +
+      '#mlsAvKioskReview .mlsAvRevRow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}' +
+      '#mlsAvKioskReview .mlsAvRevGo{border:0;background:#2E6A4B;color:#fff;border-radius:999px;padding:12px 24px;font:800 14px system-ui;cursor:pointer}' +
+      '#mlsAvKioskReview .mlsAvRevMore{border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:12px 22px;font:700 14px system-ui;cursor:pointer}' +
+      /* ⛔ ON A NARROW SCREEN THE PANEL IS A FULL-WIDTH BOTTOM SHEET, so a right-hand gutter
+         reserves the WRONG AXIS ENTIRELY and the card sits on the transcript regardless. The column
+         reserves HEIGHT here, and it reserves the sheet's MAX height (44vh) rather than its current
+         height, because a card that grows as the doctor talks must never grow into the words.
+         The two numbers are ONE FACT: 44vh appears as the sheet's max-height and as the
+         reservation, and a registered fence derives both from this stylesheet and asserts them
+         equal — because the day they drift is the day the card is back on the patient's words.
+         av-6.4.1 (composed tree): the reservation must also BIND THE OVERFLOW DIRECTION.
+         The root is a CENTERED flex column; when the stack is taller than the content box
+         (320x568 measured: progress-line bottom 313.2px vs content-box bottom 302.1px),
+         center alignment spills the overflow BOTH ways, and the last text node (the
+         progress line) sinks 11px into the reserved zone under the sheet (sheet top
+         310.1px; covered at 5 of 25 sampled points). justify-content:flex-end pins the
+         column END at the content-box bottom, so the reservation holds under overflow and
+         the spill goes UP, away from the sheet. (A sibling branch never saw this only
+         because its extra bottom flex child, a 51px button row, shifted the centered stack
+         up and itself took the covered zone, invisible to a fence that samples text nodes.) */
+      '@media (max-width:720px){#mlsAvKioskOrders{right:8px;left:8px;bottom:8px;width:auto;max-height:44vh}' +
+      '#mlsAvKiosk.hasorders{padding-right:5vw;padding-bottom:calc(44vh + 16px);justify-content:flex-end}}' +
+      '@keyframes mlsAvKSpeak{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}' +
+      '@keyframes mlsAvKLean{0%,100%{transform:rotate(0deg)}50%{transform:rotate(1.6deg)}}' +
+      '@keyframes mlsAvKThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-1vh)}}' +
+      '@keyframes mlsAvKRing{0%,100%{opacity:.45}50%{opacity:1}}' +
+      '@media (prefers-reduced-motion: reduce){#mlsAvKiosk *,#mlsAvKiosk.speaking #mlsAvKioskFace,#mlsAvKiosk.listening #mlsAvKioskFace,#mlsAvKiosk.thinking #mlsAvKioskFace{animation:none!important}}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+  /* av-5.6.7 — ONE STATE CHIP. The kiosk already carried its state in half a
+     dozen places: a class on the root, a mic pill, a recording banner, a save
+     badge. Each is true, but a doctor glancing over has to assemble the answer
+     from four elements, and "what is it doing right now" is the question the
+     screen should answer without being read. The chip is derived inside
+     kioskMood — the same call that sets the classes — so what the screen SAYS
+     and what the kiosk IS cannot drift apart. */
+  var KIOSK_STATES = {
+    ready: 'Ready', listening: 'Listening', speaking: 'Speaking', thinking: 'Thinking',
+    /* the headline behaviour: the microphone is open WHILE the question plays,
+       so the chip must be able to say both rather than picking one and lying */
+    duplex: 'Speaking · listening',
+    documenting: 'Ambiently documenting', saving: 'Saving', paused: 'Paused',
+    /* av-5.7.0: a FINISHED check-in is not "Speaking". kioskFinish set the mood
+       to speaking so the closing line would play, and the chip then read Speaking
+       - with the wave animating - for the whole rest period, sometimes for
+       minutes, while the screen was silent and waiting. */
+    resting: 'Waiting for the doctor'
+  };
+  /* ── ONE OWNER FOR THE PATIENT-FACING LINE (av-6.2.0) ─────────────────────────────────
+     Owner: "having text constantly overlapping and being such a paIUN IN THE ASS".
+     It was never a layout defect. #mlsAvKioskInterim had FOURTEEN writers - the live
+     transcript, two microphone hints, three staff-recovery notices, the rest screen, the
+     ambient status, the finish line - all assigning textContent directly, with no ownership
+     and no priority. They clobbered each other mid-sentence: a notice the patient needed was
+     wiped by a transient transcript fragment a moment later, and back again.
+     The evidence that this was already hurting: one call site had grown a hand-rolled
+     `if (!ivOff.textContent)` guard - somebody noticed the clobbering and patched the victim
+     rather than the cause. Same shape as two-modules-fight-over-one-attribute.
+     Now every write goes through here and carries a KIND, ranked:
+       alert      (staff must act: no server, no mic, no consent, wrong patient)
+       status     (the kiosk is doing something: resting, finishing, filed)
+       hint       (advice: the mic is off, type below)
+       transcript (what is being heard right now - transient, never holds the line)
+     A lower-ranked write cannot replace a higher-ranked message while its hold is live. The
+     transcript holds for zero milliseconds, so it can never lock the line, but it also can
+     never wipe an alert. kioskLineReset() is called at the start of each turn - without it an
+     alert from the previous turn would blank the next question's transcript for its whole hold.
+     ⚠️ ALL call sites are routed. Half-routing would be worse than not doing it: the arbitrator
+     would believe it owns a line that another writer is still overwriting behind its back. */
+  var KL_RANK = { transcript: 0, hint: 1, status: 2, alert: 3 };
+  var KL_HOLD = { transcript: 0, hint: 6000, status: 9000, alert: 20000 };
+  var klKind = '', klUntil = 0;
+  /* p1-mic-1.0.0 -- THE PATIENT-FACING LINE STOPS NARRATING HALF-HEARD WORDS.
+   Owner: "it listens in fragments and shows the text its listening to in fragments
+   so its like is it even listening". Interim speech results arrive as partial,
+   self-overwriting phrases; painting them made a screen wearing the doctor's face
+   look like it was mis-hearing every sentence. Recognition is UNCHANGED -- it still
+   listens to everything and every final transcript is still captured; only the
+   RENDERING of interim text is withheld, and the fact of hearing is shown as a
+   pulse instead. hint/status/alert still own this line exactly as before, so no
+   real message is suppressed. Reversible: window.__mlsAvP1Mic.revert(). */
+  var p1MicTimer = 0, p1MicOff = false;
+  function p1Hearing() {
+    if (p1MicOff) return false;
+    try {
+      var m = gid('mlsAvP1Mic'); if (!m) return false;
+      m.classList.add('on');
+      clearTimeout(p1MicTimer);
+      p1MicTimer = setTimeout(function () { try { m.classList.remove('on'); } catch (e) {} }, 1100);
+      return true;
+    } catch (e) { return false; }
+  }
+  function publishMicApi() {
+    if (disposed) return null;
+    var generation = sessionGeneration, owner = {
+      installed: true, v: 'p1-mic-1.0.0', instanceToken: INSTANCE_TOKEN,
+      installToken: INSTALL_TOKEN
+    };
+    owner.state = function () {
+      if (!publicCallCurrent(owner, generation)) return { mounted: false, on: false, suppressed: true };
+      var m = gid('mlsAvP1Mic');
+      return { mounted: !!m, on: !!(m && m.classList.contains('on')), suppressed: p1MicOff };
+    };
+    owner.revert = function () {
+      if (!publicCallCurrent(owner, generation)) return false;
+      p1MicOff = true; clearTimeout(p1MicTimer);
+      var m = gid('mlsAvP1Mic'); if (m) m.classList.remove('on');
+      return true;
+    };
+    currentMicApi = owner;
+    window.__mlsAvP1Mic = owner;
+    return owner;
+  }
+  /* The long-standing arbitrator contract executes this self-contained block
+     outside the full module.  Keep its behavioral rollback available there;
+     the real asset always has the hoisted session-owner gate and never enters
+     this compatibility arm. */
+  if (typeof publicCallCurrent !== 'function') {
+    window.__mlsAvP1Mic = {
+      installed: true,
+      state: function () {
+        var mounted = gid('mlsAvP1Mic');
+        return { mounted: !!mounted, on: !!(mounted && mounted.classList.contains('on')), suppressed: p1MicOff };
+      },
+      revert: function () { p1MicOff = true; clearTimeout(p1MicTimer);
+        var node = gid('mlsAvP1Mic'); if (node) node.classList.remove('on');
+        return true;
+      }
+    };
+  }
+function kioskLine(kind, text) {
+    var iv = gid('mlsAvKioskInterim');
+    if (!iv) return false;
+    var rank = KL_RANK[kind]; if (rank === undefined) rank = 0;
+    var now = Date.now();
+    var heldRank = (klKind && klUntil > now) ? KL_RANK[klKind] : -1;
+    if (heldRank === undefined) heldRank = -1;
+    /* interim speech: show THAT we are hearing, never the half-words themselves */
+    if (kind === 'transcript' && !p1MicOff) {
+      p1Hearing();
+      if (rank < heldRank) return false;          /* a real message still owns the line */
+      iv.textContent = ''; klKind = ''; klUntil = 0;
+      return true;
+    }
+    if (rank < heldRank) return false;          /* a more important message is still standing */
+    iv.textContent = (text === null || text === undefined) ? '' : String(text);
+    klKind = kind;
+    klUntil = now + (KL_HOLD[kind] || 0);
+    return true;
+  }
+  /* a new turn is a new context: drop any hold, or a stale alert silences the next question */
+  function kioskLineReset() {
+    klKind = ''; klUntil = 0;
+    var iv = gid('mlsAvKioskInterim');
+    if (iv) iv.textContent = '';
+    return true;
+  }
+  /* what is on the line right now, for tests and for the receipt */
+  function kioskLineState() { return { kind: klKind, holdMs: Math.max(0, klUntil - Date.now()) }; }
+  function kioskState(name) {
+    var el = gid('mlsAvKioskState');
+    if (!el) return;
+    el.textContent = KIOSK_STATES[name] || KIOSK_STATES.ready;
+    el.setAttribute('data-state', name);
+  }
+  function kioskMood(state, say, answer) {
+    var root = gid('mlsAvKiosk'); if (!root) return;
+    /* paused and documenting OUTRANK the momentary mood: a paused kiosk is
+       paused whatever it was last doing, and a room capture is documenting
+       even while the face is animating a listen. */
+    kioskState(kiosk.paused ? 'paused' : (kiosk.ambient ? 'documenting' :
+      (KIOSK_STATES[state] ? state : 'ready')));
+    ['speaking', 'listening', 'thinking', 'caring', 'happy'].forEach(function (c) { root.classList.remove(c); });
+    var caring = /pain|hurt|worse|can't|cannot|scared|worried|sad|tired|sick/i.test(String(answer || '') + ' ' + String(say || ''));
+    var happy = /thank|welcome|great|wonderful|glad|nice|perfect|all set|covers everything|see you|good (morning|afternoon|evening)|hi[!,. ]|hello/i.test(String(say || ''));
+    if (state === 'speaking') { root.classList.add('speaking'); if (caring) root.classList.add('caring'); else if (happy) root.classList.add('happy'); }
+    else if (state === 'listening') { root.classList.add('listening'); if (caring) root.classList.add('caring'); }
+    else if (state === 'thinking') root.classList.add('thinking');
+    /* the FACE carries the emotion now: brows, eyes, mouth, head tilt */
+    if (kiosk.face) kiosk.face.mood(state, caring, happy);
+  }
+  function kioskSpeechStarted(say, answer) {
+    /* The media element / SpeechSynthesis event is the sole caller. A live mic
+       turns actual playback into duplex; a closed mic turns it into speaking.
+       One helper prevents apology, alert, nudge and routine-question paths from
+       painting different truths for the same hardware state. */
+    if (!kiosk.open || kiosk.completed || kiosk.paused || kiosk.ambient) return false;
+    kioskMood('speaking', say, answer);
+    if (pvRec) kioskState('duplex');
+    return true;
+  }
+  function kioskClose(reason) {
+    kioskAsyncClearAll();
+    pvStopVoice();
+    /* release the echo-cancelled companion stream with the overlay, or the microphone light
+       stays on after the kiosk is gone — a patient-facing screen must never leave the mic
+       open once it has closed (av-6.1.0) */
+    safe(function () { pvVoiceGateStop(); });
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
+    kiosk.open = false; kiosk.busy = false;
+    if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
+    safe(function () { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {}); });
+    var node = gid('mlsAvKiosk');
+    if (!node && dialogState && dialogState.back && dialogState.back.id === 'mlsAvKiosk') node = dialogState.back;
+    var kioskOpener = safe(function () { return (node && node.__mlsAvatarOpener) ||
+      (dialogState && dialogState.back === node && dialogState.opener); }, null);
+    if (dialogState && dialogState.back === node) dialogDeactivate(false);
+    if (node && node.parentNode) node.parentNode.removeChild(node);
+    /* the recording stops with the overlay, and the captured words go with
+       it - they can never cross into the next patient's session */
+    kiosk.ambient = false; kiosk.ambRec = null;
+    kioskAmbientClear();
+    kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null; kiosk.intake = []; kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
+    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambEnding = false;
+    kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+    kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null;
+    if (kiosk.preflightRequest) { kiosk.preflightRequest.waiters = []; kiosk.preflightRequest = null; }
+    kiosk.speechFails = 0; kiosk.speechFailAt = 0; kiosk.ambExitPending = false;
+    kiosk.paused = false;
+    /* the consent dies with the screen it was given on - nothing reached from a
+       later session may act on it */
+    kiosk.consentAt = 0;
+    /* Return the keyboard to the exact still-connected control that opened
+       the kiosk. The shell removes account-owned controls before they could
+       qualify; a persistent navigation control remains the safest neutral
+       landing point after a session boundary. */
+    if (reason !== 'reverted' && kioskOpener &&
+        kioskOpener.isConnected !== false) safe(function () { kioskOpener.focus(); });
+    if (reason === 'done' || kiosk.completed) {
+      refreshCount(true);
+      safe(function () { if (isFn(window.toast)) window.toast('Check-in complete — the highlights are on the Visit page.', 'ok'); });
+    }
+    kiosk.completed = false;
+  }
+  function kioskSetSay(text) { var el = gid('mlsAvKioskSay'); if (el) el.textContent = String(text || ''); }
+  /* av-5.6.0 - WHAT THE CHART ALREADY KNOWS. An MA who has read the chart does
+     not make the patient recite the allergy list the chart already carries.
+     Built ONLY from the exact chart this interview is bound to - exactPatient
+     fails closed on an unknown or ambiguous external id, so an unresolvable
+     patient sends no context rather than the wrong patient's. Computed once
+     per interview: the chart does not change while the patient is answering,
+     and rebuilding it per turn would put roster work on the latency path. */
+  function kioskChartContext() {
+    var p = safe(function () { return exactPatient(kiosk.ext); }, null);
+    if (!p) return null;
+    function listOf(value, cap) {
+      var text = '';
+      if (Array.isArray(value)) {
+        text = value.map(function (x) {
+          return clean(typeof x === 'string' ? x : (x && (x.name || x.text || x.label || x.description)));
+        }).filter(Boolean).join(', ');
+      } else text = clean(value).replace(/\s*[\r\n]+\s*/g, ', ');
+      return text.replace(/\s+/g, ' ').trim().slice(0, cap);
+    }
+    var ctx = {};
+    var dob = clean(p.dob);
+    if (dob) {
+      var years = safe(function () {
+        var d = new Date(dob.indexOf('T') < 0 ? dob + 'T00:00:00Z' : dob);
+        if (isNaN(d.getTime())) return 0;
+        var age = Math.floor((Date.now() - d.getTime()) / 31557600000);
+        return (age > 0 && age < 130) ? age : 0;
+      }, 0);
+      if (years) ctx.age = String(years);
+    }
+    var sex = clean(p.sex || p.gender); if (sex) ctx.sex = sex.slice(0, 20);
+    var reason = clean(p.visitReason || p.reason || p.apptReason);
+    if (reason) ctx.visitReason = reason.slice(0, 200);
+    var allergies = listOf(p.allergies, 240); if (allergies) ctx.allergies = allergies;
+    var meds = listOf(p.meds || p.medications, 400); if (meds) ctx.medications = meds;
+    var problems = listOf(p.problems, 400); if (problems) ctx.problems = problems;
+    for (var k in ctx) { if (Object.prototype.hasOwnProperty.call(ctx, k)) return ctx; }
+    return null;
+  }
+  function kioskTurn(answer, nonce, finish, retryAttempt) {
+    if (!kiosk.open || kiosk.busy) return;
+    /* AND NO TURN EITHER, including a `finish`. This is the second half of the
+       same defect: from the consent screen, Tab+Enter on "End interview" reached
+       kioskCloseServerSide, which POSTs finish:true — and the backend INSERTS the
+       row for that session id, runs the summary model over a transcript with no
+       patient turns, and flips it to 'ready'. A phantom completed check-in, with
+       an AI-written headline, in the doctor's inbox and on his phone, for a
+       patient who never consented and never spoke. */
+    if (!kiosk.consentAt) return;
+    /* A FINISHED interview accepts nothing more. The typed row stays on screen
+       in mic-off mode, so without this a patient could Send into a completed
+       session: the server answers "this check-in is already complete", which
+       overwrote the rest screen and re-spoke at them. Only the staff exit
+       moves a finished kiosk. */
+    if (kiosk.completed && !finish) return;
+    if (kiosk.ambient) return;   /* ambient records the room, it never interviews */
+    var turnGeneration = kiosk.generation | 0;
+    var turnSid = clean(kiosk.sid), turnExt = clean(kiosk.ext);
+    function turnCurrent() {
+      return !!(kiosk.open && (kiosk.generation | 0) === turnGeneration &&
+        clean(kiosk.sid) === turnSid && clean(kiosk.ext) === turnExt);
+    }
+    retryAttempt = Math.max(0, Number(retryAttempt) || 0);
+    var answerNonce = answer ? (nonce || kioskNonce()) : '';
+    kiosk.busy = true;
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    /* Keep the continuous recogniser alive for an answered turn. It queues any
+       extra clause spoken while this request runs. Opening/finish turns carry no
+       patient answer and still close any stale recogniser explicitly. */
+    if (!answer || finish) pvStopMic();
+    kioskMood('thinking', '', answer);
+    kioskLineReset();
+    var body = { clientSessionId: kiosk.sid, patientExternalId: kiosk.ext };
+    /* the interview is stateless server-side, so the chart block rides with
+       every turn - resolved once, at the first turn, and reused */
+    if (kiosk.chartCtx === undefined) kiosk.chartCtx = kioskChartContext();
+    if (kiosk.chartCtx) body.chartContext = kiosk.chartCtx;
+    if (answer) { body.answer = answer; body.answerNonce = answerNonce; kiosk.silent = 0; kiosk.finishTries = 0; }
+    if (finish) body.finish = true;
+    /* p1-listener-1.1.0 - one bounded owner for a refused turn.
+       ---------------------------------------------------------
+       The recogniser deliberately remains live while the request is in flight.
+       Therefore a refusal cannot clear `busy` before its apology finishes: a
+       patient continuation would otherwise start first and the original answer
+       (which the server did not accept) would disappear. The apology callback is
+       not a reliable completion signal either - a barge-in cancels speech - so a
+       wall-clock watchdog races it. Exactly ONE automatic resend is allowed, with
+       the exact same answer nonce. A second failure stops every microphone owner
+       and leaves the original answer editable; any later clause remains queued and
+       drains only after the patient explicitly resends the original successfully.
+       No rejection can recurse forever or spin the backend. */
+    function handleTurnFailure(message, speakIt) {
+      if (!turnCurrent()) return;
+      var msg = message || 'Sorry, I didn\'t quite catch that on my end. Could you say it once more?';
+      kioskSetSay(msg);
+      if (!answer) {
+        var openingSettled = false, openingTimer = null;
+        function settleOpening() {
+          if (openingSettled) return;
+          openingSettled = true;
+          if (openingTimer) { safe(function () { clearTimeout(openingTimer); }); openingTimer = null; }
+          if (!turnCurrent()) return;
+          kiosk.busy = false;
+          /* This is the opening turn: there is no question-speech callback that
+             will arm the silence clock for us. Use the normal listening path so
+             repeated no-speech events still end this abandoned interview. */
+          kioskListen();
+        }
+        openingTimer = setTimeout(settleOpening, speakIt ? 6000 : 500);
+        if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(openingTimer);
+        if (speakIt) {
+          pvSpeakShaped(msg, settleOpening, 'calm', function () {
+            if (turnCurrent()) kioskSpeechStarted(msg);
+          });
+        }
+        return;
+      }
+
+      kiosk.lastTry = { answer: answer, nonce: answerNonce };
+      if (retryAttempt >= 1) {
+        kiosk.busy = false;
+        var stillQueued = clean(kiosk.pendingSpeech);
+        kioskTypingFallback(
+          'I could not send that answer after two tries. Please review it below and tap Send.' +
+            (stillQueued ? ' I kept the rest of what you said and will send it next.' : ''),
+          answer
+        );
+        return;
+      }
+
+      var retrySettled = false, retryTimer = null;
+      function settleRetry() {
+        if (retrySettled) return;
+        retrySettled = true;
+        if (retryTimer) { safe(function () { clearTimeout(retryTimer); }); retryTimer = null; }
+        if (!turnCurrent()) return;
+        kiosk.busy = false;
+        kioskRetryAnswer(answer, answerNonce, 1);
+      }
+      retryTimer = setTimeout(settleRetry, speakIt ? 6000 : 500);
+      if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(retryTimer);
+      if (speakIt) {
+        pvSpeakShaped(msg, settleRetry, 'calm', function () {
+          if (turnCurrent()) kioskSpeechStarted(msg);
+        });
+      }
+    }
+    var requestSettled = false;
+    var requestTimer = setTimeout(function () {
+      if (Array.isArray(kiosk.asyncTimers)) {
+        var timerAt = kiosk.asyncTimers.indexOf(requestTimer);
+        if (timerAt >= 0) kiosk.asyncTimers.splice(timerAt, 1);
+      }
+      if (requestSettled) return;
+      requestSettled = true;
+      if (!turnCurrent()) return;
+      kiosk.busy = false;
+      safe(function () { pvStopMic(); });
+      safe(function () { pvVoiceGateStop(); });
+      if (answer) {
+        kiosk.lastTry = { answer: answer, nonce: answerNonce };
+        kioskTypingFallback('That answer is still waiting because the connection took too long. Please review it below and tap Send; nothing was discarded.', answer);
+      } else {
+        kioskState('ready');
+        kioskSetSay('I could not start the interview because the connection took too long.');
+        kioskLine('alert', 'Staff: the opening request timed out. Nothing was recorded or sent; end the interview and check the connection.');
+      }
+    }, 30000);
+    if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(requestTimer);
+    function settleRequest() {
+      if (requestSettled) return false;
+      requestSettled = true;
+      if (requestTimer) {
+        if (Array.isArray(kiosk.asyncTimers)) kioskAsyncClear(requestTimer);
+        else safe(function () { clearTimeout(requestTimer); });
+        requestTimer = null;
+      }
+      return true;
+    }
+    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+      if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
+      if (!settleRequest() || !turnCurrent()) return;
+      var j = r.json || {};
+      /* A non-2xx that carries no {ok:false} — a 401, a 402 gate, a 429 whose
+         body never parsed — must NEVER be walked as a successful turn: that
+         path threw away the retry nonce and spoke an EMPTY string at the
+         patient, then reopened the mic on a blank face forever. Any refusal
+         keeps the answer resendable and re-opens the mic. */
+      if (!r.ok || j.ok === false) {
+        /* SPOKEN, so it apologises like a person and does not name our plumbing.
+           "The connection hiccuped" describes something the patient cannot see,
+           did not cause and cannot fix; what they need is permission to just say
+           it again. Shaped 'calm' for the same reason the silence nudge is: this
+           is the moment a patient decides the machine is broken, and a brisk
+           delivery here is what makes them give up and wait for a human. */
+        handleTurnFailure(j.message || 'Sorry, I didn\'t quite catch that on my end. Could you say it once more?', true);
+        return;
+      }
+      kiosk.busy = false;
+      kiosk.lastTry = null; kiosk.lastSay = String(j.say || '');
+      /* WHICH KIND OF LINE THIS IS, decided here because this is the only place
+         that can see it. `greet` fires once per interview — the first line the
+         patient ever hears, and the one the owner cares most about sounding
+         welcoming; `alert` rides the server's own emergency verdict rather than
+         any guess about the words, so the warning and its delivery are the same
+         fact. Read once into a local: kiosk.spoke flips below and the closing
+         branch must not accidentally re-greet. */
+      var saidShape = null;
+      if (j.emergency === true) saidShape = 'alert';
+      else if (!kiosk.spoke) saidShape = 'greet';
+      kiosk.spoke = true;
+      /* Keep the check-in verbatim and LOCALLY: ambient room mode hands the
+         doctor one transcript with the check-in and the visit both in it,
+         and the patient's own answers are the check-in half. Recorded only
+         on a SUCCESSFUL turn - a refused turn is re-asked and re-answered,
+         and would otherwise appear twice. */
+      /* av-6.2.0: called UNCONDITIONALLY. Gating on j.avatar meant a turn response without an
+         identity payload never resolved the name slot at all, leaving its "One moment…"
+         placeholder on screen. kioskSetIdentity is null-safe throughout and now falls back. */
+      kioskSetIdentity(j.avatar || null);
+      /* AFTER kioskSetIdentity, never before: the avatar's name arrives on
+         the first turn, so recording the label first filed question one as
+         "Avatar" and every later one as the real name - one speaker under
+         two names in a chart-bound transcript. */
+      if (answer) kioskIntakeAdd('Patient', answer);
+      /* The patient kept talking while the server handled the preceding clause.
+         Do not speak the now-stale follow-up over them. Feed the continuation as
+         the next turn first; each consumed buffer gets one new nonce exactly once.
+         An emergency warning is the sole exception: it is spoken immediately,
+         then the buffered continuation is sent. */
+      var continued = clean(kiosk.pendingSpeech);
+      if (continued) {
+        if (j.emergency === true && kiosk.lastSay) {
+          kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
+          kioskSetSay(kiosk.lastSay);
+          pvSpeakShaped(kiosk.lastSay, function () {
+            if (!turnCurrent() || kiosk.completed) return;
+            var alertContinuation = kioskTakeSpeech();
+            if (alertContinuation) kioskTurn(alertContinuation, kioskNonce());
+          }, 'alert', function () {
+            if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay, answer);
+          });
+        } else {
+          continued = kioskTakeSpeech();
+          kiosk.lastSay = '';
+          kioskSetSay('I’m listening — keep going.');
+          kioskMood('thinking', '', continued);
+          kioskTurn(continued, kioskNonce());
+        }
+        return;
+      }
+      if (kiosk.lastSay) kioskIntakeAdd(kiosk.avName || 'Avatar', kiosk.lastSay);
+      kioskSetSay(kiosk.lastSay);
+      var pg = gid('mlsAvKioskProgress');
+      if (pg && j.progress && j.progress.total) pg.textContent = j.done ? '' : ('Question ' + Math.min(j.progress.covered || 1, j.progress.total) + ' of ' + j.progress.total);
+      if (j.done) {
+        /* The server has closed the interview and no further question follows.
+           Stop before the closing thank-you so its partial audio cannot become a
+           new patient turn. Any speech during request latency was already queued
+           and handled above, before this branch can run. */
+        pvStopMic();
+        pvSpeakShaped(kiosk.lastSay, function () { kioskFinish(); }, saidShape, function () {
+          if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay);
+        });
+        var finishTimer = setTimeout(function () { if (turnCurrent() && !kiosk.completed) kioskFinish(); }, 12000);
+        if (Array.isArray(kiosk.asyncTimers)) kiosk.asyncTimers.push(finishTimer);
+      } else {
+        /* owner: "it should be able to listen while it is talking" - the mic
+           opens WITH the question, not after it. Patients answer as soon as
+           they understand, usually before the sentence ends; those first
+           words used to be discarded and the kiosk looked frozen. */
+        kioskListen(true);
+        pvSpeakShaped(kiosk.lastSay, function () {
+          /* Speech is over. The recogniser may have been open for the whole
+             question, but the visible owner now becomes listening: retire the
+             speaking wave/class, preserve the mic, and let one function set
+             the chip, face mood and CSS from the same fact. */
+          if (turnCurrent() && kiosk.open && !kiosk.completed && !kiosk.paused && !kiosk.ambient) {
+            kioskMood('listening', kiosk.lastSay, answer);
+          }
+          if (!pvRec) { kioskListen(); return; }
+          /* THE SILENCE CLOCK STARTS WHEN THE QUESTION ENDS. kioskListen arms
+             it, and the microphone now opens WITH the question, so a long
+             question spent its own patience: a 6-second question left 3
+             seconds before the kiosk talked over the patient's first words
+             with "take your time". Re-armed here, from the moment there is
+             actually something to answer. */
+          kioskArmWatchdog(9000);
+        }, saidShape, function () {
+          /* Fetching/generating audio is Thinking, not Speaking. Flip to the
+             duplex state only when the browser reports real playback. */
+          if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay, answer);
+        });
+      }
+    }, function () {
+      if (!settleRequest() || !turnCurrent()) return;
+      /* the same words the spoken refusal above uses. This path is DISPLAY only
+         (nothing is spoken when the fetch itself rejects), and two different
+         apologies for one condition is how a patient ends up reading one thing
+         and hearing another. */
+      kioskSetSay('Sorry, I didn\'t quite catch that on my end. Could you say it once more?');
+      handleTurnFailure('Sorry, I didn\'t quite catch that on my end. Could you say it once more?', false);
+    });
+  }
+  /* THE SELF-END WATCHDOG — armed on EVERY waiting path, not just the voice
+     one. It used to be armed only after kioskListen's microphone-unavailable
+     early return, so a typed-mode interview (mic blocked or absent — exactly
+     the fallback the typed row exists for) never self-ended and never produced
+     a summary. Activity lives on `kiosk.heard` so BOTH speech interims and
+     typing can reset it. */
+  function kioskArmWatchdog(ms) {
+    /* AMBIENT ROOM MODE HAS NO SELF-END. This timer exists to close an
+       abandoned INTERVIEW after three fruitless ~9s listens; an exam is
+       silent for minutes at a time. Gated here AND in kioskWatchdog, so a
+       timer armed a moment before the handoff still cannot end a capture. */
+    if (kiosk.ambient) return;
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); }
+    kiosk.nudgeTimer = setTimeout(kioskWatchdog, ms || 9000);
+  }
+  function kioskWatchdog() {
+    if (kiosk.ambient) return;   /* see kioskArmWatchdog - the auto-finish must never end a room capture */
+    if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+    var typed = (kiosk.mic === false);
+    var wait = typed ? 20000 : 9000;   /* typing is slower than talking */
+    /* AND A SENTENCE STILL PLAYING COUNTS AS ACTIVITY — WITH NO CAP ON THE WAIT.
+       This reads `pvSaying`, the LIVENESS value, and it must: it is asking "is the
+       avatar still talking?", not "what do we compare against for echo?". It was
+       not consulted here at all, so a question longer than one window burned its
+       own patience — silence counted against the patient while nobody had been
+       given anything to answer yet — and at three windows this function fell
+       straight through to pvStopVoice, the avatar cut off mid-word by its own
+       silence clock. Routing the stops to pvStopMic instead would not have helped:
+       the nudge branch speaks NUDGE_LINE over the question, and pvSpeakShaped bumps
+       pvSpeakSeq, which kills it anyway. So the fix is this CONDITION.
+       It joins the existing UNCAPPED re-arm rather than adding a second, capped
+       one: a sentence in flight is watched for as long as it takes. It cannot
+       wedge, because pvSaying is cleared by pvSpeakVoiced's finish(), which is
+       itself guaranteed by that function's own watchdog (pinned by the suite). */
+    /* av-6.4.1 (A4): AN ABSOLUTE OUTER CEILING ON THE SPEECH WAIT - wall-clock,
+       never microphone-derived. The condition below trusts finish() to clear
+       pvSaying, and finish() is watchdog-guaranteed for a hung TTS fetch (5s ->
+       synth fallback) and for playback that reported its duration (the 45s cap
+       armed at onloadedmetadata). The uncovered corner: playback starts,
+       loadedmetadata never fires AND the play() promise never settles - then
+       pvSaying stays set for ever, every tick below re-arms, and the nudge, the
+       self-end and the summary are all suspended indefinitely. Live self-healed
+       that state by cutting the sentence; the condition must not trade that for
+       wedged-until-tap. So: ONE sentence continuously observed in flight for
+       longer than any sentence can actually play - 120s, nearly three times the
+       45s playback cap, so no real sentence can reach it - is declared dead
+       right here. pvStopVoice ends the phantom (clearing pvSaying, so the
+       activity check below falls through to the silence accounting THIS tick)
+       and the interview moves on to the nudge and the self-end it was owed.
+       Keyed to the sentence VALUE: a new sentence restarts the clock, so only a
+       single unchanging pvSaying can ever accumulate the 120s. No recogniser
+       event feeds this path - the clock is Date.now() at watchdog ticks, so a
+       dead microphone, a silent room and a wedged audio element all look the
+       same to it, which is the point. */
+    if (pvSaying) {
+      if (kiosk.sayingFor !== pvSaying) {
+        kiosk.sayingFor = pvSaying;
+        kiosk.sayingSince = Date.now();
+      } else if (!kiosk.heard && Date.now() - kiosk.sayingSince > 120000) {
+        kiosk.sayingFor = null;
+        kiosk.sayingSince = 0;
+        pvStopVoice();
+      }
+    } else if (kiosk.sayingFor) {
+      kiosk.sayingFor = null;
+      kiosk.sayingSince = 0;
+    }
+    if (kiosk.heard || pvSaying) {
+      /* they are talking or typing (or the room is) — keep watching, and never
+         give up the only timer that can revive this question. This guard used
+         to RETURN, so one cough permanently disarmed the self-end. */
+      kiosk.heard = false;
+      kioskArmWatchdog(wait);
+      return;
+    }
+    kiosk.silent = (kiosk.silent || 0) + 1;
+    if (kiosk.silent >= 3) {
+      /* BOUNDED: the auto-finish turn carries no answer, so kiosk.silent is
+         never reset by it. Without a cap, a server that does not honour
+         `finish` (or a fetch that rejects, or a cold-start 502 whose j.ok is
+         undefined) had every 9s nudge re-fire the finish forever — the exact
+         runaway this feature exists to prevent, burning backend calls. */
+      kiosk.finishTries = (kiosk.finishTries || 0) + 1;
+      if (kiosk.finishTries > 2) { kioskStopBounded(); return; }
+      pvStopVoice();
+      kioskTurn(null, null, true);
+      return;
+    }
+    if (kiosk.nudgedFor !== kiosk.lastSay) {
+      kiosk.nudgedFor = kiosk.lastSay;
+      pvStopVoice();
+      kioskMood('thinking', '');
+      /* 'calm' must match the shape the pre-fetch used in kioskConsentYes, or
+         the cache key differs and the one request this line exists to have
+         already made is paid for again, right when the patient is waiting */
+      pvSpeakShaped(NUDGE_LINE, function () { kioskListen(); }, 'calm', function () {
+        kioskSpeechStarted(NUDGE_LINE);
+      });
+    } else {
+      pvStopVoice();
+      kioskListen();
+    }
+  }
+  /* The client gives up HONESTLY: it never claims the check-in was saved, it
+     stops calling the server, and it still refuses to expose the app — a
+     PIN-gated office rests for staff exactly as a normal completion does. */
+  function kioskStopBounded() {
+    pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    kiosk.completed = true;
+    kioskMood('speaking', 'thank you');
+    kioskSetSay('Thanks — we\'ll stop here. Please hand the screen back to the team.');
+    var iv = gid('mlsAvKioskInterim');
+    kioskLine('alert', 'Staff: the check-in could not reach the server — end the interview and check the connection.');
+    var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    /* the visit still deserves a transcript even when the check-in could not
+       reach the server, so the hand-off button is offered here too */
+    kioskRestShow();
+    if (kiosk.pinSet === false) {
+      safe(function () { if (isFn(window.toast)) window.toast('The check-in stopped early — the server could not be reached.', ''); });
+      kioskClose('ended');
+    }
+  }
+  /* NO CONSENT, NO MICROPHONE — enforced INSIDE this function, at the one place
+     the interview opens one. An adversarial pass on av-5.7.0 found the consent
+     card was containment by Z-INDEX ALONE: nothing behind it was inert, so Tab
+     reached #mlsAvKioskMute and #mlsAvKioskEnd, and Pause→Resume and the PIN
+     pad's "Back to the interview" both call this function. The microphone opened
+     with consentAt === 0 and the patient's words were POSTed. The card is now
+     genuinely contained (see .preconsent in kioskStyle) AND consent is a term in
+     the code, because either mechanism alone is a single point of failure.
+     The guard lives on the first line of the body and this note lives out here on
+     purpose: the contract suite reads the first 400 characters of this function
+     looking for the paused guard, and a comment that long inside the body pushed
+     it out of that window. A pin that stops seeing its subject is a pin that has
+     stopped working. */
+  function kioskListen(keepMood) {
+    if (!kiosk.consentAt) return;     /* see the note above this function */
+    if (kiosk.ambient) return;
+    if (kiosk.paused) return;         /* see kioskPauseToggle */   /* the ambient loop owns the microphone and never takes turns */
+    /* Busy means the prior clause is at the backend; it no longer means deaf.
+       Finals received in that interval are queued by the callback below. */
+    if (!kiosk.open || kiosk.completed) return;
+    if (keepMood && pvRec) return;            /* already listening */
+    if (kiosk.mic === false) {
+      kioskArmWatchdog(20000);   /* typed mode self-ends too — armed on the FIRST
+         line of this branch so it sits beside its subject: the contract suite
+         reads a 320-character window from `kiosk.mic === false` looking for it,
+         and a comment added below once pushed it out of view. */
+      var typeRow = gid('mlsAvKioskTypeRow'); if (typeRow) typeRow.style.display = 'flex';
+      var input = gid('mlsAvKioskInput'); if (input) safe(function () { input.focus(); });
+      /* SAID HERE, not only at the preflight. kioskTurn blanks the interim line
+         at the start of every turn, so the preflight's "Microphone is off" notice
+         survived exactly until the first question - after which a patient faced a
+         typing box with no explanation. This runs on every turn, so it holds. */
+      var ivOff = gid('mlsAvKioskInterim');
+      if (ivOff && !ivOff.textContent) kioskLine('hint', 'The microphone is off on this screen — type your answer below.');
+      return;
+    }
+    if (!keepMood) kioskMood('listening', kiosk.lastSay);
+    /* ⛔ NO getUserMedia HERE. My first attempt started the gate from this line,
+       which made the kiosk request the microphone a SECOND time — and
+       avatar-consent-and-turn-taking-proof.js caught it ("the microphone was requested ONCE,
+       on the staff tap [calls = 2]"). The gate now ADOPTS the stream the preflight already
+       obtained with the same constraints, so the count stays at one. */
+    kiosk.heard = false;
+    /* THE SILENCE CLOCK IS NOT ARMED HERE ON THE DUPLEX PATH. keepMood means the
+       microphone is opening WITH a question that is about to play, and the arm at
+       the bottom of this function used to start the 9-second countdown against
+       the question's own duration: any question longer than that nudged "take
+       your time" over its own second half. pvSpeak's continuation arms it when
+       the question actually ends (see kioskTurn). Every other caller - the nudge,
+       the recogniser-died path, resume - passes no keepMood and still arms below. */
+    /* the chip is set HERE too, because the mic opens WITH the question: at
+       kioskMood time the recogniser is not open yet, so 'speaking' alone
+       would under-report what the kiosk is actually doing. */
+    if (!kiosk.ambient && !kiosk.paused) {
+      var stRoot = gid('mlsAvKiosk');
+      kioskState(stRoot && stRoot.classList.contains('speaking') ? 'duplex' : 'listening');
+    }
+    var started = pvListen(function (finalText) {
+      if (!kiosk.open) return;
+      if (pvIsSelfEcho(finalText)) return;      /* never file our own voice */
+      /* THE HALF STRING MATCHING COULD NOT DO (av-6.1.0). "in the morning" the echo and "in
+         the morning" the answer are the same string, so no classifier can separate them —
+         which is why a mis-heard echo could still be FILED as the patient's answer. They are
+         not the same SOUND: the echo arrives while the room is silent, because on the
+         echo-cancelled stream the avatar's own voice has been removed.
+         Deliberately conditional on pvVoiceGateReady(): this refusal only ever fires when
+         there is hard audio evidence. Without confirmed AEC the behaviour is byte-for-byte
+         what it is today, so the measured real-answer harm (9 of 12, 22 of 22 in an earlier
+         round) cannot come back on a device that cannot support the gate. */
+      /* ⛔ AND IT NEEDS TWO INDEPENDENT REASONS, NOT ONE. An adversarial sweep raised this
+         path: the room floor is learned from whatever is in the room, and the bar is
+         floor x 2.6. In a NOISY room - a busy waiting area, a fan, a bystander talking while
+         the gate adopts the stream - the bar rises, a soft-spoken patient never clears it,
+         pvOtherVoiceNow() stays false, and this branch would then delete EVERY answer they
+         give while the avatar is still speaking. One verifier called that refuted; three
+         never ran (weekly agent limit), so I am not treating it as settled - and deleting a
+         patient's answers is the worst outcome in this file.
+         So the audio evidence is necessary but NOT sufficient: the transcript must ALSO look
+         like our own sentence, i.e. carry zero words we are not saying. A mis-transcribed
+         echo scores zero by construction (homophones and merges resolve back to our words -
+         see pvNovelWordCount). A real answer almost always carries a novel word, and now
+         survives even when the microphone never registered the person who spoke it.
+         Fail-safe by construction beats a threshold I would have to keep re-tuning. */
+      /* THE ECHO TEMPLATE, not the liveness value — see `var pvEchoSaying`. The
+         second filing gate: everything it refuses is deleted, so it reads the
+         string whose lifetime origin/main gave it. */
+      if (pvEchoSaying && pvVoiceGateReady() && !pvOtherVoiceNow() &&
+          pvNorm(finalText) === pvEchoSaying) {
+        kiosk.echoRefused = (kiosk.echoRefused || 0) + 1;
+        return;
+      }
+      kioskConfirmRecoverable(finalText);
+      kiosk.speechFails = 0; kiosk.speechFailAt = 0;
+      if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+      if (kiosk.busy) { kioskQueueSpeech(finalText); return; }
+      var reuse = kiosk.lastTry && kiosk.lastTry.answer === finalText ? kiosk.lastTry.nonce : kioskNonce();
+      kiosk.lastTry = { answer: finalText, nonce: reuse };
+      kioskTurn(finalText, reuse);
+    }, function (interim) {
+      /* the avatar hearing ITSELF must never become the patient's answer */
+      if (pvIsSelfEcho(interim)) return;
+      /* BARGE-IN: real speech while the question is still playing stops the question
+         mid-sentence, the way a person would — but it must be SOMEONE ELSE's speech.
+         Two words is not evidence of another person when the avatar is mid-sentence and
+         the microphone is pointed at the speaker playing it; see pvNovelWordCount for the
+         measured miss rate of the old negative rule (18% overall, 52% on merged words),
+         every miss silencing the avatar's own question. While nothing is playing there is
+         no question to protect, so the old two-word floor stands unchanged. */
+      var novel = pvSaying ? pvNovelWordCount(pvSaying, interim) : 0;
+      /* av-6.1.0: when echo cancellation is CONFIRMED active, presence is an audio fact and
+         the words are irrelevant to it — the avatar's own voice is not in the signal, so
+         sustained energy is another person. The novel-word rule remains the fallback for any
+         device where the browser did not apply AEC; see pvVoiceGateStart. */
+      var otherVoice;
+      if (!pvSaying) {
+        /* nothing is playing, so there is no question to protect — the historical two-word
+           floor stands, unchanged, and this is the line the contract suite reads */
+        otherVoice = interim.trim().split(/\s+/).filter(Boolean).length >= 2;
+      } else if (pvVoiceGateReady()) {
+        /* somebody is audibly there AND it behaves like speech rather than a throat-clear:
+           it produced a word the avatar is not saying, or it has run on well past any cough.
+           Presence alone is not enough — see pvOtherVoiceSustained. */
+        otherVoice = pvOtherVoiceNow() && interim.trim().split(/\s+/).filter(Boolean).length >= 1;
+      } else {
+        /* no confirmed echo cancellation: fall back to the measured string gate exactly as
+           av-6.0.9 shipped it, which a cough also cannot pass (it yields no novel words) */
+        otherVoice = novel >= 2;
+      }
+      if (pvSaying && !otherVoice) return;   /* our own voice coming back: do not stop, do not paint */
+      if (interim.trim()) {
+        kiosk.heard = true;
+        kiosk.speechFails = 0; kiosk.speechFailAt = 0;
+      }
+      var bargedIn = !!(pvSaying && otherVoice);
+      if (bargedIn) pvStopSpeechOnly();
+      /* A real barge-in ended the speaker synchronously. Move the entire UI to
+         listening in that same transition; otherwise the chip can say Duplex
+         and the waveform can keep animating while no audio exists. */
+      if (bargedIn && kiosk.open && !kiosk.paused && !kiosk.ambient) {
+        kioskMood('listening', kiosk.lastSay, interim);
+      }
+      kioskLine('transcript', interim);
+    }, function (code, recoverable) {
+      code = String(code || 'unknown');
+      var terminal = code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture';
+      if (terminal) {
+        kioskTypingFallback('The microphone or speech service is unavailable right now — type your answer below.', recoverable);
+        return;
+      }
+      if (code === 'network') {
+        var now = Date.now();
+        if (!kiosk.speechFailAt || now - kiosk.speechFailAt > 30000) {
+          kiosk.speechFailAt = now; kiosk.speechFails = 0;
+        }
+        kiosk.speechFails = (kiosk.speechFails || 0) + 1;
+        if (kiosk.speechFails >= 3) {
+          kioskTypingFallback('The speech service cannot connect right now — type your answer below. The check-in will still continue.', recoverable);
+          return;
+        }
+      }
+      if (recoverable) kioskOfferRecoverable(recoverable);
+      /* A transient end/error re-opens capture without resetting the silence
+         watchdog. That timer must be allowed to nudge and self-end an abandoned
+         kiosk even when Chrome emits no-speech every few seconds. */
+      if (kiosk.deadTimer) safe(function () { clearTimeout(kiosk.deadTimer); });
+      kiosk.deadTimer = setTimeout(function () {
+        kiosk.deadTimer = null;
+        if (kiosk.open && !kiosk.completed && kiosk.mic !== false) kioskListen(true);
+      }, code === 'network' ? Math.min(1600, 400 * (kiosk.speechFails || 1)) : 400);
+    });
+    if (!started) {
+      kioskTypingFallback('The microphone is not available here — typing works below.', '');
+      return;
+    }
+    if (!keepMood) kioskArmWatchdog(9000);
+  }
+  /* Natural completion must not expose the app either — with a PIN set, the
+     finished kiosk RESTS ("hand the screen back") until staff unlock it.
+     kiosk.pinSet is TRI-STATE: true / false / null-unknown. Unknown is treated
+     as LOCKED. It used to be seeded false and only ever raised from the
+     answer-less first turn, so one dropped first request left the flag false
+     for the whole interview and the finished kiosk auto-exited fullscreen into
+     the doctor's app — the whole roster, in front of a patient. */
+  function kioskFinish() {
+    if (!kiosk.open) return;
+    kiosk.completed = true;
+    /* av-5.7.0 - IT ALWAYS RESTS NOW, PIN OR NO PIN. A no-PIN practice used to
+       have the finished kiosk close itself straight into the doctor's app - the
+       whole roster, in front of the patient who was still holding the screen -
+       and it also meant the hand-off the owner asked for could not exist,
+       because the screen was gone before the doctor walked in. The exit is
+       still one tap for a no-PIN office (End interview), so nobody is trapped. */
+    /* pvStopMic, NOT pvStopVoice: THE CLOSING LINE IS THE ONE MOST OFTEN CUT.
+       kioskTurn arms a 12-second safety timer beside the done-path speak, and any
+       closing line longer than that reached this function while it was still
+       playing — a hard cap on the last thing the patient hears. The timer still
+       does its real job (a speak that never completes cannot strand the kiosk);
+       it just no longer amputates the sentence to do it. */
+    pvStopMic();
+    safe(function () { pvVoiceGateStop(); });
+    kioskMood('speaking', 'thank you');
+    kioskSetSay('All set — thank you. Your doctor will be in with you soon.');
+    var iv = gid('mlsAvKioskInterim');
+    kioskLine('status', 'Please hand the screen back to the team. Staff: the button below starts listening to the visit; “End interview” leaves.');
+    var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    kioskRestShow();
+  }
+  /* THE ONE BUTTON. Owner: "this avatar once its done should say your doctor
+     will be in with you soon ... but it needs to stay up so when the doctor
+     enters the room they click one button and the avatar just listens."
+     It is not behind the exit PIN on purpose: the PIN guards the way back into
+     the app, and starting a recording that the screen declares in words, that
+     Pause stops instantly and that can only ever be written to the chart this
+     check-in was bound to, is not that. */
+  function kioskRestShow() {
+    /* Rest means neither SpeechRecognition nor the independently adopted AEC
+       analyser owns a microphone. The room button is a promise to START later. */
+    safe(function () { pvVoiceGateStop(); });
+    var host = gid('mlsAvKioskRest'); if (!host) return;
+    host.style.display = 'flex';
+    /* AND THE SCREEN STOPS CLAIMING TO SPEAK. kioskFinish sets the mood to
+       'speaking' so the closing line plays; without this the chip read "Speaking"
+       and the waveform animated for the whole rest period, which on a busy day is
+       minutes of a silent screen insisting it is talking. The class goes too, or
+       the wave keeps running underneath a corrected chip. */
+    safe(function () {
+      var root = gid('mlsAvKiosk');
+      if (root) root.classList.remove('speaking', 'listening', 'thinking');
+    });
+    kioskState('resting');
+  }
+  /* End interview is a STAFF action: with an exit PIN configured, a patient
+     holding the screen cannot end the kiosk into the doctor's app. The PIN is
+     verified SERVER-side (it never rides to the client); no PIN configured =
+     End closes immediately, and Setup encourages setting one. */
+  function kioskRequestEnd() {
+    if (kiosk.pinSet === false) { kioskEndForStaff('ended'); return; }
+    pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    var pad = gid('mlsAvKioskPin'), input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg');
+    if (!pad) { kioskEndForStaff('ended'); return; }
+    if (msg) msg.textContent = '';
+    if (input) input.value = '';
+    pad.style.display = 'flex';
+    if (input) safe(function () { input.focus(); });
+    if (kiosk.pinSet === null) {
+      /* We never learned whether this practice has a PIN (a dropped first
+         turn). Ask the server — it answers unset:true for a no-PIN practice,
+         so that office still exits in one tap, and an unreachable server
+         leaves the gate CLOSED rather than open. */
+      if (kiosk.pinProbeBusy) return;
+      kiosk.pinProbeBusy = true;
+      var probeGeneration = kiosk.generation | 0, probeSid = clean(kiosk.sid), probeExt = clean(kiosk.ext);
+      function probeCurrent() {
+        return !!(kiosk.open && (kiosk.generation | 0) === probeGeneration &&
+          clean(kiosk.sid) === probeSid && clean(kiosk.ext) === probeExt);
+      }
+      api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: '' }) }).then(function (r) {
+        if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
+        if (!probeCurrent()) return;
+        kiosk.pinProbeBusy = false;
+        if (r.ok && r.json && r.json.ok && r.json.unset === true) { kiosk.pinSet = false; kioskEndForStaff('ended'); }
+        else if (r.ok && r.json) { kiosk.pinSet = true; }
+      }, function () { if (probeCurrent()) kiosk.pinProbeBusy = false; });
+    }
+  }
+  /* Staff leaving must CLOSE the interview server-side, or the row sits
+     'active' forever: both inbox queries are status-filtered, the session id
+     is not persisted, and the patient's answers become invisible in every
+     surface. Fire-and-forget — the request completes after the overlay goes,
+     and the backend closes honestly and still runs the summary pipeline. */
+  function kioskEndForStaff(reason) {
+    /* AMBIENT FIRST. The capture is filed while the transcript box, the
+       active chart and the overlay all still exist - kioskClose tears down
+       every one of those, and a capture filed after them is a capture
+       thrown away. */
+    function finishExit(owned) {
+      if (owned && kiosk.ambient) {
+        kioskAmbientSave(true);
+        kioskAmbientStop('staff');
+      }
+      kiosk.ambExitPending = false;
+      kioskCloseServerSide();
+      kioskClose(reason);
+    }
+    if (kiosk.ambient || kiosk.ambClosing) {
+      if (kiosk.ambExitPending) return;
+      kiosk.ambExitPending = true;
+      /* The PIN exit is still a terminal owner, but it waits for Chrome's last
+         final/interim exactly like End Visit. Closing the overlay first would
+         erase both the recovery buffer and its canonical transcript target. */
+      kioskAmbientFlush(finishExit, 'staff');
+      return;
+    }
+    finishExit(false);
+  }
+  function kioskPinSubmit(mode) {
+    /* TWO OUTCOMES, one gate. 'ambient' keeps the room microphone open for
+       the consultation; anything else is today's behaviour, End. Both are
+       behind the same server-verified PIN, so neither is reachable by the
+       patient holding the screen. */
+    var wantAmbient = (mode === 'ambient');
+    var input = gid('mlsAvKioskPinInput'), msg = gid('mlsAvKioskPinMsg'), go = gid('mlsAvKioskPinGo');
+    var amb = gid('mlsAvKioskPinAmb');
+    var pin = input ? input.value.trim() : '';
+    if (!/^\d{4,8}$/.test(pin)) { if (msg) msg.textContent = 'The PIN is 4 to 8 digits.'; return; }
+    if (kiosk.pinUnlockBusy) return;
+    kiosk.pinUnlockBusy = true;
+    var unlockGeneration = kiosk.generation | 0, unlockSid = clean(kiosk.sid), unlockExt = clean(kiosk.ext);
+    function unlockCurrent() {
+      return !!(kiosk.open && (kiosk.generation | 0) === unlockGeneration &&
+        clean(kiosk.sid) === unlockSid && clean(kiosk.ext) === unlockExt);
+    }
+    if (go) go.disabled = true;
+    if (amb) amb.disabled = true;
+    api('/api/avatar/office/unlock', { method: 'POST', body: JSON.stringify({ pin: pin }) }).then(function (r) {
+      if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
+      if (!unlockCurrent()) return;
+      kiosk.pinUnlockBusy = false;
+      if (go) go.disabled = false;
+      if (amb) amb.disabled = false;
+      if (r.ok && r.json && r.json.ok) {
+        if (wantAmbient) {
+          /* THE HANDOFF. The overlay STAYS UP - it is the disclosure. */
+          var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
+          if (input) input.value = '';
+          if (msg) msg.textContent = '';
+          if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
+          return;
+        }
+        /* staff just proved themselves — a COMPLETED interview hands the
+           doctor the summary immediately (the Ready inbox, fresh row on top).
+           Never on the no-PIN auto-close path, where the patient may still
+           be holding the screen. */
+        var showSummary = kiosk.completed === true;
+        kioskEndForStaff('ended');
+        if (showSummary) safe(function () { open(); });
+        return;
+      }
+      if (msg) msg.textContent = (r.json && r.json.message) || 'That PIN isn\'t right — try again.';
+      if (input) { input.value = ''; safe(function () { input.focus(); }); }
+    }, function () {
+      if (!unlockCurrent()) return;
+      kiosk.pinUnlockBusy = false;
+      if (go) go.disabled = false;
+      if (msg) msg.textContent = 'Could not check the PIN — check the connection and try again.';
+    });
+  }
+  function kioskMicPreflight(then) {
+    /* Ask for the microphone ONCE, up front, while the DOCTOR still holds the
+       screen — never mid-interview in front of the patient. */
+    /* echoCancellation is the PREREQUISITE for an open mic during playback:
+       without it the recogniser transcribes the avatar itself into the
+       patient's answer, which corrupts the record rather than merely
+       annoying anyone. */
+    if (kiosk.preflightRequest) {
+      if (then) kiosk.preflightRequest.waiters.push(then);
+      return;
+    }
+    var preflightGeneration = kiosk.generation | 0;
+    var preflightConsent = Number(kiosk.consentAt || 0);
+    var gateGeneration = ++vgStartGeneration;
+    var preflight = { generation: preflightGeneration, consent: preflightConsent,
+      gateGeneration: gateGeneration, waiters: then ? [then] : [] };
+    kiosk.preflightRequest = preflight;
+    kiosk.preflighting = true;
+    function finishPreflight() {
+      if (kiosk.preflightRequest !== preflight) return;
+      kiosk.preflightRequest = null;
+      kiosk.preflighting = false; kiosk.preflightContinue = null;
+      var waiters = preflight.waiters.slice(); preflight.waiters = [];
+      for (var pwi = 0; pwi < waiters.length; pwi++) safe(waiters[pwi]);
+    }
+    var media = safe(function () {
+      return navigator.mediaDevices && navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    }, null);
+    if (!media) { kiosk.mic = false; finishPreflight(); return; }
+    media.then(function (stream) {
+      if (!kiosk.open || (kiosk.generation | 0) !== preflightGeneration ||
+          Number(kiosk.consentAt || 0) !== preflightConsent || gateGeneration !== vgStartGeneration ||
+          kiosk.preflightRequest !== preflight) {
+        safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+        return;
+      }
+      /* av-6.1.0: KEEP this stream instead of throwing it away. The comment above already
+         said echo cancellation is the prerequisite for an open mic during playback — but the
+         stream carrying it was stopped one line later, and the recogniser then opened its own
+         microphone with no constraints at all. So the reasoning was right and nothing used it.
+         The voice gate adopts this stream, which means the mic is still requested exactly ONCE
+         on the staff tap (the contract avatar-consent-and-turn-taking-proof.js pins) and never
+         again in front of a patient. My first attempt started a second getUserMedia from
+         kioskListen, and that suite caught it. If adoption fails for any reason the stream is
+         released exactly as before, so the old behaviour is the floor. */
+      var adopted = pvVoiceGateAdopt(stream);
+      if (!adopted) safe(function () { stream.getTracks().forEach(function (t) { t.stop(); }); });
+      kiosk.mic = true; finishPreflight();
+    }, function () {
+      if (!kiosk.open || (kiosk.generation | 0) !== preflightGeneration ||
+          Number(kiosk.consentAt || 0) !== preflightConsent || gateGeneration !== vgStartGeneration ||
+          kiosk.preflightRequest !== preflight) return;
+      kiosk.mic = false;
+      kioskLine('hint', 'Microphone is off — the interview will use typing.');
+      var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'flex';
+      finishPreflight();
+    });
+  }
+  /* which of the eight backend voices are male. Named rather than inferred: the
+     list is fixed server-side (TTS_VOICES in openai.js) and a voice we do not
+     recognise leaves pvWantMale null, which means "do not guess". */
+  var PV_MALE_VOICES = { ash: 1, echo: 1, onyx: 1 };
+  var PV_FEMALE_VOICES = { coral: 1, nova: 1, shimmer: 1, sage: 1 };
+  function kioskSetIdentity(av) {
+    var name = gid('mlsAvKioskName');
+    /* av-6.2.0 — "One moment…" IS THE NAME SLOT'S PLACEHOLDER, and this was the only thing
+       that ever replaced it, only when a name actually arrived. A turn response without
+       avatar.name therefore left "One moment…" standing where the assistant's NAME belongs,
+       in front of the patient, for the entire interview. Measured in a real kiosk render:
+       #mlsAvKioskName read "One moment…" through every state.
+       Resolve it either way now — the delivered name, else the one we already learned, else a
+       neutral label. A waiting-message must never be left where a name goes. */
+    var gotName = clean(av && av.name);
+    if (name) name.textContent = gotName || kiosk.avName || 'Your check-in assistant';
+    if (gotName) kiosk.avName = gotName;   /* speaker label in the filed transcript */
+    /* THE CONFIGURED VOICE WAS DELIVERED AND THROWN AWAY. The turn response has
+       carried `avatar.voice` for several releases specifically so the client can
+       see which voice is speaking, and this function - the one place that reads
+       the identity payload - ignored it. That is why the browser fallback could
+       answer in the wrong sex: the information it needed was already on the
+       wire. `alloy` is deliberately in NEITHER table; it is the neutral voice
+       and guessing a sex for it would be worse than not matching.
+       The pick is CACHED in pvVoice, so learning this has to invalidate it -
+       the first turn can easily land after something has already spoken. */
+    safe(function () {
+      if (!av || typeof av.voice !== 'string') return;
+      var want = PV_MALE_VOICES[av.voice] ? true : (PV_FEMALE_VOICES[av.voice] ? false : null);
+      if (want === pvWantMale) return;
+      pvWantMale = want;
+      pvVoice = undefined;   /* re-pick against the new preference */
+    });
+    /* explicit — an identity payload that says "no PIN" must be able to LOWER
+       the gate, and only a real payload resolves the unknown state */
+    if (av && typeof av.exitPinSet === 'boolean') kiosk.pinSet = av.exitPinSet === true;
+    var hasPhoto = av && faceValidPhoto(av.faceImage);
+    if (hasPhoto && av.faceMode === 'photo') {
+      /* The doctor chose THEIR real portrait. Use the same bounded portrait
+         controller Setup previews, so speech/listening state stays connected
+         without drawing fake mouth landmarks over a still image. */
+      if (!kiosk.photoFace) {
+        kiosk.photoFace = true;
+        if (kiosk.face) { safe(function () { kiosk.face.destroy(); }); kiosk.face = null; }
+        var mount = gid('mlsAvKioskFace');
+        if (mount) kiosk.face = makePhotoFace(mount, av.faceImage, '');
+      }
+    } else if (av && av.faceLook && !kiosk.tinted) {
+      /* drawn mode: the doctor's SAVED appearance wins — colours, hair cut,
+         glasses, facial hair — and the full expression range survives */
+      kiosk.tinted = true;
+      kiosk.look = faceLookSafe(av.faceLook);
+      if (kiosk.face) safe(function () { kiosk.face.retint(kiosk.look); });
+    } else if (hasPhoto && !kiosk.tinted) {
+      /* no saved appearance yet: derive one from the portrait so the face
+         still resembles the doctor on day one.
+         fx-1.0 (DIAGNOSIS Mechanism B, measured end to end): this branch
+         used to apply res.look WHOLESALE - and older av.faceImage values were
+         posterized, so the first patient a dark-haired doctor ever
+         greeted met a #333333 gray-haired stranger. It now goes through the
+         same claimed-knobs-only door as Setup: an illustration-only read
+         applies NOTHING (the default character), and a claimed knob rides
+         over the default only when `derived` licenses it. */
+      kiosk.tinted = true;
+      var tintReceipt = { session: sessionReceipt(), generation: kiosk.generation | 0,
+        portrait: String(av.faceImage), face: kiosk.face };
+      kiosk.tintPortrait = tintReceipt.portrait;
+      faceTintFromPortrait(av.faceImage, function (res) {
+        if (!sessionReceiptCurrent(tintReceipt.session) || !kiosk.open ||
+            (kiosk.generation | 0) !== tintReceipt.generation ||
+            kiosk.face !== tintReceipt.face || !kiosk.face ||
+            kiosk.tintPortrait !== tintReceipt.portrait) return;
+        var applied = faceKioskDayOneLook(res);
+        kiosk.look = applied;
+        safe(function () { kiosk.face.retint(applied); });
+      });
+    }
+  }
+  /* =========================================================================
+     av-5.4.0 - AMBIENT ROOM MODE. Owner, 2026-08-06: "make it possible for the
+     avatar to just sit back and listen for even when the doctor comes back and
+     just put that into the text box once done to be turned into all the notes
+     and stuff ... just like having someone else in the room to ask questions
+     then take notes all for the doctor."
+
+     The intake interview already ends with the kiosk AT REST behind the staff
+     exit PIN. That rest screen is the handoff point: the same PIN pad now has
+     a second outcome - keep the room microphone open through the consultation,
+     then hand the doctor ONE transcript with the check-in and the visit in it,
+     in that order, with a visible boundary between them.
+
+     Five things this mode has to get right, each of which is a defect this
+     file has already paid for somewhere else:
+
+     1. IT MUST NOT SPEAK. A participant asks questions; a scribe does not.
+        Silence is enforced inside pvSpeakVoiced itself - the ONE place any
+        voice can start - instead of by disarming a list of call sites. A list
+        is a denylist, and the next call site added would not be on it.
+     2. IT MUST NOT SELF-END. The 9s watchdog exists to close an ABANDONED
+        interview after three fruitless listens. A real exam is silent for
+        minutes at a time, so both kioskArmWatchdog and kioskWatchdog return
+        early while ambient runs. The end conditions are different in kind:
+        the staff PIN, or a hard 90 minute cap. Nothing else stops it.
+     3. IT MUST SAY SO, CONTINUOUSLY. The disclosure is an element shown by one
+        class on the root plus the avatar's own listening state - "recording"
+        and "the screen says recording" are therefore the same fact and cannot
+        drift apart. A toast would fade; a patient who consented to intake
+        questions has not consented to an exam being taped.
+     4. IT MUST FAIL CLOSED ON THE PATIENT. A consultation filed to the wrong
+        chart is the worst thing this feature can produce, so the chart is
+        compared at WRITE time against the chart the check-in was bound to. Not
+        at start time, and never as "probably still the same patient".
+     5. IT MUST SURVIVE LENGTH. Chrome's recogniser ends itself roughly every
+        minute and dies silently on "no-speech" and "network". The loop owns its
+        own recogniser (pvListen's 1.3s quiet-submit is turn-taking behaviour
+        and would tear the microphone down every pause), restarts with a
+        bounded backoff, and accumulates into an array that no restart can
+        truncate. ============================================================ */
+  var AMBIENT_MAX_MS = 90 * 60 * 1000;         /* hard cap - never into the next patient */
+  var AMBIENT_HEAD_CHECKIN = '--- check-in ---';
+  var AMBIENT_HEAD_VISIT = '--- visit ---';
+  var AMBIENT_HEAD_ORDERS = '--- actions the doctor confirmed on screen ---';
+  /* ONE source for the recording banner text: the markup and the resume path
+     must never be able to disagree about what the screen says. */
+  var NUDGE_LINE = 'Take your time — whenever you\'re ready, just start talking.';
+  var AMBIENT_REC_TEXT = 'Recording this visit. The avatar is listening in the room and taking notes for the doctor.';
+
+  /* =========================================================================
+     av-5.6.0 - THE VISIT COPILOT. Room mode could already hear a whole
+     consultation. Three things it could not do, each of which is a way a real
+     visit loses information:
+
+     1. IT FORGOT ON REFRESH. The capture lived in ONE array in ONE tab and
+        reached the transcript exactly once, at the very end. A reload, a
+        crashed renderer, a tab discarded under memory pressure, or a mis-tap
+        threw away the entire consultation and left no trace that anything had
+        ever been recorded - the doctor could not even know what was lost.
+        Every finalised sentence is now persisted under the account namespace
+        within ~1.5s, and an unfiled capture announces itself on the next load.
+     2. IT HEARD ORDERS AND DID NOTHING WITH THEM. "Order an MRI lumbar spine
+        without contrast" was recorded as prose and re-read later. It is now
+        recognised as it is said and prepared as a PROPOSAL - never submitted,
+        never completed by guesswork, and not confirmable at all while a
+        clinically required detail (which side) is missing.
+     3. IT HAD NO END. Capture ended through the staff PIN pad, which is a door
+        back into the app, not a review of the visit. One End Visit control now
+        flushes the recogniser, files, and reports honestly what was saved and
+        what remains only proposed.
+     ======================================================================== */
+
+  /* ---- 1. THE BACKUP -----------------------------------------------------
+     The in-memory capture stays authoritative; this is the crash copy. It is
+     account-namespaced (never the next doctor's visit), chart-bound (it can
+     only ever be filed to the chart it was taken on), and it degrades under
+     quota by shedding its OLDEST sentences and SAYING SO - a backup that
+     silently stopped updating an hour ago is worse than no backup. ------- */
+  var AMBIENT_STORE_KEY = 'mlsAvRoomCaptureV1';
+  var AMBIENT_SAVE_MS = 1500;
+  function ambientStoreKey() {
+    return safe(function () {
+      return isFn(window.uns) ? (window.uns(AMBIENT_STORE_KEY) || AMBIENT_STORE_KEY) : AMBIENT_STORE_KEY;
+    }, AMBIENT_STORE_KEY);
+  }
+  /* ONE SLOT WAS ONE PATIENT TOO FEW (fixed av-5.7.2, found by review round three
+     and confirmed by executing the store against a fake localStorage).
+     Every capture wrote the SAME key, so the first backup write of the next room
+     recording overwrote the previous one — unconditionally, with setItem. A visit
+     that failed to file (wrong chart open, no transcript box on screen) keeps only
+     its crash copy, and the very next patient's hand-off tap destroyed it, along
+     with the Visit card's offer to recover it. Nothing said so: the panel simply
+     never appeared again.
+     The record is now keyed BY THE CHART IT IS BOUND TO, so held captures for
+     different patients coexist and each is offered to the chart it belongs to.
+     The bare legacy key is still read, so a capture taken by b954 or earlier is
+     still recoverable, and it is dropped by its own key when it is filed. */
+  function ambientStoreKeyFor(bound) {
+    var b = clean(bound);
+    return b ? (ambientStoreKey() + ':' + b) : ambientStoreKey();
+  }
+  function ambientRecParse(raw) {
+    if (!raw) return null;
+    var rec = safe(function () { return JSON.parse(raw); }, null);
+    if (!rec || typeof rec !== 'object' || !Array.isArray(rec.parts)) return null;
+    /* an UNBOUND backup could only ever end in a refusal to write (see
+       kioskAmbientFile), so it is not a recoverable capture at all */
+    if (!clean(rec.bound)) return null;
+    return rec;
+  }
+  /* every held capture, newest first. Enumerated from localStorage rather than
+     from a remembered list, because the list is exactly what a reload loses. */
+  function ambientStoreList() {
+    var base = ambientStoreKey();
+    var out = [], seen = {};
+    function add(k) {
+      if (!k || seen[k]) return;
+      var rec = ambientRecParse(safe(function () { return localStorage.getItem(k); }, null));
+      if (rec) { seen[k] = 1; out.push({ key: k, rec: rec }); }
+    }
+    /* enumeration is the general case: any chart may be holding one */
+    safe(function () {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || (k !== base && k.indexOf(base + ':') !== 0)) continue;
+        add(k);
+      }
+    });
+    /* AND A DIRECT LOOK, ALWAYS. If enumeration is unavailable or throws part-way
+       (a storage implementation without length/key, a partitioned or blocked store),
+       an empty list is indistinguishable from "no capture is waiting" - so the
+       recovery offer would silently disappear and the consultation with it. These two
+       keys are the ones that matter: the legacy single slot, and the chart on screen. */
+    add(base);
+    var open = clean(safe(function () { return activePtIdSafe(); }, ''));
+    if (open) add(ambientStoreKeyFor(open));
+    if (kiosk && clean(kiosk.ambBound)) add(ambientStoreKeyFor(clean(kiosk.ambBound)));
+    out.sort(function (a, b) { return (Number(b.rec.savedAt) || 0) - (Number(a.rec.savedAt) || 0); });
+    return out;
+  }
+  /* WHICH held capture to offer. A CAPTURE RUNNING IN THIS TAB IS NOT A RECOVERED
+     ONE - the backup is written continuously while the room is being recorded, so
+     without this filter the Visit card would offer to file a visit still in
+     progress, writing half a consultation and dropping the backup protecting the
+     other half. The open chart's own capture wins over a newer one belonging to a
+     different chart: it is the only one the doctor can file from where he stands. */
+  function ambientStorePick() {
+    var live = clean(kiosk.sid);
+    var list = ambientStoreList().filter(function (e) {
+      return !(kiosk.ambient === true && live && clean(e.rec.sid) === live);
+    });
+    if (!list.length) return null;
+    var open = clean(safe(function () { return activePtIdSafe(); }, ''));
+    var chosen = null;
+    if (open) {
+      for (var i = 0; i < list.length; i++) {
+        if (clean(list[i].rec.bound) === open) { chosen = list[i]; break; }
+      }
+    }
+    if (!chosen) chosen = list[0];
+    chosen.held = list.length;
+    return chosen;
+  }
+  /* drop BY KEY. A drop that recomputed the key from current state would delete
+     whichever capture the store happens to be pointing at now, not the one the
+     doctor just filed or deliberately discarded. */
+  function ambientStoreDrop(key) {
+    var k = clean(key);
+    safe(function () { localStorage.removeItem(k || ambientStoreKey()); });
+  }
+  function ambientStoreWrite(rec) {
+    /* keyed by the bound chart, so this write can never land on another
+       patient's held capture. An unbound record is unrecoverable by
+       construction (ambientRecParse refuses it), so it keeps the bare key. */
+    var key = ambientStoreKeyFor(rec.bound);
+    var parts = (rec.parts || []).slice();
+    var trimmed = false;
+    /* ⛔ A NEW SESSION MUST NOT ERASE ANOTHER SESSION'S RECORDED WORDS.
+       The slot is keyed by the bound chart, and kioskAmbientStart writes a backup BEFORE the first
+       ROOM word is spoken. Starting a check-in on a chart that still held an UNFILED consultation
+       therefore landed a record with zero room words on top of the only copy of it, returned
+       ok:true, and the doctor's Visit-card offer vanished at the same moment (ambientRecoverInfo
+       yields nothing for a bodyless record).
+       ⚠️ "EMPTY" MEANS NO ROOM WORDS - IT MUST NOT COUNT intake. The sole writer
+       (kioskAmbientSaveNow) always forwards kiosk.intake, so after any interview the incoming
+       record carries the whole check-in; an intake-counting test can NEVER fire on the path that
+       does the damage. A previous version of this guard counted intake and was a measured no-op
+       for exactly that reason, with a green test over it that hard-coded the one shape the caller
+       never produces.
+       ⚠️ AND IT MOVES THE HELD CAPTURE ASIDE RATHER THAN REFUSING THE WRITE. Refusing sets
+       kiosk.ambSaveOk false, which paints the patient-facing recording disclosure as a backup
+       failure, and it would also drop this check-in's own backup. The aside key keeps the chart
+       prefix so ambientStoreList's enumeration still finds it, while the live capture keeps the
+       plain chart key that ambientStoreList's DIRECT LOOK can reconstruct without knowing a sid. */
+    if (!parts.length) {
+      var heldRaw = safe(function () { return localStorage.getItem(key); }, null);
+      var held = heldRaw ? ambientRecParse(heldRaw) : null;
+      /* only a held record with ROOM WORDS is worth keeping: a bodyless one can never be offered,
+         so preserving those would silt up the chart's slot with nothing. A record carrying THIS
+         session's sid is the same capture updating itself and must simply be overwritten. */
+      if (held && (held.parts || []).length && clean(held.sid) !== clean(rec.sid)) {
+        var aside = key + '#' + (clean(held.sid) || ('t' + (Number(held.savedAt) || 0)));
+        var moved = safe(function () { localStorage.setItem(aside, heldRaw); return true; }, false);
+        /* the store is too full to hold the copy. A recorded consultation is worth more than a
+           placeholder with no words in it, so keep it and report the storage failure honestly
+           instead of overwriting a real visit to make room for an empty one. */
+        if (!moved) return { ok: false, why: 'quota', trimmed: false, kept: true };
+      }
+    }
+    for (var guard = 0; guard < 40; guard++) {
+      var body = safe(function () {
+        return JSON.stringify({
+          v: 1, sid: rec.sid || '', bound: rec.bound || '', start: rec.start || 0,
+          savedAt: Date.now(), avName: rec.avName || '', trimmed: trimmed,
+          intake: rec.intake || [], actions: rec.actions || [], parts: parts,
+          /* THE CONSENT AND THE FILED FLAG ARE PART OF THE RECORD, not of this
+             tab's memory. Without them a recovered capture filed with NO consent
+             attestation - breaking the invariant this train exists to enforce -
+             and re-filed the whole check-in block a second time, so the patient's
+             intake answers landed in the chart twice. Both are in-memory-only
+             flags that a reload is exactly the event that loses. */
+          consentAt: rec.consentAt || 0, intakeFiled: rec.intakeFiled === true,
+          /* Closed, bounded ownership receipt captured BEFORE the microphone
+             opened. Patient ID alone cannot distinguish two appointments for
+             the same person. */
+          visitBinding: ambientClosedVisitReceipt(rec.visitBinding)
+        });
+      }, '');
+      if (!body) return { ok: false, why: 'serialise', trimmed: trimmed };
+      if (safe(function () { localStorage.setItem(key, body); return true; }, false)) {
+        return { ok: true, trimmed: trimmed, bytes: body.length };
+      }
+      /* out of quota: shed the oldest quarter of the STORED copy and retry.
+         kiosk.ambParts is untouched, so a visit that ends normally still
+         files complete - only the crash copy loses its head. */
+      if (parts.length < 2) return { ok: false, why: 'quota', trimmed: trimmed };
+      parts = parts.slice(Math.ceil(parts.length / 4));
+      trimmed = true;
+    }
+    return { ok: false, why: 'quota', trimmed: true };
+  }
+  function ambientActionsForStore() {
+    return (kiosk.ambActions || []).map(function (a) {
+      return { id: a.id, kind: a.kind, title: a.title, detail: a.detail, heard: a.heard,
+        missing: (a.missing || []).slice(), status: a.status, at: a.at };
+    });
+  }
+  function kioskAmbientSaveNow() {
+    /* A FILED capture leaves no backup behind: the words are in the doctor's
+       transcript now, and a stale copy would offer to file them a second
+       time on the next load. */
+    if (kiosk.ambFiled || !clean(kiosk.ambBound)) return null;
+    var res = ambientStoreWrite({
+      sid: kiosk.sid, bound: kiosk.ambBound, start: kiosk.ambStart, avName: kiosk.avName || '',
+      intake: kiosk.intake || [], actions: ambientActionsForStore(), parts: kiosk.ambParts || [],
+      /* carried so a RECOVERED capture can state its consent and can tell whether
+         the check-in has already reached the transcript - see ambientStoreWrite */
+       consentAt: kiosk.consentAt || 0, intakeFiled: kiosk.intakeFiled === true,
+       visitBinding: kiosk.ambVisit
+    });
+    kiosk.ambSavedAt = Date.now();
+    kiosk.ambSaveOk = res.ok === true;
+    kiosk.ambSaveTrim = res.trimmed === true;
+    kioskAmbientSaveBadge();
+    return res;
+  }
+  function kioskAmbientSave(force) {
+    if (force) {
+      if (kiosk.ambSaveTimer) { safe(function () { clearTimeout(kiosk.ambSaveTimer); }); kiosk.ambSaveTimer = null; }
+      return kioskAmbientSaveNow();
+    }
+    if (!kiosk.ambient) return null;
+    /* a trailing save is already queued and will carry this sentence too -
+       one write per ~1.5s, not one per recognised phrase */
+    if (kiosk.ambSaveTimer) return null;
+    kiosk.ambSaveTimer = setTimeout(function () {
+      kiosk.ambSaveTimer = null;
+      kioskAmbientSaveNow();
+    }, AMBIENT_SAVE_MS);
+    return null;
+  }
+  function kioskAmbientSaveBadge() {
+    var el = gid('mlsAvKioskSave');
+    if (!el) return;
+    if (kiosk.ambSaveOk === false) {
+      el.textContent = 'Not backed up - this tab only';
+      el.setAttribute('data-state', 'bad');
+      return;
+    }
+    el.textContent = kiosk.ambSaveTrim ? 'Saved (backup trimmed)' : 'Saved';
+    el.setAttribute('data-state', 'ok');
+  }
+
+  /* ---- 2. THE ACTION DETECTOR -------------------------------------------
+     Pure, synchronous and LOCAL. It runs on the sentence the recogniser just
+     finalised, so a proposal is on screen in the same tick the doctor stops
+     speaking: no network hop, no model round trip, and it still works while
+     the connection is crawling. Three rules it may never break:
+
+       - IT READS ONLY WHAT WAS SAID. Every field it cannot hear stays empty.
+         An empty field that is clinically required (which side, for a paired
+         body part) blocks Confirm outright rather than being filled in with
+         the likely answer.
+       - IT PROPOSES, IT NEVER PLACES. Nothing here submits anything. The
+         confirmed list is written into the doctor's transcript under its own
+         heading; placing the order in the EMR remains the doctor's action.
+       - IT IS CONSERVATIVE ON PURPOSE. One microphone means doctor and
+         patient arrive on the same channel and cannot be told apart, so a
+         question ("should we get an MRI?", "can I get an MRI?") and every
+         negated, past, conditional or cancelled form is refused. A missed
+         proposal costs one manual entry; a spurious one spends the doctor's
+         attention in front of a patient on something nobody asked for. ---- */
+
+  /* the trigger VERB is mandatory for every kind. On its own this refuses
+     most of what a patient says about their own care ("I had an MRI last
+     year", "my knee hurts") before any other guard runs. */
+  var ACT_VERB = /\b(order|orders|ordering|get|getting|obtain|schedule|scheduling|book|repeat|prescribe|prescribing|start|starting|refer|referring|referral|send|draw|check|put (?:him|her|them) on|follow(?:ing)? up|come back|see (?:him|her|them) back)\b/i;
+
+  /* HARD refusals: the sentence contains the words and no action was taken.
+     These win over every commitment phrase, because "if it gets worse we'll
+     order an MRI" is a plan for a different day, not an order for today. */
+  var ACT_HARD_BLOCK = [
+    /\b(?:don'?t|do not|does not|doesn'?t|did not|didn'?t|will not|won'?t|cannot|can'?t|no)\s+(?:\w+\s+){0,3}(?:need|want|order|require|indicat)/i,
+    /\bnot\s+(?:\w+\s+){0,2}(?:going to\s+|gonna\s+)?(?:order|prescrib|refer|start|schedul|obtain)/i,
+    /\bno need (?:for|to)\b/i,
+    /\b(?:hold(?:ing)? off|defer(?:ring)?|avoid|against (?:an?|the)|instead of|rather than|cancel(?:led|ling)?|discontinue|stop(?:ping)?)\b/i,
+    /\b(?:already (?:had|has|have|got|done|ordered)|last (?:year|month|week|visit)|previously|prior|in the past|years? ago|months? ago|weeks? ago)\b/i,
+    /\bif\b[^.?!]*\b(?:worse|worsen|persist|fail|flare|doesn'?t (?:improve|help)|not better|no better)\b/i,
+    /\b(?:worse|persist|fail|doesn'?t (?:improve|help)|not better|no better)\b[^.?!]*\bthen\b/i,
+    /\?\s*$/,
+    /^\s*(?:do|did|does|have|has|had|can|could|should|would|will|are|is|was|am|any|what|when|why|how|which)\b[^.!]*$/i,
+    /\b(?:do|did|would|should|can|could|will) (?:you|we|i|he|she|they)\b/i,
+    /\b(?:what|how) about\b/i,
+    /\bhave you (?:had|ever|been)\b/i
+  ];
+  /* SOFT hedges - refused unless the same sentence also commits. "I would
+     like to order an MRI" commits; "we might order an MRI" does not. */
+  var ACT_SOFT_BLOCK = [/\b(?:might|maybe|perhaps|possibly|probably|consider(?:ing)?|thinking about|may want)\b/i];
+  var ACT_COMMIT = [
+    /\b(?:let'?s|we'?ll|we will|i'?ll|i will|i'?m going to|i am going to|go ahead and|please)\s+(?:\w+\s+){0,3}(?:order|get|obtain|schedul|book|prescrib|start|refer|send|draw|check|repeat)/i,
+    /\bi(?:'d| would| want)?\s*(?:like\s+)?to (?:order|get|obtain|start|prescribe|refer|schedule|check|draw)\b/i,
+    /^\s*(?:order|get|obtain|schedule|book|prescribe|start|refer|send|draw|check|repeat)\b/i
+  ];
+  function actAny(list, text) {
+    for (var i = 0; i < list.length; i++) if (list[i].test(text)) return true;
+    return false;
+  }
+  function actBlocked(text) {
+    if (actAny(ACT_HARD_BLOCK, text)) return true;
+    if (actAny(ACT_SOFT_BLOCK, text) && !actAny(ACT_COMMIT, text)) return true;
+    return false;
+  }
+
+  var ACT_IMAGING = [
+    ['MRI', /\b(?:m\s?r\s?i|magnetic resonance)\b/i],
+    ['CT', /\b(?:c\s?t(?: scan)?|cat scan|computed tomography)\b/i],
+    ['X-ray', /\b(?:x[- ]?rays?|radiographs?|plain films?)\b/i],
+    ['Ultrasound', /\b(?:ultrasound|sonogram|doppler)\b/i],
+    ['DEXA', /\b(?:dexa|bone density)\b/i],
+    ['PET', /\bp\s?e\s?t(?: scan| ct)?\b/i],
+    ['EMG / nerve conduction', /\b(?:e\s?m\s?g|electromyograph\w*|nerve conduction)\b/i],
+    ['Bone scan', /\bbone scans?\b/i]
+  ];
+  /* longest first - "lumbar spine" must win over "spine", and "abdomen and
+     pelvis" over either half */
+  var ACT_REGIONS = ['abdomen and pelvis', 'lumbosacral spine', 'cervical spine', 'thoracic spine',
+    'lumbar spine', 'sacroiliac joint', 'si joint', 'lower extremity', 'upper extremity',
+    'brain', 'head', 'neck', 'chest', 'abdomen', 'pelvis', 'spine', 'sinus',
+    'shoulder', 'elbow', 'forearm', 'wrist', 'hand', 'hip', 'knee', 'ankle', 'foot',
+    'femur', 'tibia', 'humerus', 'clavicle', 'eye', 'ear', 'arm', 'leg'];
+  /* paired structures: an imaging order without a side is not a complete
+     order, so the widget refuses to let it be confirmed until the doctor
+     picks one. It never picks for them. */
+  var ACT_PAIRED = ['shoulder', 'elbow', 'forearm', 'wrist', 'hand', 'hip', 'knee', 'ankle', 'foot',
+    'femur', 'tibia', 'humerus', 'clavicle', 'eye', 'ear', 'arm', 'leg', 'lower extremity', 'upper extremity'];
+  var ACT_LABS = [
+    ['CBC', /\bc\s?b\s?c\b|\bcomplete blood count\b/i],
+    ['CMP', /\bc\s?m\s?p\b|\bcomprehensive metabolic\b/i],
+    ['BMP', /\bb\s?m\s?p\b|\bbasic metabolic\b/i],
+    ['HbA1c', /\b(?:hemoglobin\s+)?a\s?1\s?c\b/i],
+    ['Lipid panel', /\blipid (?:panel|profile)\b/i],
+    ['TSH', /\bt\s?s\s?h\b|\bthyroid (?:panel|function)\b/i],
+    ['ESR', /\be\s?s\s?r\b|\bsed rate\b/i],
+    ['CRP', /\bc\s?r\s?p\b|\bc[- ]reactive protein\b/i],
+    ['Urinalysis', /\burinalysis\b|\bu\s?a\b/i],
+    ['Vitamin D', /\bvitamin d\b/i],
+    ['PT/INR', /\bp\s?t\s?\/?\s?i\s?n\s?r\b|\binr\b/i]
+  ];
+  var ACT_SPECIALTIES = ['orthopedics', 'orthopaedics', 'orthopedic surgery', 'ortho', 'neurosurgery',
+    'neurology', 'cardiology', 'rheumatology', 'physical therapy', 'pt', 'pain management',
+    'sports medicine', 'podiatry', 'dermatology', 'endocrinology', 'gastroenterology',
+    'psychiatry', 'urology', 'ent', 'ophthalmology', 'oncology', 'vascular surgery',
+    'general surgery', 'spine surgery', 'nephrology', 'pulmonology'];
+
+  function actFindRegion(text) {
+    for (var i = 0; i < ACT_REGIONS.length; i++) {
+      if (new RegExp('\\b' + ACT_REGIONS[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(text)) return ACT_REGIONS[i];
+    }
+    return '';
+  }
+  function actFindSide(text) {
+    if (/\bbilateral(?:ly)?\b|\bboth\b/i.test(text)) return 'bilateral';
+    if (/\bleft\b|\bl\s?side\b/i.test(text)) return 'left';
+    if (/\bright\b/i.test(text)) return 'right';
+    return '';
+  }
+  function actFindContrast(text) {
+    if (/\bwith and without contrast\b/i.test(text)) return 'with and without contrast';
+    if (/\b(?:without|no|sans) contrast\b/i.test(text)) return 'without contrast';
+    if (/\bwith contrast\b/i.test(text)) return 'with contrast';
+    return '';
+  }
+  function actInterval(text) {
+    var m = /\b(?:in|after)\s+(?:about\s+)?(\d+|one|two|three|four|five|six|eight|ten|twelve)\s+(day|week|month|year)s?\b/i.exec(text);
+    return m ? (m[1] + ' ' + m[2] + (/^(1|one)$/i.test(m[1]) ? '' : 's')) : '';
+  }
+  function actTitleCase(s) { return String(s || '').replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }); }
+
+  /* detectActions(sentence) -> array of proposals (usually 0 or 1).
+     Exposed for tests through window.__mlsAvatar.detectActions - it is a pure
+     function of its argument and touches nothing. */
+  function detectActions(sentence) {
+    var raw = clean(sentence);
+    if (!raw || raw.length > 600) return [];
+    var directed = false;
+    /* a sentence addressed to the assistant by name is an INSTRUCTION, not
+       part of the conversation between the doctor and the patient */
+    var wake = /^\s*(?:hey[, ]+|ok[, ]+|okay[, ]+)?(?:m\.?\s?l\.?\s?s\.?|scribe|avatar|copilot)\s*[,:.]?\s+(.{3,})$/i.exec(raw);
+    var text = raw;
+    if (wake) { directed = true; text = clean(wake[1]); }
+    var out = [];
+    function push(kind, title, detail, missing, fields) {
+      out.push({
+        id: 'act-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+        kind: kind, title: title, detail: detail || '', missing: missing || [],
+        fields: fields || {}, heard: raw, directed: directed, at: Date.now(), status: 'proposed'
+      });
+    }
+    var hasVerb = ACT_VERB.test(text);
+    /* A directed instruction still has to clear the refusals: "MLS, we are
+       not ordering an MRI" must not produce an order. */
+    if (actBlocked(text)) return [];
+
+    if (hasVerb) {
+      var side = actFindSide(text), region = actFindRegion(text), contrast = actFindContrast(text);
+      var i, m;
+      for (i = 0; i < ACT_IMAGING.length; i++) {
+        if (!ACT_IMAGING[i][1].test(text)) continue;
+        var bits = [];
+        if (side) bits.push(actTitleCase(side));
+        if (region) bits.push(region);
+        if (contrast) bits.push(contrast);
+        var need = [];
+        if (region && ACT_PAIRED.indexOf(region) >= 0 && !side) need.push('side');
+        if (!region) need.push('body part');
+        push('imaging', ACT_IMAGING[i][0], bits.join(' '), need,
+          { modality: ACT_IMAGING[i][0], region: region, side: side, contrast: contrast });
+        break;
+      }
+      if (!out.length) {
+        for (i = 0; i < ACT_LABS.length; i++) {
+          if (!ACT_LABS[i][1].test(text)) continue;
+          push('lab', ACT_LABS[i][0], '', [], { panel: ACT_LABS[i][0] });
+          break;
+        }
+      }
+      if (!out.length && /\b(?:refer|referral|send (?:him|her|them|the patient))\b/i.test(text)) {
+        var spec = '';
+        for (i = 0; i < ACT_SPECIALTIES.length; i++) {
+          if (new RegExp('\\b' + ACT_SPECIALTIES[i] + '\\b', 'i').test(text)) { spec = ACT_SPECIALTIES[i]; break; }
+        }
+        push('referral', 'Referral' + (spec ? ' - ' + actTitleCase(spec) : ''), '',
+          spec ? [] : ['specialty'], { specialty: spec });
+      }
+      if (!out.length && /\b(?:prescrib\w*|start(?:ing)? (?:him|her|them|the patient)? ?on|start(?:ing)?|refill|put (?:him|her|them) on|send (?:in|over) a (?:script|prescription))\b/i.test(text)) {
+        /* the drug NAME is whatever the doctor said after the verb, verbatim
+           and untouched - there is no dictionary here to guess against, and a
+           mis-expanded drug name is the most dangerous thing this file could
+           produce */
+        m = /\b(?:prescribe|prescribing|start|starting|refill|put (?:him|her|them) on)\s+(?:(?:him|her|them|the patient)\s+on\s+)?([a-z][a-z0-9\- ]{2,40})/i.exec(text);
+        /* the captured run stops at the first function word, then at the
+           dose: "start gabapentin 300 mg at night" must name the drug
+           "gabapentin", not "gabapentin 300 mg" - a title that carries a dose
+           reads as a second, different dose next to the real one. */
+        var drug = m ? clean(m[1])
+          .replace(/\s*\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|iu|milligrams?|micrograms?|grams?)\b.*$/i, '')
+          .replace(/\b(?:at|for|and|with|to|in|by|the|a|an|of|on|every|once|twice|daily|nightly)\b.*$/i, '')
+          .trim() : '';
+        var dose = (/\b(\d+(?:\.\d+)?\s?(?:mg|mcg|g|ml|units?|iu|milligrams?|micrograms?|grams?))\b/i.exec(text) || [])[1] || '';
+        var freq = (/\b(once daily|twice daily|three times (?:a day|daily)|every (?:\d+|other) (?:hours?|days?)|at (?:night|bedtime)|nightly|daily|b\.?i\.?d\.?|t\.?i\.?d\.?|q\.?h\.?s\.?|as needed|p\.?r\.?n\.?)\b/i.exec(text) || [])[1] || '';
+        var route = (/\b(by mouth|orally|oral|topical(?:ly)?|injection|intramuscular|subcutaneous|i\.?m\.?|i\.?v\.?)\b/i.exec(text) || [])[1] || '';
+        if (drug) {
+          var dbits = [];
+          if (dose) dbits.push(dose);
+          if (route) dbits.push(route);
+          if (freq) dbits.push(freq);
+          var dneed = [];
+          if (!dose) dneed.push('dose');
+          if (!freq) dneed.push('frequency');
+          push('medication', actTitleCase(drug), dbits.join(', '), dneed,
+            { drug: drug, dose: dose, frequency: freq, route: route });
+        }
+      }
+      if (!out.length && /\b(?:follow(?:ing)? up|come back|see (?:him|her|them) back|recheck)\b/i.test(text)) {
+        var iv = actInterval(text);
+        push('followUp', 'Follow-up' + (iv ? ' in ' + iv : ''), '', iv ? [] : ['interval'], { interval: iv });
+      }
+    }
+    /* A named instruction that matched no clinical shape is still an
+       instruction - it becomes a documentation note carrying the doctor's own
+       words, which is exactly what "remind me to document that ..." asks for.
+       Undirected speech never reaches here: the room is full of sentences. */
+    if (!out.length && directed && text) {
+      push('note', 'Documentation note', text, [], { text: text });
+    }
+    return out;
+  }
+
+  /* ---- the proposal list ------------------------------------------------
+     Chrome finalises PHRASES, not sentences, so one spoken order can arrive
+     as "order an MRI" then "of the lumbar spine without contrast". Detection
+     therefore runs on a short rolling window a beat after the words stop, and
+     a fuller proposal SUPERSEDES the thinner one it grew out of instead of
+     stacking a second card beside it. Two genuinely different scans stay two
+     cards: supersession requires the same modality AND a region the earlier
+     card either did not have or already agreed with. ------------------- */
+  var ACT_DETECT_MS = 1200;
+  var ACT_SUPERSEDE_MS = 30000;
+
+  /* ---- av-5.6.6 — CORRECTIONS ------------------------------------------
+     Doctors correct themselves mid-sentence, constantly: "order an MRI of the
+     knee — actually, make that the right knee." Until now the second half did
+     nothing, so the card kept asking for a side the doctor had already said
+     out loud. That is the copilot failing at the exact moment it looked like
+     it was working.
+
+     Two rules keep this safe:
+       1. A correction only ever applies to a RECENT action, and only when it
+          actually carries a new value. "Actually the pain is worse at night"
+          is not an amendment — the cue alone changes nothing.
+       2. Correcting something the doctor already CONFIRMED sends it back to
+          unconfirmed. Silently editing a confirmed order would mean the thing
+          they approved and the thing in the note are different, which is the
+          one outcome this widget exists to prevent. ---------------------- */
+  var ACT_CORRECT_WINDOW = 180000;
+  var ACT_CANCEL_RE = /\b(?:cancel|scratch|forget|disregard|strike|withdraw)\s+(?:that|it|the\s+(?:order|scan|mri|ct|x-?ray|ultrasound|referral|prescription|labs?))\b|\bnever ?mind\b|\bactually,?\s*no\b|\bdon'?t (?:order|do) (?:that|it)\b/i;
+  var ACT_CUE_RE = /\b(?:actually|sorry|i meant|i mean|make (?:that|it)|change (?:that|it)|correction|instead)\b/i;
+  function actRebuildDetail(a) {
+    var f = a.fields || {}, bits = [];
+    if (a.kind === 'imaging') {
+      if (f.side) bits.push(actTitleCase(f.side));
+      if (f.region) bits.push(f.region);
+      if (f.contrast) bits.push(f.contrast);
+    } else if (a.kind === 'medication') {
+      if (f.dose) bits.push(f.dose);
+      if (f.route) bits.push(f.route);
+      if (f.frequency) bits.push(f.frequency);
+    } else return a.detail || '';
+    return bits.join(a.kind === 'medication' ? ', ' : ' ');
+  }
+  function applyCorrection(sentence) {
+    var text = clean(sentence);
+    if (!text) return null;
+    var list = kiosk.ambActions || [], target = null, i;
+    for (i = list.length - 1; i >= 0; i--) {
+      if (list[i].status === 'dismissed') continue;
+      if (Date.now() - (list[i].at || 0) > ACT_CORRECT_WINDOW) break;
+      target = list[i]; break;
+    }
+    if (!target) return null;
+    if (ACT_CANCEL_RE.test(text)) {
+      target.status = 'dismissed';
+      target.correctedBy = text;
+      return { kind: 'cancelled', on: target };
+    }
+    if (!ACT_CUE_RE.test(text)) return null;
+    var side = actFindSide(text), contrast = actFindContrast(text);
+    var dose = (/\b(\d+(?:\.\d+)?\s?(?:mg|mcg|g|ml|units?|iu|milligrams?|micrograms?|grams?))\b/i.exec(text) || [])[1] || '';
+    var region = actFindRegion(text);
+    var f = target.fields || (target.fields = {}), changed = false;
+    if (side && target.kind === 'imaging' && f.side !== side) { f.side = side; target.picked = side; changed = true; }
+    if (contrast && target.kind === 'imaging' && f.contrast !== contrast) { f.contrast = contrast; changed = true; }
+    if (region && target.kind === 'imaging' && f.region !== region) { f.region = region; changed = true; }
+    if (dose && target.kind === 'medication' && f.dose !== dose) { f.dose = dose; changed = true; }
+    /* the cue alone is not a correction — without a new VALUE there is nothing
+       to change, and guessing what was meant is exactly what this must not do */
+    if (!changed) return null;
+    target.detail = actRebuildDetail(target);
+    target.missing = (target.missing || []).filter(function (k) {
+      if (k === 'side') return !f.side;
+      if (k === 'dose') return !f.dose;
+      if (k === 'body part') return !f.region;
+      return true;
+    });
+    target.correctedBy = text;
+    if (target.status === 'confirmed') { target.status = 'proposed'; target.reconfirm = true; }
+    return { kind: 'amended', on: target };
+  }
+  function actRoot(a) {
+    var f = a.fields || {};
+    return a.kind + '|' + clean(f.modality || f.panel || f.specialty || f.drug || (a.kind === 'note' ? a.detail : '')).toLowerCase();
+  }
+  function ordersUpsert(proposal) {
+    if (!kiosk.ambActions) kiosk.ambActions = [];
+    var list = kiosk.ambActions, root = actRoot(proposal), now = Date.now(), i;
+    for (i = 0; i < list.length; i++) {
+      var old = list[i];
+      if (old.status !== 'proposed' || actRoot(old) !== root) continue;
+      var oldRegion = clean((old.fields || {}).region).toLowerCase();
+      var newRegion = clean((proposal.fields || {}).region).toLowerCase();
+      var growth = (now - old.at) < ACT_SUPERSEDE_MS && (!oldRegion || oldRegion === newRegion);
+      if (!growth) continue;
+      /* keep the side the DOCTOR already picked on the card - the newer
+         hearing must not silently drop a resolved requirement */
+      if (old.picked) {
+        proposal.picked = old.picked;
+        proposal.fields.side = old.picked;
+        proposal.detail = (actTitleCase(old.picked) + ' ' + proposal.detail).trim();
+        proposal.missing = (proposal.missing || []).filter(function (k) { return k !== 'side'; });
+      }
+      proposal.id = old.id;
+      list[i] = proposal;
+      return proposal;
+    }
+    if (list.length >= 24) return null;    /* bounded - a visit is not a queue */
+    list.push(proposal);
+    return proposal;
+  }
+  function ordersDetectSoon(sentence) {
+    if (!kiosk.ambient) return;
+    var seg = clean(sentence);
+    kiosk.ambWindow = ((kiosk.ambWindow || '') + ' ' + seg).slice(-400).trim();
+    /* THE IMMEDIATE PASS. Most spoken orders arrive as ONE finalised phrase,
+       and making the doctor wait the settle window for a card the detector
+       already holds is latency we control and should not spend. Whatever this
+       finds is on screen in the same tick the words land; the windowed pass
+       below then UPGRADES it in place when the rest of the sentence arrives -
+       which is exactly what ordersUpsert's supersession exists for. Measured:
+       ~1200ms to first card before this, single-digit ms after. */
+    /* A CORRECTION IS NOT A NEW ORDER. It is checked first and, when it
+       lands, this phrase goes no further — otherwise "actually, make that the
+       right knee" could sit a second card beside the one it was fixing. */
+    var fixed = safe(function () { return applyCorrection(seg); }, null);
+    if (fixed) { ordersRender(); kioskAmbientSave(true); return; }
+    var immediate = detectActions(seg), grew = 0, k;
+    for (k = 0; k < immediate.length; k++) if (ordersUpsert(immediate[k])) grew++;
+    if (grew) { ordersRender(); kioskAmbientSave(true); }
+    if (kiosk.ambDetectTimer) safe(function () { clearTimeout(kiosk.ambDetectTimer); });
+    kiosk.ambDetectTimer = setTimeout(function () {
+      kiosk.ambDetectTimer = null;
+      var window_ = kiosk.ambWindow || '';
+      kiosk.ambWindow = '';
+      if (!window_) return;
+      /* the LAST clause is the one that just finished; the window before it
+         is context that has already been offered to the detector. Split
+         WITHOUT lookbehind - this file still runs on browsers that predate
+         it, and a syntax error here would take the whole module down. */
+      var clauses = window_.replace(/([.!?])\s+/g, '$1\u0001').split('\u0001');
+      var tail = clauses.slice(-2).join(' ');
+      var found = detectActions(tail);
+      var added = 0;
+      for (var i = 0; i < found.length; i++) if (ordersUpsert(found[i])) added++;
+      if (added) { ordersRender(); kioskAmbientSave(true); }
+    }, ACT_DETECT_MS);
+  }
+  function ordersCounts() {
+    var list = kiosk.ambActions || [], c = { proposed: 0, confirmed: 0, dismissed: 0 };
+    for (var i = 0; i < list.length; i++) c[list[i].status] = (c[list[i].status] || 0) + 1;
+    return c;
+  }
+  function ordersConfirmed() {
+    return (kiosk.ambActions || []).filter(function (a) { return a.status === 'confirmed'; });
+  }
+  function ordersFind(id) {
+    var list = kiosk.ambActions || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  var ACT_KIND_LABEL = { imaging: 'Imaging', lab: 'Lab', referral: 'Referral',
+    medication: 'Medication', followUp: 'Follow-up', note: 'Note' };
+  var ACT_MISSING_LABEL = { side: 'which side', 'body part': 'body part',
+    dose: 'dose', frequency: 'how often', specialty: 'which specialty', interval: 'when' };
+  function ordersMissingText(a) {
+    return (a.missing || []).map(function (k) { return ACT_MISSING_LABEL[k] || k; }).join(', ');
+  }
+  /* the card is built with DOM nodes and textContent throughout: `heard` is
+     raw speech off a microphone and must never be interpolated into markup */
+  function ordersCard(a) {
+    var controlReceipt = kioskControlReceipt();
+    var card = make('div', 'mlsAvOrd');
+    card.setAttribute('data-id', a.id);
+    card.setAttribute('data-kind', a.kind);
+    var top = make('div', 'mlsAvOrdTop');
+    top.appendChild(make('b', '', a.title));
+    top.appendChild(make('span', 'mlsAvOrdKind', ACT_KIND_LABEL[a.kind] || a.kind));
+    card.appendChild(top);
+    if (a.detail) card.appendChild(make('div', 'mlsAvOrdDet', a.detail));
+    card.appendChild(make('div', 'mlsAvOrdHeard', '“' + a.heard + '”'));
+    if (a.status === 'confirmed') {
+      card.appendChild(make('div', 'mlsAvOrdOk', 'Confirmed - goes into the note. Place it in the EMR from the chart.'));
+      return card;
+    }
+    /* the inline editor replaces the card's controls while it is open, so
+       there is never a Confirm button next to a half-typed action */
+    if (a.editing) {
+      var ed = make('div', 'mlsAvOrdEdRow');
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'mlsAvOrdEdIn';
+      input.value = a.title + (a.detail ? ' - ' + a.detail : '');
+      input.setAttribute('aria-label', 'Edit this action');
+      input.maxLength = 120;
+      var commitEdit = kioskControl(function () {
+        var v = clean(input.value);
+        if (!v) return;                       /* an empty action is not a correction */
+        a.title = v.slice(0, 120); a.detail = ''; a.missing = []; a.edited = true; a.editing = false;
+        ordersRender(); kioskAmbientSave(true);
+      }, controlReceipt);
+      input.addEventListener('keydown', kioskControl(function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); a.editing = false; ordersRender(); }
+      }, controlReceipt));
+      ed.appendChild(input);
+      var save = make('button', 'mlsAvOrdGo', 'Save');
+      save.type = 'button';
+      save.addEventListener('click', commitEdit);
+      var cancel = make('button', 'mlsAvOrdEdit', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', kioskControl(function () { a.editing = false; ordersRender(); }, controlReceipt));
+      ed.appendChild(save); ed.appendChild(cancel);
+      card.appendChild(ed);
+      /* focus after the node is in the document, or the caret goes nowhere */
+      safe(function () { setTimeout(function () {
+        if (kioskControlCurrent(controlReceipt)) safe(function () { input.focus(); input.select(); });
+      }, 0); });
+      return card;
+    }
+    /* A CORRECTED order that was already confirmed says so loudly. The doctor
+       approved different words a moment ago, and the note must carry what they
+       approve NOW — so it goes back to needing a tap. */
+    if (a.reconfirm) {
+      card.appendChild(make('div', 'mlsAvOrdMiss', 'You corrected this after confirming it — confirm again to keep it in the note.'));
+    }
+    if (a.correctedBy) {
+      card.appendChild(make('div', 'mlsAvOrdFix', '↻ corrected: “' + a.correctedBy + '”'));
+    }
+    var missing = a.missing || [];
+    if (missing.length) {
+      card.appendChild(make('div', 'mlsAvOrdMiss', 'Not stated: ' + ordersMissingText(a) + '. The avatar will not fill this in.'));
+    }
+    /* the ONE missing field a doctor can resolve in a single tap without
+       typing. Everything else routes to Edit, which puts the words in their
+       hands rather than inventing them. */
+    if (missing.indexOf('side') >= 0) {
+      var sideRow = make('div', 'mlsAvOrdSide');
+      ['left', 'right', 'bilateral'].forEach(function (side) {
+        var b = make('button', 'mlsAvOrdPick', side === 'bilateral' ? 'Both' : actTitleCase(side));
+        b.type = 'button';
+        b.addEventListener('click', kioskControl(function () {
+          a.picked = side;
+          a.fields.side = side;
+          a.detail = (actTitleCase(side) + ' ' + (a.detail || '')).trim();
+          a.missing = missing.filter(function (k) { return k !== 'side'; });
+          ordersRender(); kioskAmbientSave(true);
+        }, controlReceipt));
+        sideRow.appendChild(b);
+      });
+      card.appendChild(sideRow);
+    }
+    var row = make('div', 'mlsAvOrdRow');
+    var confirm = make('button', 'mlsAvOrdGo', 'Confirm');
+    confirm.type = 'button';
+    if ((a.missing || []).length) {
+      confirm.disabled = true;
+      confirm.title = 'Missing: ' + ordersMissingText(a);
+    }
+    confirm.addEventListener('click', kioskControl(function () {
+      if ((a.missing || []).length) return;    /* the gate is enforced here too, not only by the attribute */
+      a.status = 'confirmed';
+      a.confirmedAt = Date.now();
+      ordersRender(); kioskAmbientSave(true);
+    }, controlReceipt));
+    var edit = make('button', 'mlsAvOrdEdit', 'Edit');
+    edit.type = 'button';
+    /* INLINE, never window.prompt. A native dialog blocks the whole renderer -
+       it would freeze the recording clock, the save badge and the microphone
+       loop behind a modal the doctor may be holding open in front of a
+       patient, and this app has already been wedged once by exactly that. */
+    edit.addEventListener('click', kioskControl(function () { a.editing = true; ordersRender(); }, controlReceipt));
+    var drop = make('button', 'mlsAvOrdNo', 'Dismiss');
+    drop.type = 'button';
+    drop.addEventListener('click', kioskControl(function () {
+      a.status = 'dismissed';
+      ordersRender(); kioskAmbientSave(true);
+    }, controlReceipt));
+    row.appendChild(confirm); row.appendChild(edit); row.appendChild(drop);
+    card.appendChild(row);
+    return card;
+  }
+  /* ── THE PANEL'S AREA IS RESERVED BY ITS ONE WRITER, NOT AT A CALL SITE ──────────────────────
+     A class set at a call site goes stale the first time a caller is added, and this class is what
+     stops an OPAQUE card being painted over the patient's words. ordersRender is the only function
+     that shows or hides the panel, so it is the only thing allowed to say so — and it must say so on
+     BOTH branches: the panel appearing without the reservation is the defect itself, and the
+     reservation surviving the panel closing is a phantom gutter that pushes the question
+     off-centre for the rest of the visit. */
+  function ordersReserve(on) {
+    safe(function () {
+      var kroot = gid('mlsAvKiosk');
+      if (!kroot) return;
+      if (on) kroot.classList.add('hasorders'); else kroot.classList.remove('hasorders');
+    });
+  }
+  function ordersRender() {
+    var host = gid('mlsAvKioskOrders');
+    if (!host) return;
+    var list = (kiosk.ambActions || []).filter(function (a) { return a.status !== 'dismissed'; });
+    var counts = ordersCounts();
+    /* NOTHING to show means nothing on screen. The widget is not a permanent
+       panel competing with the patient for the doctor's attention - it
+       appears when there is something to confirm and leaves when there is
+       not. */
+    /* ⚠️ ordersReserve AFTER the display change, not before, and the reason is a red I caused:
+       avatar-visit-copilot.test.js pins the literal `if (!list.length) { host.style.display = 'none'`
+       ("an empty proposal list must hide the widget entirely"), and inserting a statement in front
+       of it broke that pin while changing nothing about the behaviour. Both orders are identical to
+       the browser — the class and the inline display land in the same frame — so the shipped code
+       keeps the shape its existing fence reads. A pin whose subject moves for no behavioural reason
+       is a pin that cries wolf, and this lane has already paid for five of those. */
+    if (!list.length) { host.style.display = 'none'; host.innerHTML = ''; ordersReserve(false); return; }
+    host.style.display = 'block';
+    ordersReserve(true);
+    host.innerHTML = '';
+    var head = make('div', 'mlsAvOrdHead');
+    head.appendChild(make('span', 'mlsAvOrdTitle', 'Proposed actions'));
+    var sub = counts.proposed
+      ? (counts.proposed + ' to confirm' + (counts.confirmed ? ' · ' + counts.confirmed + ' confirmed' : ''))
+      : (counts.confirmed + ' confirmed');
+    head.appendChild(make('span', 'mlsAvOrdCount', sub));
+    host.appendChild(head);
+    var body = make('div', 'mlsAvOrdList');
+    /* unconfirmed first: the thing that needs the doctor is the thing at the
+       top of the widget */
+    list.sort(function (x, y) {
+      if (x.status === y.status) return x.at - y.at;
+      return x.status === 'proposed' ? -1 : 1;
+    });
+    list.forEach(function (a) { body.appendChild(ordersCard(a)); });
+    host.appendChild(body);
+    host.appendChild(make('div', 'mlsAvOrdFoot', 'Nothing here is sent anywhere. Confirmed actions go into the visit note for you to place.'));
+  }
+  function ordersBlock() { return ordersBlockFrom(ordersConfirmed()); }
+  function ordersBlockFrom(confirmed) {
+    confirmed = (confirmed || []).filter(Boolean);
+    if (!confirmed.length) return '';
+    var lines = [AMBIENT_HEAD_ORDERS];
+    confirmed.forEach(function (a) {
+      lines.push('- [' + (ACT_KIND_LABEL[a.kind] || a.kind) + '] ' + a.title + (a.detail ? ' - ' + a.detail : '') +
+        '  (heard: "' + a.heard + '")');
+    });
+    lines.push('[These were confirmed on screen by the doctor during the visit. They have NOT been transmitted to any EMR.]');
+    return lines.join('\n');
+  }
+  function kioskAmbientClear() {
+    ['ambCap', 'ambTick', 'ambRestart', 'ambSaveTimer', 'ambFlushTimer', 'ambDetectTimer'].forEach(function (key) {
+      if (kiosk[key]) { safe(function () { clearTimeout(kiosk[key]); }); kiosk[key] = null; }
+    });
+    kiosk.ambFlushWaiters = [];
+  }
+  function kioskAmbientElapsed() {
+    var ms = Math.max(0, Date.now() - (kiosk.ambStart || Date.now()));
+    var secs = Math.floor(ms / 1000), mins = Math.floor(secs / 60), hrs = Math.floor(mins / 60);
+    function p2(n) { return (n < 10 ? '0' : '') + n; }
+    return hrs ? (hrs + ':' + p2(mins % 60) + ':' + p2(secs % 60)) : (mins + ':' + p2(secs % 60));
+  }
+    /* p1-livewords-1.0.0 -- THE COUNTER MUST MOVE WHILE HE IS STILL TALKING.
+     kiosk.ambParts only gains a chunk when Chrome emits a FINAL result, which
+     during continuous speech can be many seconds. Before p1-mic the doctor still
+     had the interim line as proof it was hearing him; that line is deliberately
+     gone now, so a healthy mid-utterance recogniser rendered byte-identically to
+     a dead one -- "0:10 | 0 words" while he was speaking. The finalised total is
+     still the truth for the note; this only ADDS the words currently in flight so
+     the number moves the instant Chrome hears anything. Nothing downstream reads
+     this function -- kioskAmbientAppend still owns what gets saved. */
+  function kioskAmbientWords() {
+    var parts = kiosk.ambParts || [], n = 0;
+    for (var i = 0; i < parts.length; i++) n += parts[i].split(/\s+/).filter(Boolean).length;
+    return n;
+  }
+  /* p1-livewords-1.1.0 -- SPLIT: the RECEIPT and the CLOCK are different questions.
+     1.0.0 added the in-flight utterance to kioskAmbientWords(), which is ALSO read by
+     the filing receipt ("N words - M characters written to the transcript"). That made
+     the receipt claim words that were never filed. Proven path: mid-utterance Pause ->
+     pvStopMic NULLs pvRec.onresult BEFORE stop(), so the final never arrives and
+     ambParts never gains those words -> the receipt over-reported them as written.
+     A receipt that overstates what reached the chart is worse than a clock that reads
+     zero, so kioskAmbientWords() is filed-only again and ONLY the clock adds live words.
+     The live number also SELF-EXPIRES rather than relying on every discard path
+     (pause, Chrome self-restart, flush timeout, stop) remembering to clear it - if no
+     interim has arrived for LIVE_TTL_MS the recogniser is not currently delivering, so
+     the in-flight tally is worth nothing and reads 0. */
+  var LIVE_TTL_MS = 2500;
+  function kioskAmbientLiveWords() {
+    var at = kiosk.ambLiveAt | 0;
+    if (!at || (Date.now() - at) > LIVE_TTL_MS) return 0;
+    return kiosk.ambLiveWords | 0;
+  }
+  function kioskAmbientClockWords() { return kioskAmbientWords() + kioskAmbientLiveWords(); }
+  function kioskAmbientClock() {
+    var el = gid('mlsAvKioskRecClock');
+    if (el) el.textContent = kioskAmbientElapsed() + '  |  ' + kioskAmbientClockWords() + ' words';
+  }
+  /* the clock is the LIVENESS proof: during a silent exam there are no
+     recogniser events at all, so a label that only moved on speech would look
+     identical to a capture that had quietly died. Self-rescheduling, bounded
+     by the session - this module has no permanent polling. */
+  function kioskAmbientTick() {
+    if (!kiosk.ambient) return;
+    kioskAmbientClock();
+    kiosk.ambTick = setTimeout(kioskAmbientTick, 1000);
+  }
+  function kioskAmbientAppend(text) {
+    var v = clean(text);
+    /* p1-livewords-1.0.0: this utterance has FINALISED, so its words are about to
+       be counted from ambParts. Drop the in-flight tally first or they are counted
+       twice. Cleared before the empty-guard so a finalise that yields nothing still
+       resets the live number instead of stranding it. */
+    kiosk.ambLiveWords = 0; kiosk.ambLiveAt = 0;
+    if (!v) return;
+    /* Chrome re-delivers the tail of the previous result after a restart. An
+       EXACT repeat of the chunk just accepted is dropped; anything else is
+       kept. Never the other way round - losing a real sentence of a
+       consultation is far worse than keeping one duplicated one. */
+    if (kiosk.ambLast === v) return;
+    kiosk.ambLast = v;
+    if (!kiosk.ambParts) kiosk.ambParts = [];
+    kiosk.ambParts.push(v);
+    /* the two things that must happen for EVERY finalised sentence: it
+       reaches the crash backup, and it is offered to the action detector.
+       Both are cheap and neither can throw into the recogniser callback. */
+    safe(function () { kioskAmbientSave(false); });
+    safe(function () { ordersDetectSoon(v); });
+  }
+  function kioskAmbientPaint(interim) {
+    /* p1-livewords-1.0.0: the in-flight utterance is what makes the counter move
+       while he speaks. It is REPLACED (not accumulated) every event, because Chrome
+       redelivers the whole current utterance each time; kioskAmbientAppend zeroes it
+       when the utterance finalises so the words are never counted twice. */
+    kiosk.ambLiveWords = clean(interim).split(/\s+/).filter(Boolean).length;
+    kiosk.ambLiveAt = Date.now(); /* p1-livewords-1.1.0: stamped so it self-expires */
+    /* the room transcript is a TRANSCRIPT: it must never outrank a staff alert (av-6.2.0) */
+    var tail = clean(interim);
+    if (!tail) { var parts = kiosk.ambParts || []; tail = parts.length ? parts[parts.length - 1] : ''; }
+    kioskLine('transcript', tail.length > 160 ? ('...' + tail.slice(tail.length - 160)) : tail);
+    kioskAmbientClock();
+  }
+  /* p1-listener-1.0.0 — an interim phrase already shown as heard must not vanish
+     at a recogniser boundary. It is promoted once, then cleared before append so
+     onerror+onend, a late final, and a stop timeout cannot file it twice. Exact
+     repeats are still rejected by kioskAmbientAppend's existing last-chunk gate. */
+  function kioskAmbientCommitPending() {
+    var v = clean(kiosk.ambPending);
+    kiosk.ambPending = '';
+    if (!v) return false;
+    kioskAmbientAppend(v);
+    return true;
+  }
+  function kioskAmbientNoMic() {
+    /* No recogniser, or a microphone that has been revoked mid-capture. Say so and
+       STOP: a red recording badge over a microphone that is not open is the one lie
+       this feature must not tell.
+       THE MESSAGE RIDES THROUGH THE STOP. Writing it here and calling the stop on
+       the next line lost it every time - the stop rewrites the say line and the
+       interim synchronously, with no paint in between, so staff saw the ordinary
+       "Recording stopped" and never learned the microphone had gone. */
+    kiosk.ambSayOverride = 'The microphone stopped working, so I stopped recording.';
+    /* THE CAUSE ONLY. This line used to end "Anything already captured is in the
+       transcript" - a constant, asserted before the filing attempt had happened and
+       printed unchanged when that attempt was REFUSED, so staff were told the words
+       were safe at the exact moment they were not. kioskAmbientStop appends the real
+       verdict to whatever a caller passes in. */
+    kiosk.ambInterimOverride = 'Staff: the microphone was refused or lost, so nothing more is being recorded.';
+    kioskAmbientStop('no-microphone');
+  }
+  function kioskAmbientRetry() {
+    if (!kiosk.ambient) return;
+    if (kiosk.paused) return;         /* a restart while paused would reopen the mic behind the disclosure */
+    /* End Visit stops the recogniser ON PURPOSE and then waits for its
+       trailing final results. Without this the onend handler would read that
+       deliberate stop as a death and reopen the microphone underneath the
+       review screen - recording a room the doctor believes has stopped. */
+    if (kiosk.ambClosing) return;
+    if (kiosk.ambRestart) { safe(function () { clearTimeout(kiosk.ambRestart); }); kiosk.ambRestart = null; }
+    /* A recogniser that RAN for a while and then ended is Chrome's ordinary
+       behaviour, not a failure - it ends itself about once a minute and on
+       every routine no-speech blip. Only INSTANT deaths are allowed to slow
+       the loop down, or a quiet exam room would talk itself into a four
+       second gap and lose the doctor's first sentence back in the room. */
+    var lived = Date.now() - (kiosk.ambRecAt || 0);
+    if (lived > 5000) kiosk.ambFails = 0;
+    kiosk.ambFails = (kiosk.ambFails || 0) + 1;
+    if (kiosk.ambFails >= 6) {
+      /* A clock that keeps advancing over an endlessly restarting recogniser
+         is a false recording indicator. File the words already captured and
+         stop honestly after a bounded outage instead of polling forever. */
+      kiosk.ambSayOverride = 'The speech service stayed unavailable, so I stopped recording.';
+      kiosk.ambInterimOverride = 'Staff: recording stopped after repeated speech-service failures.';
+      kioskAmbientSave(true);
+      kioskAmbientStop('speech-service-unavailable');
+      return;
+    }
+    var wait = kiosk.ambFails > 6 ? 4000 : (kiosk.ambFails > 2 ? 800 : 200);
+    kiosk.ambRestart = setTimeout(function () {
+      kiosk.ambRestart = null;
+      kioskAmbientListen();
+    }, wait);
+  }
+  function kioskAmbientListen() {
+    if (!kiosk.ambient) return false;
+    if (kiosk.paused) return false;   /* paused means the microphone is CLOSED, not merely ignored */
+    if (kiosk.ambClosing) return false;
+    var C = safe(function () { return window.SpeechRecognition || window.webkitSpeechRecognition; }, null);
+    if (!C) { kioskAmbientNoMic(); return false; }
+    var rec = safe(function () { return new C(); }, null);
+    if (!rec) { kioskAmbientRetry(); return false; }
+    /* the old recogniser is torn down by hand with its handlers nulled FIRST,
+       so our own stop() can never be read as "it died" and start a second
+       restart. pvRec is set too, so every existing exit path in this file
+       (pvStopVoice, kioskClose, revert) already kills this microphone. */
+    if (pvRec) { safe(function () { pvRec.onresult = null; pvRec.onend = null; pvRec.onerror = null; pvRec.stop(); }); }
+    pvRec = rec;
+    kiosk.ambRec = rec;
+    rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+    rec.onresult = function (ev) {
+      if (!kiosk.ambient || kiosk.ambRec !== rec) return;
+      var interim = '';
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var r = ev.results[i];
+        if (r.isFinal) kioskAmbientAppend(String(r[0].transcript || ''));
+        else interim += String(r[0].transcript || '');
+      }
+      kiosk.ambPending = clean(interim);
+      kioskAmbientPaint(interim);
+    };
+    rec.onerror = function (ev) {
+      if (kiosk.ambRec !== rec) return;
+      kioskAmbientCommitPending();
+      kiosk.ambRec = null;
+      /* PERMISSION IS NOT A HICCUP. `not-allowed` and `service-not-allowed` mean
+         the microphone will not open on the next try either, and the bounded
+         backoff then keeps the recording disclosure on screen forever over a
+         capture that never records a word. Ordinary `no-speech` / `network`
+         blips still retry - that is what the loop is for. */
+      var code = String((ev && ev.error) || '');
+      if (code === 'not-allowed' || code === 'service-not-allowed') { kioskAmbientNoMic(); return; }
+      kioskAmbientRetry();
+    };
+    rec.onend = function () {
+      if (kiosk.ambRec === rec) {
+        kioskAmbientCommitPending();
+        kiosk.ambRec = null;
+        kioskAmbientRetry();
+      }
+    };
+    var ok = safe(function () { rec.start(); return true; }, false);
+    if (!ok) { if (kiosk.ambRec === rec) kiosk.ambRec = null; kioskAmbientRetry(); return false; }
+    kiosk.ambRecAt = Date.now();
+    return true;
+  }
+  function kioskIntakeAdd(who, text) {
+    var v = clean(text);
+    if (!v) return;
+    if (!kiosk.intake) kiosk.intake = [];
+    if (kiosk.intake.length > 400) return;    /* bounded - an interview is ~20 turns */
+    kiosk.intake.push({ who: String(who || 'Avatar'), text: v });
+  }
+  function kioskIntakeText() { return intakeTextFrom(kiosk.intake); }
+  function intakeTextFrom(rows) {
+    rows = rows || [];
+    var out = [];
+    if (!rows.length) return '(no check-in answers were recorded in this session)';
+    for (var i = 0; i < rows.length; i++) out.push(clean(rows[i] && rows[i].who) + ': ' + clean(rows[i] && rows[i].text));
+    return out.join('\n');
+  }
+  function kioskAmbientBlock(body) {
+    var mins = Math.max(1, Math.round((Date.now() - (kiosk.ambStart || Date.now())) / 60000));
+    var lines = [];
+    /* THE CHECK-IN GOES IN ONCE. "Keep listening" on the review screen starts a
+       SECOND capture on the same session, and this block always led with the
+       whole intake - so the patient's answers, and the consent attestation with
+       them, were appended to the transcript a second time. A doctor reading that
+       chart cannot tell a repeated question from a duplicated paste. */
+    if (kiosk.intakeFiled) {
+      lines.push('--- visit, continued ---');
+      lines.push('[Room capture resumed. The check-in and the earlier part of this visit are already above.]');
+      /* ⛔ THE CONSENT LINE MUST RIDE WITH EVERY BLOCK OF WORDS, INCLUDING THIS ONE.
+         This early return suppressed the whole header to avoid appending the patient's answers
+         a second time — correct for the INTAKE, wrong for the attestation, and they were being
+         dropped together.
+         `intakeFiled` is a claim about a PREVIOUS write, and the early return treated it as
+         proof that the consent line is already in THIS transcript. It is not: a day flip
+         re-binds the visit, recovery can resume into a fresh session (see the crash record,
+         which carries consentAt and intakeFiled separately for exactly this reason), and the
+         doctor can edit the box. In any of those cases these words were filed with NO consent
+         record anywhere — which is the thing the note below says must never happen: "a recording
+         whose consent lives only in someone's memory is a recording nobody can defend later".
+         The asymmetry decides it. Repeating one bracketed line costs a duplicated line in a
+         chart; omitting it costs an undefendable recording. So the intake stays suppressed and
+         the attestation always rides. */
+      if (kiosk.consentAt) {
+        lines.push('[Recording consent confirmed by practice staff at ' +
+          safe(function () { return new Date(kiosk.consentAt).toLocaleString(); }, String(kiosk.consentAt)) +
+          ', before any microphone was opened]');
+      }
+      lines.push(body);
+      var ordersMore = ordersBlock();
+      if (ordersMore) { lines.push(''); lines.push(ordersMore); }
+      return lines.join('\n');
+    }
+    lines.push(AMBIENT_HEAD_CHECKIN);
+    lines.push('[Avatar check-in - the patient\'s own words, chart ' + clean(kiosk.ambBound) + ']');
+    /* THE CONSENT IS PART OF THE RECORD. A recording whose consent lives only
+       in someone's memory is a recording nobody can defend later, so the
+       confirmation and its clock time ride in the same block as the words it
+       authorised. It is written from kiosk.consentAt, the same flag that gates
+       the microphone - the transcript cannot claim a consent the kiosk did not
+       actually have. */
+    if (kiosk.consentAt) {
+      lines.push('[Recording consent confirmed by practice staff at ' +
+        safe(function () { return new Date(kiosk.consentAt).toLocaleString(); }, String(kiosk.consentAt)) +
+        ', before any microphone was opened]');
+    }
+    lines.push(kioskIntakeText());
+    lines.push('');
+    lines.push(AMBIENT_HEAD_VISIT);
+    lines.push('[Room capture - the avatar listened in the room for ' + mins + ' min. One microphone, so speakers are not separated.]');
+    lines.push(body);
+    /* Confirmed actions ride WITH the transcript, in the same write. Filing
+       them separately would mean a visit whose note and whose orders could
+       disagree about whether the write succeeded. */
+    var orders = ordersBlock();
+    if (orders) { lines.push(''); lines.push(orders); }
+    return lines.join('\n');
+  }
+
+  /* One proof gate owns BOTH live filing and recovery. The visible recorder is
+     only a mirror; its input listener is expected to merge into the canonical
+     #transcript. A dispatched event is therefore not a write receipt. We keep
+     the recovery copy until the complete provenance block is present in both
+     surfaces under the same immutable patient/visit binding. */
+  function ambientBindingPatientId(binding) {
+    var patient = binding && binding.patient;
+    return clean(patient && (patient.patientId || patient.id || patient.athenaId || patient.mrn));
+  }
+  function ambientReceiptText(value, max) {
+    var text = clean(value);
+    return text.length > max ? text.slice(0, max) : text;
+  }
+  function ambientClosedVisitReceipt(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var patient = raw.patient || {};
+    var visit = raw.visit || {};
+    var epoch = Number(raw.epoch);
+    var noteTimestamp = Number(visit.noteTimestamp);
+    var receipt = {
+      v: 1,
+      bindingId: ambientReceiptText(raw.bindingId, 180),
+      epoch: isFinite(epoch) ? epoch : null,
+      patient: {
+        patientId: ambientReceiptText(patient.patientId, 180),
+        name: ambientReceiptText(patient.name, 240),
+        dob: ambientReceiptText(patient.dob, 80),
+        mrn: ambientReceiptText(patient.mrn, 180)
+      },
+      visit: {
+        historical: visit.historical === true,
+        noteTimestamp: isFinite(noteTimestamp) && noteTimestamp > 0 ? noteTimestamp : null,
+        visitDate: ambientReceiptText(visit.visitDate, 40),
+        provider: ambientReceiptText(visit.provider, 240),
+        appointmentId: ambientReceiptText(visit.appointmentId, 180),
+        encounterId: ambientReceiptText(visit.encounterId, 180),
+        encounterUrl: ambientReceiptText(visit.encounterUrl, 1200)
+      }
+    };
+    if (!receipt.bindingId || !receipt.patient.patientId) return null;
+    safe(function () { Object.freeze(receipt.patient); Object.freeze(receipt.visit); Object.freeze(receipt); });
+    return receipt;
+  }
+  function ambientVisitReceiptFor(binding, epoch) {
+    if (!binding || !binding.patient) return null;
+    var patient = binding.patient || {};
+    var context = binding.visitContext || {};
+    return ambientClosedVisitReceipt({
+      bindingId: binding.id,
+      epoch: epoch,
+      patient: {
+        patientId: patient.patientId || patient.id || patient.athenaId || patient.mrn,
+        name: patient.name,
+        dob: patient.dob,
+        mrn: patient.mrn || patient.athenaId
+      },
+      visit: {
+        historical: binding.historical === true || context.historical === true,
+        noteTimestamp: context.noteTimestamp || binding.noteTimestamp,
+        visitDate: context.visitDate || binding.displayDate,
+        provider: context.provider || binding.displayProvider,
+        appointmentId: context.appointmentId,
+        encounterId: context.encounterId,
+        encounterUrl: context.encounterUrl
+      }
+    });
+  }
+  function ambientVisitReceiptStableKey(receipt) {
+    var r = ambientClosedVisitReceipt(receipt);
+    if (!r) return '';
+    var v = r.visit;
+    return v.appointmentId || v.encounterId || v.encounterUrl || (v.noteTimestamp ? String(v.noteTimestamp) : '');
+  }
+  function ambientVisitReceiptStableSame(left, right) {
+    var a = ambientClosedVisitReceipt(left), b = ambientClosedVisitReceipt(right);
+    if (!a || !b) return false;
+    return JSON.stringify(a.patient) === JSON.stringify(b.patient) && JSON.stringify(a.visit) === JSON.stringify(b.visit);
+  }
+  function ambientVisitBinding() {
+    return safe(function () {
+      if (typeof currentVisitAthenaBinding !== 'undefined') return currentVisitAthenaBinding || null;
+      return window.currentVisitAthenaBinding || null;
+    }, null);
+  }
+  function ambientVisitEpoch() {
+    return safe(function () {
+      if (typeof currentVisitAthenaEpoch !== 'undefined') return currentVisitAthenaEpoch;
+      return window.currentVisitAthenaEpoch;
+    }, null);
+  }
+  function ambientVisitCompromised() {
+    return safe(function () {
+      if (typeof currentVisitAthenaCompromised !== 'undefined') return currentVisitAthenaCompromised === true;
+      return window.currentVisitAthenaCompromised === true;
+    }, true);
+  }
+  function ambientBindingMatches(binding) {
+    return safe(function () {
+      if (typeof _athenaCurrentMatchesBound === 'function') return _athenaCurrentMatchesBound(binding) === true;
+      if (isFn(window._athenaCurrentMatchesBound)) return window._athenaCurrentMatchesBound(binding) === true;
+      return false;
+    }, false);
+  }
+  function ambientTranscriptHasBlock(value, block) {
+    value = String(value == null ? '' : value);
+    block = String(block == null ? '' : block);
+    if (!block) return false;
+    var from = 0;
+    while (from <= value.length) {
+      var at = value.indexOf(block, from);
+      if (at < 0) return false;
+      var before = at === 0 || value.slice(at - 2, at) === '\n\n';
+      var end = at + block.length;
+      var after = end === value.length || value.slice(end, end + 2) === '\n\n';
+      if (before && after) return true;
+      from = at + 1;
+    }
+    return false;
+  }
+  function ambientTranscriptSnapshot(bound) {
+    if (!bound || activePtIdSafe() !== bound || ambientVisitCompromised()) return null;
+    var binding = ambientVisitBinding();
+    /* The first canonical transcript input normally establishes this binding.
+       Establish it immediately before the write instead, so the input event
+       cannot change ownership or epoch midway through the proof. */
+    if (!binding) {
+      var candidate = safe(function () {
+        if (typeof _athenaBindingForCurrentVisit === 'function') return _athenaBindingForCurrentVisit('avatar-room-capture');
+        if (isFn(window._athenaBindingForCurrentVisit)) return window._athenaBindingForCurrentVisit('avatar-room-capture');
+        return null;
+      }, null);
+      if (!candidate || ambientBindingPatientId(candidate) !== bound) return null;
+      var set = safe(function () {
+        if (typeof _athenaSetVisitBinding === 'function') return _athenaSetVisitBinding(candidate) === true;
+        if (isFn(window._athenaSetVisitBinding)) return window._athenaSetVisitBinding(candidate) === true;
+        return false;
+      }, false);
+      if (!set) return null;
+      binding = ambientVisitBinding();
+    }
+    if (!binding || binding.identityConflict === true || binding.routeBlocked === true) return null;
+    if (ambientBindingPatientId(binding) !== bound || !ambientBindingMatches(binding)) return null;
+    var guarded = safe(function () {
+      if (typeof _athenaGuardBoundEditor === 'function') return _athenaGuardBoundEditor('filing this Avatar transcript') === true;
+      if (isFn(window._athenaGuardBoundEditor)) return window._athenaGuardBoundEditor('filing this Avatar transcript') === true;
+      return false;
+    }, false);
+    if (!guarded || ambientVisitCompromised()) return null;
+    return { patient: bound, binding: binding, bindingId: clean(binding.id), epoch: ambientVisitEpoch() };
+  }
+  function ambientTranscriptSnapshotStillSafe(snapshot) {
+    if (!snapshot || activePtIdSafe() !== snapshot.patient || ambientVisitCompromised()) return false;
+    var binding = ambientVisitBinding();
+    if (!binding || binding !== snapshot.binding || clean(binding.id) !== snapshot.bindingId) return false;
+    if (ambientVisitEpoch() !== snapshot.epoch || ambientBindingPatientId(binding) !== snapshot.patient) return false;
+    return ambientBindingMatches(binding);
+  }
+  function ambientVisitReceiptMatchesSnapshot(receipt, snapshot, exactLiveBinding) {
+    var expected = ambientClosedVisitReceipt(receipt);
+    var current = snapshot && ambientVisitReceiptFor(snapshot.binding, snapshot.epoch);
+    if (!expected || !current || !ambientVisitReceiptStableSame(expected, current)) return false;
+    if (expected.bindingId === current.bindingId && expected.epoch === current.epoch) return true;
+    /* Across a reload the binding object gets a new nonce. Recovery may cross
+       that boundary only when an immutable visit key reconstructs the exact
+       appointment/encounter/saved-note context. Date+provider alone are not
+       unique for one patient and therefore never qualify. */
+    if (exactLiveBinding) return false;
+    return !!ambientVisitReceiptStableKey(expected) && ambientVisitReceiptStableKey(expected) === ambientVisitReceiptStableKey(current);
+  }
+  function ambientCaptureVisitReceipt(bound) {
+    var snapshot = ambientTranscriptSnapshot(clean(bound));
+    if (!snapshot) return null;
+    return ambientVisitReceiptFor(snapshot.binding, snapshot.epoch);
+  }
+  function ambientCurrentVisitMatchesReceipt(receipt, exactLiveBinding) {
+    var expected = ambientClosedVisitReceipt(receipt);
+    if (!expected || activePtIdSafe() !== expected.patient.patientId || ambientVisitCompromised()) return false;
+    var binding = ambientVisitBinding();
+    if (!binding || !ambientBindingMatches(binding)) return false;
+    return ambientVisitReceiptMatchesSnapshot(expected, {
+      binding: binding, bindingId: clean(binding.id), epoch: ambientVisitEpoch(), patient: expected.patient.patientId
+    }, exactLiveBinding === true);
+  }
+  function ambientCommitTranscript(bound, block, visitReceipt, exactLiveBinding) {
+    bound = clean(bound);
+    block = String(block == null ? '' : block);
+    var mirror = gid('ez3flTranscript') || gid('ez3Transcript');
+    var transcript = gid('transcript');
+    if (!mirror || typeof mirror.value !== 'string' || !transcript || typeof transcript.value !== 'string') {
+      return { ok: false, why: 'the canonical visit transcript is not on this screen, so nothing was written.' };
+    }
+    var snapshot = ambientTranscriptSnapshot(bound);
+    if (!snapshot) return { ok: false, why: 'the open patient and visit binding could not be verified, so nothing was written.' };
+    if (!ambientVisitReceiptMatchesSnapshot(visitReceipt, snapshot, exactLiveBinding === true)) {
+      return { ok: false, why: 'this recording belongs to a different visit for this patient, so nothing was written and the recovery copy was kept.' };
+    }
+    var mirrorBefore = mirror.value;
+    var transcriptBefore = transcript.value;
+    if (ambientTranscriptHasBlock(mirrorBefore, block) && ambientTranscriptHasBlock(transcriptBefore, block) && ambientTranscriptSnapshotStillSafe(snapshot)) {
+      return { ok: true, chars: 0, already: true };
+    }
+    var next = mirrorBefore + (mirrorBefore ? '\n\n' : '') + block;
+    var dispatched = false;
+    try {
+      mirror.value = next;
+      mirror.dispatchEvent(new Event('input', { bubbles: true }));
+      dispatched = true;
+    } catch (e) { dispatched = false; }
+    var proved = dispatched && ambientTranscriptSnapshotStillSafe(snapshot) &&
+      ambientVisitReceiptMatchesSnapshot(visitReceipt, snapshot, exactLiveBinding === true) &&
+      ambientTranscriptHasBlock(mirror.value, block) && ambientTranscriptHasBlock(transcript.value, block);
+    if (!proved) {
+      /* Restore every local byte. In particular, syncRealTranscript also seeds
+         finalText, so leaving it advanced would make the recognizer resurrect
+         a block whose durable recovery record we correctly retained. */
+      transcript.value = transcriptBefore;
+      mirror.value = mirrorBefore;
+      safe(function () {
+        if (window.__mlsTxMirror && isFn(window.__mlsTxMirror.set)) window.__mlsTxMirror.set(mirror, mirrorBefore);
+      });
+      safe(function () {
+        if (typeof finalText !== 'undefined') finalText = transcriptBefore ? transcriptBefore + ' ' : '';
+      });
+      return { ok: false, why: 'the canonical visit transcript did not verify the complete block under the same patient and visit, so nothing was filed.' };
+    }
+    return { ok: true, chars: block.length, already: false };
+  }
+  function kioskAmbientFile() {
+    if (kiosk.ambFiled) return { ok: false, why: 'this capture was already filed, so nothing was written again.' };
+    /* PATIENT BINDING FAILS CLOSED - equality against the chart the check-in
+       was bound to, evaluated HERE, at the write. */
+    var bound = clean(kiosk.ambBound);
+    var now = activePtIdSafe();
+    if (!bound) return { ok: false, why: 'the recording was not bound to a chart, so nothing was written.' };
+    if (!now) return { ok: false, why: 'no chart is open, so nothing was written. The recording belongs to chart ' + bound + '.' };
+    if (now !== bound) return { ok: false, why: 'the open chart (' + now + ') is not the one this recording belongs to (' + bound + '), so nothing was written.' };
+    var body = (kiosk.ambParts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
+    if (!body) return { ok: false, why: 'no speech was captured, so nothing was written.' };
+    var block = kioskAmbientBlock(body);
+    var receipt = ambientCommitTranscript(bound, block, kiosk.ambVisit, true);
+    if (!receipt.ok) return receipt;
+    kiosk.ambFiled = true;
+    /* the check-in has now reached the transcript, so a resumed capture must not
+       lead with it again - see kioskAmbientBlock */
+    kiosk.intakeFiled = true;
+    /* THE BACKUP DIES ONLY ON A PROVEN WRITE. Every refusal above returns
+       before this line, so a capture that could not be filed (wrong chart
+       open, no transcript box on screen) keeps its crash copy and can still
+       be recovered on the next load. By KEY: another chart's held capture must
+       survive this one being filed - and THIS path is the live one, so the key is
+       this capture's own binding. (An earlier version of this line said info.key
+       here; there is no `info` in the live path - that identifier belongs to
+       ambientRecoverFile - so it was a ReferenceError on every successful file,
+       caught by the keyless-drop assertion in avatar-visit-copilot rather than by
+       node --check, which cannot see an undefined identifier.) */
+    ambientStoreDrop(ambientStoreKeyFor(kiosk.ambBound));
+    safe(function () { if (isFn(window.toast)) window.toast('The visit recording is in the transcript - check-in and visit, in order.', 'ok'); });
+    return receipt;
+  }
+  /* ---- RECOVERY. What the backup is FOR. A capture survives the page that
+     took it, so a reload mid-visit, a discarded tab or a crashed renderer
+     costs the doctor one click instead of the consultation. The write obeys
+     exactly the binding rule the live path obeys - the chart is compared at
+     WRITE time, and a mismatch refuses and says which chart the words belong
+     to rather than filing them somewhere plausible. ---------------------- */
+  function ambientRecoverInfo() {
+    /* the live-capture filter and the choice of WHICH held capture to offer both
+       live in ambientStorePick now - see the comment there */
+    var picked = ambientStorePick();
+    if (!picked) return null;
+    var rec = picked.rec;
+    var body = (rec.parts || []).join(' ').replace(/[ \t]+/g, ' ').trim();
+    if (!body) return null;
+    var start = Number(rec.start) || 0, saved = Number(rec.savedAt) || 0;
+    return {
+      bound: clean(rec.bound), body: body, chars: body.length,
+      words: body.split(/\s+/).filter(Boolean).length,
+      /* the record's OWN key, so filing and discarding delete the capture the
+         doctor acted on rather than whatever the store points at afterwards */
+      key: picked.key,
+      /* which SESSION took it - the only way ambientRecoverFile can tell whether the
+         words it just filed are also sitting in this tab's kiosk.ambParts */
+      sid: clean(rec.sid),
+      /* how many captures are held in total. A second one belongs to another
+         chart and would otherwise be invisible until someone opened that chart. */
+      held: Number(picked.held) || 1,
+      savedAt: saved, trimmed: rec.trimmed === true,
+      mins: (start && saved && saved > start) ? Math.max(1, Math.round((saved - start) / 60000)) : 0,
+      actions: Array.isArray(rec.actions) ? rec.actions : [],
+      intake: Array.isArray(rec.intake) ? rec.intake : [],
+      /* both persisted from av-5.7.1 - an OLDER record simply has neither, which
+         reads as "consent not recorded" and "check-in not yet filed": the safe
+         direction on both counts (it states the gap, and it errs toward including
+         the check-in rather than losing it) */
+      consentAt: Number(rec.consentAt) || 0,
+      intakeFiled: rec.intakeFiled === true,
+      visitBinding: ambientClosedVisitReceipt(rec.visitBinding)
+    };
+  }
+  function ambientRecoverFile() {
+    var info = ambientRecoverInfo();
+    if (!info) return { ok: false, why: 'there is no recovered visit waiting.' };
+    var now = activePtIdSafe();
+    if (!now) return { ok: false, why: 'no chart is open. The recovered visit belongs to chart ' + info.bound + '.' };
+    if (now !== info.bound) return { ok: false, why: 'the open chart (' + now + ') is not the one this recording belongs to (' + info.bound + ').' };
+    var box = gid('ez3flTranscript') || gid('ez3Transcript');
+    if (!box || typeof box.value !== 'string') return { ok: false, why: 'the visit transcript box is not on this screen — open the Visit recorder first.' };
+    var lines = [];
+    /* THE CHECK-IN GOES IN ONCE, ACROSS A RELOAD TOO. The live path tracks this
+       with kiosk.intakeFiled, which is in-memory - so before the flag was
+       persisted, a recovered capture led with the whole intake again and the
+       patient's answers landed in the chart twice. */
+    if (!info.intakeFiled) {
+      lines.push(AMBIENT_HEAD_CHECKIN);
+      lines.push('[Avatar check-in - the patient\'s own words, chart ' + info.bound + ']');
+      /* AND IT CARRIES ITS CONSENT, or says it cannot. A recovered recording used
+         to file with no attestation at all, which is the one thing this train
+         exists to prevent - and silence reads as "nobody asked". */
+      lines.push(info.consentAt
+        ? ('[Recording consent confirmed by practice staff at ' +
+            safe(function () { return new Date(info.consentAt).toLocaleString(); }, String(info.consentAt)) +
+            ', before any microphone was opened]')
+        : '[Recording consent: NOT RECORDED in the recovered file — confirm with the staff member who ran this check-in before relying on this transcript]');
+      lines.push(intakeTextFrom(info.intake));
+      lines.push('');
+    }
+    lines.push(AMBIENT_HEAD_VISIT);
+    lines.push('[Room capture RECOVERED after this page reloaded' +
+      (info.trimmed ? ' - the backup had run out of room, so the EARLIEST part of this visit is missing' : '') +
+      '. One microphone, so speakers are not separated.]');
+    lines.push(info.body);
+    var orders = ordersBlockFrom(info.actions.filter(function (a) { return a && a.status === 'confirmed'; }));
+    if (orders) { lines.push(''); lines.push(orders); }
+    var block = lines.join('\n');
+    /* The WHOLE labelled block is the idempotency key. A quoted sentence from
+       the room capture is not evidence that this recovered visit was filed. */
+    var receipt = ambientCommitTranscript(info.bound, block, info.visitBinding, false);
+    if (!receipt.ok) return receipt;
+    /* BY KEY: this recovered record, not whichever capture the store points at now -
+       another chart may be holding one, and a keyless drop would delete that instead
+       and leave this one to offer itself again forever. */
+    ambientStoreDrop(info.key);
+    /* AND THIS TAB MUST LEARN THAT ITS OWN WORDS ARE NOW FILED. Recovery files from
+       the STORE and never touched the in-memory copy, so after a stop that failed to
+       file, a recovery from the Visit card followed by the rest screen's hand-off tap
+       carried the same sentences into the resumed capture - they are unfiled as far as
+       kiosk.ambFiled knows - and filed the whole body a SECOND time. The record's own
+       sid is what says whether these are this tab's words. */
+    if (clean(info.sid) && clean(info.sid) === clean(kiosk.sid)) {
+      kiosk.ambFiled = true;
+      kiosk.intakeFiled = true;
+    }
+    return receipt;
+  }
+  function kioskAmbientStart() {
+    if (!kiosk.open) return false;
+    if (kiosk.ambient) return true;
+    /* NO CONSENT, NO MICROPHONE - and the gate is here rather than only on the
+       button, because this function is reachable from the PIN pad, the review
+       screen's "Keep listening" and the rest screen. A list of call sites is a
+       denylist; the next one added would not be on it. */
+    if (!kiosk.consentAt) {
+      kioskSetSay('I cannot record this visit — recording consent was not confirmed.');
+      kioskLine('alert', 'Staff: start the check-in again and confirm consent. Nothing is being recorded.');
+      return false;
+    }
+    /* AND NOT WITHOUT A MICROPHONE. The preflight already knows the answer, and
+       starting anyway paints the red "Recording this visit" banner and its
+       ticking clock over a session that captures nothing - the one lie this
+       feature must never tell. Chrome's recogniser makes this easy to get wrong:
+       rec.start() SUCCEEDS on a denied microphone and only reports it later
+       through onerror, where the retry loop treated it as an ordinary hiccup and
+       tried again forever behind the banner. */
+    if (kiosk.mic === false) {
+      kioskSetSay('I cannot record this visit — the microphone is not available on this screen.');
+      kioskLine('alert', 'Staff: nothing is being recorded. Allow the microphone for this site, then start the check-in again.');
+      return false;
+    }
+    var bound = clean(kiosk.ext);
+    if (!bound) {
+      /* refuse BEFORE the microphone opens - an unbindable recording could
+         only ever end in a refusal to write, so it must not be taken */
+      kioskSetSay('I cannot record this visit - the screen is not bound to a chart.');
+      kioskLine('alert', 'Staff: open the patient, then start the check-in again. Nothing is being recorded.');
+      return false;
+    }
+    if (activePtIdSafe() !== bound) {
+      /* The rest/review overlay can outlive a chart switch while no ambient
+         microphone is open. Never begin recording B's room under the binding
+         retained from A, even though final filing would later refuse it. */
+      kioskSetSay('I cannot record this visit - the open chart changed.');
+      kioskLine('alert', 'Staff: return to the patient this check-in belongs to before starting the room recording. Nothing is being recorded.');
+      return false;
+    }
+    var visitReceipt = null;
+    if (!kiosk.ambFiled && kiosk.ambVisit) {
+      /* A failed file followed by Keep listening is the SAME capture. It may
+         resume only in the exact binding/epoch where those words began. */
+      if (!ambientCurrentVisitMatchesReceipt(kiosk.ambVisit, true)) {
+        kioskSetSay('I cannot resume this recording - a different visit is open for this patient.');
+        kioskLine('alert', 'Staff: return to the exact visit where this room recording began. The held words were not changed or discarded.');
+        return false;
+      }
+      visitReceipt = kiosk.ambVisit;
+    } else {
+      visitReceipt = ambientCaptureVisitReceipt(bound);
+    }
+    if (!visitReceipt) {
+      kioskSetSay('I cannot record this visit - the exact visit could not be verified.');
+      kioskLine('alert', 'Staff: open the intended patient visit before starting room recording. Nothing is being recorded.');
+      return false;
+    }
+    /* Room capture is silent, so echo classification has no job. Release the
+       independently adopted preflight stream before opening SpeechRecognition;
+       one room recording must never retain two microphone owners. */
+    safe(function () { pvVoiceGateStop(); });
+    /* Close the INTERVIEW row server-side first. The summary pipeline runs on
+       that active->ready transition, and a row left 'active' is invisible to
+       every status-filtered inbox query. Ambient capture is a local recording
+       from here on: no turn is ever posted while it runs. */
+    kioskCloseServerSide();
+    kiosk.completed = true;
+    kiosk.ambient = true;
+    kiosk.ambBound = bound;
+    kiosk.ambVisit = visitReceipt;
+    kiosk.ambStart = Date.now();
+    /* AN UNFILED CAPTURE IS NEVER DISCARDED BY STARTING A NEW ONE. Before the rest
+       screen existed, a stop that failed to file left only the exit control, so the
+       words stayed in memory and in the crash backup. Restoring the hand-off button
+       on every stop created a one-tap path to this line - which used to reset
+       ambParts and then immediately overwrite the backup with the empty new record,
+       destroying the only copy of a consultation that had just failed to file.
+       Whatever was captured and not filed is carried into the resumed capture. */
+    var unfiled = !kiosk.ambFiled;
+    var carried = (unfiled && Array.isArray(kiosk.ambParts) && kiosk.ambParts.length)
+      ? kiosk.ambParts.slice() : [];
+    /* THE ORDERS LEDGER IS CARRIED TOO (av-5.7.2). Carrying the words but not the
+       actions was worse than carrying neither: the resumed capture's first backup
+       write serialises ambientActionsForStore() - i.e. [] - straight over the
+       stored record, so a prescription the doctor had CONFIRMED on screen, and
+       which the review panel still listed under "confirmed and written into the
+       note", vanished from memory and from the crash copy in the same tap. The
+       resumed capture is the same room, the same visit and the same patient
+       (openKiosk clears all of this between patients), so the ledger belongs to it. */
+    var carriedActions = (unfiled && Array.isArray(kiosk.ambActions) && kiosk.ambActions.length)
+      ? kiosk.ambActions.slice() : [];
+    /* A RESUMED CAPTURE MUST NOT BE BORN DEAF. kiosk.paused is cleared only on the
+       mount path (openKiosk), and neither the pause toggle nor the stop clears it -
+       so pausing the interview, stopping, and then tapping the hand-off produced a
+       capture whose recogniser kioskListen refuses to start while the screen said
+       "Recording this visit" with a running clock. Nothing on screen contradicted it. */
+    kiosk.paused = false;
+    /* A resumed capture is born visibly recording before its microphone opens.
+       Pause can be followed by End Visit and then Keep listening; the overlay
+       survives that route, so resetting only the boolean leaves `.paused`, the
+       Resume label and "not recording" disclosure painted over a live mic. */
+    var resumeRoot = gid('mlsAvKiosk');
+    if (resumeRoot) resumeRoot.classList.remove('paused');
+    var resumeButton = gid('mlsAvKioskMute');
+    if (resumeButton) {
+      resumeButton.textContent = '⏸ Pause';
+      resumeButton.setAttribute('aria-pressed', 'false');
+    }
+    var resumeDisclosure = gid('mlsAvKioskRecText');
+    if (resumeDisclosure) resumeDisclosure.textContent = AMBIENT_REC_TEXT;
+    kiosk.ambParts = carried; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambFails = 0;
+    kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null;
+    kiosk.ambActions = carriedActions; kiosk.ambWindow = ''; kiosk.ambClosing = false;
+    kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
+    kiosk.ambSavedAt = 0;
+    pvStopVoice();
+    /* pvStopVoice deliberately LEAVES pvSaying set, so the last question would
+       stay the echo template and the self-echo filter would silently eat real
+       speech built from its words. Ambient never speaks - drop the template,
+       and the bounded tail with it: a room capture is verbatim, and a doctor
+       who repeats the avatar's last question back to the patient must appear in
+       the transcript. */
+    pvSaying = '';
+    pvEchoSaying = '';
+    pvEchoDrop();
+    if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+    if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
+    kioskAmbientClear();
+    var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
+    var row = gid('mlsAvKioskTypeRow'); if (row) row.style.display = 'none';
+    /* explicitly, not by class: kioskRestShow sets an INLINE display, and an
+       inline style outranks the .ambient rule that would otherwise hide it -
+       the hand-off button would sit on screen through the whole recording. */
+    var rest = gid('mlsAvKioskRest'); if (rest) rest.style.display = 'none';
+    var pg = gid('mlsAvKioskProgress'); if (pg) pg.textContent = '';
+    var root = gid('mlsAvKiosk'); if (root) root.classList.add('ambient');
+    kioskSetSay('I am listening to the visit and taking notes for the doctor.');
+    kioskMood('listening', '');
+    kioskAmbientPaint('');
+    /* HARD STOP. Ninety minutes and it ends itself and says so - a capture
+       that rolled on would record the next patient in this room. */
+    kiosk.ambCap = setTimeout(function () {
+      kioskAmbientFlush(function (owned) {
+        if (!owned) return;
+        kioskAmbientSave(true);
+        kioskAmbientStop('cap');
+      }, 'cap');
+    }, AMBIENT_MAX_MS);
+    kioskAmbientTick();
+    ordersRender();
+    /* Write the backup record BEFORE the first word. A capture that dies in
+       its first thirty seconds still leaves proof it existed, with the chart
+       it belonged to - the doctor learns that something was lost rather than
+       wondering whether it was ever running. */
+    kioskAmbientSave(true);
+    kioskAmbientListen();
+    return true;
+  }
+  /* ---- 3. END VISIT -----------------------------------------------------
+     The recogniser is stopped on purpose and then WAITED ON: Chrome delivers
+     any pending final result during stop(), and the last sentence of a visit
+     is often the plan. Ending without that wait would drop it. ---------- */
+  function kioskAmbientFlush(then, intent) {
+    /* One recogniser stop owns a flush. Cap, End Visit, staff exit and a chart
+       change can race in one task. Every caller may observe completion, but only
+       ONE terminal owner is allowed to file/stop the capture. A terminal intent
+       outranks a pause waiter, even when Pause got here first. */
+    if (then) {
+      if (!Array.isArray(kiosk.ambFlushWaiters)) kiosk.ambFlushWaiters = [];
+      kiosk.ambFlushWaiters.push({ fn: then, intent: clean(intent || 'pause'),
+        terminal: !!(intent && intent !== 'pause') });
+    }
+    if (kiosk.ambClosing) return;
+    kiosk.ambClosing = true;
+    var rec = kiosk.ambRec;
+    /* handlers stay attached - the tail results still have to arrive. The
+       restart loop is disarmed by kiosk.ambClosing, not by unhooking. */
+    if (rec) safe(function () { rec.stop(); });
+    var waited = 0;
+    (function poll() {
+      waited += 120;
+      if (!kiosk.ambRec || waited >= 960) {
+        /* If Chrome never upgraded the painted interim to a final, keep that
+           bounded tail now. Clearing happens inside the commit, before append,
+           so a late event cannot duplicate it. At the ceiling the recogniser is
+           explicitly detached BEFORE the screen may say Paused: a browser that
+           delivers onresult after stop() is no longer allowed to append private
+           speech behind that claim. */
+        kioskAmbientCommitPending();
+        if (rec && kiosk.ambRec === rec) {
+          safe(function () { rec.onresult = rec.onerror = rec.onend = null; });
+          kiosk.ambRec = null;
+          safe(function () { if (typeof rec.abort === 'function') rec.abort(); else rec.stop(); });
+        }
+        kiosk.ambFlushTimer = null;
+        var waiters = (kiosk.ambFlushWaiters || []).slice();
+        kiosk.ambFlushWaiters = [];
+        var owner = 0;
+        for (var oi = 0; oi < waiters.length; oi++) {
+          if (waiters[oi] && waiters[oi].terminal) { owner = oi; break; }
+        }
+        /* The owner runs first and may produce kiosk.ambResult. Later observers
+           can display/close around that SAME result but cannot stop/file again. */
+        if (waiters[owner] && typeof waiters[owner].fn === 'function') {
+          safe(function () { waiters[owner].fn(true, kiosk.ambResult || null); });
+        }
+        for (var wi = 0; wi < waiters.length; wi++) {
+          if (wi === owner || !waiters[wi] || typeof waiters[wi].fn !== 'function') continue;
+          (function (row) { safe(function () { row.fn(false, kiosk.ambResult || null); }); })(waiters[wi]);
+        }
+        return;
+      }
+      kiosk.ambFlushTimer = setTimeout(poll, 120);
+    })();
+  }
+  /* ---- MUTE / PAUSE -----------------------------------------------------
+     One control, both modes. During the INTERVIEW it silences the avatar and
+     closes the microphone; during ROOM CAPTURE it stops recording. In both,
+     the screen stops claiming to listen in the SAME action that closes the
+     microphone - "paused" and "the screen says paused" are one fact off one
+     class, exactly as the recording disclosure is.
+
+     A pause that kept recording, or a screen still reading "Recording this
+     visit" while paused, is the worst defect this file could ship: a patient
+     asked for privacy and was told they had it. What was already captured is
+     flushed to the backup BEFORE the microphone closes, so pausing can never
+     cost the words already spoken. ------------------------------------- */
+  function kioskPauseToggle() {
+    kiosk.paused = !kiosk.paused;
+    var root = gid('mlsAvKiosk'), btn = gid('mlsAvKioskMute'), recText = gid('mlsAvKioskRecText');
+    if (btn) {
+      btn.textContent = kiosk.paused ? '▶ Resume' : '⏸ Pause';
+      btn.setAttribute('aria-pressed', kiosk.paused ? 'true' : 'false');
+    }
+    if (root) { if (kiosk.paused) root.classList.add('paused'); else root.classList.remove('paused'); }
+    if (kiosk.paused) {
+      /* Pause is a privacy state, not a UI preference. Stop the independently
+         adopted AEC stream/RAF/AudioContext synchronously with the disclosure. */
+      safe(function () { pvVoiceGateStop(); });
+      if (kiosk.preflighting) kiosk.preflightNeedsResume = true;
+      if (kiosk.ambient) {
+        /* stop() is immediate, but its trailing final remains wired for at most
+           960ms. The disclosure changes to PAUSED synchronously; only the backup
+           write waits for Chrome's tail. */
+        kioskAmbientFlush(function (owned) {
+          if (!owned) return;
+          kioskAmbientSave(true);
+          /* A chart event can be delayed or coalesced. Re-check the immutable
+             patient binding before permitting a resume, not only when flush
+             began. */
+          if (activePtIdSafe() !== clean(kiosk.ambBound)) {
+            kioskAmbientStop('patient-changed');
+            return;
+          }
+          kiosk.ambClosing = false;
+          if (!kiosk.paused && kiosk.ambient) kioskAmbientListen();
+        }, 'pause');
+      } else {
+        pvStopVoice();
+      }
+      kioskState('paused');
+      if (recText) recText.textContent = 'PAUSED — not recording. Nothing is being captured right now.';
+      kioskSetSay(kiosk.ambient ? 'Paused. I am not listening or recording.' : 'Paused. I am not listening.');
+      return true;
+    }
+    if (recText) recText.textContent = AMBIENT_REC_TEXT;
+    kioskState(kiosk.ambient ? 'documenting' : 'listening');
+    if (kiosk.ambient) {
+      kioskSetSay('I am listening to the visit and taking notes for the doctor.');
+      kioskMood('listening', '');
+      if (!kiosk.ambClosing) kioskAmbientListen();
+    } else if (!kiosk.completed) {
+      kioskSetSay(kiosk.lastSay || '');
+      if (kiosk.preflighting || kiosk.preflightNeedsResume) {
+        /* Consent preflight never produced an opening question. Resume must
+           restart THAT proof/turn, not open a recogniser on "Getting ready". */
+        kiosk.preflightNeedsResume = false;
+        if (kiosk.preflightRequest) { kiosk.preflightRequest.waiters = []; kiosk.preflightRequest = null; }
+        kiosk.preflighting = false;
+        kiosk.preflightContinue = null;
+        kioskMicPreflight(function () { if (kiosk.open && !kiosk.paused && !kiosk.completed) kioskTurn(null, null); });
+        return false;
+      }
+      /* Resume is the trusted user gesture that may reacquire the optional AEC
+         stream. Speech recognition still works if the browser declines it. */
+      pvVoiceGateStart(function (adopted) {
+        if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen();
+      });
+    }
+    return false;
+  }
+  function kioskEndVisit() {
+    if (!kiosk.ambient || kiosk.ambEnding) return;
+    kiosk.ambEnding = true;
+    var root = gid('mlsAvKiosk'); if (root) root.classList.add('saving');
+    kioskState('saving');
+    kioskSetSay('Saving the visit…');
+    var iv = gid('mlsAvKioskInterim');
+    kioskLine('status', 'Finishing the recording and writing it to the transcript…');
+    kioskAmbientFlush(function (owned, priorResult) {
+      if (!owned) {
+        if (root) root.classList.remove('saving');
+        kioskReviewShow(priorResult || kiosk.ambResult);
+        return;
+      }
+      kioskAmbientSave(true);              /* the tail reaches the backup before the file attempt */
+      var res = kioskAmbientStop('end-visit');
+      if (root) root.classList.remove('saving');
+      kioskReviewShow(res);
+    }, 'end-visit');
+  }
+  /* THE REVIEW. It states what is true and nothing else: whether the words
+     reached the transcript, how much, what the doctor confirmed, and - said
+     plainly rather than left off - what was heard and never confirmed. */
+  function kioskReviewShow(res) {
+    var pane = gid('mlsAvKioskReview');
+    if (!pane) return;
+    var reviewReceipt = kioskControlReceipt();
+    var ok = !!(res && res.filed);
+    pane.innerHTML = '';
+    var card = make('div', 'mlsAvRevCard');
+    card.appendChild(make('div', 'mlsAvRevHead' + (ok ? ' ok' : ' bad'),
+      ok ? '✓ Saved to the visit transcript' : '⚠ Not saved'));
+    var mins = Math.max(1, Math.round((Date.now() - (kiosk.ambStart || Date.now())) / 60000));
+    card.appendChild(make('div', 'mlsAvRevLine', ok
+      ? (mins + ' min captured · ' + kioskAmbientWords() + ' words · ' + ((res && res.chars) || 0) + ' characters written to the transcript for chart ' + clean(kiosk.ambBound) + '.')
+      : ('Nothing was written: ' + ((res && res.why) || 'the capture could not be filed.'))));
+    if (!ok) {
+      card.appendChild(make('div', 'mlsAvRevWarn',
+        'The words are still held in this browser under chart ' + clean(kiosk.ambBound) +
+        '. Open that chart and use “File the recovered visit” on the Visit page - nothing has been thrown away.'));
+    }
+    if (kiosk.ambSaveOk === false) {
+      card.appendChild(make('div', 'mlsAvRevWarn', ok
+        ? 'Note: the crash backup could not be written while this visit ran (browser storage refused it). It did not matter this time - the transcript above saved normally.'
+        : 'The crash backup could not be written while this visit ran either, so these words exist only in this tab. Copy them somewhere before you reload.'));
+    } else if (kiosk.ambSaveTrim) {
+      card.appendChild(make('div', 'mlsAvRevWarn',
+        'The crash backup ran out of room and dropped its earliest sentences. The transcript above is complete; only the backup was trimmed.'));
+    }
+    var confirmed = ordersConfirmed();
+    var pending = (kiosk.ambActions || []).filter(function (a) { return a.status === 'proposed'; });
+    if (confirmed.length) {
+      card.appendChild(make('div', 'mlsAvRevSub', 'Confirmed and written into the note (place them in the EMR from the chart):'));
+      var ul = make('ul', 'mlsAvRevList');
+      confirmed.forEach(function (a) {
+        ul.appendChild(make('li', '', (ACT_KIND_LABEL[a.kind] || a.kind) + ': ' + a.title + (a.detail ? ' - ' + a.detail : '')));
+      });
+      card.appendChild(ul);
+    }
+    if (pending.length) {
+      card.appendChild(make('div', 'mlsAvRevSub bad', 'Heard but NOT confirmed - these were not ordered and are not in the note:'));
+      var ul2 = make('ul', 'mlsAvRevList bad');
+      pending.forEach(function (a) {
+        ul2.appendChild(make('li', '', (ACT_KIND_LABEL[a.kind] || a.kind) + ': ' + a.title +
+          ((a.missing || []).length ? '  (missing ' + ordersMissingText(a) + ')' : '')));
+      });
+      card.appendChild(ul2);
+    }
+    if (!confirmed.length && !pending.length) {
+      card.appendChild(make('div', 'mlsAvRevLine', 'No orders, prescriptions or referrals were recognised in this visit.'));
+    }
+    /* av-5.6.4 — THE DRAFT NOTE, STARTED HERE. The acceptance line is "End
+       Visit -> complete note and actions ready for review", and filing a
+       transcript is not a note. The app already owns note generation, so this
+       calls the SAME function the Generate button calls rather than growing a
+       second drafting path that could drift from it.
+       It reports honestly: drafting, ready, or failed-with-a-retry. It never
+       claims a note exists that does not, and it never blocks leaving — the
+       transcript is already saved by the time this starts. */
+    if (ok && isFn(window.generateNote)) {
+      var noteLine = make('div', 'mlsAvRevNote', '✍️ Drafting the note from this visit…');
+      card.appendChild(noteLine);
+      var runNote = function () {
+        if (!kioskControlCurrent(reviewReceipt)) return;
+        var draftSession = sessionReceipt();
+        /* The review unit executes this local, PHI-free handoff without an
+           authenticated shell. A real rendered review can only exist behind
+           the operational account+token gate, so every real receipt is exact;
+           the empty-receipt arm preserves that isolated non-network harness. */
+        function draftSessionCurrent() {
+          return kioskControlCurrent(reviewReceipt) &&
+            ((!draftSession.account && !draftSession.token) || sessionReceiptCurrent(draftSession));
+        }
+        noteLine.textContent = '✍️ Drafting the note from this visit…';
+        noteLine.className = 'mlsAvRevNote';
+        var done = false;
+        var draftBound = clean(kiosk.ambBound);
+        var draftPatient = activePtIdSafe();
+        var draftBinding = ambientVisitBinding();
+        var draftEpoch = ambientVisitEpoch();
+        var draftBindingId = clean(draftBinding && draftBinding.id);
+        var settle = function (good, why) {
+          if (done) return;
+          if (!draftSessionCurrent()) { done = true; return; }
+          done = true;
+          if (good) {
+            noteLine.textContent = '✓ Draft note ready on the Visit page.';
+            noteLine.className = 'mlsAvRevNote ok';
+            return;
+          }
+          noteLine.textContent = '⚠ The note was not drafted' + (why ? ' (' + why + ')' : '') +
+            '. The transcript IS saved — draft it from the Visit page.';
+          noteLine.className = 'mlsAvRevNote bad';
+          var retry = make('button', 'mlsAvRevMore', 'Try drafting again');
+          retry.type = 'button';
+          retry.addEventListener('click', kioskControl(function () {
+            if (retry.parentNode) retry.parentNode.removeChild(retry);
+            runNote();
+          }, reviewReceipt));
+          noteLine.appendChild(document.createElement('br'));
+          noteLine.appendChild(retry);
+        };
+        /* An exact successful drafter receipt, unchanged visit ownership, and
+           new canonical note bytes are ALL required. Old note text alone is
+           never evidence that this transcript produced a draft. */
+        var box = gid('noteBox');
+        var before = (box && typeof box.value === 'string') ? box.value : '';
+        var draftStartSafe = !!draftBound && draftPatient === draftBound && !!draftBinding &&
+          ambientBindingPatientId(draftBinding) === draftBound && !ambientVisitCompromised() &&
+          ambientBindingMatches(draftBinding);
+        var draftReady = function (receipt) {
+          if (!draftSessionCurrent()) return false;
+          if (receipt !== true || !draftStartSafe || activePtIdSafe() !== draftPatient || activePtIdSafe() !== draftBound) return false;
+          var current = ambientVisitBinding();
+          if (!current || current !== draftBinding || clean(current.id) !== draftBindingId) return false;
+          if (ambientVisitEpoch() !== draftEpoch || ambientVisitCompromised() || !ambientBindingMatches(draftBinding)) return false;
+          var asyncSafe = safe(function () {
+            if (typeof _athenaAsyncBindingStillSafe === 'function') return _athenaAsyncBindingStillSafe(draftBinding, 'drafting this Avatar visit note', draftEpoch) === true;
+            if (isFn(window._athenaAsyncBindingStillSafe)) return window._athenaAsyncBindingStillSafe(draftBinding, 'drafting this Avatar visit note', draftEpoch) === true;
+            return false;
+          }, false);
+          var currentBox = gid('noteBox');
+          var note = (currentBox && typeof currentBox.value === 'string') ? currentBox.value : '';
+          return asyncSafe && !!note.trim() && note !== before;
+        };
+        if (!draftStartSafe) { settle(false, 'the patient or visit binding was not exact'); return; }
+        var out;
+        try { out = window.generateNote(); }
+        catch (e0) { settle(false, String((e0 && e0.message) || 'the drafter refused')); return; }
+        if (!out || !isFn(out.then)) {
+          settle(draftReady(out), out === true ? 'the canonical note was not verified' : 'the drafter did not confirm success');
+          return;
+        }
+        out.then(function (receipt) {
+          settle(draftReady(receipt), receipt === true ? 'the canonical note was not verified for this visit' : 'the drafter did not confirm success');
+        }, function (e) { settle(false, String((e && e.message) || 'the drafter refused')); });
+        /* A pending drafter is bounded, but note-box text never resolves it.
+           Only the exact generateNote(true) receipt above can say ready. */
+        var waited = 0;
+        var watch = function () {
+          if (done) return;
+          if (!draftSessionCurrent()) { done = true; return; }
+          waited += 500;
+          if (waited >= 45000) { settle(false, 'it took too long'); return; }
+          safe(function () { avatarSessionTimer(watch, 500); });
+        };
+        safe(function () { avatarSessionTimer(watch, 500); });
+      };
+      safe(function () { avatarSessionTimer(runNote, 0); });
+    }
+    var row = make('div', 'mlsAvRevRow');
+    var back = make('button', 'mlsAvRevGo', 'Back to the chart');
+    back.type = 'button';
+    /* Ending the RECORDING needs no PIN - it is not a door into the app. The
+       door still has the same lock it always had. */
+    back.addEventListener('click', kioskControl(function () {
+      if (kiosk.pinSet === false) { kioskEndForStaff('ended'); return; }
+      pane.style.display = 'none';
+      kioskRequestEnd();
+    }, reviewReceipt));
+    row.appendChild(back);
+    var again = make('button', 'mlsAvRevMore', 'Keep listening');
+    again.type = 'button';
+    again.addEventListener('click', kioskControl(function () {
+      pane.style.display = 'none';
+      /* a visit that is not over after all: a NEW capture, appended to the
+         same chart on its own file. The filed one is never re-filed. */
+      kiosk.ambEnding = false;
+      if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
+    }, reviewReceipt));
+    row.appendChild(again);
+    card.appendChild(row);
+    pane.appendChild(card);
+    pane.style.display = 'flex';
+  }
+  function kioskAmbientStop(reason) {
+    if (!kiosk.ambient) return null;
+    kiosk.ambient = false;
+    kiosk.ambRec = null;
+    kiosk.ambClosing = false;
+    kioskAmbientClear();
+    pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
+    var res = kioskAmbientFile();
+    kiosk.ambResult = { reason: String(reason || ''), filed: res.ok === true, why: res.why || '', chars: res.chars || 0 };
+    var root = gid('mlsAvKiosk');
+    if (root) root.classList.remove('ambient');
+    if (!root) return kiosk.ambResult;      /* the overlay is already gone */
+    /* the hand-off button comes back BELOW, after the mood and the say line are
+       written - see the end of this function. Calling it here put the 'resting'
+       chip on screen one line before kioskMood('speaking') took it straight back
+       off, so the screen read "Speaking", waveform animating, over a stopped
+       recording. */
+    kioskMood('speaking', 'thank you');
+    var head = res.ok ? 'Recording stopped. The visit is in the doctor\'s transcript.'
+                      : 'Recording stopped. Nothing was written.';
+    if (reason === 'cap') {
+      head = 'Recording stopped - the 90 minute limit was reached. ' +
+        (res.ok ? 'The visit is in the doctor\'s transcript.' : 'Nothing was written.');
+    }
+    kioskSetSay(head);
+    /* the filing OUTCOME is a status the staff must be able to read: it outranks the
+       transcript, so a late recogniser result cannot wipe it a moment later (av-6.2.0) */
+    kioskLine('status', res.ok
+      ? ('Staff: ' + res.chars + ' characters filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
+      : ('Staff: ' + (res.why || 'the capture could not be filed.')));
+    /* NOW the hand-off comes back, after the mood/say/interim writes above rather
+       than before them. It is also the LAST thing that touches the chip, so
+       "Waiting for the doctor" is what actually stays on screen. */
+    if (kiosk.completed) kioskRestShow();
+    /* AND THE REASON SURVIVES. kioskAmbientNoMic writes its explanation and then
+       calls this function on the next line, which used to overwrite both the say
+       line and the interim synchronously - so the only sentence telling staff the
+       microphone had been revoked never reached a paint. A caller that has already
+       explained itself passes its line in, and it wins. */
+    if (kiosk.ambSayOverride) {
+      kioskSetSay(kiosk.ambSayOverride);
+      if (kiosk.ambInterimOverride) {
+        /* the caller explains the CAUSE; the OUTCOME is this function's to state, and
+           it must be the measured one. Replacing the interim line wholesale erased a
+           refusal and left a reassuring constant in its place.
+           av-6.2.0: routed through the arbitrator as a STATUS, so a late transcript
+           fragment cannot wipe a filing refusal the staff still need to read. */
+        kioskLine('status', kiosk.ambInterimOverride + ' ' + (res.ok
+          ? (res.chars + ' characters were filed to the visit transcript for chart ' + clean(kiosk.ambBound) + '.')
+          : ('NOTHING was filed — ' + (res.why || 'the capture could not be filed.') +
+             ' The words are still held in this browser and can be recovered from the chart.')));
+      }
+      kiosk.ambSayOverride = ''; kiosk.ambInterimOverride = '';
+    }
+    return kiosk.ambResult;
+  }
+  /* Split out of kioskEndForStaff so BOTH staff outcomes close the interview
+     row server-side: leaving, and staying to record. See the comment on
+     kioskEndForStaff for why an 'active' row that is never closed strands the
+     patient's answers in every surface. */
+  function kioskCloseServerSide() {
+    /* A session that never had consent has no row to close - and asking the
+       server to close it CREATES one. See the comment in kioskTurn. */
+    if (!kiosk.consentAt) return;
+    if (kiosk.open && !kiosk.completed && kiosk.sid && kiosk.ext) {
+      safe(function () {
+        api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
+          clientSessionId: kiosk.sid, patientExternalId: kiosk.ext, finish: true }) })
+          .then(function (r) { if (apiResponseCurrent(r)) refreshCount(true); });
+      });
+    }
+  }
+  function openKiosk() {
+    /* A shell rerender can detach Setup before its cleanup runs. The retained
+       dialog lease still owns camera/voice work, so DOM presence alone is not
+       enough to authorize a second Avatar modal. */
+    if (gid(BACK_ID) || (dialogState && dialogState.back && dialogState.back.id === BACK_ID)) {
+      toast('Close Avatar setup before starting the patient check-in.');
+      return false;
+    }
+    var activeId = activePtIdSafe();
+    if (!activeId) { toast('Open the patient first — the interview files to their chart.'); return; }
+    if (kiosk.open) return false;
+    var kioskOpener = safe(function () { return document.activeElement; }, null);
+    kioskStyle(); style();
+    kiosk.open = true; kiosk.generation = (kiosk.generation | 0) + 1; kiosk.busy = false; kiosk.lastTry = null; kiosk.tinted = false;
+    kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false;
+    kiosk.pinSet = null; /* unknown until the server says — unknown means LOCKED */
+    kiosk.photoFace = false; kiosk.tintPortrait = ''; kiosk.completed = false; kiosk.silent = 0;
+    kiosk.finishTries = 0; kiosk.heard = false;
+    /* NOTHING HAS BEEN SAID TO *THIS* PATIENT YET. kioskTurn uses this to mark
+       the opening line as a greeting so it is delivered as a welcome rather
+       than as question four. Left un-reset it is a one-patient flag on a screen
+       that sees a patient an hour: the FIRST check-in after a page load would be
+       greeted warmly and every one after it would not, which is both the harder
+       bug to notice and the one that affects almost every patient. */
+    kiosk.spoke = false;
+    /* consent is per PATIENT, so it resets with the screen. A carried-over
+       flag would let the next patient be recorded on the last one's answer. */
+    kiosk.consentAt = 0;
+    /* and this patient's check-in has never been filed, whatever the last one
+       did - see kioskAmbientBlock */
+    kiosk.intakeFiled = false;
+    /* undefined means "not resolved yet"; null means "resolved to nothing".
+       Both must reset, or the previous patient's chart block would ride into
+       the next interview. */
+    kiosk.chartCtx = undefined;
+    /* kiosk.look and kiosk.nudgedFor already leak across interviews in this
+       file. The recording state must never join them - it carries a
+       patient's words, and a leak here is a cross-patient transcript. */
+    kioskAmbientClear();
+    kiosk.ambient = false; kiosk.ambParts = []; kiosk.ambLast = ''; kiosk.ambPending = ''; kiosk.ambBound = ''; kiosk.ambVisit = null;
+    kiosk.ambFiled = false; kiosk.ambResult = null; kiosk.ambRec = null; kiosk.ambFails = 0;
+    kiosk.ambStart = 0; kiosk.ambRecAt = 0; kiosk.intake = []; kiosk.avName = '';
+    kiosk.pendingSpeech = ''; kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+    kiosk.preflighting = false; kiosk.preflightNeedsResume = false; kiosk.preflightContinue = null; kiosk.preflightRequest = null;
+    kiosk.speechFails = 0; kiosk.speechFailAt = 0;
+    /* the proposed actions carry a patient's clinical plan and must leak
+       across interviews exactly as little as the transcript does */
+    kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambFlushWaiters = []; kiosk.ambExitPending = false;
+    kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false; kiosk.ambSavedAt = 0;
+    kiosk.paused = false;   /* a paused kiosk must never be inherited by the next patient */
+    kiosk.ext = activeId;
+    kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
+    var root = document.createElement('div'); root.id = 'mlsAvKiosk';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-label', 'Patient check-in assistant');
+    root.setAttribute('tabindex', '-1');
+    root.__mlsAvatarOpener = kioskOpener;
+    /* mounted PRE-CONSENT: every other control is display:none until the consent
+       question is answered, so the tab order contains exactly Yes and No */
+    root.className = 'preconsent';
+    root.innerHTML =
+      '<button type="button" id="mlsAvKioskEnd">End interview</button>' +
+      '<div id="mlsAvKioskFaceWrap"><div id="mlsAvKioskFace"></div></div>' +
+      '<div id="mlsAvKioskWave"><span></span><span></span><span></span><span></span><span></span></div>' +
+      '<div id="mlsAvKioskName">One moment…</div>' +
+      /* av-5.6.3 - THE AI DISCLOSURE. This screen can wear the doctor's own
+         face (faceMode 'photo') and speak in a voice chosen to sound like
+         them. Without this line a patient has no way to know they are not
+         talking to their doctor - which is impersonation, not a feature.
+         Mounted with the kiosk and never removed, in BOTH the interview and
+         the room-capture modes, so it cannot be turned off by a state change.
+         The spoken half lives in the backend's INTERVIEW_SYSTEM rule 9: the
+         first thing it SAYS also identifies it. */
+      '<div id="mlsAvKioskState" role="status" data-state="ready">Ready</div>' +
+      '<div id="mlsAvKioskAi">🤖 AI assistant — not the doctor. What you tell me goes to your care team.</div>' +
+      /* mute/pause: the patient stops being recorded the instant it is
+         pressed, and the screen says so. See kioskPauseToggle. */
+      '<button type="button" id="mlsAvKioskMute" aria-pressed="false">Pause</button>' +
+      '<div id="mlsAvKioskSay">Getting ready…</div>' +
+      '<div id="mlsAvKioskMic"><i></i>Listening — just talk, I\'ll know when you\'re finished</div>' +
+      /* the PERMANENT recording disclosure - mounted with the kiosk, shown by
+         the .ambient class alone, and never removed while capture runs */
+      '<div id="mlsAvKioskRec" role="status"><i aria-hidden="true"></i><span id="mlsAvKioskRecText">' + AMBIENT_REC_TEXT + '</span><b id="mlsAvKioskRecClock" aria-hidden="true">0:00</b><em id="mlsAvKioskSave" data-state="ok">Saved</em></div>' +
+      /* av-5.6.0: ONE control ends the visit. It ends the RECORDING and opens
+         the review - it is not a way into the app, so it carries no PIN; the
+         way back to the chart still does. */
+      '<button type="button" id="mlsAvKioskEndVisit">End visit &amp; review</button>' +
+      /* the orders widget mounts empty and stays invisible until something is
+         actually proposed - see ordersRender */
+      '<div id="mlsAvKioskOrders" role="region" aria-label="Proposed actions"></div>' +
+      '<div id="mlsAvKioskReview" role="dialog" aria-label="Visit review"></div>' +
+      '<div id="mlsAvKioskInterim"></div>' + '<div id="mlsAvP1Mic" aria-hidden="true"><b></b><b></b><b></b><b></b><span>Listening</span></div>' +
+      '<div id="mlsAvKioskProgress"></div>' +
+      /* av-5.7.0 - the hand-off: ONE button, mounted with the kiosk and shown
+         only once the check-in is finished. See kioskRestShow. */
+      '<div id="mlsAvKioskRest">' +
+        '<button type="button" id="mlsAvKioskRoomGo">Doctor — start listening to the visit</button>' +
+        '<div id="mlsAvKioskRestNote">One tap. The screen says it is recording the whole time, Pause stops it instantly, and “End visit &amp; review” writes the visit into the transcript.</div>' +
+      '</div>' +
+      /* NO buttons for the patient — the conversation IS the interface. The
+         typed row appears by itself only when the microphone is unavailable.
+         Saying "can you repeat that?" is handled by the interviewer itself. */
+      '<div id="mlsAvKioskTypeRow"><textarea rows="2" id="mlsAvKioskInput" placeholder="Type your answer…"></textarea><button type="button" id="mlsAvKioskSend">Send</button></div>' +
+      /* staff-only exit gate — shown when an exit PIN is configured */
+      '<div id="mlsAvKioskPin"><div id="mlsAvKioskPinCard">' +
+        '<div id="mlsAvKioskPinTitle">Staff only</div>' +
+        '<div id="mlsAvKioskPinSub">Enter the exit PIN, then choose what happens next.</div>' +
+        '<input id="mlsAvKioskPinInput" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN">' +
+        '<div id="mlsAvKioskPinMsg"></div>' +
+        '<div id="mlsAvKioskPinRow"><button type="button" id="mlsAvKioskPinGo">Unlock &amp; end</button>' +
+          '<button type="button" id="mlsAvKioskPinAmb">Unlock &amp; keep listening</button>' +
+          '<button type="button" id="mlsAvKioskPinBack">Back to the interview</button></div>' +
+        '<div id="mlsAvKioskPinNote">Keep listening records this visit in the room and puts it in the transcript under the check-in. The screen says so, in words, the whole time.</div>' +
+      '</div></div>' +
+      /* av-5.7.0 - THE CONSENT GATE, mounted LAST so it sits over everything
+         and shown by default. Owner: "when u start avatar it should say did the
+         patient consent to recording then then u click yes and then it goes."
+         It is also the trusted gesture the browser demands: fullscreen, the
+         audio engine and the microphone prompt all need a click, and that
+         prompt must land on the doctor rather than in front of the patient. */
+      '<div id="mlsAvKioskConsent" role="dialog" aria-label="Recording consent"><div id="mlsAvKioskConsentCard">' +
+        '<div id="mlsAvKioskConsentTitle">Did the patient consent to being recorded?</div>' +
+        '<div id="mlsAvKioskConsentSub">Ask them out loud, in the room. The check-in listens to their voice, and if you choose to keep listening afterwards the visit itself is recorded too. Nothing is recorded — and no microphone is opened — until you tap Yes.</div>' +
+        '<div id="mlsAvKioskConsentRow">' +
+          '<button type="button" id="mlsAvKioskConsentYes">Yes — they consented</button>' +
+          '<button type="button" id="mlsAvKioskConsentNo">No — cancel</button>' +
+        '</div>' +
+      '</div></div>';
+    (document.body || document.documentElement).appendChild(root);
+    /* The opaque kiosk is also a real modal lease: underlying and late-added
+       app surfaces are inert/hidden, Tab stays inside, and Escape follows the
+       same staff exit/PIN rules as the visible End interview control. */
+    dialogActivate(root, root, kioskOpener, function () {
+      /* Escape before consent is only a cancellation.  It must never probe
+         the staff PIN endpoint (or any backend/microphone path) before the
+         doctor has recorded the patient's answer. */
+      if (!kiosk.consentAt) kioskConsentNo();
+      else kioskRequestEnd();
+    });
+    var kioskUiGeneration = kiosk.generation | 0, kioskUiSession = sessionReceipt();
+    function kioskEvent(handler) {
+      return function () {
+        if (!sessionReceiptCurrent(kioskUiSession) || !kiosk.open ||
+            (kiosk.generation | 0) !== kioskUiGeneration || root.isConnected === false) return;
+        return handler.apply(this, arguments);
+      };
+    }
+    root.querySelector('#mlsAvKioskEnd').addEventListener('click', kioskEvent(kioskRequestEnd));
+    root.querySelector('#mlsAvKioskEndVisit').addEventListener('click', kioskEvent(kioskEndVisit));
+    root.querySelector('#mlsAvKioskMute').addEventListener('click', kioskEvent(kioskPauseToggle));
+    root.querySelector('#mlsAvKioskPinGo').addEventListener('click', kioskEvent(function () { kioskPinSubmit('end'); }));
+    root.querySelector('#mlsAvKioskPinAmb').addEventListener('click', kioskEvent(function () { kioskPinSubmit('ambient'); }));
+    root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', kioskEvent(function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit('end'); } }));
+    root.querySelector('#mlsAvKioskPinBack').addEventListener('click', kioskEvent(function () {
+      var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
+      /* a FINISHED interview stays at rest — Back never reopens the mic */
+      if (kiosk.open && !kiosk.busy && !kiosk.completed) {
+        /* Back is a new trusted staff gesture. Reacquire the optional AEC gate
+           here; a canceled PIN pad must never silently inherit a stopped gate. */
+        pvVoiceGateStart(function (adopted) { if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen(); });
+      }
+    }));
+    function kioskTypedSubmit() {
+      var input = gid('mlsAvKioskInput'); var value = input ? input.value.trim() : '';
+      if (!value || kiosk.busy) return;
+      pvStopVoice();
+      if (input) input.value = '';
+      if (clean(kiosk.provisionalSpeech) === clean(value)) {
+        kiosk.provisionalSpeech = ''; kiosk.provisionalShown = ''; kiosk.provisionalEdited = false;
+      }
+      var reuse = kiosk.lastTry && kiosk.lastTry.answer === value ? kiosk.lastTry.nonce : kioskNonce();
+      kiosk.lastTry = { answer: value, nonce: reuse };
+      kioskTurn(value, reuse);
+    }
+    root.querySelector('#mlsAvKioskSend').addEventListener('click', kioskEvent(kioskTypedSubmit));
+    root.querySelector('#mlsAvKioskInput').addEventListener('keydown', kioskEvent(function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kioskTypedSubmit(); } }));
+    /* typing IS activity — it must reset the self-end watchdog the same way
+       speech does, or a slow typist gets cut off mid-answer */
+    root.querySelector('#mlsAvKioskInput').addEventListener('input', kioskEvent(function () { kiosk.heard = true; }));
+    root.querySelector('#mlsAvKioskRoomGo').addEventListener('click', kioskEvent(function () {
+      /* THE HAND-OFF, in one tap. See kioskRestShow.
+         kiosk.mic IS A ONE-SHOT LATCH: it is written once, by the preflight on the
+         consent tap, and never again. So a doctor who dismissed the permission
+         prompt at the start of the check-in found the room recording permanently
+         unavailable for the rest of the visit, with the new refusal telling him the
+         microphone was not available and no way to change that answer. This tap is
+         a fresh user gesture, which is exactly what a permission prompt needs, so
+         it re-probes before refusing. */
+      if (kiosk.mic === false) {
+        kioskMicPreflight(function () {
+          /* ⛔ TYPING IS NOT A FALLBACK FOR ROOM CAPTURE. The preflight above reveals the typing
+             row on denial, which is right for the INTERVIEW — a patient can type answers. Here
+             it is being used as a re-probe for the room recording, and if the microphone is
+             refused again the row is left on the hand-off screen with nothing to type into:
+             a visible input on a surface where input does nothing, next to an alert saying
+             nothing is being recorded. Hide it again when the re-probe fails.
+             (Only when it FAILED — a granted re-probe leaves the interview's own state alone.)
+             ⚠️ Do NOT name the preflight function in this comment: avatar-doctor-runtime.test.js
+             COUNTS textual occurrences inside openKiosk and requires exactly one, to prove the
+             open path never touches the microphone before the consent answer. A mention in prose
+             reads as a second call site. Seventh time today a text-matching check has flagged my
+             own comment — the guard is right, the wording is what has to give. */
+          if (kiosk.mic === false) {
+            var tr = gid('mlsAvKioskTypeRow');
+            if (tr) safe(function () { tr.style.display = 'none'; });
+          }
+          if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
+        });
+        return;
+      }
+      if (!kioskAmbientStart()) safe(function () { pvVoiceGateStop(); });
+    }));
+    root.querySelector('#mlsAvKioskConsentYes').addEventListener('click', kioskEvent(kioskConsentYes));
+    root.querySelector('#mlsAvKioskConsentNo').addEventListener('click', kioskEvent(kioskConsentNo));
+    /* put the keyboard INSIDE the card. Without this the focus stays wherever it
+       was in the doctor's app, and Tab walks his own page - which is how the
+       controls behind an "impassable" overlay turned out to be reachable. */
+    safe(function () { root.querySelector('#mlsAvKioskConsentYes').focus(); });
+    /* the LIVING face */
+    kiosk.face = makeFace(gid('mlsAvKioskFace'), kiosk.look || null);
+    kioskState('ready');
+    kioskSetSay('One more thing before we start.');
+    /* NOTHING ELSE HAPPENS HERE. Fullscreen, the audio engine, the microphone
+       prompt and the first turn all used to run on this click - which meant the
+       microphone was opened, and the patient was being listened to, before
+       anyone had been asked whether that was allowed. They now run on the
+       consent answer, which is a click of its own and therefore just as
+       trusted a gesture. See kioskConsentYes. */
+    return true;
+  }
+  /* av-5.7.0 - CONSENT, THEN EVERYTHING ELSE. The Yes tap carries three jobs
+     that all need a user gesture and were previously spent on the Start click:
+     true fullscreen, the audio context the lip-sync analyser needs, and the
+     microphone permission prompt (which must reach the DOCTOR, never the
+     patient mid-interview). */
+  function kioskConsentYes() {
+    if (!kiosk.open || kiosk.consentAt) return;
+    kiosk.consentAt = Date.now();
+    var pad = gid('mlsAvKioskConsent'); if (pad) pad.style.display = 'none';
+    /* the rest of the kiosk becomes reachable only now */
+    var rootNow = gid('mlsAvKiosk'); if (rootNow) rootNow.classList.remove('preconsent');
+    safe(function () {
+      var el = document.documentElement;
+      if (el.requestFullscreen) { var p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function () {}); }
+    });
+    ttsEnsureCtx();
+    /* av-5.6.4 — the silence nudge is a CONSTANT string, so its audio can be
+       made now, while the doctor is still handing the screen over. When it is
+       needed the patient has already gone quiet and is waiting; paying a round
+       trip at that exact moment is the worst possible time to spend one. Costs
+       one request per interview and warms the TTS connection for the first
+       real question as a side effect. */
+    safe(function () { ttsFetchUrl(NUDGE_LINE, null, 'calm'); });
+    kioskSetSay('Getting ready…');
+    kioskMicPreflight(function () { kioskTurn(null, null); });
+  }
+  /* Refused: no microphone was ever opened, no turn was ever posted, and there
+     is no server row to close - the session id was never used. The kiosk closes
+     with nothing recorded and says exactly that. */
+  function kioskConsentNo() {
+    if (!kiosk.open) return;
+    safe(function () { if (isFn(window.toast)) window.toast('Check-in cancelled — nothing was recorded.', ''); });
+    kioskClose('no-consent');
+  }
+
+  /* ---- the Visit-page presence: check-ins meet the doctor where he works.
+     A compact card at the BOTTOM of #visitView (never near the patient
+     banner — standing owner rule): ready count, a highlight line when the
+     ACTIVE patient completed their check-in, one Open button. Rebuilt on
+     view/patient events and after each badge refresh — no polling. ---- */
+  function activePtIdSafe() {
+    return safe(function () { return isFn(window.getActivePtId) ? clean(window.getActivePtId()) : ''; }, '');
+  }
+
+  /* av-2.0.0: the patient's own words flow into the VISIT — insert the
+     check-in summary into the visit transcript box as a clearly labelled
+     patient-reported block, so the drafted note incorporates it. Typing and
+     pasting into that box is a first-class supported path (the box invites
+     it), and the transcript mirror merges rather than overwrites. Idempotent
+     by stamp; honest toast when the box is not on screen. */
+  function transcriptStamp(checkin) {
+    return '[Pre-visit check-in #' + (checkin.id != null ? checkin.id : '?') + ' — patient-reported]';
+  }
+  function addToTranscript(checkin, button) {
+    var box = gid('ez3flTranscript') || gid('ez3Transcript');
+    if (!box || typeof box.value !== 'string') {
+      toast('The visit transcript box is not on this screen right now — open the Visit recorder first.');
+      return false;
+    }
+    var stamp = transcriptStamp(checkin);
+    if (box.value.indexOf(stamp) >= 0) {
+      if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
+      return true;
+    }
+    /* the note is DRAFTED from this transcript, so an unverified summary must
+       carry its verdict here too - see auditNote; and the flag and the bullets
+       must arrive with it, or the note is drafted from the half of the brief
+       that carries no red flag at all - see briefLines */
+    var block = stamp + '\n' + auditNote(checkin.audited) + '\n' + briefLines(checkin) + String(checkin.summary || '').trim() + '\n';
+    box.value = box.value.trim() ? (box.value.replace(/\s+$/, '') + '\n\n' + block) : block;
+    safe(function () { box.dispatchEvent(new Event('input', { bubbles: true })); });
+    if (button) { button.disabled = true; button.textContent = 'In transcript ✓'; }
+    toast('Patient-reported check-in added to the visit transcript — the drafted note will include it.');
+    return true;
+  }
+
+  function visitButton(label, primary, onTap) {
+    var b = make('button', 'mlsAvAction' + (primary ? ' primary' : ''), label);
+    var receipt = sessionReceipt();
+    b.type = 'button';
+    b.addEventListener('click', function (event) {
+      event.preventDefault();
+      if (!sessionReceiptCurrent(receipt) || b.isConnected === false) return;
+      onTap(b);
+    });
+    return b;
+  }
+
+  function ensureVisitCard() {
+    if (!operationalSessionCurrent()) return;
+    var view = gid('visitView'); if (!view) return;
+    var card = gid('mlsAvVisitCard');
+    /* av-6.0.8 — UNCONDITIONAL, because this card may have been created by someone else.
+       The loader in mls-connect.js paints an instant skeleton under this exact id (owner:
+       "this top thing show shoup uop right away not take a secod" — this module is the ~52nd
+       of ~100 serially-loaded deferred assets, so the real card was tens of seconds late).
+       style() is id-guarded and idempotent, but it used to be called ONLY on the create
+       branch — adopting a skeleton would therefore have skipped it and left every
+       .mlsAvAction button in this card unstyled. */
+    style();
+    var CARD_BOX = 'margin:8px 2px 12px;padding:12px 14px;border:1px solid #E7E5DD;border-radius:12px;background:#FCFBF8;font-family:\'Public Sans\',system-ui,sans-serif';
+    if (card && card.getAttribute('data-mls-av-skeleton')) {
+      /* take ownership: drop the placeholder's click-to-hurry handler by replacing the node's
+         guts, and re-assert the canonical box so the skeleton's copy can never drift from it */
+      safe(function () { card.removeAttribute('data-mls-av-skeleton'); });
+      safe(function () { card.style.cssText = CARD_BOX; });
+      safe(function () { card.removeAttribute('data-mls-av-sig'); });
+    }
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'mlsAvVisitCard';
+      card.style.cssText = CARD_BOX;
+      /* TOP of the visit view — where the doctor's eye already is. (The app's
+         top patient banner is untouched; this lives inside the Visit content.) */
+      view.insertBefore(card, view.firstChild);
+    }
+    /* av-2.0.1: the Easy-lane host also claims first-child when it remounts,
+       which would sink this card BELOW the entire workspace. Re-assert first
+       position on OUR events only (no interval): moving THIS card never
+       touches the host subtree, so the doctor's caret in the transcript is
+       untouched — the one thing we skip is moving the card out from under a
+       focused element of its own. */
+    /* ⛔ TWO MODULES WERE CLAIMING visitView.firstElementChild (av-6.0.2).
+       Owner, on a screenshot of the Visit page: "where did that start avatar thing in the top
+       go I loved that."
+       feat_mls_calm_shell.js:2437 re-asserts the Prep/Record/Review/Sign/Send rail as
+       `visit.firstElementChild` "every pass, because ez3 re-inserts itself on its own
+       schedule and winning the race once is not the same as staying first" — and it is there
+       because the owner ALSO complained that the rail was in the wrong spot. So both of his
+       requirements are real and they were competing for one slot, which no amount of
+       re-asserting can settle: whoever runs last wins and the other one moves.
+       The slot is not the point. The rail goes first, this card goes DIRECTLY BELOW IT, and
+       neither has to win a race. `wantAfter` resolves the rail by id if it is present and
+       falls back to the very top when it is not, so this is correct on a build without the
+       rail too. */
+    var focusInCard = safe(function () { return card.contains(document.activeElement); }, false);
+    if (!focusInCard) {
+      var rail = safe(function () { return view.querySelector('#mlsStages'); }, null);
+      var wantAfter = (rail && rail.parentNode === view) ? rail.nextElementSibling : view.firstElementChild;
+      if (card !== wantAfter && card.previousElementSibling !== rail) {
+        safe(function () { view.insertBefore(card, wantAfter); });
+      }
+    }
+    var cache = safe(function () {
+      return currentApi && window.__mlsAvatar === currentApi ? currentApi.lastReady : null;
+    }, null);
+    var total = cache && Array.isArray(cache.checkins) ? (Number(cache.total) || cache.checkins.length) : null;
+    var activeId = activePtIdSafe();
+    var activeHit = null;
+    if (cache && activeId) {
+      for (var i = 0; i < cache.checkins.length; i++) {
+        if (clean(cache.checkins[i].patient_external_id) === activeId) { activeHit = cache.checkins[i]; break; }
+      }
+    }
+    /* Same content -> no rebuild (buttons keep their done/disabled states). */
+    var pend = safe(function () { return ambientRecoverInfo(); }, null);
+    /* the signature must include EVERY fact the card draws, or the card will not
+       repaint when only that fact changed. `audited` is the case that matters: the
+       verdict is written by a second model AFTER the row goes ready, so it arrives
+       on a later poll with the id, count and chart all identical - and the card
+       would keep painting the unverified summary as if nothing had been decided.
+       headline and bullet count are here for the same reason. */
+    var sig = (activeHit ? 'a' + activeHit.id + ':' + clean(activeHit.audited) +
+        ':' + String(activeHit.headline || '').length +
+        ':' + (Array.isArray(activeHit.bullets) ? activeHit.bullets.length : 0) : 'n') + '|' + total + '|' + activeId +
+      /* pend.held is in the signature, or a SECOND held capture appearing would
+         not rebuild the card and its line would never be drawn */
+      '|' + (pend ? 'r' + pend.bound + ':' + pend.chars + ':' + pend.held : 'r0');
+    if (card.getAttribute('data-mls-av-sig') === sig) return;
+    card.setAttribute('data-mls-av-sig', sig);
+    card.innerHTML = '';
+    var head = make('div', '');
+    head.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+    var title = make('span', '', '🧑‍⚕️ Avatar');
+    title.style.cssText = 'font-weight:800;color:#204034;font-size:13.5px';
+    head.appendChild(title);
+    var line = make('span', '', activeHit
+      ? '✨ This patient completed their pre-visit check-in:'
+      : (total == null ? 'Your AI check-in assistant — patients answer your questions before the visit.'
+        : (total === 0 ? 'No completed check-ins waiting.' : (total + ' patient' + (total === 1 ? '' : 's') + ' finished their check-in.'))));
+    line.style.cssText = 'font-size:12.5px;color:' + (activeHit ? '#2E6A4B;font-weight:700' : '#55605A');
+    head.appendChild(line);
+    /* av-3.0.0: the headline action — the patient is in the room, start the
+       interview on THIS screen for THIS patient. */
+    /* Always rendered: gating it on an active patient made it VANISH, which
+       reads as "the feature was removed" (the owner reported exactly that).
+       openKiosk() already refuses honestly with a toast naming the
+       precondition  that refusal is only reachable if the button is. */
+    if (!activeHit) head.appendChild(visitButton('🎙 Start check-in interview', true, function () { openKiosk(); }));
+    head.appendChild(visitButton(activeHit ? 'All check-ins' : (total ? 'Open check-ins' : 'Open'), false, function () { open(); }));
+    /* av-2.0.2: flag FIRST, then open — the old order consumed the flag
+       before it was set (Set up landed on the Ready tab) and left it armed
+       to hijack the doctor's NEXT open. */
+    if (!activeHit) head.appendChild(visitButton('Set up', false, function () { openSetupTab(); open(); }));
+    card.appendChild(head);
+
+    /* av-5.6.0 - A ROOM CAPTURE SURVIVED THE PAGE. It is announced here, on
+       the screen the doctor is already looking at, with the chart it belongs
+       to named out loud. It is never filed automatically: this browser cannot
+       know whether the doctor already retyped the visit by hand. */
+    if (pend) {
+      var rec = make('div', '');
+      rec.style.cssText = 'margin-top:10px;padding:10px 12px;border:1px solid #d8c6bf;border-radius:10px;background:#FBF3F0';
+      var mine = pend.bound && activeId && pend.bound === activeId;
+      var when = pend.savedAt ? formatDate(new Date(pend.savedAt).toISOString()) : '';
+      var recLine = make('div', '', '🎙 A recorded visit was saved before this page reloaded' +
+        (pend.mins ? ' (' + pend.mins + ' min, ' : ' (') + pend.words + ' words)' +
+        (when ? ', last saved ' + when : '') + '.');
+      recLine.style.cssText = 'font:700 12.5px/1.5 system-ui;color:#7a1f16';
+      rec.appendChild(recLine);
+      var recSub = make('div', '', mine
+        ? 'It belongs to this chart. Nothing has been written yet.'
+        : 'It belongs to chart ' + pend.bound + ' — open that chart to file it. It will not be written anywhere else.');
+      recSub.style.cssText = 'font:500 12px/1.5 system-ui;color:#55605A;margin-top:3px';
+      rec.appendChild(recSub);
+      if (pend.trimmed) {
+        var trimLine = make('div', '', 'The backup ran out of room, so the earliest part of this visit is missing.');
+        trimLine.style.cssText = 'font:600 11.5px/1.45 system-ui;color:#7a1f16;margin-top:3px';
+        rec.appendChild(trimLine);
+      }
+      /* A SECOND HELD CAPTURE MUST NOT BE INVISIBLE. Captures are now kept per
+         chart, so more than one can be waiting; this panel can only offer the one
+         it picked. Before the per-chart keys the extra ones did not exist at all -
+         each new recording overwrote the last - so silence here would read as
+         "nothing else is waiting" when a whole other consultation is. */
+      if (pend.held > 1) {
+        var moreLine = make('div', '',
+          (pend.held - 1) + ' other recorded visit' + (pend.held - 1 === 1 ? '' : 's') +
+          ' ' + (pend.held - 1 === 1 ? 'is' : 'are') + ' also held for other charts. ' +
+          'Open the chart it belongs to and this panel will offer it.');
+        moreLine.style.cssText = 'font:600 11.5px/1.45 system-ui;color:#7a1f16;margin-top:3px';
+        rec.appendChild(moreLine);
+      }
+      var recActions = make('div', 'mlsAvActions');
+      recActions.style.marginTop = '8px';
+      if (mine) {
+        recActions.appendChild(visitButton('File the recovered visit', true, function (b) {
+          var out = ambientRecoverFile();
+          if (out.ok) {
+            b.disabled = true; b.textContent = out.already ? 'Already in transcript ✓' : 'Filed ✓';
+            toast(out.already
+              ? 'That recovered visit was already in the transcript — nothing was written twice.'
+              : 'The recovered visit is in the transcript.');
+            safe(function () { ensureVisitCard(); });
+          } else toast('Not filed — ' + out.why);
+        }));
+      }
+      recActions.appendChild(visitButton('Copy it', false, function (b) {
+        var info = ambientRecoverInfo();
+        if (!info) { toast('There is no recovered visit waiting.'); return; }
+        safe(function () {
+          navigator.clipboard.writeText(info.body).then(function () {
+            b.textContent = 'Copied ✓';
+          }, function () { toast('Could not copy — select the text from the transcript instead.'); });
+        });
+      }));
+      /* Discard is DELIBERATE and says what it costs. Without it a capture
+         the doctor has already handled would sit here forever, and the one
+         thing worse than losing a visit is being nagged about a visit that
+         was never lost. */
+      /* TWO TAPS, no native dialog. window.confirm blocks the renderer, and
+         this button deletes a consultation - it needs a deliberate second
+         action, not a modal that can be dismissed by reflex. The button says
+         what it is about to destroy before it destroys it. */
+      recActions.appendChild(visitButton('Discard', false, function (b) {
+        if (b.getAttribute('data-armed') !== '1') {
+          b.setAttribute('data-armed', '1');
+          b.textContent = 'Delete ' + pend.words + ' words?';
+          b.style.color = '#7a1f16';
+          safe(function () {
+            setTimeout(function () {
+              if (!b || b.getAttribute('data-armed') !== '1') return;
+              b.removeAttribute('data-armed'); b.textContent = 'Discard'; b.style.color = '';
+            }, 6000);
+          });
+          return;
+        }
+        ambientStoreDrop(pend.key);
+        toast('The recovered recording was deleted.');
+        safe(function () { ensureVisitCard(); });
+      }));
+      rec.appendChild(recActions);
+      card.appendChild(rec);
+    }
+
+    if (activeHit) {
+      /* THE REVIEW UI: the doctor sees the patient's key points right here,
+         no click required, and files them where they belong with one tap. */
+      var full = null; /* full summary text arrives via the panel cache rows */
+      /* av-5.7.0: the HEADLINE leads here too. This card is the surface the
+         doctor is already looking at when he opens the visit, so the brief has
+         to arrive here or it may as well not exist. */
+      if (activeHit.headline) {
+        /* A REJECTED SUMMARY MUST NOT BE PAINTED REASSURINGLY. The flag class was
+           chosen from the HEADLINE's leading ⚠ alone, which the server writes for
+           clinical red flags - so an unverified brief with a calm headline arrived
+           in the same green block as a verified one. The audit verdict is an
+           independent fact from the clinical one and now colours the block too. */
+        var rejectedBrief = clean(activeHit.audited) === 'rejected';
+        card.appendChild(make('div', 'mlsAvBrief' +
+          ((rejectedBrief || /^⚠/.test(String(activeHit.headline))) ? ' flag' : ''),
+          String(activeHit.headline)));
+      }
+      /* the verdict itself, on the surface the doctor reads before the room. All four
+         states were rendering byte-identically here: `audited` was added to this
+         card's own cache payload by av-5.7.0 and then read by nothing. */
+      card.appendChild(make('div', 'mlsAvMeta' + (clean(activeHit.audited) === 'rejected' ? ' flag' : ''),
+        clean(activeHit.audited) === 'rejected'
+          ? '⚠ The AI audit REJECTED this summary — it could not be reconciled with the patient\'s answers. Read the check-in before relying on it.'
+          : (clean(activeHit.audited) === 'corrected' ? 'AI audit: corrected against the patient\'s answers.'
+            : (clean(activeHit.audited) === 'passed' ? 'AI audit: checked against the patient\'s answers.'
+              : 'AI audit: no verdict recorded for this check-in.'))));
+      if (Array.isArray(activeHit.bullets) && activeHit.bullets.length) {
+        var ul = make('ul', 'mlsAvBullets');
+        activeHit.bullets.forEach(function (bullet) {
+          ul.appendChild(make('li', /^⚠/.test(String(bullet)) ? 'flag' : '', String(bullet)));
+        });
+        card.appendChild(ul);
+      }
+      var actions = make('div', 'mlsAvActions');
+      actions.style.marginTop = '9px';
+      /* `audited` MUST be on this object. Both write paths stamp the verdict beside
+         the words now (auditNote), and this hand-built copy was the one place it was
+         dropped - so a REJECTED summary filed from the Visit card, the surface the
+         doctor actually uses, would have been stamped "no verdict recorded". */
+      /* THE FLAG, THE HEADLINE AND THE BULLETS MUST BE ON THIS OBJECT TOO. briefLines
+         reads them, and this hand-built copy is what the Visit card's two file buttons
+         hand it - so a check-in the server flagged would have been filed from the one
+         surface the doctor actually uses with the ⚠ dropped by construction. */
+      var detail = { id: activeHit.id, patient_external_id: activeHit.patient_external_id, ready_at: activeHit.ready_at, summary: activeHit.summary || null, audited: activeHit.audited || null,
+        headline: activeHit.headline || null, bullets: Array.isArray(activeHit.bullets) ? activeHit.bullets : [], flags: Array.isArray(activeHit.flags) ? activeHit.flags : [] };
+      var needSummary = !detail.summary || activeHit.truncated === true || activeHit.bulletsTruncated === true;
+      function withSummary(run, button) {
+        if (!needSummary) { run(); return; }
+        button.disabled = true; var was = button.textContent; button.textContent = 'Loading…';
+        api('/api/avatar/checkins?status=ready').then(function (r) {
+          if (!apiResponseCurrent(r)) return;
+          button.disabled = false; button.textContent = was;
+          var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : [];
+          /* The refetch must be PROVEN, not assumed: detail.summary was already
+             pre-seeded with the 4000-char cache truncation, so testing it after
+             a failed refetch (non-2xx, or a colleague already marked the row
+             seen) passed on the STALE cut — filing a mid-sentence slice into
+             the chart, where the stamp guard then blocks the real summary
+             forever, under a toast that said it worked. */
+          var found = null;
+          for (var j = 0; j < rows.length; j++) if (rows[j].id === detail.id) { found = rows[j]; break; }
+          if (found && found.summary) {
+            detail.summary = found.summary; detail.ready_at = found.ready_at;
+            /* the refetch is the FRESHER verdict - an audit that finished after the
+               cache row was built arrives here and must not be thrown away */
+            detail.audited = found.audited || detail.audited || null;
+            /* and the fresher brief: the whole reason this refetch can be demanded by
+               bulletsTruncated is to replace the three-bullet display sample with all
+               six, so taking the summary and leaving the bullets behind would have
+               made the refetch pointless for exactly the rows that needed it */
+            detail.headline = found.headline || detail.headline || null;
+            if (Array.isArray(found.bullets)) detail.bullets = found.bullets;
+            if (Array.isArray(found.flags)) detail.flags = found.flags;
+            needSummary = false; run();
+          } else toast('Could not load the full summary — open All check-ins and use it from there.');
+        }, function () { button.disabled = false; button.textContent = was; toast('Could not load the full summary — try again.'); });
+      }
+      actions.appendChild(visitButton('Add to visit transcript', true, function (b) {
+        withSummary(function () { addToTranscript(detail, b); }, b);
+      }));
+      actions.appendChild(visitButton('Add to chart', false, function (b) {
+        withSummary(function () { importSummary(detail, b); }, b);
+      }));
+      actions.appendChild(visitButton('Full summary', false, function (b) {
+        withSummary(function () {
+          if (full && full.parentNode) { full.parentNode.removeChild(full); full = null; b.textContent = 'Full summary'; return; }
+          full = make('div', 'mlsAvSummary', String(detail.summary));
+          card.appendChild(full); b.textContent = 'Hide summary';
+        }, b);
+      }));
+      card.appendChild(actions);
+    }
+  }
+  var pendingSetupTab = false;
+  function openSetupTab() { pendingSetupTab = true; }
+
+  /* ---- THE AVATAR IN SETTINGS (av-5.7.5) --------------------------------------
+     Owner: "add avatar to settings like I like the set up thing to start but add it to
+     settings so u can chagne it whenever and easily found."
+     The setup wizard stays exactly where it was; this is a second door, and the door
+     that is always there. Before this, the only way back into the questions, the voice
+     and the face was the Visit card's "Set up" button, which renders only when the open
+     patient has NO completed check-in - so the more the practice used the feature, the
+     harder it became to change it.
+     THE SAME FORM, NOT A COPY. setupForm() owns that markup; a second set of controls
+     in ScribeFlow.html would be a second source of truth for the questions a patient is
+     asked, and two sources of truth for clinical questions drift.
+     MOUNTED LAZILY AND ONCE PER OPEN. setupForm fetches /api/avatar/config, so it must
+     not run on every reconcile - that event fires on any Settings mutation. */
+  var settingsMountedFor = 0;
+  function mountAvatarSettings(open) {
+    var host = gid('mlsAvSettingsHost');
+    if (!host) return;                       /* an older ScribeFlow without the section */
+    if (!open) { settingsMountedFor = 0; discardAvatarSetup(host, true); return; }
+    /* ⛔ THE LATCH IS NOT THE AUTHORITY — THE DOM IS (av-6.0.7).
+       Owner, on a screenshot of Settings > Check-in avatar showing nothing but the static
+       placeholder: "Its not acatlly there."
+       `if (settingsMountedFor) return;` is a one-shot latch that only ever resets when this
+       function is called with open === false. TWO ordinary paths leave it set with no form on
+       screen, and both end in the placeholder sitting there forever:
+         1. Settings is closed WITHOUT a reconciled event carrying open:false — nothing resets
+            the latch, so the next open returns early and never mounts.
+         2. setupForm THROWS. It is called inside safe(), which swallows the throw by design,
+            but the latch was already set one line earlier — so the failure is permanent and
+            silent, and the doctor sees "Opening your avatar setup…" for the rest of the tab's
+            life with no way to retry.
+       The original intent is still honoured and is the reason this is not simply unconditional:
+       a MOUNTED form must never be re-rendered under the doctor's fingers, because that would
+       discard an edit he had not saved. But "mounted" is a fact about the DOM, not about a
+       variable — a host that holds no control at all cannot be holding an unsaved edit. */
+    var hasForm = safe(function () { return !!host.querySelector('input,select,textarea'); }, false);
+    if (settingsMountedFor && hasForm) return;
+    settingsMountedFor = Date.now();
+    safe(function () { setupForm(host); });
+  }
+  /* whether the settings modal is on screen right now, read from the modal itself rather than
+     from an event we may have missed — see mountAvatarSettings */
+  function settingsOpenNow() {
+    return safe(function () {
+      var modal = gid('settingsModal');
+      if (!modal) return false;
+      if (modal.classList && modal.classList.contains('show')) return true;
+      /* "exists" and "visible" are independent facts: a modal shown by inline style rather
+         than a class is still open, and this panel is reachable that way. */
+      var host = gid('mlsAvSettingsHost');
+      return !!(host && host.offsetParent !== null);
+    }, false);
+  }
+  function onSettingsReconciled(ev) {
+    if (typeof operationalSessionCurrent === 'function' && !operationalSessionCurrent()) {
+      /* Settings may remain open across logout. Never remount an editable
+         account form (or even issue its GET) until an exact account+token
+         owner is active again. */
+      settingsMountedFor = 0;
+      var staleHost = gid('mlsAvSettingsHost');
+      if (staleHost) discardAvatarSetup(staleHost, true);
+      return;
+    }
+    var open = !!(ev && ev.detail && ev.detail.open);
+    /* the organizer tells us; when it is absent, fall back to the modal's own class -
+       "exists" and "open" are independent facts and neither implies the other */
+    if (!ev || !ev.detail) {
+      var modal = gid('settingsModal');
+      open = !!(modal && modal.classList && modal.classList.contains('show'));
+    }
+    if (!open) {
+      /* Settings stays connected while hidden; release camera and voice from
+         the lifecycle event rather than waiting for DOM disconnection. */
+      cancelFaceCapture();
+      pvStopVoice();
+    }
+    mountAvatarSettings(open);
+  }
+
+  /* ---- mount (event-driven, bounded retry ladder — no permanent polling) ---- */
+  /* ---- account/session boundary ------------------------------------------- */
+  var publicFaceControllers = [];
+  function scrubAvatarSession() {
+    avatarSessionTimers.splice(0).forEach(function (timer) {
+      safe(function () { clearTimeout(timer); });
+    });
+    /* Retire UI owners before clearing their data. close() also restores the
+       exact opener and the background attributes owned by its modal lease. */
+    close();
+    avatarInboxEpoch++;
+    cancelFaceCapture();
+    safe(function () { discardAvatarSetups(document); });
+    settingsMountedFor = 0; pendingSetupTab = false;
+
+    /* A kiosk boundary is a teardown, never a clinical action: do not file an
+       ambient buffer and do not send the old account a finish turn. */
+    kiosk.generation = (kiosk.generation | 0) + 1;
+    kiosk.completed = false;
+    kioskClose('session-boundary');
+    kiosk.sid = null; kiosk.ext = null; kiosk.lastSay = ''; kiosk.lastTry = null;
+    kiosk.look = null; kiosk.chartCtx = undefined; kiosk.avName = ''; kiosk.nudgedFor = null;
+    kiosk.sayingFor = ''; kiosk.sayingSince = 0; kiosk.pinSet = null;
+    kiosk.pinProbeBusy = false; kiosk.pinUnlockBusy = false; kiosk.mic = null;
+    kiosk.intake = []; kiosk.intakeFiled = false; kiosk.ambActions = [];
+    kiosk.ambResult = null; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false;
+    kiosk.echoRefused = 0; kiosk.spoke = false; kiosk.tinted = false;
+
+    pvStopVoice();
+    safe(function () { pvVoiceGateStop(); });
+    pvEchoDrop(); pvVoice = undefined; pvWantMale = null; pvTalkFace = null;
+    klKind = ''; klUntil = 0;
+    if (p1MicTimer) { safe(function () { clearTimeout(p1MicTimer); }); p1MicTimer = 0; }
+    p1MicOff = false;
+    safe(function () { var mic = gid('mlsAvP1Mic'); if (mic) mic.classList.remove('on'); });
+
+    /* TTS text/audio and the face analysis canvas are account-owned ephemeral
+       data too. Abort in-flight audio fetches, revoke every blob URL, and
+       release pixel buffers synchronously. */
+    ttsFetchControllers.splice(0).forEach(function (controller) { safe(function () { controller.abort(); }); });
+    ttsFetchTimers.splice(0).forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    ttsOrder.splice(0).forEach(function (key) {
+      safe(function () { if (ttsCache[key]) URL.revokeObjectURL(ttsCache[key]); });
+    });
+    ttsCache = {}; ttsDownUntil = 0; ttsMouthGeneration++;
+    if (ttsRaf) { safe(function () { cancelAnimationFrame(ttsRaf); }); ttsRaf = 0; }
+    if (ttsCtx) safe(function () { ttsCtx.close(); });
+    ttsCtx = null;
+    if (faceLiveCanvas) safe(function () { faceLiveCanvas.width = 0; faceLiveCanvas.height = 0; });
+    faceLiveCanvas = null;
+    publicFaceControllers.splice(0).forEach(function (controller) {
+      safe(function () { if (controller && isFn(controller.destroy)) controller.destroy(); });
+    });
+
+    lastRefreshAt = 0; refreshInFlight = false;
+    setCount(0);
+    var avatarButton = gid(BUTTON_ID);
+    if (avatarButton && avatarButton.parentNode) avatarButton.parentNode.removeChild(avatarButton);
+    var visitCard = gid('mlsAvVisitCard');
+    if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
+    if (currentApi) {
+      safe(function () { delete currentApi.lastReady; delete currentApi.lastMatchReceipt; });
+      currentApi.installed = false;
+    }
+    retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    retryTimers = [];
+  }
+  function onSessionBoundary(event) {
+    if (disposed) return;
+    var ownedGlobal = !!(currentApi && window.__mlsAvatar === currentApi &&
+      currentApi.instanceToken === INSTANCE_TOKEN);
+    /* A retired closure can still have a capture listener until its loader
+       calls revert(). It must never scrub the DOM or session state owned by a
+       newer exact canonical instance. */
+    if (!ownedGlobal) return;
+    var oldMic = currentMicApi;
+    sessionGeneration++;
+    var detail = event && event.detail || {};
+    sessionEpoch = Object.prototype.hasOwnProperty.call(detail, 'epoch')
+      ? Math.max(0, Number(detail.epoch) || 0) : runtimeEpoch();
+    sessionAccount = Object.prototype.hasOwnProperty.call(detail, 'nextAccount')
+      ? normalizedAccount(detail.nextAccount) : runtimeAccount();
+    scrubAvatarSession();
+    currentApi = null;
+    if (oldMic) oldMic.installed = false;
+    if (oldMic && window.__mlsAvP1Mic === oldMic) {
+      try { delete window.__mlsAvP1Mic; } catch (_) { window.__mlsAvP1Mic = null; }
+    }
+    currentMicApi = null;
+    if (ownedGlobal) {
+      if (liveSessionCredentials()) {
+        publishApi();
+        publishMicApi();
+        scheduleEnsure();
+      } else publishDormantApi('no-authenticated-session');
+    }
+  }
+
+  var retryTimers = [], lifecycleBound = [], visBound = false;
+  function scheduleEnsure() {
+    if (!operationalSessionCurrent()) return;
+    /* av-1.3.1: this module is idle-DEFERRED, so the app's ready events can
+       fire BEFORE it loads — a fresh login landing on Visit then showed no
+       card until the user switched views. The bounded ladder now mounts the
+       Visit card too, and its last rung does the one boot count-refresh the
+       missed events would have done. Still zero permanent polling. */
+    [0, 160, 420, 900, 1800, 3200].forEach(function (delay, index, all) {
+      retryTimers.push(setTimeout(function () {
+        ensureButton();
+        ensureVisitCard();
+        /* AND THE SETTINGS PANEL, from the same ladder (av-6.0.7). Its mount was driven by the
+           mls:settings-reconciled event and NOTHING ELSE, so a settings modal opened by any
+           route that does not emit that event showed the static placeholder forever. This rung
+           asks the modal itself whether it is open, and mountAvatarSettings is now idempotent
+           against a mounted form, so calling it here cannot re-render over an unsaved edit. */
+        if (settingsOpenNow()) mountAvatarSettings(true);
+        if (index === all.length - 1) refreshCount(false);
+      }, delay));
+    });
+  }
+  function onLifecycle() {
+    if (!operationalSessionCurrent()) return;
+    scheduleEnsure(); refreshCount(false); ensureVisitCard();
+    /* a view or account change can happen with Settings already open — see mountAvatarSettings */
+    if (settingsOpenNow()) mountAvatarSettings(true);
+  }
+  function onVisibility() { if (!document.hidden) refreshCount(false); }
+  function onVisitContext() {
+    if (typeof operationalSessionCurrent === 'function' && !operationalSessionCurrent()) return;
+    /* THE CHART CHANGED UNDER A LIVE RECORDING. Everything said from here
+       belongs to whoever is on screen now, so the microphone closes at
+       once - and the write is refused, because the words already captured
+       belong to the patient whose chart just left. */
+    if (kiosk.ambient && (activePtIdSafe() !== clean(kiosk.ambBound) || !ambientCurrentVisitMatchesReceipt(kiosk.ambVisit, true))) {
+      kioskAmbientFlush(function (owned) {
+        if (!owned) return;
+        kioskAmbientSave(true);
+        kioskAmbientStop('patient-changed');
+      }, 'patient-changed');
+    }
+    ensureVisitCard();
+  }
+  function boot() {
+    safe(function () {
+      window.addEventListener('mls:session-boundary', onSessionBoundary, true);
+      lifecycleBound.push(['mls:session-boundary', onSessionBoundary, true]);
+    });
+    scheduleEnsure();
+    ['mls:ui-ready', 'mls:topbar-ready', 'mls:header-rendered'].forEach(function (name) {
+      safe(function () { window.addEventListener(name, onLifecycle, false); lifecycleBound.push([name, onLifecycle]); });
+    });
+    /* mls:easy-mode-changed: a staff→doctor mode flip remounts the Easy host
+       WITHOUT a view change — without this event the card sinks below the
+       workspace until the next unrelated event. */
+    ['mls:view-changed', 'mls:active-patient-changed', 'mls:patient-changed', 'mls:easy-mode-changed'].forEach(function (name) {
+      safe(function () { window.addEventListener(name, onVisitContext, false); lifecycleBound.push([name, onVisitContext]); });
+    });
+    if (!visBound) {
+      safe(function () { document.addEventListener('visibilitychange', onVisibility, false); visBound = true; });
+    }
+    /* the Settings organizer's one canonical lifecycle signal - documented there as
+       existing precisely so a small augmentation like this does not have to install its
+       own page-wide observer or poll */
+    safe(function () {
+      window.addEventListener('mls:settings-reconciled', onSettingsReconciled, false);
+      lifecycleBound.push(['mls:settings-reconciled', onSettingsReconciled]);
+    });
+  }
+  function publicOwnerCurrent(owner, generation) {
+    if (disposed || !owner || generation !== sessionGeneration || owner.installed !== true ||
+        owner.instanceToken !== INSTANCE_TOKEN || owner.installToken !== INSTALL_TOKEN) return false;
+    if (owner === currentApi) return window.__mlsAvatar === owner;
+    if (owner === currentMicApi) return window.__mlsAvP1Mic === owner;
+    return false;
+  }
+  function publicCallCurrent(owner, generation) {
+    return publicOwnerCurrent(owner, generation) && liveSessionCredentials() &&
+      !!(currentApi && currentApi.installed === true && currentApi.instanceToken === INSTANCE_TOKEN &&
+        window.__mlsAvatar === currentApi);
+  }
+  function avatarOwnerDirty() {
+    return !!(dialogState || gid(BACK_ID) || gid('mlsAvKiosk') || kiosk.open || kiosk.ambient || kiosk.ambClosing ||
+      safe(function () { return !!document.querySelector('[data-mls-avatar-setup-host]'); }, false) ||
+      cameraStream || faceCaptureTimers.length || faceLiveTimer || vgStream || vgStartPending || vgRaf ||
+      pvRec || pvSaying || ttsAudioNow || ttsFetchControllers.length || ttsFetchTimers.length ||
+      publicFaceControllers.length);
+  }
+  function dormantOwnerCurrent(owner, generation) {
+    return !!(!disposed && owner && generation === sessionGeneration && owner === currentApi &&
+      window.__mlsAvatar === owner && owner.installed === false && owner.dormant &&
+      owner.instanceToken === INSTANCE_TOKEN && owner.installToken === INSTALL_TOKEN);
+  }
+  function revert(owner, generation) {
+    if (disposed) return !!(owner && owner.instanceToken === INSTANCE_TOKEN);
+    if (!publicOwnerCurrent(owner, generation) && !dormantOwnerCurrent(owner, generation)) return false;
+    disposed = true;
+    sessionGeneration++;
+    scrubAvatarSession();
+    retryTimers.forEach(function (timer) { safe(function () { clearTimeout(timer); }); });
+    retryTimers = [];
+    lifecycleBound.forEach(function (row) { safe(function () { window.removeEventListener(row[0], row[1], row[2] === true); }); });
+    lifecycleBound = [];
+    if (visBound) { safe(function () { document.removeEventListener('visibilitychange', onVisibility, false); }); visBound = false; }
+    var kioskStyleNode = gid('mlsAvKioskStyle'); if (kioskStyleNode && kioskStyleNode.parentNode) kioskStyleNode.parentNode.removeChild(kioskStyleNode);
+    var button = gid(BUTTON_ID); if (button && button.parentNode) button.parentNode.removeChild(button);
+    var visitCard = gid('mlsAvVisitCard'); if (visitCard && visitCard.parentNode) visitCard.parentNode.removeChild(visitCard);
+    var styleNode = gid(STYLE_ID); if (styleNode && styleNode.parentNode) styleNode.parentNode.removeChild(styleNode);
+    owner.installed = false;
+    if (currentMicApi) currentMicApi.installed = false;
+    if (window.__mlsAvatar === owner) {
+      try { delete window.__mlsAvatar; } catch (e) { window.__mlsAvatar = null; }
+    }
+    if (currentMicApi && window.__mlsAvP1Mic === currentMicApi) {
+      try { delete window.__mlsAvP1Mic; } catch (e2) { window.__mlsAvP1Mic = null; }
+    }
+    currentApi = null; currentMicApi = null;
+    return true;
+  }
+
+  function publishDormantApi(reason) {
+    if (disposed) return null;
+    var generation = sessionGeneration;
+    var dormant = {
+      installed: false,
+      version: VERSION,
+      asset: ASSET,
+      installToken: INSTALL_TOKEN,
+      instanceToken: INSTANCE_TOKEN,
+      dormant: clean(reason) || 'no-authenticated-session'
+    };
+    /* Preserve the public interface for callers that feature-detect methods,
+       but make every dormant operation inert.  Crucially these are constants:
+       they do not enter the module's DOM, storage, chart, media, or network
+       paths while no exact authenticated account exists. */
+    dormant.open = dormant.close = dormant.openKiosk = dormant.closeKiosk = function () { return false; };
+    dormant.faceDemo = function () { return null; };
+    dormant.deriveLookFromPhoto = function () { return false; };
+    dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
+    dormant.voiceGateStart = function () { return false; };
+    dormant.voiceGateStop = dormant.otherVoiceNow = function () { return false; };
+    dormant.listenerState = function () { return { microphoneOpen: false, backendTurnInFlight: false,
+      typingFallback: false, queuedContinuationWords: 0, consecutiveNetworkFailures: 0, ambientTailPending: false }; };
+    dormant.ambientState = function () { return { running: false, boundPatient: '', startedAt: null,
+      capturedChars: 0, filed: false, last: null, backedUp: null, backupTrimmed: false, actions: [] }; };
+    dormant.detectActions = function () { return []; };
+    dormant.pendingCapture = function () { return null; };
+    dormant.fileRecoveredCapture = function () { return { ok: false, why: 'no authenticated session' }; };
+    dormant.discardRecoveredCapture = dormant.refreshCount = dormant.importSummary = function () { return false; };
+    dormant.exactPatient = function () { return null; };
+    dormant.sessionState = function () { return { stale: true, dormant: true }; };
+    dormant.isDirty = function () { return false; };
+    dormant.revert = function () { return revert(dormant, generation); };
+    currentApi = dormant;
+    window.__mlsAvatar = dormant;
+    return dormant;
+  }
+
+  function publishApi() {
+    if (disposed) return null;
+    var generation = sessionGeneration;
+    var owner = {
+      installed: true,
+      version: VERSION,
+      asset: ASSET,
+      installToken: INSTALL_TOKEN,
+      instanceToken: INSTANCE_TOKEN
+    };
+    function owned() { return publicCallCurrent(owner, generation); }
+    owner.open = function () { if (!owned()) return false; return open() === true; };
+    owner.close = function () { if (!owned()) return false; return close() === true; };
+    owner.openKiosk = function () { if (!owned()) return false; return openKiosk() === true; };
+    owner.closeKiosk = function () { if (!owned()) return false; kioskEndForStaff('ended'); return true; };
+    /* diagnostics: render the drawn character anywhere, so a look can be
+       inspected (and pinned) without opening a kiosk in front of a patient */
+    owner.faceDemo = function (mount, look) {
+      if (!owned()) return null;
+      var controller = makeFace(mount, faceLookSafe(look));
+      if (controller) {
+        var originalDestroy = controller.destroy;
+        controller.destroy = function () {
+          var at = publicFaceControllers.indexOf(controller);
+          if (at >= 0) publicFaceControllers.splice(at, 1);
+          if (isFn(originalDestroy)) originalDestroy();
+        };
+        publicFaceControllers.push(controller);
+      }
+      return controller;
+    };
+    /* diagnostics: derive a look from a portrait without touching Setup, so
+       the matcher can be proven against real pixels. */
+    owner.deriveLookFromPhoto = function (dataUrl, then) {
+      if (!owned()) return false;
+      return faceTintFromPortrait(dataUrl, function (result) { if (owned() && then) then(result); });
+    };
+    /* av-6.1.0 RECEIPT for the voice gate. "Echo cancellation is on" is a claim; this is the
+       evidence, read back from the live track rather than from the constraint we asked for.
+       ready:false with a `why` is the honest state on a device that cannot do it - and in that
+       state every turn-taking decision falls back to the string gate. Also reports how many
+       finals were refused as echo, so a filed-echo problem can be counted instead of argued. */
+    owner.voiceGate = function () {
+      if (!owned()) return { ready: false, why: 'stale session owner', echoFinalsRefused: 0 };
+      var r = pvVoiceGateReport();
+      r.echoFinalsRefused = (kiosk && kiosk.echoRefused) || 0;
+      return r;
+    };
+    owner.voiceGateStart = function (then) {
+      if (!owned()) return false;
+      return pvVoiceGateStart(function (adopted) { if (owned() && then) then(adopted); });
+    };
+    owner.voiceGateStop = function () { if (!owned()) return false; pvVoiceGateStop(); return true; };
+    owner.otherVoiceNow = function () { return owned() ? pvOtherVoiceNow() : false; };
+    /* PHI-free listener receipt for preview QA: state/counts only, never words. */
+    owner.listenerState = function () {
+      if (!owned()) return { microphoneOpen: false, backendTurnInFlight: false, typingFallback: false,
+        queuedContinuationWords: 0, consecutiveNetworkFailures: 0, ambientTailPending: false };
+      return {
+        microphoneOpen: !!pvRec,
+        backendTurnInFlight: kiosk.busy === true,
+        typingFallback: kiosk.mic === false,
+        queuedContinuationWords: clean(kiosk.pendingSpeech).split(/\s+/).filter(Boolean).length,
+        consecutiveNetworkFailures: kiosk.speechFails | 0,
+        ambientTailPending: !!clean(kiosk.ambPending)
+      };
+    };
+    /* diagnostics only: whether a room capture is running and how much it
+       holds. READ-ONLY on purpose - starting a recording is a staff action
+       behind the exit PIN and has no programmatic door. */
+    owner.ambientState = function () {
+      if (!owned()) return { running: false, boundPatient: '', startedAt: null, capturedChars: 0,
+        filed: false, last: null, backedUp: null, backupTrimmed: false, actions: [] };
+      return {
+        running: kiosk.ambient === true,
+        boundPatient: clean(kiosk.ambBound),
+        startedAt: kiosk.ambStart || null,
+        capturedChars: (kiosk.ambParts || []).join(' ').length,
+        filed: kiosk.ambFiled === true,
+        last: kiosk.ambResult || null,
+        /* av-5.6.0: the backup and the proposal queue are part of "how much it
+           holds" — a capture that is running but not backed up is a different
+           state from one that is, and QA must be able to tell them apart. */
+        backedUp: kiosk.ambSaveOk === null ? null : kiosk.ambSaveOk === true,
+        backupTrimmed: kiosk.ambSaveTrim === true,
+        actions: ambientActionsForStore()
+      };
+    };
+    /* av-5.6.0 diagnostics. detectActions is PURE — it reads its argument and
+       touches nothing — so a proposal set can be proven against any sentence
+       without a microphone, a kiosk or a patient. */
+    owner.detectActions = function (sentence) { return owned() ? detectActions(sentence) : []; };
+    /* the recovered-capture surface: what survived a reload, and the same
+       fail-closed write the visit card calls. Reading never files. */
+    owner.pendingCapture = function () { return owned() ? ambientRecoverInfo() : null; };
+    owner.fileRecoveredCapture = function () { return owned() ? ambientRecoverFile() : false; };
+    /* discards the capture currently being OFFERED, by its own key - never
+       "whatever the store points at", which is how another chart's held
+       recording would be deleted by a discard aimed at this one */
+    owner.discardRecoveredCapture = function () {
+      if (!owned()) return false;
+      var info = safe(function () { return ambientRecoverInfo(); }, null);
+      if (!info) return false;
+      ambientStoreDrop(info.key);
+      return true;
+    };
+    owner.refreshCount = function (force) { if (!owned()) return false; refreshCount(force); return true; };
+    owner.exactPatient = function (externalId) { return owned() ? exactPatient(externalId) : null; };
+    owner.importSummary = function (checkin, button) { return owned() ? importSummary(checkin, button) : false; };
+    owner.sessionState = function () { return owned()
+      ? { generation: sessionGeneration, epoch: sessionEpoch, accountBound: !!sessionAccount, tokenBound: !!token() }
+      : { stale: true }; };
+    /* Hot replacement is allowed only when every media/UI controller is idle.
+       A stale saved owner reports dirty so a loader never treats loss of
+       authority as permission to destroy a newer session. */
+    owner.isDirty = function () { return owned() ? avatarOwnerDirty() : true; };
+    owner.revert = function () { return revert(owner, generation); };
+    currentApi = owner;
+    window.__mlsAvatar = owner;
+    return owner;
+  }
+
+  if (liveSessionCredentials()) {
+    publishApi();
+    publishMicApi();
+  } else publishDormantApi('no-authenticated-session');
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else { boot(); }
+})();

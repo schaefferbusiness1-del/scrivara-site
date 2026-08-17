@@ -48,10 +48,18 @@ const PREEXISTING = {
                   //          the moment the build number caught up to it on
                   //          2026-08-05. The boundary-anchored bumper cannot
                   //          touch it ("b886" is followed by "0b").
-                  //          +1 on 2026-08-16: the /cloned lane, a byte-faithful
-                  //          production clone. Clone count matches ScribeFlow.html
-                  //          exactly; inherited copies, not new design. A build
-                  //          bumper must treat the cloned files like their originals.
+                  //          +1 on 2026-08-16: the /cloned lane. Clone count
+                  //          matches ScribeFlow.html exactly; inherited copies,
+                  //          not new design. A build bumper must treat the
+                  //          cloned files like their originals.
+                  //          2026-08-17, RE-COUNTED, TOTAL UNCHANGED: /cloned is
+                  //          no longer derived from production but from /1p
+                  //          (scripts/derive-cloned-from-1p.js) and gained 15
+                  //          cloned-feat_*.js files. Measured per source file:
+                  //          ScribeFlow.html 1, 1pScribeFlow.html 1,
+                  //          cloned/index.html 1, all 15 1p-feat_*.js 0, all 15
+                  //          cloned-feat_*.js 0. The clone's source moved; its
+                  //          contribution did not.
   '#2fb986': 2,   // "b986" — a green in ScribeFlow-staging.html and
                   //          ScribeFlow_test.html, present since the commit that
                   //          ADDED staging (7a986898), long before the build number
@@ -68,15 +76,23 @@ const PREEXISTING = {
   '#4B564F': 1,   // "b564"
   '#d8b574': 8,   // "b574"
   '#b58105': 3,   // "b581"
-                  //          +1 on 2026-08-16: the /cloned lane, a byte-faithful
-                  //          production clone. Clone count matches mls-connect.js
-                  //          exactly; inherited copies, not new design. A build
-                  //          bumper must treat the cloned files like their originals.
+                  //          +1 on 2026-08-16: the /cloned lane. Clone count
+                  //          matches mls-connect.js exactly; inherited copies,
+                  //          not new design. A build bumper must treat the
+                  //          cloned files like their originals.
+                  //          2026-08-17, RE-COUNTED, TOTAL UNCHANGED after
+                  //          /cloned was re-derived from /1p: mls-connect.js 1,
+                  //          1p-mls-connect.js 1, cloned-mls-connect.js 1, and
+                  //          0 in every 1p-feat_*.js and cloned-feat_*.js.
   '#5b7186': 30,  // "b718"
-                  //          +4 on 2026-08-16: the /cloned lane, a byte-faithful
-                  //          production clone. Clone count matches ScribeFlow.html + mls-connect.js
-                  //          exactly; inherited copies, not new design. A build
-                  //          bumper must treat the cloned files like their originals.
+                  //          +4 on 2026-08-16: the /cloned lane. Clone count
+                  //          matches ScribeFlow.html + mls-connect.js exactly;
+                  //          inherited copies, not new design. A build bumper
+                  //          must treat the cloned files like their originals.
+                  //          2026-08-17, RE-COUNTED, TOTAL UNCHANGED after
+                  //          /cloned was re-derived from /1p: shell 3 + bundle 1
+                  //          in EACH of the three lanes (production, /1p,
+                  //          /cloned), and 0 in every forked feature file.
   '#6b7280': 10,   // "b728" — +1 on 2026-08-06: the 3.0.45 full-file candidate
                   //          (same review_screen.js copy; verified the delta is
                   //          exactly 1 and lives only in extension-candidates/3.0.45)
@@ -86,14 +102,18 @@ const PREEXISTING = {
                   //          the first candidate staged with ALL 20 files (the
                   //          release-coherence copy), so review_screen.js's
                   //          copy of this colour now counts twice repo-wide
-                  //          +1 on 2026-08-16: the /cloned lane, a
-                  //          byte-faithful production clone. Verified the clone's
-                  //          count matches mls-connect.js EXACTLY, so these are
-                  //          inherited copies, not new design and not corruption.
+                  //          +1 on 2026-08-16: the /cloned lane. Verified the
+                  //          clone's count matches mls-connect.js EXACTLY, so
+                  //          these are inherited copies, not new design and not
+                  //          corruption.
                   //          NOTE: the clone doubles this colour's exposure to a
                   //          plain-replace build bump - a bumper must treat
                   //          cloned-mls-connect.js / cloned/index.html the same
                   //          way it treats their originals.
+                  //          2026-08-17, RE-COUNTED, TOTAL UNCHANGED after
+                  //          /cloned was re-derived from /1p: mls-connect.js 1,
+                  //          1p-mls-connect.js 1, cloned-mls-connect.js 1, and
+                  //          0 in every 1p-feat_*.js and cloned-feat_*.js.
   '#6B756E': 1,   // "b756"
   '#B07636': 69,  // "b076" — +3 on 2026-08-06 (the 3.0.45 candidate's
                   //          mls-popup.css copy; delta verified to be exactly 3
@@ -101,26 +121,34 @@ const PREEXISTING = {
                   //          +3 on 2026-08-02 (the 3.0.40 candidate's
                   //          mls-popup.css copy), +3 again on 2026-08-03
                   //          (the 3.0.44 full-file candidate, same copy)
-                  //          +9 on 2026-08-16: the /cloned lane, a
-                  //          byte-faithful production clone. Verified the clone's
-                  //          count matches mls-connect.js EXACTLY, so these are
-                  //          inherited copies, not new design and not corruption.
+                  //          +9 on 2026-08-16: the /cloned lane. Verified the
+                  //          clone's count matches mls-connect.js EXACTLY, so
+                  //          these are inherited copies, not new design and not
+                  //          corruption.
                   //          NOTE: the clone doubles this colour's exposure to a
                   //          plain-replace build bump - a bumper must treat
                   //          cloned-mls-connect.js / cloned/index.html the same
                   //          way it treats their originals.
+                  //          2026-08-17, RE-COUNTED, TOTAL UNCHANGED after
+                  //          /cloned was re-derived from /1p: mls-connect.js 9,
+                  //          1p-mls-connect.js 9, cloned-mls-connect.js 9, and
+                  //          0 in every 1p-feat_*.js and cloned-feat_*.js.
   '#6b7684': 1,   // "b768"
   '#b9770a': 12,  // "b977" — collided with the live build number on 2026-08-08.
                   //          The bump script rewrote all 6 to #b9780a before a
                   //          diff caught it; the bump now masks hex literals.
-                  //          +2 on 2026-08-16: the /cloned lane, a
-                  //          byte-faithful production clone. Verified the clone's
-                  //          count matches ScribeFlow.html EXACTLY, so these are
-                  //          inherited copies, not new design and not corruption.
+                  //          +2 on 2026-08-16: the /cloned lane. Verified the
+                  //          clone's count matches ScribeFlow.html EXACTLY, so
+                  //          these are inherited copies, not new design and not
+                  //          corruption.
                   //          NOTE: the clone doubles this colour's exposure to a
                   //          plain-replace build bump - a bumper must treat
                   //          cloned-mls-connect.js / cloned/index.html the same
                   //          way it treats their originals.
+                  //          2026-08-17, RE-COUNTED, TOTAL UNCHANGED after
+                  //          /cloned was re-derived from /1p: ScribeFlow.html 2,
+                  //          1pScribeFlow.html 2, cloned/index.html 2, and 0 in
+                  //          every 1p-feat_*.js and cloned-feat_*.js.
   '#8b9791': 1,   // "b979" — the write-back walkthrough's muted todo colour,
                   //          byte-identical since its introduction in
                   //          d1aa8a98 on 2026-07-27; the b979 bump did not
@@ -156,6 +184,15 @@ const PREEXISTING = {
 /* The dedicated p1/index.html live route is a byte-copy of that reviewed
    preview shell apart from its route/base bootstrap. Its exact additive
    shell-only occurrences are +1 #b8860b, +3 #5b7186, and +2 #b9770a. */
+/* 2026-08-17: /cloned stopped being a production clone and became a DERIVED
+   copy of /1p (scripts/derive-cloned-from-1p.js), which added 15
+   cloned-feat_*.js files to the repository. Every at-risk hex was re-counted
+   file by file before this file was touched, and NOT ONE TOTAL MOVED: the /1p
+   shell and bundle carry exactly the production counts (1/0/3/0/2 vs 0/1/1/9/2
+   for the six annotated colours, identical to ScribeFlow.html / mls-connect.js),
+   and all 15 1p-feat_*.js — and therefore all 15 cloned-feat_*.js — contain
+   ZERO at-risk hex literals. The clone's SOURCE changed; its contribution to
+   every pin above did not. The per-colour annotations record the measurement. */
 
 /* The annotations above have rotted before: successive blanket build bumps
    rewrote the b564 and b574 comments to b581 — which is exactly the defect

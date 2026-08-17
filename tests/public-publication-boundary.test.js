@@ -62,8 +62,11 @@ const P1_LIVE_HTML = [
   '1p/marketing/index.html'
 ];
 
-/* The /cloned live route (2026-08-16): a byte-faithful clone of ScribeFlow.html
-   that will receive individual features promoted from /1p one at a time. Kept
+/* The /cloned live route: the RELEASE CANDIDATE lane. Until 2026-08-17 it was a
+   byte-faithful clone of production; it is now DERIVED from /1p by
+   scripts/derive-cloned-from-1p.js, so it carries every /1p feature on
+   production's route identity. That means it publishes the same shape /1p does:
+   one shell, one bundle, and one cloned-feat_*.js per 1p-feat_*.js fork. Kept
    in its own classification for the same reason as P1_LIVE_HTML above — adding
    it must never silently widen PUBLIC_HTML/ASSETS or the production
    service-worker allowlist. */
@@ -71,8 +74,26 @@ const CLONED_LIVE_HTML = [
   'cloned/index.html'
 ];
 
+/* Derived 1:1 from P1_PREVIEW_ASSETS below. Jekyll publishes .js by default
+   (only HTML/ZIP/BIN/staging-JS and named modules are excluded), so — exactly
+   like the 1p forks — these need an inventory entry and no include line. */
 const CLONED_ASSETS = [
-  'cloned-mls-connect.js'
+  'cloned-mls-connect.js',
+  'cloned-feat_mls_athena_occurrence.js',
+  'cloned-feat_athena_provider_roster.js',
+  'cloned-feat_mls_avatar.js',
+  'cloned-feat_mls_avatar_face.js',
+  'cloned-feat_fullhistory_pdf.js',
+  'cloned-feat_mls_legalpack.js',
+  'cloned-feat_mls_marketing.js',
+  'cloned-feat_nextup_connect.js',
+  'cloned-feat_mls_schedimport_exact.js',
+  'cloned-feat_mls_mobile_encounter.js',
+  'cloned-feat_mls_rangejobs.js',
+  'cloned-feat_mls_study_provenance.js',
+  'cloned-feat_mls_template_modes.js',
+  'cloned-feat_mls_writeflow.js',
+  'cloned-feat_task3_frontsync.js'
 ];
 
 const P1_PREVIEW_ASSETS = [
@@ -93,6 +114,16 @@ const P1_PREVIEW_ASSETS = [
   '1p-feat_mls_writeflow.js',
   '1p-feat_task3_frontsync.js'
 ];
+
+/* The clone is derived from /1p file-for-file, so its published asset list must
+   be the 1p list renamed — nothing added, nothing dropped. Asserting the
+   correspondence here means a NEW 1p fork cannot be published without its
+   clone counterpart being registered too. */
+assert.deepStrictEqual(
+  sorted(CLONED_ASSETS),
+  sorted(P1_PREVIEW_ASSETS.map((n) => n === '1p-mls-connect.js' ? 'cloned-mls-connect.js' : 'cloned-feat_' + n.slice('1p-feat_'.length))),
+  'the /cloned published asset list must be exactly the /1p list renamed — the clone is derived from /1p file-for-file'
+);
 
 const PUBLIC_VENDOR_ASSETS = [
   'vendor/chart.umd-4.5.1.js',
