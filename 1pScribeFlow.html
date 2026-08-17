@@ -37762,5 +37762,137 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
 })();
 </script>
 <!-- ===== end msl-autodraft-1.0.0 ====================================== -->
+<!-- ===== legal-tools-1.0.0 =============================================
+     A Legal / IME workspace row in the dock's Tools menu.
+
+     WHY AN OVERLAY AND NOT A SPEC. The Tools menu is built by the SHARED
+     feat_mls_calm_shell.js. toolsSections() does not scan the DOM for opt-in
+     rows: it walks a hardcoded TOOLS_GROUPS spec list and resolves each spec
+     either by document.getElementById(spec.id) or by matching a FIXED label
+     regex inside a fixed `within` container. No spec in that list can produce
+     the label "Legal / IME workspace", and the one legal-shaped spec,
+     { id: 'nav_legalreq' }, is the LEGACY networked legal-requests page
+     (showView('legalreq')) - a different product surface that must keep its
+     own route. So the row cannot be declared; it is injected into the menu the
+     shared code has already rendered, additively, every time that menu is
+     built. Nothing in the shared file is patched or replaced.
+
+     The row is offered ONLY while the legal workspace module is actually
+     installed, so an absent module is an absent row rather than a control that
+     does nothing.
+     ================================================================== -->
+<style id="mlsLegalToolsStyle">
+#mlsToolsMenu .r[data-mls-legal-tools]{cursor:pointer}
+</style>
+<script>
+(function(){
+  'use strict';
+  var VERSION='legal-tools-1.0.0';
+  var W=window,D=document;
+  var MENU_ID='mlsToolsMenu';
+  var ROW_ATTR='data-mls-legal-tools';
+  var LABEL='Legal / IME workspace';
+  var ICON='⚖️';
+  var GROUP='Practice';
+  function safe(fn){ try{ return fn(); }catch(e){ return undefined; } }
+  function isFn(f){ return typeof f==='function'; }
+  /* Resolved by capability, never by asset path, so the block copies between
+     lanes unchanged. */
+  function workspace(){
+    var names=['__mlsLegalWorkspace','__mlsP1LegalPack','__mlsLegalPack'];
+    for(var i=0;i<names.length;i++){
+      var a=safe(function(){ return W[names[i]]; });
+      if(a&&a.installed===true&&isFn(a.open)) return a;
+    }
+    return null;
+  }
+  function menuEl(){ return safe(function(){ return D.getElementById(MENU_ID); })||null; }
+  function closeMenu(m){
+    /* The shared menu owns its own close(); it is not exported, and removing
+       the node is exactly what that close() does first. Its document-level
+       away-click listener then no-ops on a detached menu. */
+    safe(function(){ if(m&&m.parentNode) m.parentNode.removeChild(m); });
+  }
+  function openWorkspace(){
+    var api=workspace();
+    if(!api) return false;
+    return safe(function(){ api.open(); return true; })===true;
+  }
+  function buildRow(){
+    var row=D.createElement('div');
+    row.className='r';
+    row.setAttribute('role','menuitem');
+    row.setAttribute('tabindex','0');
+    row.setAttribute(ROW_ATTR,VERSION);
+    var ic=D.createElement('span'); ic.className='ri'; ic.setAttribute('aria-hidden','true'); ic.textContent=ICON;
+    var nm=D.createElement('span'); nm.className='rn'; nm.textContent=LABEL;
+    row.appendChild(ic); row.appendChild(nm);
+    function fire(ev){
+      if(ev&&isFn(ev.preventDefault)) ev.preventDefault();
+      closeMenu(menuEl());
+      openWorkspace();
+    }
+    row.addEventListener('click',fire);
+    row.addEventListener('keydown',function(ev){
+      var k=ev&&ev.key;
+      if(k==='Enter'||k===' '||k==='Spacebar') fire(ev);
+    });
+    return row;
+  }
+  /* Idempotent: one row per rendered menu, however many times this runs. */
+  var injecting=false;
+  function inject(m){
+    /* A mutation observer callback that runs while this function is still
+       building its row would re-enter and build another. One in flight. */
+    if(injecting) return false;
+    m=m||menuEl();
+    if(!m) return false;
+    if(!workspace()) return false;
+    if(safe(function(){ return m.querySelector('['+ROW_ATTR+']'); })) return false;
+    var grp=safe(function(){ return m.querySelector('.grp[aria-label="'+GROUP+'"]'); })||null;
+    if(!grp){
+      grp=D.createElement('div');
+      grp.className='grp';
+      grp.setAttribute('role','group');
+      grp.setAttribute('aria-label',GROUP);
+      var gh=D.createElement('div'); gh.className='gh'; gh.setAttribute('aria-hidden','true'); gh.textContent=GROUP;
+      grp.appendChild(gh);
+      m.appendChild(grp);
+    }
+    injecting=true;
+    try{ grp.appendChild(buildRow()); } finally { injecting=false; }
+    return true;
+  }
+  var observer=null;
+  function watch(){
+    if(observer||typeof MutationObserver!=='function') return;
+    var host=D.body||D.documentElement;
+    if(!host) return;
+    observer=new MutationObserver(function(){ safe(function(){ inject(); }); });
+    safe(function(){ observer.observe(host,{childList:true}); });
+  }
+  W.__mlsLegalToolsRow={
+    version:VERSION,
+    label:LABEL,
+    icon:ICON,
+    group:GROUP,
+    /* read-only: is the row currently rendered in the open menu */
+    present:function(){ return !!safe(function(){ var m=menuEl(); return m&&m.querySelector('['+ROW_ATTR+']'); }); },
+    available:function(){ return !!workspace(); },
+    inject:inject,
+    open:openWorkspace,
+    revert:function(){ if(observer){ safe(function(){ observer.disconnect(); }); observer=null; } var m=menuEl(); var r=m&&safe(function(){ return m.querySelector('['+ROW_ATTR+']'); }); if(r&&r.parentNode) r.parentNode.removeChild(r); return true; }
+  };
+  function boot(){ watch(); safe(function(){ inject(); }); }
+  if(D.readyState==='loading') D.addEventListener('DOMContentLoaded',boot);
+  else boot();
+  /* The menu is created inside a click handler, so a capture-phase listener
+     that re-checks on the next turn covers browsers/tabs where the observer
+     has not yet flushed. setTimeout, never rAF - rAF does not fire in a
+     hidden or non-compositing tab. */
+  D.addEventListener('click',function(){ setTimeout(function(){ safe(function(){ inject(); }); },0); },true);
+})();
+</script>
+<!-- ===== end legal-tools-1.0.0 ========================================= -->
 </body>
 </html>

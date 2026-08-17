@@ -60,6 +60,11 @@ const tests = [
   '1p-preview-freshness-runtime.test.js',
   '1p-legal-ime-workspace-runtime.test.js',
   '1p-legal-loader-runtime.test.js',
+  /* legal-tools-1.0.0: the Legal / IME workspace had exactly one route (the
+     #ptLawyerBtn door inside Patients). The dock's Tools menu is built by the
+     SHARED calm shell from a hardcoded spec list that cannot declare this row,
+     so the /1p shells overlay it into the rendered menu. */
+  '1p-legal-tools-row-runtime.test.js',
   '1p-marketing-identity-runtime.test.js',
   '1p-marketing-loader-runtime.test.js',
   '1p-marketing-workspace-runtime.test.js',
