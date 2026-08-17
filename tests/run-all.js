@@ -65,6 +65,7 @@ const tests = [
      pull-in-flight is now a deferred class with exactly one re-run after the
      pull releases the lease, bounded and setTimeout-only. */
   '1p-todaynote-deferred-retry-runtime.test.js',
+  '1p-capture-before-ai-runtime.test.js',
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-daynote-column-and-not-yet-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
