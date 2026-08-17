@@ -3733,7 +3733,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
-
 /* =========================================================================
  * MLS Scribe - COPILOT TRUTH GATE  (__mlsCopilotTruth) v1.2.0  2026-07-10 (b118)
  *
@@ -53608,318 +53607,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
-/* ============================================================
- * p1-cal-hero-pull-contract (chp-1.0.0)  [additive / reversible / idempotent]
- * DEFECT 2: the Calendar hero (#mlsCvNxt_calendar, built by the FROZEN
- * feat_mls_calm_views.js:114-146 mountPrimary()) ran
- * window.pullScheduleViaAssist(null,{date}) with no button reference, no
- * calendar-scoped provider freeze, no receipt-aware verdict, no
- * auto-retry, no copyable error report, and no post-pull re-render - while
- * the Visit tab's day strip (__mlsDaySwitch, this same file, above) does
- * all seven. Since the hero's own onclick lives in a frozen file, this
- * intercepts the click in CAPTURE PHASE - the same pattern already proven
- * on #opPrepGenAllBtn above (search "intercept the existing Draft-all
- * button") - and runs the Visit strip's own caller contract:
- *   - reuses window.__mlsSI.dayPull, the ONE guarded engine both lanes
- *     already share (never a second/weaker pull path)
- *   - reuses window.__mlsDaySwitch.classifyPullResult (== pullOutcome
- *     above), the exact receipt-aware verdict text proven live on the
- *     Visit strip, instead of reinventing schedule/roster/history parsing
- *   - freezes the calendar's OWN visible provider scope (the Task-3 chip
- *     row, 1p-feat_task3_frontsync.js, window.uns('mlsProvScope3')) and
- *     passes it explicitly when one specific provider is chip-selected;
- *     "All providers" or an unresolvable chip falls through to dayPull's
- *     own account-identity resolution untouched - never weaker than today
- *   - disables/relabels the real button and paints live progress into a
- *     status line that is actually part of the visible layout (not the
- *     legacy hero's 0x0 #heroPullStatus)
- *   - auto-retries a transient refusal up to twice with the same 4s/9s
- *     settle waits __mlsDaySwitch uses, never a deterministic one
- *     (pull-in-flight / provider-*)
- *   - arms a copyable, PHI-free error report on a failed final attempt
- *   - calls window.loadCalendar() on completion so a successful pull is
- *     never left looking unchanged
- * Nothing here can turn a false into a true: every receipt/refusal dayPull
- * returns is shown verbatim, and classifyPullResult is read-only.
- * Reverse: window.__mlsCalHeroPull.revert().
- * ============================================================ */
-(function () {
-  'use strict';
-  if (window.__mlsCalHeroPull && window.__mlsCalHeroPull.installed) return;
-  var VERSION = 'chp-1.0.0';
-  var HERO_ID = 'mlsCvNxt_calendar';
-  var STATUS_ID = 'mlsCvHeroStatus';
-  var DIAG_ID = 'mlsCvHeroDiagBtn';
-
-  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
-  function isFn(f) { return typeof f === 'function'; }
-  function pad2(n) { n = Number(n); return (n < 10 ? '0' : '') + n; }
-
-  var busy = false;
-  var autoRetryCount = 0;
-  var sessionSerial = 0;
-
-  function todayKey() {
-    var acct = safe(function () { return isFn(window._acctTodayKey) ? String(window._acctTodayKey() || '') : ''; }, '');
-    if (/^\d{4}-\d{2}-\d{2}$/.test(acct)) return acct;
-    var d = new Date();
-    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-  }
-  function targetDay() {
-    var sel = safe(function () { var r = String(window._calRefDate || ''); return /^\d{4}-\d{2}-\d{2}$/.test(r) ? r : ''; }, '');
-    return sel || todayKey();
-  }
-
-  /* The calendar's own chip scope is the only visible provider control on
-     THIS screen (feat_mls_calendar_polish.js ensureRoster() reads the same
-     key to paint the chips and pre-fill its own now-hidden pull button).
-     Resolve it through the verified roster; an unresolvable scope or
-     explicit "All providers" returns null and dayPull falls back to its
-     own account-identity resolution - exactly what every other caller
-     already gets, never weaker. */
-  function calendarChipProviderScope() {
-    return safe(function () {
-      var raw = isFn(window.uns) ? String(localStorage.getItem(window.uns('mlsProvScope3')) || '') : '';
-      var sep = raw.indexOf('|');
-      var label = sep >= 0 ? raw.slice(sep + 1).trim() : '';
-      if (!label) return null;
-      var roster = window.__mlsProviderRoster;
-      if (!roster || !isFn(roster.resolve)) return null;
-      var entry = safe(function () { return roster.resolve(label); }, null);
-      return (entry && entry.name && entry.stableKey) ? entry : null;
-    }, null);
-  }
-
-  function statusEl(el) {
-    var s = document.getElementById(STATUS_ID);
-    if (!s) {
-      s = document.createElement('div');
-      s.id = STATUS_ID;
-      s.setAttribute('role', 'status');
-      s.setAttribute('aria-live', 'polite');
-      s.style.cssText = 'flex-basis:100%;width:100%;margin-top:8px;font:600 12.5px system-ui,sans-serif;line-height:1.4;display:none';
-    }
-    try { if (el && el.parentNode && s.previousSibling !== el) el.parentNode.insertBefore(s, el.nextSibling); } catch (e) {}
-    return s;
-  }
-  /* cvbar-1.0.0 (owner 2026-08-16): "add the same loading bar you get from the
-     pull from the visit screen and have them both run the same program".
-     They already run the same program - this hero was given the Visit strip's
-     caller contract and enters the same __mlsSI.dayPull. What it lacked was
-     the strip's PROGRESS BAR, so the calendar pull looked like nothing was
-     happening while the identical work ran underneath.
-
-     Same geometry, same gradient, same "N of M" parse, same phase naming as
-     #mlsDsPullBar, deliberately kept as a self-contained copy for the same
-     reason the strip's two painters are: the bar must not vanish because
-     another lane's element was not mounted. */
-  var BAR_ID = 'mlsCvHeroBar';
-  var barStartedAt = 0;
-  function barEl(anchor) {
-    var b = document.getElementById(BAR_ID);
-    if (!b) {
-      b = document.createElement('div'); b.id = BAR_ID;
-      b.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
-      b.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
-    }
-    try { if (anchor && anchor.parentNode && b.previousSibling !== anchor) anchor.parentNode.insertBefore(b, anchor.nextSibling); } catch (e) {}
-    return b;
-  }
-  function paintBar(anchor, msg) {
-    try {
-      var b = barEl(anchor), fill = b.firstElementChild;
-      /* U0 (2026-08-17): this literal shipped with its backslashes lost - the
-         backslashes were lost in authoring (the whole literal had been through
-         a JS STRING, where \s->s, \d->d and \b->0x08), so it matched the
-         literal letters d/s and the hero bar mounted at 3% "Starting..." and
-         never moved. It is valid JS, so no gate caught it; production's three
-         painters (mls-connect.js:46768/46912/46997) carry the backslashes. */
-      var mm = String(msg || '').match(/(\d+)\s+of\s+(\d+)/);
-      if (mm && Number(mm[2]) > 0) {
-        var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
-        var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
-        var el2 = barStartedAt ? (' · ' + Math.floor((Date.now() - barStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - barStartedAt) % 60000) / 1000) + 's') : '';
-        b.style.display = 'block'; fill.style.width = pct + '%';
-        fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + el2;
-      } else if (b.style.display !== 'block') {
-        b.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
-      }
-    } catch (e) {}
-  }
-  function hideBar() { try { var b = document.getElementById(BAR_ID); if (b) b.style.display = 'none'; } catch (e) {} }
-
-  function paint(el, msg, kind) {
-    var s = statusEl(el);
-    s.textContent = String(msg || '');
-    s.style.display = msg ? 'block' : 'none';
-    s.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#1c5a3c' : '#33424e');
-    if (msg) paintBar(s, msg); else hideBar();
-  }
-  function clearDiag() {
-    try { var b = document.getElementById(DIAG_ID); if (b && b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
-  }
-  function buildReport(result, day) {
-    var r = (result && typeof result === 'object') ? result : {};
-    function pick(obj, keys) {
-      if (!obj || typeof obj !== 'object') return null;
-      var out = {}, i, k;
-      for (i = 0; i < keys.length; i++) { k = keys[i]; if (obj[k] !== undefined) out[k] = obj[k]; }
-      return out;
-    }
-    return {
-      kind: 'mls-cal-hero-pull-error-report',
-      at: new Date().toISOString(),
-      day: day,
-      build: safe(function () { return String(window.__MLS_AV || ''); }, ''),
-      env: {
-        ua: safe(function () { return String(navigator.userAgent).slice(0, 220); }, ''),
-        tz: safe(function () { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }, '')
-      },
-      reason: String(r.reason || ''),
-      error: String(r.error || '').slice(0, 300),
-      scheduleReceipt: pick(r.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason']),
-      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed']),
-      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed']),
-      historyReceipt: pick(r.historyReceipt, ['requested', 'processed', 'complete', 'failures'])
-    };
-  }
-  function copyText(t) {
-    function legacy() {
-      try {
-        var ta = document.createElement('textarea');
-        ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px;top:0';
-        document.body.appendChild(ta); ta.select();
-        var ok = document.execCommand('copy');
-        ta.remove();
-        return ok;
-      } catch (e) { return false; }
-    }
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return legacy(); });
-      }
-    } catch (e) {}
-    return Promise.resolve(legacy());
-  }
-  function armDiag(el, result, day) {
-    clearDiag();
-    var s = statusEl(el);
-    var btn = document.createElement('button');
-    btn.type = 'button'; btn.id = DIAG_ID;
-    btn.textContent = '⧉ Copy error report';
-    btn.style.cssText = 'margin-top:6px;border:1px solid #cbb26a;background:#fff9e8;color:#68551e;font:700 11.5px system-ui;border-radius:8px;padding:5px 10px;cursor:pointer;display:block';
-    btn.onclick = function () {
-      var text = JSON.stringify(buildReport(result, day), null, 1);
-      Promise.resolve(copyText(text)).then(function (ok) {
-        try { if (isFn(window.toast)) window.toast(ok ? 'Error report copied — paste it in a message to support.' : 'Could not copy automatically — printed to the console instead.', ok ? 'ok' : 'err'); } catch (e) {}
-        if (!ok) { try { console.log('[MLS calendar pull error report]\n' + text); } catch (e2) {} }
-      });
-    };
-    try { if (s && s.parentNode) s.parentNode.insertBefore(btn, s.nextSibling); } catch (e) {}
-  }
-
-  /* Reuse the Visit strip's own receipt-aware verdict text (== pullOutcome
-     above, exposed as classifyPullResult) instead of reinventing schedule/
-     roster/history parsing. Falls back to an honest generic message only
-     when that function is unavailable, never to a weaker/rosier one. */
-  function classify(result, day) {
-    var ds = window.__mlsDaySwitch;
-    var outcome = (ds && isFn(ds.classifyPullResult)) ? safe(function () { return ds.classifyPullResult(result, day); }, null) : null;
-    if (outcome && typeof outcome === 'object' && typeof outcome.message === 'string') return outcome;
-    if (result && result.ok === true) return { ok: true, message: 'The pull for ' + day + ' finished.' };
-    var reason = String((result && result.reason) || 'unspecified');
-    return { ok: false, message: 'Pull refused (' + reason + '): ' + String((result && result.error) || 'no detail was given.') };
-  }
-
-  function runHeroPull(el, isAutoRetry) {
-    if (!el) return;
-    if (busy) {
-      try { if (isFn(window.toast)) window.toast('This pull is already running — watch the progress just below.', ''); } catch (e) {}
-      return;
-    }
-    var si = window.__mlsSI;
-    if (!si || si.installed === false || !isFn(si.dayPull)) {
-      try { if (isFn(window.toast)) window.toast('The Athena pull engine is not available on this build.', 'err'); } catch (e) {}
-      return;
-    }
-    busy = true;
-    var mySerial = ++sessionSerial;
-    if (!isAutoRetry) { autoRetryCount = 0; clearDiag(); }
-    var day = targetDay();
-    try { el.disabled = true; } catch (e) {}
-    paint(el, isAutoRetry ? ('Re-reading ' + day + ' automatically…') : ('Starting the Athena pull for ' + day + '…'), '');
-    var onStatus = function (m) { if (mySerial !== sessionSerial) return; if (!barStartedAt) barStartedAt = Date.now(); paint(el, String(m || ''), ''); };
-    var dpOpts = { date: day, includeHistory: true, onStatus: onStatus };
-    var scope = calendarChipProviderScope();
-    if (scope) dpOpts.provider = scope;
-    Promise.resolve(si.dayPull(dpOpts)).then(function (result) {
-      if (mySerial !== sessionSerial) return;
-      settle(el, result, day, mySerial);
-    }, function (err) {
-      if (mySerial !== sessionSerial) return;
-      settle(el, { ok: false, complete: false, reason: 'pull-exception', error: (err && err.message) || String(err || 'unknown error') }, day, mySerial);
-    });
-  }
-
-  function settle(el, result, day, mySerial) {
-    var refusalReason = String((result && result.reason) || '');
-    var deterministicRefusal = refusalReason === 'pull-in-flight' || /^provider-/.test(refusalReason);
-    var transientRefusal = !!(result && result.ok !== true && !deterministicRefusal &&
-      ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(refusalReason)));
-    if (transientRefusal && autoRetryCount < 2) {
-      autoRetryCount++;
-      var waitMs = autoRetryCount === 1 ? 4000 : 9000;
-      paint(el, 'The Athena grid was still settling — re-reading automatically (attempt ' + (autoRetryCount + 1) + ' of 3)…', '');
-      busy = false; /* release so the scheduled retry below can re-enter; the button stays disabled the whole time */
-      setTimeout(function () { if (mySerial === sessionSerial) runHeroPull(el, true); }, waitMs);
-      return;
-    }
-    busy = false;
-    try { el.disabled = false; } catch (e) {}
-    /* p1-busy-click-1.0.0: the hero button shares the engine with the Visit
-       strip. A refusal to START must not paint an error verdict or offer an
-       error report over the pull that IS running. */
-    if (result && result.busyInFlight === true) {
-      var heroBusy = String(result.error || 'This pull is already running — watch the progress just below.');
-      paint(el, heroBusy, '');
-      try { if (isFn(window.toast)) window.toast(heroBusy, ''); } catch (eHb) {}
-      clearDiag();
-      return;
-    }
-    var outcome = classify(result, day);
-    paint(el, outcome.message, outcome.ok ? 'ok' : 'err');
-    try { if (isFn(window.toast)) window.toast(outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
-    if (!outcome.ok) armDiag(el, result, day); else clearDiag();
-    try { if (isFn(window.loadCalendar)) window.loadCalendar(); } catch (e) {}
-  }
-
-  function onHeroClickCapture(ev) {
-    try {
-      var t = ev && ev.target;
-      var el = t && t.closest ? t.closest('#' + HERO_ID) : null;
-      if (!el) return;
-      ev.stopPropagation();
-      if (ev.preventDefault) ev.preventDefault();
-      runHeroPull(el, false);
-    } catch (e) {}
-  }
-  try { document.addEventListener('click', onHeroClickCapture, true); } catch (e) {}
-
-  window.__mlsCalHeroPull = {
-    installed: true,
-    version: VERSION,
-    run: runHeroPull,
-    _calendarChipProviderScope: calendarChipProviderScope,
-    _classify: classify,
-    revert: function () {
-      try { document.removeEventListener('click', onHeroClickCapture, true); } catch (e) {}
-      clearDiag();
-      try { var s = document.getElementById(STATUS_ID); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e2) {}
-      this.installed = false;
-    }
-  };
-})();
-
 /* ===== p1-phone-sync-1.0.0 -- THE PHONE RECEIVE LOOP ========================
  * Owner, 2026-08-17: "the phone UI ... it's already on the real site and it's
  * pretty good but has the error of like not syncing, so fix that."
@@ -54542,3 +54229,315 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 /* ===== end p1-phone-sync-1.0.0 ===== */
+
+/* ============================================================
+ * p1-cal-hero-pull-contract (chp-1.0.0)  [additive / reversible / idempotent]
+ * DEFECT 2: the Calendar hero (#mlsCvNxt_calendar, built by the FROZEN
+ * feat_mls_calm_views.js:114-146 mountPrimary()) ran
+ * window.pullScheduleViaAssist(null,{date}) with no button reference, no
+ * calendar-scoped provider freeze, no receipt-aware verdict, no
+ * auto-retry, no copyable error report, and no post-pull re-render - while
+ * the Visit tab's day strip (__mlsDaySwitch, this same file, above) does
+ * all seven. Since the hero's own onclick lives in a frozen file, this
+ * intercepts the click in CAPTURE PHASE - the same pattern already proven
+ * on #opPrepGenAllBtn above (search "intercept the existing Draft-all
+ * button") - and runs the Visit strip's own caller contract:
+ *   - reuses window.__mlsSI.dayPull, the ONE guarded engine both lanes
+ *     already share (never a second/weaker pull path)
+ *   - reuses window.__mlsDaySwitch.classifyPullResult (== pullOutcome
+ *     above), the exact receipt-aware verdict text proven live on the
+ *     Visit strip, instead of reinventing schedule/roster/history parsing
+ *   - freezes the calendar's OWN visible provider scope (the Task-3 chip
+ *     row, 1p-feat_task3_frontsync.js, window.uns('mlsProvScope3')) and
+ *     passes it explicitly when one specific provider is chip-selected;
+ *     "All providers" or an unresolvable chip falls through to dayPull's
+ *     own account-identity resolution untouched - never weaker than today
+ *   - disables/relabels the real button and paints live progress into a
+ *     status line that is actually part of the visible layout (not the
+ *     legacy hero's 0x0 #heroPullStatus)
+ *   - auto-retries a transient refusal up to twice with the same 4s/9s
+ *     settle waits __mlsDaySwitch uses, never a deterministic one
+ *     (pull-in-flight / provider-*)
+ *   - arms a copyable, PHI-free error report on a failed final attempt
+ *   - calls window.loadCalendar() on completion so a successful pull is
+ *     never left looking unchanged
+ * Nothing here can turn a false into a true: every receipt/refusal dayPull
+ * returns is shown verbatim, and classifyPullResult is read-only.
+ * Reverse: window.__mlsCalHeroPull.revert().
+ * ============================================================ */
+(function () {
+  'use strict';
+  if (window.__mlsCalHeroPull && window.__mlsCalHeroPull.installed) return;
+  var VERSION = 'chp-1.0.0';
+  var HERO_ID = 'mlsCvNxt_calendar';
+  var STATUS_ID = 'mlsCvHeroStatus';
+  var DIAG_ID = 'mlsCvHeroDiagBtn';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function isFn(f) { return typeof f === 'function'; }
+  function pad2(n) { n = Number(n); return (n < 10 ? '0' : '') + n; }
+
+  var busy = false;
+  var autoRetryCount = 0;
+  var sessionSerial = 0;
+
+  function todayKey() {
+    var acct = safe(function () { return isFn(window._acctTodayKey) ? String(window._acctTodayKey() || '') : ''; }, '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(acct)) return acct;
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function targetDay() {
+    var sel = safe(function () { var r = String(window._calRefDate || ''); return /^\d{4}-\d{2}-\d{2}$/.test(r) ? r : ''; }, '');
+    return sel || todayKey();
+  }
+
+  /* The calendar's own chip scope is the only visible provider control on
+     THIS screen (feat_mls_calendar_polish.js ensureRoster() reads the same
+     key to paint the chips and pre-fill its own now-hidden pull button).
+     Resolve it through the verified roster; an unresolvable scope or
+     explicit "All providers" returns null and dayPull falls back to its
+     own account-identity resolution - exactly what every other caller
+     already gets, never weaker. */
+  function calendarChipProviderScope() {
+    return safe(function () {
+      var raw = isFn(window.uns) ? String(localStorage.getItem(window.uns('mlsProvScope3')) || '') : '';
+      var sep = raw.indexOf('|');
+      var label = sep >= 0 ? raw.slice(sep + 1).trim() : '';
+      if (!label) return null;
+      var roster = window.__mlsProviderRoster;
+      if (!roster || !isFn(roster.resolve)) return null;
+      var entry = safe(function () { return roster.resolve(label); }, null);
+      return (entry && entry.name && entry.stableKey) ? entry : null;
+    }, null);
+  }
+
+  function statusEl(el) {
+    var s = document.getElementById(STATUS_ID);
+    if (!s) {
+      s = document.createElement('div');
+      s.id = STATUS_ID;
+      s.setAttribute('role', 'status');
+      s.setAttribute('aria-live', 'polite');
+      s.style.cssText = 'flex-basis:100%;width:100%;margin-top:8px;font:600 12.5px system-ui,sans-serif;line-height:1.4;display:none';
+    }
+    try { if (el && el.parentNode && s.previousSibling !== el) el.parentNode.insertBefore(s, el.nextSibling); } catch (e) {}
+    return s;
+  }
+  /* cvbar-1.0.0 (owner 2026-08-16): "add the same loading bar you get from the
+     pull from the visit screen and have them both run the same program".
+     They already run the same program - this hero was given the Visit strip's
+     caller contract and enters the same __mlsSI.dayPull. What it lacked was
+     the strip's PROGRESS BAR, so the calendar pull looked like nothing was
+     happening while the identical work ran underneath.
+
+     Same geometry, same gradient, same "N of M" parse, same phase naming as
+     #mlsDsPullBar, deliberately kept as a self-contained copy for the same
+     reason the strip's two painters are: the bar must not vanish because
+     another lane's element was not mounted. */
+  var BAR_ID = 'mlsCvHeroBar';
+  var barStartedAt = 0;
+  function barEl(anchor) {
+    var b = document.getElementById(BAR_ID);
+    if (!b) {
+      b = document.createElement('div'); b.id = BAR_ID;
+      b.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
+      b.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+    }
+    try { if (anchor && anchor.parentNode && b.previousSibling !== anchor) anchor.parentNode.insertBefore(b, anchor.nextSibling); } catch (e) {}
+    return b;
+  }
+  function paintBar(anchor, msg) {
+    try {
+      var b = barEl(anchor), fill = b.firstElementChild;
+      /* U0 (2026-08-17): this literal shipped with its backslashes lost - the
+         backslashes were lost in authoring (the whole literal had been through
+         a JS STRING, where \s->s, \d->d and \b->0x08), so it matched the
+         literal letters d/s and the hero bar mounted at 3% "Starting..." and
+         never moved. It is valid JS, so no gate caught it; production's three
+         painters (mls-connect.js:46768/46912/46997) carry the backslashes. */
+      var mm = String(msg || '').match(/(\d+)\s+of\s+(\d+)/);
+      if (mm && Number(mm[2]) > 0) {
+        var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
+        var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
+        var el2 = barStartedAt ? (' · ' + Math.floor((Date.now() - barStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - barStartedAt) % 60000) / 1000) + 's') : '';
+        b.style.display = 'block'; fill.style.width = pct + '%';
+        fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + el2;
+      } else if (b.style.display !== 'block') {
+        b.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
+      }
+    } catch (e) {}
+  }
+  function hideBar() { try { var b = document.getElementById(BAR_ID); if (b) b.style.display = 'none'; } catch (e) {} }
+
+  function paint(el, msg, kind) {
+    var s = statusEl(el);
+    s.textContent = String(msg || '');
+    s.style.display = msg ? 'block' : 'none';
+    s.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#1c5a3c' : '#33424e');
+    if (msg) paintBar(s, msg); else hideBar();
+  }
+  function clearDiag() {
+    try { var b = document.getElementById(DIAG_ID); if (b && b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
+  }
+  function buildReport(result, day) {
+    var r = (result && typeof result === 'object') ? result : {};
+    function pick(obj, keys) {
+      if (!obj || typeof obj !== 'object') return null;
+      var out = {}, i, k;
+      for (i = 0; i < keys.length; i++) { k = keys[i]; if (obj[k] !== undefined) out[k] = obj[k]; }
+      return out;
+    }
+    return {
+      kind: 'mls-cal-hero-pull-error-report',
+      at: new Date().toISOString(),
+      day: day,
+      build: safe(function () { return String(window.__MLS_AV || ''); }, ''),
+      env: {
+        ua: safe(function () { return String(navigator.userAgent).slice(0, 220); }, ''),
+        tz: safe(function () { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }, '')
+      },
+      reason: String(r.reason || ''),
+      error: String(r.error || '').slice(0, 300),
+      scheduleReceipt: pick(r.scheduleReceipt, ['complete', 'expectedCount', 'parsedCount', 'candidateCount', 'authoritativeEmpty', 'reason']),
+      providerRosterReceipt: pick(r.providerRosterReceipt, ['complete', 'partial', 'reason', 'expected', 'observed']),
+      calendarReceipt: pick(r.calendarReceipt, ['complete', 'attempted', 'accounted', 'mapped', 'created', 'repaired', 'skipped', 'failed']),
+      historyReceipt: pick(r.historyReceipt, ['requested', 'processed', 'complete', 'failures'])
+    };
+  }
+  function copyText(t) {
+    function legacy() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = t; ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(ta); ta.select();
+        var ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+      } catch (e) { return false; }
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return legacy(); });
+      }
+    } catch (e) {}
+    return Promise.resolve(legacy());
+  }
+  function armDiag(el, result, day) {
+    clearDiag();
+    var s = statusEl(el);
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.id = DIAG_ID;
+    btn.textContent = '⧉ Copy error report';
+    btn.style.cssText = 'margin-top:6px;border:1px solid #cbb26a;background:#fff9e8;color:#68551e;font:700 11.5px system-ui;border-radius:8px;padding:5px 10px;cursor:pointer;display:block';
+    btn.onclick = function () {
+      var text = JSON.stringify(buildReport(result, day), null, 1);
+      Promise.resolve(copyText(text)).then(function (ok) {
+        try { if (isFn(window.toast)) window.toast(ok ? 'Error report copied — paste it in a message to support.' : 'Could not copy automatically — printed to the console instead.', ok ? 'ok' : 'err'); } catch (e) {}
+        if (!ok) { try { console.log('[MLS calendar pull error report]\n' + text); } catch (e2) {} }
+      });
+    };
+    try { if (s && s.parentNode) s.parentNode.insertBefore(btn, s.nextSibling); } catch (e) {}
+  }
+
+  /* Reuse the Visit strip's own receipt-aware verdict text (== pullOutcome
+     above, exposed as classifyPullResult) instead of reinventing schedule/
+     roster/history parsing. Falls back to an honest generic message only
+     when that function is unavailable, never to a weaker/rosier one. */
+  function classify(result, day) {
+    var ds = window.__mlsDaySwitch;
+    var outcome = (ds && isFn(ds.classifyPullResult)) ? safe(function () { return ds.classifyPullResult(result, day); }, null) : null;
+    if (outcome && typeof outcome === 'object' && typeof outcome.message === 'string') return outcome;
+    if (result && result.ok === true) return { ok: true, message: 'The pull for ' + day + ' finished.' };
+    var reason = String((result && result.reason) || 'unspecified');
+    return { ok: false, message: 'Pull refused (' + reason + '): ' + String((result && result.error) || 'no detail was given.') };
+  }
+
+  function runHeroPull(el, isAutoRetry) {
+    if (!el) return;
+    if (busy) {
+      try { if (isFn(window.toast)) window.toast('This pull is already running — watch the progress just below.', ''); } catch (e) {}
+      return;
+    }
+    var si = window.__mlsSI;
+    if (!si || si.installed === false || !isFn(si.dayPull)) {
+      try { if (isFn(window.toast)) window.toast('The Athena pull engine is not available on this build.', 'err'); } catch (e) {}
+      return;
+    }
+    busy = true;
+    var mySerial = ++sessionSerial;
+    if (!isAutoRetry) { autoRetryCount = 0; clearDiag(); }
+    var day = targetDay();
+    try { el.disabled = true; } catch (e) {}
+    paint(el, isAutoRetry ? ('Re-reading ' + day + ' automatically…') : ('Starting the Athena pull for ' + day + '…'), '');
+    var onStatus = function (m) { if (mySerial !== sessionSerial) return; if (!barStartedAt) barStartedAt = Date.now(); paint(el, String(m || ''), ''); };
+    var dpOpts = { date: day, includeHistory: true, onStatus: onStatus };
+    var scope = calendarChipProviderScope();
+    if (scope) dpOpts.provider = scope;
+    Promise.resolve(si.dayPull(dpOpts)).then(function (result) {
+      if (mySerial !== sessionSerial) return;
+      settle(el, result, day, mySerial);
+    }, function (err) {
+      if (mySerial !== sessionSerial) return;
+      settle(el, { ok: false, complete: false, reason: 'pull-exception', error: (err && err.message) || String(err || 'unknown error') }, day, mySerial);
+    });
+  }
+
+  function settle(el, result, day, mySerial) {
+    var refusalReason = String((result && result.reason) || '');
+    var deterministicRefusal = refusalReason === 'pull-in-flight' || /^provider-/.test(refusalReason);
+    var transientRefusal = !!(result && result.ok !== true && !deterministicRefusal &&
+      ((result.retry && (result.retry.schedule || result.retry.providerRoster)) || /^(nav-failed|wrong-day)$/.test(refusalReason)));
+    if (transientRefusal && autoRetryCount < 2) {
+      autoRetryCount++;
+      var waitMs = autoRetryCount === 1 ? 4000 : 9000;
+      paint(el, 'The Athena grid was still settling — re-reading automatically (attempt ' + (autoRetryCount + 1) + ' of 3)…', '');
+      busy = false; /* release so the scheduled retry below can re-enter; the button stays disabled the whole time */
+      setTimeout(function () { if (mySerial === sessionSerial) runHeroPull(el, true); }, waitMs);
+      return;
+    }
+    busy = false;
+    try { el.disabled = false; } catch (e) {}
+    /* p1-busy-click-1.0.0: the hero button shares the engine with the Visit
+       strip. A refusal to START must not paint an error verdict or offer an
+       error report over the pull that IS running. */
+    if (result && result.busyInFlight === true) {
+      var heroBusy = String(result.error || 'This pull is already running — watch the progress just below.');
+      paint(el, heroBusy, '');
+      try { if (isFn(window.toast)) window.toast(heroBusy, ''); } catch (eHb) {}
+      clearDiag();
+      return;
+    }
+    var outcome = classify(result, day);
+    paint(el, outcome.message, outcome.ok ? 'ok' : 'err');
+    try { if (isFn(window.toast)) window.toast(outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
+    if (!outcome.ok) armDiag(el, result, day); else clearDiag();
+    try { if (isFn(window.loadCalendar)) window.loadCalendar(); } catch (e) {}
+  }
+
+  function onHeroClickCapture(ev) {
+    try {
+      var t = ev && ev.target;
+      var el = t && t.closest ? t.closest('#' + HERO_ID) : null;
+      if (!el) return;
+      ev.stopPropagation();
+      if (ev.preventDefault) ev.preventDefault();
+      runHeroPull(el, false);
+    } catch (e) {}
+  }
+  try { document.addEventListener('click', onHeroClickCapture, true); } catch (e) {}
+
+  window.__mlsCalHeroPull = {
+    installed: true,
+    version: VERSION,
+    run: runHeroPull,
+    _calendarChipProviderScope: calendarChipProviderScope,
+    _classify: classify,
+    revert: function () {
+      try { document.removeEventListener('click', onHeroClickCapture, true); } catch (e) {}
+      clearDiag();
+      try { var s = document.getElementById(STATUS_ID); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e2) {}
+      this.installed = false;
+    }
+  };
+})();
