@@ -336,6 +336,21 @@ function makeHarness(opts) {
       set(v) { this._id = v; if (v) byId.set(v, this); },
       configurable: true
     });
+    /* Count every write, so "the heartbeat is quiet when nothing changed" is a
+       measured property rather than a hope. className re-serialises and
+       re-sets the attribute even for an identical value; textContent replaces
+       the text node, which is a childList mutation every observer in the
+       document then has to walk. */
+    n.writes = 0;
+    ['textContent', 'className'].forEach((prop) => {
+      const store = '_' + prop;
+      n[store] = '';
+      Object.defineProperty(n, prop, {
+        get() { return this[store]; },
+        set(v) { this[store] = String(v == null ? '' : v); this.writes += 1; },
+        configurable: true
+      });
+    });
     return n;
   }
 
@@ -498,6 +513,49 @@ async function testBarSurvivesRepaints() {
   h.document.getElementById('mlsPh3Act').innerHTML = '<div id="ph3ActRebuilt"></div>';
   ok(h.bar(), 'a ph3 repaint destroyed the status bar');
   eq(h.bar().parentNode.id, 'mlsPh3', 'the bar moved during a repaint');
+}
+
+/* ---- the heartbeat is quiet when nothing changed ------------------------ */
+async function testHeartbeatIsQuiet() {
+  const block = extractBlock(P1, '1p-mls-connect.js');
+  const h = makeHarness({});
+  const sync = h.install(block);
+  h.mountPhoneFrame();
+  h.advance(60000); h.fireWorker(); await flush();
+  eq(sync.state().status, 'ok', 'setup sync failed');
+
+  const nodes = ['mlsP1Sync', 'mlsP1SyncTxt', 'mlsP1SyncNow'].map((id) => h.document.getElementById(id));
+  const before = nodes.reduce((n, el) => n + el.writes, 0);
+  /* Five heartbeats inside one cadence, with the clock advancing by less than
+     a second so even the relative-time string is unchanged. */
+  for (let i = 0; i < 5; i += 1) { h.advance(100); h.fireWorker(); }
+  await flush();
+  const after = nodes.reduce((n, el) => n + el.writes, 0);
+  eq(after, before, 'the heartbeat wrote to the DOM ' + (after - before) + ' times with nothing changed');
+  eq(h.calls.loadCalendar, 1, 'the heartbeat synced inside its own cadence');
+
+  /* ...and it is NOT inert: once the clock moves the line changes and it writes. */
+  h.advance(65000); h.fireWorker();
+  ok(nodes.reduce((n, el) => n + el.writes, 0) > after, 'the bar stopped updating altogether');
+
+  /* NON-VACUITY. Strip the guard back out and the same five heartbeats write
+     every time -- so the assertion above is measuring the guard, not the
+     harness. If this replacement stops applying, the control is dead and says
+     so rather than passing quietly. */
+  const GUARDED = 'if (txt) { var t = line(); if (txt.textContent !== t) txt.textContent = t; }';
+  const UNGUARDED = 'if (txt) { var t = line(); txt.textContent = t; }';
+  ok(block.indexOf(GUARDED) > 0, 'the guarded write is no longer spelled as the control expects');
+  const h2 = makeHarness({});
+  h2.install(block.replace(GUARDED, UNGUARDED));
+  h2.mountPhoneFrame();
+  h2.advance(60000); h2.fireWorker(); await flush();
+  const n2 = h2.document.getElementById('mlsP1SyncTxt');
+  const b2 = n2.writes;
+  for (let i = 0; i < 5; i += 1) { h2.advance(100); h2.fireWorker(); }
+  /* Ten, not five: each heartbeat paints twice -- once from ensureBar() and
+     once from the not-yet-due branch of tick(). Both are absorbed to zero by
+     the guard, which is exactly the point. */
+  eq(n2.writes - b2, 10, 'CONTROL FAILED: the unguarded shape did not write on every heartbeat');
 }
 
 /* ---- the happy path: a pull that lands on the server reaches the phone --- */
@@ -982,6 +1040,7 @@ function testShellsUntouched() {
 
   await testDesktopPaysNothing();
   await testBarSurvivesRepaints();
+  await testHeartbeatIsQuiet();
   await testReceivesNewAppointments();
   await testHiddenTabAndCatchUp();
   await testReAuthResume();

@@ -53955,6 +53955,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.ensureBar = ensureBar;
 
+  /* EVERY WRITE IS GUARDED. This runs on the 5s heartbeat for as long as the
+     phone app is mounted. Assigning className re-serialises and re-sets the
+     attribute even when the value is identical, which invalidates style; and
+     assigning textContent replaces the text node, which is a childList
+     mutation any observer in the document then has to walk. Write only what
+     actually changed. */
   function paint() {
     var bar = $(BAR_ID);
     if (!bar) return;
@@ -53962,13 +53968,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* textContent, never innerHTML: the office computer's name and the device
        noun both reach this line from data, and a status bar is not a place to
        start interpreting markup. */
-    if (txt) txt.textContent = line();
-    bar.className = 'p1s-' + tone();
+    if (txt) { var t = line(); if (txt.textContent !== t) txt.textContent = t; }
+    var cls = 'p1s-' + tone();
+    if (bar.className !== cls) bar.className = cls;
     var btn = $('mlsP1SyncNow');
     if (btn) {
-      btn.className = 'p1s-now' + (glowing() ? ' p1s-glow' : '');
-      btn.disabled = !!S.inflight;
-      btn.textContent = S.inflight ? 'Syncing...' : 'Sync now';
+      var bcls = 'p1s-now' + (glowing() ? ' p1s-glow' : '');
+      if (btn.className !== bcls) btn.className = bcls;
+      var dis = !!S.inflight;
+      if (btn.disabled !== dis) btn.disabled = dis;
+      var lbl = S.inflight ? 'Syncing...' : 'Sync now';
+      if (btn.textContent !== lbl) btn.textContent = lbl;
     }
   }
   api.paint = paint;
