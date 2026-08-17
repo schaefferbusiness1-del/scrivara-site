@@ -40766,115 +40766,164 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 })();
 </script>
 <!-- ===== end view-hold-1.0.0 ========================================== -->
-<!-- ===== note-model-1.0.0 — the cheaper 4-series model is the fallback ==
-     Owner cost ruling relayed 2026-08-17: the default note model must be the
-     cheapest good one, not the most expensive allowlisted one.
+<!-- ===== note-model-1.1.0 — the cheapest good model is the default =====
+     OWNER RULING 2026-08-17, and it SUPERSEDES the 2026-08-11 one quoted
+     inside feat_mls_fixpack_0701.js: "luna is too expensive… find a cheaper
+     one and just use that one; keep luna just for the reports."
 
-     WHAT THE BRIEF SAID, AND WHAT IS ACTUALLY SHIPPED. The brief describes
-     getNoteModel() — the shell's own reader, above — returning 'gpt-4o' for
-     any value that is not exactly 'gpt-4o' or 'gpt-4o-mini', including the
-     absent value a new account starts with. That reading of the shell is
-     correct. It is NOT what the app does, and the difference matters enough
-     that this block deliberately does less than it was asked to.
+     WHAT IS ACTUALLY SHIPPED, AND WHY 1.0.0 WAS NOT ENOUGH.
+     feat_mls_fixpack_0701.js — a SHARED module this lane may not edit, the
+     same bytes production serves — loads AFTER the shell and:
 
-     feat_mls_fixpack_0701.js — a SHARED module this lane may not edit, and the
-     same bytes production serves — loads after the shell and:
-
-       * runs two one-time migrations that WRITE uns('noteModel'):
-             absent | 'gpt-5o' | 'gpt-5'   -> 'gpt-5-mini'      (mlsFpModelMig2)
-             absent | 'gpt-5-mini'         -> 'gpt-5.6-luna'    (mlsFpModelMig3)
-       * wraps getNoteModel to return 'gpt-5.6-luna' for anything unrecognised;
+       * runs two one-time migrations that WRITE uns('noteModel') with no
+         human involved at all:
+             absent | 'gpt-5o' | 'gpt-5'  -> 'gpt-5-mini'    (mlsFpModelMig2)
+             absent | 'gpt-5-mini'        -> 'gpt-5.6-luna'  (mlsFpModelMig3)
+       * wraps getNoteModel to return 'gpt-5.6-luna' for anything else;
        * inserts 'gpt-5.6-luna' and 'gpt-5-mini' into #noteModelSel, luna
-         labelled "(recommended)".
+         labelled "(recommended)";
+       * and its /api/generate fetch cascade WRITES BACK whichever model
+         succeeded, so the store fills itself in without anyone choosing.
 
-     So the live effective default for notes is gpt-5.6-luna, and its own
-     comment records an owner re-confirmation dated 2026-08-11, quoted
-     verbatim, authorizing exactly that on COST grounds — luna at $0.20/$1.20
-     per 1M against gpt-5-mini at $0.25/$2.00 — and saying "...for op notes too
-     for sure". The instruction this block was given says the opposite: luna is
-     for reports only.
+     So every account carries a stored 'gpt-5.6-luna' that nobody picked, and
+     1.0.0 deliberately refused to wrap over that because the ruling it had
+     was older than the fixpack's. The ruling above settles it.
 
-     TWO OWNER RULINGS DISAGREE, AND ONE OF THEM IS A PRICE DECISION WITH
-     NUMBERS ATTACHED. This block therefore does the part that is unambiguous
-     and leaves the part that is not to the lead:
+     THE PROBLEM THAT MAKES THIS MORE THAN A DEFAULT FLIP. A stored value can
+     no longer be read as a choice: the migrations and the fetch cascade both
+     write the same key. So this block adds the missing half — a HUMAN-CHOICE
+     FLAG, the same tri-state shape the visit-notes preference uses
+     (pullVisitBodies + pullVisitBodiesSet):
 
-       DOES  make the SHELL's own fallback gpt-4o-mini rather than gpt-4o, so
-             wherever the 4-series is what answers — a page where the fixpack
-             did not load, or a stored 'gpt-4o-mini' — the cheaper of the two
-             is the one that is picked by default.
-       DOES  order the two 4-series options mini-before-4o and label them by
-             what they cost rather than by a recommendation nobody wrote down.
-       DOES  mark "(default)" on whichever option is ACTUALLY what
-             getNoteModel() returns, so the picker cannot claim a default it
-             does not have.
-       DOES NOT add gpt-5.6-luna or any other model to the picker.
-       DOES NOT remove luna or gpt-5-mini, and does not override the fixpack's
-             effective default. Doing either would reverse a documented,
-             priced owner decision from inside a UI lane, and would silently
-             re-point every existing account's note generation at a model this
-             lane has not qualified.
-       DOES NOT write a preference. A default is what you get when you have not
-             chosen; writing one down converts every account's non-choice into
-             a choice nobody can tell apart afterwards.
-       DOES NOT touch the Premium gate — openSettings() owns `_nm.disabled`.
+         uns('noteModel')     the value        (anyone may write it)
+         uns('noteModelSet')  '1'              (ONLY a human pick writes it)
 
-     REVERT puts the shell's own default and the shell's own option list and
-     labels back exactly. -->
+     resolve() then answers:
+       * a human pick is honoured exactly, including luna — a doctor who
+         chose it keeps it;
+       * with NO human pick, only the two note models are allowed and
+         anything else — luna, gpt-5-mini, gpt-5o, a future id — resolves to
+         gpt-4o-mini. That is the shell's original allowlist semantics with
+         the cheap model as the default instead of the dear one.
+
+     WHY IT WRAPS *AFTER* THE FIXPACK AND HOW. The fixpack installs on its own
+     schedule and its wrapper ignores whatever it wrapped, so being inside it
+     is worth nothing. This re-adopts on a bounded ladder and on the wakes
+     that mean the app moved on (a click, Settings opening) — the same
+     stayOutermost pattern opnote-open-1.1.0 uses, and for the same measured
+     reason. It never edits the shared fixpack, and revert() puts back
+     whatever owned the global when this block first saw it.
+
+     THE RESOLVED MODEL MUST REACH THE WIRE. aiCallRaw() builds
+     `{transcript, model: getNoteModel()}` at request time, so wrapping the
+     global is what carries it — asserted on the actual POST body in the
+     contract suite, not inferred.
+
+     THE PICKER cannot show a model the account may not use, and must never
+     hide the one currently in force:
+       * gpt-4o-mini first, labelled the default;
+       * gpt-4o second, labelled as costing more;
+       * luna ONLY when the account is premium, or when it IS the human's
+         current pick — and labelled with the owner's own reason;
+       * gpt-5-mini only when it is the human's current pick (it costs more
+         than luna on both meters by the fixpack's own table, so it is never
+         offered fresh).
+     `disabled` is never written here: openSettings() owns the Premium gate. -->
 <script>
 (function () {
-  var VERSION = 'note-model-1.0.0';
-  if (window.__mlsNoteModel) return;
+  var VERSION = 'note-model-1.1.0';
+  if (window.__mlsNoteModel && window.__mlsNoteModel.version === VERSION) return;
 
-  /* The two models the SHELL's own reader knows. Deliberately not a copy of
-     the fixpack's four - this block is the shell's fallback, not a second
-     opinion about the whole roster. */
-  var ALLOWED = { 'gpt-4o': 1, 'gpt-4o-mini': 1 };
+  var VALUE_KEY = 'noteModel';
+  var SET_KEY = 'noteModelSet';          /* '1' = a HUMAN chose. Nothing else writes it. */
   var CHEAP = 'gpt-4o-mini';
-  /* value -> [label, order] for the two this block owns. Any other option in
-     the select is left exactly where its owner put it. */
-  var OPTIONS = [
-    ['gpt-4o-mini', 'GPT-4o mini — fast & affordable'],
-    ['gpt-4o',      'GPT-4o — stronger, costs more']
-  ];
+  var LUNA = 'gpt-5.6-luna';
+  var MINI5 = 'gpt-5-mini';
+  /* The two the shell itself knows: the only ids allowed without a human. */
+  var NOTE_MODELS = { 'gpt-4o-mini': 1, 'gpt-4o': 1 };
+  /* Everything a human may keep if they actually picked it. */
+  var KNOWN = { 'gpt-4o-mini': 1, 'gpt-4o': 1, 'gpt-5.6-luna': 1, 'gpt-5-mini': 1 };
+
+  var LABEL = {};
+  LABEL[CHEAP] = 'GPT-4o mini — fast & affordable (default)';
+  LABEL['gpt-4o'] = 'GPT-4o — stronger, costs more';
+  LABEL[LUNA] = 'Luna — costs more; the owner keeps it for reports';
+  LABEL[MINI5] = 'GPT-5 mini — costs more; kept because you chose it';
 
   var baseGet = null, baseOpts = null;
 
-  function stored() {
-    var v = null;
-    try { if (typeof window.uns === 'function') v = localStorage.getItem(window.uns('noteModel')); } catch (e) {}
-    if (v == null) { try { v = localStorage.getItem('noteModel'); } catch (e2) {} }
+  function nk(k) {
+    try { if (typeof window.uns === 'function') return String(window.uns(k) || ''); } catch (e) {}
+    return '';
+  }
+  function readKey(k) {
+    var v = null, n = nk(k);
+    if (n) { try { v = localStorage.getItem(n); } catch (e) {} }
+    if (v == null) { try { v = localStorage.getItem(k); } catch (e2) {} }
     return v == null ? '' : String(v);
   }
-  /* THE ANSWER THIS BLOCK IS RESPONSIBLE FOR, on its own, so a test can ask it
-     without having to un-install every module that wraps the global. */
-  function shellModel() {
-    var v = stored();
-    return ALLOWED[v] ? v : CHEAP;
+  function writeKey(k, value) {
+    var n = nk(k), ok = false;
+    if (n) { try { localStorage.setItem(n, value); ok = true; } catch (e) {} }
+    try { localStorage.setItem(k, value); ok = true; } catch (e2) {}
+    return ok;
   }
-  function wrapGetter() {
-    if (typeof window.getNoteModel !== 'function') return false;
-    if (window.getNoteModel.__mlsNoteModel) return true;
-    /* Only the SHELL's own reader is wrapped. If something else has already
-       taken this global (the fixpack tags its wrapper __fpWrap) the roster is
-       not this block's to answer for, and wrapping over it would override a
-       priced owner decision from a UI lane. */
-    if (window.getNoteModel.__fpWrap) return false;
-    baseGet = window.getNoteModel;
-    var w = function () {
-      var v = stored();
-      /* An explicit, allowlisted choice is returned untouched - the original
-         would have returned exactly this too. Only the no-choice case moves. */
-      if (ALLOWED[v]) return v;
-      return CHEAP;
+
+  function human() { return readKey(SET_KEY) === '1'; }
+  /* THE ONE RESOLVER. Every answer this block gives comes from here. */
+  function resolve() {
+    var stored = readKey(VALUE_KEY);
+    if (human() && KNOWN[stored]) return stored;
+    if (!human() && NOTE_MODELS[stored]) return stored;
+    return CHEAP;
+  }
+  function state() {
+    var stored = readKey(VALUE_KEY), h = human();
+    return {
+      model: resolve(), stored: stored, human: h,
+      /* WHY the answer is what it is - the honest line for diagnostics. */
+      source: h && KNOWN[stored] ? 'human'
+        : (!h && NOTE_MODELS[stored] ? 'stored-note-model'
+          : (stored ? 'default-over-' + stored : 'default-no-value'))
     };
+  }
+  /* Recording a human pick. READ-BACK CONFIRMED: true only when a fresh
+     resolve() actually returns what was asked for, because a caller must be
+     able to treat false as "nothing changed". */
+  function choose(model) {
+    if (!KNOWN[model]) return false;
+    writeKey(VALUE_KEY, model);
+    writeKey(SET_KEY, '1');
+    return resolve() === model;
+  }
+
+  /* ---- the global ------------------------------------------------------ */
+  function wrapGetter() {
+    var cur = window.getNoteModel;
+    if (typeof cur !== 'function') return false;
+    if (cur.__mlsNoteModel === VERSION) return true;
+    /* Whatever owns it now is what revert() restores. The inner is NOT called:
+       it is precisely the answer this block was told to supersede, and calling
+       it could only reintroduce the value the owner ruled against. */
+    if (!baseGet) baseGet = cur;
+    var w = function () { return resolve(); };
     w.__mlsNoteModel = VERSION;
-    w.__mlsNoteModelBase = baseGet;
+    w.__mlsNoteModelBase = cur;
     window.getNoteModel = w;
     return true;
   }
 
-  function live() {
-    try { return String(window.getNoteModel()); } catch (e) { return shellModel(); }
+  /* ---- the picker ------------------------------------------------------ */
+  function premium() {
+    try { if (typeof window.effectivePremium === 'function') return window.effectivePremium() === true; } catch (e) {}
+    return false;
+  }
+  function wanted() {
+    var out = [CHEAP, 'gpt-4o'];
+    var stored = readKey(VALUE_KEY), h = human();
+    if (premium() || (h && stored === LUNA)) out.push(LUNA);
+    if (h && stored === MINI5) out.push(MINI5);
+    return out;
   }
   function paintPicker() {
     var sel;
@@ -40884,32 +40933,34 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       baseOpts = [];
       for (var k = 0; k < sel.options.length; k++) baseOpts.push([sel.options[k].value, sel.options[k].textContent]);
     }
-    var now = live();
-    /* 1. LABEL the two this block owns, and nothing else. */
-    var i, o;
-    for (i = 0; i < sel.options.length; i++) {
-      o = sel.options[i];
-      var row = null, r;
-      for (r = 0; r < OPTIONS.length; r++) if (OPTIONS[r][0] === o.value) row = OPTIONS[r];
-      if (!row) continue;
-      var want = row[1] + (o.value === now ? ' (default)' : '');
-      if (o.textContent !== want) o.textContent = want;
+    var want = wanted(), now = resolve();
+    var sig = want.join(',') + '|' + now;
+    if (sel.__mlsNoteModelSig !== sig) {
+      sel.__mlsNoteModelSig = sig;
+      /* Rebuilt rather than reordered: the fixpack inserts two options this
+         block must be able to REMOVE, and removing by hand while reordering
+         the rest is how an option ends up duplicated. */
+      sel.innerHTML = '';
+      for (var i = 0; i < want.length; i++) {
+        var o = document.createElement('option');
+        o.value = want[i];
+        o.textContent = LABEL[want[i]] || want[i];
+        sel.appendChild(o);
+      }
     }
-    /* 2. ORDER: gpt-4o-mini must come before gpt-4o. Moving one node, not
-       rebuilding the list, so an option another module owns keeps its place
-       and the select's current value is never snapped to index 0. */
-    var mini = null, full = null;
-    for (i = 0; i < sel.options.length; i++) {
-      if (sel.options[i].value === 'gpt-4o-mini') mini = sel.options[i];
-      if (sel.options[i].value === 'gpt-4o') full = sel.options[i];
-    }
-    if (mini && full && Array.prototype.indexOf.call(sel.options, mini) >
-                        Array.prototype.indexOf.call(sel.options, full)) {
-      var keep = String(sel.value || '');
-      sel.insertBefore(mini, full);
-      if (keep) sel.value = keep;
-    }
+    /* The picker must always show what is actually in force. */
+    if (sel.value !== now) sel.value = now;
     return true;
+  }
+  /* A CHANGE ON THIS SELECT IS THE HUMAN PICK, and the only thing that writes
+     the flag. Delegated on document so a rebuilt select cannot lose it. */
+  function onChange(ev) {
+    var t = ev && ev.target;
+    if (!t || t.id !== 'noteModelSel') return;
+    var v = String(t.value || '');
+    if (!KNOWN[v]) return;
+    choose(v);
+    setTimeout(refresh, 0);
   }
 
   var queued = false;
@@ -40934,19 +40985,18 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   window.__mlsNoteModel = {
     version: VERSION,
     def: CHEAP,
-    /* What THIS block answers, independent of who else has wrapped the global. */
-    shellModel: shellModel,
-    /* What the app actually returns right now, whoever owns it. */
-    current: live,
-    stored: stored,
-    /* Who owns the global, in one word - the honest answer to "why is the
-       default not what this block's default is". */
+    resolve: resolve,
+    state: state,
+    choose: choose,
+    human: human,
+    /* Who owns the global right now - the honest answer to "why is the model
+       not what this block resolves". */
     owner: function () {
       try {
         var f = window.getNoteModel;
         if (!f) return 'none';
+        if (f.__mlsNoteModel === VERSION) return VERSION;
         if (f.__fpWrap) return 'fixpack';
-        if (f.__mlsNoteModel) return VERSION;
         return 'shell';
       } catch (e) { return 'none'; }
     },
@@ -40956,14 +41006,11 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       return Array.prototype.map.call(sel.options, function (o) { return o.value; });
     },
     installed: function () {
-      try {
-        var f = window.getNoteModel;
-        return !!(f && (f.__mlsNoteModel === VERSION || (f.__mlsNoteModelBase && f.__mlsNoteModelBase.__mlsNoteModel === VERSION)));
-      } catch (e) { return false; }
+      try { return window.getNoteModel.__mlsNoteModel === VERSION; } catch (e) { return false; }
     },
     refresh: refresh,
     revert: function () {
-      try { if (baseGet && window.getNoteModel && window.getNoteModel.__mlsNoteModel) window.getNoteModel = baseGet; } catch (e) {}
+      try { if (baseGet) window.getNoteModel = baseGet; } catch (e) {}
       var sel = document.getElementById('noteModelSel');
       if (sel && baseOpts) {
         var keep = String(sel.value || '');
@@ -40974,8 +41021,10 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
           sel.appendChild(o);
         });
         sel.value = keep;
+        try { delete sel.__mlsNoteModelSig; } catch (e2) { sel.__mlsNoteModelSig = ''; }
       }
-      try { delete window.__mlsNoteModel; } catch (e3) { window.__mlsNoteModel = null; }
+      try { document.removeEventListener('change', onChange, true); } catch (e3) {}
+      try { delete window.__mlsNoteModel; } catch (e4) { window.__mlsNoteModel = null; }
       return true;
     }
   };
@@ -40983,11 +41032,23 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   function boot() { wrapGetter(); watch(); refresh(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
-  /* The Settings dialog is markup in the shell, but the modules that fill it
-     land later; a click is the cheapest proof the app moved on. */
-  document.addEventListener('click', function () { setTimeout(boot, 0); }, true);
+  document.addEventListener('change', onChange, true);
+  /* STAY THE OWNER. feat_mls_fixpack_0701.js is a deferred asset: it installs
+     its own getNoteModel wrapper long after this block is parsed, and that
+     wrapper ignores whatever it wrapped. Being inside it is worth nothing, so
+     this re-adopts - synchronously in capture phase, because a click that
+     opens Settings must already see the resolved value, and on a bounded
+     ladder rather than a standing timer (the boot-script-budget suite's
+     interval ceiling is at its limit). */
+  ['pointerdown', 'click', 'keydown'].forEach(function (name) {
+    try { document.addEventListener(name, wrapGetter, true); } catch (e) {}
+  });
+  [400, 1500, 4000, 9000, 20000].forEach(function (ms) { setTimeout(function () { wrapGetter(); refresh(); }, ms); });
+  ['mls:ui-ready', 'mls:view-changed', 'mls:session-boundary'].forEach(function (name) {
+    try { window.addEventListener(name, refresh, false); } catch (e) {}
+  });
 })();
 </script>
-<!-- ===== end note-model-1.0.0 ========================================= -->
+<!-- ===== end note-model-1.1.0 ========================================= -->
 </body>
 </html>

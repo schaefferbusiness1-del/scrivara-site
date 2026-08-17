@@ -58,7 +58,7 @@ const BLOCKS = [
   ['<!-- ===== opnote-vocab-1.0.0', '<!-- ===== end opnote-vocab-1.0.0'],
   ['<!-- ===== opnote-day-1.0.0', '<!-- ===== end opnote-day-1.0.0'],
   ['<!-- ===== view-hold-1.0.0', '<!-- ===== end view-hold-1.0.0'],
-  ['<!-- ===== note-model-1.0.0', '<!-- ===== end note-model-1.0.0']
+  ['<!-- ===== note-model-1.1.0', '<!-- ===== end note-model-1.1.0']
 ];
 
 /* ============================================================ PART 1: static */
@@ -76,7 +76,7 @@ for (const name of SHELLS) {
   /* A superseded version number must not survive anywhere in the shell: two
      copies of one block is the shape that ships a fix and its own regression
      together. */
-  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0']) {
+  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0']) {
     eq(src.indexOf('<!-- ===== ' + dead), -1,
       `${name}: the superseded ${dead} block is still present alongside its successor`);
   }
@@ -176,38 +176,55 @@ for (const name of SHELLS) {
   ok(!/facts\.(?:approach|levelCount|laterality|levels)\s*=/.test(vocab),
     `${name}: the vocabulary overlay invents a clinical value it has not measured`);
 
-  /* -- note-model: the cheapest good model is the default -------------- */
-  const nm = src.slice(src.indexOf('<!-- ===== note-model-1.0.0'), src.indexOf('<!-- ===== end note-model-1.0.0'));
-  ok(nm.includes("var CHEAP = 'gpt-4o-mini';"), `${name}: the note-model fallback is no longer gpt-4o-mini`);
-  ok(/OPTIONS = \[\s*\['gpt-4o-mini',/.test(nm),
-    `${name}: the note-model picker no longer orders gpt-4o-mini first`);
-  /* It must not take the global away from feat_mls_fixpack_0701.js, whose own
-     comment records a PRICED owner decision (gpt-5.6-luna at $0.20/$1.20 per
-     1M, re-confirmed 2026-08-11 "for op notes too for sure"). Overriding that
-     from a UI lane would reverse an owner ruling with numbers attached. */
-  ok(/if \(window\.getNoteModel\.__fpWrap\) return false;/.test(nm),
-    `${name}: the note-model block now wraps over the fixpack's model owner and silently reverses a priced owner decision`);
-  ok(!/insertBefore\(o, sel\.firstChild\)|appendChild\(o\)/.test(nm) || !/luna/.test(nm.replace(/<!--[\s\S]*?-->/g, '')),
-    `${name}: the note-model block adds an option to the picker`);
-  /* The OPTIONS table only - a block whose prose explains WHY luna is absent
-     must not fail the check that luna is absent. */
-  const nmOpts = (/var OPTIONS = \[[\s\S]*?\];/.exec(nm) || [''])[0];
-  ok(nmOpts && !/gpt-5\.6-luna|gpt-5-mini/.test(nmOpts),
-    `${name}: a model the owner reserved for reports was added to the note picker: ${nmOpts.slice(0, 160)}`);
-  ok(/ALLOWED = \{ 'gpt-4o': 1, 'gpt-4o-mini': 1 \}/.test(nm),
-    `${name}: the note-model allowlist changed — only the two note models may be selectable here`);
+  /* -- note-model: the cheapest good model is the default --------------
+     OWNER RULING 2026-08-17, superseding the 2026-08-11 one quoted inside
+     feat_mls_fixpack_0701.js: "luna is too expensive… find a cheaper one and
+     just use that one; keep luna just for the reports." */
+  const nm = src.slice(src.indexOf('<!-- ===== note-model-1.1.0'), src.indexOf('<!-- ===== end note-model-1.1.0'));
+  ok(nm.includes("var CHEAP = 'gpt-4o-mini';"), `${name}: the note-model default is no longer gpt-4o-mini`);
+  /* THE HUMAN-CHOICE FLAG is the whole mechanism: the fixpack's migrations AND
+     its /api/generate fetch cascade both write uns('noteModel'), so a stored
+     value can no longer be read as a choice. Same tri-state shape as
+     pullVisitBodies + pullVisitBodiesSet. */
+  ok(/var SET_KEY = 'noteModelSet';/.test(nm),
+    `${name}: the note-model block lost its human-choice flag, so a fixpack migration reads as a doctor's decision again`);
+  ok(/function choose\(model\) \{[\s\S]*?writeKey\(SET_KEY, '1'\);[\s\S]*?return resolve\(\) === model;/.test(nm),
+    `${name}: choose() no longer records the human flag, or is no longer read-back confirmed`);
+  /* ONLY a human pick may write the flag. */
+  const setWrites = (nm.match(/writeKey\(SET_KEY/g) || []).length;
+  eq(setWrites, 1, `${name}: the human-choice flag is written from ${setWrites} places; exactly one (choose()) may write it`);
+  /* the resolver: a human pick is honoured, anything else falls to the cheap one */
+  ok(/if \(human\(\) && KNOWN\[stored\]\) return stored;/.test(nm),
+    `${name}: an explicit human pick is no longer honoured`);
+  ok(/if \(!human\(\) && NOTE_MODELS\[stored\]\) return stored;\s*return CHEAP;/.test(nm),
+    `${name}: a stored value with no human choice no longer falls back to the cheap model`);
+  /* it MUST now take the global from the fixpack — the opposite of 1.0.0 */
+  ok(!/__fpWrap\) return false;/.test(nm),
+    `${name}: the note-model block still stands down for the fixpack, so luna stays the default`);
+  ok(/w\.__mlsNoteModel = VERSION;/.test(nm) && /\['pointerdown', 'click', 'keydown'\]\.forEach\(function \(name\) \{\s*try \{ document\.addEventListener\(name, wrapGetter, true\);/.test(nm),
+    `${name}: the note-model block no longer re-adopts the global after the fixpack's late install`);
+  /* luna is premium-or-current-pick only, and says why */
+  ok(/if \(premium\(\) \|\| \(h && stored === LUNA\)\) out\.push\(LUNA\);/.test(nm),
+    `${name}: luna is offered to accounts that may not use it`);
+  ok(nm.includes("the owner keeps it for reports"),
+    `${name}: the luna option does not carry the owner's own reason`);
   /* An assignment STATEMENT, not the word: the block's own comment quotes the
      app's `_nm.disabled = !effectivePremium()` to explain what it must not
      touch, and a check that failed on its own explanation would teach the next
      reader to delete the explanation. */
   ok(!/^\s*[\w.$[\]']*\.disabled\s*=/m.test(nm),
     `${name}: the note-model block writes .disabled and can therefore defeat the Premium gate`);
-  ok(!/localStorage\.setItem/.test(nm),
-    `${name}: the note-model block WRITES a preference — a default must not become a stored choice`);
   /* the shell's own default is still the expensive one; the block is what
      changes it, so the block is what must be present */
   ok(/function getNoteModel\(\)\{[^}]*'gpt-4o'/.test(src),
     `${name}: getNoteModel was edited in place instead of wrapped by the block`);
+  /* The shared fixpack is never reached into. Comments are stripped first —
+     BOTH kinds: the block names the fixpack in prose to explain what it is
+     working around, and a check that failed on its own explanation would
+     teach the next reader to delete the explanation. */
+  const nmCode = nm.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  ok(!/feat_mls_fixpack_0701|__fpWrap\s*=|FP\./.test(nmCode),
+    `${name}: the note-model block's CODE reaches into the shared fixpack`);
 
   /* -- view-hold: min-height only, and never its own trigger ----------- */
   const vh = src.slice(src.indexOf('<!-- ===== view-hold-1.0.0'), src.indexOf('<!-- ===== end view-hold-1.0.0'));
@@ -991,65 +1008,153 @@ async function runtime() {
         return null;
       });
       await page.waitForTimeout(300);
-      const model = await page.evaluate(() => {
+      /* THE OWNER OF THE GLOBAL. feat_mls_fixpack_0701.js installs its own
+         getNoteModel wrapper on a deferred schedule and that wrapper ignores
+         whatever it wrapped, so being INSIDE it is worth nothing — the block
+         has to end up outermost or luna stays the default. */
+      const owner = await page.evaluate(() => ({
+        owner: window.__mlsNoteModel ? window.__mlsNoteModel.owner() : 'none',
+        version: window.__mlsNoteModel ? window.__mlsNoteModel.version : ''
+      }));
+      eq(owner.version, 'note-model-1.1.0', 'the note-model block is not installed');
+      eq(owner.owner, 'note-model-1.1.0',
+        `getNoteModel is owned by "${owner.owner}" — the fixpack's luna default is still what the app uses`);
+
+      /* THE RESOLVER, over every state the store can actually be in. The
+         fixpack's two migrations AND its /api/generate fetch cascade all write
+         uns('noteModel') with no human involved, which is exactly why a stored
+         value cannot be read as a choice. */
+      const CASES = [
+        ['', false, 'gpt-4o-mini', 'a brand-new account'],
+        ['gpt-5.6-luna', false, 'gpt-4o-mini', 'the fixpack migration nobody asked for'],
+        ['gpt-5-mini', false, 'gpt-4o-mini', 'the earlier fixpack migration'],
+        ['gpt-5o', false, 'gpt-4o-mini', 'a retired id'],
+        ['gpt-4o', false, 'gpt-4o', 'a stored note model with no human flag'],
+        ['gpt-4o-mini', false, 'gpt-4o-mini', 'the cheap model already stored'],
+        ['gpt-5.6-luna', true, 'gpt-5.6-luna', 'a doctor who deliberately picked luna'],
+        ['gpt-4o', true, 'gpt-4o', 'a doctor who deliberately picked gpt-4o'],
+        ['gpt-5-mini', true, 'gpt-5-mini', 'a doctor who deliberately picked gpt-5 mini']
+      ];
+      for (const [stored, human, want, why] of CASES) {
+        const got = await page.evaluate(({ s, h }) => {
+          const kv = uns('noteModel'), ks = uns('noteModelSet');
+          [kv, 'noteModel'].forEach((k) => (s ? localStorage.setItem(k, s) : localStorage.removeItem(k)));
+          [ks, 'noteModelSet'].forEach((k) => (h ? localStorage.setItem(k, '1') : localStorage.removeItem(k)));
+          return { resolved: window.getNoteModel(), state: window.__mlsNoteModel.state() };
+        }, { s: stored, h: human });
+        eq(got.resolved, want,
+          `${why} (stored="${stored}", human=${human}) resolves to "${got.resolved}", not "${want}" — ${JSON.stringify(got.state)}`);
+      }
+
+      /* THE FLAG IS WRITTEN BY A HUMAN PICK AND BY NOTHING ELSE. */
+      const pick = await page.evaluate(async () => {
+        const kv = uns('noteModel'), ks = uns('noteModelSet');
+        [kv, 'noteModel', ks, 'noteModelSet'].forEach((k) => localStorage.removeItem(k));
+        const beforeFlag = window.__mlsNoteModel.human();
+        const beforeModel = window.getNoteModel();
+        /* a real change event on the real select, the way a doctor picks */
         const sel = document.getElementById('noteModelSel');
-        const api = window.__mlsNoteModel;
-        return {
-          present: !!api,
-          owner: api ? api.owner() : '',
-          shellModel: api ? api.shellModel() : '',
-          current: window.getNoteModel(),
-          options: sel ? Array.from(sel.options).map((o) => o.value) : [],
-          labels: sel ? Array.from(sel.options).map((o) => o.textContent) : []
+        sel.value = 'gpt-4o';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 120));
+        return { beforeFlag, beforeModel, afterFlag: window.__mlsNoteModel.human(), afterModel: window.getNoteModel() };
+      });
+      eq(pick.beforeFlag, false, 'the human-choice flag was already set before anyone picked anything');
+      eq(pick.beforeModel, 'gpt-4o-mini', 'a fresh account does not resolve to the cheap model');
+      eq(pick.afterFlag, true, 'choosing a model in Settings did not record that a human chose');
+      eq(pick.afterModel, 'gpt-4o', 'the doctor picked gpt-4o and the app did not honour it');
+
+      /* THE PICKER: luna only for premium, or when it is the pick in force. */
+      const picker = await page.evaluate(async (want) => {
+        const kv = uns('noteModel'), ks = uns('noteModelSet');
+        const out = {};
+        const read = () => Array.from(document.getElementById('noteModelSel').options)
+          .map((o) => ({ v: o.value, t: o.textContent }));
+        /* `bkUser` is a top-level `let` and is therefore NOT on window, so
+           setting window.bkUser would change nothing and this whole section
+           would silently measure a standard account three times. The seam the
+           block actually reads is window.effectivePremium(); a function
+           DECLARATION is a writable global property, so replacing it also
+           changes what the shell's own bare calls resolve to. */
+        const keepPrem = window.effectivePremium;
+        /* standard account, no human pick */
+        [kv, 'noteModel', ks, 'noteModelSet'].forEach((k) => localStorage.removeItem(k));
+        window.effectivePremium = () => false;
+        window.__mlsNoteModel.refresh(); await new Promise((r) => setTimeout(r, 120));
+        out.standard = read();
+        /* premium account */
+        window.effectivePremium = () => true;
+        window.__mlsNoteModel.refresh(); await new Promise((r) => setTimeout(r, 120));
+        out.premium = read();
+        /* standard account whose HUMAN pick is luna — it must not vanish */
+        window.effectivePremium = () => false;
+        [kv, 'noteModel'].forEach((k) => localStorage.setItem(k, 'gpt-5.6-luna'));
+        [ks, 'noteModelSet'].forEach((k) => localStorage.setItem(k, '1'));
+        window.__mlsNoteModel.refresh(); await new Promise((r) => setTimeout(r, 120));
+        out.lunaInForce = read();
+        out.lunaSelected = document.getElementById('noteModelSel').value;
+        window.effectivePremium = keepPrem;
+        return out;
+      });
+      assert.deepStrictEqual(picker.standard.map((o) => o.v), ['gpt-4o-mini', 'gpt-4o'],
+        `a standard account is offered ${JSON.stringify(picker.standard.map((o) => o.v))} — luna is premium-only`);
+      checks++;
+      assert.deepStrictEqual(picker.premium.map((o) => o.v), ['gpt-4o-mini', 'gpt-4o', 'gpt-5.6-luna'],
+        `a premium account is offered ${JSON.stringify(picker.premium.map((o) => o.v))}`);
+      checks++;
+      ok(/costs more/i.test(picker.premium[2].t) && /reports/i.test(picker.premium[2].t),
+        `the luna option does not say why it is there: "${picker.premium[2].t}"`);
+      ok(/default/i.test(picker.standard[0].t), `the cheap model is not labelled the default: "${picker.standard[0].t}"`);
+      ok(/costs more/i.test(picker.standard[1].t), `gpt-4o is not labelled as costing more: "${picker.standard[1].t}"`);
+      ok(picker.lunaInForce.some((o) => o.v === 'gpt-5.6-luna'),
+        'a doctor whose own pick is luna cannot see it in the picker — the control would lie about what is in force');
+      eq(picker.lunaSelected, 'gpt-5.6-luna', 'the picker does not show the model actually in force');
+
+      /* THE WIRE. aiCallRaw() builds {transcript, model: getNoteModel()} at
+         request time, so this is the payload the shell would POST. Measured on
+         the real function with fetch stubbed, not inferred from the resolver. */
+      const wire = await page.evaluate(async () => {
+        const kv = uns('noteModel'), ks = uns('noteModelSet');
+        const realFetch = window.fetch;
+        const seen = [];
+        window.fetch = function (input, init) {
+          const url = (typeof input === 'string') ? input : (input && input.url) || '';
+          if (/\/api\/generate(\?|$)/.test(url)) seen.push(String(init && init.body || ''));
+          return Promise.resolve(new Response(JSON.stringify({ content: 'ok' }),
+            { status: 200, headers: { 'content-type': 'application/json' } }));
         };
+        const grab = async () => {
+          seen.length = 0;
+          try { await window.aiCallRaw('sys', 'user', '', {}); } catch (e) {}
+          try { return JSON.parse(seen[0] || '{}').model; } catch (e) { return 'UNPARSEABLE:' + seen[0]; }
+        };
+        /* the fixpack's migration, nobody's choice */
+        [kv, 'noteModel'].forEach((k) => localStorage.setItem(k, 'gpt-5.6-luna'));
+        [ks, 'noteModelSet'].forEach((k) => localStorage.removeItem(k));
+        const migrated = await grab();
+        /* the same value, deliberately chosen */
+        [ks, 'noteModelSet'].forEach((k) => localStorage.setItem(k, '1'));
+        const chosen = await grab();
+        [kv, 'noteModel', ks, 'noteModelSet'].forEach((k) => localStorage.removeItem(k));
+        const fresh = await grab();
+        window.fetch = realFetch;
+        return { migrated, chosen, fresh, calls: seen.length };
       });
-      ok(model.present, 'the note-model block is not installed');
-      /* THE PART THAT IS THIS BLOCK'S TO ANSWER: with no 4-series choice
-         stored, the shell's own fallback is the cheaper of the two. */
-      const fallback = await page.evaluate(() => {
-        const keep = localStorage.getItem(uns('noteModel'));
-        localStorage.removeItem(uns('noteModel'));
-        localStorage.removeItem('noteModel');
-        const v = window.__mlsNoteModel.shellModel();
-        localStorage.setItem(uns('noteModel'), 'gpt-4o');
-        const explicit = window.__mlsNoteModel.shellModel();
-        if (keep == null) localStorage.removeItem(uns('noteModel'));
-        else localStorage.setItem(uns('noteModel'), keep);
-        return { v, explicit };
+      eq(wire.migrated, 'gpt-4o-mini',
+        `the request body carried "${wire.migrated}" for an account the fixpack migrated to luna without asking — the owner is still paying luna prices`);
+      eq(wire.chosen, 'gpt-5.6-luna',
+        `a doctor who deliberately chose luna had "${wire.chosen}" sent instead`);
+      eq(wire.fresh, 'gpt-4o-mini',
+        `a brand-new account POSTs "${wire.fresh}"`);
+
+      /* leave the store as we found it */
+      await page.evaluate(() => {
+        ['noteModel', 'noteModelSet'].forEach((k) => {
+          localStorage.removeItem(k);
+          try { localStorage.removeItem(uns(k)); } catch (e) {}
+        });
+        window.__mlsNoteModel.refresh();
       });
-      eq(fallback.v, 'gpt-4o-mini',
-        `the shell's own note-model fallback is "${fallback.v}" — it must be the cheaper of the two 4-series models`);
-      eq(fallback.explicit, 'gpt-4o',
-        'a doctor who explicitly chose gpt-4o no longer gets it — the block overrode a choice instead of a default');
-      /* the picker: mini before 4o, labelled by cost, and NOTHING added */
-      const iMini = model.options.indexOf('gpt-4o-mini');
-      const i4o = model.options.indexOf('gpt-4o');
-      ok(iMini >= 0 && i4o >= 0 && iMini < i4o,
-        `the picker lists gpt-4o before gpt-4o-mini: ${JSON.stringify(model.options)}`);
-      ok(/affordable/i.test(model.labels[iMini] || ''),
-        `the cheap note model is not labelled by what it costs: ${JSON.stringify(model.labels)}`);
-      ok(/costs more/i.test(model.labels[i4o] || ''),
-        `the stronger note model does not say it costs more: ${JSON.stringify(model.labels)}`);
-      /* "(default)" must be on whatever the app ACTUALLY returns, never on a
-         model this block wishes were the default. */
-      const marked = model.labels.filter((l) => /\(default\)/.test(l));
-      ok(marked.length <= 1, `the picker marks ${marked.length} options as the default: ${JSON.stringify(model.labels)}`);
-      if (marked.length === 1) {
-        const at = model.labels.findIndex((l) => /\(default\)/.test(l));
-        eq(model.options[at], model.current,
-          `the picker calls "${model.options[at]}" the default while getNoteModel() returns "${model.current}"`);
-      }
-      /* THE CONFLICT, ASSERTED SO IT CANNOT BE FORGOTTEN. A shared module
-         (feat_mls_fixpack_0701.js) owns this global and defaults to
-         gpt-5.6-luna on a documented, priced owner ruling; the instruction
-         this block was given says luna is for reports only. Both cannot be
-         true. This suite records WHICH is in force rather than picking. */
-      ok(model.owner === 'fixpack' || model.owner === 'note-model-1.0.0' || model.owner === 'shell',
-        `nobody recognisable owns getNoteModel: "${model.owner}"`);
-      if (model.owner === 'fixpack') {
-        ok(model.current === 'gpt-5.6-luna' || model.current === 'gpt-4o' || model.current === 'gpt-4o-mini' || model.current === 'gpt-5-mini',
-          `the fixpack owns the note model and returns an unrecognised id: "${model.current}"`);
-      }
     }
     await page.evaluate(() => { const s = document.getElementById('settingsModal'); if (s) s.classList.remove('show'); });
 
