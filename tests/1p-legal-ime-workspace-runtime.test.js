@@ -169,12 +169,14 @@ const UI_IDS = [
   'mlsP1LegalSources', 'mlsP1LegalDoi', 'mlsP1LegalQuestions',
   'mlsP1LegalGenerate', 'mlsP1LegalCancel', 'mlsP1LegalStatus',
   'mlsP1LegalDraftCopy', 'mlsP1LegalDraftDownload', 'mlsP1LegalDraftPrint',
-  'mlsP1LegalDraft'
+  'mlsP1LegalDraft',
+  /* p1-legal-letterhead-1.0.0 */
+  'mlsP1LegalLetterheadEmail', 'mlsP1LegalLetterheadPreview'
 ];
 function installUi(runtime) {
   for (const id of UI_IDS) {
     const tag = id === 'mlsP1LegalDraft' || id === 'mlsP1LegalQuestions'
-      ? 'textarea' : (id === 'mlsP1LegalFile' || id === 'mlsP1LegalDoi' ? 'input' : 'div');
+      ? 'textarea' : (id === 'mlsP1LegalFile' || id === 'mlsP1LegalDoi' || id === 'mlsP1LegalLetterheadEmail' ? 'input' : 'div');
     runtime.ids[id] = node(tag);
     runtime.ids[id].id = id;
     runtime.ids[id]._document = runtime.document;
@@ -187,9 +189,11 @@ function installUi(runtime) {
   ok(r.api && r.api.installed, '1p marker did not install the isolated workspace');
   eq(r.api.version, 'p1-legal-1.0.0', 'workspace version drifted');
   eq(r.api.installToken, 'synthetic-legal-install', 'workspace did not publish its exact loader ownership token');
-  eq(r.api.sections.length, 13, 'draft does not have exactly 13 fixed sections');
+  /* p1-legal-letterhead-1.0.0 added XIV. OPINIONS as the 14th AI section. The
+     XV. ATTESTATION block is written locally and is NOT an AI section. */
+  eq(r.api.sections.length, 14, 'draft does not have exactly 14 fixed sections (13 chronology + XIV. OPINIONS)');
   deep(r.api.state(), { open: false, patientBound: false, generating: false, sourceCount: 0,
-    pendingFileCount: 0, activeReaderCount: 0, sectionCount: 13 }, 'initial receipt is not PHI-free and closed');
+    pendingFileCount: 0, activeReaderCount: 0, sectionCount: 14 }, 'initial receipt is not PHI-free and closed');
   r.api.revert();
   eq(r.window.__mlsP1LegalPack, undefined, 'revert left the workspace API installed');
 }
@@ -464,15 +468,17 @@ function installUi(runtime) {
     eq(r.pendingAi.length, 0, 'reading a local file sent it to AI before Generate');
     eq(r.api.state().sourceCount, 1, 'browser-local record was not staged');
     const promise = r.api.generateDraft();
-    for (let i = 0; i < 13; i++) {
+    for (let i = 0; i < 14; i++) {
       for (let spin = 0; spin < 12 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
       eq(r.pendingAi.length, i + 1, 'generation was not strictly sequential at section ' + (i + 1));
       if (i === 0) ok(r.pendingAi[0].user.includes('Synthetic local record marker.'), 'configured AI context omitted explicitly staged local text');
       r.pendingAi[i].resolve('Synthetic section body ' + (i + 1));
     }
-    eq(await promise, true, 'complete 13-section generation did not report success');
-    eq(r.pendingAi.length, 13, 'complete generation made other than 13 configured AI calls');
+    eq(await promise, true, 'complete 14-section generation did not report success');
+    eq(r.pendingAi.length, 14, 'complete generation made other than 14 configured AI calls');
     eq((r.ids.mlsP1LegalDraft.value.match(/^I{0,3}V?I{0,3}\.|^IX\.|^X(?:I{0,3})?\./gm) || []).length, 13, 'completed editable draft omitted a fixed section heading');
+    ok(/^XIV\. OPINIONS$/m.test(r.ids.mlsP1LegalDraft.value), 'completed draft omitted the XIV. OPINIONS section');
+    ok(/^XV\. ATTESTATION$/m.test(r.ids.mlsP1LegalDraft.value), 'completed draft omitted the XV. ATTESTATION block');
     ok(r.ids.mlsP1LegalDraft.value.includes('UNSIGNED DRAFT'), 'completed output omitted its unsigned-draft warning');
     eq(r.clock.count(), 0, 'successful generation left deadline timers alive');
   }
@@ -625,7 +631,7 @@ function installUi(runtime) {
       await flush();
     }
     const promise = r.api.generateDraft();
-    for (let i = 0; i < 13; i++) {
+    for (let i = 0; i < 14; i++) {
       for (let spin = 0; spin < 12 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
       r.pendingAi[i].resolve('Synthetic limited-context section ' + (i + 1));
     }
@@ -633,6 +639,115 @@ function installUi(runtime) {
     ok(/IMPORTANT SOURCE-LIMIT NOTICE/.test(r.ids.mlsP1LegalDraft.value), 'editable draft omitted source-limit receipt');
     ok(/SOURCE-LIMIT WARNING/.test(r.ids.mlsP1LegalStatus.textContent), 'clinician-visible status omitted source-limit warning');
     eq(r.ids.mlsP1LegalStatus.style.color, '#9a3d29', 'source-limit warning was not styled as a warning');
+  }
+
+  /* p1-legal-letterhead-1.0.0 END TO END: a report that leaves the practice
+     must carry the practice letterhead and state its certainty standard, and
+     must state each EXACTLY ONCE - a duplicated attestation reads as two
+     different opinions of record. Every export (the editable textarea, Copy,
+     Download .txt and Print) reads that same string, so proving it on the
+     textarea proves it on all four. */
+  {
+    const r = makeRuntime(); installUi(r); r.api.open();
+    const LH = { practice: 'Synthetic Spine & Pain Institute', provider: 'Alex Synthetic',
+      cred: 'MD', npi: '1234567890', address: '10 Synthetic Way, Suite 3, Testville PA 19000',
+      phone: '(610) 555-0100', email: 'records@synthetic-spine.example' };
+    r.window.getPracticeName = () => LH.practice;
+    r.window.getProviderName = () => LH.provider;
+    r.window.getProviderCred = () => LH.cred;
+    r.window.getNpi = () => LH.npi;
+    r.window.getClinicAddress = () => LH.address;
+    r.window.getClinicPhone = () => LH.phone;
+    /* the ONE field Settings has no home for, typed into the workspace */
+    r.ids.mlsP1LegalLetterheadEmail.value = LH.email;
+    /* the account display name must never be able to stand in for the
+       clinical provider identity on a medical-legal document */
+    r.window.getName = () => 'signup-account-display-name';
+
+    const promise = r.api.generateDraft();
+    for (let i = 0; i < 14; i++) {
+      for (let spin = 0; spin < 12 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
+      r.pendingAi[i].resolve('Synthetic section body ' + (i + 1));
+    }
+    eq(await promise, true, 'letterhead draft did not complete');
+    const report = r.ids.mlsP1LegalDraft.value;
+    function count(needle) { return report.split(needle).length - 1; }
+
+    /* the letterhead is FIRST, before the draft banner */
+    ok(report.indexOf(LH.practice) === 0, 'the practice letterhead is not the first thing on the report');
+    ok(report.indexOf(LH.practice) < report.indexOf('MEDICAL-LEGAL / IME WORKSPACE DRAFT'),
+      'the letterhead does not precede the draft banner');
+    eq(count(LH.address), 1, 'the practice address appears ' + count(LH.address) + ' times, not once');
+    eq(count(LH.phone), 1, 'the practice phone appears ' + count(LH.phone) + ' times, not once');
+    eq(count(LH.email), 1, 'the letterhead email appears ' + count(LH.email) + ' times, not once');
+    eq(count('NPI ' + LH.npi), 1, 'the NPI appears ' + count('NPI ' + LH.npi) + ' times, not once');
+    /* provider + credentials print twice BY DESIGN: masthead and signature */
+    eq(count(LH.provider + ', ' + LH.cred), 2,
+      'the provider name and credentials must appear exactly twice - the masthead and the signature line');
+    eq(count(LH.practice), 2, 'the practice name must appear exactly twice - the masthead and the signature block');
+    eq(count('signup-account-display-name'), 0,
+      'the login/account display name reached a medical-legal document');
+
+    /* the certainty standard, stated exactly once by the local attestation */
+    eq(count(r.api.certaintyStandard), 1,
+      'the certainty standard appears ' + count(r.api.certaintyStandard) + ' times, not exactly once');
+    eq(r.api.certaintyStandard, 'to a reasonable degree of medical certainty', 'the certainty standard drifted');
+    ok(/^XV\. ATTESTATION$/m.test(report), 'the report has no attestation section');
+    eq(count('Signature: ______'), 1, 'the report does not carry exactly one signature line');
+    ok(/subject to revision if additional/.test(report),
+      'the attestation does not say the opinions may change if more records arrive');
+    ok(/rest solely on the records reviewed and the examination documented above/.test(report),
+      'the attestation does not say what the opinions rest on');
+    ok(/UNSIGNED DRAFT/.test(report), 'the attestation lost the unsigned-draft framing');
+
+    /* the OPINIONS prompt demands the standard AND a per-opinion basis */
+    const opinionCall = r.pendingAi[13];
+    ok(/XIV\. OPINIONS/.test(opinionCall.sys), 'the 14th AI call is not the OPINIONS section');
+    ok(opinionCall.sys.includes('to a reasonable degree of medical certainty'),
+      'the OPINIONS prompt does not require the certainty standard');
+    ok(/"Basis:"/.test(opinionCall.sys), 'the OPINIONS prompt does not require a one-line basis per opinion');
+    ok(/Undeterminable on the record reviewed/.test(opinionCall.sys),
+      'the OPINIONS prompt does not force an undeterminable verdict instead of an unsupported opinion');
+    ok(/Never state a certainty for a fact that is bracketed or undocumented/.test(opinionCall.sys),
+      'the OPINIONS prompt does not forbid certainty over undocumented facts');
+
+    /* every export path reads this exact string */
+    eq(r.api.letterheadBlock().split('\n')[0], LH.practice, 'the exported letterhead block does not lead with the practice');
+    ok(r.api.attestationBlock().includes(r.api.certaintyStandard), 'the exported attestation lost the certainty standard');
+    /* and the export the doctor actually presses carries it verbatim */
+    const copied = [];
+    r.window.navigator.clipboard.writeText = value => { copied.push(String(value)); return Promise.resolve(); };
+    r.ids.mlsP1LegalDraftCopy.listeners.click();
+    await flush();
+    eq(copied.length, 1, 'Copy did not export the draft');
+    eq(copied[0], report, 'the exported draft is not the report the clinician saw');
+    eq(copied[0].split(r.api.certaintyStandard).length - 1, 1,
+      'the exported draft does not state the certainty standard exactly once');
+    ok(copied[0].indexOf(LH.practice) === 0, 'the exported draft does not lead with the practice letterhead');
+  }
+
+  /* An UNSET letterhead is stated as unset - never blank, never invented. */
+  {
+    const r = makeRuntime(); installUi(r); r.api.open();
+    const block = r.api.letterheadBlock();
+    ok(/\[The practice name is not configured/.test(block), 'an unset practice name printed as a blank line');
+    ok(/\[The evaluating provider name is not configured/.test(block), 'an unset provider printed as a blank line');
+    ok(/\[The practice address is not configured/.test(block), 'an unset address printed as a blank line');
+    ok(!/undefined|null/.test(block), 'the unset letterhead leaked a JS placeholder value');
+    const lh = r.api.letterhead();
+    deep({ practice: lh.practice, provider: lh.provider, npi: lh.npi }, { practice: '', provider: '', npi: '' },
+      'an unset letterhead invented values');
+  }
+
+  /* p1-legal-letterhead-1.0.0 is a delimited block so promotion is a copy. */
+  {
+    const a = source.indexOf('/* ===== p1-legal-letterhead-1.0.0 =');
+    const b = source.indexOf('/* ===== end p1-legal-letterhead-1.0.0 ===== */');
+    ok(a >= 0 && b > a, 'the p1-legal-letterhead-1.0.0 block is missing or unclosed');
+    ok(source.indexOf('/* ===== p1-legal-letterhead-1.0.0 =', a + 1) < 0,
+      'the p1-legal-letterhead-1.0.0 block appears twice');
+    ok(!/'getName'|getName\s*\(\s*\)\s*[|;)]/.test(source.slice(a, b).replace(/\/\*[\s\S]*?\*\//g, ' ')),
+      'the letterhead falls back to the login/account display name for the clinical provider identity');
   }
 
   /* Static authority boundaries complement execution. */
