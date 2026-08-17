@@ -953,6 +953,50 @@ async function testDeviceNoun() {
   ok(sync.state().status === 'network', 'setup');
 }
 
+/* ---------------------------------------------------------------------------
+ * THE CONTRACT WITH ph3, read out of ph3's own source.
+ * This module hangs a bar inside another module's frame and restates that
+ * module's caret guard. Both are handshakes across a file boundary, and a
+ * handshake nobody asserts is a phantom the day the other side is rewritten:
+ * a renamed frame id would leave this bar mounted nowhere, silently, with the
+ * receive loop never starting and no error anywhere.
+ * -------------------------------------------------------------------------*/
+function testPh3ContractHolds() {
+  const ph3 = stripComments(PH3);
+  const mine = stripComments(extractBlock(P1, '1p-mls-connect.js'));
+
+  const mount = slurpFunction(ph3, 'function mount()');
+  ok(mount.length > 200, 'ph3 mount() could not be located');
+  for (const id of ['mlsPh3', 'mlsPh3Note', 'mlsPh3Body', 'mlsPh3Act']) {
+    ok(mount.indexOf(id) > 0, 'ph3 mount() no longer creates #' + id + ' -- the sync bar would mount nowhere');
+  }
+  /* The sync module names exactly two of them: the frame it lives in and the
+     scroller it sits above. It deliberately does NOT name #mlsPh3Note --
+     insertBefore(#mlsPh3Body) puts it after the sticky message without either
+     module having to know the other's ordering. */
+  for (const id of ['mlsPh3', 'mlsPh3Body']) {
+    ok(mine.indexOf(id) > 0, 'the sync module no longer references #' + id);
+  }
+
+  /* render() must still rewrite ONLY the scroller and the action bar; the day
+     it starts rewriting the frame, a sibling stops being a safe place. */
+  const render = slurpFunction(ph3, 'function render(force)');
+  ok(render.length > 200, 'ph3 render() could not be located');
+  ok(/bodyEl\.innerHTML\s*=/.test(render), 'ph3 render() no longer rewrites its scroller -- re-check the placement');
+  ok(/actEl\.innerHTML\s*=/.test(render), 'ph3 render() no longer rewrites its action bar');
+  ok(!/frameEl\.innerHTML\s*=/.test(render), 'ph3 render() now rewrites the WHOLE FRAME: the sync bar would be erased on every repaint');
+
+  /* the caret ids this module refuses to repaint over are ph3's own */
+  const caret = slurpFunction(ph3, 'function caretIsOurs()');
+  ok(caret.indexOf('mlsPh3Tx') > 0 && caret.indexOf('mlsPh3Find') > 0, 'ph3 caretIsOurs() no longer names those two fields');
+  ok(mine.indexOf('mlsPh3Tx') > 0 && mine.indexOf('mlsPh3Find') > 0, 'the sync module no longer guards ph3 caret fields');
+
+  /* and ph3's own render entry point really is force=true -- which is WHY the
+     guard has to be restated on this side rather than delegated to ph3 */
+  ok(/api\.render\s*=\s*function\s*\(\)\s*\{\s*S\.lastSig\s*=\s*'';\s*render\(true\);\s*\}/.test(ph3),
+    'ph3 api.render() is no longer an unconditional forced repaint -- re-check whether the external caret guard is still needed');
+}
+
 /* ===========================================================================
  * PART 3 -- THE LANES
  * =========================================================================*/
@@ -1052,6 +1096,7 @@ function testShellsUntouched() {
   await testLocalSessionIsNotAFailure();
   await testDeviceNoun();
 
+  testPh3ContractHolds();
   testEveryLaneLoadsThePhoneApp();
   testDerivationCarriesTheBlock();
   testShellsUntouched();
