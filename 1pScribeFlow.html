@@ -37975,27 +37975,17 @@ html[data-msl="guided"] #calendarView .card.cx-agenda > p.mini,
 html[data-msl="calm"] #mlsT3Roster .t3r-cap:not(.t3r-census),
 html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !important; }
 
-/* ---- The guided next step ------------------------------------------
-   Exactly ONE element carries .msl-next at a time. This is deliberate: in
-   this app every existing infinite pulse means "a recorder or recognizer is
-   LIVE", so a decorative blink would collide with a clinical signal. This is
-   a soft standing ring, not a blink, and it is bounded to one target. */
-.msl-next{ position:relative; }
-.msl-next::after{
-  content:''; position:absolute; inset:-4px; border-radius:inherit; pointer-events:none;
-  box-shadow:0 0 0 2px var(--brand), 0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent);
-  animation:mslNextRing 2.4s var(--mls-ease-inout,ease-in-out) infinite;
-}
-@keyframes mslNextRing{
-  0%,100%{ opacity:.45; }
-  50%    { opacity:1; }
-}
-/* The shell's blanket reduce-motion rule at :2684 already neutralizes the
-   animation. This makes the still state deliberate rather than incidental:
-   the ring stays fully visible, so the guidance survives without motion. */
-@media (prefers-reduced-motion: reduce){
-  .msl-next::after{ animation:none !important; opacity:1 !important; }
-}
+/* ---- The guided next step: RETIRED, absorbed by nextglow-1.0.0 ------
+   This block used to own a soft ring that lit only in guided mode. The owner's
+   2026-08-17 order ("FOR EVERY SINGLE SYSTEM THE MOST LIKELY NEXT BUTTON TO
+   MOVE ALONG THE PATH SHOULD BE GLOWING") needs it in EVERY mode, on every
+   state and every dialog, so it moved to nextglow-1.0.0 and there is now
+   exactly ONE owner of the glow.
+
+   The .msl-next stylesheet is deliberately GONE rather than left inert: two
+   stylesheets both able to draw a ring is precisely how the stale-ring defect
+   this block once fixed comes back. markNext() below now delegates, and a test
+   asserts .msl-next never appears on any element. */
 
 /* ---- The mode chip, top right ---------------------------------------
    Owner: "a dad mode where you click it". Until now the only way in was a
@@ -38377,35 +38367,27 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     return null;
   }
+  /* THE GLOW MOVED OUT. nextglow-1.0.0 owns it now — every mode, every state,
+     every dialog — so this is a delegation and not a second opinion. It also
+     sweeps any .msl-next a hot reload of an older build may have left behind,
+     because two owners of one ring is the defect this function used to fix.
+     NEXT_STEPS / NEXT_OVERLAYS survive ONLY as the observer list below: those
+     containers are still exactly the nodes whose display changes mean "the
+     screen changed", which is when the folds must be re-applied. */
   function markNext(mode) {
-    /* querySelectorAll, not querySelector: one stale ring left behind on a
-       hidden node is exactly how this ended up lit on seven screens at once. */
-    var prev = document.querySelectorAll('.msl-next'), p;
-    for (p = 0; p < prev.length; p++) prev[p].classList.remove('msl-next');
-    if (mode !== 'guided') return '';
-
-    var i, host, target;
-    for (i = 0; i < NEXT_OVERLAYS.length; i++) {
-      host = document.getElementById(NEXT_OVERLAYS[i][0]);
-      if (!host || !host.classList.contains('show') || !shown(host)) continue;
-      target = firstEligible(host, NEXT_OVERLAYS[i][1]);
-      if (target) { target.classList.add('msl-next'); return NEXT_OVERLAYS[i][0]; }
-      return NEXT_OVERLAYS[i][0];
-    }
-    for (i = 0; i < NEXT_STEPS.length; i++) {
-      host = document.getElementById(NEXT_STEPS[i][0]);
-      if (!host || !shown(host)) continue;                  /* not the shown view */
-      target = firstEligible(host, NEXT_STEPS[i][1]);
-      if (target) { target.classList.add('msl-next'); return NEXT_STEPS[i][0]; }
-      return NEXT_STEPS[i][0];   /* this IS the shown view; nothing actionable */
-    }
+    var stale = document.querySelectorAll('.msl-next'), p;
+    for (p = 0; p < stale.length; p++) stale[p].classList.remove('msl-next');
+    try { if (window.__mlsNextGlow) window.__mlsNextGlow.refresh(); } catch (e) {}
     return '';
   }
-  /* Public, so a test can ask what the ring believes rather than infer it. */
+  /* Public, so a test can ask what the glow believes rather than infer it.
+     Kept at this name because callers and suites already use it; the answer now
+     comes from the one owner. */
   function nextStepReport() {
-    var lit = document.querySelectorAll('.msl-next'), out = [], k;
-    for (k = 0; k < lit.length; k++) out.push({ id: lit[k].id || '', visible: shown(lit[k]) });
-    return { mode: document.documentElement.getAttribute('data-msl') || 'calm', lit: out };
+    var mode = document.documentElement.getAttribute('data-msl') || 'calm';
+    var ng = null;
+    try { ng = window.__mlsNextGlow ? window.__mlsNextGlow.report() : null; } catch (e) { ng = null; }
+    return { mode: mode, owner: 'nextglow-1.0.0', lit: ng ? ng.lit : [], glow: ng };
   }
 
   var queued = false, lateTimer = 0;
@@ -42370,5 +42352,632 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 })();
 </script>
 <!-- ===== end visitowner-1.0.0 ========================================= -->
+<!-- ===== nextglow-1.0.0 — one glowing next step, everywhere =============
+     OWNER, 2026-08-17 (his caps): "THAT'S A BIG PROBLEM WITH THIS PROGRAM — A
+     WHERE-TO-GO-NEXT INDICATOR OR WHERE THINGS ARE. FOR EVERY SINGLE SYSTEM THE
+     MOST LIKELY NEXT BUTTON TO MOVE ALONG THE PATH SHOULD BE GLOWING."
+
+     WHAT THIS REPLACES. msl-1.0.0 already had a guided ring, and it was not
+     enough on three counts, each measured:
+       1. It only lit in "guided" mode. Normal is the DEFAULT, so on the screen
+          a doctor actually looks at, nothing glowed at all.
+       2. It was a 2px halo at 45-100% opacity — the owner's word for it was
+          "too subtle", and the app's own primary buttons already carry a
+          10px-30px coloured shadow, so the ring was quieter than the furniture
+          around it.
+       3. It covered 11 view containers and 2 dialogs. It knew nothing about
+          STATE: the Visit room lit the same control whether the doctor had no
+          patient, was recording, or had a finished note on screen.
+
+     SO THERE IS EXACTLY ONE OWNER OF THE GLOW. msl-1.0.0's markNext() now
+     delegates here and its .msl-next stylesheet is gone; nothing else in the
+     app adds the attribute. A test asserts .msl-next never appears.
+
+     THREE THINGS MAKE IT UNMISSABLE WITHOUT LYING:
+       (a) A REAL PULSE. A 3px ring, a 9px wash and a 26px bloom, pulsing
+           opacity 0.55->1 with a 2.2% scale. prefers-reduced-motion stills it
+           at full strength rather than hiding it.
+       (b) A "Next" TAG. Not a pseudo-element and not a child node — ONE fixed
+           element, #mlsNgTag, positioned from the target's measured rect.
+           WHY NOT ::before: several candidates already own ::before (the mode
+           chip's checkmark) and replacing it would delete a real affordance.
+           WHY NOT A CHILD NODE: this app reads button TEXT to decide state —
+           recordingNow() is /recording|stop/i on #captureBtn.textContent — so
+           injecting the word "Next" into a control could flip a state machine.
+           Measured, not assumed: the tag is a sibling of nothing and touches
+           no control's textContent.
+       (c) A REASON, when the natural next step is blocked. If the step the
+           path says comes next is disabled, the glow moves to the control that
+           UNBLOCKS it and the tag says why in one line. The glow is never on a
+           disabled or hidden control — that is asserted per room per state.
+
+     THE PATH TABLE IS DECLARATIVE AND LIVES IN ONE PLACE (PATHS below), so a
+     room's next step is data, not code, and a test can walk the same table.
+
+     IT NEVER GLOWS SOMETHING DESTRUCTIVE. Candidates are the forward step; no
+     entry names a delete, a clear, a stop or a sign-out. -->
+<style id="mlsNextGlowCss">
+/* The halo. ::after on the control itself is the mechanism msl-1.0.0 already
+   proved safe on these targets; only its strength changes. It carries no
+   background, so it can never cover a label. */
+[data-mls-next="1"]{ position:relative; }
+[data-mls-next="1"]::after{
+  content:''; position:absolute; inset:-5px; border-radius:inherit; pointer-events:none;
+  box-shadow:
+    0 0 0 3px var(--mls-ng-ring, #2E6A4B),
+    0 0 0 9px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 26%, transparent),
+    0 0 26px 5px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 45%, transparent);
+  animation:mlsNgPulse 2.2s var(--mls-ease-inout, ease-in-out) infinite;
+}
+/* color-mix is not universal; the fallback ring is a plain rgba so an older
+   engine still shows a real halo rather than nothing. */
+@supports not (color: color-mix(in srgb, red 50%, transparent)){
+  [data-mls-next="1"]::after{
+    box-shadow:0 0 0 3px #2E6A4B, 0 0 0 9px rgba(46,106,75,.26), 0 0 26px 5px rgba(46,106,75,.45);
+  }
+}
+@keyframes mlsNgPulse{
+  0%,100%{ opacity:.55; transform:scale(1); }
+  50%    { opacity:1;   transform:scale(1.022); }
+}
+/* The shell's blanket reduce-motion rule kills the animation; this makes the
+   still state DELIBERATE — full strength, so the guidance survives without
+   motion instead of fading to nothing. */
+@media (prefers-reduced-motion: reduce){
+  [data-mls-next="1"]::after{ animation:none !important; opacity:1 !important; transform:none !important; }
+}
+/* A control inside a scroll container clips its own outline; the halo is drawn
+   with box-shadow precisely so it is not clipped by overflow on the CONTROL,
+   but an ancestor with overflow:hidden still can. Nothing to do about that in
+   CSS, so the tag (which is fixed) carries the message in that case. */
+
+#mlsNgTag{
+  position:fixed; z-index:9460; pointer-events:none;
+  display:none; align-items:center; gap:6px;
+  max-width:min(300px, 72vw);
+  padding:4px 9px; border-radius:var(--r-pill,999px);
+  font:800 11px/1.25 var(--sans, system-ui, sans-serif); letter-spacing:.03em;
+  color:#fff; background:var(--mls-ng-ring, #2E6A4B);
+  box-shadow:0 3px 10px rgba(20,33,28,.28);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#mlsNgTag[data-shown="1"]{ display:inline-flex; }
+#mlsNgTag .mlsNgWhy{
+  font-weight:600; letter-spacing:0; opacity:.92;
+  white-space:normal; max-width:210px;
+}
+@media print{ #mlsNgTag{ display:none !important; } }
+</style>
+<script>
+/* nextglow-1.0.0 controller. */
+(function () {
+  'use strict';
+  if (window.__mlsNextGlow) return;
+
+  var VERSION = 'nextglow-1.0.0';
+  var ATTR = 'data-mls-next';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function q(sel, root) {
+    return safe(function () { return (root || document).querySelector(sel); }, null);
+  }
+  function txt(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function trimmed(v) { var s = txt(v); return s.trim ? s.trim() : s; }
+
+  /* Visible means it occupies real space AND is not display:none / hidden /
+     fully transparent. offsetParent is NOT usable: it is null for every
+     position:fixed element, which silently disqualified the dock, the chips and
+     every modal in the ring this block replaces. */
+  function shown(e) {
+    if (!e) return false;
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    if (!r || r.width <= 0 || r.height <= 0) return false;
+    var cs = safe(function () { return getComputedStyle(e); }, null);
+    if (!cs) return false;
+    return !(cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0');
+  }
+  function enabled(e) {
+    if (!e) return false;
+    if (e.disabled === true) return false;
+    if (e.getAttribute && e.getAttribute('aria-disabled') === 'true') return false;
+    return true;
+  }
+  function eligible(e) { return !!(e && enabled(e) && shown(e)); }
+  /* Present but refusing: the case that earns an "unblock" hop. */
+  function blocked(e) { return !!(e && shown(e) && !enabled(e)); }
+
+  /* ---------------- state readers -------------------------------------
+     Every one of these reads the APP's own signal rather than a private
+     mirror, so the glow cannot disagree with the screen. */
+
+  function valueOf(id) { var e = el(id); return e ? trimmed(e.value) : ''; }
+  function recording() {
+    if (safe(function () { return document.body.classList.contains('mls-recording'); }, false)) return true;
+    var cb = el('captureBtn');
+    if (!cb) return false;
+    if (safe(function () { return cb.classList.contains('recording'); }, false)) return true;
+    /* the same fallback the flow lane uses, so the two can never disagree */
+    return /recording|stop visit|stop recording/i.test(txt(cb.textContent));
+  }
+  function hasTranscript() { return !!(valueOf('transcript') || valueOf('ez3flTranscript')); }
+  function hasNote() { return !!(valueOf('noteBox') || valueOf('ez3flNote')); }
+  function noteSigned() {
+    var b = el('statusBadge');
+    return !!(b && /signed/i.test(txt(b.textContent)));
+  }
+  function activePatientId() {
+    return safe(function () {
+      return typeof window.getActivePtId === 'function' ? txt(window.getActivePtId()) : '';
+    }, '');
+  }
+  function patientChosen() {
+    /* The DELIBERATE act, not the leftover: uns('activePt') lives in
+       localStorage and survives the night, so a restored id is not a choice.
+       visitowner-1.0.0 owns the clearing; this only reads the same signal. */
+    return safe(function () {
+      return typeof window.activePtChosenThisSession === 'function'
+        ? window.activePtChosenThisSession() === true : !!activePatientId();
+    }, false);
+  }
+
+  /* Visit is a five-state machine and the ONLY correct next step depends on
+     which state it is in. Ordered most-specific first. */
+  function visitState() {
+    if (recording()) return 'recording';
+    if (hasNote()) return noteSigned() ? 'signed' : 'drafted';
+    if (hasTranscript()) return 'paused';
+    if (activePatientId()) return 'patient';
+    return 'nopatient';
+  }
+
+  /* ---------------- THE PATH TABLE ------------------------------------
+     One row per room / dialog. Read in order; the first row whose host is on
+     screen owns the glow.
+
+       id     stable name, used by the tests and by report()
+       host   the container that must be visible for this row to own the glow
+       modal  true when the host is a dialog (checked before any view)
+       states ordered list of { when, steps, why }
+                when  optional predicate; the first matching entry wins
+                steps ordered candidate selectors; the first ELIGIBLE one glows
+                why   the one line the tag shows (optional)
+              A step may be { sel, unblock, why }: if `sel` exists but is
+              DISABLED, the glow hops to `unblock` and shows `why`.
+
+     A room with no honest single next step is deliberately ABSENT: guessing
+     teaches the doctor to distrust the glow, which is worse than no glow. */
+  var PATHS = [
+    /* ---- dialogs and takeovers, most specific first ------------------ */
+    {
+      id: 'athenaReview', host: '#mlsAthenaUnifiedConfirm', modal: true,
+      states: [
+        { when: function (h) { return eligible(q('#mlsAthenaUnifiedGo', h)); },
+          steps: ['#mlsAthenaUnifiedGo'], why: 'The chart is verified — this sends only this one action' },
+        { when: function (h) { return eligible(q('#mlsAthenaUnifiedFix button', h)); },
+          steps: ['#mlsAthenaUnifiedFix button'], why: 'Clear this before MLS can send' },
+        { steps: ['#mlsAthenaUnifiedRecheck', '#mlsAthenaUnifiedProbe button', '#mlsAthenaUnifiedClose'],
+          why: 'Check Athena again once the chart is open' }
+      ]
+    },
+    {
+      id: 'pullProgress', host: '#mlsPullProgPanel', modal: true,
+      /* ONE control, whose LABEL is the state: the dialog reuses
+         #mlsPullProgHide as "Hide (keep pulling)" while running and rewrites it
+         to "Done" when the run finishes. Glowing the id rather than the label
+         means this row cannot go dark on the transition. "Stop pull" is
+         deliberately never the lit step. */
+      states: [{ steps: ['#mlsPullProgHide'] }]
+    },
+    {
+      id: 'opnotes', host: '#opPrepModal', modal: true,
+      states: [
+        { steps: [
+            { sel: '#opPrepGenAllBtn', unblock: '#oprTabTpls',
+              why: 'Assign a template to each procedure first' },
+            '#opPrepModal .btn-primary', '#oprBack'
+          ] }
+      ]
+    },
+    {
+      id: 'templates', host: '#templatesModal', modal: true,
+      states: [{ steps: ['#tplUploadBtn', '#templatesModal .btn-primary', '#templatesModal .modal-x'] }]
+    },
+    {
+      id: 'settings', host: '#settingsModal', modal: true,
+      states: [
+        { steps: ['#settingsModal .btn-primary', '#settingsModal .modal-x'],
+          why: 'Save what you changed' }
+      ]
+    },
+    {
+      id: 'legal', host: '#legalModal,#legalFillModal,#mlsLegalRoom', modal: true,
+      /* SCAFFOLD. The legal/IME lane owns 1p-feat_mls_legalpack.js and is
+         still naming its states; these are its CURRENT controls, and the row
+         degrades to the dialog's own primary if none of them exist, so it can
+         never point at nothing. The lane hands its state names over and this
+         row grows a `states` list per state — no other file changes. */
+      states: [{ steps: ['#legalGenBtn', '#legalFillGo', '#legalModal .btn-primary', '#legalFillModal .btn-primary'] }]
+    },
+    {
+      id: 'setup', host: '#setupModal', modal: true,
+      states: [{ steps: ['#setupModal .btn-primary', '#setupModal .modal-x'] }]
+    },
+    {
+      id: 'countersign', host: '#countersignModal', modal: true,
+      states: [{ steps: ['#countersignModal .btn-primary', '#countersignModal .modal-x'] }]
+    },
+    {
+      id: 'patientDetail', host: '#patientModal', modal: true,
+      states: [{ steps: ['#patientModal .btn-primary', '#patientModal .modal-x'] }]
+    },
+
+    /* ---- sign-in, before any view: the app screen is not up yet ------- */
+    {
+      id: 'signin', host: '#authScreen',
+      states: [
+        { when: function () { return !trimmed(valueOf('authEmail')); },
+          steps: ['#authEmail'], why: 'Your email' },
+        { when: function () { return !trimmed(valueOf('authPass')); },
+          steps: ['#authPass'], why: 'Your password' },
+        { steps: ['#authBtn'] }
+      ]
+    },
+
+    /* ---- rooms -------------------------------------------------------- */
+    {
+      id: 'visit', host: '#visitView',
+      states: [
+        /* NO PATIENT. The engine hero reads "Start Recording — <first
+           scheduled name>", which is a shortcut to the NEXT APPOINTMENT and
+           not a chart the doctor picked. Glowing it would teach exactly the
+           habit the owner is complaining about, so the glow goes to the act of
+           choosing. The hero keeps working; it is simply not the lit step. */
+        { when: function () { return visitState() === 'nopatient'; },
+          steps: ['#ez3Choose', '#ez3Change', '#mlsDsPullBtn'],
+          why: 'Pick the patient this visit belongs to' },
+        { when: function () { return visitState() === 'recording'; },
+          steps: ['.ez3fl-recbtn', '#ez3Stop', '#ez3Rec2', '#captureBtn'],
+          why: 'Pause when you are done talking' },
+        { when: function () { return visitState() === 'paused'; },
+          steps: [
+            { sel: '#ez3flGen', unblock: '#ez3flTranscript',
+              why: 'Record or paste some visit text first' },
+            '#ez3Gen', '#genBtn'
+          ],
+          why: 'Write one note from everything captured' },
+        { when: function () { return visitState() === 'drafted'; },
+          steps: ['#ez3flReview', '#mlsReviewSignBtn', '#signNoteBtn', '#ez3Review'],
+          why: 'Read it, then sign' },
+        { when: function () { return visitState() === 'signed'; },
+          steps: ['#pushAllEmrBtn', '#mlsAthenaSendBtn', '#ez3Send'],
+          why: 'Nothing is sent until you confirm' },
+        /* patient chosen, nothing captured yet */
+        { steps: ['#ez3Rec', '#ez3Next', '.ez3fl-recbtn', '#captureBtn'],
+          why: 'Just talk — MLS writes the note' }
+      ]
+    },
+    {
+      id: 'calendar', host: '#calendarView',
+      states: [
+        { steps: ['#mlsCvNxt_calendar', '#calendarView .cx-todaybtn', '#calendarView .btn-primary'],
+          why: 'Read that day’s appointments from Athena' }
+      ]
+    },
+    {
+      id: 'patients', host: '#patientsView',
+      states: [
+        { when: function () { return !!activePatientId(); },
+          steps: ['#profileCard > h2 button.btn-green', '#ptPullAthenaBtn'],
+          why: 'Start this patient’s visit' },
+        { steps: ['#ptList .pt-item', '#ptSearch', '#ptNewBtn'],
+          why: 'Open the patient you are about to see' }
+      ]
+    },
+    {
+      id: 'history', host: '#historyView',
+      states: [{ steps: ['#mlsCvNxt_history', '#histNewVisitBtn', '#pullChartBtn', '#histSearch'] }]
+    },
+    {
+      id: 'recs', host: '#recsView',
+      states: [{ steps: ['#genRecsBtn', '#recsView .btn-primary'] }]
+    },
+    /* studioView BEFORE analysisView, deliberately: feat_mls_studio_merge.js
+       hoists #analysisView INSIDE #studioView, so on AI Studio both containers
+       are shown and the first match wins. */
+    {
+      id: 'studio', host: '#studioView',
+      states: [{ steps: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'] }]
+    },
+    {
+      id: 'analysis', host: '#analysisView',
+      states: [{ steps: ['#t7AxRefresh', '#anaBaselineRefresh', '#anaOutcomesRefresh',
+        '#analysisView .btn-primary', '#analysisView button'] }]
+    },
+    {
+      id: 'orders', host: '#ordersView',
+      states: [{ steps: ['#ordersView .btn-primary', '#ordersView button'] }]
+    },
+    {
+      id: 'intake', host: '#intakeView',
+      states: [{ steps: ['#intakeView .ik-submit', '#intakeView button'] }]
+    },
+    {
+      id: 'staffprep', host: '#mlsStEzPanel,#staffPrepView',
+      states: [{ steps: ['#mlsStMonthStart', '#mlsStMonthResume', '#mlsStEzPanel .btn-primary',
+        '#mlsStEzPanel button'] }]
+    },
+    {
+      id: 'avatar', host: '#mlsAvKiosk,#mlsAvCheckin',
+      states: [{ steps: ['#mlsAvStart', '#mlsAvNext', '#mlsAvKiosk .btn-primary'] }]
+    },
+    {
+      id: 'extension', host: '#mlsExtHealth,#getExtensionView',
+      states: [
+        { steps: ['#mlsExtDownload', '#mlsExtInstall', '#mlsExtVerify', '#mlsExtHealth .btn-primary'] }
+      ]
+    },
+    {
+      id: 'admin', host: '#adminView',
+      states: [{ steps: ['#adminView .btn-primary', '#adminView button'] }]
+    },
+    {
+      id: 'team', host: '#teamView',
+      states: [{ steps: ['#teamView .btn-primary', '#teamView button'] }]
+    },
+    {
+      id: 'legalReq', host: '#legalReqView',
+      states: [{ steps: ['#legalReqView .btn-primary', '#legalReqView button'] }]
+    }
+  ];
+
+  /* ---------------- resolution ---------------------------------------- */
+
+  function hostOf(row) {
+    var sels = row.host.split(',');
+    for (var i = 0; i < sels.length; i++) {
+      var h = q(trimmed(sels[i]));
+      if (!h) continue;
+      if (row.modal) {
+        /* a dialog owns the screen only while it is actually shown */
+        var isShown = safe(function () { return h.classList.contains('show'); }, false);
+        if (!isShown && !shown(h)) continue;
+        if (!shown(h)) continue;
+      } else if (!shown(h)) continue;
+      return h;
+    }
+    return null;
+  }
+
+  /* Resolve one step definition to { el, why } or null. */
+  function resolveStep(step, host, rowWhy) {
+    var sel = (typeof step === 'string') ? step : step.sel;
+    var e = q(sel, host) || q(sel);
+    if (eligible(e)) return { el: e, why: (typeof step === 'string') ? rowWhy : (step.reason || rowWhy) };
+    /* THE UNBLOCK HOP. The step exists and is on screen but refuses, so glow
+       what makes it possible and say so. Never glow the refusing control. */
+    if (typeof step !== 'string' && step.unblock && blocked(e)) {
+      var u = q(step.unblock, host) || q(step.unblock);
+      if (eligible(u)) return { el: u, why: step.why || rowWhy };
+    }
+    return null;
+  }
+
+  function pick() {
+    for (var i = 0; i < PATHS.length; i++) {
+      var row = PATHS[i];
+      var host = hostOf(row);
+      if (!host) continue;
+      for (var s = 0; s < row.states.length; s++) {
+        var st = row.states[s];
+        if (typeof st.when === 'function' && !safe(function () { return st.when(host); }, false)) continue;
+        for (var k = 0; k < st.steps.length; k++) {
+          var hit = resolveStep(st.steps[k], host, st.why);
+          if (hit) return { room: row.id, state: s, el: hit.el, why: hit.why || '' };
+        }
+        /* this state matched and produced nothing actionable: fall through to
+           the row's later, less specific states rather than leaving the room
+           dark — the measured failure of the ring this replaces */
+      }
+      /* the room is on screen and has no eligible step at all. Do NOT fall
+         through to a room behind it: that is how a stale ring ends up on a
+         hidden control. */
+      return { room: row.id, state: -1, el: null, why: '' };
+    }
+    return { room: '', state: -1, el: null, why: '' };
+  }
+
+  /* ---------------- the tag ------------------------------------------- */
+
+  var _tag = null;
+  function tag() {
+    if (_tag && _tag.isConnected) return _tag;
+    if (!document.body) return null;
+    var t = el('mlsNgTag');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'mlsNgTag';
+      t.setAttribute('aria-hidden', 'true');   /* the halo is the affordance; the
+                                                  tag is decoration for sighted
+                                                  users and must not be read
+                                                  twice by a screen reader */
+      document.body.appendChild(t);
+    }
+    _tag = t;
+    return t;
+  }
+  function paintTag(target, why) {
+    var t = tag();
+    if (!t) return;
+    if (!target) { t.removeAttribute('data-shown'); return; }
+    var r = safe(function () { return target.getBoundingClientRect(); }, null);
+    if (!r) { t.removeAttribute('data-shown'); return; }
+    t.textContent = '';
+    var lead = document.createElement('span');
+    lead.textContent = 'NEXT';
+    t.appendChild(lead);
+    if (why) {
+      var w = document.createElement('span');
+      w.className = 'mlsNgWhy';
+      w.textContent = why;
+      t.appendChild(w);
+    }
+    t.setAttribute('data-shown', '1');
+    /* Measure AFTER the text is in, or the clamp uses last frame's width. */
+    var tr = safe(function () { return t.getBoundingClientRect(); }, null) || { width: 60, height: 20 };
+    var top = r.top - tr.height - 6;
+    var left = r.left;
+    /* Above the control by default; below it when there is no room above, so
+       the tag never leaves the viewport. */
+    if (top < 4) top = Math.min(r.bottom + 6, innerHeight - tr.height - 4);
+    if (left + tr.width > innerWidth - 6) left = innerWidth - tr.width - 6;
+    if (left < 6) left = 6;
+    t.style.top = Math.round(top) + 'px';
+    t.style.left = Math.round(left) + 'px';
+  }
+
+  /* ---------------- marking ------------------------------------------- */
+
+  var _last = { room: '', id: '', why: '' };
+
+  function clearAll() {
+    var prev = safe(function () { return document.querySelectorAll('[' + ATTR + ']'); }, []);
+    for (var i = 0; i < prev.length; i++) safe(function () { prev[i].removeAttribute(ATTR); });
+    /* msl-1.0.0's class is retired; sweep any that a hot reload left behind so
+       there is provably ONE owner of the glow. */
+    var stale = safe(function () { return document.querySelectorAll('.msl-next'); }, []);
+    for (var j = 0; j < stale.length; j++) safe(function () { stale[j].classList.remove('msl-next'); });
+  }
+
+  function mark() {
+    var hit = pick();
+    clearAll();
+    if (hit.el) {
+      safe(function () { hit.el.setAttribute(ATTR, '1'); });
+      paintTag(hit.el, hit.why);
+    } else {
+      paintTag(null, '');
+    }
+    _last = { room: hit.room, id: (hit.el && hit.el.id) || '', why: hit.why || '' };
+    return _last;
+  }
+
+  /* ---------------- scheduling ---------------------------------------- */
+  /* setTimeout, never requestAnimationFrame: rAF does not fire in a tab that is
+     not compositing, so a doctor returning to a backgrounded tab would find the
+     glow frozen on whatever the app was doing when it was hidden. */
+  var queued = false, lateTimer = 0;
+  function refresh() {
+    if (queued) return;
+    queued = true;
+    setTimeout(function () {
+      queued = false;
+      safe(mark);
+      /* ONE bounded second look. A view container's display flips BEFORE the
+         module that fills it has painted, so the first pass can settle for a
+         weaker candidate. Not a poll: exactly one follow-up per refresh. */
+      if (lateTimer) clearTimeout(lateTimer);
+      lateTimer = setTimeout(function () { lateTimer = 0; safe(mark); }, 420);
+    }, 0);
+  }
+
+  function watch() {
+    /* showView() switches a view by writing .style.display on its container, so
+       that attribute IS the view-change signal — no hook into shared code, and
+       a programmatic caller (the Copilot, a deep link, the calendar peek)
+       cannot bypass it. */
+    for (var i = 0; i < PATHS.length; i++) {
+      var sels = PATHS[i].host.split(',');
+      for (var s = 0; s < sels.length; s++) {
+        var h = q(trimmed(sels[s]));
+        if (!h || h.__mlsNgWatched) continue;
+        h.__mlsNgWatched = true;
+        safe(function () {
+          new MutationObserver(refresh).observe(h, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+        });
+      }
+    }
+    if (watch.__events) return;
+    watch.__events = 1;
+    ['mls:view-changed', 'mls:ui-ready', 'mls:active-patient-changed'].forEach(function (n) {
+      safe(function () { window.addEventListener(n, refresh, false); });
+    });
+    ['click', 'input', 'change'].forEach(function (n) {
+      safe(function () { document.addEventListener(n, refresh, true); });
+    });
+    ['resize', 'orientationchange'].forEach(function (n) {
+      safe(function () { window.addEventListener(n, refresh, false); });
+    });
+    /* The tag is fixed and the control is not, so a scroll moves them apart.
+       Repositioning only (no re-pick), passive, so it cannot cost a frame. */
+    safe(function () {
+      window.addEventListener('scroll', function () {
+        var t = el('mlsNgTag');
+        if (!t || t.getAttribute('data-shown') !== '1') return;
+        var cur = q('[' + ATTR + '="1"]');
+        if (cur) paintTag(cur, _last.why); else paintTag(null, '');
+      }, true);
+    });
+    /* The body is rebuilt constantly by the shared modules. One observer on
+       body/childList (no subtree) is cheap and catches a room being swapped. */
+    safe(function () {
+      new MutationObserver(refresh).observe(document.body, { childList: true });
+    });
+    /* A slow re-arm for containers that do not exist yet at boot (the op-note
+       room, the Athena sheet, the pull dialog). Bounded: 20 passes, then it
+       stops and lives on events alone. */
+    var n = 0;
+    var iv = setInterval(function () {
+      watch();
+      refresh();
+      if (++n > 20) clearInterval(iv);
+    }, 900);
+  }
+
+  window.__mlsNextGlow = {
+    version: VERSION,
+    refresh: refresh,
+    /* What the glow BELIEVES, so a test can ask rather than infer. */
+    report: function () {
+      var lit = safe(function () { return document.querySelectorAll('[' + ATTR + '="1"]'); }, []);
+      var out = [];
+      for (var i = 0; i < lit.length; i++) {
+        out.push({
+          id: lit[i].id || '',
+          cls: txt(lit[i].className).slice(0, 40),
+          visible: shown(lit[i]),
+          enabled: enabled(lit[i]),
+          text: trimmed(txt(lit[i].textContent)).replace(/\s+/g, ' ').slice(0, 44)
+        });
+      }
+      var t = el('mlsNgTag');
+      return {
+        room: _last.room, expectedId: _last.id, why: _last.why,
+        lit: out, count: out.length,
+        stale: safe(function () { return document.querySelectorAll('.msl-next').length; }, 0),
+        tagShown: !!(t && t.getAttribute('data-shown') === '1'),
+        tagText: t ? trimmed(txt(t.textContent)) : ''
+      };
+    },
+    /* The table itself, so a test walks the SAME data the runtime does rather
+       than a second copy that can drift. */
+    paths: PATHS,
+    visitState: visitState,
+    revert: function () {
+      clearAll();
+      var t = el('mlsNgTag');
+      if (t && t.parentNode) t.parentNode.removeChild(t);
+      var css = el('mlsNextGlowCss');
+      if (css && css.parentNode) css.parentNode.removeChild(css);
+      return true;
+    }
+  };
+
+  function boot() { watch(); refresh(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end nextglow-1.0.0 ============================================ -->
 </body>
 </html>
