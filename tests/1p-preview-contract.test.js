@@ -25,7 +25,7 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    This constant freezes 1p against a PRODUCTION train, which is why a 1p train
    is the only thing allowed to move it, and why the production and extension
    baselines below are deliberately NOT moved by it. */
-const P1_BASE_COMMIT = '4c26fa1c73aec4343d8f2e8b5851255ac540ce1c';
+const P1_BASE_COMMIT = '4bc880035a97c56b957df6805aba239320f5af2e';
 const EXTENSION_BASE_COMMIT = 'a1903ff12128d36acaa615f43bb394f6b14c5e20';
 const PRODUCTION_BASE_COMMIT = 'd038c1ce20e70fe57895af2a6ceec5be9f7d0c58';
 
