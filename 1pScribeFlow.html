@@ -14912,7 +14912,7 @@ function _acctNowMinutes(){ var p=_acctNowParts(new Date()); return p.hour*60+p.
  *      _fmtApptTime/_apptMinsTz/_apptHHMMTz/_calDateOf hooks.
  *   2. this shell parsed the same string with `new Date(s)`, which ES2015+
  *      reads as BROWSER-local — so the answer changed with the laptop.
- *   3. this lane's bundle startIso() built the instant the same browser-local
+ *   3. 1p-mls-connect.js's startIso() built the instant the same browser-local
  *      way and then persisted it with .toISOString() — a wrong UTC instant
  *      written to the server, not just a wrong label.
  *
@@ -14935,7 +14935,7 @@ function _acctNowMinutes(){ var p=_acctNowParts(new Date()); return p.hour*60+p.
  * its teardown restore path (feat_mls_assistant_exact.js:1313) inert. Because
  * it can no longer install _calDateOf either, this block installs that fourth
  * hook with the module's own semantics on the one rule, stamped __prf so
- * this lane's bundle installF1 wrapper leaves it exactly as alone as it does
+ * 1p-mls-connect.js's installF1 wrapper leaves it exactly as alone as it does
  * today.
  */
 var _apptClockNaive=/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/;

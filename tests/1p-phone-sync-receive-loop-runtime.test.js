@@ -1122,14 +1122,17 @@ function testDerivationCarriesTheBlock() {
   }
   ok(mine.indexOf('__MLS_P1_PREVIEW') < 0, 'the block is gated on the /1p marker and would arm nothing in /cloned');
 
-  /* The lane's own hygiene, reported rather than owned: if OTHER /1p bytes
-     still name the lane, the derivation refuses and /cloned receives nothing
-     at all -- including this. Surface it by name instead of letting it hide
-     behind a suite that only ever looks at cloned/*. */
+  /* Reported, never owned. If OTHER /1p bytes still name the lane, the
+     derivation REFUSES and /cloned receives nothing at all -- including this.
+     On this branch two shell comments do (they name the bundle by file name);
+     origin/main 469607c9 already fixed it inside the derive script itself, so
+     the cure is a rebase, not an edit here. Surfaced by name rather than left
+     to hide behind a suite that only ever looks at cloned/*. */
   const survivors = derive.survivors(built.files);
   if (survivors.length) {
-    console.log('  NOTE: /cloned cannot currently be re-derived; ' + survivors.length +
-      ' lane token(s) survive:\n    ' + survivors.join('\n    '));
+    console.log('  NOTE: /cloned cannot be re-derived from THIS branch; ' + survivors.length +
+      ' lane token(s) survive (fixed on origin/main 469607c9 -- rebase, do not edit):\n    ' +
+      survivors.join('\n    '));
   }
 }
 
