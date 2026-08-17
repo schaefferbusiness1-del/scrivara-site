@@ -52819,11 +52819,52 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (el && el.parentNode && s.previousSibling !== el) el.parentNode.insertBefore(s, el.nextSibling); } catch (e) {}
     return s;
   }
+  /* cvbar-1.0.0 (owner 2026-08-16): "add the same loading bar you get from the
+     pull from the visit screen and have them both run the same program".
+     They already run the same program - this hero was given the Visit strip's
+     caller contract and enters the same __mlsSI.dayPull. What it lacked was
+     the strip's PROGRESS BAR, so the calendar pull looked like nothing was
+     happening while the identical work ran underneath.
+
+     Same geometry, same gradient, same "N of M" parse, same phase naming as
+     #mlsDsPullBar, deliberately kept as a self-contained copy for the same
+     reason the strip's two painters are: the bar must not vanish because
+     another lane's element was not mounted. */
+  var BAR_ID = 'mlsCvHeroBar';
+  var barStartedAt = 0;
+  function barEl(anchor) {
+    var b = document.getElementById(BAR_ID);
+    if (!b) {
+      b = document.createElement('div'); b.id = BAR_ID;
+      b.style.cssText = 'flex-basis:100%;height:14px;border-radius:7px;background:#E3ECE7;overflow:hidden;display:none;margin-top:4px;';
+      b.innerHTML = '<div style="height:100%;width:3%;background:linear-gradient(90deg,#2E6A4B,#7A5CC0);color:#fff;font:700 10px/14px system-ui;text-align:center;white-space:nowrap;border-radius:7px;transition:width .4s"></div>';
+    }
+    try { if (anchor && anchor.parentNode && b.previousSibling !== anchor) anchor.parentNode.insertBefore(b, anchor.nextSibling); } catch (e) {}
+    return b;
+  }
+  function paintBar(anchor, msg) {
+    try {
+      var b = barEl(anchor), fill = b.firstElementChild;
+      var mm = String(msg || '').match(/(d+)s+ofs+(d+)/);
+      if (mm && Number(mm[2]) > 0) {
+        var phase = /identity|schedule/i.test(msg) ? 'Schedule' : (/history|encounter|visit/i.test(msg) ? 'History' : 'Working');
+        var pct = Math.max(3, Math.min(100, Math.round((Number(mm[1]) / Number(mm[2])) * 100)));
+        var el2 = barStartedAt ? (' · ' + Math.floor((Date.now() - barStartedAt) / 60000) + 'm ' + Math.floor(((Date.now() - barStartedAt) % 60000) / 1000) + 's') : '';
+        b.style.display = 'block'; fill.style.width = pct + '%';
+        fill.textContent = phase + ' ' + mm[1] + '/' + mm[2] + el2;
+      } else if (b.style.display !== 'block') {
+        b.style.display = 'block'; fill.style.width = '3%'; fill.textContent = 'Starting…';
+      }
+    } catch (e) {}
+  }
+  function hideBar() { try { var b = document.getElementById(BAR_ID); if (b) b.style.display = 'none'; } catch (e) {} }
+
   function paint(el, msg, kind) {
     var s = statusEl(el);
     s.textContent = String(msg || '');
     s.style.display = msg ? 'block' : 'none';
     s.style.color = kind === 'err' ? '#8b2525' : (kind === 'ok' ? '#1c5a3c' : '#33424e');
+    if (msg) paintBar(s, msg); else hideBar();
   }
   function clearDiag() {
     try { var b = document.getElementById(DIAG_ID); if (b && b.parentNode) b.parentNode.removeChild(b); } catch (e) {}
@@ -52918,7 +52959,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var day = targetDay();
     try { el.disabled = true; } catch (e) {}
     paint(el, isAutoRetry ? ('Re-reading ' + day + ' automatically…') : ('Starting the Athena pull for ' + day + '…'), '');
-    var onStatus = function (m) { if (mySerial !== sessionSerial) return; paint(el, String(m || ''), ''); };
+    var onStatus = function (m) { if (mySerial !== sessionSerial) return; if (!barStartedAt) barStartedAt = Date.now(); paint(el, String(m || ''), ''); };
     var dpOpts = { date: day, includeHistory: true, onStatus: onStatus };
     var scope = calendarChipProviderScope();
     if (scope) dpOpts.provider = scope;
