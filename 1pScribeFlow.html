@@ -37625,7 +37625,13 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        Studio lit Analysis's "Refresh" instead of the Copilot's own question
        box. */
     ['studioView',    ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn']],
-    ['analysisView',  ['#t7AxRefresh', '#analysisView .btn-ghost']],
+    /* Analysis needs a LAST RESORT like ordersView/intakeView already have.
+       MEASURED 2026-08-17 in a long run: #t7AxRefresh was absent and
+       .btn-ghost hidden, while four perfectly actionable buttons sat on the
+       screen ("Whole practice", "One provider", ...) - so the ring went dark
+       on a screen full of next steps, which is the one failure mode this
+       table's own comment says to degrade out of rather than accept. */
+    ['analysisView',  ['#t7AxRefresh', '#analysisView .btn-ghost', '#analysisView .btn-primary', '#analysisView button']],
     ['ordersView',    ['#ordersView .btn-primary', '#ordersView button']],
     ['intakeView',    ['#intakeView .ik-submit', '#intakeView button']],
     ['adminView',     ['#adminView .btn-primary', '#adminView button']],
@@ -39352,6 +39358,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   grid-template-columns:minmax(0,1fr) !important;
 }
 
+/* THE FORMATTED VIEW STARTS SHUT ------------------------------------
+   Owner, 2026-08-17: "for the op notes the formatted view should always start
+   hidden and then only expand if you click it."
+
+   feat_mls_opnote_fixpack's live "📄 Formatted view" (.mls-fp-fmt) attaches
+   itself above each note textarea and opens EXPANDED the moment the note is
+   long enough to look structured — so the first thing a doctor saw after a
+   draft landed was the rendered copy rather than the note he is going to edit.
+   The raw note is the thing you work in; the formatted view is a check.
+
+   The attribute is written only by this block, and the module's own Hide/Show
+   button is what changes it (see fmtSync), so there is one state, not two. */
+#opPrepModal .mls-fp-fmt[data-mls-fmt="shut"] .fmt-body{ display:none !important; }
+
 /* THE BOARD. */
 #mlsOpDay{ margin:2px 0 14px; }
 #mlsOpDayHead{
@@ -39689,13 +39709,111 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return S(window._opPrepDay);
   }
 
+  /* ---- 3b. THE FORMATTED VIEW STARTS SHUT ----------------------------
+     Owner, 2026-08-17: "the formatted view should always start hidden and then
+     only expand if you click it."
+
+     EVERY patient and EVERY open, with no remembered-open state: the marker
+     lives on the .mls-fp-fmt node the fixpack builds, and opPrepRender()
+     rebuilds the cards - and therefore those nodes - so a fresh open is a
+     fresh shut. Nothing is stored.
+
+     It drives the module's OWN Hide/Show button rather than fighting it: that
+     button is what flips the module's `entry.hidden`, and a block that set
+     display directly would leave the module believing the pane was open and
+     re-rendering into it. One state, one owner, this block only supplies the
+     first press and records what happened. */
+  function fmtSync() {
+    var modal = el('opPrepModal');
+    if (!modal) return 0;
+    var wraps;
+    try { wraps = modal.querySelectorAll('.mls-fp-fmt'); } catch (e) { return 0; }
+    var i, n = 0;
+    for (i = 0; i < wraps.length; i++) {
+      var w = wraps[i];
+      if (w.getAttribute('data-mls-fmt')) continue;      /* already ours */
+      w.setAttribute('data-mls-fmt', 'shut');
+      var body = w.querySelector('.fmt-body');
+      var btn = w.querySelector('.fmt-bar button');
+      if (body && btn && body.style.display !== 'none') {
+        try { btn.click(); } catch (e2) {}
+      }
+      n++;
+    }
+    return n;
+  }
+  /* The doctor's own click on that button. The module flips its state on the
+     same event, so this reads the result back rather than predicting it. */
+  document.addEventListener('click', function (ev) {
+    if (!ev || !ev.target || !ev.target.closest) return;
+    var btn = ev.target.closest('.mls-fp-fmt .fmt-bar button');
+    if (!btn) return;
+    var w = btn.closest('.mls-fp-fmt'), modal = el('opPrepModal');
+    if (!w || !modal || !modal.contains(w)) return;
+    setTimeout(function () {
+      var body = w.querySelector('.fmt-body');
+      w.setAttribute('data-mls-fmt', (body && body.style.display === 'none') ? 'shut' : 'open');
+    }, 0);
+  }, false);
+
+  /* ---- 3c. ONE PLACE FOR OP-NOTE TEMPLATES ---------------------------
+     Owner, 2026-08-17: "get rid of the duplicate confusing UI in templates of
+     op notes too."
+
+     WHAT IS ACTUALLY DUPLICATED, MEASURED. There is only ONE op-note
+     generator and it is this room: of the eleven controls in the app that
+     reach openOpPrep / opPrepGenerate* / opPrepSave, eight are inside
+     #opPrepModal and the other three (#opPrepSmartBtn and a "Draft op note"
+     on the patient and history cards) are ENTRY POINTS into it, not a second
+     generator - none of them was visible outside the room in the measured
+     state. Deleting an entry point would only strand the doctor.
+
+     The real duplication is the TEMPLATES surface. #templatesModal is ONE
+     node with three buttons pointing at it, and feat_mls_opnote_room.js MOVES
+     that node into #oprPanelTpls the first time the room's Templates tab is
+     used. MEASURED: after that move, pressing "Templates" anywhere else calls
+     openTemplates() and RE-OPENS THE WHOLE FULL-SCREEN OP-NOTE ROOM - the
+     doctor asked for a template library and got the operating list.
+
+     Not a dead end, so nothing is removed: the surface it lands on is real and
+     visible (#tplList visible = true after the hop). What was missing is that
+     the button never said where it was taking him. It says so now, in the
+     app's own words, and the destination is unchanged. */
+  /* THE DESTINATION GOES IN THE VISIBLE LABEL, not in `title`. MEASURED: a
+     title set here reads back as absent - something later in the boot welds
+     accessible names and strips it - and a promise the doctor cannot see is
+     not a promise. The label is also the thing the owner asked for in so many
+     words ("a plain link: op-note templates are managed in Op Notes"). */
+  var TPL_LABEL = '📄 Op-note templates — in Op Notes';
+  var TPL_TITLE = 'Op-note templates live in Op Notes — this opens the Op Notes room on its Templates tab.';
+  function tplLabels() {
+    var modal = el('opPrepModal'), out = 0, btns;
+    try { btns = document.querySelectorAll('button[onclick="openTemplates()"]'); } catch (e) { return 0; }
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      if (modal && modal.contains(b)) continue;          /* the room's own tab keeps its word */
+      if (b.getAttribute('data-mls-tpl') === '1') continue;
+      b.setAttribute('data-mls-tpl', '1');
+      if (!b.__mlsTplLabel) b.__mlsTplLabel = String(b.textContent || '');
+      b.textContent = TPL_LABEL;
+      b.setAttribute('aria-label', TPL_TITLE);
+      b.setAttribute('title', TPL_TITLE);
+      out++;
+    }
+    return out;
+  }
+
   var lastSig = '';
   function paint() {
+    /* These two are true whether or not the room is open: the Templates
+       buttons live on other screens entirely. */
+    tplLabels();
     if (!roomOpen()) return false;
     var host = ensureHost();
     if (!host) return false;
     repairSolo();
     applyFold();
+    fmtSync();
 
     var r = rows(), t = tally(), cur = currentIndex(), i;
     var st = dayState();
@@ -39840,7 +39958,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         open: roomOpen(), level: level(), more: moreOpen,
         board: !!el(BOARD), cards: (el(GRID) || { children: [] }).children.length,
         railFolded: !!(modal && modal.getAttribute('data-mlsopn-rail') === 'folded'),
-        primary: dayState(), tally: tally()
+        primary: dayState(), tally: tally(),
+        formatted: (function () {
+          var out = { total: 0, shut: 0, open: 0, unmarked: 0 };
+          if (!modal) return out;
+          var w = modal.querySelectorAll('.mls-fp-fmt'), i;
+          for (i = 0; i < w.length; i++) {
+            out.total++;
+            var a = w[i].getAttribute('data-mls-fmt');
+            if (a === 'shut') out.shut++;
+            else if (a === 'open') out.open++;
+            else out.unmarked++;
+          }
+          return out;
+        })(),
+        tplButtons: document.querySelectorAll('button[data-mls-tpl="1"]').length
       };
     },
     setMore: function (v) { moreOpen = !!v; paint(); return moreOpen; },
@@ -39855,6 +39987,13 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       }
       var m = el('opPrepModal');
       if (m) { m.removeAttribute('data-mlsopn'); m.removeAttribute('data-mlsopn-rail'); m.removeAttribute('data-mlsopn-more'); }
+      var fmt = document.querySelectorAll('.mls-fp-fmt[data-mls-fmt]');
+      for (i = 0; i < fmt.length; i++) fmt[i].removeAttribute('data-mls-fmt');
+      var tpl = document.querySelectorAll('button[data-mls-tpl="1"]');
+      for (i = 0; i < tpl.length; i++) {
+        if (tpl[i].__mlsTplLabel) tpl[i].textContent = tpl[i].__mlsTplLabel;
+        tpl[i].removeAttribute('data-mls-tpl');
+      }
       lastSig = '';
       return true;
     }

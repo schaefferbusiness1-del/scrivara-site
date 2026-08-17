@@ -937,6 +937,177 @@ async function runtime() {
       await page.evaluate(() => window.__uiContract.seed());
     }
 
+    /* ================================================================
+     * 12b. THE FORMATTED VIEW STARTS HIDDEN
+     * Owner, 2026-08-17: "for the op notes the formatted view should always
+     * start hidden and then only expand if you click it."
+     * feat_mls_opnote_fixpack's .mls-fp-fmt attaches itself above each note
+     * textarea and opens EXPANDED as soon as the note looks structured, so a
+     * finished draft put the rendered copy in front of the note the doctor
+     * edits.
+     * ============================================================== */
+    {
+      await page.evaluate(() => { document.querySelectorAll('.modal-bg.show').forEach((x) => x.classList.remove('show')); });
+      await page.evaluate(() => window.__uiContract.openRoom());
+      await page.waitForTimeout(700);
+      /* a FRESH patient has no note at all, so nothing may be showing */
+      const fresh = await page.evaluate(() => window.__mlsOpDay.status().formatted);
+      eq(fresh.open, 0, `a freshly opened room already shows ${fresh.open} expanded formatted views`);
+
+      /* now generate: this is the moment the pane appears */
+      const after = await page.evaluate(async () => {
+        const rows = window._opPrep || [];
+        const body = ['PROCEDURE PERFORMED:', 'Lumbar medial branch block', '',
+          'INDICATIONS:', 'Chronic low back pain.', '',
+          'TECHNIQUE:', '- The area was prepped and draped.', '- Fluoroscopic guidance was used.',
+          '', 'FINDINGS:', 'Documented.', '', 'DISPOSITION:', 'Stable.'].join('\n');
+        rows.forEach((r) => { r.gen = true; r.note = body; });
+        opPrepRender();
+        await new Promise((r) => setTimeout(r, 1500));
+        window.__mlsOpDay.refresh();
+        await new Promise((r) => setTimeout(r, 600));
+        const st = window.__mlsOpDay.status().formatted;
+        const shown = Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt'))
+          .filter((w) => window.__uiContract.visible(w)).length;
+        const bodiesShown = Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt .fmt-body'))
+          .filter((b) => window.__uiContract.visible(b)).length;
+        return { st, shown, bodiesShown };
+      });
+      ok(after.st.total > 0,
+        `no formatted view was attached at all, so this section proved nothing (${JSON.stringify(after)})`);
+      eq(after.st.unmarked, 0, `${after.st.unmarked} formatted views were never taken in hand`);
+      eq(after.st.open, 0, `after generating, ${after.st.open} formatted views are expanded — they must start hidden`);
+      eq(after.bodiesShown, 0,
+        `after generating, ${after.bodiesShown} formatted-view bodies are on screen before anyone asked for one`);
+
+      /* ... and it expands on a click, on the module's own control */
+      const clicked = await page.evaluate(async () => {
+        const btn = document.querySelector('#opPrepModal .mls-fp-fmt .fmt-bar button');
+        if (!btn) return { why: 'no toggle' };
+        btn.click();
+        await new Promise((r) => setTimeout(r, 250));
+        const w = btn.closest('.mls-fp-fmt');
+        const body = w.querySelector('.fmt-body');
+        const openNow = window.__uiContract.visible(body);
+        btn.click();
+        await new Promise((r) => setTimeout(r, 250));
+        return { attr: w.getAttribute('data-mls-fmt'), openNow, shutAgain: !window.__uiContract.visible(body) };
+      });
+      ok(clicked.openNow, `clicking the formatted view's own control did not expand it: ${JSON.stringify(clicked)}`);
+      ok(clicked.shutAgain, `the formatted view could not be closed again: ${JSON.stringify(clicked)}`);
+      /* a fresh render is a fresh SHUT — no remembered-open state */
+      const reopened = await page.evaluate(async () => {
+        const btn = document.querySelector('#opPrepModal .mls-fp-fmt .fmt-bar button');
+        if (btn) { btn.click(); await new Promise((r) => setTimeout(r, 200)); }
+        window.__uiContract.openRoom();
+        await new Promise((r) => setTimeout(r, 1200));
+        window.__mlsOpDay.refresh();
+        await new Promise((r) => setTimeout(r, 500));
+        return {
+          st: window.__mlsOpDay.status().formatted,
+          bodiesShown: Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt .fmt-body'))
+            .filter((b) => window.__uiContract.visible(b)).length
+        };
+      });
+      eq(reopened.bodiesShown, 0,
+        `re-opening the room left ${reopened.bodiesShown} formatted views expanded — an open state is being remembered across opens`);
+    }
+
+    /* ================================================================
+     * 12c. ONE OP-NOTE SURFACE
+     * Owner, 2026-08-17: "get rid of the duplicate confusing UI in templates
+     * of op notes too."
+     * The premise checked here is the measurable one: op-note GENERATION
+     * belongs to the room and to nothing else, and the Templates buttons
+     * elsewhere say where they go instead of silently hauling the doctor into
+     * the full-screen room.
+     * ============================================================== */
+    {
+      const inv = await page.evaluate(() => {
+        const PAT = /openOpPrep|opPrepGenerateAll|opPrepGenerateOne|opPrepSave|opPrepSetMode|opPrepSetDay/;
+        const out = { generators: [], entryPoints: [] };
+        document.querySelectorAll('button,a[href],[role=button]').forEach((b) => {
+          const oc = String(b.getAttribute('onclick') || '');
+          const id = String(b.id || '');
+          if (!PAT.test(oc) && !/^opPrep|^oprTab|^oprBack/.test(id)) return;
+          const inRoom = !!(b.closest && b.closest('#opPrepModal'));
+          const label = id || (b.textContent || '').trim().slice(0, 24);
+          /* a control that DRAFTS or SAVES is a generator; one that merely
+             opens the room is an entry point and must not be removed */
+          const drafts = /opPrepGenerate|opPrepSave/.test(oc);
+          if (drafts && !inRoom) out.generators.push(label);
+          if (!drafts && !inRoom) out.entryPoints.push({ label, visible: window.__uiContract.visible(b) });
+        });
+        return out;
+      });
+      assert.deepStrictEqual(inv.generators, [],
+        `op-note drafting/saving controls are mounted outside the Op Notes room: ${JSON.stringify(inv.generators)} — there must be exactly one op-note surface`);
+      checks++;
+
+      /* the Templates hop is not a dead end, and it says where it goes */
+      const tpl = await page.evaluate(async () => {
+        /* the room's Templates tab is what moves #templatesModal into it */
+        const tab = document.getElementById('oprTabTpls');
+        if (tab) tab.click();
+        await new Promise((r) => setTimeout(r, 900));
+        try { closeOpPrep(); } catch (e) {}
+        document.querySelectorAll('.modal-bg.show').forEach((x) => x.classList.remove('show'));
+        await new Promise((r) => setTimeout(r, 400));
+        window.__mlsOpDay.refresh();
+        await new Promise((r) => setTimeout(r, 300));
+        const outside = Array.from(document.querySelectorAll('button[onclick="openTemplates()"]'))
+          .filter((b) => !b.closest('#opPrepModal'));
+        const labelled = outside.filter((b) => /op-note templates/i.test(b.textContent || ''));
+        /* The VISIBLE label, not `title`: a title set on these buttons reads
+           back as absent (something later in the boot welds accessible names
+           and strips it), and a promise the doctor cannot see is not one. */
+        const titled = outside.filter((b) => /in Op Notes/i.test(b.textContent || ''));
+        const titles = outside.map((b) => String(b.textContent || '(none)').trim().slice(0, 60));
+        /* and pressing it must land somewhere real */
+        try { openTemplates(); } catch (e) {}
+        await new Promise((r) => setTimeout(r, 700));
+        const list = document.getElementById('tplList');
+        return {
+          outside: outside.length, labelled: labelled.length, titled: titled.length, titles: titles,
+          landedVisible: !!(list && window.__uiContract.visible(list)),
+          roomOpen: !!(document.getElementById('opPrepModal') || {}).classList.contains('show')
+        };
+      });
+      ok(tpl.outside > 0, 'there are no Templates buttons outside the room, so this check proved nothing');
+      eq(tpl.labelled, tpl.outside,
+        `${tpl.outside - tpl.labelled} Templates buttons outside the room still do not say they are op-note templates`);
+      eq(tpl.titled, tpl.outside,
+        `${tpl.outside - tpl.titled} Templates buttons outside the room do not say where they take you: ${JSON.stringify(tpl.titles)}`);
+      ok(tpl.landedVisible,
+        'pressing Templates outside the room lands on nothing visible — that is a dead end');
+      /* HAND THE APP BACK THE WAY WE FOUND IT. This section deliberately drives
+         the Templates hop, which reparents #templatesModal into the room and
+         re-opens it; leaving that standing made the guided-ring section two
+         steps later measure a screen with a full-screen dialog over it and
+         report "analysis lit 0 rings" — a real failure of the wrong thing. */
+      await page.evaluate(async () => {
+        /* openTemplates() re-shows the room asynchronously (the room owns the
+           tab switch), so a single remove('show') does not stick. Closed is
+           CONFIRMED here, not assumed: leaving #opPrepModal shown makes
+           markNext treat it as the active overlay and light NOTHING anywhere,
+           which the guided-ring section two steps later reports as
+           "analysis lit 0 rings" — a real failure of the wrong thing. */
+        for (let i = 0; i < 40; i++) {
+          try { closeTemplates(); } catch (e) {}
+          try { closeOpPrep(); } catch (e) {}
+          document.querySelectorAll('.modal-bg.show').forEach((x) => x.classList.remove('show'));
+          await new Promise((r) => setTimeout(r, 100));
+          if (!document.querySelectorAll('.modal-bg.show').length) break;
+        }
+        const v = document.getElementById('nav_visit'); if (v) v.click();
+      });
+      await page.waitForTimeout(900);
+      const settled = await page.evaluate(() => Array.from(document.querySelectorAll('.modal-bg.show')).map((m) => m.id));
+      assert.deepStrictEqual(settled, [],
+        `a dialog is still open after the Templates check: ${JSON.stringify(settled)} — every later screen measurement would be taken behind it`);
+      checks++;
+    }
+
     await page.evaluate(() => { const m = document.getElementById('opPrepModal'); if (m) m.classList.remove('show'); });
 
     /* -- 1: exactly one VISIBLE ring per screen in guided, none otherwise -- */
@@ -949,7 +1120,27 @@ async function runtime() {
         const rings = await page.evaluate(() => window.__uiContract.rings());
         const lit = rings.filter((r) => r.visible);
         if (mode === 'guided') {
-          eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)}`);
+          const why = lit.length === 1 ? null : await page.evaluate(() => ({
+            report: window.__mlsSimpleLayer.nextStep(),
+            openDialogs: Array.from(document.querySelectorAll('.modal-bg.show')).map((m) => m.id),
+            shownViews: ['calendarView', 'patientsView', 'visitView', 'historyView', 'recsView',
+              'studioView', 'analysisView', 'ordersView'].filter((id) => {
+              const e = document.getElementById(id);
+              return e && window.__uiContract.visible(e);
+            }),
+            candidates: ['#t7AxRefresh', '#analysisView .btn-ghost', '#copilotInput', '#studioGenBtn']
+              .map((s) => {
+                const e = document.querySelector(s);
+                if (!e) return s + '=absent';
+                return s + '=' + (window.__uiContract.visible(e) ? 'visible' : 'hidden') +
+                  (e.disabled ? ' DISABLED' : '') +
+                  (e.getAttribute('aria-disabled') === 'true' ? ' ARIA-DISABLED' : '');
+              }),
+            eligibleButtons: Array.from(document.querySelectorAll('#analysisView button'))
+              .filter((b) => window.__uiContract.visible(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true')
+              .slice(0, 4).map((b) => b.id || (b.textContent || '').trim().slice(0, 20))
+          }));
+          eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''}`);
         } else {
           eq(rings.length, 0, `${screen} in ${mode} mode lit a guided ring: ${JSON.stringify(rings)}`);
         }
