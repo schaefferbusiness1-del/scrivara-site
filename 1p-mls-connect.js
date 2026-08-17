@@ -51864,11 +51864,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             ['Copilot Voice',function(){return !!(window.__mlsCopilotVoiceV2&&window.__mlsCopilotVoiceV2.installed)}],
             ['Patient safety locks',function(){return !!window.__mlsPatientLock}]];
   var el=null,t0=Date.now();
+  /* br-1.2.0 (owner 2026-08-16, from a phone screenshot): this strip painted on
+     EVERY boot, in engineering language, pinned over the app header where it
+     collided with the "Today" heading. Two things were wrong with it.
+
+     It said "Getting MLS ready - 3 of 4 engines live". A doctor does not have
+     engines; that is instrumentation leaking into a clinical surface, and the
+     owner's standing rule is that developer language belongs in diagnostics.
+
+     And it appeared even when boot was fast, so the normal case paid for the
+     slow case. It now stays silent unless boot is genuinely slow, says one
+     human thing, and sits BELOW the header instead of on top of it.
+
+     The performance marks and __mlsBootTimeline() are untouched - the
+     measurement was never the problem, only its presentation. */
+  var QUIET_MS=2500;
   function paint(n,total){
+    if(Date.now()-t0<QUIET_MS) return;   /* a fast boot shows nothing at all */
     if(!el){el=document.createElement('div');el.id='mlsBootReadiness';el.setAttribute('role','status');
-      el.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2147482800;background:#1A211C;color:#EAF1EE;font:600 12px system-ui;border-radius:0 0 10px 10px;padding:5px 14px;opacity:.92;transition:opacity .4s';
+      el.style.cssText='position:fixed;top:calc(env(safe-area-inset-top,0px) + 72px);left:50%;transform:translateX(-50%);z-index:2147482800;background:#1A211C;color:#EAF1EE;font:600 12px system-ui;border-radius:999px;padding:6px 16px;opacity:.92;transition:opacity .4s;max-width:calc(100vw - 32px);text-align:center';
       (document.body||document.documentElement).appendChild(el);}
-    el.textContent='Getting MLS ready - '+n+' of '+total+' engines live';
+    el.textContent = (Date.now()-t0 > 12000) ? 'Still starting up…' : 'Starting up…';
   }
   function gone(){if(el){el.style.opacity='0';setTimeout(function(){try{el.remove()}catch(e){}},450);el=null;}}
   /* br-1.1.0 (owner 5s bar): the boot gets a CLOCK. Each engine's first

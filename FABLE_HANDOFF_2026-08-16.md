@@ -1,92 +1,83 @@
-# For Fable — extension work only
+# For Fable — the one thing only Fable can do
 
-Everything else from the 2026-08-16 launch train was fixed **site-side**, on
-`/1p`, with **no extension change**. That was the owner's constraint and it
-held: the released **3.0.61** bytes are untouched, and
-`tests/1p-preview-contract.test.js` byte-freezes them against
-`a1903ff12128d36acaa615f43bb394f6b14c5e20` so a future train cannot move them
-by accident.
-
-**Do not ship an extension update for any of the UI work.** None of it needs one.
-
-There are exactly two items that are genuinely extension territory.
+Owner's rule: this file contains **only** work that cannot be done on the site.
+Everything else is the /1p lane's job. Two items were in an earlier draft of
+this file and have been removed because they turned out to be site-side; they
+are listed at the bottom so nobody re-assigns them by mistake.
 
 ---
 
-## 1. The provider roster never reaches "verified" — HIGH
+## THE ONLY ITEM: lift the extension's execute-block for `stage_billing` and `sign_encounter`
 
-**The contradiction.** In the owner's 2026-08-21 pull report, one receipt says
-the roster is complete and two say it was never verified:
+**Status: owner-authorized, site side already shipped, extension side is the
+last remaining step.**
 
+The owner's instruction of 2026-08-12 stands: *"remove all the blockers and
+ungray the confirm and send to athena button… dont touch the extension all of
+the writes work they just need to be unblocked."* He was right that the writes
+work — the extension already contains complete, working execution code for all
+five actions.
+
+**The site side is done.** `1p-feat_mls_writeflow.js:151` already reads:
+
+```js
+var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true };
 ```
-providerRosterReceipt: { complete: true, expectedCount: 1, observedCount: 1, providerMode: "all" }
-preflightReceipt:      { rosterComplete: FALSE, providerResolved: false, scopeSource: "caller" }
-providerReceipt:       { rosterVerified: FALSE, complete: true, discoveredProviders: ["Matthew Schaeffer, MD"] }
-```
 
-Both cannot be true. Something observes 1 of 1 expected providers and still
-reports the roster unverified.
+and the `/1p` shell carries the capability handshake (`athenaFinalActionsV1`,
+three sites in `1pScribeFlow.html`). Rows go READY only when the installed
+extension advertises that capability in `mlsPong`.
 
-**Why it matters beyond a cosmetic flag.** `#mlsCalProviderPull` — the
-calendar's "Choose a provider to pull" — is **permanently disabled** on this
-practice because it needs `__mlsProviderRoster.getReceipt().complete`. The
-site-side path `pullCalendarSelection()` needs the same thing, so a
-provider-scoped calendar pull is unreachable on this account today. The site
-lane worked around it (the hero now freezes the chip scope and passes it into
-`dayPull` explicitly, and the dead disabled button is hidden rather than left
-sitting there), but the underlying roster verification is still broken and
-that workaround is a workaround.
+**What still blocks execution is four layers, all inside the extension. No
+site change can lift any of them:**
 
-**What to determine:** why verification never completes when the observed
-count already equals the expected count. Is the verifier waiting on a signal
-that never arrives on a single-provider practice? Is `rosterComplete` reading
-a different receipt than the one being populated? Is it a timing race where
-preflight samples before the roster settles?
+1. `content.js` — click-gate arm list
+2. `content.js` — `MLS_WRITE_SAFETY_BRIDGE_GATE`
+3. `background.js` — `MLS_WRITE_SAFETY_GATE`
+4. `background.js` — driver guard `wsg-1.0.0` (~:232) plus the forbidden-label
+   `clickOnce` list
 
-**Reproduce with:** owner's account, day `2026-08-21`, provider mode `all`,
-extension `3.0.61`.
+**The task:** an extension release that lifts `wsg-1.0.0` for `stage_billing`
+and `sign_encounter` specifically, and advertises `athenaFinalActionsV1` in
+the handshake. Follow the `mls-extension-release` train — it has 12+ pins that
+must move together.
 
----
+**Keep blocked:** `place_order`. That is autonomous clinical ordering and the
+owner's own brief says orders must stay behind clinician authorization.
 
-## 2. `_assistReadChart` cannot receive an owner token from the today-note path — MEDIUM
+**Do NOT touch the correctness gates** — they are not policy and they are not
+what the owner asked to remove: identity lock, encounter binding, exact CPT
+format, sign-requires-a-verified-note-write, one confirm per action, no
+auto-chain.
 
-**Already worked around site-side; a cleaner extension-side fix may exist.**
-
-`/1p` has a single-owner Athena read lease. The schedule pull claims it and
-threads its token through its own five `_assistReadChart` calls. The
-today-note leg does not use those — it goes
-`__mlsVisitSavePref.runForPatient` → `feat_visits.js` →
-`_assistReadChart(target, cb)` **with no options object at all**. With no
-token the reader attempted a fresh `claim()`, lost to the lease the very same
-pull was holding, and refused. That is the
-`"pull-in-flight: another Athena read or schedule pull is active"` on all six
-rows in the owner's report, with `todayNoteFailures: 6`.
-
-**The site fix (shipped, commit `fed96564`).** The pull publishes its token as
-a *loan*; a caller arriving with no token joins the live lease rather than
-competing with it. It is a join, not a bypass: the loan is honoured only while
-`leaseMgr.owns(loan)` is still true, and a borrowing read never releases a
-lease it does not own.
-
-**Whether Fable needs to do anything.** Probably not urgently — the site fix
-removes the cause. But if the extension is going to grow more read paths, it
-is worth deciding whether lease participation belongs in the extension bridge
-rather than being reconstructed on the site side each time a frozen file sits
-in the call path.
-
-**Also still narrow, and site-side, so NOT Fable's:** the inline retry fuse in
-`1p-feat_mls_schedimport_exact.js` does not recognise `pull-in-flight`, which
-is why all six rows failed rather than one failing and the rest retrying. The
-loan removes the cause; the fuse is still too narrow and should be widened by
-whoever next touches that file.
+**One thing to know before anyone celebrates this unblocking the button.** On
+the owner's real store, measured 2026-08-16: of 1,672 patients, **1,252 (75%)
+have no MRN**. Writes require three-factor identity (name + DOB + MRN),
+enforced at both ends including `background.js:766` which hard-refuses with
+`patient-mismatch`. So even after this extension release, the button stays
+gray for three of four patients until the MRN data is restored. That data
+problem is the site lane's job, not Fable's — but shipping the extension
+release and then finding the button still gray would look like the release
+failed, and it would not have.
 
 ---
 
-## What is explicitly NOT Fable's
+## Removed from this file — these are the /1p lane's, not Fable's
 
-- Op Notes simplification, the taskbar/dock, the calendar, the avatar, the
-  laptop layout — **all site-side, all shipped, no extension involvement.**
-- `feat_visits.js`, `feat_mls_calm_shell.js`, `feat_mls_opnote_*.js` — these
-  are *site* production files, not extension files. They are frozen for a
-  different reason (they are shared with the live site), and the correct move
-  there is an overlay from the two `/1p` shells, not an edit.
+- **`_assistReadChart` could not receive a lease token from the today-note
+  path.** Already fixed site-side (commit `fed96564`) with a lease loan. The
+  frozen file in the call path was `feat_visits.js` — a *site* production
+  file, not an extension file.
+- **The provider roster "never verifies."** Traced to site code: the preflight
+  initialises `rosterComplete:false` (`1p-feat_mls_schedimport_exact.js:6406`)
+  and samples the roster before it settles, then `rosterVerified` inherits
+  that stale value via `detectedOnly` (:469, :479). The owner's own report
+  shows `providerRosterReceipt {complete:true, partial:false}` — the roster
+  did complete; the preflight read it too early. A timing race in our code.
+
+**A note for whoever reads this next.** `feat_visits.js`,
+`feat_mls_calm_shell.js`, and the `feat_mls_opnote_*` files are **site**
+production files, not extension files. They are frozen because they are shared
+byte-for-byte with the live site, not because they ship in the extension. The
+correct move there is an overlay from the two `/1p` shells — never an edit,
+and never a Fable ticket.

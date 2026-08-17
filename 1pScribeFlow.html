@@ -14250,12 +14250,35 @@ async function loadCalendar(options){
      full fetch landed — the "calendar glitches out on every load". Cache the
      rows around TODAY instead: the visible window's first paint is complete,
      the post-fetch render matches the sig-guard, and nothing repaints. */
+  /* cc-1.1.0 (owner phone screenshot, 2026-08-16). Measured on the owner's real
+     store this single key held 1,721KB — 60% of everything in localStorage, and
+     the largest single reason the app reached its quota and told a doctor
+     "MLS storage is FULL — this save did NOT happen".
+
+     This is a CACHE. The authoritative rows arrive from the fetch immediately
+     after; the cache only buys an instant first paint. So it must never be the
+     thing that fills the quota, and a doctor must never see a storage warning
+     because of it. It now degrades: full window, then narrower, then narrower
+     still, and if even the smallest will not fit it REMOVES the key rather than
+     leaving a stale oversized value behind and reports nothing. A smaller cache
+     costs a less complete first paint and nothing else. */
   try{ if(_calApplied&&_calRequestCurrent()){
-    var _ccNow=new Date(); var _ccLo=new Date(_ccNow.getFullYear(),_ccNow.getMonth(),_ccNow.getDate()-62), _ccHi=new Date(_ccNow.getFullYear(),_ccNow.getMonth(),_ccNow.getDate()+62);
     var _ccKey=function(d){ return d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); };
-    var _ccLoK=_ccKey(_ccLo), _ccHiK=_ccKey(_ccHi);
-    var _ccWin=(_calAppts||[]).filter(function(a){ var k=String((a&&(a.appt_date||(a.start_at||'')))||'').slice(0,10); return k>=_ccLoK&&k<=_ccHiK; }).slice(0,1500);
-    localStorage.setItem(uns('calApptsCacheV2'), JSON.stringify({appointments:_ccWin, me:_calMe||{}, providers:(_calProviders||[]).slice(0,80)}));
+    var _ccNow=new Date();
+    var _ccWrite=function(days,cap){
+      var lo=new Date(_ccNow.getFullYear(),_ccNow.getMonth(),_ccNow.getDate()-days),
+          hi=new Date(_ccNow.getFullYear(),_ccNow.getMonth(),_ccNow.getDate()+days);
+      var loK=_ccKey(lo), hiK=_ccKey(hi);
+      var win=(_calAppts||[]).filter(function(a){ var k=String((a&&(a.appt_date||(a.start_at||'')))||'').slice(0,10); return k>=loK&&k<=hiK; }).slice(0,cap);
+      localStorage.setItem(uns('calApptsCacheV2'), JSON.stringify({appointments:win, me:_calMe||{}, providers:(_calProviders||[]).slice(0,80)}));
+      return true;
+    };
+    var _ccSteps=[[62,1500],[31,600],[14,250],[7,120]], _ccDone=false;
+    for(var _ccI=0;_ccI<_ccSteps.length&&!_ccDone;_ccI++){
+      try{ _ccDone=_ccWrite(_ccSteps[_ccI][0],_ccSteps[_ccI][1]); }
+      catch(_ccE){ /* quota or serialization — try a smaller window */ }
+    }
+    if(!_ccDone){ try{ localStorage.removeItem(uns('calApptsCacheV2')); }catch(_ccR){} }
   } }catch(e){}
   renderCalendar(); renderCalCheckin();
   return _calResult(_calApplied,_calApplied,_calReadError,'');
