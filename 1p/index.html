@@ -4368,7 +4368,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- 📣 OUTCOMES → MARKETING — turn real outcomes into shareable proof -->
     <div class="card" id="anaOutcomes">
       <h2 aria-label="Outcomes and marketing"><span class="ic">📣</span> Outcomes &amp; marketing
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh</button>
+        <!-- anarefresh-1.0.0: Analysis showed TWO buttons reading exactly
+             "🔄 Refresh". At 360px the cards stack, so both are on screen with
+             their headings scrolled away and neither says what it reloads.
+             Each now names its own card, in the visible label and in the
+             accessible name. -->
+        <button class="btn-ghost" id="anaOutcomesRefresh" aria-label="Refresh outcomes and marketing" title="Recompute your outcomes from the latest visits" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh outcomes</button>
       </h2>
       <p class="sub">Your real results, turned into proof you can publish. Measured from first vs. latest visit per patient — fully de-identified, no names ever leave your practice. Use it on your website, in referral packets, and with patients.</p>
       <div id="anaOutcomesBody"><div class="mini" style="color:var(--muted)">Loading your outcomes…</div></div>
@@ -4420,7 +4425,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- 📈 BASELINE METRICS — server-side aggregates over your visit records -->
     <div class="card" id="anaBaseline">
       <h2 aria-label="Baseline metrics"><span class="ic">📈</span> Baseline metrics
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh</button>
+        <!-- anarefresh-1.0.0 — see the note on #anaOutcomesRefresh -->
+        <button class="btn-ghost" id="anaBaselineRefresh" aria-label="Refresh baseline metrics" title="Ask the clinic server for fresh practice aggregates" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh metrics</button>
       </h2>
       <p class="sub">Practice aggregates computed on the clinic server from non-PHI visit metadata available to your account.</p>
       <div id="anaBaselineBody"><div class="mini" style="color:var(--muted)">Loading your baseline metrics…</div></div>
@@ -4453,7 +4459,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- 🌟 TEAM PATIENT-EXPERIENCE — head doctor sees each doctor's AI grade per visit -->
     <div class="card" id="anaTeamGrades" hidden aria-hidden="true" style="display:none">
       <h2 aria-label="Team patient-experience ratings"><span class="ic">🌟</span> Team patient-experience ratings
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh</button>
+        <!-- anarefresh-1.0.0: hidden today (__MLS_TEAM_WORKSPACE_RELEASED=false),
+             scoped now so releasing the card cannot re-create the collision. -->
+        <button class="btn-ghost" id="anaTeamGradesRefresh" aria-label="Refresh team patient-experience ratings" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh ratings</button>
       </h2>
       <p class="sub">How your doctors are doing with patients — an AI grade (1–5) of the patient experience on each visit, from the visit conversation. Averages and the most recent visits per doctor. No patient data — dates and scores only.</p>
       <div id="anaTeamGradesBody"><div class="mini" style="color:var(--muted)">Loading your team ratings…</div></div>
@@ -19673,8 +19681,14 @@ function opPrepRender(){
     var h='<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:var(--card)">';
     h+='<div id="opPrepPrev_'+i+'">'+_opPreviewHtml(row.proc, a.name, row.dateStr)+'</div>';
     h+='<label class="mini" for="opPrepProc_'+i+'" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
-    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">'+(row.tplManual?'(your pick)':'(auto-matched)')+'</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value;window._opPrep['+i+'].tplManual=true" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
+    /* optap-1.0.0: 40px minimum on the three controls a doctor drives with a
+       thumb. Measured at 360px these were ~30px tall — under every touch-target
+       floor, on the one screen where the procedure text is corrected. Set
+       inline and NOT with !important on purpose: feat_mls_opnote_room.js owns
+       the room's skin and must keep the last word on padding and radius; it
+       carries no rule for these two ids, so a plain min-height sits under it. */
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;min-height:40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px;min-height:40px;box-sizing:border-box" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">'+(row.tplManual?'(your pick)':'(auto-matched)')+'</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value;window._opPrep['+i+'].tplManual=true" style="font-size:13px;padding:6px 9px;min-height:40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px'+(row._confirmRedraft?';background:#b4231e':'')+'" onclick="opPrepGenerateOne('+i+')">'+(row._confirmRedraft?'↻ Discard my edits & re-draft?':(row.gen?'↻ Re-draft':'✨ Draft op note'))+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){

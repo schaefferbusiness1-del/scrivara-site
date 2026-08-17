@@ -17,6 +17,9 @@
  *      its own container scrolls.
  *   7. The day being drafted is visible in the op-note room in EVERY mode.
  *   8. Date-key regexes actually contain backslashes.
+ *   9. No two visible controls on Analysis at 360 carry the same name.
+ *  10. The Analysis scope chip is at least 12px — and did not grow its row.
+ *  11. The op-note room's typed controls are 40px tap targets at 360.
  *
  * PART 1 is static (both twins, no browser). PART 2 drives the real shell in
  * real Chrome with a synthetic 28-patient day - no login, no network, no PHI.
@@ -44,6 +47,7 @@ const SHELLS = ['1pScribeFlow.html', '1p/index.html'];
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
 let checks = 0;
+const measured = {};   /* numbers this run actually saw, printed at the end */
 function ok(value, message) { assert.ok(value, message); checks++; }
 function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }
 
@@ -353,6 +357,65 @@ function harness() {
         return true;
       }).map(function (el) { return el.id || String(el.className || '').slice(0, 24) || el.tagName; });
     },
+    /* -- 9,10,11 (P2 shape) ------------------------------------------------
+     * 9.  No two VISIBLE controls on one screen carry the same accessible
+     *     name. Analysis shipped two buttons reading exactly "🔄 Refresh";
+     *     at 360 the cards stack, so both are on screen with their headings
+     *     scrolled away and neither says what it reloads.
+     * 10. Nothing a physician reads is under 12px.
+     * 11. Every tap target is at least 40px on its short side at 360.
+     * Names come from aria-label first, then the trimmed text — textContent
+     * is NOT a label when an aria-label exists. */
+    /* Scoped to controls that sit INSIDE a card heading — the card-action row.
+       Two of those with one name are two DIFFERENT actions wearing the same
+       label, which is the defect. The glossary pills below the headings
+       ("💡 Explain RVUs" and friends) repeat across cards on purpose: they are
+       one action, opening the same overlay at the same topic, so a repeated
+       name there is a repeated control, not an ambiguous one. Measured while
+       writing this: 4 such repeats exist and are deliberate. */
+    ambiguousNames: function (sel) {
+      var host = document.querySelector(sel) || document.body;
+      var seen = Object.create(null), dupes = [];
+      Array.prototype.slice.call(host.querySelectorAll('h2 button,h2 a[href],h3 button,h3 a[href]')).filter(visible).forEach(function (el) {
+        var n = (el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ');
+        if (!n) return;
+        if (seen[n]) { if (dupes.indexOf(n) < 0) dupes.push(n); } else seen[n] = 1;
+      });
+      return dupes;
+    },
+    /* The scope chip carries the sentence that says WHOSE numbers are on
+       screen. It renders only when the Analysis module has a provider scope,
+       so rather than hope one is on screen we plant a probe carrying the real
+       class and measure what the SHIPPED stylesheet computes for it. */
+    chipMetrics: function () {
+      var sheet = document.getElementById('mlsAnaClarityCSS');
+      var host = document.getElementById('analysisView') || document.body;
+      var probe = document.createElement('span');
+      probe.className = 'mls-anaclar-chip pw';
+      probe.textContent = 'Practice-wide';
+      host.appendChild(probe);
+      var cs = getComputedStyle(probe);
+      var r = probe.getBoundingClientRect();
+      var out = {
+        sheetPresent: !!sheet,
+        fontPx: parseFloat(cs.fontSize),
+        lineHeightPx: parseFloat(cs.lineHeight),
+        boxHeight: Math.round(r.height)
+      };
+      probe.remove();
+      return out;
+    },
+    smallTargets: function (selectors, floor) {
+      var out = [];
+      selectors.forEach(function (s) {
+        Array.prototype.slice.call(document.querySelectorAll(s)).filter(visible).forEach(function (el) {
+          var r = el.getBoundingClientRect();
+          var short = Math.min(r.width, r.height);
+          if (short < floor) out.push({ id: el.id || el.tagName, w: Math.round(r.width), h: Math.round(r.height) });
+        });
+      });
+      return out;
+    },
     dayOnScreen: function () {
       var h = document.getElementById('opPrepHdr');
       var lbl = document.getElementById('opPrepDayLbl');
@@ -537,6 +600,50 @@ async function runtime() {
       }
     }
 
+    /* -- 9: Analysis at 360 must not offer two identically-named controls --
+     * MEASURED before anarefresh-1.0.0: #anaOutcomes and #anaBaseline each
+     * carried a button reading exactly "🔄 Refresh". At 360 the cards stack,
+     * both buttons are on screen at once, and their headings have scrolled
+     * away — so the doctor is choosing between two identical labels for two
+     * different reloads. */
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.evaluate(() => { const e = document.getElementById('nav_analysis'); if (e) e.click(); });
+    await page.waitForTimeout(600);
+    const dupes = await page.evaluate(() => window.__uiContract.ambiguousNames('#analysisView'));
+    eq(dupes.length, 0, `Analysis at 360 offers ${dupes.length} pairs of identically-named controls: ${JSON.stringify(dupes)}`);
+    const scoped = await page.evaluate(() => ['anaOutcomesRefresh', 'anaBaselineRefresh'].map((id) => {
+      const el = document.getElementById(id);
+      return { id: id, present: !!el, name: el ? (el.getAttribute('aria-label') || '').trim() : '', text: el ? (el.textContent || '').trim() : '' };
+    }));
+    for (const s of scoped) {
+      ok(s.present, `Analysis lost ${s.id}`);
+      ok(s.name.length > 0 && s.name !== 'Refresh', `${s.id} has no scoped accessible name (got "${s.name}")`);
+      ok(s.text !== '🔄 Refresh', `${s.id} still shows the unscoped label "${s.text}"`);
+    }
+
+    /* -- 10: the scope chip is at least 12px, and did not grow its own row -- */
+    const scopeChip = await page.evaluate(() => window.__uiContract.chipMetrics());
+    ok(scopeChip.sheetPresent, 'the Analysis clarity stylesheet never injected, so this measurement is of nothing');
+    ok(scopeChip.fontPx >= 12,
+      `the scope chip — the label that says whose numbers these are — computes to ${scopeChip.fontPx}px, under the 12px floor`);
+    /* the "legibility fix creates the next collision" guard: report BOTH
+       quantities. The chip sits inline in an <h2> beside a heading and a
+       button; at 360 that row has no spare height. */
+    ok(scopeChip.boxHeight <= 24,
+      `the chip grew to ${scopeChip.boxHeight}px tall at 360 (font ${scopeChip.fontPx}px, line-height ${scopeChip.lineHeightPx}px) — a legibility fix that pushes the heading row is the next defect`);
+
+    /* -- 11: the op-note room's typed controls are 40px targets at 360 ----- */
+    await page.evaluate(() => window.__uiContract.openRoom());
+    await page.waitForTimeout(600);
+    const TAP = ['#opPrepProc_0', '#opPrepTpl_0', '[onclick^="_opAutoTpl(0)"]'];
+    const small = await page.evaluate((sels) => window.__uiContract.smallTargets(sels, 40), TAP);
+    eq(small.length, 0,
+      `op-note room controls under 40px at 360: ${JSON.stringify(small)} — these are the controls a doctor corrects a procedure name with, by thumb`);
+    /* print what was measured, so the next reader sees numbers rather than a tick */
+    measured.taps = await page.evaluate((sels) => window.__uiContract.smallTargets(sels, 9999), TAP);
+    measured.chip = scopeChip;
+    await page.evaluate(() => { document.querySelectorAll('.modal-bg.show').forEach((x) => x.classList.remove('show')); });
+
     eq(pageErrors.length, 0, `the shell threw during the run: ${JSON.stringify(pageErrors.slice(0, 3))}`);
   } finally {
     await browser.close();
@@ -546,6 +653,8 @@ async function runtime() {
 
 runtime().then(() => {
   console.log(`1p-ui-shape-contract: ${checks} checks passed`);
+  console.log(`  scope chip @360: font ${measured.chip.fontPx}px, line-height ${measured.chip.lineHeightPx}px, box ${measured.chip.boxHeight}px`);
+  console.log(`  op-note tap targets @360: ${(measured.taps || []).map((t) => t.id + ' ' + t.w + 'x' + t.h).join(', ')}`);
 }).catch((err) => {
   console.error(err && err.message ? err.message : err);
   process.exit(1);

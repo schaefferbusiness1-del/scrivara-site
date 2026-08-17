@@ -14347,9 +14347,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function injectCSS() {
     if ($('mlsAnaClarityCSS')) return;
     var css = ''
-      + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;'
+      /* anachip-1.1.0: 10.5px was the smallest type in the product, and it is
+         carrying the sentence that says WHOSE numbers are on screen — provider
+         view vs practice-wide. Raised to 12px, the floor the /1p UI contract
+         now enforces. line-height comes down from 1.7 to 1.45 so the chip's own
+         box grows by ~1px rather than ~4px: this is the "a legibility fix can
+         create the next collision" rule — the chip sits inline in an <h2> row
+         beside a heading and a Refresh button, and at 360 that row has no
+         spare height to give. */
+      + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;'
       + 'letter-spacing:.03em;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle;'
-      + 'white-space:nowrap;line-height:1.7;text-transform:uppercase}'
+      + 'white-space:nowrap;line-height:1.45;text-transform:uppercase}'
       // On a phone this chip is the label that says WHOSE numbers these are,
       // and at 375px it ran to 515px and was clipped by body{overflow-x:hidden}.
       // min-width:0 is the operative part: a flex item defaults to
