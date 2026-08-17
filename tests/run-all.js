@@ -171,6 +171,11 @@ const tests = [
      the encrypted server write, so a full device threw the finished note away
      instead of letting the server accept it. */
   '1p-note-never-lost-to-quota-runtime.test.js',
+  /* ptsmig-1.0.0: the sj-2.0 IndexedDB patient store shipped with five green
+     suites and ZERO shipped migrate() call sites, so every account stayed on
+     the localStorage lane. Pins the shipped activation and a 3,000-patient
+     round trip through the real store. */
+  '1p-pts-store-activation-runtime.test.js',
   'production-provider-day-render-runtime.test.js',
   'production-default-view-pull-runtime.test.js',
   'day-switch-current-pull-result-runtime.test.js',

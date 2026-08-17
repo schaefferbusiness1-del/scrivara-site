@@ -7243,6 +7243,62 @@ function sfStartupValid(opts){
    a hung IndexedDB open must never brick boot - the paint runs anyway
    after 4000ms and the re-routed readers fall through to the legacy path
    (loud-empty, never stale PHI). */
+/* ===== ptsmig-1.0.0: ACTIVATE the sj-2.0 patient store =====================
+   The store, its journal, its verified cutover and five passing suites all
+   shipped, but nothing ever CALLED migrate(): every account stayed in
+   S.mode==='ls', isReady() never became true, and savePatients() therefore
+   always fell to the localStorage lane whose measured ceiling is ~1,400
+   patients. This is the one-shot activation, and it is deliberately thin -
+   every safety decision belongs to the store's own fail-closed migrate():
+   verified IndexedDB write, byte-identical echo, live journal, gen stamp, and
+   only THEN the blob removal, with failCleanup() restoring localStorage as
+   authoritative on any failed step.
+
+   Rules kept here:
+   - never bind a migration to an unresolved account namespace (the
+     sf_u::undefined:: / ::_:: class) - refuse instead;
+   - never run before this account's init() settles, and re-check that the
+     account has not changed in between;
+   - one attempt per account key per page;
+   - never gate boot paint on it, and never let it throw into a caller;
+   - the store's OWN receipt is the only verdict; a refusal is logged loudly
+     and leaves localStorage authoritative. */
+var __mlsPtsMigrateOnce=Object.create(null);
+function __mlsPtsNamespaceUsable(key){
+  return !!key&&/::patients$/.test(key)&&key.indexOf('::undefined::')<0&&key.indexOf('::_::')<0;
+}
+function __mlsPtsAutoMigrate(initPromise,why){
+  if(!initPromise||typeof initPromise.then!=='function')return null;
+  var store=null; try{ store=window.__mlsPtsStore; }catch(eS){ return null; }
+  if(!store||typeof store.migrate!=='function'||typeof store.mode!=='function')return null;
+  var key=''; try{ key=uns('patients'); }catch(eK){ key=''; }
+  if(!__mlsPtsNamespaceUsable(key)){
+    try{ console.warn('[pts-migrate] refused: unresolved account namespace'); }catch(_e){}
+    return null;
+  }
+  if(__mlsPtsMigrateOnce[key])return __mlsPtsMigrateOnce[key];
+  var run=initPromise.then(function(){
+    var live=''; try{ live=uns('patients'); }catch(eL){ live=''; }
+    if(live!==key)return {migrated:false,skipped:'account-changed'};
+    if(store.mode()!=='ls')return {migrated:true,already:true};
+    return store.migrate();
+  }).then(function(rep){
+    try{ window.__mlsPtsMigrationReceipt={why:String(why||''),at:Date.now(),report:rep||null}; }catch(eR){}
+    try{
+      if(!(rep&&rep.migrated===true))
+        console.warn('[pts-migrate] '+String(why||'')+' did NOT migrate - patients stay on localStorage: '+
+          JSON.stringify((rep&&(rep.steps||rep.skipped))||rep||null).slice(0,400));
+    }catch(eW){}
+    return rep||null;
+  },function(err){
+    try{ window.__mlsPtsMigrationReceipt={why:String(why||''),at:Date.now(),error:String((err&&err.message)||err).slice(0,200)}; }catch(eR2){}
+    try{ console.warn('[pts-migrate] '+String(why||'')+' refused: '+String((err&&err.message)||err)); }catch(eW2){}
+    return null;
+  });
+  __mlsPtsMigrateOnce[key]=run;
+  return run;
+}
+/* ===== end ptsmig-1.0.0 */
 function __mlsPtsBootBarrier(paint){
   var ranPaint=false;
   var runPaint=function(why){
@@ -7257,6 +7313,10 @@ function __mlsPtsBootBarrier(paint){
   try{ window.__mlsPtsBootReady=p; }catch(ePw){}
   if(!p||typeof p.then!=='function'){ runPaint(); return; }
   p.then(null,function(ePr){ try{ console.warn('[pts-boot] store init refused: '+String((ePr&&ePr.message)||ePr)); }catch(_e){} return null; });
+  /* ptsmig-1.0.0: one-shot activation, after init() and never in front of the
+     paint - a migration that is slow, refused, or impossible must not delay a
+     single roster pixel. */
+  try{ __mlsPtsAutoMigrate(p,'boot'); }catch(ePmg){}
   var migrated=false;
   try{ migrated=(localStorage.getItem(uns('ptsGenV2'))!=null)&&(localStorage.getItem(uns('patients'))==null); }catch(ePm){}
   if(!migrated){ runPaint(); return; }
@@ -7592,7 +7652,7 @@ function refreshMe(opts){
              authenticated namespace (idempotent per account key). Without
              this, a migrated account reached via identity drift stays on
              the legacy loud-empty path until the next reload. */
-          try{ if(window.__mlsPtsStore&&typeof window.__mlsPtsStore.init==='function'){ window.__mlsPtsBootReady=window.__mlsPtsStore.init(); window.__mlsPtsBootReady.then(null,function(ePtsIc){ try{ console.warn('[pts-boot] identity-change init refused: '+String((ePtsIc&&ePtsIc.message)||ePtsIc)); }catch(_e){} }); } }catch(ePtsI){}
+          try{ if(window.__mlsPtsStore&&typeof window.__mlsPtsStore.init==='function'){ window.__mlsPtsBootReady=window.__mlsPtsStore.init(); window.__mlsPtsBootReady.then(null,function(ePtsIc){ try{ console.warn('[pts-boot] identity-change init refused: '+String((ePtsIc&&ePtsIc.message)||ePtsIc)); }catch(_e){} }); try{ __mlsPtsAutoMigrate(window.__mlsPtsBootReady,'identity-change'); }catch(ePtsMg){} } }catch(ePtsI){}
           const whoEl=document.getElementById('whoLabel');
           if(whoEl) whoEl.textContent='👤 '+em;
           const histEl=document.getElementById('histWho');
@@ -11808,7 +11868,7 @@ function savePatients(arr,__storageKey,__opts){
         try{
           for(var qi=localStorage.length-1;qi>=0;qi--){var qk=localStorage.key(qi);if(/(?:^|_)(?:studygroups_v1|mlsRFScrapeCache2)$|ScrapeCache/.test(String(qk||''))){try{localStorage.removeItem(qk);}catch(_){}}}
           localStorage.setItem(__key,packed);
-        }catch(e2){try{toast('âš  Local storage is full â€” patient changes could NOT be saved. Tell MLS support.','');}catch(_){}throw e2;}
+        }catch(e2){try{toast('⚠ Local storage is full — patient changes could NOT be saved. Tell MLS support.','');}catch(_){}throw e2;}
       }
       __mlsPtsLastSavedKey=__key;__mlsPtsLastSaved=__json;__mlsPtsLastPacked=packed;__mlsPtsGen++;
       /* The exact rows that produced `packed` are already in memory. Seed the
