@@ -627,8 +627,8 @@ async function testHiddenTabAndCatchUp() {
   h.activeJob = null;
 
   /* THE SUSPENDED CASE. iOS suspends a backgrounded page outright: no Worker
-     message is delivered at all. Unlocking the phone must be a catch-up, not
-     a wait -- so lastTryAt is forced due and the sync happens on the spot. */
+     message is delivered at all, so unlocking is often the FIRST tick since
+     the screen went off. It must be a catch-up, not a wait. */
   h.document.visibilityState = 'hidden';
   h.fireDoc('visibilitychange');
   const before = h.calls.loadCalendar;
@@ -637,6 +637,28 @@ async function testHiddenTabAndCatchUp() {
   h.fireDoc('visibilitychange');
   await flush();
   eq(h.calls.loadCalendar, before + 1, 'unlocking the phone did not resync it');
+  eq(sync.state().status, 'ok', 'the catch-up sync did not settle ok');
+
+  /* AND THE CATCH-UP DEFEATS A BACKOFF, which is the case that actually
+     discriminates: after failures the cadence can be minutes long, and a
+     doctor who picks the phone up and looks must not be served a stale list
+     for the rest of a backoff they cannot see. Three failures put the cadence
+     at 160s; the phone is away for five seconds; unlocking still syncs. */
+  h.calendar = () => Promise.resolve({ error: 'appointments_http_500' });
+  for (let i = 0; i < 3; i += 1) { h.advance(400000); h.fireWorker(); await flush(); }
+  eq(sync.state().fails, 3, 'the failure run did not accrue');
+  eq(sync.state().cadenceMs, 160000, 'the backoff is not where this case needs it');
+  h.calendar = () => Promise.resolve({ applied: true, count: 0, error: '', discarded: '' });
+  const before2 = h.calls.loadCalendar;
+  h.document.visibilityState = 'hidden';
+  h.fireDoc('visibilitychange');
+  h.advance(5000);
+  h.fireWorker(); await flush();
+  eq(h.calls.loadCalendar, before2, 'the backoff was not being honoured -- the case proves nothing');
+  h.document.visibilityState = 'visible';
+  h.fireDoc('visibilitychange');
+  await flush();
+  eq(h.calls.loadCalendar, before2 + 1, 'unlocking the phone did not defeat the backoff');
   eq(sync.state().status, 'ok', 'the catch-up sync did not settle ok');
 }
 
@@ -649,17 +671,31 @@ async function testReAuthResume() {
   h.advance(60000); h.fireWorker(); await flush();
   const base = h.calls.loadCalendar;
 
+  /* The session goes bad BEFORE the token disappears -- which is the ordinary
+     shape: the backend starts refusing, a backoff accrues, and only then does
+     the idle timer clear the token. Without that run of failures the resume is
+     untestable, because a signed-out stretch makes every sync overdue anyway
+     and the loop would fire on the next tick regardless. */
+  h.calendar = () => Promise.resolve({ error: 'appointments_http_500' });
+  for (let i = 0; i < 3; i += 1) { h.advance(400000); h.fireWorker(); await flush(); }
+  eq(sync.state().fails, 3, 'the failure run did not accrue');
+  eq(sync.state().cadenceMs, 160000, 'the backoff is not where this case needs it');
+  const base2 = h.calls.loadCalendar;
+
   h.token = '';                            /* idle logout empties the token */
-  h.advance(60000); h.fireWorker(); await flush();
+  h.advance(1000); h.fireWorker(); await flush();
   eq(sync.state().status, 'expired', 'a signed-out phone did not say so: ' + sync.state().status);
-  eq(h.calls.loadCalendar, base, 'a signed-out phone kept fetching');
+  eq(h.calls.loadCalendar, base2, 'a signed-out phone kept fetching');
   ok(/Sign in again/.test(h.text()), 'the expiry line does not name the next move: ' + h.text());
 
+  h.calendar = () => Promise.resolve({ applied: true, count: 0, error: '', discarded: '' });
   h.token = 'tok-A2';                      /* the doctor signs back in */
-  h.fireWorker(); await flush();
-  eq(h.calls.loadCalendar, base + 1,
-    'syncing did not resume on the tick after re-auth -- it waited out a cadence');
+  h.advance(1000); h.fireWorker(); await flush();
+  eq(h.calls.loadCalendar, base2 + 1,
+    'syncing did not resume on the tick after re-auth -- it was still serving the pre-logout backoff');
   eq(sync.state().status, 'ok', 'the resumed sync did not settle ok');
+  eq(sync.state().fails, 0, 'the pre-logout failure run survived the new session');
+  ok(base > 0, 'setup sync never ran');
 }
 
 /* ---- the account boundary ------------------------------------------------ */
@@ -791,18 +827,43 @@ async function testFaultMatrix() {
     eq(sync.state().status, 'ok', 'the offline state did not clear on reconnect');
   }
 
-  /* the request that never answers */
+  /* the request that never answers -- and then answers anyway, late */
   {
     const h = makeHarness({});
     const sync = h.install(block);
     h.mountPhoneFrame();
-    h.calendar = () => new Promise(() => {});
+    const pending = [];
+    h.calendar = () => new Promise((r) => { pending.push(r); });
+
     h.advance(60000); h.fireWorker(); await flush();
     eq(sync.state().status, 'syncing', 'the in-flight state is wrong');
+    eq(pending.length, 1, 'the first request did not start');
     h.advance(20000); h.fireDueTimeouts();
     eq(sync.state().status, 'timeout', 'a stalled request never timed out');
     ok(/has not answered in 20 seconds/.test(h.text()), 'the timeout line is wrong: ' + h.text());
     eq(sync.state().inflight, false, 'the loop stayed wedged after a timeout');
+
+    /* NEWEST WINS. The timed-out request was never abandoned -- loadCalendar
+       has no abort and pretending otherwise would be a lie about the network.
+       So it can still answer while a NEWER request is in flight. Prove the
+       stale answer neither writes the state nor releases the newer request's
+       lane, because releasing it would let a third start beside it. */
+    h.advance(400000); h.fireWorker(); await flush();
+    eq(pending.length, 2, 'the newer request did not start');
+    eq(sync.state().inflight, true, 'the newer request is not in flight');
+    const runs = h.calls.loadCalendar;
+
+    pending[0]({ applied: true, count: 99, error: '', discarded: '' });   /* the OLD one lands */
+    await flush();
+    eq(sync.state().inflight, true, 'a stale answer released the newer request lane');
+    eq(sync.state().status, 'syncing', 'a stale answer overwrote the newer request state');
+    eq(sync.state().syncs, 0, 'a stale answer was counted as a completed sync');
+
+    pending[1]({ applied: true, count: 0, error: '', discarded: '' });
+    await flush();
+    eq(sync.state().status, 'ok', 'the newer request did not settle');
+    eq(sync.state().syncs, 1, 'the newer request was not counted');
+    eq(h.calls.loadCalendar, runs, 'an extra request started beside the newer one');
   }
 
   /* the engine has not loaded */

@@ -54014,6 +54014,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   /* ============================ THE SYNC ================================== */
   var inflightP = null;
+  /* NEWEST WINS. The watchdog releases the loop without abandoning the request,
+     so a request that answers late can land while a NEWER one is in flight. If
+     the stale answer were allowed to write shared state it would clear the new
+     request's in-flight flag and let a third start beside it -- the same class
+     of race loadCalendar itself carries a sequence number for. Only the current
+     generation may write. */
+  var gen = 0;
   function hydrateCharts(boundId, boundTok) {
     var f = safe(function () { return typeof window.loadPatientsFromServer === 'function' ? window.loadPatientsFromServer : null; }, null);
     if (!f) return;
@@ -54032,7 +54039,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
     var boundId = identity(), boundTok = tok();
     var key = curDay(), before = dayCount(key);
-    var settled = false, watchdog = null;
+    var settled = false, watchdog = null, myGen = ++gen;
 
     S.inflight = true;
     S.lastTryAt = Date.now();
@@ -54042,6 +54049,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (settled) return r;
       settled = true;
       if (watchdog !== null) { safe(function () { clearTimeout(watchdog); }); watchdog = null; }
+      /* Superseded: this answer arrived after a newer request started (only
+         possible past the watchdog). It is not wrong, it is just no longer
+         anybody's answer -- and writing it would release the newer request's
+         lane. */
+      if (myGen !== gen) return r;
       S.inflight = false;
       inflightP = null;
 
