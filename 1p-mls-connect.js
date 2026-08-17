@@ -22363,8 +22363,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function p1RangeSettled(result) {
     var st = p1RangePaint((result && result.state) || null) || p1RangeState();
     var status = (st && st.status) || (result && result.status) || '';
+    /* name the job's OWN scope - a year job resumed from this panel must not
+       be reported as if it were the month in the picker */
+    var scope = st ? ((st.kind === 'year' ? 'year ' : 'month ') + st.target) : (P && P.range ? P.range.label : 'the month');
     if (P) P.running = false;
-    if (status === 'complete') pSet('ez3PullNow', 'Verified ' + (P && P.range ? P.range.label : 'the month') + ' complete.');
+    if (status === 'complete') pSet('ez3PullNow', 'Verified ' + scope + ' complete.');
     else if (status === 'needs-attention') pSet('ez3PullNow', 'Finished — some days still need attention.');
     else if (status === 'paused') pSet('ez3PullNow', 'Paused. Resume continues from the saved checkpoint.');
     else if (status === 'cancelled') pSet('ez3PullNow', 'Cancelled. Days already saved stay saved.');
@@ -22403,7 +22406,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' &&
         saved.kind === 'month' && saved.target === monthKey) return p1RangeResume();
     if (saved && saved.status !== 'complete' && saved.status !== 'cancelled' && saved.status !== 'needs-attention') {
-      pSet('ez3PullNow', 'A saved pull for ' + String(saved.kind === 'year' ? saved.target : saved.target) + ' is still unfinished.');
+      pSet('ez3PullNow', 'A saved ' + (saved.kind === 'year' ? 'year' : 'month') + ' pull for ' + String(saved.target) + ' is still unfinished.');
       pSet('ez3PullNow2', 'Resume or cancel it before starting a different month.');
       return true;
     }
