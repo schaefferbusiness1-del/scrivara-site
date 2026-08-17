@@ -94,6 +94,14 @@ const tests = [
      the shipped refresher reads, the "<!-- Developer API key + MLS Assist"
      between() boundary comment, and every control/handler are untouched. */
   '1p-advanced-integrations-disclosure.test.js',
+  /* sharedws-1.0.0 (readiness P0 #9): the 30-day token was written to
+     localStorage and boot auto-entered from that seed, so Doctor A closing the
+     exam-room tab put Doctor B inside A's charts. Runs the real token helpers
+     and the real inactivity machinery on a FAKE CLOCK and proves both modes —
+     private unchanged (seed written, 30 min, purging sign-out) and shared
+     (session-only token, seed entry re-authenticates, 15 min, and a LOCK that
+     keeps the unsaved visit and purges nothing). */
+  '1p-shared-workstation-runtime.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
   '1p-pull-resume-skip-and-cost-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',

@@ -6223,13 +6223,19 @@ reconcileAppFooterNotice();
    through these helpers. */
 function bkToken(){ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }
 function setBkToken(t){
-  if(t){ sessionStorage.setItem('sf_bk_token',t); localStorage.setItem('sf_bk_token',t); }
+  /* sharedws-1.0.0: on a shared computer the token never leaves the tab, and
+     any seed a private-mode session already left behind is stripped. */
+  var shared=(typeof swEnabled==='function')&&swEnabled();
+  if(t){ sessionStorage.setItem('sf_bk_token',t); if(shared) localStorage.removeItem('sf_bk_token'); else localStorage.setItem('sf_bk_token',t); }
   else { sessionStorage.removeItem('sf_bk_token'); localStorage.removeItem('sf_bk_token'); }
 }
 /* Per-tab session email (sessionStorage-first; localStorage is the seed). */
 function getSessionEmail(){ return sessionStorage.getItem('sf_session')||localStorage.getItem('sf_session')||''; }
 function setSessionEmail(e){
-  if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
+  /* sharedws-1.0.0: the seed pair is written and torn together, so a shared
+     computer never keeps half a session on disk. */
+  var shared=(typeof swEnabled==='function')&&swEnabled();
+  if(e){ sessionStorage.setItem('sf_session',e); if(shared) localStorage.removeItem('sf_session'); else localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
 /* SLIDING SESSION REFRESH (b940): an ACTIVE clinician must never hit the fixed
@@ -7320,6 +7326,7 @@ function startSession(email){
   if(globalThis.__mlsPatientStoreBatch&&typeof globalThis.__mlsPatientStoreBatch._prepareBoundary==='function')globalThis.__mlsPatientStoreBatch._prepareBoundary('session-start');
   session={email};
   setSessionEmail(email);
+  try{ if(typeof swOnSessionStart==='function') swOnSessionStart(email); }catch(eSw){} /* sharedws-1.0.0 */
   try{ slideSession(); }catch(e){} /* b940: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
@@ -7389,6 +7396,9 @@ function startSession(email){
       if(sfSessionPromptValid(_assistPromptEpoch,_assistPromptAccount)) maybePromptInstallAssist(_assistPromptEpoch,_assistPromptAccount);
     },1600);
   }catch(e){}   // first-run nudge to install MLS Assist (skips if already installed/dismissed)
+  /* sharedws-1.0.0: ask once per device, after the assist nudge so two dialogs
+     never stack. setTimeout only — a hidden tab's rAF never fires. */
+  try{ setTimeout(function(){ try{ if(typeof swMaybeFirstRunPrompt==='function') swMaybeFirstRunPrompt(); }catch(e2){} },3200); }catch(e){}
   if(_gateMode){
     // Refresh identity, then require an explicit server-owned legal release.
     // Absence, timeout, malformed evidence, or any network/server error remains
@@ -8750,7 +8760,12 @@ function getIdleMins(){
   const raw=localStorage.getItem(uns('idleMins'));
   if(raw==='off'||raw==='0') return 0; // 0 = auto-logoff disabled ("stay signed in")
   const v=parseInt(raw,10);
-  return (v && v>0) ? v : 30; // default: auto log off after 30 minutes of inactivity
+  if(v && v>0) return v;
+  /* sharedws-1.0.0: an unattended shared computer gets a 15-minute window, not
+     30. This moves the DEFAULT only — the Settings control still wins, and the
+     select reads its value back from here so the two can never disagree. */
+  try{ if(typeof swEnabled==='function'&&swEnabled()) return SW_DEFAULT_IDLE_MINS; }catch(eSw){}
+  return 30; // default: auto log off after 30 minutes of inactivity
 }
 /* lgn-1.0.0: ACCOUNT-WIDE activity ledger. Activity in ANY same-account MLS tab
    counts toward the inactivity window. Without this, a background tab idles out
@@ -8854,6 +8869,12 @@ function idleLogout(){
   // the ATHENA tab right now? A changed open chart is real work; re-arm.
   _idleAthenaProbe(function(athenaActive){
     if(athenaActive){ resetIdle(); return; }
+    /* sharedws-1.0.0: on a shared computer this is a LOCK, not a sign-out — the
+       reachability goes, the unsaved visit stays. Every refusal above (live
+       capture, running pull, report generation, another active tab, an active
+       athenaOne chart) has already been honoured, so the two paths differ only
+       in what happens at the end. */
+    try{ if(typeof swEnabled==='function'&&swEnabled()&&swLock('idle')) return; }catch(eSw){}
     _stampSignoutReason('idle',{mins:getIdleMins()||30});
     toast('Logged out due to inactivity.','');
     logout(true);
@@ -8888,6 +8909,273 @@ function attachIdleListeners(){
   });
 }
 
+/* ===== sharedws-1.0.0 — a shared workstation cannot cross doctors =====
+ *
+ * MEASURED (readiness P0 #9). The 30-day bearer token is written to
+ * localStorage by setBkToken() above, and boot auto-enters from that seed with
+ * no re-authentication. On the exam-room computer every practice actually has,
+ * Doctor A closes the tab without signing out, Doctor B opens MLS, and B lands
+ * inside A's account, on A's charts. Nothing in the product asked a question.
+ *
+ * This block adds ONE switch a physician can read - "This computer is shared" -
+ * and three behaviours under it:
+ *
+ *   1. THE TOKEN NEVER LEAVES THE TAB. setBkToken/setSessionEmail write
+ *      sessionStorage only and strip any localStorage seed already on the
+ *      device, so closing the tab ends the session on this computer.
+ *   2. A SEED ENTRY RE-AUTHENTICATES. A tab that starts with no session of its
+ *      own, and only the localStorage "last login" seed to go on, does not
+ *      auto-enter: the seed is dropped and the ordinary sign-in screen asks for
+ *      the password and, where the account has one, the second factor. This
+ *      block never touches a credential itself - it only declines to skip the
+ *      screen that does.
+ *   3. AN UNATTENDED SCREEN LOCKS; IT DOES NOT DISCARD. The default idle window
+ *      becomes 15 minutes instead of 30, and when it fires on a shared computer
+ *      the app LOCKS to the sign-in screen rather than signing out. The token is
+ *      dropped, so nothing on this device can reach the account; the in-progress
+ *      visit is flushed to its account-namespaced draft slot FIRST; and nothing
+ *      is purged. Signing back in as the same doctor offers the work back
+ *      through the restore bar that already exists. A "sign out and clear this
+ *      computer" button on the lock screen still purges exactly as today.
+ *
+ * WHY A LOCK AND NOT A LOGOUT. logout() purges by design - it clears the whole
+ * account namespace, every clinical IndexedDB, and ALL of sessionStorage
+ * (clinical-state-purge.js:163), which is where the unsaved visit lives. An
+ * idle logout therefore destroys work the doctor never chose to abandon. A lock
+ * removes the reachability without removing the work, and leaves the purge on
+ * the deliberate path where it belongs.
+ *
+ * THE DEFAULT. A computer that has never been signed in to MLS starts SHARED,
+ * so a new practice is protected before anyone reads a setting. A computer that
+ * already carries a sign-in keeps today's behaviour and is ASKED once, so no
+ * existing doctor is silently locked out of his own laptop. Both are device
+ * facts, deliberately not account facts: the account cannot know which computer
+ * it is sitting on.
+ */
+var SW_MODE_KEY='sf_shared_workstation';          /* device-level: describes the COMPUTER, so it is never account-namespaced */
+var SW_ASKED_KEY='sf_shared_workstation_asked';
+var SW_LOCK_KEY='sf_sw_lock';                     /* per-tab: a lock belongs to the tab it locked */
+var SW_DEFAULT_IDLE_MINS=15;
+var swLocked=false;
+
+function swRead(key){ try{ return localStorage.getItem(key); }catch(e){ return null; } }
+function swWrite(key,value){ try{ localStorage.setItem(key,value); return true; }catch(e){ return false; } }
+
+/* Has MLS ever been signed in on this computer? Any of: a token seed, a session
+   seed, the remembered sign-in email, or a single account-namespaced key. */
+function swDeviceEverSignedIn(){
+  try{
+    if(localStorage.getItem('sf_bk_token')||localStorage.getItem('sf_session')) return true;
+    if(localStorage.getItem(LAST_HOSTED_LOGIN_EMAIL_KEY)) return true;
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k&&String(k).indexOf('sf_u::')===0) return true;
+    }
+    return false;
+  }catch(e){ return true; }   /* unreadable storage: assume an existing device and change nothing */
+}
+function swDefaultEnabled(){ return !swDeviceEverSignedIn(); }
+function swEnabled(){
+  var raw=swRead(SW_MODE_KEY);
+  if(raw==='1') return true;
+  if(raw==='0') return false;
+  return swDefaultEnabled();
+}
+function swStripLocalSeed(){
+  try{ localStorage.removeItem('sf_bk_token'); }catch(e){}
+  try{ localStorage.removeItem('sf_session'); }catch(e){}
+}
+function swSetEnabled(on){
+  on=!!on;
+  swWrite(SW_MODE_KEY,on?'1':'0');
+  swWrite(SW_ASKED_KEY,'1');
+  if(on) swStripLocalSeed();
+  else {
+    /* answering "this computer is mine" must actually keep him signed in: the
+       seed the shared path stripped is written back from the live session. */
+    try{
+      var tok=sessionStorage.getItem('sf_bk_token'), em=sessionStorage.getItem('sf_session');
+      if(tok) localStorage.setItem('sf_bk_token',tok);
+      if(em) localStorage.setItem('sf_session',em);
+    }catch(e){}
+  }
+  try{ swSyncSettingsField(); }catch(e){}
+  try{ resetIdle(); }catch(e){}   /* the idle default changes with the mode */
+  try{
+    toast(on
+      ? 'Shared computer: MLS will ask for your password in every new tab and lock after '+(getIdleMins()||15)+' quiet minutes.'
+      : 'Private computer: MLS will keep you signed in on this device.','');
+  }catch(e){}
+  return on;
+}
+
+/* --- the Settings switch, built by the block so promoting it carries it ---- */
+function swEnsureSettingsField(){
+  try{
+    if(document.getElementById('swSharedToggle')) return true;
+    var idle=document.getElementById('idleMins'); if(!idle) return false;
+    var host=(typeof idle.closest==='function')?idle.closest('.field'):null;
+    if(!host||!host.parentNode) return false;
+    var box=document.createElement('div');
+    box.className='field';
+    box.setAttribute('data-sharedws-own','settings-field');
+    box.style.cssText='padding-top:0;margin-top:0';
+    var label=document.createElement('label');
+    label.style.cssText='font-size:15px;display:flex;align-items:center;gap:9px;cursor:pointer';
+    var cb=document.createElement('input');
+    cb.type='checkbox'; cb.id='swSharedToggle'; cb.style.width='auto';
+    var span=document.createElement('span');
+    span.textContent='🖥️ This computer is shared with other clinicians';
+    label.appendChild(cb); label.appendChild(span);
+    var note=document.createElement('p');
+    note.className='note'; note.id='swSharedNote'; note.style.margin='4px 0 10px';
+    box.appendChild(label); box.appendChild(note);
+    host.parentNode.insertBefore(box,host);
+    cb.addEventListener('change',function(){ swSetEnabled(cb.checked); });
+    swSyncSettingsField();
+    return true;
+  }catch(e){ return false; }
+}
+function swSyncSettingsField(){
+  try{
+    var cb=document.getElementById('swSharedToggle');
+    if(cb) cb.checked=swEnabled();
+    var note=document.getElementById('swSharedNote');
+    if(note){
+      note.textContent=swEnabled()
+        ? 'On: MLS asks for your password in every new tab, never keeps you signed in after the tab closes, and locks the screen after '+(getIdleMins()||SW_DEFAULT_IDLE_MINS)+' quiet minutes. Locking keeps your unsaved visit; it does not delete anything.'
+        : 'Off: this computer stays signed in between tabs and sessions. Turn this on for any exam-room, workroom, or front-desk computer that more than one clinician uses.';
+    }
+    var sel=document.getElementById('idleMins');
+    if(sel){
+      var m=getIdleMins();
+      sel.value=(m===0?'off':String(m));
+    }
+  }catch(e){}
+}
+
+/* --- first run: ask once, on this device ---------------------------------- */
+function swMaybeFirstRunPrompt(){
+  try{
+    if(!backendMode()) return false;
+    if(swRead(SW_ASKED_KEY)==='1') return false;
+    if(typeof mlsConfirm!=='function'){ swWrite(SW_ASKED_KEY,'1'); return false; }
+    var mins=getIdleMins()||SW_DEFAULT_IDLE_MINS;
+    var msg=swEnabled()
+      ? 'Is this computer shared with other clinicians?\n\nMLS has it set to SHARED, so it asks for your password in every new tab and locks the screen after '+mins+' quiet minutes. Say so if this computer is yours alone.'
+      : 'Is this computer shared with other clinicians?\n\nOn a shared computer MLS asks for your password in every new tab and locks the screen after '+SW_DEFAULT_IDLE_MINS+' quiet minutes, so the next person cannot land in your charts.';
+    Promise.resolve(mlsConfirm(msg,{okLabel:'Yes, it is shared',cancelLabel:'No, it is mine'}))
+      .then(function(yes){ swSetEnabled(yes===true); },
+            function(){ swWrite(SW_ASKED_KEY,'1'); });
+    return true;
+  }catch(e){ return false; }
+}
+/* --- boot: an entry that came only from the localStorage seed -------------- */
+function swSeedOnlyEntry(){
+  try{
+    if(sessionStorage.getItem('sf_bk_token')) return false;   /* this tab owns a session */
+    return !!localStorage.getItem('sf_bk_token');             /* only the "last login" seed is left */
+  }catch(e){ return false; }
+}
+function swRequireReauth(email){
+  swStripLocalSeed();
+  try{
+    var field=document.getElementById('authEmail');
+    var known=normalizeHostedLoginEmail(email)||getLastHostedLoginEmail();
+    if(field&&known) field.value=known;
+    var err=document.getElementById('authErr');
+    if(err){
+      err.textContent='🔒 This computer is shared, so MLS does not stay signed in between tabs. Enter your password to continue — nothing on this device was deleted.';
+      err.style.display='block';
+    }
+  }catch(e){}
+  return true;
+}
+
+/* --- the lock -------------------------------------------------------------- */
+function swIsLocked(){
+  try{ return !!sessionStorage.getItem(SW_LOCK_KEY); }catch(e){ return false; }
+}
+function swLockRecord(){
+  try{ return JSON.parse(sessionStorage.getItem(SW_LOCK_KEY)||'null'); }catch(e){ return null; }
+}
+function swLock(reason){
+  if(!session) return false;
+  var email=(session&&session.email)||getSessionEmail()||'';
+  var mins=getIdleMins()||SW_DEFAULT_IDLE_MINS;
+  /* FLUSH FIRST. _saveVisitDraft writes sessionStorage[uns('visitDraft')] and
+     uns() resolves through the still-live session, so the draft lands under THIS
+     doctor's namespace before anything is torn down. */
+  try{ if(typeof _saveVisitDraft==='function') _saveVisitDraft(); }catch(e){}
+  try{ sessionStorage.setItem(SW_LOCK_KEY,JSON.stringify({email:email,at:Date.now(),reason:String(reason||'idle'),mins:mins})); }catch(e){}
+  swLocked=true;
+  try{ stopIdle(); }catch(e){}
+  /* Drop the TOKEN only. Nothing on this device can reach the account now - and
+     because session is null a 401 elsewhere no longer triggers the purging
+     logout path (the two eviction sites both guard on session). The session
+     EMAIL stays in this tab so uns() still resolves to the locked account: it is
+     what makes the draft findable, and what makes a later deliberate sign-out
+     purge the right namespace instead of refusing with no account. */
+  try{ setBkToken(''); }catch(e){}
+  try{ bkUser=null; }catch(e){}
+  session=null;
+  try{
+    document.getElementById('appScreen').style.display='none';
+    var authScreen=document.getElementById('authScreen');
+    authScreen.style.display='flex';
+    var tc=document.getElementById('twofaCard'); if(tc) tc.style.display='none';
+    var rc=document.getElementById('resetCard'); if(rc) rc.style.display='none';
+    var cards=authScreen.querySelectorAll('.auth-card');
+    if(cards[0]) cards[0].style.display='block';
+    var pw=document.getElementById('authPass'); if(pw) pw.value='';
+    switchAuth('login');
+  }catch(e){}
+  swPaintLockGate(email,mins);
+  return true;
+}
+function swPaintLockGate(email,mins){
+  try{
+    var field=document.getElementById('authEmail');
+    var known=normalizeHostedLoginEmail(email)||getLastHostedLoginEmail();
+    if(field&&known) field.value=known;
+    var err=document.getElementById('authErr');
+    if(err){
+      err.textContent='🔒 Locked after '+mins+' quiet minutes because this computer is shared. Your unsaved visit is being held for '+(known||'the signed-in clinician')+' — sign in to pick it up. Signing in as a different clinician discards it.';
+      err.style.display='block';
+    }
+    if(!document.getElementById('swLockSignOut')&&err&&err.parentNode){
+      var out=document.createElement('button');
+      out.id='swLockSignOut'; out.type='button'; out.className='btn-ghost';
+      out.style.cssText='font-size:13px;padding:8px 13px;margin-top:8px';
+      out.textContent='Sign out and clear this computer';
+      out.title='Removes this account’s charts, notes and recordings from this device. Anything not yet saved to your MLS account is lost.';
+      out.addEventListener('click',function(){ swClearLock(); try{ logout(true); }catch(e){} });
+      err.parentNode.insertBefore(out,err.nextSibling);
+    }
+  }catch(e){}
+}
+function swClearLock(){
+  swLocked=false;
+  try{ sessionStorage.removeItem(SW_LOCK_KEY); }catch(e){}
+  try{ var b=document.getElementById('swLockSignOut'); if(b) b.remove(); }catch(e){}
+}
+/* Called from startSession the moment the new identity is adopted. */
+function swOnSessionStart(email){
+  try{
+    var rec=swLockRecord();
+    if(rec&&rec.email&&String(rec.email)!==String(email||'')){
+      /* a DIFFERENT clinician unlocked this computer: the held draft is not
+         theirs to see, and uns() is about to point somewhere else anyway. */
+      try{ sessionStorage.removeItem('sf_u::'+String(rec.email)+'::visitDraft'); }catch(e){}
+    }
+  }catch(e){}
+  swClearLock();
+  if(swEnabled()) swStripLocalSeed();
+  try{ swEnsureSettingsField(); }catch(e){}
+  try{ swSyncSettingsField(); }catch(e){}
+  return true;
+}
+/* ===== end sharedws-1.0.0 ===== */
 /* ---------- settings ---------- */
 /* Hide the API-key field & nudges when running in hosted backend mode. */
 function applyBackendModeUI(){
@@ -35962,6 +36250,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   // per-tab session restores that account; a fresh tab falls back to the
   // localStorage seed → auto-enters the last account, unchanged single-tab UX)
   const saved=getSessionEmail();
+  /* sharedws-1.0.0: BEFORE the auto-enter below. On a shared computer a tab that
+     has no session of its own, and only the localStorage "last login" seed to go
+     on, must not walk into the previous doctor's account — the seed is dropped
+     here so bkToken() is empty and the branch below falls through to the normal
+     sign-in screen. */
+  try{ if(typeof swEnabled==='function'&&swEnabled()&&swSeedOnlyEntry()) swRequireReauth(saved); }catch(eSw){}
+  try{ if(typeof swEnsureSettingsField==='function') swEnsureSettingsField(); }catch(eSw2){}
   if(backendMode() && bkToken() && saved){
     // CLAIM the session into THIS tab's sessionStorage. If we only seeded from
     // the localStorage "last login" (sessionStorage empty), copy it into
