@@ -26,9 +26,12 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    (scripts/sweep-3062.js). The config comparison below applies those two
    literal substitutions to the frozen baseline text, so everything else in
    the file is still byte-compared. */
+/* 3.0.63 (2026-08-17): the frozen baseline text (P1_CONFIG_BASE_COMMIT) still names
+   v3.0.61 / 4d77f337...; each release maps THOSE baseline literals to the current
+   release (scripts/sweep-3063.js). */
 const P1_CONFIG_RELEASE_SUBS = [
-  ['MLS_Assist_v3.0.62', 'MLS_Assist_v3.0.63'],
-  ['b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f', 'c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c79']
+  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.63'],
+  ['4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775', 'c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c79']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
@@ -67,12 +70,22 @@ const P1_CONFIG_RELEASE_SUBS = [
    verdict decoupled from the pulled-day note), tny-1.0.0 (today's not-yet-seen appointments are not failures),
    cap-1.0.0 (a captured chart is saved before any AI step; AI outage → summaryPending), nav-1.0.0 (no whole
    re-pull after a landed schedule), fdx-1.1.0; /cloned re-derived. Production and extension baselines untouched. */
-const P1_BASE_COMMIT = '5fb0e3d60409ca0d751297d59686cd89e9fdef58';
+/* Advanced by the 1p train of 2026-08-17 (Fable straighten-up, BATCH 7): ext 3.0.63 Settings card,
+   Athena review READY without executing + read-only fix ladder + PROBE ONLY + op-note hand-off (writeready),
+   A1 (pdr-1.0.0 port, oar-1.0.0, nq-1.0.0, ptsmig-1.0.0, psq-1.0.0, fork parity), A2 (apptclock-1.0.0,
+   sharedws-1.0.0, advint-1.0.0, dsdiag-1.1.0, diag-account-1.0.0), op notes round 2 + note-model-1.1.0,
+   visitowner-1.0.0, pull honesty + day-note budget (pullfix3); /cloned re-derived at cloned-20260817-r4.
+   Production and extension baselines ALSO move (below) - same commit. */
+const P1_BASE_COMMIT = '469607c9feb45031e5a8bcf2f2a73184d1d1562c';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
    2026-08-17 evidence artifact. */
-const EXTENSION_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
+/* Advanced by the AUTHORIZED extension release train 3.0.63 (2026-08-17): athena tab
+   resilience - rendered-strip preference, missed-ping re-check, empty week strip -> recovery
+   ladder, athenaTabs on goto/schedule/presence replies; digest fb803aca..., zip c71a6375... -
+   documented in scripts/sweep-3063.js. Nothing about writing moved. */
+const EXTENSION_BASE_COMMIT = '469607c9feb45031e5a8bcf2f2a73184d1d1562c';
 /* Advanced by the SAME extension release train, for the pin lines ONLY: the
    production Settings card version strings + release notes (ScribeFlow.html,
    ScribeFlow-staging.html) and the feat_mls_checker.js loader token in
@@ -84,7 +97,11 @@ const EXTENSION_BASE_COMMIT = 'a1983b91737bef97871241cc18e053b7115f3413';
    owner: 'main site fixes come first'). Moves ScribeFlow.html/-staging.html,
    mls-connect.js, app-version.json build tokens and feat_mls_schedimport_exact.js
    ONLY; the extension baseline does not move. */
-const PRODUCTION_BASE_COMMIT = '1ba4a812a10996e3f2b259bea70fb015b1297d09';
+/* Advanced by the SAME 3.0.63 release train, for the pin lines ONLY: production Settings card
+   version strings + release notes, get-extension/_config/inventory pins, feat_mls_checker.js
+   SERVER_EXT_VERSION + its chk3063 loader token in mls-connect.js/-staging.js - exactly what
+   every prior extension release moved. No production behaviour changed. */
+const PRODUCTION_BASE_COMMIT = '469607c9feb45031e5a8bcf2f2a73184d1d1562c';
 
 const P1_FILES = [
   '1pScribeFlow.html',
