@@ -149,7 +149,14 @@ async function testOneRowCannotStallTheBatch() {
   ok(i >= 0, 'tnBoundedRead is missing');
   const block = src.slice(i, src.indexOf('}', src.indexOf('"pulled-day-note-deadline-exceeded"', i)));
   ok(/boundedUntil\(/.test(block), 'the day-note read is not bounded by an absolute deadline');
-  ok(/DN_ROW_DEADLINE_MS/.test(block), 'the day-note bound is not the per-row budget');
+  /* pullfix3 (2026-08-17, measured 943 s day-note pass): the per-row bound is now
+     tnRowDeadlineMs() - DN_ROW_DEADLINE_MS as the floor, raised adaptively from the
+     rows this machine actually finished, capped at DN_ROW_DEADLINE_CAP_MS. The bound
+     is still per row (never the day). */
+  ok(/DN_ROW_DEADLINE_MS|tnRowDeadlineMs\(\)/.test(block), 'the day-note bound is not the per-row budget');
+  const tnRowIdx = src.indexOf('function tnRowDeadlineMs()');
+  ok(tnRowIdx >= 0, 'tnRowDeadlineMs is missing');
+  ok(/DN_ROW_DEADLINE_MS/.test(src.slice(tnRowIdx, tnRowIdx + 400)), 'tnRowDeadlineMs must be anchored on DN_ROW_DEADLINE_MS (the per-row floor)');
   ok(/pulled-day-note-deadline-exceeded/.test(block),
     'the day-note bound does not refuse with a named, honest reason');
   /* every call site goes through the bound - a bare runForPatient in the

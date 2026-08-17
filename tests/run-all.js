@@ -104,6 +104,7 @@ const tests = [
   '1p-shared-workstation-runtime.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
   '1p-pull-resume-skip-and-cost-runtime.test.js',
+  '1p-pull-honesty-and-daynote-budget-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',

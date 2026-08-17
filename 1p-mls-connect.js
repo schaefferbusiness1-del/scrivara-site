@@ -4856,7 +4856,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/^identity-mismatch/.test(head)) return 'chart identity could not be verified';
     if (/^open-failed$/.test(head)) return 'not on the athenaOne schedule';
     if (/^read-failed$/.test(head)) return 'chart read timed out';
-    if (/^pulled-day-note-unread/.test(head)) return 'the note for the pulled day could not be read';
+    /* dnw-1.0.0 (owner 2026-08-17, verbatim: "comments like this would scare a
+       user, so if they are fixed, update them"). Nothing clinical was lost -
+       the chart itself saved - so say that, and never before the deferred
+       retry has had its turn. */
+    if (/^pulled-day-note-retrying/.test(head)) return 'today’s note not read yet — retrying';
+    if (/^pulled-day-note-unread/.test(head)) return 'today’s note could not be read this time — pull again later; nothing was lost';
     /* ===== fdx-1.1.0 / cap-1.0.0 (two verdicts that had no wording) ===== */
     if (/^find-open-deadline/.test(head)) return 'athenaOne search did not open the chart in time';
     if (/^summary-pending/.test(head)) return 'saved · summary pending';
@@ -4906,12 +4911,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 200)) + '"' : '';
       var dnRaw = String(r.dn == null ? '' : r.dn), dnCell = '';
       if (dnRaw && !pending) {
+        /* dnw-1.0.0: a row waiting on the deferred round is CALM ("retrying"),
+           not a warning. Only a row whose retry is spent says it could not be
+           read, and it says nothing was lost. */
+        var dnRetrying = dnRaw.indexOf('retrying:') === 0;
         var dnWhy = dnRaw === 'read' ? 'note saved'
           : dnRaw === 'not-yet' ? 'not seen yet'
           : dnRaw === 'future-day' ? 'day not here yet'
-          : 'note unread';
-        var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day') ? 'pp-wait' : 'pp-bad');
-        var dnTitle = dnRaw.indexOf('unread:') === 0 ? ' title="' + esc(dnRaw.slice(7, 207)) + '"' : '';
+          : dnRetrying ? 'today’s note not read yet — retrying'
+          : 'today’s note not read this time (chart saved)';
+        var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying) ? 'pp-wait' : 'pp-bad');
+        var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying) ? ' title="' + esc(dnRaw.slice(dnRetrying ? 9 : 7, 207)) + '"' : '';
         dnCell = '<span class="' + dnCls + '"' + dnTitle + ' style="opacity:.8">' + esc(dnWhy) + '</span>';
       }
       return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span>' + dnCell + '</div>';
@@ -4984,6 +4994,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     ensureFab(false);
     var total = S.total || 0, done = S.done || 0, ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0;
     var pct = total ? Math.round((done / total) * 100) : 0;
+    /* dnp-1.0.0: 100% is a CLAIM. While the engine reports an unfinished
+       day-note phase the pull is not finished, so the bar stops at 99%. */
+    if (pct >= 100 && S && S.phase && String(S.phase.kind || '') === 'day-notes' && S.running === true) pct = 99;
     var p = buildPanel();
     setText(p, 'done', String(done));
     setText(p, 'total', String(total));
@@ -5002,14 +5015,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        reported watching for 21 minutes. The counter is named for what it
        counts - histories - and the pulled-day NOTE column gets its own count
        beside it, never inside the failure count. */
-    var dnUnreadLive = 0;
-    try { (S.rows || []).forEach(function (r) { if (r && String(r.dn || '').indexOf('unread:') === 0) dnUnreadLive++; }); } catch (eDn) {}
-    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' pulled-day note' + (dnUnreadLive === 1 ? '' : 's') + ' not read yet' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
+    var dnUnreadLive = 0, dnRetryLive = 0;
+    try { (S.rows || []).forEach(function (r) { var d = String((r && r.dn) || ''); if (d.indexOf('unread:') === 0) dnUnreadLive++; else if (d.indexOf('retrying:') === 0) dnRetryLive++; }); } catch (eDn) {}
+    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
     /* ===== end dv3-1.0.0 ===== */
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
-    setText(p, 'current', String(S.current || 'opening the next chart'));
+    /* ===== dnp-1.0.0 (the bar does not claim 100% while a phase is running) ==
+       Owner 2026-08-17: the bar read 100% and "18 saved \u00B7 5 not saved" while
+       "saving the pulled day's note (7 of 23)" was still going. The engine now
+       publishes that pass as state.phase; while it is set the bar is held one
+       notch short and the phase's own counts are shown under it. */
+    var dnPhase = (S && S.phase && String(S.phase.kind || '') === 'day-notes') ? S.phase : null;
+    setText(p, 'current', dnPhase
+      ? ('reading today\u2019s notes ' + Number(dnPhase.done || 0) + ' of ' + Number(dnPhase.total || 0))
+      : String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
-    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + ((S.rows || []).length);
+    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + dnRetryLive + '|' + dnUnreadLive + '|' + ((S.rows || []).length);
     var rowsEl = p.querySelector('[data-pp="rows"]');
     if (rowsEl && p.__ppRowsSig !== sig) {
       p.__ppRowsSig = sig;
@@ -48939,9 +48960,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'signin': 'Sign in to MLS before pulling from Athena.',
       'signin-expired': 'Your MLS sign-in expired on this device. Sign in to MLS again, then pull — nothing was imported.',
       'no-ext': 'MLS Assist is not available in this browser. Enable the extension, reload this page, and try again.',
-      'nav-failed': (r && r.navSessionLikelyExpired === true)
-        ? 'Athena signed you out (its idle timeout). Sign in again on the Athena tab, then pull - nothing was imported.'
-        : 'Athena could not be opened to the requested day. Keep the signed-in Athena tab open and try again.',
+      /* p1-busy-click-1.0.0: a second click while the engine is busy is not a
+         failed pull. Without this entry the generic fallback below painted
+         "The pull did not return a verified completion receipt
+         (pull-in-flight). Nothing is being reported as complete." over a pull
+         that was running fine (measured live 2026-08-17). */
+      'pull-in-flight': String((r && r.error) || 'This pull is already running — watch the progress just below.'),
+      /* p1-onetab-nav-1.0.0: when the engine could see WHY the nav failed (the
+         athena week strip rendered no day cells in the tab MLS leased), its
+         evidence-based advice outranks this generic line. */
+      'nav-failed': (r && typeof r.navAdvice === 'string' && r.navAdvice)
+        ? r.navAdvice
+        : ((r && r.navSessionLikelyExpired === true)
+          ? 'Athena signed you out (its idle timeout). Sign in again on the Athena tab, then pull - nothing was imported.'
+          : 'Athena could not be opened to the requested day. Keep the signed-in Athena tab open and try again.'),
       'wrong-day': 'Athena showed a different day, so nothing was accepted. Open the requested day and try again.',
       'no-read': 'Athena did not return a readable schedule. Open the day schedule and try again.',
       'unverified-day': 'The extension could not prove that the visible Athena schedule matches this day, so nothing was accepted.',
@@ -49586,6 +49618,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              timeout was re-read as a settling grid three times over. The engine
              guard above stops that at the source; this refuses to re-pull on it
              even if some other path ever produces the pair again. */
+          /* ===== p1-busy-click-1.0.0 =====
+             The engine refused to START because one is already running. That
+             is not this pull's verdict and it is not an error report: say the
+             calm sentence, keep whatever the RUNNING pull last painted in the
+             log, and never arm the copy-error-report control. */
+          if (result && result.busyInFlight === true) {
+            var busyMsg = String(result.error || 'This pull is already running — watch the progress just below.');
+            DS.pulling = false;
+            DS.pullProviderScope = null;
+            dsStatusLog(busyMsg);
+            try { var busyBtn = $('mlsDsPullBtn'); if (busyBtn) { busyBtn.disabled = false; busyBtn.innerHTML = '📥 ' + esc(dsPullVerb()); } } catch (eBusyB) {}
+            try { if (typeof window.toast === 'function') window.toast(busyMsg, ''); } catch (eBusyT) {}
+            return;
+          }
           var __stoppedByUser = false;
           try { __stoppedByUser = window.__mlsPullStopRequested === true || String((result && result.reason) || '') === 'stopped-by-user' || !!(result && result.historyReceipt && result.historyReceipt.stoppedByUser === true); } catch (eStp2) {}
           var __emptyDayParseTimeout = !!(result && String(result.reason || '') === 'schedule-parse-timeout' && result.scheduleReceipt && result.scheduleReceipt.authoritativeEmpty === true);
@@ -49900,6 +49946,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (!ok) paint();
         };
         try { window.addEventListener('storage', function (ev) { try { var r = window.__mlsVisitNotesPref; if (ev && ev.key && r && typeof r.isPrefKey === 'function' && r.isPrefKey(ev.key)) paint(); } catch (e2) {} }); } catch (e3) {}
+        /* p1-visitpref-broadcast-1.0.0: the SAME-TAB half of the same job. The
+           storage listener above only ever fires for OTHER tabs, so without
+           this the visible control kept showing the value it happened to be
+           painted with at strip build (measured: CHECKED while the resolver -
+           and therefore the pull - said off). */
+        try { window.addEventListener('mls:visit-notes-pref-changed', function () { try { if (document.getElementById('mlsDsVisitBodies') === tgl) paint(); } catch (e5) {} }); } catch (e4) {}
       })();
       $('mlsDsPrev').onclick = function () { shift(-1); };
       $('mlsDsNext').onclick = function () { shift(1); };
@@ -50106,6 +50158,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var ok = got.state === want && got.on === (on === true);
       api.lastWrite = { want: want, confirmed: ok, pairCoherent: pairCoherent };
       if (ok && !pairCoherent) { try { console.warn('[mls] visit-notes preference: canonical key confirmed but the legacy-pair write failed; an older cached bundle could read a stale value until it updates.'); } catch (eW) {} }
+      /* ===== p1-visitpref-broadcast-1.0.0 (2026-08-17, MEASURED) ============
+         A same-tab write fires NO storage event, so every VIEW of this
+         preference in this tab went stale the moment anything else wrote it.
+         Measured against the real resolver + the real day-strip paint block:
+         boot with a real namespace and no stored value answers
+         {state:'unset', on:true, settled:true} -> the strip checkbox paints
+         CHECKED and arms no settle interval (the answer is already
+         definitive); a later write of 'off' leaves read() = {state:'off',
+         on:false} with checkbox.checked === true, permanently. That is the
+         "checkbox says ON while the pull runs OFF" the owner saw.
+         One broadcast, emitted only on a CONFIRMED write, so a refused write
+         can never move a view. Views listen; nothing else changes. */
+      if (ok) { try { window.dispatchEvent(new CustomEvent('mls:visit-notes-pref-changed', { detail: { state: want, on: on === true } })); } catch (eB) {} }
       return ok;
     } catch (e) { return false; }
   }
@@ -53811,6 +53876,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     busy = false;
     try { el.disabled = false; } catch (e) {}
+    /* p1-busy-click-1.0.0: the hero button shares the engine with the Visit
+       strip. A refusal to START must not paint an error verdict or offer an
+       error report over the pull that IS running. */
+    if (result && result.busyInFlight === true) {
+      var heroBusy = String(result.error || 'This pull is already running — watch the progress just below.');
+      paint(el, heroBusy, '');
+      try { if (isFn(window.toast)) window.toast(heroBusy, ''); } catch (eHb) {}
+      clearDiag();
+      return;
+    }
     var outcome = classify(result, day);
     paint(el, outcome.message, outcome.ok ? 'ok' : 'err');
     try { if (isFn(window.toast)) window.toast(outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}
