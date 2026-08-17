@@ -99,7 +99,9 @@ for (const name of SHELLS) {
     ok(connect.indexOf(`'${id}'`) > 0, `1p-mls-connect.js no longer reads #${id} — re-check this pin`);
   }
   /* the changelog text itself stays in the shell, retitled only */
-  ok(/id="extDlNotes"[^>]*>v3\.0\.62/.test(src),
+  /* the version literal moves with every extension release train (3.0.62 -> 3.0.63 on
+     2026-08-17, scripts/sweep-3063.js); the pin is that the notes text stays in #extDlNotes */
+  ok(/id="extDlNotes"[^>]*>v3\.0\.\d+ - /.test(src),
     `${name}: the pinned release-notes text was moved out of #extDlNotes`);
   ok(/<summary[^>]*>What changed in this update/.test(src),
     `${name}: the release-notes disclosure was not retitled to physician language`);

@@ -1367,7 +1367,7 @@
     return censusListHasContent(p.bmi);
   }
   /* ===== cap-1.0.0 (a captured chart is content, even before the AI runs) =====
-     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260817-r3, ext
+     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260817-r4, ext
      3.0.62, TODAY, bodies OFF, 16 rows): 9 rows read their chart out of athena
      successfully and then died on "502 Upstream request failed" - the BACKEND
      AI (aiCallRaw -> /api/complete, called by _parsePatientChart) was down
@@ -3258,6 +3258,146 @@
     });
   }
 
+  /* ===== p1-athena-presence-1.0.0 (a BUSY athena is not a MISSING athena) ====
+     MEASURED live 2026-08-17 20:20-20:45Z on /cloned, ext 3.0.62, with THREE
+     signed-in athenaOne tabs open: a mid-pull leg answered `no-athena-tab`
+     (the extension picker's 1.2-1.5 s session ping was missed while athena was
+     rendering) and the pull ended terminal with "sign in to athenaOne" - false,
+     and unactionable. The lease-free presence verb answered
+     `presence-verified` 5/5 within 80 ms immediately afterwards.
+
+     So: a `no-athena-tab` answer on the goto/schedule leg is now a QUESTION,
+     not a verdict. Ask the presence verb; if athena really is there, wait
+     2s/4s/8s and re-run THAT leg (at most 3 retries for the whole pull), and
+     count the retries in the receipt. Only when presence is genuinely absent
+     does the honest sign-in text stand.
+
+     The presence reply carries NO requestId (content.js:264-269 relays the
+     background answer verbatim), so it cannot ride bridge() - bridge REJECTS
+     an id-less stateful reply on purpose. This probe therefore listens for the
+     type directly, exactly the way feat_athena_guard.js's presenceProbe does.
+     PHI-free throughout: booleans, a reason code, and a tab COUNT. */
+  var P1_ATHENA_BUSY_WAITS = [2000, 4000, 8000];
+  var P1_ATHENA_BUSY_MAX = 3;
+  var p1PresenceLast = { at: 0, resp: null };
+  var p1AthenaTabsLast = { at: 0, tabs: -1 };
+  function p1PresenceProbe(ms) {
+    return new Promise(function (res) {
+      var done = false, timer = null;
+      function fin(v) {
+        if (done) return;
+        done = true;
+        safe(function () { if (timer != null) clearTimeout(timer); });
+        safe(function () { window.removeEventListener("message", on, false); });
+        if (v && typeof v === "object") p1PresenceLast = { at: Date.now(), resp: v };
+        res(v);
+      }
+      function on(e) {
+        var d = e && e.data;
+        if (!d || typeof d !== "object" || d.source !== "mls-ext" || d.type !== "mlsAthenaPresenceResult") return;
+        fin(d.resp || {});
+      }
+      safe(function () { window.addEventListener("message", on, false); });
+      timer = setTimeout(function () { fin(null); }, Number(ms) > 0 ? Number(ms) : 3500);
+      safe(function () { window.postMessage({ source: "mls-app", type: "mlsAthenaPresence" }, "*"); });
+    });
+  }
+  /* PHI-free athena tab COUNT. mlsExtHealth is the only verb that reports it
+     ({tabs, discarded}, background.js:15142), and its reply IS request-bound,
+     so this one rides bridge(). -1 means "not knowable", never 0. */
+  function p1AthenaTabCount(ms) {
+    return bridge("mlsExtHealthResult", "mlsExtHealth", Number(ms) > 0 ? Number(ms) : 2500).then(function (h) {
+      var n = Number(h && h.athena && h.athena.tabs);
+      if (!isFinite(n) || n < 0) return -1;
+      p1AthenaTabsLast = { at: Date.now(), tabs: n };
+      return n;
+    }, function () { return -1; });
+  }
+  /* the count this pull already knows, without spending another round trip */
+  function p1AthenaTabsKnown() {
+    return (p1AthenaTabsLast.at && Date.now() - p1AthenaTabsLast.at < 120000) ? Number(p1AthenaTabsLast.tabs) : -1;
+  }
+  function p1PresenceSaysAthenaLives(resp) {
+    if (!resp || typeof resp !== "object") return false;   /* no answer proves nothing */
+    if (resp.athenaOpen === true) return true;             /* presence-verified */
+    /* 'athena-tab-unverified' = raw athena tabs ARE present, the picker just
+       could not prove a signed-in one this instant. That is precisely the
+       busy-render case, so it earns a retry too. */
+    return String(resp.reason || "") === "athena-tab-unverified";
+  }
+  function p1IsNoAthenaTabAnswer(r) {
+    if (!r || typeof r !== "object") return false;
+    if (r.ok !== false) return false;
+    if (String(r.reason || "") === "no-athena-tab") return true;
+    return /no athenaone tab open/i.test(String(r.error || ""));
+  }
+  function p1BusySleep(ms) {
+    return safe(function () {
+      return window.__mlsBgSleep ? window.__mlsBgSleep(ms) : new Promise(function (r) { setTimeout(r, ms); });
+    }, new Promise(function (r) { setTimeout(r, ms); }));
+  }
+  /* Runs ONE athena leg, and re-runs it only while the presence verb proves
+     athena is really there. `budget` is shared by every leg of one pull, so the
+     whole pull can never spend more than P1_ATHENA_BUSY_MAX retries. */
+  function p1AthenaBusyRetry(runLeg, onStatus, budget) {
+    var say = isFn(onStatus) ? onStatus : function () {};
+    budget = budget || {};
+    function attempt() {
+      return Promise.resolve().then(runLeg).then(function (r) {
+        if (!p1IsNoAthenaTabAnswer(r)) return r;
+        var used = Number(budget.athenaBusyRetries || 0);
+        if (used >= P1_ATHENA_BUSY_MAX) { budget.athenaBusyExhausted = true; return r; }
+        return p1PresenceProbe(3500).then(function (presence) {
+          budget.athenaPresence = String((presence && presence.reason) || "no-answer");
+          if (!p1PresenceSaysAthenaLives(presence)) { budget.athenaPresenceAbsent = true; return r; }
+          budget.athenaPresenceAbsent = false;
+          budget.athenaBusyRetries = used + 1;
+          say("Athena is busy rendering — re-checking (" + (used + 1) + " of " + P1_ATHENA_BUSY_MAX + ")…", "");
+          return p1BusySleep(P1_ATHENA_BUSY_WAITS[used] || P1_ATHENA_BUSY_WAITS[P1_ATHENA_BUSY_WAITS.length - 1]).then(attempt);
+        });
+      });
+    }
+    return attempt();
+  }
+  /* THE ONE-TAB SENTENCE. Measured on the owner's athena 2026-08-17: three
+     tabs open, ONE with a rendered week strip (Sun 8/16 - Sat 8/22), TWO with
+     .calendar-nav present but EMPTY - and the extension leased an empty one.
+     Nothing about "the grid is still settling" is true there, so say what the
+     diag actually shows and name the fix the doctor can perform. */
+  function p1OneTabAdvice(tabs) {
+    var n = Number(tabs);
+    return "Athena's Day view isn't showing a week strip in the tab MLS is using." +
+      (isFinite(n) && n > 1 ? (" " + n + " Athena tabs are open.") : "") +
+      " Keep ONE signed-in Athena tab open on your Day view (close the extras) and Pull again.";
+  }
+  /* An EMPTY week strip is not a missing tab and not a slow render: the strip
+     container answered, it just carried no day cells. The extension says so in
+     its error text; the nav diag corroborates (rounds were spent, no init
+     frame was ever found). */
+  function p1NavEmptyStrip(nav, diag) {
+    var err = String((nav && nav.error) || "");
+    if (/no athenaone tab open/i.test(err)) return false;
+    if (/week strip shows no selected day|no selected day/i.test(err)) return true;
+    return !!(diag && Number(diag.rounds || 0) > 0 && diag.initFound === false);
+  }
+  /* ADVISORY, fire-and-forget: never blocks a pull, never refuses one. It
+     speaks only when the extension reports more than one athena tab or cannot
+     verify the one it has - the exact state that later dies as a 60 s
+     nav-failed. Costs the pull zero latency because nothing awaits it. */
+  function p1OneTabPreflight(onStatus) {
+    var say = isFn(onStatus) ? onStatus : function () {};
+    return safe(function () {
+      return Promise.all([p1PresenceProbe(2500), p1AthenaTabCount(2500)]).then(function (pair) {
+        var presence = pair[0], tabs = Number(pair[1]);
+        var unverified = !!(presence && presence.athenaOpen !== true && String(presence.reason || "") === "athena-tab-unverified");
+        var multi = isFinite(tabs) && tabs > 1;
+        if (unverified || multi) say(p1OneTabAdvice(tabs), "");
+        return { tabs: tabs, presence: String((presence && presence.reason) || "no-answer"), advised: unverified || multi };
+      }, function () { return { tabs: -1, presence: "probe-failed", advised: false }; });
+    }, Promise.resolve({ tabs: -1, presence: "probe-threw", advised: false }));
+  }
+  /* ===== end p1-athena-presence-1.0.0 ===== */
+
   /* Some athenaOne day grids render no demographics at all. The current React
      grid does, however, expose one immutable appointment id on every row. For
      a managed history pull, open ONLY that exact appointment row and accept a
@@ -4097,7 +4237,22 @@
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
     function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
     function ppResolve(rowRef,ok,reason,extra){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); if(extra){ if(extra.sp===true) rowRef.sp=true; /* cap-1.0.0 */ if(extra.chartSaved===true) rowRef.cs=true; if(extra.dn) rowRef.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ } ppTally(s); }
-    function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
+    function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; s.phase=null; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
+    /* ===== dnp-1.0.0 (the day-note pass gets its OWN phase) =================
+       Owner 2026-08-17: the bar sat at 100% with "18 saved · 5 not saved"
+       painted while "saving the pulled day's note (7 of 23)" was still
+       running. The history rows really WERE all settled - the bar was telling
+       the truth about the wrong thing. The engine now publishes the day-note
+       pass as a named phase with its own counts, so the surface that owns the
+       dialog can show "reading today's notes 7 of 23" under the same bar and
+       withhold "complete" until phase === null. PHI-free: a kind and two
+       integers. */
+    function ppPhase(kind, done, total){
+      var s = ppState(); if (!s) return null;
+      if (!kind) { s.phase = null; return null; }
+      s.phase = { kind: String(kind), done: Number(done || 0), total: Number(total || 0), at: Date.now() };
+      return s.phase;
+    }
     var sweepDepth = Number(sweepOpts && sweepOpts.depth != null ? sweepOpts.depth : sweepOpts) || 0;
     var sweepDeadlineCapAt = Number(sweepOpts && sweepOpts.deadlineCapAt || 0);
     /* si-1.9.4 (owner 2026-07-22): "when the bar resets it makes it seem like
@@ -4144,6 +4299,19 @@
            reason, so the slowest row costs DN_ROW_DEADLINE_MS, never the day.
        Codes only - no name, DOB or MRN reaches any reason string. */
     var DN_ROW_DEADLINE_MS = 45000;
+    /* ===== dnb-1.0.0 (the day-note budget is MEASURED, never assumed) =======
+       Owner watching live 2026-08-17 20:45-20:58Z (/cloned, bodies OFF, 24
+       patients, athena tabs HIDDEN/occluded): histories 24/24 in ~4 min, then
+       10 of 24 day-notes died `pulled-day-note-deadline-exceeded`. A hidden
+       athena tab is slow — a flat 45 s is a guess about a machine we can
+       measure instead. Every SUCCESSFUL day-note read feeds readStats.daynote,
+       and the next row's deadline is 2.5x the median of what this machine has
+       actually needed (floor 45 s so nothing gets tighter than today, cap
+       150 s so one wedged row can still never own the pull). */
+    var DN_ROW_DEADLINE_CAP_MS = 150000;
+    function tnRowDeadlineMs() {
+      return safe(function () { return adaptiveCeilingMs("daynote", DN_ROW_DEADLINE_MS, DN_ROW_DEADLINE_CAP_MS, DN_ROW_DEADLINE_MS); }, DN_ROW_DEADLINE_MS);
+    }
     function tnDayApplicable(day) {
       var d = normDate(day || "") || "";
       if (!d) return { ok: false, future: false, reason: "no-day-on-row" };
@@ -4151,10 +4319,16 @@
       return { ok: true, future: false, reason: "" };
     }
     function tnBoundedRead(vp, p, day) {
-      var at = Date.now() + DN_ROW_DEADLINE_MS;
+      var budget = tnRowDeadlineMs();
+      var startedAt = Date.now(), at = startedAt + budget;
+      safe(function () { receipt.todayNoteBudgetMs = budget; });
       return boundedUntil(
         Promise.resolve().then(function () { return vp.runForPatient(p, function () {}, { onlyDate: String(day) }); }),
-        at, "pulled-day-note-deadline-exceeded");
+        at, "pulled-day-note-deadline-exceeded").then(function (res) {
+          /* only a read that FINISHED tells us what this machine costs */
+          safe(function () { recordReadMs("daynote", Date.now() - startedAt); });
+          return res;
+        });
     }
     /* records the per-row cost of the day-note leg so "the day-note leg is
        what makes the pull slow" is a measurement, never an opinion. */
@@ -4240,6 +4414,11 @@
       if (entry.todayNote === true) return "read";
       if (entry.todayNote === "not-yet") return "not-yet";
       if (entry.todayNote === "future-day") return "future-day";
+      /* dnw-1.0.0 (owner 2026-08-17: "comments like this would scare a user"):
+         a row QUEUED for the deferred round has not failed - it has not
+         finished. Say so, and keep "could not be read" for the end of the
+         lane, after the retry has actually had its turn. */
+      if (entry.todayNote === false && entry.todayNoteDeferred === true) return "retrying:" + String(entry.todayNoteReason || "unknown").slice(0, 60);
       if (entry.todayNote === false) return "unread:" + String(entry.todayNoteReason || "unknown").slice(0, 60);
       return "";
     }
@@ -4248,10 +4427,37 @@
        the row's own settle, and latest-state-wins made the day-note verdict the
        row's visible verdict - 12 "not saved" rows on a day whose charts were
        read. The row keeps its HISTORY verdict; the note rides in r.dn. */
+    /* ===== dnw-1.0.0 (a fixed row must stop showing the failure) ============
+       MEASURED here, in this suite: the deferred round DID recover rows and
+       DID recompute the receipt, but the panel never changed - ppSettle
+       refuses to touch a reporter that has ended (`!s.running`), and the
+       deferred round by definition runs after ppEnd. So a doctor watching the
+       DONE card kept reading "the note for the pulled day could not be read"
+       about a note that had just been saved.
+       Re-stamping mutates the row that is already on the card, in place: it
+       adds no row, moves no saved/failed tally (the day-note lane stays
+       verdict-neutral, dv3-1.0.0), and touches only the note cell. */
+    function ppRestampDayNote(entry) {
+      var s = ppState();
+      if (!s || !entry) return false;
+      var col = tnColumn(entry);
+      if (!col) return false;
+      var pid = String(entry.patientId || ""), nm = String(entry.name || ""), hit = null;
+      for (var i = (s.rows || []).length - 1; i >= 0; i--) {
+        var r = s.rows[i];
+        if (!r) continue;
+        if (pid ? String(r.pid || "") === pid : String(r.name || "") === nm) { hit = r; break; }
+      }
+      if (!hit) return false;
+      hit.dn = col;
+      return true;
+    }
     function tnEmitDayNoteColumn(entry) {
       if (!entry || !entry.name || typeof ppSettle !== "function") return;
       var col = tnColumn(entry);
       if (!col) return;
+      var ppLive = safe(function () { var s = ppState(); return !!(s && s.running === true); }, false);
+      if (!ppLive) { safe(function () { ppRestampDayNote(entry); }); return; }
       safe(function () {
         ppSettle(entry.name, entry.complete === true,
           entry.complete === true ? (entry.summaryPending === true ? "saved · summary pending" : "") : ((entry.reason || "") + historyDiagSuffix(entry)),
@@ -4392,7 +4598,7 @@
        successful awaits resolve early - so the ceiling should track what
        reads actually cost RIGHT NOW: 2.5x the batch's median successful
        duration, clamped to a floor and cap. First reads use a neutral prior. */
-    var readStats = { chart: [], visits: [] };
+    var readStats = { chart: [], visits: [], daynote: [] }; /* dnb-1.0.0 */
     function recordReadMs(kind, ms) { if (isFinite(ms) && ms > 0) { readStats[kind].push(ms); if (readStats[kind].length > 40) readStats[kind].shift(); } }
     function adaptiveCeilingMs(kind, floorMs, capMs, priorMs) {
       var a = readStats[kind];
@@ -4497,10 +4703,31 @@
        the athena tab and wrestles the tab-of-record away from the next chart
        open (measured live 2026-07-28: 10 ok, then 11 straight tab-unreachable).
        Fused patients keep todayNote null and fall through to the tail pass,
-       which is byte-for-byte the old post-batch behavior. */
+       which is byte-for-byte the old post-batch behavior.
+
+       ===== dnf2-1.0.0 (the fuse is a COOLDOWN, not a kill switch) ==========
+       MEASURED 2026-08-17 20:45-20:58Z: because the fuse was ONE-WAY, the
+       FIRST timeout sent every remaining row to the tail pass — and the tail
+       pass opens each chart a SECOND time (feat_visits.run always re-verifies
+       through _assistReadChart). That is the 2N-chart-opens the owner watched
+       for 13 minutes on an occluded tab: "all charts read — saving the pulled
+       day's note (7 of 23)" is the fuse's shadow, not a design.
+       The fuse's stated cause is real and is kept: an abandoned scoped read
+       may still be driving the tab. But the NEXT row's own chart read is proof
+       that it is not — that read opened and verified the tab-of-record. So the
+       fuse now clears on the first successful chart read after it trips, and
+       the one-open inline lane resumes. Every fuse trip is counted. */
     var todayNoteExtOk = null;
     var safeAsync = async function (fn, fb) { try { return await fn(); } catch (eSa) { return fb; } };
     var inlineDayNoteFuse = "";
+    function dnClearFuseOnVerifiedChart() {
+      if (!inlineDayNoteFuse) return;
+      inlineDayNoteFuse = "";
+      safe(function () {
+        receipt.todayNoteInlineFuse = "";
+        receipt.todayNoteFuseCleared = Number(receipt.todayNoteFuseCleared || 0) + 1;
+      });
+    }
     /* ===== cap-1.0.0 (one place decides what a summary-pending row looks like) =====
        The AI half failed but the capture is STORED. The row is saved with a
        pending summary and a PHI-free code; it is NOT a failed history, it does
@@ -4712,6 +4939,9 @@
             rd = await boundedUntil(window._assistReadChart(target, function () {}, { requestId: chartRequestId, deadlineAt: chartDeadlineAt, athenaOwnerToken: siAthenaOwnerToken }), chartDeadlineAt, "chart-read-deadline-exceeded");
             stageMs.chart += Date.now() - __chartT0;
             recordReadMs('chart', Date.now() - __chartT0);
+            /* dnf2-1.0.0: this read just opened and VERIFIED the tab-of-record,
+               which is exactly the proof the day-note fuse was waiting for. */
+            dnClearFuseOnVerifiedChart();
             var parseDeadlineAt = Math.min(patientDeadlineAt, Date.now() + 120000);
             var parseRequestId = patientRequestId + "-parse" + (chartAttempt > 1 ? "-a" + chartAttempt : "");
             if (!stopAfterTimeout && pullVisitBodies !== true) {
@@ -5237,12 +5467,17 @@
           var vp = safe(function () { return window.__mlsVisitSavePref; }, null);
           var p = safe(function () { return findStorePatient(pid); }, null);
           if (!(vp && isFn(vp.runForPatient) && p)) {
-            entry.todayNote = false; entry.todayNoteReason = "deferred-reader-unavailable";
+            entry.todayNote = false; entry.todayNoteDeferred = false; entry.todayNoteReason = "deferred-reader-unavailable";
+            safe(function () { tnEmitDayNoteColumn(entry); });
             return Promise.resolve(false);
           }
           return tnBoundedRead(vp, p, String(day)).then(function (res) { /* dnf-1.0.0 */
             var ok = !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
             entry.todayNote = ok;
+            /* dnw-1.0.0: the retry has had its turn - this row is no longer
+               "retrying", it is read or it is honestly unread. */
+            entry.todayNoteDeferred = false;
+            if (ok) { entry.todayNoteRecovered = true; safe(function () { receipt.todayNoteRecovered = Number(receipt.todayNoteRecovered || 0) + 1; }); }
             entry.todayNoteReason = ok ? "" : String((res && res.reason) || "scoped-read-unverified").slice(0, 80);
             /* tny-1.0.0: the same not-yet classification applies to the
                deferred round - it runs after the pull, still on TODAY. */
@@ -5255,7 +5490,9 @@
             return ok;
           }, function (err) {
             entry.todayNote = false;
+            entry.todayNoteDeferred = false;   /* dnw-1.0.0: the retry is spent */
             entry.todayNoteReason = String((err && err.message) || err || "deferred-read-failed").slice(0, 80);
+            safe(function () { tnEmitDayNoteColumn(entry); });
             return false;
           });
         }
@@ -5488,7 +5725,12 @@
            this tail. tny-1.0.0 adds exactly ONE re-entry: a row parked as
            not-yet whose appointment slot has since passed. */
         if (oneTn.todayNote != null && !(oneTn.todayNote === "not-yet" && tnApptPassed(tnDay, tnRow))) continue;
-        tnIdx++; try { ppCurrent("all charts read \u2014 saving the pulled day's note (" + tnIdx + " of " + tnTotal + ") \u2014 " + String(oneTn.name || "").split(" ")[0]); } catch (ePpCur) {}
+        tnIdx++;
+        /* dnp-1.0.0 + dnw-1.0.0: the phase the dialog can render, and calm
+           wording while the answer is still unknown. "could not be read" is
+           reserved for the END of the lane, after the deferred round. */
+        try { ppPhase("day-notes", tnIdx - 1, tnTotal); } catch (ePpPh) {}
+        try { ppCurrent("reading today's notes (" + tnIdx + " of " + tnTotal + ") \u2014 " + String(oneTn.name || "").split(" ")[0]); } catch (ePpCur) {}
         safe(function () { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); });
         var tnId = String(oneTn.patientId || "");
         var tnGate = tnDayApplicable(tnDay); /* dnf-1.0.0 */
@@ -5528,6 +5770,8 @@
         tnEmitDayNoteColumn(oneTn);
       }
       } catch (eTodayNotePass) { try { if (receipt) receipt.todayNotePassError = String((eTodayNotePass && eTodayNotePass.message) || eTodayNotePass).slice(0, 120); } catch (eR2) {} }
+      /* dnp-1.0.0: the day-note pass is over - the bar may claim completion. */
+      try { ppPhase(null); } catch (ePpPh2) {}
       try { ppCurrent("finishing \u2014 recording the day verdict"); } catch (ePpFin) {}
     }
     finalizeVerdict();
@@ -5547,6 +5791,14 @@
        already earns applies - and "once the batch is idle" is exactly when
        this sweep runs. */
     var SWEEPABLE_REASON = /^(visit-bodies-incomplete|same-frame-name-mismatch|same-frame-name-missing|visits-time-budget-exceeded|visits-read-deadline-exceeded|chart-read-deadline-exceeded|find-open-deadline|stale-encounter-surface-open|encounter-surface-not-open|visits-total-not-readable|visits-list-still-rendering|visits-panel-not-open|no-athena-tab|deferred-after-timeout)/;
+    /* p1-athena-presence-1.0.0: the moment ANY row blames a missing athena
+       tab, ask the lease-free presence verb once. Nothing waits on the answer;
+       it only makes the day-end verdict tell the truth about whether athenaOne
+       was actually signed out or merely busy rendering. */
+    if (!sweepDepth) safe(function () {
+      var blamesTab = (receipt.retry || []).some(function (entry) { return /no-athena-tab/.test(String(entry && entry.reason || "")); });
+      if (blamesTab) p1PresenceProbe(3500);
+    });
     if (!sweepDepth && !__stpStopped) try {   /* stp-2.0.0 */
       receipt.sweepPasses = 0;
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
@@ -5732,8 +5984,33 @@
   var TN_DEFER_DELAY_MS = 1200;
   var TN_DEFER_LEASE_WAITS = 5;
   var _tnDefer = { queue: [], timer: null, running: false, waits: 0 };
+  /* ===== dnd2-1.0.0 (a TIMING refusal earns the deferred round) ============
+     MEASURED 2026-08-17 (owner's /cloned pull, 24 patients, occluded athena):
+     10 of 24 day-notes ended `pulled-day-note-deadline-exceeded` or "the
+     Athena patient open reached its own deadline" — and NONE of them entered
+     the deferred round, because this predicate only ever matched
+     `pull-in-flight`. The doctor was told "the note for the pulled day could
+     not be read" for rows that had never been retried once.
+     Only TIMING and SURFACE-RACE classes are added. A refusal that is
+     deterministic (an identity safety stop, the reader's own encounter-cap
+     verdict, an extension too old) is NOT retryable and stays exactly where it
+     was: retrying it would burn the doctor's time to re-fail. */
+  var TN_DEFERRABLE_REASON = new RegExp([
+    "pull-in-flight",
+    "pulled-day-note-deadline-exceeded",
+    "reached its own deadline",
+    "deadline-exceeded",
+    "\\btimed? ?out\\b|\\btimeout\\b",
+    "is still showing a different patient",
+    "not responding|unreachable"
+  ].join("|"), "i");
+  /* the deterministic refusals that must NEVER be re-driven */
+  var TN_NOT_DEFERRABLE_REASON = /(safety stop|cannot all be verified|encounter index without verified full detail|extension-predates-scoped-read|identity|different patient than this read expects and could not)/i;
   function tnIsDeferrable(reason) {
-    return /pull-in-flight/i.test(String(reason || ""));
+    var r = String(reason || "");
+    if (!r) return false;
+    if (TN_NOT_DEFERRABLE_REASON.test(r) && !/reached its own deadline|deadline-exceeded/i.test(r)) return false;
+    return TN_DEFERRABLE_REASON.test(r);
   }
   function tnAthenaFree() {
     if (pullRunning) return false;
@@ -6224,10 +6501,16 @@
         }, { v: 1, ok: false, reason: "nav-diag-unreadable", attempts: Number(attempts || 0) });
       }
       /* ===== end nav-1.0.0 (diag) ===== */
+      /* p1-athena-presence-1.0.0: ONE busy budget for the whole pull. Both the
+         goto leg and the schedule leg draw from it, so a busy athena can cost
+         at most three re-checks per pull no matter which leg hit it. */
+      var athenaBusy = { athenaBusyRetries: 0 };
       function gotoDateSettled() {
         var settleWaits = [2500, 5000, 8000];
         function attempt(round) {
-          return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false }).then(function (nav) {
+          return p1AthenaBusyRetry(function () {
+            return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 60000, { date: date, probe: false });
+          }, onStatus, athenaBusy).then(function (nav) {
             navAttempts = round + 1; /* nav-1.0.0 */
             var day0 = normDate(nav && nav.schedDate);
             var bad = !nav || nav.ok === false || (day0 && day0 !== date);
@@ -6240,15 +6523,41 @@
         }
         return attempt(0);
       }
+      /* ===== p1-onetab-nav-1.0.0 (the nav refusal says what the diag shows) ===
+         Live 2026-08-17: nav-failed carried "athena week strip shows no
+         selected day instead of <date>" on a NEXT-WEEK date while three athena
+         tabs were open and only ONE of them had a rendered week strip. The
+         doctor was told "keep the signed-in Athena tab open and try again" -
+         which he had done, three times over. Name the real state instead, and
+         carry the PHI-free tab count so the sentence can say how many. */
+      function p1NavFailure(nav, diag) {
+        var emptyStrip = p1NavEmptyStrip(nav, diag);
+        var known = p1AthenaTabsKnown();
+        var counted = (emptyStrip && known < 0) ? p1AthenaTabCount(2500) : Promise.resolve(known);
+        return Promise.resolve(counted).then(function (tabs) {
+          var extra = {
+            error: (nav && nav.error) || "",
+            navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired),
+            navDiag: diag, /* nav-1.0.0 */
+            athenaBusyRetries: Number(athenaBusy.athenaBusyRetries || 0),
+            athenaPresenceAtFailure: String(athenaBusy.athenaPresence || (p1PresenceLast.resp && p1PresenceLast.resp.reason) || ""),
+            athenaTabsAtFailure: Number(isFinite(Number(tabs)) ? tabs : -1),
+            navEmptyStrip: emptyStrip
+          };
+          if (emptyStrip) extra.navAdvice = p1OneTabAdvice(tabs);
+          onStatus(extra.navAdvice || (nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
+          return fail("nav-failed", extra);
+        });
+      }
+      /* ===== end p1-onetab-nav-1.0.0 ===== */
       return gotoDateSettled().then(function (nav) {
         var navDay = normDate(nav && nav.schedDate);
         if (nav && nav.ok === false) {
-          onStatus((nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
-          return fail("nav-failed", { error: nav && nav.error || "", navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired), navDiag: navDiagOf(nav, navAttempts) /* nav-1.0.0 */ });
+          return p1NavFailure(nav, navDiagOf(nav, navAttempts));
         }
         if (navDay && navDay !== date) {
           onStatus("Athena opened " + navDay + " instead of " + date + ". Nothing was imported.", "err");
-          return fail("wrong-day", { observedDay: navDay, navDiag: navDiagOf(nav, navAttempts) /* nav-1.0.0 */ });
+          return fail("wrong-day", { observedDay: navDay, navDiag: navDiagOf(nav, navAttempts) /* nav-1.0.0 */, athenaBusyRetries: Number(athenaBusy.athenaBusyRetries || 0) });
         }
         onStatus("Reading your athenaOne Day schedule...", "");
         /* Batch-bound receipt provenance (si-1.6.3): freeze THIS pull's schedule
@@ -6277,8 +6586,14 @@
             String(receipt.requestedProviderId || "") === rosterOperation.requestedProviderId &&
             String(receipt.requestedProviderStableKey || "") === rosterOperation.requestedProviderStableKey);
         }
-        return bridge("mlsAppScheduleResult", "mlsAppPullSchedule", 30000, { requestId: scheduleRequestId }).then(function (r) {
-        if (!r || !r.ok) { onStatus((r && r.error) || "Couldn't read your athenaOne tab. Open your Day schedule and try again.", "err"); return fail((r && r.reason) || "no-read", { error: r && r.error || "", schedSessionLikelyExpired: !!(r && r.sessionLikelyExpired), scheduleReceipt: r && r.receipt || null, retry: { schedule: true } }); }
+        /* p1-athena-presence-1.0.0: the schedule leg draws from the SAME busy
+           budget as the goto leg. A schedule read that answers no-athena-tab
+           while the presence verb proves athena is alive is a busy render, not
+           a signed-out session. */
+        return p1AthenaBusyRetry(function () {
+          return bridge("mlsAppScheduleResult", "mlsAppPullSchedule", 30000, { requestId: scheduleRequestId });
+        }, onStatus, athenaBusy).then(function (r) {
+        if (!r || !r.ok) { onStatus((r && r.error) || "Couldn't read your athenaOne tab. Open your Day schedule and try again.", "err"); return fail((r && r.reason) || "no-read", { error: r && r.error || "", schedSessionLikelyExpired: !!(r && r.sessionLikelyExpired), scheduleReceipt: r && r.receipt || null, athenaBusyRetries: Number(athenaBusy.athenaBusyRetries || 0), athenaPresenceAtFailure: String(athenaBusy.athenaPresence || ""), athenaTabsAtFailure: p1AthenaTabsKnown(), retry: { schedule: true } }); }
         /* Normalize the roster from this exact schedule reply before any rows
            are imported. The raw extension receipt may legitimately omit a
            declared total even after a proven full sweep; the roster module
@@ -6809,7 +7124,19 @@
                recorded in tests/live-e2e-artifacts/2026-07-22-acceptance.md.
                Threshold 2, matching multiTabSuspected: one refusal can be a
                transient tab race, two in a row is the session. */
-            res.athenaSignedOutSuspected = __noTab >= 2;
+            /* p1-athena-presence-1.0.0: TWO no-athena-tab rows is the signal,
+               but it is not the PROOF. On 2026-08-17 the lease-free presence
+               verb answered presence-verified 5/5 within 80 ms while rows were
+               failing this way, so "your athenaOne session has most likely
+               signed out" was simply false. A presence answer newer than the
+               batch outranks the count: claim the sign-out only when presence
+               did NOT prove athena alive. No answer at all leaves the old
+               behaviour exactly as it was. */
+            res.athenaPresenceAtHistory = String((p1PresenceLast.resp && p1PresenceLast.resp.reason) || "");
+            var __presenceAlive = !!(p1PresenceLast.at && Date.now() - p1PresenceLast.at < 300000 &&
+              p1PresenceSaysAthenaLives(p1PresenceLast.resp));
+            res.athenaSignedOutSuspected = __noTab >= 2 && !__presenceAlive;
+            res.athenaBusySuspected = __noTab >= 2 && __presenceAlive;
             /* rr-1.1 + owner 2026-08-09 ("only 1 redo maybe"): a chart saved by
                the in-chart redo is a success WITH a redo, never a first-attempt
                success - the count rides the day line so it can never launder
@@ -6831,6 +7158,7 @@
             var __chartOnly = 0; try { __chartOnly = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true && p.organized === true && p.dobVerified === true && !p.storageFailure; }).length; } catch (eCo) {}
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
               (res.athenaSignedOutSuspected ? " " + __noTab + " charts could not be read because MLS could not find a signed-in athenaOne tab — your athenaOne session has most likely signed out or timed out. Sign in to athenaOne, then pull again. Note the schedule above was read off the grid athenaOne still had on screen, so treat it as of that moment rather than as of now." : "") +
+              (res.athenaBusySuspected ? " " + __noTab + " charts could not be read at the moment MLS looked, but the athenaOne presence check answered '" + String(res.athenaPresenceAtHistory || "presence-verified").replace(/[^a-z-]/g, "") + "' — athenaOne is open and signed in, it was busy rendering. This is NOT a sign-out: retry those charts." : "") +
               (res.multiTabSuspected ? " " + __mismatch + " charts were refused because MLS read a DIFFERENT athenaOne tab than the one it opened — close every athenaOne tab except one and pull again. Nothing was saved to the wrong patient." : "") +
               (__noIndex ? " " + __noIndex + " chart" + (__noIndex === 1 ? "" : "s") + " could not be read (" + __ppWhy("no-chart-frame-candidate") + "), so " + (__noIndex === 1 ? "its" : "their") + " history was left untouched rather than saved as partial. Nothing was written to the wrong patient. This is an MLS reader limitation, not something you did." : "") +
               (__noStore ? " " + __noStore + " chart" + (__noStore === 1 ? " was" : "s were") + " read correctly, but MLS could not verify the latest save on this device. Keep this tab open, check available storage, then retry those charts." : "") +
@@ -6862,12 +7190,82 @@
      continues where it left off. si-2.0.0 carries make that cheap — patients
      already verified are skipped in seconds, so a resume pays only for the
      work that was actually still outstanding.
-     Bounded on purpose: an intent older than 2h is dropped, at most 2 automatic
+     Bounded on purpose: a stale intent is dropped, at most 2 automatic
      resumes are attempted (a day that keeps failing must not loop forever), a
      pull running in another tab is never disturbed, and the doctor always sees
-     the countdown with a way to stop it.
+     the offer with a way to decline it.
+
+     ===== p1-resume-honesty-1.0.0 (2026-08-17, MEASURED HIJACK) =============
+     A pull of 2026-08-25 ended `nav-failed` and left its record behind. In
+     ANOTHER tab whose selected day was 2026-08-17 the doctor pressed "Pull
+     today" — and _lastPullResult().target came back 2026-08-25, repeatedly,
+     with nothing on screen to explain why "pulling isn't working". The 10 s
+     countdown card had IMPOSED the stale record's day.
+
+     Four changes, each aimed at that mechanism:
+       (a) the offer is only ever made for the day the doctor is looking at,
+       (b) it is OFFERED, never imposed — no countdown, no auto-start, so a
+           plain Pull click is always a fresh pull of the selected day,
+       (c) a pull that reached a TERMINAL verdict clears its record (an honest
+           partial still keeps it, which is the whole point of pr-1.0.0), and
+           a record older than RESUME_MAX_AGE_MS expires,
+       (d) the record carries the writing TAB's id (sessionStorage, so it
+           survives that tab's reload and no other tab's), and a record stamped
+           by a different tab is never adopted.
      --------------------------------------------------------------------- */
-  var RESUME_MAX_AGE_MS = 2 * 60 * 60 * 1000, RESUME_MAX_ATTEMPTS = 2, RESUME_COUNTDOWN_S = 10;
+  var RESUME_MAX_AGE_MS = 6 * 60 * 60 * 1000, RESUME_MAX_ATTEMPTS = 2;
+  /* p1-resume-honesty-1.0.0 (d): a per-TAB id. sessionStorage is scoped to one
+     tab and survives that tab's reloads, which is exactly the lifetime an
+     interrupted pull's record should have. When sessionStorage is unavailable
+     the id is per page load, and a record with NO tabId at all (legacy, or
+     seeded by a test) stays adoptable so nothing already durable is orphaned. */
+  var P1_TAB_ID = "";
+  function p1TabId() {
+    if (P1_TAB_ID) return P1_TAB_ID;
+    var got = safe(function () { return window.sessionStorage && window.sessionStorage.getItem("mlsP1PullTabV1"); }, null);
+    if (got && /^[A-Za-z0-9_-]{1,64}$/.test(String(got))) { P1_TAB_ID = String(got); return P1_TAB_ID; }
+    P1_TAB_ID = "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    safe(function () { if (window.sessionStorage) window.sessionStorage.setItem("mlsP1PullTabV1", P1_TAB_ID); });
+    return P1_TAB_ID;
+  }
+  /* The day the doctor is LOOKING AT. The visit strip owns it; the calendar
+     selection and the account day are the fallbacks, in that order. Never the
+     record's own date — that is the value this gate exists to distrust. */
+  function p1SelectedDayKey() {
+    var fromStrip = safe(function () {
+      var ds = window.__mlsDaySwitch;
+      return (ds && isFn(ds.currentDay)) ? normDate(ds.currentDay()) : "";
+    }, "");
+    if (fromStrip) return fromStrip;
+    var sel = normDate(safe(function () { return window._calSelDay; }, ""));
+    if (sel) return sel;
+    var ref = normDate(safe(function () { return window._calRefDate; }, ""));
+    if (ref) return ref;
+    return normDate(estTodayKey()) || "";
+  }
+  /* (c) THE TERMINAL SET. A verdict in here answered the doctor's question —
+     keeping a resume record after it is what let a dead 2026-08-25 pull come
+     back to life on a different day. Everything NOT in here (an honest
+     partial, an attribution/census refusal, a provider scope that needs the
+     clinician) stays resumable exactly as pr-1.0.0 intended. */
+  var P1_RESUME_TERMINAL_REASONS = {
+    "nav-failed": 1, "wrong-day": 1, "no-athena-tab": 1, "no-ext": 1,
+    "signin": 1, "signin-expired": 1, "athena-session-expired": 1,
+    "verified-empty": 1, "stopped-by-user": 0
+  };
+  function p1ResumeVerdictIsTerminal(value) {
+    if (!value || typeof value !== "object") return false;
+    if (value.complete === true) return true;                       /* complete */
+    var reason = String(value.reason || "");
+    if (P1_RESUME_TERMINAL_REASONS[reason] === 1) return true;
+    /* a history-partial WITH a receipt has already told the doctor exactly
+       which charts to retry, and Retry-failed-histories is the control for
+       that — resuming the whole day on the next load is not. */
+    if (reason === "history-partial" && value.historyReceipt && typeof value.historyReceipt === "object") return true;
+    /* an authoritatively EMPTY day has nothing left to read */
+    if (value.scheduleReceipt && value.scheduleReceipt.authoritativeEmpty === true) return true;
+    return false;
+  }
   function resumeKey() { return safe(function () { return isFn(window.uns) ? window.uns("pullResumeV1") : "pullResumeV1"; }, "pullResumeV1"); }
   function resumeGet() {
     var key = resumeKey();
@@ -6941,7 +7339,9 @@
       includeHistory: opts.includeHistory !== false,
       bodies: (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null,
       providerScope: p1ResumeScopeForProvider(provider, source),
-      p1CensusEligible: censusEligible === true
+      p1CensusEligible: censusEligible === true,
+      /* p1-resume-honesty-1.0.0 (d): whose interruption this was */
+      tabId: p1TabId()
     };
     rec.persistence = resumeSave(rec);
     return rec;
@@ -6967,22 +7367,30 @@
     if (__metadataBefore) return Promise.resolve(__metadataBefore);
     opts.__p1MetadataStartSerial = p1MetadataFailureSerial;
     var __resumeDate = String(opts.date || "");
-    if (__resumeDate) {
-      /* p1-resume-scope-1.0.0: the durable intent carries the same frozen
-         provider scope as the interrupted pull. Only strong provider ids/keys
-         are stored (never display names), and resume re-resolves them against
-         the current complete roster instead of widening a selected pull. */
-      var __resumeIntent = p1PersistResumeIntent(__resumeDate, opts, opts.provider,
-        opts.__p1ResumeScopeSource || "direct",
-        opts.__p1DayCensusToken === P1_DAY_CENSUS_TOKEN);
-      if (!(__resumeIntent.persistence && __resumeIntent.persistence.ok === true)) return Promise.resolve(p1MetadataRefusal(opts.onStatus));
-    }
     var __ownedPull = false;
     var run = function () {
       /* qol-2.2: only an explicit boolean overrides, and it is armed INSIDE
          the managed operation - a REFUSED second call used to overwrite the
          RUNNING pull's lane here and then clear it in its settle path. */
       __ownedPull = true;
+      /* p1-resume-honesty-1.0.0: the intent is written by the pull that
+         actually ACQUIRED the engine. It used to be written before the mutex,
+         so a second click that was about to be refused re-stamped the RUNNING
+         pull's record with its own day - the same overwrite qol-2.2 already
+         had to fix for the bodies lane. */
+      if (__resumeDate) {
+        /* p1-resume-scope-1.0.0: the durable intent carries the same frozen
+           provider scope as the interrupted pull. Only strong provider ids/keys
+           are stored (never display names), and resume re-resolves them against
+           the current complete roster instead of widening a selected pull. */
+        var __resumeIntent = p1PersistResumeIntent(__resumeDate, opts, opts.provider,
+          opts.__p1ResumeScopeSource || "direct",
+          opts.__p1DayCensusToken === P1_DAY_CENSUS_TOKEN);
+        if (!(__resumeIntent.persistence && __resumeIntent.persistence.ok === true)) {
+          return p1MetadataRefusal(opts.onStatus) ||
+            { ok: false, complete: false, reason: "metadata-persist-failed", includeHistory: opts.includeHistory !== false, retry: {} };
+        }
+      }
       _pullBodiesOverride = (typeof opts.pullVisitBodies === "boolean") ? opts.pullVisitBodies : null;
       return withPatientBatch("schedule-pull", function (token) {
         var runOpts = {};
@@ -6992,12 +7400,28 @@
       });
     };
     return runManagedAthenaOperation(run, function (scope) {
-      return { ok: false, complete: false, reason: "pull-in-flight", error: scope === "other-tab"
+      /* ===== p1-busy-click-1.0.0 (a second click is not a failed pull) =====
+         MEASURED live 2026-08-17: a second Pull press during the schedule
+         phase painted "The pull did not return a verified completion receipt
+         (pull-in-flight). Nothing is being reported as complete." over a pull
+         that was running perfectly well. Scary, and false. Say the calm true
+         thing, and mark the stub so nothing downstream mistakes it for the
+         running pull's verdict. */
+      return { ok: false, complete: false, reason: "pull-in-flight", busyInFlight: true, gate: "engine-in-flight",
+        error: scope === "other-tab"
         ? "Another MLS tab is already running an explicit pull. Nothing else was started."
-        : "Another explicit pull is still running in this MLS tab.", includeHistory: opts.includeHistory !== false, retry: {} };
+        : "This pull is already running — watch the progress just below.", includeHistory: opts.includeHistory !== false, retry: {} };
     }).then(function (value) {
       if (__ownedPull) _pullBodiesOverride = null;          /* one pull only */
-      lastPullResult = value || null;
+      /* p1-busy-click-1.0.0: a busy stub is a refusal to START, not a result.
+         Overwriting lastPullResult with it destroyed the running pull's
+         receipt for every surface that reads _lastPullResult(). */
+      if (!(value && value.busyInFlight === true)) lastPullResult = value || null;
+      /* p1-resume-honesty-1.0.0 (c): a TERMINAL verdict clears the record. An
+         honest partial still keeps it, which is what pr-1.0.0 is for. */
+      if (__resumeDate && __ownedPull && value && value.complete !== true && p1ResumeVerdictIsTerminal(value)) {
+        safe(function () { resumeClear(); });
+      }
       /* Clear the intent only when the day is genuinely finished. An honest
          partial keeps it, so the next load continues instead of forgetting. */
       if (__resumeDate && value && value.complete === true) {
@@ -7613,6 +8037,20 @@
   function resumeStart(rec) {
     resumeDismiss(false);
     var prev = resumeGet();
+    /* p1-resume-honesty-1.0.0 (a): a resume may only ever run the day the
+       doctor is looking at. This is the exact hijack that shipped: a record
+       for 2026-08-25 started while the selected day was 2026-08-17, and the
+       receipt came back with target 2026-08-25. */
+    var __selectedDay = p1SelectedDayKey();
+    var __recDay = normDate(rec && rec.date || "");
+    if (__selectedDay && __recDay && __recDay !== __selectedDay) {
+      var __wrongDayRefusal = { ok: false, complete: false, reason: "resume-day-not-selected",
+        gate: "resume-selected-day", target: __recDay, selectedDay: __selectedDay,
+        error: "The unfinished pull was for " + __recDay + ", but " + __selectedDay + " is selected. Nothing was read; press Pull to pull " + __selectedDay + ".",
+        created: 0, repaired: 0, skipped: 0, failed: 0, retry: {} };
+      safe(function () { if (isFn(window.__mlsDsStatus)) window.__mlsDsStatus(__wrongDayRefusal.error, "err"); });
+      return __wrongDayRefusal;
+    }
     var capturedScope = p1SanitizeResumeScope(rec && rec.providerScope);
     var durableScope = p1SanitizeResumeScope(prev && prev.providerScope);
     var capturedDate = normDate(rec && rec.date || ""), durableDate = normDate(prev && prev.date || "");
@@ -7668,34 +8106,46 @@
       pull(resumeOpts);
     });
   }
+  /* p1-resume-honesty-1.0.0 (b): OFFERED, never imposed. The countdown that
+     used to sit here started a pull by itself — on the record's day, not the
+     doctor's — so there is no timer any more. Two buttons, one honest line,
+     and nothing happens until the doctor chooses. */
   function resumeOffer(rec) {
     if (resumeCard || typeof document === "undefined" || !document.body) return;
-    var left = RESUME_COUNTDOWN_S;
+    var day = String(rec && rec.date || "").replace(/[<>&"]/g, "");
     var box = document.createElement("div");
     box.id = "mlsPullResumeCard";
     box.setAttribute("role", "status");
     box.style.cssText = "position:fixed;left:16px;bottom:84px;z-index:9000;max-width:340px;background:#eef6f1;border:1px solid #cfe0d7;color:#204034;border-radius:12px;padding:11px 13px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.16)";
-    box.innerHTML = '<div style="font-weight:700;margin-bottom:3px">↻ Unfinished pull for ' + String(rec.date).replace(/[<>&"]/g, "") + '</div>' +
-      '<div id="mlsPullResumeMsg" style="font-size:12.5px;line-height:1.35">This page reloaded before the pull finished. Continuing in ' + left + 's — already-verified charts are skipped.</div>' +
-      '<div style="margin-top:8px;display:flex;gap:6px"><button type="button" id="mlsPullResumeGo" style="border:1px solid #2e6a4b;background:#2e6a4b;color:#fff;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer">Continue now</button>' +
+    box.innerHTML = '<div style="font-weight:700;margin-bottom:3px">↻ Unfinished pull for ' + day + '</div>' +
+      '<div id="mlsPullResumeMsg" style="font-size:12.5px;line-height:1.35">An earlier pull of ' + day + ' was interrupted — Resume · Start over. Resume skips charts already verified today; nothing runs until you choose.</div>' +
+      '<div style="margin-top:8px;display:flex;gap:6px"><button type="button" id="mlsPullResumeGo" style="border:1px solid #2e6a4b;background:#2e6a4b;color:#fff;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer">Resume</button>' +
+      '<button type="button" id="mlsPullResumeFresh" style="border:1px solid #bcd0c5;background:#fff;color:#204034;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer">Start over</button>' +
       '<button type="button" id="mlsPullResumeNo" style="border:1px solid #bcd0c5;background:#fff;color:#204034;border-radius:8px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer">Not now</button></div>';
     document.body.appendChild(box);
     resumeCard = box;
     safe(function () { document.getElementById("mlsPullResumeGo").onclick = function () { resumeStart(rec); }; });
-    safe(function () { document.getElementById("mlsPullResumeNo").onclick = function () { resumeDismiss(true); }; });
-    resumeTimer = setInterval(function () {
-      left--;
-      if (left <= 0) { resumeStart(rec); return; }
-      safe(function () { var m = document.getElementById("mlsPullResumeMsg"); if (m) m.textContent = "This page reloaded before the pull finished. Continuing in " + left + "s — already-verified charts are skipped."; });
-    }, 1000);
+    /* "Start over" throws the record away and leaves the Pull button to do
+       what it always does: a fresh pull of the SELECTED day. */
+    safe(function () { document.getElementById("mlsPullResumeFresh").onclick = function () { resumeDismiss(true); }; });
+    safe(function () { document.getElementById("mlsPullResumeNo").onclick = function () { resumeDismiss(false); }; });
   }
+  var p1ResumeOfferState = { offered: false, date: "", reason: "not-checked", selectedDay: "" };
   function maybeResumePull() {
     var rec = resumeGet();
-    if (!rec || !rec.date) return;
-    if (!(Date.now() - Number(rec.startedAt || 0) < RESUME_MAX_AGE_MS)) { resumeClear(); return; }
-    if (Number(rec.attempts || 0) >= RESUME_MAX_ATTEMPTS) return;   // never loop on a day that keeps failing
-    if (pullRunning || resumeBusyElsewhere()) return;               // another tab owns it
+    var selectedDay = p1SelectedDayKey();
+    function decline(reason) { p1ResumeOfferState = { offered: false, date: String((rec && rec.date) || ""), reason: reason, selectedDay: selectedDay }; }
+    if (!rec || !rec.date) { decline("no-record"); return; }
+    if (!(Date.now() - Number(rec.startedAt || 0) < RESUME_MAX_AGE_MS)) { resumeClear(); decline("expired"); return; }
+    if (Number(rec.attempts || 0) >= RESUME_MAX_ATTEMPTS) { decline("attempts-exhausted"); return; }   // never loop on a day that keeps failing
+    if (pullRunning || resumeBusyElsewhere()) { decline("pull-in-flight"); return; }                   // another tab owns it
+    /* (d) another TAB's interruption is that tab's to resume. A record with no
+       tabId (legacy/durable-before-this-change) is still adoptable here. */
+    if (rec.tabId && String(rec.tabId) !== p1TabId()) { decline("foreign-tab"); return; }
+    /* (a)+(b) THE HIJACK GATE: only offer for the day on screen. */
+    if (selectedDay && normDate(rec.date) !== selectedDay) { decline("other-day"); return; }
     resumeOffer(rec);
+    p1ResumeOfferState = { offered: true, date: normDate(rec.date), reason: "offered", selectedDay: selectedDay };
   }
   safe(function () {
     if (typeof document === "undefined") return;
@@ -7938,12 +8388,19 @@
          only - the engine's own single-flight stays the authoritative gate. */
       var _lrLease = foreignPullLease();
       var _lrHolder = pullRunning ? "this tab's pull engine" : (_lrLease ? (String(_lrLease.kind || _lrLease.id || "foreign-lease") + " lease, " + Math.max(0, Math.round((Date.now() - Number(_lrLease.at || 0)) / 1000)) + "s old") : "a pull lease");
+      /* ===== p1-busy-click-1.0.0 =====
+         The wording is the mls-connect DS.startPull sentence, because a second
+         click during the schedule phase is the same event: the pull the doctor
+         is watching is fine. And this refusal must leave the RUNNING pull's
+         evidence alone - overwriting lastPullResult / __mlsPullLastOutcome
+         here is what made the strip paint "did not return a verified
+         completion receipt" over a healthy run. */
       var _lrRefusal = { ok: false, complete: false, reason: "pull-in-flight", gate: "advisory-in-flight",
-        holder: _lrHolder, at: Date.now(),
-        error: "Another explicit pull is already running (" + _lrHolder + "). No Athena navigation was started." };
-      say(_lrRefusal.error, "err");
-      lastPullResult = _lrRefusal;
-      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: _lrRefusal.error }; });
+        busyInFlight: true, holder: _lrHolder, at: Date.now(),
+        error: pullRunning
+          ? "This pull is already running — watch the progress just below."
+          : "Another explicit pull is already running (" + _lrHolder + "). No Athena navigation was started." };
+      say(_lrRefusal.error, "");
       return Promise.resolve(_lrRefusal);
     }
     /* lr-1.0 QUOTA PREFLIGHT (diagnosis 2026-08-11 defect B): when the write
@@ -7978,6 +8435,12 @@
       return Promise.resolve(_lrQRefusal);
     }
     if (isFn(__armPresence)) __armPresence(); /* qol-2.3: presence assist belongs to the call that passed the advisory */
+    /* p1-onetab-nav-1.0.0 (b): the one-tab advice UP FRONT. Fire-and-forget on
+       purpose - the pull must not pay a round trip for a diagnostic - so the
+       advice lands within a couple of seconds of the click instead of after a
+       60 s nav-failed. It refuses nothing and it is silent unless the
+       extension actually reports multiple/unverified athena tabs. */
+    safe(function () { p1OneTabPreflight(say); });
     var explicit = (opts.provider !== undefined && opts.provider !== null && opts.provider !== "");
     var scope0 = explicit ? opts.provider : accountProviderRequest();
     var originalProviderRequest = providerRequest(scope0);
@@ -8112,6 +8575,17 @@
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },
     _maybeResumePull: maybeResumePull,
+    /* p1-resume-honesty-1.0.0: why the last offer was (not) made. Read-only. */
+    _resumeOfferState: function () { var o = {}; for (var k in p1ResumeOfferState) if (p1ResumeOfferState.hasOwnProperty(k)) o[k] = p1ResumeOfferState[k]; return o; },
+    _resumeTabId: p1TabId,
+    _resumeSelectedDay: p1SelectedDayKey,
+    _resumeVerdictIsTerminal: p1ResumeVerdictIsTerminal,
+    /* p1-athena-presence-1.0.0: the lease-free presence probe and the PHI-free
+       athena tab count, drivable from a test or the console. */
+    _athenaPresenceProbe: p1PresenceProbe,
+    _athenaTabCount: p1AthenaTabCount,
+    _athenaOneTabAdvice: p1OneTabAdvice,
+    _athenaOneTabPreflight: p1OneTabPreflight,
     pullMonth: pullMonth,
     pullCalendarSelection: pullCalendarSelection,
     calendarSelection: calendarSelection,

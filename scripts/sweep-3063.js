@@ -5,7 +5,7 @@
  * count on goto/schedule/presence replies) · chk3062 -> chk3063
  * (feat_mls_checker.js bytes move with SERVER_EXT_VERSION, so its immutable
  * loader token moves in every loader that names it) · zip sha b8a12950... ->
- * 2a62dc2e... (interim 9432f984 before the lease-contract correction) · release notes replaced in the feed and every page that bakes
+ * c71a6375... (interims 9432f984 -> 2a62dc2e before the lease-contract and athena-action-contract corrections) · release notes replaced in the feed and every page that bakes
  * them (the What's-new pin asserts baked == feed). Historical feature-origin
  * comments are deliberately NOT moved. Usage: node scripts/sweep-3063.js [--dry] */
 'use strict';
@@ -13,7 +13,7 @@ const fs = require('fs');
 const DRY = process.argv.includes('--dry');
 const OLD = '3.0.62', NEW = '3.0.63';
 const OLD_SHA = 'b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f';
-const NEW_SHA = '2a62dc2ec6c1b4f60581a9f4237eb88d88ac6a784b5857b712e5579db30943ac';
+const NEW_SHA = 'c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c79';
 const OLD_CHK = '20260817chk3062', NEW_CHK = '20260817chk3063';
 const OLD_NOTES = 'v3.0.62 - Every supervised Athena action now executes after your explicit confirm: write reviewed note, save draft, stage billing codes, Sign & Save, and one exact reviewed order. The previous preview-only policy block on billing, signing and orders is lifted by the owner; the same safety checks still run before every send - exact patient identity and encounter lock, a one-use authorization from your own click, a verified note write before Sign & Save, one action per confirm, and no automatic chaining. Everything from earlier releases remains. Requires Chrome 116+.';
 const NEW_NOTES = 'v3.0.63 - Athena tab handling made robust: MLS now prefers the Athena tab whose Day view is actually rendered, re-checks a tab that was slow to answer instead of reporting no Athena tab while you are signed in, and treats a not-yet-rendered week strip as something to recover from rather than a failed day change. Every date, schedule and presence reply now also carries how many Athena tabs are open, so the app can advise keeping one. Reads only; nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.';

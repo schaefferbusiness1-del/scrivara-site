@@ -209,7 +209,7 @@ assert(!/var\s+FILES\s*=|fetch\(\s*['"]\/manifest\.json/i.test(downloadPage),
   'get-extension.html must not fetch candidate manifests or expose a loose-source package allowlist');
 assert(/id=["']dl["'][^>]*href=["']MLS_Assist_v3.0.63.zip["']/i.test(downloadPage) && !/candidate package withheld/i.test(downloadPage),
   'manual download must offer exactly the stamped released package (owner directive 2026-07-20)');
-assert(/2a62dc2ec6c1b4f60581a9f4237eb88d88ac6a784b5857b712e5579db30943ac/.test(downloadPage),
+assert(/c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c79/.test(downloadPage),
   'download page must display the released package digest for verification');
 assert(/extension-version\.json/.test(downloadPage), 'download page may display only the published-channel feed version');
 assert(/chromewebstore\.google\.com\/detail\/mls-assist\/mpeidpagiccfdehcgfanlkibpafhogfg/.test(downloadPage),

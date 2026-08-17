@@ -299,6 +299,11 @@ function deriveShell(TOKEN) {
   /* 2. the bundle loader */
   out = subst(out, "s.src='1p-mls-connect.js?v='+window.__MLS_AV;", "s.src='cloned-mls-connect.js?v='+window.__MLS_AV;",
     1, 'shell bundle loader');
+  /* 2b. (2026-08-17 batch 7) the shell's own comments now NAME the bundle
+     ("1p-mls-connect.js's startIso() ...", apptclock-1.0.0). Those are lane
+     identity, not behaviour: the clone's bundle IS cloned-mls-connect.js. Rename
+     every remaining mention so the forbidden-token audit stays exact. */
+  out = out.split('1p-mls-connect.js').join('cloned-mls-connect.js');
 
   /* 3. the service worker stays an EXPLICIT refusal, renamed to this lane */
   out = subst(out, SW_REFUSAL_P1, SW_REFUSAL_CLONED, 1, 'shell service-worker refusal');

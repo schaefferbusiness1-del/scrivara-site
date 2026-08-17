@@ -43,7 +43,7 @@ assert(!/synthetic evaluation only/i.test(assist), 'outdated synthetic-only lang
 
 const download = read('get-extension.html');
 assert(/MLS_Assist_v3.0.63.zip/.test(download) &&
-  /2a62dc2ec6c1b4f60581a9f4237eb88d88ac6a784b5857b712e5579db30943ac/i.test(download) &&
+  /c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c79/i.test(download) &&
   !/Manual candidate package withheld/i.test(download));
 assert(!/\bJSZip\b|var\s+FILES\s*=|\/manifest\.json\?/.test(download));
 assert(/Chrome Web Store/.test(download));

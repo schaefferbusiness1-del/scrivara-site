@@ -4856,7 +4856,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (/^identity-mismatch/.test(head)) return 'chart identity could not be verified';
     if (/^open-failed$/.test(head)) return 'not on the athenaOne schedule';
     if (/^read-failed$/.test(head)) return 'chart read timed out';
-    if (/^pulled-day-note-unread/.test(head)) return 'the note for the pulled day could not be read';
+    /* dnw-1.0.0 (owner 2026-08-17, verbatim: "comments like this would scare a
+       user, so if they are fixed, update them"). Nothing clinical was lost -
+       the chart itself saved - so say that, and never before the deferred
+       retry has had its turn. */
+    if (/^pulled-day-note-retrying/.test(head)) return 'today’s note not read yet — retrying';
+    if (/^pulled-day-note-unread/.test(head)) return 'today’s note could not be read this time — pull again later; nothing was lost';
     /* ===== fdx-1.1.0 / cap-1.0.0 (two verdicts that had no wording) ===== */
     if (/^find-open-deadline/.test(head)) return 'athenaOne search did not open the chart in time';
     if (/^summary-pending/.test(head)) return 'saved · summary pending';
@@ -4906,12 +4911,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 200)) + '"' : '';
       var dnRaw = String(r.dn == null ? '' : r.dn), dnCell = '';
       if (dnRaw && !pending) {
+        /* dnw-1.0.0: a row waiting on the deferred round is CALM ("retrying"),
+           not a warning. Only a row whose retry is spent says it could not be
+           read, and it says nothing was lost. */
+        var dnRetrying = dnRaw.indexOf('retrying:') === 0;
         var dnWhy = dnRaw === 'read' ? 'note saved'
           : dnRaw === 'not-yet' ? 'not seen yet'
           : dnRaw === 'future-day' ? 'day not here yet'
-          : 'note unread';
-        var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day') ? 'pp-wait' : 'pp-bad');
-        var dnTitle = dnRaw.indexOf('unread:') === 0 ? ' title="' + esc(dnRaw.slice(7, 207)) + '"' : '';
+          : dnRetrying ? 'today’s note not read yet — retrying'
+          : 'today’s note not read this time (chart saved)';
+        var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying) ? 'pp-wait' : 'pp-bad');
+        var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying) ? ' title="' + esc(dnRaw.slice(dnRetrying ? 9 : 7, 207)) + '"' : '';
         dnCell = '<span class="' + dnCls + '"' + dnTitle + ' style="opacity:.8">' + esc(dnWhy) + '</span>';
       }
       return '<div class="pp-row"><span>' + esc((r.name || '').split(' ')[0]) + '</span><span class="' + cls + '"' + title + '>' + glyph + esc(why) + '</span>' + dnCell + '</div>';
@@ -4984,6 +4994,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     ensureFab(false);
     var total = S.total || 0, done = S.done || 0, ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0;
     var pct = total ? Math.round((done / total) * 100) : 0;
+    /* dnp-1.0.0: 100% is a CLAIM. While the engine reports an unfinished
+       day-note phase the pull is not finished, so the bar stops at 99%. */
+    if (pct >= 100 && S && S.phase && String(S.phase.kind || '') === 'day-notes' && S.running === true) pct = 99;
     var p = buildPanel();
     setText(p, 'done', String(done));
     setText(p, 'total', String(total));
@@ -5002,14 +5015,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        reported watching for 21 minutes. The counter is named for what it
        counts - histories - and the pulled-day NOTE column gets its own count
        beside it, never inside the failure count. */
-    var dnUnreadLive = 0;
-    try { (S.rows || []).forEach(function (r) { if (r && String(r.dn || '').indexOf('unread:') === 0) dnUnreadLive++; }); } catch (eDn) {}
-    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' pulled-day note' + (dnUnreadLive === 1 ? '' : 's') + ' not read yet' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
+    var dnUnreadLive = 0, dnRetryLive = 0;
+    try { (S.rows || []).forEach(function (r) { var d = String((r && r.dn) || ''); if (d.indexOf('unread:') === 0) dnUnreadLive++; else if (d.indexOf('retrying:') === 0) dnRetryLive++; }); } catch (eDn) {}
+    setText(p, 'tally', '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' not saved' + (chartOnly ? ' (' + chartOnly + ' chart-saved, notes incomplete)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : ''));
     /* ===== end dv3-1.0.0 ===== */
     setText(p, 'elapsed', mmss(Date.now() - startedAt) + ' elapsed');
-    setText(p, 'current', String(S.current || 'opening the next chart'));
+    /* ===== dnp-1.0.0 (the bar does not claim 100% while a phase is running) ==
+       Owner 2026-08-17: the bar read 100% and "18 saved \u00B7 5 not saved" while
+       "saving the pulled day's note (7 of 23)" was still going. The engine now
+       publishes that pass as state.phase; while it is set the bar is held one
+       notch short and the phase's own counts are shown under it. */
+    var dnPhase = (S && S.phase && String(S.phase.kind || '') === 'day-notes') ? S.phase : null;
+    setText(p, 'current', dnPhase
+      ? ('reading today\u2019s notes ' + Number(dnPhase.done || 0) + ' of ' + Number(dnPhase.total || 0))
+      : String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
-    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + ((S.rows || []).length);
+    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + dnRetryLive + '|' + dnUnreadLive + '|' + ((S.rows || []).length);
     var rowsEl = p.querySelector('[data-pp="rows"]');
     if (rowsEl && p.__ppRowsSig !== sig) {
       p.__ppRowsSig = sig;
@@ -14347,9 +14368,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function injectCSS() {
     if ($('mlsAnaClarityCSS')) return;
     var css = ''
-      + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;'
+      /* anachip-1.1.0: 10.5px was the smallest type in the product, and it is
+         carrying the sentence that says WHOSE numbers are on screen — provider
+         view vs practice-wide. Raised to 12px, the floor the /1p UI contract
+         now enforces. line-height comes down from 1.7 to 1.45 so the chip's own
+         box grows by ~1px rather than ~4px: this is the "a legibility fix can
+         create the next collision" rule — the chip sits inline in an <h2> row
+         beside a heading and a Refresh button, and at 360 that row has no
+         spare height to give. */
+      + '.mls-anaclar-chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;'
       + 'letter-spacing:.03em;padding:2px 9px;border-radius:999px;margin-left:8px;vertical-align:middle;'
-      + 'white-space:nowrap;line-height:1.7;text-transform:uppercase}'
+      + 'white-space:nowrap;line-height:1.45;text-transform:uppercase}'
       // On a phone this chip is the label that says WHOSE numbers these are,
       // and at 375px it ran to 515px and was clipped by body{overflow-x:hidden}.
       // min-width:0 is the operative part: a flex item defaults to
@@ -19166,42 +19195,126 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var entry = ref ? safe(function () { return rp.resolve(ref); }, null) : null;
     return entry || (activeProvider() || 'all');
   }
-  /* A selected provider is a display filter as well as a pull target. Older
-     builds kept provider-empty rows visible under every clinician, which made
-     "show Dr X" a mixed list. Selected pulls now persist the provider proof,
-     so the named view fails closed: exact provider id when both sides expose
-     one, otherwise an exact normalized roster name or alias. */
-  function providerIdentityKey(value) {
-    return String(value == null ? '' : value).toLowerCase()
-      .replace(/\./g, '').replace(/[_,\/]+/g, ' ').replace(/[^a-z0-9' -]/g, ' ')
-      .split(/\s+/).filter(function (token) {
-        return token && ['md','do','pa','pac','pa-c','np','crna','aprn','dpm','dds','dmd','crnp','dr'].indexOf(token) < 0;
-      }).sort().join(' ');
+  /* ===== pdr-1.0.0 (ported verbatim-in-behaviour from production b1026,
+     mls-connect.js:18822-18940). The fork previously carried a name-normalising
+     predicate (providerIdentityKey/rowProviderIdentity) that read only four
+     row spellings, so appointment rows carrying an OBJECT provider, a
+     rendering_provider_id, or a doctor_user_id were dropped from a selected
+     Day view that production renders. It also treated a null internal pull
+     identity as a clinician selection. Both are fixed by using production's
+     explicit render proof. */
+  /* Rendering has its own explicit scope. `null` is meaningful to the legacy
+     pull identity, but it is never a clinician selection in the Day UI. Only
+     this selector's exact stable provider reference may narrow visible rows. */
+  var renderedProviderReceipt = { ref: '', filter: '', label: '' };
+  function requestedRenderedProvider() {
+    return S.providerRef && String(S.providerFilter || '').trim() ? String(S.providerFilter).trim() : '';
   }
-  function rowProviderIdentity(row) {
-    row = row || {};
-    return {
-      id: String(row.athena_provider_id || row.athenaProviderId || row.provider_id || row.providerId || '').trim(),
-      name: String(row.provider || row.providerName || row.provider_name || row.renderingProviderName || row.rendering_provider_name || '').trim()
+  function rememberRenderedProvider(label) {
+    renderedProviderReceipt = {
+      ref: String(S.providerRef || ''),
+      filter: String(S.providerFilter || ''),
+      label: String(label || '')
     };
+    return renderedProviderReceipt.label;
   }
-  function rowMatchesActiveProvider(row) {
-    var selectedName = activeProvider();
-    if (!selectedName) return true;
-    var got = rowProviderIdentity(row);
+  function renderedProvider() {
+    var requested = requestedRenderedProvider();
+    if (!requested) return '';
+    return renderedProviderReceipt.ref === String(S.providerRef || '') &&
+      renderedProviderReceipt.filter === String(S.providerFilter || '') ? renderedProviderReceipt.label : '';
+  }
+  /* display-only provider proof. The default view keeps every appointment
+     already returned by the existing pull/history pipeline. A selected view
+     renders a row only when the canonical roster proves that row belongs to
+     the exact selected identity. Blank, ambiguous, or conflicting attribution
+     is never guessed into a clinician's view. */
+  function sameProviderIdentity(left, right) {
+    if (!left || !right) return false;
+    var leftId = String(left.id || left.providerId || left.provider_id || '').trim();
+    var rightId = String(right.id || right.providerId || right.provider_id || '').trim();
+    if (leftId && rightId) return leftId === rightId;
+    var leftKey = String(left.stableKey || left.stable_key || '').trim();
+    var rightKey = String(right.stableKey || right.stable_key || '').trim();
+    return !!leftKey && leftKey === rightKey;
+  }
+  function providerSnapshotResolve(snapshot, ref) {
+    if (!snapshot || !Array.isArray(snapshot.entries)) return null;
+    var raw = ref;
+    if (raw && typeof raw === 'object') raw = raw.stableKey || raw.stable_key || raw.id || raw.providerId || raw.provider_id || raw.raw || raw.name || '';
+    raw = String(raw || '').trim();
+    if (raw.indexOf('pv:') === 0) { try { raw = decodeURIComponent(raw.slice(3)); } catch (ePv) { return null; } }
+    if (!raw) return null;
+    var matches = snapshot.entries.filter(function (entry) { return String(entry && (entry.stableKey || entry.stable_key) || '') === raw; });
+    if (matches.length === 1) return matches[0];
+    matches = snapshot.entries.filter(function (entry) { return !!String(entry && (entry.id || entry.providerId || entry.provider_id) || '') && String(entry.id || entry.providerId || entry.provider_id) === raw; });
+    if (matches.length === 1) return matches[0];
+    matches = snapshot.entries.filter(function (entry) { return Array.isArray(entry && entry.aliases) && entry.aliases.indexOf(raw) >= 0; });
+    if (matches.length === 1) return matches[0];
+    var eq = snapshot.equivalent(raw);
+    matches = eq ? snapshot.entries.filter(function (entry) {
+      return String(entry && entry.equivalentKey || snapshot.equivalent(entry && (entry.name || entry.raw) || '')) === eq;
+    }) : [];
+    return matches.length === 1 ? matches[0] : null;
+  }
+  function providerRenderProof() {
+    var selectedLabel = requestedRenderedProvider();
+    if (!selectedLabel) {
+      rememberRenderedProvider('');
+      return { defaultView: true, selected: null, entries: [], equivalent: function () { return ''; } };
+    }
     var roster = safe(function () { return window.__mlsProviderRoster; }, null);
-    var entry = roster && isFn(roster.resolve)
-      ? safe(function () { return roster.resolve(S.providerRef || selectedName); }, null)
-      : null;
-    var wantedId = String(entry && entry.id || '').trim();
-    if (wantedId && got.id) return got.id.toLowerCase() === wantedId.toLowerCase();
-    if (!got.name) return false;
-    var gotKey = providerIdentityKey(got.name);
-    if (!gotKey) return false;
-    var wanted = [entry && entry.name, entry && entry.raw, selectedName]
-      .map(providerIdentityKey).filter(Boolean);
-    return wanted.indexOf(gotKey) >= 0;
+    if (!(roster && isFn(roster.list) && isFn(roster._equivalentKey))) {
+      rememberRenderedProvider('');
+      return { defaultView: true, selected: null, entries: [], equivalent: function () { return ''; } };
+    }
+    var proof = {
+      defaultView: false,
+      entries: safe(function () { return roster.list(); }, []) || [],
+      equivalent: function (value) { return safe(function () { return roster._equivalentKey(value, true, true); }, ''); }
+    };
+    var selectedRef = S.providerRef || selectedLabel;
+    proof.selected = providerSnapshotResolve(proof, selectedRef);
+    if (!proof.selected) {
+      rememberRenderedProvider('');
+      proof.defaultView = true;
+      return proof;
+    }
+    proof.label = rememberRenderedProvider(proof.selected.name || selectedLabel);
+    return proof;
   }
+  function rowMatchesActiveProvider(row, proof) {
+    if (!proof) proof = providerRenderProof();
+    if (proof && proof.defaultView) return true;
+    var selected = proof && proof.selected;
+    if (!selected) return false;
+
+    var rowProvider = row && row.provider;
+    var rowProviderObject = rowProvider && typeof rowProvider === 'object' ? rowProvider : null;
+    var rowId = String(row && (row.athena_provider_id || row.athenaProviderId || row.provider_id || row.providerId || row.rendering_provider_id || row.renderingProviderId || row.doctor_user_id) ||
+      rowProviderObject && (rowProviderObject.athena_provider_id || rowProviderObject.athenaProviderId || rowProviderObject.provider_id || rowProviderObject.providerId || rowProviderObject.id) || '').trim();
+    var rowName = String(row && (typeof rowProvider === 'string' ? rowProvider : '') || row && (row.provider_name || row.providerName || row.rendering_provider_name || row.renderingProviderName || row.doctor_name) ||
+      rowProviderObject && (rowProviderObject.name || rowProviderObject.displayName || rowProviderObject.raw) || '').trim();
+    if (!rowId && !rowName) return false;
+
+    if (rowId) {
+      var selectedId = String(selected.id || selected.providerId || selected.provider_id || '').trim();
+      if (!selectedId || selectedId !== rowId) return false;
+      var sameIdEntries = proof.entries.filter(function (entry) { return String(entry && (entry.id || entry.providerId || entry.provider_id) || '').trim() === rowId; });
+      var sameIdNames = {};
+      sameIdEntries.forEach(function (entry) { var key = String(entry && entry.equivalentKey || proof.equivalent(entry && (entry.name || entry.raw) || '')); if (key) sameIdNames[key] = 1; });
+      if (Object.keys(sameIdNames).length > 1) return false;
+      if (rowName) {
+        var resolvedByName = providerSnapshotResolve(proof, rowName);
+        if (resolvedByName && !sameProviderIdentity(selected, resolvedByName)) return false;
+      }
+      return true;
+    }
+
+    var resolvedByNameOnly = providerSnapshotResolve(proof, rowName);
+    return sameProviderIdentity(selected, resolvedByNameOnly);
+  }
+  /* ===== end pdr-1.0.0 */
   function providerRosterReceipt() {
     var rp = safe(function () { return window.__mlsProviderRoster; }, null);
     return rp && isFn(rp.getReceipt) ? safe(function () { return rp.getReceipt(); }, null) : null;
@@ -19325,7 +19438,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            ((a && a.dob) || '') + '|' + apptDay(a) + '|' + (a && a.start_local || t12(a));
   }
   function rowsInRange(fromStr, toStr) {
-    var prov = activeProvider(), seen = {};
+    /* pdr-1.0.0: one frozen roster snapshot per render, reused by every row. */
+    var providerProof = providerRenderProof();
+    var prov = providerProof && !providerProof.defaultView && providerProof.selected ? providerProof.label : '', seen = {};
     var rows = appts().filter(function (a) {
       if (!a) return false;
       var d = apptDay(a); if (!d) return false;
@@ -19334,10 +19449,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          blocks etc.) never render as patients. User-controlled list, never
          guessed; the record itself is untouched. */
       try { if (window.__mlsStaffMark && window.__mlsStaffMark.isStaff(a.name)) return false; } catch (eSm) {}
-      /* A chosen provider means only rows proven for that provider. Blank
-         legacy attribution remains visible in the default view, never inside
-         a named clinician's Day list. */
-      if (prov && !rowMatchesActiveProvider(a)) return false;
+      /* pdr-1.0.0: the complete default view keeps unattributed rows visible;
+         an explicitly selected provider view requires exact roster proof. */
+      if (prov && !rowMatchesActiveProvider(a, providerProof)) return false;
       var k = rowKey(a); if (seen[k]) return false; seen[k] = 1;
       return true;
     });
@@ -19919,17 +20033,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* ---- provider quick-selecter markup (data-sourced) ---------------------- */
   function provSelectHtml() {
     var list = providerList();
-    if (!list.length) return '';
-    var cur = activeProvider(), counts = {};
+    /* pdr-1.0.0: the selector is the only thing that may narrow the render, so
+       it files the render receipt every time it draws. */
+    if (!list.length) { rememberRenderedProvider(''); return ''; }
+    var cur = renderedProvider(), counts = {};
     var canonicalSelectedRef = '';
     if (S.providerRef) {
       var selectedRoster = safe(function () { return window.__mlsProviderRoster; }, null);
       var selectedEntry = selectedRoster && isFn(selectedRoster.resolve) ? safe(function () { return selectedRoster.resolve(S.providerRef); }, null) : null;
       canonicalSelectedRef = String(selectedEntry && selectedEntry.stableKey || S.providerRef || '');
-      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = selectedEntry.name; }
+      if (selectedEntry) { S.providerRef = canonicalSelectedRef; S.providerFilter = selectedEntry.name; cur = rememberRenderedProvider(selectedEntry.name); }
+      else { cur = rememberRenderedProvider(''); }
     }
     list.forEach(function (p0) { var k0 = String(p0 && p0.name || '').toLowerCase(); counts[k0] = (counts[k0] || 0) + 1; });
-    var opts = '<option value="__all"' + ((S.providerFilter === '') ? ' selected' : '') + '>' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) + '</option>';
+    var opts = '<option value="__all"' + (!cur ? ' selected' : '') + '>' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) + '</option>';
     list.forEach(function (p) {
       var key = String(p && p.stableKey || ''), name = String(p && p.name || ''), label = name;
       if (!key || !name) return;
@@ -20633,7 +20750,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   function homeStatus() {
-    var prov = activeProvider(), g = guardInfo();
+    var prov = renderedProvider(), g = guardInfo();
     var bits = [];
     bits.push('🩺 ' + esc(prov || DEFAULT_PROVIDER_SCOPE_LABEL));
     if (g.on) bits.push('🛡 identity guards active' + (g.blocked ? ' · ' + g.blocked + ' blocked' : ''));
@@ -20728,7 +20845,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        a scoped list may be compared against NEITHER the store total nor the
        Athena day total: both differences would read as missing patients. The
        selected provider is already named in the status line below. */
-    var scoped = !!activeProvider();
+    var scoped = !!renderedProvider();
     if (!scoped && stored !== null && stored > n) {
       return n + ' of ' + stored + ' saved for ' + label + ' are shown here';
     }
@@ -21014,7 +21131,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    *  - pulled, but the current provider filter hides everything
    *                                  → one-tap return to default view       */
   function emptyTodayHtml() {
-    var un = visitCountUnscoped(), prov = activeProvider(), dayLabel = visitDayShort();
+    var un = visitCountUnscoped(), prov = renderedProvider(), dayLabel = visitDayShort();
     if (un > 0 && prov) {
       return '<button type="button" class="ez3-big" id="ez3AllProv">👥 Use ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL) +
              '<small>Nothing for ' + esc(prov) + ' on ' + esc(dayLabel) + ' — ' + un + ' appointment' + (un === 1 ? '' : 's') +
@@ -21384,7 +21501,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              '<span class="ez3-badge dob">' + dobLabel(a) + '</span>' +
              '<span class="ez3-badge">' + esc(visitType(a)) + '</span>' +
              '<span class="ez3-badge ' + (isSeen(a) ? 'g' : 'a') + '">' + esc(statusOf(a)) + '</span>' : '') +
-        (activeProvider() ? '<span class="ez3-badge">🩺 ' + esc(activeProvider()) + '</span>' : '') +
+        (renderedProvider() ? '<span class="ez3-badge">🩺 ' + esc(renderedProvider()) + '</span>' : '') +
         /* b438: b430 surfaced a missing Athena appointment id through S.lastWarn,
            but computePhase() clears lastWarn once the note reaches 30 characters and
            renderDoctor reads it AFTER that clear - so the signal vanished exactly when
@@ -22847,7 +22964,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<p class="ez3-sub" style="margin:0 0 10px">' + esc(rb.label) +
          (rb.from === rb.to ? ' · ' + esc(rb.from) : ' · ' + esc(rb.from) + ' → ' + esc(rb.to)) +
          ' · ' + all.length + ' appointment' + (all.length === 1 ? '' : 's') +
-         (activeProvider() ? ' · scoped to ' + esc(activeProvider()) : ' · ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL)) + '</p>';
+         (renderedProvider() ? ' · scoped to ' + esc(renderedProvider()) : ' · ' + esc(DEFAULT_PROVIDER_SCOPE_LABEL)) + '</p>';
     if (!all.length) {
       h += '<div class="ez3-empty">Nothing in this range yet.<br>Use the month pull above (or 📥 Pull today only) to fetch it from Athena.</div>';
     } else {
@@ -36860,7 +36977,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var ST=window.__mlsT6Stab={v:'b21',dupesBlocked:0,pulses:0,backgroundTicksSkipped:0,interactionTicksSkipped:0,fetch:{coalesced:0,ttlHits:0,pass:0,calendarMutations:0},veilMs:0,reverted:false};
 
   /* ---- shared asset version (RC1) — bump alongside MLS_APP_BUILD ---- */
-  window.__MLS_AV = window.__MLS_AV || 'cloned-20260817-r3';
+  window.__MLS_AV = window.__MLS_AV || 'cloned-20260817-r4';
 
   /* ================= RC2: EARLY BOOT VEIL ================= */
   try{
@@ -37203,7 +37320,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function(){
   if(window.__mlsVersionCheck) return;
   window.__mlsVersionCheck=true;
-  var MLS_APP_BUILD='cloned-20260817-r3';
+  var MLS_APP_BUILD='cloned-20260817-r4';
   window.__MLS_APP_BUILD=MLS_APP_BUILD;
   var URL='app-version.json';
   var banner=null, lastCheck=0, checking=null;
@@ -44422,7 +44539,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m=t.match(/^([01]?\d|2[0-3]):([0-5]\d)\s*(a|p)?/i); if(!m) return null;
     var h=parseInt(m[1],10), mi=parseInt(m[2],10), ap=(m[3]||'').toLowerCase();
     if(ap==='p'&&h<12) h+=12; if(ap==='a'&&h===12) h=0;
-    return safe(function(){ return new Date(iso+'T'+('0'+h).slice(-2)+':'+('0'+mi).slice(-2)+':00').toISOString(); }, null);
+    /* apptclock-1.0.0 (readiness §23/§27): this WROTE the split it was later
+       blamed for reading. `new Date(iso+'T'+hh+':'+mm+':00')` is an offset-less
+       string, which ES2015+ parses in the BROWSER's timezone; .toISOString()
+       then persisted that as a UTC instant. An appointment created from a
+       laptop one timezone away was stored hours off and every surface rendered
+       the wrong hour faithfully. The ONE resolver reads the same wall clock as
+       the PRACTICE's, which is what the row on the athenaOne grid meant. */
+    return safe(function(){
+      var clock=window.__mlsApptClock;
+      if(clock&&typeof clock.wallClockIso==='function'){
+        var z=clock.wallClockIso(iso,h,mi);
+        if(z) return z;
+      }
+      return null;
+    }, null);
   }
 
   /* ---- create a linked MLS calendar entry (deduped; today/future only) ---- */
@@ -48124,8 +48255,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function parseKey(k) { var p = String(k).split('-'); return new Date(+p[0], +p[1] - 1, +p[2], 12, 0, 0); }
   function fmtDay(k) { try { return parseKey(k).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return k; } }
   var DS_AUTO_RETRY = {}; /* private identity; public pullDay(true) is still manual */
-  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, sessionSerial: 0,
-    pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null };
+  var DS = { day: todayKey(), followToday: true, pulling: false, retrying: false, lastResult: null, lastAttemptResult: null, sessionSerial: 0,
+    pullSerial: 0, autoRePull: 0, providerRosterRetryReceipt: null, providerAttributionCoverage: null, pullProviderScope: null,
+    /* dsdiag-1.1.0: minted at every pull entry, quoted by the copyable report */
+    pullId: '', pullStartedAt: 0 };
 
   function rowSortMinute(a) {
     var raw = String(a && (a.start_local || a.time_display || a.time) || ''), m = raw.match(/(\d{1,2}):(\d{2})\s*([AP]M)?/i);
@@ -48302,6 +48435,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        change invalidates that chain even before its bounded retry notices the
        frozen-date mismatch. */
     DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
+    DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
     syncStrip(); renderList();
     try {
       window.dispatchEvent(new CustomEvent('mls:visit-day-changed', {
@@ -48470,7 +48604,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     'dob-mismatch': 1,
     'unreported': 1,
     'future-day': 1,
-    'stopped-by-user': 1
+    'stopped-by-user': 1,
+    /* dsdiag-1.1.0: the STORAGE outcomes. A pull that read athenaOne perfectly
+       and then could not keep what it read is a pull failure the old report
+       could not describe - every storage reason collapsed to 'unverified'. */
+    'store-not-migrated': 1,
+    'store-not-ready': 1,
+    'store-account-changed': 1,
+    'store-degraded': 1,
+    'store-write-failed': 1,
+    'quota-exceeded': 1,
+    'durability-denied': 1,
+    'durability-unverifiable': 1
   };
   function dsSafeReasonCounts(raw) {
     var out = {};
@@ -48483,9 +48628,123 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
     return out;
   }
+  /* ===== dsdiag-1.1.0 — a copyable pull report that can be ACTED ON =====
+   * §11 gap, measured: dsDiagReport had 0 hits for pullId, user, practice and
+   * storage. Two reports from two doctors on the same day were
+   * indistinguishable, and a pull that lost its rows to a full patient store
+   * looked identical to one that read nothing. Four receipts close that:
+   *   pullId   - one id minted per RUN, so a doctor can quote it and two
+   *              reports from the same account can be ordered.
+   *   user     - account/plan/role from the shell's own non-PHI accessor.
+   *              Deliberate: the doctor copies this report himself. NEVER a
+   *              patient field.
+   *   storage  - the patient store's own receipt (mode, durability, journal,
+   *              degraded) so "it pulled but nothing stayed" is legible.
+   *   client   - extension + web build + browser/OS, because half of the
+   *              reports that reach support are version skew.
+   * Every value is read defensively: a report that throws is a report the
+   * doctor cannot send. */
+  function dsNewPullId() {
+    var rand = '';
+    try { rand = Math.random().toString(36).slice(2, 8); } catch (e) { rand = 'xxxxxx'; }
+    return 'pull-' + Date.now().toString(36) + '-' + rand;
+  }
+  function dsAccountReceipt() {
+    try {
+      var fn = window.__mlsDiagAccountReceipt;
+      if (typeof fn !== 'function') return { available: false, why: 'accessor-missing' };
+      var a = fn() || {};
+      return {
+        available: true,
+        email: String(a.email || ''),
+        userId: String(a.userId || ''),
+        role: String(a.role || ''),
+        practice: String(a.practice || ''),
+        plan: String(a.plan || ''),
+        isAdmin: a.isAdmin === true,
+        isHead: a.isHead === true,
+        hasAccess: a.hasAccess === true,
+        backend: a.backend === true
+      };
+    } catch (e) { return { available: false, why: 'accessor-threw' }; }
+  }
+  function dsStorageReceipt() {
+    var out = { available: false, why: '' };
+    try {
+      var store = window.__mlsPtsStore;
+      if (!store || typeof store.receipt !== 'function') { out.why = 'store-missing'; return out; }
+      var r = store.receipt() || {};
+      var d = r.durable || {};
+      out = {
+        available: true,
+        version: String(r.version || ''),
+        /* 'ls' here is the measured cause of the ~1,400-patient ceiling: the
+           IndexedDB store exists but the account never migrated onto it. */
+        mode: String(r.mode || ''),
+        hydrated: r.hydrated === true,
+        rows: (typeof r.rows === 'number') ? r.rows : null,
+        gen: Number(r.gen || 0),
+        confirmedGen: Number(r.confirmedGen || 0),
+        journalUnits: Number(r.journalUnits || 0),
+        journalHardMax: Number(r.journalHardMax || 0),
+        journalOverHighWater: r.journalOverHighWater === true,
+        writebackInflight: r.wbInflight === true || r.wbInflight === 1,
+        writebackQueued: r.wbQueued === true || r.wbQueued === 1,
+        writebackFailures: Number(r.wbFailures || 0),
+        durabilityRequested: d.requested === true,
+        durabilityPersisted: (d.persisted === true) ? true : ((d.persisted === false) ? false : null),
+        durabilityWhy: String(d.why || '').slice(0, 120),
+        degraded: r.degraded === true,
+        degradedWhy: String(r.degradedWhy || '').slice(0, 160),
+        lastError: String(r.lastError || '').slice(0, 200)
+      };
+      /* maskKey() already masks the account inside the store's own receipt; we
+         do not copy `key` or `tab` across at all, so no namespace string and no
+         per-tab identifier leaves this function. */
+      return out;
+    } catch (e) { return { available: false, why: 'receipt-threw' }; }
+  }
+  function dsClientReceipt() {
+    var ua = '';
+    try { ua = String(navigator.userAgent || ''); } catch (e) { ua = ''; }
+    function pick(list) {
+      for (var i = 0; i < list.length; i++) { if (ua.indexOf(list[i][0]) >= 0) return list[i][1]; }
+      return 'other';
+    }
+    var browser = 'other';
+    if (ua.indexOf('Edg/') >= 0) browser = 'edge';
+    else if (ua.indexOf('OPR/') >= 0) browser = 'opera';
+    else if (ua.indexOf('Chrome/') >= 0) browser = 'chrome';
+    else if (ua.indexOf('Firefox/') >= 0) browser = 'firefox';
+    else if (ua.indexOf('Safari/') >= 0) browser = 'safari';
+    var version = '';
+    try {
+      var token = { chrome: 'Chrome/', edge: 'Edg/', opera: 'OPR/', firefox: 'Firefox/', safari: 'Version/' }[browser];
+      if (token) {
+        var at = ua.indexOf(token);
+        if (at >= 0) version = ua.slice(at + token.length).split(' ')[0].split('.')[0];
+      }
+    } catch (e2) { version = ''; }
+    return {
+      /* the WEB build and the EXTENSION build, side by side: the single most
+         common real cause of "the pull broke" is these two disagreeing. */
+      webBuild: (function () { try { return String(window.__MLS_AV || ''); } catch (e3) { return ''; } })(),
+      extVersion: (function () { try { return String(window.__mlsExtReportedVersion || ''); } catch (e4) { return ''; } })(),
+      browser: browser,
+      browserMajor: String(version || ''),
+      os: pick([['Windows NT 10', 'windows-10/11'], ['Windows', 'windows'], ['Mac OS X', 'macos'],
+        ['CrOS', 'chromeos'], ['Android', 'android'], ['iPhone', 'ios'], ['iPad', 'ipados'], ['Linux', 'linux']]),
+      online: (function () { try { return navigator.onLine !== false; } catch (e5) { return null; } })()
+    };
+  }
+  /* ===== end dsdiag-1.1.0 ===== */
   function dsDiagReport() {
-    var si = window.__mlsSI, res = null;
-    try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
+    /* oar-1.0.0: the button owns the exact receipt returned to THIS DaySwitch
+       attempt. The importer's engine-global last result may belong to an
+       automatic resume for another date, so it is only a legacy fallback when
+       this surface has not received an attempt result of its own. */
+    var si = window.__mlsSI, res = DS.lastAttemptResult || null;
+    if (!res) try { res = si && typeof si._lastPullResult === 'function' ? si._lastPullResult() : null; } catch (e) {}
     if (!res && DS.lastResult) res = DS.lastResult;
     var hr = res && res.historyReceipt || null;
     var ib = res && res.identityBootstrapReceipt || null;
@@ -48494,6 +48753,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       build: (function () { try { return String(window.__MLS_AV || ''); } catch (e) { return ''; } }),
       at: new Date().toISOString(),
       day: DS.day,
+      /* dsdiag-1.1.0 */
+      pullId: String(DS.pullId || ''),
+      pullStartedAt: DS.pullStartedAt ? new Date(Number(DS.pullStartedAt)).toISOString() : '',
+      user: dsAccountReceipt(),
+      storage: dsStorageReceipt(),
+      client: dsClientReceipt(),
       env: {
         ua: (function () { try { return String(navigator.userAgent).slice(0, 220); } catch (e) { return ''; } })(),
         tz: (function () { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } })(),
@@ -48695,9 +48960,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'signin': 'Sign in to MLS before pulling from Athena.',
       'signin-expired': 'Your MLS sign-in expired on this device. Sign in to MLS again, then pull — nothing was imported.',
       'no-ext': 'MLS Assist is not available in this browser. Enable the extension, reload this page, and try again.',
-      'nav-failed': (r && r.navSessionLikelyExpired === true)
-        ? 'Athena signed you out (its idle timeout). Sign in again on the Athena tab, then pull - nothing was imported.'
-        : 'Athena could not be opened to the requested day. Keep the signed-in Athena tab open and try again.',
+      /* p1-busy-click-1.0.0: a second click while the engine is busy is not a
+         failed pull. Without this entry the generic fallback below painted
+         "The pull did not return a verified completion receipt
+         (pull-in-flight). Nothing is being reported as complete." over a pull
+         that was running fine (measured live 2026-08-17). */
+      'pull-in-flight': String((r && r.error) || 'This pull is already running — watch the progress just below.'),
+      /* p1-onetab-nav-1.0.0: when the engine could see WHY the nav failed (the
+         athena week strip rendered no day cells in the tab MLS leased), its
+         evidence-based advice outranks this generic line. */
+      'nav-failed': (r && typeof r.navAdvice === 'string' && r.navAdvice)
+        ? r.navAdvice
+        : ((r && r.navSessionLikelyExpired === true)
+          ? 'Athena signed you out (its idle timeout). Sign in again on the Athena tab, then pull - nothing was imported.'
+          : 'Athena could not be opened to the requested day. Keep the signed-in Athena tab open and try again.'),
       'wrong-day': 'Athena showed a different day, so nothing was accepted. Open the requested day and try again.',
       'no-read': 'Athena did not return a readable schedule. Open the day schedule and try again.',
       'unverified-day': 'The extension could not prove that the visible Athena schedule matches this day, so nothing was accepted.',
@@ -48765,6 +49041,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   api.classifyPullResult = pullOutcome;
   api._safeReasonCounts = dsSafeReasonCounts;
+
+  /* ===== oar-1.0.0 (ported from production mls-connect.js:46708-46718)
+     THIS surface owns the receipt returned to THIS DaySwitch attempt. Without
+     it the fork's error report read the importer's engine-global
+     _lastPullResult(), which may belong to an automatic resume for ANOTHER
+     date - so a doctor's copied diagnostic could describe a pull they never
+     clicked, and a promise that resolved to nothing at all produced no
+     attempt record whatsoever. */
+  function ownAttemptResult(result, day, fallbackReason, fallbackError) {
+    var source = result && typeof result === 'object' ? result : null, owned = {};
+    if (source) Object.keys(source).forEach(function (key) { owned[key] = source[key]; });
+    owned.ok = !!(source && source.ok === true);
+    owned.complete = !!(source && source.complete === true);
+    if (!owned.reason) owned.reason = fallbackReason || 'unverified-result';
+    if (!owned.target) owned.target = String(day || DS.day || '');
+    if (!owned.error && fallbackError) owned.error = String(fallbackError);
+    DS.lastAttemptResult = owned;
+    return owned;
+  }
+  /* ===== end oar-1.0.0 */
 
   function retryItems(source) {
     var history = source && source.historyReceipt ? source.historyReceipt : source;
@@ -49115,6 +49411,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (eF) {}
     var sessionSerial = DS.sessionSerial, pullSerial = DS.pullSerial;
+    DS.lastAttemptResult = null;                          /* oar-1.0.0: a new attempt owns its own receipt */
     syncRetryControl(null);                               /* a new pull supersedes an older partial receipt */
     /* 2026-07-28: a MANUAL pull resets the transient auto-retry budget. */
     if (!automaticRetry) {
@@ -49129,7 +49426,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        relay: the office computer runs the pull, this device shows live status
        and syncs the result. Same UI, zero extra steps. */
     if (window.__mlsRelayLink && window.__mlsRelayLink.shouldRelay && window.__mlsRelayLink.shouldRelay()) {
-      DS.pulling = true; DS.pullStartedAt = Date.now();
+      DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
       var rday = DS.day;
       var rbtn = $('mlsDsPullBtn'), rstat = $('mlsDsStatus');
       if (rbtn) { rbtn.disabled = true; rbtn.innerHTML = '<span class="ds-spin"></span> Pulling via your office computer...'; }
@@ -49166,6 +49463,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
           DS.pulling = false;
+          ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || '') }, rday);
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
           if (rbtn) { rbtn.disabled = false; rbtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
@@ -49182,7 +49480,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast('The Athena day-pull engine is not available on this build.', 'err'); } catch (e) {}
       return;
     }
-    DS.pulling = true; DS.pullStartedAt = Date.now();
+    DS.pulling = true; DS.pullStartedAt = Date.now(); DS.pullId = dsNewPullId(); /* dsdiag-1.1.0 */
     var day = DS.day;
     var btn = $('mlsDsPullBtn'), stat = $('mlsDsStatus');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="ds-spin"></span> Pulling ' + esc(fmtDay(day)) + '...'; }
@@ -49290,6 +49588,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : si.pull({ date: day, onStatus: dsOnStatus });
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
+          /* oar-1.0.0: own this attempt's receipt BEFORE anything reads it, so
+             a promise that resolves to nothing still leaves an honest record. */
+          result = ownAttemptResult(result, day, 'unverified-result', 'The Athena pull returned no verifiable result.');
           var attributionCoverage = dsBoundAttributionCoverage(si, result, day);
           DS.providerAttributionCoverage = attributionCoverage;
           if (attributionCoverage && result && result.providerRosterReceipt) {
@@ -49317,6 +49618,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              timeout was re-read as a settling grid three times over. The engine
              guard above stops that at the source; this refuses to re-pull on it
              even if some other path ever produces the pair again. */
+          /* ===== p1-busy-click-1.0.0 =====
+             The engine refused to START because one is already running. That
+             is not this pull's verdict and it is not an error report: say the
+             calm sentence, keep whatever the RUNNING pull last painted in the
+             log, and never arm the copy-error-report control. */
+          if (result && result.busyInFlight === true) {
+            var busyMsg = String(result.error || 'This pull is already running — watch the progress just below.');
+            DS.pulling = false;
+            DS.pullProviderScope = null;
+            dsStatusLog(busyMsg);
+            try { var busyBtn = $('mlsDsPullBtn'); if (busyBtn) { busyBtn.disabled = false; busyBtn.innerHTML = '📥 ' + esc(dsPullVerb()); } } catch (eBusyB) {}
+            try { if (typeof window.toast === 'function') window.toast(busyMsg, ''); } catch (eBusyT) {}
+            return;
+          }
           var __stoppedByUser = false;
           try { __stoppedByUser = window.__mlsPullStopRequested === true || String((result && result.reason) || '') === 'stopped-by-user' || !!(result && result.historyReceipt && result.historyReceipt.stoppedByUser === true); } catch (eStp2) {}
           var __emptyDayParseTimeout = !!(result && String(result.reason || '') === 'schedule-parse-timeout' && result.scheduleReceipt && result.scheduleReceipt.authoritativeEmpty === true);
@@ -49510,11 +49825,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             done(outcome.ok, outcome.message + cvNote, finalRetry > 0 || outcome.keepStatus === true, outcome.signinRequired === true);
           });
         },
-               function (err) { done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + ((err && err.message) || 'check the Athena tab and try again.')); });
+               function (err) {
+                 var errText = (err && err.message) || 'check the Athena tab and try again.';
+                 ownAttemptResult(null, day, 'pull-exception', errText);
+                 done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + errText);
+               });
       } else {
+        ownAttemptResult(null, day, 'no-receipt', 'The Athena pull engine did not return a verifiable completion receipt.');
         done(false, 'The Athena pull engine did not return a verifiable completion receipt. Reload MLS and try again.');
       }
-    } catch (e) { done(false, 'The pull could not start - make sure athenaOne is open, then try again.'); }
+    } catch (e) {
+      ownAttemptResult(null, day, 'pull-start-failed', (e && e.message) || 'The Athena pull could not start.');
+      done(false, 'The pull could not start - make sure athenaOne is open, then try again.');
+    }
   }
 
   function removeDoctorDayControls() {
@@ -49623,6 +49946,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (!ok) paint();
         };
         try { window.addEventListener('storage', function (ev) { try { var r = window.__mlsVisitNotesPref; if (ev && ev.key && r && typeof r.isPrefKey === 'function' && r.isPrefKey(ev.key)) paint(); } catch (e2) {} }); } catch (e3) {}
+        /* p1-visitpref-broadcast-1.0.0: the SAME-TAB half of the same job. The
+           storage listener above only ever fires for OTHER tabs, so without
+           this the visible control kept showing the value it happened to be
+           painted with at strip build (measured: CHECKED while the resolver -
+           and therefore the pull - said off). */
+        try { window.addEventListener('mls:visit-notes-pref-changed', function () { try { if (document.getElementById('mlsDsVisitBodies') === tgl) paint(); } catch (e5) {} }); } catch (e4) {}
       })();
       $('mlsDsPrev').onclick = function () { shift(-1); };
       $('mlsDsNext').onclick = function () { shift(1); };
@@ -49639,6 +49968,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var k = String(ev && ev.detail && ev.detail.day || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || k === DS.day) return;
       DS.pullSerial++; DS.pullProviderScope = null; DS.__autoRetrying = false;
+    DS.lastAttemptResult = null; /* oar-1.0.0: a receipt belongs to ONE day */
       DS.day = k; DS.followToday = (k === todayKey());
       syncStrip();
     } catch (e) {}
@@ -49653,7 +49983,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function resetDaySwitchSession() {
     DS.sessionSerial++; DS.pullSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
-    DS.lastResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
+    DS.lastResult = null; DS.lastAttemptResult = null; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
     DS.providerRosterRetryReceipt = null; DS.providerAttributionCoverage = null; DS.pullProviderScope = null;
     try { var strip = $('mlsDsStrip'); if (strip) strip.remove(); var list = $('mlsDsList'); if (list) list.remove(); var bar = $('mlsDsPullBar'); if (bar) bar.remove(); } catch (e0) {}
     try {
@@ -49828,6 +50158,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var ok = got.state === want && got.on === (on === true);
       api.lastWrite = { want: want, confirmed: ok, pairCoherent: pairCoherent };
       if (ok && !pairCoherent) { try { console.warn('[mls] visit-notes preference: canonical key confirmed but the legacy-pair write failed; an older cached bundle could read a stale value until it updates.'); } catch (eW) {} }
+      /* ===== p1-visitpref-broadcast-1.0.0 (2026-08-17, MEASURED) ============
+         A same-tab write fires NO storage event, so every VIEW of this
+         preference in this tab went stale the moment anything else wrote it.
+         Measured against the real resolver + the real day-strip paint block:
+         boot with a real namespace and no stored value answers
+         {state:'unset', on:true, settled:true} -> the strip checkbox paints
+         CHECKED and arms no settle interval (the answer is already
+         definitive); a later write of 'off' leaves read() = {state:'off',
+         on:false} with checkbox.checked === true, permanently. That is the
+         "checkbox says ON while the pull runs OFF" the owner saw.
+         One broadcast, emitted only on a CONFIRMED write, so a refused write
+         can never move a view. Views listen; nothing else changes. */
+      if (ok) { try { window.dispatchEvent(new CustomEvent('mls:visit-notes-pref-changed', { detail: { state: want, on: on === true } })); } catch (eB) {} }
       return ok;
     } catch (e) { return false; }
   }
@@ -53533,6 +53876,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     busy = false;
     try { el.disabled = false; } catch (e) {}
+    /* p1-busy-click-1.0.0: the hero button shares the engine with the Visit
+       strip. A refusal to START must not paint an error verdict or offer an
+       error report over the pull that IS running. */
+    if (result && result.busyInFlight === true) {
+      var heroBusy = String(result.error || 'This pull is already running — watch the progress just below.');
+      paint(el, heroBusy, '');
+      try { if (isFn(window.toast)) window.toast(heroBusy, ''); } catch (eHb) {}
+      clearDiag();
+      return;
+    }
     var outcome = classify(result, day);
     paint(el, outcome.message, outcome.ok ? 'ok' : 'err');
     try { if (isFn(window.toast)) window.toast(outcome.message, outcome.ok ? 'ok' : 'err'); } catch (e) {}

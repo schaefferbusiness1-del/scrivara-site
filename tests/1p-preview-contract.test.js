@@ -28,7 +28,7 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    the file is still byte-compared. */
 const P1_CONFIG_RELEASE_SUBS = [
   ['MLS_Assist_v3.0.62', 'MLS_Assist_v3.0.63'],
-  ['b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f', '2a62dc2ec6c1b4f60581a9f4237eb88d88ac6a784b5857b712e5579db30943ac']
+  ['b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f', 'c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c79']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,
