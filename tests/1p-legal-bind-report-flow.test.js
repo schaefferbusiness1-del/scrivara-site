@@ -112,8 +112,19 @@ const UI_IDS = {
   mlsP1LegalDraft: 'textarea', mlsP1LegalLetterheadEmail: 'input', mlsP1LegalLetterheadPreview: 'pre',
   /* p1-legal-flow-2.0.0 / p1-legal-bind-2.0.0 */
   mlsP1LegalBanner: 'div', mlsP1LegalRoster: 'div', mlsP1LegalReadOps: 'div',
-  mlsP1LegalReportTypes: 'div', mlsP1LegalFreeze: 'div'
+  mlsP1LegalReportTypes: 'div', mlsP1LegalFreeze: 'div',
+  /* p1-legal-stepper-1.0.0 */
+  mlsP1LegalStepper: 'ol'
 };
+/* the four ids each collapsed card owns */
+const CARD_KEYS = ['report', 'chronology', 'records', 'generate', 'draft'];
+CARD_KEYS.forEach(key => {
+  const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+  UI_IDS['mlsP1LegalDisclose' + suffix] = 'button';
+  UI_IDS['mlsP1LegalBody' + suffix] = 'div';
+  UI_IDS['mlsP1LegalSum' + suffix] = 'span';
+  UI_IDS['mlsP1LegalCue' + suffix] = 'span';
+});
 
 function makeRuntime(options = {}) {
   const ids = {};
@@ -695,8 +706,197 @@ function makeRuntime(options = {}) {
     });
   }
 
+  /* ==========================================================================
+     6. p1-legal-stepper-1.0.0 - "I open the legal page and I have no idea
+        where to go next, and this patient data should start collapsed."
+     ======================================================================== */
+  {
+    const r = makeRuntime({ activeId: '' });
+    r.api.open();
+    /* the stepper states all four steps, up front, with the current one marked */
+    const stepper = r.ids.mlsP1LegalStepper.innerHTML;
+    ['Bind patient', 'Pick report', 'Generate', 'Export'].forEach((label, i) => {
+      ok(stepper.indexOf(label) >= 0, 'the stepper does not show step ' + (i + 1) + ' (' + label + ')');
+    });
+    ok(/data-state="current"[^>]*data-mls-legal-stepitem="bind"/.test(stepper) ||
+      /data-mls-legal-stepitem="bind"[^>]*aria-current="step"/.test(stepper) ||
+      /data-state="current"/.test(stepper), 'the stepper marks no current step');
+    eq((stepper.match(/data-state="current"/g) || []).length, 1, 'more than one step is marked current');
+    deep(r.api.flow(), { stage: 'unbound', step: 'bind', next: 'mlsP1LegalRosterSearch' },
+      'the published flow receipt is wrong while unbound');
+    eq(r.root().getAttribute('data-mls-legal-next'), 'mlsP1LegalRosterSearch',
+      'the room root does not publish the id of the next control for the glow lane');
+  }
+
+  /* the next-control id tracks the stage, and exactly one control wears it */
+  {
+    const r = makeRuntime();
+    r.api.open();
+    eq(r.api.flow().next, 'mlsP1LegalReport_ime', 'a bound patient does not point at the report picker');
+    ok(/id="mlsP1LegalReport_ime"/.test(r.ids.mlsP1LegalReportTypes.innerHTML), 'the report picker has no stable per-type control id');
+    ok(/id="mlsP1LegalReport_chronology"/.test(r.ids.mlsP1LegalReportTypes.innerHTML), 'not every report type has a stable control id');
+    r.api.pickReport('ime');
+    eq(r.api.flow().next, 'mlsP1LegalGenerate', 'a picked report does not point at Generate');
+    eq(r.root().getAttribute('data-mls-legal-next'), 'mlsP1LegalGenerate', 'the room root did not republish the next control');
+    /* until the shared glow lands, the next control carries its own emphasis
+       and the stale one must give it up */
+    ok(/p1l-nextctl/.test(r.ids.mlsP1LegalGenerate.className), 'the next control carries no local emphasis');
+    ok(!/p1l-nextctl/.test(r.ids.mlsP1LegalRosterSearch ? r.ids.mlsP1LegalRosterSearch.className : ''), 'a stale next control kept its emphasis');
+    const promise = r.api.generateDraft();
+    for (let i = 0; i < 14; i++) {
+      for (let spin = 0; spin < 14 && r.pendingAi.length < i + 1; spin++) await Promise.resolve();
+      r.pendingAi[i].resolve('Synthetic body ' + (i + 1));
+    }
+    await promise;
+    eq(r.api.flow().next, 'mlsP1LegalDraftDownload', 'a generated draft does not point at an export');
+    ok(/p1l-nextctl/.test(r.ids.mlsP1LegalDraftDownload.className), 'the export control carries no emphasis');
+    ok(!/p1l-nextctl/.test(r.ids.mlsP1LegalGenerate.className), 'Generate kept the emphasis after it was used');
+    r.ids.mlsP1LegalDraftDownload.listeners.click(); await flush();
+    eq(r.api.flow(), null, 'a finished flow still points somewhere');
+  }
+
+  /* EVERYTHING below the header starts collapsed; only the current step opens */
+  {
+    const r = makeRuntime({ activeId: '' });
+    r.api.open();
+    CARD_KEYS.forEach(key => {
+      const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+      eq(r.ids['mlsP1LegalBody' + suffix].hidden, true, 'the ' + key + ' card did not start collapsed');
+      eq(r.ids['mlsP1LegalDisclose' + suffix].getAttribute('aria-expanded'), 'false', 'the ' + key + ' card lies about being collapsed');
+      eq(r.ids['mlsP1LegalCue' + suffix].textContent, 'Expand', 'the ' + key + ' card offers no Expand affordance');
+    });
+    /* a bound patient's default view is the stepper + the report picker */
+    r.api.bindTo('C');
+    eq(r.ids.mlsP1LegalBodyReport.hidden, false, 'binding a patient did not open the report picker');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, true, 'binding a patient dumped the chronology on screen');
+    eq(r.ids.mlsP1LegalBodyDraft.hidden, true, 'binding a patient opened the draft card');
+    eq(r.ids.mlsP1LegalBodyGenerate.hidden, true, 'binding a patient opened the generate card');
+    /* the current step auto-opens as the flow advances */
+    r.api.pickReport('ime');
+    eq(r.ids.mlsP1LegalBodyGenerate.hidden, false, 'picking a report did not open the step it points at');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, true, 'picking a report opened the raw chronology');
+    /* a card the clinician opens is never force-closed by a later stage */
+    eq(r.api.toggleCard('chronology'), true, 'the chronology card could not be opened by hand');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, false, 'the hand-opened card stayed hidden');
+    eq(r.ids.mlsP1LegalCueChronology.textContent, 'Collapse', 'an open card still offers Expand');
+    r.api.pickReport('narrative');
+    eq(r.ids.mlsP1LegalBodyChronology.hidden, false, 'a stage change force-closed a card the clinician opened');
+    eq(r.api.toggleCard('nope'), false, 'an unknown card key was accepted');
+    /* the one-line summaries are what a collapsed card shows */
+    ok(/entr(y|ies)/.test(r.ids.mlsP1LegalSumChronology.textContent), 'the collapsed chronology has no entry-count summary');
+    ok(/compiled /.test(r.ids.mlsP1LegalSumChronology.textContent), 'the collapsed chronology does not say when it was compiled');
+    ok(/no local files/.test(r.ids.mlsP1LegalSumRecords.textContent), 'the collapsed local-records card has no summary');
+    ok(/Medical-legal narrative/.test(r.ids.mlsP1LegalSumReport.textContent), 'the collapsed report card does not name the pick');
+  }
+
+  /* Each encounter is collapsed to its date/type line, not a raw dump. */
+  {
+    const r = makeRuntime();
+    r.api.open(); r.api.toggleCard('chronology', true);
+    const html = r.ids.mlsP1LegalChronology.innerHTML;
+    const heads = (html.match(/data-row-toggle="/g) || []).length;
+    const bodies = (html.match(/class="p1l-rowbody" id="mlsP1LegalRowBody\d+" hidden/g) || []).length;
+    ok(heads > 0, 'the chronology renders no collapsible encounter rows');
+    eq(bodies, heads, 'an encounter body was rendered already expanded');
+    ok(/Office visit</.test(html), 'the collapsed row does not show the encounter type');
+    ok(!/Pain follow-up\./.test(html.replace(/<pre[\s\S]*?<\/pre>/g, '')), 'the encounter body leaked outside its collapsed body');
+  }
+
+  /* ==========================================================================
+     7. p1-legal-scrub-1.0.0 - the owner's EXACT screenshot samples
+     ======================================================================== */
+  {
+    const r = makeRuntime();
+    const scrub = r.api.scrubBody;
+    /* sample A: athenaOne page chrome stored as an encounter body */
+    const A = 'Office visit 02-02-2025\nrecently edited this chart at . Refresh to view the most current information.REFRESH CHART\nPatient reports 6/10 low back pain radiating to the left calf.';
+    const a = scrub(A);
+    ok(!/REFRESH CHART/.test(a.text), 'the athenaOne refresh banner survived into the displayed body');
+    ok(!/recently edited this chart/.test(a.text), 'the "recently edited this chart" banner survived');
+    ok(/6\/10 low back pain radiating to the left calf/.test(a.text), 'the scrubber deleted the clinical line');
+    eq(a.chrome, 1, 'the chrome line count is wrong');
+    eq(a.code, 0, 'a chrome line was miscounted as script');
+    eq(a.raw, A, 'the raw body was not preserved verbatim');
+
+    /* sample B: a <script> tag's text stored as an encounter body */
+    const B = 'Print Premier Ortho and Philadelphia Hand to Shoulder • 100 Example Rd\n' +
+      'window.Original = {}; window.Original.IsSafari = IsSafari;\n' +
+      'IsSafari = function(){ return 0; }\n' +
+      'Jotter = function(params) { var svgjottercontainerid = params.div; }\n' +
+      'Impression: L5-S1 disc herniation with left S1 radiculopathy.';
+    const b = scrub(B);
+    ok(!/window\.Original/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/IsSafari/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/Jotter/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/svgjottercontainerid/.test(b.text), 'captured script text survived into the displayed body');
+    ok(!/Print Premier Ortho/.test(b.text), 'the print-header page furniture survived');
+    ok(/L5-S1 disc herniation with left S1 radiculopathy\./.test(b.text), 'the scrubber deleted the clinical impression');
+    ok(b.removed >= 4, 'the scrubber under-counted what it removed: ' + b.removed);
+    eq(b.raw, B, 'the raw body was not preserved verbatim');
+
+    /* NEVER delete a clinical line. These are the near-misses that a greedy
+       pattern would have eaten - "loss of function (grade 3)" was the reason
+       the code patterns require assignment or brace syntax. */
+    [
+      'Exam: loss of function (grade 3) in the left wrist.',
+      'Patient function (ADLs) unchanged since the last visit.',
+      'Discussed the variable response to the epidural injection.',
+      'MRI window for repeat imaging is 6 weeks.',
+      'The patient will print the work note at the front desk.',
+      'Constant pain; variable at night.'
+    ].forEach(line => {
+      const kept = scrub('Header\n' + line + '\nFooter');
+      ok(kept.text.indexOf(line) >= 0, 'the scrubber deleted a clinical line: ' + JSON.stringify(line));
+      eq(kept.removed, 0, 'the scrubber flagged a clinical line: ' + JSON.stringify(line));
+    });
+
+    /* a body that is ENTIRELY junk falls back to raw rather than vanishing:
+       a cleaner that silently empties an encounter is worse than the junk */
+    const allJunk = scrub('REFRESH CHART\nrecently edited this chart at .');
+    eq(allJunk.refused, true, 'an entirely-suppressed body did not fall back to raw');
+    eq(allJunk.text, 'REFRESH CHART\nrecently edited this chart at .', 'the fallback did not show the raw text');
+    eq(allJunk.removed, 0, 'the refused fallback still claimed to have removed lines');
+    /* and an empty body stays empty without claiming anything */
+    deep({ text: scrub('').text, removed: scrub('').removed, refused: scrub('').refused },
+      { text: '', removed: 0, refused: false }, 'an empty body was mishandled');
+  }
+
+  /* End to end: the junk never reaches the screen or the export, the count is
+     declared, and the raw text stays reachable. */
+  {
+    const junkPatient = [{ id: 'A', name: 'Synthetic Alpha', dob: '01/02/1980', mrn: 'TEST-A',
+      visits: [{ date: '2025-02-02', type: 'Office visit', provider: 'M Synthetic',
+        detail: 'recently edited this chart at . Refresh to view the most current information.REFRESH CHART\n' +
+          'window.Original = {}; IsSafari = function(){ return 0; }\n' +
+          'Assessment: lumbar radiculopathy, left S1.' }] }];
+    const r = makeRuntime({ patients: junkPatient });
+    r.api.open(); r.api.toggleCard('chronology', true);
+    const painted = r.ids.mlsP1LegalChronology.innerHTML;
+    ok(!/REFRESH CHART/.test(painted), 'the EMR banner reached the rendered chronology');
+    ok(!/IsSafari/.test(painted), 'captured script text reached the rendered chronology');
+    ok(/lumbar radiculopathy/.test(painted), 'the clinical assessment was lost from the rendered chronology');
+    ok(/hidden as non-clinical/.test(painted), 'the suppression was silent on screen');
+    ok(/data-row-raw="/.test(painted), 'there is no way to reach the raw text');
+
+    const text = r.api.chronologyText();
+    ok(!/REFRESH CHART/.test(text), 'the EMR banner reached the exported chronology');
+    ok(!/IsSafari/.test(text), 'captured script text reached the exported chronology');
+    ok(/lumbar radiculopathy/.test(text), 'the clinical assessment was lost from the exported chronology');
+    ok(/DISPLAY NOTE: \d+ line\(s\)/.test(text), 'the export does not declare what it suppressed');
+    ok(/the stored chart was not modified/.test(text), 'the export does not say the record itself is untouched');
+
+    /* Show raw brings the exact stored bytes back, on demand */
+    const rawButton = /data-row-raw="(\d+)"/.exec(painted);
+    ok(rawButton, 'no raw toggle was rendered for a cleaned row');
+    r.api.showRaw(rawButton[1], true);
+    ok(/IsSafari/.test(r.ids.mlsP1LegalChronology.innerHTML), 'Show raw did not restore the exact stored text');
+    r.api.showRaw(rawButton[1], false);
+    ok(!/IsSafari/.test(r.ids.mlsP1LegalChronology.innerHTML), 'Show cleaned did not go back to the cleaned text');
+  }
+
   /* the delimited blocks stay delimited, so promotion is a copy not a diff */
-  ['p1-legal-restore-2.0.0', 'p1-legal-bind-2.0.0', 'p1-legal-reports-2.0.0'].forEach(name => {
+  ['p1-legal-restore-2.0.0', 'p1-legal-bind-2.0.0', 'p1-legal-reports-2.0.0',
+    'p1-legal-scrub-1.0.0', 'p1-legal-stepper-1.0.0'].forEach(name => {
     const a = source.indexOf('/* ===== ' + name + ' =');
     const b = source.indexOf('/* ===== end ' + name + ' ===== */');
     ok(a >= 0 && b > a, 'the ' + name + ' block is missing or unclosed');

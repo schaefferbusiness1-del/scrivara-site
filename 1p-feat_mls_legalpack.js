@@ -68,6 +68,8 @@
     snapshotSig: '',       /* signature of that snapshot, re-measured to detect drift */
     snapshotAt: 0,
     rebindIntent: null,    /* {patientId, at} - an IN-WORKSPACE Change, not an external switch */
+    expanded: {},          /* p1-legal-stepper-1.0.0: card key -> disclosed */
+    rawOpen: {},           /* chronology row index -> raw body shown */
     athenaOp: '',          /* the read op currently running, '' when idle */
     athenaNote: ''         /* last honest receipt from an Athena read */
   };
@@ -424,6 +426,84 @@
   }
   /* ===== end p1-legal-restore-2.0.0 ===== */
 
+  /* ===== p1-legal-scrub-1.0.0 =============================================
+     Owner, 2026-08-17, from a screenshot of the live workspace: an encounter
+     body rendered as athenaOne page furniture ("recently edited this chart
+     at . Refresh to view the most current information.REFRESH CHART") and
+     another rendered as RAW JAVASCRIPT ("window.Original = {}; ... Jotter =
+     function(params) { var svgjottercontainerid = ...").
+
+     That debris is in the STORED record - some capture path put a <script>
+     tag's text into a visit body - so this is a DISPLAY fix, not a data fix:
+       - it never writes, never deletes, and never edits the chart;
+       - it works LINE BY LINE and drops only lines that match an explicit
+         non-clinical pattern. Everything else is kept, including anything it
+         does not recognise. A line is guilty only if named guilty here;
+       - the exact raw text stays one click away behind "Show raw", and the
+         count of suppressed lines is always shown, so nothing is hidden
+         silently and a clinician can always audit what was removed;
+       - if scrubbing would empty a body that had content, the RAW body is
+         shown instead. A cleaner that deletes a whole clinical note because
+         its patterns were too greedy is the failure mode this guards.
+
+     The lead still has to fix the capture path at the source: this makes the
+     workspace usable today, it does not make the stored record correct.
+     ====================================================================== */
+  /* athenaOne page chrome that is never clinical content */
+  var SCRUB_CHROME = [
+    /recently edited this chart/i,
+    /refresh to view the most current information/i,
+    /^\s*refresh chart\s*$/i,
+    /^\s*print\s+premier\s+ortho/i,
+    /philadelphia hand to shoulder/i
+  ];
+  /* Script/style text captured as if it were prose.
+     DELIBERATELY NARROW. A bare /\bfunction\s*\(/ would have matched the
+     clinical phrase "loss of function (grade 3)" and deleted a real exam
+     finding, so every pattern here needs syntax a sentence does not have: an
+     assignment, a declaration keyword, or a function body brace. */
+  var SCRUB_CODE = [
+    /window\s*\.\s*[A-Za-z_$][\w$]*\s*=/,
+    /[A-Za-z_$][\w$]*\s*=\s*function\s*\(/,
+    /\bfunction\s*\([^)]*\)\s*\{/,
+    /(?:^|[;{}])\s*(?:var|let|const)\s+[A-Za-z_$][\w$]*\s*=/,
+    /\bJotter\b/,
+    /\bIsSafari\b/,
+    /svgjotter/i,
+    /\bparams\s*\.\s*div\b/
+  ];
+  function scrubReason(line) {
+    var text = String(line == null ? '' : line);
+    if (!clean(text)) return '';
+    for (var i = 0; i < SCRUB_CHROME.length; i++) if (SCRUB_CHROME[i].test(text)) return 'chrome';
+    for (var j = 0; j < SCRUB_CODE.length; j++) if (SCRUB_CODE[j].test(text)) return 'code';
+    return '';
+  }
+  /* Returns {text, removed, chrome, code, raw}. `text` is what is displayed
+     and exported; `raw` is always the untouched original. */
+  function scrubBody(body) {
+    var raw = String(body == null ? '' : body);
+    var chrome = 0, code = 0;
+    var kept = raw.split(/\r?\n/).filter(function (line) {
+      var reason = scrubReason(line);
+      if (reason === 'chrome') { chrome++; return false; }
+      if (reason === 'code') { code++; return false; }
+      return true;
+    });
+    var text = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    /* Never let the cleaner win outright: an emptied body falls back to raw. */
+    if (!text && clean(raw)) return { text: raw, removed: 0, chrome: 0, code: 0, raw: raw, refused: true };
+    return { text: text, removed: chrome + code, chrome: chrome, code: code, raw: raw, refused: false };
+  }
+  function scrubNote(result) {
+    if (!result || !result.removed) return '';
+    var parts = [];
+    if (result.chrome) parts.push(result.chrome + ' EMR page line' + (result.chrome === 1 ? '' : 's'));
+    if (result.code) parts.push(result.code + ' script line' + (result.code === 1 ? '' : 's'));
+    return parts.join(' and ') + ' hidden as non-clinical';
+  }
+  /* ===== end p1-legal-scrub-1.0.0 ===== */
+
   function visitsFor(patient) {
     try {
       var vm = window.__mlsVisitModel;
@@ -453,6 +533,13 @@
     item.body = String(item.body || '').trim();
     item.title = clean(item.title) || 'Record entry';
     item.date = ymd(item.date);
+    /* p1-legal-scrub-1.0.0: `body` stays the untouched stored record; `display`
+       is what a reader is shown and exported. Both travel together so the raw
+       text is always one click away and never re-derived. */
+    var scrubbed = scrubBody(item.body);
+    item.display = scrubbed.text;
+    item.scrubbed = scrubbed.removed;
+    item.scrubNote = scrubNote(scrubbed);
     items.push(item);
   }
   function buildModel(patientSnapshot, binding) {
@@ -563,6 +650,7 @@
     if (note) lines.push('', note);
     lines.push('');
     var items = filteredItems();
+    var suppressed = 0;
     CATEGORIES.forEach(function (category) {
       var rows = items.filter(function (item) { return item.category === category[0]; });
       lines.push(category[1].toUpperCase() + ' (' + rows.length + ')');
@@ -570,13 +658,24 @@
       if (!rows.length) lines.push('(none documented)');
       rows.forEach(function (item) {
         lines.push(niceDate(item.date) + ' - ' + item.title + ' - ' + item.provider + ' [' + item.source + ']');
-        if (item.body && item.body !== item.title) lines.push(item.body);
+        /* p1-legal-scrub-1.0.0: a legal chronology must not carry the EMR's
+           page furniture or a <script> tag's text as if it were an encounter.
+           The suppression is counted and declared below, never silent. */
+        var shown = item.display || '';
+        suppressed += Number(item.scrubbed || 0);
+        if (shown && shown !== item.title) lines.push(shown);
+        if (item.scrubNote) lines.push('[' + item.scrubNote + ' - the stored record is unchanged]');
         lines.push('');
       });
       lines.push('');
     });
     lines.push('Compiled locally from the exact active chart snapshot. No data was written or delivered.');
     lines.push('Nothing here is invented; anything missing from the chart is shown as missing.');
+    if (suppressed) {
+      lines.push('DISPLAY NOTE: ' + suppressed + ' line(s) of EMR page furniture or captured script text were suppressed ' +
+        'from this compilation as non-clinical. Nothing clinical was removed and the stored chart was not modified; ' +
+        'the raw text of every entry remains visible in the workspace behind "Show raw".');
+    }
     return lines.join('\n');
   }
 
@@ -1058,13 +1157,128 @@
          reaches no delegate at all.
      ====================================================================== */
   var STAGES = ['unbound', 'bound', 'report-picked', 'generated', 'exported'];
+  /* ===== p1-legal-stepper-1.0.0 ===========================================
+     Owner, 2026-08-17: "I open the legal page and I have no idea where to go
+     next, and this patient data should start collapsed."
+
+     Two separate faults, fixed together because either alone leaves the other
+     one in charge of the screen:
+       - there was no visible ladder, only cards. The stepper states all four
+         steps up front, marks the current one, and names the ONE control that
+         is the next action.
+       - the first thing on screen was a raw chart dump. Everything below the
+         header now opens COLLAPSED to a one-line summary, and the card for
+         the current step is the only one auto-opened. A card the clinician
+         opens themselves is never force-closed again by a stage change.
+
+     data-mls-legal-state (the stage) and data-mls-legal-next (the id of the
+     next control) are published on the room root for the shared next-step
+     glow lane. Until that lands, .p1l-nextctl carries the emphasis locally;
+     the glow lane can override it by class.
+     ====================================================================== */
+  var FLOW_STEPS = [
+    { key: 'bind', n: 1, label: 'Bind patient', hint: 'Add one, or grab from the EMR' },
+    { key: 'report', n: 2, label: 'Pick report', hint: 'Choose what to produce' },
+    { key: 'generate', n: 3, label: 'Generate', hint: 'Draft it on your letterhead' },
+    { key: 'export', n: 4, label: 'Export', hint: 'Copy, download or print' }
+  ];
+  var STAGE_STEP = { 'unbound': 'bind', 'bound': 'report', 'report-picked': 'generate', 'generated': 'export', 'exported': '' };
+  var STAGE_NEXT = {
+    'unbound': 'mlsP1LegalRosterSearch',
+    'bound': 'mlsP1LegalReport_ime',
+    'report-picked': 'mlsP1LegalGenerate',
+    'generated': 'mlsP1LegalDraftDownload',
+    'exported': ''
+  };
+  var CARD_KEYS = ['report', 'chronology', 'records', 'generate', 'draft'];
+  function cardId(prefix, key) { return 'mlsP1Legal' + prefix + key.charAt(0).toUpperCase() + key.slice(1); }
+  function autoExpandedFor(stage) {
+    return {
+      report: stage !== 'unbound',
+      chronology: false,
+      records: false,
+      generate: stage === 'report-picked',
+      draft: stage === 'generated' || stage === 'exported'
+    };
+  }
   function setStage(stage) {
     if (STAGES.indexOf(stage) < 0) return false;
     state.stage = stage;
     var root = byId(ROOT_ID);
-    if (root && isFn(root.setAttribute)) root.setAttribute('data-mls-legal-state', stage);
+    if (root && isFn(root.setAttribute)) {
+      root.setAttribute('data-mls-legal-state', stage);
+      root.setAttribute('data-mls-legal-next', STAGE_NEXT[stage] || '');
+    }
+    /* open what the current step needs; never close what the reader opened */
+    var auto = autoExpandedFor(stage);
+    CARD_KEYS.forEach(function (key) { if (auto[key]) state.expanded[key] = true; });
+    renderStepper(); applyDisclosure(); markNextControl();
     return true;
   }
+  function renderStepper() {
+    var node = byId('mlsP1LegalStepper'); if (!node) return false;
+    var current = STAGE_STEP[state.stage] || '';
+    var reached = FLOW_STEPS.map(function (s) { return s.key; }).indexOf(current);
+    node.innerHTML = FLOW_STEPS.map(function (step, index) {
+      var done = state.stage === 'exported' || (reached >= 0 && index < reached);
+      var mode = (step.key === current) ? 'current' : (done ? 'done' : 'todo');
+      return '<li class="p1l-stepitem" data-state="' + mode + '" data-mls-legal-stepitem="' + esc(step.key) + '"' +
+        (mode === 'current' ? ' aria-current="step"' : '') + '>' +
+        '<span class="n" aria-hidden="true">' + (done ? '✓' : step.n) + '</span>' +
+        '<span class="t">' + esc(step.label) + '<small>' + esc(step.hint) + '</small></span></li>';
+    }).join('');
+    return true;
+  }
+  /* Exactly one control wears the next-step emphasis at a time. */
+  function markNextControl() {
+    var wanted = STAGE_NEXT[state.stage] || '';
+    Object.keys(STAGE_NEXT).forEach(function (stage) {
+      var id = STAGE_NEXT[stage];
+      if (!id || id === wanted) return;
+      var stale = byId(id);
+      if (stale && typeof stale.className === 'string') stale.className = stale.className.replace(/\s*p1l-nextctl/g, '');
+    });
+    if (!wanted) return '';
+    var node = byId(wanted);
+    if (!node) return '';
+    if (typeof node.className !== 'string') return wanted;
+    if (node.className.indexOf('p1l-nextctl') < 0) node.className = clean(node.className + ' p1l-nextctl');
+    return wanted;
+  }
+  function applyDisclosure() {
+    CARD_KEYS.forEach(function (key) {
+      var open = !!state.expanded[key];
+      var body = byId(cardId('Body', key));
+      var toggle = byId(cardId('Disclose', key));
+      if (body) body.hidden = !open;
+      if (toggle && isFn(toggle.setAttribute)) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var cue = byId(cardId('Cue', key));
+      if (cue) cue.textContent = open ? 'Collapse' : 'Expand';
+    });
+    renderCardSummaries();
+  }
+  function toggleCard(key, force) {
+    if (CARD_KEYS.indexOf(key) < 0) return false;
+    state.expanded[key] = (force === undefined) ? !state.expanded[key] : !!force;
+    applyDisclosure(); markNextControl();
+    return state.expanded[key];
+  }
+  function renderCardSummaries() {
+    var sum = function (key, text) { var n = byId(cardId('Sum', key)); if (n) n.textContent = text; };
+    var count = state.model ? state.model.items.length : 0;
+    var when = state.snapshotAt ? new Date(state.snapshotAt).toLocaleTimeString() : '';
+    sum('chronology', state.model
+      ? (count + ' entr' + (count === 1 ? 'y' : 'ies') + (when ? ' · compiled ' + when : '') + (snapshotDrifted() ? ' · chart changed since' : ''))
+      : 'not compiled yet');
+    sum('records', state.sources.length
+      ? (state.sources.length + ' local file' + (state.sources.length === 1 ? '' : 's') + ' staged')
+      : 'no local files added');
+    var report = reportTypeFor(state.reportType);
+    sum('report', report ? report.label : 'nothing picked yet');
+    sum('generate', report ? ('ready to draft ' + sectionsFor(report.key).length + ' section' + (sectionsFor(report.key).length === 1 ? '' : 's')) : 'pick a report type first');
+    sum('draft', state.draft ? (state.draft.length.toLocaleString() + ' characters, unsigned') : 'nothing generated yet');
+  }
+  /* ===== end p1-legal-stepper-1.0.0 ===== */
 
   function rosterPatients() {
     try { return isFn(window.getPatients) ? (window.getPatients() || []) : []; } catch (e) { return []; }
@@ -1320,6 +1534,34 @@
     '#' + ROOT_ID + ' .p1l-freeze.stale{color:#8a5a1a;background:#fff8e8;border:1px solid #ead6a8;border-radius:10px;padding:9px 11px}',
     '#' + ROOT_ID + ' .p1l-readop{border-top:1px solid #e8e9e5;padding:9px 0;font-size:13px}',
     '#' + ROOT_ID + ' .p1l-readop b{display:block;font-size:14px;color:#204034}',
+    /* p1-legal-stepper-1.0.0 CSS (the block itself is below, in the JS) */
+    '#' + ROOT_ID + ' .p1l-stepper{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px;padding:0;list-style:none}',
+    '#' + ROOT_ID + ' .p1l-stepitem{display:flex;align-items:center;gap:9px;flex:1 1 190px;min-width:170px;border:1px solid #dedfd9;background:#fff;border-radius:12px;padding:10px 13px}',
+    '#' + ROOT_ID + ' .p1l-stepitem .n{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex:0 0 26px;border-radius:50%;background:#e9edea;color:#5c7a68;font-weight:750;font-size:13px}',
+    '#' + ROOT_ID + ' .p1l-stepitem .t{font-weight:700;font-size:14px;color:#5c7a68;line-height:1.2}',
+    '#' + ROOT_ID + ' .p1l-stepitem .t small{display:block;font-weight:400;font-size:12px;color:#8a9a90}',
+    '#' + ROOT_ID + ' .p1l-stepitem[data-state="done"]{border-color:#bdd4c5;background:#eef6f0}',
+    '#' + ROOT_ID + ' .p1l-stepitem[data-state="done"] .n{background:#2e6a4b;color:#fff}',
+    '#' + ROOT_ID + ' .p1l-stepitem[data-state="done"] .t{color:#2e6a4b}',
+    '#' + ROOT_ID + ' .p1l-stepitem[data-state="current"]{border-color:#2e6a4b;border-width:2px;background:#fff;box-shadow:0 0 0 4px rgba(46,106,75,.12)}',
+    '#' + ROOT_ID + ' .p1l-stepitem[data-state="current"] .n{background:#2e6a4b;color:#fff}',
+    '#' + ROOT_ID + ' .p1l-stepitem[data-state="current"] .t{color:#183a2f}',
+    /* Until the shared next-step glow lands, the next control carries its own
+       unmistakable emphasis. The glow lane can override this by class. */
+    '#' + ROOT_ID + ' .p1l-nextctl{background:#2e6a4b!important;color:#fff!important;border-color:#2e6a4b!important;box-shadow:0 0 0 4px rgba(46,106,75,.18)}',
+    '#' + ROOT_ID + ' input.p1l-nextctl,#' + ROOT_ID + ' textarea.p1l-nextctl{background:#fff!important;color:#183a2f!important;border-color:#2e6a4b!important;border-width:2px}',
+    /* collapse-by-default disclosure */
+    '#' + ROOT_ID + ' .p1l-disclose{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;padding:0;min-height:38px;font:750 15px/1.3 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
+    '#' + ROOT_ID + ' .p1l-disclose .sum{font-weight:400;font-size:13px;color:#5c7a68;flex:1;min-width:0}',
+    '#' + ROOT_ID + ' .p1l-disclose .cue{flex:0 0 auto;font-size:13px;font-weight:700;color:#2e6a4b}',
+    '#' + ROOT_ID + ' .p1l-body[hidden]{display:none}',
+    '#' + ROOT_ID + ' .p1l-row{border-left:3px solid #c7d9ce;margin:6px 0;background:#fafbf9}',
+    '#' + ROOT_ID + ' .p1l-rowhead{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;min-height:38px;font:650 13.5px/1.35 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
+    '#' + ROOT_ID + ' .p1l-rowhead .meta{font-weight:400;color:#5c7a68;font-size:12.5px}',
+    '#' + ROOT_ID + ' .p1l-rowbody{padding:0 10px 9px}',
+    '#' + ROOT_ID + ' .p1l-rowbody pre{white-space:pre-wrap;max-height:220px;overflow:auto;font:12px/1.45 ui-monospace,monospace;margin:0}',
+    '#' + ROOT_ID + ' .p1l-scrub{font-size:12px;color:#8a5a1a;background:#fff8e8;border:1px solid #ead6a8;border-radius:8px;padding:5px 8px;margin:0 0 6px}',
+    '#' + ROOT_ID + ' .p1l-raw{min-height:30px;padding:3px 9px;font-size:12px;margin-top:6px}',
     '@media(max-width:820px){#' + ROOT_ID + ' .p1l-grid{grid-template-columns:1fr}#' + ROOT_ID + ' .p1l-card.wide{grid-column:auto}#' + ROOT_ID + ' .p1l-shell{padding:18px 13px 70px}#' + ROOT_ID + ' .p1l-bindname{font-size:21px}}'
   ].join('\n');
 
@@ -1328,24 +1570,55 @@
     var style = document.createElement('style'); style.id = STYLE_ID; style.textContent = CSS;
     (document.head || document.documentElement).appendChild(style);
   }
+  /* p1-legal-stepper-1.0.0: every card below the header is a disclosure that
+     starts CLOSED. The heading is the button, the one-line summary sits beside
+     it, and the body is hidden until the reader (or the current step) opens it. */
+  function discloseCard(key, title, attrs, inner) {
+    return '<section class="p1l-card' + (attrs.wide ? ' wide' : '') + '" data-mls-legal-step="' + esc(attrs.step) +
+      '" data-mls-legal-card="' + esc(key) + '">' +
+      '<button type="button" class="p1l-disclose" id="' + cardId('Disclose', key) + '" aria-expanded="false" aria-controls="' + cardId('Body', key) + '">' +
+      '<span>' + (attrs.stepNo ? '<span class="p1l-step"><i>' + attrs.stepNo + '</i></span> ' : '') + esc(title) + '</span>' +
+      '<span class="sum" id="' + cardId('Sum', key) + '"></span>' +
+      '<span class="cue" id="' + cardId('Cue', key) + '">Expand</span></button>' +
+      '<div class="p1l-body" id="' + cardId('Body', key) + '" hidden>' + inner + '</div></section>';
+  }
   function shellHtml() {
-    /* p1-legal-flow-2.0.0: the same cards, in the order the work is actually
-       done, each one labelled with its step number. Nothing was removed. */
+    /* The same cards and every control, in the order the work is done: a
+       visible stepper, the patient, then four collapsed disclosures. */
     return '<div class="p1l-shell">' +
-      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>Bind a patient, pick a report, generate, export. Exact chart, local files, and a clinician-review draft on your practice letterhead. No signing, delivery, chart filing, Athena writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
-      '<section class="p1l-card p1l-bindcard" data-mls-legal-step="bind"><div class="p1l-step"><i>1</i>Patient</div>' +
+      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>No signing, delivery, chart filing, EMR writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
+      '<ol class="p1l-stepper" id="mlsP1LegalStepper" aria-label="Legal report steps"></ol>' +
+      '<section class="p1l-card p1l-bindcard" data-mls-legal-step="bind" data-mls-legal-card="bind"><div class="p1l-step"><i>1</i>Patient</div>' +
       '<div id="mlsP1LegalBanner" class="p1l-bindhead"></div>' +
       '<div id="mlsP1LegalRoster"></div>' +
       '<div id="mlsP1LegalReadOps"></div>' +
       '</section>' +
-      '<section class="p1l-card" data-mls-legal-step="report"><div class="p1l-step"><i>2</i>Report type</div>' +
-      '<p class="p1l-explain">Pick what this workspace should produce. Every type prints on the same letterhead and closes with the same signature attestation; only the sections differ.</p>' +
-      '<div id="mlsP1LegalReportTypes"></div></section>' +
+      discloseCard('report', 'Pick the report', { step: 'report', stepNo: 2 },
+        '<p class="p1l-explain">Every type prints on the same letterhead and closes with the same signature attestation; only the sections differ.</p>' +
+        '<div id="mlsP1LegalReportTypes"></div>') +
       '<div class="p1l-grid">' +
-      '<section class="p1l-card wide" data-mls-legal-step="inputs"><h2>Chronology (read-only)</h2><p class="p1l-explain">Built from the patient as of when you opened this workspace — a frozen snapshot, so a chart edit made elsewhere cannot change a report you are part-way through. Provider filters change only the preview and export; they never change the chart.</p><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalCompile">Compile history</button><button type="button" id="mlsP1LegalChronCopy" disabled>Copy chronology</button><button type="button" id="mlsP1LegalChronDownload" disabled>Download .txt</button><button type="button" id="mlsP1LegalChronPrint" disabled>Print</button></div><div id="mlsP1LegalFreeze" class="p1l-freeze" role="status" aria-live="polite"></div><div id="mlsP1LegalProviders" class="p1l-actions" aria-label="Filter chronology by provider"></div><div id="mlsP1LegalChronology"></div></section>' +
-      '<section class="p1l-card" data-mls-legal-step="inputs"><h2>Local records</h2><p id="mlsP1LegalFileHelp">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p><button type="button" class="p1l-drop" id="mlsP1LegalDrop" aria-describedby="mlsP1LegalFileHelp">Choose or drop local files</button><input id="mlsP1LegalFile" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.html,text/*" hidden><div id="mlsP1LegalSources" aria-live="polite"></div></section>' +
-      '<section class="p1l-card" data-mls-legal-step="generate"><div class="p1l-step"><i>3</i>Generate</div><label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label><label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label><fieldset id="mlsP1LegalLetterhead" style="margin-top:12px;border:1px solid #d7ddd8;border-radius:10px;padding:10px 12px"><legend style="font-weight:750;font-size:13px;padding:0 4px">Letterhead</legend><p style="margin:2px 0 8px">Printed at the top of the report and above the signature line. Practice name, provider name, credentials, NPI, address and phone come from Settings; change them there.</p><pre id="mlsP1LegalLetterheadPreview" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#fafbf8;border:1px solid #e4e8e4;border-radius:8px;padding:8px;margin:0 0 8px"></pre><label>Contact email for the letterhead <input id="mlsP1LegalLetterheadEmail" type="email" autocomplete="off" placeholder="Optional; saved for this account on this device"></label></fieldset><div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate report</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div><div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div><div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div></section>' +
-      '<section class="p1l-card wide" data-mls-legal-step="export"><div class="p1l-step"><i>4</i>Export</div><h2 id="mlsP1LegalDraftLabel">Unsigned clinician-review draft</h2><div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div><textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea></section>' +
+      discloseCard('chronology', 'Chronology (read-only)', { step: 'inputs', wide: true },
+        '<p class="p1l-explain">Built from the patient as of when you opened this workspace — a frozen snapshot, so a chart edit made elsewhere cannot change a report you are part-way through. Provider filters change only the preview and export; they never change the chart.</p>' +
+        '<div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalCompile">Compile history</button><button type="button" id="mlsP1LegalChronCopy" disabled>Copy chronology</button><button type="button" id="mlsP1LegalChronDownload" disabled>Download .txt</button><button type="button" id="mlsP1LegalChronPrint" disabled>Print</button></div>' +
+        '<div id="mlsP1LegalFreeze" class="p1l-freeze" role="status" aria-live="polite"></div>' +
+        '<div id="mlsP1LegalProviders" class="p1l-actions" aria-label="Filter chronology by provider"></div>' +
+        '<div id="mlsP1LegalChronology"></div>') +
+      discloseCard('records', 'Local records', { step: 'inputs' },
+        '<p id="mlsP1LegalFileHelp">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p>' +
+        '<button type="button" class="p1l-drop" id="mlsP1LegalDrop" aria-describedby="mlsP1LegalFileHelp">Choose or drop local files</button>' +
+        '<input id="mlsP1LegalFile" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.html,text/*" hidden>' +
+        '<div id="mlsP1LegalSources" aria-live="polite"></div>') +
+      discloseCard('generate', 'Generate the report', { step: 'generate', stepNo: 3 },
+        '<label>Date of injury / onset <input id="mlsP1LegalDoi" type="text" placeholder="Only if known; the draft must reconcile it with the record"></label>' +
+        '<label style="display:block;margin-top:10px">Questions to address <textarea id="mlsP1LegalQuestions" placeholder="Optional questions. Unsupported answers must stay bracketed or undeterminable."></textarea></label>' +
+        '<fieldset id="mlsP1LegalLetterhead" style="margin-top:12px;border:1px solid #d7ddd8;border-radius:10px;padding:10px 12px"><legend style="font-weight:750;font-size:13px;padding:0 4px">Letterhead</legend><p style="margin:2px 0 8px">Printed at the top of the report and above the signature line. Practice name, provider name, credentials, NPI, address and phone come from Settings; change them there.</p><pre id="mlsP1LegalLetterheadPreview" style="white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:#fafbf8;border:1px solid #e4e8e4;border-radius:8px;padding:8px;margin:0 0 8px"></pre><label>Contact email for the letterhead <input id="mlsP1LegalLetterheadEmail" type="email" autocomplete="off" placeholder="Optional; saved for this account on this device"></label></fieldset>' +
+        '<div class="p1l-actions"><button type="button" class="primary" id="mlsP1LegalGenerate">Generate report</button><button type="button" id="mlsP1LegalCancel" disabled>Cancel current generation</button></div>' +
+        '<div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div>' +
+        '<div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div>') +
+      discloseCard('draft', 'Unsigned clinician-review draft', { step: 'export', stepNo: 4, wide: true },
+        '<div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div>' +
+        '<h2 id="mlsP1LegalDraftLabel" style="font-size:14px;margin:8px 0 4px">Unsigned clinician-review draft</h2>' +
+        '<textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea>') +
       '</div></div>';
   }
   function renderNoPatient(message) {
@@ -1495,13 +1768,17 @@
     node.innerHTML = REPORT_TYPES.map(function (report) {
       var on = state.reportType === report.key;
       var count = sectionsFor(report.key).length;
-      return '<button type="button" class="p1l-report" aria-pressed="' + (on ? 'true' : 'false') +
+      /* stable per-type id so the next-step glow lane can name one control */
+      return '<button type="button" class="p1l-report" id="mlsP1LegalReport_' + esc(report.key) +
+        '" aria-pressed="' + (on ? 'true' : 'false') +
         '" data-report-type="' + esc(report.key) + '">' + esc(report.label) +
+        (report.key === 'ime' ? ' — recommended' : '') +
         '<small>' + esc(report.blurb) + ' ' + (report.ai ? (count + ' AI-drafted sections.') : 'No AI sections.') + '</small></button>';
     }).join('');
     Array.prototype.forEach.call(node.querySelectorAll('button[data-report-type]'), function (button) {
       button.addEventListener('click', function () { pickReportType(button.getAttribute('data-report-type')); });
     });
+    markNextControl();
     return true;
   }
   function renderSnapshotNotice() {
@@ -1552,16 +1829,48 @@
     var node = byId('mlsP1LegalChronology'); if (!node || !state.model) return;
     if (!state.bound || !bindingCurrent(state.bound)) { abortForPatientChange(); return; }
     var items = filteredItems(), html = '';
+    /* p1-legal-stepper-1.0.0: every encounter starts as its date/type line
+       only. p1-legal-scrub-1.0.0: the body shown is the scrubbed one, with the
+       count of suppressed lines stated and the exact raw text one click away. */
     CATEGORIES.forEach(function (category) {
       var rows = items.filter(function (item) { return item.category === category[0]; });
       html += '<div class="p1l-section"><b>' + esc((CATEGORY_ICONS[category[0]] || '') + ' ' + category[1]) + ' (' + rows.length + ')</b>';
       if (!rows.length) html += '<p>(none documented)</p>';
       rows.forEach(function (item) {
-        html += '<div class="p1l-item"><b>' + esc(niceDate(item.date)) + ' · ' + esc(item.title) + '</b><div>' + esc(item.provider) + ' · ' + esc(item.source) + '</div>' + (item.body && item.body !== item.title ? '<pre>' + esc(item.body) + '</pre>' : '') + '</div>';
+        var key = items.indexOf(item);
+        var showRaw = !!state.rawOpen[key];
+        var shown = showRaw ? item.body : (item.display || '');
+        var hasBody = !!(shown && shown !== item.title);
+        html += '<div class="p1l-row">' +
+          '<button type="button" class="p1l-rowhead" aria-expanded="false" data-row-toggle="' + key + '" aria-controls="mlsP1LegalRowBody' + key + '">' +
+          '<span>' + esc(niceDate(item.date)) + ' · ' + esc(item.title) + '</span>' +
+          '<span class="meta">' + esc(item.provider) + ' · ' + esc(item.source) + (item.scrubbed ? ' · cleaned' : '') + '</span></button>' +
+          '<div class="p1l-rowbody" id="mlsP1LegalRowBody' + key + '" hidden>' +
+          (item.scrubNote ? '<p class="p1l-scrub">' + esc(item.scrubNote) + '. The stored chart is unchanged.</p>' : '') +
+          (hasBody ? '<pre>' + esc(shown) + '</pre>' : '<p>(no additional documented text)</p>') +
+          (item.scrubbed ? '<button type="button" class="p1l-raw" data-row-raw="' + key + '">' + (showRaw ? 'Show cleaned' : 'Show raw') + '</button>' : '') +
+          '</div></div>';
       });
       html += '</div>';
     });
     node.innerHTML = html;
+    Array.prototype.forEach.call(node.querySelectorAll('button[data-row-toggle]'), function (button) {
+      button.addEventListener('click', function () {
+        var body = byId('mlsP1LegalRowBody' + button.getAttribute('data-row-toggle'));
+        if (!body) return;
+        body.hidden = !body.hidden;
+        if (isFn(button.setAttribute)) button.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+      });
+    });
+    Array.prototype.forEach.call(node.querySelectorAll('button[data-row-raw]'), function (button) {
+      button.addEventListener('click', function () {
+        var key = button.getAttribute('data-row-raw');
+        state.rawOpen[key] = !state.rawOpen[key];
+        renderChronology();
+        var body = byId('mlsP1LegalRowBody' + key); if (body) body.hidden = false;
+      });
+    });
+    renderCardSummaries();
   }
   function compileHistory() {
     if (!state.bound) {
@@ -1621,8 +1930,13 @@
       drop.addEventListener('dragover', function (event) { event.preventDefault(); });
       drop.addEventListener('drop', function (event) { event.preventDefault(); if (event.dataTransfer) addFiles(event.dataTransfer.files); });
     }
+    /* p1-legal-stepper-1.0.0: the disclosure toggles. */
+    CARD_KEYS.forEach(function (key) {
+      on(cardId('Disclose', key), 'click', function () { toggleCard(key); });
+    });
     /* p1-legal-flow-2.0.0: step 1 (patient) and step 2 (report type). */
     renderBinding(); renderRoster(); renderReadOps(); renderReportTypes(); renderSnapshotNotice();
+    renderStepper(); applyDisclosure(); markNextControl();
     /* p1-legal-letterhead-1.0.0: show what will print, and take the one field
        Settings has no home for. A refused save is SAID, never swallowed. */
     var lhEmail = byId('mlsP1LegalLetterheadEmail');
@@ -1694,6 +2008,8 @@
     state.reportType = ''; state.priorFocus = prior;
     state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0; state.rebindIntent = null;
     state.athenaOp = ''; state.athenaNote = '';
+    /* p1-legal-stepper-1.0.0: a fresh open always starts collapsed. */
+    state.expanded = {}; state.rawOpen = {};
     var root = document.createElement('div'); root.id = ROOT_ID; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'mlsP1LegalTitle'); root.innerHTML = shellHtml();
     root.addEventListener('keydown', onDialogKeydown);
     (document.body || document.documentElement).appendChild(root);
@@ -1776,6 +2092,26 @@
     },
     bindTo: function (id) { return apiCurrent() ? requestBind(id) : false; },
     filterProvider: function (provider, on) { return apiCurrent() ? filterProvider(provider, on) : false; },
+    /* p1-legal-stepper-1.0.0: what the next-step glow lane needs - the stage,
+       the step it belongs to, and the id of the ONE control that is the next
+       action. null once the flow is finished. No PHI. */
+    flow: function () {
+      if (!apiCurrent()) return null;
+      var next = STAGE_NEXT[state.stage] || '';
+      if (!next) return null;
+      return { stage: state.stage, step: STAGE_STEP[state.stage] || '', next: next };
+    },
+    steps: FLOW_STEPS.map(function (s) { return { key: s.key, n: s.n, label: s.label }; }),
+    toggleCard: function (key, force) { return apiCurrent() ? toggleCard(key, force) : false; },
+    /* p1-legal-scrub-1.0.0: display-side only. Exposed so the exact samples
+       from the owner's screenshot are executed, not grepped for. */
+    scrubBody: function (body) { return apiCurrent() ? scrubBody(body) : null; },
+    showRaw: function (key, on) {
+      if (!apiCurrent()) return false;
+      state.rawOpen[key] = !!on;
+      renderChronology();
+      return !!state.rawOpen[key];
+    },
     readOps: function () {
       return apiCurrent() ? readOpKeys().map(function (key) {
         return { key: key, label: ATHENA_READ_OPS[key].label, available: readOpAvailable(key) };
