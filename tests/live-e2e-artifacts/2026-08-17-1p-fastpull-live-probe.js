@@ -38,6 +38,7 @@
       bodies: (function () { try { return (window.__mlsVisitNotesPref && window.__mlsVisitNotesPref.read()) || null; } catch (e) { return null; } })(),
       ns: (function () { try { return typeof uns === 'function' ? uns('') : null; } catch (e) { return null; } })(),
       dayLabel: (function () { var d = el('mlsDsDayLbl'); return d ? String(d.textContent || '') : ''; })(),
+      day: (function () { try { return window.__mlsDaySwitch && window.__mlsDaySwitch.currentDay ? window.__mlsDaySwitch.currentDay() : ''; } catch (e) { return ''; } })(),
       acctToday: (function () { try { return typeof _acctTodayKey === 'function' ? _acctTodayKey() : ''; } catch (e) { return ''; } })(),
       visibility: (function () { try { return document.visibilityState; } catch (e) { return ''; } })(),
       skipVerifiedToday: (function () { try { return window.__mlsP1SkipVerifiedToday !== false; } catch (e) { return true; } })()
@@ -144,7 +145,7 @@
     while (Date.now() - t0 < (maxMs || 45 * 60000)) {
       var s = pullState();
       var busy = false;
-      try { busy = !!(window.__mlsDsPull && window.__mlsDsPull.isBusy && window.__mlsDsPull.isBusy()); } catch (e) {}
+      try { busy = !!(window.__mlsDaySwitch && window.__mlsDaySwitch.isBusy && window.__mlsDaySwitch.isBusy()); } catch (e) {}
       if (s && s.running) { sawRunning = true; if (s.done < lastDone) rounds++; lastDone = s.done; }
       if (sawRunning && s && !s.running && !busy) return { settledMs: Date.now() - t0, barResets: rounds };
       await sleep(1000);
@@ -154,7 +155,7 @@
 
   /* ---- STEP 1: ONE click, then measure --------------------------------- */
   async function pull() {
-    var day = (function () { try { return window.__mlsDsPull && window.__mlsDsPull.day ? window.__mlsDsPull.day() : ''; } catch (e) { return ''; } })();
+    var day = (function () { try { return window.__mlsDaySwitch && window.__mlsDaySwitch.currentDay ? window.__mlsDaySwitch.currentDay() : ''; } catch (e) { return ''; } })();
     var before = dayLedger(day || '');
     var btn = el('mlsDsPullBtn');
     if (!btn) { console.error('no #mlsDsPullBtn on this screen'); return null; }
