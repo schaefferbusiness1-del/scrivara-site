@@ -48493,7 +48493,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function retryItems(source) {
     var history = source && source.historyReceipt ? source.historyReceipt : source;
-    var partial = !!(source && source.reason === 'history-partial') || !!(history && history.reason === 'history-partial');
+    /* stp-2.0.0: a batch the doctor STOPPED names itself 'stopped-by-user'
+       instead of 'history-partial' (so the automatic convergence lane cannot
+       mistake a deliberate stop for a transient straggler). The rows it left
+       behind are still the doctor's to retry by hand, so the Retry control
+       must still see them. */
+    var RETRYABLE = /^(history-partial|stopped-by-user)$/;
+    var partial = !!(source && RETRYABLE.test(String(source.reason || ''))) ||
+      !!(history && RETRYABLE.test(String(history.reason || '')));
     return partial && history && Array.isArray(history.retry) ? history.retry : [];
   }
   function syncRetryControl(source) {
