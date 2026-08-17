@@ -56,6 +56,11 @@ const tests = [
   '1p-autobind-encounter.test.js',
   '1p-athena-write-unlock-frozen-contract-runtime.test.js',
   '1p-athena-write-unlock-adversarial-runtime.test.js',
+  /* MLS Assist 3.0.62 / wsg-2.0.0 (owner directive 2026-08-12): with the
+     capable extension every supervised action - note, billing, save, sign,
+     one exact reviewed order - renders READY on /1p; an older extension gets
+     honest manual rows that name the cure; a missing MRN still blocks all. */
+  '1p-athena-all-actions-ready-3062.test.js',
   '1p-avatar-loader-runtime.test.js',
   '1p-calm-dock-owner-runtime.test.js',
   '1p-avatar-face-loader-runtime.test.js',

@@ -4,7 +4,7 @@
  * supervised Athena action executes after the clinician's own confirm) ·
  * chk3061 -> chk3062 (feat_mls_checker.js bytes move with SERVER_EXT_VERSION,
  * so its immutable loader token moves in every loader that names it) ·
- * zip sha 4d77f337... -> 56710c44... · release notes replaced in the feed and
+ * zip sha 4d77f337... -> b8a12950... · release notes replaced in the feed and
  * every page that bakes them (the What's-new pin asserts baked == feed).
  * Historical feature-origin comments and the sw.js measured-live note are
  * deliberately NOT moved. Usage: node scripts/sweep-3062.js [--dry] */
@@ -13,7 +13,7 @@ const fs = require('fs');
 const DRY = process.argv.includes('--dry');
 const OLD = '3.0.61', NEW = '3.0.62';
 const OLD_SHA = '4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775';
-const NEW_SHA = '56710c442e7feb67398ffa533fb199bbf89feed10e7fe9baf9671b5877eb24b1';
+const NEW_SHA = 'b8a12950f9272a1fd1f50a13ac7f123d2d5a3638ecd0b6a1ccbc37380901ec0f';
 const OLD_CHK = '20260810chk3061', NEW_CHK = '20260817chk3062';
 const OLD_NOTES = 'v3.0.61 - When a chart cannot be fully read, MLS now records exactly what it saw at the moment each part failed - how many encounter rows were on screen and whether the expected one was still present - so recurring problems can be diagnosed from the receipts instead of guessed at. Purely additive; nothing about reading or saving changes. Everything from v3.0.53 remains. Requires Chrome 116+.';
 const NEW_NOTES = 'v3.0.62 - Every supervised Athena action now executes after your explicit confirm: write reviewed note, save draft, stage billing codes, Sign & Save, and one exact reviewed order. The previous preview-only policy block on billing, signing and orders is lifted by the owner; the same safety checks still run before every send - exact patient identity and encounter lock, a one-use authorization from your own click, a verified note write before Sign & Save, one action per confirm, and no automatic chaining. Everything from earlier releases remains. Requires Chrome 116+.';
