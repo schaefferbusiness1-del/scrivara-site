@@ -4368,7 +4368,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- 📣 OUTCOMES → MARKETING — turn real outcomes into shareable proof -->
     <div class="card" id="anaOutcomes">
       <h2 aria-label="Outcomes and marketing"><span class="ic">📣</span> Outcomes &amp; marketing
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh</button>
+        <!-- anarefresh-1.0.0: Analysis showed TWO buttons reading exactly
+             "🔄 Refresh". At 360px the cards stack, so both are on screen with
+             their headings scrolled away and neither says what it reloads.
+             Each now names its own card, in the visible label and in the
+             accessible name. -->
+        <button class="btn-ghost" id="anaOutcomesRefresh" aria-label="Refresh outcomes and marketing" title="Recompute your outcomes from the latest visits" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadOutcomesMarketing(true)">🔄 Refresh outcomes</button>
       </h2>
       <p class="sub">Your real results, turned into proof you can publish. Measured from first vs. latest visit per patient — fully de-identified, no names ever leave your practice. Use it on your website, in referral packets, and with patients.</p>
       <div id="anaOutcomesBody"><div class="mini" style="color:var(--muted)">Loading your outcomes…</div></div>
@@ -4420,7 +4425,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- 📈 BASELINE METRICS — server-side aggregates over your visit records -->
     <div class="card" id="anaBaseline">
       <h2 aria-label="Baseline metrics"><span class="ic">📈</span> Baseline metrics
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh</button>
+        <!-- anarefresh-1.0.0 — see the note on #anaOutcomesRefresh -->
+        <button class="btn-ghost" id="anaBaselineRefresh" aria-label="Refresh baseline metrics" title="Ask the clinic server for fresh practice aggregates" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAnalysisBaseline(true)">🔄 Refresh metrics</button>
       </h2>
       <p class="sub">Practice aggregates computed on the clinic server from non-PHI visit metadata available to your account.</p>
       <div id="anaBaselineBody"><div class="mini" style="color:var(--muted)">Loading your baseline metrics…</div></div>
@@ -4453,7 +4459,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- 🌟 TEAM PATIENT-EXPERIENCE — head doctor sees each doctor's AI grade per visit -->
     <div class="card" id="anaTeamGrades" hidden aria-hidden="true" style="display:none">
       <h2 aria-label="Team patient-experience ratings"><span class="ic">🌟</span> Team patient-experience ratings
-        <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh</button>
+        <!-- anarefresh-1.0.0: hidden today (__MLS_TEAM_WORKSPACE_RELEASED=false),
+             scoped now so releasing the card cannot re-create the collision. -->
+        <button class="btn-ghost" id="anaTeamGradesRefresh" aria-label="Refresh team patient-experience ratings" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="renderTeamGrades(true)">🔄 Refresh ratings</button>
       </h2>
       <p class="sub">How your doctors are doing with patients — an AI grade (1–5) of the patient experience on each visit, from the visit conversation. Averages and the most recent visits per doctor. No patient data — dates and scores only.</p>
       <div id="anaTeamGradesBody"><div class="mini" style="color:var(--muted)">Loading your team ratings…</div></div>
@@ -5096,9 +5104,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="field">
         <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.63</b> · requires Chrome 116+</p>
         <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.63.bin" download="MLS_Assist_v3.0.63.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.63</span> (.zip)</a>
-        <p class="note" style="margin:10px 0 0">Install: unzip the download, open <b>chrome://extensions</b>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b>, and pick the unzipped folder — the one containing <code>manifest.json</code>. Updating an existing install: replace the folder's contents, then press the ↻ reload arrow on the MLS Assist card. Full guide: <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
+        <p class="note" style="margin:10px 0 0">Download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What&#39;s new in v<span id="extDlVersionNotes">3.0.63</span></summary>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.63</span>)</summary>
           <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.63 - Athena tab handling made robust: MLS now prefers the Athena tab whose Day view is actually rendered, re-checks a tab that was slow to answer instead of reporting no Athena tab while you are signed in, and treats a not-yet-rendered week strip as something to recover from rather than a failed day change. Every date, schedule and presence reply now also carries how many Athena tabs are open, so the app can advise keeping one. Reads only; nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.</p>
         </details>
       </div>
@@ -5263,8 +5271,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- Developer API key + MLS Assist (browser extension) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label style="font-size:15px">🔌 MLS Assist &amp; Developer API key</label>
-      <p class="note" style="margin:2px 0 10px"><b>MLS Assist now works automatically off your MLS login</b> — no key needed, just stay signed in here. The Developer API key below is <b>optional</b>: only for the MLS FHIR API or advanced server use.</p>
+      <label style="font-size:15px">🔌 MLS Assist — your athenaOne connection</label>
+      <p class="note" style="margin:2px 0 10px"><b>MLS Assist works automatically off your MLS login</b> — no key, no setup code, just stay signed in here. Everything else a practice might need — first-time setup, connecting another system, and bringing patients in from an old one — is under <b>Advanced integrations</b> below.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
         <!-- The badge starts UNKNOWN and stays unknown until the extension itself
              answers. It used to ship the literal words "Latest version" in a green
@@ -5275,7 +5283,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <b style="font-size:14px">🩺 MLS Assist browser extension <span data-mls-extension-version="1" style="font-size:11.5px;background:#eef2f0;color:#204034;border:1px solid #d7e6dc;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle">Checking this browser…</span></b>
         <p class="note" style="margin:6px 0 10px">Drops finished notes into any web EMR, reads your Athena day for <b>📅 Pull schedule</b>, and Autopilot can take steps for you with your approval.</p>
         <div style="background:#fff7e6;border:1px solid #f0d79a;border-radius:10px;padding:9px 12px;margin:0 0 10px;font-size:12.5px;color:#7a5a16">
-          <b>Already installed?</b> Updates are automatic — MLS refreshes MLS Assist on this computer when a new version ships, and the badge above tells you the moment you're up to date. If a pull ever looks stuck, open <code>chrome://extensions</code> and press <b>↻</b> on MLS Assist.
+          <b>Already installed?</b> Updates are automatic — MLS refreshes MLS Assist on this computer when a new version ships, and the badge above tells you the moment you're up to date. If a pull ever looks stuck, there is a one-click reload step under <b>Advanced integrations</b> below.
         </div>
         <label style="display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="athenaFollowToggle" checked>
@@ -5295,38 +5303,68 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <a href="https://mlsscribe.com/MLS_Assist_v3.0.63.zip" download="MLS_Assist_v3.0.63.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.63 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
-        <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
-          <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
-          <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. (To update later, replace the folder and click ↻ Reload.)</li>
-          <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
-          <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
-        </ol>
       </div>
-      <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:13px;color:var(--muted)">Advanced: Developer API key (FHIR API / server use)</summary>
-        <div style="margin-top:8px">
-          <div class="row tight">
-            <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
-            <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
-          </div>
-          <div id="newApiKeyBox" style="display:none;margin-top:10px">
-            <label>Your new key — copy it now</label>
-            <div class="row tight" style="gap:8px">
-              <input type="text" id="newApiKey" aria-label="New API key" readonly style="flex:1;font-family:monospace;font-size:12px">
-              <button class="btn-ghost" style="font-size:14px;padding:9px 12px" onclick="copyApiKey()">Copy</button>
+      <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
+           The Settings dialog is one click from the doctor and it carried, in the open,
+           these four:
+             * "Developer mode", twice
+             * a card headed "MLS Assist &amp; Developer API key"
+             * a fold headed "Advanced: Developer API key (FHIR API / server use)"
+             * "Paste a JSON export below - shape: {...}"
+           None of it is deletable - the four setup steps are the only
+           in-app install path for the extension the whole Athena lane rides on, and
+           genApiKey() with no arguments is the only way to mint the unscoped key the card
+           itself documents. So this is a RESTYLE: same controls, same ids, same handlers,
+           gathered behind one closed disclosure a physician can read the title of and
+           correctly ignore. Nothing outside this block moved except the copy that named
+           the developer vocabulary. -->
+      <details id="advIntegrations" style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:13.5px;font-weight:700;color:var(--ink);padding:6px 0">🔧 Advanced integrations <span class="note" style="font-weight:400">— setup steps, connecting other systems, and bulk import</span></summary>
+        <div style="margin-top:10px;border-left:3px solid var(--line);padding-left:12px">
+
+          <b style="font-size:13.5px">Setting up MLS Assist on this computer</b>
+          <p class="note" style="margin:4px 0 6px">Four steps, once per computer. Your practice IT can do this for you; the illustrated version is at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. If a pull ever looks stuck afterwards, open the same <code>chrome://extensions</code> page and press <b>↻</b> on the MLS Assist card.</p>
+          <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
+            <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
+            <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. (To update later, replace the folder and click ↻ Reload.)</li>
+            <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
+            <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
+          </ol>
+
+          <b style="font-size:13.5px;display:block;margin-top:16px">Connecting another system to MLS</b>
+          <p class="note" style="margin:4px 0 6px">Only if another program in your practice needs to read or write MLS records on its own — a billing system, a scheduler, or a second computer that will not be signed in to MLS. Most practices never need this.</p>
+          <div style="margin-top:8px">
+            <div class="row tight">
+              <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="genApiKey()">＋ Generate API key</button>
+              <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="loadApiKeys()">↻ Refresh</button>
             </div>
-            <p class="note">Use this for the FHIR API or to authenticate the extension on a machine where you won't be signed in to MLS.</p>
+            <div id="newApiKeyBox" style="display:none;margin-top:10px">
+              <label>Your new key — copy it now</label>
+              <div class="row tight" style="gap:8px">
+                <input type="text" id="newApiKey" aria-label="New API key" readonly style="flex:1;font-family:monospace;font-size:12px">
+                <button class="btn-ghost" style="font-size:14px;padding:9px 12px" onclick="copyApiKey()">Copy</button>
+              </div>
+              <p class="note">Use this for the FHIR API or to authenticate the extension on a machine where you won't be signed in to MLS.</p>
+            </div>
+            <div id="apiKeyList" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
           </div>
-          <div id="apiKeyList" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
+          <p class="note" style="margin:8px 0 0">Reference for whoever sets that up: <a href="https://scrivara-backend.onrender.com/fhir/docs" target="_blank" rel="noopener">the hosted API documentation</a>.</p>
+
+          <b style="font-size:13.5px;display:block;margin-top:16px">📥 Bringing patients in from another system</b>
+          <p class="note" style="margin:2px 0 8px">Bring many patients and their visit history across in one go. Paste your old system’s export into the box below; whoever produces that export needs it in this form: <code>{"patients":[{"name":"Jane Doe","dob":"1980-05-01","mrn":"12345","history":[{"date":"2026-03-10","note":"..."}]}]}</code>. Everything imported is stored encrypted, exactly like a chart created here.</p>
+          <textarea id="importJson" aria-label="Patient data to import, as JSON" rows="5" placeholder='{"patients":[ ... ]}' style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;padding:8px;font:12px monospace"></textarea>
+          <div class="row tight"><button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="importPatients()">📥 Import patients</button></div>
+          <p class="note" id="importResult"></p>
+
         </div>
       </details>
+      <!-- ===== end advint-1.0.0 ===== -->
       <div id="emrPullBox" style="margin-top:12px;background:#f0faf4;border:1px solid #cdeed9;border-radius:10px;padding:12px 14px">
         <b style="font-size:14px">📥 Pull a patient from my EMR</b>
         <p class="note" style="margin:6px 0 10px">With MLS Assist installed, open a patient in your EMR (another tab), then click below — MLS reads that chart and pulls the patient + prior visits in here. No copy-paste.</p>
         <button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="captureFromEMR(this)">📥 Pull current EMR patient into MLS</button>
         <div id="emrPullStatus" style="margin-top:9px;font-size:13px;color:var(--muted)"></div>
       </div>
-      <p class="note">API docs: <a href="https://scrivara-backend.onrender.com/fhir/docs" target="_blank">scrivara-backend.onrender.com/fhir/docs</a></p>
     </div>
 
     <!-- Scheduling API — connect another scheduler. Guide + management card.
@@ -5430,15 +5468,6 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         </div>
       </details>
       <p class="note" style="margin:8px 0 0">Full reference: <a href="https://scrivara-backend.onrender.com/fhir/docs" target="_blank" rel="noopener">hosted API docs</a> (<code>/fhir/docs</code> on the MLS backend).</p>
-    </div>
-
-    <!-- Bulk patient import / migration -->
-    <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
-      <label style="font-size:15px">📥 Import patients &amp; history</label>
-      <p class="note" style="margin:2px 0 8px">Move many patients and their visit history into MLS at once. Paste a JSON export below — shape: <code>{"patients":[{"name":"Jane Doe","dob":"1980-05-01","mrn":"12345","history":[{"date":"2026-03-10","note":"..."}]}]}</code>. Stored encrypted, same as in-app charts.</p>
-      <textarea id="importJson" aria-label="Patient data to import, as JSON" rows="5" placeholder='{"patients":[ ... ]}' style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;padding:8px;font:12px monospace"></textarea>
-      <div class="row tight"><button class="btn-primary" style="font-size:14px;padding:9px 15px" onclick="importPatients()">📥 Import patients</button></div>
-      <p class="note" id="importResult"></p>
     </div>
 
     <!-- Athena imports and optional backups -->
@@ -6208,13 +6237,19 @@ reconcileAppFooterNotice();
    through these helpers. */
 function bkToken(){ return sessionStorage.getItem('sf_bk_token')||localStorage.getItem('sf_bk_token')||''; }
 function setBkToken(t){
-  if(t){ sessionStorage.setItem('sf_bk_token',t); localStorage.setItem('sf_bk_token',t); }
+  /* sharedws-1.0.0: on a shared computer the token never leaves the tab, and
+     any seed a private-mode session already left behind is stripped. */
+  var shared=(typeof swEnabled==='function')&&swEnabled();
+  if(t){ sessionStorage.setItem('sf_bk_token',t); if(shared) localStorage.removeItem('sf_bk_token'); else localStorage.setItem('sf_bk_token',t); }
   else { sessionStorage.removeItem('sf_bk_token'); localStorage.removeItem('sf_bk_token'); }
 }
 /* Per-tab session email (sessionStorage-first; localStorage is the seed). */
 function getSessionEmail(){ return sessionStorage.getItem('sf_session')||localStorage.getItem('sf_session')||''; }
 function setSessionEmail(e){
-  if(e){ sessionStorage.setItem('sf_session',e); localStorage.setItem('sf_session',e); }
+  /* sharedws-1.0.0: the seed pair is written and torn together, so a shared
+     computer never keeps half a session on disk. */
+  var shared=(typeof swEnabled==='function')&&swEnabled();
+  if(e){ sessionStorage.setItem('sf_session',e); if(shared) localStorage.removeItem('sf_session'); else localStorage.setItem('sf_session',e); }
   else { sessionStorage.removeItem('sf_session'); localStorage.removeItem('sf_session'); }
 }
 /* SLIDING SESSION REFRESH (b940): an ACTIVE clinician must never hit the fixed
@@ -6288,6 +6323,36 @@ window.__mlsP1MarketingIdentity=function(){
     epoch:epoch,isAdmin:!!(bkUser&&bkUser.isAdmin),isHead:!!(bkUser&&bkUser.isHead),
     isLawyer:!!(bkUser&&(bkUser.isLawyer||role==='lawyer'))});
 };
+/* ===== diag-account-1.0.0 — the copyable pull report must name WHO ran it =====
+   §11 gap: dsDiagReport carried no user, no plan, no practice, so a report
+   pasted into support could not be tied to an account. bkUser is a top-level
+   `let` and therefore NOT a window property, so an additive asset cannot read
+   it. This is the ONE accessor that hands out the non-PHI ACCOUNT receipt that
+   a doctor's own error report needs: account/plan/role only. It never returns a
+   patient field, a token, a password, a 2FA secret, or the doctor's name. */
+window.__mlsDiagAccountReceipt=function(){
+  const blank={email:'',userId:'',role:'',isAdmin:false,isHead:false,practice:'',plan:'',hasAccess:false,backend:false};
+  try{
+    const email=sfNormalizeSessionAccount((bkUser&&bkUser.email)||(session&&session.email)||(typeof getSessionEmail==='function'&&getSessionEmail())||'');
+    const role=String((bkUser&&bkUser.role)||((bkUser&&bkUser.isAdmin)?'admin':((bkUser&&bkUser.isHead)?'head':''))).trim().toLowerCase();
+    return {
+      email:email,
+      userId:(bkUser&&bkUser.id!=null)?String(bkUser.id):'',
+      role:role,
+      isAdmin:!!(bkUser&&bkUser.isAdmin),
+      isHead:!!(bkUser&&bkUser.isHead),
+      /* "practice" is the doctor's POSITION in one, not a practice name: a
+         practice name is customer-identifying and this report is copied into
+         email by hand. head-of-practice vs member is what routes a support
+         question, and it is all the report needs. */
+      practice:(bkUser&&bkUser.isHead)?'head-of-practice':(role?('member:'+role):''),
+      plan:(bkUser&&bkUser.premium)?'premium':((bkUser&&bkUser.lite)?'lite':(bkUser?'standard':'')),
+      hasAccess:!!(bkUser&&bkUser.hasAccess),
+      backend:!!(typeof backendMode==='function'&&backendMode())
+    };
+  }catch(e){ return blank; }
+};
+/* ===== end diag-account-1.0.0 ===== */
 function sfP1ReleaseMarketingIdentity(user){
   const account=sfNormalizeSessionAccount(window.__mlsSessionAccount||'');
   const email=sfNormalizeSessionAccount((user&&user.email)||'');
@@ -7335,6 +7400,7 @@ function startSession(email){
   if(globalThis.__mlsPatientStoreBatch&&typeof globalThis.__mlsPatientStoreBatch._prepareBoundary==='function')globalThis.__mlsPatientStoreBatch._prepareBoundary('session-start');
   session={email};
   setSessionEmail(email);
+  try{ if(typeof swOnSessionStart==='function') swOnSessionStart(email); }catch(eSw){} /* sharedws-1.0.0 */
   try{ slideSession(); }catch(e){} /* b940: fire-and-forget; never blocks the gate */
   sfResetSessionBoundary(email,{reason:'session-start',force:true,previousAccount:_previousSessionAccount});
   document.getElementById('authScreen').style.display='none';
@@ -7404,6 +7470,9 @@ function startSession(email){
       if(sfSessionPromptValid(_assistPromptEpoch,_assistPromptAccount)) maybePromptInstallAssist(_assistPromptEpoch,_assistPromptAccount);
     },1600);
   }catch(e){}   // first-run nudge to install MLS Assist (skips if already installed/dismissed)
+  /* sharedws-1.0.0: ask once per device, after the assist nudge so two dialogs
+     never stack. setTimeout only — a hidden tab's rAF never fires. */
+  try{ setTimeout(function(){ try{ if(typeof swMaybeFirstRunPrompt==='function') swMaybeFirstRunPrompt(); }catch(e2){} },3200); }catch(e){}
   if(_gateMode){
     // Refresh identity, then require an explicit server-owned legal release.
     // Absence, timeout, malformed evidence, or any network/server error remains
@@ -8765,7 +8834,12 @@ function getIdleMins(){
   const raw=localStorage.getItem(uns('idleMins'));
   if(raw==='off'||raw==='0') return 0; // 0 = auto-logoff disabled ("stay signed in")
   const v=parseInt(raw,10);
-  return (v && v>0) ? v : 30; // default: auto log off after 30 minutes of inactivity
+  if(v && v>0) return v;
+  /* sharedws-1.0.0: an unattended shared computer gets a 15-minute window, not
+     30. This moves the DEFAULT only — the Settings control still wins, and the
+     select reads its value back from here so the two can never disagree. */
+  try{ if(typeof swEnabled==='function'&&swEnabled()) return SW_DEFAULT_IDLE_MINS; }catch(eSw){}
+  return 30; // default: auto log off after 30 minutes of inactivity
 }
 /* lgn-1.0.0: ACCOUNT-WIDE activity ledger. Activity in ANY same-account MLS tab
    counts toward the inactivity window. Without this, a background tab idles out
@@ -8869,6 +8943,12 @@ function idleLogout(){
   // the ATHENA tab right now? A changed open chart is real work; re-arm.
   _idleAthenaProbe(function(athenaActive){
     if(athenaActive){ resetIdle(); return; }
+    /* sharedws-1.0.0: on a shared computer this is a LOCK, not a sign-out — the
+       reachability goes, the unsaved visit stays. Every refusal above (live
+       capture, running pull, report generation, another active tab, an active
+       athenaOne chart) has already been honoured, so the two paths differ only
+       in what happens at the end. */
+    try{ if(typeof swEnabled==='function'&&swEnabled()&&swLock('idle')) return; }catch(eSw){}
     _stampSignoutReason('idle',{mins:getIdleMins()||30});
     toast('Logged out due to inactivity.','');
     logout(true);
@@ -8903,6 +8983,273 @@ function attachIdleListeners(){
   });
 }
 
+/* ===== sharedws-1.0.0 — a shared workstation cannot cross doctors =====
+ *
+ * MEASURED (readiness P0 #9). The 30-day bearer token is written to
+ * localStorage by setBkToken() above, and boot auto-enters from that seed with
+ * no re-authentication. On the exam-room computer every practice actually has,
+ * Doctor A closes the tab without signing out, Doctor B opens MLS, and B lands
+ * inside A's account, on A's charts. Nothing in the product asked a question.
+ *
+ * This block adds ONE switch a physician can read - "This computer is shared" -
+ * and three behaviours under it:
+ *
+ *   1. THE TOKEN NEVER LEAVES THE TAB. setBkToken/setSessionEmail write
+ *      sessionStorage only and strip any localStorage seed already on the
+ *      device, so closing the tab ends the session on this computer.
+ *   2. A SEED ENTRY RE-AUTHENTICATES. A tab that starts with no session of its
+ *      own, and only the localStorage "last login" seed to go on, does not
+ *      auto-enter: the seed is dropped and the ordinary sign-in screen asks for
+ *      the password and, where the account has one, the second factor. This
+ *      block never touches a credential itself - it only declines to skip the
+ *      screen that does.
+ *   3. AN UNATTENDED SCREEN LOCKS; IT DOES NOT DISCARD. The default idle window
+ *      becomes 15 minutes instead of 30, and when it fires on a shared computer
+ *      the app LOCKS to the sign-in screen rather than signing out. The token is
+ *      dropped, so nothing on this device can reach the account; the in-progress
+ *      visit is flushed to its account-namespaced draft slot FIRST; and nothing
+ *      is purged. Signing back in as the same doctor offers the work back
+ *      through the restore bar that already exists. A "sign out and clear this
+ *      computer" button on the lock screen still purges exactly as today.
+ *
+ * WHY A LOCK AND NOT A LOGOUT. logout() purges by design - it clears the whole
+ * account namespace, every clinical IndexedDB, and ALL of sessionStorage
+ * (clinical-state-purge.js:163), which is where the unsaved visit lives. An
+ * idle logout therefore destroys work the doctor never chose to abandon. A lock
+ * removes the reachability without removing the work, and leaves the purge on
+ * the deliberate path where it belongs.
+ *
+ * THE DEFAULT. A computer that has never been signed in to MLS starts SHARED,
+ * so a new practice is protected before anyone reads a setting. A computer that
+ * already carries a sign-in keeps today's behaviour and is ASKED once, so no
+ * existing doctor is silently locked out of his own laptop. Both are device
+ * facts, deliberately not account facts: the account cannot know which computer
+ * it is sitting on.
+ */
+var SW_MODE_KEY='sf_shared_workstation';          /* device-level: describes the COMPUTER, so it is never account-namespaced */
+var SW_ASKED_KEY='sf_shared_workstation_asked';
+var SW_LOCK_KEY='sf_sw_lock';                     /* per-tab: a lock belongs to the tab it locked */
+var SW_DEFAULT_IDLE_MINS=15;
+var swLocked=false;
+
+function swRead(key){ try{ return localStorage.getItem(key); }catch(e){ return null; } }
+function swWrite(key,value){ try{ localStorage.setItem(key,value); return true; }catch(e){ return false; } }
+
+/* Has MLS ever been signed in on this computer? Any of: a token seed, a session
+   seed, the remembered sign-in email, or a single account-namespaced key. */
+function swDeviceEverSignedIn(){
+  try{
+    if(localStorage.getItem('sf_bk_token')||localStorage.getItem('sf_session')) return true;
+    if(localStorage.getItem(LAST_HOSTED_LOGIN_EMAIL_KEY)) return true;
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k&&String(k).indexOf('sf_u::')===0) return true;
+    }
+    return false;
+  }catch(e){ return true; }   /* unreadable storage: assume an existing device and change nothing */
+}
+function swDefaultEnabled(){ return !swDeviceEverSignedIn(); }
+function swEnabled(){
+  var raw=swRead(SW_MODE_KEY);
+  if(raw==='1') return true;
+  if(raw==='0') return false;
+  return swDefaultEnabled();
+}
+function swStripLocalSeed(){
+  try{ localStorage.removeItem('sf_bk_token'); }catch(e){}
+  try{ localStorage.removeItem('sf_session'); }catch(e){}
+}
+function swSetEnabled(on){
+  on=!!on;
+  swWrite(SW_MODE_KEY,on?'1':'0');
+  swWrite(SW_ASKED_KEY,'1');
+  if(on) swStripLocalSeed();
+  else {
+    /* answering "this computer is mine" must actually keep him signed in: the
+       seed the shared path stripped is written back from the live session. */
+    try{
+      var tok=sessionStorage.getItem('sf_bk_token'), em=sessionStorage.getItem('sf_session');
+      if(tok) localStorage.setItem('sf_bk_token',tok);
+      if(em) localStorage.setItem('sf_session',em);
+    }catch(e){}
+  }
+  try{ swSyncSettingsField(); }catch(e){}
+  try{ resetIdle(); }catch(e){}   /* the idle default changes with the mode */
+  try{
+    toast(on
+      ? 'Shared computer: MLS will ask for your password in every new tab and lock after '+(getIdleMins()||15)+' quiet minutes.'
+      : 'Private computer: MLS will keep you signed in on this device.','');
+  }catch(e){}
+  return on;
+}
+
+/* --- the Settings switch, built by the block so promoting it carries it ---- */
+function swEnsureSettingsField(){
+  try{
+    if(document.getElementById('swSharedToggle')) return true;
+    var idle=document.getElementById('idleMins'); if(!idle) return false;
+    var host=(typeof idle.closest==='function')?idle.closest('.field'):null;
+    if(!host||!host.parentNode) return false;
+    var box=document.createElement('div');
+    box.className='field';
+    box.setAttribute('data-sharedws-own','settings-field');
+    box.style.cssText='padding-top:0;margin-top:0';
+    var label=document.createElement('label');
+    label.style.cssText='font-size:15px;display:flex;align-items:center;gap:9px;cursor:pointer';
+    var cb=document.createElement('input');
+    cb.type='checkbox'; cb.id='swSharedToggle'; cb.style.width='auto';
+    var span=document.createElement('span');
+    span.textContent='🖥️ This computer is shared with other clinicians';
+    label.appendChild(cb); label.appendChild(span);
+    var note=document.createElement('p');
+    note.className='note'; note.id='swSharedNote'; note.style.margin='4px 0 10px';
+    box.appendChild(label); box.appendChild(note);
+    host.parentNode.insertBefore(box,host);
+    cb.addEventListener('change',function(){ swSetEnabled(cb.checked); });
+    swSyncSettingsField();
+    return true;
+  }catch(e){ return false; }
+}
+function swSyncSettingsField(){
+  try{
+    var cb=document.getElementById('swSharedToggle');
+    if(cb) cb.checked=swEnabled();
+    var note=document.getElementById('swSharedNote');
+    if(note){
+      note.textContent=swEnabled()
+        ? 'On: MLS asks for your password in every new tab, never keeps you signed in after the tab closes, and locks the screen after '+(getIdleMins()||SW_DEFAULT_IDLE_MINS)+' quiet minutes. Locking keeps your unsaved visit; it does not delete anything.'
+        : 'Off: this computer stays signed in between tabs and sessions. Turn this on for any exam-room, workroom, or front-desk computer that more than one clinician uses.';
+    }
+    var sel=document.getElementById('idleMins');
+    if(sel){
+      var m=getIdleMins();
+      sel.value=(m===0?'off':String(m));
+    }
+  }catch(e){}
+}
+
+/* --- first run: ask once, on this device ---------------------------------- */
+function swMaybeFirstRunPrompt(){
+  try{
+    if(!backendMode()) return false;
+    if(swRead(SW_ASKED_KEY)==='1') return false;
+    if(typeof mlsConfirm!=='function'){ swWrite(SW_ASKED_KEY,'1'); return false; }
+    var mins=getIdleMins()||SW_DEFAULT_IDLE_MINS;
+    var msg=swEnabled()
+      ? 'Is this computer shared with other clinicians?\n\nMLS has it set to SHARED, so it asks for your password in every new tab and locks the screen after '+mins+' quiet minutes. Say so if this computer is yours alone.'
+      : 'Is this computer shared with other clinicians?\n\nOn a shared computer MLS asks for your password in every new tab and locks the screen after '+SW_DEFAULT_IDLE_MINS+' quiet minutes, so the next person cannot land in your charts.';
+    Promise.resolve(mlsConfirm(msg,{okLabel:'Yes, it is shared',cancelLabel:'No, it is mine'}))
+      .then(function(yes){ swSetEnabled(yes===true); },
+            function(){ swWrite(SW_ASKED_KEY,'1'); });
+    return true;
+  }catch(e){ return false; }
+}
+/* --- boot: an entry that came only from the localStorage seed -------------- */
+function swSeedOnlyEntry(){
+  try{
+    if(sessionStorage.getItem('sf_bk_token')) return false;   /* this tab owns a session */
+    return !!localStorage.getItem('sf_bk_token');             /* only the "last login" seed is left */
+  }catch(e){ return false; }
+}
+function swRequireReauth(email){
+  swStripLocalSeed();
+  try{
+    var field=document.getElementById('authEmail');
+    var known=normalizeHostedLoginEmail(email)||getLastHostedLoginEmail();
+    if(field&&known) field.value=known;
+    var err=document.getElementById('authErr');
+    if(err){
+      err.textContent='🔒 This computer is shared, so MLS does not stay signed in between tabs. Enter your password to continue — nothing on this device was deleted.';
+      err.style.display='block';
+    }
+  }catch(e){}
+  return true;
+}
+
+/* --- the lock -------------------------------------------------------------- */
+function swIsLocked(){
+  try{ return !!sessionStorage.getItem(SW_LOCK_KEY); }catch(e){ return false; }
+}
+function swLockRecord(){
+  try{ return JSON.parse(sessionStorage.getItem(SW_LOCK_KEY)||'null'); }catch(e){ return null; }
+}
+function swLock(reason){
+  if(!session) return false;
+  var email=(session&&session.email)||getSessionEmail()||'';
+  var mins=getIdleMins()||SW_DEFAULT_IDLE_MINS;
+  /* FLUSH FIRST. _saveVisitDraft writes sessionStorage[uns('visitDraft')] and
+     uns() resolves through the still-live session, so the draft lands under THIS
+     doctor's namespace before anything is torn down. */
+  try{ if(typeof _saveVisitDraft==='function') _saveVisitDraft(); }catch(e){}
+  try{ sessionStorage.setItem(SW_LOCK_KEY,JSON.stringify({email:email,at:Date.now(),reason:String(reason||'idle'),mins:mins})); }catch(e){}
+  swLocked=true;
+  try{ stopIdle(); }catch(e){}
+  /* Drop the TOKEN only. Nothing on this device can reach the account now - and
+     because session is null a 401 elsewhere no longer triggers the purging
+     logout path (the two eviction sites both guard on session). The session
+     EMAIL stays in this tab so uns() still resolves to the locked account: it is
+     what makes the draft findable, and what makes a later deliberate sign-out
+     purge the right namespace instead of refusing with no account. */
+  try{ setBkToken(''); }catch(e){}
+  try{ bkUser=null; }catch(e){}
+  session=null;
+  try{
+    document.getElementById('appScreen').style.display='none';
+    var authScreen=document.getElementById('authScreen');
+    authScreen.style.display='flex';
+    var tc=document.getElementById('twofaCard'); if(tc) tc.style.display='none';
+    var rc=document.getElementById('resetCard'); if(rc) rc.style.display='none';
+    var cards=authScreen.querySelectorAll('.auth-card');
+    if(cards[0]) cards[0].style.display='block';
+    var pw=document.getElementById('authPass'); if(pw) pw.value='';
+    switchAuth('login');
+  }catch(e){}
+  swPaintLockGate(email,mins);
+  return true;
+}
+function swPaintLockGate(email,mins){
+  try{
+    var field=document.getElementById('authEmail');
+    var known=normalizeHostedLoginEmail(email)||getLastHostedLoginEmail();
+    if(field&&known) field.value=known;
+    var err=document.getElementById('authErr');
+    if(err){
+      err.textContent='🔒 Locked after '+mins+' quiet minutes because this computer is shared. Your unsaved visit is being held for '+(known||'the signed-in clinician')+' — sign in to pick it up. Signing in as a different clinician discards it.';
+      err.style.display='block';
+    }
+    if(!document.getElementById('swLockSignOut')&&err&&err.parentNode){
+      var out=document.createElement('button');
+      out.id='swLockSignOut'; out.type='button'; out.className='btn-ghost';
+      out.style.cssText='font-size:13px;padding:8px 13px;margin-top:8px';
+      out.textContent='Sign out and clear this computer';
+      out.title='Removes this account’s charts, notes and recordings from this device. Anything not yet saved to your MLS account is lost.';
+      out.addEventListener('click',function(){ swClearLock(); try{ logout(true); }catch(e){} });
+      err.parentNode.insertBefore(out,err.nextSibling);
+    }
+  }catch(e){}
+}
+function swClearLock(){
+  swLocked=false;
+  try{ sessionStorage.removeItem(SW_LOCK_KEY); }catch(e){}
+  try{ var b=document.getElementById('swLockSignOut'); if(b) b.remove(); }catch(e){}
+}
+/* Called from startSession the moment the new identity is adopted. */
+function swOnSessionStart(email){
+  try{
+    var rec=swLockRecord();
+    if(rec&&rec.email&&String(rec.email)!==String(email||'')){
+      /* a DIFFERENT clinician unlocked this computer: the held draft is not
+         theirs to see, and uns() is about to point somewhere else anyway. */
+      try{ sessionStorage.removeItem('sf_u::'+String(rec.email)+'::visitDraft'); }catch(e){}
+    }
+  }catch(e){}
+  swClearLock();
+  if(swEnabled()) swStripLocalSeed();
+  try{ swEnsureSettingsField(); }catch(e){}
+  try{ swSyncSettingsField(); }catch(e){}
+  return true;
+}
+/* ===== end sharedws-1.0.0 ===== */
 /* ---------- settings ---------- */
 /* Hide the API-key field & nudges when running in hosted backend mode. */
 function applyBackendModeUI(){
@@ -14566,25 +14913,156 @@ function _acctNowParts(d){
 function _acctDateKeyOf(d){ var p=_acctNowParts(d||new Date()); return p.year+'-'+_calPad(p.month)+'-'+_calPad(p.day); }
 function _acctTodayKey(){ return _acctDateKeyOf(new Date()); }
 function _acctNowMinutes(){ var p=_acctNowParts(new Date()); return p.hour*60+p.minute; }
-/* Minutes-since-midnight of an appointment IN the account time zone (from a UTC ISO start_at). */
-function _apptMinsTz(iso){
-  try{ var d=new Date(iso); if(isNaN(d.getTime())) return null;
-    var ps=_mlsTzFmt('apptHM',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:_acctTz()}).formatToParts(d);
-    var hh=0,mm=0; ps.forEach(function(p){ if(p.type==='hour')hh=parseInt(p.value,10); if(p.type==='minute')mm=parseInt(p.value,10); });
-    if(hh===24) hh=0; return hh*60+mm;
-  }catch(e){ return null; }
-}
+/* ===== apptclock-1.0.0 — ONE time convention for every appointment surface =====
+ *
+ * MEASURED SPLIT (readiness §23/§27, one 360px screen, ONE appointment): the
+ * Visit hero read "4:00 AM" while the day-chip rail read "8:00 AM". Three
+ * conventions were fighting over the same string:
+ *
+ *   1. feat_mls_assistant_exact.js:151 (SHARED — not this lane's file to edit)
+ *      does `new Date(s + "Z")` for an offset-less ISO. That DECLARES a naive
+ *      wall clock to be UTC and then renders it in Eastern, moving an 8 AM
+ *      clinic appointment to 4 AM. It then installs itself over the app's
+ *      _fmtApptTime/_apptMinsTz/_apptHHMMTz/_calDateOf hooks.
+ *   2. this shell parsed the same string with `new Date(s)`, which ES2015+
+ *      reads as BROWSER-local — so the answer changed with the laptop.
+ *   3. 1p-mls-connect.js's startIso() built the instant the same browser-local
+ *      way and then persisted it with .toISOString() — a wrong UTC instant
+ *      written to the server, not just a wrong label.
+ *
+ * THE ONE RULE, and it is now the only one anywhere:
+ *   - a string that CARRIES a zone (trailing Z, or +HH:MM / -HH:MM) is an
+ *     instant: parse it exactly as written;
+ *   - a string with NO zone is a WALL CLOCK in the PRACTICE's timezone
+ *     (_acctTz(), default America/New_York). We never append "Z" to it, and we
+ *     never let the browser's own timezone decide what it means.
+ *
+ * WHY THIS BLOCK CLAIMS THE GLOBALS. Every appointment surface in the product —
+ * the hero (_renderTodayPatients -> _apptDisplayTime), the rail, the picker,
+ * the calendar feed, day-progress, the agenda popover — reads the time through
+ * window._fmtApptTime / _apptMinsTz / _apptHHMMTz. They agree only if ONE
+ * implementation owns those three names. The shared assistant module installs
+ * rule 1 over them when it loads, and this lane may not edit that file, so the
+ * three are defined here as NON-WRITABLE. Its installEstHooks() is strict-mode
+ * and self-wrapped in try/catch, so its first assignment throws, it installs
+ * none of its four hooks, and _hooksInstalled stays false — which also makes
+ * its teardown restore path (feat_mls_assistant_exact.js:1313) inert. Because
+ * it can no longer install _calDateOf either, this block installs that fourth
+ * hook with the module's own semantics on the one rule, stamped __prf so
+ * 1p-mls-connect.js's installF1 wrapper leaves it exactly as alone as it does
+ * today.
+ */
+var _apptClockNaive=/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/;
+var _apptClockZoned=/(?:[Zz]|[+-]\d{2}:?\d{2})$/;
+var _apptClockMeridian=/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/;
+var _apptClockBare=/(\d{1,2}):(\d{2})/;
+var _apptClockDayKey=/^(\d{4})-(\d{2})-(\d{2})$/;
+window.__mlsApptClock=(function(){
+  function tz(){ try{ return _acctTz(); }catch(e){ return 'America/New_York'; } }
+  /* the wall-clock fields a zone shows at a given instant */
+  function partsAt(ms,zone){
+    var o={};
+    _mlsTzFmt('apptClockParts',{timeZone:zone,hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      .formatToParts(new Date(ms)).forEach(function(p){ o[p.type]=p.value; });
+    var h=parseInt(o.hour,10); if(h===24) h=0;
+    return {y:parseInt(o.year,10),mo:parseInt(o.month,10),d:parseInt(o.day,10),h:h,mi:parseInt(o.minute,10),s:parseInt(o.second,10)||0};
+  }
+  /* how far ahead of UTC the zone is at that instant, in ms */
+  function offsetAt(ms,zone){
+    var whole=Math.floor(ms/1000)*1000;
+    var p=partsAt(whole,zone);
+    return Date.UTC(p.y,p.mo-1,p.d,p.h,p.mi,p.s)-whole;
+  }
+  /* the instant at which the practice clock reads exactly these fields. Two
+     passes, because the offset that converts the guess may not be the offset
+     in force at the answer (the DST changeover hours). */
+  function fromWallClock(y,mo,d,h,mi,s){
+    var zone=tz();
+    var guess=Date.UTC(y,mo-1,d,h,mi,s||0);
+    if(!isFinite(guess)) return null;
+    var off=offsetAt(guess,zone);
+    var t=guess-off;
+    var off2=offsetAt(t,zone);
+    if(off2!==off) t=guess-off2;
+    var out=new Date(t);
+    return isNaN(out.getTime())?null:out;
+  }
+  function instant(v){
+    var s=String(v==null?'':v).trim(); if(!s) return null;
+    var m=_apptClockNaive.exec(s); if(!m) return null;
+    if(_apptClockZoned.test(s)){ var d=new Date(s); return isNaN(d.getTime())?null:d; }
+    return fromWallClock(parseInt(m[1],10),parseInt(m[2],10),parseInt(m[3],10),parseInt(m[4],10),parseInt(m[5],10),parseInt(m[6]||'0',10));
+  }
+  function fmtTime(v){
+    var s=String(v==null?'':v).trim(); if(!s) return '';
+    var d=instant(s);
+    if(d){ try{ return _mlsTzFmt('apptClock12',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:tz()}).format(d); }catch(e){} }
+    /* b242 is preserved: an EXPLICIT meridian is authoritative — "4:00 PM" must
+       never re-render as 4:00 AM. The hh<12 default below is meridian-less input
+       only. */
+    var mx=_apptClockMeridian.exec(s);
+    if(mx&&!d){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
+    var b=_apptClockBare.exec(s); if(!b) return '';
+    var hh=parseInt(b[1],10); if(hh>23) return '';
+    var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12;
+    return h12+':'+b[2]+' '+ap;
+  }
+  function mins(v){
+    var s=String(v==null?'':v).trim(); if(!s) return null;
+    var d=instant(s);
+    if(d){ var p=partsAt(d.getTime(),tz()); return p.h*60+p.mi; }
+    var mx=_apptClockMeridian.exec(s);
+    if(mx){ var hx=parseInt(mx[1],10)%12; if(/[Pp]/.test(mx[3])) hx+=12; var mix=parseInt(mx[2],10); if(hx>23||mix>59) return null; return hx*60+mix; }
+    var b=_apptClockBare.exec(s); if(!b) return null;
+    var hh=parseInt(b[1],10), mi=parseInt(b[2],10); if(hh>23||mi>59) return null;
+    return hh*60+mi;
+  }
+  function hhmm(v){
+    var m=mins(v); if(m==null) return '';
+    return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2);
+  }
+  function dateKey(v){
+    var d=instant(v); if(!d) return String(v==null?'':v).slice(0,10);
+    var p=partsAt(d.getTime(),tz());
+    return p.y+'-'+('0'+p.mo).slice(-2)+'-'+('0'+p.d).slice(-2);
+  }
+  /* the WRITE side of the same rule: a practice wall clock becomes a true UTC
+     instant, so an appointment booked at 8 AM in the office is 8 AM in the
+     office no matter which laptop created it. */
+  function wallClockIso(dayKey,h,mi){
+    var m=_apptClockDayKey.exec(String(dayKey||'')); if(!m) return null;
+    var hh=Number(h), mm=Number(mi);
+    if(!isFinite(hh)||!isFinite(mm)||hh<0||hh>23||mm<0||mm>59) return null;
+    var d=fromWallClock(parseInt(m[1],10),parseInt(m[2],10),parseInt(m[3],10),hh,mm,0);
+    return d?d.toISOString():null;
+  }
+  return {version:'apptclock-1.0.0',tz:tz,instant:instant,fmtTime:fmtTime,mins:mins,
+    hhmm:hhmm,dateKey:dateKey,wallClockIso:wallClockIso,fromWallClock:fromWallClock};
+})();
+/* Minutes-since-midnight of an appointment IN the account time zone. */
+function _apptMinsTz(iso){ try{ return window.__mlsApptClock.mins(iso); }catch(e){ return null; } }
 /* 24-hour "HH:MM" in the account TZ — for <input type=time> + internal logic. */
-function _apptHHMMTz(v){ v=String(v||''); if(!v) return ''; if(/T/.test(v)){ var m=_apptMinsTz(v); if(m==null) return ''; return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2); } var x=v.match(/(\d{1,2}):(\d{2})/); return x?(('0'+x[1]).slice(-2)+':'+x[2]):''; }
-/* Friendly 12-hour "9:00 AM" — accepts a UTC ISO start_at (→account TZ) OR a bare local "HH:MM". */
+function _apptHHMMTz(v){ try{ return window.__mlsApptClock.hhmm(v); }catch(e){ return ''; } }
+/* Friendly 12-hour "9:00 AM" — accepts an ISO start_at (→practice TZ) OR a bare "HH:MM". */
 function _fmtApptTime(v){
   v=String(v||''); if(!v) return '';
-  if(/T/.test(v)){ try{ var d=new Date(v); if(!isNaN(d.getTime())) return _mlsTzFmt('appt12',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:_acctTz()}).format(d); }catch(e){} }
-  /* b242: an EXPLICIT meridian in the input is authoritative — "4:00 PM" must never
-     re-format as 4:00 AM (the hh<12 default below is only for meridian-less input). */
-  var mx=v.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*\.?[Mm]/); if(mx){ var hx=parseInt(mx[1],10)%12; if(hx===0) hx=12; return hx+':'+mx[2]+' '+(/[Pp]/.test(mx[3])?'PM':'AM'); }
-  var m=v.match(/(\d{1,2}):(\d{2})/); if(!m) return v; var hh=parseInt(m[1],10); var ap=hh<12?'AM':'PM'; var h12=hh%12; if(h12===0) h12=12; return h12+':'+m[2]+' '+ap;
+  /* the raw string is the last resort, exactly as before: a schedule cell that
+     says "TBD" must keep saying "TBD" rather than going blank. */
+  try{ return window.__mlsApptClock.fmtTime(v)||v; }catch(e){ return v; }
 }
+/* The fourth hook the shared module can no longer install (see the block header). */
+function _calDateOf(a){
+  try{
+    if(a&&a.appt_date) return String(a.appt_date).slice(0,10);
+    if(a&&a.start_at) return window.__mlsApptClock.dateKey(a.start_at);
+  }catch(e){}
+  return '';
+}
+try{ _calDateOf.__prf=1; }catch(e){}
+['_fmtApptTime','_apptMinsTz','_apptHHMMTz','_calDateOf'].forEach(function(_ac){
+  try{ Object.defineProperty(window,_ac,{value:window[_ac],writable:false,enumerable:true,configurable:false}); }catch(e){}
+});
+/* ===== end apptclock-1.0.0 ===== */
 /* One display-time truth for every site schedule surface. start_at is the
    authoritative instant and is always rendered in the saved practice timezone;
    start_local is the next-best account wall clock. time_display/time are legacy
@@ -14593,7 +15071,9 @@ function _fmtApptTime(v){
 function _apptDisplayTime(a){
   a=a||{};
   try{
-    if(a.start_at){ var d=new Date(a.start_at); if(!isNaN(d.getTime())){ var z=_fmtApptTime(a.start_at); if(z) return z; } }
+    /* apptclock-1.0.0: the validity check must use the SAME parser as the
+       render, or a string the renderer cannot read still reaches the label. */
+    if(a.start_at && window.__mlsApptClock.instant(a.start_at)){ var z=_fmtApptTime(a.start_at); if(z) return z; }
     if(a.start_local && /(?:^|T|\s)\d{1,2}:\d{2}/.test(String(a.start_local))){ var l=_fmtApptTime(a.start_local); if(l) return l; }
     if(a.time_display){ var td=_fmtApptTime(a.time_display); if(td) return td; }
     if(a.time){ var t=_fmtApptTime(a.time); if(t) return t; }
@@ -14603,7 +15083,10 @@ function _apptDisplayTime(a){
 function _apptScheduleId(a){ a=a||{}; return String(a.appointment_id||a.appt_id||a.athena_appointment_id||a.id||'').trim(); }
 function _apptScheduleDate(a, fallback){
   a=a||{}; var k=String(a.day_local||a.appt_date||a.date||'').slice(0,10); if(k) return k;
-  try{ if(a.start_at && typeof _acctDateKeyOf==='function'){ var d=new Date(a.start_at); if(!isNaN(d.getTime())) return _acctDateKeyOf(d); } }catch(e){}
+  /* apptclock-1.0.0: one rule for the day key too — new Date(naiveIso) read the
+     browser's timezone, so an evening appointment landed on a different day on
+     a laptop in another state. */
+  try{ if(a.start_at){ var dk=window.__mlsApptClock.dateKey(a.start_at); if(_apptClockDayKey.test(dk)) return dk; } }catch(e){}
   return String(fallback||'').slice(0,10);
 }
 /* Resolve only an exact appointment identity. A unique full-name+practice-date
@@ -19634,8 +20117,14 @@ function opPrepRender(){
     var h='<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:var(--card)">';
     h+='<div id="opPrepPrev_'+i+'">'+_opPreviewHtml(row.proc, a.name, row.dateStr)+'</div>';
     h+='<label class="mini" for="opPrepProc_'+i+'" style="color:var(--muted);display:block;margin:10px 0 3px">Procedure (edit if it’s wrong or missing — the preview updates as you type)</label>';
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
-    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">'+(row.tplManual?'(your pick)':'(auto-matched)')+'</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value;window._opPrep['+i+'].tplManual=true" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
+    /* optap-1.0.0: 40px minimum on the three controls a doctor drives with a
+       thumb. Measured at 360px these were ~30px tall — under every touch-target
+       floor, on the one screen where the procedure text is corrected. Set
+       inline and NOT with !important on purpose: feat_mls_opnote_room.js owns
+       the room's skin and must keep the last word on padding and radius; it
+       carries no rule for these two ids, so a plain min-height sits under it. */
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="opPrepProc_'+i+'" value="'+esc(row.proc||'')+'" oninput="_opProcChanged('+i+',this.value)" placeholder="e.g. Left L5–S1 transforaminal epidural steroid injection" style="flex:1;min-width:220px;font-size:13px;padding:6px 9px;min-height:40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px;min-height:40px;box-sizing:border-box" onclick="_opAutoTpl('+i+')" title="Find the best-matching template for this procedure">🔎 Match template</button></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="mini" style="color:var(--muted)">Template <span style="font-size:10.5px;color:#127a55">'+(row.tplManual?'(your pick)':'(auto-matched)')+'</span>:</span><select id="opPrepTpl_'+i+'" onchange="window._opPrep['+i+'].tplId=this.value;window._opPrep['+i+'].tplManual=true" style="font-size:13px;padding:6px 9px;min-height:40px;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;min-width:200px">'+tplOpts(row.tplId)+'</select>';
     h+='<button class="btn-primary" style="font-size:12.5px;padding:7px 12px'+(row._confirmRedraft?';background:#b4231e':'')+'" onclick="opPrepGenerateOne('+i+')">'+(row._confirmRedraft?'↻ Discard my edits & re-draft?':(row.gen?'↻ Re-draft':'✨ Draft op note'))+'</button></div>';
     if(row.gen){
       if(row.missing&&row.missing.length){
@@ -35990,6 +36479,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   // per-tab session restores that account; a fresh tab falls back to the
   // localStorage seed → auto-enters the last account, unchanged single-tab UX)
   const saved=getSessionEmail();
+  /* sharedws-1.0.0: BEFORE the auto-enter below. On a shared computer a tab that
+     has no session of its own, and only the localStorage "last login" seed to go
+     on, must not walk into the previous doctor's account — the seed is dropped
+     here so bkToken() is empty and the branch below falls through to the normal
+     sign-in screen. */
+  try{ if(typeof swEnabled==='function'&&swEnabled()&&swSeedOnlyEntry()) swRequireReauth(saved); }catch(eSw){}
+  try{ if(typeof swEnsureSettingsField==='function') swEnsureSettingsField(); }catch(eSw2){}
   if(backendMode() && bkToken() && saved){
     // CLAIM the session into THIS tab's sessionStorage. If we only seeded from
     // the localStorage "last login" (sessionStorage empty), copy it into

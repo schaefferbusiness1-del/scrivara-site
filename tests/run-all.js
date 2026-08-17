@@ -73,6 +73,35 @@ const tests = [
   '1p-day-note-day-and-future-runtime.test.js',
   '1p-daynote-column-and-not-yet-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
+  /* dsdiag-1.1.0 (readiness §11): the copyable pull report carried no pull id,
+     no user, no practice/plan and no storage receipt, so two doctors' reports
+     were indistinguishable and a pull that lost its rows to a full store read
+     exactly like a pull that read nothing. Executes the real report builder
+     and asserts the four receipts are present AND carry no patient identifier,
+     no storage namespace key and no per-tab id. */
+  '1p-diag-report-receipts.test.js',
+  /* apptclock-1.0.0 (readiness §23/§27): the Visit hero said "4:00 AM" and the
+     day-chip rail said "8:00 AM" for the SAME appointment, because three files
+     disagreed about what an offset-less ISO means. Runs the shipped resolver,
+     the shipped hero path and the shared module's own installer in three
+     laptop timezones, with a positive control that reproduces the old 4:00 AM. */
+  '1p-appointment-clock-one-convention.test.js',
+  /* advint-1.0.0: the Settings dialog carried "Developer mode" twice, a
+     "Developer API key" card heading, an "Advanced: Developer API key" fold and
+     "Paste a JSON export below - shape: {...}" in the open, one click from the
+     doctor. Gathered behind ONE closed disclosure in physician language. Pins
+     BOTH halves: the vocabulary is behind the fold, AND the four #extDl* ids
+     the shipped refresher reads, the "<!-- Developer API key + MLS Assist"
+     between() boundary comment, and every control/handler are untouched. */
+  '1p-advanced-integrations-disclosure.test.js',
+  /* sharedws-1.0.0 (readiness P0 #9): the 30-day token was written to
+     localStorage and boot auto-entered from that seed, so Doctor A closing the
+     exam-room tab put Doctor B inside A's charts. Runs the real token helpers
+     and the real inactivity machinery on a FAKE CLOCK and proves both modes —
+     private unchanged (seed written, 30 min, purging sign-out) and shared
+     (session-only token, seed entry re-authenticates, 15 min, and a LOCK that
+     keeps the unsaved visit and purges nothing). */
+  '1p-shared-workstation-runtime.test.js',
   '1p-pull-stop-and-find-census-runtime.test.js',
   '1p-pull-resume-skip-and-cost-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
