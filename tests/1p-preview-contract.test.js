@@ -63,7 +63,11 @@ const P1_CONFIG_RELEASE_SUBS = [
    avatar (avlook-1.0.0 adult proportions, avanim-1.0.0 blink/gaze/visemes/neutral mouth,
    avintake-1.0.0 topics/correction/repeat guard/one encounter write); /cloned re-derived. Production and
    extension baselines untouched. */
-const P1_BASE_COMMIT = '01bccca4533be916d87a8bc6875785ba017fae83';
+/* Advanced by the 1p train of 2026-08-17 (Fable straighten-up, batch 6 — pull follow-up): dv3-1.0.0 (row
+   verdict decoupled from the pulled-day note), tny-1.0.0 (today's not-yet-seen appointments are not failures),
+   cap-1.0.0 (a captured chart is saved before any AI step; AI outage → summaryPending), nav-1.0.0 (no whole
+   re-pull after a landed schedule), fdx-1.1.0; /cloned re-derived. Production and extension baselines untouched. */
+const P1_BASE_COMMIT = '5fb0e3d60409ca0d751297d59686cd89e9fdef58';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
