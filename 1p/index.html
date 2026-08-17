@@ -37822,10 +37822,23 @@ html[data-msl="guided"] #mlsT3Roster .t3r-cap:not(.t3r-census){ display:none !im
   }
   function menuEl(){ return safe(function(){ return D.getElementById(MENU_ID); })||null; }
   function closeMenu(m){
-    /* The shared menu owns its own close(); it is not exported, and removing
-       the node is exactly what that close() does first. Its document-level
-       away-click listener then no-ops on a detached menu. */
-    safe(function(){ if(m&&m.parentNode) m.parentNode.removeChild(m); });
+    /* MEASURED TRAP: the shared openTools() keeps a PRIVATE toolsClose handle
+       and toggles on it - its next call begins
+       "if (toolsClose) { toolsClose(); return; }". Detaching the menu node
+       here would leave that handle set over an already-detached menu, so the
+       next press of the dock Tools button is swallowed closing nothing and
+       the menu only reopens on a SECOND press. Toggle it shut through the
+       shell's own exported go() instead: that runs the real close(), which
+       removes the node, detaches the document away-listener, and releases
+       the handle. Node removal stays only as a last resort, so the workspace
+       is never opened behind a menu that refused to close. */
+    var shell = safe(function(){ return W.__mlsCalmShell; });
+    if(shell && isFn(shell.go)){
+      safe(function(){ shell.go('tools'); });
+      if(!menuEl()) return true;
+    }
+    safe(function(){ var n = m || menuEl(); if(n && n.parentNode) n.parentNode.removeChild(n); });
+    return !menuEl();
   }
   function openWorkspace(){
     var api=workspace();

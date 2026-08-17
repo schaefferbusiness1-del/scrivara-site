@@ -79,6 +79,18 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
   ok(/<div class="r" role="menuitem" tabindex="0"/.test(openSrc),
     'the Tools menu row shape changed - the overlay mirrors it');
   ok(/id: 'practice', label: 'Practice'/.test(groups), 'the Practice group the overlay targets is gone');
+
+  /* THE CLOSE TRAP. openTools keeps a private toolsClose handle and its next
+     call begins by toggling on it. A row that closes the menu by detaching the
+     node leaves that handle set over a detached menu, and the doctor's next
+     Tools press is swallowed. The overlay must therefore close through the
+     shell's exported go(), and these two assertions are what will say so if
+     either half of that contract moves. */
+  ok(/if \(toolsClose\) \{ toolsClose\(\); return; \}/.test(openSrc),
+    'openTools no longer toggles on a private toolsClose handle - re-check how the overlay closes the menu');
+  ok(/if \(destId === 'tools'\) \{\s*openTools\(/.test(shared),
+    "the shell's exported go('tools') no longer reaches openTools - the overlay closes through it");
+  ok(/go: go,/.test(shared), 'the calm shell no longer exports go() - the overlay closes through it');
 }
 
 /* -------------------------------------- 2. the legal workspace root id */
@@ -195,6 +207,20 @@ function boot(file, options) {
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
+  /* the shared calm shell, standing in for the real one: go('tools') on an
+     open menu is the toggle that runs its private close() */
+  const shellGo = [];
+  if (options.shell !== false) {
+    sandbox.__mlsCalmShell = {
+      version: 'calm-1.0.0',
+      go(dest) {
+        shellGo.push(String(dest));
+        if (dest !== 'tools') return;
+        const open = dom.doc.getElementById('mlsToolsMenu');
+        if (open && open.parentNode) open.parentNode.removeChild(open);
+      }
+    };
+  }
   if (options.workspace !== false) {
     sandbox.__mlsP1LegalPack = {
       installed: true,
@@ -211,7 +237,7 @@ function boot(file, options) {
   }
   vm.createContext(sandbox);
   vm.runInContext(script, sandbox, { filename: file + '#legal-tools-1.0.0' });
-  return { sandbox, dom, opened };
+  return { sandbox, dom, opened, shellGo };
 }
 
 for (const file of SHELLS) {
@@ -249,6 +275,20 @@ for (const file of SHELLS) {
   eq(h.opened.length, 1, file + ': clicking the Legal row did not open the legal workspace');
   ok(h.dom.doc.getElementById(ROOT_ID), file + ': clicking the Legal row did not create the workspace root ' + ROOT_ID);
   eq(h.dom.doc.getElementById('mlsToolsMenu'), null, file + ': the Tools menu stayed open behind the workspace');
+  /* and it closed through the SHELL, so openTools' private toolsClose handle
+     is released and the next Tools press is not swallowed */
+  eq(h.shellGo.length, 1, file + ": the row did not close the menu through the shell's own go('tools') toggle");
+  eq(h.shellGo[0], 'tools', file + ': the row closed by navigating somewhere other than the Tools toggle');
+
+  /* ---- with no shell to toggle, it still must not leave the menu up ---- */
+  const hNoShell = boot(file, { shell: false });
+  renderToolsMenu(hNoShell.dom);
+  hNoShell.sandbox.window.__mlsLegalToolsRow.inject();
+  hNoShell.dom.doc.querySelector('[data-mls-legal-tools]')
+    .dispatch('click', { type: 'click', preventDefault() {}, stopPropagation() {} });
+  eq(hNoShell.dom.doc.getElementById('mlsToolsMenu'), null,
+    file + ': with no calm shell present the Tools menu was left open behind the workspace');
+  eq(hNoShell.opened.length, 1, file + ': the fallback close path skipped opening the workspace');
 
   /* ---- Enter activates it too ----------------------------------------- */
   const h2 = boot(file);
