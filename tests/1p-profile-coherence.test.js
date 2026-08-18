@@ -217,13 +217,19 @@ function harness() {
     /* NOT PULLED — no chart has ever landed. */
     { id: 'syn-cold', name: 'Dee Sample', dob: '1970-01-02', mrn: 'MRN900004',
       problems: '', meds: '', allergies: '', visits: [] },
-    /* FIVE visits, for the collapse-to-three timeline. */
+    /* FIVE visits, for the collapse-to-three timeline. Visit 1 carries the page
+       debris athenaOne's print/sketchpad frames leak into captured text, with
+       real clinical words in front of it — summaryLine falls back to raw when
+       there is no aiSummary, so this is what actually reaches the card. */
     { id: 'syn-five', name: 'Eli Sample', dob: '1966-11-11', mrn: 'MRN900005',
       problems: 'Cervical radiculopathy', meds: '', allergies: 'NKDA',
       athenaChartImportedAt: '2026-08-17T12:00:00.000Z',
       visits: [1, 2, 3, 4, 5].map(function (i) {
+        var raw = i === 1
+          ? 'Cervical radiculopathy, improved. window.Original = function(){ var IsSafari=1; } SVGJotter.PutSketchpad({a:1});'
+          : 'Visit ' + i + ' body text for the timeline.';
         return { id: 'f' + i, date: '2026-0' + i + '-0' + i, type: 'Office visit',
-          raw: 'Visit ' + i + ' body text for the timeline.', source: 'athena-copy', encounterId: 'fenc-' + i };
+          raw: raw, source: 'athena-copy', encounterId: 'fenc-' + i };
       }) },
     /* EMPTY — no visits at all, for the single-empty-state check. */
     { id: 'syn-empty', name: 'Fay Sample', dob: '1980-05-05', mrn: 'MRN900006',
@@ -416,7 +422,17 @@ function harness() {
         if (cards[i].querySelector('.mlsxh-cdate')) dated++;
       }
       var btn = list.querySelector('.pvr-showall');
-      return { rows: rows, shown: rows - hidden, dated: dated,
+      /* the debris card, by the visit id the module stamps on it */
+      var junk = null, keeps = null;
+      var f1 = list.querySelector('.mlsxh-card[data-vid="f1"]');
+      if (f1) {
+        var s = f1.querySelector('.mlsxh-sum');
+        var txt = s ? String(s.textContent) : '';
+        junk = (txt.indexOf('window.') >= 0 || txt.indexOf('SVGJotter') >= 0 ||
+                txt.indexOf('IsSafari') >= 0 || txt.indexOf('PutSketchpad') >= 0);
+        keeps = txt.toLowerCase().indexOf('cervical radiculopathy') >= 0;
+      }
+      return { rows: rows, shown: rows - hidden, dated: dated, junk: junk, keeps: keeps,
                hasBtn: !!btn, btnText: btn ? btn.textContent : '' };
     },
     showAll: function () {
@@ -594,6 +610,9 @@ async function runtime() {
     eq(tl.shown, 3, `the timeline must collapse to the latest 3, showed ${tl.shown}`);
     ok(tl.hasBtn, 'a collapsed timeline must offer "Show all"');
     ok(tl.btnText.indexOf('5') >= 0, `the "Show all" control must name the total: ${tl.btnText}`);
+    /* THE ONE-LINE SUMMARY IS SCRUBBED, AND KEEPS ITS CLINICAL TEXT. */
+    eq(tl.junk, false, 'the timeline card is rendering athenaOne page/script debris as a clinical summary');
+    eq(tl.keeps, true, 'the scrub deleted the clinical text along with the debris');
     await page.evaluate(() => window.__pvr.showAll());
     await page.waitForTimeout(500);
     const tl2 = await page.evaluate(() => window.__pvr.timeline());

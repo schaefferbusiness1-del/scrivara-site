@@ -42844,7 +42844,40 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
         if (line.textContent !== txt) line.textContent = txt;
       }
     }
+    scrubCards(sec, res);
     collapseList(sec);
+  }
+
+  /* THE ONE-LINE SUMMARY, SCRUBBED. feat_visit_history_ext's summaryLine falls
+     back to trim(v.raw) when a visit has no aiSummary, and v.raw is captured
+     athenaOne frame text - which on print/sketchpad frames carries window.*
+     assignments, Jotter/SVG path code and VMLJSON blobs. That is what "the
+     history looks so bad" is made of. The visit model already exports the two
+     scrubbers its own summarizer uses (_stripPageDebris, _normalizeClinicalText),
+     so this calls THOSE rather than carrying a second copy of their regexes -
+     no escape to lose in transport, and no second definition of debris to drift
+     from the legal lane's. Clinical text is never deleted: an entry whose
+     scrubbed body is empty keeps whatever the module put there. */
+  function scrubCards(sec, res) {
+    var cards = sec.querySelectorAll('.mlsxh-card');
+    if (!cards.length) return;
+    var byId = {}, i;
+    for (i = 0; i < res.entries.length; i++) {
+      var e = res.entries[i];
+      if (e.visitId) byId[e.visitId] = e;
+    }
+    for (i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var sum = card.querySelector('.mlsxh-sum');
+      if (!sum || sum.classList.contains('pending')) continue;
+      var entry = byId[str(card.getAttribute('data-vid'))];
+      if (!entry) continue;
+      var want = trim(entry.summary) || entry.body;
+      if (!want) continue;
+      want = trim(str(want).split('\n').join(' · '));
+      if (want.length > 200) want = want.slice(0, 200);
+      if (sum.textContent !== want) sum.textContent = want;
+    }
   }
 
   /* 2) latest three, then "Show all" */
