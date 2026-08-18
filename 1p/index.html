@@ -933,6 +933,15 @@
   #opPrepModal.opr-room > .modal{ max-width:none; width:100vw; height:100dvh; max-height:100dvh;
     border-radius:0; border:0; box-shadow:none; padding:0; background:var(--bg);
     display:flex; flex-direction:column; overflow:hidden; }
+  /* oprtop-1.0.0 (owner live, 2026-08-18: "the op notes are cut off at the top
+     still"): the generic .modal carries a vertical MARGIN this room never
+     reset, so the flex-CENTERED 100dvh card overflowed equally top and bottom
+     (measured live: card top -34 in a 1253px window, day head at -21, no way
+     to scroll to it). Two independent guarantees, either alone suffices:
+     margin:0 removes the overflow source, and top-alignment makes the TOP the
+     part that survives if any future rule overflows the card again. */
+  #opPrepModal.opr-room{ align-items:flex-start !important; justify-content:flex-start !important; }
+  #opPrepModal.opr-room > .modal{ margin:0 !important; }
   /* b940 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
