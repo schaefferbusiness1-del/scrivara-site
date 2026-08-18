@@ -2176,8 +2176,15 @@
   /* fraction of a rectangle darker than `ref`. -1 means the rectangle did not
      fit inside the frame, which is never treated as evidence either way. */
   function faceLmDarkFrac(ctx, x0, y0, x1, y1, ref) {
-    x0 = Math.round(Math.min(x0, x1)); y0 = Math.round(Math.min(y0, y1));
-    var w = Math.max(1, Math.round(Math.abs(x1 - x0))), h = Math.max(1, Math.round(Math.abs(y1 - y0)));
+    /* the corners are normalised BEFORE either is overwritten. Doing it in place
+       silently collapsed the rectangle to one pixel whenever the landmarks came
+       back crossed (x1 < x0) — a one-pixel strip still returns a fraction, so
+       the caller would have read a confident answer off nothing. */
+    var lo = Math.round(Math.min(x0, x1)), hi = Math.round(Math.max(x0, x1));
+    var top = Math.round(Math.min(y0, y1)), bot = Math.round(Math.max(y0, y1));
+    var w = hi - lo, h = bot - top;
+    if (w < 2 || h < 2) return -1;
+    x0 = lo; y0 = top;
     if (x0 < 0 || y0 < 0 || x0 + w > ctx.canvas.width || y0 + h > ctx.canvas.height) return -1;
     var d = safe(function () { return ctx.getImageData(x0, y0, w, h).data; }, null);
     if (!d) return -1;
@@ -2303,9 +2310,14 @@
     }
     if (foreheadFrac !== null) {
       var hairPatch = faceLmMedian(ctx, g.browMid.x, Math.max(1, hairY - faceH * 0.07), faceH * 0.04);
-      if (hairPatch && !faceIsSkinRgb(hairPatch[0], hairPatch[1], hairPatch[2])) claim('hair', faceLmHex(hairPatch));
-      else if (hairPatch) claim('hair', faceLmHex(hairPatch));
-      else refuse('hair', 'the patch above your hairline could not be sampled');
+      if (!hairPatch) refuse('hair', 'the patch above your hairline could not be sampled');
+      else if (faceIsSkinRgb(hairPatch[0], hairPatch[1], hairPatch[2]) && faceLmHueGap(hairPatch, cheek) <= 16) {
+        /* the patch above the boundary is still YOUR SKIN, so what was crossed
+           was a shadow or a scalp, not a hairline. Taking a "hair colour" from
+           it would paint the character's hair the colour of his own head —
+           refused, and hairStyle stays the pixel ladder's to decide. */
+        refuse('hair', 'the area above your hairline read as more skin, so no hair colour was taken from it');
+      } else claim('hair', faceLmHex(hairPatch));
     }
     notes.foreheadFrac = foreheadFrac === null ? null : Math.round(foreheadFrac * 1000) / 1000;
 
