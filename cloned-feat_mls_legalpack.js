@@ -354,6 +354,13 @@
   /* Provider of an imported row: explicit field first, else the raw athenaOne
      line "<type>\n<MM-DD-YYYY[ h:mm AM]>, <Provider>, <Cred>, <Specialty>". */
   function provOfVisit(row) {
+    /* histview-1.0.0 owns the one copy of this extractor too, for the same
+       reason: the card in the chart and the row in the report must name the
+       same clinician. The block below is the offline fallback. */
+    var shell = encView();
+    if (shell && isFn(shell.provider)) {
+      try { return shell.provider(row); } catch (eDel) { /* fall through */ }
+    }
     try {
       var explicit = providerOf(row);
       if (explicit) return explicit;
@@ -490,9 +497,29 @@
     } catch (e) { return null; }
   }
   function isBlankish(line) { return !/[A-Za-z0-9]/.test(String(line || '')); }
+  /* ===== histview-1.0.0 delegation ========================================
+     THE DETECTOR IS NOT FORKED. histview-1.0.0 (in both /1p shells) owns the
+     one copy of these patterns, and the History room and this workspace both
+     ask IT - otherwise the chart and the report could disagree about what
+     counts as junk, which is the same class of defect pvr-1.0.0 closed for
+     visit COUNTS. Everything below this delegation is the OFFLINE FALLBACK:
+     it runs only where the shell is not present, which is this module's own vm
+     harness (tests/1p-legal-bind-report-flow.test.js). On the live page the
+     delegation is what runs, and tests/1p-histview-contract.test.js proves it
+     by reading the `by` stamp off a real page rather than grepping for it. */
+  function encView() {
+    try {
+      var api = window.__mlsEncView;
+      return (api && api.version) ? api : null;
+    } catch (e) { return null; }
+  }
   /* Returns {text, removed, chrome, code, raw, shared, refused}. `text` is what
      is displayed and exported; `raw` is ALWAYS the untouched original. */
   function scrubBody(body) {
+    var shellScrub = encView();
+    if (shellScrub && isFn(shellScrub.scrub)) {
+      try { return shellScrub.scrub(body); } catch (eDel) { /* fall through to the local copy */ }
+    }
     var raw = String(body == null ? '' : body);
     if (!clean(raw)) return { text: '', removed: 0, chrome: 0, code: 0, raw: raw, shared: false, refused: false };
     var chrome = 0, code = 0;
@@ -694,6 +721,30 @@
       lines.push(category[1].toUpperCase() + ' (' + rows.length + ')');
       lines.push('--------------------------------------------------');
       if (!rows.length) lines.push('(none documented)');
+      /* ===== histview-1.0.0: the "random text" the owner named ==============
+         Every other category here is a one-line fact (a diagnosis, a follow-up
+         line, a document name). VISITS & ENCOUNTERS is the one that carries a
+         whole captured note, and printing it as one undated run of text is
+         exactly what made the report unreadable. It now goes through the SAME
+         renderer the History room uses: a scannable AT A GLANCE table
+         (date, type, provider, one-line impression) followed by a dated list
+         with the note's own sections labelled.
+         A body with nothing readable left after cleaning is omitted and
+         counted in ONE footnote - never silently, and never a body whose
+         clinical text survived: a records compilation that drops documented
+         clinical text is the most dangerous thing this workspace can produce
+         and no display defect justifies it. */
+      var enc = encView();
+      if (category[0] === 'visit' && rows.length && enc && isFn(enc.reportSection)) {
+        var built = null;
+        try { built = enc.reportSection(rows, { table: true }); } catch (eSec) { built = null; }
+        if (built && built.text) {
+          rows.forEach(function (item) { suppressed += Number(item.scrubbed || 0); });
+          lines.push(built.text);
+          lines.push('');
+          return;
+        }
+      }
       rows.forEach(function (item) {
         lines.push(niceDate(item.date) + ' - ' + item.title + ' - ' + item.provider + ' [' + item.source + ']');
         /* p1-legal-scrub-1.0.0: a legal chronology must not carry the EMR's
@@ -1925,7 +1976,19 @@
       rows.forEach(function (item) {
         var key = items.indexOf(item);
         var showRaw = !!state.rawOpen[key];
-        var shown = showRaw ? item.body : (item.display || '');
+        /* histview-1.0.0: an encounter body opens as the SAME sectioned,
+           print-friendly text the report prints, not as the raw run of
+           captured text. head:false because the row's own head already
+           carries the date and the type. "Show raw" still returns the exact
+           stored bytes, unchanged. */
+        var pretty = '';
+        if (!showRaw && category[0] === 'visit') {
+          var encRow = encView();
+          if (encRow && isFn(encRow.textBlock) && isFn(encRow.fromLegalItem)) {
+            try { pretty = String(encRow.textBlock(encRow.fromLegalItem(item), { head: false }) || ''); } catch (ePretty) { pretty = ''; }
+          }
+        }
+        var shown = pretty || (showRaw ? item.body : (item.display || ''));
         var hasBody = !!(shown && shown !== item.title);
         html += '<div class="p1l-row">' +
           '<button type="button" class="p1l-rowhead" aria-expanded="false" data-row-toggle="' + key + '" aria-controls="mlsP1LegalRowBody' + key + '">' +

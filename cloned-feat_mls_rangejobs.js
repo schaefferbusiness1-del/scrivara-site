@@ -116,6 +116,27 @@
     'no-read': 1, 'nav-failed': 1, 'no-athena-tab': 1,
     'unverified-day': 1, 'schedule-incomplete': 1, exception: 1
   };
+  /* ===== p1-range-storage-pause-1.0.0 (a full disk is not a per-day problem)
+     The importer re-runs its quota preflight on EVERY day (the lr-1.0 gate in
+     pull()), and refuses before any Athena navigation when the durable store
+     has stopped absorbing writes. Those reasons were already counted as
+     non-attempts, so no retry budget was burned - but nothing PAUSED the job.
+     A year is 250+ days; with a full store the run walked the whole remaining
+     ledger, refusing each day in turn and finishing with a wall of retryable
+     days and no statement of the one thing wrong.
+
+     A storage refusal is exactly like a sign-out: a condition outside this
+     job that no amount of retrying inside it can fix, and that the doctor can
+     actually clear. So it takes the same shape - stop the importer, park the
+     manifest in the storage-failed control state that controlStatus() and
+     applyControl() already understand, and name the reason. Resume then picks
+     up at the first unverified day, because the ledger is the resume target
+     (pendingDates), not a cursor that a pause could invalidate. */
+  var STORAGE_REASONS = {
+    'storage-full': 1, 'storage-full-writes-failing': 1, 'metadata-persist-failed': 1
+  };
+  function isStorageReason(value) { return STORAGE_REASONS[reasonCode(value)] === 1; }
+  /* ===== end p1-range-storage-pause-1.0.0 ===== */
   /* A day that was never DRIVEN did not spend an attempt. Counting these
      would let one athenaOne outage burn every day's retry budget. */
   var NON_ATTEMPT_REASONS = {
@@ -636,6 +657,18 @@
     if (isLoginReason(code)) {
       ctx.control = 'waiting-login';
       ctx.manifest.status = 'waiting-login';
+      ctx.manifest.reason = code;
+      stopImporter();
+    }
+    /* p1-range-storage-pause-1.0.0: the importer refused this day because the
+       durable store is not absorbing writes. Every remaining day would refuse
+       identically, so stop here and say so once. The day itself stays
+       retryable and spent no attempt (NON_ATTEMPT_REASONS), so Resume after
+       freeing space continues from exactly this day. */
+    else if (isStorageReason(code)) {
+      ctx.storageFailure = code;
+      ctx.control = 'storage-failed';
+      ctx.manifest.status = 'storage-failed';
       ctx.manifest.reason = code;
       stopImporter();
     }

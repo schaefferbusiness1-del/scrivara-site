@@ -50918,7 +50918,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      an HTML-unaware regex, and naming it here made the extractor start the
      "script" at this line and refuse the whole block as a syntax error).
      Those patterns now live in exactly one place — this
-     block — and 1p-feat_mls_legalpack.js delegates to it whenever it is
+     block — and the legalpack module delegates to it whenever it is
      loaded, which in this app is always. The copy still inside the legal pack
      is explicitly demoted to the OFFLINE fallback its own vm harness runs
      against, and the delegation is proved on the live page rather than

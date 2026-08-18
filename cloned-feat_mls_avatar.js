@@ -1948,7 +1948,15 @@
       fromIllustration: fromIllustration,
       srcKind: fromIllustration ? 'illustration' : (provedPhoto ? 'photo' : 'unknown'),
       adaptiveSegmentation: pxReceipt.adaptiveSegmentation === true,
-      combinedEvidence: true
+      combinedEvidence: true,
+      /* avml-1.0.0 — THE PROVENANCE SURVIVES THE COMBINE. This function builds a
+         FRESH receipt object, so anything the landmark merge recorded upstream
+         was being dropped exactly here and `lastMatchReceipt` could not say
+         which reader moved a trait. Counts and knob NAMES only: no image, no
+         landmark coordinate, no pixel ever rides in a receipt. */
+      landmarkClaimed: Array.isArray(pxReceipt.landmarkClaimed) ? pxReceipt.landmarkClaimed.slice() : [],
+      landmarkDisplaced: Array.isArray(pxReceipt.landmarkDisplaced) ? pxReceipt.landmarkDisplaced.slice() : [],
+      landmarkScore: Number(pxReceipt.landmarkScore) || 0
     };
     return {
       look: derived.length ? look : null,
@@ -1960,6 +1968,567 @@
       visionRefused: visionRefused
     };
   }
+  /* ===== avml-1.0.0 (2026-08-18) — AN ABSENCE YOU CAN POINT AT ================
+     Owner, on the whole feature: "this face to avatar is still a nightmare and
+     needs a lot of work."
+
+     THE CEILING THE LAST LANE MEASURED AND COULD NOT LIFT. avfit-1.2.0 wrote it
+     down honestly: five of the fourteen ledger entries — `beard`, `glasses`,
+     `hairline`, `browCol`, `faceShape` — are pushed ONLY when the feature is
+     PRESENT, or never. A clean-shaven doctor with no glasses and a full
+     hairline could not score above nine of fourteen however good the
+     photograph was, and the whole-read bar is six. It also wrote down exactly
+     what turning "I did not see a beard" into `beard: 'none'` would require:
+     "positive-evidence margins measured on REAL annotated photographs — not on
+     the synthetic fixtures in this tree". The blocker was never the arithmetic.
+     It was that the pixel ladder does not know WHERE the jaw is, so it has no
+     region it can point at and say "this is chin, and it is skin".
+
+     WHAT CHANGED. `1p-avatar-model/` bundles a 68-point face landmark model
+     (face-api.js tiny_face_detector + face_landmark_68, MIT; tfjs wasm backend,
+     Apache-2.0; 2 631 533 bytes total, digests in that folder's NOTICE.md). It
+     runs on-device, same-origin, lazily, and it hands this file the jaw
+     contour, the brow line, the eye corners and the mouth outline in image
+     pixels. With those, an absence stops being an assumption:
+
+       glasses:false  the strip across the nose bridge AT EYE LEVEL and the two
+                      strips outside the outer eye corners are all bare skin.
+                      A frame cannot be there and leave those three clean.
+       beard:'none'   the chin patch inside the jaw contour is still the cheek's
+                      colour — same skin gate, same hue, comparable luminance.
+       hairline:'full' walking up the midline from the brow FINDS a hair
+                      boundary, and it sits 20-58% of brow-to-chin above the
+                      brow. Finding it is the evidence; a head cropped at the
+                      top finds nothing and is refused.
+       browCol        the brow landmarks say where the brows are, so their
+                      colour is a measurement rather than a search.
+       faceShape      brow-to-chin over cheekbone width, from the contour.
+
+     EVERY THRESHOLD BELOW WAS MEASURED, NOT CHOSEN. The numbers come from
+     driving this exact model over 19 synthetic sitters in real Chrome
+     (tests/1p-avatar-landmark-evidence.test.js re-runs them and prints the
+     table). Both sides of every band are populated, and where the fixtures did
+     NOT separate a trait the trait is NOT claimed here:
+       eyeSet  inner-corner spacing moved 1.450 -> 1.527 across fixtures drawn
+               from eyeSep 0.36 to 0.58 — the landmark net regresses to its own
+               prior, so spacing is NOT claimable from it. Left to the pixels.
+       nose    0.590 (thin) vs 0.604 (wide). Not claimable. Left to the pixels.
+       lips    0.373 (thin) vs 0.391 (neutral) vs 0.474 (full) — only the full
+               end separates, so only the extremes are claimed.
+       eyes    the iris is a handful of pixels at sitting distance and the
+               trimmed sample kept picking up sclera. Left to the pixels.
+
+     ⛔ THE GATE IS NOT TOUCHED. `faceMatchDecision` still reads
+     `examined >= 10 && claimed >= 6 && skin && hair`. Everything this block
+     produces is a CANDIDATE that must still pass `faceVisionClaimGate` value
+     by value, exactly like the backend model's claims do, and a candidate that
+     fails is counted as a refusal and named. This adds evidence; it removes no
+     check.
+     ⛔ AND IT CANNOT INVENT A FACE. `faceLandmarkGeometry` refuses a detection
+     whose geometry is impossible (chin above the brows, non-positive face
+     height or cheek width, score below the floor). Measured: a blank frame is
+     not detected at all, and a textured wall that IS detected at score 0.106
+     reports faceH = -99.7 and is refused right there. ===================== */
+  var FACE_LM_ASSET = '1p-avatar-model/face-api-1.7.15.js';
+  var FACE_LM_DIR = '1p-avatar-model';
+  var FACE_LM_LOAD_MS = 25000;
+  var FACE_LM_MIN_SCORE = 0.30;
+  /* the ladder the calibration used: the first size/threshold pair that finds a
+     face wins. 416 answered 19 of 19 sitters; the rest are there for a frame
+     the first pass misses, and every one of them still clears the score floor. */
+  var FACE_LM_LADDER = [[416, 0.35], [608, 0.30], [512, 0.25], [320, 0.25], [224, 0.20]];
+  var faceLmState = { tried: false, ready: false, why: '', promise: null, ms: 0, backend: '' };
+  /* PHI-free: counts, a backend name and reasons. Never an image, never a landmark.
+     `backend` is reported because it is NOT decorative — see the CSP note below:
+     it is how you tell a machine that got the deterministic wasm path from one
+     that quietly fell through to a GPU that may not exist. */
+  function faceLandmarkStatus() {
+    return { tried: faceLmState.tried, ready: faceLmState.ready,
+      why: faceLmState.why, loadMs: faceLmState.ms, backend: faceLmState.backend };
+  }
+  function faceLmApi() {
+    var F = window.faceapi;
+    return (F && F.nets && F.nets.tinyFaceDetector && F.nets.faceLandmark68Net && F.tf) ? F : null;
+  }
+  /* LAZY, and only from this origin. Nothing here runs at page boot: the first
+     caller is avatar Setup. A page that never opens Setup downloads none of it. */
+  function faceLandmarkReady() {
+    if (faceLmState.promise) return faceLmState.promise;
+    faceLmState.tried = true;
+    var t0 = Date.now();
+    faceLmState.promise = new Promise(function (resolve) {
+      var settled = false;
+      function done(ok, why) {
+        if (settled) return;
+        settled = true;
+        faceLmState.ready = !!ok;
+        faceLmState.why = ok ? '' : String(why || 'the on-device model did not load');
+        faceLmState.ms = Date.now() - t0;
+        resolve(!!ok);
+      }
+      var timer = setTimeout(function () {
+        done(false, 'the on-device model took longer than ' + Math.round(FACE_LM_LOAD_MS / 1000) + ' seconds to load');
+      }, FACE_LM_LOAD_MS);
+      function finish(ok, why) { clearTimeout(timer); done(ok, why); }
+      function start() {
+        var F = faceLmApi();
+        if (!F) { finish(false, 'the on-device model file loaded but did not install'); return; }
+        safe(function () {
+          /* threads are deliberately off — see 1p-avatar-model/NOTICE.md. The
+             threaded binary is NOT shipped, so this is what keeps tfjs from
+             asking for a file that is not there when a page IS cross-origin
+             isolated. */
+          F.tf.env().set('WASM_HAS_MULTITHREAD_SUPPORT', false);
+          if (typeof F.tf.setThreadsCount === 'function') F.tf.setThreadsCount(1);
+          F.tf.setWasmPaths(FACE_LM_DIR + '/');
+        });
+        var chain = safe(function () {
+          return F.tf.setBackend('wasm').then(function () { return F.tf.ready(); })
+            .then(function () {
+              /* ⛔ WHY THE CSP LINE IS NOT OPTIONAL, MEASURED TWO-SIDED.
+                 Serving this exact model under the /1p policy gives
+                 getBackend() === 'wasm'. Serving it under PRODUCTION's policy
+                 — the same bytes, the same page, one source expression fewer —
+                 Chrome refuses the module ("Compiling or instantiating
+                 WebAssembly is blocked") and tfjs does NOT throw: it silently
+                 falls through to 'webgl'. That is the trap. WebGL needs a
+                 working, un-blocklisted GPU, so on the machines that do not
+                 have one there is no backend left and the read fails for a
+                 reason nobody would connect to a CSP. Recording the backend
+                 name is how that stays visible instead of becoming a bug
+                 report that says "it scores lower on my laptop". */
+              faceLmState.backend = String(safe(function () { return F.tf.getBackend(); }, '') || '');
+            })
+            /* A HOT RELOAD MUST NOT RE-DOWNLOAD 550 KB OF WEIGHTS. This module's
+               loader can retire and reinstall the whole IIFE, which gives
+               faceLmState a fresh memo — but `window.faceapi` and its already-
+               loaded nets survive, so the only honest work left is to check
+               them. `isLoaded` is face-api's own getter. */
+            .then(function () {
+              return F.nets.tinyFaceDetector.isLoaded ? null : F.nets.tinyFaceDetector.loadFromUri(FACE_LM_DIR);
+            })
+            .then(function () {
+              return F.nets.faceLandmark68Net.isLoaded ? null : F.nets.faceLandmark68Net.loadFromUri(FACE_LM_DIR);
+            });
+        }, null);
+        if (!chain || typeof chain.then !== 'function') { finish(false, 'the on-device model could not start'); return; }
+        chain.then(function () { finish(true, ''); },
+          function (e) { finish(false, 'the on-device model could not start (' + String((e && e.message) || e).slice(0, 120) + ')'); });
+      }
+      if (faceLmApi()) { start(); return; }
+      /* ⛔ FETCHED AND CHECKED, NEVER <script src>. A classic <script src> that
+         404s does not fail quietly: the server's HTML error page arrives with a
+         200-shaped body, the parser reads `<` as JavaScript, and the page throws
+         "Unexpected token '<'" — measured, it broke two unrelated avatar
+         harnesses the first time this loaded. Fetching first means a wrong path,
+         a 404 page or an HTML redirect is REPORTED as a reason the doctor can
+         read, and only something that is actually JavaScript is ever executed.
+         The inline execution is what `script-src 'self' 'unsafe-inline'` already
+         permits; no new source expression is needed for this step. */
+      var req = safe(function () {
+        return window.fetch(FACE_LM_ASSET, { credentials: 'same-origin', cache: 'force-cache' });
+      }, null);
+      if (!req || typeof req.then !== 'function') { finish(false, 'the on-device model could not be requested'); return; }
+      req.then(function (r) {
+        if (!r || !r.ok) { finish(false, 'the on-device model file answered ' + ((r && r.status) || 'no status')); return null; }
+        var type = String((r.headers && r.headers.get && r.headers.get('content-type')) || '');
+        if (type && !/javascript|ecmascript|text\/plain|octet-stream/i.test(type)) {
+          finish(false, 'the on-device model path served ' + type.split(';')[0] + ' instead of JavaScript');
+          return null;
+        }
+        return r.text();
+      }).then(function (text) {
+        if (settled || text === null || text === undefined) return;
+        if (typeof text !== 'string' || !text.length || /^\s*</.test(text)) {
+          finish(false, 'the on-device model path served a page, not JavaScript');
+          return;
+        }
+        var s = safe(function () { return document.createElement('script'); }, null);
+        if (!s) { finish(false, 'the on-device model could not be installed'); return; }
+        s.textContent = text;
+        if (!safe(function () { (document.head || document.documentElement).appendChild(s); return true; }, false)) {
+          finish(false, 'the on-device model could not be installed');
+          return;
+        }
+        start();
+      }, function (e) {
+        finish(false, 'the on-device model file could not be downloaded (' + String((e && e.message) || e).slice(0, 100) + ')');
+      });
+    });
+    return faceLmState.promise;
+  }
+  /* ---- the measurement helpers. Each one reads pixels and returns a number or
+     null; none of them decides anything. ---- */
+  function faceLmLum(c) { return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]; }
+  function faceLmHex(c) {
+    return '#' + [c[0], c[1], c[2]].map(function (v) {
+      var n = Math.max(0, Math.min(255, Math.round(v)));
+      return ('0' + n.toString(16)).slice(-2);
+    }).join('');
+  }
+  function faceLmHueGap(a, b) {
+    var d = faceHueAb(faceLab(a)) - faceHueAb(faceLab(b));
+    return Math.abs(((d + 540) % 360) - 180);
+  }
+  function faceLmMedian(ctx, cx, cy, r) {
+    var W = ctx.canvas.width, H = ctx.canvas.height;
+    var x0 = Math.max(0, Math.round(cx - r)), y0 = Math.max(0, Math.round(cy - r));
+    var x1 = Math.min(W - 1, Math.round(cx + r)), y1 = Math.min(H - 1, Math.round(cy + r));
+    if (x1 <= x0 || y1 <= y0) return null;
+    var d = safe(function () { return ctx.getImageData(x0, y0, x1 - x0 + 1, y1 - y0 + 1).data; }, null);
+    if (!d) return null;
+    var R = [], G = [], B = [], i;
+    for (i = 0; i < d.length; i += 4) { R.push(d[i]); G.push(d[i + 1]); B.push(d[i + 2]); }
+    function m(a) { a.sort(function (p, q) { return p - q; }); return a[a.length >> 1]; }
+    return [m(R), m(G), m(B)];
+  }
+  /* fraction of a rectangle darker than `ref`. -1 means the rectangle did not
+     fit inside the frame, which is never treated as evidence either way. */
+  function faceLmDarkFrac(ctx, x0, y0, x1, y1, ref) {
+    /* the corners are normalised BEFORE either is overwritten. Doing it in place
+       silently collapsed the rectangle to one pixel whenever the landmarks came
+       back crossed (x1 < x0) — a one-pixel strip still returns a fraction, so
+       the caller would have read a confident answer off nothing. */
+    var lo = Math.round(Math.min(x0, x1)), hi = Math.round(Math.max(x0, x1));
+    var top = Math.round(Math.min(y0, y1)), bot = Math.round(Math.max(y0, y1));
+    var w = hi - lo, h = bot - top;
+    if (w < 2 || h < 2) return -1;
+    x0 = lo; y0 = top;
+    if (x0 < 0 || y0 < 0 || x0 + w > ctx.canvas.width || y0 + h > ctx.canvas.height) return -1;
+    var d = safe(function () { return ctx.getImageData(x0, y0, w, h).data; }, null);
+    if (!d) return -1;
+    var n = 0, t = 0, i;
+    for (i = 0; i < d.length; i += 4) { t++; if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < ref) n++; }
+    return t ? n / t : -1;
+  }
+  function faceLmLerp(a, b, t) { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; }
+  function faceLmMid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+  function faceLmDist(a, b) { return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)); }
+  /* THE STRUCTURAL REFUSAL. A detection is not a face until its own geometry
+     agrees that it is one. Measured: a textured wall detected at score 0.106
+     lands here with faceH = -99.7. */
+  function faceLandmarkGeometry(det) {
+    if (!det || !det.landmarks || !det.detection) return null;
+    var pts = det.landmarks.positions;
+    if (!pts || pts.length !== 68) return null;
+    var score = Number(det.detection.score) || 0;
+    if (score < FACE_LM_MIN_SCORE) return null;
+    var p = [], i;
+    for (i = 0; i < 68; i++) p.push({ x: Number(pts[i].x), y: Number(pts[i].y) });
+    for (i = 0; i < 68; i++) if (!isFinite(p[i].x) || !isFinite(p[i].y)) return null;
+    var chin = p[8], browMid = faceLmMid(p[21], p[22]);
+    var faceH = chin.y - browMid.y, cheekW = faceLmDist(p[1], p[15]);
+    var eyeC = faceLmMid(faceLmMid(p[36], p[39]), faceLmMid(p[42], p[45]));
+    if (!(faceH > 8) || !(cheekW > 8)) return null;
+    if (!(eyeC.y > browMid.y) || !(eyeC.y < chin.y)) return null;
+    if (!(p[57].y > eyeC.y) || !(p[57].y < chin.y + faceH * 0.10)) return null;
+    return { p: p, score: score, chin: chin, browMid: browMid, faceH: faceH, cheekW: cheekW,
+      eyeL: faceLmMid(p[36], p[39]), eyeR: faceLmMid(p[42], p[45]), eyeY: eyeC.y };
+  }
+  function faceLandmarkDetect(canvas) {
+    var F = faceLmApi();
+    if (!F || !faceLmState.ready || !canvas) return Promise.resolve(null);
+    var i = 0;
+    function attempt() {
+      if (i >= FACE_LM_LADDER.length) return Promise.resolve(null);
+      var step = FACE_LM_LADDER[i++];
+      var run = safe(function () {
+        return F.detectSingleFace(canvas,
+          new F.TinyFaceDetectorOptions({ inputSize: step[0], scoreThreshold: step[1] })).withFaceLandmarks(false);
+      }, null);
+      if (!run || typeof run.then !== 'function') return Promise.resolve(null);
+      return run.then(function (r) {
+        var g = r ? faceLandmarkGeometry(r) : null;
+        if (g) { g.inputSize = step[0]; return g; }
+        return attempt();
+      }, function () { return attempt(); });
+    }
+    return attempt();
+  }
+  /* ---- the trait rules. Each returns {value, why} — `why` non-empty means
+     REFUSED, and the reason is shown to the doctor rather than swallowed. ---- */
+  var FACE_LM_BANDS = {
+    /* measured, 19 sitters: clean chins scored 0.00-0.52, beards 0.84-1.22 */
+    beardNone: 0.60, beardYes: 0.80, beardFullHue: 20,
+    /* glasses: bridge 0.328-0.390 with frames, 0.000 without; outer bands
+       0.284-0.465 with, 0.000-0.000 without */
+    glassNo: 0.10, glassNoOuter: 0.15, glassYes: 0.22, glassYesOuter: 0.22,
+    /* Midline forehead as a fraction of brow-to-chin, measured through the REAL
+       reader on the real fixtures: eight full hairlines landed 0.381-0.429, and
+       a hairline drawn at 0.80 of the face height measured 0.597 (the model
+       places its brow line a little above the drawn brow, so the measure
+       compresses). Both edges are populated by measurement and the dead band
+       between them is 0.48-0.56 — deliberately wide, because "somewhere in
+       between" is a refusal this reader is happy to make. */
+    hairFullLo: 0.20, hairFullHi: 0.48, hairRecede: 0.56,
+    /* brow-to-chin over cheekbone width: oval cluster 0.873-0.953, long 1.105 */
+    shapeOvalLo: 0.86, shapeOvalHi: 0.98, shapeLong: 1.03,
+    /* lip height over mouth width: only the full end separated (0.474 vs 0.391) */
+    lipFull: 0.47, lipThin: 0.29,
+    /* a brow must be meaningfully darker than the cheek to be a brow at all */
+    browDarker: 0.15
+  };
+  function faceLandmarkTraits(canvas, g) {
+    var ctx = safe(function () { return canvas.getContext('2d', { willReadFrequently: true }); }, null);
+    if (!ctx || !g) return null;
+    var p = g.p, faceH = g.faceH, look = {}, claimed = [], refused = [], notes = {};
+    function claim(k, v) { look[k] = v; if (claimed.indexOf(k) < 0) claimed.push(k); }
+    function refuse(k, why) { refused.push({ knob: k, reason: why, source: 'landmarks' }); }
+    var rad = faceH * 0.045;
+
+    /* SKIN — two landmark-anchored cheek patches, 45% of the way from the nose
+       wing to the jaw. Both must pass the same YCbCr gate the pixel path uses;
+       one alone is not a face. */
+    var ckL = faceLmLerp(p[31], p[3], 0.45), ckR = faceLmLerp(p[35], p[13], 0.45);
+    var cL = faceLmMedian(ctx, ckL.x, ckL.y, rad), cR = faceLmMedian(ctx, ckR.x, ckR.y, rad);
+    var okL = !!(cL && faceIsSkinRgb(cL[0], cL[1], cL[2])), okR = !!(cR && faceIsSkinRgb(cR[0], cR[1], cR[2]));
+    var cheek = null;
+    if (okL && okR) cheek = [(cL[0] + cR[0]) / 2, (cL[1] + cR[1]) / 2, (cL[2] + cR[2]) / 2];
+    else if (okL) cheek = cL;
+    else if (okR) cheek = cR;
+    if (!cheek) {
+      refuse('skin', 'neither cheek sampled a colour real skin has');
+      return { look: {}, claimed: [], refused: refused, notes: notes, score: g.score };
+    }
+    claim('skin', faceLmHex(cheek));
+    notes.cheeksAgreed = okL && okR;
+    var cheekL = faceLmLum(cheek);
+
+    /* HAIRLINE + HAIR — one walk up the midline does both. The FIRST row that
+       stops being cheek-coloured skin is the hairline; the patch above it is
+       the hair. No boundary before the frame edge = the top of the head is not
+       in shot, and both are refused rather than guessed. */
+    var hairY = null, i2;
+    for (i2 = Math.round(g.browMid.y - faceH * 0.04); i2 > 1; i2--) {
+      var row = faceLmMedian(ctx, g.browMid.x, i2, 1.6);
+      if (!row) break;
+      if (!faceIsSkinRgb(row[0], row[1], row[2]) || faceLmHueGap(row, cheek) > 16 ||
+          Math.abs(faceLmLum(row) - cheekL) > cheekL * 0.38) { hairY = i2; break; }
+    }
+    var foreheadFrac = hairY === null ? null : (g.browMid.y - hairY) / faceH;
+    if (foreheadFrac === null) {
+      refuse('hairline', 'the top of your head is outside the photo, so there is nothing to measure the hairline against');
+      refuse('hair', 'no hair boundary was found above your brows');
+    } else if (foreheadFrac >= FACE_LM_BANDS.hairFullLo && foreheadFrac <= FACE_LM_BANDS.hairFullHi) {
+      claim('hairline', 'full');
+    } else if (foreheadFrac >= FACE_LM_BANDS.hairRecede) {
+      claim('hairline', 'receding');
+    } else {
+      refuse('hairline', 'the forehead measured ' + Math.round(foreheadFrac * 100) +
+        '% of your face height, which is between the two answers this reader will commit to');
+    }
+    if (foreheadFrac !== null) {
+      var hairPatch = faceLmMedian(ctx, g.browMid.x, Math.max(1, hairY - faceH * 0.07), faceH * 0.04);
+      if (!hairPatch) refuse('hair', 'the patch above your hairline could not be sampled');
+      else if (faceIsSkinRgb(hairPatch[0], hairPatch[1], hairPatch[2]) && faceLmHueGap(hairPatch, cheek) <= 16) {
+        /* the patch above the boundary is still YOUR SKIN, so what was crossed
+           was a shadow or a scalp, not a hairline. Taking a "hair colour" from
+           it would paint the character's hair the colour of his own head —
+           refused, and hairStyle stays the pixel ladder's to decide. */
+        refuse('hair', 'the area above your hairline read as more skin, so no hair colour was taken from it');
+      } else claim('hair', faceLmHex(hairPatch));
+    }
+    notes.foreheadFrac = foreheadFrac === null ? null : Math.round(foreheadFrac * 1000) / 1000;
+
+    /* BROW COLOUR — the landmarks say where the brows are, so this is a
+       measurement and not a search. The darkest coherent patch over the six
+       brow points, and it must be meaningfully darker than the cheek. */
+    var brow = null, browBest = 1e9, bi, dy;
+    for (bi = 0; bi < 6; bi++) {
+      var bp = p[[18, 19, 20, 23, 24, 25][bi]];
+      for (dy = -0.02; dy <= 0.061; dy += 0.01) {
+        var bs = faceLmMedian(ctx, bp.x, bp.y + faceH * dy, faceH * 0.012);
+        if (bs && faceLmLum(bs) < browBest) { browBest = faceLmLum(bs); brow = bs; }
+      }
+    }
+    var browDL = brow ? (cheekL - faceLmLum(brow)) / Math.max(1, cheekL) : null;
+    if (brow && browDL >= FACE_LM_BANDS.browDarker) claim('browCol', faceLmHex(brow));
+    else refuse('browCol', 'your brows were not distinct enough from your skin to take a colour from');
+
+    /* SHIRT — two shoulder patches, well clear of the neck. They must agree, or
+       one of them is a wall. */
+    var sA = faceLmMedian(ctx, g.chin.x - g.cheekW * 0.78, g.chin.y + faceH * 0.48, faceH * 0.09);
+    var sB = faceLmMedian(ctx, g.chin.x + g.cheekW * 0.78, g.chin.y + faceH * 0.48, faceH * 0.09);
+    if (sA && sB && Math.abs(faceLmLum(sA) - faceLmLum(sB)) <= 26 && faceLmHueGap(sA, sB) <= 22) {
+      claim('shirt', faceLmHex([(sA[0] + sB[0]) / 2, (sA[1] + sB[1]) / 2, (sA[2] + sB[2]) / 2]));
+    } else refuse('shirt', 'your two shoulders did not read as the same garment');
+
+    /* BEARD — AN ABSENCE, MEASURED. The chin patch sits inside the jaw contour.
+       Clean chins scored 0.00-0.52 on the combined score across 19 sitters
+       (including deep skin under a shading gradient); a full beard scored 1.22
+       and light stubble 0.84. */
+    var chinPt = { x: g.chin.x, y: p[57].y * 0.40 + g.chin.y * 0.60 };
+    var chinC = faceLmMedian(ctx, chinPt.x, chinPt.y, rad);
+    if (!chinC) refuse('beard', 'your chin could not be sampled');
+    else {
+      var chinDL = (cheekL - faceLmLum(chinC)) / Math.max(1, cheekL);
+      var chinDH = faceLmHueGap(cheek, chinC);
+      var chinSkin = faceIsSkinRgb(chinC[0], chinC[1], chinC[2]);
+      var bScore = Math.max((chinDL - 0.10) / 0.30, (chinDH - 2) / 30, chinSkin ? 0 : 1);
+      notes.beardScore = Math.round(bScore * 1000) / 1000;
+      if (bScore <= FACE_LM_BANDS.beardNone) claim('beard', 'none');
+      else if (bScore >= FACE_LM_BANDS.beardYes) claim('beard', chinDH >= FACE_LM_BANDS.beardFullHue ? 'beard' : 'stubble');
+      else refuse('beard', 'your chin was darker than your cheek but not dark enough to call it facial hair');
+    }
+
+    /* GLASSES — AN ABSENCE, MEASURED. Three strips that a frame cannot cross
+       without darkening: the nose bridge at eye level and the two temples
+       outside the outer eye corners. Measured with frames: bridge 0.328-0.390,
+       temples 0.284-0.465. Without: 0.000 on all three, all 17 bare sitters. */
+    var dark = cheekL * 0.70, band = faceH * 0.045;
+    var eyeW = (faceLmDist(p[36], p[39]) + faceLmDist(p[42], p[45])) / 2;
+    var bridge = faceLmDarkFrac(ctx, p[39].x + eyeW * 0.18, g.eyeY - band, p[42].x - eyeW * 0.18, g.eyeY + band, dark);
+    var outL = faceLmDarkFrac(ctx, p[36].x - eyeW * 0.80, g.eyeY - band, p[36].x - eyeW * 0.15, g.eyeY + band, dark);
+    var outR = faceLmDarkFrac(ctx, p[45].x + eyeW * 0.15, g.eyeY - band, p[45].x + eyeW * 0.80, g.eyeY + band, dark);
+    notes.glassBridge = bridge < 0 ? null : Math.round(bridge * 1000) / 1000;
+    if (bridge < 0 || outL < 0 || outR < 0) {
+      refuse('glasses', 'your eye line ran outside the photo, so the frames could not be looked for');
+    } else if (bridge >= FACE_LM_BANDS.glassYes ||
+               (outL >= FACE_LM_BANDS.glassYesOuter && outR >= FACE_LM_BANDS.glassYesOuter)) {
+      claim('glasses', true);
+    } else if (bridge <= FACE_LM_BANDS.glassNo &&
+               outL <= FACE_LM_BANDS.glassNoOuter && outR <= FACE_LM_BANDS.glassNoOuter) {
+      claim('glasses', false);
+    } else {
+      refuse('glasses', 'something dark crossed your eye line but not in the shape frames make');
+    }
+
+    /* FACE SHAPE — never claimed before this block existed, because the pixel
+       ladder's own comment says the photo cannot support a shape verdict. From
+       a real contour it can, at the two ends: oval 0.873-0.953, long 1.105. */
+    var hOverW = faceH / g.cheekW;
+    notes.hOverW = Math.round(hOverW * 1000) / 1000;
+    if (hOverW >= FACE_LM_BANDS.shapeLong) claim('faceShape', 'long');
+    else if (hOverW >= FACE_LM_BANDS.shapeOvalLo && hOverW <= FACE_LM_BANDS.shapeOvalHi) claim('faceShape', 'oval');
+    else refuse('faceShape', 'your face height and cheekbone width landed between the shapes this reader will commit to');
+
+    /* LIPS — only the end that separated. */
+    var lipR = faceLmDist(p[51], p[57]) / Math.max(1, faceLmDist(p[48], p[54]));
+    if (lipR >= FACE_LM_BANDS.lipFull) claim('lips', 'full');
+    else if (lipR <= FACE_LM_BANDS.lipThin) claim('lips', 'thin');
+    else refuse('lips', 'your lip depth was in the middle of the range, where this reader does not commit');
+
+    return { look: look, claimed: claimed, refused: refused, notes: notes, score: g.score };
+  }
+  /* The one entry point the match flow calls. Resolves with null whenever the
+     model is unavailable, the frame has no face, or the geometry is impossible
+     — and null always means "fall back to the avfit ladder", never "claim
+     nothing about a face that is there". */
+  var FACE_LM_MAX_SIDE = 1024;
+  /* the trait rules read PIXELS, so an <img> has to become a surface first. Its
+     own resolution is kept (capped at 1024 on the long side, the same ceiling
+     captureSquare uses) and it is NEVER upscaled — reading a face that is not
+     there off invented pixels is [[face-matcher-measured-a-12-pixel-face]]. */
+  function faceLandmarkSurface(src) {
+    if (!src) return null;
+    if (typeof src.getContext === 'function') return src;
+    var w = Number(src.naturalWidth || src.videoWidth || src.width) || 0;
+    var h = Number(src.naturalHeight || src.videoHeight || src.height) || 0;
+    if (!(w > 0 && h > 0)) return null;
+    var k = Math.min(1, FACE_LM_MAX_SIDE / Math.max(w, h));
+    var c = safe(function () { return document.createElement('canvas'); }, null);
+    if (!c) return null;
+    c.width = Math.max(1, Math.round(w * k));
+    c.height = Math.max(1, Math.round(h * k));
+    var ctx = safe(function () { return c.getContext('2d', { willReadFrequently: true }); }, null);
+    if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    if (!safe(function () { ctx.drawImage(src, 0, 0, c.width, c.height); return true; }, false)) return null;
+    return c;
+  }
+  function faceLandmarkEvidence(src) {
+    var canvas = safe(function () { return faceLandmarkSurface(src); }, null);
+    if (!canvas) return Promise.resolve(null);
+    return faceLandmarkReady().then(function (ok) {
+      if (!ok) return null;
+      return faceLandmarkDetect(canvas).then(function (g) {
+        if (!g) return null;
+        return safe(function () { return faceLandmarkTraits(canvas, g); }, null);
+      }, function () { return null; });
+    }, function () { return null; });
+  }
+  /* THE FIVE THE LANDMARKS DECIDE, AND WHY THEY OUTRANK THE PIXEL LADDER HERE.
+     Measured, and it is the reason this list exists rather than "pixels always
+     win": on the fair/blonde sitter and the sitting-back-from-the-laptop sitter
+     — BOTH drawn clean-shaven — the pixel ladder claimed `beard: 'beard'`. It is
+     not being careless; it has no jaw contour, so "a darker region low in the
+     frame" is the best evidence available to it, and a blond jaw against a
+     shadowed neck reads exactly like one. The landmark reader measured the chin
+     patch INSIDE the jaw contour against the cheek and scored 0.31 and 0.387 on
+     a scale where every real beard scored 0.84 or more.
+     These five all depend on knowing WHERE a feature would be — the jaw, the
+     eye line, the hairline, the brow line, the face outline — so a reader that
+     knows is the one that should answer. Everything else, including every
+     colour the pixel ladder guards with its skin-range, posterize and backdrop
+     vetoes, keeps pixel priority. A displaced pixel claim is recorded in the
+     receipt, never dropped silently. */
+  var FACE_LM_AUTHORITATIVE = ['beard', 'glasses', 'hairline', 'browCol', 'faceShape'];
+  /* MERGE — the landmark claims become part of the ON-DEVICE receipt, because
+     that is what they are: a second local reader, not a network call. Every
+     value still passes `faceVisionClaimGate`, and the receipt keeps counting the
+     same fourteen controls. */
+  function faceMergeLandmark(pixelRes, lm) {
+    var px = pixelRes || {};
+    if (!lm || !lm.claimed || !lm.claimed.length) return pixelRes;
+    var pxLook = px.look || {};
+    var pxDerived = Array.isArray(px.derived) ? px.derived.slice() : [];
+    var look = {}, derived = [], added = [], displaced = [], k, i;
+    for (i = 0; i < pxDerived.length; i++) {
+      k = pxDerived[i];
+      if (pxLook[k] === undefined) continue;
+      look[k] = pxLook[k]; derived.push(k);
+    }
+    var refusedByKnob = {};
+    (Array.isArray(px.refused) ? px.refused : []).forEach(function (r) {
+      if (r && r.knob) refusedByKnob[r.knob] = r;
+    });
+    lm.claimed.forEach(function (knob) {
+      if (FACE_MATCH_FIELDS.indexOf(knob) < 0) return;
+      var v = lm.look[knob];
+      if (v === undefined) return;
+      var already = derived.indexOf(knob) >= 0;
+      if (already && FACE_LM_AUTHORITATIVE.indexOf(knob) < 0) return;   /* the pixels own it */
+      var why = faceVisionClaimGate(knob, v);
+      if (why) { if (!already) refusedByKnob[knob] = { knob: knob, reason: why, source: 'landmarks' }; return; }
+      if (already) {
+        if (pxLook[knob] !== v) displaced.push({ knob: knob, was: pxLook[knob], now: v });
+        look[knob] = v;
+        if (added.indexOf(knob) < 0) added.push(knob);
+        return;
+      }
+      look[knob] = v; derived.push(knob); added.push(knob);
+      delete refusedByKnob[knob];
+    });
+    (lm.refused || []).forEach(function (r) {
+      if (!r || !r.knob || derived.indexOf(r.knob) >= 0) return;
+      if (!refusedByKnob[r.knob]) refusedByKnob[r.knob] = r;
+    });
+    var refusedOut = [];
+    FACE_MATCH_FIELDS.forEach(function (knob) {
+      if (derived.indexOf(knob) >= 0) return;
+      refusedOut.push(refusedByKnob[knob] || { knob: knob, reason: 'not reliably measured', source: 'combined' });
+    });
+    var pxReceipt = px.receipt || {};
+    var receipt = {};
+    Object.keys(pxReceipt).forEach(function (key) { receipt[key] = pxReceipt[key]; });
+    receipt.claimed = derived.length;
+    receipt.refused = refusedOut.length;
+    receipt.examined = FACE_MATCH_FIELDS.length;
+    receipt.landmarkClaimed = added.slice();
+    receipt.landmarkDisplaced = displaced.slice();
+    receipt.landmarkScore = Math.round((Number(lm.score) || 0) * 1000) / 1000;
+    /* A landmark read is positive proof there is a FACE here. The pixel ladder
+       reaches the same conclusion by a different route and sometimes cannot;
+       this does not bypass `fromIllustration`, which still refuses a stylized
+       copy outright. */
+    if (receipt.fromIllustration !== true) receipt.srcKind = 'photo';
+    var out = {};
+    Object.keys(px).forEach(function (key) { out[key] = px[key]; });
+    out.look = look; out.derived = derived; out.refused = refusedOut; out.receipt = receipt;
+    out.landmarkNotes = lm.notes || {};
+    return out;
+  }
+  /* ===== end avml-1.0.0 ===== */
   /* day one in the kiosk with no saved appearance: the only copy the server
      holds is the POSTERIZED illustration, and measuring it is how a
      dark-haired doctor greeted his patients as a gray-haired stranger
@@ -3524,8 +4093,11 @@
   function faceTintFromPortrait(dataUrl, then) {
     if (!dataUrl || String(dataUrl).indexOf('data:image/') !== 0) { then(null); return; }
     var img = new Image();
-    img.onload = function () { then(safe(function () { return faceReadPortrait(img); }, null)); };
-    img.onerror = function () { then(null); };
+    /* avml-1.0.0: the decoded image rides out with the receipt so the landmark
+       reader can measure the SAME pixels without a second decode. Every earlier
+       caller takes one argument and is unaffected. */
+    img.onload = function () { then(safe(function () { return faceReadPortrait(img); }, null), img); };
+    img.onerror = function () { then(null, null); };
     img.src = dataUrl;
   }
   /* skin in YCbCr. The bounds are the standard skin-chroma cluster; the
@@ -7021,6 +7593,13 @@
     host.__mlsAvatarSetupEpoch = setupEpoch;
     host.setAttribute('data-mls-avatar-setup-host', '1');
     host.innerHTML = '';
+    /* avml-1.0.0 — THE ONE PLACE THE MODEL IS ALLOWED TO START DOWNLOADING.
+       Opening Setup is the first moment a face read can possibly be wanted, and
+       it is minutes of typing before Match is pressed, so 2.5 MB fetched here is
+       warm by then and fetched NEVER on a page that does not open Setup. The
+       promise is memoised, so a re-mount does not re-download, and nothing waits
+       on it: Match re-awaits the same promise. */
+    safe(function () { faceLandmarkReady(); });
     var notice = make('div', 'mlsAvNotice', 'Loading your avatar setup…');
     host.appendChild(notice);
     api('/api/avatar/config').then(function (r) {
@@ -8072,7 +8651,11 @@
             : 'Matched the reliable appearance details.';
           var note = counts + (aiKnobs.length ? (' The second read confirmed ' + aiKnobs.join(', ') + '.') : '') +
             (modelRefused.length ? (' It refused ' + modelRefused.length + ' unsafe claim' + (modelRefused.length === 1 ? '' : 's') + '.') : '') +
-            (modelUnsure && modelUnsure.length ? (' It was unsure about ' + modelUnsure.join(', ') + ', so those stayed unchanged.') : '');
+            (modelUnsure && modelUnsure.length ? (' It was unsure about ' + modelUnsure.join(', ') + ', so those stayed unchanged.') : '') +
+            /* avml-1.0.0: a whole-read match still has to say whether the
+               on-device face model was part of it. Silence here is how "it
+               works on my machine and scores lower on yours" becomes invisible. */
+            (extraWhy || '');
           lookNoteSay(note, refusedNow.length || modelRefused.length ? 1 : 0);
           partialListShow(allObserved, (refusedNow || []).map(function (r) { return r && r.knob; })
             .filter(function (k) { return !!k && allObserved.indexOf(k) < 0; }));
@@ -8093,17 +8676,18 @@
            finishMatch has already spoken, and a second commit would mutate
            the character behind a doctor who has moved on. */
         var VISION_WAIT_MS = 30000, VISION_SLOW_MS = 7000;
-        function requestVision(pixelRes) {
+        function requestVision(pixelRes, lmStatusLine) {
           if (!matchStillCurrent()) return;
           var local = faceCombineEvidence(pixelRes, null, [], trustedNaturalPhoto);
+          var lmNote = String(lmStatusLine || '');
           lookNoteSay('The on-device read found ' + local.receipt.claimed + ' of ' + local.receipt.examined +
-            ' appearance details. Checking the second read before changing any character traits\u2026', 0);
+            ' appearance details. Checking the second read before changing any character traits\u2026' + lmNote, 0);
           var settled = false;
           function settle(fn) { if (settled) return; settled = true; fn(); }
           function finishLocally(reason) {
             settle(function () {
               if (!matchStillCurrent()) return;
-              finishMatch(local, [], true, faceMatchDecision(local).why + (reason || ''));
+              finishMatch(local, [], true, faceMatchDecision(local).why + (reason || '') + lmNote);
             });
           }
           var request = safe(function () {
@@ -8128,31 +8712,60 @@
             if (!vr || !vr.ok || !vr.json || vr.json.ok !== true) { finishLocally(''); return; }
             settle(function () {
               var combined = faceCombineEvidence(pixelRes, vr.json.look || {}, vr.json.claimed || [], trustedNaturalPhoto);
-              finishMatch(combined, vr.json.unsure || [], false, '');
+              finishMatch(combined, vr.json.unsure || [], false, lmNote);
             });
           }, function () { finishLocally(''); });
         }
-        faceTintFromPortrait(src, function (res) {
+        faceTintFromPortrait(src, function (res0, decoded) {
           if (!matchStillCurrent()) return;
-          var rct = res && res.receipt;
-          if (rct && rct.fromIllustration === true) {
-            var illustrated = faceCombineEvidence(res, null, [], false);
+          var rct0 = res0 && res0.receipt;
+          if (rct0 && rct0.fromIllustration === true) {
+            var illustrated = faceCombineEvidence(res0, null, [], false);
             finishMatch(illustrated, [], false,
               'Only a stylized copy was available, so none of its manufactured colours were used and the second read was not asked.');
             return;
           }
-          /* A high-resolution in-memory capture is independently known to be a
-             natural photo even when the local detector cannot build a receipt.
-             This rescues difficult dark-hair, glasses and wall combinations. */
-          if (trustedNaturalPhoto || (rct && rct.srcKind === 'photo')) {
-            requestVision(res);
-            return;
+          /* ===== avml-1.0.0 — THE LANDMARK READ, BEFORE ANY VERDICT ==========
+             The pixel ladder has finished. Now the on-device landmark model gets
+             the SAME decoded pixels, and whatever it can prove — including the
+             absences the ladder is structurally unable to claim — is merged into
+             this one on-device receipt before `faceMatchDecision` is asked
+             anything. If the model is not there (offline, blocked wasm, a
+             browser that will not instantiate it) `faceLandmarkEvidence`
+             resolves null, `faceMergeLandmark` returns the pixel result
+             unchanged, and the doctor is TOLD so in plain words rather than
+             quietly scoring lower for a reason nobody can see. */
+          lookNoteSay('Reading your face with the on-device model…', 0);
+          function afterLandmarks(res, lmStatusLine) {
+            if (!matchStillCurrent()) return;
+            var rct = res && res.receipt;
+            /* A high-resolution in-memory capture is independently known to be a
+               natural photo even when the local detector cannot build a receipt.
+               This rescues difficult dark-hair, glasses and wall combinations. */
+            if (trustedNaturalPhoto || (rct && rct.srcKind === 'photo')) {
+              requestVision(res, lmStatusLine);
+              return;
+            }
+            var unproved = faceCombineEvidence(res, null, [], false);
+            var whyNoFace = (res && Array.isArray(res.found) && res.found.length)
+              ? res.found.join(' ')
+              : 'The matcher could not prove that this saved image was a natural portrait.';
+            finishMatch(unproved, [], false, whyNoFace + ' No animated traits were changed.' + (lmStatusLine || ''));
           }
-          var unproved = faceCombineEvidence(res, null, [], false);
-          var whyNoFace = (res && Array.isArray(res.found) && res.found.length)
-            ? res.found.join(' ')
-            : 'The matcher could not prove that this saved image was a natural portrait.';
-          finishMatch(unproved, [], false, whyNoFace + ' No animated traits were changed.');
+          var lmRun = safe(function () { return faceLandmarkEvidence(decoded || src); }, null);
+          if (!lmRun || typeof lmRun.then !== 'function') { afterLandmarks(res0, ''); return; }
+          lmRun.then(function (lm) {
+            if (!matchStillCurrent()) return;
+            if (lm && lm.claimed && lm.claimed.length) {
+              afterLandmarks(faceMergeLandmark(res0, lm), '');
+              return;
+            }
+            var st = faceLandmarkStatus();
+            afterLandmarks(res0, st.ready
+              ? ' The on-device face model ran but could not find a face it was willing to measure, so only the picture-colour reader was used.'
+              : (' The on-device face model was not available (' + (st.why || 'it did not load') +
+                 '), so only the picture-colour reader was used — everything below still applies.'));
+          }, function () { afterLandmarks(res0, ''); });
         });
       });
       var moodBtn = make('button', 'mlsAvAction', '🙂 See the expressions');
@@ -13263,6 +13876,8 @@ function kioskLine(kind, text) {
     dormant.lookProportions = function () { return null; };   /* avlook-1.0.0 */
     dormant.deriveLookFromPhoto = function () { return false; };
     dormant.captureFit = function () { return null; };   /* avfit-1.0.0 */
+    dormant.landmarkStatus = function () { return null; };   /* avml-1.0.0 */
+    dormant.landmarkRead = function () { return false; };    /* avml-1.0.0 */
     dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
     dormant.voiceGateStart = function () { return false; };
     dormant.voiceGateStop = dormant.otherVoiceNow = function () { return false; };
@@ -13379,6 +13994,46 @@ function kioskLine(kind, text) {
         after: receiptOf(fitted.q) };
     };
     /* ===== end avfit-1.0.0 ===== */
+    /* ===== avml-1.0.0 — the landmark read, drivable without a camera =========
+       Same shape as captureFit and for the same reason: the proof must run the
+       REAL reader on real pixels, not a re-implementation. `landmarkRead` runs
+       the pixel ladder, then the landmark pass, then the merge, and hands back
+       BOTH receipts plus the per-trait refusal reasons, so the honest question
+       — how many of fourteen did each reader actually claim — is a number.
+       PHI-free by construction: it returns knob names, counts and reasons.
+       Never an image, never a landmark coordinate, never a pixel. ========== */
+    owner.landmarkStatus = function () { return owned() ? faceLandmarkStatus() : null; };
+    owner.landmarkRead = function (canvas, then) {
+      if (!owned() || !canvas || typeof then !== 'function') return false;
+      var pixel = safe(function () { return faceReadPortrait(canvas); }, null);
+      var run = safe(function () { return faceLandmarkEvidence(canvas); }, null);
+      if (!run || typeof run.then !== 'function') run = Promise.resolve(null);
+      run.then(function (lm) {
+        if (!owned()) return;
+        var merged = faceMergeLandmark(pixel, lm);
+        var decision = faceMatchDecision(merged);
+        then({
+          modelReady: faceLandmarkStatus().ready,
+          modelWhy: faceLandmarkStatus().why,
+          faceFound: !!lm,
+          score: lm ? lm.score : 0,
+          notes: (lm && lm.notes) || null,
+          pixelClaimed: (pixel && pixel.derived) ? pixel.derived.slice() : [],
+          landmarkClaimed: (lm && lm.claimed) ? lm.claimed.slice() : [],
+          landmarkRefused: (lm && lm.refused) ? lm.refused.map(function (r) { return { knob: r.knob, reason: r.reason }; }) : [],
+          claimed: (merged && merged.derived) ? merged.derived.slice() : [],
+          examined: (merged && merged.receipt) ? merged.receipt.examined : 0,
+          refused: (merged && merged.refused) ? merged.refused.map(function (r) { return { knob: r.knob, reason: r.reason }; }) : [],
+          displaced: (merged && merged.receipt && merged.receipt.landmarkDisplaced) ? merged.receipt.landmarkDisplaced.slice() : [],
+          look: (merged && merged.look) ? merged.look : {},
+          srcKind: (merged && merged.receipt) ? merged.receipt.srcKind : '',
+          applies: decision.applies,
+          why: decision.why
+        });
+      }, function () { if (owned()) then(null); });
+      return true;
+    };
+    /* ===== end avml-1.0.0 ===== */
     /* diagnostics: derive a look from a portrait without touching Setup, so
        the matcher can be proven against real pixels. */
     owner.deriveLookFromPhoto = function (dataUrl, then) {
