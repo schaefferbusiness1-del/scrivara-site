@@ -2548,7 +2548,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (trim(h.codeStatus)) hBits.push('Code status: ' + trim(h.codeStatus));
     if (trim(h.pcp)) hBits.push('PCP: ' + trim(h.pcp));
     if (trim(h.pharmacy)) hBits.push('Pharmacy: ' + trim(h.pharmacy));
-    lines.push('HISTORY: ' + (hBits.length ? hBits.join(' | ') : 'Not recorded'));
+    lines.push('HISTORY: ' + (hBits.length ? hBits.join(' | ') : (blank.history || 'Not recorded')));
     if (trim(ctx.historySummary)) {
       lines.push('LONGITUDINAL SUMMARY:');
       lines.push(trim(ctx.historySummary));
@@ -2716,7 +2716,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var out = {};
     var cf = null; try { cf = window.__mlsChartField; } catch (e) { return out; }
     if (!cf || !isFn(cf.state)) return out;
-    ['problems', 'meds', 'vitals', 'history', 'allergies'].forEach(function (k) {
+    /* allergies is deliberately NOT here: its line already distinguishes unread
+       from documented, and refuses to imply an NKDA it never read. Four keys,
+       four consumers - nothing computed that nothing prints. */
+    ['problems', 'meds', 'vitals', 'history'].forEach(function (k) {
       try {
         var st = cf.state(p, k);
         if (st && st.state !== 'present') out[k] = st.text;
