@@ -236,6 +236,7 @@ const tests = [
      with ONE enforcement point, and the op note -> review hand-off. */
   '1p-athena-write-readiness-and-probe-only.test.js',
   '1p-writeflow-booking-row-fallback.test.js',
+  '1p-writeflow-stale-review-rebind.test.js',
   /* MLS Assist 3.0.62 / wsg-2.0.0 (owner directive 2026-08-12): with the
      capable extension every supervised action - note, billing, save, sign,
      one exact reviewed order - renders READY on /1p; an older extension gets
