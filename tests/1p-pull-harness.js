@@ -27,7 +27,11 @@ function makeHarness(options) {
   options = options || {};
   const day = options.day || '2026-08-17';
   const rowCount = options.rows == null ? 15 : options.rows;
-  const store = new Map();
+  /* options.store lets a SECOND harness boot over the first one's localStorage,
+     which is the only way to drive a same-day RE-PULL through the real engine:
+     the day ledger (and therefore dnrs-1.0.0's already-read skip) lives there.
+     Absent, every harness gets its own empty store exactly as before. */
+  const store = options.store || new Map();
   const listeners = new Set();
   const elements = new Map();
   const timers = [];
@@ -47,7 +51,10 @@ function makeHarness(options) {
 
   /* the owner's shape: SCHEDULE-BORN rows - name + DOB only, no MRN, no
      snapshot, no visits. Synthetic identities. */
-  const patients = Array.from({ length: rowCount }, (_, i) => ({
+  /* options.patients carries the STORE across a re-pull the same way
+     options.store carries the ledger: the second pull must see the records the
+     first one wrote, or "already verified today" can never be true. */
+  const patients = options.patients || Array.from({ length: rowCount }, (_, i) => ({
     id: 'syn-' + String(i + 1).padStart(2, '0'),
     name: 'Synthetic Row ' + String(i + 1).padStart(2, '0'),
     dob: '0' + ((i % 9) + 1) + '/1' + (i % 10) + '/197' + (i % 10),
@@ -167,7 +174,13 @@ function makeHarness(options) {
            ORDERING question. */
         const call = { patientId: p && p.id, onlyDate: opts && opts.onlyDate, at: now, seq: ++callSeq };
         noteCalls.push(call);
-        const delay = Number(options.noteDelayMs || 0);
+        /* noteDelayMs may be a FUNCTION of the call number, so a suite can
+           reproduce a slow-athena night where each read costs 40-60 s rather
+           than one flat figure. A number behaves exactly as before. */
+        const delay = typeof options.noteDelayMs === 'function'
+          ? Number(options.noteDelayMs(noteCalls.length, p && p.id) || 0)
+          : Number(options.noteDelayMs || 0);
+        call.costMs = delay;
         if (delay) now += delay;                       /* measured per-row cost */
         const answer = options.noteResult
           ? options.noteResult(p && p.id, opts && opts.onlyDate, noteCalls.length)
@@ -291,9 +304,29 @@ function makeHarness(options) {
   rt.addEventListener = (_t, fn) => listeners.add(fn);
   rt.removeEventListener = (_t, fn) => listeners.delete(fn);
   rt.dispatchEvent = () => true;
+  const presenceCalls = [];
   rt.postMessage = msg => {
     if (msg && msg.type === 'mlsPing') queueMicrotask(() => {
       const ev = { data: { source: 'mls-ext', type: 'mlsPong', id: msg.id || '', version: options.extVersion || '3.0.62', resp: { ok: true, version: options.extVersion || '3.0.62' } } };
+      Array.from(listeners).forEach(fn => fn(ev));
+    });
+    /* ===== dnbf-1.0.0 seam =====
+       The lease-free presence verb, answered EXACTLY as content.js relays it:
+       type mlsAthenaPresenceResult, resp with NO requestId (which is why it
+       cannot ride bridge()). makeMonthHarness has carried this seam since
+       p1-athena-presence-1.0.0; the day harness needs it too, because the
+       BACKFILL is where the false "open your signed-in athenaOne" was
+       measured. Absent options.presenceResult it answers presence-verified -
+       athena is there - which is the pre-existing world for older fixtures.
+       Returning null means "never answers": the probe must time out on its
+       own, which is a case the backfill has to survive. */
+    if (msg && msg.type === 'mlsAthenaPresence') queueMicrotask(() => {
+      presenceCalls.push({ at: now });
+      const answer = options.presenceResult
+        ? options.presenceResult(presenceCalls.length)
+        : { ok: true, athenaOpen: true, certain: true, reason: 'presence-verified' };
+      if (answer === null) return;
+      const ev = { data: { source: 'mls-ext', type: 'mlsAthenaPresenceResult', resp: JSON.parse(JSON.stringify(answer)) } };
       Array.from(listeners).forEach(fn => fn(ev));
     });
   };
@@ -327,7 +360,7 @@ function makeHarness(options) {
 
   return {
     rt, api: rt.__mlsSI, rows, patients, day,
-    noteCalls, chartCalls, statusLines, clock, timers, intervals, fireIntervals, runDueTimers, store,
+    noteCalls, chartCalls, statusLines, presenceCalls, clock, timers, intervals, fireIntervals, runDueTimers, store,
     parseCalls, saveCalls, cardCoverage,
     /* the live progress state the pull panel reads (window.__mlsDayHistoryPull) */
     ppState: () => (rt.__mlsDayHistoryPull && rt.__mlsDayHistoryPull.state) || null,

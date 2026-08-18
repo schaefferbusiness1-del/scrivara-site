@@ -133,19 +133,39 @@ async function testPastDayStillReadsTheNote() {
 
 /* -------------------------------- 5. the per-row cost is MEASURED, not told */
 async function testDayNoteCostIsMeasured() {
-  const h = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 4, noteDelayMs: 61000 });
+  /* dnp2-1.0.0 rescopes this fixture, it does not weaken it. The pass budget
+     for a 4-row day is max(60 s, 4 x 10 s) = 60 s, so a 61 s-per-row fixture no
+     longer measures four rows - it measures ONE row and three hand-offs, which
+     is the whole point of the budget. Four 12 s reads (48 s, inside the budget)
+     measure exactly what this case was written to measure. */
+  const h = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 4, noteDelayMs: 12000 });
   const receipt = await h.api._runHistoryBatch(h.rows, [], h.onStatus);
   eq(receipt.todayNoteAttempts, 4, 'the day-note leg did not record its attempts');
-  eq(receipt.todayNoteMsTotal, 4 * 61000, 'the day-note leg did not record its total cost');
-  eq(receipt.todayNoteMsMax, 61000, 'the day-note leg did not record its worst row');
-  ok(receipt.patients.every(p => p.todayNoteMs === 61000),
+  eq(receipt.todayNoteMsTotal, 4 * 12000, 'the day-note leg did not record its total cost');
+  eq(receipt.todayNoteMsMax, 12000, 'the day-note leg did not record its worst row');
+  ok(receipt.patients.every(p => p.todayNoteMs === 12000),
     'a per-row day-note cost is missing from the receipt');
+  eq(Number(receipt.todayNoteHandedOff || 0), 0,
+    'a pass that fits inside its budget handed rows to the backfill anyway');
+
+  /* and the SAME fixture at 61 s a row proves the budget bites: the pass stops
+     after the row that spent it, and the rest are handed over - not read, and
+     not counted as failures of the reader. */
+  const over = makeHarness({ day: '2026-08-17', today: '2026-08-17', rows: 4, noteDelayMs: 61000 });
+  const overReceipt = await over.api._runHistoryBatch(over.rows, [], over.onStatus);
+  eq(over.noteCalls.length, 1, 'the pass budget did not stop the day-note leg (' + over.noteCalls.length + ' reads)');
+  eq(Number(overReceipt.todayNotePassBudgetMs || 0), 60000, 'a 4-row day did not get the 60 s floor budget');
+  eq(Number(overReceipt.todayNoteHandedOff || 0), 3, 'the remaining rows were not handed to the background backfill');
+  eq(Number(overReceipt.todayNoteRead || 0), 1, 'the one row that fit was not recorded as read');
+  ok(overReceipt.patients.filter(p => p.todayNoteHandedOff === true)
+    .every(p => p.todayNoteReason === 'day-note-pass-budget-exhausted'),
+    'a handed-over row does not name why it was handed over');
 }
 
 /* ----------------- 6. one slow row cannot stall the batch (bounded per row) */
 async function testOneRowCannotStallTheBatch() {
   const src = SRC;
-  const i = src.indexOf('function tnBoundedRead(vp, p, day) {');
+  const i = src.indexOf('function tnBoundedRead(vp, p, day, opts) {');
   ok(i >= 0, 'tnBoundedRead is missing');
   const block = src.slice(i, src.indexOf('}', src.indexOf('"pulled-day-note-deadline-exceeded"', i)));
   ok(/boundedUntil\(/.test(block), 'the day-note read is not bounded by an absolute deadline');
