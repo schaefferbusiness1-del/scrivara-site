@@ -41068,7 +41068,23 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      `why` is unchanged and still the whole reason: it goes on the row's title
      and accessible name, and onto the note's own state chip. */
   function st3(k, label, full, why) { return { k: k, label: label, full: full, why: S(why) }; }
+  /* ONE STATUS PER ROW PER PAINT. Owner, 2026-08-18: "when clicking around fast
+     when drafting, things get clunky and slow."
+     MEASURED: statusCompute() ran THREE times for every row of every paint —
+     once inside tally(), once building the paint signature, once filling the
+     row — and each call reads the draft-all ledger, counts [[key]] blanks and
+     may walk the chart store. On a 17-patient day mid-draft that is 51 status
+     derivations per click where 17 are needed. The cache lives for exactly one
+     synchronous pass (paint() opens and closes it), so nothing can read a
+     status across a save. */
+  var statusCache = null;
   function statusOf(row, i) {
+    if (statusCache && Object.prototype.hasOwnProperty.call(statusCache, i)) return statusCache[i];
+    var v = statusCompute(row, i);
+    if (statusCache) statusCache[i] = v;
+    return v;
+  }
+  function statusCompute(row, i) {
     var led = ledgerState(i);
     if (led === 'run') return st3('drafting', 'Drafting', 'Drafting…', '');
     var t = row && row._opdbTriage;
@@ -41232,7 +41248,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      patients scroll under them. The height is MEASURED from the dock's own
      rect - never a constant, because the dock's size is its own business - and
      falls back to the shell's own reservation when the dock has not rendered. */
+  /* ONE DOCK MEASUREMENT PER PAINT. It is read twice — once into the paint
+     signature and once by fitList() — and each read is a getBoundingClientRect
+     plus, on the fallback path, a getComputedStyle. Both are forced layout, and
+     the second one cannot have changed since the first inside one synchronous
+     pass. paint() opens and closes this cache. */
+  var bandCache = null;
   function dockBand() {
+    if (bandCache !== null) return bandCache;
+    var v = dockBandCompute();
+    bandCache = v;
+    return v;
+  }
+  function dockBandCompute() {
     var dock = el('mlsDock');
     var h = 0;
     try { h = window.innerHeight || 0; } catch (e) { h = 0; }
@@ -42001,8 +42029,13 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   var painting = false;
   function paint() {
     painting = true;
+    statusCache = {};                  /* one status per row for this pass */
+    bandCache = null;                  /* one dock measurement for this pass */
     try { return paintInner(); }
-    finally { setTimeout(function () { painting = false; }, 0); }
+    finally {
+      statusCache = null; bandCache = null;
+      setTimeout(function () { painting = false; }, 0);
+    }
   }
   function paintInner() {
     /* True whether or not the room is open: the Templates buttons live on
@@ -42144,10 +42177,27 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     /* ---- the patients ---- */
     var grid = el(GRID);
     if (grid) {
+      /* THE ROWS ARE REBUILT ONLY WHEN THE ROWS CHANGE, AND THIS IS THE FIX FOR
+         "CLICKING AROUND FAST GETS CLUNKY AND SLOW" (owner, 2026-08-18).
+
+         MEASURED before it, storming 10 patient switches in one draft-all run
+         on a 17-patient day: 17 of 17 row buttons were destroyed and rebuilt on
+         EVERY switch — 0 of the original nodes survived the storm — because the
+         rebuild guard was the whole paint signature, and the paint signature
+         includes `sel`. Choosing a patient changed nothing about any row's
+         name, procedure or status; it changed which one is marked. So the guard
+         is now the ROW CONTENT alone, and the mark is two attribute writes on
+         two nodes.
+
+         What that also buys, beyond the churn: the rail keeps its scroll
+         position, its focus and its :hover, none of which survive innerHTML. */
       var html = '';
+      var rowSig = VERSION + '|' + day + '|' + level() + '|' + shownIdx.join(',');
       for (var j = 0; j < shownIdx.length; j++) {
         i = shownIdx[j];
         var sx = statusOf(r[i], i);
+        rowSig += '~' + S(r[i] && r[i].appt && r[i].appt.name) + '~' + S(r[i] && r[i].proc) +
+          '~' + sx.k + '~' + sx.label + '~' + sx.why;
         /* TWO PAINTED SPANS PER ROW PLUS THE CHIP. 3.0.0 wrapped the chip and
            the reason in a .mlsOpDayFoot and carried a fourth, permanently
            display:none .mlsOpDayAct ("Open note ›") that no doctor has ever
@@ -42155,16 +42205,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
            chip is a direct grid child, and .mlsOpDayWhy stays only because it
            is the row's data (two suites read it) and is not painted. */
         html += '<button type="button" class="mlsOpDayCard" id="mlsOpnRow' + i + '" data-mls-card-i="' + i + '"' +
-          ' data-mls-cardstate="' + sx.k + '"' + (i === sel ? ' aria-current="true"' : '') + '>' +
+          ' data-mls-cardstate="' + sx.k + '">' +
           '<span class="mlsOpDayTop"><span class="mlsOpDayDot"></span><span class="mlsOpDayTime"></span><span class="mlsOpDayName"></span></span>' +
           '<span class="mlsOpDayProc"></span>' +
           '<span class="mlsOpDayChip"></span>' +
           '<span class="mlsOpDayWhy"></span>' +
           '</button>';
       }
-      if (grid.__sig !== sig) {
+      if (grid.__sig !== rowSig) {
         grid.innerHTML = html;
-        grid.__sig = sig;
+        grid.__sig = rowSig;
         /* textContent rather than interpolation: a patient name is data and
            never markup, and this room carries real names. */
         for (j = 0; j < grid.children.length; j++) {
@@ -42194,6 +42244,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
           card.setAttribute('aria-label', said + ' — ' +
             (hasNote ? 'open this note' : 'draft this op note'));
         }
+      }
+      /* THE MARK, AS TWO ATTRIBUTE WRITES. Re-asserted after a rebuild too,
+         because the freshly-built rows carry no mark of their own. */
+      var curNow = null;
+      try { curNow = grid.querySelector('.mlsOpDayCard[aria-current="true"]'); } catch (e8) { curNow = null; }
+      var curWant = (sel >= 0) ? el('mlsOpnRow' + sel) : null;
+      if (curWant && !grid.contains(curWant)) curWant = null;
+      if (curNow !== curWant) {
+        if (curNow) curNow.removeAttribute('aria-current');
+        if (curWant) curWant.setAttribute('aria-current', 'true');
       }
     }
 

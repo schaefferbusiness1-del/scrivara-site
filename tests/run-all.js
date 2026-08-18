@@ -84,6 +84,7 @@ const tests = [
      the LEFT RAIL of per-patient buttons he asked to have back, beside the
      selected patient's note. */
   '1p-opnote-rail-runtime.test.js',
+  '1p-opnote-storm-perf.test.js',
   /* The 2026-08-17/18 clunky audit's 148 confirmed defects, as properties:
      the mode/date chips reachable rather than under the header bar, one
      state-driven primary control per Staff Prep job state, the calendar's
