@@ -6854,7 +6854,10 @@
         if (niEnqueue(p.patientId, d, tnReasonCode(p.todayNoteReason))) added++;
       });
     });
-    if (added) niSurface();
+    /* repaint on every sync, not only when rows were ADDED: a sync that only
+       drops recovered rows is exactly the moment the surface should stop
+       claiming those notes are still owed. */
+    niSurface();
     return added;
   }
   /* ---- the gate ---------------------------------------------------------- */
