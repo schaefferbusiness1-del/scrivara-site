@@ -79,7 +79,12 @@ const P1_CONFIG_RELEASE_SUBS = [
 /* Advanced by the 1p train of 2026-08-17 (batch 8): p1-phone-sync-1.0.0 (Worker-timer receive loop + visibility
    catch-up for the phone recorder; account/token-bound; 'Phone connected · last sync' line); /cloned re-derived at
    cloned-20260817-r5. Production and extension baselines untouched (they stay at 469607c9). */
-const P1_BASE_COMMIT = '96c5d1d66795102f2ac7a5d0a136cbfb3b3255ad';
+/* Advanced by the 1p train of 2026-08-17/18 (batch 9): nextglow-1.0.0 (one glowing next step per screen/state,
+   msl ring retired), visitflow-1.0.0 (transcript visible while recording, one truthful record control), dockspace-1.0.0
+   (dock safe-area/reflow at every size), uimap-1.0.0, pullface-1.0.0 (silent sync, one phase-mapped pull bar), the
+   legal lane (p1-legal-restore-2.0.0 / bind-2.0.0 / reports-2.0.0 / stepper-1.0.0 / scrub-1.0.0); /cloned re-derived
+   at cloned-20260817-r6. Production and extension baselines untouched (469607c9). */
+const P1_BASE_COMMIT = 'cc27396e165d0459ccdb1218e444c7bc9cb74ca0';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
