@@ -153,7 +153,10 @@ const PREEXISTING = {
                   //          byte-identical since its introduction in
                   //          d1aa8a98 on 2026-07-27; the b979 bump did not
                   //          edit that asset or this chosen colour.
-  '#e0b877': 2,   // "b877" — the fill-box amber border and its dictation-
+  '#e0b877': 5,   // "b877" — the fill-box amber border and its dictation-
+                  // corr button (feat_mls_opnote_fill.js), plus the opnote-day
+                  // shell comments naming the colour in both twins + derived
+                  // cloned (2026-08-18: 2 CSS literals + 3 prose comments).
                   //          correction twin in feat_mls_opnote_fill.js.
                   //          Collided with the live build number on 2026-08-05
                   //          at the b876 -> b877 bump. Git-verified untouched:
