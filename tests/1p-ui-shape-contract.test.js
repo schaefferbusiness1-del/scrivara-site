@@ -1210,12 +1210,15 @@ async function runtime() {
            look ~1 run in 3 under load — the studio→analysis hoist re-marks after the
            900 ms sample. The invariant is unchanged (exactly one lit ring in guided,
            none otherwise); the sample is simply allowed to settle for up to 3 s. */
-        for (let settle = 0; settle < 7; settle++) {
+        for (let settle = 0; settle < 15; settle++) {
           /* nextglow-1.0.0 lights one next step in EVERY mode, so the settle
-             condition is the same in every mode. */
+             condition is the same in every mode. Under full-gate CPU load
+             (695 suites, several headless Chromes) the Analysis room's glow
+             was measured to light 3-6 s after navigation; the sample is
+             allowed up to ~6 s. The invariant (exactly one lit) is unchanged. */
           const okNow = lit.length === 1;
           if (okNow) break;
-          await page.waitForTimeout(300);
+          await page.waitForTimeout(400);
           rings = await page.evaluate(() => window.__uiContract.rings());
           lit = rings.filter((r) => r.visible);
         }

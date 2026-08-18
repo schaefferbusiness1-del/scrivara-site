@@ -42659,9 +42659,12 @@ a[data-mls-next="1"]{
               reason: 'Read the note you just saved' }
           ] },
         { steps: [
-            { sel: '#opPrepGenAllBtn', unblock: '#oprTabTpls',
-              reason: 'Draft every op note this day needs',
-              why: 'Assign a template to each procedure first' },
+            /* 2026-08-18 owner: the unblock hop to the Templates tab lit the
+               WRONG box ('why would it highlight templates'). While Draft-all
+               is disabled (history loading) the glow stays on it - the ladder
+               falls through to the room's own primary button, never Templates. */
+            { sel: '#opPrepGenAllBtn',
+              reason: 'Draft every op note this day needs' },
             '#opPrepModal .btn-primary', '#oprBack'
           ] }
       ]
@@ -44783,5 +44786,61 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 })();
 </script>
 <!-- ===== end quietnotify-1.0.0 ========================================= -->
+<!-- ===== dockcal-1.0.0 — the dock says "Calendar", not "Day" =================
+     Owner, 2026-08-18: "where did the calendar view go? it disappeared from the
+     bottom tab thing." It never left: the calm shell's first dock destination
+     is id 'day', label 'Day', target nav_calendar. A doctor looking for the
+     calendar does not read "Day" as the calendar. The shell is a shared
+     production file, so the rename lives here: the label of the dock item that
+     routes to nav_calendar becomes "Calendar" (title keeps "Day · Calendar").
+     Nothing about routing, icons or counts changes; a re-render is re-labelled
+     by the same observer. -->
+<script>
+(function () {
+  'use strict';
+  var VERSION = 'dockcal-1.0.0';
+  if (window.__mlsDockCal && window.__mlsDockCal.version === VERSION) return;
+  var relabels = 0;
+  function relabel() {
+    var dock = document.getElementById('mlsDock');
+    if (!dock) return false;
+    var items = dock.querySelectorAll('button,[role="button"]');
+    var done = false;
+    for (var i = 0; i < items.length; i++) {
+      var b = items[i];
+      var t = String(b.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t !== 'Day') continue;
+      /* the label is the last text-bearing span/node; keep the icon */
+      var spans = b.querySelectorAll('span');
+      var target = null;
+      for (var s = spans.length - 1; s >= 0; s--) {
+        if (String(spans[s].textContent || '').trim() === 'Day') { target = spans[s]; break; }
+      }
+      if (target) { target.textContent = 'Calendar'; }
+      else {
+        for (var n = b.childNodes.length - 1; n >= 0; n--) {
+          var c = b.childNodes[n];
+          if (c.nodeType === 3 && String(c.nodeValue || '').trim() === 'Day') { c.nodeValue = 'Calendar'; break; }
+        }
+      }
+      b.setAttribute('title', 'Calendar (day, week, month)');
+      b.setAttribute('aria-label', 'Calendar');
+      relabels++;
+      done = true;
+    }
+    return done;
+  }
+  function arm() {
+    relabel();
+    var dock = document.getElementById('mlsDock');
+    if (!dock || !window.MutationObserver) { setTimeout(arm, 700); return; }
+    var mo = new MutationObserver(function () { relabel(); });
+    mo.observe(dock, { childList: true, subtree: true, characterData: true });
+    window.__mlsDockCal = { version: VERSION, relabel: relabel, count: function () { return relabels; } };
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+})();
+</script>
+<!-- ===== end dockcal-1.0.0 ============================================== -->
 </body>
 </html>
