@@ -71,8 +71,14 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 /* ===================================================== PART 1: static ===== */
 {
   const read = (n) => fs.readFileSync(path.join(root, n), 'utf8');
-  const OPEN = '<!-- ===== opnote-day-3.0.0';
-  const CLOSE = '<!-- ===== end opnote-day-3.0.0';
+  /* PIN MOVED 2026-08-18 (op-notes lane, owner: "completely redo the op notes
+     UI, I hate it"). opnote-day-3.0.0 is REPLACED by opnote-day-4.0.0. Only
+     the block's NAME moved here: every property this suite asserts about the
+     block — the never-folded set, the forbidden re-implementations, the
+     day-brain isolation, the re-entrancy and coalescing guards, the byte-equal
+     twins — is unchanged and is asserted against the new span. */
+  const OPEN = '<!-- ===== opnote-day-4.0.0';
+  const CLOSE = '<!-- ===== end opnote-day-4.0.0';
   const a = read('1pScribeFlow.html');
   const b = read('1p/index.html');
   for (const [name, src] of [['1pScribeFlow.html', a], ['1p/index.html', b]]) {
@@ -118,7 +124,7 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
       `${name}: the op-note room marks a glow of its own — there must be exactly one highlight owner`);
     /* ... and the nextglow table must actually consult it, per state. The row
        is read out of the shipped shell rather than assumed. */
-    const ng = src.slice(src.indexOf('<!-- ===== nextglow-1.0.0'), src.indexOf('<!-- ===== end nextglow-1.0.0'));
+    const ng = src.slice(src.indexOf('<!-- ===== nextglow-1.1.0'), src.indexOf('<!-- ===== end nextglow-1.1.0'));
     ok(/function opnWant\(\)/.test(ng),
       `${name}: nextglow no longer asks the op-note room which surface is up — it is guessing again`);
     for (const id of ['mlsOpnHist', 'tpfStop', 'mlsOpnGo', 'mlsOpnPull', 'opPrepGenAllBtn', 'mlsOpDayGo']) {
@@ -1703,8 +1709,8 @@ async function runtime() {
       /* THE BLOCK'S OWN GUARDS, read out of the shipped shell so a future
          edit that removes them fails here rather than in the owner's room. */
       const guards = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
-      const span = guards.slice(guards.indexOf('<!-- ===== opnote-day-3.0.0'),
-        guards.indexOf('<!-- ===== end opnote-day-3.0.0'));
+      const span = guards.slice(guards.indexOf('<!-- ===== opnote-day-4.0.0'),
+        guards.indexOf('<!-- ===== end opnote-day-4.0.0'));
       ok(/var painting = false;/.test(span) && /if \(painting\) return;/.test(span),
         'the op-note room lost its re-entrancy guard, so its own writes wake it again');
       ok(/var COALESCE = 60;/.test(span),
