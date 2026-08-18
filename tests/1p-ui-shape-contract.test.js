@@ -1204,7 +1204,9 @@ async function runtime() {
            900 ms sample. The invariant is unchanged (exactly one lit ring in guided,
            none otherwise); the sample is simply allowed to settle for up to 3 s. */
         for (let settle = 0; settle < 7; settle++) {
-          const okNow = mode === 'guided' ? lit.length === 1 : rings.length === 0;
+          /* nextglow-1.0.0 lights one next step in EVERY mode, so the settle
+             condition is the same in every mode. */
+          const okNow = lit.length === 1;
           if (okNow) break;
           await page.waitForTimeout(300);
           rings = await page.evaluate(() => window.__uiContract.rings());
