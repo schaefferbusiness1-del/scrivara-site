@@ -925,6 +925,72 @@ async function runtime() {
     eq(tpl.said, tpl.outside,
       `${tpl.outside - tpl.said} Templates buttons outside the room still do not say they are op-note templates living in Op Notes: ${JSON.stringify(tpl.labels)}`);
 
+    /* THE ROUND TRIP, because a library you cannot leave is a dead end. The
+       room's own top bar is retired on the list and the note surface (its
+       title repeated the day, and its "< Back" was a second copy of the
+       modal's X) — but the Templates panel is the one place the doctor needs
+       the room's Procedures tab to get home, so it comes BACK there. */
+    const trip = await page.evaluate(async () => {
+      const vis = (s) => window.__opn.seen(s);
+      window.__mlsOpDay.openNote(0);
+      await new Promise((r) => setTimeout(r, 800));
+      window.__mlsOpDay.setTemplate(true);
+      await new Promise((r) => setTimeout(r, 400));
+      const onNote = { state: window.__mlsOpDay.state(), lib: vis('#mlsOpnTplLib'), top: vis('.opr-top') };
+      document.getElementById('mlsOpnTplLib').click();
+      await new Promise((r) => setTimeout(r, 1600));
+      const inLib = { state: window.__mlsOpDay.state(), list: vis('#tplList'), top: vis('.opr-top'),
+        home: vis('#oprTabProcs'), roomOpen: !!document.getElementById('opPrepModal').classList.contains('show') };
+      const home = document.getElementById('oprTabProcs');
+      if (home) home.click();
+      await new Promise((r) => setTimeout(r, 1600));
+      const back = { state: window.__mlsOpDay.state(), surface: vis('#mlsOpnNote'),
+        roomOpen: !!document.getElementById('opPrepModal').classList.contains('show') };
+      return { onNote, inLib, back };
+    });
+    eq(trip.onNote.lib, true, 'the note surface offers no way into the template library');
+    eq(trip.onNote.top, false, "the room's old top bar is back on the note surface");
+    eq(trip.inLib.state, 'templates', `pressing the library left the room in state "${trip.inLib.state}"`);
+    eq(trip.inLib.list, true, 'the template library did not land on anything visible — that is a dead end');
+    eq(trip.inLib.top, true,
+      'the template library has no visible way back to the procedures — the doctor is stuck in the library');
+    eq(trip.inLib.home, true, 'the Procedures tab is not on screen in the template library');
+    eq(trip.back.state, 'note', `coming back from the library left the room in state "${trip.back.state}"`);
+    eq(trip.back.surface, true, 'coming back from the library did not restore the note surface');
+    eq(trip.back.roomOpen, true, 'coming back from the library closed the room');
+
+    /* ================================================================
+     * 8b. "ALWAYS START ON ALL SCHEDULED PATIENTS"
+     *
+     * Owner, twice. Pressing Prep op notes must land on the DAY, even when
+     * the last thing on screen was one patient's note — MEASURED: it came
+     * back to that patient's note, because a same-day re-open changes neither
+     * the day nor the modal's shown state. openOpPrep() replaces
+     * window._opPrep with a new array on every call, so array identity is the
+     * signal; opPrepRender() reuses the array, so a draft's dozens of
+     * repaints do not throw the doctor off the note he is working on.
+     * ============================================================== */
+    {
+      await page.evaluate(() => window.__opn.pressRow(5));
+      await page.waitForTimeout(800);
+      eq(await page.evaluate(() => window.__mlsOpDay.state()), 'note',
+        'the room did not open a note surface, so this section proved nothing');
+      /* a repaint must NOT throw him off the note */
+      await page.evaluate(() => { try { opPrepRender(); } catch (e) {} });
+      await page.waitForTimeout(600);
+      eq(await page.evaluate(() => window.__mlsOpDay.state()), 'note',
+        'a repaint of the room threw the doctor off the note he was working on');
+      eq(await page.evaluate(() => window.__mlsOpDay.selected()), 5,
+        'a repaint of the room moved the selected patient');
+      /* ... and a real re-open, on the SAME day, must land on the day */
+      await page.evaluate((d) => window.__opn.open(d), DAY);
+      await page.waitForTimeout(1600);
+      eq(await page.evaluate(() => window.__mlsOpDay.state()), 'list',
+        'pressing Prep op notes again came back to one patient\'s note instead of the day\'s patients');
+      eq(await page.evaluate(() => window.__mlsOpDay.selected()), -1,
+        're-opening the room kept a patient selected');
+    }
+
     /* ================================================================
      * 9. THE BUDGETS, COUNTED
      * ============================================================== */

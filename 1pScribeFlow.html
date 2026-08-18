@@ -40535,13 +40535,26 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   /* The chart record this row's save produced, if any. row._noteId is also set
      by the prep module's autosave, so the id alone does not mean "filed" - the
      record has to exist AND not be a draft. */
+  /* ONE READ OF THE CHART STORE PER PASS. getNotes() parses the whole notes
+     store out of localStorage; statusOf() runs for EVERY row and paint() runs
+     on every mutation of this room, so a naive read here is N parses of the
+     entire store per repaint - the same shape as the b965 perf defect the
+     room's own renderer was rebuilt to remove. Cached for the synchronous
+     pass and dropped on the next macrotask, so nothing ever reads a stale
+     chart across a save. */
+  var notesCache = null;
+  function notesNow() {
+    if (notesCache) return notesCache;
+    try { notesCache = (typeof window.getNotes === 'function' ? window.getNotes() : []) || []; }
+    catch (e) { notesCache = []; }
+    setTimeout(function () { notesCache = null; }, 0);
+    return notesCache;
+  }
   function savedRecord(row) {
     var id = S(row && row._noteId);
     if (!id) return null;
-    try {
-      var ns = (typeof window.getNotes === 'function' ? window.getNotes() : []) || [];
-      for (var i = 0; i < ns.length; i++) { if (ns[i] && ns[i].id === id) return ns[i]; }
-    } catch (e) {}
+    var ns = notesNow(), i;
+    for (i = 0; i < ns.length; i++) { if (ns[i] && ns[i].id === id) return ns[i]; }
     return null;
   }
   function statusOf(row, i) {
@@ -41132,18 +41145,35 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return !!(n && !n.hidden && S(n.textContent) === notice);
   }
 
-  var lastSig = '', lastState = '';
+  var lastSig = '', lastState = '', lastRowsRef = null;
   function paint() {
     /* True whether or not the room is open: the Templates buttons live on
        other screens entirely. */
+    notesCache = null;                 /* one chart read per pass, see notesNow */
     tplLabels();
     if (!roomOpen()) { lastDay = ''; return false; }
     if (!ensureHosts()) return false;
 
     /* A day change rebuilds window._opPrep, so a remembered selection would
        point at a different patient. */
+    /* "ALWAYS START ON ALL SCHEDULED PATIENTS" (owner, twice). openOpPrep()
+       REPLACES window._opPrep with a freshly built array every time it runs -
+       whether the day changed or not - while opPrepRender() only repaints the
+       same array. So array IDENTITY is the exact signal for "the room was
+       opened again", and it is the one that survives a same-day re-open:
+       MEASURED, pressing Prep op notes while a patient's note was on screen
+       came back to that patient's note rather than to the day. Selection is
+       kept across the dozens of repaints a draft causes, and dropped on every
+       real open. Single-patient entries (the chart's own "Draft op note") are
+       the one exception - that IS their surface. */
+    var rowsRef = rows();
+    if (rowsRef !== lastRowsRef) {
+      lastRowsRef = rowsRef;
+      if (!patientMode()) { sel = -1; detOpen = false; tplOpen = false; }
+      topOfRoom();
+    }
     var day = currentDay();
-    if (day !== lastDay) { lastDay = day; if (!patientMode()) { sel = -1; } topOfRoom(); }
+    if (day !== lastDay) { lastDay = day; if (!patientMode()) { sel = -1; } query = ''; topOfRoom(); }
     if (patientMode()) sel = 0;
 
     var modal = el('opPrepModal');
@@ -41560,7 +41590,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         if (tpl[i].__mlsTplLabel) tpl[i].textContent = tpl[i].__mlsTplLabel;
         tpl[i].removeAttribute('data-mls-tpl');
       }
-      sel = -1; query = ''; lastSig = ''; lastDay = ''; lastState = ''; notice = '';
+      sel = -1; query = ''; lastSig = ''; lastDay = ''; lastState = ''; notice = ''; lastRowsRef = null;
       return true;
     }
   };

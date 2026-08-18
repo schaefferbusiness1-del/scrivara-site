@@ -1246,16 +1246,40 @@ async function runtime() {
            for a value nothing was going to recompute.
            ROOT CAUSE IS NOT THIS LANE'S: msl-1.0.0's single 450ms second look
            is the defect, and it is reported to the nextglow lane. */
+        /* THE VERDICT AND ITS DIAGNOSIS MUST BE ONE SAMPLE. Reading the rings
+           in one evaluate and the reasons in the next let the page move
+           between them: measured, `lit: []` alongside
+           `#studioView button=eligible`, which is not a state markNext can
+           produce — the button became eligible after the ring was read. Both
+           are now taken in the same pass, after re-marking. */
+        let why = null;
         for (let settle = 0; settle < 7; settle++) {
           const okNow = mode === 'guided' ? lit.length === 1 : rings.length === 0;
           if (okNow) break;
-          await page.evaluate(() => { try { window.__mlsSimpleLayer.refresh(); } catch (e) {} });
-          await page.waitForTimeout(300);
-          rings = await page.evaluate(() => window.__uiContract.rings());
+          const pass = await page.evaluate(async () => {
+            try { window.__mlsSimpleLayer.refresh(); } catch (e) {}
+            await new Promise((r) => setTimeout(r, 300));
+            return {
+              rings: window.__uiContract.rings(),
+              studioShown: (() => { const e = document.getElementById('studioView'); return !!(e && window.__uiContract.visible(e)); })(),
+              /* msl-1.0.0's OWN studioView list, verbatim — an assumed list
+                 measured a different question and reported an eligible
+                 `#studioView button` that markNext never looks at. */
+              studioCandidates: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn']
+                .map((s) => {
+                  const e = document.querySelector(s);
+                  if (!e) return s + '=absent';
+                  const usable = window.__uiContract.visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true';
+                  return s + '=' + (usable ? 'eligible' : 'unusable');
+                })
+            };
+          });
+          rings = pass.rings;
           lit = rings.filter((r) => r.visible);
+          why = pass;
         }
         if (mode === 'guided') {
-          const why = lit.length === 1 ? null : await page.evaluate(() => ({
+          const extra = lit.length === 1 ? null : await page.evaluate(() => ({
             report: window.__mlsSimpleLayer.nextStep(),
             openDialogs: Array.from(document.querySelectorAll('.modal-bg.show')).map((m) => m.id),
             shownViews: ['calendarView', 'patientsView', 'visitView', 'historyView', 'recsView',
@@ -1282,7 +1306,7 @@ async function runtime() {
               const e = document.getElementById('studioView');
               return !!(e && window.__uiContract.visible(e));
             })(),
-            studioCandidates: ['#studioGenBtn', '#copilotInput', '#studioView .btn-primary', '#studioView button']
+            studioCandidates: ['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn']
               .map((s) => {
                 const e = document.querySelector(s);
                 if (!e) return s + '=absent';
@@ -1290,6 +1314,11 @@ async function runtime() {
                 return s + '=' + (usable ? 'eligible' : 'unusable');
               })
           }));
+          /* The list this exception reasons about must BE the shipped one: an
+             assumed list is a different question with a different answer. */
+          ok(/\['studioView',\s*\['#copilotInput', '#copilotInputRow textarea', '#studioGenBtn'\]\]/
+            .test(read('1pScribeFlow.html')),
+            "msl-1.0.0's studioView next-step list changed — the hoist exception below is reasoning about selectors the app no longer uses");
           /* ONE NAMED, DATED EXCEPTION, so the rule still catches anything new.
              MEASURED 2026-08-18 (op-notes lane), with a CONTROL: the pinned
              base commit 67e5ddc8 passes this section, and this worktree fails
@@ -1299,9 +1328,10 @@ async function runtime() {
              feat_mls_studio_merge.js hoists #analysisView INSIDE #studioView on
              idle, and once it has, showing Analysis also shows #studioView.
              markNext then tries studioView FIRST (deliberately - see the table's
-             own comment), finds every studio candidate hidden
-             (#studioGenBtn, #copilotInput, #studioView .btn-primary, button),
-             and RETURNS on the spot without lighting anything.
+             own comment), finds every one of ITS OWN studio candidates unusable
+             (#copilotInput, #copilotInputRow textarea, #studioGenBtn - the
+             shipped list, asserted just above), and RETURNS on the spot
+             without lighting anything.
              That is a real defect and it belongs to msl-1.0.0's NEXT_STEPS
              table / feat_mls_studio_merge - reported to the nextglow lane, not
              hidden, and not this lane's to edit. The exception is this exact
@@ -1315,7 +1345,7 @@ async function runtime() {
             measured.ringHoist.push(screen + ' ' + JSON.stringify(why.studioCandidates));
             continue;
           }
-          eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''}`);
+          eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''} ${extra ? JSON.stringify(extra) : ''}`);
         } else {
           eq(rings.length, 0, `${screen} in ${mode} mode lit a guided ring: ${JSON.stringify(rings)}`);
         }
