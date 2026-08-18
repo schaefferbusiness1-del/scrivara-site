@@ -7722,7 +7722,14 @@
               else if (modelUnsure && modelUnsure.length) why += ' The second read was also unsure about ' + modelUnsure.join(', ') + '.';
               why += ' ' + (partial.why || 'Nothing was applied.');
             }
-            why += ' Your Animated character stays the patient-facing face — Face style only ever changes when you change it.';
+            /* NAME THE FACE THAT IS ACTUALLY SELECTED. The sentence exists to
+               say "nothing moved your Face style", so it has to read back the
+               control rather than assume the animated character — a doctor who
+               deliberately chose My photo would otherwise be told his animated
+               character is what patients see. */
+            why += faceModeSelect && faceModeSelect.value === 'photo'
+              ? ' Your photo stays the patient-facing face — Face style only ever changes when you change it.'
+              : ' Your Animated character stays the patient-facing face — Face style only ever changes when you change it.';
             lookNoteSay(why, partial.partial ? 1 : 2);
             partialListShow(applied, partial.skipped);
             safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {

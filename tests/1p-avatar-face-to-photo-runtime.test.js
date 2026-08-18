@@ -158,10 +158,12 @@ ok(/taking longer than usual/.test(visionSlice), 'a slow read is indistinguishab
    are now gone: the refusal branch writes faceModeSelect.value never, so
    `faceModeTouched` no longer gates anything here. */
 const refusalSlice = between(source, 'if (!decision.applies) {', '/* The exact photo/edit revision is still current');
-ok(!/faceModeSelect\.value\s*=/.test(refusalSlice),
+/* assignment, not comparison. The branch READS the select — deliberately, to
+   name whichever face is really selected when it says nothing moved it. */
+ok(!/faceModeSelect\.value\s*=(?!=)/.test(refusalSlice),
   'an incomplete match still writes the Face style select');
-ok(!/faceModeSelect\.value === 'photo'/.test(refusalSlice),
-  'an incomplete match still branches on the Face style it must not touch');
+ok(!/faceValidPhoto\(shown\) && !keepAnimated/.test(refusalSlice),
+  'the photo fallback branch is back');
 ok(/Your Animated character stays the patient-facing face/.test(refusalSlice),
   'the doctor is not told that the animated character is still what patients see');
 ok(/facePartialDecision\(combined, decision\)/.test(refusalSlice),

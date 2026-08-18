@@ -322,8 +322,13 @@ eq(modeApi.onLoad('photo', ''), 'photo', 'a deliberate saved photo choice is dis
 eq(modeApi.after('drawn', false), 'drawn', 'taking a picture switches an untouched select to My photo');
 eq(modeApi.after('drawn', true), 'drawn', 'taking a picture overrides a deliberate Animated choice');
 eq(modeApi.after('photo', true), 'photo', 'taking a picture undoes a deliberate My photo choice');
-ok(!/faceModeSelect\.value\s*=/.test(refusalBranch),
+/* ASSIGNMENT, not comparison: `\s*=` alone also matches `===`, and the refusal
+   branch legitimately READS the select to name the face that is selected. */
+ok(!/faceModeSelect\.value\s*=(?!=)/.test(refusalBranch),
   'an incomplete match still writes the Face style select — the owner\'s "it goes to My photo"');
+ok(/faceModeSelect\.value === 'photo'\s*\n?\s*\?/.test(refusalBranch) ||
+   /faceModeSelect && faceModeSelect\.value === 'photo'/.test(refusalBranch),
+  'the refusal no longer reads the select to name the face that is really selected');
 {
   /* the ONLY assignments to the select anywhere are the capture rule (which
      preserves whatever is selected) and the doctor's own change handler */

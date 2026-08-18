@@ -143,7 +143,8 @@ ok(/pendingFace = dataUrl;[\s\S]*faceModeSelect\.value = faceModeAfterCapture[\s
 const refusalBranch = between(source, 'if (!decision.applies) {', '/* The exact photo/edit revision is still current');
 ok(/facePartialDecision\(combined, decision\)/.test(refusalBranch),
   'an incomplete match no longer runs the partial-application decision');
-ok(!/faceModeSelect\.value\s*=/.test(refusalBranch),
+/* assignment, not comparison — the branch legitimately READS the select */
+ok(!/faceModeSelect\.value\s*=(?!=)/.test(refusalBranch),
   'an incomplete match still changes the Face style the doctor chose');
 ok(!/lookNow = faceApplyDerived\(lookNow, combined\)/.test(refusalBranch),
   'an incomplete match commits the WHOLE combined look instead of only the claimed subset');
