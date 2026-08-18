@@ -875,6 +875,7 @@ const tests = [
      the unverifiable default instead of wearing it. */
   'unverified-default-never-reads-as-fact.test.js',
   'ext-3063-athena-tab-resilience-contract.test.js',
+  'ext-3064-hidden-safe-sleep-contract.test.js',
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
   'settings-cleanup-contract.test.js',

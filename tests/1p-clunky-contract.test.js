@@ -662,10 +662,43 @@ async function runtime() {
           css.disabled = false;
           await sleep(250);
           return { on: on, off: off };
+        })(),
+        /* clunky-cal-1.0.1 (owner 2026-08-18, "WTF happened to calendar"): with
+           the DAY PANEL OPEN the shell turns #calSplitWrap into a two-column
+           grid; the line used to sit INSIDE that wrap and shoved the month
+           grid into the narrow right column (measured live: 480px of 2320).
+           The line must live outside the wrap, and the grid must keep the
+           first column. Executed, not grepped: open the panel, measure. */
+        placement: await (async () => {
+          const wrap = document.getElementById('calSplitWrap');
+          const grid = document.getElementById('calGrid');
+          const panel = document.getElementById('calDayPanel');
+          const ln = document.getElementById('mlsClunkyCalLine');
+          if (!wrap || !grid || !panel) return { skipped: 'no-split-wrap' };
+          const before = panel.getAttribute('style');
+          panel.setAttribute('style', 'display:block;' + (before || '').replace(/display\s*:[^;]*;?/g, ''));
+          await sleep(300);
+          try { if (typeof window.__mlsClunkyCal === 'object' && window.__mlsClunkyCal && typeof window.__mlsClunkyCal.pass === 'function') window.__mlsClunkyCal.pass(); } catch (e) {}
+          await sleep(300);
+          const wr = wrap.getBoundingClientRect(), gr = grid.getBoundingClientRect();
+          const out = {
+            lineInsideWrap: !!(ln && ln.parentElement === wrap),
+            gridLeftDelta: Math.round(gr.left - wr.left),
+            gridW: Math.round(gr.width), wrapW: Math.round(wr.width),
+            wrapDisplay: getComputedStyle(wrap).display
+          };
+          if (before === null) panel.removeAttribute('style'); else panel.setAttribute('style', before);
+          return out;
         })()
       };
     });
     measured.calendar = cal;
+    if (!cal.placement.skipped) {
+      ok(!cal.placement.lineInsideWrap,
+        'the calendar numbers line sits INSIDE #calSplitWrap and takes a grid track of its own when the day panel is open (clunky-cal-1.0.1)');
+      ok(cal.placement.gridLeftDelta <= 2,
+        `with the day panel open the MONTH GRID starts ${cal.placement.gridLeftDelta}px right of its wrap (${cal.placement.gridW}px of ${cal.placement.wrapW}px, ${cal.placement.wrapDisplay}) - it was pushed into the second column (clunky-cal-1.0.1)`);
+    }
     ok(!cal.cardShown,
       `the 250px "DAY AT A GLANCE" card is back on the calendar (${cal.cardHeight}px) alongside the colour legend (CLUNKY 112)`);
     ok(cal.lineShown && /booked/.test(cal.line || ''),

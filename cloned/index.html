@@ -5120,12 +5120,12 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.63</b> · requires Chrome 116+</p>
-        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.63.bin" download="MLS_Assist_v3.0.63.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.63</span> (.zip)</a>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.64</b> · requires Chrome 116+</p>
+        <a class="btn-primary" id="extDlBtn" href="MLS_Assist_v3.0.64.bin" download="MLS_Assist_v3.0.64.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.64</span> (.zip)</a>
         <p class="note" style="margin:10px 0 0">Download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.63</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.63 - Athena tab handling made robust: MLS now prefers the Athena tab whose Day view is actually rendered, re-checks a tab that was slow to answer instead of reporting no Athena tab while you are signed in, and treats a not-yet-rendered week strip as something to recover from rather than a failed day change. Every date, schedule and presence reply now also carries how many Athena tabs are open, so the app can advise keeping one. Reads only; nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.64</span>)</summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.64 - Chart reads keep their pace while the athenaOne tab is in the background: every step that waits inside Athena now runs at normal speed even when that tab is hidden, so the days visit notes finish alongside the histories instead of timing out. Nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -5325,7 +5325,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <span><b>📖 Pull full visit notes</b> — during an Athena pull, also open and save every encounter note (slower, most complete). Off: the schedule and each patient's chart history cards only — much faster. Applies to every pull on this account, wherever you start it.</span>
         </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.63.zip" download="MLS_Assist_v3.0.63.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.63 ZIP)</a>
+        <a href="https://mlsscribe.com/MLS_Assist_v3.0.64.zip" download="MLS_Assist_v3.0.64.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.64 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
       </div>
       <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
@@ -36970,7 +36970,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260818-r11';
+  var CLONED_BUILD='cloned-20260818-r12';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
@@ -48077,6 +48077,8 @@ html #calendarView .cx-glance[data-mls-clunky-folded="1"]{ display:none !importa
 }
 #mlsClunkyCalLine .q{ color:var(--muted, #79837C); font-weight:600; }
 #mlsClunkyCalLine[hidden]{ display:none; }
+/* clunky-cal-1.0.1: belt for a line that is (still) inside the split wrap - never a grid track of its own. */
+#calSplitWrap > #mlsClunkyCalLine{ grid-column:1 / -1; }
 
 /* --- 34 IS NOT FIXED HERE, AND THE ATTEMPT IS RECORDED BECAUSE IT MADE
    THINGS WORSE. Hiding .cx-rail below 1200px to give #calGrid the width
@@ -48135,9 +48137,20 @@ html #calDayPanel button{ min-height:44px; }
     if (!line) {
       line = document.createElement('div');
       line.id = 'mlsClunkyCalLine';
-      var host = q('#calGrid', view);
+      /* clunky-cal-1.0.1 (owner, 2026-08-18: 'WTF happened to calendar'):
+         the line used to be inserted INSIDE #calSplitWrap, in front of
+         #calGrid. With the day panel open the wrap is a two-column grid
+         (1.45fr / 1fr, shell CSS :has(#calDayPanel[style*=block])), so the
+         line took column 1 and pushed the MONTH GRID into the narrow right
+         column - measured live at 480px of a 2320px window, day panel below.
+         The line now mounts ABOVE the wrap, where it can never claim a grid
+         track; a line already inside the wrap (long-lived tab) is moved out. */
+      var wrap = q('#calSplitWrap', view);
+      var host = wrap || q('#calGrid', view);
       if (host && host.parentNode) host.parentNode.insertBefore(line, host);
       else view.insertBefore(line, view.firstChild);
+    } else if (line.parentNode && line.parentNode.id === 'calSplitWrap' && line.parentNode.parentNode) {
+      line.parentNode.parentNode.insertBefore(line, line.parentNode);
     }
     var want = nums.map(function (p) { return p[1] + ' ' + p[0].toLowerCase(); }).join(' · ');
     if (txt(line) !== want) line.textContent = want;
