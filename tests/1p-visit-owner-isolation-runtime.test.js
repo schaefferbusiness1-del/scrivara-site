@@ -1,3 +1,6 @@
+/* CAUSAL CONTROL PIN (2026-08-17 batch 8): the control engine is the pre-fix commit 1e0151a4 (main before
+   batch 7), NOT the moving origin/main - once the fix ships, origin/main carries it and a control against it
+   would "prove nothing" and fail. */
 'use strict';
 
 /* /1p VISIT OWNERSHIP — ONE VISIT BELONGS TO ONE PATIENT
@@ -242,7 +245,7 @@ async function leakAfterSwitch(page) {
 async function runtime() {
   /* origin/main's shell bytes, for PART 3 */
   const baselineFile = path.join(os.tmpdir(), 'mls-visitowner-baseline-' + process.pid + '.html');
-  const baseline = execFileSync('git', ['show', 'origin/main:1pScribeFlow.html'], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
+  const baseline = execFileSync('git', ['show', '1e0151a4864b696b2934ffcabf88a95e9716e593:1pScribeFlow.html'], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
   fs.writeFileSync(baselineFile, baseline);
 
   const { srv, port } = await serve(baselineFile);

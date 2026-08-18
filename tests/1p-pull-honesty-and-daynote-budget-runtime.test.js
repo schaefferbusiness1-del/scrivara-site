@@ -1,3 +1,6 @@
+/* CAUSAL CONTROL PIN (2026-08-17 batch 8): the control engine is the pre-fix commit 1e0151a4 (main before
+   batch 7), NOT the moving origin/main - once the fix ships, origin/main carries it and a control against it
+   would "prove nothing" and fail. */
 'use strict';
 /* =============================================================================
  * 1p pull honesty + the day-note budget
@@ -59,11 +62,11 @@ const CONTROL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'p1-pullfix-control-')
 let CONTROL_IMPORTER = '';
 let CONTROL_CONNECT = '';
 try {
-  const impo = execFileSync('git', ['show', 'origin/main:1p-feat_mls_schedimport_exact.js'],
+  const impo = execFileSync('git', ['show', '1e0151a4864b696b2934ffcabf88a95e9716e593:1p-feat_mls_schedimport_exact.js'],
     { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   CONTROL_IMPORTER = path.join(CONTROL_DIR, 'control-importer.js');
   fs.writeFileSync(CONTROL_IMPORTER, impo);
-  const conn = execFileSync('git', ['show', 'origin/main:1p-mls-connect.js'],
+  const conn = execFileSync('git', ['show', '1e0151a4864b696b2934ffcabf88a95e9716e593:1p-mls-connect.js'],
     { cwd: ROOT, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
   CONTROL_CONNECT = path.join(CONTROL_DIR, 'control-connect.js');
   fs.writeFileSync(CONTROL_CONNECT, conn);
