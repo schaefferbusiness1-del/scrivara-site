@@ -207,6 +207,7 @@ const tests = [
   '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
   '1p-legal-ime-workspace-runtime.test.js',
+  '1p-legal-word-download.test.js',
   '1p-legal-loader-runtime.test.js',
   /* legal-tools-1.0.0: the Legal / IME workspace had exactly one route (the
      #ptLawyerBtn door inside Patients). The dock's Tools menu is built by the
