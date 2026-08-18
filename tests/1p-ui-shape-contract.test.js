@@ -143,9 +143,16 @@ for (const name of SHELLS) {
   ok(src.includes("version: 'dock-1p-1.1.0'"), `${name}: the dock block lost its version`);
   ok(src.includes('window.applyDockSidePreview'),
     `${name}: the dock block no longer writes through the app's public settings action`);
-  /* it must never overwrite a choice the doctor already made */
-  ok(/if \(SIDE_RE\.test\(readAny\(SIDE_KEY\)\)\) \{ writeAll\(SEEDED, '1'\); return true; \}/.test(src),
-    `${name}: the dock block lost the guard that honours an existing stored side`);
+  /* it must never overwrite a choice the doctor made HERE — and (2026-08-18,
+     measured live: production writes qolDockSide='bottom' into the same account
+     namespace, which silenced the 1p rail for every real doctor) it must NOT
+     treat a bare shared value as consent. The in-lane marker is the record of
+     a choice made in this deployment; seedSide returns early on it and no
+     longer re-reads the shared side value. */
+  ok(/if \(readAny\(SEEDED\) === '1'\) return true;/.test(src),
+    `${name}: the dock block lost the in-lane-choice guard (SEEDED marker)`);
+  ok(!/if \(SIDE_RE\.test\(readAny\(SIDE_KEY\)\)\) \{ writeAll\(SEEDED, '1'\); return true; \}/.test(src),
+    `${name}: the dock block re-admits a production-written qolDockSide as a choice`);
   /* the setters were GETTERS that silently ignored their argument */
   ok(/side: function \(next\) \{ return \(next === undefined \|\| next === null\) \? currentSide\(\) : setSide\(next\); \}/.test(src),
     `${name}: __mlsDockP1.side went back to a getter that ignores its argument`);
