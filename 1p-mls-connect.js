@@ -54927,8 +54927,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       else if (Number(census.targets || 0) > Number(census.withContent || 0)) clean = false;
     }
     if (Number(hr.todayNoteFailures || 0) > 0) clean = false;
-    if (clean) return { head: prefix + ' — all ' + rows + ' patient' + (rows === 1 ? '' : 's') + ' pulled and verified.', full: text };
-    return { head: prefix + ' — ' + done + ' of ' + rows + ' patient' + (rows === 1 ? '' : 's') + ' pulled and verified. Open Details for the rest.', full: text };
+    var who = ' patient' + (rows === 1 ? '' : 's');
+    if (clean) return { head: prefix + ' — all ' + rows + who + ' pulled and verified.', full: text };
+    /* A shortfall in the CHART count and a shortfall in what the store or the
+       notes reported are different sentences. "14 of 14 patients pulled ... the
+       rest" was the first version of this and it contradicts itself: every
+       chart landed, and something else is outstanding. */
+    if (done < rows) return { head: prefix + ' — ' + done + ' of ' + rows + who + ' pulled and verified. Open Details for the rest.', full: text };
+    return { head: prefix + ' — all ' + rows + who + ' pulled. Open Details for what is still outstanding.', full: text };
   }
   var VERDICT_CSS_ID = 'mlsCvVerdictCss';
   function verdictCss() {

@@ -469,6 +469,39 @@ async function runtime() {
     measured.item2Shortfall = shortfall;
     ok(!/all 19/.test(shortfall), `a shortfall was summarised as full coverage: "${shortfall}"`);
     ok(/12 of 19/.test(shortfall) && /Details/.test(shortfall), `a shortfall must name its own numbers and point at the fold: "${shortfall}"`);
+    /* EVERY OTHER SHAPE the verdict can take. The first version of the headline
+       said "14 of 14 patients pulled ... Open Details for the rest", which
+       contradicts itself: the chart count was complete and the shortfall was
+       somewhere else. A summary that can contradict itself is a summary nobody
+       can trust, so each shape is pinned. */
+    const shapes = await page.evaluate(() => {
+      const vp = window.__mlsCalHeroPull._verdictParts;
+      const full = (n) => Array.from({ length: n }, () => ({ complete: true }));
+      return {
+        censusOnly: vp('Wed, Aug 19 is ready — all 14 exact appointments were reconciled. Athena did not provide a row-to-provider link.',
+          { ok: true, complete: true, appointmentCensusOnly: true, appointmentCensusReceipt: { rowCount: 14 }, scheduleReceipt: {} }),
+        noHistory: vp('Wed, Aug 19 is ready — 14 appointments reconciled.',
+          { ok: true, complete: true, scheduleReceipt: { parsedCount: 14 }, historyReceipt: {} }),
+        noteFail: vp('Wed, Aug 19 is ready — 14 appointments reconciled, history read for 14 of 14. 2 pulled-day notes were not read.',
+          { ok: true, complete: true, scheduleReceipt: { parsedCount: 14 }, historyReceipt: { requested: 14, todayNoteFailures: 2, patients: full(14) } }),
+        censusUnmeasured: vp('Wed, Aug 19 is ready — 14 appointments reconciled. Chart content in MLS was not measured for this day.',
+          { ok: true, complete: true, scheduleReceipt: { parsedCount: 14 }, historyReceipt: { requested: 14, patients: full(14), storeCensus: { measured: false, targets: 14, rows: 14 } } }),
+        emptyDay: vp('Wed, Aug 19 was verified in Athena and has no appointments.', { ok: true, complete: true }),
+        zeroRows: vp('Wed, Aug 19 is ready — 0 appointments reconciled.',
+          { ok: true, complete: true, scheduleReceipt: { parsedCount: 0 }, historyReceipt: {} })
+      };
+    });
+    measured.item2NoteFail = shapes.noteFail.head;
+    eq(shapes.censusOnly.head, 'Wed, Aug 19 is ready — all 14 appointments are in MLS.', 'the provider-unknown census verdict is summarised wrongly');
+    eq(shapes.noHistory.head, 'Wed, Aug 19 is ready — all 14 appointments are in MLS.', 'a pull with no history leg claims patients were verified');
+    for (const k of ['noteFail', 'censusUnmeasured']) {
+      const h = shapes[k].head;
+      ok(!/verified\./.test(h), `${k}: an outstanding item was summarised as verified: "${h}"`);
+      ok(!/14 of 14/.test(h), `${k}: the headline contradicts itself: "${h}"`);
+      ok(/Open Details/.test(h), `${k}: the headline does not point at the fold: "${h}"`);
+    }
+    eq(shapes.emptyDay, null, 'a verified empty day is being folded');
+    eq(shapes.zeroRows, null, 'a zero-row verdict is being folded');
     /* a refusal is not folded at all */
     const refusal = await page.evaluate(() => window.__mlsCalHeroPull._verdictParts('Sign in to MLS before pulling from Athena.', { ok: false }));
     eq(refusal, null, 'a refusal message is being folded');
