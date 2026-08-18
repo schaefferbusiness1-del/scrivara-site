@@ -252,6 +252,89 @@ async function run() {
       stableSteady: { max: max(pick(steady, (r) => r.stable)), avg: avg(pick(steady, (r) => r.stable)) },
       firstSwitch: rows[0]
     };
+
+    /* ================= PART 2: dr-1.2.0 — a day switch mid-draft can NEVER
+       cross patients. The live defect: workers reach rows as
+       (window._opPrep||[])[idx] — the LIVE array by POSITION — and a day
+       switch REPLACES that array, silently re-pointing every remaining worker
+       at whichever patient sits at the same index on the new day. The stub
+       below reproduces exactly that access pattern, so if the identity bind
+       regresses, drafts land on day-2 row objects and these checks fail. */
+    const DAY2 = '2026-08-19';
+    await page.evaluate((d2) => {
+      const N = (window._calAppts || []).length;
+      const extra = [];
+      for (let i = 0; i < N; i++) extra.push({ id: 'b' + i, name: 'Other' + i + ' Sample', patientId: 'syn2-' + i,
+        appt_date: d2, start_at: d2 + 'T09:00:00', reason: 'Lumbar medial branch block', providerName: 'Sample Provider, MD' });
+      window._calAppts = (window._calAppts || []).concat(extra);
+      window.__stWrites = []; window.__stCalls = 0;
+      window.__stOrigRows = window._opPrep;
+      window.__stOrigNames = (window._opPrep || []).map((r) => (r && r.name) || '');
+      window.opPrepGenerateOne = function (i) {
+        window.__stCalls++;
+        return new Promise((res) => setTimeout(() => {
+          const live = window._opPrep || [];
+          const r = live[i];
+          window.__stWrites.push({ i,
+            sameArray: live === window.__stOrigRows,
+            sameRow: !!(r && window.__stOrigRows && r === window.__stOrigRows[i]),
+            name: (r && r.name) || '' });
+          if (r) { r.gen = true; r.note = 'PROCEDURE: synthetic'; }
+          try { opPrepRender(); } catch (e) {}
+          res(true);
+        }, 120));
+      };
+      (window._opPrep || []).forEach((r) => { if (r) { r.gen = false; r.note = ''; } });
+      try { opPrepRender(); } catch (e) {}
+      return true;
+    }, DAY2);
+    ok(await page.evaluate(() => window.__st.startDraftAll()), 'PART2: draft-all did not start');
+    await page.waitForTimeout(250); /* ~2 drafts in flight */
+    const switched = await page.evaluate((d2) => { try { return !!window.__mlsOpDay.setDay(d2); } catch (e) { return 'ERR:' + String(e && e.message); } }, DAY2);
+    ok(switched === true, 'PART2: the day switch did not run: ' + switched);
+    await page.waitForTimeout(900); /* let any in-flight worker settle */
+    const p2 = await page.evaluate(() => ({
+      calls: window.__stCalls,
+      writes: (window.__stWrites || []).slice(),
+      origNames: (window.__stOrigNames || []).slice(),
+      day2Drafted: (window._opPrep || []).filter((r) => r && r.gen).length,
+      modalText: (function () { const m = document.getElementById('opPrepModal'); return m ? String(m.textContent || '').replace(/\s+/g, ' ') : ''; })()
+    }));
+    ok(p2.writes.length >= 1, 'PART2: no draft ever ran, so the switch guard was never exercised (vacuous)');
+    for (const w of p2.writes) {
+      ok(w.sameArray && w.sameRow, `PART2 CROSS-PATIENT WRITE: draft ${w.i} landed outside the original day's array (${JSON.stringify(w)})`);
+      eq(w.name, p2.origNames[w.i], `PART2: draft ${w.i} wrote "${w.name}" where the run started with "${p2.origNames[w.i]}"`);
+    }
+    eq(p2.day2Drafted, 0, `PART2: ${p2.day2Drafted} rows on the NEW day carry drafts generated for the old day`);
+    ok(/because you (changed day|moved to another day)/i.test(p2.modalText),
+      'PART2: the stop must say WHY in the doctor\'s words (modal text carries no day-switch explanation)');
+    await page.waitForTimeout(500);
+    const p2b = await page.evaluate(() => window.__stCalls);
+    ok(p2b <= p2.calls + 1, `PART2: the run kept drafting after the day switch (${p2.calls} -> ${p2b}) — it must stop, not continue into the new list`);
+    /* the honest resume: back on day 1, Draft-all is available again for the rest */
+    const back = await page.evaluate((d1) => { try { window.__mlsOpDay.setDay(d1); } catch (e) {} const b = document.getElementById('opPrepGenAllBtn'); const undone = (window._opPrep || []).filter((r) => r && !r.gen).length; return { btn: !!b, disabled: !!(b && b.disabled), undone }; }, DAY);
+    ok(back.btn && !back.disabled, 'PART2: back on the original day, Draft-all must be pressable again (the resume is the doctor\'s own press)');
+    ok(back.undone >= 1, 'PART2: the not-yet-drafted patients must still be undrafted (nothing silently drafted behind the doctor)');
+    measured.part2 = { writes: p2.writes.length, callsAtStop: p2.calls, day2Drafted: p2.day2Drafted, undoneOnReturn: back.undone };
+
+    /* ================= PART 3: the room's TOP LINE survives a shrunken
+       viewport (owner 2026-08-18: "op notes top line got all messed up again"
+       — a browser infobar compressed the window and the day title slid out of
+       view). The head must be fully inside the viewport in the room's states,
+       including ~40px shorter (infobar simulation). */
+    for (const vh of [900, 860]) {
+      await page.setViewportSize({ width: 1440, height: vh });
+      await page.waitForTimeout(350);
+      const t = await page.evaluate(() => {
+        const h = document.getElementById('mlsOpDayHead') || document.getElementById('mlsOpDayTitle');
+        if (!h) return null;
+        const r = h.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), inner: window.innerHeight, vis: r.height > 0 };
+      });
+      ok(t && t.vis, `PART3: the day head did not render at ${vh}px`);
+      ok(t && t.top >= 0, `PART3: at ${vh}px viewport the day head starts ABOVE the viewport (top ${t && t.top})`);
+      ok(t && t.bottom <= t.inner, `PART3: at ${vh}px viewport the day head extends below the fold (bottom ${t && t.bottom} of ${t && t.inner})`);
+    }
   } finally {
     await browser.close();
     srv.close();

@@ -41554,6 +41554,25 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   function setDay(k) {
     k = okKey(k);
     if (!k) return false;
+    /* AN EXPLICIT PAUSE, NEVER A SILENT ONE. Owner, 2026-08-18: "auto drafting
+       while you switch days for the op notes just does not work."
+
+       The runner reaches its rows as window._opPrep[idx], and opPrepSetDay()
+       REPLACES that array — so a switch mid-run silently re-points every
+       remaining worker at whichever patient sits at the same index on the new
+       day. dr-1.2.0 in the connect file makes that fail closed, but a guard
+       tripping is not an explanation. This stops the run HERE, on the doctor's
+       own action, through the runner's OWN Stop control, and says what happened
+       and what to do about it in the quiet line the room already owns. The
+       resume is his Draft-all on the day he comes back to: those patients still
+       have no note, so it is lit for him. */
+    if (tally().drafting > 0) {
+      var stopBtn = el('tpfStop');
+      if (stopBtn) { try { stopBtn.click(); } catch (e0) {} }
+      notice = 'Drafting stopped on ' + dayShort(currentDay()) +
+        ' because you changed day. Go back to that day and press Draft all to finish them.';
+      lastSig = '';
+    }
     sel = -1; query = ''; detOpen = false; tplOpen = false;
     fmtReset();
     try {

@@ -17236,7 +17236,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* =====================================================================
    * (3) op-prep: whole-month mode + reliable Draft-all with ledger
    * ===================================================================== */
-  var RUN = { on: false, stop: false };
+  var RUN = { on: false, stop: false, rows: null, day: "", broke: false };
+  /* dr-1.2.0 — IS THIS RUN STILL DRAFTING THE LIST IT STARTED ON?
+     Three questions, all of which must still be yes before a worker touches a
+     row: the room is still on the run's day, the live array is still the very
+     array the run captured, and the row at this index is still the same object.
+     Identity (===) on purpose: openOpPrep() rebuilds equal-LOOKING rows for a
+     different day, and a value comparison would wave them through. */
+  function bound(idx) {
+    try {
+      if (!RUN.rows) return true;                       /* nothing captured: legacy path */
+      var live = window._opPrep || null;
+      if (live !== RUN.rows) return false;
+      if (RUN.day && S(window._opPrepDay) !== RUN.day) return false;
+      if (idx != null && RUN.rows[idx] !== live[idx]) return false;
+      return true;
+    } catch (eB) { return false; }                      /* cannot prove it: fail closed */
+  }
 
   function monthDays(ym) {
     /* ym = "YYYY-MM" -> ["YYYY-MM-01", ...] for the real month length */
@@ -17325,6 +17341,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!goBig) return;
     }
     RUN.on = true; RUN.stop = false;
+    /* dr-1.2.0 (owner, 2026-08-18: "auto drafting while you switch days for the
+       op notes just does not work").
+
+       WHAT ACTUALLY HAPPENS, read off this loop. Every worker below reaches the
+       row it is drafting as `(window._opPrep || [])[idx]` — the LIVE array, by
+       POSITION. opPrepSetDay() calls openOpPrep(), which REPLACES
+       window._opPrep with a freshly built array for the new day. So a day
+       switch in the middle of a run does not stop the run and does not orphan
+       it: it silently re-points every remaining worker at a DIFFERENT PATIENT
+       who happens to sit at the same index on the new day, and writes that
+       patient's row with a draft generated for someone else. The ledger then
+       scores it against the old day's name. That is a cross-patient write, and
+       it is the one class of defect this codebase never tolerates.
+
+       THE RUN IS BOUND TO THE ARRAY IT STARTED ON. Both are recorded here and
+       checked before every attempt (see `bound()`); the run FAILS CLOSED —
+       stops itself and says so — the moment the room is showing a different
+       day. It is never allowed to keep drafting into a list it did not start
+       with. Resuming is the doctor's own Draft-all on the day he came back to,
+       which is lit for him because those rows still have no note. */
+    RUN.rows = rows;
+    RUN.day = "";
+    try { RUN.day = S(window._opPrepDay); } catch (eRD) { RUN.day = ""; }
+    RUN.broke = false;
     var states = rows.map(function (r) {
       var day = ""; try { day = S(r.dateStr).replace(/^[A-Za-z]+,\s*/, "").replace(/,\s*\d{4}$/, ""); } catch (e) {}
       return { name: (r.appt && r.appt.name) || "Patient", day: day, st: "pend", msg: "" };
@@ -17354,6 +17394,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       /* b965: also clear THIS ROW's stamp. Under the parallel runner below the
          globals are shared, so they are cleared only to keep single-flight
          behaviour byte-identical; the per-row fields are the ones that decide. */
+      /* dr-1.2.0 THE BOUND CHECK, BEFORE ANY WORK IS SPENT ON THIS ROW.
+         Identity, not equality: the array this run started with must still BE
+         the array the room is showing, and the row at this index must still be
+         the same OBJECT. A day switch replaces both, and the index alone would
+         happily address a different patient. Fails closed — stops the run —
+         and the reason is reported by finish() rather than swallowed. */
+      if (!bound(idx)) { RUN.stop = true; RUN.broke = true; return false; }
       try { window.__mlsLastOpFidelityError = ""; window.__mlsLastOpErrorCode = ""; window.__mlsLastOpReconstructed = false; } catch (e0) {}
       try { var rC = (window._opPrep || [])[idx]; if (rC) { delete rC._genPass; rC._genErr = ""; rC._genErrCode = ""; rC._reconstructed = false; } } catch (e0b) {}
       /* CAPTURE WHAT THE ROW ALREADY HAD, BEFORE SPENDING AN ATTEMPT ON IT.
@@ -17701,7 +17748,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       finished = true;
       RUN.on = false;
       var el = $("opPrepStatus");
-      var summary = (RUN.stop ? "\u23F9 Stopped: " : "\u2705 Done: ") + okN + " drafted \u00B7 " + failN + " failed \u00B7 " + skipN + " skipped of " + total + ".";
+      /* dr-1.2.0: a run that stopped because the room moved to another day says
+         SO, in the doctor's own words, rather than reporting a bare "Stopped"
+         he cannot account for. The remaining patients still have no note, so
+         Draft-all on that day is lit again when he goes back \u2014 which is the
+         resume, and it is his own press rather than something that restarts
+         behind him. */
+      var brokeWord = RUN.broke
+        ? ("\u23F9 Stopped because you moved to another day: " + okN + " drafted \u00B7 " + failN
+           + " failed \u00B7 " + (total - okN - failN) + " not started of " + total
+           + ". Go back to that day and press Draft all to finish them.")
+        : "";
+      var summary = brokeWord || ((RUN.stop ? "\u23F9 Stopped: " : "\u2705 Done: ") + okN + " drafted \u00B7 " + failN + " failed \u00B7 " + skipN + " skipped of " + total + ".");
       paintLedger(states, total, total, summary);
       if (el) el.textContent = summary + " Drafts are in History \u2014 nothing was sent to Athena.";
       if (!RUN.stop && failN > 0 && el) {
