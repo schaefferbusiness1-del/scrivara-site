@@ -449,19 +449,28 @@
      The lead still has to fix the capture path at the source: this makes the
      workspace usable today, it does not make the stored record correct.
      ====================================================================== */
-  /* athenaOne page chrome that is never clinical content */
+  /* athenaOne EXAM-PREP / BRIEFING chrome. Documented at background.js:3183:
+     athenaOne v26.3 opens a briefing view on a schedule click whose stale
+     prompt reads "...recently edited this chart... REFRESH CHART". A read that
+     lands there stores the prompt as the encounter.
+     These are SURGICAL: the matched phrase is cut OUT of the line, and the
+     line is dropped only if nothing but punctuation is left. Cutting whole
+     lines is how a stoplist eats the clinical sentence sharing the line. */
   var SCRUB_CHROME = [
-    /recently edited this chart/i,
-    /refresh to view the most current information/i,
-    /^\s*refresh chart\s*$/i,
-    /^\s*print\s+premier\s+ortho/i,
-    /philadelphia hand to shoulder/i
+    /recently edited this chart(?:\s+at\s*\.?)?/ig,
+    /refresh to view the most current information\.?/ig,
+    /\bREFRESH CHART\b/g,
+    /\bPrint\s+Premier\s+Ortho\b(?:\s+and\s+Philadelphia\s+Hand\s+to\s+Shoulder)?/ig
   ];
-  /* Script/style text captured as if it were prose.
-     DELIBERATELY NARROW. A bare /\bfunction\s*\(/ would have matched the
-     clinical phrase "loss of function (grade 3)" and deleted a real exam
-     finding, so every pattern here needs syntax a sentence does not have: an
-     assignment, a declaration keyword, or a function body brace. */
+  /* Fallback ONLY. The shared, production-tested token walker
+     __mlsVisitModel._stripPageDebris (feat_visits.js:1209, guarded by
+     tests/prep-summary-debris.test.js) is preferred because the captured
+     script is usually INTERLEAVED with the note on ONE long line, and a
+     line-level rule would delete the note with it. This list runs only when
+     that shared scrubber is not loaded.
+     DELIBERATELY NARROW: a bare /\bfunction\s*\(/ would match the clinical
+     phrase "loss of function (grade 3)", so each pattern needs syntax a
+     sentence does not have - an assignment, a declaration, or a body brace. */
   var SCRUB_CODE = [
     /window\s*\.\s*[A-Za-z_$][\w$]*\s*=/,
     /[A-Za-z_$][\w$]*\s*=\s*function\s*\(/,
@@ -472,34 +481,61 @@
     /svgjotter/i,
     /\bparams\s*\.\s*div\b/
   ];
-  function scrubReason(line) {
-    var text = String(line == null ? '' : line);
-    if (!clean(text)) return '';
-    for (var i = 0; i < SCRUB_CHROME.length; i++) if (SCRUB_CHROME[i].test(text)) return 'chrome';
-    for (var j = 0; j < SCRUB_CODE.length; j++) if (SCRUB_CODE[j].test(text)) return 'code';
-    return '';
+  function sharedDebrisStripper() {
+    try {
+      var vm = window.__mlsVisitModel;
+      return (vm && isFn(vm._stripPageDebris)) ? vm._stripPageDebris : null;
+    } catch (e) { return null; }
   }
-  /* Returns {text, removed, chrome, code, raw}. `text` is what is displayed
-     and exported; `raw` is always the untouched original. */
+  function isBlankish(line) { return !/[A-Za-z0-9]/.test(String(line || '')); }
+  /* Returns {text, removed, chrome, code, raw, shared, refused}. `text` is what
+     is displayed and exported; `raw` is ALWAYS the untouched original. */
   function scrubBody(body) {
     var raw = String(body == null ? '' : body);
+    if (!clean(raw)) return { text: '', removed: 0, chrome: 0, code: 0, raw: raw, shared: false, refused: false };
     var chrome = 0, code = 0;
-    var kept = raw.split(/\r?\n/).filter(function (line) {
-      var reason = scrubReason(line);
-      if (reason === 'chrome') { chrome++; return false; }
-      if (reason === 'code') { code++; return false; }
-      return true;
+    /* 1. the briefing chrome, cut phrase-by-phrase out of each line */
+    var lines = raw.split(/\r?\n/).map(function (line) {
+      var before = line;
+      SCRUB_CHROME.forEach(function (pattern) {
+        line = line.replace(pattern, ' ');
+      });
+      if (line !== before) chrome++;
+      return line;
+    }).filter(function (line, index, all) {
+      /* drop a line only if the cut left nothing readable AND it had something */
+      return !(isBlankish(line) && !isBlankish(all === undefined ? '' : raw.split(/\r?\n/)[index] || ''));
     });
-    var text = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    var stage = lines.join('\n');
+    /* 2. the captured script text - shared token walker first */
+    var shared = sharedDebrisStripper(), usedShared = false;
+    if (shared) {
+      var walked = '';
+      try { walked = String(shared(stage) || ''); usedShared = true; } catch (e) { usedShared = false; }
+      if (usedShared) {
+        if (clean(walked) !== clean(stage)) code++;
+        stage = walked;
+      }
+    }
+    if (!usedShared) {
+      stage = stage.split(/\r?\n/).filter(function (line) {
+        if (!clean(line)) return true;
+        for (var j = 0; j < SCRUB_CODE.length; j++) {
+          if (SCRUB_CODE[j].test(line)) { code++; return false; }
+        }
+        return true;
+      }).join('\n');
+    }
+    var text = stage.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
     /* Never let the cleaner win outright: an emptied body falls back to raw. */
-    if (!text && clean(raw)) return { text: raw, removed: 0, chrome: 0, code: 0, raw: raw, refused: true };
-    return { text: text, removed: chrome + code, chrome: chrome, code: code, raw: raw, refused: false };
+    if (!text) return { text: raw, removed: 0, chrome: 0, code: 0, raw: raw, shared: usedShared, refused: true };
+    return { text: text, removed: chrome + code, chrome: chrome, code: code, raw: raw, shared: usedShared, refused: false };
   }
   function scrubNote(result) {
     if (!result || !result.removed) return '';
     var parts = [];
-    if (result.chrome) parts.push(result.chrome + ' EMR page line' + (result.chrome === 1 ? '' : 's'));
-    if (result.code) parts.push(result.code + ' script line' + (result.code === 1 ? '' : 's'));
+    if (result.chrome) parts.push('EMR page text');
+    if (result.code) parts.push('captured page script');
     return parts.join(' and ') + ' hidden as non-clinical';
   }
   /* ===== end p1-legal-scrub-1.0.0 ===== */

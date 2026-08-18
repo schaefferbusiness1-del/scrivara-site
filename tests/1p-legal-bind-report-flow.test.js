@@ -818,6 +818,15 @@ function makeRuntime(options = {}) {
     eq(a.code, 0, 'a chrome line was miscounted as script');
     eq(a.raw, A, 'the raw body was not preserved verbatim');
 
+    /* THE SHAPE THE SCREENSHOT ACTUALLY SHOWS: the banner is on the SAME line
+       as clinical text. A line-level stoplist deletes the clinical sentence
+       with the banner - the defect class this cut-the-phrase rule exists for. */
+    const inline = scrub('Assessment: lumbar radiculopathy. recently edited this chart at . Refresh to view the most current information.REFRESH CHART');
+    ok(/Assessment: lumbar radiculopathy\./.test(inline.text),
+      'a banner sharing a line with clinical text took the clinical text with it');
+    ok(!/REFRESH CHART|recently edited/.test(inline.text), 'the inline banner survived');
+    eq(inline.refused, false, 'the inline case fell back to raw instead of cleaning');
+
     /* sample B: a <script> tag's text stored as an encounter body */
     const B = 'Print Premier Ortho and Philadelphia Hand to Shoulder • 100 Example Rd\n' +
       'window.Original = {}; window.Original.IsSafari = IsSafari;\n' +
@@ -831,8 +840,27 @@ function makeRuntime(options = {}) {
     ok(!/svgjottercontainerid/.test(b.text), 'captured script text survived into the displayed body');
     ok(!/Print Premier Ortho/.test(b.text), 'the print-header page furniture survived');
     ok(/L5-S1 disc herniation with left S1 radiculopathy\./.test(b.text), 'the scrubber deleted the clinical impression');
-    ok(b.removed >= 4, 'the scrubber under-counted what it removed: ' + b.removed);
+    ok(b.removed >= 2, 'the scrubber under-counted what it removed: ' + b.removed);
     eq(b.raw, B, 'the raw body was not preserved verbatim');
+
+    /* The SHARED production token walker is preferred when it is loaded,
+       because the captured script is usually interleaved with the note on ONE
+       long line - exactly the owner's screenshot. Prove the delegation, and
+       prove the clinical tail survives it. */
+    {
+      const withShared = makeRuntime({ readers: { __mlsVisitModel: {
+        getVisits: p => (p && p.visits) || [],
+        _stripPageDebris: text => String(text).replace(/window\.[\s\S]*?params\.div;\s*\}/g, ' ')
+      } } });
+      const s = withShared.api.scrubBody(
+        'Print Premier Ortho window.Original = {}; IsSafari = function(){ return 0; } Jotter = function(params) { var svgjottercontainerid = params.div; } Impression: L5-S1 herniation.');
+      eq(s.shared, true, 'the shared production debris stripper was not used when it was available');
+      ok(/Impression: L5-S1 herniation\./.test(s.text), 'delegating to the shared stripper lost the clinical tail');
+      ok(!/window\.Original|svgjottercontainerid/.test(s.text), 'delegating to the shared stripper left script text');
+    }
+    /* and with no shared stripper loaded, the local fallback still runs */
+    eq(scrub('window.Original = {};\nImpression: intact.').shared, false,
+      'the fallback claimed to have used a stripper that is not loaded');
 
     /* NEVER delete a clinical line. These are the near-misses that a greedy
        pattern would have eaten - "loss of function (grade 3)" was the reason
