@@ -5703,6 +5703,17 @@
            read-only views of this row - no clinical text, no name. */
         reasonOf: function () { return String(entry.todayNoteReason || ""); },
         retrying: function () { entry.todayNoteDeferred = true; safe(function () { tnEmitDayNoteColumn(entry); }); },
+        /* nih-1.0.0 (2026-08-18): a row DROPPED from _tnDefer without its
+           attempt() ever running kept todayNoteDeferred=true forever, and
+           niSyncFromReceipt skips deferred rows — so every lease-wait or
+           terminal drop stranded its rows outside BOTH queues (measured live:
+           15 queued, 13 dropped mid-pull while the pull held the lease ~11
+           min, notesidle gate read "nothing-due"). disown() releases the
+           receipt row so the settle's sync can adopt it into the idle queue.
+           Only attempt() and disown() may clear the flag; retrying() re-sets
+           it, and a stopped-by-user drop still syncs into a guard that
+           refuses enqueue, so Stop never re-drives Athena. */
+        disown: function () { entry.todayNoteDeferred = false; if (!entry.todayNoteReason) entry.todayNoteReason = "deferred-dropped"; safe(function () { tnEmitDayNoteColumn(entry); }); },
         attempt: function () {
           var vp = safe(function () { return window.__mlsVisitSavePref; }, null);
           var p = safe(function () { return findStorePatient(pid); }, null);
@@ -6463,7 +6474,8 @@
       code: String(item.code || "unknown"),
       reasonOf: isFn(item.reasonOf) ? item.reasonOf : null,
       retrying: isFn(item.retrying) ? item.retrying : null,
-      attempt: item.attempt, settleDay: isFn(item.settleDay) ? item.settleDay : null, attempts: 0 });
+      attempt: item.attempt, settleDay: isFn(item.settleDay) ? item.settleDay : null,
+      disown: isFn(item.disown) ? item.disown : null, /* nih-1.0.0 */ attempts: 0 });
     safe(function () { _tnBackfill.queued = Number(_tnBackfill.queued || 0) + 1; _tnBackfill.at = Date.now(); });
     return true;
   }
@@ -6476,6 +6488,7 @@
     _tnDefer.waits = 0;
     if (!_tnDefer.queue.length) return 0;
     var dropped = _tnDefer.queue.splice(0, _tnDefer.queue.length);
+    dropped.forEach(function (d) { safe(function () { if (d.disown) d.disown(); }); }); /* nih-1.0.0: a dropped row is adoptable, never stranded (the stop-path sync guard still refuses enqueue) */
     var seen = [];
     dropped.forEach(function (d) { if (d.settleDay && seen.indexOf(d.settleDay) < 0) seen.push(d.settleDay); });
     seen.forEach(function (fn) { safe(function () { fn({ attempted: 0, recovered: 0, remaining: dropped.length, reason: String(reason || "stopped-by-user") }); }); });
@@ -6495,6 +6508,7 @@
       if (_tnDefer.waits >= TN_DEFER_LEASE_WAITS) {
         var dropped = _tnDefer.queue.splice(0, _tnDefer.queue.length);
         _tnDefer.waits = 0;
+        dropped.forEach(function (d) { safe(function () { if (d.disown) d.disown(); }); }); /* nih-1.0.0: release before settle so the sync can adopt */
         var seenDrop = [];
         dropped.forEach(function (d) { if (d.settleDay && seenDrop.indexOf(d.settleDay) < 0) seenDrop.push(d.settleDay); });
         seenDrop.forEach(function (fn) { safe(function () { fn({ attempted: 0, recovered: 0, remaining: dropped.length, reason: "lease-still-held" }); }); });
