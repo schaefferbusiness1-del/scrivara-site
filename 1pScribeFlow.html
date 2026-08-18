@@ -40354,18 +40354,24 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    keeps its colour, its border and its meaning, and loses only the motion.
    The thing that SHOULD be moving in this state is the single nextglow halo,
    and it is pointed at the field that needs a value — never at the border. */
+   THE ONE EXCEPTION IS THE GLOW, and it had to be measured to be found: the
+   first version of this rule matched `.onf-fillbox *::after` and therefore
+   killed nextglow's own halo on the fill-box button it points at — the lit
+   control reported animation-name "none" and nothing on the screen moved.
+   `:not([data-mls-next="1"])` is the whole fix: the ONE control that is the
+   next step keeps its halo, everything else in the box is still. */
 #opPrepModal .onf-fillbox,
 #opPrepModal .onf-fillbox::before,
 #opPrepModal .onf-fillbox::after,
-#opPrepModal .onf-fillbox *,
-#opPrepModal .onf-fillbox *::before,
-#opPrepModal .onf-fillbox *::after{
+#opPrepModal .onf-fillbox *:not([data-mls-next="1"]),
+#opPrepModal .onf-fillbox *:not([data-mls-next="1"])::before,
+#opPrepModal .onf-fillbox *:not([data-mls-next="1"])::after{
   animation:none !important;
   transition:none !important;
 }
 /* prefers-reduced-motion already kills it through feat_mls_magic's own
-   generated off-switch; this states the same thing for the room so the two
-   cannot drift apart. */
+   generated off-switch, and nextglow-1.0.0 stills its own halo there too;
+   this states the same thing for the room so the three cannot drift apart. */
 @media (prefers-reduced-motion: reduce){
   #opPrepModal .onf-fillbox,
   #opPrepModal .onf-fillbox *{ animation:none !important; transition:none !important; }
