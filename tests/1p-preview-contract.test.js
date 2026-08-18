@@ -110,8 +110,8 @@ const P1_CONFIG_RELEASE_SUBS = [
    /cloned is re-derived at cloned-20260818-r12; the notes apostrophe fix (0x19 byte) moved all three again. */
 /* Advanced by the 1p train of 2026-08-18 (batch 12): notes-idle-1.0.0 (leftover day-notes catch up quietly when idle,
    never touches the athena tab; cloned r13) + opnote-day-3.0.0 (the LEFT patient rail is back, calm room, one glow,
-   Fields box static; cloned r14). Extension/production baselines stay at the 3.0.64 release commit. */
-const P1_BASE_COMMIT = '98bf309a8121c954388a3d718b5ebb3a3bcd37dc';
+   Fields box static; cloned r14) + junkscrub-1.0.0 (cloned r15). Extension/production baselines stay at the 3.0.64 release commit. */
+const P1_BASE_COMMIT = '876c8b126265dd095ab21f28590c95eca9925ddc';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
