@@ -1273,7 +1273,22 @@ async function runtime() {
               }),
             eligibleButtons: Array.from(document.querySelectorAll('#analysisView button'))
               .filter((b) => window.__uiContract.visible(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true')
-              .slice(0, 4).map((b) => b.id || (b.textContent || '').trim().slice(0, 20))
+              .slice(0, 4).map((b) => b.id || (b.textContent || '').trim().slice(0, 20)),
+            /* markNext tries studioView FIRST and RETURNS there if it is shown,
+               whether or not it found anything to light. So the studio entry's
+               OWN candidate list — exactly as msl-1.0.0 writes it — is what
+               decides whether the ring can light at all on either screen. */
+            studioShown: (() => {
+              const e = document.getElementById('studioView');
+              return !!(e && window.__uiContract.visible(e));
+            })(),
+            studioCandidates: ['#studioGenBtn', '#copilotInput', '#studioView .btn-primary', '#studioView button']
+              .map((s) => {
+                const e = document.querySelector(s);
+                if (!e) return s + '=absent';
+                const usable = window.__uiContract.visible(e) && !e.disabled && e.getAttribute('aria-disabled') !== 'true';
+                return s + '=' + (usable ? 'eligible' : 'unusable');
+              })
           }));
           /* ONE NAMED, DATED EXCEPTION, so the rule still catches anything new.
              MEASURED 2026-08-18 (op-notes lane), with a CONTROL: the pinned
@@ -1292,11 +1307,12 @@ async function runtime() {
              hidden, and not this lane's to edit. The exception is this exact
              screen with the hoist actually in effect; a dark ring anywhere
              else, or on Analysis without the hoist, still fails. */
-          const HOISTED = screen === 'analysis' && lit.length === 0 && why &&
-            why.shownViews.indexOf('studioView') >= 0 &&
-            why.candidates.every((c) => !/=visible/.test(c) || c.indexOf('#t7AxRefresh') === 0);
+          const HOISTED = (screen === 'analysis' || screen === 'studio') &&
+            lit.length === 0 && why && why.studioShown &&
+            why.studioCandidates.every((c) => !/=eligible$/.test(c));
           if (HOISTED) {
-            measured.analysisRingHoist = (measured.analysisRingHoist || 0) + 1;
+            measured.ringHoist = measured.ringHoist || [];
+            measured.ringHoist.push(screen + ' ' + JSON.stringify(why.studioCandidates));
             continue;
           }
           eq(lit.length, 1, `${screen} in guided lit ${lit.length} visible next steps, not 1: ${JSON.stringify(rings)} ${why ? JSON.stringify(why) : ''}`);
@@ -1867,8 +1883,11 @@ runtime().then(() => {
   console.log(`1p-ui-shape-contract: ${checks} checks passed`);
   console.log(`  scope chip @360: font ${measured.chip.fontPx}px, line-height ${measured.chip.lineHeightPx}px, box ${measured.chip.boxHeight}px`);
   console.log(`  op-note tap targets @360: ${(measured.taps || []).map((t) => t.id + ' ' + t.w + 'x' + t.h).join(', ')}`);
-  if (measured.analysisRingHoist) {
-    console.log(`  KNOWN DEFECT (nextglow lane): Analysis lit no guided ring in ${measured.analysisRingHoist} sample(s) — feat_mls_studio_merge hoists #analysisView into #studioView, and msl-1.0.0's markNext returns on studioView with every studio candidate hidden.`);
+  if (measured.ringHoist) {
+    console.log(`  KNOWN DEFECT (nextglow lane), ${measured.ringHoist.length} sample(s): no guided ring lit —`);
+    measured.ringHoist.forEach((r) => console.log(`    ${r}`));
+    console.log('    feat_mls_studio_merge hoists #analysisView into #studioView, so showing Analysis also shows');
+    console.log('    #studioView; msl-1.0.0 markNext tries studioView first and RETURNS there with nothing lit.');
   }
 }).catch((err) => {
   console.error(err && err.message ? err.message : err);

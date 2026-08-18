@@ -769,6 +769,74 @@ async function runtime() {
     }
 
     /* ================================================================
+     * 7b2. THE TASKBAR NEVER COVERS THE PATIENTS
+     *
+     * MEASURED at 1366x900 with 24 patients: the card grid is 848px tall and
+     * starts at y=164, so it runs to y=1012 — past the window and straight
+     * through the band the app taskbar occupies. #oprEditor already reserves
+     * 124px of padding-bottom, but padding only lets the LAST row be scrolled
+     * clear; the rows sitting in the dock's band at scroll 0 are still
+     * covered. dock-1p-1.1.0's own probe scored that 25/25.
+     * ============================================================== */
+    {
+      const dockUp = await page.waitForFunction(() => !!document.getElementById('mlsDock'), null, { timeout: 30000 })
+        .then(() => true).catch(() => false);
+      /* THE SIDE IS CHOSEN, NOT ASSUMED. The taskbar remembers a per-doctor
+         side, so measuring "wherever it happens to be" would score a left
+         rail as proof about the bottom one. */
+      if (dockUp) {
+        await page.evaluate(() => { try { window.__mlsDock1p.side('bottom'); } catch (e) {} });
+        await page.waitForTimeout(700);
+      }
+      await page.evaluate((d) => window.__opn.open(d), DAY);
+      await page.waitForTimeout(1800);
+      const fit = await page.evaluate(() => ({
+        fit: window.__mlsOpDay.fit(),
+        listBottom: (() => { const e = document.getElementById('mlsOpDayList'); return e ? Math.round(e.getBoundingClientRect().bottom) : null; })(),
+        scrolls: (() => { const e = document.getElementById('mlsOpDayList'); return !!(e && e.scrollHeight > e.clientHeight + 2); })(),
+        headTop: Math.round(document.getElementById('mlsOpDay').getBoundingClientRect().top),
+        innerH: window.innerHeight,
+        dock: (() => {
+          const d = document.getElementById('mlsDock');
+          if (!d) return null;
+          const r = d.getBoundingClientRect();
+          return { top: Math.round(r.top), h: Math.round(r.height), w: Math.round(r.width) };
+        })()
+      }));
+      measured.fit = Object.assign({ dockUp }, fit);
+      ok(fit.fit.capped > 0,
+        `the card list is not capped at all (${JSON.stringify(fit.fit)}) — with 24 patients it runs past the window and under the taskbar`);
+      ok(fit.scrolls,
+        'the card list is capped but does not scroll, so patients below the fold are unreachable');
+      if (dockUp && fit.dock && fit.dock.top > fit.innerH / 2) {
+        ok(fit.listBottom <= fit.dock.top,
+          `the card list ends at ${fit.listBottom}px and the taskbar starts at ${fit.dock.top}px — the taskbar covers the patients`);
+        const hits = await page.evaluate(() => window.__mlsDock1p.roomObstruction());
+        ok(hits && hits.n > 0, `the taskbar obstruction probe sampled nothing: ${JSON.stringify(hits)}`);
+        eq(hits.hits, 0,
+          `the taskbar covers the op-note room's content at ${hits.hits}/${hits.n} sample points`);
+      } else {
+        /* No dock on the page: the reservation must still come from the
+           shell's own --opr-dock-clear rather than from nothing. */
+        ok(fit.fit.band >= 100,
+          `with no taskbar rendered the list reserved ${fit.fit.band}px — the shell's own --opr-dock-clear is at least 104px`);
+      }
+      /* the day strip stays put while the patients scroll under it */
+      const stayed = await page.evaluate(async () => {
+        const before = Math.round(document.getElementById('mlsOpDay').getBoundingClientRect().top);
+        const list = document.getElementById('mlsOpDayList');
+        list.scrollTop = list.scrollHeight;
+        await new Promise((r) => setTimeout(r, 300));
+        return { before, after: Math.round(document.getElementById('mlsOpDay').getBoundingClientRect().top),
+          scrolled: Math.round(list.scrollTop) };
+      });
+      ok(stayed.scrolled > 0, `the card list did not scroll: ${JSON.stringify(stayed)}`);
+      eq(stayed.after, stayed.before,
+        `scrolling the patients moved the day switcher (${stayed.before}px -> ${stayed.after}px) — the switcher must stay put`);
+      await page.evaluate(() => { const l = document.getElementById('mlsOpDayList'); if (l) l.scrollTop = 0; });
+    }
+
+    /* ================================================================
      * 7c. AUTOMATIC DRAFTING SPEAKS ON THIS SCREEN, NOT IN A TOAST
      *
      * Owner: the "Drafting the op notes that need one. Stop any time." toast
@@ -980,6 +1048,7 @@ runtime()
     console.log(`  AFTER  card height                  : ${measured.cardHeight}`);
     console.log(`  AFTER  header chips                 : ${JSON.stringify(measured.chips)}`);
     console.log(`  AFTER  quiet run status             : ${JSON.stringify(measured.notice)}`);
+    console.log(`  AFTER  taskbar clearance            : ${JSON.stringify(measured.fit)}`);
     (measured.place || []).forEach((p) => {
       console.log(`  AFTER  place @${p.tag.padEnd(5)}              : ${p.headId} top ${p.headTop}px, scrollers ${JSON.stringify(p.scrollers)}, occluded ${p.occluded.length}`);
     });

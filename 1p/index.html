@@ -40711,6 +40711,73 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      scroll is reset once per STATE TRANSITION - never on every paint, or a
      doctor scrolling through a long note would be dragged back up on the next
      repaint (and opPrepRender() repaints on every keystroke in a field). */
+  /* ---- 3c. THE CARDS SCROLL, THE DAY STRIP DOES NOT --------------------
+     MEASURED (real Chrome, 1366x900, 28 patients): the card grid is 848px
+     tall and starts at y=164, so it runs to y=1012 - past the bottom of a
+     900px window and straight through the band the app taskbar occupies.
+     #oprEditor is the room's scroller and already reserves 124px of
+     padding-bottom for the dock, but padding only guarantees that the LAST
+     row can be scrolled clear; it does nothing for the rows that sit in the
+     dock's band at scroll 0. dock-1p-1.1.0's own obstruction probe scores
+     that 25/25.
+
+     So the list gets its own scroller that ENDS where the dock begins. The
+     day switcher and the count stay put while the patients scroll under
+     them, which is also the better shape for a 24-patient day. The height is
+     MEASURED from the dock's own rect - never a constant, because the dock's
+     size is its own business and a number here would be wrong the first time
+     it changed - and falls back to the shell's own reservation when the dock
+     has not rendered. */
+  function dockBand() {
+    var dock = el('mlsDock');
+    var h = 0;
+    try { h = window.innerHeight || 0; } catch (e) { h = 0; }
+    if (!h) return 0;
+    if (dock) {
+      var d = null, w = 0;
+      try { d = dock.getBoundingClientRect(); w = window.innerWidth || 0; } catch (e2) { d = null; }
+      if (d && d.height > 0 && d.width > 0) {
+        /* A BOTTOM DOCK IS ONE THAT SITS IN THE LOWER HALF AND SPANS THE
+           WIDTH - not one that touches the very edge. MEASURED: testing for
+           `bottom >= innerHeight - 12` scored the floating pill dock (which
+           keeps a gap under itself) as "not a bottom dock", the reservation
+           came out 0, and the card list ran straight back under it - 15 of 25
+           sample points. Reserve from the dock's TOP, with a small margin. */
+        if (d.top > h / 2 && w && d.width > w * 0.4) return Math.round(h - d.top) + 10;
+        return 0;                                        /* left / right / top */
+      }
+    }
+    /* the shell's own --opr-dock-clear, read rather than duplicated */
+    var v = 0;
+    try {
+      var modal = el('opPrepModal');
+      var raw = modal ? getComputedStyle(modal).getPropertyValue('--opr-dock-clear') : '';
+      v = parseFloat(String(raw).trim()) || 0;
+    } catch (e3) { v = 0; }
+    return v || 104;
+  }
+  function fitList() {
+    var host = el(LISTH);
+    if (!host) return 0;
+    var st = stateNow();
+    if (st !== 'list' && st !== 'empty') {
+      if (host.style.maxHeight) { host.style.maxHeight = ''; host.style.overflowY = ''; }
+      return 0;
+    }
+    var band = dockBand();
+    var top = 0, vh = 0;
+    try { top = host.getBoundingClientRect().top; vh = window.innerHeight || 0; } catch (e) { return 0; }
+    var avail = Math.round(vh - top - band - 12);
+    /* Below this there is no room to scroll INSIDE and the room's own
+       scroller is the better answer; leaving it alone is the honest fallback. */
+    if (!vh || avail < 200) {
+      if (host.style.maxHeight) { host.style.maxHeight = ''; host.style.overflowY = ''; }
+      return 0;
+    }
+    var want = avail + 'px';
+    if (host.style.maxHeight !== want) { host.style.maxHeight = want; host.style.overflowY = 'auto'; }
+    return avail;
+  }
   function topOfRoom() {
     var modal = el('opPrepModal');
     if (!modal) return false;
@@ -41127,7 +41194,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 
     var sig = [VERSION, st, level(), moreOpen ? 1 : 0, sel, detOpen ? 1 : 0, tplOpen ? 1 : 0,
       day, query, runOn ? 1 : 0, bulkSave() ? 'B' : 'b', plan ? plan.label : '', plan && plan.able ? 1 : 0,
-      notice, shownIdx.join(',')].join('|');
+      notice, dockBand(), Math.round((window.innerHeight || 0) / 10), shownIdx.join(',')].join('|');
     for (i = 0; i < r.length; i++) {
       var s0 = statusOf(r[i], i);
       sig += '~' + S(r[i] && r[i].appt && r[i].appt.name) + '~' + S(r[i] && r[i].proc) +
@@ -41319,6 +41386,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       if (nextId) modal.setAttribute('data-mls-opnotes-next', nextId);
       else modal.removeAttribute('data-mls-opnotes-next');
     }
+    /* LAST, because it measures: everything above has finished writing, so
+       the list host's top is the one it will actually keep. */
+    fitList();
     return true;
   }
 
@@ -41466,6 +41536,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       };
     },
     setMore: function (v) { moreOpen = !!v; lastSig = ''; paint(); return moreOpen; },
+    /* the measured height the card list is capped to, and the band it is
+       keeping clear - numbers, so a test can report them rather than tick */
+    fit: function () {
+      var host = el(LISTH);
+      return { band: dockBand(), maxHeight: host ? S(host.style.maxHeight) : '', capped: fitList() };
+    },
     revert: function () {
       try { window.removeEventListener('keydown', onKey, true); } catch (e0) {}
       ['mlsOpDay', 'mlsOpDayList', 'mlsOpnNote'].forEach(function (id) {
