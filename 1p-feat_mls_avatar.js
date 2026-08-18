@@ -6494,7 +6494,7 @@
           light BEFORE it is read, by avcamFrameLooksLive — the same rule the
           shutter's own ranking pass uses. ===== */
   var FACE_FIT_TARGET = 0.34;        /* keep equal to faceCaptureVerdict's matchLimited bound */
-  var FACE_FIT_MIN_SRC = 256;        /* the 256 analysis grid: below it a crop would be upscaled */
+  var FACE_FIT_MIN_SRC = 128;        /* the SMALLER analysis grid: below it a crop would be upscaled */
   var FACE_FIT_WIDTH_SPAN = 2.38;    /* crop side / face width — puts the face at ~0.42 of the crop */
   var FACE_FIT_HEIGHT_SPAN = 1.95;   /* crop side / face height — the hair/forehead margin */
   var FACE_FIT_CENTRE_Y = 0.46;      /* the face centre's place in the crop, as the upload path uses */
@@ -6515,7 +6515,12 @@
       facePx: grid ? Math.round(Number(b.w || (b.R - b.L))) : 0, grid: grid,
       targetFrac: FACE_FIT_TARGET, sizeOk: big, eyesOk: eyes, lightOk: light,
       ready: !!(grid && big && eyes && light),
-      say: !grid ? 'Centre your face in the oval'
+      /* ⛔ THE NO-FACE LINE NAMES THE ACTION. Measured: at a head 15% of frame
+         height — a doctor sitting back from the lid — the reader finds nothing
+         at all, and no crop can rescue a box that does not exist. Moving
+         closer is the ONLY thing that fixes that framing, so the line that
+         fires there has to say so rather than "no face found yet". */
+      say: !grid ? 'Centre your face in the oval and move closer until it fills it'
         : (!light ? (exposure < 45 ? 'More light — face a window or turn a lamp on' : 'Less glare — move the bright light out of shot')
           : (!big ? 'Move closer — fill the oval' : (!eyes ? 'Look at the camera — both eyes need to be visible' : 'Framing looks good')))
     };
@@ -6554,7 +6559,7 @@
   }
   function faceFitApply(square, q) {
     var plan = faceFitPlan(square, q && q.faceResult);
-    if (!plan) return { square: square, q: q, fitted: false };
+    if (!plan) return { square: square, q: q, fitted: false, why: 'no crop plan' };
     var cropped = safe(function () {
       var canvas = document.createElement('canvas');
       canvas.width = plan.out; canvas.height = plan.out;
@@ -6564,15 +6569,15 @@
       ctx.drawImage(square, plan.sx, plan.sy, plan.side, plan.side, 0, 0, plan.out, plan.out);
       return canvas;
     }, null);
-    if (!cropped) return { square: square, q: q, fitted: false };
+    if (!cropped) return { square: square, q: q, fitted: false, why: 'the crop could not be drawn' };
     var q2 = frameQuality(cropped);
     /* the shutter's own rule: an unlit surface never reaches the matcher */
-    if (!avcamFrameLooksLive(q2)) return { square: square, q: q, fitted: false };
+    if (!avcamFrameLooksLive(q2)) return { square: square, q: q, fitted: false, why: 'the crop had no light in it' };
     q2.faceLit = true;
     q2.faceResult = safe(function () { return faceReadPortrait(cropped); }, null);
     q2.faceVerdict = faceCaptureVerdict(q2.faceResult, q2);
-    if (!faceFitBetter(q, q2)) return { square: square, q: q, fitted: false };
-    return { square: cropped, q: q2, fitted: true, plan: plan };
+    if (!faceFitBetter(q, q2)) return { square: square, q: q, fitted: false, why: 'the crop read no better' };
+    return { square: cropped, q: q2, fitted: true, why: '', plan: plan };
   }
   /* ===== end avfit-1.0.0 ===== */
   /* ---- end live capture view ---- */
@@ -13040,6 +13045,7 @@ function kioskLine(kind, text) {
       var q0 = look(canvas);
       var fitted = faceFitApply(canvas, q0);
       return { fitted: fitted.fitted === true,
+        why: fitted.why || '',
         plan: fitted.plan || null,
         srcPx: Number(canvas.width) || 0,
         outPx: Number(fitted.square && fitted.square.width) || 0,

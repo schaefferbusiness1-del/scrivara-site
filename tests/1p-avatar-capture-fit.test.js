@@ -113,7 +113,17 @@ const fit = makeEnv();
 eq(fit.TARGET, 0.34, 'the framing target drifted from faceCaptureVerdict\'s matchLimited bound');
 ok(/faceRatio < 0\.34/.test(between(source, 'function faceCaptureVerdict', '/* BEST OF SEVERAL FRAMES')),
   'faceCaptureVerdict\'s own 0.34 bound moved, so the guide now promises a frame the shutter grades differently');
-eq(fit.MIN_SRC, 256, 'the never-upscale floor is no longer the 256 analysis grid');
+/* ⛔ 128, AND THAT NUMBER IS LOAD-BEARING. faceReadPortrait picks its grid as
+   `M = min(iw,ih) >= 256 ? 256 : 128` and then draws the source into M, so a
+   crop of 128-255 source pixels is DOWNSCALED into the 128 grid and a crop
+   below 128 is UPSCALED — which is the 12-pixel-face defect. Measured with the
+   floor at 256, the ordinary 640x480 head-22% laptop framing was refused a crop
+   it benefits from (face 0.18 -> 0.42 of the grid, no claim lost, canary still
+   refused); measured at 128, it gets it. Anything below 128 must never be
+   accepted whatever else changes. */
+eq(fit.MIN_SRC, 128, 'the never-upscale floor is no longer the smaller analysis grid');
+ok(/M = Math\.min\(iw, ih\) >= 256 \? 256 : 128/.test(source),
+  'the reader\'s grid rule moved, so FACE_FIT_MIN_SRC is no longer the point below which a crop is upscaled');
 
 /* A face 20% of the analysed square, in a 720px capture — the ordinary laptop
    framing measured above. It must be cropped, and the crop must contain the
