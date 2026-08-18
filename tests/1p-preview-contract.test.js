@@ -126,6 +126,7 @@ const P1_FILES = [
   '1p-feat_athena_provider_roster.js',
   '1p-feat_mls_avatar.js',
   '1p-feat_mls_avatar_face.js',
+  '1p-feat_mls_b121_pack.js',
   '1p-feat_fullhistory_pdf.js',
   '1p-feat_mls_legalpack.js',
   '1p-feat_mls_marketing.js',

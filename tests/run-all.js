@@ -83,6 +83,16 @@ const tests = [
      it repeats the false "open your signed-in athenaOne". Causal control
      against origin/main, and a before/after table. */
   '1p-daynote-pass-budget-and-backfill-runtime.test.js',
+  /* b121fork (owner's /cloned pull, 2026-08-17): the visit-backfill footer said
+     "Visit backfill: <Full Patient Name> - open-failed: Open your signed-in
+     athenaOne in another tab, then try again" with THREE signed-in athena tabs
+     open. Its owner is a SHARED production file, so it is forked here and
+     p1-backfill-footer-1.0.0 makes the footer two PHI-free sentences and a
+     count, asks the presence verb before it believes a no-athena-tab refusal,
+     and retries 2 s / 6 s for two rounds while presence is verified. Runs the
+     real module against a fake extension, with the SHARED engine as the
+     causal control. */
+  '1p-b121-backfill-footer-runtime.test.js',
   '1p-empty-day-regex-and-authority-repair.test.js',
   /* dsdiag-1.1.0 (readiness §11): the copyable pull report carried no pull id,
      no user, no practice/plan and no storage receipt, so two doctors' reports

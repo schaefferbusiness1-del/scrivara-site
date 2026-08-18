@@ -120,6 +120,12 @@ const BASELINE_ABSENCES = {
   'feat_athena_provider_roster.js': ['operationFromReceipt', 'picker', 'renderDropdown', 'setLastResp'],
   'feat_fullhistory_pdf.js': [],
   'feat_mls_avatar.js': ['applyVision', 'commitEdit', 'faceHiSave'],
+  /* 2026-08-18 b121 fork lane: 1p-feat_mls_b121_pack.js is a byte-identical
+     copy of the shared pack plus the delimited p1-backfill-footer-1.0.0 block,
+     so it declares every production function and this baseline is EMPTY on
+     purpose. A name arriving here later means the fork drifted from the pack
+     it forked, which is exactly the event this contract exists to report. */
+  'feat_mls_b121_pack.js': [],
   /* 2026-08-17 legal restoration lane: eight of the thirty baseline absences
      were CLOSED by porting the production function itself (p1-legal-restore-2.0.0
      in 1p-feat_mls_legalpack.js) - activeFilterNote, classifiable, fuLinesOf,
