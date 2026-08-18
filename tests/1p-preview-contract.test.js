@@ -95,7 +95,10 @@ const P1_CONFIG_RELEASE_SUBS = [
    bar), 1p-feat_mls_b121_pack.js fork (p1-backfill-footer-1.0.0), clunky-* blocks (51 items), visit lane survives the
    note phase + glow maintained; /cloned re-derived at cloned-20260818-r9 (18 files). Production/extension baselines
    untouched (469607c9). */
-const P1_BASE_COMMIT = 'c1bfa929cc141e7d9e1d4dde9f565b69dbe00f0e';
+/* Advanced by the 1p train of 2026-08-18 (batches 10+11, gate fix): AI Studio / Analysis glow ladder falls through to
+   the Analysis controls in calm mode (nothing was lit); ui-shape settle loop re-triggers nextglow; /cloned re-derived at
+   cloned-20260818-r10 (18 files). Production/extension baselines untouched (469607c9). */
+const P1_BASE_COMMIT = '4216b33396785160a4a6e7d0a5805b52a3d112a7';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
