@@ -47929,7 +47929,14 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
         key: stableKey(v) || (d ? ('d:' + d) : ('v:' + str(v.id) + ':' + i)),
         date: d, rawDate: str(v.date), type: typeOf(v) || 'Visit',
         source: sourceTag(v), summary: trim(v.aiSummary), body: bodyOf(v),
-        visitId: str(v.id), fromStore: 'visits', hasNote: false
+        visitId: str(v.id), fromStore: 'visits', hasNote: false,
+        /* histview-1.0.0: the resolver hands back the ROW it resolved, so a
+           renderer that needs the structured fields (findings / plan / meds /
+           cpt / icd10 / scores / indexOnly / textHead) or the UNSCRUBBED body
+           does not have to re-find it and cannot end up looking at a different
+           row than the one that was counted. Display-only: nothing reads back
+           through it, and `body` above is still the scrubbed text. */
+        row: v
       });
       if (created) out.sources[e.source] = (out.sources[e.source] || 0) + 1;
     }
@@ -47939,12 +47946,15 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
       var n = nn[i]; if (!n) continue;
       d = noteDate(n);
       var known = d ? byDay[d] : null;
-      if (known) { known.hasNote = true; if (!known.summary) known.summary = trim(n.summary || n.cc || ''); continue; }
+      if (known) { known.hasNote = true; known.noteRow = n; if (!known.summary) known.summary = trim(n.summary || n.cc || ''); continue; }
       e = push({
         key: d ? ('d:' + d) : ('n:' + str(n.id) + ':' + i),
         date: d, rawDate: str(n.date || n.created_at || ''), type: trim(n.type || n.visitType) || 'Visit recorded in MLS',
         source: 'note', summary: trim(n.summary || n.cc || ''), body: scrub(n.text || n.note || n.soap || ''),
-        visitId: '', noteId: str(n.id), fromStore: 'notes', hasNote: true
+        visitId: '', noteId: str(n.id), fromStore: 'notes', hasNote: true,
+        /* histview-1.0.0: same reason as `row` above - the renderer reads the
+           note it was actually given, never one it looked up again. */
+        noteRow: n
       });
       if (created) out.sources.note = (out.sources.note || 0) + 1;
       else e.hasNote = true;
@@ -50321,5 +50331,845 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 })();
 </script>
 <!-- ===== end clunky2-rooms-1.0.0 ======================================= -->
+<!-- ===== histview-1.0.0 — ONE encounter renderer, for the chart and the report =
+     Owner, 2026-08-18: "I like the legal report thing u added but needs some
+     work and like the visits and encounters is just random text basically.
+     Also fix that under the patient's history — make sure the visits and
+     encounters are there and actually look good."
+
+     MEASURED before this block, on the two surfaces the owner named:
+
+       surface                              what a visit looked like
+       ------------------------------------ ---------------------------------
+       History room (#historyView)          THE VISITS WERE NOT THERE AT ALL.
+                                            #histList renders saved MLS NOTES
+                                            (getNotes()); p.visits[] — every
+                                            encounter the Athena pull brought
+                                            across — has no surface in this
+                                            room. A chart with 12 pulled
+                                            encounters and no recorded note
+                                            showed "No saved visits yet".
+       Legal "Visits & encounters"          one <pre> per encounter holding the
+       (p1-legal chronology + every          whole captured body as ONE run of
+        report built from chronologyText)    text: no date heading a reader can
+                                            scan, no section labels, and the
+                                            athenaOne index line, the exam and
+                                            the plan all in the same grey blob.
+                                            That is the "random text".
+
+     WHAT THIS BLOCK ADDS
+
+       window.__mlsEncView — ONE renderer with ONE input shape (a `record`) and
+       three outputs: a History card (HTML), a print-friendly block (text) and
+       a one-line chronology row. The History room and the Legal reports call
+       the SAME functions, so a visit cannot read one way on the chart and
+       another way in the report.
+
+       It does NOT decide which visits exist. window.__mlsPtVisits (pvr-1.0.0)
+       is the one resolver and stays the one resolver: this block asks it for
+       the list and the count and never re-derives either — the four-readers
+       defect pvr-1.0.0 exists to close would come straight back if a fifth
+       reader counted visits for a header.
+
+     THE JUNK DETECTOR IS CENTRALISED HERE, NOT FORKED.
+     p1-legal-scrub-1.0.0 named the two sources the owner screenshotted
+     (athenaOne briefing chrome, and a page script's own source text captured
+     as an encounter body — the literal tag name is deliberately NOT written
+     in this comment: tests/static-site.test.js extracts inline scripts with
+     an HTML-unaware regex, and naming it here made the extractor start the
+     "script" at this line and refuse the whole block as a syntax error).
+     Those patterns now live in exactly one place — this
+     block — and 1p-feat_mls_legalpack.js delegates to it whenever it is
+     loaded, which in this app is always. The copy still inside the legal pack
+     is explicitly demoted to the OFFLINE fallback its own vm harness runs
+     against, and the delegation is proved on the live page rather than
+     grepped for (tests/1p-histview-contract.test.js).
+
+     WHY A FLAGGED BODY IS NOT DUMPED
+     A body that still carries page furniture is not a note a doctor can read,
+     and the junkscrub lane is repairing the STORED record. Until it does:
+       - History: a body with nothing readable left says so in plain words and
+         offers the app's own re-read; a body that still has clinical text
+         after cleaning shows that text, plus the same plain-words notice, and
+         in NEITHER case does a junk literal reach the DOM.
+       - Legal: a body with nothing readable left is OMITTED and counted in one
+         footnote. A body whose clinical text survived cleaning is NOT omitted —
+         dropping documented clinical text out of a records compilation is the
+         one thing this workspace's own code calls the most dangerous output it
+         can produce, and no display defect justifies it.
+
+     No regex in this block is authored through a shell; every one of them was
+     written straight into the file, because four shipped /1p regexes have
+     already lost a backslash in transport.
+
+     Reversible: window.__mlsEncView.revert() takes the section off the History
+     room and disables this stylesheet; the legal pack falls back to its own
+     path the moment this API is gone. -->
+<style id="mlsHxCss">
+#mlsHxSection{margin:12px 0 6px}
+#mlsHxSection[hidden]{display:none!important}
+#mlsHxSection .hx-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:0 0 2px;font-size:15.5px;font-weight:800;color:var(--ink,#1A211C)}
+#mlsHxSection .hx-count{font-weight:600;font-size:12.5px;color:var(--muted,#5c6b60)}
+#mlsHxSection .hx-lead{margin:0 0 8px;font-size:12.5px;color:var(--muted,#5c6b60)}
+#mlsHxSection .hx-group{margin:0 0 10px}
+#mlsHxSection .hx-gh{font-size:11.5px;letter-spacing:.6px;text-transform:uppercase;font-weight:800;color:var(--muted,#5c6b60);margin:10px 0 6px}
+#mlsHxSection .hx-card{border:1px solid var(--line,#dfe6e1);border-radius:12px;background:var(--card,#fff);margin:0 0 8px;overflow:hidden;min-width:0}
+#mlsHxSection .hx-card[hidden]{display:none!important}
+#mlsHxSection .hx-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;min-height:44px;
+  padding:10px 12px;border:0;background:transparent;text-align:left;cursor:pointer;font:inherit;color:inherit}
+#mlsHxSection .hx-head:hover{background:var(--soft,#EAF1EC)}
+#mlsHxSection .hx-date{font-weight:800;font-size:13.5px;color:var(--ink,#1A211C)}
+#mlsHxSection .hx-type{font-size:13px;color:var(--ink,#1A211C);overflow-wrap:anywhere;min-width:0}
+#mlsHxSection .hx-prov{font-size:12px;color:var(--muted,#5c6b60);overflow-wrap:anywhere;min-width:0}
+#mlsHxSection .hx-src{margin-left:auto;font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+  border:1px solid var(--line,#dfe6e1);border-radius:999px;padding:3px 9px;color:var(--muted,#5c6b60);white-space:nowrap}
+#mlsHxSection .hx-src[data-src="Athena"]{background:#eef4fc;border-color:#d7e6fb;color:#204034}
+#mlsHxSection .hx-src[data-src="MLS"]{background:#EAF1EC;border-color:#cfe0d4;color:#2E6A4B}
+#mlsHxSection .hx-body{padding:0 12px 10px;min-width:0}
+#mlsHxSection .hx-body[hidden]{display:none!important}
+#mlsHxSection .hx-sec{margin:0 0 9px;min-width:0}
+#mlsHxSection .hx-sl{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;font-weight:800;opacity:.62;margin:0 0 2px}
+#mlsHxSection .hx-p{margin:0 0 5px;font-size:13px;line-height:1.5;color:var(--ink,#1A211C);overflow-wrap:anywhere;white-space:pre-line}
+#mlsHxSection .hx-ul{margin:0 0 5px;padding-left:18px}
+#mlsHxSection .hx-ul li{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+#mlsHxSection .hx-rest[hidden]{display:none!important}
+#mlsHxSection .hx-note{font-size:12.5px;line-height:1.45;color:#7a5a16;background:#fff7e6;border:1px solid #f0d79a;
+  border-radius:10px;padding:8px 11px;margin:0 0 8px;overflow-wrap:anywhere}
+#mlsHxSection .hx-acts{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 0}
+#mlsHxSection .hx-btn{min-height:40px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
+  background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:9px 15px;cursor:pointer}
+#mlsHxSection .hx-btn:hover{background:var(--soft,#EAF1EC)}
+#mlsHxSection .hx-btn.hx-go{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B)}
+#mlsHxSection .hx-btn[disabled]{opacity:.55;cursor:default}
+#mlsHxSection .hx-all{min-height:40px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
+  background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:9px 15px;cursor:pointer;margin:2px 0 4px}
+#mlsHxSection .hx-all:hover{background:var(--soft,#EAF1EC)}
+#mlsHxSection .hx-empty{border:1px dashed var(--line,#dfe6e1);border-radius:12px;padding:14px 14px;
+  font-size:13px;line-height:1.5;color:var(--ink,#1A211C);background:var(--card,#fff)}
+#mlsHxSection .hx-say{font-size:12px;color:var(--muted,#5c6b60);margin:4px 0 0;min-height:16px}
+@media(max-width:520px){
+  #mlsHxSection .hx-src{margin-left:0}
+  #mlsHxSection .hx-head{padding:11px 11px}
+}
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsEncView) return;
+
+  var VERSION = 'histview-1.0.0';
+
+  function S(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function trim(v) { return S(v).trim(); }
+  function isFn(f) { return typeof f === 'function'; }
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function esc(v) {
+    return S(v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function model() { return safe(function () { return window.__mlsVisitModel; }, null); }
+  function arr(v) { return (v && v.length !== undefined && typeof v !== 'string') ? [].slice.call(v) : []; }
+
+  /* ===================================================== THE JUNK DETECTOR
+     Moved here from p1-legal-scrub-1.0.0 so there is ONE of it. Same rules,
+     same guarantees, same return shape:
+       - it works phrase by phrase, never by deleting whole lines, because the
+         owner's screenshot has the banner sharing a line with the assessment;
+       - the shared production token walker (__mlsVisitModel._stripPageDebris,
+         feat_visits.js) is preferred for the captured <script> text, because
+         that text is usually interleaved with the note on ONE long line;
+       - a body the cleaner would empty falls back to the RAW body and says it
+         refused, so a cleaner can never silently delete a whole note;
+       - `raw` is always the untouched original. */
+  var CHROME = [
+    /recently edited this chart(?:\s+at\s*\.?)?/ig,
+    /refresh to view the most current information\.?/ig,
+    /\bREFRESH CHART\b/g,
+    /\bPrint\s+Premier\s+Ortho\b(?:\s+and\s+Philadelphia\s+Hand\s+to\s+Shoulder)?/ig
+  ];
+  /* DELIBERATELY NARROW: a bare /\bfunction\s*\(/ matches the clinical phrase
+     "loss of function (grade 3)", so every pattern here needs syntax a
+     sentence does not have — an assignment, a declaration, or a body brace. */
+  var CODE = [
+    /window\s*\.\s*[A-Za-z_$][\w$]*\s*=/,
+    /[A-Za-z_$][\w$]*\s*=\s*function\s*\(/,
+    /\bfunction\s*\([^)]*\)\s*\{/,
+    /(?:^|[;{}])\s*(?:var|let|const)\s+[A-Za-z_$][\w$]*\s*=/,
+    /\bJotter\b/,
+    /\bIsSafari\b/,
+    /svgjotter/i,
+    /\bparams\s*\.\s*div\b/
+  ];
+  function sharedStripper() {
+    var m = model();
+    return (m && isFn(m._stripPageDebris)) ? m._stripPageDebris : null;
+  }
+  function blankish(line) { return !/[A-Za-z0-9]/.test(S(line)); }
+  function scrub(body) {
+    var raw = S(body);
+    if (!trim(raw)) return { text: '', removed: 0, chrome: 0, code: 0, raw: raw, shared: false, refused: false, by: VERSION };
+    var chrome = 0, code = 0, original = raw.split(/\r?\n/);
+    var lines = original.map(function (line) {
+      var before = line;
+      for (var i = 0; i < CHROME.length; i++) line = line.replace(CHROME[i], ' ');
+      if (line !== before) chrome++;
+      return line;
+    }).filter(function (line, index) {
+      /* drop a line only when the cut left nothing readable AND it had something */
+      return !(blankish(line) && !blankish(original[index] || ''));
+    });
+    var stage = lines.join('\n');
+    var shared = sharedStripper(), usedShared = false;
+    if (shared) {
+      var walked = '';
+      try { walked = S(shared(stage)); usedShared = true; } catch (e) { usedShared = false; }
+      if (usedShared) {
+        if (trim(walked).replace(/\s+/g, ' ') !== trim(stage).replace(/\s+/g, ' ')) code++;
+        stage = walked;
+      }
+    }
+    if (!usedShared) {
+      stage = stage.split(/\r?\n/).filter(function (line) {
+        if (!trim(line)) return true;
+        for (var j = 0; j < CODE.length; j++) { if (CODE[j].test(line)) { code++; return false; } }
+        return true;
+      }).join('\n');
+    }
+    var text = stage.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    if (!text) return { text: raw, removed: 0, chrome: 0, code: 0, raw: raw, shared: usedShared, refused: true, by: VERSION };
+    return { text: text, removed: chrome + code, chrome: chrome, code: code, raw: raw, shared: usedShared, refused: false, by: VERSION };
+  }
+  /* Two grades, because they need two different answers (see the header). */
+  function junkOf(body) {
+    var r = scrub(body);
+    var readable = r.refused ? '' : trim(r.text);
+    var letters = readable.replace(/[^A-Za-z0-9]/g, '').length;
+    var illegible = r.refused === true || (r.removed > 0 && letters < 12);
+    return { flagged: r.removed > 0 || r.refused === true, illegible: illegible,
+             removed: r.removed, chrome: r.chrome, code: r.code,
+             text: illegible ? '' : readable, raw: r.raw };
+  }
+  var JUNK_LINE = 'This note came in with Athena page text; MLS is cleaning it — read from Athena again to refresh.';
+  var INDEX_LINE = 'Index only — full note not read yet.';
+
+  /* ======================================================== PROVIDER OF A ROW
+     Also centralised: an imported chart row usually carries no `provider`
+     field and the clinician's name is inside the raw athenaOne index line
+     "MM-DD-YYYY, Provider, Cred, Specialty". Returned WITHOUT the credential
+     suffix so "M Sample" and "M Sample, DO" are one person. */
+  var ROW_MDY = /^\s*\d{2}-\d{2}-\d{4}/;
+  var ROW_SLASH = /^\s*\d{1,2}\/\d{1,2}\/\d{2,4}/;
+  var CRED_TAIL = /\s*,?\s*(MD|DO|PA-?C?|NP|CRNP|DPT|PT|RN|FNP|APRN)\.?\s*$/i;
+  function tidy(v) { return S(v).replace(/\s+/g, ' ').trim(); }
+  function normProv(v) { return tidy(S(v).replace(CRED_TAIL, '')); }
+  function providerOf(row) {
+    if (!row) return '';
+    var explicit = tidy(row.provider || row.providerName || row.doctor || row.clinician);
+    if (explicit) return normProv(explicit);
+    var lines = S(row.raw || row.detail || row.text || row.textHead || '').split(/\r?\n/);
+    for (var i = 0; i < lines.length && i < 4; i++) {
+      var ln = lines[i];
+      if (!ROW_MDY.test(ln) && !ROW_SLASH.test(ln)) continue;
+      var parts = ln.split(',');
+      if (parts.length < 2) continue;
+      var cand = tidy(parts[1]);
+      if (cand && !/^\d/.test(cand)) return normProv(cand);
+    }
+    return '';
+  }
+
+  /* ================================================================== DATES
+     Built from the Y-M-D itself with UTC arithmetic, never from a parsed
+     local Date: "2026-08-10" through new Date() lands on the 9th west of
+     Greenwich and the card would print the wrong weekday. */
+  var DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+             'August', 'September', 'October', 'November', 'December'];
+  function ymd(v) {
+    var m = model();
+    if (m && isFn(m._svcToYMD)) { var got = safe(function () { return m._svcToYMD(v); }, ''); if (got) return S(got); }
+    var s = trim(v);
+    if (s.length >= 10 && s.charAt(4) === '-' && s.charAt(7) === '-') return s.slice(0, 10);
+    return '';
+  }
+  function parts(day) {
+    var s = ymd(day);
+    if (!s) return null;
+    var y = Number(s.slice(0, 4)), mo = Number(s.slice(5, 7)), d = Number(s.slice(8, 10));
+    if (!y || !mo || !d || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return { y: y, m: mo, d: d, dow: new Date(Date.UTC(y, mo - 1, d)).getUTCDay() };
+  }
+  function dateLabel(day) {
+    var p = parts(day);
+    if (!p) return 'Date not documented';
+    return DOW[p.dow] + ', ' + MON[p.m - 1] + ' ' + p.d + ', ' + p.y;
+  }
+  function monthLabel(day) {
+    var p = parts(day);
+    if (!p) return 'Date not documented';
+    return MON[p.m - 1] + ' ' + p.y;
+  }
+
+  /* ================================================== THE SECTION PARSER
+     A captured note is never one grey blob again. Three passes, in order:
+       1. explicit clinical headings ("ASSESSMENT:", "Plan:", "S:"), which is
+          how a dictated or templated note is actually shaped;
+       2. blank-line paragraphs;
+       3. line breaks, and — for a body that arrived as one long line with no
+          break in it at all — sentence groups.
+     Bullet runs become a list wherever they appear. */
+  var HEAD_INLINE = /^\s*(?:\*\*)?\s*(CHIEF COMPLAINT|HISTORY OF PRESENT ILLNESS|REVIEW OF SYSTEMS|PAST MEDICAL HISTORY|PHYSICAL EXAMINATION|PHYSICAL EXAM|ASSESSMENT AND PLAN|ASSESSMENT & PLAN|RECOMMENDATIONS|RECOMMENDATION|COMPLICATIONS|INDICATIONS|DISPOSITION|MEDICATIONS|DIAGNOSES|DIAGNOSIS|ASSESSMENT|IMPRESSION|PROCEDURES|PROCEDURE|SUBJECTIVE|OBJECTIVE|LABORATORY|TECHNIQUE|EXAMINATION|RADIOLOGY|ALLERGIES|FOLLOW[- ]?UP|FINDINGS|IMAGING|VITALS|VITAL SIGNS|EXAM|LABS|MEDS|PLAN|HPI|ROS|CC|PE)\s*(?:\*\*)?\s*:\s*(.*)$/i;
+  var HEAD_BARE = /^\s*(?:\*\*)?\s*(CHIEF COMPLAINT|HISTORY OF PRESENT ILLNESS|REVIEW OF SYSTEMS|PAST MEDICAL HISTORY|PHYSICAL EXAMINATION|PHYSICAL EXAM|ASSESSMENT AND PLAN|ASSESSMENT & PLAN|RECOMMENDATIONS|RECOMMENDATION|COMPLICATIONS|INDICATIONS|DISPOSITION|MEDICATIONS|DIAGNOSES|DIAGNOSIS|ASSESSMENT|IMPRESSION|PROCEDURES|PROCEDURE|SUBJECTIVE|OBJECTIVE|LABORATORY|TECHNIQUE|EXAMINATION|RADIOLOGY|ALLERGIES|FOLLOW[- ]?UP|FINDINGS|IMAGING|VITAL SIGNS|VITALS)\s*(?:\*\*)?\s*$/i;
+  var SOAP_INLINE = /^\s*([SOAP])\s*[:.\-]\s*(.+)$/;
+  var BULLET = /^\s*(?:[-*•·]|\d{1,2}[.)])\s+(.*)$/;
+  var LABEL_FIX = {
+    'cc': 'Chief complaint', 'hpi': 'HPI', 'ros': 'Review of systems', 'pe': 'Physical exam',
+    'meds': 'Medications', 'labs': 'Labs', 'exam': 'Exam', 's': 'Subjective', 'o': 'Objective',
+    'a': 'Assessment', 'p': 'Plan', 'vitals': 'Vitals', 'vital signs': 'Vitals'
+  };
+  function labelOf(word) {
+    var key = tidy(word).toLowerCase();
+    if (LABEL_FIX[key]) return LABEL_FIX[key];
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  }
+  function sentences(line) {
+    var got = S(line).match(/[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g) || [];
+    var out = [], buf = [];
+    for (var i = 0; i < got.length; i++) {
+      buf.push(trim(got[i]));
+      if (buf.length === 3) { out.push(buf.join(' ')); buf = []; }
+    }
+    if (buf.length) out.push(buf.join(' '));
+    return out.filter(function (x) { return !!x; });
+  }
+  /* A block is {label, paras:[string], items:[string]}. paras and items keep
+     their own order of arrival by being emitted as one interleaved list. */
+  function flush(out, label, lines) {
+    var body = lines.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
+    if (!body) return;
+    var chunks = body.split(/\n\s*\n/).map(trim).filter(Boolean);
+    if (chunks.length === 1 && chunks[0].indexOf('\n') < 0 && chunks[0].length > 320) chunks = sentences(chunks[0]);
+    var parts2 = [];
+    for (var i = 0; i < chunks.length; i++) {
+      var rows = chunks[i].split(/\r?\n/), run = [];
+      for (var j = 0; j < rows.length; j++) {
+        var b = rows[j].match(BULLET);
+        if (b) { run.push(trim(b[1])); continue; }
+        if (run.length) { parts2.push({ list: run.slice() }); run = []; }
+        if (trim(rows[j])) parts2.push({ text: trim(rows[j]) });
+      }
+      if (run.length) parts2.push({ list: run.slice() });
+    }
+    if (!parts2.length) return;
+    out.push({ label: label, parts: parts2 });
+  }
+  function parseBody(text) {
+    var out = [], label = '', buf = [];
+    var lines = S(text).split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], m = line.match(HEAD_INLINE) || line.match(HEAD_BARE) || line.match(SOAP_INLINE);
+      if (m) {
+        flush(out, label, buf);
+        label = labelOf(m[1]);
+        buf = (m.length > 2 && trim(m[2])) ? [trim(m[2])] : [];
+        continue;
+      }
+      buf.push(line);
+    }
+    flush(out, label, buf);
+    return out;
+  }
+  function listBlock(label, values) {
+    var items = arr(values).map(function (v) {
+      if (v && typeof v === 'object') return tidy(S(v.code) + (v.desc ? (' — ' + S(v.desc)) : ''));
+      return tidy(v);
+    }).filter(Boolean);
+    if (!items.length) return null;
+    return { label: label, parts: [{ list: items }] };
+  }
+  function scoreBlock(scores) {
+    if (!scores || typeof scores !== 'object') return null;
+    var keys = Object.keys(scores), items = [];
+    for (var i = 0; i < keys.length; i++) {
+      var v = scores[keys[i]];
+      if (v === null || v === undefined || v === '') continue;
+      if (typeof v === 'object') continue;
+      items.push(tidy(keys[i]) + ': ' + tidy(v));
+    }
+    if (!items.length) return null;
+    return { label: 'Scores', parts: [{ list: items }] };
+  }
+  function hasLabel(blocks, label) {
+    for (var i = 0; i < blocks.length; i++) if (tidy(blocks[i].label).toLowerCase() === label.toLowerCase()) return true;
+    return false;
+  }
+  /* The structured fields the reader stores go in as their own labelled
+     sections, and only when the captured note did not already say them. */
+  function sectionsOf(record) {
+    var row = record.row || {}, blocks = [];
+    if (record.readable) blocks = parseBody(record.readable);
+    if (!hasLabel(blocks, 'Findings') && trim(row.findings)) flush(blocks, 'Findings', [S(row.findings)]);
+    if (!hasLabel(blocks, 'Plan') && trim(row.plan)) flush(blocks, 'Plan', [S(row.plan)]);
+    var meds = listBlock('Medications', row.meds); if (meds && !hasLabel(blocks, 'Medications')) blocks.push(meds);
+    var dx = listBlock('Diagnoses (ICD-10)', row.icd10); if (dx) blocks.push(dx);
+    var cpt = listBlock('Procedure codes (CPT)', row.cpt); if (cpt) blocks.push(cpt);
+    var sc = scoreBlock(row.scores); if (sc) blocks.push(sc);
+    return blocks;
+  }
+
+  /* ================================================================ RECORDS
+     ONE input shape. `fromEntry` adapts pvr-1.0.0's resolved entry (the chart
+     surface) and `fromLegalItem` adapts the legal pack's chronology item, so
+     both surfaces render through the same code below. */
+  function sourceLabel(tag) {
+    var t = trim(tag).toLowerCase();
+    if (t === 'athena' || t.indexOf('athena') >= 0 || t === 'chart' || t === 'copy') return 'Athena';
+    if (t === 'note' || t === 'manual' || t === 'user' || t === 'mls' || t.indexOf('mls') >= 0) return 'MLS';
+    return 'Imported';
+  }
+  function finish(rec) {
+    var j = junkOf(rec.rawBody);
+    rec.junk = j.flagged;
+    rec.illegible = j.illegible;
+    rec.junkRemoved = j.removed;
+    rec.readable = rec.indexOnly ? '' : j.text;
+    rec.sections = sectionsOf(rec);
+    rec.lines = 0;
+    for (var i = 0; i < rec.sections.length; i++) {
+      rec.lines += 1;
+      for (var k = 0; k < rec.sections[i].parts.length; k++) {
+        var part = rec.sections[i].parts[k];
+        rec.lines += part.list ? part.list.length : 1;
+      }
+    }
+    return rec;
+  }
+  function fromEntry(entry) {
+    var e = entry || {}, row = e.row || e.noteRow || null;
+    var body = row ? S(row.raw || row.detail || row.text || row.soap || row.note || '') : S(e.body);
+    var rec = {
+      key: S(e.key), date: ymd(e.date), dateLabel: dateLabel(e.date), monthLabel: monthLabel(e.date),
+      type: tidy(e.type) || 'Visit', provider: providerOf(row || { raw: body }) || '',
+      source: sourceLabel(e.source), row: row || {}, rawBody: body,
+      indexOnly: !!(row && row.indexOnly === true),
+      indexText: tidy(row && row.textHead), summary: tidy(e.summary), origin: 'chart'
+    };
+    return finish(rec);
+  }
+  function fromLegalItem(item) {
+    var it = item || {};
+    var rec = {
+      key: S(it.date) + '::' + S(it.title), date: ymd(it.date), dateLabel: dateLabel(it.date),
+      monthLabel: monthLabel(it.date), type: tidy(it.title) || 'Visit',
+      provider: tidy(it.provider) === 'Unattributed' ? '' : tidy(it.provider),
+      source: sourceLabel(it.source), row: it.row || {}, rawBody: S(it.body),
+      indexOnly: false, indexText: '', summary: '', origin: 'legal', legalSource: tidy(it.source)
+    };
+    return finish(rec);
+  }
+
+  /* THE LIST, from the ONE resolver. The count is pvr-1.0.0's count, never
+     re-counted here: a fifth reader with its own rule is the exact defect
+     pvr-1.0.0 was written to close. */
+  function forPatient(patient) {
+    var out = { count: 0, indexOnly: 0, junk: 0, records: [], resolver: '', ok: false };
+    var api = safe(function () { return window.__mlsPtVisits; }, null);
+    if (!patient || !api || !isFn(api.resolve)) return out;
+    var res = safe(function () { return api.resolve(patient); }, null);
+    if (!res) return out;
+    out.ok = true;
+    out.resolver = S(api.version);
+    out.count = Number(res.count) || 0;
+    var entries = arr(res.entries);
+    for (var i = 0; i < entries.length; i++) {
+      var rec = fromEntry(entries[i]);
+      if (rec.indexOnly) out.indexOnly++;
+      if (rec.junk) out.junk++;
+      out.records.push(rec);
+    }
+    return out;
+  }
+  function countLine(view) {
+    var n = view.count;
+    var line = n + ' visit' + (n === 1 ? '' : 's');
+    if (view.indexOnly) line += ' · ' + view.indexOnly + ' index only';
+    if (view.junk) line += ' · ' + view.junk + ' being cleaned';
+    return line;
+  }
+
+  /* ============================================================ HTML OUTPUT */
+  var FOLD_LINES = 12;
+  function partsHtml(part) {
+    if (part.list) {
+      return '<ul class="hx-ul">' + part.list.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+    }
+    return '<p class="hx-p">' + esc(part.text) + '</p>';
+  }
+  function bodyHtml(record) {
+    if (record.indexOnly) {
+      return { head: '<p class="hx-note">' + esc(INDEX_LINE) + '</p>' +
+        (record.indexText ? '<p class="hx-p">' + esc(record.indexText) + '</p>' : ''), rest: '', more: 0 };
+    }
+    var head = '', rest = '', used = 0, more = 0;
+    if (record.junk) head += '<p class="hx-note">' + esc(JUNK_LINE) + '</p>';
+    if (record.illegible) return { head: head, rest: '', more: 0 };
+    for (var i = 0; i < record.sections.length; i++) {
+      var sec = record.sections[i], html = '';
+      if (sec.label) html += '<div class="hx-sl">' + esc(sec.label) + '</div>';
+      var cost = sec.label ? 1 : 0;
+      for (var k = 0; k < sec.parts.length; k++) {
+        html += partsHtml(sec.parts[k]);
+        cost += sec.parts[k].list ? sec.parts[k].list.length : 1;
+      }
+      html = '<div class="hx-sec">' + html + '</div>';
+      if (used >= FOLD_LINES) { rest += html; more += cost; }
+      else { head += html; used += cost; }
+    }
+    if (!head && !rest) head = '<p class="hx-p">No note text was captured for this encounter.</p>';
+    return { head: head, rest: rest, more: more };
+  }
+  function cardHtml(record, opts) {
+    var o = opts || {}, hidden = o.hidden === true, open = o.open !== false;
+    var body = bodyHtml(record);
+    var acts = '<div class="hx-acts"><button type="button" class="hx-btn" data-hx-copy="' + esc(record.key) + '">📋 Copy</button>';
+    if (record.indexOnly || record.illegible) {
+      acts += '<button type="button" class="hx-btn hx-go" data-hx-read="' + esc(record.key) + '">📥 Read from Athena</button>';
+    }
+    acts += '</div>';
+    return '<div class="hx-card" data-hx-key="' + esc(record.key) + '"' +
+      ' data-hx-index="' + (record.indexOnly ? '1' : '0') + '"' +
+      ' data-hx-junk="' + (record.junk ? '1' : '0') + '"' +
+      ' data-hx-illegible="' + (record.illegible ? '1' : '0') + '"' +
+      (hidden ? ' hidden' : '') + '>' +
+      '<button type="button" class="hx-head" aria-expanded="' + (open ? 'true' : 'false') + '" data-hx-head="' + esc(record.key) + '">' +
+      '<span class="hx-date">' + esc(record.dateLabel) + '</span>' +
+      '<span class="hx-type">' + esc(record.type) + '</span>' +
+      (record.provider ? '<span class="hx-prov">' + esc(record.provider) + '</span>' : '') +
+      '<span class="hx-src" data-src="' + esc(record.source) + '">' + esc(record.source) + '</span>' +
+      '</button>' +
+      '<div class="hx-body"' + (open ? '' : ' hidden') + '>' + body.head +
+      (body.rest ? ('<div class="hx-rest" hidden data-hx-rest="' + esc(record.key) + '">' + body.rest + '</div>' +
+        '<button type="button" class="hx-btn" data-hx-more="' + esc(record.key) + '">Show more (' + body.more + ' more lines)</button>') : '') +
+      acts + '</div></div>';
+  }
+  /* Newest first, grouped by the month they happened in. Undated encounters
+     are kept — never dropped — under their own heading at the end. */
+  function groupsOf(records) {
+    var groups = [], index = {};
+    for (var i = 0; i < records.length; i++) {
+      var key = records[i].date ? records[i].date.slice(0, 7) : 'zzzz';
+      if (index[key] === undefined) { index[key] = groups.length; groups.push({ key: key, label: records[i].date ? records[i].monthLabel : 'Date not documented', records: [] }); }
+      groups[index[key]].records.push(records[i]);
+    }
+    return groups;
+  }
+  function listHtml(records, shown, isOpen) {
+    var groups = groupsOf(records), html = '', n = 0;
+    var open = isFn(isOpen) ? isOpen : function () { return true; };
+    for (var g = 0; g < groups.length; g++) {
+      var inner = '';
+      for (var i = 0; i < groups[g].records.length; i++) {
+        inner += cardHtml(groups[g].records[i], { hidden: n >= shown, open: open(groups[g].records[i]) !== false });
+        n++;
+      }
+      html += '<div class="hx-group"><div class="hx-gh">' + esc(groups[g].label) + '</div>' + inner + '</div>';
+    }
+    return html;
+  }
+
+  /* ============================================ PRINT-FRIENDLY TEXT OUTPUT
+     What the Legal reports print. Same record, same sections, no markup. */
+  function textBlock(record, opts) {
+    var o = opts || {}, out = [];
+    var head = record.dateLabel + ' — ' + record.type;
+    if (record.provider) head += ' — ' + record.provider;
+    if (o.source && record.legalSource) head += ' [' + record.legalSource + ']';
+    else if (o.source) head += ' [' + record.source + ']';
+    /* head:false for a surface that already prints the date/type line itself -
+       the legal workspace's own collapsible row head - so the reader is not
+       shown the same line twice. */
+    if (o.head !== false) out.push(head);
+    if (record.indexOnly) { out.push('  ' + INDEX_LINE); return out.join('\n'); }
+    if (record.illegible) {
+      out.push('  Not legible at export time: the stored note came in with EMR page text and no clinical text survived cleaning. The stored record is unchanged.');
+      return out.join('\n');
+    }
+    if (!record.sections.length) { out.push('  (no additional documented text)'); return out.join('\n'); }
+    for (var i = 0; i < record.sections.length; i++) {
+      var sec = record.sections[i];
+      if (sec.label) out.push('  ' + sec.label.toUpperCase());
+      for (var k = 0; k < sec.parts.length; k++) {
+        var part = sec.parts[k];
+        if (part.list) { for (var j = 0; j < part.list.length; j++) out.push('    - ' + part.list[j]); }
+        else out.push('    ' + part.text);
+      }
+    }
+    return out.join('\n');
+  }
+  /* One line for a chronology table: date, type, provider, one-line impression.
+     The impression prefers a real ASSESSMENT / IMPRESSION section, because
+     that is the sentence a reader of a chronology is looking for. */
+  var IMPRESSION_FIRST = ['impression', 'assessment and plan', 'assessment', 'findings', 'diagnoses (icd-10)', 'plan'];
+  function firstText(sec) {
+    for (var k = 0; k < sec.parts.length; k++) {
+      var part = sec.parts[k];
+      if (part.list && part.list.length) return part.list[0];
+      if (part.text) return part.text;
+    }
+    return '';
+  }
+  function impressionOf(record, cap) {
+    var limit = cap || 72;
+    if (record.indexOnly) return 'Index only — not read yet';
+    if (record.illegible) return 'Not legible — being cleaned';
+    var i, sec, text = '';
+    for (var w = 0; w < IMPRESSION_FIRST.length && !text; w++) {
+      for (i = 0; i < record.sections.length; i++) {
+        sec = record.sections[i];
+        if (tidy(sec.label).toLowerCase() !== IMPRESSION_FIRST[w]) continue;
+        text = firstText(sec); if (text) break;
+      }
+    }
+    if (!text) { for (i = 0; i < record.sections.length && !text; i++) text = firstText(record.sections[i]); }
+    text = tidy(text);
+    if (!text) return '(no documented text)';
+    var stop = text.match(/^[^.!?]{4,}[.!?]/);
+    if (stop) text = tidy(stop[0]);
+    return text.length > limit ? (text.slice(0, limit - 1) + '…') : text;
+  }
+  function chronRow(record) {
+    return { date: record.date || '(undated)', type: record.type,
+             provider: record.provider || 'Unattributed', impression: impressionOf(record) };
+  }
+  function pad(v, width) { var s = S(v); while (s.length < width) s += ' '; return s; }
+  function chronTable(records) {
+    var rows = records.map(chronRow);
+    var w = { date: 10, type: 4, prov: 8 };
+    rows.forEach(function (r) {
+      w.type = Math.max(w.type, Math.min(28, r.type.length));
+      w.prov = Math.max(w.prov, Math.min(24, r.provider.length));
+    });
+    var out = [pad('DATE', w.date) + '  ' + pad('TYPE', w.type) + '  ' + pad('PROVIDER', w.prov) + '  IMPRESSION'];
+    rows.forEach(function (r) {
+      out.push(pad(r.date, w.date) + '  ' + pad(r.type.slice(0, w.type), w.type) + '  ' +
+        pad(r.provider.slice(0, w.prov), w.prov) + '  ' + r.impression);
+    });
+    return out.join('\n');
+  }
+  /* The whole "Visits & encounters" body of a report, from legal items.
+     Returns the text AND the count of encounters whose body was omitted, so
+     the caller can print ONE honest footnote instead of many silent gaps. */
+  function reportSection(items, opts) {
+    var o = opts || {}, records = arr(items).map(fromLegalItem), lines = [], omitted = 0;
+    if (!records.length) return { text: '(none documented)', omitted: 0, records: records };
+    records.sort(function (a, b) {
+      if (a.date && b.date) return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);
+      if (a.date) return -1; if (b.date) return 1; return 0;
+    });
+    if (o.table !== false) { lines.push('AT A GLANCE'); lines.push(chronTable(records)); lines.push(''); }
+    for (var i = 0; i < records.length; i++) {
+      if (records[i].illegible) omitted++;
+      lines.push(textBlock(records[i], { source: true }));
+      lines.push('');
+    }
+    if (omitted) {
+      lines.push(omitted + ' encounter' + (omitted === 1 ? ' was' : 's were') + ' not legible at export time; ' +
+        'the date, type and provider are listed above and the stored record is unchanged.');
+    }
+    return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n'), omitted: omitted, records: records };
+  }
+
+  /* ====================================================== THE HISTORY ROOM */
+  var SHOWN = 5;
+  var state = { all: false, closed: {}, patient: '', sig: '', say: '' };
+  var timer = null, deb = null, installed = false, wired = false;
+
+  function byId(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function activeP() { return safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null); }
+  function host() {
+    var card = byId('historyCard');
+    if (!card) return null;
+    var node = byId('mlsHxSection');
+    if (node && node.parentNode === card) return node;
+    if (!node) { node = document.createElement('section'); node.id = 'mlsHxSection'; }
+    var anchor = byId('histSearchRow');
+    if (anchor && anchor.parentNode === card) card.insertBefore(node, anchor);
+    else card.appendChild(node);
+    return node;
+  }
+  function say(node, message) {
+    state.say = S(message);
+    var line = node ? node.querySelector('.hx-say') : null;
+    if (line) line.textContent = state.say;
+  }
+  function paint(force) {
+    if (!installed) return false;
+    var card = byId('historyCard');
+    if (!card) return false;
+    var node = host();
+    if (!node) return false;
+    var p = activeP();
+    if (!p) {
+      /* CLUNKY 50 is law in this room: with no patient chosen, History is the
+         whole-account list and this section has nothing honest to say. */
+      if (!node.hidden) { node.hidden = true; node.innerHTML = ''; state.sig = ''; }
+      return false;
+    }
+    var view = forPatient(p);
+    if (!view.ok) {
+      /* pvr-1.0.0 is the ONE resolver. Without it this block does not guess a
+         count from a store of its own - it says nothing at all. */
+      if (!node.hidden) { node.hidden = true; node.innerHTML = ''; state.sig = ''; }
+      return false;
+    }
+    if (S(p.id) !== state.patient) { state.patient = S(p.id); state.all = false; state.closed = {}; state.say = ''; }
+    var sig = [state.patient, view.count, view.indexOnly, view.junk, state.all,
+      view.records.map(function (r) { return r.key + '|' + r.date + '|' + r.lines + '|' + (r.junk ? 1 : 0); }).join(';')].join('~');
+    if (!force && sig === state.sig && node.innerHTML) { node.hidden = false; return true; }
+    state.sig = sig;
+    var shown = state.all ? view.records.length : Math.min(SHOWN, view.records.length);
+    var html = '<h3 class="hx-h"><span>🩺 Visits &amp; encounters</span>' +
+      '<span class="hx-count" data-hx-count="1">' + esc(countLine(view)) + '</span></h3>';
+    if (!view.records.length) {
+      html += '<div class="hx-empty">No encounters on this chart yet. When this patient’s chart is brought across from ' +
+        'athenaOne, every visit lands here with its date, its type and the note that was written that day.</div>';
+    } else {
+      html += '<p class="hx-lead">Every encounter on this chart — brought across from athenaOne and recorded in MLS — newest first.</p>';
+      html += listHtml(view.records, shown, function (rec) { return state.closed[rec.key] !== true; });
+      if (view.records.length > SHOWN) {
+        html += '<button type="button" class="hx-all" data-hx-all="1">' +
+          (state.all ? 'Show only the latest ' + SHOWN : 'Show all ' + view.records.length) + '</button>';
+      }
+    }
+    html += '<p class="hx-say" role="status" aria-live="polite">' + esc(state.say) + '</p>';
+    node.innerHTML = html;
+    node.hidden = false;
+    return true;
+  }
+  function recordFor(key) {
+    var p = activeP(); if (!p) return null;
+    var view = forPatient(p);
+    for (var i = 0; i < view.records.length; i++) if (view.records[i].key === key) return view.records[i];
+    return null;
+  }
+  function copyRecord(key, node) {
+    var rec = recordFor(key);
+    if (!rec) return false;
+    var text = textBlock(rec, { source: true });
+    var done = function () { say(node, 'Visit copied.'); };
+    var fell = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      var okc = safe(function () { return document.execCommand('copy'); }, false);
+      ta.parentNode.removeChild(ta);
+      say(node, okc ? 'Visit copied.' : 'This browser would not let MLS copy it.');
+    };
+    if (navigator.clipboard && isFn(navigator.clipboard.writeText)) {
+      safe(function () { navigator.clipboard.writeText(text).then(done, fell); }, fell);
+    } else fell();
+    return true;
+  }
+  /* ROUTED, not reinvented: the one-tap re-read is pvr-1.0.0's, which is the
+     app's own _assistReadChart behind the three-factor identity gate. */
+  function readRecord(node) {
+    var p = activeP();
+    var field = safe(function () { return window.__mlsChartField; }, null);
+    if (!p || !field || !isFn(field.read)) { say(node, 'MLS Assist and a signed-in athenaOne tab are needed for this.'); return false; }
+    field.read(p, function (message) { say(node, S(message)); });
+    return true;
+  }
+  function onClick(ev) {
+    var t = ev && ev.target;
+    if (!t || !t.closest) return;
+    var node = byId('mlsHxSection');
+    if (!node || !node.contains(t)) return;
+    var head = t.closest('[data-hx-head]');
+    if (head) {
+      var card = head.parentNode, body = card ? card.querySelector('.hx-body') : null;
+      if (body) {
+        body.hidden = !body.hidden;
+        head.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
+        state.closed[head.getAttribute('data-hx-head')] = body.hidden;
+      }
+      return;
+    }
+    var more = t.closest('[data-hx-more]');
+    if (more) {
+      var key = more.getAttribute('data-hx-more');
+      var rest = node.querySelector('[data-hx-rest="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"]');
+      if (!rest) { var all = node.querySelectorAll('[data-hx-rest]'); for (var i = 0; i < all.length; i++) if (all[i].getAttribute('data-hx-rest') === key) rest = all[i]; }
+      if (rest) { rest.hidden = false; more.hidden = true; }
+      return;
+    }
+    var allBtn = t.closest('[data-hx-all]');
+    if (allBtn) { state.all = !state.all; paint(true); return; }
+    var copy = t.closest('[data-hx-copy]');
+    if (copy) { copyRecord(copy.getAttribute('data-hx-copy'), node); return; }
+    var read = t.closest('[data-hx-read]');
+    if (read) { readRecord(node); return; }
+  }
+  function schedule() { if (deb) return; deb = setTimeout(function () { deb = null; safe(function () { paint(false); }); }, 120); }
+  function start() {
+    /* setTimeout / setInterval only. requestAnimationFrame never fires in a
+       non-compositing tab and this section would freeze half-painted. */
+    safe(function () { document.addEventListener('click', onClick, false); });
+    if (!wired) {
+      wired = true;
+      ['mls:active-patient-changed', 'mls:view-changed'].forEach(function (name) {
+        safe(function () { window.addEventListener(name, schedule); });
+      });
+    }
+    timer = setInterval(function () { safe(function () { paint(false); }); }, 1200);
+    [120, 600, 1500, 3000].forEach(function (ms) { setTimeout(function () { safe(function () { paint(false); }); }, ms); });
+    safe(function () { paint(false); });
+  }
+  function revert() {
+    safe(function () { if (timer) clearInterval(timer); }); timer = null;
+    safe(function () { if (deb) clearTimeout(deb); }); deb = null;
+    safe(function () { document.removeEventListener('click', onClick, false); });
+    safe(function () { var n = byId('mlsHxSection'); if (n && n.parentNode) n.parentNode.removeChild(n); });
+    safe(function () { var s = byId('mlsHxCss'); if (s) s.disabled = true; });
+    state.sig = '';
+    installed = false;
+    safe(function () { try { delete window.__mlsEncView; } catch (e) { window.__mlsEncView = undefined; } });
+    return true;
+  }
+
+  var API = {
+    version: VERSION,
+    /* the ONE junk detector, and the two grades it reports */
+    scrub: scrub, junk: junkOf, junkLine: JUNK_LINE, indexLine: INDEX_LINE,
+    /* the ONE provider extractor */
+    provider: providerOf,
+    /* records */
+    fromEntry: fromEntry, fromLegalItem: fromLegalItem, forPatient: forPatient,
+    sections: sectionsOf, parseBody: parseBody,
+    /* outputs */
+    cardHtml: cardHtml, listHtml: listHtml, textBlock: textBlock,
+    chronRow: chronRow, chronTable: chronTable, reportSection: reportSection,
+    impression: impressionOf, countLine: countLine, dateLabel: dateLabel,
+    /* the History room */
+    paint: paint, revert: revert, state: function () { return { all: state.all, patient: state.patient, say: state.say }; }
+  };
+  window.__mlsEncView = API;
+
+  function install() {
+    if (installed) return true;
+    installed = true;
+    safe(function () { var s = byId('mlsHxCss'); if (s) s.disabled = false; });
+    start();
+    return true;
+  }
+  if (typeof document === 'undefined' || !document.addEventListener) {
+    /* API-only realm (a vm harness): publish the renderer, mount nothing. */
+    installed = false;
+  } else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
+})();
+</script>
+<!-- ===== end histview-1.0.0 ============================================= -->
 </body>
 </html>
