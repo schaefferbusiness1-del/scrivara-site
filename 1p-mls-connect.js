@@ -38237,13 +38237,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     a.forEach(function(r){
       var k=r.patient_external_id||((r.name||'')+'|'+(r.dob||'')); if(!k||!r.name) return;
       var cur=m[k];
-      if(!cur){ m[k]={name:r.name, dob:r.dob||'', last:r.appt_date||'', visits:1, reason:r.reason||''}; }
-      else { cur.visits++; if((r.appt_date||'')>cur.last) cur.last=r.appt_date||''; if(!cur.dob&&r.dob) cur.dob=r.dob; }
+      if(!cur){ m[k]={name:r.name, dob:r.dob||'', last:r.appt_date||'', visits:1, reason:r.reason||'', pid:String(r.patient_external_id||'')}; }
+      else { cur.visits++; if((r.appt_date||'')>cur.last) cur.last=r.appt_date||''; if(!cur.dob&&r.dob) cur.dob=r.dob; if(!cur.pid&&r.patient_external_id) cur.pid=String(r.patient_external_id); }
     });
     return Object.keys(m).map(function(k){ return m[k]; });
   }
   var ALL=null;
   function ensure(){ if(!ALL||!ALL.length) ALL=patients(); return ALL; }
+  /* pvr-1.0.0: this list is built from window._calAppts, so its counter counts
+     SCHEDULED APPOINTMENT ROWS - and it printed them as "N visits" beside a
+     profile whose timeline said "No visits yet" and whose strip said 3. Say
+     what is actually counted, and where the row resolves to a real chart, defer
+     to the one visit resolver so no two surfaces can disagree again. */
+  function pickCount(p){
+    try{
+      var pid=String((p&&p.pid)||'');
+      if(pid&&window.__mlsPtVisits&&typeof window.__mlsPtVisits.countFor==='function'){
+        var pt=(typeof window.findPatient==='function')?window.findPatient(pid):null;
+        if(pt){ var n=window.__mlsPtVisits.countFor(pid); return n+' visit'+(n===1?'':'s'); }
+      }
+    }catch(e){}
+    var a=Number((p&&p.visits)||0);
+    return a+' appointment'+(a===1?'':'s');
+  }
   function build(){
     var ps=document.getElementById('ptSearch'); if(!ps) return false;
     if(ps.__mlsPick) return true; ps.__mlsPick=1;
@@ -38262,7 +38278,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dd.innerHTML='<div style="padding:7px 14px;font-size:11px;opacity:.55;border-bottom:1px solid rgba(143,216,190,.15)">'+list.length+' pulled patients · pick one</div>'+rows.map(function(p,i){
         return '<div class="mls-pick-row" data-i="'+i+'" style="padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(143,216,190,.08)">'
           +'<div><div style="font-weight:700">'+esc(p.name)+'</div><div style="font-size:11px;opacity:.6">'+(p.dob?('DOB '+esc(p.dob)):'DOB —')+(p.reason?(' · '+esc(p.reason)):'')+'</div></div>'
-          +'<div style="font-size:11px;opacity:.55;text-align:right">'+(p.last||'')+'<br>'+p.visits+' visit'+(p.visits>1?'s':'')+'</div></div>';
+          +'<div style="font-size:11px;opacity:.55;text-align:right">'+(p.last||'')+'<br>'+esc(pickCount(p))+'</div></div>';
       }).join('');
       dd.style.display='block';
       Array.prototype.forEach.call(dd.querySelectorAll('.mls-pick-row'),function(el){
@@ -50765,6 +50781,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
   }
   function qtxt(v, max) { v = (v == null ? '' : String(v)).replace(/\s+$/, ''); if (!v) return '\u2014'; return v.length > max ? v.slice(0, max - 1) + '\u2026' : v; }
+  /* pvr-1.0.0 (2026-08-17): a bare em-dash is not an answer.
+     "Athena says there are none", "the pull could not read that section" and
+     "this chart has never been pulled" all rendered as the same one character,
+     so the strip - the surface the doctor actually reads, because pf2 ships
+     COLLAPSED - said nothing at all about half of a real day's patients
+     (measured 2026-08-17: 24/24 charts landed with content, problems captured
+     on 13, medications on 12). window.__mlsChartField (shell block pvr-1.0.0)
+     resolves the four states from evidence the pull already writes. This
+     function asks it; it never infers a state from emptiness alone, and when
+     the resolver is absent it degrades to exactly the old text. */
+  function qfield(p, key, value, max) {
+    var cf = null; try { cf = window.__mlsChartField; } catch (e) {}
+    var shown = (arguments.length > 2) ? value : (p ? p[key] : '');
+    if (!cf || typeof cf.state !== 'function') return { text: qtxt(shown, max), quiet: false, read: false };
+    var st = null; try { st = cf.state(p, key, shown); } catch (e2) {}
+    if (!st) return { text: qtxt(shown, max), quiet: false, read: false };
+    if (st.state === 'present') return { text: qtxt(shown, max), quiet: false, read: false };
+    var can = false; try { can = !!st.canRead && typeof cf.canRead === 'function' && cf.canRead(); } catch (e3) {}
+    return { text: st.text, quiet: true, read: can, state: st.state };
+  }
   function quickRow(pc) {
     /* 2026-07-28 owner order: separate little boxes with everything the
        doctor needs at the top; the rest of the profile stays behind Expand.
@@ -50778,14 +50814,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { lastV = (typeof ep.lastVisitInfo === 'function') ? ep.lastVisitInfo(p.id) : null; } catch (e) {}
       try { appt = (typeof ep.apptContext === 'function') ? ep.apptContext(p) : null; } catch (e) {}
       try { var bmi = (typeof ep.resolveBmi === 'function') ? ep.resolveBmi(p) : (p.bmi || ''); var vv = (p.vitals && typeof p.vitals === 'object') ? p.vitals : {}; vit = [vv.bp ? ('BP ' + vv.bp) : '', vv.hr ? ('HR ' + vv.hr) : '', bmi ? ('BMI ' + bmi) : ''].filter(Boolean).join(' \u00b7 '); } catch (e) {}
+      /* pvr-1.0.0: ONE resolver answers "how many visits". lastVisitInfo counts
+         the notes store INCLUDING drafts; _renderProfAtGlance counted the same
+         store EXCLUDING them; the timeline counted p.visits[]; the rail picker
+         counted scheduled appointment rows. Four readers, four rules, and the
+         owner's chart truthfully showed 0, 1 and 3 at the same instant. */
+      var vres = null; try { if (window.__mlsPtVisits && typeof window.__mlsPtVisits.resolve === 'function') vres = window.__mlsPtVisits.resolve(p); } catch (e) {}
+      var vcount = vres ? vres.count : (lastV && lastV.count) || 0;
+      var vlast = '';
+      try { vlast = vres ? ((vres.entries[0] && vres.entries[0].date) || '') : String((lastV && lastV.lastDate) || ''); } catch (e) {}
+      var vtext = vcount ? (vcount + ' visit' + (vcount === 1 ? '' : 's') + (vlast ? ' \u00b7 last ' + vlast : '')) : '';
+      var vfield = vcount
+        ? { text: qtxt(vtext, 60), quiet: false, read: false }
+        : { text: (vres && vres.pulled) ? 'No visits on file for this chart.' : 'Not pulled from Athena yet.', quiet: true, read: !!(vres && !vres.pulled), state: (vres && vres.pulled) ? 'none' : 'not_pulled' };
       boxes = [
-        ['Problems', qtxt(String(p.problems || '').split(/\n/).slice(0, 4).join('\n'), 220)],
-        ['Medications', qtxt(String(p.meds || '').split(/\n/).slice(0, 4).join('\n'), 220)],
-        ['Allergies', qtxt(p.allergies, 120)],
-        ['Vitals', qtxt(vit, 90)],
-        ['Next appt', qtxt(appt && (appt.time ? appt.time + (appt.reason ? ' \u00b7 ' + appt.reason : '') : ''), 90)],
-        ['Visits', qtxt(lastV && lastV.count ? (lastV.count + (lastV.lastDate ? ' \u00b7 last ' + lastV.lastDate : '')) : '', 60)],
-        ['Key risks', qtxt(p.careFlags, 120)]
+        ['Problems', qfield(p, 'problems', String(p.problems || '').split(/\n/).slice(0, 4).join('\n'), 220)],
+        ['Medications', qfield(p, 'meds', String(p.meds || '').split(/\n/).slice(0, 4).join('\n'), 220)],
+        ['Allergies', qfield(p, 'allergies', p.allergies, 120)],
+        ['Vitals', qfield(p, 'vitals', vit, 90)],
+        ['Next appt', { text: qtxt(appt && (appt.time ? appt.time + (appt.reason ? ' \u00b7 ' + appt.reason : '') : ''), 90), quiet: false, read: false }],
+        ['Visits', vfield],
+        ['Key risks', { text: qtxt(p.careFlags, 120), quiet: false, read: false }]
       ];
     }
     /* The signature LEADS WITH THE PATIENT ID. Built from the seven tile values
@@ -50796,7 +50845,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        that agree only up to the cut collided and the second one kept the
        first's text. Identity first makes "a different patient always repaints"
        a property of the code rather than a coincidence of the data. */
-    var sig = (p ? String(p.id) : '') + '|' + boxes.map(function (b) { return b[1]; }).join('|');
+    var sig = (p ? String(p.id) : '') + '|' + boxes.map(function (b) { var f = b[1] || {}; return f.text + '' + (f.quiet ? 'q' : '') + (f.read ? 'r' : ''); }).join('|');
     var q = $('pf2Quick'), btn = $('pf2ExpandAll');
     var h2 = pc.querySelector('h2');
     if (!q) { q = document.createElement('div'); q.id = 'pf2Quick'; if (h2 && h2.nextSibling) pc.insertBefore(q, h2.nextSibling); else pc.insertBefore(q, pc.firstChild); }
@@ -50820,8 +50869,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (btn.style.display) btn.style.display = '';
     if (q.getAttribute('data-sig') === sig) return;
     q.setAttribute('data-sig', sig);
-    q.innerHTML = boxes.map(function (b) { return '<div class="qb"><div class="qk">' + b[0] + '</div><div class="qv">' + String(b[1]).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div></div>'; }).join('');
+    /* pvr-1.0.0: chips, and a one-tap re-read on the two states a re-read can
+       actually fix. The button calls the app's OWN read-only single-patient
+       chart reader - it reads, it never writes to Athena, and if the section
+       still cannot be seen the chip goes straight back to saying so. */
+    q.innerHTML = boxes.map(function (b) {
+      var f = b[1] || {};
+      return '<div class="qb pvr-chip' + (f.quiet ? ' is-quiet' : '') + '" data-pvr-key="' + esc2(b[0]) + '"' + (f.state ? (' data-pvr-state="' + esc2(f.state) + '"') : '') + '>' +
+        '<div class="qk">' + b[0] + '</div><div class="qv">' + esc2(f.text) + '</div>' +
+        (f.read ? '<button type="button" class="pvr-read">Read from Athena</button>' : '') +
+        '</div>';
+    }).join('');
+    if (!q.__pvrWired) {
+      q.__pvrWired = 1;
+      q.addEventListener('click', function (ev) {
+        var t = ev && ev.target;
+        if (!t || !t.classList || !t.classList.contains('pvr-read')) return;
+        var cur = null; try { cur = (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) {}
+        if (!cur) return;
+        var cf = null; try { cf = window.__mlsChartField; } catch (e2) {}
+        if (!cf || typeof cf.read !== 'function') return;
+        t.disabled = true;
+        var was = t.textContent;
+        cf.read(cur, function (m) { try { t.textContent = String(m || was).slice(0, 60); } catch (e3) {} }).then(function () {
+          try { q.setAttribute('data-sig', ''); } catch (e4) {}
+          try { schedulePatientEnsure(); } catch (e5) {}
+        }, function () { t.disabled = false; t.textContent = was; });
+      });
+    }
   }
+  function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   var patientEnsureFrame = 0;
   function schedulePatientEnsure() {
     if (patientEnsureFrame) return;

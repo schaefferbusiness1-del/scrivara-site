@@ -23406,10 +23406,10 @@ function _athenaChartTextForParse(rd){
   var note={patientId:String((rd&&rd.targetPatientId)||''),extOffered:0,extBound:0,extUsed:0,extOmitted:0,extChars:0,extApptScoped:0,baseChars:base.length,briefChars:brief.length,usedChars:0,dropped:'',at:Date.now()};
   try{ var bd=rd&&rd.briefingDiag; if(bd&&typeof bd==='object'){ note.extOffered=Number(bd.offered||0); note.extBound=Number(bd.bound||0); note.extUsed=Number(bd.used||0); note.extOmitted=Number(bd.omitted||0); note.extChars=Number(bd.chars||0); note.extApptScoped=Number(bd.apptScoped||0); } }catch(eBriefDiag){}
   try{ window.__mlsLastBriefingCombine=note; var blog=window.__mlsBriefingCombineLog; if(!Array.isArray(blog)) blog=window.__mlsBriefingCombineLog=[]; blog.push(note); if(blog.length>40) blog.splice(0,blog.length-40); }catch(eBriefNote){}
-  if(!brief.trim()){ note.dropped=brief?'blank':'absent'; return base; }
+  if(!brief.trim()){ note.dropped=brief?'blank':'absent'; return _athenaSurfaceNote(note,base); }
   var head='\n\n===== (appointment briefing for the same verified patient) =====\n\n';
   var room=CAP-base.length-head.length;
-  if(room<200){ note.dropped='no-room'; return base; }
+  if(room<200){ note.dropped='no-room'; return _athenaSurfaceNote(note,base); }
   var used=brief;
   if(used.length>room){
     /* The TOP of a briefing page is navigation chrome and the provider header; the
@@ -23423,9 +23423,34 @@ function _athenaChartTextForParse(rd){
     note.dropped='truncated';
   }
   note.usedChars=used.length;
-  return base+head+used;
+  return _athenaSurfaceNote(note,base+head+used);
 }
-try{ window._athenaChartTextForParse=_athenaChartTextForParse; }catch(eChartTextForParse){}
+/* pvr-1.0.0. WHICH SURFACE WAS ACTUALLY IN FRONT OF THE MODEL.
+   _athenaChartProfileCoverage marks a card 'unverified' only when the model's
+   declaration is missing or contradicts the values, and _savePatientChart
+   REFUSES such a save (profile-coverage-incomplete). So 'unverified' never
+   reaches storage: an empty section always lands as status:'not_documented' on
+   a complete, identity-verified receipt — byte-identical to a chart the doctor
+   has personally confirmed is clear. Measured 2026-08-17 on a real 24-patient
+   day: every chart saved green, yet problems landed on 13 and medications on
+   12, because Athena renders Active Problems ONLY on the appointment briefing
+   (which the reader must click away from to prove identity, and which
+   sometimes never ships) and renders the ongoing medication list under a
+   "Historical Meds" heading that NOTHING in this app ever navigates to.
+   Recording which of those two surfaces was present in the exact text handed
+   to _parsePatientChart is the only way a later reader can tell "Athena says
+   none" from "we never looked". Substring tests, never a regex: an escape lost
+   in transport still parses and silently never matches. */
+function _athenaSurfaceNote(note,finalText){
+  try{
+    var low=String(finalText||'').toLowerCase();
+    note.problemsSurface=(low.indexOf('active problems')>=0||low.indexOf('problem list')>=0)?1:0;
+    note.medsSurface=(low.indexOf('historical med')>=0||low.indexOf('historical medication')>=0||low.indexOf('medications (')>=0||low.indexOf('onechart')>=0)?1:0;
+    note.finalChars=low.length;
+  }catch(eSurface){}
+  return finalText;
+}
+try{ window._athenaChartTextForParse=_athenaChartTextForParse; window._athenaSurfaceNote=_athenaSurfaceNote; }catch(eChartTextForParse){}
 /* ===== Pull a PATIENT'S CHART/HISTORY from Athena via MLS Assist and SAVE it into the
    patient's MLS record (problems, meds, allergies, running summary) + a history entry.
    Reuses the same Assist read as the schedule pull — no extension change needed.
@@ -23738,6 +23763,25 @@ function _savePatientChart(name, appt, chart){
      current facts, rather than an ever-growing series of stale daily snapshots. */
   p.athenaChartSnapshot=Object.assign({capturedAt:importedAtIso},currentAthenaSnapshot);
   profileCoverage.patientId=String(p.id||''); profileCoverage.exactIdentityVerified=true; profileCoverage.capturedAt=importedAtIso; profileCoverage.saveRequestId=String(ref.requestId||'');
+  /* pvr-1.0.0: carry the surface evidence onto the receipt, so the profile can
+     say WHY a section is empty instead of printing a bare dash. Trusted only
+     when the combine note is from this same read (two minutes) — a stale note
+     from the previous patient in a day pull must never label THIS chart. The
+     field is additive: a record saved before this change simply has no
+     sourceEvidence, and the reader treats that as "unknown", which is the
+     cautious answer rather than a clinical claim. */
+  try{
+    var __ev=window.__mlsLastBriefingCombine;
+    if(__ev&&typeof __ev==='object'&&(importedAtMs-Number(__ev.at||0))>=0&&(importedAtMs-Number(__ev.at||0))<=120000){
+      profileCoverage.sourceEvidence={
+        briefing:String(__ev.dropped||'')||((Number(__ev.briefChars||0)>0)?'present':'absent'),
+        briefChars:Number(__ev.briefChars||0),
+        problemsSurface:Number(__ev.problemsSurface||0),
+        medsSurface:Number(__ev.medsSurface||0),
+        at:Number(__ev.at||0)
+      };
+    }
+  }catch(eSrcEv){}
   p.athenaProfileCoverage=profileCoverage;
   p.athenaChartImportedAt=importedAtIso;
 
@@ -42384,5 +42428,564 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 })();
 </script>
 <!-- ===== end visitowner-1.0.0 ========================================= -->
+<!-- ===== pvr-1.0.0 — one visit resolver, and a profile that says what it knows ==
+     Owner, 2026-08-17, on a patient profile: "why does the patient's history
+     look so bad and why is there nothing under problems or medications?"
+
+     MEASURED on this shell before this block. FOUR readers answered "how many
+     visits does this patient have?" and no two of them used the same rule:
+
+       reader                                      store        drafts   for the
+                                                                          owner's
+                                                                          chart
+       ------------------------------------------- ------------ -------- -------
+       _renderProfAtGlance (the chip on the card)   notes        EXCLUDED   1
+       __mlsEasyPrep.lastVisitInfo -> pf2 VISITS    notes        included   3
+       feat_visit_history_ext (the timeline)        p.visits[]   n/a        0
+       _ptItemHtml (the rail row)                   notes        included   "N notes"
+
+     So the same chart truthfully reported 0, 1 and 3 at the same instant, and
+     the timeline — the one surface that reads p.visits[] — printed "No visits
+     yet" over a patient the other two surfaces agreed had been seen.
+
+     A second measured defect on the same screen: the timeline's empty state and
+     feat_source_clarity's summary headline BOTH render the literal "No visits
+     yet", one under the other, because neither knows the other exists.
+
+     A third: pf2's seven-tile strip is what the doctor actually reads (it ships
+     COLLAPSED — mls_pf2_collapsed defaults to '1'), and it renders every empty
+     field as a bare em-dash. The shell already has an honesty resolver for this
+     exact question — _athenaProfileEmptyText — but only the EXPANDED fields call
+     it. The strip bypassed it, so "we have never pulled this chart", "Athena says
+     none documented" and "the pull could not read that section" all printed the
+     same one character.
+
+     A fourth: feat_save_verify's banner titles carry a PATIENT NAME ("Saved &
+     verified: <name>"), and it fires on upsert — so a background save for one
+     patient puts that patient's name in a floating card over a DIFFERENT
+     patient's open profile. Measured in the owner's screenshot.
+
+     WHAT THIS BLOCK ADDS (additive, reversible, no shared feat_*.js edited):
+
+       1. window.__mlsPtVisits — THE resolver. One union over the stores that
+          actually hold visits for a patient (p.visits[] from the Athena pull and
+          from manual entry, plus completed notes recorded in MLS), keyed so a
+          note recorded on the same day as its Athena row cannot count twice.
+          Returns the count, the merged timeline entries, and the per-source
+          breakdown. Every count surface is repointed at it.
+
+       2. window.__mlsChartField — the honesty resolver. Four states per clinical
+          field, from evidence the pull already writes:
+            present       the field has text
+            none          athenaProfileCoverage says not_documented, on a
+                          complete + identity-verified receipt for THIS id
+            not_captured  a chart landed (athenaChartImportedAt) but this
+                          section is not verified in the receipt
+            not_pulled    no chart has ever landed for this record
+          The strip renders the matching sentence and, for the two states a
+          re-read can fix, a one-tap "Read from Athena" that calls the app's own
+          read-only single-patient reader. It never invents a value and never
+          turns a missing section into a clinical finding.
+
+       3. ONE empty state. The timeline's own is kept; the duplicate headline
+          from feat_source_clarity is suppressed when the timeline already says
+          it. Nothing is deleted from either module.
+
+       4. A PHI-FREE notice. The save-verify banner's title is de-identified in
+          place: "Saved & verified: <name>" becomes "Saved & verified" and the
+          detail line keeps the count. No name, ever, in a floating card.
+
+       5. A CALM PROFILE. The strip becomes real chips, the timeline collapses to
+          the latest three behind "Show all", and the two copy-from-Athena
+          controls become one secondary action.
+
+     Placed in a delimited block rather than edited into the shared modules
+     because feat_visit_history_ext.js, feat_source_clarity.js, feat_ease.js and
+     feat_save_verify.js are the SAME BYTES production serves. Everything here is
+     re-applied on mutation and fully undone by window.__mlsProfileCalm.revert().
+
+     No regex literal in this block carries an escape that a transport could eat:
+     dates are parsed with the visit model's own _svcToYMD and with String
+     methods, and clinical text is scrubbed with the visit model's own exported
+     _stripPageDebris / _normalizeClinicalText rather than a copy of them. -->
+<style id="mlsPvrCss">
+/* The strip: seven facts as chips, one line each, never a wall. */
+#pf2Quick .qb.pvr-chip{border:1px solid var(--line,#dfe6e1);border-radius:12px;padding:9px 12px;background:var(--card,#fff);min-width:0}
+#pf2Quick .qb.pvr-chip .qk{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;opacity:.62;font-weight:700}
+#pf2Quick .qb.pvr-chip .qv{font-size:13.5px;line-height:1.35;margin-top:3px;white-space:pre-line;overflow-wrap:anywhere}
+#pf2Quick .qb.pvr-chip.is-quiet .qv{opacity:.72;font-style:italic}
+#pf2Quick .qb.pvr-chip .pvr-read{margin-top:6px;font-size:11.5px;font-weight:700;border:1px solid var(--brand,#2E6A4B);
+  color:var(--brand,#2E6A4B);background:transparent;border-radius:999px;padding:4px 11px;cursor:pointer;min-height:28px}
+#pf2Quick .qb.pvr-chip .pvr-read:hover{background:var(--soft,#EAF1EC)}
+#pf2Quick .qb.pvr-chip .pvr-read[disabled]{opacity:.55;cursor:default}
+/* One empty state: the timeline owns it, so the source-clarity headline that
+   repeats it is hidden — the rest of that summary (the per-source counts) is
+   untouched and still shows the moment there is anything to count. */
+body.pvr-on #mlsVisitHistoryExt .mls-src-summary.pvr-dup-empty{display:none!important}
+/* One copy-from-Athena action. feat_ease adds a second button to the copy bar
+   and the timeline's empty state offers a third; the empty state's is the one
+   in context, so the bar reads as a single secondary action beneath it. */
+body.pvr-on #mlsCopyVisitsBar{gap:8px;margin:8px 0 2px}
+body.pvr-on #mlsCopyVisitsBar .mls-cv-btn{background:transparent!important;color:var(--brand,#2E6A4B)!important;
+  border:1px solid var(--line,#dfe6e1)!important;font-weight:600!important;box-shadow:none!important;filter:none!important}
+body.pvr-on #mlsCopyVisitsBar .mls-cv-btn:hover{background:var(--soft,#EAF1EC)!important}
+body.pvr-on #mlsCopyVisitsBar #mlsEaseAddVisit{display:none!important}
+/* The timeline, collapsed to the latest three. */
+body.pvr-on #mlsVisitHistoryExt .mlsxh-list > .pvr-hidden{display:none!important}
+#mlsVisitHistoryExt .pvr-showall{margin:8px 0 2px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
+  background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:7px 14px;cursor:pointer;min-height:36px}
+#mlsVisitHistoryExt .pvr-showall:hover{background:var(--soft,#EAF1EC)}
+/* The resolver's own line, above the timeline: the count, and where it came from. */
+#mlsVisitHistoryExt .pvr-src{font-size:12px;opacity:.75;margin:2px 0 8px}
+</style>
+<script>
+(function () {
+  'use strict';
+  if (window.__mlsProfileCalm) return;
+
+  var VERSION = 'pvr-1.0.0';
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function str(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function trim(v) { var s = str(v); return s.trim ? s.trim() : s; }
+  function isFn(f) { return typeof f === 'function'; }
+  function model() { return safe(function () { return window.__mlsVisitModel; }, null); }
+
+  /* ------------------------------------------------------------------ dates
+     _svcToYMD is the visit model's OWN date normalizer and already handles
+     every shape this app stores (ISO, US, Athena service dates). Reusing it
+     rather than copying its regexes means this block cannot drift from it and
+     carries no escape a transport could eat. The fallback is String work only:
+     an ISO date is the first ten characters when the eleventh is a separator. */
+  function ymd(v) {
+    var m = model();
+    if (m && isFn(m._svcToYMD)) { var got = safe(function () { return m._svcToYMD(v); }, ''); if (got) return str(got); }
+    var s = trim(v);
+    if (s.length >= 10) {
+      var head = s.slice(0, 10);
+      if (head.charAt(4) === '-' && head.charAt(7) === '-') return head;
+    }
+    return '';
+  }
+  function noteDate(n) { return ymd(n && (n.date || n.note_date || n.created_at || n.created)); }
+
+  /* ---------------------------------------------------------------- scrubbing
+     The timeline body is captured Athena frame text and carries page debris
+     (Jotter/SVG/script fragments). The visit model exports the scrubbers the
+     summarizer already uses; this block calls THOSE, so the legal lane and this
+     lane cannot end up with two different ideas of what debris is. */
+  function scrub(text) {
+    var m = model(), s = str(text);
+    if (m && isFn(m._stripPageDebris)) s = safe(function () { return m._stripPageDebris(s); }, s);
+    if (m && isFn(m._normalizeClinicalText)) s = safe(function () { return m._normalizeClinicalText(s); }, s);
+    return trim(s);
+  }
+  function bodyOf(v) {
+    var m = model();
+    if (m && isFn(m._visitBodyText)) { var t = safe(function () { return m._visitBodyText(v); }, ''); if (trim(t)) return scrub(t); }
+    return scrub(v && (v.raw || v.findings || v.plan || ''));
+  }
+  function typeOf(v) {
+    var m = model(), t = str(v && v.type);
+    if (m && isFn(m._cleanVisitTypeForDisplay)) t = safe(function () { return m._cleanVisitTypeForDisplay(v && v.type); }, t);
+    return trim(t);
+  }
+
+  /* ================================================================ RESOLVER
+     ONE answer to "how many visits does this patient have", over every store
+     that actually holds one. RESOLVER BEGIN */
+  function storedVisits(p) {
+    var m = model();
+    if (m && isFn(m.getVisits)) { var vs = safe(function () { return m.getVisits(p); }, null); if (vs && vs.length !== undefined) return [].slice.call(vs); }
+    return (p && p.visits && p.visits.length !== undefined) ? [].slice.call(p.visits) : [];
+  }
+  function notesOf(p) {
+    var id = str(p && p.id);
+    var all = safe(function () { return isFn(window.patientNotes) ? window.patientNotes(id) : []; }, []) || [];
+    var out = [];
+    for (var i = 0; i < all.length; i++) {
+      var n = all[i];
+      /* A DRAFT IS NOT A VISIT. This is the rule _renderProfAtGlance already
+         applied and lastVisitInfo did not — the exact reason one surface said 1
+         and another said 3 about the same chart at the same instant. */
+      if (n && !n.isDraft) out.push(n);
+    }
+    return out;
+  }
+  function stableKey(v) {
+    var k = trim(v && (v.encounterId || v.sourceVisitKey || v.athenaVisitId));
+    return k ? ('k:' + k) : '';
+  }
+  function sourceTag(v) {
+    var s = trim(v && v.source).toLowerCase();
+    if (s.indexOf('cohort') >= 0) return 'cohort';
+    if (s.indexOf('athena') >= 0 || s === 'chart' || s === 'copy') return 'athena';
+    if (s === 'manual' || s === 'user' || s === 'legacy') return 'manual';
+    return s ? 'unknown' : 'unknown';
+  }
+
+  /* The merge rule, stated once so it can be argued with:
+       - a visit that carries a STABLE Athena key is its own encounter, always;
+       - anything else is keyed by its DAY;
+       - a recorded note NEVER opens a new entry for a day the chart already
+         knows about — it enriches that day instead.
+     Under-merging inflates a count; over-merging hides a visit. Keying on the
+     stable key first means two encounters on one day both survive whenever
+     Athena told us they were two, and a note written during a pulled visit
+     cannot double it. */
+  function resolve(p) {
+    var out = { count: 0, entries: [], sources: { athena: 0, cohort: 0, manual: 0, note: 0, unknown: 0 },
+                stored: 0, notes: 0, pulled: false, patientId: str(p && p.id) };
+    if (!p) return out;
+    out.pulled = chartLanded(p);
+    var byKey = {}, byDay = {}, order = [];
+    function push(entry) {
+      var k = entry.key;
+      if (byKey[k]) return byKey[k];
+      byKey[k] = entry; order.push(entry);
+      if (entry.date) { if (!byDay[entry.date]) byDay[entry.date] = entry; }
+      return entry;
+    }
+    var sv = storedVisits(p), i, v, d, e;
+    out.stored = sv.length;
+    for (i = 0; i < sv.length; i++) {
+      v = sv[i]; if (!v) continue;
+      d = ymd(v.date);
+      e = push({
+        key: stableKey(v) || (d ? ('d:' + d) : ('v:' + str(v.id) + ':' + i)),
+        date: d, rawDate: str(v.date), type: typeOf(v) || 'Visit',
+        source: sourceTag(v), summary: trim(v.aiSummary), body: bodyOf(v),
+        visitId: str(v.id), fromStore: 'visits', hasNote: false
+      });
+      if (e === byKey[e.key] && e.visitId === str(v.id)) out.sources[e.source] = (out.sources[e.source] || 0) + 1;
+    }
+    var nn = notesOf(p);
+    out.notes = nn.length;
+    for (i = 0; i < nn.length; i++) {
+      var n = nn[i]; if (!n) continue;
+      d = noteDate(n);
+      var known = d ? byDay[d] : null;
+      if (known) { known.hasNote = true; if (!known.summary) known.summary = trim(n.summary || n.cc || ''); continue; }
+      e = push({
+        key: d ? ('d:' + d) : ('n:' + str(n.id) + ':' + i),
+        date: d, rawDate: str(n.date || n.created_at || ''), type: trim(n.type || n.visitType) || 'Visit recorded in MLS',
+        source: 'note', summary: trim(n.summary || n.cc || ''), body: scrub(n.text || n.note || n.soap || ''),
+        visitId: '', noteId: str(n.id), fromStore: 'notes', hasNote: true
+      });
+      out.sources.note = (out.sources.note || 0) + 1;
+    }
+    order.sort(function (a, b) {
+      if (a.date && b.date) return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0);
+      if (a.date) return -1; if (b.date) return 1; return 0;
+    });
+    out.entries = order;
+    out.count = order.length;
+    return out;
+  }
+  function count(p) { return resolve(p).count; }
+  function countFor(id) { var p = safe(function () { return isFn(window.findPatient) ? window.findPatient(str(id)) : null; }, null); return p ? count(p) : 0; }
+  /* RESOLVER END */
+
+  /* ============================================================ CHART HONESTY
+     Four states, every one of them backed by something the pull already wrote.
+     Nothing here guesses, and no state is inferred from emptiness alone. */
+  function chartLanded(p) {
+    if (isFn(window._athenaChartLanded)) return !!safe(function () { return window._athenaChartLanded(p); }, false);
+    return !!trim(p && p.athenaChartImportedAt);
+  }
+  function coverageCard(p, key) {
+    var r = safe(function () { return p && p.athenaProfileCoverage; }, null);
+    if (!r) return null;
+    if (r.complete !== true) return null;
+    if (r.exactIdentityVerified !== true) return null;
+    if (str(r.patientId) !== str(p && p.id)) return null;
+    var cards = r.cards || {};
+    var card = cards[key];
+    return card ? { card: card, at: str(r.capturedAt).slice(0, 10), evidence: r.sourceEvidence || null } : null;
+  }
+  function hasText(v) {
+    if (v === null || v === undefined) return false;
+    if (v.length !== undefined && typeof v !== 'string') { for (var i = 0; i < v.length; i++) { if (hasText(v[i])) return true; } return false; }
+    if (typeof v === 'object') { var ks = Object.keys(v); for (var j = 0; j < ks.length; j++) { if (hasText(v[ks[j]])) return true; } return false; }
+    return !!trim(v);
+  }
+  var FIELD_LABEL = { problems: 'problems', meds: 'medications', allergies: 'allergies', summary: 'summary', vitals: 'vitals', history: 'history' };
+  function fieldState(p, key, value) {
+    var val = (arguments.length > 2) ? value : (p ? p[key] : '');
+    if (hasText(val)) return { state: 'present', value: val, text: '', canRead: false };
+    var what = FIELD_LABEL[key] || key;
+    if (!chartLanded(p)) {
+      return { state: 'not_pulled', value: '', canRead: true,
+               text: 'Not pulled from Athena yet.' };
+    }
+    var cov = coverageCard(p, key);
+    if (cov && cov.card && cov.card.status === 'not_documented') {
+      /* "not_documented" alone is NOT proof of absence. _savePatientChart
+         refuses any save whose coverage is incomplete, so a section the pull
+         could not read lands with exactly this status on a complete,
+         identity-verified receipt — byte-identical to a chart the doctor has
+         confirmed is clear. The receipt's sourceEvidence records which Athena
+         surface was actually in front of the parser, and only that can tell
+         the two apart. No evidence (every record saved before this change) is
+         answered with the cautious state, never with a clinical claim. */
+      var proven = surfaceProven(cov, key);
+      if (proven === true) {
+        return { state: 'none', value: '', canRead: false,
+                 text: 'None documented in Athena' + (cov.at ? (' as of ' + cov.at) : '') + '.' };
+      }
+      return { state: 'not_captured', value: '', canRead: true,
+               text: 'Not captured — ' + MISSED_SURFACE[key] + ' was not read during the last pull.' };
+    }
+    /* A chart landed, and this section is not verified in its receipt at all. */
+    return { state: 'not_captured', value: '', canRead: true,
+             text: 'Not captured — the ' + what + ' section was not readable in the last chart read.' };
+  }
+  /* Which Athena surface each section rides on, in the doctor's words. */
+  var MISSED_SURFACE = {
+    problems: "athenaOne's appointment briefing (the only page that lists Active Problems)",
+    meds: "athenaOne's Historical Meds list",
+    allergies: 'the allergies section',
+    summary: 'the chart summary',
+    vitals: 'the vitals section',
+    history: 'the history section'
+  };
+  /* allergies / summary / vitals / history ride on rd.text — the frame set the
+     extension receipt already proves complete — so an empty one of those on a
+     verified receipt really is "none documented". problems and meds do not:
+     problems renders only on the appointment briefing, which the reader must
+     navigate away from to prove identity and which sometimes never ships, and
+     the ongoing medication list renders under a "Historical Meds" heading that
+     nothing in this app navigates to at all. */
+  var SURFACE_KEY = { problems: 'problemsSurface', meds: 'medsSurface' };
+  function surfaceProven(cov, key) {
+    var need = SURFACE_KEY[key];
+    if (!need) return true;
+    var ev = cov && cov.evidence;
+    if (!ev) return null;
+    return Number(ev[need] || 0) > 0;
+  }
+
+  /* ------------------------------------------------- one-tap re-read (read-only)
+     Reuses the app's own single-patient reader. It reads; it never writes to
+     Athena, and it never invents a value: if the re-read still cannot see the
+     section, the chip goes back to saying so. */
+  function canRead() {
+    return isFn(window._assistReadChart) && isFn(window._athenaChartTextForParse) &&
+           isFn(window._parsePatientChart) && isFn(window._savePatientChart);
+  }
+  var _reading = '';
+  function readFromAthena(p, onStatus) {
+    var say = isFn(onStatus) ? onStatus : function () {};
+    if (!p) return Promise.resolve({ ok: false, reason: 'no-patient' });
+    if (!canRead()) { say('MLS Assist and a signed-in athenaOne tab are needed for this.'); return Promise.resolve({ ok: false, reason: 'no-bridge' }); }
+    if (_reading) return Promise.resolve({ ok: false, reason: 'busy' });
+    _reading = str(p.id);
+    var target = { patientId: str(p.id), name: str(p.name), dob: str(p.dob), mrn: str(p.mrn) };
+    say('Reading this chart from athenaOne...');
+    return Promise.resolve(safe(function () { return window._assistReadChart(target, say); }, null)).then(function (rd) {
+      if (!rd) return { ok: false, reason: 'read-failed' };
+      var text = safe(function () { return window._athenaChartTextForParse(rd); }, '');
+      return Promise.resolve(safe(function () { return window._parsePatientChart(text); }, null)).then(function (chart) {
+        if (!chart) return { ok: false, reason: 'parse-failed' };
+        var saved = safe(function () { return window._savePatientChart(p, null, chart) === true; }, false);
+        return { ok: !!saved, reason: saved ? '' : 'save-refused' };
+      });
+    }).then(function (r) {
+      _reading = '';
+      safe(function () { if (isFn(window.renderProfile)) window.renderProfile(); });
+      say(r.ok ? 'Chart re-read from athenaOne.' : 'The chart could not be re-read. Nothing was changed.');
+      return r;
+    }, function () { _reading = ''; say('The chart could not be re-read. Nothing was changed.'); return { ok: false, reason: 'error' }; });
+  }
+
+  /* ======================================================== DOM RECONCILIATION
+     Everything below only ever adds, hides or rewrites text that a shared module
+     produced. It never removes a node another module owns, so a re-render by
+     that module restores its own state and the next pass re-applies ours. */
+  var PASS_MS = 700;
+  var timer = null, obs = null, obsTarget = null, deb = null;
+
+  function activeP() { return safe(function () { return isFn(window.activePatient) ? window.activePatient() : null; }, null); }
+
+  /* 1) the timeline header count + a source line, from the resolver */
+  function fixTimeline(p, res) {
+    var sec = document.getElementById('mlsVisitHistoryExt');
+    if (!sec) return;
+    var title = sec.querySelector('.mlsxh-title .mlsxh-count');
+    if (title) {
+      var want = res.count + ' visit' + (res.count === 1 ? '' : 's');
+      if (title.textContent !== want) title.textContent = want;
+    }
+    var head = sec.querySelector('.mlsxh-content');
+    if (head) {
+      var line = sec.querySelector('.pvr-src');
+      var parts = [];
+      if (res.sources.athena) parts.push(res.sources.athena + ' from Athena');
+      if (res.sources.cohort) parts.push(res.sources.cohort + ' from cohort search');
+      if (res.sources.manual) parts.push(res.sources.manual + ' entered here');
+      if (res.sources.note) parts.push(res.sources.note + ' recorded in MLS');
+      if (res.sources.unknown) parts.push(res.sources.unknown + ' untagged');
+      var txt = parts.length ? parts.join(' · ') : '';
+      if (!txt) { if (line) line.remove(); }
+      else {
+        if (!line) { line = document.createElement('div'); line.className = 'pvr-src'; head.insertBefore(line, head.firstChild); }
+        if (line.textContent !== txt) line.textContent = txt;
+      }
+    }
+    collapseList(sec);
+  }
+
+  /* 2) latest three, then "Show all" */
+  var _showAll = {};
+  function collapseList(sec) {
+    var list = sec.querySelector('.mlsxh-list');
+    if (!list) return;
+    var pid = str(safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : ''; }, ''));
+    var kids = [], i;
+    for (i = 0; i < list.children.length; i++) {
+      var c = list.children[i];
+      if (c.classList && c.classList.contains('pvr-showall')) continue;
+      kids.push(c);
+    }
+    var open = !!_showAll[pid];
+    var over = kids.length - 3;
+    for (i = 0; i < kids.length; i++) {
+      var hide = !open && i >= 3;
+      if (kids[i].classList.contains('pvr-hidden') !== hide) kids[i].classList.toggle('pvr-hidden', hide);
+    }
+    var btn = list.querySelector('.pvr-showall');
+    if (over <= 0) { if (btn) btn.remove(); return; }
+    if (!btn) {
+      btn = document.createElement('button'); btn.type = 'button'; btn.className = 'pvr-showall';
+      btn.addEventListener('click', function () {
+        var k = str(safe(function () { return isFn(window.getActivePtId) ? window.getActivePtId() : ''; }, ''));
+        _showAll[k] = !_showAll[k];
+        collapseList(sec);
+      });
+    }
+    var label = open ? ('Show latest 3') : ('Show all ' + kids.length + ' visits');
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (btn.parentNode !== list || list.lastElementChild !== btn) list.appendChild(btn);
+  }
+
+  /* 3) ONE empty state. feat_source_clarity's summary headline and the
+        timeline's own empty state both say "No visits yet". The timeline's is
+        the one with the actions, so the headline-only duplicate is hidden — and
+        un-hidden the moment that summary has real per-source counts to show. */
+  function dedupeEmpty() {
+    var sec = document.getElementById('mlsVisitHistoryExt');
+    if (!sec) return;
+    var sum = sec.querySelector('.mls-src-summary');
+    if (!sum) return;
+    var timelineEmpty = !!sec.querySelector('.mlsxh-empty');
+    var onlyHeadline = sum.children.length === 1 && !!sum.querySelector('.mls-src-headline');
+    var dup = timelineEmpty && onlyHeadline;
+    if (sum.classList.contains('pvr-dup-empty') !== dup) sum.classList.toggle('pvr-dup-empty', dup);
+  }
+
+  /* 4) a notice may not name a patient. feat_save_verify builds its title as
+        "Saved & verified: <name>"; the name is stripped in place, in the DOM, so
+        every one of its internal call sites is covered rather than only the
+        exported one. The count in the detail line is left alone. */
+  var NAMED_PREFIXES = ['Saved & verified:', 'Saved and verified:', 'Not found in the saved store:'];
+  function deidentify(root) {
+    var host = root || document.getElementById('mls-save-verify-stack');
+    if (!host) return 0;
+    var titles = host.querySelectorAll ? host.querySelectorAll('.mls-sv-title') : [];
+    var n = 0;
+    for (var i = 0; i < titles.length; i++) {
+      var t = titles[i], s = str(t.textContent);
+      for (var k = 0; k < NAMED_PREFIXES.length; k++) {
+        var pre = NAMED_PREFIXES[k];
+        if (s.indexOf(pre) === 0 && trim(s.slice(pre.length))) {
+          t.textContent = pre.slice(0, pre.length - 1);
+          n++;
+          break;
+        }
+      }
+    }
+    return n;
+  }
+  var svObs = null;
+  function watchNotices() {
+    if (svObs) return;
+    if (!window.MutationObserver) return;
+    svObs = new MutationObserver(function () { safe(function () { deidentify(); }); });
+    safe(function () { svObs.observe(document.body || document.documentElement, { childList: true, subtree: true }); });
+  }
+
+  /* 5) the strip's own repaint hook — pf2 owns #pf2Quick, so this block only
+        asks it to repaint when the resolver's answer has changed. */
+  function pass() {
+    var p = activeP();
+    safe(function () { deidentify(); });
+    if (!document.body) return;
+    if (!document.body.classList.contains('pvr-on')) document.body.classList.add('pvr-on');
+    if (!p) return;
+    var res = resolve(p);
+    safe(function () { fixTimeline(p, res); });
+    safe(function () { dedupeEmpty(); });
+    /* the shell's own at-a-glance chip, repointed without touching its code */
+    safe(function () {
+      var el = document.getElementById('profAtGlance');
+      if (!el) return;
+      var b = el.querySelector('span b');
+      if (!b) return;
+      var want = str(res.count);
+      if (b.textContent !== want) {
+        b.textContent = want;
+        var label = b.nextSibling;
+        if (label && label.nodeType === 3) label.nodeValue = ' visit' + (res.count === 1 ? '' : 's');
+      }
+    });
+  }
+  function schedule() { if (deb) return; deb = setTimeout(function () { deb = null; safe(pass); }, 120); }
+  function bindObserver() {
+    var pc = document.getElementById('profileCard');
+    if (pc === obsTarget) return;
+    if (obs) safe(function () { obs.disconnect(); });
+    obs = null; obsTarget = pc || null;
+    if (pc && window.MutationObserver) {
+      obs = new MutationObserver(schedule);
+      safe(function () { obs.observe(pc, { childList: true, subtree: true }); });
+    }
+  }
+  function start() {
+    watchNotices();
+    safe(pass);
+    bindObserver();
+    /* setTimeout, never requestAnimationFrame: rAF does not fire in a
+       non-compositing tab and the profile would freeze mid-repaint. */
+    timer = setInterval(function () { safe(bindObserver); safe(pass); }, PASS_MS);
+    safe(function () { window.addEventListener('mls:active-patient-changed', schedule); });
+  }
+  function revert() {
+    safe(function () { if (timer) clearInterval(timer); }); timer = null;
+    safe(function () { if (deb) clearTimeout(deb); }); deb = null;
+    safe(function () { if (obs) obs.disconnect(); }); obs = null; obsTarget = null;
+    safe(function () { if (svObs) svObs.disconnect(); }); svObs = null;
+    safe(function () { if (document.body) document.body.classList.remove('pvr-on'); });
+    safe(function () {
+      var sec = document.getElementById('mlsVisitHistoryExt');
+      if (!sec) return;
+      var line = sec.querySelector('.pvr-src'); if (line) line.remove();
+      var btn = sec.querySelector('.pvr-showall'); if (btn) btn.remove();
+      var hid = sec.querySelectorAll('.pvr-hidden');
+      for (var i = 0; i < hid.length; i++) hid[i].classList.remove('pvr-hidden');
+      var dupe = sec.querySelectorAll('.pvr-dup-empty');
+      for (var j = 0; j < dupe.length; j++) dupe[j].classList.remove('pvr-dup-empty');
+    });
+    safe(function () { var st = document.getElementById('mlsPvrCss'); if (st) st.disabled = true; });
+  }
+
+  window.__mlsPtVisits = { version: VERSION, resolve: resolve, count: count, countFor: countFor, _ymd: ymd, _scrub: scrub };
+  window.__mlsChartField = { version: VERSION, state: fieldState, landed: chartLanded, canRead: canRead, read: readFromAthena, _coverageCard: coverageCard };
+  window.__mlsProfileCalm = { version: VERSION, pass: pass, revert: revert, deidentify: deidentify, _collapseList: collapseList, _dedupeEmpty: dedupeEmpty };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+</script>
+<!-- ===== end pvr-1.0.0 ================================================= -->
 </body>
 </html>
