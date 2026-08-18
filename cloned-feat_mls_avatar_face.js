@@ -116,8 +116,9 @@
     if (dropped) clearPollTimers();
   }
 
-  function summarizeReceipt(receipt, wholeReadRefusal) {
+  function summarizeReceipt(receipt, wholeReadRefusal, partialApplied) {
     var r = receipt || {};
+    var partialCount = Math.max(0, Number(partialApplied) || 0);
     var examined = Math.max(0, Number(r.examined) || 0);
     var claimed = Math.max(0, Math.min(examined, Number(r.claimed) || 0));
     var refused = Math.max(0, Number(r.refused) || Math.max(0, examined - claimed));
@@ -141,14 +142,35 @@
        decision, so a refusal there is still a refusal here. */
     var applyEligible = !wholeReadRefusal && r.fromIllustration !== true &&
       examined >= 10 && claimed >= 6;
+    /* avfit-1.0.0 — THE THIRD STATE THE ENGINE NOW HAS.
+       Owner, 2026-08-17, holding this meter: "No animated traits changed · 5 of
+       14 details were readable; the match was incomplete, so all character
+       settings stayed unchanged ... this is unacceptable and always happens."
+       An incomplete read now APPLIES the traits it really measured
+       (facePartialDecision in the engine), so a heading saying nothing changed
+       while five controls visibly change beside it would be the same
+       engine/meter contradiction p1-photo-truth-1.2.0 was written to close —
+       just in the other direction.
+       ⛔ `applied` still means WHOLE MATCH and is still false here: a partial
+       read must never be presented as a match, and the gate that decides that
+       (examined >= 10 && claimed >= 6, plus the engine's own whole-read
+       refusal) is untouched above. `partialApplied` is the count the engine
+       reports for THIS read; zero means the engine applied nothing and the old
+       words are the true ones. */
+    var partialShown = !applyEligible && partialCount > 0;
     var level = applyEligible && score >= 76 && claimed >= 8 ? 'strong' : (applyEligible ? 'usable' : 'limited');
     var heading = level === 'strong' ? 'Strong animated match' :
-      (level === 'usable' ? 'Animated match applied' : 'No animated traits changed');
+      (level === 'usable' ? 'Animated match applied' :
+        (partialShown ? 'Partial read applied' : 'No animated traits changed'));
     var detail = examined
-      ? (claimed + ' of ' + examined + ' details were readable; ' +
-         (applyEligible ? (refused + ' left unchanged') : 'the match was incomplete, so all character settings stayed unchanged'))
+      ? (partialShown
+        ? ('Applied ' + partialCount + ' of ' + examined + '; ' + (examined - partialCount) +
+           ' could not be read — retake in better light to refine. This is a partial read, not a match.')
+        : (claimed + ' of ' + examined + ' details were readable; ' +
+           (applyEligible ? (refused + ' left unchanged') : 'the match was incomplete, so all character settings stayed unchanged')))
       : 'No appearance details were changed';
-    return { score: score, level: level, heading: heading, detail: detail, applied: applyEligible };
+    return { score: score, level: level, heading: heading, detail: detail,
+      applied: applyEligible, partial: partialShown, partialApplied: partialCount };
   }
 
   function style() {
@@ -201,9 +223,9 @@
     }
   }
 
-  function updateMeter(meter, receipt, wholeReadRefusal) {
+  function updateMeter(meter, receipt, wholeReadRefusal, partialApplied) {
     if (!meter) return;
-    var summary = summarizeReceipt(receipt, wholeReadRefusal);
+    var summary = summarizeReceipt(receipt, wholeReadRefusal, partialApplied);
     meter.setAttribute('data-level', summary.level);
     meter.setAttribute('aria-label', summary.heading + '. ' + summary.detail + '. Evidence coverage ' + summary.score + ' percent.');
     var head = meter.querySelector('.mlsP1FaceMeterHead');
@@ -297,7 +319,8 @@
           var owner = window.__mlsAvatar;
           var latest = owner && owner.lastMatchReceipt;
           if (latest && latest.receipt && Number(latest.at || 0) > before && Number(latest.at || 0) >= startedAt) {
-            updateMeter(meter, latest.receipt, latest.wholeReadRefusal === true);
+            var partialCount = (latest.partialApplied && latest.partialApplied.length) || 0;
+            updateMeter(meter, latest.receipt, latest.wholeReadRefusal === true, partialCount);
             if (latest.wholeReadRefusal || Number(latest.receipt.refused || 0) > Number(latest.receipt.claimed || 0)) details.open = true;
             return;
           }

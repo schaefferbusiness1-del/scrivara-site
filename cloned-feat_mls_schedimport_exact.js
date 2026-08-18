@@ -1367,7 +1367,7 @@
     return censusListHasContent(p.bmi);
   }
   /* ===== cap-1.0.0 (a captured chart is content, even before the AI runs) =====
-     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260817-r7, ext
+     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260817-r8, ext
      3.0.62, TODAY, bodies OFF, 16 rows): 9 rows read their chart out of athena
      successfully and then died on "502 Upstream request failed" - the BACKEND
      AI (aiCallRaw -> /api/complete, called by _parsePatientChart) was down
