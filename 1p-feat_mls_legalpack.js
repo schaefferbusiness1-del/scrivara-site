@@ -1555,6 +1555,37 @@
       setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 0);
     } catch (e) { toast('Could not download this local draft.', 'err'); }
   }
+  /* wdoc-1.0.0 (owner's father, 2026-08-18: "summarize the report and put
+     into MS Word format for me to make changes"). Word opens an HTML document
+     served as .doc natively and fully editably. This wraps the EXACT text the
+     .txt export produces — letterhead lines, bracketed refusals and all — as
+     paragraphs, with the IME section heads ("X. CAUSATION ANALYSIS", …)
+     rendered bold. No new content and no new exit class: it is the existing
+     download exit in a Word-readable wrapper, still local-only. */
+  function wdocHeadingLine(t) {
+    var s = String(t || '').trim();
+    if (!s || /[a-z]/.test(s)) return false;
+    return /^[IVXLC]+\.\s+[A-Z]/.test(s) || /^[A-Z0-9 ,\/&:().-]{6,}$/.test(s);
+  }
+  function wdocBody(text) {
+    return String(text || '').replace(/\r\n/g, '\n').split('\n').map(function (line) {
+      if (!line.trim()) return '<p style="margin:0 0 8pt 0">&nbsp;</p>';
+      var e = esc(line);
+      return wdocHeadingLine(line)
+        ? '<p style="margin:14pt 0 6pt 0;font-weight:bold;font-size:12pt">' + e + '</p>'
+        : '<p style="margin:0 0 2pt 0">' + e + '</p>';
+    }).join('');
+  }
+  function downloadWord(filename, docTitle, text) {
+    try {
+      var html = '<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>' + esc(docTitle) + '</title></head>' +
+        '<body style="font-family:Georgia, \'Times New Roman\', serif;font-size:11pt;line-height:1.45;margin:1in">' + wdocBody(text) + '</body></html>';
+      var blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+      var url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+    } catch (e) { toast('Could not build the Word download.', 'err'); }
+  }
   function printText(title, text) {
     try {
       var win = window.open('', '_blank', 'width=900,height=1000');
@@ -1735,7 +1766,7 @@
         '<div class="p1l-warn">AI disclosure: this sends the compiled record context to the existing configured MLS AI path only when you press Generate. It is an unsigned draft, may be incomplete or wrong, and requires clinician verification.</div>' +
         '<div id="mlsP1LegalStatus" class="p1l-status" role="status" aria-live="polite"></div>') +
       discloseCard('draft', 'Unsigned clinician-review draft', { step: 'export', stepNo: 4, wide: true },
-        '<div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div>' +
+        '<div class="p1l-actions"><button id="mlsP1LegalDraftCopy" disabled>Copy</button><button id="mlsP1LegalDraftDownload" disabled>Download .txt</button><button id="mlsP1LegalDraftWord" disabled>Download for Word</button><button id="mlsP1LegalDraftPrint" disabled>Print</button></div>' +
         '<h2 id="mlsP1LegalDraftLabel" style="font-size:14px;margin:8px 0 4px">Unsigned clinician-review draft</h2>' +
         '<textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea>') +
       '</div></div>';
@@ -1793,7 +1824,7 @@
     }
   }
   function enableExports(on) {
-    ['mlsP1LegalDraftCopy', 'mlsP1LegalDraftDownload', 'mlsP1LegalDraftPrint'].forEach(function (id) { var node = byId(id); if (node) node.disabled = !on; });
+    ['mlsP1LegalDraftCopy', 'mlsP1LegalDraftDownload', 'mlsP1LegalDraftWord', 'mlsP1LegalDraftPrint'].forEach(function (id) { var node = byId(id); if (node) node.disabled = !on; });
   }
   function renderSources() {
     var node = byId('mlsP1LegalSources'); if (!node) return;
@@ -2071,6 +2102,7 @@
     on('mlsP1LegalCancel', 'click', function () { cancelGeneration('Generation canceled. Any late response is blocked; the current inputs remain editable.'); });
     on('mlsP1LegalDraftCopy', 'click', function () { exportDraft(function (text) { copyText(text, 'Draft'); }); });
     on('mlsP1LegalDraftDownload', 'click', function () { exportDraft(function (text) { downloadText('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.txt', text); }); });
+    on('mlsP1LegalDraftWord', 'click', function () { exportDraft(function (text) { downloadWord('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.doc', 'IME draft — for review and edit', text); }); }); /* wdoc-1.0.0 */
     on('mlsP1LegalDraftPrint', 'click', function () { exportDraft(function (text) { printText('Medical-Legal / IME DRAFT', text); }); });
     var drop = byId('mlsP1LegalDrop'), input = byId('mlsP1LegalFile');
     if (drop && input) {

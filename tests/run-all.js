@@ -139,6 +139,7 @@ const tests = [
      pull-in-flight is now a deferred class with exactly one re-run after the
      pull releases the lease, bounded and setTimeout-only. */
   '1p-todaynote-deferred-retry-runtime.test.js',
+  '1p-todaynote-disown-handover.test.js',
   '1p-notes-idle-catchup-runtime.test.js',
   '1p-capture-before-ai-runtime.test.js',
   '1p-day-note-day-and-future-runtime.test.js',
@@ -206,6 +207,8 @@ const tests = [
   '1p-contamination-cleaner-fail-closed-runtime.test.js',
   '1p-preview-freshness-runtime.test.js',
   '1p-legal-ime-workspace-runtime.test.js',
+  '1p-legal-word-download.test.js',
+  '1p-pullchart-status-line.test.js',
   '1p-legal-loader-runtime.test.js',
   /* legal-tools-1.0.0: the Legal / IME workspace had exactly one route (the
      #ptLawyerBtn door inside Patients). The dock's Tools menu is built by the
@@ -235,6 +238,7 @@ const tests = [
      with ONE enforcement point, and the op note -> review hand-off. */
   '1p-athena-write-readiness-and-probe-only.test.js',
   '1p-writeflow-booking-row-fallback.test.js',
+  '1p-writeflow-stale-review-rebind.test.js',
   /* MLS Assist 3.0.62 / wsg-2.0.0 (owner directive 2026-08-12): with the
      capable extension every supervised action - note, billing, save, sign,
      one exact reviewed order - renders READY on /1p; an older extension gets
