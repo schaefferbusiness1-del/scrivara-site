@@ -84,7 +84,12 @@ const P1_CONFIG_RELEASE_SUBS = [
    (dock safe-area/reflow at every size), uimap-1.0.0, pullface-1.0.0 (silent sync, one phase-mapped pull bar), the
    legal lane (p1-legal-restore-2.0.0 / bind-2.0.0 / reports-2.0.0 / stepper-1.0.0 / scrub-1.0.0); /cloned re-derived
    at cloned-20260817-r6. Production and extension baselines untouched (469607c9). */
-const P1_BASE_COMMIT = '1c4c8d0ababba750757dc5bc72af6f9615eed190';
+/* Advanced by the 1p train of 2026-08-18 (batch 10): nextglow follow-ups (dock seedSide honours only an in-lane
+   choice; quietnotify-1.0.0 action-needed toasts bottom-left, activity tray on the left), pull-speed 2 (per-row ceiling
+   raised only by successes, one frozen day-note pass budget → background backfill, backfill presence re-check with a
+   PHI-free receipt, same-day re-pull never re-opens a read note, earliest-first, busy-click gate); /cloned re-derived at
+   cloned-20260817-r7. Production and extension baselines untouched (469607c9). */
+const P1_BASE_COMMIT = 'c0ae02ff31dac88840b7a31c9ea857dce3ae119e';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
