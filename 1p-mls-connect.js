@@ -7884,17 +7884,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      choose screen (which has no anchor and legitimately shows no lane) keeps
      the 150 ms coalesce it was given for freeze safety, and so does everything
      else. _fast guards against re-entering through our own writes. */
-  var _fast = false;
+  var _fast = false, _fastBlocked = false;
   function scheduleFromMutation() {
     if (!_fast) {
       try {
         var body = $('mlsEz3Body');
         var wrapEl = body ? body.querySelector('#ez3Wrap') : null;
         var anchor = wrapEl ? wrapEl.querySelector('.ez3-row2') : null;
-        if (anchor && !body.querySelector('.ez3fl-record') && !onStaffScreen(body)) {
+        var have = !!(body && body.querySelector('.ez3fl-record'));
+        if (have) _fastBlocked = false;
+        if (!_fastBlocked && anchor && !have && !onStaffScreen(body)) {
           if (_deb) { try { clearTimeout(_deb); } catch (e0) {} _deb = null; }
           _fast = true;
           try { run(); } finally { _fast = false; }
+          /* THE VALVE. If the mount did not take, this screen cannot host the
+             lane right now for a reason we do not model, and running ensure()
+             once per mutation with no coalesce would be a hot loop on a doctor's
+             machine. Stand down to the ordinary 150 ms debounce until a lane is
+             seen again; the debounce keeps retrying, just at a sane rate. */
+          if (!body.querySelector('.ez3fl-record')) _fastBlocked = true;
           return;
         }
       } catch (e) {}
