@@ -131,8 +131,24 @@ ok(!/getImageData|putImageData|poster|quantiz|levels\s*=/.test(
   'the patient portrait path contains pixel manipulation');
 ok(/pendingFace = dataUrl;[\s\S]*faceModeSelect\.value = faceModeAfterCapture[\s\S]*renderPatientPreview\(\)/.test(source),
   'a successful capture does not switch its patient preview to the real photo');
-ok(/if \(!decision\.applies\)[\s\S]*setLookBadges\(\[\], \[\]\)[\s\S]*faceModeSelect\.value = 'photo'[\s\S]*renderPatientPreview\(\)[\s\S]*return;/.test(source),
-  'an incomplete match can mutate traits or leave the misleading character on stage');
+/* avfit-1.0.0 (owner, 2026-08-17) — THIS PIN IS REVERSED, DELIBERATELY.
+   It used to require that an incomplete match set the Face style select to
+   'photo'. The owner countermanded exactly that: "when you take a picture it
+   goes to 'My photo' — that's not ok, it should stay on avatar." The refusal
+   branch must therefore never write faceModeSelect.value at all, and it must
+   route through facePartialDecision instead of applying nothing. What the old
+   pin protected — an incomplete read must not commit the whole combined look —
+   is asserted by the executable decision checks above and by the two pins
+   below. */
+const refusalBranch = between(source, 'if (!decision.applies) {', '/* The exact photo/edit revision is still current');
+ok(/facePartialDecision\(combined, decision\)/.test(refusalBranch),
+  'an incomplete match no longer runs the partial-application decision');
+ok(!/faceModeSelect\.value\s*=/.test(refusalBranch),
+  'an incomplete match still changes the Face style the doctor chose');
+ok(!/lookNow = faceApplyDerived\(lookNow, combined\)/.test(refusalBranch),
+  'an incomplete match commits the WHOLE combined look instead of only the claimed subset');
+ok(/lookNow = faceApplyDerived\(lookNow, \{ derived: applied,/.test(refusalBranch),
+  'the partial branch does not restrict itself to the subset it just licensed');
 ok(/faceCombineEvidence\(pixelRes, vr\.json\.look \|\| \{\}, vr\.json\.claimed \|\| \[\], trustedNaturalPhoto\)/.test(source),
   'pixel and model evidence are not merged before the apply decision');
 ok(/faceMutated\(\);[\s\S]*lookNow = faceApplyDerived\(lookNow, combined\)/.test(source),
@@ -145,5 +161,21 @@ ok(studio.includes('No animated traits changed'), 'the face meter still labels a
 ok(studio.includes('the match was incomplete, so all character settings stayed unchanged'),
   'the face meter hides zero-application truth');
 ok(studio.includes('Evidence coverage'), 'the meter still presents partial coverage as likeness confidence');
+/* avfit-1.0.0 — and a PARTIAL application is still not a match. `applied` is
+   the whole-match flag and stays false; only `partial` moves. */
+const summarize = new Function('receipt', 'wholeReadRefusal', 'partialApplied',
+  between(studio, 'function summarizeReceipt(receipt, wholeReadRefusal, partialApplied)', 'function style()') +
+  '\nreturn summarizeReceipt(receipt, wholeReadRefusal, partialApplied);');
+const partialMeter = summarize({ claimed: 5, refused: 9, examined: 14, faceW: 108, grid: 256 }, true, 5);
+eq(partialMeter.applied, false, 'a partial application is reported as a whole match');
+eq(partialMeter.partial, true, 'a partial application is not reported at all');
+ok(!/match/i.test(partialMeter.heading.replace(/not a match/i, '')) || /Partial read applied/.test(partialMeter.heading),
+  'the partial heading calls itself a match');
+ok(/Applied 5 of 14/.test(partialMeter.detail) && /could not be read/.test(partialMeter.detail),
+  'the partial detail hides what was applied or what was not');
+const zeroPartial = summarize({ claimed: 5, refused: 9, examined: 14, faceW: 108, grid: 256 }, true, 0);
+eq(zeroPartial.partial, false, 'a read that applied nothing is dressed as a partial application');
+ok(/all character settings stayed unchanged/.test(zeroPartial.detail),
+  'a read that applied nothing lost its honest wording');
 
 console.log('PASS 1p avatar photo truth: ' + passed + ' assertions');

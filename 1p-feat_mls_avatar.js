@@ -257,6 +257,12 @@
       '.mlsAvLiveLine{font:600 12.5px \'Public Sans\',system-ui;color:#204034;margin-top:6px;max-width:420px}' +
       '.mlsAvLiveList{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 10px;margin-top:4px;font-size:11.5px;color:#55605A;max-width:640px}' +
       '.mlsAvLiveList .on{color:#2E6A4B;font-weight:700}' +
+      /* avfit-1.0.0 - the framing guide's readiness facts, above the ledger */
+      '.mlsAvLiveFit{font:700 12px \'Public Sans\',system-ui;color:#7a4d12;background:#fdf6e7;border:1px solid #ecd9ab;border-radius:9px;padding:6px 9px;margin-top:6px;max-width:520px}' +
+      '.mlsAvLiveFit.on{color:#1f5c41;background:#e6f7ef;border-color:#a8d5bc}' +
+      /* avfit-1.0.0 - the partial-match ledger under the appearance grid */
+      '.mlsAvPartialList{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 10px;margin-top:6px;font-size:11.5px;color:#55605A;max-width:640px}' +
+      '.mlsAvPartialList .on{color:#1f5c41;font-weight:700}' +
       '@media(max-width:600px){.mlsAvPanel{padding:17px}.mlsAvAction{min-height:44px}.mlsAvHead h2{font-size:19px}}';
     (document.head || document.documentElement).appendChild(node);
   }
@@ -1822,6 +1828,72 @@
       why: applies ? '' : (res && res.look
         ? ('Only ' + claimed + ' of ' + examined + ' appearance details were reliable. No animated traits were changed.')
         : 'The matcher could not make a reliable appearance read. No animated traits were changed.') };
+  }
+  /* ===== avfit-1.0.0 (2026-08-17) — AN INCOMPLETE MATCH STOPS DOING NOTHING.
+     Owner, holding the Setup screen: "No animated traits changed · 5 of 14
+     details were readable; the match was incomplete, so all character settings
+     stayed unchanged ... this is unacceptable and always happens."
+
+     MEASURED FIRST, then changed. Driving this file's own reader in real Chrome
+     over synthetic webcam frames (640x480 and 1280x720, head 15-35% of frame
+     height, scratchpad/measure-likeness.js) reproduces his number exactly: 5-8
+     of 14 at every ordinary sitting distance, and 5 of 14 on mid-brown and deep
+     skin. Sweeping the SAME face from 20% to 80% of the analysed square moves it
+     6,7,7,7,7,6,7 — i.e. the count is NOT mainly a resolution problem, so
+     "make the face bigger" alone could never have fixed it. Five of the fourteen
+     ledger entries are claimable only in the minority case (`beard`, `glasses`,
+     `hairline`, `browCol` are pushed ONLY when the feature is PRESENT) or never
+     (`faceShape` is measured and deliberately excluded, see the note in
+     faceReadPortrait). A clean-shaven doctor with no glasses, a full hairline and
+     brows the colour of his hair CANNOT score above nine, and the honest bar the
+     whole-read gate enforces is six.
+
+     ⛔ THE GATE IS NOT TOUCHED. `faceMatchDecision` above is byte-for-byte the
+     rule it was: `examined >= 10 && claimed >= 6 && skin && hair`, and only a
+     receipt that clears it may ever be called a match. What changes is what
+     happens BELOW it. Applying nothing was not the conservative choice it looked
+     like — it left the doctor's character sitting at values NOTHING had measured
+     while the screen said "incomplete", which is the same confidently-wrong
+     drawing the truth pass was written to prevent, arrived at from the other
+     side.
+
+     So an incomplete read may apply the traits it really did measure, provided:
+       1. the source was PROVEN a photograph (never an illustration, never an
+          unproved image) — same two terms the gate uses;
+       2. the ledger examined the full control set (>= 10), so a truncated
+          receipt cannot qualify by having little to refuse;
+       3. `skin` is among the claims. Skin is the one field guarded by the YCbCr
+          window, the CIELAB hue/chroma band, the eye-separation corroboration,
+          the per-patch quorum AND the backdrop veto — without it there is no
+          evidence the reader was looking at a face rather than a wall, and this
+          project has measured a wall winning that vote twice;
+       4. at least FACE_PARTIAL_MIN claims survive. One lone field over thirteen
+          untouched defaults is the exact 1-of-14 case that produced "a drawing
+          confidently unlike the photograph".
+     ⛔ It claims nothing the readers did not already claim: `derived` is filtered,
+     never extended, so no absence is ever claimed and no gate is bypassed.
+     ⛔ `applies` stays false. The caller MUST present this as a partial,
+     labelled application and MUST NOT call it a match. */
+  var FACE_PARTIAL_MIN = 2;
+  function facePartialDecision(res, decision) {
+    var r = (res && res.receipt) || {};
+    var got = res && Array.isArray(res.derived) ? res.derived.slice() : [];
+    var examined = Math.max(0, Number(r.examined) || 0);
+    var whole = decision || faceMatchDecision(res);
+    if (whole.applies) return { partial: false, derived: [], skipped: [], why: '' };
+    var provedPhoto = !!(res && res.look && r.srcKind === 'photo' && r.fromIllustration !== true);
+    var eligible = provedPhoto && examined >= 10 && got.indexOf('skin') >= 0 && got.length >= FACE_PARTIAL_MIN;
+    var skipped = [];
+    FACE_MATCH_FIELDS.forEach(function (k) { if (got.indexOf(k) < 0) skipped.push(k); });
+    if (!eligible) {
+      return { partial: false, derived: [], skipped: skipped,
+        why: !provedPhoto
+          ? 'Nothing was applied: this image was never proved to be a photograph of a face.'
+          : (got.indexOf('skin') < 0
+            ? 'Nothing was applied: your skin tone could not be read, and without it there is no proof the reader was looking at a face.'
+            : 'Nothing was applied: fewer than ' + FACE_PARTIAL_MIN + ' details were readable.') };
+    }
+    return { partial: true, derived: got, skipped: skipped, why: '' };
   }
   /* Pixel evidence and high-confidence model evidence are candidates until
      this function has built one complete receipt.  Nothing here mutates the
@@ -6173,6 +6245,15 @@
     beard: 'Facial hair', glasses: 'Glasses', eyes: 'Eye colour', brows: 'Brow weight',
     browCol: 'Brow colour', lips: 'Lip shape', nose: 'Nose', eyeSet: 'Eye spacing',
     hairline: 'Hairline', faceShape: 'Face shape', shirt: 'Top colour' };
+  /* avfit-1.0.0 — the same fourteen controls, named the way they are named in a
+     sentence. "Applied 5 of 14 (skin tone, hair colour, …)" has to read as
+     English, and it must name the SAME things the ledger beside it lists, so
+     both come from here. */
+  var FACE_KNOB_SAID = { skin: 'skin tone', hair: 'hair colour', hairStyle: 'hair style',
+    beard: 'facial hair', glasses: 'glasses', eyes: 'eye colour', brows: 'brow weight',
+    browCol: 'brow colour', lips: 'lip shape', nose: 'nose shape', eyeSet: 'eye spacing',
+    hairline: 'hairline', faceShape: 'face shape', shirt: 'top colour' };
+  function faceKnobLabel(knob) { return FACE_KNOB_SAID[knob] || String(knob || ''); }
   var faceLiveCanvas = null;
   function faceLiveMeasure(video) {
     if (!faceLiveCanvas) faceLiveCanvas = document.createElement('canvas');
@@ -6214,6 +6295,22 @@
     var ctx = overlay.getContext && overlay.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, overlay.width, overlay.height);
+    /* avfit-1.0.0 — THE TARGET, DRAWN. A doctor cannot aim at a number. The
+       oval is exactly FACE_FIT_TARGET of the frame wide, so "fill the oval"
+       and "the matcher can read this" are the same instruction. Guarded: an
+       older canvas implementation without ellipse() must not stop the loop
+       that is also the dead-feed witness. */
+    safe(function () {
+      var w = overlay.width, h = overlay.height;
+      ctx.save();
+      ctx.setLineDash([6, 5]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = ready ? 'rgba(46,106,75,.85)' : 'rgba(255,255,255,.75)';
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h * 0.46, w * FACE_FIT_TARGET * 0.62, h * FACE_FIT_TARGET * 0.86, 0, 0, 7);
+      ctx.stroke();
+      ctx.restore();
+    });
     var b = res && res.box;
     if (!b || !b.grid) return;
     var s = overlay.width / b.grid;
@@ -6248,9 +6345,28 @@
       line = avcamWaitingLine(feed) || 'Waiting for the first camera frame…';
       if (ui.status && ui.status.__mlsLast !== line) { ui.status.__mlsLast = line; ui.status.textContent = line; }
       if (ui.list && ui.list.__mlsRows) { ui.list.__mlsRows = null; ui.list.textContent = ''; }
+      if (ui.fit && ui.fit.__mlsLast !== '') { ui.fit.__mlsLast = ''; ui.fit.textContent = ''; }
       return;
     }
     /* ===== end avcam-1.0.0 ===== */
+    /* avfit-1.0.0 — THREE FACTS, NOT AN ADJECTIVE. Face size against the target
+       the matcher actually needs, whether both eyes were found, and whether the
+       light is inside the band. Each is the same quantity the shutter and the
+       re-crop are judged on, so the guide cannot promise a frame the reader
+       then refuses. */
+    if (ui.fit) {
+      var fit = faceFitReport(res, q);
+      var fitLine = (fit.sizeOk ? '✓' : '·') + ' Face ' + Math.round(fit.faceFrac * 100) + '% of frame' +
+        (fit.faceFound ? ' (' + fit.facePx + 'px, aim ' + Math.round(fit.targetFrac * 100) + '%+)' : '') +
+        '   ' + (fit.eyesOk ? '✓' : '·') + ' Both eyes found' +
+        '   ' + (fit.lightOk ? '✓' : '·') + ' Light' +
+        ' — ' + fit.say;
+      if (ui.fit.__mlsLast !== fitLine) {
+        ui.fit.__mlsLast = fitLine;
+        ui.fit.textContent = fitLine;
+        ui.fit.className = 'mlsAvLiveFit' + (fit.ready ? ' on' : '');
+      }
+    }
     if (res && res.receipt) {
       line = 'Portrait found — optional match sees ' + res.receipt.claimed + ' of ' + res.receipt.examined + ' details' +
         (ready ? ' — portrait ready, snap when ready' : '');
@@ -6351,6 +6467,114 @@
     }
     next();
   }
+  /* ===== avfit-1.0.0 — THE FRAME THE MATCHER IS GIVEN =====================
+     The camera path took the whole webcam frame, centre-cropped it square and
+     measured that. At the distance a doctor actually sits from a laptop lid
+     that leaves the face 18-29% of the analysed grid, and at 15% of frame
+     height it leaves the reader with NO findable face at all — measured, over
+     synthetic 640x480 and 1280x720 frames: 0 of 14, twice, with no advice
+     beyond "no face found".
+     The upload path has solved this since p1-photo-framing-1.0.0: find the
+     face, then crop to it. The camera never did. This block gives the shutter
+     the same treatment, and gives the doctor the guide the upload path does not
+     need — a target oval and three readiness facts he can act on while the
+     camera is open.
+     ⛔ THREE REFUSALS THAT MAKE THIS SAFE, each one a measured trap:
+       1. NEVER UPSCALE. Cropping a small face and blowing it up is precisely
+          [[face-matcher-measured-a-12-pixel-face]]: measured here, an ideal
+          crop of a 3-pixel head produced a 64px square that the reader
+          UPSCALED to its 128 grid and then confidently described — 5 of 14 on
+          a face that is not there. A crop whose source side is below the
+          analysis grid is refused, so a tiny face stays a wide frame and stays
+          an honest refusal.
+       2. THE CROP MUST PAY FOR ITSELF. It is kept only if the re-read is
+          READY and claims at least as many controls as the wide frame did. A
+          reframe that reads worse is discarded and the original is used.
+       3. NO ZERO-LUMINANCE FRAME REACHES THE MATCHER. The crop is measured for
+          light BEFORE it is read, by avcamFrameLooksLive — the same rule the
+          shutter's own ranking pass uses. ===== */
+  var FACE_FIT_TARGET = 0.34;        /* keep equal to faceCaptureVerdict's matchLimited bound */
+  var FACE_FIT_MIN_SRC = 256;        /* the 256 analysis grid: below it a crop would be upscaled */
+  var FACE_FIT_WIDTH_SPAN = 2.38;    /* crop side / face width — puts the face at ~0.42 of the crop */
+  var FACE_FIT_HEIGHT_SPAN = 1.95;   /* crop side / face height — the hair/forehead margin */
+  var FACE_FIT_CENTRE_Y = 0.46;      /* the face centre's place in the crop, as the upload path uses */
+  /* WHAT THE DOCTOR IS ASKED TO FIX, as three facts rather than one adjective.
+     Pure: it reads a reader result and a quality reading and returns numbers,
+     so the guide, the shutter and the suite all describe the same frame. */
+  function faceFitReport(res, q) {
+    var b = (res && res.box) || null;
+    var grid = Number(b && b.grid) || 0;
+    var faceFrac = grid ? Math.max(0, Math.min(1, Number(b.w || (b.R - b.L)) / grid)) : 0;
+    var eL = b && b.eL, eR = b && b.eR;
+    var eyes = !!(eL && eR && Number(eL.n) >= 6 && Number(eR.n) >= 6);
+    var exposure = Number((q && q.exposure) || 0);
+    var light = exposure >= 45 && exposure <= 225;
+    var big = faceFrac >= FACE_FIT_TARGET;
+    return {
+      faceFound: !!grid, faceFrac: Math.round(faceFrac * 1000) / 1000,
+      facePx: grid ? Math.round(Number(b.w || (b.R - b.L))) : 0, grid: grid,
+      targetFrac: FACE_FIT_TARGET, sizeOk: big, eyesOk: eyes, lightOk: light,
+      ready: !!(grid && big && eyes && light),
+      say: !grid ? 'Centre your face in the oval'
+        : (!light ? (exposure < 45 ? 'More light — face a window or turn a lamp on' : 'Less glare — move the bright light out of shot')
+          : (!big ? 'Move closer — fill the oval' : (!eyes ? 'Look at the camera — both eyes need to be visible' : 'Framing looks good')))
+    };
+  }
+  /* WHERE TO CROP, in the source square's own pixels. Null means "do not". */
+  function faceFitPlan(square, res) {
+    var b = (res && res.box) || null;
+    var grid = Number(b && b.grid) || 0;
+    var side0 = Number(square && square.width) || 0;
+    if (!grid || !side0) return null;
+    var boxW = Math.max(0, Number(b.w || (b.R - b.L)));
+    var boxH = Math.max(0, Number(b.B) - Number(b.T));
+    if (boxW <= 0 || boxH <= 0) return null;
+    if (boxW / grid >= FACE_FIT_TARGET) return null;      /* already filling the frame */
+    var scale = side0 / grid;
+    var want = Math.round(Math.max(boxW * scale * FACE_FIT_WIDTH_SPAN, boxH * scale * FACE_FIT_HEIGHT_SPAN));
+    var side = Math.min(side0, want);
+    if (side < FACE_FIT_MIN_SRC) return null;             /* ⛔ never upscale a small face */
+    if (side >= side0) return null;                       /* nothing to gain */
+    var cx = (isFinite(Number(b.cx)) ? Number(b.cx) : (Number(b.L) + Number(b.R)) / 2) * scale;
+    var cy = ((Number(b.T) + Number(b.B)) / 2) * scale;
+    var sx = Math.round(Math.max(0, Math.min(side0 - side, cx - side / 2)));
+    var sy = Math.round(Math.max(0, Math.min(side0 - side, cy - side * FACE_FIT_CENTRE_Y)));
+    return { sx: sx, sy: sy, side: side, out: Math.min(MEASURE_MAX, side) };
+  }
+  /* THE CROP MUST PAY FOR ITSELF — ready, and no fewer claims than before. */
+  function faceFitBetter(before, after) {
+    if (!after || !after.faceVerdict || !after.faceVerdict.ready) return false;
+    function claims(q) { return Number(q && q.faceResult && q.faceResult.receipt && q.faceResult.receipt.claimed) || 0; }
+    function frac(q) {
+      var r = q && q.faceResult && q.faceResult.receipt;
+      var g = Number(r && r.grid) || 0;
+      return g ? Number(r.faceW || 0) / g : 0;
+    }
+    return claims(after) >= claims(before) && frac(after) > frac(before);
+  }
+  function faceFitApply(square, q) {
+    var plan = faceFitPlan(square, q && q.faceResult);
+    if (!plan) return { square: square, q: q, fitted: false };
+    var cropped = safe(function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = plan.out; canvas.height = plan.out;
+      var ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(square, plan.sx, plan.sy, plan.side, plan.side, 0, 0, plan.out, plan.out);
+      return canvas;
+    }, null);
+    if (!cropped) return { square: square, q: q, fitted: false };
+    var q2 = frameQuality(cropped);
+    /* the shutter's own rule: an unlit surface never reaches the matcher */
+    if (!avcamFrameLooksLive(q2)) return { square: square, q: q, fitted: false };
+    q2.faceLit = true;
+    q2.faceResult = safe(function () { return faceReadPortrait(cropped); }, null);
+    q2.faceVerdict = faceCaptureVerdict(q2.faceResult, q2);
+    if (!faceFitBetter(q, q2)) return { square: square, q: q, fitted: false };
+    return { square: cropped, q: q2, fitted: true, plan: plan };
+  }
+  /* ===== end avfit-1.0.0 ===== */
   /* ---- end live capture view ---- */
 
   function stylizeCanvas(src) {
@@ -6636,6 +6860,7 @@
            Found by driving the real capture with a real photograph through a fake camera
            (scratchpad/facelook/autocapture.js) and reading pageerror — the owner's
            symptom, "once the image is taken it sohuld auto change avatar", exactly. */
+        safe(function () { avatarSetupStep('captured'); });
         safe(function () {
           setupLater(function () {
             safe(function () {
@@ -6737,9 +6962,12 @@
           overlay.style.cssText = 'position:absolute;left:0;top:0;width:200px;height:200px;pointer-events:none;transform:scaleX(-1);border-radius:14px';
           camWrap.appendChild(video); camWrap.appendChild(overlay);
           var liveStatus = make('div', 'mlsAvLiveLine', 'Opening the camera…');   /* avcam-1.0.0: the guide starts on the truth, not on a search that has not begun */
+          /* avfit-1.0.0: the framing guide's own line, above the per-control
+             ledger — the doctor acts on this one while the camera is open. */
+          var liveFit = make('div', 'mlsAvLiveFit', 'Centre your face in the oval and fill it.');
           var liveList = make('div', 'mlsAvLiveList');
           camHost.appendChild(camWrap); camHost.appendChild(row);
-          camHost.appendChild(liveStatus); camHost.appendChild(liveList);
+          camHost.appendChild(liveStatus); camHost.appendChild(liveFit); camHost.appendChild(liveList);
           /* p1-camera-endurance-1.0.0 — PLAYBACK IS ASKED FOR, NOT ASSUMED.
              autoplay+muted+playsInline normally starts a MediaStream, but a
              backgrounded tab, a policy change or a re-attach after a lost
@@ -6803,7 +7031,7 @@
              action, and no lamp is ever mentioned for a feed that is dead. */
           function startLiveGuide() {
             avcamFeedSet(feed, 'warming', '');
-            faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, snapBtn: snapBtn, feed: feed,
+            faceLiveLoopStart(video, overlay, { status: liveStatus, list: liveList, fit: liveFit, snapBtn: snapBtn, feed: feed,
               onDark: function (nth) {
                 /* First dark spell: the usual cause is a dropped compositor
                    surface, and re-attaching the same live stream brings the
@@ -6848,9 +7076,16 @@
             }, function (bestCanvas, q) {
               if (!faceCaptureIsCurrent(captureGeneration, camHost)) return;
               var vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+              /* avfit-1.0.0: the shutter's best frame is re-cropped around the
+                 face it found, with hair and forehead margin, exactly as an
+                 upload already is. Refuses to upscale, refuses a crop that
+                 reads no better, and never hands an unlit surface to the
+                 matcher — see faceFitApply. */
+              var fitted = faceFitApply(bestCanvas, q);
+              bestCanvas = fitted.square; q = fitted.q;
               stopCamera(); camHost.innerHTML = '';
               acceptPortrait({
-                square: bestCanvas, q: q, source: 'camera',
+                square: bestCanvas, q: q, source: 'camera', fitted: fitted.fitted === true,
                 still: function () { return faceCaptureIsCurrent(captureGeneration, camHost); },
                 fail: function (message) { camHost.appendChild(make('div', 'mlsAvNotice', message)); },
                 noFrame: 'The camera did not deliver a frame — try again.',
@@ -6858,12 +7093,13 @@
                 badEncode: 'That capture did not work — try again with more light.',
                 describe: function (square, verdict, hi) {
                   return 'Portrait captured from a ' + (square.width) + '×' + (square.height) +
-                    ' crop of your ' + (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
+                    ' ' + (fitted.fitted ? 'face-aware' : 'centre') + ' crop of your ' +
+                    (vw && vh ? (vw + '×' + vh + ' ') : '') + 'camera' +
                     ' — best of 6 frames, processed on this device' +
                     (hi ? '. Match my photo will measure the full-quality copy; it is stored only after Save.'
                         : '. Match will measure the patient portrait and say so.') +
-                    ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
-                    (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
+                    ' Your Animated character stays the patient-facing face — this photo feeds its traits. Save to keep both.' +
+                    (verdict.matchLimited ? ' The read may be partial: whatever it can measure will be applied and labelled, and the rest left at their defaults.' : '');
                 }
               });
             });
@@ -6950,8 +7186,8 @@
                   ' ' + cropCopy + ' of a ' + (img.naturalWidth || 0) + '×' + (img.naturalHeight || 0) +
                   ' image, processed on this device and never uploaded until you Save' +
                   (hi ? '. Match my photo will measure the full-quality copy.' : '.') +
-                  ' The patient-facing preview now shows this exact portrait. Save to publish it.' +
-                  (verdict.matchLimited ? ' The animated-trait match is uncertain, so it will not change any character traits unless a later read is complete enough.' : '');
+                  ' Your Animated character stays the patient-facing face — this photo feeds its traits. Save to keep both.' +
+                  (verdict.matchLimited ? ' The read may be partial: whatever it can measure will be applied and labelled, and the rest left at their defaults.' : '');
               }
             });
           };
@@ -6971,7 +7207,17 @@
       var initialFaceMode = faceModeOnLoad(cfg.faceMode, cfg.faceImage);
       var faceModeTouched = false;
       var hasSavedPortrait = faceValidPhoto(cfg.faceImage || '');
-      [['photo', 'My photo — closest likeness, moves gently while speaking' + (hasSavedPortrait ? ' (recommended)' : '')], ['drawn', 'Animated character — expressions, matched from your photo (approximate illustrated likeness)']].forEach(function (opt) {
+      /* ⛔ avfit-1.0.0 — THE ANIMATED CHARACTER IS FIRST AND IT IS THE ONE
+         RECOMMENDED. It is the default (faceModeOnLoad), it is what a capture
+         leaves selected (faceModeAfterCapture) and it is what an incomplete
+         match now leaves selected too — so a list that opened with "My photo …
+         (recommended)" was the product arguing against its own default at the
+         exact moment the doctor had just taken a picture. `hasSavedPortrait`
+         still decides whether the recommendation is worth printing at all,
+         because before there is a portrait neither option is a real choice.
+         The option VALUES and the 'photo' copy are unchanged; only the order
+         and which line carries the recommendation moved. */
+      [['drawn', 'Animated character — expressions, matched from your photo (approximate illustrated likeness)' + (hasSavedPortrait ? ' (recommended)' : '')], ['photo', 'My photo — closest likeness, moves gently while speaking']].forEach(function (opt) {
         var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
         if (initialFaceMode === opt[0]) o.selected = true;
         faceModeSelect.appendChild(o);
@@ -7183,6 +7429,7 @@
       lookActions.style.marginTop = '4px';
       var matchBtn = make('button', 'mlsAvAction', '🪄 Match my photo');
       matchBtn.type = 'button';
+      matchBtn.id = 'mlsAvMatchBtn';   /* avfit-1.0.0: the step machine and the glow lane address it by id */
       var lookNote = make('div', 'mlsAvMeta', '');
       lookNote.id = 'mlsAvLookNote';
       /* fx-1.0 THE REFUSAL IS LOUD (owner 2026-08-11: he barely saw the pale
@@ -7255,6 +7502,95 @@
         if (lookWrap.parentNode) lookWrap.parentNode.insertBefore(box, lookWrap);
         quarantineBox = box;
       }
+      /* ===== avfit-1.0.0 — WHAT WAS APPLIED, NAMED, WITH A RETAKE ============
+         The note is one sentence; this is the ledger under it. Every one of the
+         fourteen controls appears exactly once, either as applied (and where
+         from) or as not readable — the same "no third state" rule the live
+         capture guide already follows, carried through to the result. The
+         Retake button is here because "retake in better light" is the advice
+         and the doctor should not have to go looking for the camera again. */
+      var partialBox = null;
+      function partialListShow(applied, skipped) {
+        var got = applied || [], missed = skipped || [];
+        if (!partialBox) {
+          partialBox = make('div', 'mlsAvPartialList');
+          partialBox.id = 'mlsAvMatchLedger';
+          partialBox.setAttribute('role', 'group');
+          partialBox.setAttribute('aria-label', 'What this photo could and could not decide');
+          if (lookNote.parentNode) lookNote.parentNode.insertBefore(partialBox, lookNote.nextSibling);
+          else return;
+        }
+        partialBox.textContent = '';
+        FACE_MATCH_FIELDS.forEach(function (k) {
+          var on = got.indexOf(k) >= 0;
+          var line = make('div', on ? 'on' : '',
+            (on ? '✓ ' : '· ') + faceKnobLabel(k) +
+            (on ? ' — from your photo' : (missed.indexOf(k) >= 0 ? ' — not readable' : ' — your setting')));
+          partialBox.appendChild(line);
+        });
+        var retakeRow = make('div', 'mlsAvActions');
+        retakeRow.style.cssText = 'grid-column:1/-1;margin-top:6px';
+        var retake = make('button', 'mlsAvAction', '↻ Retake the photo');
+        retake.type = 'button';
+        retake.id = 'mlsAvRetakePhoto';
+        retake.addEventListener('click', function () {
+          if (!setupCurrent()) return;
+          avatarSetupStep('capturing');
+          safe(function () { camBtn.click(); });
+        });
+        retakeRow.appendChild(retake);
+        partialBox.appendChild(retakeRow);
+      }
+      /* ===== avfit-1.0.0 — AND THEN IT KEEPS GOING =========================
+         Owner, 2026-08-17: "once you're done, these things don't stop — just
+         keep doing everything else." The match used to END on its result text:
+         a paragraph, and no indication that Setup has two more sections before
+         a patient can ever see this avatar. The form now publishes what state
+         it is in and which control is next, moves the doctor there, and lets
+         another lane light it — `data-mls-avatar-state` and
+         `data-mls-avatar-next` on the form, plus a `mls:avatar-step` event
+         carrying both. The next control also carries `data-mls-next-step="1"`,
+         which is the hook the glow lane reads.
+         ⛔ It never advances past a control the doctor still has to act on: a
+         Setup with no questions sends him to Add question, not to Save, because
+         saving with none leaves the check-in OFF. */
+      var setupState = '', setupNextId = '';
+      function avatarSetupNextId(state) {
+        if (state === 'capturing' || state === 'captured') return 'mlsAvMatchBtn';
+        if (state === 'matching') return '';
+        if (state === 'matched' || state === 'matched-partial' || state === 'match-refused') {
+          var have = safe(function () { return qValues().length; }, 0);
+          return have ? 'mlsAvSaveBtn' : 'mlsAvAddQuestion';
+        }
+        return '';
+      }
+      function avatarSetupStep(state) {
+        if (!setupCurrent()) return '';
+        setupState = String(state || '');
+        setupNextId = avatarSetupNextId(setupState);
+        safe(function () {
+          form.setAttribute('data-mls-avatar-state', setupState);
+          if (setupNextId) form.setAttribute('data-mls-avatar-next', setupNextId);
+          else form.removeAttribute('data-mls-avatar-next');
+        });
+        safe(function () {
+          var prior = form.querySelectorAll('[data-mls-next-step]');
+          for (var i = 0; i < prior.length; i++) prior[i].removeAttribute('data-mls-next-step');
+        });
+        var next = setupNextId ? document.getElementById(setupNextId) : null;
+        if (next) safe(function () { next.setAttribute('data-mls-next-step', '1'); });
+        safe(function () {
+          window.dispatchEvent(new CustomEvent('mls:avatar-step',
+            { detail: { state: setupState, next: setupNextId } }));
+        });
+        /* deferred one tick so the note, the badges and the ledger paint before
+           anything moves — and setupLater dies with the form */
+        if (next) setupLater(function () {
+          safe(function () { next.scrollIntoView({ block: 'center', behavior: 'auto' }); });
+          safe(function () { next.focus({ preventScroll: true }); });
+        }, 90);
+        return setupNextId;
+      }
       matchBtn.addEventListener('click', function () {
         if (!setupCurrent()) return;
         var matchGeneration = faceMutated();
@@ -7268,6 +7604,7 @@
         var usedHi = !!hi;
         var matchPortrait = String(shown || '');
         if (!src) { lookNoteSay('Capture your photo above first, then Match my photo.', 0); return; }
+        avatarSetupStep('matching');
         lookNoteCalm();
         lookNote.textContent = usedHi
           ? 'Reading the full-quality copy of your photo…'
@@ -7320,38 +7657,76 @@
           var pixelKnobs = allObserved.filter(function (k) { return aiKnobs.indexOf(k) < 0; });
           var modelRefused = (combined && combined.visionRefused) || [];
           if (!decision.applies) {
+            /* ===== avfit-1.0.0 \u2014 AN INCOMPLETE MATCH APPLIES WHAT IT READ.
+               Owner: "No animated traits changed \u00b7 5 of 14 details were
+               readable; the match was incomplete, so all character settings
+               stayed unchanged ... this is unacceptable and always happens."
+               facePartialDecision decides, under the four conditions written
+               beside it, whether the traits the readers DID claim may be
+               applied. It never extends `derived`, never claims an absence and
+               never lets this be called a match: `decision.applies` is still
+               false, the note still says the match is incomplete, and every
+               applied control is labelled with where its value came from. */
+            var partial = facePartialDecision(combined, decision);
+            var applied = partial.partial ? partial.derived.slice() : [];
+            var appliedPixel = applied.filter(function (k) { return aiKnobs.indexOf(k) < 0; });
+            var appliedAi = applied.filter(function (k) { return aiKnobs.indexOf(k) >= 0; });
+            if (partial.partial) {
+              faceMutated();
+              lookNow = faceApplyDerived(lookNow, { derived: applied, look: (combined && combined.look) || {} });
+              applied.forEach(function (k) { delete manualNow[k]; delete lookMarks[k]; });
+              syncLookControls();
+            }
+            /* THE REST ARE NAMED, NOT "UNCHANGED". A knob the doctor set by hand
+               keeps its own provenance; every other unread knob says plainly
+               that it is sitting at its default because the photo could not
+               decide it. "Unchanged" was true and useless. */
             Object.keys(FACE_LOOK).forEach(function (sk) {
               if (sk === 'cap' || sk === 'stethoscope' || sk === 'age' || manualNow[sk]) return;
-              lookMarks[sk] = 'not changed \u2014 match incomplete';
+              if (applied.indexOf(sk) >= 0) return;
+              lookMarks[sk] = 'left at the default \u2014 not readable from this photo';
             });
-            setLookBadges([], []);
-            /* p1-face-mode-choice-1.0.0 — A REFUSAL MAY NOT OVERRULE HIS OWN
-               CHOICE. Owner, 2026-08-13: "if i click animation it should keep
-               it not change it." Falling back to the photo is right when the
-               doctor has expressed no preference — an unmatched default
-               character is a worse likeness than the real portrait. It is
-               wrong when he has deliberately picked Animated character in this
-               session: the match failing is not a reason to silently undo a
-               setting he made, and he was left thinking the control did not
-               work. The fallback keeps its whole job for the untouched case
-               and the note says plainly that the character is unmatched. */
-            var keepAnimated = faceModeTouched && faceModeSelect.value === 'drawn';
-            if (faceValidPhoto(shown) && !keepAnimated) {
-              faceModeSelect.value = 'photo';
-              renderPatientPreview();
-            }
+            setLookBadges(appliedPixel, appliedAi);
+            if (partial.partial) lookApply();
+            /* ⛔ p1-avatar-primary-1.1.0 — AND IT STAYS ON THE ANIMATED
+               CHARACTER. Owner, 2026-08-17: "when you take a picture it goes to
+               'My photo' — that's not ok, it should stay on avatar ... If the
+               doctor wants 'My photo' they pick it themselves."
+               THIS REVERSES p1-face-mode-choice-1.0.0's fallback, which forced
+               an untouched select to 'photo' on every incomplete match — i.e.
+               on the ORDINARY case, which is how a doctor who never asked for
+               photo mode kept finding himself in it seconds after taking a
+               picture. That fallback's reasoning (an unmatched default
+               character is a worse likeness than the real portrait) is now
+               answered by the partial application above: the character is no
+               longer unmatched, it carries the traits the photo really did
+               supply. `faceModeAfterCapture` already refused to switch on
+               capture; this was the last implicit switch, and it is the one he
+               saw. The patient-facing face changes in exactly one place now:
+               the Face style control, by his own hand. */
             var why = extraWhy || decision.why;
-            if (modelUnavailable) why += ' The second read was unavailable.';
-            else if (modelUnsure && modelUnsure.length) why += ' The second read was also unsure about ' + modelUnsure.join(', ') + '.';
-            why += keepAnimated
-              ? ' Your Animated character choice is kept exactly as you set it — its traits are simply unmatched, so fine-tune them below or retake the photo.'
-              : ' Your real photo remains the patient-facing face. You can retake or fine-tune the optional animated character by hand.';
-            lookNoteSay(why, 2);
+            if (partial.partial) {
+              why = 'Applied ' + applied.length + ' of ' + (decision.examined || FACE_MATCH_FIELDS.length) +
+                ' (' + applied.map(faceKnobLabel).join(', ') + '). ' +
+                partial.skipped.length + ' could not be read — retake in better light to refine. ' +
+                'This is a partial read, not a match, so the rest are left at their defaults.' +
+                (modelUnavailable ? ' The second read was unavailable.' : '') +
+                (modelUnsure && modelUnsure.length ? (' The second read was unsure about ' + modelUnsure.join(', ') + '.') : '');
+            } else {
+              if (modelUnavailable) why += ' The second read was unavailable.';
+              else if (modelUnsure && modelUnsure.length) why += ' The second read was also unsure about ' + modelUnsure.join(', ') + '.';
+              why += ' ' + (partial.why || 'Nothing was applied.');
+            }
+            why += ' Your Animated character stays the patient-facing face — Face style only ever changes when you change it.';
+            lookNoteSay(why, partial.partial ? 1 : 2);
+            partialListShow(applied, partial.skipped);
             safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
               at: Date.now(), usedHi: usedHi, wholeReadRefusal: true, why: why,
-              claimed: [], observed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
+              claimed: [], partialApplied: applied.slice(), observed: allObserved,
+              pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
               refused: refusedNow.slice(), modelRefused: modelRefused.slice(),
               receipt: (combined && combined.receipt) || null }; });
+            avatarSetupStep(partial.partial ? 'matched-partial' : 'match-refused');
             return;
           }
 
@@ -7375,10 +7750,13 @@
             (modelRefused.length ? (' It refused ' + modelRefused.length + ' unsafe claim' + (modelRefused.length === 1 ? '' : 's') + '.') : '') +
             (modelUnsure && modelUnsure.length ? (' It was unsure about ' + modelUnsure.join(', ') + ', so those stayed unchanged.') : '');
           lookNoteSay(note, refusedNow.length || modelRefused.length ? 1 : 0);
+          partialListShow(allObserved, (refusedNow || []).map(function (r) { return r && r.knob; })
+            .filter(function (k) { return !!k && allObserved.indexOf(k) < 0; }));
           safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
             at: Date.now(), usedHi: usedHi, wholeReadRefusal: false,
             claimed: allObserved, pixelClaimed: pixelKnobs, aiClaimed: aiKnobs,
             refused: refusedNow.slice(), modelRefused: modelRefused.slice(), receipt: rct || null }; });
+          avatarSetupStep('matched');
         }
         /* p1-match-never-hangs-1.0.0 \u2014 THE MATCH HAD NO DEADLINE.
            Owner, 2026-08-13: "this never loads". api() wraps fetch with no
@@ -7572,6 +7950,7 @@
       }
       (Array.isArray(cfg.questions) ? cfg.questions : []).forEach(function (q) { addQRow(q); });
       var addQBtn = make('button', 'mlsAvAction', '+ Add question'); addQBtn.type = 'button';
+      addQBtn.id = 'mlsAvAddQuestion';   /* avfit-1.0.0: the step after a match, when there are no questions yet */
       addQBtn.addEventListener('click', function () { addQRow('', true); });
       var starters = make('div', 'mlsAvActions');
       var starterNote = make('div', 'mlsAvMeta', qRows.length ? 'Quick add:' : 'Start from the basics — tap to add:');
@@ -7585,6 +7964,7 @@
       });
       var saveBtn = make('button', 'mlsAvAction primary', 'Save avatar');
       saveBtn.type = 'button';
+      saveBtn.id = 'mlsAvSaveBtn';   /* avfit-1.0.0: the step after a match once questions exist */
       var status = make('div', 'mlsAvMeta', '');
       saveBtn.addEventListener('click', function () {
         if (!setupCurrent()) return;
@@ -12558,6 +12938,7 @@ function kioskLine(kind, text) {
     dormant.faceDemo = function () { return null; };
     dormant.lookProportions = function () { return null; };   /* avlook-1.0.0 */
     dormant.deriveLookFromPhoto = function () { return false; };
+    dormant.captureFit = function () { return null; };   /* avfit-1.0.0 */
     dormant.voiceGate = function () { return { ready: false, why: 'no authenticated session', echoFinalsRefused: 0 }; };
     dormant.voiceGateStart = function () { return false; };
     dormant.voiceGateStop = dormant.otherVoiceNow = function () { return false; };
@@ -12627,6 +13008,45 @@ function kioskLine(kind, text) {
       window.__mlsAvLook = owner.lookProportions;
     });
     /* ===== end avlook-1.0.0 ===== */
+    /* ===== avfit-1.0.0 — the shutter's own sequence, drivable without a camera.
+       The proof has to measure the REAL capture path, not a re-implementation of
+       it: the whole reason the wide-frame defect survived so long is that every
+       harness handed the reader a square with the head already filling it. This
+       runs exactly what the shutter runs on its best frame — quality, read,
+       verdict, then faceFitApply — and returns both receipts so before/after is
+       a number. Pure with respect to the doctor's look: it never touches
+       lookNow, manualNow, lookMarks or the character. ===== */
+    owner.captureFit = function (canvas) {
+      if (!owned() || !canvas) return null;
+      function look(surface) {
+        var q = frameQuality(surface);
+        q.faceLit = avcamFrameLooksLive(q);
+        q.faceResult = q.faceLit ? safe(function () { return faceReadPortrait(surface); }, null) : null;
+        q.faceVerdict = faceCaptureVerdict(q.faceResult, q);
+        return q;
+      }
+      function receiptOf(q) {
+        var res = q && q.faceResult;
+        var rec = (res && res.receipt) || null;
+        var box = (res && res.box) || null;
+        return { claimed: rec ? rec.claimed : 0, examined: rec ? rec.examined : 0,
+          grid: rec ? rec.grid : 0, faceW: rec ? rec.faceW : 0,
+          faceFrac: rec && rec.grid ? Math.round((rec.faceW / rec.grid) * 1000) / 1000 : 0,
+          derived: (res && res.derived) ? res.derived.slice() : [],
+          ready: !!(q && q.faceVerdict && q.faceVerdict.ready),
+          box: box ? { L: box.L, R: box.R, T: box.T, B: box.B, w: box.w, grid: box.grid } : null,
+          fit: faceFitReport(res, q) };
+      }
+      var q0 = look(canvas);
+      var fitted = faceFitApply(canvas, q0);
+      return { fitted: fitted.fitted === true,
+        plan: fitted.plan || null,
+        srcPx: Number(canvas.width) || 0,
+        outPx: Number(fitted.square && fitted.square.width) || 0,
+        before: receiptOf(q0),
+        after: receiptOf(fitted.q) };
+    };
+    /* ===== end avfit-1.0.0 ===== */
     /* diagnostics: derive a look from a portrait without touching Setup, so
        the matcher can be proven against real pixels. */
     owner.deriveLookFromPhoto = function (dataUrl, then) {

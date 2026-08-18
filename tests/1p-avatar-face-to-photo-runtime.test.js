@@ -113,7 +113,7 @@ ok(gate('glasses', 'yes') !== '', 'a non-boolean glasses answer became applicabl
 /* ---- 2. THE ENGINE AND THE METER MUST AGREE ---------------------------- */
 
 const studioApi = new Function('receipt', 'wholeReadRefusal',
-  between(studio, 'function summarizeReceipt(receipt, wholeReadRefusal)', 'function style()') +
+  between(studio, 'function summarizeReceipt(receipt, wholeReadRefusal, partialApplied)', 'function style()') +
   '\nreturn summarizeReceipt(receipt, wholeReadRefusal);'
 );
 const meter = studioApi({ claimed: 7, refused: 7, examined: 14, faceW: 112, grid: 256 }, false);
@@ -145,17 +145,71 @@ ok(/request\.then\(function \(vr\) \{\s*\n\s*if \(settled \|\|/.test(visionSlice
   'a reply arriving after the deadline is still applied');
 ok(/taking longer than usual/.test(visionSlice), 'a slow read is indistinguishable from a frozen panel');
 
-/* ---- 4. A REFUSAL MAY NOT OVERRULE THE FACE STYLE ---------------------- */
+/* ---- 4. A REFUSAL MAY NOT TOUCH THE FACE STYLE AT ALL ------------------ */
 
-const refusalSlice = between(source, 'if (!decision.applies) {', 'faceMutated();');
-ok(/var keepAnimated = faceModeTouched && faceModeSelect\.value === 'drawn';/.test(refusalSlice),
-  'an incomplete match still overwrites a deliberate Animated character choice');
-ok(/if \(faceValidPhoto\(shown\) && !keepAnimated\) \{\s*\n\s*faceModeSelect\.value = 'photo';/.test(refusalSlice),
-  'the photo fallback no longer runs for a doctor who expressed no preference');
-ok(/Your Animated character choice is kept exactly as you set it/.test(refusalSlice),
-  'keeping the animated choice is silent about the traits being unmatched');
-ok(/Your real photo remains the patient-facing face/.test(refusalSlice),
-  'the untouched-preference case lost its explanation');
+/* ⛔ THIS SECTION IS REVERSED FROM ITS ORIGINAL FORM, BY OWNER ORDER
+   (2026-08-17): "when you take a picture it goes to 'My photo' — that's not ok,
+   it should stay on avatar ... If the doctor wants 'My photo' they pick it
+   themselves."
+   The 2026-08-13 rule kept a DELIBERATE Animated choice and still forced an
+   UNTOUCHED select to 'photo'. Untouched is the ordinary case — a doctor opens
+   Setup, takes a picture, the auto-match reads 5 of 14, and the product silently
+   moves his patients' face to the photograph. Both halves of that distinction
+   are now gone: the refusal branch writes faceModeSelect.value never, so
+   `faceModeTouched` no longer gates anything here. */
+const refusalSlice = between(source, 'if (!decision.applies) {', '/* The exact photo/edit revision is still current');
+ok(!/faceModeSelect\.value\s*=/.test(refusalSlice),
+  'an incomplete match still writes the Face style select');
+ok(!/faceModeSelect\.value === 'photo'/.test(refusalSlice),
+  'an incomplete match still branches on the Face style it must not touch');
+ok(/Your Animated character stays the patient-facing face/.test(refusalSlice),
+  'the doctor is not told that the animated character is still what patients see');
+ok(/facePartialDecision\(combined, decision\)/.test(refusalSlice),
+  'an incomplete match applies nothing again instead of applying what it read');
+/* …and the capture path, which never switched, still never switches. */
+const afterCapture = new Function(
+  between(source, 'function faceModeOnLoad(savedMode, savedImage)', 'function makePhotoFace') +
+  '\nreturn faceModeAfterCapture;')();
+eq(afterCapture('drawn', false), 'drawn', 'a capture switches an untouched select to the photograph');
+eq(afterCapture('drawn', true), 'drawn', 'a capture overrides a deliberate Animated choice');
+eq(afterCapture('photo', true), 'photo', 'a capture undoes a deliberate My photo choice');
+
+/* ---- 4b. THE PARTIAL APPLICATION, EXECUTED ----------------------------- */
+
+/* The owner's own case: 5 of 14, skin among them. It must APPLY those five and
+   it must not be called a match. */
+const partialApi = new Function(
+  between(source, 'var FACE_LOOK = {', 'var FACE_MOUTHS') +
+  between(source, 'function faceLab(rgb)', 'function faceReadPortrait(img)') +
+  '\nreturn { decide: faceMatchDecision, partial: facePartialDecision };'
+)();
+function partialOf(res) { return partialApi.partial(res, partialApi.decide(res)); }
+const fiveOfFourteen = read(5);
+eq(partialApi.decide(fiveOfFourteen).applies, false, 'the five-control read became a match');
+eq(partialOf(fiveOfFourteen).partial, true, 'the owner\'s 5-of-14 read still applies nothing');
+eq(partialOf(fiveOfFourteen).derived.length, 5, 'the partial application changed the claim count');
+eq(partialOf(fiveOfFourteen).skipped.length, 9, 'the unread controls are not counted for the doctor');
+/* it never extends the ledger: every applied knob was already claimed */
+partialOf(fiveOfFourteen).derived.forEach(k =>
+  ok(fiveOfFourteen.derived.indexOf(k) >= 0, k + ' was applied without ever having been claimed'));
+/* a whole match is NOT a partial one — the two states are exclusive */
+eq(partialOf(read(7)).partial, false, 'a passing whole read is also reported as partial');
+
+/* ⛔ AND THE FOUR REFUSALS THAT MAKE PARTIAL APPLICATION SAFE. */
+const noSkin = read(8); noSkin.derived = noSkin.derived.filter(k => k !== 'skin');
+eq(partialOf(noSkin).partial, false,
+  'traits are applied from a read with no proven skin sample — the one guard that proves a face, not a wall');
+const posterized = read(9, { receipt: { fromIllustration: true } });
+eq(partialOf(posterized).partial, false, 'a stylized copy\'s manufactured colours are applied partially');
+const neverProved = read(9, { receipt: { srcKind: 'unknown' } });
+eq(partialOf(neverProved).partial, false, 'an image never proved to be a photograph is applied partially');
+const truncated = read(5, { receipt: { examined: 8, refused: 3 } });
+eq(partialOf(truncated).partial, false, 'a truncated ledger qualifies by having little to refuse');
+const lonely = read(1);
+eq(partialOf(lonely).partial, false,
+  'a single claimed field over thirteen untouched defaults is applied — the exact 1-of-14 case truth-1.0.0 was written against');
+const two = read(2);
+eq(partialOf(two).partial, true, 'the documented two-claim floor is not the floor actually enforced');
 
 /* ---- 5. THE CAMERA MUST SURVIVE A SLOW SHOT ---------------------------- */
 
