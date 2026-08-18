@@ -229,6 +229,7 @@ function routeLiterals(text) {
 
 /* ---- user-facing wording (behaviour decision B3) ---- */
 const WORDING = [
+  ['1p Legal / IME chronology ready for clinician review.', 'Legal / IME chronology ready for clinician review.'],
   ['The navigation bar is disabled outside the 1p preview.', 'The navigation bar is disabled outside this lane.'],
   ['The old Premium Reviews workspace is retired in 1p. Marketing is not ready, so nothing opened.',
     'The old Premium Reviews workspace is retired here. Marketing is not ready, so nothing opened.'],

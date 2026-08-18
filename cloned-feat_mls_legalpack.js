@@ -1106,7 +1106,7 @@
       if (chronBox) { chronBox.value = state.draft; chronBox.hidden = false; }
       enableExports(true); setStage('generated'); updateControls();
       setStatus('Records chronology compiled on your letterhead. No AI was called and no text was generated — every line came from the compiled record.', false);
-      toast('1p Legal / IME chronology ready for clinician review.', 'ok');
+      toast('Legal / IME chronology ready for clinician review.', 'ok');
       return Promise.resolve(true);
     }
     if (!isFn(window.aiCallRaw)) { setStatus('AI drafting is unavailable in this MLS session. Nothing was sent.', true); return Promise.resolve(false); }
