@@ -1,6 +1,6 @@
 'use strict';
 
-/* dockspace-1.0.0 + uimap-1.0.0 + pullface-1.0.0 — THE LAYER CONTRACT
+/* dockspace-1.1.0 + uimap-1.0.0 + pullface-1.0.0 — THE LAYER CONTRACT
  *
  * Owner, 2026-08-17 ~21:55Z: "at different aspect ratios and sizes of screen,
  * the tab selector ... things get in the way of it, and it looks awful.
@@ -51,7 +51,7 @@ function blockOf(src, name) {
 
 for (const shell of SHELLS) {
   const src = read(shell);
-  for (const name of ['dockspace-1.0.0', 'uimap-1.0.0', 'pullface-1.0.0']) {
+  for (const name of ['dockspace-1.1.0', 'uimap-1.0.0', 'pullface-1.0.0']) {
     const blk = blockOf(src, name);
     ok(blk.length > 800, `${shell}: ${name} is missing or truncated`);
     for (const bad of ['__MLS_P1_PREVIEW', "'/1p/'", '1p-feat_']) {
@@ -59,14 +59,26 @@ for (const shell of SHELLS) {
     }
   }
 
-  const ds = blockOf(src, 'dockspace-1.0.0');
+  const ds = blockOf(src, 'dockspace-1.1.0');
   /* A reserved band, not a z-index war — winning the stack would hide the
      NOTIFICATION instead, which is not an improvement. */
   ok(!/z-index\s*:\s*9[0-9]{3}/.test(ds.slice(0, ds.indexOf('<script>'))),
-    `${shell}: dockspace-1.0.0 raises a z-index; the fix must be a reserved band`);
-  for (const v of ['--mls-dock-clear-top', '--mls-dock-clear-bottom', '--mls-dock-clear-left', '--mls-dock-clear-right', '--mls-dock-thickness']) {
-    ok(ds.indexOf(v) > 0, `${shell}: dockspace-1.0.0 does not publish ${v}`);
+    `${shell}: dockspace-1.1.0 raises a z-index; the fix must be a reserved band`);
+  for (const v of ['--mls-dock-clear-top', '--mls-dock-clear-bottom', '--mls-dock-clear-left', '--mls-dock-clear-right', '--mls-dock-thickness', '--mls-dock-pad-top']) {
+    ok(ds.indexOf(v) > 0, `${shell}: dockspace-1.1.0 does not publish ${v}`);
   }
+  /* 1.1.0: the page reservation may only ever be GIVEN BACK. The cap on the
+     shell's own constant is the whole safety argument for touching a shared
+     layout at all, and the CSS fallback is what makes a controller that never
+     ran land on today's behaviour instead of on zero clearance. */
+  ok(/Math\.min\(SHELL_PAD_TOP, need\)/.test(ds),
+    `${shell}: dockspace-1.1.0 no longer caps the top reservation at the shell's own 112px — it could now reserve LESS than the dock needs is the wrong risk, reserving MORE than the shell is the other`);
+  ok(/var\(--mls-dock-pad-top,\s*112px\)/.test(ds),
+    `${shell}: the #appWrap reservation lost its 112px fallback — a controller that never ran would reserve nothing`);
+  /* the band changes the dock's own size (the max-height diet), so the first
+     measurement is of the old dock */
+  ok(/bandChanged/.test(ds),
+    `${shell}: sync() no longer re-measures after it publishes a NEW band, so --mls-dock-thickness stays the size the dock was BEFORE the band's own CSS applied`);
   /* max() rather than a wrapper: the shell recomputes --mls-notice-top on every
      toast, so anything written after it is overwritten on the next one. */
   ok(/top:max\(var\(--mls-notice-top/.test(ds),
@@ -96,7 +108,7 @@ for (const shell of SHELLS) {
     `${shell}: pullface-1.0.0 must clamp to 99% while the run is still going`);
   ok(!/syncing to server/.test(blockOf(src, 'pullface-1.0.0').replace(/[\s\S]*?<script>/, '')) || true, 'noop');
 }
-for (const name of ['dockspace-1.0.0', 'uimap-1.0.0', 'pullface-1.0.0']) {
+for (const name of ['dockspace-1.1.0', 'uimap-1.0.0', 'pullface-1.0.0']) {
   eq(blockOf(read(SHELLS[0]), name), blockOf(read(SHELLS[1]), name),
     `the twins carry DIFFERENT ${name} blocks`);
 }
@@ -244,8 +256,8 @@ async function runtime() {
     await page.waitForFunction(() => !!document.getElementById('mlsDock'), null, { timeout: 60000 });
     await page.waitForTimeout(1800);
 
-    eq(await page.evaluate(() => window.__mlsDockSpace.version), 'dockspace-1.0.0',
-      'dockspace-1.0.0 did not install');
+    eq(await page.evaluate(() => window.__mlsDockSpace.version), 'dockspace-1.1.0',
+      'dockspace-1.1.0 did not install');
 
     /* FIRST-PAINT SHAPE: with no choice made in this deployment, a desktop
        width must land on the SIDE RAIL, not the production bottom bar. This is
@@ -293,6 +305,43 @@ async function runtime() {
        shell pins the dock to the bottom regardless, by design). */
     for (const b of ['bottom', 'top', 'left', 'right']) {
       ok(measured.bands[b] > 0, `the dock was never observed on the ${b} band — the position picker did not take effect`);
+    }
+
+    /* ---- 1.1.0 / CLUNKY 41: THE PAGE RESERVES WHAT THE DOCK ACTUALLY TAKES.
+     * feat_mls_calm_shell.js reserves a flat 112px of #appWrap padding for a
+     * top dock. Section (6) of this block then trims the dock on short screens
+     * (@media max-height:700px) and nothing trimmed the reservation.
+     * MEASURED at 1280x600 before 1.1.0: dock 88..148 (60px), #appWrap padding
+     * 112px, content at 199 - 39px of a 600px screen reserved for nothing, and
+     * --mls-dock-thickness stuck at 81px (the size the dock was BEFORE the band
+     * attribute this block writes brought the diet into play), so every other
+     * clearance here was 21px too generous as well.
+     * Both halves are asserted: never MORE than the shell (a regression in the
+     * other direction), and never LESS than the dock needs (the collision). */
+    await page.evaluate(() => window.__dsT.setSide('top'));
+    await page.setViewportSize({ width: 1280, height: 600 });
+    await page.waitForTimeout(1400);
+    const shortTop = await page.evaluate(() => {
+      const g = window.__mlsDockSpace.geometry();
+      const w = document.getElementById('appWrap');
+      const wr = w ? w.getBoundingClientRect() : null;
+      return { g: g,
+        wrapTop: wr ? Math.round(wr.top) : null,
+        pad: w ? Math.round(parseFloat(getComputedStyle(w).paddingTop) || 0) : null,
+        band: document.documentElement.getAttribute('data-mls-dock-band') || '' };
+    });
+    if (shortTop.g.present && shortTop.band === 'top') {
+      const dockBottom = shortTop.g.rect.y + shortTop.g.rect.h;
+      eq(shortTop.g.thickness, shortTop.g.rect.h,
+        `--mls-dock-thickness is ${shortTop.g.thickness}px for a dock that is ${shortTop.g.rect.h}px tall — the band's own CSS resized it after the measurement and nothing re-measured (CLUNKY 41)`);
+      ok(shortTop.pad <= 112,
+        `#appWrap reserves ${shortTop.pad}px for the top dock — more than the shell's own 112px constant`);
+      ok(shortTop.g.wrapContentTop >= dockBottom,
+        `#appWrap content starts at ${shortTop.g.wrapContentTop} and the dock ends at ${dockBottom} — the reservation is now too small and the dock covers the page (CLUNKY 41 collision guard)`);
+      ok(shortTop.g.wrapContentTop <= dockBottom + 24,
+        `#appWrap content starts ${shortTop.g.wrapContentTop - dockBottom}px below a dock that ends at ${dockBottom} — the reservation is padding nothing (CLUNKY 41)`);
+      ok(shortTop.pad < 112,
+        `#appWrap still reserves the flat ${shortTop.pad}px for a ${shortTop.g.rect.h}px dock on a 600px-tall screen (CLUNKY 41)`);
     }
 
     await page.setViewportSize({ width: 1366, height: 900 });

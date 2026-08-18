@@ -60,7 +60,7 @@ const BLOCKS = [
   ['<!-- ===== msl-1.0.0', '<!-- ===== end msl-1.0.0'],
   ['<!-- ===== msl-fit-1.1.0', '<!-- ===== end msl-fit-1.1.0'],
   ['<!-- ===== dock-1p-1.1.0', '<!-- ===== end dock-1p-1.1.0'],
-  ['<!-- ===== opnote-open-1.1.0', '<!-- ===== end opnote-open-1.1.0'],
+  ['<!-- ===== opnote-open-1.2.0', '<!-- ===== end opnote-open-1.2.0'],
   ['<!-- ===== opnote-vocab-1.0.0', '<!-- ===== end opnote-vocab-1.0.0'],
   /* PIN MOVED 2026-08-18 (op-notes lane): opnote-day-2.0.0 is REPLACED by
      opnote-day-3.0.0 on the owner's order — "that LEFT SIDE SELECTOR THING was
@@ -86,7 +86,7 @@ for (const name of SHELLS) {
   /* A superseded version number must not survive anywhere in the shell: two
      copies of one block is the shape that ships a fix and its own regression
      together. */
-  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'note-model-1.0.0',
+  for (const dead of ['dock-1p-1.0.0', 'opnote-open-1.0.0', 'opnote-open-1.1.0', 'note-model-1.0.0',
     'opnote-day-1.0.0', 'opnote-day-2.0.0']) {
     eq(src.indexOf('<!-- ===== ' + dead), -1,
       `${name}: the superseded ${dead} block is still present alongside its successor`);
