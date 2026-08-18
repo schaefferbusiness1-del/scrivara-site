@@ -14816,10 +14816,19 @@ function _calResetForSession(account,epoch){
 function _calPad(n){ return (n<10?'0':'')+n; }
 function _calShiftRef(deltaDays){ var d=new Date(_calRefDate+'T12:00'); d.setDate(d.getDate()+deltaDays); _calRefDate=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); }
 function _calInit(){ if(_calYear==null){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); } }
-function calToday(){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); _calRefDate=(p.length===3?k:(n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()))); var panel=document.getElementById('calDayPanel'); if(panel) panel.style.display='none'; renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
-function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
-function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); if(_calMode==='day') calOpenDay(_calRefDate); }
-function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump'); if(jump) jump.style.display=(m==='month')?'':'none'; var pn=document.getElementById('calDayPanel'); if(pn&&m!=='day') pn.style.display='none'; renderCalendar(); if(m==='day') calOpenDay(_calRefDate); }
+function calToday(){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); _calRefDate=(p.length===3?k:(n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()))); var panel=document.getElementById('calDayPanel'); if(panel) panel.style.display='none'; renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
+function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
+function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
+function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump'); if(jump) jump.style.display=(m==='month')?'':'none'; var pn=document.getElementById('calDayPanel'); /* caldata-1.0.0 (CLUNKY 33): Day view used to open the right-hand day panel on
+     top of its own hour timeline, so every patient was on screen twice - the
+     timeline block AND a panel row with "Details" - beside a third copy in the
+     "Day at a glance" card. Measured 1280x800, 2026-08-17 seeded with six
+     appointments: 12 rows for 6 appointments, and #calGrid squeezed to 421px
+     because the open panel turns #calSplitWrap into a two-column grid.
+     The timeline IS the day's agenda; the panel stays what it always was, the
+     thing a MONTH cell opens. Every action survives on the timeline chip
+     (calApptPeek: Start visit, Pull chart, Details, Draft op note). */
+  if(pn) pn.style.display='none'; renderCalendar(); }
 function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2E6A4B'}; return {bg:'#eef4fc',fg:'#2E6A4B'}; }
 function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointment'; }
 function _calDateOf(a){ return a.appt_date || String(a.start_at||'').slice(0,10); }
@@ -14966,6 +14975,14 @@ function renderCalendar(){
   _calInit();
   if(!_calRefDate){ _calRefDate=(typeof _acctTodayKey==='function'?_acctTodayKey():''); if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); } }
   ['month','week','day'].forEach(function(m){ var b=document.getElementById('calMode_'+m); if(b){ var on=_calMode===m; var bg=on?'var(--brand,#2E6A4B)':'#fff', fg=on?'#fff':'var(--ink)'; if(b.style.background!==bg) b.style.background=bg; if(b.style.color!==fg) b.style.color=fg; } });
+  /* caldata-1.0.0 (CLUNKY 33): publish the mode so a stylesheet can stand the
+     shared uxpack day-chip strip (#mlsUx1DayChips) down in DAY view, where the
+     hour timeline underneath it already lists every one of the same
+     appointments. Measured 1280x800, six appointments on 2026-08-17: each
+     patient's name appeared TWICE in #calendarView - once in that strip, once
+     in the timeline. In month and week view the strip is additive (a month
+     cell shows at most five), so it is left alone there. */
+  try{ var _cvMode=document.getElementById('calendarView'); if(_cvMode&&_cvMode.getAttribute('data-cal-mode')!==_calMode) _cvMode.setAttribute('data-cal-mode',_calMode); }catch(eCvMode){}
   if(_calMode==='week') return _calRenderWeek();
   if(_calMode==='day') return _calRenderDay();
   return _calRenderMonth();
@@ -15206,6 +15223,49 @@ function _acctWallToUtcIso(dateKey, hhmm){
 }
 /* Time helpers for the hourly Week/Day agenda grids. */
 function _calFmtHr(mins){ var h=Math.floor(mins/60), m=mins%60; var ap=h<12?'AM':'PM'; var h12=h%12; if(h12===0) h12=12; return h12+(m?(':'+_calPad(m)):'')+' '+ap; }
+/* ===== caldata-1.0.0 - name-first, compact appointment chips ==============
+   CLUNKY AUDIT items 34 (month) and 35 (week).
+
+   MEASURED at 1280x800 with a seeded August 2026 (126 appointments, six on
+   every weekday, applied through the calendar's real data source):
+
+     month view    105 of 105 visible chips clipped - clientWidth 81px against
+                   scrollWidth 111-151px - reading "8:00 AM Ada Sa..."
+     month, day panel open   the same chips at clientWidth 35-37px in a 421px
+                   grid: "8:0..." - no name legible anywhere in the month
+     week view     30 of 30 chips clipped, clientWidth 81 vs scrollWidth
+                   97-136, in 90px day lanes
+     phone 390x844 chips at clientWidth 20px
+
+   The chip led with the TIME, so the characters a doctor already knows (the
+   month is sorted by time, and the hour gutter states it in week view) ate the
+   room the one thing they are scanning for - WHO - needed. These two helpers
+   put the name first and shorten the clock to the same information in a third
+   of the characters: "8:00 AM Ada Sample" (18 chars) -> "Ada S. 8a" (9).
+
+   NOTHING IS DROPPED. The full name and the full time move into the chip's
+   own title attribute, and the peek card, the day panel and the agenda still
+   carry name, time, reason, room and provider in full. This shortens a label,
+   it does not remove a fact. An unrecognised time string is returned
+   unchanged, so a future format can never silently blank the clock. ===== */
+function _calCompactTime(s){
+  s=String(s==null?'':s);
+  var m=s.match(/^(\d{1,2}(?::\d{2})?)[\s\u00a0]*([AaPp])\.?[Mm]\.?$/);
+  if(!m) return s;
+  var t=m[1];
+  if(t.slice(-3)===':00') t=t.slice(0,-3);
+  return t+m[2].toLowerCase();
+}
+function _calShortWho(v){
+  var n=String(v==null?'':v).replace(/[\s\u00a0]+/g,' ').trim();
+  if(!n) return '';
+  var parts=n.split(' ');
+  if(parts.length<2) return n;
+  var last=parts[parts.length-1], ini='';
+  for(var i=0;i<last.length;i++){ if(/[A-Za-z]/.test(last.charAt(i))){ ini=last.charAt(i); break; } }
+  return ini?(parts[0]+' '+ini.toUpperCase()+'.'):parts[0];
+}
+/* ===== end caldata-1.0.0 helpers ======================================== */
 function _calApptTimeBlock(a){ var mins=_apptMinsTz((a&&a.start_at)||''); if(mins==null) return null; var dur=30; if(a.end_at){ try{ var d=Math.round((new Date(a.end_at).getTime()-new Date(a.start_at).getTime())/60000); if(d>0) dur=d; }catch(e){} } return {mins:mins, dur:dur}; }
 function _calHourRange(appts){ var startMin=7*60, endMin=19*60; (appts||[]).forEach(function(a){ var b=_calApptTimeBlock(a); if(b){ if(b.mins<startMin) startMin=Math.floor(b.mins/60)*60; if(b.mins+b.dur>endMin) endMin=Math.ceil((b.mins+b.dur)/60)*60; } }); return {startMin:startMin, endMin:endMin}; }
 /* Click an empty time slot on the Day/Week grid to book there (like every other calendar). */
@@ -15254,7 +15314,11 @@ function _calRenderWeek(){
     ap.forEach(function(a){ var b=_calApptTimeBlock(a); if(b) timed.push([a,b]); else untimed.push(a); });
     h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book here" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="position:relative;height:'+totalH+'px;border-left:1px solid var(--line);background:'+(it?'var(--soft)':'transparent')+';cursor:pointer">';
     for(var tl=rng.startMin;tl<=rng.endMin;tl+=60){ var topl=(tl-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:0;right:0;top:'+topl+'px;border-top:1px solid #F4F2EC"></div>'; }
-    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="Click for details · drag to reschedule" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:10px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;cursor:pointer">'+esc(_calFmtHr(b.mins))+' '+esc(_calLabelOf(a))+'</div>'; });
+    /* caldata-1.0.0 (CLUNKY 35): in a 90px lane "8 AM Ada Sample" wrapped and
+       the surname was sliced mid-glyph on a clipped second line. Name first,
+       clock compacted, ONE line that ellipsizes honestly; the hour gutter on
+       the left already states the time, and the title carries both in full. */
+    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); var tmFull=_calFmtHr(b.mins); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="'+esc(_calLabelOf(a)+' - '+tmFull+' - click for details, drag to reschedule')+'" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:10px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer">'+esc(_calShortWho(_calLabelOf(a)))+' <span style="opacity:.72">'+esc(_calCompactTime(tmFull))+'</span></div>'; });
     if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#2E6A4B;background:#eef4fc;border-radius:10px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
     h+='</div>';
   });
@@ -15305,7 +15369,9 @@ function _calRenderMonth(){
     var cellBg=isSel?'#dbeafe':(isToday?'var(--soft)':'var(--card)');
     h+='<div onclick="calOpenDay(\''+key+'\')" ondragover="calAllowDrop(event)" ondrop="calDrop(event,\''+key+'\')" style="min-height:122px;border:'+cellBorder+';border-radius:10px;padding:6px 7px;cursor:pointer;background:'+cellBg+(isSel?';box-shadow:0 3px 12px rgba(31,122,224,.28)':'')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+((isToday||isSel)?'800':'600')+';font-size:13px;color:'+((isToday||isSel)?'#2E6A4B':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
-    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="Click for a quick preview · drag to reschedule" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:10px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+(tm?esc(tm)+' ':'')+esc(_calLabelOf(a))+'</div>'; });
+    /* caldata-1.0.0: name first, clock compacted, FULL name and time kept in
+       the title so hovering still states both in full (CLUNKY 34). */
+    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tmFull=_fmtApptTime(a.start_at); var tm=_calCompactTime(tmFull); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="'+esc(_calLabelOf(a)+(tmFull?(' - '+tmFull):'')+' - click for a quick preview, drag to reschedule')+'" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:10px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+esc(_calShortWho(_calLabelOf(a)))+(tm?' <span style="opacity:.72">'+esc(tm)+'</span>':'')+'</div>'; });
     if(ap.length>5) h+='<div onclick="event.stopPropagation();calOpenDay(\''+key+'\')" title="See all '+ap.length+' appointments this day" style="font-size:11px;color:#2E6A4B;font-weight:700;margin-top:2px;cursor:pointer">+'+(ap.length-5)+' more →</div>';
     h+='</div>';
   }
@@ -49750,14 +49816,24 @@ html #mlsToolsMenu .gh{ font-size:13px !important; }
     max-height:calc(100vh - var(--mls-header-h, 88px) - var(--mls-dock-clear-bottom, 0px) - 24px) !important;
   }
 }
-/* --- 40: a 46px box is an icon, so it looks like one. */
-html body[data-mls-dock="left"] #mlsDockAsk,
-html body[data-mls-dock="right"] #mlsDockAsk{
-  text-align:center;
-  font-size:15px;
+/* --- 40: a 46px box is an icon, so it looks like one.
+   The state is keyed to WHAT THE BOX IS SHOWING (data-mls-clunky-ask, written
+   by ask() below from a real text measurement), not to which edge the dock is
+   parked on. The old rules centred the text for any left/right dock and only
+   un-centred it on :focus, so a rail state that was wide enough to defeat the
+   90px threshold but far too narrow for the 254px label rendered the string
+   CENTRED AND CLIPPED AT BOTH ENDS - which shows the MIDDLE of the sentence
+   ("...r an actio...") rather than a readable start.
+
+   Centre applies to the ICON only. Any state carrying words reads from its
+   start with an ellipsis, so a mid-string slice cannot render no matter what a
+   later block does to the rail's width. */
+html #mlsDockAsk[data-mls-clunky-ask="icon"]{ text-align:center; font-size:15px; }
+html #mlsDockAsk[data-mls-clunky-ask="short"],
+html #mlsDockAsk[data-mls-clunky-ask="full"]{
+  text-align:left; font-size:13px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-html body[data-mls-dock="left"] #mlsDockAsk:focus,
-html body[data-mls-dock="right"] #mlsDockAsk:focus{ text-align:left; font-size:13px; }
 /* --- 73 / 123: a bar with tabs does not also say it has nothing to say. */
 html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
 </style>
@@ -49775,19 +49851,54 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
   function side() { try { return document.body.getAttribute('data-mls-dock') || 'bottom'; } catch (e) { return 'bottom'; } }
 
   /* ---- 39 / 40: the finder is named for what it does ------------------ */
+  /* MEASURED, 1366x900, every laid-out dock state: the label needs 254px and
+     the box offers 148px at rest / 226px focused, with text-overflow:clip - so
+     the finder's placeholder was cut mid-glyph in EVERY state, on all three
+     dock sides, at every viewport at or above 761px. The old rule picked the
+     label from one magic number (`width >= 90`) as though 90px could show a
+     254px sentence; between 90px and 254px it set a label the box could not
+     hold, and the centring rule above then threw away both ends of it.
+
+     The label is now chosen by MEASURING it in the box's own computed font:
+     the fullest wording that leaves a readable prefix wins, and the icon is
+     used only when even "Find..." will not fit. */
   var FIND = 'Find a patient, a screen or an action';
+  var SHORT = 'Find\u2026';   /* escaped, not literal: a sweep that rewrites this file in a single-byte encoding turns a raw U+2026 into a control byte */
+  var ICON = '🔎';
+  var PREFIX_MIN = 90;   /* px of words that still say what the box is for */
+  var _askCtx = null;
+  function textFits(a, str) {
+    try {
+      var cs = window.getComputedStyle(a);
+      var avail = a.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+      if (!(avail > 0)) return { avail: 0, need: 0, fits: false };
+      if (!_askCtx) _askCtx = document.createElement('canvas').getContext('2d');
+      _askCtx.font = [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily].join(' ');
+      var need = _askCtx.measureText(String(str || '')).width;
+      return { avail: avail, need: need, fits: need <= avail - 2 };
+    } catch (e) { return { avail: 0, need: 0, fits: false }; }
+  }
   function ask() {
     var a = el('mlsDockAsk');
     if (!a) return;
     if (a.getAttribute('aria-label') !== 'Find') a.setAttribute('aria-label', 'Find');
-    var rail = side() === 'left' || side() === 'right';
-    var wide = a.getBoundingClientRect().width >= 90;
-    var want = (rail && !wide && document.activeElement !== a) ? '🔎' : FIND;
+    var full = textFits(a, FIND);
+    var want, state;
+    /* A box with room for a meaningful prefix keeps the full wording and lets
+       the ellipsis do its job - "Find a patient, a scre..." says more than
+       "Find...". Below that it steps down, and only an icon-sized box gets an
+       icon. */
+    if (full.fits || full.avail >= PREFIX_MIN) { want = FIND; state = 'full'; }
+    else if (textFits(a, SHORT).fits) { want = SHORT; state = 'short'; }
+    else { want = ICON; state = 'icon'; }
     if (a.placeholder !== want) a.placeholder = want;
+    if (a.getAttribute('data-mls-clunky-ask') !== state) a.setAttribute('data-mls-clunky-ask', state);
     if (!a.getAttribute('data-mls-clunky-wired')) {
       a.setAttribute('data-mls-clunky-wired', '1');
-      a.addEventListener('focus', function () { a.placeholder = FIND; }, false);
-      a.addEventListener('blur', function () { setTimeout(ask, 20); }, false);
+      /* Focus widens the box through a CSS transition, so re-measure after it
+         rather than forcing a label the box may still be too small for. */
+      a.addEventListener('focus', function () { setTimeout(ask, 0); setTimeout(ask, 240); }, false);
+      a.addEventListener('blur', function () { setTimeout(ask, 20); setTimeout(ask, 260); }, false);
     }
   }
 
