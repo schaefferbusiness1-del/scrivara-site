@@ -98,7 +98,12 @@ const P1_CONFIG_RELEASE_SUBS = [
 /* Advanced by the 1p train of 2026-08-18 (batches 10+11, gate fix): AI Studio / Analysis glow ladder falls through to
    the Analysis controls in calm mode (nothing was lit); ui-shape settle loop re-triggers nextglow; /cloned re-derived at
    cloned-20260818-r10 (18 files). Production/extension baselines untouched (469607c9). */
-const P1_BASE_COMMIT = '4216b33396785160a4a6e7d0a5805b52a3d112a7';
+/* Advanced by the 1p train of 2026-08-18 (clunky-2): 25 more clunky items — pull dialog (Stop contrast, one phase
+   number, tally fold, stop state, phone rows, retry two-sided), Legal/IME wording + letterhead + patient-changed reopen,
+   sign-in gate + link + paragraph, History banner/hero, Patients picker/rows/Record-per-row, Studio title once, Recs lit
+   segment, wizard folds, Settings update advice; contract 247 -> 370 checks; /cloned re-derived at cloned-20260818-r11
+   (18 files). Production/extension baselines untouched (469607c9). */
+const P1_BASE_COMMIT = '4be33aa50945580d64dc5926523ee3ae7b12848b';
 /* Advanced by the SAME authorized extension release train (3.0.62): the four
    write-safety execute layers lifted, athenaFinalActionsV1 advertised, digest
    e5579398..., zip b8a12950... - documented in scripts/sweep-3062.js and the
