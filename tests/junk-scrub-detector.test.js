@@ -70,6 +70,33 @@ for (const shell of SHELLS) {
   const block = blockOf(src, 'junkscrub-1.0.0');
   ok(block.indexOf('await ') < 0, shell + ': the cleanup block blocks');
   ok(block.indexOf('runPaint') < 0, shell + ': the cleanup block reaches into the boot paint');
+  /* MEASURED REGRESSION, 2026-08-18 — the Worker must stay behind the loop.
+     rest() resolves through the shared __mlsBgSleep Worker, which is BUILT on
+     first use. Calling it from boot() built that Worker on the boot task and
+     took tests/1p-visitflow-transcript-contract.test.js from 6/6 to 1/3 on
+     this machine (the calm shell lost a render race and never marked the
+     transcript .mls-empty); neutralising ONLY this block's boot call site put
+     it straight back. Moving it one idle callback later was not enough (3/5).
+     What fixed it was the nap()/rest() split: every wait that happens BEFORE
+     any work exists is a plain timer, and the Worker is only reached inside
+     the apply loop — so a roster with no junk never builds one at all.
+     These four assertions pin that split in the shipped bytes. */
+  const bootFn = block.slice(block.indexOf('  function boot(why) {'), block.indexOf('  function announce(rec) {'));
+  ok(bootFn.length > 100, shell + ': could not slice boot() out of the junkscrub block');
+  ok(/requestIdleCallback\(go, \{ timeout: BOOT_IDLE_MS \}\)/.test(bootFn),
+    shell + ': boot() no longer defers its first hop to an idle callback');
+  ok(/setTimeout\(go, BOOT_IDLE_MS\)/.test(bootFn),
+    shell + ': boot() has no plain-timer fallback, so a hidden document that never runs an idle callback never cleans up');
+  /* nothing from boot() to the start of the scan may touch the Worker */
+  const preScan = block.slice(block.indexOf('  function attempt(why) {'), block.indexOf('  function announce(rec) {'));
+  ok(preScan.indexOf('rest(') < 0,
+    shell + ': the boot / retry path calls rest() — that builds the __mlsBgSleep Worker before any work exists');
+  ok(bootFn.indexOf('rest(') < 0 && /nap\(START_DELAY_MS\)/.test(bootFn),
+    shell + ': boot() waits on the Worker instead of a plain timer');
+  /* and the apply loop DOES use it — otherwise the split is just a deletion */
+  const runFn = block.slice(block.indexOf('  function run(opts) {'), block.indexOf('  /* The one-per-account background pass'));
+  ok(/rest\(APPLY_REST_MS\)/.test(runFn),
+    shell + ': the apply loop no longer paces on the Worker — a hidden tab will strand it half-done');
   /* the lane rule: a promotable block names no lane */
   ok(block.indexOf('/1p/') < 0 && block.indexOf('1p-feat_') < 0 && block.indexOf('__MLS_P1_PREVIEW') < 0,
     shell + ': the junkscrub block is lane-bound and cannot be promoted as a copy');

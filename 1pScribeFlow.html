@@ -46235,9 +46235,24 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     if (safe(function () { return window.__mlsPullShieldForeign(); }, false)) return true;
     return safe(function () { var d = window.__mlsDaySwitch; return !!(d && isFn(d.isBusy) && d.isBusy()); }, false);
   }
+  /* TWO KINDS OF WAIT, on purpose.
+     nap()  is an ordinary timer. It is used everywhere BEFORE any work exists:
+            the boot hand-off, the start delay, and the retries while the
+            account namespace is still resolving. A hidden tab may freeze these
+            and that is the right trade - nothing has started, and the wait
+            simply resumes the next time the doctor looks at MLS.
+     rest() is the shared __mlsBgSleep WORKER. It is used only inside the apply
+            loop, where the doctor really will put athenaOne in front of MLS
+            mid-run and a frozen timer would strand the pass half-done.
+     Keeping the Worker out of everything before the loop is not tidiness. It
+     is BUILT on first use, and building it on or near the boot task measurably
+     cost the calm shell a render race - tests/1p-visitflow-transcript-contract
+     went 6/6 to 1/3 on this machine with the Worker on the boot task, 3/5 with
+     it one idle callback later, and back to 6/6 once it moved behind the loop.
+     A roster with no junk in it now never builds one at all. */
+  function nap(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function rest(ms) {
-    return safe(function () { return Promise.resolve(window.__mlsBgSleep(ms)); },
-      null) || new Promise(function (r) { setTimeout(r, ms); });
+    return safe(function () { return Promise.resolve(window.__mlsBgSleep(ms)); }, null) || nap(ms);
   }
 
   /* run({apply}) -> Promise<receipt|null>. apply:false is the DRY RUN. */
@@ -46276,42 +46291,51 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     });
   }
 
-  /* The one-per-account background pass. Never throws, never gates boot.
-     The first delay is a Worker sleep, not setTimeout, because the doctor's
-     MLS tab spends the working day HIDDEN behind athenaOne and a hidden tab's
-     timers are frozen, not merely throttled. The retry loop exists because the
-     barrier that calls this can fire before the account namespace resolves or
-     before the roster has hydrated - a one-shot latch there would mean the
-     cleanup silently never ran. */
-  var started = false, MAX_TRIES = 40, RETRY_MS = 15000;
-  function boot(why) {
-    if (started) return null;
-    started = true;
-    var tries = 0;
-    function attempt() {
-      if (nsUsable()) {
-        var prior = readReceipt();
-        if (prior && prior.complete === true) {              /* once per account */
-          window.__mlsJunkScrubReceipt = prior;
-          return Promise.resolve(prior);
-        }
-        return run({ apply: true }).then(function (rec) {
-          if (!rec) return again();                          /* roster not hydrated yet */
-          rec.why = S(why || 'boot');
-          writeReceipt(rec);
-          window.__mlsJunkScrubReceipt = rec;
-          announce(rec);
-          return rec;
-        });
+  /* The one-per-account background pass. Never throws, never gates boot, and
+     DOES NOTHING AT ALL ON THE BOOT TASK - see the nap()/rest() note above for
+     the measurement that forced that. The first hop is an idle callback with a
+     plain timer beside it as the fallback, because a hidden document may never
+     run an idle callback and a visible one should not wait the full fallback.
+     The retry loop exists because the barrier that calls this can fire before
+     the account namespace resolves or before the roster has hydrated - a
+     one-shot latch there would mean the cleanup silently never ran. */
+  var bootPromise = null, MAX_TRIES = 40, RETRY_MS = 15000, BOOT_IDLE_MS = 8000, tries = 0;
+  function attempt(why) {
+    if (nsUsable()) {
+      var prior = readReceipt();
+      if (prior && prior.complete === true) {                /* once per account */
+        window.__mlsJunkScrubReceipt = prior;
+        return Promise.resolve(prior);
       }
-      return again();
+      return run({ apply: true }).then(function (rec) {
+        if (!rec) return again(why);                         /* roster not hydrated yet */
+        rec.why = S(why || 'boot');
+        writeReceipt(rec);
+        window.__mlsJunkScrubReceipt = rec;
+        announce(rec);
+        return rec;
+      });
     }
-    function again() {
-      tries += 1;
-      if (tries > MAX_TRIES) return Promise.resolve(null);
-      return rest(RETRY_MS).then(attempt);
-    }
-    return rest(START_DELAY_MS).then(attempt).then(null, function () { return null; });
+    return again(why);
+  }
+  function again(why) {
+    tries += 1;
+    if (tries > MAX_TRIES) return Promise.resolve(null);
+    return nap(RETRY_MS).then(function () { return attempt(why); });
+  }
+  function boot(why) {
+    if (bootPromise) return bootPromise;
+    bootPromise = new Promise(function (resolve) {
+      var kicked = false;
+      function go() {
+        if (kicked) return;
+        kicked = true;                                       /* whichever timer wins, once */
+        resolve(nap(START_DELAY_MS).then(function () { return attempt(why); }));
+      }
+      try { if (isFn(window.requestIdleCallback)) window.requestIdleCallback(go, { timeout: BOOT_IDLE_MS }); } catch (eIc) {}
+      setTimeout(go, BOOT_IDLE_MS);
+    }).then(null, function () { return null; });
+    return bootPromise;
   }
 
   /* The tray line. 'ok' routes it to the activity tray as an OUTCOME, so it
