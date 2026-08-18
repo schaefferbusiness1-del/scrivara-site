@@ -3061,7 +3061,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 <div id="agreementsGate" role="dialog" aria-modal="true" aria-labelledby="agGateTitle" aria-describedby="agGateSummary" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg,#f4f7fb);overflow:auto;padding:24px 16px">
   <div style="max-width:760px;margin:0 auto">
     <div class="card">
-      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> <span id="agGateTitleText">Clinical workspace not enabled</span></h2>
+      <h2 id="agGateTitle" style="margin-top:0"><span class="ic">🛡️</span> <span id="agGateTitleText">Not switched on yet</span></h2>
       <!-- clunky2-signin-1.0.0 (CLUNKY 44): MEASURED at HEAD, the locked gate
            carried the same refusal three times — a grey summary, an amber box
            and a red status line — 93 words and 639 characters over two
@@ -5873,9 +5873,21 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- STEP 5: quick guide -->
     <div class="su_step" id="su_step5" style="display:none">
-      <p style="font-weight:700;margin:0 0 2px">📖 Quick guide — how to use MLS</p>
-      <p class="note" style="margin:0 0 10px">The essentials. You can reopen this anytime from <b>❓ Help</b> or the 🚀 button.</p>
-      <div style="max-height:340px;overflow:auto;padding-right:6px;display:flex;flex-direction:column;gap:10px">
+      <!-- clunky2-signin-1.0.0 (CLUNKY 115): MEASURED - the last onboarding
+           screen was 276 words in a 340px box whose content was 643px tall,
+           so it cut a sentence in half with nothing to say it scrolled. Three
+           one-line steps are in the open; every original word is kept, in the
+           same order, behind "Read the full guide", and the fixed-height
+           scroller is gone because the modal already scrolls. -->
+      <p style="font-weight:700;margin:0 0 2px">📖 You are set up. Three things to know:</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin:8px 0 12px">
+        <div class="su_guide"><b>🎙️ Record a visit.</b> Open a patient, press record, talk through the visit — MLS writes the note.</div>
+        <div class="su_guide"><b>👤 Patients.</b> Every chart lives here; search by name or date of birth up top.</div>
+        <div class="su_guide"><b>❓ Stuck?</b> Press <b>❓ Help</b> and ask “where is…” or “how do I…”.</div>
+      </div>
+      <details id="su_guideFold"><summary style="cursor:pointer;font-weight:600">Read the full guide</summary>
+      <p class="note" style="margin:8px 0 10px">The essentials. You can reopen this anytime from <b>❓ Help</b> or the 🚀 button.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
         <div class="su_guide"><b>🎙️ Record a visit → instant note.</b> Open a patient (or “New visit”), press record, and talk through the visit normally. MLS transcribes and writes a structured note. Review, edit, then <b>Sign</b> — your signature block is appended automatically.</div>
         <div class="su_guide"><b>👤 Patients.</b> Add patients with “＋ New patient.” Each chart keeps the problem list, meds, allergies, prior visits, and notes. Search by name or DOB up top.</div>
         <div class="su_guide"><b>🗓️ Scheduling &amp; booking.</b> Set your hours in <b>🕘 Availability</b>. Share your booking link; patients pick only open slots and get a confirmation email with a link to confirm or cancel. See everyone on the <b>🗓️ Check-in board</b>.</div>
@@ -5885,6 +5897,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div class="su_guide"><b>✨ Create your own + 🔗 connectors.</b> Build custom tabs/widgets by describing them, and connect via the FHIR API. All under the tools menu.</div>
         <div class="su_guide"><b>❓ Stuck?</b> Hit <b>❓ Help</b> anytime and ask “where is…” or “how do I…”. Answers are specific to this app.</div>
       </div>
+      </details>
     </div>
 
     <div class="row" style="gap:8px;margin-top:16px;align-items:center">
@@ -32177,7 +32190,10 @@ function showAgreementsGate(fromLoading){
   /* locked mode (default): hide the ceremony layout */
   const lw=document.getElementById('agLockedWrap'); if(lw) lw.style.display='';
   const cw=document.getElementById('agCeremonyWrap'); if(cw) cw.style.display='none';
-  const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Clinical workspace not enabled';
+  /* clunky2-signin-1.0.0 (CLUNKY 44): the heading, the summary and the status
+     line each named the same refusal in different words. The heading is the
+     label; it now uses the same plain words the summary does. */
+  const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Not switched on yet';
   const rb=document.getElementById('agRetryBtn'); if(rb) rb.style.display='';
   /* clunky2-signin-1.0.0 (CLUNKY 44): the summary above already says what is
      not enabled and who enables it; this line is the RESULT, not a third
@@ -41769,16 +41785,24 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsDockNubMenu .mlsDockItem[aria-checked="true"]::before{ content:'\2713\00a0'; font-weight:800; }
 /* The nudge. A standing strip, not a dialog: it must never block the work it
    is offering to stop covering. */
+/* clunky2-dock-1.0.0 (CLUNKY 42): MEASURED at 1280x600 with the bar at the
+   bottom - a 420x127 floating card at (844,383), i.e. four lines of paragraph
+   sitting on the patient rows and their Record buttons, and on the Visit
+   screen the same card squeezed into a 147px twelve-line column. It is a
+   STRIP now: one line, one row of buttons beside it, min-width so it can
+   never collapse into a column, and (see placeNudge) the width of the bar it
+   is talking about, flush above it. */
 #mlsDockNudge{
   position:fixed; z-index:9404; display:none;
-  max-width:min(420px,calc(100vw - 32px));
-  padding:12px 14px; border-radius:var(--r-ctl,12px);
+  max-width:calc(100vw - 32px); min-width:min(320px,calc(100vw - 32px));
+  padding:10px 14px; border-radius:var(--r-ctl,12px);
   background:var(--card,#fff); border:1px solid var(--line,#dfe6e2);
   box-shadow:var(--shadow,0 10px 30px rgba(22,48,38,.18));
   font:600 12.5px/1.45 var(--sans); color:var(--ink);
 }
-#mlsDockNudge.on{ display:block; }
-#mlsDockNudge .mlsDockNudgeRow{ display:flex; gap:8px; flex-wrap:wrap; margin-top:9px; }
+#mlsDockNudge.on{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+#mlsDockNudge #mlsDockNudgeText{ flex:1 1 220px; min-width:0; }
+#mlsDockNudge .mlsDockNudgeRow{ display:flex; gap:8px; flex-wrap:wrap; margin-top:0; margin-left:auto; }
 #mlsDockNudge button{
   min-height:38px; padding:8px 14px; border-radius:var(--r-ctl,10px);
   font:700 12.5px/1.2 var(--sans); cursor:pointer;
@@ -42219,8 +42243,13 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       '</div>';
     /* textContent, not markup: this copy is the whole point and it must read
        the same everywhere it is quoted. */
+    /* clunky2-dock-1.0.0 (CLUNKY 42): 221 characters of explanation, on top
+       of the work it was explaining. The measurement it was quoting belongs in
+       this comment, not on the doctor's screen: along the bottom the bar sits
+       over the page at every scroll position except the very end; on the left
+       or right it never does. */
     box.querySelector('#mlsDockNudgeText').textContent =
-      'Move the taskbar to the side so it never covers your work? Along the bottom it sits over the page at every scroll position except the very end; on the left or right it never does.';
+      'Taskbar covering your work? Move it to the side and it never will.';
     var yes = box.querySelector('#mlsDockNudgeYes');
     var no = box.querySelector('#mlsDockNudgeNo');
     yes.textContent = 'Move it to the left';
@@ -42237,15 +42266,21 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     if (!box || !box.classList.contains('on')) return false;
     var vw = 0, vh = 0;
     try { vw = window.innerWidth || 0; vh = window.innerHeight || 0; } catch (e) {}
+    var r = null;
+    if (dock) { try { r = dock.getBoundingClientRect(); } catch (e3) { r = null; } }
+    /* clunky2-dock-1.0.0 (CLUNKY 42): a strip attached to the bar it is about.
+       When the dock IS a bottom bar the nudge takes exactly its width and sits
+       flush above it, so it reads as part of the bar instead of as a card
+       dropped on the list. Any other dock shape keeps the old corner. */
+    var bottomBar = !!(r && r.height > 0 && vw > 0 && r.width >= vw * 0.6);
+    if (bottomBar) { box.style.width = Math.round(r.width) + 'px'; box.style.maxWidth = 'none'; }
+    else { box.style.width = ''; box.style.maxWidth = ''; }
     var br;
     try { br = box.getBoundingClientRect(); } catch (e2) { return false; }
     var top = vh - br.height - 16, left = vw - br.width - 16;
-    if (dock) {
-      var r;
-      try { r = dock.getBoundingClientRect(); } catch (e3) { r = null; }
-      /* Sit ABOVE a bottom bar rather than on top of it. */
-      if (r && r.height > 0) top = Math.max(8, r.top - br.height - 12);
-    }
+    /* Sit ABOVE a bottom bar rather than on top of it. */
+    if (r && r.height > 0) top = Math.max(8, r.top - br.height - 12);
+    if (bottomBar) left = r.left;
     box.style.left = Math.max(8, Math.round(left)) + 'px';
     box.style.top = Math.max(8, Math.round(top)) + 'px';
     return true;
@@ -47371,6 +47406,15 @@ html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
     } catch (e) {}
     setInterval(pass, 1500);
     [300, 900, 2000, 4000].forEach(function (ms) { setTimeout(pass, ms); });
+    /* clunky2 (2026-08-18): room() writes textContent on #mlsRdTitle, which
+       DESTROYS the .rd-titletext span the redesign header owns - so the next
+       header re-render puts "Visit" back and this block only noticed on its
+       next 1500ms tick. Between those two events the front-desk screen wore
+       the doctor's room title again, and the 141 assertion caught it as a
+       flake. The header publishes the change; listen to it. */
+    try {
+      window.addEventListener('mls:view-changed', function () { room(); setTimeout(room, 80); });
+    } catch (e) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
 
@@ -48097,6 +48141,119 @@ html #calDayPanel button{ min-height:44px; }
 })();
 </script>
 <!-- ===== end clunky-calendar-1.0.0 ===================================== -->
+<!-- ===== clunky2-visitnote-1.0.0 — a saved visit opens the note, not a label
+     CLUNKY AUDIT item 51 (sev 2).
+
+     MEASURED at HEAD, 1280x600, one synthetic saved note opened from History
+     (feat_visit_note_detail.js forced to load; it is deferred and never
+     arrives in a non-compositing tab on its own):
+
+       dialog text : "(undated) · Office visit  From saved note  ✕
+                      Unknown / untagged
+                      AI SUMMARY  No AI summary yet — use “Regenerate AI summary”.
+                      Full captured visit data
+                      ✏️ Edit visit  ✨ Regenerate AI summary  📝 Edit raw note"
+       note text   : NOT on screen. The note itself is the <pre> inside a
+                     CLOSED <details class="mlsvd-raw"> labelled "Full captured
+                     visit data" — the doctor clicked a visit to read it and
+                     got two empty slots and three buttons instead.
+
+     WHY AN OVERLAY. feat_visit_note_detail.js and __mlsVisitDetail.buildRead
+     are production files this lane may not edit, and the dialog is built
+     fresh on every open. So the scrim is watched and patched in place:
+       - the note fold opens, and its summary says what it holds;
+       - the AI summary section stands down while it is EMPTY (.mlsvd-ai-empty
+         is the module's own marker) and comes back the moment a summary
+         lands, because the pass re-runs on every mutation;
+       - the "Unknown / untagged" provenance chip stands down; a chip whose
+         value is "unknown" is a label with no content.
+     Nothing is removed and nothing is rewritten: three display decisions,
+     each reversible, each keyed on a state the module itself publishes.
+
+     Revert: window.__mlsClunkyVisitNote.revert() -->
+<style id="mlsClunkyVndCss">
+.mlsvnd-scrim [data-mls-clunky-vnd="empty-ai"]{ display:none !important; }
+.mlsvnd-scrim [data-mls-clunky-vnd="unknown-src"]{ display:none !important; }
+.mlsvnd-scrim details.mlsvd-raw > summary{ font-weight:700; }
+</style>
+<script>
+(function(){
+  'use strict';
+  var VERSION = 'clunky2-visitnote-1.0.0';
+  if (window.__mlsClunkyVisitNote) return;
+  var passes = 0, opens = 0;
+
+  function mark(node, why){
+    if (!node) return;
+    if (node.getAttribute('data-mls-clunky-vnd') !== why) node.setAttribute('data-mls-clunky-vnd', why);
+  }
+  function unmark(node){
+    if (node && node.hasAttribute('data-mls-clunky-vnd')) node.removeAttribute('data-mls-clunky-vnd');
+  }
+  function txt(n){ return n ? String(n.textContent || '').replace(/\s+/g, ' ').trim() : ''; }
+
+  function pass(){
+    passes++;
+    var scrim = document.querySelector('.mlsvnd-scrim');
+    if (!scrim) return false;
+    try {
+      /* 1. THE NOTE. It is already in the dialog, one closed fold away. */
+      var raw = scrim.querySelector('details.mlsvd-raw');
+      if (raw) {
+        if (!raw.open && !raw.__mlsClunkyShut) { raw.open = true; opens++; }
+        /* a doctor who closes it has said so - never re-open behind him */
+        if (!raw.__mlsClunkyWatched) {
+          raw.__mlsClunkyWatched = 1;
+          raw.addEventListener('toggle', function(){ if (!raw.open) raw.__mlsClunkyShut = 1; });
+        }
+        var sum = raw.querySelector('summary');
+        if (sum && txt(sum) === 'Full captured visit data') sum.textContent = 'The note';
+      }
+      /* 2. THE EMPTY AI SLOT. The module marks its own empty state. */
+      var ai = scrim.querySelector('.mlsvd-ai-empty');
+      var sec = ai ? ai.closest('.mlsvd-sec') : null;
+      Array.prototype.forEach.call(scrim.querySelectorAll('.mlsvd-sec'), function(s){
+        if (s !== sec) unmark(s);
+      });
+      if (sec) mark(sec, 'empty-ai');
+      /* 3. A PROVENANCE CHIP THAT SAYS "unknown". */
+      Array.prototype.forEach.call(scrim.querySelectorAll('.mls-src-banner'), function(b){
+        if (/^unknown\s*\/\s*untagged$/i.test(txt(b))) mark(b, 'unknown-src'); else unmark(b);
+      });
+    } catch (e) {}
+    return true;
+  }
+
+  /* COALESCED for the same reason as clunky2-rooms: this dialog exists for a
+     few seconds at a time, and the observer must not tax every other boot. */
+  var queued = null;
+  function schedule(){
+    if (queued !== null) return;
+    queued = setTimeout(function(){ queued = null; pass(); }, 60);
+  }
+  function arm(){
+    try {
+      var obs = new MutationObserver(schedule);
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {}
+    setInterval(pass, 900);
+    pass();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyVisitNote = {
+    version: VERSION, pass: pass, passes: function(){ return passes; }, opens: function(){ return opens; },
+    revert: function(){
+      try {
+        var s = document.getElementById('mlsClunkyVndCss'); if (s) s.disabled = true;
+        Array.prototype.forEach.call(document.querySelectorAll('[data-mls-clunky-vnd]'), unmark);
+      } catch (e) {}
+      return true;
+    }
+  };
+})();
+</script>
+<!-- ===== end clunky2-visitnote-1.0.0 =================================== -->
 <!-- ===== clunky2-rooms-1.0.0 — the rooms the first clunky lane did not reach
      CLUNKY AUDIT items 19, 49, 50, 68, 114, 124, 130, 142.
 
@@ -48350,9 +48507,19 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     } catch (e) {}
   }
 
+  /* COALESCED. An un-debounced body-subtree observer runs pass() once per
+     mutation, and the app mutates the body hundreds of times during boot.
+     Two more of those measurably shifted the timing of an unrelated block
+     (the Staff prep title lost a race with the header's own re-render). One
+     pass per frame's worth of mutations is all this needs. */
+  var queued = null;
+  function schedule(){
+    if (queued !== null) return;
+    queued = setTimeout(function(){ queued = null; pass(); }, 60);
+  }
   function arm(){
     try {
-      var obs = new MutationObserver(function(){ pass(); });
+      var obs = new MutationObserver(schedule);
       if (document.body) obs.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
     ['mls:active-patient-changed', 'mls:view-changed'].forEach(function(ev){
