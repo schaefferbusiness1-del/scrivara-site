@@ -40590,7 +40590,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     position:sticky; top:0; z-index:2; background:var(--card);
     margin:0 0 6px; padding:0 0 4px;
   }
-  #mlsOpDayHead{ margin:0 0 5px; }
+  /* THE ROOM'S ✕ IS ABSOLUTELY POSITIONED AT THE TOP RIGHT OF THE CARD
+     (`#opPrepModal.opr-room .modal-x{ top:10px; right:12px }`, ~44px), and
+     below 900px the rail's FIRST ROW is the top of that card. MEASURED at
+     390x844: the ✕ painted over the next-day arrow — the doctor pressing
+     "tomorrow" would have closed the room. Reserve its lane. */
+  #mlsOpDayHead{ margin:0 0 5px; padding-right:58px; }
   #mlsOpDayCount{ margin:0 0 5px; }
   #mlsOpnRailAct{ flex-direction:row; align-items:stretch; margin:0 0 6px; }
   #mlsOpnRailAct > *{ flex:1 1 0; min-width:0; }
