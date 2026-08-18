@@ -17,7 +17,7 @@ const OLD_SHA = 'c71a63758cfd237bdd1041840ae750db6e1f578607e01970aa5cc4bb1e5d7c7
 const NEW_SHA = '1fd1c977430aa0550edd3a99f864bfb901e5c3c4dbcf63bf8ed2a27636b42c23';
 const OLD_CHK = '20260817chk3063', NEW_CHK = '20260818chk3064';
 const OLD_NOTES = 'v3.0.63 - Athena tab handling made robust: MLS now prefers the Athena tab whose Day view is actually rendered, re-checks a tab that was slow to answer instead of reporting no Athena tab while you are signed in, and treats a not-yet-rendered week strip as something to recover from rather than a failed day change. Every date, schedule and presence reply now also carries how many Athena tabs are open, so the app can advise keeping one. Reads only; nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.';
-const NEW_NOTES = 'v3.0.64 - Chart reads keep their pace while the athenaOne tab is in the background: every step that waits inside Athena now runs at normal speed even when that tab is hidden, so the day's visit notes finish alongside the histories instead of timing out. Nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.';
+const NEW_NOTES = 'v3.0.64 - Chart reads keep their pace while the athenaOne tab is in the background: every step that waits inside Athena now runs at normal speed even when that tab is hidden, so the day\'s visit notes finish alongside the histories instead of timing out. Nothing about writing changes. Everything from earlier releases remains. Requires Chrome 116+.';
 
 const plan = [
   ['extension-version.json', [[OLD_NOTES, NEW_NOTES, 1], [OLD, NEW, 1]]],

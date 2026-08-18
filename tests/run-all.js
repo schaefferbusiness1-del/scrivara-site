@@ -325,6 +325,20 @@ const tests = [
      the localStorage lane. Pins the shipped activation and a 3,000-patient
      round trip through the real store. */
   '1p-pts-store-activation-runtime.test.js',
+  /* junkscrub-1.0.0: pre-fix Athena pulls captured the athenaOne PAGE into
+     stored visit bodies (its sketchpad script, its refresh prompt, its print
+     header). The migration takes that back OUT of the data. Because it
+     rewrites stored clinical text, the detector suite pairs every rule with a
+     firing fixture AND a clinical near-miss it must not flag, and carries a
+     control proving the shared display cleaner really does destroy two of
+     those sentences (which is why it is not reused here). */
+  'junk-scrub-detector.test.js',
+  /* the same migration run for real: the shipped shell in a browser, the
+     sj-2.0 IndexedDB store migrated and serving, the real getPatients /
+     upsertPatient / savePatients, and the per-patient server mirror pointed at
+     a mock endpoint whose POST bodies are read back. Five seeded charts; four
+     of them must come out byte-identical. */
+  'junk-scrub-migration-runtime.test.js',
   /* psq-1.0.0: the pending patient-sync queue had ONE driver, a 60s interval
      capped at 25 ids, so a 300-patient pull idled a full minute before the
      first id moved (12 minutes against a refusing server) with nothing on
