@@ -243,7 +243,24 @@ function harness() {
       }) },
     /* EMPTY — no visits at all, for the single-empty-state check. */
     { id: 'syn-empty', name: 'Fay Sample', dob: '1980-05-05', mrn: 'MRN900006',
-      problems: '', meds: '', allergies: '', visits: [] }
+      problems: '', meds: '', allergies: '', visits: [] },
+    /* THE MERGE EDGE CASES, in one chart:
+         - two encounters on the SAME DAY, both carrying stable Athena keys:
+           Athena told us they were two, so they must stay two;
+         - two UNDATED rows with no id at all: neither has a key or a day, and
+           an id-equality test would call them the same row (both ''), so they
+           must still be two;
+         - one dated row with NO stable key, on a day nothing else claims. */
+    { id: 'syn-edge', name: 'Gus Sample', dob: '1959-02-02', mrn: 'MRN900007',
+      problems: 'Lumbar facet arthropathy', meds: '', allergies: 'NKDA',
+      athenaChartImportedAt: '2026-08-17T12:00:00.000Z',
+      visits: [
+        { id: 'e1', date: '2026-04-04', type: 'Injection', raw: 'Morning procedure.', source: 'athena-copy', encounterId: 'ee-1' },
+        { id: 'e2', date: '2026-04-04', type: 'Office visit', raw: 'Afternoon follow-up.', source: 'athena-copy', encounterId: 'ee-2' },
+        { id: '', date: '', type: 'Imported chart', raw: 'Undated row one.', source: 'legacy' },
+        { id: '', date: '', type: 'Imported chart', raw: 'Undated row two.', source: 'legacy' },
+        { id: 'e5', date: '2026-03-03', type: 'Office visit', raw: 'Keyless dated row.', source: 'manual' }
+      ] }
   ];
 
   var NOTES = [
@@ -531,7 +548,7 @@ async function runtime() {
     eq(apis.version, 'pvr-1.0.0', 'the installed block is not pvr-1.0.0');
 
     const seeded = await page.evaluate(() => window.__pvr.seed());
-    eq(seeded.patients, 6, `the synthetic roster did not land: ${JSON.stringify(seeded)}`);
+    eq(seeded.patients, 7, `the synthetic roster did not land: ${JSON.stringify(seeded)}`);
     eq(seeded.notes, 3, `the synthetic notes did not land: ${JSON.stringify(seeded)}`);
 
     /* -- 1. ONE RESOLVER, THREE STORES ---------------------------------- */
@@ -554,6 +571,26 @@ async function runtime() {
     eq(res.sources.note, 1, `only the note on its own day may add a source row: ${JSON.stringify(res.sources)}`);
     eq(res.dates[0], '2026-08-10', `the timeline must be newest-first: ${JSON.stringify(res.dates)}`);
     ok(res.bodies[0] > 0, 'the resolved entry carries a scrubbed body for the expander');
+
+    /* THE MERGE RULE, at its edges. Under-merging inflates a count and
+       over-merging HIDES A VISIT, so both directions are pinned on one chart:
+       two same-day encounters Athena keyed separately stay two; two undated,
+       idless rows stay two (an id-equality test would fold them, both ids
+       being ''); and a keyless dated row keeps its own day. */
+    await page.evaluate(() => window.__pvr.open('syn-edge'));
+    await page.waitForTimeout(1400);
+    const edge = await page.evaluate(() => window.__pvr.resolveActive());
+    measured.mergeEdges = edge;
+    eq(edge.stored, 5, `the fixture did not land: ${JSON.stringify(edge)}`);
+    eq(edge.count, 5, `the merge rule collapsed rows it should have kept: ${JSON.stringify(edge)}`);
+    eq(edge.sources.athena, 2, `both stable-keyed same-day encounters must count: ${JSON.stringify(edge.sources)}`);
+    eq(edge.sources.manual, 3, `the two undated rows and the keyless dated row must count: ${JSON.stringify(edge.sources)}`);
+    const edgeCounts = await page.evaluate(() => window.__pvr.counts());
+    eq(edgeCounts.panel, 5, `the panel says ${edgeCounts.panel} on the merge-edge chart`);
+    eq(edgeCounts.strip, 5, `the strip says ${edgeCounts.strip} on the merge-edge chart`);
+
+    await page.evaluate(() => window.__pvr.open('syn-split'));
+    await page.waitForTimeout(1400);
 
     const counts = await page.evaluate(() => window.__pvr.counts());
     measured.countsAfter = counts;

@@ -42641,11 +42641,15 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
                 stored: 0, notes: 0, pulled: false, patientId: str(p && p.id) };
     if (!p) return out;
     out.pulled = chartLanded(p);
-    var byKey = {}, byDay = {}, order = [];
+    var byKey = {}, byDay = {}, order = [], created = false;
+    /* `created` says whether this call ADDED an entry, because that - not
+       object identity - is what the per-source tally must count. Comparing the
+       returned entry to the stored one is always true, and comparing ids is
+       true by accident for two rows that both lack an id. */
     function push(entry) {
       var k = entry.key;
-      if (byKey[k]) return byKey[k];
-      byKey[k] = entry; order.push(entry);
+      if (byKey[k]) { created = false; return byKey[k]; }
+      byKey[k] = entry; order.push(entry); created = true;
       if (entry.date) { if (!byDay[entry.date]) byDay[entry.date] = entry; }
       return entry;
     }
@@ -42660,7 +42664,7 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
         source: sourceTag(v), summary: trim(v.aiSummary), body: bodyOf(v),
         visitId: str(v.id), fromStore: 'visits', hasNote: false
       });
-      if (e === byKey[e.key] && e.visitId === str(v.id)) out.sources[e.source] = (out.sources[e.source] || 0) + 1;
+      if (created) out.sources[e.source] = (out.sources[e.source] || 0) + 1;
     }
     var nn = notesOf(p);
     out.notes = nn.length;
@@ -42675,7 +42679,8 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
         source: 'note', summary: trim(n.summary || n.cc || ''), body: scrub(n.text || n.note || n.soap || ''),
         visitId: '', noteId: str(n.id), fromStore: 'notes', hasNote: true
       });
-      out.sources.note = (out.sources.note || 0) + 1;
+      if (created) out.sources.note = (out.sources.note || 0) + 1;
+      else e.hasNote = true;
     }
     order.sort(function (a, b) {
       if (a.date && b.date) return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0);
