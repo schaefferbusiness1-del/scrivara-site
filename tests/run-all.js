@@ -91,6 +91,15 @@ const tests = [
      honest bar, and the notice layer that never lands on the dock. Drives the
      real shell in real Chrome with a synthetic 28-patient day. */
   '1p-clunky-contract.test.js',
+  /* The residue of that audit: the four items two lanes in a row closed as
+     "never rendered in this harness" plus the op-note rail's write churn.
+     Each one needed a state the previous probes never built - an UNBOUND
+     Athena manifest, a capable-extension manifest with a selectable Sign &
+     Save radio, an ACTION-NEEDED notice on a 390px screen, and the op-note
+     room actually re-rendering - so this suite asserts the state arrived
+     BEFORE it asserts anything about the fix. It also pins why the Settings
+     rebuild (feat_mls_settings_exact.js) can never activate on /1p. */
+  '1p-residue-contract.test.js',
   /* A black camera feed and a dim room are different faults with different
      remedies; two luminance thresholds decided which the doctor was told
      about, and only this keeps them equal. */
