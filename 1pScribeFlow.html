@@ -45573,5 +45573,329 @@ html body[data-mls-staffprep="1"] #mlsStages{ display:none !important; }
 })();
 </script>
 <!-- ===== end clunky-staffprep-1.0.0 ==================================== -->
+<!-- ===== clunky-dock-1.0.0 — the taskbar stops covering its own menu
+     CLUNKY AUDIT items 39, 40, 43, 73, 116, 123, 143, 144.
+
+     MEASURED at HEAD, 1366x900, dock on the left rail, Patients:
+       #mlsDock            18,246 102x409
+       #mlsToolsMenu       10,246 560x677  z 930  bottom 923 in a 900px view
+       overlap(menu, dock) 102x409  — the menu opens ON the taskbar, so the
+                           taskbar's words bleed through it (item 143)
+       overlap(nub, menu)  44x44   — the ⋮ nub sits on the menu it opened
+       36 text nodes inside the menu computed under 12px (item 144)
+       #mlsDockAsk         46x34 with placeholder "Ask or find anything" —
+                           five characters render, and it reads "Asl" (item 40)
+       #mlsRightNow        155,109 1170x57, segments "Patients ·" / "History ·"
+                           AND a .note reading "Nothing to do here yet", on a
+                           screen holding 28 patients and 12 booked appointments
+                           (items 73, 123)
+
+     ITEM 39 IS A NAMING PROBLEM, NOT A COUNT. The dock's three "AI" entries
+     are not three assistants: AI Studio is a destination, Copilot is the
+     assistant, and the box is a finder. It was called "Ask or find anything",
+     which is what an assistant would be called, so it read as a second one.
+     It is named for what it does instead — the control, its handler and its
+     results list are untouched. -->
+<style id="mlsClunkyDockCss">
+/* --- 43 / 143: the menu opens BESIDE the dock, never on it, and it fits. */
+html body[data-mls-dock="left"] #mlsToolsMenu{
+  left:calc(var(--mls-dock-clear-left, 0px) + 10px) !important;
+  right:auto !important;
+}
+html body[data-mls-dock="right"] #mlsToolsMenu{
+  right:calc(var(--mls-dock-clear-right, 0px) + 10px) !important;
+  left:auto !important;
+}
+html #mlsToolsMenu{
+  z-index:9500 !important;
+  max-height:calc(100vh - var(--mls-dock-clear-bottom, 0px) - 24px) !important;
+  overflow-y:auto !important;
+  overscroll-behavior:contain;
+  background:var(--card, #fff) !important;
+}
+/* --- 144: nothing in a menu a doctor reads is under 13px. The menu's own
+   rules set .rn/.gh sizes with !important, so this has to as well. */
+html #mlsToolsMenu, html #mlsToolsMenu *{ font-size:max(13px, 1em) !important; }
+html #mlsToolsMenu .gh{ font-size:13px !important; }
+@media (max-width:600px){
+  html #mlsToolsMenu{
+    top:calc(var(--mls-header-h, 88px) + 8px) !important;
+    max-height:calc(100vh - var(--mls-header-h, 88px) - var(--mls-dock-clear-bottom, 0px) - 24px) !important;
+  }
+}
+/* --- 40: a 46px box is an icon, so it looks like one. */
+html body[data-mls-dock="left"] #mlsDockAsk,
+html body[data-mls-dock="right"] #mlsDockAsk{
+  text-align:center;
+  font-size:15px;
+}
+html body[data-mls-dock="left"] #mlsDockAsk:focus,
+html body[data-mls-dock="right"] #mlsDockAsk:focus{ text-align:left; font-size:13px; }
+/* --- 73 / 123: a bar with tabs does not also say it has nothing to say. */
+html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
+</style>
+<script>
+/* clunky-dock-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyDock) return;
+  var VERSION = 'clunky-dock-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s, r) { try { return Array.prototype.slice.call((r || document).querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function side() { try { return document.body.getAttribute('data-mls-dock') || 'bottom'; } catch (e) { return 'bottom'; } }
+
+  /* ---- 39 / 40: the finder is named for what it does ------------------ */
+  var FIND = 'Find a patient, a screen or an action';
+  function ask() {
+    var a = el('mlsDockAsk');
+    if (!a) return;
+    if (a.getAttribute('aria-label') !== 'Find') a.setAttribute('aria-label', 'Find');
+    var rail = side() === 'left' || side() === 'right';
+    var wide = a.getBoundingClientRect().width >= 90;
+    var want = (rail && !wide && document.activeElement !== a) ? '🔎' : FIND;
+    if (a.placeholder !== want) a.placeholder = want;
+    if (!a.getAttribute('data-mls-clunky-wired')) {
+      a.setAttribute('data-mls-clunky-wired', '1');
+      a.addEventListener('focus', function () { a.placeholder = FIND; }, false);
+      a.addEventListener('blur', function () { setTimeout(ask, 20); }, false);
+    }
+  }
+
+  /* ---- 73 / 123: the right-now bar stops contradicting the screen ----- */
+  function rightNow() {
+    var bar = el('mlsRightNow');
+    if (!bar) return;
+    var segs = qa('.segbtn', bar).length;
+    bar.setAttribute('data-mls-clunky-hasnav', segs > 0 ? '1' : '0');
+  }
+
+  /* ---- 116: one name for hiding the taskbar --------------------------- */
+  var HIDE_NAME = 'Hide it until I need it';
+  function names() {
+    var cb = el('qolDockAutoHide');
+    var field = cb && cb.closest ? cb.closest('.field, label') : null;
+    var label = field ? (field.tagName === 'LABEL' ? field : field.querySelector('label')) : null;
+    if (!label) return;
+    var span = label.querySelector('span') || label;
+    if (span !== cb && txt(span) && txt(span) !== HIDE_NAME && /hide/i.test(txt(span))) span.textContent = HIDE_NAME;
+  }
+
+  /* ---- 43: the menu ends on screen, whatever its top turns out to be.
+     A CSS max-height cannot know the top the menu was opened at: measured,
+     the menu was 703px tall starting at y=231 in a 900px viewport, so a
+     `max-height:calc(100vh - 24px)` (876px) clamped nothing and "Log out"
+     stayed off the bottom of the screen. This clamps from the real top. */
+  function fitMenu() {
+    ['mlsToolsMenu', 'mlsDockNubMenu'].forEach(function (id) {
+      var m = el(id);
+      if (!m) return;
+      var r = m.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) { m.style.removeProperty('max-height'); return; }
+      var room = Math.max(160, Math.round(window.innerHeight - r.top - 16));
+      var want = room + 'px';
+      /* the menu's own sheet sets max-height with !important, so this must
+         too - a plain inline value measured no change at all */
+      if (m.style.getPropertyValue('max-height') !== want) {
+        m.style.setProperty('max-height', want, 'important');
+        m.style.setProperty('overflow-y', 'auto', 'important');
+      }
+    });
+  }
+
+  function pass() { passes++; ask(); rightNow(); names(); fitMenu(); }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-mls-dock', 'class'] });
+    } catch (e) {}
+    setInterval(pass, 2000);
+    [250, 800, 1800, 3600].forEach(function (ms) { setTimeout(pass, ms); });
+    try { window.addEventListener('resize', pass, false); } catch (e) {}
+    /* a menu is opened by a click, and it must fit on the frame after it,
+       not up to two seconds later */
+    try {
+      document.addEventListener('click', function () {
+        setTimeout(fitMenu, 0); setTimeout(fitMenu, 90); setTimeout(fitMenu, 320);
+      }, true);
+    } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyDock = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () { var s = el('mlsClunkyDockCss'); if (s) s.disabled = true; return true; } };
+})();
+</script>
+<!-- ===== end clunky-dock-1.0.0 ========================================= -->
+<!-- ===== clunky-notice-1.0.0 — a notice never lands on the work
+     CLUNKY AUDIT items 15 (sev 3), 81, 94, 95, 96, 97, and the standing
+     property behind 108, 125, 145 and 146.
+
+     quietnotify-1.0.0 already moved the one remaining toast into the dock's
+     reserved band and sent everything else to the tray. THREE THINGS IT DID
+     NOT DO, measured at HEAD:
+
+       * AN ERROR TOAST IS THE SAME COLOUR AS A SUCCESS TOAST. Measured:
+         toast('probe ok') and toast('probe failed to save','err') BOTH
+         compute background rgb(32,64,52) — feat_mls_redesign.js:319 sets
+         `body.mls-redesign .toast{background:#204034}` with no severity
+         exemption, so the doctor cannot tell good news from bad at a glance
+         (item 95).
+       * THE FLOATING CARDS ARE NOT PART OF THAT LAYER. #mlsUpgradeReadyNotice
+         is bottom-anchored at 0 and lands exactly on the dock (item 15);
+         #mlsSignInPrompt does the same on the phone (item 97);
+         #mlsGetPhoneCard and #mlsKbdHint float over an open Settings dialog
+         and over the Tools menu (items 81, 144). All four are given the same
+         reserved band the toast uses, and the two promos stand down entirely
+         while a dialog or a menu is open — a promotion is never more
+         important than the thing the doctor opened.
+       * A CHIP WITH THREE INSTRUCTIONS AND NO BUTTON. #mlsQuotaChip has 0
+         controls and tells the doctor to "keep this tab open, check available
+         storage, then retry the last action" (item 94).
+
+     ITEM 96 IS A WORDING FIX WITH A REAL CONSEQUENCE. When the note is not
+     empty the update bar explains why it cannot reload and still labels its
+     button "Reload update", which cannot work; the button now says what it
+     does. -->
+<style id="mlsClunkyNoticeCss">
+/* --- 95: severity is visible. Out-specifies body.mls-redesign .toast. */
+html body.mls-redesign #toast.toast.err,
+html body #toast.toast.err,
+html body.mls-redesign .toast.err,
+html body .toast.err{
+  background:#7E2B21 !important;
+  border-left:4px solid #F0A79A !important;
+}
+html body.mls-redesign #toast.toast.warn,
+html body #toast.toast.warn,
+html body.mls-redesign .toast.warn,
+html body .toast.warn{
+  background:#7A5312 !important;
+  border-left:4px solid #F3CE86 !important;
+}
+
+/* --- 15 / 97: a banner sits ABOVE the dock's reserved band, never on it. */
+html body #mlsUpgradeReadyNotice,
+html body #mlsSignInPrompt,
+html body #mlsQuotaChip{
+  bottom:calc(var(--mls-dock-clear-bottom, 0px) + 14px) !important;
+  left:calc(var(--mls-dock-clear-left, 0px) + 14px) !important;
+  right:calc(var(--mls-dock-clear-right, 0px) + 14px) !important;
+  max-width:calc(100vw - var(--mls-dock-clear-left, 0px) - var(--mls-dock-clear-right, 0px) - 28px) !important;
+}
+
+/* --- 81: a promotion stands down while a dialog or a menu is open. */
+html body[data-mls-clunky-modal="1"] #mlsGetPhoneCard,
+html body[data-mls-clunky-modal="1"] #mlsKbdHint,
+html body[data-mls-clunky-modal="1"] #mlsA2hsCard,
+html body[data-mls-clunky-menu="1"] #mlsGetPhoneCard,
+html body[data-mls-clunky-menu="1"] #mlsKbdHint,
+html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
+/* a keyboard hint on a device with no keyboard is never useful */
+@media (max-width:600px){ html body #mlsKbdHint{ display:none !important; } }
+
+/* --- 94: the chip carries its own way out. */
+#mlsQuotaChipAct{
+  margin-left:10px; padding:5px 11px; border-radius:999px; cursor:pointer;
+  border:1px solid currentColor; background:transparent; color:inherit;
+  font:700 12px/1.15 var(--sans, system-ui, sans-serif);
+}
+</style>
+<script>
+/* clunky-notice-1.0.0 */
+(function () {
+  'use strict';
+  if (window.__mlsClunkyNotice) return;
+  var VERSION = 'clunky-notice-1.0.0';
+  var passes = 0;
+
+  function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
+  function qa(s) { try { return Array.prototype.slice.call(document.querySelectorAll(s)); } catch (e) { return []; } }
+  function txt(n) { return ((n && (n.textContent || '')) + '').replace(/\s+/g, ' ').trim(); }
+  function vis(n) {
+    if (!n) return false;
+    var r = n.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    var cs = getComputedStyle(n);
+    return !(cs.display === 'none' || cs.visibility === 'hidden');
+  }
+
+  /* ---- 81: is anything the doctor opened on screen right now? --------- */
+  function context() {
+    var modal = qa('.modal-bg.show').some(vis);
+    var menu = ['mlsToolsMenu', 'mlsDockNubMenu', 'mslChipMenu', 'mlsRdNewMenu'].some(function (id) { return vis(el(id)); });
+    try {
+      if (modal) document.body.setAttribute('data-mls-clunky-modal', '1');
+      else document.body.removeAttribute('data-mls-clunky-modal');
+      if (menu) document.body.setAttribute('data-mls-clunky-menu', '1');
+      else document.body.removeAttribute('data-mls-clunky-menu');
+    } catch (e) {}
+  }
+
+  /* ---- 94: one action on the storage chip ---------------------------- */
+  function quota() {
+    var chip = el('mlsQuotaChip');
+    if (!chip || !vis(chip)) return;
+    if (el('mlsQuotaChipAct')) return;
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'mlsQuotaChipAct';
+    b.textContent = 'Free up space';
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      /* the app's own storage/diagnostics surface, whichever of the two the
+         build has - never a new one, and never a destructive default */
+      try {
+        if (typeof window.openStorageDiagnostics === 'function') { window.openStorageDiagnostics(); return; }
+        if (typeof window.mlsOpenDiagnostics === 'function') { window.mlsOpenDiagnostics(); return; }
+        if (typeof window.openSettings === 'function') window.openSettings();
+      } catch (e) {}
+    }, false);
+    chip.appendChild(b);
+  }
+
+  /* ---- 96: the update bar's button says what it will do -------------- */
+  function upgrade() {
+    var note = el('mlsUpgradeReadyNotice');
+    if (!note || !vis(note)) return;
+    var btn = el('mlsUpgradeReadyNoticeButton');
+    if (!btn) return;
+    var body = txt(note);
+    /* the shell only refuses when there is unsaved clinical text */
+    var blocked = /is not empty/i.test(body);
+    if (blocked) {
+      if (txt(btn) !== 'Remind me later') btn.textContent = 'Remind me later';
+      var line = el('mlsClunkyUpdLine');
+      if (!line) {
+        line = document.createElement('div');
+        line.id = 'mlsClunkyUpdLine';
+        line.style.cssText = 'margin:2px 0 6px;font:600 13px/1.4 var(--sans,system-ui,sans-serif)';
+        if (btn.parentNode) btn.parentNode.insertBefore(line, btn);
+      }
+      var want = 'Update ready — it will apply after this note is saved.';
+      if (txt(line) !== want) line.textContent = want;
+    }
+  }
+
+  function pass() { passes++; context(); quota(); upgrade(); }
+
+  function arm() {
+    try {
+      var obs = new MutationObserver(function () { pass(); });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    } catch (e) {}
+    setInterval(pass, 1200);
+    [200, 700, 1600, 3200].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+
+  window.__mlsClunkyNotice = { version: VERSION, pass: pass, passes: function () { return passes; },
+    revert: function () { var s = el('mlsClunkyNoticeCss'); if (s) s.disabled = true; return true; } };
+})();
+</script>
+<!-- ===== end clunky-notice-1.0.0 ======================================= -->
 </body>
 </html>

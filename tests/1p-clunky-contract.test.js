@@ -36,7 +36,9 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
 const BLOCKS = [
   'clunky-header-1.0.0',
   'clunky-settings-1.0.0',
-  'clunky-staffprep-1.0.0'
+  'clunky-staffprep-1.0.0',
+  'clunky-dock-1.0.0',
+  'clunky-notice-1.0.0'
 ];
 
 /* ============================================================ PART 1: static */
@@ -220,6 +222,22 @@ async function boot(page, port) {
     document.head.appendChild(st);
   });
   await page.evaluate(() => { window.__mlsHarnessAccountEmail = 'ui-harness@mlsscribe.test'; });
+  /* THE DOCK IS NOT THERE UNLESS THE CALM SHELL IS MADE TO LOAD. Its loader
+     schedules feat_mls_calm_shell.js through window.__mlsDeferAsset ||
+     requestIdleCallback, and requestIdleCallback - like rAF - never fires in
+     a non-compositing tab, so #mlsDock, #mlsRightNow and the Tools menu are
+     simply absent and every dock assertion would pass vacuously. boot() also
+     refuses while #appScreen is display:none, which it is until the line
+     above. Both are handled here, in this order. */
+  await page.evaluate(() => {
+    try { window.__mlsDeferAsset = function (fn) { return setTimeout(fn, 0); }; } catch (e) {}
+    try { if (window.__mlsP1CalmDock && typeof window.__mlsP1CalmDock.ensure === 'function') window.__mlsP1CalmDock.ensure(); } catch (e) {}
+  });
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => {
+    try { if (window.__mlsCalmShell && typeof window.__mlsCalmShell.boot === 'function') window.__mlsCalmShell.boot(); } catch (e) {}
+  });
+  await page.waitForTimeout(1500);
   await page.evaluate(harness);
   const seeded = await page.evaluate(() => window.__clunky.seed());
   eq(seeded.patients, 28, 'the synthetic roster did not land');
@@ -471,6 +489,93 @@ async function runtime() {
     eq(staff.deadPointers.length, 0,
       `Staff Prep still says: ${staff.deadPointers.join(' | ')} (CLUNKY 85, 86, 87)`);
     ok(staff.statusOwner, 'the staff-prep status line has no owner, so it cannot follow the job (CLUNKY 12)');
+
+    /* ============================================ DOCK, TOOLS, NOTICES === */
+    const dock = await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const C = window.__clunky;
+      C.nav('nav_patients');
+      await sleep(1200);
+      const out = {};
+      out.dockThere = C.shown('#mlsDock');
+      out.side = document.body.getAttribute('data-mls-dock') || '';
+      /* 40: the collapsed side-rail finder is an icon, not a clipped sentence. */
+      const ask = document.getElementById('mlsDockAsk');
+      out.ask = ask ? { w: Math.round(ask.getBoundingClientRect().width), ph: ask.placeholder, aria: ask.getAttribute('aria-label') } : null;
+      /* 73 / 123: a bar with tabs does not also say it has nothing to say. */
+      const rn = document.getElementById('mlsRightNow');
+      out.rightNow = rn ? { segs: rn.querySelectorAll('.segbtn').length, text: (rn.innerText || '').replace(/\s+/g, ' ').trim() } : null;
+      /* 43 / 143 / 144: the Tools menu fits, sits beside the dock, and is legible. */
+      const tools = Array.prototype.slice.call(document.querySelectorAll('#mlsDock button'))
+        .filter((b) => /tools/i.test(b.textContent || ''))[0];
+      if (tools) tools.click();
+      await sleep(700);
+      const m = document.getElementById('mlsToolsMenu');
+      const r = m ? m.getBoundingClientRect() : null;
+      out.tools = r ? { bottom: Math.round(r.bottom), viewport: window.innerHeight, scrolls: m.scrollHeight > m.clientHeight + 2 } : null;
+      out.toolsOverDock = C.overlap('#mlsToolsMenu', '#mlsDock');
+      out.toolsTiny = Array.prototype.slice.call(document.querySelectorAll('#mlsToolsMenu *'))
+        .filter(C.visible)
+        .filter((e) => (e.textContent || '').trim() && parseFloat(getComputedStyle(e).fontSize) < 12).length;
+      /* 81: a promotion stands down while a menu is open. */
+      out.menuFlag = document.body.getAttribute('data-mls-clunky-menu');
+      if (tools) tools.click();
+      await sleep(400);
+      /* 95: an error toast does not look like a success toast.
+         Measured off the CASCADE, not off a live toast: quietnotify-1.0.0
+         routes an OUTCOME message to the tray instead of showing it, so
+         calling toast() twice and reading #toast measures whichever one
+         happened to survive - it read the same colour for both in a first
+         attempt at this assertion. Two detached nodes carrying the real
+         classes answer the actual question, which is whether the stylesheet
+         distinguishes them. */
+      const swatch = (cls) => {
+        const n = document.createElement('div');
+        n.id = 'toast';
+        n.className = cls;
+        n.style.cssText = 'position:fixed;left:-9999px;top:0;width:10px;height:10px';
+        document.body.appendChild(n);
+        const bg = getComputedStyle(n).backgroundColor;
+        n.remove();
+        return bg;
+      };
+      out.okBg = swatch('toast show ok');
+      out.errBg = swatch('toast show err');
+      out.warnBg = swatch('toast show warn');
+      /* 15 / 97: the banner layer is anchored to the dock's reserved band. */
+      out.banners = ['mlsUpgradeReadyNotice', 'mlsSignInPrompt', 'mlsQuotaChip'].map((id) => {
+        const probe = document.createElement('div');
+        probe.id = id;
+        probe.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:40px';
+        document.body.appendChild(probe);
+        const b = getComputedStyle(probe).bottom;
+        const l = getComputedStyle(probe).left;
+        probe.remove();
+        return { id: id, bottom: b, left: l };
+      });
+      out.clearBottom = getComputedStyle(document.documentElement).getPropertyValue('--mls-dock-clear-bottom').trim();
+      out.clearLeft = getComputedStyle(document.documentElement).getPropertyValue('--mls-dock-clear-left').trim();
+      return out;
+    });
+    measured.dock = { side: dock.side, ask: dock.ask, tools: dock.tools, okBg: dock.okBg, errBg: dock.errBg,
+      banners: dock.banners, clearLeft: dock.clearLeft };
+    ok(dock.dockThere, 'the calm-shell dock did not mount, so nothing below was measured');
+    ok(dock.ask && (dock.ask.w >= 90 || dock.ask.ph.length <= 3),
+      `the side-rail finder is ${dock.ask && dock.ask.w}px wide with placeholder "${dock.ask && dock.ask.ph}" - it renders as "Asl" (CLUNKY 40)`);
+    ok(dock.ask && dock.ask.aria, 'the dock finder lost its accessible name when it became an icon (CLUNKY 40)');
+    ok(dock.rightNow && !(dock.rightNow.segs > 0 && /Nothing to do here yet/.test(dock.rightNow.text)),
+      `the right-now bar shows ${dock.rightNow && dock.rightNow.segs} tabs AND "Nothing to do here yet" (CLUNKY 73, 123)`);
+    ok(dock.tools && dock.tools.bottom <= dock.tools.viewport,
+      `the Tools menu ends ${dock.tools && (dock.tools.bottom - dock.tools.viewport)}px below the bottom of the screen, so Log out is unreachable (CLUNKY 43)`);
+    eq(dock.toolsOverDock, null, 'the Tools menu opens on top of the taskbar that opened it (CLUNKY 143)');
+    eq(dock.toolsTiny, 0, `${dock.toolsTiny} labels in the Tools menu compute under 12px (CLUNKY 144)`);
+    eq(dock.menuFlag, '1', 'nothing marks "a menu is open", so promo cards keep floating over it (CLUNKY 81)');
+    ok(dock.okBg && dock.errBg && dock.warnBg && dock.okBg !== dock.errBg && dock.okBg !== dock.warnBg,
+      `a success toast and an error toast are both ${dock.okBg} - severity is invisible (CLUNKY 95)`);
+    for (const b of dock.banners) {
+      ok(b.bottom !== '0px',
+        `${b.id} is pinned to bottom:0 and lands on the dock instead of above it (CLUNKY 15, 97)`);
+    }
     await page.close();
 
     /* ------------------------------------------------------------ 390x844 */
