@@ -283,7 +283,9 @@
     state.reportType = '';
     state.snapshot = null; state.snapshotSig = ''; state.snapshotAt = 0;
     state.rebindIntent = null; state.athenaOp = ''; state.athenaNote = '';
-    renderNoPatient('The active patient changed. This preview closed the prior workspace and discarded every in-progress result. Open Legal / IME again for the patient now on screen.');
+    /* clunky2-legal-1.0.0 (CLUNKY 54): same fail-closed behaviour, said in
+       plain words, with the next step offered instead of described. */
+    renderNoPatient('You switched patients, so this draft was closed. Nothing was saved from it — a report is only ever built for the one chart it is bound to.', true);
     return true;
   }
 
@@ -1532,6 +1534,15 @@
     '#' + ROOT_ID + ' .p1l-bind{padding:12px;border:1px solid #bdd4c5;background:#eef6f0;border-radius:12px;font-weight:700;margin:12px 0}',
     '#' + ROOT_ID + ' .p1l-warn{padding:11px 12px;border:1px solid #ead6a8;background:#fff8e8;color:#765616;border-radius:11px;margin:10px 0}',
     '#' + ROOT_ID + ' .p1l-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}',
+    /* ===== clunky2-legal-1.0.0 (CLUNKY 52, 53): the fold that holds the
+       sentences that used to be in the open, and the one warning that owns
+       an incomplete letterhead. */
+    '#' + ROOT_ID + ' .p1l-what{margin:0 0 10px}',
+    '#' + ROOT_ID + ' .p1l-what>summary{cursor:pointer;color:#596a62;font-size:12.5px;font-weight:600;list-style:revert}',
+    '#' + ROOT_ID + ' .p1l-what>p{margin:6px 0 0}',
+    '#' + ROOT_ID + ' #mlsClunkyLegalLhWarn{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
+    '#' + ROOT_ID + ' #mlsClunkyLegalLhSettings{min-height:38px;padding:6px 12px}',
+    /* ===== end clunky2-legal-1.0.0 (css) ===== */
     '#' + ROOT_ID + ' button{min-height:42px;border:1px solid #cfd8d1;background:#fff;color:#204034;border-radius:10px;padding:8px 13px;font-weight:700;cursor:pointer}',
     '#' + ROOT_ID + ' button.primary{background:#2e6a4b;color:#fff;border-color:#2e6a4b}',
     '#' + ROOT_ID + ' button[disabled]{opacity:.48;cursor:default}',
@@ -1622,7 +1633,19 @@
     /* The same cards and every control, in the order the work is done: a
        visible stepper, the patient, then four collapsed disclosures. */
     return '<div class="p1l-shell">' +
-      '<div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · read-only draft workspace</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1><p>No signing, delivery, chart filing, EMR writing, payment, messaging, or public intake.</p></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
+      /* ===== clunky2-legal-1.0.0 (CLUNKY 52) =====
+         MEASURED at HEAD on a bound workspace: the first two lines a doctor
+         read were "Free 1p preview · read-only draft workspace" and "No
+         signing, delivery, chart filing, EMR writing, payment, messaging, or
+         public intake." — a release label and a seven-item list of things
+         that do NOT happen, before one word about what does. The facts are
+         kept, word for word, one click away; the line in the open says what
+         this room is for and where the draft lives. */
+      '<div class="p1l-top"><div><span class="p1l-badge">Draft only</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1>' +
+      '<p>Drafts stay on this computer until you copy, download or print them.</p>' +
+      '<details class="p1l-what"><summary>What this workspace never does</summary><p class="p1l-explain">No signing, delivery, chart filing, EMR writing, payment, messaging, or public intake. It is a free preview of the Legal / IME report and every draft is read-only until you export it yourself.</p></details>' +
+      '</div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
+      /* ===== end clunky2-legal-1.0.0 (top) ===== */
       '<ol class="p1l-stepper" id="mlsP1LegalStepper" aria-label="Legal report steps"></ol>' +
       '<section class="p1l-card p1l-bindcard" data-mls-legal-step="bind" data-mls-legal-card="bind"><div class="p1l-step"><i>1</i>Patient</div>' +
       '<div id="mlsP1LegalBanner" class="p1l-bindhead"></div>' +
@@ -1640,7 +1663,16 @@
         '<div id="mlsP1LegalProviders" class="p1l-actions" aria-label="Filter chronology by provider"></div>' +
         '<div id="mlsP1LegalChronology"></div>') +
       discloseCard('records', 'Local records', { step: 'inputs' },
-        '<p id="mlsP1LegalFileHelp">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p>' +
+        /* ===== clunky2-legal-1.0.0 (CLUNKY 52) =====
+           MEASURED: 339 characters of one paragraph above the button it
+           describes. The AI DISCLOSURE is the sentence that changes what the
+           doctor does, so it stays in the open, word for word - a first pass
+           paraphrased it and 1p-legal-ime-workspace-runtime caught that as a
+           weakened disclosure, correctly. Only the mechanical detail (which
+           file types, the size cap, OCR) moves behind the fold. */
+        '<p id="mlsP1LegalFileHelp">When you press Generate, extracted text from files still listed here is included in the configured MLS AI context; remove a file first if its text should not be included.</p>' +
+        '<details class="p1l-what"><summary>How files are handled</summary><p class="p1l-explain">Searchable PDF, DOCX, and text files are read by this browser. Raw file bytes never leave the browser. Up to 8 files / 50 MB total. Image OCR is intentionally disabled.</p></details>' +
+        /* ===== end clunky2-legal-1.0.0 (files) ===== */
         '<button type="button" class="p1l-drop" id="mlsP1LegalDrop" aria-describedby="mlsP1LegalFileHelp">Choose or drop local files</button>' +
         '<input id="mlsP1LegalFile" type="file" multiple accept=".pdf,.docx,.txt,.md,.rtf,.csv,.tsv,.json,.html,text/*" hidden>' +
         '<div id="mlsP1LegalSources" aria-live="polite"></div>') +
@@ -1657,10 +1689,28 @@
         '<textarea id="mlsP1LegalDraft" aria-labelledby="mlsP1LegalDraftLabel" hidden spellcheck="true"></textarea>') +
       '</div></div>';
   }
-  function renderNoPatient(message) {
+  function renderNoPatient(message, offerRebind) {
     var root = byId(ROOT_ID); if (!root) return;
-    root.innerHTML = '<div class="p1l-shell"><div class="p1l-top"><div><span class="p1l-badge">Free 1p preview · fail closed</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div><div class="p1l-card"><h2>No bound patient workspace</h2><div class="p1l-warn" role="alert">' + esc(message || 'Select exactly one active patient, then reopen this preview.') + '</div></div></div>';
+    /* ===== clunky2-legal-1.0.0 (CLUNKY 54) =====
+       MEASURED at HEAD: clicking another patient turned the whole workspace
+       into a blank page headed "No bound patient workspace", telling the
+       doctor it "discarded every in-progress result", with exactly ONE
+       control on it — Close preview. A true statement and a dead end.
+       The state is unchanged (the old draft really is gone — that is the
+       fail-closed rule and it stays). What changes is that the room says so
+       in plain words and offers the obvious way forward: open it again for
+       the patient now on screen. */
+    var next = offerRebind ? lhSafe(function () { return captureBinding(); }) : null;
+    var nextName = next && clean(next.name) ? clean(next.name) : '';
+    root.innerHTML = '<div class="p1l-shell"><div class="p1l-top"><div><span class="p1l-badge">Draft only</span><h1 id="mlsP1LegalTitle">Legal / IME workspace</h1></div><button type="button" class="p1l-close" id="mlsP1LegalClose">Close preview</button></div>' +
+      '<div class="p1l-card"><h2>' + (offerRebind ? 'This draft was closed' : 'No patient chosen yet') + '</h2>' +
+      '<div class="p1l-warn" role="alert">' + esc(message || 'Select exactly one active patient, then reopen this preview.') + '</div>' +
+      (nextName ? '<div class="p1l-actions" style="margin-top:10px"><button type="button" class="primary" id="mlsClunkyLegalReopen">Open for ' + esc(nextName) + '</button></div>' : '') +
+      '</div></div>';
     var close = byId('mlsP1LegalClose'); if (close) close.addEventListener('click', closeOverlay);
+    var again = byId('mlsClunkyLegalReopen');
+    if (again && isFn(again.addEventListener)) again.addEventListener('click', function () { openOverlay(); });
+    /* ===== end clunky2-legal-1.0.0 (patient changed) ===== */
   }
   function setStatus(message, error) {
     var node = byId('mlsP1LegalStatus');
@@ -1990,9 +2040,54 @@
   function renderLetterheadPreview() {
     var node = byId('mlsP1LegalLetterheadPreview');
     if (!node) return false;
-    /* the block already prefers the live field, so this previews exactly
-       what Generate will print */
-    node.textContent = letterheadBlock();
+    /* ===== clunky2-legal-1.0.0 (CLUNKY 53) =====
+       MEASURED on an unconfigured account: the preview printed four lines of
+       the form "[The practice name is not configured - set it in Settings
+       before this report is signed]", and the same four lines then topped the
+       finished report — instructions to the doctor, rendered as if they were
+       the letterhead.
+       The GENERATED block is not touched. Printing a visible bracketed refusal
+       instead of a blank line is a deliberate guard (two suites pin it), and a
+       legal report with a silently empty practice name is the worse failure.
+       What changes is the WORKSPACE: the preview names each missing field in
+       three words, and ONE warning above it says what is missing and opens the
+       place that fixes it. */
+    var block = letterheadBlock();
+    var missing = [];
+    var shown = block.split('\n').map(function (line) {
+      var m = /^\[(.+?) is not configured - set it in Settings before this report is signed\]$/.exec(line);
+      if (!m) return line;
+      var what = clean(m[1]).replace(/^The\s+/i, '').replace(/^A\s+/i, '');
+      missing.push(what);
+      return what.charAt(0).toUpperCase() + what.slice(1) + ' — not set';
+    }).join('\n');
+    node.textContent = shown;
+    var host = node.parentNode;
+    if (host && isFn(host.insertBefore)) {
+      var warn = byId('mlsClunkyLegalLhWarn');
+      if (!missing.length) { if (warn && warn.parentNode) warn.parentNode.removeChild(warn); return true; }
+      if (!warn) {
+        warn = document.createElement('div');
+        warn.id = 'mlsClunkyLegalLhWarn';
+        warn.className = 'p1l-warn';
+        warn.setAttribute('role', 'status');
+        host.insertBefore(warn, node);
+      }
+      warn.innerHTML = '';
+      var say = document.createElement('span');
+      say.textContent = 'Letterhead incomplete — ' + missing.length + ' item' + (missing.length === 1 ? '' : 's') +
+        ' still to set (' + missing.join(', ') + '). Until they are set the report prints a bracketed note in their place. ';
+      warn.appendChild(say);
+      var go = document.createElement('button');
+      go.type = 'button';
+      go.id = 'mlsClunkyLegalLhSettings';
+      go.textContent = 'Open Settings';
+      go.addEventListener('click', function () {
+        lhSafe(function () { if (isFn(window.openSettings)) window.openSettings(); });
+      });
+      warn.appendChild(go);
+    }
+    /* ===== end clunky2-legal-1.0.0 (letterhead) ===== */
     return true;
   }
   function dialogFocusable(root) {
