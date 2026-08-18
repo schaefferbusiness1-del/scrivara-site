@@ -149,7 +149,10 @@ const PREEXISTING = {
                   //          /cloned was re-derived from /1p: ScribeFlow.html 2,
                   //          1pScribeFlow.html 2, cloned/index.html 2, and 0 in
                   //          every 1p-feat_*.js and cloned-feat_*.js.
-  '#8b9791': 1,   // "b979" — the write-back walkthrough's muted todo colour,
+  '#8b9791': 4,   // "b979" — the write-back walkthrough's muted todo colour
+                  // (feat_mls_writeback_walkthrough.js), plus residue-athena-1.0.0's
+                  // evidence-derived step chips reusing the palette in both twins
+                  // + derived cloned (2026-08-18: 1 production + 3 residue).
                   //          byte-identical since its introduction in
                   //          d1aa8a98 on 2026-07-27; the b979 bump did not
                   //          edit that asset or this chosen colour.
