@@ -2099,8 +2099,17 @@
                  report that says "it scores lower on my laptop". */
               faceLmState.backend = String(safe(function () { return F.tf.getBackend(); }, '') || '');
             })
-            .then(function () { return F.nets.tinyFaceDetector.loadFromUri(FACE_LM_DIR); })
-            .then(function () { return F.nets.faceLandmark68Net.loadFromUri(FACE_LM_DIR); });
+            /* A HOT RELOAD MUST NOT RE-DOWNLOAD 550 KB OF WEIGHTS. This module's
+               loader can retire and reinstall the whole IIFE, which gives
+               faceLmState a fresh memo — but `window.faceapi` and its already-
+               loaded nets survive, so the only honest work left is to check
+               them. `isLoaded` is face-api's own getter. */
+            .then(function () {
+              return F.nets.tinyFaceDetector.isLoaded ? null : F.nets.tinyFaceDetector.loadFromUri(FACE_LM_DIR);
+            })
+            .then(function () {
+              return F.nets.faceLandmark68Net.isLoaded ? null : F.nets.faceLandmark68Net.loadFromUri(FACE_LM_DIR);
+            });
         }, null);
         if (!chain || typeof chain.then !== 'function') { finish(false, 'the on-device model could not start'); return; }
         chain.then(function () { finish(true, ''); },
