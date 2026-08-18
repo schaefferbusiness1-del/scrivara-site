@@ -65,7 +65,10 @@ const built = derive.generate();
 const CLONED_BUILD = built.token;
 assert(/^cloned-\d{8}-r\d+$/.test(CLONED_BUILD), `/cloned build token is malformed: ${CLONED_BUILD}`);
 
-assert.strictEqual(built.files.length, 17,
+/* 18 = the shell + the bundle + one fork per 1p-feat_*.js. It became 18 on
+   2026-08-18 when 1p-feat_mls_b121_pack.js forked the shared visits/backfill
+   pack for p1-backfill-footer-1.0.0. */
+assert.strictEqual(built.files.length, 18,
   `the derivation must produce the shell, the bundle and one fork per 1p-feat_*.js; got ${built.files.length}`);
 
 const drifted = [];
@@ -83,7 +86,7 @@ assert.deepStrictEqual(drifted, [],
 /* Every 1p fork must have produced a clone counterpart, and vice versa — no
    orphan on either side. */
 const forkSources = derive.forkSources();
-assert.strictEqual(forkSources.length, 15, `expected 15 1p-feat_*.js forks, found ${forkSources.length}`);
+assert.strictEqual(forkSources.length, 16, `expected 16 1p-feat_*.js forks, found ${forkSources.length}`);
 const clonedForksOnDisk = fs.readdirSync(root).filter((n) => /^cloned-feat_[A-Za-z0-9_]+\.js$/.test(n)).sort();
 assert.deepStrictEqual(clonedForksOnDisk, forkSources.map(derive.forkOutName).sort(),
   'the cloned-feat_*.js files on disk are not exactly the derived names of the 1p-feat_*.js forks');
@@ -290,6 +293,6 @@ console.log(
 console.log(
   `PASS /cloned lane contract: ${CLONED_BUILD} — cloned/index.html, cloned-mls-connect.js and ${clonedForksOnDisk.length} ` +
   `cloned-feat_*.js are byte-exactly what scripts/derive-cloned-from-1p.js generates from 1pScribeFlow.html, ` +
-  `1p-mls-connect.js and the 15 1p-feat_*.js (/1p build ${built.p1Build}); ${markerHits} lane-marker gates; ` +
+  `1p-mls-connect.js and the ${forkSources.length} 1p-feat_*.js (/1p build ${built.p1Build}); ${markerHits} lane-marker gates; ` +
   `no 1p-only string, no service worker, production untouched.`
 );
