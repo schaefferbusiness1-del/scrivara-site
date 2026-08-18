@@ -40853,7 +40853,27 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 <script>
 (function () {
   var SIDE_KEY = 'qolDockSide';
-  var SEEDED = 'mlsDockSideSeeded';       /* '1' once this block has had its say */
+  /* THE MARKER IS PER DEPLOYMENT, NOT PER ACCOUNT (2026-08-17).
+     REPRODUCED: seed the account-scoped key the PRODUCTION app writes
+     (sf_u::<account>::qolDockSide = 'bottom') before the bundle runs, and the
+     side rail never appears — the dock lands as a 660x68 bottom bar. Clean
+     account: 102x409 left rail. Same build, same width, one localStorage key
+     apart. That is the owner's "why does this load the OLD UI": production and
+     this lane are the SAME ORIGIN and the SAME ACCOUNT, so uns('qolDockSide')
+     is one shared value, and seedSide() was reading a choice the doctor made in
+     the production app as though he had made it here.
+
+     A per-account marker cannot fix it either, because /1p and /cloned also
+     share the account — whichever loaded first would silence the other. So the
+     marker is keyed by the directory this shell is served from, which makes it
+     per-deployment without naming any lane or route. */
+  function laneTag() {
+    try {
+      var p = String(location.pathname || '/');
+      return p.replace(/[^/]*$/, '') || '/';      /* the directory, not the file */
+    } catch (e) { return '/'; }
+  }
+  var SEEDED = 'mlsDockSideSeeded@' + laneTag(); /* '1' once this block has had its say HERE */
   var ASKED  = 'mlsDockSideAsked';        /* 'moved' | 'kept' — answered either way */
   var WIDE = 1100;                        /* below this a side rail costs more width than it saves */
   var NARROW = 760;                       /* the shell's own phone threshold */
@@ -40895,9 +40915,23 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   function seedSide() {
     if (readAny(SEEDED) === '1') return true;
     if (!dockReady()) { if (++seedTries < 60) setTimeout(seedSide, 500); return false; }
-    /* An existing choice - the doctor's, or an earlier session's - always wins.
-       Section 3 below is what asks him about it, once. */
-    if (SIDE_RE.test(readAny(SIDE_KEY))) { writeAll(SEEDED, '1'); return true; }
+    /* AN EXISTING VALUE IS ONLY A CHOICE IF IT WAS MADE HERE.
+       This used to read "any value in qolDockSide wins". qolDockSide is
+       account-scoped through uns(), and production serves from the same origin
+       to the same account — so on every real signed-in doctor the value was
+       already 'bottom', written by the production app, and the side rail this
+       block exists to seed was never applied even once. MEASURED both ways on
+       one build at 1440px: clean account -> 102x409 LEFT rail; the same page
+       with sf_u::<account>::qolDockSide='bottom' pre-seeded -> 660x68 BOTTOM
+       bar.
+       The lane marker is the record of a choice made in THIS deployment: it is
+       written when the doctor picks a side here (setSide), when the nudge is
+       answered either way, and when this function seeds. A value with no marker
+       beside it came from somewhere else and is not consent.
+       There is deliberately NO check of qolDockSide here any more: the marker
+       test at the top of this function already returns early for a choice made
+       in this deployment, so re-testing the shared value could only re-admit
+       the production one. */
     var w = 0;
     try { w = Number(window.innerWidth) || 0; } catch (e) { w = 0; }
     if (w < WIDE) {
