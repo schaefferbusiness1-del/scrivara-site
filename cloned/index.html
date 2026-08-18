@@ -5355,6 +5355,30 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
             <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
           </ol>
 
+          <!-- ===== notes-idle-1.0.0 — the leftover visit notes, and their receipt ==
+               A pull reads each patient's chart history and then the pulled day's own
+               visit note. When athenaOne is slow the note leg runs out of budget, and
+               before this those rows were simply reported unread and forgotten until
+               someone pulled again. They now sit in one queue that drains itself
+               whenever the doctor stops using the machine — and this is the only
+               place that says what is in it.
+               PHI-FREE: every byte rendered here is a COUNT or a plain-words
+               translation of a closed reason code. No name, DOB or MRN is on the
+               queue at all (the schedule-import engine, notes-idle-1.0.0), so
+               there is nothing here to leak. The panel renders only while it is on
+               screen; a doctor who never opens this fold pays nothing. -->
+          <b style="font-size:13.5px;display:block;margin-top:16px">🕰️ Visit notes still filling in</b>
+          <p class="note" style="margin:4px 0 6px">When a pull cannot finish reading a day's visit notes — usually because athenaOne was slow — MLS keeps the rest and reads them quietly in the background, one at a time, only while you are not using this computer. It pauses the moment you touch anything and picks up again after 20 seconds of quiet. It never brings athenaOne to the front.</p>
+          <div id="mlsNotesIdleRow" style="margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--ink)">
+            <div id="mlsNotesIdleLine">Nothing waiting.</div>
+            <div id="mlsNotesIdleDetail" class="note" style="margin-top:4px"></div>
+            <div class="row tight" style="margin-top:8px">
+              <button class="btn-ghost" style="font-size:13.5px;padding:7px 13px" id="mlsNotesIdleNow" onclick="mlsNotesIdleReadNow()">Read now</button>
+              <button class="btn-ghost" style="font-size:13.5px;padding:7px 13px" id="mlsNotesIdleStop" onclick="mlsNotesIdleStop()">Stop</button>
+            </div>
+          </div>
+          <!-- ===== end notes-idle-1.0.0 (settings row) ===== -->
+
           <b style="font-size:13.5px;display:block;margin-top:16px">Connecting another system to MLS</b>
           <p class="note" style="margin:4px 0 6px">Only if another program in your practice needs to read or write MLS records on its own — a billing system, a scheduler, or a second computer that will not be signed in to MLS. Most practices never need this.</p>
           <div style="margin-top:8px">
@@ -36970,7 +36994,7 @@ function _ptGroupSort(mode){
      production build token lets an already-active root service worker replay
      stale shared modules into this page, and makes diagnostics indistinguishable
      from the production app. This marker changes clone requests only. */
-  var CLONED_BUILD='cloned-20260818-r12';
+  var CLONED_BUILD='cloned-20260818-r13';
   window.__MLS_CLONED=Object.freeze({enabled:true,route:'/cloned/',build:CLONED_BUILD});
   window.__MLS_AV=CLONED_BUILD;
   var CRITICAL=[
@@ -45840,6 +45864,41 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     paintTray();
   }
 
+  /* ===== notes-idle-1.0.0 (a line that UPDATES rather than repeats) =========
+     A background job that reports progress every few seconds is the exact shape
+     this tray was built to survive: forty "Visit notes 1 of 5 / 2 of 5 / ..."
+     rows would push everything else off the list and light the unseen dot
+     forever. A PINNED line is owned by a key, is rewritten in place, and
+     deliberately does NOT bump `unseen` - progress is something you look at,
+     never something that interrupts. It is still an ordinary tray line: same
+     sanitiser, same render, and unpin() lets it fall off when it is finished. */
+  var pinned = {};
+  function pin(key, msg, type) {
+    var k = S(key);
+    if (!k) return false;
+    var text = sanitize(msg);
+    var cur = pinned[k];
+    if (cur && lines.indexOf(cur) >= 0) {
+      cur.text = text; cur.at = hhmm(); cur.kind = S(type) === 'err' ? 'err' : '';
+      paintTray();
+      return true;
+    }
+    var line = { text: text, at: hhmm(), kind: S(type) === 'err' ? 'err' : '', n: 1, pin: k };
+    lines.push(line);
+    if (lines.length > KEEP) lines.shift();
+    pinned[k] = line;
+    paintTray();
+    return true;
+  }
+  function unpin(key) {
+    var k = S(key);
+    if (!pinned[k]) return false;
+    delete pinned[k];
+    paintTray();
+    return true;
+  }
+  /* ===== end notes-idle-1.0.0 (tray pin) ===== */
+
   /* ---------------- THE ONE TOAST -------------------------------------- */
   var activeAt = 0;
   var activeTimer = 0;
@@ -45899,6 +45958,10 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
     classify: classify,
     sanitize: sanitize,
     counts: counts,
+    /* notes-idle-1.0.0: one tray line, owned by a key, rewritten in place. */
+    pin: pin,
+    unpin: unpin,
+    pinnedKeys: function () { var out = []; for (var k in pinned) if (Object.prototype.hasOwnProperty.call(pinned, k)) out.push(k); return out; },
     report: function () {
       var node = el('toast');
       var vis = function (e) {
@@ -45934,7 +45997,7 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
        to start from zero rather than subtract a number it did not choose. */
     resetCounts: function () {
       counts.action = 0; counts.outcome = 0; counts.info = 0; counts.debug = 0;
-      lines.length = 0; unseen = 0; paintTray();
+      lines.length = 0; unseen = 0; pinned = {}; paintTray();
       return true;
     },
     revert: function () {
@@ -45964,6 +46027,86 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 })();
 </script>
 <!-- ===== end quietnotify-1.0.0 ========================================= -->
+<!-- ===== notes-idle-1.0.0 — the receipt renderer =========================
+     The engine lives in the schedule-import module and owns every fact.
+     This is a DUMB renderer: it asks __mlsSI.notesIdle() for a PHI-free receipt
+     (counts, a closed reason code, a plain-words translation) and writes it into
+     the Settings row. It invents no wording of its own beyond joining what the
+     receipt already says, so the tray line and this panel cannot drift.
+
+     It holds NO TIMER. The engine calls window.__mlsNotesIdleRender() on every
+     state change it makes (which, while there is work, is once per Worker tick),
+     and the disclosure's own `toggle` paints it once on open. A doctor who never
+     opens this fold pays exactly nothing. -->
+<script>
+/* notes-idle-1.0.0 (renderer) */
+(function () {
+  'use strict';
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function el(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function si() { return safe(function () { return window.__mlsSI; }, null); }
+  function receipt() {
+    var a = si();
+    if (!a || typeof a.notesIdle !== 'function') return null;
+    return safe(function () { return a.notesIdle(); }, null);
+  }
+  function detailOf(r) {
+    var bits = [];
+    if (r.queued) bits.push(r.queued + ' waiting');
+    if (r.read) bits.push(r.read + ' read');
+    if (r.noNote) bits.push(r.noNote + ' with no note in Athena');
+    if (r.gaveUp) bits.push(r.gaveUp + ' given up');
+    var out = bits.join(' · ');
+    if (r.lastPlain) out += (out ? ' — ' : '') + 'last answer: ' + r.lastPlain;
+    return out;
+  }
+  function render() {
+    var host = el('mlsNotesIdleRow');
+    if (!host) return false;
+    var lineEl = el('mlsNotesIdleLine'), detEl = el('mlsNotesIdleDetail');
+    var r = receipt();
+    if (!r || !r.total) {
+      if (lineEl) lineEl.textContent = 'Nothing waiting.';
+      if (detEl) detEl.textContent = '';
+      return true;
+    }
+    if (lineEl) lineEl.textContent = r.line || '';
+    if (detEl) detEl.textContent = detailOf(r);
+    var stopBtn = el('mlsNotesIdleStop');
+    if (stopBtn) stopBtn.textContent = r.stopped ? 'Resume' : 'Stop';
+    return true;
+  }
+  window.__mlsNotesIdleRender = render;
+  /* "Read now" waives the 20-second idle wait for ONE read. It does NOT waive
+     the rest of the gate: a pull, a recording, a draft-all, an open Athena
+     review or another engine on Athena still refuse, because a person asking is
+     not a reason to open a chart underneath one of those. */
+  window.mlsNotesIdleReadNow = function () {
+    var a = si();
+    if (!a || typeof a.notesIdleReadNow !== 'function') return false;
+    safe(function () { a.notesIdleReadNow(); });
+    render();
+    return true;
+  };
+  window.mlsNotesIdleStop = function () {
+    var a = si();
+    if (!a) return false;
+    var r = receipt();
+    if (r && r.stopped && typeof a.notesIdleResume === 'function') safe(function () { a.notesIdleResume(); });
+    else if (typeof a.notesIdleStop === 'function') safe(function () { a.notesIdleStop(); });
+    render();
+    return true;
+  };
+  function boot() {
+    var d = el('advIntegrations');
+    if (d) safe(function () { d.addEventListener('toggle', render, false); });
+    render();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+<!-- ===== end notes-idle-1.0.0 (renderer) ================================ -->
 <!-- ===== dockcal-1.0.0 — the dock says "Calendar", not "Day" =================
      Owner, 2026-08-18: "where did the calendar view go? it disappeared from the
      bottom tab thing." It never left: the calm shell's first dock destination

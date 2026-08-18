@@ -2668,6 +2668,12 @@
     var st = pullState(); if (st && st.running) return true;
     try { if (window.__mlsProvMonthPull && window.__mlsProvMonthPull.running) return true; } catch (e) {}
     try { if (window.__mlsImportChainFix && window.__mlsImportChainFix.bulk && window.__mlsImportChainFix.bulk.running) return true; } catch (e) {}
+    /* notes-idle-1.0.0: the OTHER half of the one-engine rule. The idle
+       day-note catch-up (cloned-feat_mls_schedimport_exact.js) refuses to start
+       while THIS backfill is running; without this line the refusal is
+       one-sided and both engines could open a chart at the same moment.
+       It is a read of a boolean - no message, no lease, no round trip. */
+    try { if (window.__mlsNotesIdle && typeof window.__mlsNotesIdle.reading === 'function' && window.__mlsNotesIdle.reading()) return true; } catch (e) {}
     if (Date.now() < _foreignBusyUntil) return true; /* cohort builder / grab / copy-visits etc. (flagless engines) */
     return false;
   }

@@ -1367,7 +1367,7 @@
     return censusListHasContent(p.bmi);
   }
   /* ===== cap-1.0.0 (a captured chart is content, even before the AI runs) =====
-     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260818-r12, ext
+     MEASURED on the owner's /1p 2026-08-17 (build cloned-20260818-r13, ext
      3.0.62, TODAY, bodies OFF, 16 rows): 9 rows read their chart out of athena
      successfully and then died on "502 Upstream request failed" - the BACKEND
      AI (aiCallRaw -> /api/complete, called by _parsePatientChart) was down
@@ -5681,6 +5681,10 @@
         sDv.dayVerdict.at = Date.now();
       });
       safe(function () { var day = tnBatchDay(); if (day) recordHistoryVerdict(day, receipt, rows.length); });
+      /* notes-idle-1.0.0 (feed 2 of 2): the immediate round has now had its two
+         bounded attempts, so every row it did NOT recover is a leftover. Rows it
+         DID recover are dropped from the persistent queue by the same call. */
+      safe(function () { niSyncFromReceipt(receipt, tnBatchDay()); });
     }
     function tnDeferRow(entry, day, force) {
       if (!entry || !day || sweepDepth) return false;
@@ -5762,6 +5766,11 @@
       /* dnd-1.0.0: the receipt states the day it read, so a later Retry round
          rebuilt from receipt.retry can stay on that day without guessing. */
       receipt.day = batchScopeDay;
+      /* notes-idle-1.0.0 (feed 1 of 2): the rows the pass refused and did NOT
+         hand to the immediate deferred round. A row _tnDefer still owns is
+         skipped here by niSyncFromReceipt and reaches the queue at tnSettleDay,
+         after its two bounded attempts are spent. */
+      safe(function () { niSyncFromReceipt(receipt, tnBatchDay()); });
       receipt.exactIdentityVerified = receipt.retry.length === 0 && receipt.patients.length === rows.length && receipt.patients.every(function (p) { return p && p.identityVerified === true; });
       /* An empty verified provider day has no patient history targets and is
          vacuously exact; unresolved/name-only rows remain in retry and fail. */
@@ -6576,6 +6585,607 @@
     }, function () { _tnDefer.running = false; return null; });
   }
   /* ===== end p1-todaynote-deferred-retry-1.0.0 ===== */
+  /* ===== notes-idle-1.0.0 (the LEFTOVER visit notes fill in quietly) ========
+     OWNER, 2026-08-18: "I want it to just do histories like it's doing and then
+     when it's done and says done, secretly in the background it is going to get
+     the day visit notes. But if the person goes to do something it will PAUSE
+     the visit notes and then restart and get them all in background when idle."
+     Re-scoped the same day, after the inline leg was measured working:
+     "wait it worked so make sure not to jump me to athena but if u have a fix
+     that's fast no need for background pulls."
+
+     SO THIS IS THE LEFTOVER PATH, NOT A REPLACEMENT. The pull's own day-note
+     leg is untouched: it still reads inside the pass, under dnp2-1.0.0's
+     budget, and dnbf-1.0.0's immediate deferred round still gets its two
+     bounded attempts the moment the pull releases the lease. What was missing
+     is what happens to a row AFTER all of that has been spent: it was simply
+     reported "could not be read" and forgotten, forever, until the doctor ran
+     another pull. Those rows now land in ONE persistent queue that drains
+     itself when the doctor is not using the machine.
+
+     THERE IS NO THIRD QUEUE. Exactly three things can drive Athena from this
+     app and each one refuses while another is driving:
+       _tnDefer                (this file)  the IMMEDIATE round, 2 attempts,
+                                            in-memory, owned by the pull.
+       notes-idle (here)                    the PERSISTENT leftover, idle-gated.
+       __mlsVisitsBackfill     (b121 pack)  whole visit LISTS, not day notes.
+     notes-idle refuses while _tnDefer still owns rows, refuses while the b121
+     backfill is running, and b121's own anyPullRunning() was taught to see
+     notes-idle (cloned-feat_mls_b121_pack.js) - both directions, so neither can
+     open a chart the other is reading.
+
+     IT NEVER JUMPS THE DOCTOR TO ATHENA. Nothing in this block activates,
+     focuses or navigates a tab. The ONLY two things it posts are the
+     lease-free presence probe (mlsAthenaPresence) and the ordinary scoped read
+     the pull itself uses (vp.runForPatient with onlyDate). A hidden athenaOne
+     that refuses is a REFUSAL WITH A CODE, retried later - never a reason to
+     bring a window forward.
+
+     THE GATE IS FAIL-CLOSED. Read starts only when every one of these is true:
+     no user input in this tab for NI_IDLE_MS, no pull running here or in
+     another tab, the managed Web Lock is free, no recording, no op-note
+     draft-all, no Athena review sheet open, no other engine on Athena, and
+     presence proves athenaOne is alive. Any user input flips the state to
+     `paused` on the very next tick; a read already in flight is NOT killed
+     (it has its own absolute deadline and killing it would lose the work),
+     but no further read starts until the doctor has been idle again.
+
+     THE CLOCK IS A WORKER TIMER. Main-thread timers freeze in a hidden tab, and
+     "in the background while you work" is exactly the hidden-tab case. Same
+     pattern as p1-phone-sync-1.0.0, with setInterval as the fallback where
+     Worker construction is refused. A hidden tab is still IDLE - visibility is
+     deliberately not part of the gate.
+
+     PHI-FREE BY CONSTRUCTION. The queue carries {patientId, day, attempts,
+     code} and nothing else - no name, DOB or MRN, exactly like dnbf-1.0.0's
+     receipt - and every visible string is counts plus a closed code vocabulary
+     translated to plain words. ES5, ASCII, no rAF. */
+  var NI_VERSION = "notes-idle-1.0.0";
+  var NI_IDLE_MS = 20000;            /* the doctor is "idle" after this much quiet */
+  var NI_TICK_MS = 3000;             /* the Worker clock; the brief's 2-5 s band */
+  var NI_MAX_ATTEMPTS = 3;
+  var NI_BACKOFF_MS = [30000, 120000, 600000];
+  var NI_READ_DEADLINE_MS = 45000;   /* DN_ROW_DEADLINE_MS, off-pass */
+  var NI_PRESENCE_MS = 3500;
+  var NI_LOCK_QUERY_MS = 1200;
+  var NI_MAX_ROWS = 200;
+  var NI_KEEP_DAYS = 7;
+  var NI_PULL_LOCK = "mls-managed-athena-pull";
+  var NI_STORE_SUFFIX = "p1NotesIdleQueueV1";
+  var NI_ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart", "scroll", "input"];
+  /* the ONLY code that stops a row for good: there is nothing in Athena to
+     read, so a retry can only re-prove the same absence. Everything else is
+     retried on the ladder and then honestly given up after NI_MAX_ATTEMPTS. */
+  var NI_TERMINAL_CODES = { "no-encounter": 1 };
+  /* the closed code vocabulary (tnReasonCode's, verbatim) in plain words. A
+     surface may render these; it may never render a reader message. */
+  var NI_PLAIN = {
+    "no-encounter": "no visit note in Athena for that day",
+    "safety-stop": "Athena showed the visit but not its full note; nothing stored",
+    "deadline": "Athena was slow; will retry when idle",
+    "no-athena-tab": "athenaOne was not open",
+    "pull-in-flight": "MLS was busy with another Athena read",
+    "pass-budget-exhausted": "the pull ran out of its note budget",
+    "surface-race": "athenaOne was showing a different patient",
+    "extension-too-old": "MLS Assist needs updating",
+    "reader-unavailable": "the visit reader was not loaded",
+    "other": "athenaOne did not return the note",
+    "unknown": "athenaOne did not return the note"
+  };
+  function niPlain(code) {
+    var c = String(code || "unknown");
+    return NI_PLAIN[c] || NI_PLAIN.unknown;
+  }
+  var _ni = {
+    rows: [], emitted: {}, stopped: false, loaded: false, key: null,
+    state: "idle", gateReason: "nothing-due",
+    lastActivityAt: 0, reading: false, listening: false,
+    reads: 0, ticks: 0, lastCode: "", lastAt: 0,
+    wk: null, wkUrl: null, iv: null
+  };
+  function niKey() {
+    return safe(function () { return isFn(window.uns) ? String(window.uns(NI_STORE_SUFFIX) || "") : ""; }, "");
+  }
+  function niToday() { return safe(function () { return acctTodayKey() || ""; }, ""); }
+  function niCutoffDay() {
+    var t = niToday();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return "";
+    var ms = Date.UTC(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1, Number(t.slice(8, 10))) - (NI_KEEP_DAYS * 86400000);
+    var d = new Date(ms);
+    function two(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getUTCFullYear() + "-" + two(d.getUTCMonth() + 1) + "-" + two(d.getUTCDate());
+  }
+  var NI_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function niDayLabel(day) {
+    var d = String(day || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    var mi = Number(d.slice(5, 7)) - 1;
+    if (!(mi >= 0 && mi < 12)) return d;
+    return NI_MONTHS[mi] + " " + String(Number(d.slice(8, 10)));
+  }
+  /* THE KEY IS RE-ASKED EVERY TIME, and a change means a different account.
+     This module loads BEFORE anyone signs in, and `uns()` answers a device
+     namespace until a session is owned - so caching "loaded" against the first
+     answer would silently strand the doctor's real queue behind an anonymous
+     one. On a change: stop, forget, and load the account whose key it now is.
+     That is also the re-login path the owner asked to survive. */
+  function niLoad() {
+    var k = niKey();
+    if (_ni.loaded && _ni.key === k) return _ni;
+    if (_ni.loaded && _ni.key !== k) {
+      niStopTimer();
+      _ni.rows = []; _ni.emitted = {}; _ni.stopped = false;
+      _ni.state = "idle"; _ni.gateReason = "nothing-due"; _ni.lastCode = ""; _ni.lastAt = 0;
+    }
+    _ni.loaded = true;
+    _ni.key = k;
+    if (!k) return _ni;
+    var raw = safe(function () { return window.localStorage.getItem(k); }, null);
+    var x = safe(function () { return JSON.parse(raw || "null"); }, null);
+    if (!x || x.v !== 1) return _ni;
+    var cutoff = niCutoffDay();
+    _ni.rows = [];
+    safe(function () {
+      (x.rows || []).forEach(function (r) {
+        if (!r || !r.p || !r.d) return;
+        if (cutoff && String(r.d) < cutoff) return;
+        if (_ni.rows.length >= NI_MAX_ROWS) return;
+        _ni.rows.push({ p: String(r.p), d: String(r.d), a: Number(r.a || 0),
+          c: String(r.c || "unknown"), s: String(r.s || "queued"), n: Number(r.n || 0) });
+      });
+    });
+    safe(function () {
+      var em = x.emitted || {};
+      for (var kk in em) if (Object.prototype.hasOwnProperty.call(em, kk)) {
+        if (!cutoff || String(kk) >= cutoff) _ni.emitted[String(kk)] = 1;
+      }
+    });
+    _ni.stopped = x.stopped === true;
+    return _ni;
+  }
+  function niSave() {
+    var k = niKey();
+    if (!k) return false;
+    return safe(function () {
+      window.localStorage.setItem(k, JSON.stringify({ v: 1, at: Date.now(), stopped: _ni.stopped === true,
+        emitted: _ni.emitted,
+        rows: _ni.rows.map(function (r) { return { p: r.p, d: r.d, a: r.a, c: r.c, s: r.s, n: r.n }; }) }));
+      return true;
+    }, false);
+  }
+  function niFind(pid, day) {
+    for (var i = 0; i < _ni.rows.length; i++) {
+      if (_ni.rows[i].p === String(pid) && _ni.rows[i].d === String(day)) return _ni.rows[i];
+    }
+    return null;
+  }
+  /* THE DROP RULE. A row leaves the queue the moment the day's note is proven
+     to be on the record, whoever put it there - this pull, another tab, the
+     b121 backfill, or a read the doctor did by hand. Two independent proofs,
+     and the ledger one is checked FIRST because it is the reader's own receipt:
+       (a) the day ledger recorded todayNoteReadAt for this patient on this day;
+       (b) the patient record holds a DATED visit for that day that is not the
+           pull's own {type:'Chart summary'} row (that row is written by the
+           history leg and proves nothing about the note). */
+  function niNoteOnFile(pid, day) {
+    var d = normDate(day || "") || "";
+    if (!d || !pid) return false;
+    var byLedger = safe(function () {
+      var x = readIndex(d), h = x && x.history;
+      return !!(h && Number((h.todayNoteReadAt || {})[String(pid)] || 0) > 0);
+    }, false);
+    if (byLedger) return true;
+    return safe(function () {
+      var p = patientById(pid);
+      if (!p || !Array.isArray(p.visits)) return false;
+      for (var i = 0; i < p.visits.length; i++) {
+        var v = p.visits[i];
+        if (!v) continue;
+        if (/^\s*chart summary\s*$/i.test(String(v.type || ""))) continue;
+        if ((normDate(v.date || v.serviceDate || v.dateISO || "") || "") === d) return true;
+      }
+      return false;
+    }, false);
+  }
+  function niEnqueue(pid, day, code) {
+    niLoad();
+    var p = String(pid || ""), d = normDate(day || "") || "";
+    if (!p || !d) return false;
+    var c = String(code || "unknown");
+    if (NI_TERMINAL_CODES[c] === 1) {
+      /* honest, and it stops here: there is no note to fetch. It still rides
+         the queue so the receipt and the final line can COUNT it. */
+      var t = niFind(p, d);
+      if (t) { t.s = "no-note"; t.c = c; return false; }
+      if (_ni.rows.length >= NI_MAX_ROWS) return false;
+      _ni.rows.push({ p: p, d: d, a: 0, c: c, s: "no-note", n: 0 });
+      niSave();
+      return false;
+    }
+    if (niNoteOnFile(p, d)) { niDrop(p, d, "already-on-file"); return false; }
+    var hit = niFind(p, d);
+    if (hit) {
+      if (hit.s === "read" || hit.s === "no-note") return false;
+      hit.c = c;
+      /* a row that gave up gets ONE fresh life per pull. A pull is a deliberate
+         act by the doctor and a fresh refusal is fresh evidence; without this a
+         row that lost three attempts on Monday could never be read again. The
+         ladder starts over, so this can never become an unbounded retry. */
+      if (hit.s === "gave-up") { hit.s = "queued"; hit.a = 0; hit.n = 0; delete _ni.emitted[d]; niSave(); niKick(); return true; }
+      niSave();
+      return false;
+    }
+    if (_ni.rows.length >= NI_MAX_ROWS) return false;
+    _ni.rows.push({ p: p, d: d, a: 0, c: c, s: "queued", n: 0 });
+    /* a day that gains new work has not finished, whatever it said before */
+    delete _ni.emitted[d];
+    niSave();
+    niKick();
+    return true;
+  }
+  function niDrop(pid, day, why) {
+    niLoad();
+    var hit = niFind(pid, day);
+    if (!hit) return false;
+    if (hit.s === "read" || hit.s === "no-note") return false;
+    hit.s = "read";
+    hit.c = String(why || "already-on-file");
+    niSave();
+    return true;
+  }
+  /* THE ONE FEED. Called from finalizeVerdict (the rows the pull refused and
+     never deferred) and from tnSettleDay (the rows the immediate deferred round
+     has now finished with). A row still OWNED by _tnDefer is skipped - it has
+     not finished, and enqueuing it here would be the third queue this block
+     exists to prevent. */
+  function niSyncFromReceipt(receipt, day) {
+    if (!receipt) return 0;
+    if (safe(function () { return window.__mlsPullStopRequested === true; }, false)) return 0;
+    var d = normDate(day || receipt.day || "") || "";
+    if (!d) return 0;
+    var added = 0;
+    safe(function () {
+      (receipt.patients || []).forEach(function (p) {
+        if (!p || !p.patientId) return;
+        if (p.todayNote === true || p.todayNote === "already-read") { niDrop(p.patientId, d, "read-in-pull"); return; }
+        if (p.todayNote === "not-yet" || p.todayNote === "future-day") return;
+        if (p.todayNote !== false) return;
+        if (p.todayNoteDeferred === true) return;   /* still _tnDefer's row */
+        if (niEnqueue(p.patientId, d, tnReasonCode(p.todayNoteReason))) added++;
+      });
+    });
+    /* repaint on every sync, not only when rows were ADDED: a sync that only
+       drops recovered rows is exactly the moment the surface should stop
+       claiming those notes are still owed. */
+    niSurface();
+    return added;
+  }
+  /* ---- the gate ---------------------------------------------------------- */
+  function niIdleMs() { return Math.max(0, Date.now() - Number(_ni.lastActivityAt || 0)); }
+  function niDue(row, force) {
+    if (!row || row.s !== "queued") return false;
+    if (force === true) return true;
+    return !(Number(row.n || 0) > Date.now());
+  }
+  function niNextRow(force) {
+    for (var i = 0; i < _ni.rows.length; i++) if (niDue(_ni.rows[i], force)) return _ni.rows[i];
+    return null;
+  }
+  function niOpenRows() {
+    var n = 0;
+    for (var i = 0; i < _ni.rows.length; i++) if (_ni.rows[i].s === "queued") n++;
+    return n;
+  }
+  /* every synchronous refusal, in one place, in a closed vocabulary. `force`
+     (the Read now button) waives the IDLE threshold and the backoff ladder and
+     NOTHING else - a doctor asking is not permission to drive Athena while a
+     pull, a recording or another engine is on it. */
+  function niGate(force) {
+    niLoad();
+    if (_ni.stopped === true) return { open: false, reason: "stopped" };
+    if (_ni.reading === true) return { open: false, reason: "reading" };
+    if (!niNextRow(force === true)) return { open: false, reason: "nothing-due" };
+    if (force !== true && niIdleMs() < NI_IDLE_MS) return { open: false, reason: "user-active" };
+    if (pullRunning === true || !tnAthenaFree()) return { open: false, reason: "pull-running" };
+    if (safe(function () { return !!(window.__mlsDaySwitch && isFn(window.__mlsDaySwitch.isBusy) && window.__mlsDaySwitch.isBusy()); }, false)) return { open: false, reason: "day-switch-busy" };
+    if (safe(function () { return !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running); }, false)) return { open: false, reason: "history-pull-running" };
+    if (_tnDefer.running === true || _tnDefer.queue.length > 0) return { open: false, reason: "deferred-round-active" };
+    if (safe(function () { var b = window.__mlsVisitsBackfill; return !!(b && b.state && (b.state.running || b.state.inFlight)); }, false)) return { open: false, reason: "visits-backfill-running" };
+    if (safe(function () { var b = document.getElementById("captureBtn"); return !!(b && b.classList && b.classList.contains("recording")); }, false)) return { open: false, reason: "recording" };
+    if (safe(function () { var t = window.__mlsTplPrepFix; return !!(t && isFn(t.isDrafting) && t.isDrafting()); }, false)) return { open: false, reason: "opnote-drafting" };
+    if (safe(function () { return !!document.getElementById("mlsAthenaUnifiedConfirm"); }, false)) return { open: false, reason: "athena-review-open" };
+    if (safe(function () { return resumeBusyElsewhere(); }, false)) return { open: false, reason: "pull-running-other-tab" };
+    return { open: true, reason: "" };
+  }
+  /* the ASYNCHRONOUS half of the gate, asked immediately before a read and
+     never cached: a Web Lock held by ANOTHER TAB is invisible to every
+     synchronous signal above. An environment with no navigator.locks cannot
+     prove the lock is held, and says so by answering false - the cross-tab
+     busy stamp above is the fallback that still refuses in that case. */
+  function niWebLockHeld() {
+    return new Promise(function (res) {
+      var lk = safe(function () { return window.navigator && window.navigator.locks; }, null);
+      if (!lk || !isFn(lk.query)) { res(false); return; }
+      var done = false;
+      function fin(v) { if (done) return; done = true; res(v === true); }
+      safe(function () { setTimeout(function () { fin(false); }, NI_LOCK_QUERY_MS); });
+      safe(function () {
+        Promise.resolve(lk.query()).then(function (q) {
+          var held = false;
+          safe(function () {
+            ["held", "pending"].forEach(function (side) {
+              ((q && q[side]) || []).forEach(function (h) { if (h && String(h.name) === NI_PULL_LOCK) held = true; });
+            });
+          });
+          fin(held);
+        }, function () { fin(false); });
+      });
+    });
+  }
+  /* ---- the read ---------------------------------------------------------- */
+  function niReadOk(res) {
+    return !!(res && (res.ok === true || typeof res === "number" || res.visits != null));
+  }
+  function niReadOnce(row) {
+    var vp = safe(function () { return window.__mlsVisitSavePref; }, null);
+    var p = patientById(row.p);
+    if (!(vp && isFn(vp.runForPatient) && p)) return Promise.resolve({ ok: false, reason: "reader-unavailable" });
+    return boundedUntil(
+      Promise.resolve().then(function () { return vp.runForPatient(p, function () {}, { onlyDate: String(row.d) }); }),
+      Date.now() + NI_READ_DEADLINE_MS, "pulled-day-note-deadline-exceeded")
+      .then(function (r) { return r; }, function (err) {
+        return { ok: false, reason: String((err && err.message) || err || "deferred-read-failed").slice(0, 80) };
+      });
+  }
+  function niSettleRow(row, ok, reason) {
+    if (ok === true) {
+      row.s = "read"; row.c = "read"; row.n = 0;
+      _ni.lastCode = "read";
+    } else {
+      var code = tnReasonCode(reason);
+      row.c = code;
+      _ni.lastCode = code;
+      if (NI_TERMINAL_CODES[code] === 1) { row.s = "no-note"; row.n = 0; }
+      else if (row.a >= NI_MAX_ATTEMPTS) { row.s = "gave-up"; row.n = 0; }
+      else { row.s = "queued"; row.n = Date.now() + NI_BACKOFF_MS[Math.min(row.a - 1, NI_BACKOFF_MS.length - 1)]; }
+    }
+    _ni.lastAt = Date.now();
+    niSave();
+  }
+  function niRunOne(force) {
+    var gate = niGate(force);
+    _ni.gateReason = gate.reason;
+    if (!gate.open) {
+      _ni.state = (gate.reason === "stopped") ? "stopped"
+        : (gate.reason === "user-active") ? "paused"
+        : (gate.reason === "nothing-due") ? (niOpenRows() ? "waiting" : (_ni.rows.length ? "done" : "idle"))
+        : (gate.reason === "reading") ? "reading" : "waiting";
+      niSurface();
+      return Promise.resolve(null);
+    }
+    var row = niNextRow(force === true);
+    if (!row) { _ni.state = "waiting"; return Promise.resolve(null); }
+    /* the drop rule runs again HERE: minutes may have passed since the row was
+       queued and somebody else may have filed the note in the meantime. */
+    if (niNoteOnFile(row.p, row.d)) { row.s = "read"; row.c = "already-on-file"; niSave(); niSurface(); return Promise.resolve(null); }
+    _ni.reading = true;
+    _ni.state = "reading";
+    niSurface();
+    return niWebLockHeld().then(function (held) {
+      if (held) { _ni.reading = false; _ni.state = "waiting"; _ni.gateReason = "web-lock-held"; niSurface(); return null; }
+      /* re-ask the synchronous gate: the lock query is a round trip and the
+         doctor may have touched the machine while it was in flight. */
+      var g2 = niGate(force);
+      if (!g2.open && g2.reason !== "reading") {
+        _ni.reading = false; _ni.gateReason = g2.reason;
+        _ni.state = (g2.reason === "user-active") ? "paused" : "waiting";
+        niSurface();
+        return null;
+      }
+      return p1PresenceProbe(NI_PRESENCE_MS).then(function (presence) {
+        if (!p1PresenceSaysAthenaLives(presence)) {
+          _ni.reading = false; _ni.state = "waiting"; _ni.gateReason = "athena-absent";
+          /* NOT an attempt: nothing was asked of Athena, so nothing was spent
+             and the row keeps its whole ladder. It IS pushed out by one rung of
+             the ladder, though - otherwise an athenaOne that is simply closed
+             for the afternoon would earn a presence probe every three seconds
+             for hours. */
+          row.n = Date.now() + NI_BACKOFF_MS[0];
+          niSave();
+          niSurface();
+          return null;
+        }
+        row.a = Number(row.a || 0) + 1;
+        _ni.reads++;
+        niSave();
+        return niReadOnce(row).then(function (res) {
+          var ok = niReadOk(res);
+          niSettleRow(row, ok, ok ? "" : String((res && res.reason) || "scoped-read-unverified"));
+          _ni.reading = false;
+          _ni.state = niOpenRows() ? "waiting" : "done";
+          niSurface();
+          return { ok: ok, code: row.c };
+        }, function () {
+          niSettleRow(row, false, "deferred-read-failed");
+          _ni.reading = false;
+          _ni.state = niOpenRows() ? "waiting" : "done";
+          niSurface();
+          return { ok: false, code: row.c };
+        });
+      }, function () { _ni.reading = false; _ni.state = "waiting"; _ni.gateReason = "athena-absent"; niSurface(); return null; });
+    }, function () { _ni.reading = false; _ni.state = "waiting"; _ni.gateReason = "web-lock-held"; niSurface(); return null; });
+  }
+  function niTick() {
+    _ni.ticks++;
+    niLoad();
+    if (!niOpenRows() && !_ni.reading) {
+      var g = niGate(false);
+      _ni.gateReason = g.reason;
+      _ni.state = _ni.stopped ? "stopped" : (_ni.rows.length ? "done" : "idle");
+      niSurface();
+      niStopTimer();
+      return Promise.resolve(null);
+    }
+    return niRunOne(false);
+  }
+  /* ---- the clock (Worker; a hidden tab is still idle) --------------------- */
+  function niStartTimer() {
+    if (_ni.wk || _ni.iv !== null) return;
+    _ni.wkUrl = safe(function () {
+      return window.URL.createObjectURL(new window.Blob(
+        ["onmessage=function(e){setInterval(function(){postMessage(1)},e.data)}"],
+        { type: "application/javascript" }));
+    }, null);
+    if (_ni.wkUrl) {
+      _ni.wk = safe(function () {
+        var w = new window.Worker(_ni.wkUrl);
+        w.onmessage = function () { safe(niTick); };
+        w.postMessage(NI_TICK_MS);
+        return w;
+      }, null);
+    }
+    if (!_ni.wk) {
+      safe(function () { if (_ni.wkUrl) window.URL.revokeObjectURL(_ni.wkUrl); });
+      _ni.wkUrl = null;
+      var h = safe(function () { return setInterval(function () { safe(niTick); }, NI_TICK_MS); }, null);
+      /* a timer handle of 0 is FALSY - compare with !== null, the phone-sync law */
+      _ni.iv = (h === undefined || h === null) ? null : h;
+    }
+  }
+  function niStopTimer() {
+    safe(function () { if (_ni.wk) _ni.wk.terminate(); });
+    _ni.wk = null;
+    safe(function () { if (_ni.wkUrl) window.URL.revokeObjectURL(_ni.wkUrl); });
+    _ni.wkUrl = null;
+    if (_ni.iv !== null) { safe(function () { clearInterval(_ni.iv); }); _ni.iv = null; }
+  }
+  function niTimerKind() { return _ni.wk ? "worker" : (_ni.iv !== null ? "interval" : "none"); }
+  function niOnActivity() {
+    _ni.lastActivityAt = Date.now();
+    if (_ni.state === "waiting" || _ni.state === "reading") { _ni.state = "paused"; _ni.gateReason = "user-active"; }
+  }
+  function niListen() {
+    if (_ni.listening) return;
+    _ni.listening = true;
+    _ni.lastActivityAt = Date.now();   /* a page that just loaded is not idle yet */
+    safe(function () {
+      NI_ACTIVITY_EVENTS.forEach(function (t) {
+        document.addEventListener(t, niOnActivity, { capture: true, passive: true });
+      });
+    });
+  }
+  function niKick() {
+    if (_ni.stopped === true) return false;
+    if (!niOpenRows()) return false;
+    niListen();
+    niStartTimer();
+    return true;
+  }
+  /* ---- the surface (counts and codes; never a name) ----------------------- */
+  function niDayOf() {
+    var best = "";
+    for (var i = 0; i < _ni.rows.length; i++) if (_ni.rows[i].d > best) best = _ni.rows[i].d;
+    return best;
+  }
+  function niCensus(day) {
+    var c = { total: 0, read: 0, noNote: 0, gaveUp: 0, queued: 0 };
+    for (var i = 0; i < _ni.rows.length; i++) {
+      var r = _ni.rows[i];
+      if (day && r.d !== day) continue;
+      c.total++;
+      if (r.s === "read") c.read++;
+      else if (r.s === "no-note") c.noNote++;
+      else if (r.s === "gave-up") c.gaveUp++;
+      else c.queued++;
+    }
+    return c;
+  }
+  function niLine() {
+    var day = niDayOf();
+    if (!day) return "";
+    var c = niCensus(day);
+    var head = "Visit notes for " + niDayLabel(day) + " — " + c.read + " of " + c.total + " read";
+    if (_ni.stopped === true) return head + " · stopped";
+    if (c.queued === 0) return head + " · done";
+    if (_ni.state === "paused") return head + " · paused while you work";
+    if (_ni.state === "reading") return head + " · reading now";
+    if (_ni.gateReason === "athena-absent") return head + " · waiting for athenaOne";
+    return head + " · waiting for a quiet moment";
+  }
+  function niFinalLine(day) {
+    var c = niCensus(day);
+    var bits = [c.read + " read"];
+    if (c.noNote) bits.push(c.noNote + " had no note in Athena");
+    if (c.gaveUp) bits.push(c.gaveUp + " could not be read (" + niPlain(_ni.lastCode) + ")");
+    return "Visit notes for " + niDayLabel(day) + ": " + bits.join(", ");
+  }
+  function niSurface() {
+    var day = niDayOf();
+    if (!day) return false;
+    var c = niCensus(day);
+    safe(function () {
+      var q = window.__mlsQuietNotify;
+      if (q && isFn(q.pin)) {
+        if (c.queued === 0 && _ni.emitted[day] === 1) q.unpin("notes-idle");
+        else q.pin("notes-idle", niLine(), "");
+      }
+    });
+    /* ONE toast per day, and only when the day is finished AND this engine
+       actually did something. A day whose every row was "no visit note in
+       Athena" was already stated in plain words on the DONE line, and a second
+       line saying it again is the noise the owner asked to be rid of - so the
+       toast is earned by at least one real attempt, never by bookkeeping. */
+    var worked = false;
+    for (var wi = 0; wi < _ni.rows.length; wi++) if (_ni.rows[wi].d === day && Number(_ni.rows[wi].a || 0) > 0) { worked = true; break; }
+    if (c.queued === 0 && c.total > 0 && worked && _ni.emitted[day] !== 1) {
+      _ni.emitted[day] = 1;
+      niSave();
+      safe(function () { if (isFn(window.toast)) window.toast(niFinalLine(day), ""); });
+    }
+    safe(function () { if (isFn(window.__mlsNotesIdleRender)) window.__mlsNotesIdleRender(); });
+    return true;
+  }
+  function niReceipt() {
+    niLoad();
+    var day = niDayOf(), c = niCensus(day);
+    return { version: NI_VERSION, state: _ni.state, gateReason: String(_ni.gateReason || ""),
+      day: day, dayLabel: niDayLabel(day), line: niLine(),
+      total: c.total, read: c.read, noNote: c.noNote, gaveUp: c.gaveUp, queued: c.queued,
+      stopped: _ni.stopped === true, reading: _ni.reading === true,
+      idleMs: niIdleMs(), idleThresholdMs: NI_IDLE_MS,
+      reads: Number(_ni.reads || 0), ticks: Number(_ni.ticks || 0),
+      lastCode: String(_ni.lastCode || ""), lastPlain: _ni.lastCode ? niPlain(_ni.lastCode) : "",
+      lastAt: Number(_ni.lastAt || 0), timerKind: niTimerKind(),
+      rows: _ni.rows.map(function (r) { return { patientId: r.p, day: r.d, attempts: Number(r.a || 0), code: String(r.c || ""), state: String(r.s || ""), nextAt: Number(r.n || 0) }; }) };
+  }
+  function niStop(why) {
+    niLoad();
+    _ni.stopped = true;
+    _ni.state = "stopped";
+    _ni.gateReason = String(why || "stopped-by-user");
+    niStopTimer();
+    niSave();
+    niSurface();
+    return true;
+  }
+  function niResume() {
+    niLoad();
+    _ni.stopped = false;
+    _ni.gateReason = "";
+    _ni.state = niOpenRows() ? "waiting" : "idle";
+    niSave();
+    niKick();
+    return niOpenRows();
+  }
+  /* Read now: waives the idle threshold and the backoff for ONE read. Every
+     other refusal in niGate still stands, on purpose. */
+  function niReadNow() {
+    niLoad();
+    if (_ni.stopped === true) { _ni.stopped = false; niSave(); }
+    niKick();
+    return niRunOne(true);
+  }
+  /* ===== end notes-idle-1.0.0 ===== */
   function runManagedAthenaOperation(task, busyFactory) {
     function busy(scope) {
       return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
@@ -7634,13 +8244,33 @@
             var __p1ScopeNotice = p1AppointmentCensusComplete
               ? " Appointment census only: all exact appointment IDs were reconciled, but provider is blank and provider/practice coverage is not reported as complete."
               : providerScopeNotice(selectedProvider.mode);
-            /* dn-1.0 (queue item): NAME the refused day-notes on the day line.
-               First names + the reason head, bounded to 6; rides BOTH verdict
-               lines because the day-note lane is verdict-neutral by design. */
+            /* ===== notes-idle-1.0.0 (the DONE line stops sounding like a loss) =
+               dn-1.0 named every refused day-note on the day line as "could not
+               be read". Owner, 2026-08-18: "comments like this would scare a
+               user" - and after this change it is also FALSE for most of those
+               rows, because the leftover queue is going to read them the next
+               time the doctor is idle. At DONE, a row is in exactly one of two
+               honest states:
+                 (a) there is NOTHING TO READ. tnReasonCode says `no-encounter`:
+                     Athena has no visit note for that day. Finished, and said in
+                     plain words - no reason code, no reader message.
+                 (b) it is QUEUED. The pass ran out of budget, athenaOne was
+                     slow, the tab was busy - all of which the idle catch-up
+                     retries. It is not a failure; it has not finished.
+               "could not be read" now belongs to exactly one place: the tray
+               line the catch-up writes when a row has actually spent its
+               attempts (niFinalLine). NAMES are gone from this line too - the
+               day ledger still carries the per-patient detail, and this string
+               rides a status surface that also reaches the quiet tray. */
             var __tnNote = "";
             try {
               var __tnList = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.todayNote === false; });
-              if (__tnList.length) __tnNote = " The pulled day's note could not be read for " + __tnList.slice(0, 6).map(function (p) { return (String(p.name || "").split(/\s+/)[0] || ("#" + String(p.patientId || "????").slice(-4))) + " (" + String(p.todayNoteReason || "unread").split(/[\[{]/)[0].trim().slice(0, 48) + ")"; }).join("; ") + (__tnList.length > 6 ? "; +" + (__tnList.length - 6) + " more" : "") + " \u2014 the charts themselves saved; the reasons are in the day ledger.";
+              var __tnNoNote = __tnList.filter(function (p) { return tnReasonCode(p.todayNoteReason) === "no-encounter"; }).length;
+              var __tnQueued = __tnList.length - __tnNoNote;
+              var __tnBits = [];
+              if (__tnQueued) __tnBits.push(__tnQueued + " visit note" + (__tnQueued === 1 ? "" : "s") + " will fill in quietly when you're idle \u2014 the charts themselves saved. Progress is under Integrations \u2192 Advanced integrations.");
+              if (__tnNoNote) __tnBits.push(__tnNoNote + " appointment" + (__tnNoNote === 1 ? " had" : "s had") + " no visit note in Athena for that day.");
+              if (__tnBits.length) __tnNote = " " + __tnBits.join(" ");
             } catch (eTnNote) {}
             var __chartOnly = 0; try { __chartOnly = ((historyReceipt && historyReceipt.patients) || []).filter(function (p) { return p && p.complete !== true && p.organized === true && p.dobVerified === true && !p.storageFailure; }).length; } catch (eCo) {}
             if (!complete) onStatus("Incomplete: schedule " + scheduleSummary + "; history " + historySummary + "; failures " + (calendarReceipt.failed + historyFailures) + ". It is safe to retry; MLS did not mark this pull complete." +
@@ -9045,6 +9675,10 @@
       window.__mlsPullStopRequested = true;
       var droppedNotes = 0;
       try { droppedNotes = tnDropDeferredQueue("stopped-by-user"); } catch (eStp) {}
+      /* notes-idle-1.0.0: Stop means STOP. The idle catch-up is a background
+         Athena driver too, so it stops with everything else rather than
+         restarting five seconds after the doctor pressed the button. */
+      try { niStop("stopped-by-user"); } catch (eNi) {}
       return { requested: true, deferredTodayNotesDropped: droppedNotes };
     },
     _dropDeferredTodayNotes: tnDropDeferredQueue,
@@ -9068,6 +9702,32 @@
     /* dnb2-1.0.0: the retry's progress predicate, so its contract can be
        EXECUTED rather than grepped for. Read-only, pure. */
     _todayNoteProgressCode: tnProgressCode,
+    /* ===== notes-idle-1.0.0 (the persistent leftover catch-up) =============
+       Read-only receipt plus the four verbs a surface needs. Every one of them
+       goes through niGate, so none of them can drive Athena while a pull, a
+       recording, a draft-all, a review sheet or another engine is on it. */
+    notesIdle: niReceipt,
+    notesIdleReadNow: niReadNow,
+    notesIdleStop: function () { return niStop("stopped-by-user"); },
+    notesIdleResume: niResume,
+    _notesIdle: niReceipt,
+    _notesIdleTick: niTick,
+    _notesIdleEnqueue: niEnqueue,
+    _notesIdleSyncFromReceipt: niSyncFromReceipt,
+    _notesIdleGate: niGate,
+    _notesIdleLine: niLine,
+    _notesIdleFinalLine: niFinalLine,
+    _notesIdlePlain: niPlain,
+    _notesIdleActivity: niOnActivity,
+    _notesIdleNoteOnFile: niNoteOnFile,
+    _notesIdleConfig: function () {
+      return { version: NI_VERSION, idleMs: NI_IDLE_MS, tickMs: NI_TICK_MS,
+        maxAttempts: NI_MAX_ATTEMPTS, backoffMs: NI_BACKOFF_MS.slice(),
+        readDeadlineMs: NI_READ_DEADLINE_MS, maxRows: NI_MAX_ROWS,
+        keepDays: NI_KEEP_DAYS, storeSuffix: NI_STORE_SUFFIX, lockName: NI_PULL_LOCK,
+        activityEvents: NI_ACTIVITY_EVENTS.slice(),
+        terminalCodes: Object.keys(NI_TERMINAL_CODES) };
+    },
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },
@@ -9135,6 +9795,32 @@
     isBusy: function () { return !!(pullRunning || monthPullRunning || historyBatchRunning); },
     revert: revert
   };
+
+  /* ===== notes-idle-1.0.0 (the one-engine handshake + the boot restore) =====
+     __mlsNotesIdle is what the OTHER engines read. b121's anyPullRunning() asks
+     `reading()` before it opens a chart, and this block asks b121's own
+     state.running in niGate - both directions, so a chart can never be opened
+     twice at once by the two of them.
+
+     The restore is deliberately LAZY and SILENT: it reads the persisted queue,
+     re-arms the clock only if there is unfinished work, and does not touch
+     Athena until the ordinary idle gate opens. A reload in the middle of a
+     clinic therefore costs nothing and loses nothing. */
+  window.__mlsNotesIdle = {
+    version: NI_VERSION,
+    reading: function () { return _ni.reading === true; },
+    receipt: niReceipt,
+    line: niLine,
+    readNow: niReadNow,
+    stop: function () { return niStop("stopped-by-user"); },
+    resume: niResume,
+    tick: niTick,
+    plain: niPlain
+  };
+  safe(function () {
+    niLoad();
+    if (niOpenRows() > 0) { niKick(); niSurface(); }
+  });
 
   if (!gateOn()) { window.__mlsSI.installed = false; window.__mlsSI.gated = true; return; }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
