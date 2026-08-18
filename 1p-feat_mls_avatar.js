@@ -2037,11 +2037,14 @@
      face wins. 416 answered 19 of 19 sitters; the rest are there for a frame
      the first pass misses, and every one of them still clears the score floor. */
   var FACE_LM_LADDER = [[416, 0.35], [608, 0.30], [512, 0.25], [320, 0.25], [224, 0.20]];
-  var faceLmState = { tried: false, ready: false, why: '', promise: null, ms: 0 };
-  /* PHI-free: counts and reasons only, never an image and never a landmark. */
+  var faceLmState = { tried: false, ready: false, why: '', promise: null, ms: 0, backend: '' };
+  /* PHI-free: counts, a backend name and reasons. Never an image, never a landmark.
+     `backend` is reported because it is NOT decorative — see the CSP note below:
+     it is how you tell a machine that got the deterministic wasm path from one
+     that quietly fell through to a GPU that may not exist. */
   function faceLandmarkStatus() {
     return { tried: faceLmState.tried, ready: faceLmState.ready,
-      why: faceLmState.why, loadMs: faceLmState.ms };
+      why: faceLmState.why, loadMs: faceLmState.ms, backend: faceLmState.backend };
   }
   function faceLmApi() {
     var F = window.faceapi;
@@ -2081,6 +2084,21 @@
         });
         var chain = safe(function () {
           return F.tf.setBackend('wasm').then(function () { return F.tf.ready(); })
+            .then(function () {
+              /* ⛔ WHY THE CSP LINE IS NOT OPTIONAL, MEASURED TWO-SIDED.
+                 Serving this exact model under the /1p policy gives
+                 getBackend() === 'wasm'. Serving it under PRODUCTION's policy
+                 — the same bytes, the same page, one source expression fewer —
+                 Chrome refuses the module ("Compiling or instantiating
+                 WebAssembly is blocked") and tfjs does NOT throw: it silently
+                 falls through to 'webgl'. That is the trap. WebGL needs a
+                 working, un-blocklisted GPU, so on the machines that do not
+                 have one there is no backend left and the read fails for a
+                 reason nobody would connect to a CSP. Recording the backend
+                 name is how that stays visible instead of becoming a bug
+                 report that says "it scores lower on my laptop". */
+              faceLmState.backend = String(safe(function () { return F.tf.getBackend(); }, '') || '');
+            })
             .then(function () { return F.nets.tinyFaceDetector.loadFromUri(FACE_LM_DIR); })
             .then(function () { return F.nets.faceLandmark68Net.loadFromUri(FACE_LM_DIR); });
         }, null);

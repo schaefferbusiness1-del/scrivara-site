@@ -180,12 +180,25 @@ const MIME = { '.js': 'text/javascript', '.json': 'application/json', '.wasm': '
 
 const HARNESS_HTML = '<!doctype html><meta charset="utf-8"><title>avml harness</title><div id="visitView"></div>';
 
+/* the two shell policies, byte-for-byte out of the shells themselves, so the CSP
+   experiment below cannot drift from what is actually shipped */
+function shellCsp(rel) {
+  return read(rel).match(/<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i)[1];
+}
+const CSP_UNDER_TEST = { p1: shellCsp('1pScribeFlow.html'), prod: shellCsp('ScribeFlow.html') };
+
 function startServer() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(String(req.url).split('?')[0]);
     if (rel === '/__avml_harness') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(HARNESS_HTML);
+    }
+    const cspPage = /^\/__avml_csp_(p1|prod)$/.exec(rel);
+    if (cspPage) {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' +
+        CSP_UNDER_TEST[cspPage[1]] + '"><title>csp</title>');
     }
     const abs = path.join(ROOT, rel);
     if (!abs.startsWith(ROOT) || !fs.existsSync(abs) || fs.statSync(abs).isDirectory()) {
@@ -259,6 +272,40 @@ async function bootModule(page, port, opts) {
   const port = server.address().port;
   const browser = await chromium.launch({ channel: 'chrome' });
   try {
+    /* ---------- PART 1b : THE CSP EXPERIMENT, TWO-SIDED ------------------ */
+    /* Reading the meta tag proves the string was edited. It does NOT prove the
+       edit does anything, and this project has shipped a "fix" that changed a
+       string and no behaviour before. So: the same model bytes, the same page,
+       under each shell's REAL policy, and the backend it actually gets. */
+    const cspResults = {};
+    for (const which of ['p1', 'prod']) {
+      const cp = await browser.newPage();
+      await cp.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, (r) => r.abort());
+      await cp.goto('http://127.0.0.1:' + port + '/__avml_csp_' + which);
+      cspResults[which] = await cp.evaluate(async () => {
+        const text = await (await fetch('1p-avatar-model/face-api-1.7.15.js')).text();
+        const s = document.createElement('script'); s.textContent = text; document.head.appendChild(s);
+        if (!window.faceapi) return { installed: false, backend: null };
+        const F = window.faceapi;
+        try {
+          F.tf.env().set('WASM_HAS_MULTITHREAD_SUPPORT', false);
+          F.tf.setWasmPaths('1p-avatar-model/');
+          await F.tf.setBackend('wasm');
+          await F.tf.ready();
+          return { installed: true, backend: F.tf.getBackend() };
+        } catch (e) { return { installed: true, backend: null, err: String((e && e.message) || e).slice(0, 120) }; }
+      });
+      await cp.close();
+    }
+    eq(cspResults.p1.installed, true, 'the model bundle would not even install under the /1p policy');
+    eq(cspResults.p1.backend, 'wasm',
+      `under the /1p shell CSP the tfjs wasm backend must actually start; got ${JSON.stringify(cspResults.p1)}`);
+    ok(cspResults.prod.backend !== 'wasm',
+      'the PRODUCTION CSP allowed the wasm backend to start — then the /1p source expression is buying nothing ' +
+      'and the whole justification for adding it is wrong');
+    console.log(`  CSP experiment: /1p -> backend "${cspResults.p1.backend}", production -> "${cspResults.prod.backend}" ` +
+      '(WebAssembly refused, tfjs falls through to a GPU that may not exist)');
+
     /* ---------- PART 2 : the model is present ---------------------------- */
     const page = await browser.newPage();
     /* capture the real fetch before anything replaces it */
@@ -299,7 +346,8 @@ async function bootModule(page, port, opts) {
     const status = await page.evaluate(() => window.__mlsAvatar.landmarkStatus());
     ok(status && status.ready === true,
       'the bundled model did not load in real Chrome over http: ' + JSON.stringify(status));
-    console.log(`  model loaded in ${status.loadMs} ms from ${MODEL_DIR}/`);
+    console.log(`  model loaded in ${status.loadMs} ms from ${MODEL_DIR}/ on the ${status.backend} backend`);
+    eq(status.backend, 'wasm', 'the harness did not get the deterministic wasm backend');
 
     console.log('  fixture                    found  score  pixel  lmark  CLAIMED/EXAMINED  glasses  beard   hairline  shape');
     let strong = 0;
