@@ -40638,14 +40638,34 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    standing in for a control. Below the 900px breakpoint the rail is a capped
    strip ABOVE the note, so a doctor reading a long note has scrolled the whole
    selector off screen and Escape was the only way out. */
-#mlsOpnCrumb{ display:flex; align-items:center; gap:10px; margin:0 0 10px; }
+/* THE WAY BACK TO THE WHOLE DAY IS A DESTINATION, NOT A BREADCRUMB.
+   Owner, 2026-08-18: the control that shows ALL the patients for a day must be
+   "WAY BIGGER". 4.0.0 shipped it as a 44px pill sharing a line with the patient
+   counter, which reads as a breadcrumb — the thing you skim past — rather than
+   as the way to the list. It takes its own full-width row at 48px, says how
+   many patients it will show, and the counter drops beneath it. */
+#mlsOpnCrumb{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
 #mlsOpnBack{
-  min-height:44px; padding:0 15px 0 11px; cursor:pointer;
-  font:700 12.5px/1.2 var(--sans); color:var(--ink);
-  background:var(--card); border:1px solid var(--line); border-radius:var(--r-pill,999px);
+  flex:1 1 100%; width:100%; box-sizing:border-box; min-height:48px;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  padding:13px 16px; cursor:pointer;
+  font:800 13.5px/1.25 var(--sans); color:var(--ink);
+  background:var(--soft); border:1px solid var(--line); border-radius:var(--r-ctl,12px);
 }
-#mlsOpnBack:hover{ border-color:var(--brand,#2E6A4B); }
-#mlsOpnPos{ font:600 12px/1.3 var(--sans); color:var(--muted); }
+#mlsOpnBack:hover{ border-color:var(--brand,#2E6A4B); background:var(--card); }
+#mlsOpnPos{ flex:0 0 auto; font:600 12px/1.3 var(--sans); color:var(--muted); }
+/* THE ROOM'S OWN all-patients SWITCH IS THE OTHER ANSWER to "show me everyone
+   on this day". It is folded in Simple and Normal and given back whole in
+   Everything (and by the one More disclosure), so it is sized here rather than
+   unfolded — it must be a real target on the surface where it does appear. Its
+   buttons carry INLINE styles from the shell's own markup, which a plain rule
+   cannot outrank; this is size only, and no behaviour is touched. */
+#opPrepModal #opPrepModeRow{ gap:8px !important; }
+#opPrepModal #opPrepModeAll,
+#opPrepModal #opPrepModePatient{
+  min-height:44px !important; padding:12px 16px !important;
+  font:700 13px/1.2 var(--sans) !important; border-radius:var(--r-ctl,10px) !important;
+}
 /* IDENTITY AND STATE ON ONE LINE. 3.0.0 put the status chip in the ACTION row,
    next to the button that changes it — so the thing that says what IS and the
    thing that says what to DO wore the same shape, side by side. */
@@ -40713,6 +40733,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #mlsOpnCopy[hidden],#mlsOpnFmt[hidden]{ display:none; }
 #mlsOpnDiscl{ display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin:7px 0 6px; }
 
+/* THE FILL BOX'S TWO PRIMARIES ARE TAP TARGETS TOO. MEASURED at 1440x900 with
+   one blank waiting: "🎙 Dictate to fill" renders 108x25 and "✨ Fill from
+   dictation" the same — under every touch floor, on the two controls that
+   ANSWER a blank, and now on the control nextglow-1.1.0 points at when a field
+   is waiting. feat_mls_opnote_fill.js is not this lane's to edit and its
+   behaviour is untouched; this is size only.
+
+   SIZED ALWAYS, NOT WHILE LIT. Growing only the glowing control would reflow
+   the fill box every time the glow moved — churn on the exact surface the
+   owner reports as slow when he clicks around fast. A constant height costs
+   one layout, once. */
+#opPrepModal .onf-fillbox [id^="mlsOnfDictBtn_"],
+#opPrepModal .onf-fillbox .onf-dict-go{
+  min-height:40px; padding:9px 14px; box-sizing:border-box;
+}
 /* THE DAY-BRAIN'S OWN CONTROL IS A TAP TARGET TOO. MEASURED at 1440x900 in
    this room: #opdbFold ("Show only who needs an op note") renders 154x26 —
    under every touch floor, on the control that decides whether the doctor can
@@ -41831,17 +41866,27 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      a real element, it carries the halo, and pressing it is what fills the
      field. When the box offers no button, glowId falls back to #mlsOpnGo,
      which is labelled "Fill N fields" and focuses that same field. */
+  /* 4.0.1 — THIS GATE FOLLOWED THE GLOW OFF THE MIC. It answers one question:
+     is there a real, labelled control on the fill box that ANSWERS a blank? If
+     yes, 'fields' is the honest next step and nextglow-1.1.0's own row resolves
+     which one; if no, the pane's own action is. It no longer looks for the
+     per-field action button, because that set is where .onf-mic lives — 26x18
+     of glyph — and pointing at it is the defect the owner photographed.
+     :has() is still used to ask whether any field is actually unanswered; on
+     an engine without it querySelector throws and this degrades to #mlsOpnGo. */
   function fieldsNext() {
     var card = curCard();
     if (!card) return null;
+    var waiting = null;
+    try { waiting = card.querySelector('.onf-fillbox .onf-field:has(label:not(.onf-has))'); }
+    catch (e) { return null; }
+    if (!waiting) return null;
     var n = null;
-    /* :has() is already used by this shell's own room CSS; on an engine
-       without it querySelector throws and this degrades to #mlsOpnGo. */
-    try { n = card.querySelector('.onf-fillbox .onf-field:has(label:not(.onf-has)) .onf-field-actions button'); }
-    catch (e) { n = null; }
+    try { n = card.querySelector('.onf-fillbox [id^="mlsOnfDictBtn_"]') ||
+                card.querySelector('.onf-fillbox .onf-dict-go'); } catch (e2) { n = null; }
     if (!n || n.disabled) return null;
     var r = null;
-    try { r = n.getBoundingClientRect(); } catch (e2) { return null; }
+    try { r = n.getBoundingClientRect(); } catch (e3) { return null; }
     return (r && r.width > 0 && r.height > 0) ? n : null;
   }
   function glowId() {
@@ -42205,6 +42250,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         subEl.textContent = parts.join(' · ');
       }
       if (posEl) posEl.textContent = (r.length > 1 && sel >= 0) ? ('Patient ' + (sel + 1) + ' of ' + r.length) : '';
+      /* THE SHOW-ALL CONTROL SAYS WHAT IT WILL SHOW, and the count is re-read
+         on every day change (the day is part of the paint signature, so a new
+         day repaints this line with its own number). In single-patient mode
+         there is no list behind this surface — backToList() LOADS the day — so
+         it promises the day rather than a count it does not have yet. */
+      var backEl = el('mlsOpnBack');
+      if (backEl) {
+        var nAll = r.length;
+        var backWord = patientMode()
+          ? '‹ Show all patients on this day'
+          : ('‹ All ' + nAll + ' patient' + (nAll === 1 ? '' : 's') + ' on this day');
+        if (S(backEl.textContent) !== backWord) backEl.textContent = backWord;
+      }
       /* THE FULL SENTENCE LIVES HERE. The rail's chip is the short form; this
          is the surface with room for the whole fact and the reason behind it,
          and it wears the same colour as the row it came from. */
@@ -44263,7 +44321,20 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 })();
 </script>
 <!-- ===== end visitowner-1.0.0 ========================================= -->
-<!-- ===== nextglow-1.0.0 — one glowing next step, everywhere =============
+<!-- ===== nextglow-1.1.0 — one glowing next step, everywhere =============
+     1.1.0 (owner, 2026-08-18, from a screenshot of the op-note fill screen
+     where the ring sat on the tiny Dictate mic and the NEXT pill covered the
+     field beside it) changes THREE things and nothing else about the ladder:
+       · the halo is drawn INSIDE the control's border box (it was painting up
+         to 31px outside it, in every direction);
+       · the NEXT pill is no longer painted by default — the reason moves onto
+         the control as data-tip and aria-label, and the pill opens on focus;
+       · a target under the 40x40 touch floor is upgraded to a LABELLED control
+         of at least 40x40 in the same action group. "They choose the wrong
+         thing all the time."
+     The path table, the resolve order and the one-owner invariant are
+     untouched.
+
      OWNER, 2026-08-17 (his caps): "THAT'S A BIG PROBLEM WITH THIS PROGRAM — A
      WHERE-TO-GO-NEXT INDICATOR OR WHERE THINGS ARE. FOR EVERY SINGLE SYSTEM THE
      MOST LIKELY NEXT BUTTON TO MOVE ALONG THE PATH SHOULD BE GLOWING."
@@ -44308,34 +44379,64 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
      IT NEVER GLOWS SOMETHING DESTRUCTIVE. Candidates are the forward step; no
      entry names a delete, a clear, a stop or a sign-out. -->
 <style id="mlsNextGlowCss">
-/* The halo. ::after on the control itself is the mechanism msl-1.0.0 already
-   proved safe on these targets; only its strength changes. It carries no
-   background, so it can never cover a label. */
+/* THE HALO IS DRAWN INSIDE THE CONTROL. Owner, 2026-08-18, from his own
+   screenshot of the op-note fill screen: the ring sat on the tiny Dictate mic
+   beside "Indications" and the NEXT pill overlapped the field next to it.
+
+   MEASURED CAUSE of the overlap half. 1.0.0 drew the halo at `inset:-5px`
+   with `0 0 0 9px` and `0 0 26px 5px` shadows on top of that — up to 31px of
+   paint OUTSIDE the control's border box, in every direction. On a 26x18 mic
+   button that is a halo three times the size of the thing it is pointing at,
+   and it lands on whatever is next to it. There is nothing to tune: an outset
+   halo on a small control in a dense form ALWAYS covers a neighbour.
+
+   So it is drawn inside instead. `inset:0` plus INSET shadows cannot paint
+   outside the border box by construction, and the pulse animates opacity
+   only — 1.0.0's `transform:scale(1.022)` grew the overlay past its own box,
+   which is the same defect by another route. It still carries no background,
+   so it can never cover a label. */
 [data-mls-next="1"]{ position:relative; }
 [data-mls-next="1"]::after{
-  content:''; position:absolute; inset:-5px; border-radius:inherit; pointer-events:none;
+  content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
   box-shadow:
-    0 0 0 3px var(--mls-ng-ring, #2E6A4B),
-    0 0 0 9px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 26%, transparent),
-    0 0 26px 5px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 45%, transparent);
+    inset 0 0 0 3px var(--mls-ng-ring, #2E6A4B),
+    inset 0 0 0 7px color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 26%, transparent);
   animation:mlsNgPulse 2.2s var(--mls-ease-inout, ease-in-out) infinite;
 }
 /* color-mix is not universal; the fallback ring is a plain rgba so an older
    engine still shows a real halo rather than nothing. */
 @supports not (color: color-mix(in srgb, red 50%, transparent)){
   [data-mls-next="1"]::after{
-    box-shadow:0 0 0 3px #2E6A4B, 0 0 0 9px rgba(46,106,75,.26), 0 0 26px 5px rgba(46,106,75,.45);
+    box-shadow:inset 0 0 0 3px #2E6A4B, inset 0 0 0 7px rgba(46,106,75,.26);
   }
 }
+/* A REPLACED ELEMENT GENERATES NO ::after AT ALL, so the rule above draws
+   nothing on an <input>, <select> or <textarea> — measured once already as a
+   note surface with the glow resolved onto an empty field and ZERO running
+   animations. `outline-offset` with a NEGATIVE value draws the outline inside
+   the border box, which is the one mechanism that both works on a replaced
+   element and cannot touch a neighbour. The pulse animates the outline COLOUR,
+   never opacity: fading an <input> would fade the value the doctor is reading. */
+input[data-mls-next="1"],select[data-mls-next="1"],textarea[data-mls-next="1"]{
+  outline:3px solid var(--mls-ng-ring, #2E6A4B); outline-offset:-3px;
+  animation:mlsNgPulseInset 2.2s var(--mls-ease-inout, ease-in-out) infinite;
+}
 @keyframes mlsNgPulse{
-  0%,100%{ opacity:.55; transform:scale(1); }
-  50%    { opacity:1;   transform:scale(1.022); }
+  0%,100%{ opacity:.62; }
+  50%    { opacity:1; }
+}
+@keyframes mlsNgPulseInset{
+  0%,100%{ outline-color:color-mix(in srgb, var(--mls-ng-ring, #2E6A4B) 55%, transparent); }
+  50%    { outline-color:var(--mls-ng-ring, #2E6A4B); }
 }
 /* The shell's blanket reduce-motion rule kills the animation; this makes the
    still state DELIBERATE — full strength, so the guidance survives without
    motion instead of fading to nothing. */
 @media (prefers-reduced-motion: reduce){
   [data-mls-next="1"]::after{ animation:none !important; opacity:1 !important; transform:none !important; }
+  input[data-mls-next="1"],select[data-mls-next="1"],textarea[data-mls-next="1"]{
+    animation:none !important; outline-color:var(--mls-ng-ring, #2E6A4B) !important;
+  }
 }
 /* A control inside a scroll container clips its own outline; the halo is drawn
    with box-shadow precisely so it is not clipped by overflow on the CONTROL,
@@ -44352,7 +44453,21 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   box-shadow:0 3px 10px rgba(20,33,28,.28);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-#mlsNgTag[data-shown="1"]{ display:inline-flex; }
+/* THE SENTENCE LEAVES THE DEFAULT PAINT. Owner, 2026-08-18: the
+   "NEXT — The one detail this note still needs" pill was painting over the
+   field beside the control it described. It is position:fixed, so it can never
+   push layout — it can only COVER, and on a dense form there is nowhere to put
+   a 300px pill that does not cover something.
+
+   So it is not painted until it is asked for. `data-shown` still means "the
+   tag is positioned and ready" (the resolve is unchanged and report() still
+   publishes it); `data-reveal` is written only while the lit control has
+   FOCUS. Hover is served by the app's own tooltip instead — the reason is
+   written to data-tip on the control, and initTooltips() already renders that
+   as a bubble on a deliberate pause. Two bubbles on one control is the
+   double-tooltip this app deletes every `title` to avoid, which is why the tag
+   does not also open on hover. */
+#mlsNgTag[data-shown="1"][data-reveal="1"]{ display:inline-flex; }
 /* AN INLINE LINK THAT IS THE NEXT STEP BECOMES A BUTTON. Owner: "Open in
    History →" must be BIG and glowing. It ships as a bare inline <a> inside a
    sentence, so a halo alone would ring a line of text. Scoped to
@@ -44372,12 +44487,12 @@ a[data-mls-next="1"]{
 @media print{ #mlsNgTag{ display:none !important; } }
 </style>
 <script>
-/* nextglow-1.0.0 controller. */
+/* nextglow-1.1.0 controller. */
 (function () {
   'use strict';
   if (window.__mlsNextGlow) return;
 
-  var VERSION = 'nextglow-1.0.0';
+  var VERSION = 'nextglow-1.1.0';
   var ATTR = 'data-mls-next';
   /* The nodes visitState() reads its answer OUT OF — see watch(). */
   var STATE_SOURCES = ['captureBtn', 'statusBadge'];
@@ -44544,9 +44659,24 @@ a[data-mls-next="1"]{
            rather than at a node this lane invented — and at its BUTTON, not
            the input, because the halo is an ::after and a replaced element
            generates none (see fieldsNext). Falls back to the pane's action. */
+        /* 1.1.0 RE-TARGETS THIS ROW. Owner, 2026-08-18, from the screenshot:
+           the ring was on the per-field Dictate mic — feat_mls_opnote_fill
+           styles .onf-mic at `font-size:12px; padding:2px 7px`, so it renders
+           about 26x18 — with two LABELLED controls doing the same job right
+           beside it. 1.0.0 chose that mic deliberately, for a reason that was
+           true then: the halo was an ::after, a replaced element generates
+           none, so the field itself could not carry it and the nearest real
+           element was the icon. Containment changed the mechanism, and the
+           icon is no longer the only option.
+           The fill box's own primaries are what a doctor presses to answer a
+           blank, they say what they do, and they are box-level rather than
+           26px of glyph. The pane's "Fill N fields" is the last resort and it
+           focuses the waiting field, so the specificity is not lost. */
         { when: function () { return opnWant() === 'fields'; },
           steps: [
-            { sel: '#opPrepList > div.opr-cur .onf-fillbox .onf-field:has(label:not(.onf-has)) .onf-field-actions button',
+            { sel: '#opPrepList > div.opr-cur .onf-fillbox [id^="mlsOnfDictBtn_"]',
+              reason: 'The one detail this note still needs' },
+            { sel: '#opPrepList > div.opr-cur .onf-fillbox .onf-dict-go',
               reason: 'The one detail this note still needs' },
             { sel: '#mlsOpnGo' }
           ] },
@@ -44780,10 +44910,54 @@ a[data-mls-next="1"]{
   }
 
   /* Resolve one step definition to { el, why } or null. */
+  /* ---- NEVER POINT AT SOMETHING TOO SMALL TO MEAN IT ------------------
+     Owner, 2026-08-18: "they choose the wrong thing all the time." The
+     measured case is the op-note fill screen, where the ladder resolved onto
+     .onf-mic — feat_mls_opnote_fill styles it `font-size:12px; padding:2px 7px`,
+     so it renders about 26x18 — while "🎙 Dictate to fill" and "✨ Fill from
+     dictation" sat right there, labelled, doing the same job at a real size.
+
+     THE RULE: a control under the 40x40 touch floor is not the honest target
+     when a LABELLED control of at least 40x40 in the same action group
+     advances the same step.
+
+     "The same action group" is deliberately ONE parent hop, not a crawl. A
+     wide search is how a ladder starts choosing confidently wrong things in a
+     new place, which is the complaint this exists to answer — so the search is
+     bounded to the element's own parent, and if nothing there qualifies the
+     original target stands rather than being replaced by a guess. A label is
+     two or more alphanumeric characters of text or aria-label: one glyph is an
+     icon, and an icon is what we are hopping away from. */
+  var TOUCH_FLOOR = 40;
+  function bigEnough(e) {
+    var r = safe(function () { return e.getBoundingClientRect(); }, null);
+    return !!(r && r.width >= TOUCH_FLOOR && r.height >= TOUCH_FLOOR);
+  }
+  function labelled(e) {
+    var t = trimmed(txt(e && e.textContent)).replace(/[^0-9a-z]/gi, '');
+    if (t.length >= 2) return true;
+    var a = trimmed(safe(function () { return e.getAttribute('aria-label'); }, ''))
+      .replace(/[^0-9a-z]/gi, '');
+    return a.length >= 2;
+  }
+  var UPGRADE_SEL = 'button,a[href],[role=button]';
+  function upgradeTarget(e) {
+    if (!e || bigEnough(e)) return e;
+    var group = safe(function () { return e.parentElement; }, null);
+    if (!group) return e;
+    var cands = safe(function () { return group.querySelectorAll(UPGRADE_SEL); }, []);
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (c === e) continue;
+      if (eligible(c) && bigEnough(c) && labelled(c)) return c;
+    }
+    return e;
+  }
+
   function resolveStep(step, host, rowWhy) {
     var sel = (typeof step === 'string') ? step : step.sel;
     var e = q(sel, host) || q(sel);
-    if (eligible(e)) return { el: e, why: (typeof step === 'string') ? rowWhy : (step.reason || rowWhy) };
+    if (eligible(e)) return { el: upgradeTarget(e), why: (typeof step === 'string') ? rowWhy : (step.reason || rowWhy) };
     /* THE UNBLOCK HOP. The step exists and is on screen but refuses, so glow
        what makes it possible and say so. Never glow the refusing control. */
     if (typeof step !== 'string' && step.unblock && blocked(e)) {
@@ -44912,9 +45086,75 @@ a[data-mls-next="1"]{
     for (var j = 0; j < stale.length; j++) safe(function () { stale[j].classList.remove('msl-next'); });
   }
 
+  /* ---- THE REASON MOVES ONTO THE CONTROL ------------------------------
+     The pill is no longer painted by default, so the sentence has to reach the
+     doctor some other way: data-tip, which the app's OWN tooltip renders on a
+     deliberate hover pause, and aria-label for assistive tech.
+
+     COMPOSED, NEVER REPLACED, and restored verbatim when the glow moves. This
+     app reads control TEXT to decide state (recordingNow() is /recording|stop/i
+     on #captureBtn.textContent), which is why 1.0.0 refused to inject a child
+     node; the same caution applies to a name. The control's own label stays
+     first and intact, the reason is appended, and deannotate() puts back
+     exactly what was there — including ABSENCE, which is why the saved value is
+     `false` rather than '' when the attribute did not exist. */
+  function annotate(e, why) {
+    if (!e || !why) return;
+    safe(function () {
+      if (e.getAttribute('data-mls-ng-note') === '1') return;
+      var lbl = e.getAttribute('aria-label');
+      var tip = e.getAttribute('data-tip');
+      e.__mlsNgLabel = (lbl === null) ? false : lbl;
+      e.__mlsNgTip = (tip === null) ? false : tip;
+      var own = trimmed(txt(lbl || e.textContent)).replace(/\s+/g, ' ');
+      e.setAttribute('aria-label', own ? (own + ' — next step: ' + why) : ('Next step: ' + why));
+      e.setAttribute('data-tip', 'NEXT — ' + why);
+      e.setAttribute('data-mls-ng-note', '1');
+    });
+  }
+  function deannotate(e) {
+    if (!e) return;
+    safe(function () {
+      if (e.getAttribute('data-mls-ng-note') !== '1') return;
+      e.removeAttribute('data-mls-ng-note');
+      if (e.__mlsNgLabel === false) e.removeAttribute('aria-label');
+      else if (typeof e.__mlsNgLabel === 'string') e.setAttribute('aria-label', e.__mlsNgLabel);
+      if (e.__mlsNgTip === false) e.removeAttribute('data-tip');
+      else if (typeof e.__mlsNgTip === 'string') e.setAttribute('data-tip', e.__mlsNgTip);
+      try { delete e.__mlsNgLabel; delete e.__mlsNgTip; } catch (x) {}
+    });
+  }
+
+  /* ---- THE TAG OPENS ON FOCUS, AND ON NOTHING ELSE -------------------- */
+  var _revealOn = null;
+  function setReveal(on) {
+    var t = el('mlsNgTag');
+    if (!t) return;
+    if (on) { if (t.getAttribute('data-reveal') !== '1') t.setAttribute('data-reveal', '1'); }
+    else if (t.getAttribute('data-reveal')) t.removeAttribute('data-reveal');
+  }
+  function onReveal() { paintTag(_marked, _last.why); setReveal(true); }
+  function onUnreveal() { setReveal(false); }
+  function armReveal(node) {
+    if (_revealOn) {
+      safe(function () {
+        _revealOn.removeEventListener('focus', onReveal, true);
+        _revealOn.removeEventListener('blur', onUnreveal, true);
+      });
+    }
+    _revealOn = node || null;
+    setReveal(false);
+    if (!node) return;
+    safe(function () {
+      node.addEventListener('focus', onReveal, true);
+      node.addEventListener('blur', onUnreveal, true);
+      if (document.activeElement === node) { setReveal(true); }
+    });
+  }
+
   function clearAll() {
     var prev = safe(function () { return document.querySelectorAll('[' + ATTR + ']'); }, []);
-    for (var i = 0; i < prev.length; i++) safe(function () { prev[i].removeAttribute(ATTR); });
+    for (var i = 0; i < prev.length; i++) safe(function () { deannotate(prev[i]); prev[i].removeAttribute(ATTR); });
     sweepStale();
   }
 
@@ -44936,12 +45176,14 @@ a[data-mls-next="1"]{
     clearAll();
     if (hit.el) {
       safe(function () { hit.el.setAttribute(ATTR, '1'); });
+      annotate(hit.el, hit.why);
       paintTag(hit.el, hit.why);
     } else {
       paintTag(null, '');
     }
     _marked = hit.el || null;
     armOnMarked();
+    armReveal(_marked);
     _last = { room: hit.room, id: (hit.el && hit.el.id) || '', why: hit.why || '' };
     return _last;
   }
@@ -45155,7 +45397,17 @@ a[data-mls-next="1"]{
         room: _last.room, expectedId: _last.id, why: _last.why,
         lit: out, count: out.length,
         stale: safe(function () { return document.querySelectorAll('.msl-next').length; }, 0),
-        tagShown: !!(t && t.getAttribute('data-shown') === '1'),
+        /* HONEST, NOT FLATTERING. tagShown is what is ON SCREEN — the tag is
+           positioned and revealed — so a suite that asserts it can actually
+           fail when the pill is not painted. tagArmed is the other half: the
+           resolve produced a tag and placed it, which is true in every state
+           whether or not the doctor has focused the control. */
+        tagShown: !!(t && t.getAttribute('data-shown') === '1' && t.getAttribute('data-reveal') === '1'),
+        tagArmed: !!(t && t.getAttribute('data-shown') === '1'),
+        /* what the control itself now carries, so the reason is provably
+           reachable without the pill */
+        litTip: safe(function () { return _marked ? txt(_marked.getAttribute('data-tip')) : ''; }, ''),
+        litLabel: safe(function () { return _marked ? txt(_marked.getAttribute('aria-label')) : ''; }, ''),
         tagText: t ? trimmed(txt(t.textContent)) : ''
       };
     },
@@ -45166,6 +45418,9 @@ a[data-mls-next="1"]{
     revert: function () {
       safe(function () { if (watch.__keep) { clearInterval(watch.__keep); watch.__keep = 0; } });
       safe(function () { if (_mo) { _mo.disconnect(); _mo = null; } });
+      /* the focus listeners and the reveal flag go with it, or a reverted block
+         leaves a pill that can still be opened on a control it no longer owns */
+      armReveal(null);
       clearAll();
       _marked = null;
       var t = el('mlsNgTag');
@@ -45181,7 +45436,7 @@ a[data-mls-next="1"]{
   else boot();
 })();
 </script>
-<!-- ===== end nextglow-1.0.0 ============================================ -->
+<!-- ===== end nextglow-1.1.0 ============================================ -->
 <!-- ===== visitflow-1.0.0 — the transcript stays, and one record control ===
      OWNER, 2026-08-17 21:35Z, from his own screenshot of the Visit room while
      recording: the transcript box ("The visit conversation appears here as you

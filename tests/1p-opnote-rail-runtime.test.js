@@ -124,7 +124,7 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
       `${name}: the op-note room marks a glow of its own — there must be exactly one highlight owner`);
     /* ... and the nextglow table must actually consult it, per state. The row
        is read out of the shipped shell rather than assumed. */
-    const ng = src.slice(src.indexOf('<!-- ===== nextglow-1.0.0'), src.indexOf('<!-- ===== end nextglow-1.0.0'));
+    const ng = src.slice(src.indexOf('<!-- ===== nextglow-1.1.0'), src.indexOf('<!-- ===== end nextglow-1.1.0'));
     ok(/function opnWant\(\)/.test(ng),
       `${name}: nextglow no longer asks the op-note room which surface is up — it is guessing again`);
     for (const id of ['mlsOpnHist', 'tpfStop', 'mlsOpnGo', 'mlsOpnPull', 'opPrepGenAllBtn', 'mlsOpDayGo']) {

@@ -57,7 +57,7 @@ function blockOf(src, name) {
 
 for (const shell of SHELLS) {
   const src = read(shell);
-  const blk = blockOf(src, 'nextglow-1.0.0');
+  const blk = blockOf(src, 'nextglow-1.1.0');
   ok(blk.length > 2000, `${shell}: nextglow-1.0.0 block is missing or truncated`);
 
   /* 6 — lane neutrality: promoting the block must not carry the lane with it */
@@ -95,7 +95,7 @@ for (const shell of SHELLS) {
 }
 
 /* the two shells must carry byte-identical blocks */
-eq(blockOf(read(SHELLS[0]), 'nextglow-1.0.0'), blockOf(read(SHELLS[1]), 'nextglow-1.0.0'),
+eq(blockOf(read(SHELLS[0]), 'nextglow-1.1.0'), blockOf(read(SHELLS[1]), 'nextglow-1.1.0'),
   'the twins carry DIFFERENT nextglow-1.0.0 blocks');
 
 /* ============================================================ PART 2 runtime */
@@ -245,7 +245,28 @@ function assertOne(r, where) {
   ok(r.lit[0] && r.lit[0].visible, `${where}: the glowing control is NOT VISIBLE (${JSON.stringify(r.lit[0])})`);
   ok(r.lit[0] && r.lit[0].enabled, `${where}: the glowing control is DISABLED (${JSON.stringify(r.lit[0])})`);
   eq(r.stale, 0, `${where}: ${r.stale} stale .msl-next element(s) — there must be exactly one owner of the glow`);
-  ok(r.tagShown, `${where}: the "Next" tag is not shown`);
+  /* PIN INVERTED 2026-08-18 (nextglow-1.1.0). Owner order, from his own
+     screenshot of the op-note fill screen where the "NEXT — The one detail this
+     note still needs" pill sat on top of the field beside the lit control:
+     "text gone or out of the way".
+
+     The tag is position:fixed, so it can never push layout — it can only
+     COVER, and on a dense form there is nowhere to put a 300px pill that does
+     not cover something. So it is ARMED on every state (positioned, ready, and
+     that is still asserted) and REVEALED only on focus of the control it
+     describes. What the property was really protecting — that the reason is
+     reachable and not invented — is asserted more strictly than before: the
+     reason must be on the control itself, where a hover bubble and a screen
+     reader both reach it, rather than only in a pill nobody asked for. */
+  eq(r.tagShown, false,
+    `${where}: the "Next" pill is painted by default — the owner asked for it out of the way (2026-08-18)`);
+  ok(r.tagArmed, `${where}: the "Next" tag was never positioned, so focus could not reveal it`);
+  if (r.why) {
+    ok(r.litTip.indexOf(r.why) >= 0,
+      `${where}: the reason "${r.why}" is not on the lit control as data-tip (got "${r.litTip}") — with the pill hidden this is the only way a doctor reads it`);
+    ok(r.litLabel.indexOf(r.why) >= 0,
+      `${where}: the reason is not in the lit control's accessible name (got "${r.litLabel}")`);
+  }
 }
 
 async function runtime() {
@@ -279,7 +300,7 @@ async function runtime() {
     eq(dayPin.seeded, dayPin.app,
       `the seeded day (${dayPin.seeded}) is not the app's own today (${dayPin.app}) — the Visit room is being measured on a day it does not consider today`);
 
-    eq(await page.evaluate(() => window.__mlsNextGlow.version), 'nextglow-1.0.0',
+    eq(await page.evaluate(() => window.__mlsNextGlow.version), 'nextglow-1.1.0',
       'nextglow-1.0.0 did not install on the running page');
 
     /* ---- 1,2,3: every room ---------------------------------------- */
@@ -312,6 +333,52 @@ async function runtime() {
     eq(r.lit[0].id, EXPECT.visit_nopatient,
       `visit with NO patient must glow "Choose patient", not a pre-armed recorder — got ${r.lit[0].id}`);
     ok(/pick the patient/i.test(r.why), `visit / no patient: the tag gives no reason (why="${r.why}")`);
+
+    /* ---- 1.1.0: CONTAINMENT, MEASURED ON THE PAGE -------------------
+       Owner, 2026-08-18: the ring must render INSIDE the lit control's border
+       box — no outset halo, no overlap with a neighbour, ever. 1.0.0 drew it at
+       inset:-5px with a `0 0 26px 5px` bloom on top, i.e. up to 31px of paint
+       outside the control in every direction. Read off computed style rather
+       than off the stylesheet text, so a later rule that re-adds an outset
+       shadow fails here. */
+    const ring = await page.evaluate(() => {
+      const e = document.querySelector('[data-mls-next="1"]');
+      if (!e) return null;
+      const a = getComputedStyle(e, '::after');
+      const parts = String(a.boxShadow || 'none')
+        .split(/,(?![^(]*\))/).map((s) => s.trim()).filter(Boolean);
+      return {
+        id: e.id || e.tagName,
+        offsets: [a.top, a.right, a.bottom, a.left].join(' '),
+        outset: parts.filter((p) => p !== 'none' && p.indexOf('inset') < 0),
+        shadow: parts.join(' | ').slice(0, 160)
+      };
+    });
+    ok(ring, 'nothing is lit, so containment could not be measured');
+    assert.deepStrictEqual(ring.outset, [],
+      `the halo on ${ring.id} paints OUTSIDE its border box: ${JSON.stringify(ring.outset)} — owner 2026-08-18, no outset halo, ever`);
+    checks++;
+    eq(ring.offsets, '0px 0px 0px 0px',
+      `the halo overlay on ${ring.id} is offset from the control's box (${ring.offsets}) — it must be inset:0`);
+
+    /* ---- 1.1.0: THE PILL OPENS ON FOCUS AND ON NOTHING ELSE ---------- */
+    const reveal = await page.evaluate(async () => {
+      const e = document.querySelector('[data-mls-next="1"]');
+      const t = document.getElementById('mlsNgTag');
+      if (!e || !t) return null;
+      const before = getComputedStyle(t).display;
+      e.focus();
+      await new Promise((r2) => setTimeout(r2, 260));
+      const during = getComputedStyle(t).display;
+      e.blur();
+      await new Promise((r2) => setTimeout(r2, 260));
+      return { before, during, after: getComputedStyle(t).display };
+    });
+    ok(reveal, 'the Next tag element is absent, so the reveal could not be measured');
+    eq(reveal.before, 'none', `the "Next" pill is painted before anyone asked for it (display:${reveal.before})`);
+    ok(reveal.during !== 'none',
+      `focusing the lit control did not reveal the "Next" pill (display:${reveal.during}) — a fold that cannot open is a deletion`);
+    eq(reveal.after, 'none', `the "Next" pill stayed open after the control lost focus (display:${reveal.after})`);
 
     /* THE CANARY (4). Hide the expected control: the glow MUST move, and the
        expectation above MUST now fail. A suite that cannot fail proves nothing. */
