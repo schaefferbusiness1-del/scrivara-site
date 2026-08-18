@@ -1111,23 +1111,27 @@ async function runtime() {
       eq(fresh.open, 0, `a freshly opened room already shows ${fresh.open} expanded formatted views`);
 
       /* now generate: this is the moment the pane appears */
-      const after = await page.evaluate(async () => {
+      await page.evaluate(async () => {
         const rows = window._opPrep || [];
         const body = ['PROCEDURE PERFORMED:', 'Lumbar medial branch block', '',
-          'INDICATIONS:', 'Chronic low back pain.', '',
-          'TECHNIQUE:', '- The area was prepped and draped.', '- Fluoroscopic guidance was used.',
-          '', 'FINDINGS:', 'Documented.', '', 'DISPOSITION:', 'Stable.'].join('\n');
+          'INDICATIONS:', 'Chronic low back pain refractory to conservative care.', '',
+          'TECHNIQUE:', '- The area was prepped and draped in the usual sterile fashion.',
+          '- Fluoroscopic guidance was used throughout the procedure.',
+          '- The needle was advanced under direct visualization.', '',
+          'FINDINGS:', 'Documented in full.', '', 'DISPOSITION:', 'Stable, discharged to recovery.'].join('\n');
         rows.forEach((r) => { r.gen = true; r.note = body; });
         opPrepRender();
-        await new Promise((r) => setTimeout(r, 1500));
-        /* MEASURE WHERE THE PANE IS ACTUALLY ON SCREEN. From the day list no
-           note editor is rendered at all, so "no formatted body is visible"
-           would be true whether or not this block works — a vacuous pass.
-           The note surface is the only place the question means anything. */
-        window.__mlsOpDay.openNote(0);
-        await new Promise((r) => setTimeout(r, 600));
-        window.__mlsOpDay.refresh();
-        await new Promise((r) => setTimeout(r, 600));
+      });
+      /* SETTLE, DON'T SNAPSHOT (2026-08-18, op-notes lane). MEASURED: this
+         section read `total: 0` and failed on its own premise. The pane is
+         feat_mls_fixpack_0701's, it attaches only when the note is over 200
+         characters AND looks structured, and only on one of ITS OWN refresh
+         reasons — none of which is "a test just assigned .note". The note is
+         longer now and the sample is nudged the way a doctor nudges it (an
+         input event on the note he is typing in) until the pane exists. If it
+         never appears the suite still says so; it just no longer depends on
+         winning a race. */
+      const readFmt = () => page.evaluate(() => {
         const st = window.__mlsOpDay.status().formatted;
         const shown = Array.from(document.querySelectorAll('#opPrepModal .mls-fp-fmt'))
           .filter((w) => window.__uiContract.visible(w)).length;
@@ -1135,6 +1139,18 @@ async function runtime() {
           .filter((b) => window.__uiContract.visible(b)).length;
         return { st, shown, bodiesShown };
       });
+      await page.evaluate(() => { window.__mlsOpDay.openNote(0); });
+      await page.waitForTimeout(900);
+      let after = await readFmt();
+      for (let i = 0; i < 16 && (after.shown === 0 || after.st.unmarked > 0); i++) {
+        await page.evaluate(() => {
+          const ta = document.querySelector('#opPrepList > div.opr-cur textarea[id^="opPrepNote_"]');
+          if (ta) ta.dispatchEvent(new Event('input', { bubbles: true }));
+          try { window.__mlsOpDay.refresh(); } catch (e) {}
+        });
+        await page.waitForTimeout(700);
+        after = await readFmt();
+      }
       ok(after.shown > 0,
         `no formatted view is on screen in the note surface, so this section proved nothing (${JSON.stringify(after)})`);
       ok(after.st.total > 0,
